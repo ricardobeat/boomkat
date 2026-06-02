@@ -18,6 +18,17 @@ import std::io;
 import std::math;
 import libc;
 
+// C hot-path dispatch for simple opcodes (loads, arithmetic, bitwise, etc.)
+extern fn int vm_dispatch_hot_run(
+    ulong* regs,
+    uint* code,
+    uint code_len,
+    uint* pc,
+    ulong* consts,
+    uint const_count,
+    ulong this_val
+);
+
 // ============================================================================
 // Fault codes
 // ============================================================================
@@ -1482,6 +1493,32 @@ fn TVal? Vm.run(Vm* vm) {
                 curr_pc = act.curr_pc;
                 regs_base = act.bottom;
                 continue;
+            }
+
+            // === C HOT PATH — delegate simple-opcode runs to C ===
+            // Peek at opcode; only call C if it's a hot (simple) opcode.
+            // This avoids the C-call overhead for cold opcodes.
+            Opcode peek_op = curr_pc.op;
+            bool is_hot_op = (peek_op <= Opcode.VOID        && peek_op != Opcode.TYPEOF) ||
+                             (peek_op >= Opcode.BAND         && peek_op <= Opcode.GE)      ||
+                              peek_op == Opcode.JUMP         ||
+                              peek_op == Opcode.IF_TRUE      ||
+                              peek_op == Opcode.IF_FALSE     ||
+                              peek_op == Opcode.NOP;
+            if (is_hot_op) {
+                uint pc_idx = (uint)(curr_pc - code_base);
+                int hot_ret = vm_dispatch_hot_run(
+                    (ulong*)regs_base,
+                    (uint*)code_base,
+                    code_count,
+                    &pc_idx,
+                    (ulong*)constants,
+                    vm.current_func.const_count,
+                    act.this_binding.bits
+                );
+                curr_pc = code_base + pc_idx;
+                if (hot_ret == 0) continue;     // C processed one or more ops
+                if (hot_ret == -1) continue;    // C reached end of code
             }
 
             Instruction insn = *curr_pc;

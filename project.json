@@ -1,7 +1,7 @@
 {
   "langrev": "1",
   "warnings": [ "all" ],
-  "c-sources": [ "libregexp/libregexp.c", "libregexp/libunicode.c", "libregexp/re_wrapper.c" ],
+  "c-sources": [ "libregexp/libregexp.c", "libregexp/libunicode.c", "libregexp/re_wrapper.c", "src/vm_dispatch_hot.c" ],
   "c-include-dirs": [ "libregexp" ],
   "targets": {
     "duktape": {
