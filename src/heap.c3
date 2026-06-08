@@ -1094,19 +1094,22 @@ fn void Heap.free_string(&self, hstring::HString* s) {
  * needs to collect cycle garbage (objects with refcount > 0 but not
  * reachable from roots).
  */
-fn void Heap.decref(&self, HeapHeader* hdr) {
+fn void Heap.decref_free(&self, HeapHeader* hdr) {
+    if (hdr.is_string()) {
+        self.str_table_remove((hstring::HString*)hdr);
+        self.free_string((hstring::HString*)hdr);
+    } else if (hdr.is_object()) {
+        hdr.unlink(&self.heap_allocated);
+        hobject::hobject_free((HObject*)hdr);
+    } else {
+        hdr.unlink(&self.heap_allocated);
+        self.free_func(self.heap_udata, hdr);
+    }
+}
+
+fn void Heap.decref(&self, HeapHeader* hdr) @inline {
     if (--hdr.refcount == 0) {
-        if (hdr.is_string()) {
-            self.str_table_remove((hstring::HString*)hdr);
-            self.free_string((hstring::HString*)hdr);
-        } else if (hdr.is_object()) {
-            hdr.unlink(&self.heap_allocated);
-            hobject::hobject_free((HObject*)hdr);
-        } else {
-            // Buffer
-            hdr.unlink(&self.heap_allocated);
-            self.free_func(self.heap_udata, hdr);
-        }
+        self.decref_free(hdr);
     }
 }
 
