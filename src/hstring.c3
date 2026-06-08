@@ -323,15 +323,15 @@ fn HString*? hstring_alloc(void* heap_ptr, char[] data, uint hash) {
         s.flags.is_eval_or_args = true;
     }
 
+    // Reference count starts at 1 — the caller (str_intern) holds the first ref.
+    s.refcount = 1;
+
     // --- Copy bytes + NUL terminate ---
     char* dest = (char*)((usz)raw + HSTRING_HDR_SIZE);
     if (data.len > 0) {
         libc::memcpy(dest, data.ptr, data.len);
     }
     dest[data.len] = 0;  // NUL terminator
-
-    // Register with heap's GC string tracking
-    ((heap::Heap*)heap_ptr).track_string(raw);
 
     return s;
 }
@@ -375,8 +375,8 @@ fn HString*? hstring_concat(void* heap_ptr, HString* a, HString* b) {
     }
     dest[a_len + b_len] = 0;
 
-    // Register with heap's GC string tracking
-    ((heap::Heap*)heap_ptr).track_string(raw);
+    // Refcount starts at 1 — will be interned by caller.
+    s.refcount = 1;
 
     return s;
 }

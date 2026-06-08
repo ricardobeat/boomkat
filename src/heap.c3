@@ -43,6 +43,9 @@ faultdef HEAP_ALLOC_FAULT;
 const uint  INITIAL_STR_TABLE_SIZE  = 256;
 const float STR_TABLE_LOAD_FACTOR   = 0.70;
 const long  GC_INITIAL_TRIGGER      = 1024;
+/// Sentinel refcount for strings that must never be freed (builtins, symbols).
+/// Large enough that decref can never decrement it to zero in practice.
+const uint  STRING_PINNED_REFCOUNT  = 0x7FFF_FFFF;
 const long  GC_TRIGGER_GROW_FACTOR  = 2;
 const long  GC_MAX_TRIGGER          = 4096;
 /// Initial capacity for the gray object stack (grows as needed).
@@ -142,7 +145,6 @@ struct Heap {
     long  gc_trigger_counter;
     uint  live_obj_count;
     uint  peak_live_obj_count;   /// High-water mark for live objects
-    uint  peak_str_gc_count;     /// High-water mark for tracked strings
 
     // Gray set for iterative mark — dynamic array of HObject* pointers.
     // Avoids C-stack overflow on deep object graphs.
@@ -234,13 +236,6 @@ struct Heap {
     // reads the current value (no sync needed on push/pop).
     TVal*      valstack_base;    /// VM's valstack base pointer
     TVal**     valstack_top_ptr; /// Points to vm.valstack_top
-
-    // GC string tracking — dynamic array of all allocated HString*.
-    // Strings can't use the heap_allocated doubly-linked list because
-    // HString lacks a `prev` field (its layout differs from HeapHeader).
-    void**     str_gc_array;
-    uint       str_gc_count;
-    uint       str_gc_capacity;
 
     // GC re-entrancy guard
     bool                gc_running;
@@ -421,17 +416,6 @@ fn Heap*? create(
     h.str_table_size = INITIAL_STR_TABLE_SIZE;
     h.str_table_used = 0;
 
-    // Allocate string GC tracking array (must be before init_builtin_strs)
-    h.str_gc_capacity = INITIAL_STR_TABLE_SIZE;
-    h.str_gc_count    = 0;
-    void* str_gc_raw = afn(udata, void*::size * INITIAL_STR_TABLE_SIZE);
-    if (str_gc_raw == null) {
-        ffn(udata, tbl_raw);
-        ffn(udata, raw);
-        return HEAP_ALLOC_FAULT~;
-    }
-    h.str_gc_array = (void**)str_gc_raw;
-
     // Pre-intern well-known strings
     h.init_builtin_strs();
 
@@ -484,6 +468,10 @@ fn void Heap.init_builtin_strs(&self) {
                 self.str_table_insert(s);
                 self.strs[i] = s;
             }
+        }
+        // Pin: builtin strings must never be freed by refcounting.
+        if (self.strs[i] != null) {
+            ((HeapHeader*)self.strs[i]).refcount = STRING_PINNED_REFCOUNT;
         }
     }
     // Cache the "length" pointer for HObject.put_prop array_length sync.
@@ -700,11 +688,36 @@ fn void Heap.destroy(&self) {
             bytecode::CompiledFunction* cf = (bytecode::CompiledFunction*)self.compiled_funcs[i];
             if (cf != null) {
                 if (cf.code != null) { libc::free(cf.code); }
-                if (cf.constants != null) { libc::free(cf.constants); }
+                if (cf.constants != null) {
+                    // Decref string (and object/buffer) constants before freeing the pool.
+                    for (uint ci = 0; ci < cf.const_count; ci++) {
+                        self.decref_tval(&cf.constants[ci]);
+                    }
+                    libc::free(cf.constants);
+                }
                 if (cf.inner_funcs != null) { libc::free(cf.inner_funcs); }
                 if (cf.line_table != null) { libc::free(cf.line_table); }
-                if (cf.ic_entries != null) { libc::free(cf.ic_entries); }
-                if (cf.var_ic_entries != null) { libc::free(cf.var_ic_entries); }
+                if (cf.ic_entries != null) {
+                    // Decref cached key strings.
+                    hobject::ICEntry* ics = (hobject::ICEntry*)cf.ic_entries;
+                    for (uint ii = 0; ii < cf.ic_count; ii++) {
+                        if (ics[ii].key != null) {
+                            self.decref((HeapHeader*)ics[ii].key);
+                            ics[ii].key = null;
+                        }
+                    }
+                    libc::free(cf.ic_entries);
+                }
+                if (cf.var_ic_entries != null) {
+                    hobject::VarICEntry* vics = (hobject::VarICEntry*)cf.var_ic_entries;
+                    for (uint vi = 0; vi < cf.var_ic_count; vi++) {
+                        if (vics[vi].key != null) {
+                            self.decref((HeapHeader*)vics[vi].key);
+                            vics[vi].key = null;
+                        }
+                    }
+                    libc::free(cf.var_ic_entries);
+                }
                 libc::free(cf);
             }
         }
@@ -712,20 +725,15 @@ fn void Heap.destroy(&self) {
         self.compiled_funcs = null;
     }
 
-    // Free all interned HStrings via the GC tracking array
-    if (self.str_gc_array != null) {
-        for (uint i = 0; i < self.str_gc_count; i++) {
-            hstring::HString* s = (hstring::HString*)self.str_gc_array[i];
+    // Free all interned HStrings via the string table (RC-managed; teardown frees directly).
+    if (self.str_table != null) {
+        for (uint i = 0; i < self.str_table_size; i++) {
+            hstring::HString* s = self.str_table[i];
             if (s != null) {
                 self.free_string(s);
+                self.str_table[i] = null;
             }
         }
-        self.free_func(self.heap_udata, self.str_gc_array);
-        self.str_gc_array = null;
-    }
-
-    // Free the string table (just the pointer array, strings freed above)
-    if (self.str_table != null) {
         self.free_func(self.heap_udata, self.str_table);
         self.str_table = null;
     }
@@ -796,40 +804,50 @@ fn void Heap.reset(&self) {
         bytecode::CompiledFunction* cf = (bytecode::CompiledFunction*)self.compiled_funcs[i];
         if (cf != null) {
             if (cf.code != null) { libc::free(cf.code); }
-            if (cf.constants != null) { libc::free(cf.constants); }
+            if (cf.constants != null) {
+                for (uint ci = 0; ci < cf.const_count; ci++) {
+                    self.decref_tval(&cf.constants[ci]);
+                }
+                libc::free(cf.constants);
+            }
             if (cf.inner_funcs != null) { libc::free(cf.inner_funcs); }
             if (cf.line_table != null) { libc::free(cf.line_table); }
+            if (cf.ic_entries != null) {
+                hobject::ICEntry* ics = (hobject::ICEntry*)cf.ic_entries;
+                for (uint ii = 0; ii < cf.ic_count; ii++) {
+                    if (ics[ii].key != null) {
+                        self.decref((HeapHeader*)ics[ii].key);
+                        ics[ii].key = null;
+                    }
+                }
+                libc::free(cf.ic_entries);
+            }
+            if (cf.var_ic_entries != null) {
+                hobject::VarICEntry* vics = (hobject::VarICEntry*)cf.var_ic_entries;
+                for (uint vi = 0; vi < cf.var_ic_count; vi++) {
+                    if (vics[vi].key != null) {
+                        self.decref((HeapHeader*)vics[vi].key);
+                        vics[vi].key = null;
+                    }
+                }
+                libc::free(cf.var_ic_entries);
+            }
             libc::free(cf);
         }
     }
     self.compiled_func_count = 0;
     // Keep compiled_funcs array allocated — just reset the count
 
-    // Free all tracked HStrings via GC tracking array and reset
-    if (self.str_gc_array != null) {
-        for (uint i = 0; i < self.str_gc_count; i++) {
-            hstring::HString* s = (hstring::HString*)self.str_gc_array[i];
+    // Free all interned HStrings via str_table and reset (strings are RC-managed).
+    if (self.str_table != null) {
+        for (uint i = 0; i < self.str_table_size; i++) {
+            hstring::HString* s = self.str_table[i];
             if (s != null) {
                 self.free_string(s);
+                self.str_table[i] = null;
             }
         }
         // Shrink if it grew very large
-        if (self.str_gc_capacity > INITIAL_STR_TABLE_SIZE * 8) {
-            self.free_func(self.heap_udata, self.str_gc_array);
-            usz arr_bytes = void*::size * INITIAL_STR_TABLE_SIZE;
-            void* new_arr = self.alloc_func(self.heap_udata, arr_bytes);
-            if (new_arr != null) {
-                self.str_gc_array = (void**)new_arr;
-                self.str_gc_capacity = INITIAL_STR_TABLE_SIZE;
-            }
-        }
-        self.str_gc_count = 0;
-    }
-
-    // Reset the string table to empty
-    if (self.str_table != null) {
-        libc::memset(self.str_table, 0, HString*::size * self.str_table_size);
-        // If the table grew very large, shrink back to the initial size
         if (self.str_table_size > INITIAL_STR_TABLE_SIZE * 8) {
             self.free_func(self.heap_udata, self.str_table);
             usz tbl_bytes = HString*::size * INITIAL_STR_TABLE_SIZE;
@@ -843,7 +861,15 @@ fn void Heap.reset(&self) {
         self.str_table_used = 0;
     }
 
-    // Free symbol registry
+    // Free symbol registry — decref all held string references first
+    for (uint i = 0; i < self.symbol_registry_count; i++) {
+        if (self.symbol_registry_keys[i] != null) {
+            self.decref((HeapHeader*)self.symbol_registry_keys[i]);
+        }
+        if (self.symbol_registry_syms[i] != null) {
+            self.decref((HeapHeader*)self.symbol_registry_syms[i]);
+        }
+    }
     if (self.symbol_registry_keys != null) {
         libc::free(self.symbol_registry_keys);
         self.symbol_registry_keys = null;
@@ -1043,26 +1069,6 @@ fn void Heap.free(&self, void* ptr) {
 }
 
 /**
- * Track an allocated HString for GC purposes.  Strings can't use the
- * heap_allocated doubly-linked list (HString lacks prev/next HeapHeader
- * fields), so we maintain a separate dynamic array.
- */
-fn void Heap.track_string(&self, void* str_ptr) {
-    if (self.str_gc_count >= self.str_gc_capacity) {
-        uint new_cap = self.str_gc_capacity * 2;
-        usz new_bytes = (usz)new_cap * void*::size;
-        void* new_arr = libc::realloc(self.str_gc_array, new_bytes);
-        if (new_arr == null) { return; }  // best effort
-        self.str_gc_array = (void**)new_arr;
-        self.str_gc_capacity = new_cap;
-    }
-    self.str_gc_array[self.str_gc_count++] = str_ptr;
-    if (self.str_gc_count > self.peak_str_gc_count) {
-        self.peak_str_gc_count = self.str_gc_count;
-    }
-}
-
-/**
  * Free an HString through the heap's allocator (matches Heap.alloc).
  */
 fn void Heap.free_string(&self, hstring::HString* s) {
@@ -1079,8 +1085,9 @@ fn void Heap.free_string(&self, hstring::HString* s) {
  * When the count reaches zero the object is unlinked from the
  * heap_allocated list and freed.
  *
- * Strings are NOT refcounted — they are managed by M&S sweep_strings.
- * Calling this on a string is a no-op.
+ * Strings are reference-counted: when a string's refcount reaches zero it is
+ * removed from the intern table and freed immediately.  Strings cannot form
+ * cycles so no cycle collector is needed for them.
  *
  * Objects freed here are NOT visited by the subsequent mark-and-sweep
  * sweep phase — they are already gone from the linked list.  M&S only
@@ -1088,15 +1095,16 @@ fn void Heap.free_string(&self, hstring::HString* s) {
  * reachable from roots).
  */
 fn void Heap.decref(&self, HeapHeader* hdr) {
-    // Strings are not refcounted — M&S handles them.
-    if (hdr.is_string()) { return; }
-
     if (--hdr.refcount == 0) {
-        hdr.unlink(&self.heap_allocated);
-        if (hdr.is_object()) {
+        if (hdr.is_string()) {
+            self.str_table_remove((hstring::HString*)hdr);
+            self.free_string((hstring::HString*)hdr);
+        } else if (hdr.is_object()) {
+            hdr.unlink(&self.heap_allocated);
             hobject::hobject_free((HObject*)hdr);
         } else {
             // Buffer
+            hdr.unlink(&self.heap_allocated);
             self.free_func(self.heap_udata, hdr);
         }
     }
@@ -1110,7 +1118,7 @@ fn void Heap.decref(&self, HeapHeader* hdr) {
  * slot that holds a heap pointer.
  */
 fn void Heap.decref_tval(&self, TVal* tv) @inline {
-    if (tv.is_object() || tv.is_buffer()) {
+    if (tv.is_object() || tv.is_buffer() || tv.is_string()) {
         void* ptr = tv.get_heapptr();
         if (ptr != null) {
             self.decref((HeapHeader*)ptr);
@@ -1127,7 +1135,7 @@ fn void Heap.tval_copy_ref(&self, TVal* dst, TVal* src) @inline {
     if (dst != src) {
         self.decref_tval(dst);
         *dst = *src;
-        if (src.is_object() || src.is_buffer()) {
+        if (src.is_object() || src.is_buffer() || src.is_string()) {
             void* ptr = src.get_heapptr();
             if (ptr != null) {
                 ((HeapHeader*)ptr).incref();
@@ -1260,12 +1268,8 @@ fn void Heap.mark_tval(&self, TVal* v) {
                 self.gray_push(obj);
             }
         }
-    } else if (v.is_string()) {
-        HString* s = (HString*)v.get_heapptr();
-        if (s != null) {
-            ((HeapHeader*)s).set_reachable();
-        }
     }
+    // Strings are RC-managed — no marking needed.
 }
 
 /**
@@ -1423,60 +1427,26 @@ fn void Heap.mark_roots(&self) {
         }
     }
 
-    // Mark symbol registry entries
-    for (uint i = 0; i < self.symbol_registry_count; i++) {
-        HString* key = self.symbol_registry_keys[i];
-        HString* sym = self.symbol_registry_syms[i];
-        if (key != null) { ((HeapHeader*)key).set_reachable(); }
-        if (sym != null) { ((HeapHeader*)sym).set_reachable(); }
-    }
+    // Strings are RC-managed — no string marking needed in M&S.
+    // Symbol registry, builtin strs[], iterator/toprimitive symbols, and
+    // CF constant string refs are all kept alive by their refcounts.
 
-    // Mark built-in cached strings
-    for (uint i = 0; i < STRS_CACHE_SIZE; i++) {
-        HString* s = (HString*)self.strs[i];
-        if (s != null) {
-            ((HeapHeader*)s).set_reachable();
-        }
-    }
-
-    // Mark strings in CompiledFunction constant pools.
-    // CompiledFunctions are not GC-tracked objects — they live in a
-    // separate tracking array.  Their constants may reference interned
-    // HStrings that would otherwise be swept.
+    // Mark HObject* protos cached in IC entries (strings are RC, objects need M&S)
     for (uint fi = 0; fi < self.compiled_func_count; fi++) {
         bytecode::CompiledFunction* cf = (bytecode::CompiledFunction*)self.compiled_funcs[fi];
-        if (cf == null || cf.constants == null) { continue; }
-        for (uint ci = 0; ci < cf.const_count; ci++) {
-            self.mark_tval(&cf.constants[ci]);
-        }
-        // Mark IC entries: trace cached proto HObject* and key HString*
+        if (cf == null) { continue; }
         if (cf.ic_entries != null && cf.ic_count > 0) {
             hobject::ICEntry* ics = (hobject::ICEntry*)cf.ic_entries;
             for (uint ii = 0; ii < cf.ic_count; ii++) {
-                hobject::ICEntry* ie = &ics[ii];
-                if (ie.key != null) { ((HeapHeader*)ie.key).set_reachable(); }
-                if (ie.proto != null) { self.mark_hobject((HObject*)ie.proto); }
+                if (ics[ii].proto != null) { self.mark_hobject((HObject*)ics[ii].proto); }
             }
         }
-        // Mark VarIC entries: trace cached bindings HObject* and key HString*
         if (cf.var_ic_entries != null && cf.var_ic_count > 0) {
             hobject::VarICEntry* vics = (hobject::VarICEntry*)cf.var_ic_entries;
             for (uint vi = 0; vi < cf.var_ic_count; vi++) {
-                hobject::VarICEntry* vie = &vics[vi];
-                if (vie.key != null) { ((HeapHeader*)vie.key).set_reachable(); }
-                if (vie.bindings != null) { self.mark_hobject((HObject*)vie.bindings); }
+                if (vics[vi].bindings != null) { self.mark_hobject((HObject*)vics[vi].bindings); }
             }
         }
-    }
-
-    // Mark the cached iterator symbol (may not be in strs[] or symbol registry)
-    if (self.iterator_symbol != null) {
-        ((HeapHeader*)self.iterator_symbol).set_reachable();
-    }
-
-    // Mark the cached Symbol.toPrimitive (may not be in strs[] or symbol registry)
-    if (self.toprimitive_symbol != null) {
-        ((HeapHeader*)self.toprimitive_symbol).set_reachable();
     }
 
     // Mark global checkpoint keys
@@ -1541,37 +1511,6 @@ fn void Heap.sweep(&self) {
 }
 
 /**
- * Sweep the string tracking array: free unreachable strings, compact
- * the array, and remove dead entries from the string table (rebuilt
- * as a side effect).
- */
-fn void Heap.sweep_strings(&self) {
-    uint write = 0;
-    for (uint i = 0; i < self.str_gc_count; i++) {
-        hstring::HString* s = (hstring::HString*)self.str_gc_array[i];
-        if (s == null) { continue; }
-        if (((HeapHeader*)s).is_reachable()) {
-            // Keep — compact in place
-            self.str_gc_array[write++] = s;
-        } else {
-            // Dead string — free it
-            self.free_string(s);
-        }
-    }
-    self.str_gc_count = write;
-
-    // Rebuild the string table from the surviving strings
-    if (self.str_table != null) {
-        libc::memset(self.str_table, 0, HString*::size * self.str_table_size);
-        self.str_table_used = 0;
-        for (uint i = 0; i < write; i++) {
-            hstring::HString* s = (hstring::HString*)self.str_gc_array[i];
-            self.str_table_insert(s);
-        }
-    }
-}
-
-/**
  * Run a full mark-and-sweep garbage collection.
  *
  * 1. Clear all reachable flags.
@@ -1593,23 +1532,13 @@ fn void Heap.mark_and_sweep(&self) {
             cur.clear_reachable();
             cur = cur.next;
         }
-        // Also clear flags on tracked strings
-        for (uint i = 0; i < self.str_gc_count; i++) {
-            hstring::HString* s = (hstring::HString*)self.str_gc_array[i];
-            if (s != null) {
-                ((HeapHeader*)s).clear_reachable();
-            }
-        }
     }
 
     // --- Phase 2: Mark from roots ---
     self.mark_roots();
 
-    // --- Phase 3: Sweep objects ---
+    // --- Phase 3: Sweep objects (strings are RC-managed, not swept here) ---
     self.sweep();
-
-    // --- Phase 3b: Sweep unreachable strings ---
-    self.sweep_strings();
 
     // --- Phase 4: Reset trigger counter (capped) ---
     long new_trigger = (long)self.live_obj_count * GC_TRIGGER_GROW_FACTOR;
@@ -1739,6 +1668,51 @@ fn void Heap.str_table_insert(&self, HString* hstr) {
     }
     self.str_table[idx] = hstr;
     self.str_table_used++;
+}
+
+/**
+ * Remove hstr from the string table using backshift deletion (Knuth R).
+ * Must only be called when hstr is confirmed to be in the table.
+ * Preserves the linear-probe invariant so str_table_lookup remains correct.
+ */
+fn void Heap.str_table_remove(&self, HString* hstr) {
+    if (self.str_table_size == 0) { return; }
+
+    uint mask = self.str_table_size - 1;
+
+    // Find the slot holding hstr
+    uint i = hstr.hash & mask;
+    while (self.str_table[i] != hstr) {
+        i = (i + 1) & mask;
+    }
+
+    // Backshift: repeatedly pull forward the best candidate to fill the hole
+    for (;;) {
+        uint hole = i;
+        uint k = i;
+        for (;;) {
+            k = (k + 1) & mask;
+            if (self.str_table[k] == null) {
+                // No candidate needed — just clear the hole
+                self.str_table[hole] = null;
+                self.str_table_used--;
+                return;
+            }
+            // Natural slot of the candidate at k
+            uint nat = self.str_table[k].hash & mask;
+            // Candidate can fill hole if its natural slot is not strictly
+            // between hole and k (cyclically).
+            bool can_move;
+            if (hole <= k) {
+                can_move = (nat <= hole || nat > k);
+            } else {
+                can_move = (nat <= hole && nat > k);
+            }
+            if (can_move) { break; }
+        }
+        self.str_table[hole] = self.str_table[k];
+        i = k;
+    }
 }
 
 /**

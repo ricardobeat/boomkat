@@ -13739,6 +13739,9 @@ fn bool symbol_registry_put(Heap* heap, char[] key, HString* sym) {
     heap.symbol_registry_keys[count] = key_str;
     heap.symbol_registry_syms[count] = sym;
     heap.symbol_registry_count = count + 1;
+    // Hold refs: registry owns a reference to both key and symbol strings.
+    ((types::HeapHeader*)key_str).incref();
+    ((types::HeapHeader*)sym).incref();
     return true;
 }
 
@@ -13773,12 +13776,14 @@ fn HString* ensure_iterator_symbol(Heap* heap) {
     HString* existing = symbol_registry_get(heap, desc);
     if (existing != null) {
         heap.iterator_symbol = existing;
+        ((types::HeapHeader*)existing).refcount = heap::STRING_PINNED_REFCOUNT;
         return existing;
     }
     HString* sym = create_symbol_string(heap, desc);
     if (sym == null) return null;
     symbol_registry_put(heap, desc, sym);
     heap.iterator_symbol = sym;
+    ((types::HeapHeader*)sym).refcount = heap::STRING_PINNED_REFCOUNT;
     return sym;
 }
 
@@ -13790,12 +13795,14 @@ fn HString* ensure_toprimitive_symbol(Heap* heap) {
     HString* existing = symbol_registry_get(heap, desc);
     if (existing != null) {
         heap.toprimitive_symbol = existing;
+        ((types::HeapHeader*)existing).refcount = heap::STRING_PINNED_REFCOUNT;
         return existing;
     }
     HString* sym = create_symbol_string(heap, desc);
     if (sym == null) return null;
     symbol_registry_put(heap, desc, sym);
     heap.toprimitive_symbol = sym;
+    ((types::HeapHeader*)sym).refcount = heap::STRING_PINNED_REFCOUNT;
     return sym;
 }
 

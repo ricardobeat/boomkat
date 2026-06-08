@@ -1260,7 +1260,7 @@ fn bool invoke_getter(Vm* vm, hobject::AccessorResult* acc,
 /// instruction that writes an object or buffer TVal into a register.
 /// Updates max_heap_reg so decref_callee_regs can skip non-heap registers.
 fn void track_heap_store(Activation* act, TVal* val, uint reg_idx) @inline {
-    if (val.is_object() || val.is_buffer()) {
+    if (val.is_object() || val.is_buffer() || val.is_string()) {
         if (val.get_heapptr() != null && reg_idx > act.max_heap_reg) {
             act.max_heap_reg = reg_idx;
         }
@@ -1818,8 +1818,8 @@ fn TVal? Vm.run(Vm* vm) {
         case Opcode.LDREG:
             // Fast path: if source is not a heap ref (fastint, undefined, etc.),
             // skip full refcounting — only decref dst if it held a heap pointer.
-            if (!(rb.is_object() || rb.is_buffer())) {
-                if (ra.is_object() || ra.is_buffer()) {
+            if (!(rb.is_object() || rb.is_buffer() || rb.is_string())) {
+                if (ra.is_object() || ra.is_buffer() || ra.is_string()) {
                     vm.heap.decref_tval(ra);
                 }
                 *ra = *rb;
@@ -1832,7 +1832,7 @@ fn TVal? Vm.run(Vm* vm) {
         case Opcode.LDCONST: {
             uint bc = insn.get_bc();
             if (bc < vm.current_func.const_count) {
-                *ra = constants[bc];
+                vm.heap.tval_copy_ref(ra, &constants[bc]);
             } else {
                 ra.set_undefined();
             }
@@ -2279,7 +2279,9 @@ fn TVal? Vm.run(Vm* vm) {
                 vic.shape_id = ic_env.bindings.shape_id;
                 vic.generation = vm.heap.shapes[ic_env.bindings.shape_id].generation;
                 vic.prop_idx = (ushort)ic_prop_idx;
+                if (vic.key != null) { vm.heap.decref((types::HeapHeader*)vic.key); }
                 vic.key = key;
+                if (key != null) { ((types::HeapHeader*)key).incref(); }
             }
             break;
         }
@@ -2719,9 +2721,9 @@ fn TVal? Vm.run(Vm* vm) {
                             // Fast path: when dest is not a heap pointer (common for
                             // fastint/number results), skip decref and do a raw copy.
                             TVal ic_val = ic.prop_value_ptr.data.value;
-                            if (!(ra.is_object() || ra.is_buffer())) {
+                            if (!(ra.is_object() || ra.is_buffer() || ra.is_string())) {
                                 *ra = ic_val;
-                                if (ic_val.is_object() || ic_val.is_buffer()) {
+                                if (ic_val.is_object() || ic_val.is_buffer() || ic_val.is_string()) {
                                     void* ptr = ic_val.get_heapptr();
                                     if (ptr != null) ((HeapHeader*)ptr).incref();
                                 }
@@ -2803,7 +2805,9 @@ fn TVal? Vm.run(Vm* vm) {
                                 ic.shape_id = hobj.shape_id;
                                 ic.proto = res.owner == hobj ? null : (void*)res.owner;
                                 ic.prop_idx = (uint)owner_idx;
+                                if (ic.key != null) { vm.heap.decref((types::HeapHeader*)ic.key); }
                                 ic.key = key;
+                                if (key != null) { ((types::HeapHeader*)key).incref(); }
                                 ic.prop_value_ptr = &res.owner.prop_values()[owner_idx];
                                 ic.cached_prop_alloc = res.owner.prop_alloc;
                             }
@@ -3643,8 +3647,8 @@ fn TVal? Vm.run(Vm* vm) {
                     // Fast path: skip refcounting when this value is not a heap ref
                     {
                         TVal* this_src = target_fast.is_arrow() ? &act.this_binding : &regs_base[callee_reg + 1];
-                        if (!(this_src.is_object() || this_src.is_buffer())) {
-                            if (new_act.this_binding.is_object() || new_act.this_binding.is_buffer()) {
+                        if (!(this_src.is_object() || this_src.is_buffer() || this_src.is_string())) {
+                            if (new_act.this_binding.is_object() || new_act.this_binding.is_buffer() || new_act.this_binding.is_string()) {
                                 vm.heap.decref_tval(&new_act.this_binding);
                             }
                             new_act.this_binding = *this_src;
@@ -3684,6 +3688,7 @@ fn TVal? Vm.run(Vm* vm) {
                     code_count = target_fast.code_count;
                     code_end = code_base + code_count;
                     ic_base = (hobject::ICEntry*)target_fast.ic_entries;
+                    var_ic_base = (hobject::VarICEntry*)target_fast.var_ic_entries;
                     constants = target_fast.constants;
                     nregs = target_fast.num_regs;
                     curr_pc = act.curr_pc;
@@ -5070,8 +5075,8 @@ fn TVal? Vm.run(Vm* vm) {
                     }
                 } else {
                     // Fast path: skip refcounting when return value is not a heap ref
-                    if (!(val.is_object() || val.is_buffer())) {
-                        if (callee_result.is_object() || callee_result.is_buffer()) {
+                    if (!(val.is_object() || val.is_buffer() || val.is_string())) {
+                        if (callee_result.is_object() || callee_result.is_buffer() || callee_result.is_string()) {
                             vm.heap.decref_tval(callee_result);
                         }
                         *callee_result = val;
@@ -5124,7 +5129,7 @@ fn TVal? Vm.run(Vm* vm) {
                     vm.heap.tval_copy_ref(callee_result, &callee_act.this_binding);
                 } else {
                     // undef_val is never a heap ref — only decref dst if needed
-                    if (callee_result.is_object() || callee_result.is_buffer()) {
+                    if (callee_result.is_object() || callee_result.is_buffer() || callee_result.is_string()) {
                         vm.heap.decref_tval(callee_result);
                     }
                     *callee_result = undef_val;
@@ -5255,9 +5260,9 @@ fn TVal? Vm.run(Vm* vm) {
                                 && vm.heap.shapes[b.shape_id].generation == vic.generation) {
                                 TVal v = b.prop_values()[vic.prop_idx].data.value;
                                 if (!env::is_tdz_sentinel(&v)) {
-                                    if (!(ra.is_object() || ra.is_buffer())) {
+                                    if (!(ra.is_object() || ra.is_buffer() || ra.is_string())) {
                                         *ra = v;
-                                        if (v.is_object() || v.is_buffer()) {
+                                        if (v.is_object() || v.is_buffer() || v.is_string()) {
                                             void* ptr = v.get_heapptr();
                                             if (ptr != null) ((HeapHeader*)ptr).incref();
                                         }
@@ -5340,7 +5345,9 @@ fn TVal? Vm.run(Vm* vm) {
                             vic.shape_id = ic_env.bindings.shape_id;
                             vic.generation = vm.heap.shapes[ic_env.bindings.shape_id].generation;
                             vic.prop_idx = (ushort)ic_prop_idx;
+                            if (vic.key != null) { vm.heap.decref((types::HeapHeader*)vic.key); }
                             vic.key = key;
+                            if (key != null) { ((types::HeapHeader*)key).incref(); }
                         }
                     } else {
                         // ReferenceError: variable not declared
@@ -5476,7 +5483,9 @@ fn TVal? Vm.run(Vm* vm) {
                         vic.shape_id = ic_env.bindings.shape_id;
                         vic.generation = vm.heap.shapes[ic_env.bindings.shape_id].generation;
                         vic.prop_idx = (ushort)ic_prop_idx;
+                        if (vic.key != null) { vm.heap.decref((types::HeapHeader*)vic.key); }
                         vic.key = key;
+                        if (key != null) { ((types::HeapHeader*)key).incref(); }
                     }
                 } else {
                     ra.set_undefined();

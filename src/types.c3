@@ -414,6 +414,7 @@ $else
     self.tag     = STRING;
     self.pointer = ptr;
 $endif
+    if (ptr != null) { ((HeapHeader*)ptr).incref(); }
 }
 
 macro void TVal.set_object(&self, void* ptr) {
@@ -523,6 +524,7 @@ $else
     tv.tag     = STRING;
     tv.pointer = ptr;
 $endif
+    if (ptr != null) { ((HeapHeader*)ptr).incref(); }
     return tv;
 }
 
