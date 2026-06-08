@@ -3691,6 +3691,7 @@ fn TVal? Vm.run(Vm* vm) {
                     code_count = target_fast.code_count;
                     code_end = code_base + code_count;
                     ic_base = (hobject::ICEntry*)target_fast.ic_entries;
+                    var_ic_base = (hobject::VarICEntry*)target_fast.var_ic_entries;
                     constants = target_fast.constants;
                     nregs = target_fast.num_regs;
                     curr_pc = act.curr_pc;
@@ -4232,6 +4233,7 @@ fn TVal? Vm.run(Vm* vm) {
             code_count = target.code_count;
             code_end = code_base + code_count;
             ic_base = (hobject::ICEntry*)target.ic_entries;
+            var_ic_base = (hobject::VarICEntry*)target.var_ic_entries;
             constants = target.constants;
             nregs = target.num_regs;
             curr_pc = act.curr_pc;
