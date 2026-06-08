@@ -3616,10 +3616,12 @@ fn TVal? Vm.run(Vm* vm) {
                         break;
                     }
 
+                    // Clear the 'this' slot before env creation so the GC
+                    // valstack scan doesn't follow a stale object pointer left
+                    // over from a previous call in the sliding-window model.
+                    regs_base[callee_reg + 1].set_undefined();
+
                     Activation* new_act = &vm.activations[vm.activation_count];
-                    vm.activation_count++;
-                    new_act.max_heap_reg = 0;
-                    new_act.caller_valstack_top = vm.valstack_top;
 
                     EnvRecord* fast_var_env;
                     // Skip env allocation when the callee has no local bindings —
@@ -3639,6 +3641,8 @@ fn TVal? Vm.run(Vm* vm) {
                     new_act.bottom = new_bottom;
                     new_act.retval = regs_base + result_reg;
                     new_act.flags = ACT_FLAG_STRICT;
+                    new_act.max_heap_reg = 0;
+                    new_act.caller_valstack_top = vm.valstack_top;
                     // Arrow functions use lexical this (inherited from enclosing scope)
                     // Fast path: skip refcounting when this value is not a heap ref
                     {
@@ -3652,6 +3656,9 @@ fn TVal? Vm.run(Vm* vm) {
                             vm.heap.tval_copy_ref(&new_act.this_binding, this_src);
                         }
                     }
+
+                    // Activation fully initialized — now make it visible to GC.
+                    vm.activation_count++;
 
                     TVal* new_regs = new_act.bottom;
                     uint new_nregs = target_fast.num_regs;
