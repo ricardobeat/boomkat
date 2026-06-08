@@ -1118,7 +1118,7 @@ fn void Heap.decref(&self, HeapHeader* hdr) {
  * slot that holds a heap pointer.
  */
 fn void Heap.decref_tval(&self, TVal* tv) @inline {
-    if (tv.is_object() || tv.is_buffer() || tv.is_string()) {
+    if (tv.is_heap_allocated()) {
         void* ptr = tv.get_heapptr();
         if (ptr != null) {
             self.decref((HeapHeader*)ptr);
@@ -1135,7 +1135,7 @@ fn void Heap.tval_copy_ref(&self, TVal* dst, TVal* src) @inline {
     if (dst != src) {
         self.decref_tval(dst);
         *dst = *src;
-        if (src.is_object() || src.is_buffer() || src.is_string()) {
+        if (src.is_heap_allocated()) {
             void* ptr = src.get_heapptr();
             if (ptr != null) {
                 ((HeapHeader*)ptr).incref();
