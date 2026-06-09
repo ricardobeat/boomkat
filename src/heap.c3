@@ -556,6 +556,9 @@ fn void Heap.insert_transition(&self, uint parent_id, void* key, uint shape_id) 
     while (table[slot].parent_id != SHAPE_NONE) slot = (slot + 1) & mask;
     table[slot].parent_id = parent_id;
     table[slot].key = key;
+    if (key != null) {
+        ((HeapHeader*)key).incref();
+    }
     table[slot].shape_id = shape_id;
     self.trans_count++;
 }
