@@ -1832,12 +1832,7 @@ fn TVal? Vm.run(Vm* vm) {
         case Opcode.LDCONST: {
             uint bc = insn.get_bc();
             if (bc < vm.current_func.const_count) {
-                TVal* src = &constants[bc];
-                if (src.is_heap_allocated()) {
-                    vm.heap.tval_copy_ref(ra, src);
-                } else {
-                    *ra = *src;
-                }
+                vm.heap.tval_copy_ref(ra, &constants[bc]);
             } else {
                 ra.set_undefined();
             }
@@ -1938,7 +1933,7 @@ fn TVal? Vm.run(Vm* vm) {
 
                     HString* interned = intern_string(vm, buf[:total]);
                     if (heap_allocated) libc::free(buf);
-                    ra.set_string(interned);
+                    vm.heap.set_reg_string(ra, interned);
                 } else {
                     ra.set_undefined();
                 }
@@ -2071,7 +2066,7 @@ fn TVal? Vm.run(Vm* vm) {
 
         case Opcode.TYPEOF: {
             HString* ts = typeof_string(vm, rb);
-            ra.set_string(ts);
+            vm.heap.set_reg_string(ra, ts);
             break;
         }
 
@@ -2723,18 +2718,11 @@ fn TVal? Vm.run(Vm* vm) {
                     if (lookup_key != null && ic.key == lookup_key && ic.shape_id == hobj.shape_id) {
                         HObject* ic_owner = ic.proto == null ? hobj : (HObject*)ic.proto;
                         if (ic.cached_prop_alloc == ic_owner.prop_alloc) {
-                            // Fast path: when dest is not a heap pointer (common for
-                            // fastint/number results), skip decref and do a raw copy.
+                            // Always use tval_copy_ref for correct RC (decref old, incref new).
+                            // The old !ra.is_heap_allocated() fast path was removed because it
+                            // skipped the decref, leaving stale references in registers.
                             TVal ic_val = ic.prop_value_ptr.data.value;
-                            if (!ra.is_heap_allocated()) {
-                                *ra = ic_val;
-                                if (ic_val.is_heap_allocated()) {
-                                    void* ptr = ic_val.get_heapptr();
-                                    if (ptr != null) ((HeapHeader*)ptr).incref();
-                                }
-                            } else {
-                                vm.heap.tval_copy_ref(ra, &ic_val);
-                            }
+                            vm.heap.tval_copy_ref(ra, &ic_val);
                             track_heap_store(act, ra, (uint)insn.a);
                             break;
                         }
@@ -2780,7 +2768,7 @@ fn TVal? Vm.run(Vm* vm) {
                                 uint sblen = hstring::encode_codepoint(cp, sbuf[:4]);
                                 HString* interned = intern_string(vm, sbuf[:sblen]);
                                 if (interned != null) {
-                                    ra.set_string(interned);
+                                    vm.heap.set_reg_string(ra, interned);
                                 } else {
                                     return VM_ERROR~;
                                 }
@@ -2890,7 +2878,7 @@ fn TVal? Vm.run(Vm* vm) {
                         uint cblen = hstring::encode_codepoint(cp, cbuf[:4]);
                         HString* interned = intern_string(vm, cbuf[:cblen]);
                         if (interned != null) {
-                            ra.set_string(interned);
+                            vm.heap.set_reg_string(ra, interned);
                         } else {
                             return VM_ERROR~;
                         }
@@ -2957,7 +2945,7 @@ fn TVal? Vm.run(Vm* vm) {
                         builtins::BuiltinMeta meta = builtins::builtin_get_metadata(fn_idx);
                         if (meta.name.len > 0) {
                             HString* name_str = intern_string(vm, meta.name);
-                            ra.set_string(name_str);
+                            vm.heap.set_reg_string(ra, name_str);
                         } else {
                             ra.set_undefined();
                         }
@@ -5265,15 +5253,7 @@ fn TVal? Vm.run(Vm* vm) {
                                 && vm.heap.shapes[b.shape_id].generation == vic.generation) {
                                 TVal v = b.prop_values()[vic.prop_idx].data.value;
                                 if (!env::is_tdz_sentinel(&v)) {
-                                    if (!ra.is_heap_allocated()) {
-                                        *ra = v;
-                                        if (v.is_heap_allocated()) {
-                                            void* ptr = v.get_heapptr();
-                                            if (ptr != null) ((HeapHeader*)ptr).incref();
-                                        }
-                                    } else {
-                                        vm.heap.tval_copy_ref(ra, &v);
-                                    }
+                                    vm.heap.tval_copy_ref(ra, &v);
                                     track_heap_store(act, ra, (uint)insn.a);
                                     break;
                                 }
@@ -5409,7 +5389,7 @@ fn TVal? Vm.run(Vm* vm) {
                                 TVal v = b.prop_values()[vic.prop_idx].data.value;
                                 if (!env::is_tdz_sentinel(&v)) {
                                     HString* ts = typeof_string(vm, &v);
-                                    ra.set_string(ts);
+                                    vm.heap.set_reg_string(ra, ts);
                                     break;
                                 }
                                 // TDZ: fall through to slow path (error)
@@ -5455,7 +5435,7 @@ fn TVal? Vm.run(Vm* vm) {
                                 }
                             } else {
                                 HString* ts = typeof_string(vm, &v);
-                                ra.set_string(ts);
+                                vm.heap.set_reg_string(ra, ts);
                                 found = true;
                                 ic_env = cur;
                                 ic_prop_idx = idx;
@@ -5470,12 +5450,12 @@ fn TVal? Vm.run(Vm* vm) {
                         TVal? result = env::env_get(act.var_env, key);
                         if (try v2 = result) {
                             HString* ts = typeof_string(vm, &v2);
-                            ra.set_string(ts);
+                            vm.heap.set_reg_string(ra, ts);
                             found = true;
                         } else {
                             // Unresolvable reference → "undefined" (no error)
                             HString* ts = (HString*)vm.heap.strs[heap::BuiltinStr.UNDEFINED];
-                            ra.set_string(ts);
+                            vm.heap.set_reg_string(ra, ts);
                         }
                     }
 
@@ -5539,6 +5519,11 @@ fn TVal? Vm.run(Vm* vm) {
                         env::env_put(act.var_env, key, *ra);
                     }
                     // put_result == 1: already updated in lex_env
+                    // Release ra's ref — the binding now owns the reference.
+                    // Without this, ra holds a stale ref into the next iteration,
+                    // causing strings to leak (not reach rc=0 on binding overwrite).
+                    vm.heap.decref_tval(ra);
+                    ra.set_undefined();
                 }
             }
             break;
@@ -5775,7 +5760,7 @@ fn TVal? Vm.run(Vm* vm) {
             }
 
             // Return the next key
-            ra.set_string(state.keys[state.index]);
+            vm.heap.set_reg_string(ra, state.keys[state.index]);
             state.index++;
             rb.set_boolean(true);
             break;

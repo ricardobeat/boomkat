@@ -323,8 +323,9 @@ fn HString*? hstring_alloc(void* heap_ptr, char[] data, uint hash) {
         s.flags.is_eval_or_args = true;
     }
 
-    // Reference count starts at 1 — the caller (str_intern) holds the first ref.
-    s.refcount = 1;
+    // Reference count starts at 0 — the intern table is a weak reference.
+    // The first real user (TVal assignment, shape key, etc.) increfs.
+    s.refcount = 0;
 
     // --- Copy bytes + NUL terminate ---
     char* dest = (char*)((usz)raw + HSTRING_HDR_SIZE);
@@ -375,8 +376,8 @@ fn HString*? hstring_concat(void* heap_ptr, HString* a, HString* b) {
     }
     dest[a_len + b_len] = 0;
 
-    // Refcount starts at 1 — will be interned by caller.
-    s.refcount = 1;
+    // Refcount starts at 0 — intern table is a weak reference.
+    s.refcount = 0;
 
     return s;
 }

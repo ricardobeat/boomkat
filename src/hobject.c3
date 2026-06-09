@@ -572,11 +572,11 @@ fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags) {
     int idx = self.find_prop_idx(key);
     if (idx >= 0) {
         PropValue* pv = &self.prop_values()[idx];
-        if (self.heap_ptr != null) {
+        if (self.heap_ptr != null && pv.data.value.is_string()) {
             ((heap::Heap*)self.heap_ptr).decref_tval(&pv.data.value);
         }
         pv.data.value = val;
-        if (self.heap_ptr != null && val.is_heap_allocated()) {
+        if (self.heap_ptr != null && val.is_string()) {
             void* ptr = val.get_heapptr();
             if (ptr != null) {
                 ((types::HeapHeader*)ptr).incref();
@@ -607,7 +607,7 @@ fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags) {
     libc::memset(&self.prop_values()[new_idx], 0, PropValue::size);
     self.prop_values()[new_idx].data.value = val;
     self.prop_values()[new_idx].flags = pflags;
-    if (self.heap_ptr != null && val.is_heap_allocated()) {
+    if (self.heap_ptr != null && val.is_string()) {
         void* ptr = val.get_heapptr();
         if (ptr != null) {
             ((types::HeapHeader*)ptr).incref();
@@ -759,11 +759,11 @@ fn void HObject.set_array_idx(&self, uint idx, TVal val) {
         }
     }
 
-    if (self.heap_ptr != null) {
+    if (self.heap_ptr != null && self.array_part()[idx].is_string()) {
         ((heap::Heap*)self.heap_ptr).decref_tval(&self.array_part()[idx]);
     }
     self.array_part()[idx] = val;
-    if (self.heap_ptr != null && val.is_heap_allocated()) {
+    if (self.heap_ptr != null && val.is_string()) {
         void* ptr = val.get_heapptr();
         if (ptr != null) {
             ((types::HeapHeader*)ptr).incref();
@@ -929,23 +929,27 @@ fn void hobject_free(HObject* obj) {
         obj.extra.regexp.regexp_data = null;
     }
 
-    // Decref all owned property values and array elements before freeing.
+    // Decref string values held in property slots and array elements.
+    // Only strings are RC-freed here — objects still use M&S and can form cycles;
+    // decref-freeing objects from within another object's teardown would corrupt the
+    // heap_allocated list and cause use-after-free on generator/closure env chains.
     if (obj.prop_alloc != null && obj.heap_ptr != null) {
         heap::Heap* h = (heap::Heap*)obj.heap_ptr;
-        // Decref named property values
         PropValue* pvs = obj.prop_values();
         for (uint i = 0; i < obj.prop_count; i++) {
-            h.decref_tval(&pvs[i].data.value);
-            // If accessor, also decref setter
-            if (pvs[i].flags.is_accessor) {
+            if (pvs[i].data.value.is_string()) {
+                h.decref_tval(&pvs[i].data.value);
+            }
+            if (pvs[i].flags.is_accessor && pvs[i].setter.is_string()) {
                 h.decref_tval(&pvs[i].setter);
             }
         }
-        // Decref dense array elements
         TVal* arr = obj.array_part();
         if (arr != null) {
             for (uint i = 0; i < obj.array_size; i++) {
-                h.decref_tval(&arr[i]);
+                if (arr[i].is_string()) {
+                    h.decref_tval(&arr[i]);
+                }
             }
         }
     }

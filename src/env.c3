@@ -241,7 +241,15 @@ fn bool env_put(EnvRecord* env, void* key, TVal val) {
             int idx = cur.bindings.find_prop_idx(key);
             if (idx >= 0) {
                 // Found the binding — update it here (even if it's in an outer scope).
-                cur.bindings.prop_values()[idx].data.value = val;
+                hobject::PropValue* pv = &cur.bindings.prop_values()[idx];
+                if (cur.bindings.heap_ptr != null) {
+                    heap::Heap* h = (heap::Heap*)cur.bindings.heap_ptr;
+                    if (pv.data.value.is_string()) { h.decref_tval(&pv.data.value); }
+                    pv.data.value = val;
+                    if (val.is_string()) { void* p = val.get_heapptr(); if (p != null) ((types::HeapHeader*)p).incref(); }
+                } else {
+                    pv.data.value = val;
+                }
                 return true;
             }
         }
@@ -338,7 +346,15 @@ fn bool env_put_lex(EnvRecord* lex_env, void* key, TVal val) {
             if (!cur.bindings.prop_values()[idx].flags.writable) {
                 return false;
             }
-            cur.bindings.prop_values()[idx].data.value = val;
+            hobject::PropValue* pv = &cur.bindings.prop_values()[idx];
+            if (cur.bindings.heap_ptr != null) {
+                heap::Heap* h = (heap::Heap*)cur.bindings.heap_ptr;
+                if (pv.data.value.is_string()) { h.decref_tval(&pv.data.value); }
+                pv.data.value = val;
+                if (val.is_string()) { void* p = val.get_heapptr(); if (p != null) ((types::HeapHeader*)p).incref(); }
+            } else {
+                pv.data.value = val;
+            }
             return true;
         }
         cur = cur.parent;
@@ -385,7 +401,15 @@ fn bool env_put_at_depth(EnvRecord* env, uint depth, void* key, TVal val) {
     int idx = cur.bindings.find_prop_idx(key);
     if (idx >= 0) {
         if (!cur.bindings.prop_values()[idx].flags.writable) return false;
-        cur.bindings.prop_values()[idx].data.value = val;
+        hobject::PropValue* pv = &cur.bindings.prop_values()[idx];
+        if (cur.bindings.heap_ptr != null) {
+            heap::Heap* h = (heap::Heap*)cur.bindings.heap_ptr;
+            if (pv.data.value.is_string()) { h.decref_tval(&pv.data.value); }
+            pv.data.value = val;
+            if (val.is_string()) { void* p = val.get_heapptr(); if (p != null) ((types::HeapHeader*)p).incref(); }
+        } else {
+            pv.data.value = val;
+        }
         return true;
     }
     return cur.bindings.put_prop(key, val, hobject::PROP_FLAGS_WEC);
@@ -440,7 +464,18 @@ fn int env_try_put_lex(EnvRecord* lex_env, void* key, TVal val) {
             if (!cur.bindings.prop_values()[idx].flags.writable) {
                 return -1;
             }
-            cur.bindings.prop_values()[idx].data.value = val;
+            hobject::PropValue* pv = &cur.bindings.prop_values()[idx];
+            if (cur.bindings.heap_ptr != null) {
+                heap::Heap* h = (heap::Heap*)cur.bindings.heap_ptr;
+                bool old_is_str = pv.data.value.is_string();
+                if (old_is_str) {
+                    h.decref_tval(&pv.data.value);
+                }
+                pv.data.value = val;
+                if (val.is_string()) { void* p = val.get_heapptr(); if (p != null) ((types::HeapHeader*)p).incref(); }
+            } else {
+                pv.data.value = val;
+            }
             return 1;
         }
         cur = cur.parent;

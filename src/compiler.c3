@@ -756,6 +756,7 @@ fn uint CompilerContext.add_string_constant(&self, char[] str) {
     }
     uint idx = self.const_count;
     self.constants[idx] = tv;
+    if (hstr != null) { ((types::HeapHeader*)hstr).incref(); }
     self.const_count++;
     return idx;
 }
