@@ -631,7 +631,7 @@ fn uint Heap.transition_shape(&self, uint cur_shape_id, void* key) {
 
     uint new_id = self.alloc_shape_slot();
     if (new_id == SHAPE_NONE) {
-        hobject::shape_free(ns);
+        hobject::shape_free(ns, (void*)self);
         return cur_shape_id;
     }
 
@@ -764,7 +764,7 @@ fn void Heap.destroy(&self) {
     if (self.shapes != null) {
         for (uint i = 0; i < self.shape_count; i++) {
             if (self.shapes[i] != null) {
-                hobject::shape_free(self.shapes[i]);
+                hobject::shape_free(self.shapes[i], null);
             }
         }
         libc::free(self.shapes);
@@ -954,7 +954,7 @@ fn void Heap.reset(&self) {
     if (self.shapes != null) {
         for (uint i = 0; i < self.shape_count; i++) {
             if (self.shapes[i] != null) {
-                hobject::shape_free(self.shapes[i]);
+                hobject::shape_free(self.shapes[i], null);
             }
         }
         // Reuse the pointer array, just zero it

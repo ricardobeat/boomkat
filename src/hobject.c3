@@ -571,8 +571,18 @@ fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags) {
     // --- Update existing property ---
     int idx = self.find_prop_idx(key);
     if (idx >= 0) {
-        self.prop_values()[idx].data.value = val;
-        self.prop_values()[idx].flags = pflags;
+        PropValue* pv = &self.prop_values()[idx];
+        if (self.heap_ptr != null) {
+            ((heap::Heap*)self.heap_ptr).decref_tval(&pv.data.value);
+        }
+        pv.data.value = val;
+        if (self.heap_ptr != null && val.is_heap_allocated()) {
+            void* ptr = val.get_heapptr();
+            if (ptr != null) {
+                ((types::HeapHeader*)ptr).incref();
+            }
+        }
+        pv.flags = pflags;
         // Sync array_length shadow cache on LENGTH writes to ARRAY exotic
         if (self.flags.exotic_array && key == builtin_length_key) {
             if (val.is_fastint()) {
@@ -597,6 +607,12 @@ fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags) {
     libc::memset(&self.prop_values()[new_idx], 0, PropValue::size);
     self.prop_values()[new_idx].data.value = val;
     self.prop_values()[new_idx].flags = pflags;
+    if (self.heap_ptr != null && val.is_heap_allocated()) {
+        void* ptr = val.get_heapptr();
+        if (ptr != null) {
+            ((types::HeapHeader*)ptr).incref();
+        }
+    }
     self.prop_count++;
 
     // Sync array_length shadow cache on LENGTH writes to ARRAY exotic
@@ -679,11 +695,11 @@ fn bool HObject.delete_prop(&self, void* key) {
                 self.shape_id = new_id;
                 self.shape = ns;
             } else {
-                shape_free(ns);
+                shape_free(ns, self.heap_ptr);
                 self.shape = null;
             }
         } else {
-            shape_free(ns);
+            shape_free(ns, null);
             self.shape = null;
         }
     } else {
@@ -734,15 +750,25 @@ fn void HObject.set_array_idx(&self, uint idx, TVal val) {
     }
 
     // Track used count.
-    if (self.array_part()[idx].is_undefined() && !val.is_undefined()) {
+    TVal old_val = self.array_part()[idx];
+    if (old_val.is_undefined() && !val.is_undefined()) {
         self.array_used++;
-    } else if (!self.array_part()[idx].is_undefined() && val.is_undefined()) {
+    } else if (!old_val.is_undefined() && val.is_undefined()) {
         if (self.array_used > 0) {
             self.array_used--;
         }
     }
 
+    if (self.heap_ptr != null) {
+        ((heap::Heap*)self.heap_ptr).decref_tval(&self.array_part()[idx]);
+    }
     self.array_part()[idx] = val;
+    if (self.heap_ptr != null && val.is_heap_allocated()) {
+        void* ptr = val.get_heapptr();
+        if (ptr != null) {
+            ((types::HeapHeader*)ptr).incref();
+        }
+    }
 }
 
 // ============================================================================
@@ -901,6 +927,27 @@ fn void hobject_free(HObject* obj) {
     if (obj.flags.obj_class == ObjClass.REGEXP && obj.extra.regexp.regexp_data != null) {
         re_bindings::re_free(obj.extra.regexp.regexp_data);
         obj.extra.regexp.regexp_data = null;
+    }
+
+    // Decref all owned property values and array elements before freeing.
+    if (obj.prop_alloc != null && obj.heap_ptr != null) {
+        heap::Heap* h = (heap::Heap*)obj.heap_ptr;
+        // Decref named property values
+        PropValue* pvs = obj.prop_values();
+        for (uint i = 0; i < obj.prop_count; i++) {
+            h.decref_tval(&pvs[i].data.value);
+            // If accessor, also decref setter
+            if (pvs[i].flags.is_accessor) {
+                h.decref_tval(&pvs[i].setter);
+            }
+        }
+        // Decref dense array elements
+        TVal* arr = obj.array_part();
+        if (arr != null) {
+            for (uint i = 0; i < obj.array_size; i++) {
+                h.decref_tval(&arr[i]);
+            }
+        }
     }
 
     // Free the unified property allocation block (prop_values + array_part).
@@ -1155,12 +1202,33 @@ fn Shape* shape_extend(Shape* parent, uint parent_id, void* new_key) {
         ht[slot] = i + 1;  // 1-indexed (0 = empty)
     }
 
+    // Incref all keys: this new shape holds independent refs to all keys.
+    for (uint i = 0; i < old_count; i++) {
+        if (new_sp[i].key != null) {
+            ((types::HeapHeader*)new_sp[i].key).incref();
+        }
+    }
+    if (new_key != null) {
+        ((types::HeapHeader*)new_key).incref();
+    }
+
     return ns;
 }
 
 /// Free a shape allocation.  Computes the base pointer from the Shape pointer.
-fn void shape_free(Shape* sh) {
+/// If heap_ptr is non-null, decrefs all property keys held by this shape.
+/// Pass null at teardown to skip decref (when the string table is already being freed).
+fn void shape_free(Shape* sh, void* heap_ptr) {
     if (sh == null) return;
+    if (heap_ptr != null) {
+        ShapeProperty* sp = sh.props();
+        heap::Heap* h = (heap::Heap*)heap_ptr;
+        for (uint i = 0; i < sh.prop_count; i++) {
+            if (sp[i].key != null) {
+                h.decref((HeapHeader*)sp[i].key);
+            }
+        }
+    }
     void* base = (char*)sh - (sz)shape_header_offset(sh);
     libc::free(base);
 }
