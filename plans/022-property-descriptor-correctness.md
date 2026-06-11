@@ -143,10 +143,10 @@ Steps 1-2 must precede Step 3 (defineProperty depends on correct array flag stat
 
 After each step, run:
 ```
-bash scripts/run_test262_per_phase.sh 3
-bash scripts/run_test262_per_phase.sh 5
-bash scripts/run_test262_per_phase.sh 6
-bash scripts/run_test262_per_phase.sh 8
+python3 scripts/run_test262.py --phase 3
+python3 scripts/run_test262.py --phase 5
+python3 scripts/run_test262.py --phase 6
+python3 scripts/run_test262.py --phase 8
 ```
 
 Full validation:

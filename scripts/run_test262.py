@@ -7,9 +7,14 @@ collects PASS/FAIL results, enforces per-test timeouts via SIGKILL+restart.
 
 Default: 3 workers (max 4) to avoid OOM from multiple VM heaps.
 
+IMPORTANT: Always prefer running a single --phase relevant to your change
+instead of the full suite. The full suite takes 20+ minutes; a single phase
+is usually under a minute. Only run all phases for final validation before
+merging.
+
 Usage:
-    python3 scripts/run_test262.py              # all phases
-    python3 scripts/run_test262.py --phase 2    # single phase
+    python3 scripts/run_test262.py --phase 2    # single phase (preferred)
+    python3 scripts/run_test262.py              # all phases (full validation only)
     python3 scripts/run_test262.py --workers 8  # override worker count
     python3 scripts/run_test262.py --es5        # ES5-only (skip tests with feature flags)
 """
