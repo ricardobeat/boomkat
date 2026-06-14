@@ -298,18 +298,22 @@ fn ushort? CompilerContext.assignment_expr(&self) {
 
     if (is_compound) {
         // Compound assignment: left op= right => left = left op right.
-        // When left is a local variable register, copy to a temp first so
-        // the arithmetic op doesn't use the same register as both source
-        // and destination (which can cause register corruption).
+        // For local variable registers, use the destination register in-place
+        // when the op reads both operands before writing (ADD/SUB/MUL) and the
+        // right operand doesn't alias left. Otherwise copy to a temp first to
+        // avoid register corruption.
         ushort result_reg = left;
-        if (!lhs_was_getvar && !lhs_was_member) {
+        bool can_inplace =
+            (compound_op == Opcode.ADD || compound_op == Opcode.SUB || compound_op == Opcode.MUL)
+            && left != right;
+        if (!lhs_was_getvar && !lhs_was_member && !can_inplace) {
             ushort tmp = self.alloc_reg();
             self.emit_abc(Opcode.LDREG, (uint)tmp, (uint)left, 0);
             result_reg = tmp;
         }
         self.emit_abc(compound_op, (uint)result_reg, (uint)result_reg, (uint)right);
         self.free_reg(right);
-        if (!lhs_was_getvar && !lhs_was_member) {
+        if (!lhs_was_getvar && !lhs_was_member && result_reg != left) {
             self.emit_abc(Opcode.LDREG, (uint)left, (uint)result_reg, 0);
             self.free_reg(result_reg);
         }

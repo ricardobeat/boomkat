@@ -243,6 +243,11 @@ fn TVal* ptr_from_byteoff(TVal* base, uint idx) @inline {
 // Helpers
 // ============================================================================
 
+/// Convert a value known to be numeric (FASTINT or NUMBER) to double.
+fn double tval_numeric_to_double(TVal* val) @inline {
+    return val.is_fastint() ? (double)val.get_fastint() : val.get_number();
+}
+
 /// ECMAScript ToNumber — convert any TVal to its numeric double value.
 /// Handles BOOLEAN→0/1, OBJECT→ToPrimitive→number, STRING→parse, etc.
 fn double vm_to_number(Vm* vm, TVal* val) {
@@ -2706,6 +2711,8 @@ fn TVal? Vm.run(Vm* vm) {
             bool result;
             if (rb.is_fastint() && rc.is_fastint()) {
                 result = rb.get_fastint() < rc.get_fastint();
+            } else if ((rb.is_fastint() || rb.is_number()) && (rc.is_fastint() || rc.is_number())) {
+                result = tval_numeric_to_double(rb) < tval_numeric_to_double(rc);
             } else if (rb.is_string() && rc.is_string()) {
                 result = hstring::hstring_compare((HString*)rb.get_heapptr(), (HString*)rc.get_heapptr()) < 0;
             } else {
@@ -2724,6 +2731,8 @@ fn TVal? Vm.run(Vm* vm) {
             bool result;
             if (rb.is_fastint() && rc.is_fastint()) {
                 result = rb.get_fastint() <= rc.get_fastint();
+            } else if ((rb.is_fastint() || rb.is_number()) && (rc.is_fastint() || rc.is_number())) {
+                result = tval_numeric_to_double(rb) <= tval_numeric_to_double(rc);
             } else if (rb.is_string() && rc.is_string()) {
                 result = hstring::hstring_compare((HString*)rb.get_heapptr(), (HString*)rc.get_heapptr()) <= 0;
             } else {
@@ -2742,6 +2751,8 @@ fn TVal? Vm.run(Vm* vm) {
             bool result;
             if (rb.is_fastint() && rc.is_fastint()) {
                 result = rb.get_fastint() > rc.get_fastint();
+            } else if ((rb.is_fastint() || rb.is_number()) && (rc.is_fastint() || rc.is_number())) {
+                result = tval_numeric_to_double(rb) > tval_numeric_to_double(rc);
             } else if (rb.is_string() && rc.is_string()) {
                 result = hstring::hstring_compare((HString*)rb.get_heapptr(), (HString*)rc.get_heapptr()) > 0;
             } else {
@@ -2760,6 +2771,8 @@ fn TVal? Vm.run(Vm* vm) {
             bool result;
             if (rb.is_fastint() && rc.is_fastint()) {
                 result = rb.get_fastint() >= rc.get_fastint();
+            } else if ((rb.is_fastint() || rb.is_number()) && (rc.is_fastint() || rc.is_number())) {
+                result = tval_numeric_to_double(rb) >= tval_numeric_to_double(rc);
             } else if (rb.is_string() && rc.is_string()) {
                 result = hstring::hstring_compare((HString*)rb.get_heapptr(), (HString*)rc.get_heapptr()) >= 0;
             } else {
@@ -2786,6 +2799,8 @@ fn TVal? Vm.run(Vm* vm) {
             bool jmp_result;
             if (rb.is_fastint() && rc.is_fastint()) {
                 jmp_result = rb.get_fastint() < rc.get_fastint();
+            } else if ((rb.is_fastint() || rb.is_number()) && (rc.is_fastint() || rc.is_number())) {
+                jmp_result = tval_numeric_to_double(rb) < tval_numeric_to_double(rc);
             } else if (rb.is_string() && rc.is_string()) {
                 jmp_result = hstring::hstring_compare((HString*)rb.get_heapptr(), (HString*)rc.get_heapptr()) < 0;
             } else {
@@ -2804,6 +2819,8 @@ fn TVal? Vm.run(Vm* vm) {
             bool jmp_result;
             if (rb.is_fastint() && rc.is_fastint()) {
                 jmp_result = rb.get_fastint() <= rc.get_fastint();
+            } else if ((rb.is_fastint() || rb.is_number()) && (rc.is_fastint() || rc.is_number())) {
+                jmp_result = tval_numeric_to_double(rb) <= tval_numeric_to_double(rc);
             } else if (rb.is_string() && rc.is_string()) {
                 jmp_result = hstring::hstring_compare((HString*)rb.get_heapptr(), (HString*)rc.get_heapptr()) <= 0;
             } else {
@@ -2822,6 +2839,8 @@ fn TVal? Vm.run(Vm* vm) {
             bool jmp_result;
             if (rb.is_fastint() && rc.is_fastint()) {
                 jmp_result = rb.get_fastint() > rc.get_fastint();
+            } else if ((rb.is_fastint() || rb.is_number()) && (rc.is_fastint() || rc.is_number())) {
+                jmp_result = tval_numeric_to_double(rb) > tval_numeric_to_double(rc);
             } else if (rb.is_string() && rc.is_string()) {
                 jmp_result = hstring::hstring_compare((HString*)rb.get_heapptr(), (HString*)rc.get_heapptr()) > 0;
             } else {
@@ -2840,6 +2859,8 @@ fn TVal? Vm.run(Vm* vm) {
             bool jmp_result;
             if (rb.is_fastint() && rc.is_fastint()) {
                 jmp_result = rb.get_fastint() >= rc.get_fastint();
+            } else if ((rb.is_fastint() || rb.is_number()) && (rc.is_fastint() || rc.is_number())) {
+                jmp_result = tval_numeric_to_double(rb) >= tval_numeric_to_double(rc);
             } else if (rb.is_string() && rc.is_string()) {
                 jmp_result = hstring::hstring_compare((HString*)rb.get_heapptr(), (HString*)rc.get_heapptr()) >= 0;
             } else {
@@ -2858,6 +2879,8 @@ fn TVal? Vm.run(Vm* vm) {
             bool jmp_result;
             if (rb.is_fastint() && rc.is_fastint()) {
                 jmp_result = rb.get_fastint() < rc.get_fastint();
+            } else if ((rb.is_fastint() || rb.is_number()) && (rc.is_fastint() || rc.is_number())) {
+                jmp_result = tval_numeric_to_double(rb) < tval_numeric_to_double(rc);
             } else if (rb.is_string() && rc.is_string()) {
                 jmp_result = hstring::hstring_compare((HString*)rb.get_heapptr(), (HString*)rc.get_heapptr()) < 0;
             } else {
@@ -2876,6 +2899,8 @@ fn TVal? Vm.run(Vm* vm) {
             bool jmp_result;
             if (rb.is_fastint() && rc.is_fastint()) {
                 jmp_result = rb.get_fastint() <= rc.get_fastint();
+            } else if ((rb.is_fastint() || rb.is_number()) && (rc.is_fastint() || rc.is_number())) {
+                jmp_result = tval_numeric_to_double(rb) <= tval_numeric_to_double(rc);
             } else if (rb.is_string() && rc.is_string()) {
                 jmp_result = hstring::hstring_compare((HString*)rb.get_heapptr(), (HString*)rc.get_heapptr()) <= 0;
             } else {
@@ -2894,6 +2919,8 @@ fn TVal? Vm.run(Vm* vm) {
             bool jmp_result;
             if (rb.is_fastint() && rc.is_fastint()) {
                 jmp_result = rb.get_fastint() > rc.get_fastint();
+            } else if ((rb.is_fastint() || rb.is_number()) && (rc.is_fastint() || rc.is_number())) {
+                jmp_result = tval_numeric_to_double(rb) > tval_numeric_to_double(rc);
             } else if (rb.is_string() && rc.is_string()) {
                 jmp_result = hstring::hstring_compare((HString*)rb.get_heapptr(), (HString*)rc.get_heapptr()) > 0;
             } else {
@@ -2912,6 +2939,8 @@ fn TVal? Vm.run(Vm* vm) {
             bool jmp_result;
             if (rb.is_fastint() && rc.is_fastint()) {
                 jmp_result = rb.get_fastint() >= rc.get_fastint();
+            } else if ((rb.is_fastint() || rb.is_number()) && (rc.is_fastint() || rc.is_number())) {
+                jmp_result = tval_numeric_to_double(rb) >= tval_numeric_to_double(rc);
             } else if (rb.is_string() && rc.is_string()) {
                 jmp_result = hstring::hstring_compare((HString*)rb.get_heapptr(), (HString*)rc.get_heapptr()) >= 0;
             } else {
