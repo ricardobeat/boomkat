@@ -28,6 +28,7 @@ import duktape::bytecode;
 import duktape::env;
 import duktape::re_bindings;
 import duktape::heap;
+import std::core::mem::alloc;
 import std::core::mem::mempool;
 import libc;
 
@@ -720,7 +721,7 @@ fn PropFlags HObject.get_prop_flags(&self, uint idx) @inline {
 /// so no other object will find this shape.
 fn void HObject.make_shape_private(&self) {
     if (_active_heap == null || self.get_shape() == null) return;
-    hobject::Shape* ns = shape_create(self.prop_count, 0, 0xFFFF_FFFF, null);
+    hobject::Shape* ns = shape_create((heap::Heap*)_active_heap, self.prop_count, 0, 0xFFFF_FFFF, null);
     if (ns == null) return;
 
     hobject::ShapeProperty* new_sp = ns.props();
@@ -1013,7 +1014,7 @@ fn bool HObject.delete_prop(&self, void* key) {
     // Build a new private shape from the surviving properties.
     // We do NOT insert it into the transition table — it's object-specific.
     // Create a flat shape (own_count = all surviving props, offset = 0).
-    Shape* ns = shape_create(new_count, 0, 0xFFFF_FFFF, null);
+    Shape* ns = shape_create((heap::Heap*)_active_heap, new_count, 0, 0xFFFF_FFFF, null);
     if (ns != null) {
         // Collect surviving property names by walking the old shape chain
         if (self.get_shape() != null) {
@@ -1466,11 +1467,10 @@ fn usz shape_alloc_size(uint own_count) {
 /// `offset` is the index in the object's prop_values where these start.
 /// `parent_id` is the index of the parent shape (SHAPE_NONE for root).
 /// `parent_shape` is the parent shape pointer (null for root).
-fn Shape* shape_create(uint own_count, uint offset, uint parent_id, Shape* parent_shape) {
+fn Shape* shape_create(heap::Heap* heap, uint own_count, uint offset, uint parent_id, Shape* parent_shape) {
     usz bytes = shape_alloc_size(own_count);
-    void* raw = libc::malloc(bytes);
+    void* raw = heap.shape_arena.acquire((sz)bytes, AllocInitType.ZERO, 0) ?? null;
     if (raw == null) return null;
-    libc::memset(raw, 0, bytes);
 
     Shape* sh = (Shape*)raw;
     sh.generation   = 0;
@@ -1484,9 +1484,9 @@ fn Shape* shape_create(uint own_count, uint offset, uint parent_id, Shape* paren
 
 /// Create a new shape that extends `parent` by adding one property.
 /// Only stores the NEW property (delta).  Returns null on allocation failure.
-fn Shape* shape_extend(Shape* parent, uint parent_id, void* new_key, PropFlags flags) {
+fn Shape* shape_extend(heap::Heap* heap, Shape* parent, uint parent_id, void* new_key, PropFlags flags) {
     uint offset = parent.offset + parent.own_count;
-    Shape* ns = shape_create(1, offset, parent_id, parent);
+    Shape* ns = shape_create(heap, 1, offset, parent_id, parent);
     if (ns == null) return null;
 
     // Set the single new property

@@ -5,6 +5,8 @@ import duktape::hstring;
 import duktape::hobject;
 import duktape::bytecode;
 import std::io;
+import std::core::mem::alloc;
+import std::core::mem::allocators;
 import std::core::mem::mempool;
 import libc;
 
@@ -284,6 +286,9 @@ struct Heap {
     uint                shape_capacity;
     uint                shape_gen;
 
+    // Shape arena allocator — bump-allocated, bulk-freed at reset/destroy.
+    allocators::DynamicArenaAllocator shape_arena;
+
     // Shape transition deduplication table.
     // Maps (parent_shape_id, key_pointer) → child_shape_id so that two
     // objects following the same property-addition path share one Shape.
@@ -482,6 +487,9 @@ fn Heap*? create(
     // Pre-intern well-known strings
     h.init_builtin_strs();
 
+    // Initialize shape arena (4096 byte pages, backed by libc).
+    h.shape_arena.init(&allocators::LIBC_ALLOCATOR, 4096);
+
     // Initialize shape system
     h.init_shapes();
 
@@ -678,7 +686,7 @@ fn void Heap.init_shapes(&self) {
     self.shapes = (hobject::Shape**)libc::malloc(bytes);
     libc::memset(self.shapes, 0, bytes);
     // Allocate root shape: 0 properties, minimum hash (mask=0 → 2 slots)
-    self.shapes[0] = hobject::shape_create(0, 0, SHAPE_NONE, null);
+    self.shapes[0] = hobject::shape_create(self, 0, 0, SHAPE_NONE, null);
     // Init transition dedup table
     self.init_transition_table();
 }
@@ -744,7 +752,7 @@ fn ushort Heap.transition_shape(&self, ushort cur_shape_id, void* key) {
     }
 
     // Allocate a new shape that extends the current one.
-    hobject::Shape* ns = hobject::shape_extend(cur, cur_shape_id, key, hobject::PROP_FLAGS_WEC);
+    hobject::Shape* ns = hobject::shape_extend(self, cur, cur_shape_id, key, hobject::PROP_FLAGS_WEC);
     if (ns == null) return cur_shape_id;
 
     uint new_id = self.alloc_shape_slot();
@@ -777,7 +785,7 @@ fn ushort Heap.transition_shape_new(&self, ushort cur_shape_id, void* key) {
     }
 
     // Allocate a new shape that extends the current one.
-    hobject::Shape* ns = hobject::shape_extend(cur, cur_shape_id, key, hobject::PROP_FLAGS_WEC);
+    hobject::Shape* ns = hobject::shape_extend(self, cur, cur_shape_id, key, hobject::PROP_FLAGS_WEC);
     if (ns == null) return cur_shape_id;
 
     uint new_id = self.alloc_shape_slot();
@@ -887,20 +895,16 @@ fn void Heap.destroy(&self) {
         self.promise_resolve_stack = null;
     }
 
-    // Free shape system
+    // Free shape system — release arena memory to backing allocator.
     if (self.trans_table != null) {
         libc::free(self.trans_table);
         self.trans_table = null;
     }
     if (self.shapes != null) {
-        for (uint i = 0; i < self.shape_count; i++) {
-            if (self.shapes[i] != null) {
-                hobject::shape_free(self.shapes[i], null);
-            }
-        }
         libc::free(self.shapes);
         self.shapes = null;
     }
+    self.shape_arena.free();
 
     // Destroy object pool allocators — releases all pool pages to libc.
     self.obj_pool_plain.free();
@@ -1061,23 +1065,20 @@ fn void Heap.reset(&self) {
     self.lj.lj_type = LjType.UNKNOWN;
     self.lj.iserror = false;
 
-    // Reset shape system — free all shapes and transition table, then reinit
+    // Reset shape system — reset arena and transition table, then reinit
     if (self.trans_table != null) {
         libc::free(self.trans_table);
         self.trans_table = null;
     }
+    // Reset the shape arena — keeps allocated pages, marks all as empty.
+    self.shape_arena.reset();
     if (self.shapes != null) {
-        for (uint i = 0; i < self.shape_count; i++) {
-            if (self.shapes[i] != null) {
-                hobject::shape_free(self.shapes[i], null);
-            }
-        }
         // Reuse the pointer array, just zero it
         libc::memset(self.shapes, 0, (usz)self.shape_capacity * (void*::size));
     }
     self.shape_count = 1;
     self.shape_gen   = 0;
-    self.shapes[0]   = hobject::shape_create(0, 0, SHAPE_NONE, null);
+    self.shapes[0]   = hobject::shape_create(self, 0, 0, SHAPE_NONE, null);
     self.init_transition_table();
 
     // Destroy and reinitialize object pool allocators — all pool pages are
