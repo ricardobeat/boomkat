@@ -1026,10 +1026,12 @@ fn void? CompilerContext.for_statement(&self) {
         self.free_reg(incr_reg);
     }
 
-    // Sync register-cached for-init var back to the environment so that
-    // closures inside the loop body see the updated value on each iteration,
-    // and code after the loop reads the correct final value via GETVAR.
-    if (has_for_var) {
+    // Sync register-cached for-init var back to the environment when necessary.
+    // Closures/direct-eval inside the loop can observe the binding each iteration,
+    // so keep it up to date. Otherwise the variable lives purely in its register
+    // for the loop's duration, which avoids the expensive PUTVAR/GETVAR pair.
+    bool for_var_needs_iter_sync = has_for_var && (self.has_closures || self.has_direct_eval);
+    if (for_var_needs_iter_sync) {
         self.emit_a_bc(Opcode.PUTVAR, (uint)for_var_reg, for_var_name_idx);
         self.emit_a_bc(Opcode.GETVAR, (uint)for_var_reg, for_var_name_idx);
     }
@@ -1091,6 +1093,13 @@ fn void? CompilerContext.for_statement(&self) {
 
     // exit: pop_loop patches all break jumps to current position.
     self.pop_loop();
+
+    // For uncaptured for-init vars the environment was not updated each
+    // iteration, so write the final register value once before the register
+    // is freed and subsequent code reads the binding via GETVAR.
+    if (has_for_var && !for_var_needs_iter_sync) {
+        self.emit_a_bc(Opcode.PUTVAR, (uint)for_var_reg, for_var_name_idx);
+    }
 
     // Restore the lexer to the position after the body so the outer parser
     // continues from the right source position.

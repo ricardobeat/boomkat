@@ -7,7 +7,7 @@
     "duktape_c3": {
       "type": "executable",
       "sources": [ "src", "benchmarks/duktape_c3.c3" ],
-      "opt": "Os",
+      "opt": "O3",
       "fp-math": "relaxed"
     },
     "lib": {
