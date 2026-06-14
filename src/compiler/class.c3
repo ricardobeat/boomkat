@@ -365,19 +365,6 @@ fn ushort? CompilerContext.parse_class_tail(&self) {
         self.free_reg(proto_key_reg);
     }
 
-    // If extends, set proto.__proto__ = Base.prototype
-    if (base_reg != MAX_REGISTERS) {
-        ushort base_proto_reg = self.alloc_reg();
-        {
-            ushort base_proto_key_reg = self.alloc_reg();
-            self.emit(bytecode::make_a_bc(Opcode.LDCONST, (uint)base_proto_key_reg, proto_name_idx));
-            self.emit_abc(Opcode.GETPROP, (uint)base_proto_reg, (uint)base_reg, (uint)base_proto_key_reg);
-            self.free_reg(base_proto_key_reg);
-        }
-        self.emit_abc(Opcode.SETPROTO, (uint)proto_reg, (uint)base_proto_reg, 0);
-        self.free_reg(base_proto_reg);
-    }
-
     // Install methods on prototype or constructor (static)
     for (ushort mi = 0; mi < method_count; mi++) {
         uint mi_idx = methods[mi].inner_idx;

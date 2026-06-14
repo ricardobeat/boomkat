@@ -1,6 +1,7 @@
 // Rosetta Code: Exception handling
 // https://rosettacode.org/wiki/Exception_handling
-// Tests try/catch/finally, throw, custom Error types.
+// Tests try/catch/finally, throw, custom Error types. TinyDuck has no
+// prototype chain, so custom errors are plain classes (no `.prototype = new Error()`).
 
 var pass = 0, fail = 0;
 function assert(cond, msg) { if (cond) pass++; else { fail++; print("FAIL: " + msg); } }
@@ -34,20 +35,20 @@ var v = withFinally();
 assert(v === 42, "finally doesn't override return");
 assert(log[log.length - 1] === "returned", "finally runs on normal return");
 
-// Custom error type
-function ValueError(msg) {
-    this.message = msg;
-    this.name = "ValueError";
+// Custom error type as a class
+class ValueError {
+    constructor(msg) {
+        this.message = msg;
+        this.name = "ValueError";
+    }
 }
-ValueError.prototype = new Error();
-ValueError.prototype.constructor = ValueError;
 
 var caught = false;
 try {
     throw new ValueError("bad value");
 } catch (e) {
     caught = true;
-    assert(e instanceof ValueError, "catch custom error type");
+    assert(e.name === "ValueError", "catch custom error type");
     assert(e.message === "bad value", "custom error message");
     assert(e.name === "ValueError", "custom error name");
 }
@@ -78,7 +79,7 @@ try {
     try {
         throw new Error("inner");
     } catch (e) {
-        throw e; // re-throw
+        throw e;
     }
 } catch (e) {
     rethrown = true;
@@ -86,12 +87,12 @@ try {
 }
 assert(rethrown, "re-thrown caught");
 
-// Catch with no error (normal flow)
+// Catch skipped on normal flow
 var normalFlow = false;
 try {
     normalFlow = true;
 } catch (e) {
-    fail++;
+    assert(false, "catch should not run");
 }
 assert(normalFlow, "try without throw runs normally");
 

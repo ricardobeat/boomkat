@@ -206,11 +206,6 @@ struct CompilerContext {
     // Global scope flag: when true, all var decls use environment only (no register cache)
     bool is_global;
 
-    // Eval mode: when true, expression statements save their last result
-    // to eval_acc_reg for eval's implicit return value.
-    bool   eval_mode;
-    ushort eval_acc_reg;
-
     // Strict mode: set by "use strict" directive prologue.
     bool is_strict;
 
@@ -235,9 +230,6 @@ struct CompilerContext {
     // Generator tracking
     bool is_generator;          // true when compiling a generator function (function*)
 
-    // arguments tracking
-    bool uses_arguments;        // true when 'arguments' is referenced in function body
-
     // Local binding tracking — used to decide needs_env optimisation.
     // Set to true when the function body contains any var/function declarations
     // that would be hoisted to the function scope.
@@ -252,9 +244,6 @@ struct CompilerContext {
     // Hoisted function declaration names (so main pass can skip recompilation).
     char[][16] hoisted_fn_names;
     ushort hoisted_fn_count;
-
-    // Direct eval tracking — when true, the CALL path must create a fresh env.
-    bool has_direct_eval;
 
     // Arrow/async tracking — needed for needs_env computation in finish().
     bool is_arrow;
@@ -875,20 +864,14 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     func.flags.has_rest = self.has_rest;
     func.flags.is_constructable = self.is_constructable;
     func.flags.is_generator = self.is_generator;
-    func.flags.uses_arguments = self.uses_arguments;
 
     // `needs_env` controls whether the CALL fast path allocates a fresh
     // env record + bindings object per call (2 allocations).  We only need
     // a fresh env when the function's scope is actually accessed at runtime:
     //   - var bindings captured by a nested closure
-    //   - arguments object
-    //   - direct eval
-    // Functions with var declarations but no closures, eval, or arguments
-    // can reuse the parent's env directly.
+    // Functions with var declarations but no closures can reuse the parent's env directly.
     bool has_params_needing_env = self.has_rest || self.default_count > 0;
-    bool needs_runtime_env = ((self.has_local_bindings || self.num_args > 0) && self.has_closures)
-                          || self.uses_arguments
-                          || self.has_direct_eval;
+    bool needs_runtime_env = ((self.has_local_bindings || self.num_args > 0) && self.has_closures);
     bool can_skip_env = !needs_runtime_env
                      && !has_params_needing_env
                      && !self.is_arrow

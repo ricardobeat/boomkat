@@ -21,7 +21,6 @@ fn void builtin_error_constructor_shared(BuiltinContext* ctx, HObject* proto) {
         return;
     }
     HObject* err = err_raw;
-    err.prototype = proto;
 
     // Set .message if first arg is provided and not undefined
     if (ctx.argc > 0) {
@@ -91,7 +90,6 @@ fn void builtin_aggregate_error(BuiltinContext* ctx) {
         return;
     }
     HObject* err = err_raw;
-    err.prototype = ctx.heap.aggregate_err_proto;
 
     // Set .message if provided and not undefined
     if (!msg_val.is_undefined()) {
@@ -111,7 +109,6 @@ fn void builtin_aggregate_error(BuiltinContext* ctx) {
     } else {
         HObject*? empty_arr = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
         if (try arr = empty_arr) {
-            arr.prototype = ctx.heap.array_proto;
             TVal arr_tv;
             arr_tv.set_object(arr);
             err.put_prop(errors_key, arr_tv, hobject::PROP_FLAGS_WC);
@@ -140,7 +137,7 @@ fn void builtin_error_prototype_to_string(BuiltinContext* ctx) {
 
         // Read .name property
         HString* name_key = builtin_intern_string(ctx.heap, "name");
-        TVal? name_prop = obj.get_prop_proto(name_key);
+        TVal? name_prop = obj.get_prop(name_key);
         if (try nv = name_prop) {
             if (!nv.is_undefined()) {
                 HString* tmp = builtin_to_string(ctx.heap, &nv);
@@ -150,7 +147,7 @@ fn void builtin_error_prototype_to_string(BuiltinContext* ctx) {
 
         // Read .message property
         HString* msg_key = builtin_intern_string(ctx.heap, "message");
-        TVal? msg_prop = obj.get_prop_proto(msg_key);
+        TVal? msg_prop = obj.get_prop(msg_key);
         if (try mv = msg_prop) {
             if (!mv.is_undefined()) {
                 HString* tmp = builtin_to_string(ctx.heap, &mv);
@@ -189,7 +186,6 @@ fn HObject* register_error_prototype(Heap* heap, HObject* proto_parent, char[] n
     HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.ERROR);
     if (catch err = proto_raw) return null;
     HObject* proto = proto_raw;
-    proto.prototype = proto_parent;
 
     // Set .name property
     HString* name_key = builtin_intern_string(heap, "name");

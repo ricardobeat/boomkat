@@ -107,7 +107,6 @@ fn void builtin_regexp(BuiltinContext* ctx) {
             // Invalid flag per ES5 §15.10.4.1 — throw SyntaxError
             HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
             if (try err = err_raw) {
-                err.prototype = ctx.heap.syntax_err_proto;
                 char[80] buf;
                 int len = libc::snprintf(&buf, 80, "Invalid flags supplied to RegExp constructor '%c'", f);
                 if (len > 0 && len < 80) {
@@ -137,7 +136,6 @@ fn void builtin_regexp(BuiltinContext* ctx) {
         // Compilation failed — throw SyntaxError (ES5 §15.10.4.1)
         HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
         if (try err = err_raw) {
-            err.prototype = ctx.heap.syntax_err_proto;
             HString* msg_str = builtin_intern_string(ctx.heap, error_buf[:128]);
             TVal msg_tv;
             msg_tv.set_string(msg_str);
@@ -158,7 +156,6 @@ fn void builtin_regexp(BuiltinContext* ctx) {
         return;
     }
     HObject* obj = obj_raw;
-    obj.prototype = ctx.heap.regexp_proto;
     (*obj.extra_ptr()).regexp.regexp_data = compiled;
     (*obj.extra_ptr()).regexp.flags = js_flags;
 
@@ -182,7 +179,6 @@ fn void builtin_regexp_proto_test(BuiltinContext* ctx) {
         // ES5 §15.10.6.3 step 2: throw TypeError if this is not a RegExp
         HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
         if (try err = err_raw) {
-            err.prototype = ctx.heap.type_err_proto;
             HString* msg_str = builtin_intern_string(ctx.heap, "RegExp.prototype.test called on incompatible receiver");
             TVal msg_tv;
             msg_tv.set_string(msg_str);
@@ -274,7 +270,6 @@ fn void builtin_regexp_proto_exec(BuiltinContext* ctx) {
         // ES5 §15.10.6.2 step 2: throw TypeError if this is not a RegExp
         HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
         if (try err = err_raw) {
-            err.prototype = ctx.heap.type_err_proto;
             HString* msg_str = builtin_intern_string(ctx.heap, "RegExp.prototype.exec called on incompatible receiver");
             TVal msg_tv;
             msg_tv.set_string(msg_str);
@@ -373,7 +368,6 @@ fn void builtin_regexp_proto_exec(BuiltinContext* ctx) {
         return;
     }
     HObject* arr = arr_raw;
-    arr.prototype = ctx.heap.array_proto;
 
     // Element 0: full match string
     usz match_len = (usz)(out_end - out_start);
@@ -489,7 +483,6 @@ fn HObject* regexp_get_this_or_throw(BuiltinContext* ctx) {
     if (!this_val.is_object() || this_val.get_heapptr() == null) {
         HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
         if (try err = err_raw) {
-            err.prototype = ctx.heap.type_err_proto;
             HString* msg_str = builtin_intern_string(ctx.heap, "Method get RegExp.prototype.flags called on incompatible receiver");
             TVal msg_tv;
             msg_tv.set_string(msg_str);
@@ -506,7 +499,6 @@ fn HObject* regexp_get_this_or_throw(BuiltinContext* ctx) {
     if (obj.get_class() != hobject::ObjClass.REGEXP) {
         HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
         if (try err = err_raw) {
-            err.prototype = ctx.heap.type_err_proto;
             HString* msg_str = builtin_intern_string(ctx.heap, "Method get RegExp.prototype.flags called on incompatible receiver");
             TVal msg_tv;
             msg_tv.set_string(msg_str);
@@ -604,7 +596,6 @@ fn bool register_proto_accessor(HObject* proto, Heap* heap, char[] name, uint ge
     HObject* func_obj = func_raw;
     (*func_obj.extra_ptr()).func.builtin_fn_index = (int)getter_index;
     func_obj.flags.callable = true;
-    func_obj.prototype = heap.function_proto;
 
     // Set .name = "get <name>" per ES6 §17 (non-writable, non-enumerable, configurable)
     char[64] name_buf;
@@ -654,7 +645,6 @@ fn bool register_regexp_constructor(EnvRecord* global_env, Heap* heap) {
     HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = proto_raw) return false;
     HObject* proto = proto_raw;
-    proto.prototype = null;  // Will be Object.prototype
     heap.regexp_proto = proto;
 
     // Add RegExp.prototype.test()

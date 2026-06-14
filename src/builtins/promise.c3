@@ -62,7 +62,6 @@ fn HObject* check_promise(BuiltinContext* ctx) {
     }
     HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
     if (try err = err_raw) {
-        err.prototype = ctx.heap.type_err_proto;
         HString* msg_str = builtin_intern_string(ctx.heap,
             "Promise.prototype method called on incompatible value");
         if (msg_str != null) {
@@ -283,7 +282,6 @@ fn HObject*? promise_create(Heap* heap) {
     HObject*? prom_raw = heap.alloc_object(hobject::ObjClass.PROMISE);
     if (catch err = prom_raw) return null;
     HObject* prom = prom_raw;
-    prom.prototype = heap.promise_proto;
     promise_set_state(prom, PROMISE_PENDING);
     return prom;
 }
@@ -323,7 +321,6 @@ fn void builtin_promise(BuiltinContext* ctx) {
     HObject* promise = prom_raw;
 
     // Set prototype
-    promise.prototype = ctx.heap.promise_proto;
 
     if (ctx.argc < 1) {
         // No executor — return pending promise
@@ -378,7 +375,6 @@ fn void builtin_promise(BuiltinContext* ctx) {
     HObject* resolve_func = resolve_func_raw;
     (*resolve_func.extra_ptr()).func.builtin_fn_index = (int)BUILTIN_PROMISE_RESOLVE_CALLBACK;
     resolve_func.flags.callable = true;
-    resolve_func.prototype = heap.function_proto;
     // Store promise reference on the function object
     HString* promise_key = builtin_intern_string(heap, "\xFFpromise");
     TVal promise_ref;
@@ -393,7 +389,6 @@ fn void builtin_promise(BuiltinContext* ctx) {
     HObject* reject_func = reject_func_raw;
     (*reject_func.extra_ptr()).func.builtin_fn_index = (int)BUILTIN_PROMISE_REJECT_CALLBACK;
     reject_func.flags.callable = true;
-    reject_func.prototype = heap.function_proto;
     reject_func.put_prop(promise_key, promise_ref, hobject::PROP_FLAGS_WEC);
 
     TVal resolve_tv;
@@ -614,7 +609,6 @@ fn void builtin_promise_all(BuiltinContext* ctx) {
         TVal arr_val;
         arr_val.set_undefined();
         if (try arr = arr_raw) {
-            arr.prototype = ctx.heap.array_proto;
             arr_val.set_object(arr);
         }
         promise_set_state(promise, PROMISE_FULFILLED);
@@ -630,7 +624,6 @@ fn void builtin_promise_all(BuiltinContext* ctx) {
         return;
     }
     HObject* arr = arr_raw;
-    arr.prototype = ctx.heap.array_proto;
 
     usz remaining = len;
     bool rejected = false;
@@ -726,7 +719,6 @@ fn void builtin_promise_allsettled(BuiltinContext* ctx) {
         TVal arr_val;
         arr_val.set_undefined();
         if (try arr = arr_raw) {
-            arr.prototype = ctx.heap.array_proto;
             arr_val.set_object(arr);
         }
         promise_set_state(promise, PROMISE_FULFILLED);
@@ -742,7 +734,6 @@ fn void builtin_promise_allsettled(BuiltinContext* ctx) {
         return;
     }
     HObject* arr = arr_raw;
-    arr.prototype = ctx.heap.array_proto;
 
     usz remaining = len;
     HString* status_key = builtin_intern_string(ctx.heap, "status");
@@ -773,7 +764,6 @@ fn void builtin_promise_allsettled(BuiltinContext* ctx) {
                 // Create result object
                 HObject*? result_obj_raw = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
                 if (try result_obj = result_obj_raw) {
-                    result_obj.prototype = ctx.heap.object_proto;
 
                     if (state == PROMISE_FULFILLED) {
                         result_obj.put_prop(status_key, fulfilled_status, hobject::PROP_FLAGS_WEC);
@@ -800,7 +790,6 @@ fn void builtin_promise_allsettled(BuiltinContext* ctx) {
         // Not a promise — store as fulfilled
         HObject*? result_obj_raw = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
         if (try result_obj = result_obj_raw) {
-            result_obj.prototype = ctx.heap.object_proto;
             result_obj.put_prop(status_key, fulfilled_status, hobject::PROP_FLAGS_WEC);
             result_obj.put_prop(value_key, elem, hobject::PROP_FLAGS_WEC);
             TVal result_tv;
@@ -866,11 +855,9 @@ fn void builtin_promise_any(BuiltinContext* ctx) {
         // Create AggregateError with empty errors array
         HObject*? agg_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
         if (try agg = agg_raw) {
-            agg.prototype = ctx.heap.aggregate_err_proto;
             HString* errors_key = builtin_intern_string(ctx.heap, "errors");
             HObject*? empty_arr = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
             if (try arr = empty_arr) {
-                arr.prototype = ctx.heap.array_proto;
                 TVal arr_tv;
                 arr_tv.set_object(arr);
                 agg.put_prop(errors_key, arr_tv, hobject::PROP_FLAGS_WEC);
@@ -895,7 +882,6 @@ fn void builtin_promise_any(BuiltinContext* ctx) {
     HObject*? errors_arr_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
     HObject* errors_arr = null;
     if (try arr = errors_arr_raw) {
-        arr.prototype = ctx.heap.array_proto;
         errors_arr = arr;
     }
 
@@ -963,7 +949,6 @@ fn void builtin_promise_any(BuiltinContext* ctx) {
         TVal agg_tv;
         agg_tv.set_undefined();
         if (try agg = agg_raw) {
-            agg.prototype = ctx.heap.aggregate_err_proto;
             HString* errors_key = builtin_intern_string(ctx.heap, "errors");
             agg.put_prop(errors_key, errors_val, hobject::PROP_FLAGS_WEC);
             HString* msg = builtin_intern_string(ctx.heap, "All promises were rejected");
@@ -1075,21 +1060,12 @@ fn bool register_promise_constructor(EnvRecord* global_env, Heap* heap) {
     HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.PROMISE);
     if (catch err = proto_raw) return false;
     HObject* proto = proto_raw;
-    proto.prototype = null;
     heap.promise_proto = proto;
 
     // Register prototype methods
     if (!register_string_proto_method(proto, heap, "then",    BUILTIN_PROMISE_PROTO_THEN))    return false;
     if (!register_string_proto_method(proto, heap, "catch",   BUILTIN_PROMISE_PROTO_CATCH))   return false;
     if (!register_string_proto_method(proto, heap, "finally", BUILTIN_PROMISE_PROTO_FINALLY)) return false;
-
-    // Set @@toStringTag on Promise.prototype
-    HString* tag_key = ensure_tostringtag_symbol(heap);
-    if (tag_key != null) {
-        TVal tag_tv;
-        tag_tv.set_string(builtin_intern_string(heap, "Promise"));
-        proto.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_WEC);
-    }
 
     // Create Promise function object
     HObject*? ctor_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);

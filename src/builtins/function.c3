@@ -98,7 +98,6 @@ fn void builtin_function(BuiltinContext* ctx) {
         // Compilation failed: throw SyntaxError
         HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
         if (try err = err_raw) {
-            err.prototype = ctx.heap.syntax_err_proto;
             HString* msg_key = builtin_intern_string(ctx.heap, "message");
             HString* msg_str = builtin_intern_string(ctx.heap, "SyntaxError in Function constructor");
             TVal msg_tv;
@@ -130,7 +129,6 @@ fn void builtin_function(BuiltinContext* ctx) {
 
     // Set the function's .prototype property (standard for JS functions)
     // and its internal [[Prototype]] to Function.prototype
-    func_obj.prototype = ctx.heap.function_proto;
     HObject*? proto_raw = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
     if (try proto = proto_raw) {
         HString* proto_key = builtin_intern_string(ctx.heap, "prototype");
@@ -189,7 +187,6 @@ fn void builtin_function_proto_call(BuiltinContext* ctx) {
         // Throw TypeError
         HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
         if (try err = err_raw) {
-            err.prototype = ctx.heap.type_err_proto;
             // Cannot easily throw from here — set needs_throw or similar
         }
         ctx.result.set_undefined();
@@ -357,7 +354,7 @@ fn void builtin_function_proto_apply(BuiltinContext* ctx) {
     // Get length via property lookup (arrays store length as a named property)
     uint len = 0;
     HString* length_key = builtin_intern_string(ctx.heap, "length");
-    TVal? len_val = arr_obj.get_prop_proto(length_key);
+    TVal? len_val = arr_obj.get_prop(length_key);
     if (try lv = len_val) {
         if (lv.is_number() || lv.is_fastint()) {
             double d = lv.is_fastint() ? (double)lv.get_fastint() : lv.get_number();
@@ -385,7 +382,7 @@ fn void builtin_function_proto_apply(BuiltinContext* ctx) {
                 int n = libc::snprintf(&buf, 20, "%d", i);
                 if (n <= 0 || n >= 20) break;
                 HString* key_hstr = builtin_intern_string(ctx.heap, buf[:n]);
-                TVal? prop = arr_obj.get_prop_proto(key_hstr);
+                TVal? prop = arr_obj.get_prop(key_hstr);
                 if (try p = prop) {
                     elem = p;
                 }
@@ -396,7 +393,7 @@ fn void builtin_function_proto_apply(BuiltinContext* ctx) {
             if (n <= 0 || n >= 20) break;
             HString* key_hstr = builtin_intern_string(ctx.heap, buf[:n]);
             if (key_hstr == null) { break; }
-            TVal? prop = arr_obj.get_prop_proto(key_hstr);
+            TVal? prop = arr_obj.get_prop(key_hstr);
             if (try p = prop) {
                 elem = p;
             } else {
@@ -521,7 +518,6 @@ fn void builtin_function_proto_bind(BuiltinContext* ctx) {
     // Set up bound function properties
     bound_obj.flags.callable = true;
     bound_obj.flags.is_bound = true;
-    bound_obj.prototype = ctx.heap.function_proto;
     (*bound_obj.extra_ptr()).func.builtin_fn_index = (int)BUILTIN_BOUND_CALL;
 
     // Also maintain constructable flag if downstream is constructable
@@ -552,7 +548,6 @@ fn void builtin_function_proto_bind(BuiltinContext* ctx) {
     HObject* args_arr = null;
     if (try a = args_arr_raw) {
         args_arr = a;
-        args_arr.prototype = ctx.heap.array_proto;
         // Set length
         HString* len_key = builtin_intern_string(ctx.heap, "length");
         TVal len_tv;
@@ -622,9 +617,9 @@ fn void builtin_bound_call(BuiltinContext* ctx) {
     HString* key_this   = builtin_intern_string(ctx.heap, { '\x00', 'b', 'o', 'u', 'n', 'd', '_', 't', 'h', 'i', 's' });
     HString* key_args   = builtin_intern_string(ctx.heap, { '\x00', 'b', 'o', 'u', 'n', 'd', '_', 'a', 'r', 'g', 's' });
 
-    TVal? downstream_val = bound_obj.get_prop_proto(key_downstream);
-    TVal? this_val   = bound_obj.get_prop_proto(key_this);
-    TVal? args_val   = bound_obj.get_prop_proto(key_args);
+    TVal? downstream_val = bound_obj.get_prop(key_downstream);
+    TVal? this_val   = bound_obj.get_prop(key_this);
+    TVal? args_val   = bound_obj.get_prop(key_args);
 
     TVal downstream;
     TVal bound_this;
@@ -640,7 +635,7 @@ fn void builtin_bound_call(BuiltinContext* ctx) {
             HObject* arr = (HObject*)av.get_heapptr();
             if (arr != null && arr.get_class() == hobject::ObjClass.ARRAY) {
                 HString* len_key = builtin_intern_string(ctx.heap, "length");
-                TVal? lv = arr.get_prop_proto(len_key);
+                TVal? lv = arr.get_prop(len_key);
                 if (try l = lv) {
                     if (l.is_fastint()) {
                         bound_argc = (uint)l.get_fastint();
@@ -670,7 +665,7 @@ fn void builtin_bound_call(BuiltinContext* ctx) {
                     int n = libc::snprintf(&buf, 20, "%d", i);
                     if (n > 0 && n < 20) {
                         HString* ek = builtin_intern_string(ctx.heap, buf[:n]);
-                        TVal? e = arr.get_prop_proto(ek);
+                        TVal? e = arr.get_prop(ek);
                         if (try ev = e) all_args[actual_total++] = ev;
                     }
                 }
@@ -741,7 +736,6 @@ fn bool register_function_constructor(EnvRecord* global_env, Heap* heap) {
     HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
     if (catch err = proto_raw) return false;
     HObject* proto = proto_raw;
-    proto.prototype = null;  // Will be Object.prototype
     heap.function_proto = proto;
 
     // Add .call method

@@ -108,7 +108,6 @@ enum ObjClass : char {
     OBJECT,
     ARRAY,
     FUNCTION,
-    ARGUMENTS,
     BOOLEAN,
     DATE,
     ERROR,
@@ -118,7 +117,7 @@ enum ObjClass : char {
     REGEXP,
     STRING,
     GLOBAL,
-    SYMBOL,
+    // SYMBOL removed in TinyDuck — see tinyduck.md "What's Out".
     /// Object environment record (ES spec).
     OBJENV,
     /// Declarative environment record (ES spec).
@@ -139,8 +138,7 @@ enum ObjClass : char {
     FLOAT64ARRAY,
     MAP,
     SET,
-    WEAKMAP,
-    WEAKSET,
+    // WEAKMAP / WEAKSET removed in TinyDuck — see tinyduck.md "What's Out".
     PROMISE,
     GENERATOR,
     ARRAY_ITERATOR,
@@ -199,12 +197,10 @@ bitstruct ObjFlags : uint {
     bool exotic_array      : 12;
     /// Exotic behaviour for String wrapper objects.
     bool exotic_stringobj  : 13;
-    /// Exotic behaviour for Arguments objects.
-    bool exotic_arguments  : 14;
     /// Exotic behaviour for Proxy objects.
-    bool exotic_proxyobj   : 15;
+    bool exotic_proxyobj   : 14;
     /// Internal [[Class]] tag (6 bits → up to 64 classes).
-    ObjClass obj_class     : 16..21;
+    ObjClass obj_class     : 15..20;
     /// Set when pool allocation was exhausted and this object fell back to malloc.
     bool pool_fallback     : 22;
 }
@@ -289,16 +285,6 @@ const PropFlags PROP_FLAGS_NEC = {
     .configurable = false,
     .is_accessor  = false
 };
-
-/// Result of searching for an accessor property on the prototype chain.
-struct AccessorResult {
-    /// The getter or setter TVal (function), or undefined if not found.
-    TVal accessor_fn;
-    /// The object that owns the accessor (needed for `this` binding).
-    HObject* this_obj;
-    /// Whether an accessor was actually found.
-    bool found;
-}
 
 // ============================================================================
 // PropValue — per-object property value storage (QuickJS-style)
@@ -420,7 +406,6 @@ struct HObjectBase {
     uint          refcount;
     HeapHeader*   next;
     HeapHeader*   prev;
-    HObject*      prototype;
     ushort        shape_id;
     Shape*        shape @if(USE_SHAPE_CACHE);
     ushort        prop_capacity;
@@ -468,7 +453,6 @@ fn usz alloc_size_for_class(ObjClass cls) @inline {
     switch (cls) {
         case ObjClass.OBJECT:
         case ObjClass.ERROR:
-        case ObjClass.ARGUMENTS:
         case ObjClass.PROXY:
             return OBJ_SIZE_PLAIN;
         case ObjClass.ARRAY:
@@ -503,7 +487,6 @@ fn void* pool_for_class(void* heap_ptr, ObjClass cls) @inline {
     switch (cls) {
         case ObjClass.OBJECT:
         case ObjClass.ERROR:
-        case ObjClass.ARGUMENTS:
         case ObjClass.PROXY:
             return &h.obj_pool_plain;
         case ObjClass.ARRAY:
@@ -512,10 +495,6 @@ fn void* pool_for_class(void* heap_ptr, ObjClass cls) @inline {
             return &h.obj_pool_func;
     }
 }
-
-// ============================================================================
-// HObject — Unified property allocation helpers
-// ============================================================================
 
 /// Compute total size of the property allocation block.
 /// When prop_alloc is null, the inline storage has no array part.
@@ -1376,8 +1355,6 @@ fn HObject*? hobject_alloc(void* heap_ptr, ObjClass cls) {
     } else if (cls == ObjClass.ARRAY) {
         obj.flags.exotic_array = true;
         obj.array_len_ptr()[0] = 0;
-    } else if (cls == ObjClass.ARGUMENTS) {
-        obj.flags.exotic_arguments = true;
     } else if (cls == ObjClass.PROXY) {
         obj.flags.exotic_proxyobj = true;
     }
@@ -1476,79 +1453,24 @@ fn PropValue*? HObject.get_prop_at(&self, uint idx) {
     return &self.prop_values()[idx];
 }
 
-// ============================================================================
-// Prototype-chain helpers
-// ============================================================================
-
-/// Walk the prototype chain looking for a named property.
-///
-/// Returns the TVal of the first own property with the matching key found
-/// along the chain, or `null` (Optional failure) if no object in the chain
-/// has the property.  The depth limit prevents infinite loops from circular
-/// prototype chains.
-fn TVal? HObject.get_prop_proto(&self, void* key) {
-    HObject* cur = self;
-    uint depth = 0;
-
-    while (cur != null && depth < MAX_PROTO_DEPTH) {
-        int idx = cur.find_prop_idx(key);
-        if (idx >= 0) {
-            return cur.prop_values()[idx].data.value;
-        }
-        cur = cur.prototype;
-        depth++;
-    }
-
-    return PROP_NOT_FOUND~;
+/// Result of searching for an accessor property (own property only).
+struct AccessorResult {
+    /// The getter or setter TVal (function), or undefined if not found.
+    TVal accessor_fn;
+    /// Whether an accessor was actually found.
+    bool found;
 }
 
-/// Search the prototype chain for an accessor property (getter or setter).
-///
-/// Returns an AccessorResult with the accessor function and its owning object
-/// (for `this` binding), or `.found = false` if no accessor exists.
-/// If a data property is found before any accessor, the search stops (no accessor).
-fn AccessorResult HObject.find_accessor_proto(&self, void* key, bool want_getter) {
-    HObject* cur = self;
-    uint depth = 0;
-
-    while (cur != null && depth < MAX_PROTO_DEPTH) {
-        int idx = cur.find_prop_idx(key);
-        if (idx >= 0) {
-            if (cur.get_prop_flags((uint)idx).is_accessor) {
-                TVal accessor_fn = want_getter ? cur.prop_values()[idx].data.getter : cur.prop_values()[idx].setter;
-                if (accessor_fn.is_object() && accessor_fn.get_heapptr() != null) {
-                    return { .accessor_fn = accessor_fn, .this_obj = self, .found = true };
-                }
-                return { .accessor_fn = accessor_fn, .this_obj = self, .found = true };
-            }
-            return { .found = false };
-        }
-        cur = cur.prototype;
-        depth++;
+/// Search for an accessor property on the object (own property only).
+/// Returns the accessor function if found, with `.found = false` otherwise.
+/// If a data property is found instead, returns `.found = false`.
+fn AccessorResult HObject.find_accessor(&self, void* key, bool want_getter) {
+    int idx = self.find_prop_idx(key);
+    if (idx >= 0 && self.get_prop_flags((uint)idx).is_accessor) {
+        TVal accessor_fn = want_getter ? self.prop_values()[idx].data.getter : self.prop_values()[idx].setter;
+        return { .accessor_fn = accessor_fn, .found = true };
     }
-
     return { .found = false };
-}
-
-/// Maximum prototype chain depth before we assume a cycle / infinite loop.
-const uint MAX_PROTO_DEPTH = 256;
-
-/// Result of a combined accessor + data property lookup.
-enum PropLookupKind {
-    PROP_ACCESSOR,
-    PROP_DATA,
-    PROP_NOT_FOUND
-}
-
-/// Combined result of a prototype-chain lookup.
-/// Check `kind` first: if PROP_ACCESSOR, read `acc`;
-/// if PROP_DATA, read `data_val` (and optionally `owner`);
-/// if PROP_NOT_FOUND, neither is valid.
-struct PropLookupResult {
-    PropLookupKind kind;
-    TVal data_val;
-    HObject* owner;
-    AccessorResult acc;
 }
 
 // ============================================================================
@@ -1664,8 +1586,6 @@ struct ICEntry {
     ushort prop_idx;
     /// Cached property flags (avoid shape walk on IC hit).
     PropFlags prop_flags;
-    /// Prototype pointer where the property was found (null = own property).
-    void*  proto;
     /// The interned key (HString*) this entry was populated for.
     /// Pointer equality is sufficient (interned strings).
     void*  key;
@@ -1697,68 +1617,6 @@ struct VarICEntry {
     /// act.lex_env at population time; a hit requires the same chain head
     /// so entries never serve a different activation's environment.
     void*   search_head;
-}
-
-/// Single-pass prototype chain search: finds either an accessor or data property.
-/// Returns the kind found. For accessors, sets `acc_out`; for data, sets `data_out`.
-/// If `owner_out` is non-null, sets it to the object owning the found property.
-fn PropLookupResult HObject.get_prop_or_accessor_proto(&self, void* key, bool want_getter) {
-    HObject* cur = self;
-    uint depth = 0;
-
-    while (cur != null && depth < MAX_PROTO_DEPTH) {
-        int idx = cur.find_prop_idx(key);
-        if (idx >= 0) {
-            if (cur.get_prop_flags((uint)idx).is_accessor) {
-                TVal accessor_fn = want_getter ? cur.prop_values()[idx].data.getter : cur.prop_values()[idx].setter;
-                return {
-                    .kind = PropLookupKind.PROP_ACCESSOR,
-                    .acc = {
-                        .accessor_fn = accessor_fn,
-                        .this_obj = self,
-                        .found = true
-                    }
-                };
-            }
-            return {
-                .kind = PropLookupKind.PROP_DATA,
-                .data_val = cur.prop_values()[idx].data.value,
-                .owner = cur
-            };
-        }
-        cur = cur.prototype;
-        depth++;
-    }
-
-    return { .kind = PropLookupKind.PROP_NOT_FOUND };
-}
-
-/// Check whether the property exists anywhere on the prototype chain.
-fn bool HObject.has_prop_proto(&self, void* key) {
-    HObject* cur = self;
-    uint depth = 0;
-
-    while (cur != null && depth < MAX_PROTO_DEPTH) {
-        if (cur.find_prop_idx(key) >= 0) {
-            return true;
-        }
-        cur = cur.prototype;
-        depth++;
-    }
-
-    return false;
-}
-
-/// Returns true if `probe` appears anywhere in the prototype chain of `self`.
-fn bool HObject.is_prototype_of(&self, HObject* probe) {
-    HObject* cur = self;
-    uint depth = 0;
-    while (cur != null && depth < MAX_PROTO_DEPTH) {
-        if (cur == probe) return true;
-        cur = cur.prototype;
-        depth++;
-    }
-    return false;
 }
 
 /// ES5 [[Delete]]: remove an own property.

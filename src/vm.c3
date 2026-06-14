@@ -442,18 +442,16 @@ fn HObject* lightfunc_get_proto(Vm* vm, uint fn_idx) {
         case builtins::BUILTIN_REGEXP:          return vm.heap.regexp_proto;
         case builtins::BUILTIN_MAP:             return vm.heap.map_proto;
         case builtins::BUILTIN_SET:             return vm.heap.set_proto;
-        case builtins::BUILTIN_WEAKMAP:         return vm.heap.weakmap_proto;
-        case builtins::BUILTIN_WEAKSET:         return vm.heap.weakset_proto;
-        case builtins::BUILTIN_SYMBOL:          return vm.heap.symbol_proto;
+        // BUILTIN_WEAKMAP / BUILTIN_WEAKSET removed in TinyDuck.
+        // BUILTIN_SYMBOL removed in TinyDuck.
         case builtins::BUILTIN_PROMISE:         return vm.heap.promise_proto;
-        case builtins::BUILTIN_GENERATOR_FUNCTION: return vm.heap.generator_proto;
         case builtins::BUILTIN_AGGREGATE_ERROR: return vm.heap.aggregate_err_proto;
         default: return null;
     }
 }
 
 fn TVal get_prop_with_proto(HObject* obj, void* key) {
-    TVal? result = obj.get_prop_proto(key);
+    TVal? result = obj.get_prop(key);
     if (try v = result) {
         return v;
     }
@@ -580,7 +578,7 @@ fn HString*? vm_to_string(Vm* vm, TVal* val) {
                 HObject* obj = (HObject*)val.get_heapptr();
                 HString* to_str_key = (HString*)h.strs[heap::BuiltinStr.TO_STRING];
                 if (to_str_key != null) {
-                    if (try toString_fn = obj.get_prop_proto(to_str_key)) {
+                    if (try toString_fn = obj.get_prop(to_str_key)) {
                         if (toString_fn.is_lightfunc() || (toString_fn.is_object() && toString_fn.get_heapptr() != null && ((HObject*)toString_fn.get_heapptr()).is_callable())) {
                             TVal result = h.call_fn(vm, toString_fn, null, 0, *val);
                             if (vm_check_call_fn_error(vm)) return null;
@@ -694,7 +692,6 @@ fn bool vm_check_to_number_throw(Vm* vm, Activation* act, Instruction** curr_pc,
 fn void vm_set_toprimitive_error(Vm* vm) {
     HObject*? err_raw = vm.heap.alloc_object(hobject::ObjClass.ERROR);
     if (try err = err_raw) {
-        err.prototype = vm.heap.type_err_proto;
         HString* msg_str = intern_string(vm, "Cannot convert object to primitive value");
         if (msg_str != null) {
             TVal msg_val;
@@ -715,7 +712,6 @@ fn void vm_set_toprimitive_error(Vm* vm) {
 fn void vm_set_type_error(Vm* vm, char[] msg) {
     HObject*? err_raw = vm.heap.alloc_object(hobject::ObjClass.ERROR);
     if (try err = err_raw) {
-        err.prototype = vm.heap.type_err_proto;
         HString* msg_str = intern_string(vm, msg);
         if (msg_str != null) {
             TVal msg_val;
@@ -779,18 +775,18 @@ fn TVal to_primitive_value(Vm* vm, TVal* val) {
         if (vm != null && vm.heap.call_fn != null && vm.heap.toprimitive_symbol != null) {
             Heap* h = vm.heap;
             HString* toprim_key = h.toprimitive_symbol;
-            // Use find_accessor_proto to properly invoke getters (Object.defineProperty)
-            hobject::AccessorResult acc = obj.find_accessor_proto(toprim_key, true);
+            // Use find_accessor to properly invoke getters (Object.defineProperty)
+            hobject::AccessorResult acc = obj.find_accessor(toprim_key, true);
             TVal toprim_fn;
             if (acc.found) {
                 // Getter-defined Symbol.toPrimitive: invoke the getter
                 TVal getter_this;
-                getter_this.set_object(acc.this_obj);
+                getter_this.set_object(obj);
                 toprim_fn = h.call_fn(vm, acc.accessor_fn, null, 0, getter_this);
                 if (vm_check_call_fn_error(vm)) return *val;
             } else {
                 // Data property: try get_prop_proto as fallback
-                TVal? toprim_val = obj.get_prop_proto(toprim_key);
+                TVal? toprim_val = obj.get_prop(toprim_key);
                 if (try tv = toprim_val) {
                     toprim_fn = tv;
                 } else {
@@ -827,7 +823,7 @@ fn TVal to_primitive_value(Vm* vm, TVal* val) {
                 ? (HString*)h.strs[heap::BuiltinStr.VALUE_OF]
                 : (HString*)h.strs[heap::BuiltinStr.TO_STRING];
             if (first_key != null) {
-                TVal? first_val = obj.get_prop_proto(first_key);
+                TVal? first_val = obj.get_prop(first_key);
                 if (try first_fn = first_val) {
                     if (first_fn.is_lightfunc() || (first_fn.is_object() && first_fn.get_heapptr() != null && ((HObject*)first_fn.get_heapptr()).is_callable())) {
                         TVal prim = h.call_fn(vm, first_fn, null, 0, *val);
@@ -837,7 +833,7 @@ fn TVal to_primitive_value(Vm* vm, TVal* val) {
                 }
             }
             if (second_key != null) {
-                TVal? second_val = obj.get_prop_proto(second_key);
+                TVal? second_val = obj.get_prop(second_key);
                 if (try second_fn = second_val) {
                     if (second_fn.is_lightfunc() || (second_fn.is_object() && second_fn.get_heapptr() != null && ((HObject*)second_fn.get_heapptr()).is_callable())) {
                         TVal prim = h.call_fn(vm, second_fn, null, 0, *val);
@@ -900,8 +896,8 @@ fn ForInState* collect_forin_keys(Vm* vm, HObject* obj) {
     uint seen_cnt = 0;
 
     HObject* cur = obj;
-    uint depth = 0;
-    while (cur != null && depth < hobject::MAX_PROTO_DEPTH) {
+    // Own properties only (no prototype chain)
+    {
         // STRING exotic: enumerate integer indices [0, clen) from the primitive value
         // before the named property list so index order matches the spec.
         if (cur.flags.exotic_stringobj && (*cur.extra_ptr()).prim.primitive_value.is_string()) {
@@ -996,8 +992,6 @@ fn ForInState* collect_forin_keys(Vm* vm, HObject* obj) {
             }
         }
 
-        cur = cur.prototype;
-        depth++;
     }
 
     libc::free(seen);
@@ -1670,26 +1664,6 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
             vm.valstack_bottom = frame;
             vm.current_func = target;
 
-            // Create arguments object if the function references 'arguments'
-            if (target.uses_arguments()) {
-                HObject*? args_obj_raw = vm.heap.alloc_object(hobject::ObjClass.ARGUMENTS);
-                if (try args_obj = args_obj_raw) {
-                    // Store arguments in dense array_part (avoids O(argc) string key allocs)
-                    for (uint ai = 0; ai < nargs; ai++) {
-                        args_obj.set_array_idx(ai, frame[ai]);
-                    }
-                    // No own .length property — handled via exotic_arguments fast path in GETPROP
-                    args_obj.prototype = null;
-                    // Declare 'arguments' in the function's var_env
-                    HString* args_name = (HString*)vm.heap.strs[heap::BuiltinStr.ARGUMENTS];
-                    if (args_name != null) {
-                        TVal args_tv;
-                        args_tv.set_object(args_obj);
-                        env::env_declare(act.var_env, args_name, args_tv);
-                    }
-                }
-            }
-
             // Run the function via Vm.run (skip Vm.execute init — we already set up state)
             TVal? result_opt = Vm.run(vm);
             TVal result;
@@ -2309,7 +2283,6 @@ fn TVal? Vm.run(Vm* vm) {
                         HString* name_hstr = (HString*)key;
                         HObject*? err_raw = vm.heap.alloc_object(hobject::ObjClass.ERROR);
                         if (try err = err_raw) {
-                            err.prototype = vm.heap.ref_err_proto;
                             char[types::ERROR_MSG_BUF] ebuf;
                             int elen = libc::snprintf(&ebuf, types::ERROR_MSG_BUF,
                                                       "%s is not defined", name_hstr.get_cstr());
@@ -2334,7 +2307,6 @@ fn TVal? Vm.run(Vm* vm) {
                         HString* name_hstr = (HString*)key;
                         HObject*? err_raw = vm.heap.alloc_object(hobject::ObjClass.ERROR);
                         if (try err = err_raw) {
-                            err.prototype = vm.heap.type_err_proto;
                             char[types::ERROR_MSG_BUF] ebuf;
                             int elen = libc::snprintf(&ebuf, types::ERROR_MSG_BUF,
                                                       "Assignment to constant variable '%s'",
@@ -2408,7 +2380,6 @@ fn TVal? Vm.run(Vm* vm) {
                     HString* name_hstr = (HString*)key;
                     HObject*? err_raw = vm.heap.alloc_object(hobject::ObjClass.ERROR);
                     if (try err = err_raw) {
-                        err.prototype = vm.heap.ref_err_proto;
                         char[types::ERROR_MSG_BUF] ebuf;
                         int elen = libc::snprintf(&ebuf, types::ERROR_MSG_BUF,
                                                   "%s is not defined", name_hstr.get_cstr());
@@ -2854,7 +2825,7 @@ fn TVal? Vm.run(Vm* vm) {
                 HObject* proto_obj = lightfunc_get_proto(vm, fn_idx);
                 if (proto_obj != null && lval.is_object()) {
                     HObject* lbh = (HObject*)lval.get_heapptr();
-                    if (lbh.is_prototype_of(proto_obj)) {
+                    if (lbh == proto_obj) {
                         ra.set_boolean(true);
                     }
                 }
@@ -2865,7 +2836,6 @@ fn TVal? Vm.run(Vm* vm) {
                 // TypeError: right-hand side must be an object
                 HObject*? err_raw = vm.heap.alloc_object(hobject::ObjClass.ERROR);
                 if (try err = err_raw) {
-                    err.prototype = vm.heap.type_err_proto;
                     HString* msg_key = (HString*)vm.heap.strs[heap::BuiltinStr.MESSAGE];
                     HString* msg_val = intern_string(vm, "Right-hand side of instanceof is not an object");
                     TVal msg_tv;
@@ -2887,7 +2857,6 @@ fn TVal? Vm.run(Vm* vm) {
                 // TypeError: right-hand side must be callable
                 HObject*? err_raw = vm.heap.alloc_object(hobject::ObjClass.ERROR);
                 if (try err = err_raw) {
-                    err.prototype = vm.heap.type_err_proto;
                     HString* msg_key = (HString*)vm.heap.strs[heap::BuiltinStr.MESSAGE];
                     HString* msg_val = intern_string(vm, "Right-hand side of instanceof is not callable");
                     TVal msg_tv;
@@ -2921,7 +2890,7 @@ fn TVal? Vm.run(Vm* vm) {
 
             HObject* proto_obj = (HObject*)proto_val.get_heapptr();
             HObject* cur = (HObject*)lval.get_heapptr();
-            if (cur.is_prototype_of(proto_obj)) {
+            if (cur == proto_obj) {
                 ra.set_boolean(true);
             }
             break;
@@ -2939,7 +2908,6 @@ fn TVal? Vm.run(Vm* vm) {
                 ra.set_boolean(false);
                 HObject*? err_raw = vm.heap.alloc_object(hobject::ObjClass.ERROR);
                 if (try err = err_raw) {
-                    err.prototype = vm.heap.type_err_proto;
                     HString* msg_key = (HString*)vm.heap.strs[heap::BuiltinStr.MESSAGE];
                     HString* msg_val = intern_string(vm, "in requires an object");
                     TVal msg_tv;
@@ -2959,7 +2927,7 @@ fn TVal? Vm.run(Vm* vm) {
             HObject* obj = (HObject*)rc.get_heapptr();
 
             // Fast path: dense array / arguments indexed check (numeric keys)
-            if ((obj.get_class() == hobject::ObjClass.ARRAY || obj.get_class() == hobject::ObjClass.ARGUMENTS) && obj.array_part() != null && (rb.is_fastint() || rb.is_number())) {
+            if ((obj.get_class() == hobject::ObjClass.ARRAY) && obj.array_part() != null && (rb.is_fastint() || rb.is_number())) {
                 long idx_long = rb.is_fastint() ? rb.get_fastint() : (long)rb.get_number();
                 if (idx_long >= 0 && idx_long < (long)obj.array_size) {
                     TVal? av = obj.get_array_idx((uint)idx_long);
@@ -2969,10 +2937,10 @@ fn TVal? Vm.run(Vm* vm) {
                     }
                     // Array hole — fall through to prototype chain lookup
                 } else {
-                    // Index out of bounds — check prototype only
+                    // Index out of bounds — own property only
                     void* key = get_prop_key(vm, rb);
                     if (key != null) {
-                        ra.set_boolean(obj.prototype != null && obj.prototype.has_prop_proto(key));
+                        ra.set_boolean(obj.has_prop(key));
                     } else {
                         ra.set_boolean(false);
                     }
@@ -2981,7 +2949,7 @@ fn TVal? Vm.run(Vm* vm) {
             }
 
             // Fast path: dense array with string key that might be an index
-            if ((obj.get_class() == hobject::ObjClass.ARRAY || obj.get_class() == hobject::ObjClass.ARGUMENTS) && obj.array_part() != null && rb.is_string()) {
+            if ((obj.get_class() == hobject::ObjClass.ARRAY) && obj.array_part() != null && rb.is_string()) {
                 HString* skey = (HString*)rb.get_heapptr();
                 uint skey_idx = skey.array_index();
                 if (skey_idx != hstring::ARRIDX_NONE && skey_idx < (uint)obj.array_size) {
@@ -3006,7 +2974,7 @@ fn TVal? Vm.run(Vm* vm) {
                         }
                     }
                 }
-                ra.set_boolean(obj.has_prop_proto(key));
+                ra.set_boolean(obj.has_prop(key));
             } else {
                 ra.set_boolean(false);
             }
@@ -3051,7 +3019,7 @@ fn TVal? Vm.run(Vm* vm) {
                     void* lookup_key = null;
                     if (rc.is_string()) lookup_key = rc.get_heapptr();
                     if (lookup_key != null && ic.key == lookup_key && ic.shape_id == hobj.shape_id) {
-                        HObject* ic_owner = ic.proto == null ? hobj : (HObject*)ic.proto;
+                        HObject* ic_owner = hobj;
                         if (ic.cached_prop_alloc == ic_owner.prop_alloc) {
                             // Ultra-fast path: when the IC value is not a heap
                             // pointer (common for fastint/number results), skip
@@ -3069,8 +3037,7 @@ fn TVal? Vm.run(Vm* vm) {
                 }
 
                 // Fast path: dense array indexed access (a[i] where i is a non-negative integer)
-                // Also handles ARGUMENTS exotic objects for arguments[i] access
-                if ((hobj.get_class() == hobject::ObjClass.ARRAY || hobj.get_class() == hobject::ObjClass.ARGUMENTS) && hobj.array_part() != null && (rc.is_fastint() || rc.is_number())) {
+                if ((hobj.get_class() == hobject::ObjClass.ARRAY) && hobj.array_part() != null && (rc.is_fastint() || rc.is_number())) {
                     long idx_long = rc.is_fastint() ? rc.get_fastint() : (long)rc.get_number();
                     if (idx_long >= 0 && idx_long < (long)hobj.array_size) {
                         TVal? av = hobj.get_array_idx((uint)idx_long);
@@ -3091,11 +3058,6 @@ fn TVal? Vm.run(Vm* vm) {
 
                 void* key = get_prop_key(vm, rc);
                 if (key != null) {
-                    // ARGUMENTS exotic: .length returns array_used directly (no own property)
-                    if (hobj.get_class() == hobject::ObjClass.ARGUMENTS && key == (void*)vm.heap.strs[heap::BuiltinStr.LENGTH]) {
-                        ra.set_fastint((long)hobj.array_used);
-                        break;
-                    }
                     // STRING exotic: indexed access reads characters lazily from the primitive value.
                     // Handles both fastint/number keys (e.g. s[0]) and array-index string keys
                     // (e.g. s["0"]), avoiding the need to materialise per-character own properties.
@@ -3131,37 +3093,68 @@ fn TVal? Vm.run(Vm* vm) {
                             // lookup so that explicitly assigned out-of-range slots are still found.
                         }
                     }
-                    hobject::PropLookupResult res = hobj.get_prop_or_accessor_proto(key, true);
-                    if (res.kind == hobject::PropLookupKind.PROP_ACCESSOR) {
-                        TVal obj_val;
-                        obj_val.set_object(hobj);
-                        if (invoke_getter(vm, &res.acc, &obj_val, (uint)insn.a,
-                                          act, &curr_pc, &needs_restart, regs_base)) {
-                            regs_base = act.bottom;
+                    // Own-property lookup (no prototype chain)
+                    int lookup_idx = hobj.find_prop_idx(key);
+                    if (lookup_idx >= 0) {
+                        PropFlags pk_flags = hobj.get_prop_flags((uint)lookup_idx);
+                        if (pk_flags.is_accessor) {
+                            TVal obj_val;
+                            obj_val.set_object(hobj);
+                            hobject::AccessorResult acc;
+                            acc.accessor_fn = hobj.prop_values()[lookup_idx].data.getter;
+                            acc.found = true;
+                            if (invoke_getter(vm, &acc, &obj_val, (uint)insn.a,
+                                              act, &curr_pc, &needs_restart, regs_base)) {
+                                regs_base = act.bottom;
+                                break;
+                            }
                             break;
-                        }
-                        break;
-                    } else if (res.kind == hobject::PropLookupKind.PROP_DATA) {
-                        vm.heap.tval_copy_ref(ra, &res.data_val);
-                        track_heap_store(act, ra, (uint)insn.a);
-                        // Populate IC for this site
-                        if (res.owner != null && ic_base != null) {
-                            uint pc_off = (uint)(curr_pc - 1 - code_base);
-                            hobject::ICEntry* ic = ic_base + pc_off;
-                            int owner_idx = res.owner.find_prop_idx(key);
-                            if (owner_idx >= 0) {
+                        } else {
+                            vm.heap.tval_copy_ref(ra, &&hobj.prop_values()[lookup_idx].data.value);
+                            track_heap_store(act, ra, (uint)insn.a);
+                            // Populate IC for this site
+                            if (ic_base != null) {
+                                uint pc_off = (uint)(curr_pc - 1 - code_base);
+                                hobject::ICEntry* ic = ic_base + pc_off;
                                 ic.shape_id = hobj.shape_id;
-                                ic.proto = res.owner == hobj ? null : (void*)res.owner;
-                                ic.prop_idx = (ushort)owner_idx;
-                                ic.prop_flags = res.owner.get_prop_flags((uint)owner_idx);
+                                ic.prop_idx = (ushort)lookup_idx;
+                                ic.prop_flags = pk_flags;
                                 if (ic.key != null) { vm.heap.decref((types::HeapHeader*)ic.key); }
                                 ic.key = key;
                                 if (key != null) { ((types::HeapHeader*)key).incref(); }
-                                ic.prop_value_ptr = &res.owner.prop_values()[owner_idx];
-                                ic.cached_prop_alloc = res.owner.prop_alloc;
+                                ic.prop_value_ptr = &hobj.prop_values()[lookup_idx];
+                                ic.cached_prop_alloc = hobj.prop_alloc;
                             }
                         }
                     } else {
+                        // Lazy builtin method install: if the object is a built-in type,
+                        // look up the property on its prototype object and cache as own property.
+                        HObject* class_proto = null;
+                        switch (hobj.get_class()) {
+                            case hobject::ObjClass.ARRAY:   class_proto = vm.heap.array_proto; break;
+                            case hobject::ObjClass.DATE:    class_proto = vm.heap.date_proto; break;
+                            case hobject::ObjClass.REGEXP:  class_proto = vm.heap.regexp_proto; break;
+                            case hobject::ObjClass.ERROR:   class_proto = vm.heap.err_proto; break;
+                            case hobject::ObjClass.STRING:  class_proto = vm.heap.string_proto; break;
+                            case hobject::ObjClass.NUMBER:  class_proto = vm.heap.number_proto; break;
+                            case hobject::ObjClass.BOOLEAN: class_proto = vm.heap.bool_proto; break;
+                            case hobject::ObjClass.PROMISE: class_proto = vm.heap.promise_proto; break;
+                            case hobject::ObjClass.MAP:     class_proto = vm.heap.map_proto; break;
+                            case hobject::ObjClass.SET:     class_proto = vm.heap.set_proto; break;
+                            default: break;
+                        }
+                        if (class_proto == null && hobj.is_callable()) {
+                            class_proto = vm.heap.function_proto;
+                        }
+                        if (class_proto != null) {
+                            TVal? m = class_proto.get_prop(key);
+                            if (try mv = m) {
+                                hobj.put_prop(key, mv, hobject::PROP_FLAGS_WEC);
+                                vm.heap.tval_copy_ref(ra, &mv);
+                                track_heap_store(act, ra, (uint)insn.a);
+                                break;
+                            }
+                        }
                         ra.set_undefined();
                     }
                 } else {
@@ -3175,7 +3168,6 @@ fn TVal? Vm.run(Vm* vm) {
                 }
                 HObject*? err_raw = vm.heap.alloc_object(hobject::ObjClass.ERROR);
                 if (try err = err_raw) {
-                    err.prototype = vm.heap.type_err_proto;
                     char[types::ERROR_MSG_BUF] buf;
                     if (name_hstr != null) {
                         int len = libc::snprintf(&buf, types::ERROR_MSG_BUF, "Cannot read properties of %s (reading '%s')",
@@ -3204,7 +3196,7 @@ fn TVal? Vm.run(Vm* vm) {
                     // Auto-box symbol primitive: walk Symbol.prototype chain
                     HString* key = get_prop_key(vm, rc);
                     if (key != null) {
-                        TVal? result = vm.heap.symbol_proto.get_prop_proto(key);
+                        TVal? result = vm.heap.symbol_proto.get_prop(key);
                         if (try v = result) {
                             vm.heap.tval_copy_ref(ra, &v);
                             track_heap_store(act, ra, (uint)insn.a);
@@ -3250,7 +3242,7 @@ fn TVal? Vm.run(Vm* vm) {
                         }
                         // Slow path: walk String.prototype chain
                         if (vm.heap.string_proto != null) {
-                            TVal? result = vm.heap.string_proto.get_prop_proto(key);
+                            TVal? result = vm.heap.string_proto.get_prop(key);
                             if (try v = result) {
                                 vm.heap.tval_copy_ref(ra, &v);
                                 track_heap_store(act, ra, (uint)insn.a);
@@ -3268,7 +3260,7 @@ fn TVal? Vm.run(Vm* vm) {
                 // Auto-box number primitive: walk Number.prototype chain
                 HString* key = get_prop_key(vm, rc);
                 if (key != null && vm.heap.number_proto != null) {
-                    TVal? result = vm.heap.number_proto.get_prop_proto(key);
+                    TVal? result = vm.heap.number_proto.get_prop(key);
                     if (try v = result) {
                         vm.heap.tval_copy_ref(ra, &v);
                         track_heap_store(act, ra, (uint)insn.a);
@@ -3282,7 +3274,7 @@ fn TVal? Vm.run(Vm* vm) {
                 // Auto-box boolean primitive: walk Boolean.prototype chain
                 HString* key = get_prop_key(vm, rc);
                 if (key != null && vm.heap.bool_proto != null) {
-                    TVal? result = vm.heap.bool_proto.get_prop_proto(key);
+                    TVal? result = vm.heap.bool_proto.get_prop(key);
                     if (try v = result) {
                         vm.heap.tval_copy_ref(ra, &v);
                         track_heap_store(act, ra, (uint)insn.a);
@@ -3307,7 +3299,7 @@ fn TVal? Vm.run(Vm* vm) {
                                 ra.set_undefined();
                             }
                         } else if (vm.heap.function_proto != null) {
-                            TVal? result = vm.heap.function_proto.get_prop_proto(key);
+                            TVal? result = vm.heap.function_proto.get_prop(key);
                             if (try v = result) { vm.heap.tval_copy_ref(ra, &v); track_heap_store(act, ra, (uint)insn.a); }
                             else { ra.set_undefined(); }
                         } else { ra.set_undefined(); }
@@ -3320,7 +3312,7 @@ fn TVal? Vm.run(Vm* vm) {
                                 ra.set_undefined();
                             }
                         } else if (vm.heap.function_proto != null) {
-                            TVal? result = vm.heap.function_proto.get_prop_proto(key);
+                            TVal? result = vm.heap.function_proto.get_prop(key);
                             if (try v = result) { vm.heap.tval_copy_ref(ra, &v); track_heap_store(act, ra, (uint)insn.a); }
                             else { ra.set_undefined(); }
                         } else { ra.set_undefined(); }
@@ -3335,13 +3327,13 @@ fn TVal? Vm.run(Vm* vm) {
                                 ra.set_undefined();
                             }
                         } else if (vm.heap.function_proto != null) {
-                            TVal? result = vm.heap.function_proto.get_prop_proto(key);
+                            TVal? result = vm.heap.function_proto.get_prop(key);
                             if (try v = result) { vm.heap.tval_copy_ref(ra, &v); track_heap_store(act, ra, (uint)insn.a); }
                             else { ra.set_undefined(); }
                         } else { ra.set_undefined(); }
                     } else if (vm.heap.function_proto != null) {
                         // Walk Function.prototype for .call, .apply, .bind, etc.
-                        TVal? result = vm.heap.function_proto.get_prop_proto(key);
+                        TVal? result = vm.heap.function_proto.get_prop(key);
                         if (try v = result) {
                             vm.heap.tval_copy_ref(ra, &v);
                             track_heap_store(act, ra, (uint)insn.a);
@@ -3372,7 +3364,7 @@ fn TVal? Vm.run(Vm* vm) {
                         uint pc_off = (uint)(curr_pc - 1 - code_base);
                         hobject::ICEntry* ic = ic_base + pc_off;
                         if (ic.key == (void*)key_hstr && ic.shape_id == hobj.shape_id) {
-                            HObject* ic_owner = ic.proto == null ? hobj : (HObject*)ic.proto;
+                            HObject* ic_owner = hobj;
                             if (ic.cached_prop_alloc == ic_owner.prop_alloc) {
                                 TVal ic_val = ic.prop_value_ptr.data.value;
                                 if (!ic_val.is_heap_allocated()) {
@@ -3394,11 +3386,6 @@ fn TVal? Vm.run(Vm* vm) {
 
                     void* key = (void*)key_hstr;
                     if (key != null) {
-                        // ARGUMENTS exotic: .length fast path
-                        if (hobj.get_class() == hobject::ObjClass.ARGUMENTS && key == (void*)vm.heap.strs[heap::BuiltinStr.LENGTH]) {
-                            ra.set_fastint((long)hobj.array_used);
-                            break;
-                        }
                         // STRING exotic: string-key indexed access (array-index string keys like "0")
                         if (hobj.flags.exotic_stringobj && (*hobj.extra_ptr()).prim.primitive_value.is_string()) {
                             if (key_hstr != null && key_hstr.is_arridx()) {
@@ -3418,37 +3405,67 @@ fn TVal? Vm.run(Vm* vm) {
                                 }
                             }
                         }
-                        hobject::PropLookupResult res = hobj.get_prop_or_accessor_proto(key, true);
-                        if (res.kind == hobject::PropLookupKind.PROP_ACCESSOR) {
-                            TVal obj_val;
-                            obj_val.set_object(hobj);
-                            if (invoke_getter(vm, &res.acc, &obj_val, (uint)insn.a,
-                                              act, &curr_pc, &needs_restart, regs_base)) {
-                                regs_base = act.bottom;
+                        // Own-property lookup (no prototype chain)
+                        int lookup_idx = hobj.find_prop_idx(key);
+                        if (lookup_idx >= 0) {
+                            PropFlags pk_flags = hobj.get_prop_flags((uint)lookup_idx);
+                            if (pk_flags.is_accessor) {
+                                TVal obj_val;
+                                obj_val.set_object(hobj);
+                                hobject::AccessorResult acc;
+                                acc.accessor_fn = hobj.prop_values()[lookup_idx].data.getter;
+                                acc.found = true;
+                                if (invoke_getter(vm, &acc, &obj_val, (uint)insn.a,
+                                                  act, &curr_pc, &needs_restart, regs_base)) {
+                                    regs_base = act.bottom;
+                                    break;
+                                }
                                 break;
-                            }
-                            break;
-                        } else if (res.kind == hobject::PropLookupKind.PROP_DATA) {
-                            vm.heap.tval_copy_ref(ra, &res.data_val);
-                            track_heap_store(act, ra, (uint)insn.a);
-                            // Populate IC for this site
-                            if (res.owner != null && ic_base != null) {
-                                uint pc_off = (uint)(curr_pc - 1 - code_base);
-                                hobject::ICEntry* ic = ic_base + pc_off;
-                                int owner_idx = res.owner.find_prop_idx(key);
-                                if (owner_idx >= 0) {
+                            } else {
+                                vm.heap.tval_copy_ref(ra, &&hobj.prop_values()[lookup_idx].data.value);
+                                track_heap_store(act, ra, (uint)insn.a);
+                                // Populate IC for this site
+                                if (ic_base != null) {
+                                    uint pc_off = (uint)(curr_pc - 1 - code_base);
+                                    hobject::ICEntry* ic = ic_base + pc_off;
                                     ic.shape_id = hobj.shape_id;
-                                    ic.proto = res.owner == hobj ? null : (void*)res.owner;
-                                    ic.prop_idx = (ushort)owner_idx;
-                                    ic.prop_flags = res.owner.get_prop_flags((uint)owner_idx);
+                                    ic.prop_idx = (ushort)lookup_idx;
+                                    ic.prop_flags = pk_flags;
                                     if (ic.key != null) { vm.heap.decref((types::HeapHeader*)ic.key); }
                                     ic.key = key;
                                     if (key != null) { ((types::HeapHeader*)key).incref(); }
-                                    ic.prop_value_ptr = &res.owner.prop_values()[owner_idx];
-                                    ic.cached_prop_alloc = res.owner.prop_alloc;
+                                    ic.prop_value_ptr = &hobj.prop_values()[lookup_idx];
+                                    ic.cached_prop_alloc = hobj.prop_alloc;
                                 }
                             }
                         } else {
+                            // Lazy builtin method install: check prototype object for built-in types.
+                            HObject* class_proto = null;
+                            switch (hobj.get_class()) {
+                                case hobject::ObjClass.ARRAY:   class_proto = vm.heap.array_proto; break;
+                                case hobject::ObjClass.DATE:    class_proto = vm.heap.date_proto; break;
+                                case hobject::ObjClass.REGEXP:  class_proto = vm.heap.regexp_proto; break;
+                                case hobject::ObjClass.ERROR:   class_proto = vm.heap.err_proto; break;
+                                case hobject::ObjClass.STRING:  class_proto = vm.heap.string_proto; break;
+                                case hobject::ObjClass.NUMBER:  class_proto = vm.heap.number_proto; break;
+                                case hobject::ObjClass.BOOLEAN: class_proto = vm.heap.bool_proto; break;
+                                case hobject::ObjClass.PROMISE: class_proto = vm.heap.promise_proto; break;
+                                case hobject::ObjClass.MAP:     class_proto = vm.heap.map_proto; break;
+                                case hobject::ObjClass.SET:     class_proto = vm.heap.set_proto; break;
+                                default: break;
+                            }
+                            if (class_proto == null && hobj.is_callable()) {
+                                class_proto = vm.heap.function_proto;
+                            }
+                            if (class_proto != null) {
+                                TVal? m = class_proto.get_prop(key);
+                                if (try mv = m) {
+                                    hobj.put_prop(key, mv, hobject::PROP_FLAGS_WEC);
+                                    vm.heap.tval_copy_ref(ra, &mv);
+                                    track_heap_store(act, ra, (uint)insn.a);
+                                    break;
+                                }
+                            }
                             ra.set_undefined();
                         }
                     } else {
@@ -3457,7 +3474,6 @@ fn TVal? Vm.run(Vm* vm) {
                 } else if (rb.is_null() || rb.is_undefined()) {
                     HObject*? err_raw = vm.heap.alloc_object(hobject::ObjClass.ERROR);
                     if (try err = err_raw) {
-                        err.prototype = vm.heap.type_err_proto;
                         char[types::ERROR_MSG_BUF] buf;
                         int len = libc::snprintf(&buf, types::ERROR_MSG_BUF, "Cannot read properties of %s (reading '%s')",
                                                  (rb.is_null() ? "null" : "undefined"),
@@ -3481,7 +3497,7 @@ fn TVal? Vm.run(Vm* vm) {
                     HString* h_str = (HString*)rb.get_heapptr();
                     if (h_str != null && h_str.is_symbol() && vm.heap.symbol_proto != null) {
                         if (key_hstr != null) {
-                            TVal? result = vm.heap.symbol_proto.get_prop_proto((void*)key_hstr);
+                            TVal? result = vm.heap.symbol_proto.get_prop((void*)key_hstr);
                             if (try v = result) {
                                 vm.heap.tval_copy_ref(ra, &v);
                                 track_heap_store(act, ra, (uint)insn.a);
@@ -3500,7 +3516,7 @@ fn TVal? Vm.run(Vm* vm) {
                                 break;
                             }
                             if (vm.heap.string_proto != null) {
-                                TVal? result = vm.heap.string_proto.get_prop_proto((void*)key_hstr);
+                                TVal? result = vm.heap.string_proto.get_prop((void*)key_hstr);
                                 if (try v = result) {
                                     vm.heap.tval_copy_ref(ra, &v);
                                     track_heap_store(act, ra, (uint)insn.a);
@@ -3516,7 +3532,7 @@ fn TVal? Vm.run(Vm* vm) {
                     }
                 } else if (rb.is_number() || rb.is_fastint()) {
                     if (key_hstr != null && vm.heap.number_proto != null) {
-                        TVal? result = vm.heap.number_proto.get_prop_proto((void*)key_hstr);
+                        TVal? result = vm.heap.number_proto.get_prop((void*)key_hstr);
                         if (try v = result) {
                             vm.heap.tval_copy_ref(ra, &v);
                             track_heap_store(act, ra, (uint)insn.a);
@@ -3528,7 +3544,7 @@ fn TVal? Vm.run(Vm* vm) {
                     }
                 } else if (rb.is_boolean()) {
                     if (key_hstr != null && vm.heap.bool_proto != null) {
-                        TVal? result = vm.heap.bool_proto.get_prop_proto((void*)key_hstr);
+                        TVal? result = vm.heap.bool_proto.get_prop((void*)key_hstr);
                         if (try v = result) {
                             vm.heap.tval_copy_ref(ra, &v);
                             track_heap_store(act, ra, (uint)insn.a);
@@ -3550,7 +3566,7 @@ fn TVal? Vm.run(Vm* vm) {
                                     vm.heap.set_reg_string(ra, name_str);
                                 } else { ra.set_undefined(); }
                             } else if (vm.heap.function_proto != null) {
-                                TVal? result = vm.heap.function_proto.get_prop_proto((void*)key_hstr);
+                                TVal? result = vm.heap.function_proto.get_prop((void*)key_hstr);
                                 if (try v = result) { vm.heap.tval_copy_ref(ra, &v); track_heap_store(act, ra, (uint)insn.a); }
                                 else { ra.set_undefined(); }
                             } else { ra.set_undefined(); }
@@ -3561,7 +3577,7 @@ fn TVal? Vm.run(Vm* vm) {
                                     ra.set_number(meta.arity);
                                 } else { ra.set_undefined(); }
                             } else if (vm.heap.function_proto != null) {
-                                TVal? result = vm.heap.function_proto.get_prop_proto((void*)key_hstr);
+                                TVal? result = vm.heap.function_proto.get_prop((void*)key_hstr);
                                 if (try v = result) { vm.heap.tval_copy_ref(ra, &v); track_heap_store(act, ra, (uint)insn.a); }
                                 else { ra.set_undefined(); }
                             } else { ra.set_undefined(); }
@@ -3573,13 +3589,13 @@ fn TVal? Vm.run(Vm* vm) {
                                     track_heap_store(act, ra, (uint)insn.a);
                                 } else { ra.set_undefined(); }
                             } else if (vm.heap.function_proto != null) {
-                                TVal? result = vm.heap.function_proto.get_prop_proto((void*)key_hstr);
+                                TVal? result = vm.heap.function_proto.get_prop((void*)key_hstr);
                                 if (try v = result) { vm.heap.tval_copy_ref(ra, &v); track_heap_store(act, ra, (uint)insn.a); }
                                 else { ra.set_undefined(); }
                             } else { ra.set_undefined(); }
                         } else if (vm.heap.function_proto != null) {
                             // Walk Function.prototype for .call, .apply, .bind, etc.
-                            TVal? result = vm.heap.function_proto.get_prop_proto((void*)key_hstr);
+                            TVal? result = vm.heap.function_proto.get_prop((void*)key_hstr);
                             if (try v = result) {
                                 vm.heap.tval_copy_ref(ra, &v);
                                 track_heap_store(act, ra, (uint)insn.a);
@@ -3607,7 +3623,7 @@ fn TVal? Vm.run(Vm* vm) {
                 // Cap at 2^24 to avoid insane allocations for sparse arrays with huge indices.
                 // Guard with array_part() != null — after seal/freeze the array part is
                 // abandoned and elements live as named properties with proper flags.
-                if ((hobj.get_class() == hobject::ObjClass.ARRAY || hobj.get_class() == hobject::ObjClass.ARGUMENTS)
+                if ((hobj.get_class() == hobject::ObjClass.ARRAY)
                     && hobj.array_part() != null
                     && (rb.is_fastint() || rb.is_number())) {
                     long idx_long = rb.is_fastint() ? rb.get_fastint() : (long)rb.get_number();
@@ -3627,7 +3643,7 @@ fn TVal? Vm.run(Vm* vm) {
                     uint pc_off = (uint)(curr_pc - 1 - code_base);
                     hobject::ICEntry* ic = ic_base + pc_off;
                     void* wkey = rb.get_heapptr();
-                    if (wkey != null && ic.key == wkey && ic.shape_id == hobj.shape_id && ic.proto == null) {
+                    if (wkey != null && ic.key == wkey && ic.shape_id == hobj.shape_id) {
                         if (ic.cached_prop_alloc == hobj.prop_alloc
                             && !ic.prop_flags.is_accessor
                             && ic.prop_flags.writable) {
@@ -3727,7 +3743,6 @@ fn TVal? Vm.run(Vm* vm) {
                             if (act.flags & ACT_FLAG_STRICT) {
                                 HObject*? err_raw = vm.heap.alloc_object(hobject::ObjClass.ERROR);
                                 if (try err = err_raw) {
-                                    err.prototype = vm.heap.type_err_proto;
                                     HString* msg_key = (HString*)vm.heap.strs[heap::BuiltinStr.MESSAGE];
                                     HString* msg_val = intern_string(vm, "Cannot assign to read only property");
                                     TVal msg_tv;
@@ -3749,7 +3764,7 @@ fn TVal? Vm.run(Vm* vm) {
                         }
                     } else {
                         // Property doesn't exist: check prototype for accessors
-                        hobject::AccessorResult acc = hobj.find_accessor_proto(key, false);
+                        hobject::AccessorResult acc = hobj.find_accessor(key, false);
                         if (acc.found && acc.accessor_fn.is_object() && acc.accessor_fn.get_heapptr() != null) {
                             // Invoke setter from prototype
                             HObject* setter_obj = (HObject*)acc.accessor_fn.get_heapptr();
@@ -3767,7 +3782,7 @@ fn TVal? Vm.run(Vm* vm) {
 
                                     vm.heap.tval_copy_ref(&caller_regs[callee_reg], &acc.accessor_fn);
                                     TVal obj_tv;
-                                    obj_tv.set_object(acc.this_obj);
+                                    obj_tv.set_object(hobj);
                                     vm.heap.tval_copy_ref(&caller_regs[callee_reg + 1], &obj_tv);
                                     vm.heap.tval_copy_ref(&caller_regs[callee_reg + 2], &put_val);
 
@@ -3818,7 +3833,6 @@ fn TVal? Vm.run(Vm* vm) {
                 }
                 HObject*? err_raw = vm.heap.alloc_object(hobject::ObjClass.ERROR);
                 if (try err = err_raw) {
-                    err.prototype = vm.heap.type_err_proto;
                     char[types::ERROR_MSG_BUF] buf;
                     if (name_hstr != null) {
                         int len = libc::snprintf(&buf, types::ERROR_MSG_BUF, "Cannot set properties of %s (setting '%s')",
@@ -3879,7 +3893,6 @@ fn TVal? Vm.run(Vm* vm) {
         case Opcode.NEWOBJ: {
             HObject*? new_obj = vm.heap.alloc_object(hobject::ObjClass.OBJECT);
             if (try o = new_obj) {
-                o.prototype = vm.heap.object_proto;
                 ra.set_object(o);
                 track_heap_store(act, ra, (uint)insn.a);
             } else {
@@ -3891,7 +3904,6 @@ fn TVal? Vm.run(Vm* vm) {
         case Opcode.NEWARR: {
             HObject*? new_arr = vm.heap.alloc_object(hobject::ObjClass.ARRAY);
             if (try a = new_arr) {
-                a.prototype = vm.heap.array_proto;
                 ra.set_object(a);
                 track_heap_store(act, ra, (uint)insn.a);
                 if (insn.a == 251) {
@@ -3966,7 +3978,6 @@ fn TVal? Vm.run(Vm* vm) {
                         if (compiled != null) {
                             HObject*? obj_raw = vm.heap.alloc_object(hobject::ObjClass.REGEXP);
                             if (try obj = obj_raw) {
-                                obj.prototype = vm.heap.regexp_proto;
                                 (*obj.extra_ptr()).regexp.regexp_data = compiled;
                                 (*obj.extra_ptr()).regexp.flags = js_flags;
                                 // Store pattern string as primitive_value
@@ -3989,7 +4000,6 @@ fn TVal? Vm.run(Vm* vm) {
                             // so typeof works correctly
                             HObject*? obj_raw = vm.heap.alloc_object(hobject::ObjClass.REGEXP);
                             if (try obj = obj_raw) {
-                                obj.prototype = vm.heap.regexp_proto;
                                 (*obj.extra_ptr()).regexp.regexp_data = null;
                                 (*obj.extra_ptr()).regexp.flags = js_flags;
                                 HString* pattern_hs = intern_string(vm, pattern_data);
@@ -4037,7 +4047,6 @@ fn TVal? Vm.run(Vm* vm) {
             if (src_tv.is_null() || src_tv.is_undefined()) {
                 HObject*? err_raw = vm.heap.alloc_object(hobject::ObjClass.ERROR);
                 if (try err = err_raw) {
-                    err.prototype = vm.heap.type_err_proto;
                     HString* msg_str = intern_string(vm, "cannot spread null/undefined");
                     if (msg_str != null) {
                         TVal msg_val; msg_val.set_string(msg_str);
@@ -4065,9 +4074,9 @@ fn TVal? Vm.run(Vm* vm) {
             if (iter_sym != null) {
                 TVal? method_opt;
                 if (src_tv.is_object() && src_tv.get_heapptr() != null) {
-                    method_opt = ((HObject*)src_tv.get_heapptr()).get_prop_proto(iter_sym);
+                    method_opt = ((HObject*)src_tv.get_heapptr()).get_prop(iter_sym);
                 } else if (src_tv.is_string() && vm.heap.string_proto != null) {
-                    method_opt = vm.heap.string_proto.get_prop_proto(iter_sym);
+                    method_opt = vm.heap.string_proto.get_prop(iter_sym);
                 }
                 if (try m = method_opt) {
                     iter_method = m;
@@ -4080,7 +4089,6 @@ fn TVal? Vm.run(Vm* vm) {
             if (!has_method) {
                 HObject*? err_raw = vm.heap.alloc_object(hobject::ObjClass.ERROR);
                 if (try err = err_raw) {
-                    err.prototype = vm.heap.type_err_proto;
                     HString* msg_str = intern_string(vm, "xxx is not iterable");
                     if (msg_str != null) {
                         TVal msg_val; msg_val.set_string(msg_str);
@@ -4104,7 +4112,7 @@ fn TVal? Vm.run(Vm* vm) {
             uint k = 0;
             while (vm.heap.call_fn != null) {
                 HObject* iter_obj = (HObject*)iterator.get_heapptr();
-                TVal? next_opt = iter_obj.get_prop_proto(next_key);
+                TVal? next_opt = iter_obj.get_prop(next_key);
                 TVal next_method;
                 if (try nm = next_opt) { next_method = nm; } else { break; }
                 bool callable = next_method.is_lightfunc() ||
@@ -4116,12 +4124,12 @@ fn TVal? Vm.run(Vm* vm) {
                 if (!result.is_object() || result.get_heapptr() == null) { break; }
 
                 HObject* result_obj = (HObject*)result.get_heapptr();
-                TVal? done_opt = result_obj.get_prop_proto(done_key);
+                TVal? done_opt = result_obj.get_prop(done_key);
                 bool done = false;
                 if (try dv = done_opt) { done = builtins::builtin_to_boolean(&dv); }
                 if (done) { break; }
 
-                TVal? value_opt = result_obj.get_prop_proto(value_key);
+                TVal? value_opt = result_obj.get_prop(value_key);
                 if (try vv = value_opt) {
                     HString* pk = vm.heap.int_to_hstring(idx + (long)k);
                     if (pk != null) {
@@ -4144,7 +4152,6 @@ fn TVal? Vm.run(Vm* vm) {
             if (src_tv.is_null() || src_tv.is_undefined()) {
                 HObject*? err_raw = vm.heap.alloc_object(hobject::ObjClass.ERROR);
                 if (try err = err_raw) {
-                    err.prototype = vm.heap.type_err_proto;
                     HString* msg_str = intern_string(vm, "cannot spread null/undefined");
                     if (msg_str != null) {
                         TVal msg_val; msg_val.set_string(msg_str);
@@ -4164,9 +4171,9 @@ fn TVal? Vm.run(Vm* vm) {
             if (iter_sym != null) {
                 TVal? method_opt;
                 if (src_tv.is_object() && src_tv.get_heapptr() != null) {
-                    method_opt = ((HObject*)src_tv.get_heapptr()).get_prop_proto(iter_sym);
+                    method_opt = ((HObject*)src_tv.get_heapptr()).get_prop(iter_sym);
                 } else if (src_tv.is_string() && vm.heap.string_proto != null) {
-                    method_opt = vm.heap.string_proto.get_prop_proto(iter_sym);
+                    method_opt = vm.heap.string_proto.get_prop(iter_sym);
                 }
                 if (try m = method_opt) {
                     iter_method = m;
@@ -4179,7 +4186,6 @@ fn TVal? Vm.run(Vm* vm) {
             if (!has_method) {
                 HObject*? err_raw = vm.heap.alloc_object(hobject::ObjClass.ERROR);
                 if (try err = err_raw) {
-                    err.prototype = vm.heap.type_err_proto;
                     HString* msg_str = intern_string(vm, "xxx is not iterable");
                     if (msg_str != null) {
                         TVal msg_val; msg_val.set_string(msg_str);
@@ -4206,7 +4212,7 @@ fn TVal? Vm.run(Vm* vm) {
             uint k = 0;
             while (vm.heap.call_fn != null) {
                 HObject* iter_obj = (HObject*)iterator.get_heapptr();
-                TVal? next_opt = iter_obj.get_prop_proto(next_key);
+                TVal? next_opt = iter_obj.get_prop(next_key);
                 TVal next_method;
                 if (try nm = next_opt) { next_method = nm; } else { break; }
                 bool callable = next_method.is_lightfunc() ||
@@ -4218,12 +4224,12 @@ fn TVal? Vm.run(Vm* vm) {
                 if (!result.is_object() || result.get_heapptr() == null) { break; }
 
                 HObject* result_obj = (HObject*)result.get_heapptr();
-                TVal? done_opt = result_obj.get_prop_proto(done_key);
+                TVal? done_opt = result_obj.get_prop(done_key);
                 bool done = false;
                 if (try dv = done_opt) { done = builtins::builtin_to_boolean(&dv); }
                 if (done) { break; }
 
-                TVal? value_opt = result_obj.get_prop_proto(value_key);
+                TVal? value_opt = result_obj.get_prop(value_key);
                 if (try vv = value_opt) {
                     TVal* dest_slot = regs_base + dest_start + k;
                     *dest_slot = vv;
@@ -4355,7 +4361,6 @@ fn TVal? Vm.run(Vm* vm) {
                         uint overflow = (nargs > formals) ? (nargs - formals) : 0;
                         HObject*? rest_arr_raw = vm.heap.alloc_object(hobject::ObjClass.ARRAY);
                         if (try rest_arr = rest_arr_raw) {
-                            rest_arr.prototype = vm.heap.array_proto;
                             for (uint ri = 0; ri < overflow; ri++) {
                                 HString* rkey = vm.heap.int_to_hstring((long)ri);
                                 if (rkey != null) {
@@ -4415,26 +4420,6 @@ fn TVal? Vm.run(Vm* vm) {
                     curr_pc = act.curr_pc;
                     regs_base = act.bottom;
 
-                    // Create arguments object if the function references 'arguments'
-                    if (target_fast.uses_arguments()) {
-                        HObject*? args_obj_raw = vm.heap.alloc_object(hobject::ObjClass.ARGUMENTS);
-                        if (try args_obj = args_obj_raw) {
-                            // Store arguments in dense array_part (avoids O(argc) string key allocs)
-                            for (uint ai = 0; ai < nargs; ai++) {
-                                args_obj.set_array_idx(ai, regs_base[ai]);
-                            }
-                            // No own .length property — handled via exotic_arguments fast path in GETPROP
-                            args_obj.prototype = null;
-                            // Declare 'arguments' in the function's var_env
-                            HString* args_name = (HString*)vm.heap.strs[heap::BuiltinStr.ARGUMENTS];
-                            if (args_name != null) {
-                                TVal args_tv;
-                                args_tv.set_object(args_obj);
-                                env::env_declare(new_act.var_env, args_name, args_tv);
-                            }
-                        }
-                    }
-
                     continue;
                     }
                 }
@@ -4482,7 +4467,6 @@ fn TVal? Vm.run(Vm* vm) {
                 HString* type_str = typeof_string(vm, &func_val);
                 HObject*? err_raw = vm.heap.alloc_object(hobject::ObjClass.ERROR);
                 if (try err = err_raw) {
-                    err.prototype = vm.heap.type_err_proto;
                     char[types::ERROR_MSG_BUF] buf;
                     int len = libc::snprintf(&buf, types::ERROR_MSG_BUF, "%s is not a function",
                                              type_str.get_cstr());
@@ -4511,7 +4495,6 @@ fn TVal? Vm.run(Vm* vm) {
                 HString* type_str = typeof_string(vm, &func_val);
                 HObject*? err_raw2 = vm.heap.alloc_object(hobject::ObjClass.ERROR);
                 if (try err2 = err_raw2) {
-                    err2.prototype = vm.heap.type_err_proto;
                     char[types::ERROR_MSG_BUF] buf;
                     int len = libc::snprintf(&buf, types::ERROR_MSG_BUF, "%s is not a function",
                                              type_str.get_cstr());
@@ -4617,7 +4600,6 @@ fn TVal? Vm.run(Vm* vm) {
                     HString* type_str = typeof_string(vm, &func_val);
                     HObject*? err_raw2 = vm.heap.alloc_object(hobject::ObjClass.ERROR);
                     if (try err2 = err_raw2) {
-                        err2.prototype = vm.heap.type_err_proto;
                         char[types::ERROR_MSG_BUF] buf;
                         int len = libc::snprintf(&buf, types::ERROR_MSG_BUF, "%s is not a function",
                                                  type_str.get_cstr());
@@ -4776,7 +4758,6 @@ fn TVal? Vm.run(Vm* vm) {
 
                     HObject*? arr_raw = vm.heap.alloc_object(hobject::ObjClass.ARRAY);
                     if (try a = arr_raw) {
-                        a.prototype = vm.heap.array_proto;
                         for (uint i = 0; i < overflow; i++) {
                             HString* key = vm.heap.int_to_hstring((long)i);
                             if (key != null) {
@@ -4804,7 +4785,6 @@ fn TVal? Vm.run(Vm* vm) {
                     regs_base[result_reg].set_undefined();
                     break;
                 }
-                gen_obj.prototype = vm.heap.generator_proto;
                 (*gen_obj.extra_ptr()).gen.generator_data = gs;
 
                 // Return generator object as the call result
@@ -4881,7 +4861,6 @@ fn TVal? Vm.run(Vm* vm) {
 
                 HObject*? arr_raw = vm.heap.alloc_object(hobject::ObjClass.ARRAY);
                 if (try a = arr_raw) {
-                    a.prototype = vm.heap.array_proto;
                     // Copy overflow args into the array
                     for (uint i = 0; i < overflow; i++) {
                         HString* key = vm.heap.int_to_hstring((long)i);
@@ -4955,21 +4934,6 @@ fn TVal? Vm.run(Vm* vm) {
             ra.set_undefined();
             break;
 
-        case Opcode.SETPROTO: {
-            // A.[[Prototype]] = B
-            // ABC format: A=obj_reg, B=proto_reg
-            if (!ra.is_object() || !rb.is_object()) {
-                // Non-object operands — silently ignore or error
-                break;
-            }
-            HObject* obj = (HObject*)ra.get_heapptr();
-            HObject* proto = (HObject*)rb.get_heapptr();
-            if (obj != null && proto != null) {
-                obj.prototype = proto;
-            }
-            break;
-        }
-
         case Opcode.SUPER_CALL: {
             // A = super(B, args...) — call superclass constructor
             // Uses current activation's new.target
@@ -4985,7 +4949,6 @@ fn TVal? Vm.run(Vm* vm) {
                 HString* type_str = typeof_string(vm, &super_val);
                 HObject*? err_raw = vm.heap.alloc_object(hobject::ObjClass.ERROR);
                 if (try err = err_raw) {
-                    err.prototype = vm.heap.type_err_proto;
                     char[types::ERROR_MSG_BUF] buf;
                     int len = libc::snprintf(&buf, types::ERROR_MSG_BUF, "%s is not a constructor",
                                              type_str.get_cstr());
@@ -5011,7 +4974,6 @@ fn TVal? Vm.run(Vm* vm) {
                 HString* type_str = typeof_string(vm, &super_val);
                 HObject*? err_raw2 = vm.heap.alloc_object(hobject::ObjClass.ERROR);
                 if (try err2 = err_raw2) {
-                    err2.prototype = vm.heap.type_err_proto;
                     char[types::ERROR_MSG_BUF] buf;
                     int len2 = libc::snprintf(&buf, types::ERROR_MSG_BUF, "%s is not a constructor",
                                               type_str.get_cstr());
@@ -5118,7 +5080,6 @@ fn TVal? Vm.run(Vm* vm) {
                 uint overflow = (nargs > copy_count) ? (nargs - copy_count) : 0;
                 HObject*? rest_obj_raw = vm.heap.alloc_object(hobject::ObjClass.ARRAY);
                 if (try rest_obj = rest_obj_raw) {
-                    rest_obj.prototype = vm.heap.array_proto;
                     // Copy overflow args into the array
                     for (uint j = 0; j < overflow; j++) {
                         HString* key = vm.heap.int_to_hstring((long)j);
@@ -5210,7 +5171,6 @@ fn TVal? Vm.run(Vm* vm) {
                 HString* type_str = typeof_string(vm, &func_val);
                 HObject*? err_raw = vm.heap.alloc_object(hobject::ObjClass.ERROR);
                 if (try err = err_raw) {
-                    err.prototype = vm.heap.type_err_proto;
                     char[types::ERROR_MSG_BUF] buf;
                     int len = libc::snprintf(&buf, types::ERROR_MSG_BUF, "%s is not a constructor",
                                              type_str.get_cstr());
@@ -5238,7 +5198,6 @@ fn TVal? Vm.run(Vm* vm) {
                 HString* type_str = typeof_string(vm, &func_val);
                 HObject*? err_raw2 = vm.heap.alloc_object(hobject::ObjClass.ERROR);
                 if (try err2 = err_raw2) {
-                    err2.prototype = vm.heap.type_err_proto;
                     char[types::ERROR_MSG_BUF] buf;
                     int len = libc::snprintf(&buf, types::ERROR_MSG_BUF, "%s is not a constructor",
                                              type_str.get_cstr());
@@ -5328,7 +5287,6 @@ fn TVal? Vm.run(Vm* vm) {
                 HString* type_str = typeof_string(vm, &func_val);
                 HObject*? err_raw2 = vm.heap.alloc_object(hobject::ObjClass.ERROR);
                 if (try err2 = err_raw2) {
-                    err2.prototype = vm.heap.type_err_proto;
                     char[types::ERROR_MSG_BUF] buf;
                     int len = libc::snprintf(&buf, types::ERROR_MSG_BUF, "%s is not a constructor",
                                              type_str.get_cstr());
@@ -5357,7 +5315,6 @@ fn TVal? Vm.run(Vm* vm) {
                 HString* type_str = typeof_string(vm, &func_val);
                 HObject*? err_raw3 = vm.heap.alloc_object(hobject::ObjClass.ERROR);
                 if (try err3 = err_raw3) {
-                    err3.prototype = vm.heap.type_err_proto;
                     char[types::ERROR_MSG_BUF] buf;
                     int len = libc::snprintf(&buf, types::ERROR_MSG_BUF, "%s is not a constructor",
                                              type_str.get_cstr());
@@ -5389,10 +5346,9 @@ fn TVal? Vm.run(Vm* vm) {
 
             // Step 2: Set prototype from constructor.prototype
             HString* proto_key = (HString*)vm.heap.strs[heap::BuiltinStr.PROTOTYPE];
-            TVal? proto_val = hobj.get_prop_proto(proto_key);
+            TVal? proto_val = hobj.get_prop(proto_key);
             if (try pv = proto_val) {
                 if (pv.is_object() && pv.get_heapptr() != null) {
-                    new_obj.prototype = (HObject*)pv.get_heapptr();
                 }
             }
 
@@ -5454,7 +5410,6 @@ fn TVal? Vm.run(Vm* vm) {
 
                 HObject*? arr2_raw = vm.heap.alloc_object(hobject::ObjClass.ARRAY);
                 if (try a2 = arr2_raw) {
-                    a2.prototype = vm.heap.array_proto;
                     for (uint i = 0; i < overflow; i++) {
                         HString* key2 = vm.heap.int_to_hstring((long)i);
                         if (key2 != null) {
@@ -5561,7 +5516,6 @@ fn TVal? Vm.run(Vm* vm) {
                     HObject*? robj_raw2 = vm.heap.alloc_object(hobject::ObjClass.OBJECT);
                     TVal ret_val;
                     if (try robj2 = robj_raw2) {
-                        robj2.prototype = vm.heap.object_proto;
                         HString* val_key2 = (HString*)vm.heap.strs[heap::BuiltinStr.VALUE];
                         if (val_key2 != null) robj2.put_prop(val_key2, ret_val_raw, hobject::PROP_FLAGS_WEC);
                         HString* done_key2 = (HString*)vm.heap.strs[heap::BuiltinStr.DONE];
@@ -5666,7 +5620,6 @@ fn TVal? Vm.run(Vm* vm) {
                     HObject*? robj_raw = vm.heap.alloc_object(hobject::ObjClass.OBJECT);
                     TVal wrapped_val;
                     if (try robj = robj_raw) {
-                        robj.prototype = vm.heap.object_proto;
                         HString* val_key = (HString*)vm.heap.strs[heap::BuiltinStr.VALUE];
                         if (val_key != null) robj.put_prop(val_key, gs.return_value, hobject::PROP_FLAGS_WEC);
                         HString* done_key = (HString*)vm.heap.strs[heap::BuiltinStr.DONE];
@@ -5716,7 +5669,6 @@ fn TVal? Vm.run(Vm* vm) {
                 HObject*? result_obj_raw = vm.heap.alloc_object(hobject::ObjClass.OBJECT);
                 TVal wrapped_val;
                 if (try robj = result_obj_raw) {
-                    robj.prototype = vm.heap.object_proto;
                     HString* val_key = (HString*)vm.heap.strs[heap::BuiltinStr.VALUE];
                     if (val_key != null) robj.put_prop(val_key, vm.heap.yield_value, hobject::PROP_FLAGS_WEC);
                     HString* done_key = (HString*)vm.heap.strs[heap::BuiltinStr.DONE];
@@ -5912,7 +5864,6 @@ fn TVal? Vm.run(Vm* vm) {
             HObject*? robj_raw = vm.heap.alloc_object(hobject::ObjClass.OBJECT);
             TVal wrapped_val;
             if (try robj = robj_raw) {
-                robj.prototype = vm.heap.object_proto;
                 HString* val_key = (HString*)vm.heap.strs[heap::BuiltinStr.VALUE];
                 if (val_key != null) robj.put_prop(val_key, ra[0], hobject::PROP_FLAGS_WEC);
                 HString* done_key = (HString*)vm.heap.strs[heap::BuiltinStr.DONE];
@@ -5953,7 +5904,6 @@ fn TVal? Vm.run(Vm* vm) {
             HObject*? robj_raw2 = vm.heap.alloc_object(hobject::ObjClass.OBJECT);
             TVal wrapped_val2;
             if (try robj2 = robj_raw2) {
-                robj2.prototype = vm.heap.object_proto;
                 HString* val_key2 = (HString*)vm.heap.strs[heap::BuiltinStr.VALUE];
                 TVal undef_val2;
                 undef_val2.set_undefined();
@@ -6031,7 +5981,6 @@ fn TVal? Vm.run(Vm* vm) {
                                 HString* name_hstr = (HString*)key;
                                 HObject*? err_raw = vm.heap.alloc_object(hobject::ObjClass.ERROR);
                                 if (try err = err_raw) {
-                                    err.prototype = vm.heap.ref_err_proto;
                                     char[types::ERROR_MSG_BUF] buf;
                                     int len = libc::snprintf(&buf, types::ERROR_MSG_BUF, "Cannot access '%s' before initialization",
                                                              name_hstr.get_cstr());
@@ -6093,7 +6042,6 @@ fn TVal? Vm.run(Vm* vm) {
                         HString* name_hstr = (HString*)key;
                         HObject*? err_raw = vm.heap.alloc_object(hobject::ObjClass.ERROR);
                         if (try err = err_raw) {
-                            err.prototype = vm.heap.ref_err_proto;
                             char[types::ERROR_MSG_BUF] buf;
                             int len = libc::snprintf(&buf, types::ERROR_MSG_BUF, "%s is not defined",
                                                      name_hstr.get_cstr());
@@ -6168,7 +6116,6 @@ fn TVal? Vm.run(Vm* vm) {
                                 HString* name_hstr = (HString*)key;
                                 HObject*? err_raw = vm.heap.alloc_object(hobject::ObjClass.ERROR);
                                 if (try err = err_raw) {
-                                    err.prototype = vm.heap.ref_err_proto;
                                     char[types::ERROR_MSG_BUF] buf;
                                     int len = libc::snprintf(&buf, types::ERROR_MSG_BUF, "Cannot access '%s' before initialization",
                                                              name_hstr.get_cstr());
@@ -6249,7 +6196,6 @@ fn TVal? Vm.run(Vm* vm) {
                         HString* name_hstr = (HString*)key;
                         HObject*? err_raw = vm.heap.alloc_object(hobject::ObjClass.ERROR);
                         if (try err = err_raw) {
-                            err.prototype = vm.heap.type_err_proto;
                             char[types::ERROR_MSG_BUF] buf;
                             int len = libc::snprintf(&buf, types::ERROR_MSG_BUF, "Assignment to constant variable '%s'",
                                                      name_hstr.get_cstr());
@@ -6396,7 +6342,6 @@ fn TVal? Vm.run(Vm* vm) {
 
                 HObject*? func_obj_raw = vm.heap.alloc_object(hobject::ObjClass.FUNCTION);
                 if (try func_obj = func_obj_raw) {
-                    func_obj.prototype = vm.heap.function_proto;
                     func_obj.flags.callable = true;
                     func_obj.flags.constructable = template.is_constructable();
                     (*func_obj.extra_ptr()).func.comp_func = template;
@@ -6429,7 +6374,6 @@ fn TVal? Vm.run(Vm* vm) {
                         // ES5 §13.2: create .prototype property (plain object with .constructor)
                         HObject*? proto_obj_raw = vm.heap.alloc_object(hobject::ObjClass.OBJECT);
                         if (try proto_obj = proto_obj_raw) {
-                            proto_obj.prototype = vm.heap.object_proto;
                             // Set .constructor on the prototype object
                             HString* constr_key = (HString*)vm.heap.strs[heap::BuiltinStr.CONSTRUCTOR];
                             TVal constr_val;
@@ -6506,14 +6450,12 @@ fn TVal? Vm.run(Vm* vm) {
                 HObject*? wrapped = vm.heap.alloc_object(hobject::ObjClass.BOOLEAN);
                 if (catch _err = wrapped) { rb.set_null(); break; }
                 obj = wrapped;
-                obj.prototype = vm.heap.bool_proto;
                 (*obj.extra_ptr()).prim.primitive_value.set_boolean(ra.get_boolean());
             } else if (ra.is_string()) {
                 HObject*? wrapped = vm.heap.alloc_object(hobject::ObjClass.STRING);
                 if (catch _err = wrapped) { rb.set_null(); break; }
                 obj = wrapped;
                 obj.flags.exotic_stringobj = true;
-                obj.prototype = vm.heap.string_proto;
                 HString* prim_str = (HString*)ra.get_heapptr();
                 (*obj.extra_ptr()).prim.primitive_value.set_string(prim_str);
                 // Set .length own property (ES5 §15.5.5.1) — non-writable, non-enumerable, non-configurable.
@@ -6526,7 +6468,6 @@ fn TVal? Vm.run(Vm* vm) {
                 HObject*? wrapped = vm.heap.alloc_object(hobject::ObjClass.NUMBER);
                 if (catch _err = wrapped) { rb.set_null(); break; }
                 obj = wrapped;
-                obj.prototype = vm.heap.number_proto;
                 vm.heap.tval_copy_ref(&(*obj.extra_ptr()).prim.primitive_value, ra);
             } else {
                 rb.set_null();
@@ -6823,96 +6764,7 @@ fn TVal? Vm.run(Vm* vm) {
         case Opcode.CSVARI:
             break;
 
-        // === WITH STATEMENT ===
-
-        case Opcode.WITH_START: {
-            // Register A holds the with-object.  Call ToObject
-            // (primitives are wrapped), then push a new env record onto
-            // the current activation's var_env chain.
-            TVal obj_val = *ra;
-            HObject* obj;
-
-            if (obj_val.is_object()) {
-                obj = (HObject*)obj_val.get_heapptr();
-            } else if (obj_val.is_null() || obj_val.is_undefined()) {
-                // TypeError: with cannot be applied to null/undefined
-                HString* msg_key = (HString*)vm.heap.strs[heap::BuiltinStr.MESSAGE];
-                HObject*? err_raw = vm.heap.alloc_object(hobject::ObjClass.ERROR);
-                if (try err = err_raw) {
-                    err.prototype = vm.heap.type_err_proto;
-                    char[80] buf;
-                    int len = libc::snprintf(&buf, 80,
-                        "Cannot use 'with' on %s",
-                        (obj_val.is_null() ? "null" : "undefined"));
-                    if (len > 0 && len < 80) {
-                        HString* msg_str = intern_string(vm, buf[:len]);
-                        TVal msg_val;
-                        msg_val.set_string(msg_str);
-                        err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WEC);
-                    }
-                    TVal err_val;
-                    err_val.set_object(err);
-                    if (!vm_throw_value(vm, err_val, act, &curr_pc, &needs_restart)) {
-                        return VM_ERROR~;
-                    }
-                } else {
-                    return VM_ERROR~;
-                }
-                break;
-            } else if (obj_val.is_boolean()) {
-                HObject*? wrapped = vm.heap.alloc_object(hobject::ObjClass.BOOLEAN);
-                if (catch _err = wrapped) { break; }
-                obj = wrapped;
-                obj.prototype = vm.heap.bool_proto;
-                (*obj.extra_ptr()).prim.primitive_value.set_boolean(obj_val.get_boolean());
-            } else if (obj_val.is_string()) {
-                HObject*? wrapped = vm.heap.alloc_object(hobject::ObjClass.STRING);
-                if (catch _err = wrapped) { break; }
-                obj = wrapped;
-                obj.flags.exotic_stringobj = true;
-                obj.prototype = vm.heap.string_proto;
-                HString* prim_str = (HString*)obj_val.get_heapptr();
-                (*obj.extra_ptr()).prim.primitive_value.set_string(prim_str);
-                // Set .length own property (ES5 §15.5.5.1) — non-writable, non-enumerable, non-configurable.
-                // Indexed character properties are served lazily via exotic_stringobj during enumeration.
-                HString* len_key = (HString*)vm.heap.strs[heap::BuiltinStr.LENGTH];
-                TVal len_tv;
-                len_tv.set_fastint((long)prim_str.char_length());
-                obj.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NNC);
-            } else if (obj_val.is_number() || obj_val.is_fastint()) {
-                HObject*? wrapped = vm.heap.alloc_object(hobject::ObjClass.NUMBER);
-                if (catch _err = wrapped) { break; }
-                obj = wrapped;
-                obj.prototype = vm.heap.number_proto;
-                vm.heap.tval_copy_ref(&(*obj.extra_ptr()).prim.primitive_value, &obj_val);
-            } else {
-                // POINTER or BUFFER
-                break;
-            }
-
-            // Create a with-env record wrapping the object and push it
-            // onto the current activation's var_env.
-            EnvRecord*? env_raw = env::env_create_with_object(vm.heap, act.var_env, obj);
-            if (try new_env = env_raw) {
-                act.var_env = new_env;
-            } else {
-                return VM_ERROR~;
-            }
-            break;
-        }
-
-        case Opcode.WITH_END: {
-            // Pop the current with-env from the scope chain.
-            // NOTE: we do NOT free the env record here because a closure
-            // created inside the `with` block may have captured it via
-            // (*func_obj.extra_ptr()).func.var_env = act.var_env (see CLOSURE opcode).
-            // Freeing it would leave a dangling pointer in the closure
-            // and crash on subsequent env_get calls.
-            if (act.var_env != null && act.var_env.parent != null) {
-                act.var_env = act.var_env.parent;
-            }
-            break;
-        }
+        // WITH_START / WITH_END removed in TinyDuck — parser rejects `with`.
 
         case Opcode.PUSH_LEX: {
             // Push a new declarative environment record onto act.lex_env.

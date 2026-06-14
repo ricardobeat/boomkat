@@ -72,10 +72,8 @@ bitstruct HStringFlags : uint {
     bool  is_symbol         : 9;
     /// Duktape hidden Symbol (\xFF prefix).
     bool  is_hidden         : 10;
-    /// The string is "eval" or "arguments".
-    bool  is_eval_or_args   : 11;
     /// Strict-mode reserved word.
-    bool  is_strict_reserved : 12;
+    bool  is_strict_reserved : 11;
     /// String data lives in an external buffer, not inline.
     bool  has_extdata       : 13;
     /// String has been inserted into the heap's string table.
@@ -189,9 +187,6 @@ fn bool HString.is_symbol(&self)             { return self.flags.is_symbol; }
 
 /// Returns `true` when the string is a Duktape hidden symbol.
 fn bool HString.is_hidden(&self)             { return self.flags.is_hidden; }
-
-/// Returns `true` when the string is "eval" or "arguments".
-fn bool HString.is_eval_or_args(&self)       { return self.flags.is_eval_or_args; }
 
 /// Returns `true` when the string is a strict-mode reserved word.
 fn bool HString.is_strict_reserved(&self)    { return self.flags.is_strict_reserved; }
@@ -339,11 +334,6 @@ fn HString*? hstring_alloc(void* heap_ptr, char[] data, uint hash) {
         if (data.len > 1 && (uint)data[1] == 0xFF) {
             s.flags.is_hidden = true;
         }
-    }
-
-    // --- "eval" / "arguments" check ---
-    if (bytes_eq(data, "eval") || bytes_eq(data, "arguments")) {
-        s.flags.is_eval_or_args = true;
     }
 
     // Reference count starts at 0 — the intern table is a weak reference.

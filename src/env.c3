@@ -73,10 +73,8 @@ struct EnvRecord {
     HObject* bindings;
     /// Is this a declarative (not object) environment?
     bool is_declarative;
-    /// Is this a `with`-statement environment? When true, env_put
-    /// skips this record when creating new bindings (unresolvable
-    /// references go to the enclosing non-with scope).
-    bool is_with;
+    // `is_with` was removed in TinyDuck — `with` is a compile error, so
+    // no with-env records are ever created. See tinyduck.md "What's Out".
     /// Is this a function call boundary? When true, var-scope writes
     /// stop here and do not propagate to parent scopes.
     bool is_function_scope;
@@ -122,24 +120,7 @@ fn EnvRecord*? env_create(Heap* heap, EnvRecord* parent) {
     return types::ALLOC_ERROR~;
 }
 
-/// Create a new `with` environment record wrapping an existing HObject.
-///
-/// Unlike `env_create`, this does NOT allocate a new bindings object —
-/// it uses the caller-supplied object directly. The `is_with` flag is
-/// set so that `env_put` skips this record when creating *new* bindings
-/// (spec-compliant: unresolvable references inside `with` go to the
-/// enclosing scope, not to the with-object).
-fn EnvRecord*? env_create_with_object(Heap* heap, EnvRecord* parent, HObject* bindings) {
-    EnvRecord*? raw = env_pool_alloc(heap);
-    if (try env = raw) {
-        env.parent = parent;
-        env.bindings = bindings;
-        env.is_declarative = false;
-        env.is_with = true;
-        return env;
-    }
-    return types::ALLOC_ERROR~;
-}
+// `env_create_with_object` removed in TinyDuck — `with` is a compile error.
 
 /// Create a new declarative environment record.
 fn EnvRecord*? env_create_declarative(Heap* heap, EnvRecord* parent) {
@@ -175,24 +156,14 @@ fn void env_destroy(Heap* heap, EnvRecord* env) {
 // ============================================================================
 
 /// Look up a binding by walking the scope chain.
-///
-/// For `with`-env records (`is_with == true`) we walk the prototype
-/// chain of the bindings object (ES5 §10.2.1.2.1 — HasBinding uses
-/// [[HasProperty]]).  For declarative envs we only check own properties.
-/// Optimized: single find_prop_idx per scope level for non-with envs.
+/// For declarative envs we only check own properties. (No with-envs —
+/// `with` is rejected by the compiler in TinyDuck.)
 fn TVal? env_get(EnvRecord* env, void* key) {
     EnvRecord* cur = env;
     while (cur != null) {
-        if (cur.is_with) {
-            TVal? result = cur.bindings.get_prop_proto(key);
-            if (try v = result) {
-                return v;
-            }
-        } else {
-            int idx = cur.bindings.find_prop_idx(key);
-            if (idx >= 0) {
-                return cur.bindings.prop_values()[idx].data.value;
-            }
+        int idx = cur.bindings.find_prop_idx(key);
+        if (idx >= 0) {
+            return cur.bindings.prop_values()[idx].data.value;
         }
         cur = cur.parent;
     }
@@ -200,13 +171,11 @@ fn TVal? env_get(EnvRecord* env, void* key) {
 }
 
 /// Check whether a binding exists anywhere in the scope chain.
+/// Own-property only — no prototype walk (no with-envs in TinyDuck).
 fn bool env_has(EnvRecord* env, void* key) @inline {
     EnvRecord* cur = env;
     while (cur != null) {
-        bool found = cur.is_with
-                     ? cur.bindings.has_prop_proto(key)
-                     : cur.bindings.has_prop(key);
-        if (found) {
+        if (cur.bindings.has_prop(key)) {
             return true;
         }
         cur = cur.parent;
@@ -220,48 +189,34 @@ fn bool env_has(EnvRecord* env, void* key) @inline {
 
 /// Set a binding value, updating an existing one or creating a new one.
 ///
-/// When the variable is found in an existing env record (including
-/// with-envs), it is updated in-place.  When the variable is NOT found
-/// anywhere, the new binding is created in the first *non-with* record
-/// (the function/global scope) — this is the ES5-spec-compliant
-/// behaviour for unresolvable references inside `with` blocks.
-///
-/// For `with`-envs (`is_with == true`) we walk the prototype chain
-/// when checking for existing bindings (matching [[HasProperty]]).
-/// Optimized: single find_prop_idx per scope level for non-with envs.
+/// All env records are declarative/object — no with-envs in TinyDuck.
+/// If a binding exists anywhere in the chain, it is updated in place.
+/// Otherwise it is created in the *outermost* scope (the global/function
+/// scope), matching the spec rule that bare-assignment inside a block
+/// targets the enclosing function scope, never a block-local env.
 fn bool env_put(EnvRecord* env, void* key, TVal val) {
     EnvRecord* cur = env;
-    EnvRecord* first_non_with = null;
+    EnvRecord* last = env;
     while (cur != null) {
-        if (cur.is_with) {
-            if (cur.bindings.has_prop_proto(key)) {
-                return cur.bindings.put_prop(key, val, hobject::PROP_FLAGS_WEC);
+        int idx = cur.bindings.find_prop_idx(key);
+        if (idx >= 0) {
+            // Found the binding — update it here (even if it's in an outer scope).
+            hobject::PropValue* pv = &cur.bindings.prop_values()[idx];
+            if (hobject::_active_heap != null) {
+                heap::Heap* h = (heap::Heap*)hobject::_active_heap;
+                if (pv.data.value.is_string()) { h.decref_tval(&pv.data.value); }
+                pv.data.value = val;
+                if (val.is_string()) { void* p = val.get_heapptr(); if (p != null) ((types::HeapHeader*)p).incref(); }
+            } else {
+                pv.data.value = val;
             }
-        } else {
-            int idx = cur.bindings.find_prop_idx(key);
-            if (idx >= 0) {
-                // Found the binding — update it here (even if it's in an outer scope).
-                hobject::PropValue* pv = &cur.bindings.prop_values()[idx];
-                if (hobject::_active_heap != null) {
-                    heap::Heap* h = (heap::Heap*)hobject::_active_heap;
-                    if (pv.data.value.is_string()) { h.decref_tval(&pv.data.value); }
-                    pv.data.value = val;
-                    if (val.is_string()) { void* p = val.get_heapptr(); if (p != null) ((types::HeapHeader*)p).incref(); }
-                } else {
-                    pv.data.value = val;
-                }
-                return true;
-            }
+            return true;
         }
-        if (!cur.is_with && first_non_with == null) {
-            first_non_with = cur;
-        }
+        last = cur;
         cur = cur.parent;
     }
-    // Not found in the entire chain — create in the first non-with scope
-    // (which is the function/global scope that contains the with block).
-    EnvRecord* target = (first_non_with != null) ? first_non_with : env;
-    return target.bindings.put_prop(key, val, hobject::PROP_FLAGS_WEC);
+    // Not found in the entire chain — create in the outermost scope.
+    return last.bindings.put_prop(key, val, hobject::PROP_FLAGS_WEC);
 }
 
 /// Declare a binding in the given environment only (no chain walk).

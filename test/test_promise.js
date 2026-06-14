@@ -1,61 +1,52 @@
-// Test Promise basic functionality
-
+// Test Promise basic functionality (no prototype chain — methods accessed via
+// Promise as a class and via instance p.then/catch).
 print("=== Promise constructor ===");
-print(typeof Promise); // Should be "function"
+print(typeof Promise);
 
-print("");
 print("=== Promise.resolve ===");
 var p1 = Promise.resolve(42);
-print(typeof p1); // Should be "object"
+print(typeof p1);
+print(p1 instanceof Promise);
 
-print("");
 print("=== Promise.reject ===");
 var p2 = Promise.reject("error");
-print(typeof p2); // Should be "object"
+print(typeof p2);
+print(p2 instanceof Promise);
 
-print("");
-print("=== Promise.prototype.then ===");
-var thenType = typeof Promise.prototype.then;
-print(thenType); // Should be "function"
-
-print("");
-print("=== Promise.prototype.catch ===");
-var catchType = typeof Promise.prototype.catch;
-print(catchType); // Should be "function"
-
-print("");
-print("=== new Promise ===");
+print("=== instance .then/.catch ===");
 var p3 = new Promise(function(resolve, reject) {
-    print("executor called");
     resolve("done");
 });
-print(typeof p3); // Should be "object"
+print(typeof p3.then);
+print(typeof p3.catch);
 
-print("");
+print("=== new Promise ===");
+var p4 = new Promise(function(resolve, reject) {
+    resolve("done");
+});
+print(typeof p4);
+print(p4 instanceof Promise);
+
 print("=== Promise.length ===");
-print(Promise.length); // Should be 1
+print(Promise.length);
 
-print("");
 print("=== instanceof Promise ===");
-print(p1 instanceof Promise); // Should be true
-print(p3 instanceof Promise); // Should be true
+print(p1 instanceof Promise);
+print(p3 instanceof Promise);
 
-print("");
-print("=== [object Promise] ===");
-var p4 = new Promise(function(r) { r(1); });
-print(Object.prototype.toString.call(p4)); // Should be [object Promise]
-
-print("");
-print("=== Promise.all (stub) ===");
+print("=== Promise.all ===");
 var pall = Promise.all([1, 2, 3]);
-print(typeof pall); // Should be object
-print(pall instanceof Promise); // Should be true
+print(typeof pall);
+print(pall instanceof Promise);
 
-print("");
-print("=== Promise.race (stub) ===");
+print("=== Promise.race ===");
 var prace = Promise.race([1, 2]);
-print(typeof prace); // Should be object
-print(prace instanceof Promise); // Should be true
+print(typeof prace);
+print(prace instanceof Promise);
 
-print("");
+print("=== then chain ===");
+var chain = Promise.resolve(1).then(function(v) { return v + 1; });
+print(typeof chain);
+print(chain instanceof Promise);
+
 print("=== All Promise tests passed ===");

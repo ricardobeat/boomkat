@@ -20,7 +20,6 @@ fn HObject* check_set(BuiltinContext* ctx) {
     // TypeError
     HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
     if (try err = err_raw) {
-        err.prototype = ctx.heap.type_err_proto;
         HString* msg_str = builtin_intern_string(ctx.heap,
             "Set.prototype method called on incompatible value");
         if (msg_str != null) {
@@ -55,7 +54,6 @@ fn void builtin_set(BuiltinContext* ctx) {
         return;
     }
     HObject* set = set_raw;
-    set.prototype = ctx.heap.set_proto;
 
     // Set size property
     HString* size_key = builtin_intern_string(ctx.heap, "size");
@@ -175,124 +173,6 @@ fn void builtin_set_proto_clear(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Set.prototype.keys() — ES6 §23.2.3.8
-// Same as values() — returns a SetIterator with kind=1.
-// ============================================================================
-fn void builtin_set_proto_keys(BuiltinContext* ctx) {
-    create_set_iterator(ctx, 1);
-}
-
-// ============================================================================
-// Set.prototype.data.values() — ES6 §23.2.3.10
-// Returns a SetIterator with kind=0.
-// ============================================================================
-fn void builtin_set_proto_values(BuiltinContext* ctx) {
-    create_set_iterator(ctx, 0);
-}
-
-// ============================================================================
-// Set.prototype.entries() — ES6 §23.2.3.5
-// Returns [value, value] pairs as a SetIterator with kind=2.
-// ============================================================================
-fn void builtin_set_proto_entries(BuiltinContext* ctx) {
-    create_set_iterator(ctx, 2);
-}
-
-// ============================================================================
-// Set.prototype[@@iterator] — ES6 §23.2.3.9
-// Same as values().
-// ============================================================================
-fn void builtin_set_proto_symbol_iter(BuiltinContext* ctx) {
-    create_set_iterator(ctx, 0);
-}
-
-// ============================================================================
-// SetIterator.prototype.next() — ES6 §23.2.5.2.1
-// ============================================================================
-fn void builtin_set_iterator_next(BuiltinContext* ctx) {
-    TVal this_val = ctx.this_val;
-    Heap* heap = ctx.heap;
-
-    if (!this_val.is_object()) {
-        ctx.should_throw = true;
-        ctx.result.set_undefined();
-        return;
-    }
-
-    HObject* iter = (HObject*)this_val.get_heapptr();
-    if (iter.get_class() != hobject::ObjClass.SET_ITERATOR) {
-        ctx.should_throw = true;
-        ctx.result.set_undefined();
-        return;
-    }
-
-    HObject* target = (*iter.extra_ptr()).iter.target;
-    if (target == null) {
-        ctx.result.set_undefined();
-        return;
-    }
-
-    uint idx = (*iter.extra_ptr()).iter.index;
-    uint kind = (*iter.extra_ptr()).iter.kind;
-
-    bool done = false;
-    TVal value;
-    value.set_undefined();
-
-    if (idx < target.array_used) {
-        TVal* entries = target.array_part();
-        if (entries != null) {
-            TVal item = entries[idx];
-            if (kind == 1 || kind == 0) {
-                // keys()/values(): return the value
-                value = item;
-            } else {
-                // entries(): return [value, value]
-                HObject*? pair_raw = heap.alloc_object(hobject::ObjClass.ARRAY);
-                if (try pair = pair_raw) {
-                    pair.prototype = heap.array_proto;
-                    pair.set_array_idx(0, item);
-                    pair.set_array_idx(1, item);
-                    pair.array_used = 2;
-                    HString* len_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
-                    if (len_key != null) {
-                        TVal len_tv;
-                        len_tv.set_fastint(2);
-                        pair.put_prop(len_key, len_tv, hobject::PROP_FLAGS_WEC);
-                    }
-                    value.set_object(pair);
-                }
-            }
-            (*iter.extra_ptr()).iter.index += 1;
-        } else {
-            done = true;
-        }
-    } else {
-        done = true;
-    }
-
-    if (done) {
-        value.set_undefined();
-    }
-
-    // Create result object: {value, done}
-    HObject*? result_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
-    if (catch err = result_raw) { ctx.result.set_undefined(); return; }
-    HObject* result = result_raw;
-    result.prototype = null;
-
-    HString* value_key = (HString*)heap.strs[heap::BuiltinStr.VALUE];
-    result.put_prop(value_key, value, hobject::PROP_FLAGS_WEC);
-
-    HString* done_key = (HString*)heap.strs[heap::BuiltinStr.DONE];
-    TVal done_tv;
-    done_tv.set_boolean(done);
-    result.put_prop(done_key, done_tv, hobject::PROP_FLAGS_WEC);
-
-    ctx.result.set_object(result);
-}
-
-// ============================================================================
 // Set.prototype.forEach(callbackfn[, thisArg]) — ES6 §23.2.3.6
 // ============================================================================
 fn void builtin_set_proto_forEach(BuiltinContext* ctx) {
@@ -302,7 +182,6 @@ fn void builtin_set_proto_forEach(BuiltinContext* ctx) {
     if (ctx.argc < 1) {
         HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
         if (try err = err_raw) {
-            err.prototype = ctx.heap.type_err_proto;
             HString* msg_str = builtin_intern_string(ctx.heap, "missing argument 0 when calling function forEach");
             if (msg_str != null) {
                 TVal msg_val;
@@ -328,7 +207,6 @@ fn bool register_set_constructor(EnvRecord* global_env, Heap* heap) {
     HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.SET);
     if (catch err = proto_raw) return false;
     HObject* proto = proto_raw;
-    proto.prototype = null;
     heap.set_proto = proto;
 
     // Add .add(value) method
@@ -347,42 +225,6 @@ fn bool register_set_constructor(EnvRecord* global_env, Heap* heap) {
     if (!register_string_proto_method(proto, heap, "entries", BUILTIN_SET_PROTO_ENTRIES)) return false;
     // Add .forEach() method
     if (!register_string_proto_method(proto, heap, "forEach", BUILTIN_SET_PROTO_FOREACH)) return false;
-    // Add [Symbol.iterator] = values
-    HString* iter_sym = ensure_iterator_symbol(heap);
-    if (iter_sym != null) {
-        HObject*? fn_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
-        if (catch err = fn_raw) return false;
-        HObject* fn_obj = fn_raw;
-        (*fn_obj.extra_ptr()).func.builtin_fn_index = (int)BUILTIN_SET_PROTO_SYMBOL_ITER;
-        fn_obj.flags.callable = true;
-        fn_obj.prototype = heap.function_proto;
-        // Set .name
-        HString* name_key = builtin_intern_string(heap, "name");
-        HString* name_val = builtin_intern_string(heap, "[Symbol.iterator]");
-        if (name_key != null && name_val != null) {
-            TVal name_tv;
-            name_tv.set_string(name_val);
-            fn_obj.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC);
-        }
-        // Set .length = 0
-        HString* len_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
-        if (len_key != null) {
-            TVal len_tv;
-            len_tv.set_fastint(0);
-            fn_obj.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NWC);
-        }
-        TVal iter_tv;
-        iter_tv.set_object(fn_obj);
-        proto.put_prop(iter_sym, iter_tv, hobject::PROP_FLAGS_NWC);
-    }
-
-    // Set @@toStringTag on Set.prototype
-    HString* tag_key = ensure_tostringtag_symbol(heap);
-    if (tag_key != null) {
-        TVal tag_tv;
-        tag_tv.set_string(builtin_intern_string(heap, "Set"));
-        proto.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC);
-    }
 
     // Add .size property (will be updated on each mutation)
     HString* size_key = builtin_intern_string(heap, "size");

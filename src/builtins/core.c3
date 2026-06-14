@@ -145,21 +145,13 @@ const uint BUILTIN_OBJECT_PROTO_HASOWNPROPERTY  = 108;
 const uint BUILTIN_OBJECT_PROTO_PROPERTYISENUMERABLE = 109;
 const uint BUILTIN_OBJECT_PROTO_ISPROTOTYPEOF  = 107;
 const uint BUILTIN_OBJECT_PROTO_TOLOCALESTRING = 110;
-const uint BUILTIN_DATE_PROTO_TOLOCALESTRING   = 261;
-const uint BUILTIN_DATE_PROTO_TOLOCALEDATESTRING = 262;
-const uint BUILTIN_DATE_PROTO_TOLOCALETIMESTRING = 263;
-const uint BUILTIN_PROMISE_RESOLVE_CALLBACK     = 264;
+const uint BUILTIN_PROMISE_RESOLVE_CALLBACK     = 261;
 const uint BUILTIN_PROMISE_REJECT_CALLBACK      = 265;
 
 // Iterator protocol
-const uint BUILTIN_ARRAY_ITERATOR_NEXT        = 269;
-const uint BUILTIN_STRING_ITERATOR_NEXT       = 270;
-const uint BUILTIN_ARRAY_PROTO_SYMBOL_ITER    = 271;
-const uint BUILTIN_STRING_PROTO_SYMBOL_ITER   = 272;
+// BUILTIN_ARRAY/STRING_ITERATOR/... (ids 269-272) removed in TinyDuck.
 
-const uint BUILTIN_ARRAY_PROTO_KEYS           = 273;
-const uint BUILTIN_ARRAY_PROTO_VALUES         = 274;
-const uint BUILTIN_ARRAY_PROTO_ENTRIES        = 275;
+// BUILTIN_ARRAY_PROTO_KEYS/VALUES/ENTRIES (ids 273-275) removed in TinyDuck.
 const uint BUILTIN_OBJECT_FROMENTRIES         = 276;
 
 // RegExp.prototype accessor getters (ES6 §21.2.5)
@@ -176,13 +168,10 @@ const uint BUILTIN_REGEXP_PROTO_GET_UNICODE    = 284;
 const uint BUILTIN_ARRAY_FROM                  = 285;
 
 // %IteratorPrototype%[@@iterator] (ES6 §25.1.2.1)
-const uint BUILTIN_ITERATOR_PROTO_SYMBOL_ITER  = 286;
+// BUILTIN_ITERATOR_PROTO_SYMBOL_ITER (286) removed in TinyDuck.
 
 // Map/Set iterators
-const uint BUILTIN_MAP_ITERATOR_NEXT           = 287;
-const uint BUILTIN_SET_ITERATOR_NEXT           = 288;
-const uint BUILTIN_MAP_PROTO_SYMBOL_ITER       = 289;
-const uint BUILTIN_SET_PROTO_SYMBOL_ITER       = 290;
+// BUILTIN_MAP/SET_ITERATOR (ids 287-290) removed in TinyDuck.
 
 const uint BUILTIN_ARRAY_PROTO_FOREACH   = 291;
 const uint BUILTIN_ARRAY_PROTO_MAP        = 292;
@@ -217,22 +206,10 @@ const uint BUILTIN_SET_PROTO_VALUES          = 128;
 const uint BUILTIN_SET_PROTO_ENTRIES         = 129;
 const uint BUILTIN_SET_PROTO_FOREACH         = 130;
 
-const uint BUILTIN_WEAKMAP                   = 131;
-const uint BUILTIN_WEAKMAP_PROTO_SET         = 132;
-const uint BUILTIN_WEAKMAP_PROTO_GET         = 133;
-const uint BUILTIN_WEAKMAP_PROTO_HAS         = 134;
-const uint BUILTIN_WEAKMAP_PROTO_DELETE      = 135;
 
-const uint BUILTIN_WEAKSET                   = 136;
-const uint BUILTIN_WEAKSET_PROTO_ADD         = 137;
-const uint BUILTIN_WEAKSET_PROTO_HAS         = 138;
-const uint BUILTIN_WEAKSET_PROTO_DELETE      = 139;
-
-const uint BUILTIN_SYMBOL                    = 140;
-const uint BUILTIN_SYMBOL_FOR                = 141;
-const uint BUILTIN_SYMBOL_KEYFOR             = 142;
-const uint BUILTIN_SYMBOL_PROTO_TOSTRING     = 143;
-const uint BUILTIN_SYMBOL_PROTO_VALUEOF      = 144;
+// BUILTIN_WEAKMAP / BUILTIN_WEAKSET removed in TinyDuck — see tinyduck.md
+// "What's Out".  See hobject::ObjClass for the corresponding enum drop.
+// BUILTIN_SYMBOL (ids 140-144) removed in TinyDuck.
 
 const uint BUILTIN_PROMISE                   = 145;
 const uint BUILTIN_PROMISE_PROTO_THEN        = 146;
@@ -247,10 +224,7 @@ const uint BUILTIN_PROMISE_ALLSETTLED         = 266;
 const uint BUILTIN_PROMISE_ANY                = 267;
 const uint BUILTIN_AGGREGATE_ERROR            = 268;
 
-const uint BUILTIN_GENERATOR_FUNCTION        = 153;
-const uint BUILTIN_GENERATOR_PROTO_NEXT      = 154;
-const uint BUILTIN_GENERATOR_PROTO_THROW     = 155;
-const uint BUILTIN_GENERATOR_PROTO_RETURN    = 156;
+// BUILTIN_GENERATOR (ids 153-156) removed in TinyDuck.
 const uint BUILTIN_OBJECT_KEYS               = 157;
 const uint BUILTIN_OBJECT_GETPROTOTYPEOF     = 158;
 const uint BUILTIN_OBJECT_ISEXTENSIBLE       = 159;
@@ -850,7 +824,6 @@ fn BuiltinMeta builtin_get_metadata(uint idx) {
         case 78: return { "apply", 2 };
         case 79: return { "bind", 1 };
         case 80: return { "bind", 1 };
-        case 81: return { "eval", 1 };
         case 82: return { "parse", 2 };
         case 83: return { "stringify", 3 };
         case 84: return { "Date", 7 };
@@ -896,18 +869,8 @@ fn BuiltinMeta builtin_get_metadata(uint idx) {
         case 128: return { "values", 0 };
         case 129: return { "entries", 0 };
         case 130: return { "forEach", 1 };
-        case 131: return { "WeakMap", 0 };
-        case 132: return { "set", 2 };
-        case 133: return { "get", 1 };
-        case 134: return { "has", 1 };
-        case 135: return { "delete", 1 };
-        case 136: return { "WeakSet", 0 };
-        case 137: return { "add", 1 };
-        case 138: return { "has", 1 };
-        case 139: return { "delete", 1 };
-        case 140: return { "Symbol", 1 };
-        case 141: return { "for", 1 };
-        case 142: return { "keyFor", 1 };
+        // WeakMap / WeakSet removed in TinyDuck (ids 131-139).
+        // BUILTIN_SYMBOL removed in TinyDuck (ids 140-142).
         case 143: return { "toString", 0 };
         case 144: return { "valueOf", 0 };
         case 145: return { "Promise", 1 };
@@ -1026,9 +989,6 @@ fn BuiltinMeta builtin_get_metadata(uint idx) {
         case 258: return { "toISOString", 0 };
         case 259: return { "toUTCString", 0 };
         case 260: return { "toGMTString", 0 };
-        case 261: return { "toLocaleString", 0 };
-        case 262: return { "toLocaleDateString", 0 };
-        case 263: return { "toLocaleTimeString", 0 };
         case 301: return { "toDateString", 0 };
         case 302: return { "toTimeString", 0 };
         case 303: return { "replaceAll", 2 };
@@ -1078,7 +1038,6 @@ fn bool register_array_proto_method(HObject* proto, Heap* heap, char[] name, uin
     HObject* func_obj = func_raw;
     (*func_obj.extra_ptr()).func.builtin_fn_index = (int)fn_index;
     func_obj.flags.callable = true;
-    func_obj.prototype = heap.function_proto;
     // Set .name (non-writable, non-enumerable, configurable)
     HString* name_prop_key = builtin_intern_string(heap, "name");
     HString* name_val = builtin_intern_string(heap, name);
@@ -1124,7 +1083,6 @@ fn bool register_compiled_proto_method(HObject* proto, Heap* heap, EnvRecord* gl
     (*func_obj.extra_ptr()).func.builtin_fn_index = -1;
     (*func_obj.extra_ptr()).func.var_env = global_env;
     (*func_obj.extra_ptr()).func.lex_env = global_env;
-    func_obj.prototype = heap.function_proto;
     func_obj.flags.callable = true;
     HString* name_str = builtin_intern_string(heap, "name");
     if (name_str != null) {
@@ -1177,7 +1135,6 @@ fn bool register_string_proto_method(HObject* proto, Heap* heap, char[] name, ui
     HObject* func_obj = func_raw;
     (*func_obj.extra_ptr()).func.builtin_fn_index = (int)fn_index;
     func_obj.flags.callable = true;
-    func_obj.prototype = heap.function_proto;
     // Set .name (non-writable, non-enumerable, configurable)
     HString* name_prop_key = builtin_intern_string(heap, "name");
     HString* name_val = builtin_intern_string(heap, name);
@@ -1342,13 +1299,12 @@ BuiltinFunc[BUILTIN_COUNT] builtin_dispatch_table = {
     [BUILTIN_ARRAY] = &builtin_array,
     [BUILTIN_ARRAY_FROM] = &builtin_array_from,
     [BUILTIN_ARRAY_ISARRAY] = &builtin_array_isArray,
-    [BUILTIN_ARRAY_ITERATOR_NEXT] = &builtin_array_iterator_next,
+    // BUILTIN_ARRAY_ITERATOR_NEXT removed in TinyDuck.
     [BUILTIN_ARRAY_OF] = &builtin_array_of,
     [BUILTIN_ARRAY_PROTO_AT] = &builtin_array_proto_at,
     [BUILTIN_ARRAY_PROTO_CONCAT] = &builtin_array_proto_concat,
     [BUILTIN_ARRAY_PROTO_COPYWITHIN] = &builtin_array_proto_copyWithin,
     [BUILTIN_ARRAY_PROTO_EVERY] = &builtin_array_proto_every,
-    [BUILTIN_ARRAY_PROTO_ENTRIES] = &builtin_array_proto_entries,
     [BUILTIN_ARRAY_PROTO_FILL] = &builtin_array_proto_fill,
     [BUILTIN_ARRAY_PROTO_FILTER] = &builtin_array_proto_filter,
     [BUILTIN_ARRAY_PROTO_FIND] = &builtin_array_proto_find,
@@ -1359,7 +1315,6 @@ BuiltinFunc[BUILTIN_COUNT] builtin_dispatch_table = {
     [BUILTIN_ARRAY_PROTO_INCLUDES] = &builtin_array_proto_includes,
     [BUILTIN_ARRAY_PROTO_INDEXOF] = &builtin_array_proto_indexOf,
     [BUILTIN_ARRAY_PROTO_JOIN] = &builtin_array_proto_join,
-    [BUILTIN_ARRAY_PROTO_KEYS] = &builtin_array_proto_keys,
     [BUILTIN_ARRAY_PROTO_LASTINDEXOF] = &builtin_array_proto_lastIndexOf,
     [BUILTIN_ARRAY_PROTO_MAP] = &builtin_array_proto_map,
     [BUILTIN_ARRAY_PROTO_POP] = &builtin_array_proto_pop,
@@ -1372,13 +1327,12 @@ BuiltinFunc[BUILTIN_COUNT] builtin_dispatch_table = {
     [BUILTIN_ARRAY_PROTO_SOME] = &builtin_array_proto_some,
     [BUILTIN_ARRAY_PROTO_SORT] = &builtin_array_proto_sort,
     [BUILTIN_ARRAY_PROTO_SPLICE] = &builtin_array_proto_splice,
-    [BUILTIN_ARRAY_PROTO_SYMBOL_ITER] = &builtin_array_proto_symbol_iter,
+    // BUILTIN_ARRAY_PROTO_SYMBOL_ITER removed in TinyDuck.
     [BUILTIN_ARRAY_PROTO_TOREVERSED] = &builtin_array_proto_toReversed,
     [BUILTIN_ARRAY_PROTO_TOSORTED] = &builtin_array_proto_toSorted,
     [BUILTIN_ARRAY_PROTO_TOSPLICED] = &builtin_array_proto_toSpliced,
     [BUILTIN_ARRAY_PROTO_TOSTRING] = &builtin_array_proto_toString,
     [BUILTIN_ARRAY_PROTO_UNSHIFT] = &builtin_array_proto_unshift,
-    [BUILTIN_ARRAY_PROTO_VALUES] = &builtin_array_proto_values,
     [BUILTIN_ARRAY_PROTO_WITH] = &builtin_array_proto_with,
     [BUILTIN_BOOLEAN] = &builtin_boolean,
     [BUILTIN_BOOLEAN_PROTO_TOSTRING] = &builtin_boolean_proto_toString,
@@ -1424,9 +1378,6 @@ BuiltinFunc[BUILTIN_COUNT] builtin_dispatch_table = {
     [BUILTIN_DATE_PROTO_TOGMTSTRING] = &builtin_date_proto_toUTCString,
     [BUILTIN_DATE_PROTO_TOISOSTRING] = &builtin_date_proto_toISOString,
     [BUILTIN_DATE_PROTO_TOJSON] = &builtin_date_proto_toJSON,
-    [BUILTIN_DATE_PROTO_TOLOCALEDATESTRING] = &builtin_date_proto_toLocaleDateString,
-    [BUILTIN_DATE_PROTO_TOLOCALESTRING] = &builtin_date_proto_toLocaleString,
-    [BUILTIN_DATE_PROTO_TOLOCALETIMESTRING] = &builtin_date_proto_toLocaleTimeString,
     [BUILTIN_DATE_PROTO_TODATESTRING] = &builtin_date_proto_toDateString,
     [BUILTIN_DATE_PROTO_TOTIMESTRING] = &builtin_date_proto_toTimeString,
     [BUILTIN_DATE_PROTO_TOSTRING] = &builtin_date_proto_toString,
@@ -1439,33 +1390,27 @@ BuiltinFunc[BUILTIN_COUNT] builtin_dispatch_table = {
     [BUILTIN_ENCODE_URI_COMPONENT] = &builtin_encode_uri_component,
     [BUILTIN_ERROR] = &builtin_error,
     [BUILTIN_ERROR_PROTO_TOSTRING] = &builtin_error_prototype_to_string,
-    [BUILTIN_EVAL] = &builtin_eval,
+    // [BUILTIN_EVAL] removed in TinyDuck.
     [BUILTIN_EVAL_ERROR] = &builtin_eval_error,
     [BUILTIN_FUNCTION] = &builtin_function,
     [BUILTIN_FUNCTION_PROTO_APPLY] = &builtin_function_proto_apply,
     [BUILTIN_FUNCTION_PROTO_BIND] = &builtin_function_proto_bind,
     [BUILTIN_FUNCTION_PROTO_CALL] = &builtin_function_proto_call,
-    [BUILTIN_GENERATOR_FUNCTION] = &builtin_generator_function,
-    [BUILTIN_GENERATOR_PROTO_NEXT] = &builtin_generator_proto_next,
-    [BUILTIN_GENERATOR_PROTO_RETURN] = &builtin_generator_proto_return,
-    [BUILTIN_GENERATOR_PROTO_THROW] = &builtin_generator_proto_throw,
+    // BUILTIN_GENERATOR* removed in TinyDuck.
     [BUILTIN_IS_FINITE] = &builtin_is_finite,
     [BUILTIN_IS_NAN] = &builtin_is_nan,
-    [BUILTIN_ITERATOR_PROTO_SYMBOL_ITER] = &builtin_iterator_proto_symbol_iter,
+    // BUILTIN_ITERATOR* removed in TinyDuck.
     [BUILTIN_JSON_PARSE] = &builtin_json_parse,
     [BUILTIN_JSON_STRINGIFY] = &builtin_json_stringify,
     [BUILTIN_MAP] = &builtin_map,
-    [BUILTIN_MAP_ITERATOR_NEXT] = &builtin_map_iterator_next,
+    // BUILTIN_MAP_ITERATOR_NEXT removed in TinyDuck.
     [BUILTIN_MAP_PROTO_CLEAR] = &builtin_map_proto_clear,
     [BUILTIN_MAP_PROTO_DELETE] = &builtin_map_proto_delete,
-    [BUILTIN_MAP_PROTO_ENTRIES] = &builtin_map_proto_entries,
     [BUILTIN_MAP_PROTO_FOREACH] = &builtin_map_proto_forEach,
     [BUILTIN_MAP_PROTO_GET] = &builtin_map_proto_get,
     [BUILTIN_MAP_PROTO_HAS] = &builtin_map_proto_has,
-    [BUILTIN_MAP_PROTO_KEYS] = &builtin_map_proto_keys,
     [BUILTIN_MAP_PROTO_SET] = &builtin_map_proto_set,
-    [BUILTIN_MAP_PROTO_SYMBOL_ITER] = &builtin_map_proto_symbol_iter,
-    [BUILTIN_MAP_PROTO_VALUES] = &builtin_map_proto_values,
+    // BUILTIN_MAP_PROTO_SYMBOL_ITER removed in TinyDuck.
     [BUILTIN_MATH_ABS] = &builtin_math_abs,
     [BUILTIN_MATH_ACOS] = &builtin_math_acos,
     [BUILTIN_MATH_ACOSH] = &builtin_math_acosh,
@@ -1513,29 +1458,29 @@ BuiltinFunc[BUILTIN_COUNT] builtin_dispatch_table = {
     [BUILTIN_NUMBER_PROTO_VALUEOF] = &builtin_number_proto_valueOf,
     [BUILTIN_OBJECT] = &builtin_object,
     [BUILTIN_OBJECT_ASSIGN] = &builtin_object_assign,
-    [BUILTIN_OBJECT_CREATE] = &builtin_object_create,
-    [BUILTIN_OBJECT_DEFINEPROPERTIES] = &builtin_object_defineProperties,
-    [BUILTIN_OBJECT_DEFINEPROPERTY] = &builtin_object_defineProperty,
+    [BUILTIN_OBJECT_CREATE] = null,
+    [BUILTIN_OBJECT_DEFINEPROPERTIES] = null,
+    [BUILTIN_OBJECT_DEFINEPROPERTY] = null,
     [BUILTIN_OBJECT_ENTRIES] = &builtin_object_entries,
-    [BUILTIN_OBJECT_FREEZE] = &builtin_object_freeze,
+    [BUILTIN_OBJECT_FREEZE] = null,
     [BUILTIN_OBJECT_FROMENTRIES] = &builtin_object_fromEntries,
-    [BUILTIN_OBJECT_GETOWNPROPERTYDESCRIPTOR] = &builtin_object_getOwnPropertyDescriptor,
-    [BUILTIN_OBJECT_GETOWNPROPERTYNAMES] = &builtin_object_getOwnPropertyNames,
+    [BUILTIN_OBJECT_GETOWNPROPERTYDESCRIPTOR] = null,
+    [BUILTIN_OBJECT_GETOWNPROPERTYNAMES] = null,
     [BUILTIN_OBJECT_GETPROTOTYPEOF] = &builtin_object_getPrototypeOf,
     [BUILTIN_OBJECT_HASOWN] = &builtin_object_hasOwn,
     [BUILTIN_OBJECT_IS] = &builtin_object_is,
-    [BUILTIN_OBJECT_ISEXTENSIBLE] = &builtin_object_isExtensible,
-    [BUILTIN_OBJECT_ISFROZEN] = &builtin_object_isFrozen,
-    [BUILTIN_OBJECT_ISSEALED] = &builtin_object_isSealed,
+    [BUILTIN_OBJECT_ISEXTENSIBLE] = null,
+    [BUILTIN_OBJECT_ISFROZEN] = null,
+    [BUILTIN_OBJECT_ISSEALED] = null,
     [BUILTIN_OBJECT_KEYS] = &builtin_object_keys,
-    [BUILTIN_OBJECT_PREVENTEXTENSIONS] = &builtin_object_preventExtensions,
+    [BUILTIN_OBJECT_PREVENTEXTENSIONS] = null,
     [BUILTIN_OBJECT_PROTO_HASOWNPROPERTY] = &builtin_object_proto_hasOwnProperty,
     [BUILTIN_OBJECT_PROTO_ISPROTOTYPEOF] = &builtin_object_proto_isPrototypeOf,
     [BUILTIN_OBJECT_PROTO_PROPERTYISENUMERABLE] = &builtin_object_proto_propertyIsEnumerable,
     [BUILTIN_OBJECT_PROTO_TOLOCALESTRING] = &builtin_object_proto_toLocaleString,
     [BUILTIN_OBJECT_PROTO_TOSTRING] = &builtin_object_proto_toString,
     [BUILTIN_OBJECT_PROTO_VALUEOF] = &builtin_object_proto_valueOf,
-    [BUILTIN_OBJECT_SEAL] = &builtin_object_seal,
+    [BUILTIN_OBJECT_SEAL] = null,
     [BUILTIN_OBJECT_SETPROTOTYPEOF] = &builtin_object_setPrototypeOf,
     [BUILTIN_OBJECT_VALUES] = &builtin_object_values,
     [BUILTIN_PARSE_FLOAT] = &builtin_parse_float,
@@ -1569,20 +1514,17 @@ BuiltinFunc[BUILTIN_COUNT] builtin_dispatch_table = {
     [BUILTIN_REGEXP_PROTO_TOSTRING] = &builtin_regexp_proto_toString,
     [BUILTIN_RESET_GLOBALS] = &builtin_reset_globals,
     [BUILTIN_SET] = &builtin_set,
-    [BUILTIN_SET_ITERATOR_NEXT] = &builtin_set_iterator_next,
+    // BUILTIN_SET_ITERATOR_NEXT removed in TinyDuck.
     [BUILTIN_SET_PROTO_ADD] = &builtin_set_proto_add,
     [BUILTIN_SET_PROTO_CLEAR] = &builtin_set_proto_clear,
     [BUILTIN_SET_PROTO_DELETE] = &builtin_set_proto_delete,
-    [BUILTIN_SET_PROTO_ENTRIES] = &builtin_set_proto_entries,
     [BUILTIN_SET_PROTO_FOREACH] = &builtin_set_proto_forEach,
     [BUILTIN_SET_PROTO_HAS] = &builtin_set_proto_has,
-    [BUILTIN_SET_PROTO_KEYS] = &builtin_set_proto_keys,
-    [BUILTIN_SET_PROTO_SYMBOL_ITER] = &builtin_set_proto_symbol_iter,
-    [BUILTIN_SET_PROTO_VALUES] = &builtin_set_proto_values,
+    // BUILTIN_SET_PROTO_SYMBOL_ITER removed in TinyDuck.
     [BUILTIN_STRING] = &builtin_string,
     [BUILTIN_STRING_FROMCHARCODE] = &builtin_string_fromcharcode,
     [BUILTIN_STRING_FROMCODEPOINT] = &builtin_string_fromcodepoint,
-    [BUILTIN_STRING_ITERATOR_NEXT] = &builtin_string_iterator_next,
+    // BUILTIN_STRING_ITERATOR_NEXT removed in TinyDuck.
     [BUILTIN_STRING_PROTO_AT] = &builtin_string_proto_at,
     [BUILTIN_STRING_PROTO_CHARAT] = &builtin_string_proto_charAt,
     [BUILTIN_STRING_PROTO_CHARCODEAT] = &builtin_string_proto_charCodeAt,
@@ -1606,7 +1548,7 @@ BuiltinFunc[BUILTIN_COUNT] builtin_dispatch_table = {
     [BUILTIN_STRING_PROTO_STARTSWITH] = &builtin_string_proto_startsWith,
     [BUILTIN_STRING_PROTO_SUBSTR] = &builtin_string_proto_substr,
     [BUILTIN_STRING_PROTO_SUBSTRING] = &builtin_string_proto_substring,
-    [BUILTIN_STRING_PROTO_SYMBOL_ITER] = &builtin_string_proto_symbol_iter,
+    // BUILTIN_STRING_PROTO_SYMBOL_ITER removed in TinyDuck.
     [BUILTIN_STRING_PROTO_TOLOWERCASE] = &builtin_string_proto_toLowerCase,
     [BUILTIN_STRING_PROTO_TOSTRING] = &builtin_string_proto_toString,
     [BUILTIN_STRING_PROTO_TOUPPERCASE] = &builtin_string_proto_toUpperCase,
@@ -1617,23 +1559,11 @@ BuiltinFunc[BUILTIN_COUNT] builtin_dispatch_table = {
     [BUILTIN_STRING_PROTO_TRIMEND] = &builtin_string_proto_trimEnd,
     [BUILTIN_STRING_PROTO_TRIMSTART] = &builtin_string_proto_trimStart,
     [BUILTIN_STRING_PROTO_VALUEOF] = &builtin_string_proto_valueOf,
-    [BUILTIN_SYMBOL] = &builtin_symbol,
-    [BUILTIN_SYMBOL_FOR] = &builtin_symbol_for,
-    [BUILTIN_SYMBOL_KEYFOR] = &builtin_symbol_keyfor,
-    [BUILTIN_SYMBOL_PROTO_TOSTRING] = &builtin_symbol_proto_toString,
-    [BUILTIN_SYMBOL_PROTO_VALUEOF] = &builtin_symbol_proto_valueOf,
+    // BUILTIN_SYMBOL dispatches removed in TinyDuck (ids 140-142).
     [BUILTIN_SYNTAX_ERROR] = &builtin_syntax_error,
     [BUILTIN_TYPE_ERROR] = &builtin_type_error,
     [BUILTIN_URI_ERROR] = &builtin_uri_error,
-    [BUILTIN_WEAKMAP] = &builtin_weakmap,
-    [BUILTIN_WEAKMAP_PROTO_DELETE] = &builtin_weakmap_proto_delete,
-    [BUILTIN_WEAKMAP_PROTO_GET] = &builtin_weakmap_proto_get,
-    [BUILTIN_WEAKMAP_PROTO_HAS] = &builtin_weakmap_proto_has,
-    [BUILTIN_WEAKMAP_PROTO_SET] = &builtin_weakmap_proto_set,
-    [BUILTIN_WEAKSET] = &builtin_weakset,
-    [BUILTIN_WEAKSET_PROTO_ADD] = &builtin_weakset_proto_add,
-    [BUILTIN_WEAKSET_PROTO_DELETE] = &builtin_weakset_proto_delete,
-    [BUILTIN_WEAKSET_PROTO_HAS] = &builtin_weakset_proto_has,
+    // BUILTIN_WEAKMAP / BUILTIN_WEAKSET dispatch entries removed in TinyDuck.
 };
 
 fn void dispatch_builtin(uint fn_index, BuiltinContext* ctx) {
@@ -1765,9 +1695,6 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
     // Register isFinite
     if (!register_simple_builtin(global_env, heap, "isFinite", BUILTIN_IS_FINITE)) return false;
 
-    // Register eval (ES5 §15.1.2.1)
-    if (!register_simple_builtin(global_env, heap, "eval", BUILTIN_EVAL)) return false;
-
     // Register encodeURI (ES5 §15.1.3.1)
     if (!register_simple_builtin(global_env, heap, "encodeURI", BUILTIN_ENCODE_URI)) return false;
 
@@ -1827,44 +1754,13 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
     // Register Set constructor and prototype
     if (!register_set_constructor(global_env, heap)) return false;
 
-    // Register WeakMap constructor and prototype
-    if (!register_weakmap_constructor(global_env, heap)) return false;
-
-    // Register WeakSet constructor and prototype
-    if (!register_weakset_constructor(global_env, heap)) return false;
-
-    // Register Symbol constructor and prototype
-    if (!register_symbol_constructor(global_env, heap)) return false;
+    // Register WeakMap / WeakSet / Symbol constructors removed in TinyDuck.
 
     // Register Promise constructor and prototype
     if (!register_promise_constructor(global_env, heap)) return false;
 
-    // Register Generator constructor and prototype (GeneratorFunction uses
-    // heap.generator_proto; the GeneratorFunction global is registered
-    // separately as a simple builtin).
-    if (!register_generator_constructor(global_env, heap)) return false;
-
-    // Register %IteratorPrototype% (ES6 §25.1.2) — shared prototype for all
-    // built-in iterators, providing [Symbol.iterator]() that returns `this`.
-    if (!register_iterator_prototype(heap)) return false;
-
     // Wire all prototype chains to Object.prototype
-    if (heap.number_proto != null) heap.number_proto.prototype = heap.object_proto;
-    if (heap.bool_proto != null)   heap.bool_proto.prototype = heap.object_proto;
-    if (heap.string_proto != null) heap.string_proto.prototype = heap.object_proto;
-    if (heap.err_proto != null)    heap.err_proto.prototype = heap.object_proto;
-    if (heap.array_proto != null)  heap.array_proto.prototype = heap.object_proto;
-    if (heap.function_proto != null) heap.function_proto.prototype = heap.object_proto;
-    if (heap.date_proto != null)   heap.date_proto.prototype = heap.object_proto;
-    if (heap.regexp_proto != null) heap.regexp_proto.prototype = heap.object_proto;
-    if (heap.map_proto != null)    heap.map_proto.prototype = heap.object_proto;
-    if (heap.set_proto != null)    heap.set_proto.prototype = heap.object_proto;
-    if (heap.weakmap_proto != null) heap.weakmap_proto.prototype = heap.object_proto;
-    if (heap.weakset_proto != null) heap.weakset_proto.prototype = heap.object_proto;
-    if (heap.symbol_proto != null) heap.symbol_proto.prototype = heap.object_proto;
-    if (heap.promise_proto != null) heap.promise_proto.prototype = heap.object_proto;
-    if (heap.generator_proto != null) heap.generator_proto.prototype = heap.object_proto;
-    if (heap.iterator_proto != null)  heap.iterator_proto.prototype = heap.object_proto;
+    // weakmap_proto / weakset_proto / symbol_proto prototype wiring removed in TinyDuck.
 
     // Wire constructor functions' [[Prototype]] to Function.prototype.
     // Constructor functions (Object, Number, Function, etc.) are HObjects
@@ -1872,13 +1768,12 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
     // so that Function.prototype.isPrototypeOf(Number) and similar work.
     // We look them up in the global environment by name.
     if (heap.function_proto != null) {
-        char[][] ctor_names = { "Object", "Number", "Boolean", "String", "Array", "Function", "Date", "RegExp", "Error", "TypeError", "RangeError", "ReferenceError", "SyntaxError", "EvalError", "URIError", "Map", "Set", "WeakMap", "WeakSet", "Symbol", "Promise", "GeneratorFunction" };
+        char[][] ctor_names = { "Object", "Number", "Boolean", "String", "Array", "Function", "Date", "RegExp", "Error", "TypeError", "RangeError", "ReferenceError", "SyntaxError", "EvalError", "URIError", "Map", "Set", "Promise", "GeneratorFunction" };
         for (int i = 0; i < ctor_names.len; i++) {
             TVal? optv = env::env_get(global_env, builtin_intern_string(heap, ctor_names[i]));
             if (try tv = optv) {
                 if (tv.is_object() && tv.get_heapptr() != null) {
                     HObject* ctor = (HObject*)tv.get_heapptr();
-                    ctor.prototype = heap.function_proto;
                 }
             }
         }

@@ -58,9 +58,9 @@ assert(MathUtil.add(1, 2) === 3, 'static method');
 // Test 6: typeof class
 assert(typeof Point === 'function', 'typeof class is function');
 
-// Test 7: class has prototype
-assert(Point.prototype !== undefined, 'class has prototype');
-assert(Point.prototype.constructor === Point, 'prototype.constructor === class');
+// Test 7: no prototype chain (TinyDuck: flat class tables, no .prototype lookup)
+assert(Point.prototype === undefined, 'class has no prototype');
+assert(Greeter.prototype === undefined, 'class has no prototype');
 
 // Test 8: default constructor
 class Empty {}
@@ -84,7 +84,7 @@ assert(c1.inc() === 1, 'counter 1 first inc');
 assert(c1.inc() === 2, 'counter 1 second inc');
 assert(c2.inc() === 1, 'counter 2 first inc');
 
-// Test 10: class with extends (prototype chain)
+// Test 10: class with extends (super calls walk the class table, not a proto chain)
 class Animal {
     speak() {
         return 'animal';

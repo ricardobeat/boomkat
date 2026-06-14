@@ -1,8 +1,5 @@
-duktape
 *.dSYM
 out/
-quickjs/
 .antigravitycli
 .worktrees/
 worktrees/
-ctest2

@@ -18,7 +18,6 @@ fn void builtin_array_of(BuiltinContext* ctx) {
     HObject*? arr_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
     if (catch err = arr_raw) { ctx.result.set_undefined(); return; }
     HObject* arr = arr_raw;
-    arr.prototype = ctx.heap.array_proto;
 
     uint len = (uint)ctx.argc;
     HString* len_key = builtin_intern_string(ctx.heap, "length");
@@ -187,7 +186,6 @@ fn void builtin_array_proto_flat(BuiltinContext* ctx) {
     if (obj == null) {
         HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
         if (try err = err_raw) {
-            err.prototype = ctx.heap.type_err_proto;
             HString* msg = builtin_intern_string(ctx.heap, "Array.prototype.flat requires 'this' to be an object");
             TVal msg_tv; msg_tv.set_string(msg);
             HString* msg_key = builtin_intern_string(ctx.heap, "message");
@@ -214,7 +212,6 @@ fn void builtin_array_proto_flat(BuiltinContext* ctx) {
         ctx.result.set_undefined(); return;
     }
     HObject* result = new_arr;
-    result.prototype = ctx.heap.array_proto;
 
     uint n = flatten_into(result, obj, len, 0, depth_num, ctx.heap);
     array_set_length(result, n, ctx.heap);
@@ -228,7 +225,6 @@ fn void builtin_array_proto_flatMap(BuiltinContext* ctx) {
     if (obj == null) {
         HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
         if (try err = err_raw) {
-            err.prototype = ctx.heap.type_err_proto;
             HString* msg = builtin_intern_string(ctx.heap, "Array.prototype.flatMap requires 'this' to be an object");
             TVal msg_tv; msg_tv.set_string(msg);
             HString* msg_key = builtin_intern_string(ctx.heap, "message");
@@ -245,7 +241,6 @@ fn void builtin_array_proto_flatMap(BuiltinContext* ctx) {
         if (!arg.is_object() || arg.get_heapptr() == null || !((HObject*)arg.get_heapptr()).is_callable()) {
             HObject*? err_raw2 = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
             if (try err2 = err_raw2) {
-                err2.prototype = ctx.heap.type_err_proto;
                 HString* msg2 = builtin_intern_string(ctx.heap, "Array.prototype.flatMap callback is not callable");
                 TVal msg_tv2; msg_tv2.set_string(msg2);
                 HString* msg_key2 = builtin_intern_string(ctx.heap, "message");
@@ -265,7 +260,6 @@ fn void builtin_array_proto_flatMap(BuiltinContext* ctx) {
         ctx.result.set_undefined(); return;
     }
     HObject* result = new_arr;
-    result.prototype = ctx.heap.array_proto;
 
     uint n = flatten_into(result, obj, len, 0, 1.0, ctx.heap);
     array_set_length(result, n, ctx.heap);
@@ -286,7 +280,6 @@ fn void builtin_array(BuiltinContext* ctx) {
         return;
     }
     HObject* arr = arr_raw;
-    arr.prototype = ctx.heap.array_proto;
 
     HString* len_key = builtin_intern_string(ctx.heap, "length");
 
@@ -366,7 +359,6 @@ fn HObject* array_proto_get_this(BuiltinContext* ctx) {
     // TypeError: Array.prototype method called on non-object
     HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
     if (try err = err_raw) {
-        err.prototype = ctx.heap.type_err_proto;
         HString* msg_str = builtin_intern_string(ctx.heap,
             "Array.prototype method called on incompatible value");
         if (msg_str != null) {
@@ -389,26 +381,10 @@ fn uint array_get_length(HObject* obj, Heap* heap) {
     if (obj.get_class() == ARRAY) {
         return *obj.array_len_ptr();
     }
-    // ARGUMENTS and other array-likes: read from prop table.
-    if (obj.get_class() == ARGUMENTS) {
-        HString* len_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
-        if (len_key == null) return 0;
-        TVal? len_val = obj.get_prop(len_key);
-        if (try v = len_val) {
-            if (v.is_fastint()) return (uint)(long)v.get_fastint();
-            if (v.is_number()) return (uint)(long)v.get_number();
-        }
-        // Fallback: might be inherited
-        len_val = obj.get_prop_proto(len_key);
-        if (try v = len_val) {
-            if (v.is_fastint()) return (uint)(long)v.get_fastint();
-            if (v.is_number()) return (uint)(long)v.get_number();
-        }
-        return 0;
-    }
+    // Other array-likes: read from prop table.
     HString* len_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
     if (len_key == null) return 0;
-    TVal? len_val = obj.get_prop_proto(len_key);
+    TVal? len_val = obj.get_prop(len_key);
     if (try v = len_val) {
         if (v.is_fastint()) return (uint)(long)v.get_fastint();
         if (v.is_number()) return (uint)(long)v.get_number();
@@ -433,19 +409,6 @@ fn void array_set_length(HObject* obj, uint len_val, Heap* heap) {
         }
         return;
     }
-    // ARGUMENTS: update prop table directly.
-    if (obj.get_class() == ARGUMENTS) {
-        HString* len_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
-        if (len_key != null) {
-            int idx = obj.find_prop_idx(len_key);
-            if (idx >= 0) {
-                TVal tv;
-                tv.set_fastint((long)len_val);
-                obj.prop_values()[idx].data.value = tv;
-                return;
-            }
-        }
-    }
     HString* len_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
     if (len_key == null) return;
     TVal tv;
@@ -469,7 +432,7 @@ fn TVal array_get_elem(HObject* obj, uint idx, Heap* heap) {
     if (try v = result) {
         return v;
     }
-    TVal? result2 = obj.get_prop_proto(key);
+    TVal? result2 = obj.get_prop(key);
     if (try v2 = result2) {
         return v2;
     }
@@ -817,7 +780,6 @@ fn void builtin_array_proto_slice(BuiltinContext* ctx) {
         return;
     }
     HObject* result_arr = new_arr;
-    result_arr.prototype = ctx.heap.array_proto;
 
     uint n = 0;
     for (uint i = k; i < final_val; i++) {
@@ -854,7 +816,6 @@ fn void builtin_array_proto_sort(BuiltinContext* ctx) {
                 !((HObject*)arg0.get_heapptr()).is_callable()) {
                 HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
                 if (try err = err_raw) {
-                    err.prototype = ctx.heap.type_err_proto;
                     HString* msg_str = builtin_intern_string(ctx.heap,
                         "Array.prototype.sort: comparefn is not a function or undefined");
                     if (msg_str != null) {
@@ -999,7 +960,6 @@ fn void builtin_array_proto_splice(BuiltinContext* ctx) {
         return;
     }
     HObject* result = result_raw;
-    result.prototype = ctx.heap.array_proto;
 
     for (uint i = 0; i < actual_delete_count; i++) {
         TVal elem = array_get_elem(obj, actual_start + i, ctx.heap);
@@ -1055,7 +1015,6 @@ fn void builtin_array_proto_toReversed(BuiltinContext* ctx) {
         if (this_val.is_undefined() || this_val.is_null()) {
             HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
             if (try err = err_raw) {
-                err.prototype = ctx.heap.type_err_proto;
                 HString* msg = builtin_intern_string(ctx.heap, "Array.prototype.toReversed called on null or undefined");
                 TVal msg_tv; msg_tv.set_string(msg);
                 HString* msg_key = builtin_intern_string(ctx.heap, "message");
@@ -1074,7 +1033,6 @@ fn void builtin_array_proto_toReversed(BuiltinContext* ctx) {
         ctx.result.set_undefined(); return;
     }
     HObject* result = new_arr;
-    result.prototype = ctx.heap.array_proto;
 
     for (uint i = 0; i < len; i++) {
         TVal elem = array_get_elem(obj, len - 1 - i, ctx.heap);
@@ -1095,7 +1053,6 @@ fn void builtin_array_proto_toSorted(BuiltinContext* ctx) {
         if (this_val.is_undefined() || this_val.is_null()) {
             HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
             if (try err = err_raw) {
-                err.prototype = ctx.heap.type_err_proto;
                 HString* msg = builtin_intern_string(ctx.heap, "Array.prototype.toSorted called on null or undefined");
                 TVal msg_tv; msg_tv.set_string(msg);
                 HString* msg_key = builtin_intern_string(ctx.heap, "message");
@@ -1115,7 +1072,6 @@ fn void builtin_array_proto_toSorted(BuiltinContext* ctx) {
         ctx.result.set_undefined(); return;
     }
     HObject* result = new_arr;
-    result.prototype = ctx.heap.array_proto;
 
     for (uint i = 0; i < len; i++) {
         TVal elem = array_get_elem(obj, i, ctx.heap);
@@ -1170,7 +1126,6 @@ fn void builtin_array_proto_toSpliced(BuiltinContext* ctx) {
         if (this_val.is_undefined() || this_val.is_null()) {
             HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
             if (try err = err_raw) {
-                err.prototype = ctx.heap.type_err_proto;
                 HString* msg = builtin_intern_string(ctx.heap, "Array.prototype.toSpliced called on null or undefined");
                 TVal msg_tv; msg_tv.set_string(msg);
                 HString* msg_key = builtin_intern_string(ctx.heap, "message");
@@ -1235,7 +1190,6 @@ fn void builtin_array_proto_toSpliced(BuiltinContext* ctx) {
         ctx.result.set_undefined(); return;
     }
     HObject* result = new_arr;
-    result.prototype = ctx.heap.array_proto;
 
     uint n = 0;
     // Copy prefix [0, actual_start)
@@ -1271,7 +1225,6 @@ fn void builtin_array_proto_with(BuiltinContext* ctx) {
         if (this_val.is_undefined() || this_val.is_null()) {
             HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
             if (try err = err_raw) {
-                err.prototype = ctx.heap.type_err_proto;
                 HString* msg = builtin_intern_string(ctx.heap, "Array.prototype.with called on null or undefined");
                 TVal msg_tv; msg_tv.set_string(msg);
                 HString* msg_key = builtin_intern_string(ctx.heap, "message");
@@ -1309,7 +1262,6 @@ fn void builtin_array_proto_with(BuiltinContext* ctx) {
     if (actual_index >= len) {
         HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
         if (try err = err_raw) {
-            err.prototype = ctx.heap.range_err_proto;
             HString* msg = builtin_intern_string(ctx.heap, "Invalid array index");
             TVal msg_tv; msg_tv.set_string(msg);
             HString* msg_key = builtin_intern_string(ctx.heap, "message");
@@ -1334,7 +1286,6 @@ fn void builtin_array_proto_with(BuiltinContext* ctx) {
         ctx.result.set_undefined(); return;
     }
     HObject* result = new_arr;
-    result.prototype = ctx.heap.array_proto;
 
     for (uint i = 0; i < len; i++) {
         if (i == actual_index) {
@@ -1485,7 +1436,6 @@ fn void builtin_array_proto_concat(BuiltinContext* ctx) {
         return;
     }
     HObject* result = new_arr;
-    result.prototype = ctx.heap.array_proto;
 
     uint n = 0;
 
@@ -1550,7 +1500,6 @@ fn void builtin_array_from(BuiltinContext* ctx) {
             if (!callable) {
                 HObject*? err_raw = heap.alloc_object(hobject::ObjClass.ERROR);
                 if (try err = err_raw) {
-                    err.prototype = heap.type_err_proto;
                     HString* msg_str = builtin_intern_string(heap, "The second argument to Array.from is not callable");
                     if (msg_str != null) {
                         TVal msg_val;
@@ -1574,133 +1523,12 @@ fn void builtin_array_from(BuiltinContext* ctx) {
     }
 
     // Step 3: Try iterable path — get @@iterator from items
-    HString* iter_sym = ensure_iterator_symbol(heap);
-    bool use_iter = false;
-    TVal iterator;
-    TVal iterable = items;
-
-    if (iter_sym != null) {
-        // GetMethod(items, @@iterator) — ToObject if needed for property access
-        HObject* items_obj = null;
-        if (items.is_object() && items.get_heapptr() != null) {
-            items_obj = (HObject*)items.get_heapptr();
-        } else if (!items.is_undefined() && !items.is_null()) {
-            // Wrap primitive in temporary object to look up @@iterator
-            HObject*? wrapped = heap.alloc_object(hobject::ObjClass.OBJECT);
-            if (try w = wrapped) {
-                items_obj = w;
-                // For strings, set the wrapped primitive value
-                if (items.is_string()) {
-                    (*items_obj.extra_ptr()).prim.primitive_value = items;
-                }
-                HString* proto_key = (HString*)heap.strs[heap::BuiltinStr.PROTOTYPE];
-                if (proto_key != null && heap.string_proto != null) {
-                    TVal proto_tv; proto_tv.set_object(heap.string_proto);
-                    PropFlags pf; pf.writable = false; pf.enumerable = false; pf.configurable = false; pf.is_accessor = false;
-                    items_obj.put_prop(proto_key, proto_tv, pf);
-                }
-            }
-        }
-
-        if (items_obj != null) {
-            TVal? iter_method_opt = items_obj.get_prop_proto(iter_sym);
-            if (try iter_method = iter_method_opt) {
-                bool callable = false;
-                if (iter_method.is_lightfunc()) {
-                    callable = true;
-                } else if (iter_method.is_object() && iter_method.get_heapptr() != null) {
-                    HObject* fn_hobj = (HObject*)iter_method.get_heapptr();
-                    callable = fn_hobj.is_callable();
-                }
-                if (callable && heap.call_fn != null && ctx.vm != null) {
-                    iterator = heap.call_fn(ctx.vm, iter_method, null, 0, items);
-                    use_iter = true;
-                }
-            }
-        }
-    }
-
-    if (use_iter) {
-        // === Iterable path ===
-        HObject*? arr_raw = heap.alloc_object(hobject::ObjClass.ARRAY);
-        if (catch err = arr_raw) { ctx.result.set_undefined(); return; }
-        HObject* arr = arr_raw;
-        arr.prototype = heap.array_proto;
-
-        HString* next_key = builtin_intern_string(heap, "next");
-        HString* done_key = builtin_intern_string(heap, "done");
-        HString* value_key = builtin_intern_string(heap, "value");
-
-        uint k = 0;
-        while (heap.call_fn != null && ctx.vm != null) {
-            if (!iterator.is_object() || iterator.get_heapptr() == null) break;
-            HObject* iter_obj = (HObject*)iterator.get_heapptr();
-
-            TVal? next_method_opt = iter_obj.get_prop_proto(next_key);
-            TVal next_method;
-            if (try nm = next_method_opt) {
-                next_method = nm;
-            } else { break; }
-
-            bool callable = false;
-            if (next_method.is_lightfunc()) {
-                callable = true;
-            } else if (next_method.is_object() && next_method.get_heapptr() != null) {
-                callable = ((HObject*)next_method.get_heapptr()).is_callable();
-            }
-            if (!callable) break;
-
-            TVal result = heap.call_fn(ctx.vm, next_method, null, 0, iterator);
-            if (!result.is_object() || result.get_heapptr() == null) break;
-
-            HObject* result_obj = (HObject*)result.get_heapptr();
-            TVal? done_opt = result_obj.get_prop_proto(done_key);
-            bool done = false;
-            if (try dv = done_opt) {
-                done = builtin_to_boolean(&dv);
-            }
-            if (done) break;
-
-            TVal? value_opt = result_obj.get_prop_proto(value_key);
-            TVal next_value;
-            if (try vv = value_opt) {
-                next_value = vv;
-            } else { break; }
-
-            // Apply mapfn if mapping
-            TVal final_value = next_value;
-            if (mapping) {
-                TVal[2] map_args;
-                map_args[0] = next_value;
-                TVal k_tv; k_tv.set_fastint((long)k);
-                map_args[1] = k_tv;
-                final_value = heap.call_fn(ctx.vm, mapfn, &map_args[0], 2, this_arg);
-            }
-
-            // arr[k] = final_value
-            HString* pk = heap.int_to_hstring((long)k);
-            if (pk != null) {
-                arr.put_prop(pk, final_value, hobject::PROP_FLAGS_WEC);
-            }
-            k++;
-        }
-
-        HString* len_key = builtin_intern_string(heap, "length");
-        if (len_key != null) {
-            TVal len_tv; len_tv.set_fastint((long)k);
-            arr.put_prop(len_key, len_tv, hobject::PROP_FLAGS_WEC);
-        }
-
-        ctx.result.set_object(arr);
-        return;
-    }
 
     // === Array-like path ===
     // Step: items must not be null or undefined
     if (items.is_undefined() || items.is_null()) {
         HObject*? err_raw = heap.alloc_object(hobject::ObjClass.ERROR);
         if (try err = err_raw) {
-            err.prototype = heap.type_err_proto;
             HString* msg_str = builtin_intern_string(heap, "Cannot convert undefined or null to object");
             if (msg_str != null) {
                 TVal msg_val;
@@ -1736,7 +1564,7 @@ fn void builtin_array_from(BuiltinContext* ctx) {
     if (is_string_prim) {
         len = str_val.char_length();
     } else if (len_key != null) {
-        TVal? len_opt = array_like.get_prop_proto(len_key);
+        TVal? len_opt = array_like.get_prop(len_key);
         if (try lv = len_opt) {
             double len_d = builtin_to_number_getdouble(ctx, &lv);
             if (len_d <= 0) {
@@ -1755,7 +1583,6 @@ fn void builtin_array_from(BuiltinContext* ctx) {
     HObject*? arr_raw = heap.alloc_object(hobject::ObjClass.ARRAY);
     if (catch err = arr_raw) { ctx.result.set_undefined(); return; }
     HObject* arr = arr_raw;
-    arr.prototype = heap.array_proto;
 
     for (uint k = 0; k < len; k++) {
         HString* pk = heap.int_to_hstring((long)k);
@@ -1774,7 +1601,7 @@ fn void builtin_array_from(BuiltinContext* ctx) {
                 if (ch_str != null) k_value.set_string(ch_str);
             }
         } else if (pk != null) {
-            TVal? elem_opt = array_like.get_prop_proto(pk);
+            TVal? elem_opt = array_like.get_prop(pk);
             if (try elem = elem_opt) {
                 k_value = elem;
             }
@@ -1841,7 +1668,6 @@ fn HObject*? arr_to_object(TVal val, Heap* heap) {
     if (val.is_boolean()) {
         HObject*? obj_raw = heap.alloc_object(hobject::ObjClass.BOOLEAN);
         if (try obj = obj_raw) {
-            obj.prototype = heap.bool_proto;
             (*obj.extra_ptr()).prim.primitive_value.set_boolean(val.get_boolean());
             return obj;
         }
@@ -1851,7 +1677,6 @@ fn HObject*? arr_to_object(TVal val, Heap* heap) {
     if (val.is_number() || val.is_fastint()) {
         HObject*? obj_raw = heap.alloc_object(hobject::ObjClass.NUMBER);
         if (try obj = obj_raw) {
-            obj.prototype = heap.number_proto;
             (*obj.extra_ptr()).prim.primitive_value = val;
             return obj;
         }
@@ -1862,7 +1687,6 @@ fn HObject*? arr_to_object(TVal val, Heap* heap) {
         HObject*? obj_raw = heap.alloc_object(hobject::ObjClass.STRING);
         if (try obj = obj_raw) {
             obj.flags.exotic_stringobj = true;
-            obj.prototype = heap.string_proto;
             HString* prim_str = (HString*)val.get_heapptr();
             (*obj.extra_ptr()).prim.primitive_value.set_string(prim_str);
             HString* len_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
@@ -1882,7 +1706,6 @@ fn HObject*? arr_to_object(TVal val, Heap* heap) {
 fn void arr_throw_type_error(BuiltinContext* ctx, char[] msg) {
     HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
     if (try err = err_raw) {
-        err.prototype = ctx.heap.type_err_proto;
         HString* msg_str = builtin_intern_string(ctx.heap, msg);
         if (msg_str != null) {
             TVal msg_val;
@@ -1904,7 +1727,7 @@ fn bool arr_has_prop(HObject* obj, uint key, Heap* heap) {
     }
     HString* pk = heap.int_to_hstring((long)key);
     if (pk == null) return false;
-    TVal? found = obj.get_prop_proto(pk);
+    TVal? found = obj.get_prop(pk);
     return @ok(found);
 }
 
@@ -1920,7 +1743,7 @@ fn bool arr_get_elem(HObject* obj, uint key, Heap* heap, TVal* out) {
     }
     HString* pk = heap.int_to_hstring((long)key);
     if (pk == null) return false;
-    if (try v = obj.get_prop_proto(pk)) {
+    if (try v = obj.get_prop(pk)) {
         *out = v;
         return true;
     }
@@ -2001,7 +1824,6 @@ fn void builtin_array_proto_map(BuiltinContext* ctx) {
     HObject*? arr_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
     if (catch err = arr_raw) { ctx.result.set_undefined(); ctx.should_throw = true; return; }
     HObject* arr = arr_raw;
-    arr.prototype = ctx.heap.array_proto;
     uint aj = 0;
     for (uint k = 0; k < len; k++) {
         if (arr_has_prop(o, k, ctx.heap)) {
@@ -2042,7 +1864,6 @@ fn void builtin_array_proto_filter(BuiltinContext* ctx) {
     HObject*? arr_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
     if (catch err = arr_raw) { ctx.result.set_undefined(); ctx.should_throw = true; return; }
     HObject* arr = arr_raw;
-    arr.prototype = ctx.heap.array_proto;
     uint aj = 0;
     for (uint k = 0; k < len; k++) {
         if (arr_has_prop(o, k, ctx.heap)) {
@@ -2321,7 +2142,6 @@ fn bool register_array_constructor(EnvRecord* global_env, Heap* heap) {
     HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.ARRAY);
     if (catch err = proto_raw) return false;
     HObject* proto = proto_raw;
-    proto.prototype = null;  // Will be Object.prototype in later phases
     heap.array_proto = proto;
 
     // Create Array constructor as a proper HObject (not LIGHTFUNC)
@@ -2376,11 +2196,6 @@ fn bool register_array_constructor(EnvRecord* global_env, Heap* heap) {
     if (!register_array_proto_method(proto, heap, "toSpliced", BUILTIN_ARRAY_PROTO_TOSPLICED)) return false;
     if (!register_array_proto_method(proto, heap, "with",      BUILTIN_ARRAY_PROTO_WITH))      return false;
 
-// Array.prototype.keys/values/entries (ES2015 §22.1.3.x)
-    if (!register_array_proto_method(proto, heap, "keys",      BUILTIN_ARRAY_PROTO_KEYS))      return false;
-    if (!register_array_proto_method(proto, heap, "values",    BUILTIN_ARRAY_PROTO_VALUES))    return false;
-    if (!register_array_proto_method(proto, heap, "entries",   BUILTIN_ARRAY_PROTO_ENTRIES))   return false;
-
     // Register callback-based Array.prototype methods as native builtins.
     // Uses heap.call_fn for proper this-binding via Function.prototype.call semantics.
     if (!register_array_proto_method(proto, heap, "forEach",   BUILTIN_ARRAY_PROTO_FOREACH))   return false;
@@ -2390,37 +2205,6 @@ fn bool register_array_constructor(EnvRecord* global_env, Heap* heap) {
     if (!register_array_proto_method(proto, heap, "some",       BUILTIN_ARRAY_PROTO_SOME))       return false;
     if (!register_array_proto_method(proto, heap, "reduce",     BUILTIN_ARRAY_PROTO_REDUCE))     return false;
     if (!register_array_proto_method(proto, heap, "reduceRight",BUILTIN_ARRAY_PROTO_REDUCERIGHT)) return false;
-
-    // Register Array.prototype[@@iterator] (ES6 §22.1.3.30)
-    {
-        HString* iter_sym = ensure_iterator_symbol(heap);
-        if (iter_sym != null) {
-            HObject*? fn_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
-            if (catch err = fn_raw) return false;
-            HObject* fn_obj = fn_raw;
-            (*fn_obj.extra_ptr()).func.builtin_fn_index = (int)BUILTIN_ARRAY_PROTO_SYMBOL_ITER;
-            fn_obj.flags.callable = true;
-            fn_obj.prototype = heap.function_proto;
-            // Set .name
-            HString* name_key = builtin_intern_string(heap, "name");
-            HString* name_val = builtin_intern_string(heap, "[Symbol.iterator]");
-            if (name_key != null && name_val != null) {
-                TVal name_tv;
-                name_tv.set_string(name_val);
-                fn_obj.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC);
-            }
-            // Set .length = 0
-            HString* len_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
-            if (len_key != null) {
-                TVal len_tv;
-                len_tv.set_fastint(0);
-                fn_obj.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NWC);
-            }
-            TVal iter_tv;
-            iter_tv.set_object(fn_obj);
-            proto.put_prop(iter_sym, iter_tv, hobject::PROP_FLAGS_NWC);
-        }
-    }
 
     // Add Array.isArray (ES6 §22.1.2.2) as static method on the constructor
     HString* isarray_key = builtin_intern_string(heap, "isArray");

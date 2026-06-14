@@ -78,7 +78,6 @@ fn HObject* check_map(BuiltinContext* ctx) {
     // TypeError
     HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
     if (try err = err_raw) {
-        err.prototype = ctx.heap.type_err_proto;
         HString* msg_str = builtin_intern_string(ctx.heap,
             "Map.prototype method called on incompatible value");
         if (msg_str != null) {
@@ -113,7 +112,6 @@ fn void builtin_map(BuiltinContext* ctx) {
         return;
     }
     HObject* map = map_raw;
-    map.prototype = ctx.heap.map_proto;
 
     // Set size property
     HString* size_key = builtin_intern_string(ctx.heap, "size");
@@ -272,126 +270,6 @@ fn void builtin_map_proto_clear(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Map.prototype.keys() — ES6 §23.1.3.8
-// Returns a MapIterator with kind=1 (keys).
-// ============================================================================
-fn void builtin_map_proto_keys(BuiltinContext* ctx) {
-    create_map_iterator(ctx, 1);
-}
-
-// ============================================================================
-// Map.prototype.data.values() — ES6 §23.1.3.11
-// Returns a MapIterator with kind=0 (values).
-// ============================================================================
-fn void builtin_map_proto_values(BuiltinContext* ctx) {
-    create_map_iterator(ctx, 0);
-}
-
-// ============================================================================
-// Map.prototype.entries() — ES6 §23.1.3.4
-// Returns a MapIterator with kind=2 (entries).
-// ============================================================================
-fn void builtin_map_proto_entries(BuiltinContext* ctx) {
-    create_map_iterator(ctx, 2);
-}
-
-// ============================================================================
-// Map.prototype[@@iterator] — ES6 §23.1.3.10
-// Same as entries().
-// ============================================================================
-fn void builtin_map_proto_symbol_iter(BuiltinContext* ctx) {
-    create_map_iterator(ctx, 2);
-}
-
-// ============================================================================
-// MapIterator.prototype.next() — ES6 §23.1.5.2.1
-// ============================================================================
-fn void builtin_map_iterator_next(BuiltinContext* ctx) {
-    TVal this_val = ctx.this_val;
-    Heap* heap = ctx.heap;
-
-    if (!this_val.is_object()) {
-        ctx.should_throw = true;
-        ctx.result.set_undefined();
-        return;
-    }
-
-    HObject* iter = (HObject*)this_val.get_heapptr();
-    if (iter.get_class() != hobject::ObjClass.MAP_ITERATOR) {
-        ctx.should_throw = true;
-        ctx.result.set_undefined();
-        return;
-    }
-
-    HObject* target = (*iter.extra_ptr()).iter.target;
-    if (target == null) {
-        ctx.result.set_undefined();
-        return;
-    }
-
-    uint idx = (*iter.extra_ptr()).iter.index * 2;  // Map entries are [k0,v0,k1,v1,...]
-    uint kind = (*iter.extra_ptr()).iter.kind;
-
-    bool done = false;
-    TVal value;
-    value.set_undefined();
-
-    if (idx < target.array_used) {
-        TVal* entries = target.array_part();
-        if (entries != null) {
-            if (kind == 1) {
-                // keys: return key at idx
-                value = entries[idx];
-            } else if (kind == 0) {
-                // values: return value at idx+1
-                value = entries[idx + 1];
-            } else {
-                // entries: return [key, value]
-                HObject*? pair_raw = heap.alloc_object(hobject::ObjClass.ARRAY);
-                if (try pair = pair_raw) {
-                    pair.prototype = heap.array_proto;
-                    pair.set_array_idx(0, entries[idx]);
-                    pair.set_array_idx(1, entries[idx + 1]);
-                    pair.array_used = 2;
-                    HString* len_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
-                    if (len_key != null) {
-                        TVal len_tv;
-                        len_tv.set_fastint(2);
-                        pair.put_prop(len_key, len_tv, hobject::PROP_FLAGS_WEC);
-                    }
-                    value.set_object(pair);
-                }
-            }
-            (*iter.extra_ptr()).iter.index += 1;
-        } else {
-            done = true;
-        }
-    } else {
-        done = true;
-    }
-
-    if (done) {
-        value.set_undefined();
-    }
-
-    // Create result object: {value, done}
-    HObject*? result_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
-    if (catch err = result_raw) { ctx.result.set_undefined(); return; }
-    HObject* result = result_raw;
-    result.prototype = null;
-
-    HString* value_key = (HString*)heap.strs[heap::BuiltinStr.VALUE];
-    result.put_prop(value_key, value, hobject::PROP_FLAGS_WEC);
-
-    HString* done_key = (HString*)heap.strs[heap::BuiltinStr.DONE];
-    TVal done_tv;
-    done_tv.set_boolean(done);
-    result.put_prop(done_key, done_tv, hobject::PROP_FLAGS_WEC);
-
-    ctx.result.set_object(result);
-}
-
-// ============================================================================
 // Map.prototype.forEach(callbackfn[, thisArg]) — ES6 §23.1.3.5
 // ============================================================================
 fn void builtin_map_proto_forEach(BuiltinContext* ctx) {
@@ -402,7 +280,6 @@ fn void builtin_map_proto_forEach(BuiltinContext* ctx) {
         // Missing callback throws TypeError
         HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
         if (try err = err_raw) {
-            err.prototype = ctx.heap.type_err_proto;
             HString* msg_str = builtin_intern_string(ctx.heap, "missing argument 0 when calling function forEach");
             if (msg_str != null) {
                 TVal msg_val;
@@ -421,7 +298,6 @@ fn void builtin_map_proto_forEach(BuiltinContext* ctx) {
     if (!(callback.is_object() && callback.get_heapptr() != null && ((HObject*)callback.get_heapptr()).flags.callable)) {
         HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
         if (try err = err_raw) {
-            err.prototype = ctx.heap.type_err_proto;
             HString* msg_str = builtin_intern_string(ctx.heap, "object is not a function");
             if (msg_str != null) {
                 TVal msg_val;
@@ -444,7 +320,6 @@ fn bool register_map_constructor(EnvRecord* global_env, Heap* heap) {
     HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.MAP);
     if (catch err = proto_raw) return false;
     HObject* proto = proto_raw;
-    proto.prototype = null;
     heap.map_proto = proto;
 
     // Add .set(key, value) method
@@ -465,42 +340,6 @@ fn bool register_map_constructor(EnvRecord* global_env, Heap* heap) {
     if (!register_string_proto_method(proto, heap, "entries", BUILTIN_MAP_PROTO_ENTRIES)) return false;
     // Add .forEach() method
     if (!register_string_proto_method(proto, heap, "forEach", BUILTIN_MAP_PROTO_FOREACH)) return false;
-    // Add [Symbol.iterator] = entries
-    HString* iter_sym = ensure_iterator_symbol(heap);
-    if (iter_sym != null) {
-        HObject*? fn_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
-        if (catch err = fn_raw) return false;
-        HObject* fn_obj = fn_raw;
-        (*fn_obj.extra_ptr()).func.builtin_fn_index = (int)BUILTIN_MAP_PROTO_SYMBOL_ITER;
-        fn_obj.flags.callable = true;
-        fn_obj.prototype = heap.function_proto;
-        // Set .name
-        HString* name_key = builtin_intern_string(heap, "name");
-        HString* name_val = builtin_intern_string(heap, "[Symbol.iterator]");
-        if (name_key != null && name_val != null) {
-            TVal name_tv;
-            name_tv.set_string(name_val);
-            fn_obj.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC);
-        }
-        // Set .length = 0
-        HString* len_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
-        if (len_key != null) {
-            TVal len_tv;
-            len_tv.set_fastint(0);
-            fn_obj.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NWC);
-        }
-        TVal iter_tv;
-        iter_tv.set_object(fn_obj);
-        proto.put_prop(iter_sym, iter_tv, hobject::PROP_FLAGS_NWC);
-    }
-
-    // Set @@toStringTag on Map.prototype
-    HString* tag_key = ensure_tostringtag_symbol(heap);
-    if (tag_key != null) {
-        TVal tag_tv;
-        tag_tv.set_string(builtin_intern_string(heap, "Map"));
-        proto.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC);
-    }
 
     // Add .size property (will be updated on each mutation)
     HString* size_key = builtin_intern_string(heap, "size");

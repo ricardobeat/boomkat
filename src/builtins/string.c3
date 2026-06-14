@@ -49,7 +49,6 @@ fn void builtin_string(BuiltinContext* ctx) {
         }
         HObject* obj = obj_raw;
         obj.flags.exotic_stringobj = true;
-        obj.prototype = ctx.heap.string_proto;
         (*obj.extra_ptr()).prim.primitive_value.set_string(s);
         // Set .length own property (ES5 §15.5.5.1) — non-writable, non-enumerable, non-configurable
         HString* len_key = (HString*)ctx.heap.strs[heap::BuiltinStr.LENGTH];
@@ -141,7 +140,6 @@ fn void builtin_string_fromcodepoint(BuiltinContext* ctx) {
             // Throw RangeError
             HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
             if (try err = err_raw) {
-                err.prototype = ctx.heap.range_err_proto;
                 HString* msg = builtin_intern_string(ctx.heap, "Invalid code point value");
                 TVal msg_tv; msg_tv.set_string(msg);
                 HString* msg_key = builtin_intern_string(ctx.heap, "message");
@@ -228,7 +226,6 @@ fn HString* string_proto_get_this(BuiltinContext* ctx) {
     // TypeError: String.prototype method called on incompatible value
     HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
     if (try err = err_raw) {
-        err.prototype = ctx.heap.type_err_proto;
         HString* msg_str = builtin_intern_string(ctx.heap, "String.prototype method called on incompatible value");
         TVal msg_val;
         msg_val.set_string(msg_str);
@@ -667,7 +664,6 @@ fn void builtin_string_proto_split(BuiltinContext* ctx) {
         return;
     }
     HObject* arr = arr_raw;
-    arr.prototype = ctx.heap.array_proto;
 
     // If separator is undefined, return [string]
     if (ctx.argc == 0 || ctx.regs[ctx.base_reg].is_undefined()) {
@@ -1273,7 +1269,6 @@ fn void builtin_string_proto_replaceAll(BuiltinContext* ctx) {
         if (!global_flag) {
             HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
             if (try err = err_raw) {
-                err.prototype = ctx.heap.type_err_proto;
                 HString* msg_str = builtin_intern_string(ctx.heap, "String.prototype.replaceAll called with a non-global regular expression");
                 if (msg_str != null) {
                     TVal msg_val;
@@ -1592,7 +1587,6 @@ fn void builtin_string_proto_repeat(BuiltinContext* ctx) {
         // Throw RangeError
         HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
         if (try err = err_raw) {
-            err.prototype = ctx.heap.range_err_proto;
             HString* msg = builtin_intern_string(ctx.heap, "Invalid count value");
             TVal msg_val; msg_val.set_string(msg);
             HString* msg_key = builtin_intern_string(ctx.heap, "message");
@@ -1888,7 +1882,6 @@ fn void builtin_string_proto_match(BuiltinContext* ctx) {
             HObject*? arr_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
             if (catch err = arr_raw) { ctx.result.set_null(); return; }
             HObject* arr = arr_raw;
-            arr.prototype = ctx.heap.array_proto;
 
             usz match_len = (usz)(out_end - out_start);
             HString* match_str;
@@ -1933,7 +1926,6 @@ fn void builtin_string_proto_match(BuiltinContext* ctx) {
             HObject*? arr_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
             if (catch err = arr_raw) { ctx.result.set_null(); return; }
             HObject* arr = arr_raw;
-            arr.prototype = ctx.heap.array_proto;
 
             uint arr_idx = 0;
             int search_pos = 0;
@@ -2024,7 +2016,6 @@ fn void builtin_string_proto_match(BuiltinContext* ctx) {
     HObject*? arr_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
     if (catch err = arr_raw) { ctx.result.set_null(); return; }
     HObject* arr = arr_raw;
-    arr.prototype = ctx.heap.array_proto;
 
     TVal elem;
     elem.set_string(search_hstr);
@@ -2051,7 +2042,6 @@ fn void builtin_string_proto_matchAll(BuiltinContext* ctx) {
         // matchAll() with no args: RegExp(undefined) has no 'g' flag → TypeError
         HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
         if (try err = err_raw) {
-            err.prototype = ctx.heap.type_err_proto;
             HString* msg_str = builtin_intern_string(ctx.heap, "String.prototype.matchAll requires a global regular expression");
             if (msg_str != null) {
                 TVal msg_val;
@@ -2081,7 +2071,6 @@ fn void builtin_string_proto_matchAll(BuiltinContext* ctx) {
         if (!global_flag) {
             HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
             if (try err = err_raw) {
-                err.prototype = ctx.heap.type_err_proto;
                 HString* msg_str = builtin_intern_string(ctx.heap, "String.prototype.matchAll called with a non-global regular expression");
                 if (msg_str != null) {
                     TVal msg_val;
@@ -2107,7 +2096,6 @@ fn void builtin_string_proto_matchAll(BuiltinContext* ctx) {
         HObject*? arr_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
         if (catch err = arr_raw) { ctx.result.set_null(); return; }
         HObject* result_arr = arr_raw;
-        result_arr.prototype = ctx.heap.array_proto;
 
         uint arr_idx = 0;
         int search_pos = 0;
@@ -2133,7 +2121,6 @@ fn void builtin_string_proto_matchAll(BuiltinContext* ctx) {
             HObject*? match_arr_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
             if (catch err = match_arr_raw) break;
             HObject* match_arr = match_arr_raw;
-            match_arr.prototype = ctx.heap.array_proto;
 
             // Element 0: full match
             usz match_len = (usz)(out_end - out_start);
@@ -2229,7 +2216,6 @@ fn void builtin_string_proto_matchAll(BuiltinContext* ctx) {
     HObject*? arr_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
     if (catch err = arr_raw) { ctx.result.set_null(); return; }
     HObject* result_arr = arr_raw;
-    result_arr.prototype = ctx.heap.array_proto;
 
     if (search_len == 0) {
         // Empty pattern: return empty array
@@ -2254,7 +2240,6 @@ fn void builtin_string_proto_matchAll(BuiltinContext* ctx) {
         HObject*? match_arr_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
         if (catch err = match_arr_raw) break;
         HObject* match_arr = match_arr_raw;
-        match_arr.prototype = ctx.heap.array_proto;
 
         // Element 0: full match
         TVal elem;
@@ -2334,7 +2319,6 @@ fn void builtin_string_proto_normalize(BuiltinContext* ctx) {
                 // Throw RangeError for invalid form
                 HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
                 if (try err = err_raw) {
-                    err.prototype = ctx.heap.range_err_proto;
                     HString* msg_str = builtin_intern_string(ctx.heap, "The normalization form should be one of NFC, NFD, NFKC, NFKD.");
                     TVal msg_val;
                     msg_val.set_string(msg_str);
@@ -2414,7 +2398,6 @@ fn bool register_string_constructor(EnvRecord* global_env, Heap* heap) {
     HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.STRING);
     if (catch err = proto_raw) return false;
     HObject* proto = proto_raw;
-    proto.prototype = null;  // Will be Object.prototype in later phases
     heap.string_proto = proto;
 
     // Add .toString() method
@@ -2461,35 +2444,6 @@ fn bool register_string_constructor(EnvRecord* global_env, Heap* heap) {
     if (!register_string_proto_method(proto, heap, "toLocaleUpperCase", BUILTIN_STRING_PROTO_TOLOCALEUPPERCASE)) return false;
     if (!register_string_proto_method(proto, heap, "localeCompare", BUILTIN_STRING_PROTO_LOCALECOMPARE)) return false;
     if (!register_string_proto_method(proto, heap, "normalize",    BUILTIN_STRING_PROTO_NORMALIZE))    return false;
-
-    // Register String.prototype[@@iterator] (ES6 §21.1.3.30)
-    {
-        HString* iter_sym = ensure_iterator_symbol(heap);
-        if (iter_sym != null) {
-            HObject*? fn_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
-            if (catch err = fn_raw) return false;
-            HObject* fn_obj = fn_raw;
-            (*fn_obj.extra_ptr()).func.builtin_fn_index = (int)BUILTIN_STRING_PROTO_SYMBOL_ITER;
-            fn_obj.flags.callable = true;
-            fn_obj.prototype = heap.function_proto;
-            HString* name_key = builtin_intern_string(heap, "name");
-            HString* name_val = builtin_intern_string(heap, "[Symbol.iterator]");
-            if (name_key != null && name_val != null) {
-                TVal name_tv;
-                name_tv.set_string(name_val);
-                fn_obj.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC);
-            }
-            HString* len_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
-            if (len_key != null) {
-                TVal len_tv;
-                len_tv.set_fastint(0);
-                fn_obj.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NWC);
-            }
-            TVal iter_tv;
-            iter_tv.set_object(fn_obj);
-            proto.put_prop(iter_sym, iter_tv, hobject::PROP_FLAGS_NWC);
-        }
-    }
 
     // Create String constructor as a proper function object (not LIGHTFUNC)
     // so it can carry static methods like String.fromCharCode.

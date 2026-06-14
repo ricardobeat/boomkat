@@ -285,10 +285,10 @@ enum Opcode : char {
     /// `with_start A`  — begin a `with` block.  Register A holds the
     /// object that becomes the new scope's binding object.  The runtime
     /// pushes a new object env-record onto `act.var_env`.
-    WITH_START,
+    // WITH_START  — removed in TinyDuck; parser rejects `with` as a compile error.
     /// End the current `with` block — pop the with-scope from the
     /// environment chain.
-    WITH_END,
+    // WITH_END  — removed in TinyDuck; see WITH_START comment.
 
     // ---- Lexical scoping (let/const) ----------------------------------
 
@@ -332,10 +332,6 @@ enum Opcode : char {
 
     // ---- ES6 Classes -----------------------------------------------------
 
-    /// `A.[[Prototype]] = B` — set the internal [[Prototype]] of object A
-    /// to object B (used for `extends` to set `Derived.prototype.__proto__`).
-    /// ABC format: A=derived_obj_reg, B=proto_reg.
-    SETPROTO,
     /// `A = super(B, C..C+N)` — call superclass constructor.
     /// Uses the current activation's `new.target` as the new object's constructor.
     /// ABC format: A=result_reg, B=super_ctor_reg, C=arg_count.
@@ -462,7 +458,7 @@ fn OpFormat get_op_format(Opcode op) {
         case TRY:       return A_BC;
         case BREAK:     return A_BC;
         case CONTINUE:  return A_BC;
-        case WITH_START: return A_BC;
+        // WITH_START — removed in TinyDuck
         case PUTLEX:     return A_BC;
         case PUTLEX_C:   return A_BC;
         case INITTZ:     return A_BC;
@@ -470,7 +466,6 @@ fn OpFormat get_op_format(Opcode op) {
         case ARRSPRD:    return ABC;
         case SPREAD_ARG: return ABC;
         case CALL_S:     return ABC;
-        case SETPROTO:   return ABC;
         case SUPER_CALL: return ABC;
         case NEWTARGET:  return ABC;
 
@@ -493,7 +488,7 @@ fn OpFormat get_op_format(Opcode op) {
         case DEBUGGER:  return NONE;
         case ENDTRY:    return NONE;
         case ENDFINALLY: return NONE;
-        case WITH_END:  return NONE;
+        // WITH_END — removed in TinyDuck
         case PUSH_LEX:   return NONE;
         case POP_LEX:    return NONE;
         case INC:        return NONE;
@@ -753,18 +748,12 @@ bitstruct FuncFlags : uint {
     bool  is_namebinding: 8;
     /// Function has a `...rest` parameter.
     bool  has_rest      : 9;
-    /// Function uses `arguments` (needs Arguments exotic object).
-    bool  uses_arguments: 10;
-    /// Function uses `eval` (may create dynamic bindings).
-    bool  uses_eval     : 11;
     /// Function is an arrow function (lexical `this`).
-    bool  is_arrow      : 12;
+    bool  is_arrow      : 11;
     /// Function is a generator.
     bool  is_generator  : 13;
     /// Function is an async function.
     bool  is_async      : 14;
-    /// Function body has direct `eval()` calls — prevents optimisations.
-    bool  has_direct_eval: 15;
     /// Function is a constructor method.
     bool  is_constructable: 16;
     /// Function never creates local bindings — the CALL fast path can
@@ -902,16 +891,6 @@ macro bool CompiledFunction.is_constructable(&self) {
 /// path can skip `env_create_function_scope`.
 macro bool CompiledFunction.needs_env(&self) {
     return self.flags.needs_env;
-}
-
-/// Returns `true` when the function uses `arguments`.
-macro bool CompiledFunction.uses_arguments(&self) {
-    return self.flags.uses_arguments;
-}
-
-/// Returns `true` when the function contains direct `eval()` calls.
-macro bool CompiledFunction.has_direct_eval(&self) {
-    return self.flags.has_direct_eval;
 }
 
 /// Returns `true` when the function has a rest parameter.
@@ -1055,8 +1034,7 @@ const char*[Opcode.LAST_OP.ordinal + 1] OPCODE_NAMES = {
     [Opcode.INITGET.ordinal]     = "INITGET",
     [Opcode.INITSETI.ordinal]    = "INITSETI",
     [Opcode.CSVARI.ordinal]      = "CSVARI",
-    [Opcode.WITH_START.ordinal]  = "WITH_START",
-    [Opcode.WITH_END.ordinal]    = "WITH_END",
+    // WITH_START / WITH_END removed in TinyDuck — see comment near Opcode enum.
     [Opcode.PUSH_LEX.ordinal]    = "PUSH_LEX",
     [Opcode.POP_LEX.ordinal]     = "POP_LEX",
     [Opcode.PUTLEX.ordinal]      = "PUTLEX",
@@ -1066,7 +1044,6 @@ const char*[Opcode.LAST_OP.ordinal + 1] OPCODE_NAMES = {
     [Opcode.ARRSPRD.ordinal]     = "ARRSPRD",
     [Opcode.SPREAD_ARG.ordinal]  = "SPREAD_ARG",
     [Opcode.CALL_S.ordinal]      = "CALL_S",
-    [Opcode.SETPROTO.ordinal]    = "SETPROTO",
     [Opcode.SUPER_CALL.ordinal]  = "SUPER_CALL",
     [Opcode.NEWTARGET.ordinal]   = "NEWTARGET",
     [Opcode.LOAD_RESUME.ordinal] = "LOAD_RESUME",

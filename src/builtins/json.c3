@@ -196,7 +196,6 @@ fn TVal json_parse_array(JsonParseCtx* jctx) {
     HObject* arr;
     if (try a = arr_raw) {
         arr = a;
-        arr.prototype = jctx.heap.array_proto;
     } else {
         TVal r; r.set_undefined(); return r;
     }
@@ -253,7 +252,6 @@ fn TVal json_parse_object(JsonParseCtx* jctx) {
     HObject* obj;
     if (try o = obj_raw) {
         obj = o;
-        obj.prototype = jctx.heap.object_proto;
     } else {
         TVal r; r.set_undefined(); return r;
     }
@@ -368,7 +366,7 @@ fn TVal json_walk(Heap* heap, TVal reviver, TVal holder, HString* name) {
     TVal val;
     if (holder.is_object() && holder.get_heapptr() != null) {
         HObject* obj = (HObject*)holder.get_heapptr();
-        TVal? prop = obj.get_prop_proto(name);
+        TVal? prop = obj.get_prop(name);
         if (try p = prop) {
             val = p;
         } else {
@@ -382,7 +380,7 @@ fn TVal json_walk(Heap* heap, TVal reviver, TVal holder, HString* name) {
         HObject* obj = (HObject*)val.get_heapptr();
         if (obj.get_class() == ObjClass.ARRAY) {
             HString* len_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
-            TVal? len_prop = obj.get_prop_proto(len_key);
+            TVal? len_prop = obj.get_prop(len_key);
             uint len = 0;
             if (try l = len_prop) {
                 if (l.is_fastint()) len = (uint)l.get_fastint();
@@ -429,7 +427,6 @@ fn TVal json_walk(Heap* heap, TVal reviver, TVal holder, HString* name) {
 fn void json_throw_syntax_error(BuiltinContext* ctx, char[] msg) {
     HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
     if (try err = err_raw) {
-        err.prototype = ctx.heap.syntax_err_proto;
         HString* msg_str = builtin_intern_string(ctx.heap, msg);
         TVal msg_tv;
         msg_tv.set_string(msg_str);
@@ -486,18 +483,6 @@ fn void builtin_json_parse(BuiltinContext* ctx) {
         // Trailing non-whitespace characters → SyntaxError
         json_throw_syntax_error(ctx, "Unexpected token in JSON");
         return;
-    }
-
-    // Set prototype on the result object if it's an object
-    if (result.is_object() && result.get_heapptr() != null) {
-        HObject* obj = (HObject*)result.get_heapptr();
-        if (obj.prototype == null) {
-            if (obj.get_class() == hobject::ObjClass.ARRAY) {
-                obj.prototype = ctx.heap.array_proto;
-            } else {
-                obj.prototype = ctx.heap.object_proto;
-            }
-        }
     }
 
     // Reviver support (ES5 §15.12.2 step 4)
@@ -626,7 +611,7 @@ fn TVal json_unwrap_wrapper(JsonSerializeCtx* jctx, TVal val, bool* had_error) {
     if (cls == ObjClass.STRING) {
         HString* to_str_key = (HString*)jctx.heap.strs[heap::BuiltinStr.TO_STRING];
         if (to_str_key == null) return val;
-        TVal? toString_fn_opt = obj.get_prop_proto(to_str_key);
+        TVal? toString_fn_opt = obj.get_prop(to_str_key);
         if (try toString_fn = toString_fn_opt) {
             bool callable = false;
             if (toString_fn.is_object() && toString_fn.get_heapptr() != null) {
@@ -652,7 +637,7 @@ fn TVal json_unwrap_wrapper(JsonSerializeCtx* jctx, TVal val, bool* had_error) {
     if (cls == ObjClass.NUMBER) {
         HString* vo_key = (HString*)jctx.heap.strs[heap::BuiltinStr.VALUE_OF];
         if (vo_key != null) {
-            TVal? valueOf_fn_opt = obj.get_prop_proto(vo_key);
+            TVal? valueOf_fn_opt = obj.get_prop(vo_key);
             if (try valueOf_fn = valueOf_fn_opt) {
                 bool callable = false;
                 if (valueOf_fn.is_object() && valueOf_fn.get_heapptr() != null) {
@@ -685,7 +670,7 @@ fn TVal json_check_property(JsonSerializeCtx* jctx, HString* key, TVal val, TVal
     if (val.is_object() && val.get_heapptr() != null) {
         HObject* obj = (HObject*)val.get_heapptr();
         HString* toJSON_key = builtin_intern_string(jctx.heap, "toJSON");
-        TVal? toJSON_val = obj.get_prop_proto(toJSON_key);
+        TVal? toJSON_val = obj.get_prop(toJSON_key);
         if (try toJSON_fn = toJSON_val) {
             bool callable = false;
             if (toJSON_fn.is_object() && toJSON_fn.get_heapptr() != null) {
@@ -757,8 +742,7 @@ fn TVal json_check_property(JsonSerializeCtx* jctx, HString* key, TVal val, TVal
 
 /// Check if a value is an array-like object per ES5 spec (HasProperty with "length")
 fn bool json_is_array(HObject* obj) {
-    return obj.get_class() == ObjClass.ARRAY ||
-           obj.get_class() == ObjClass.ARGUMENTS;
+    return obj.get_class() == ObjClass.ARRAY;
 }
 
 /// Serialize an object's properties
@@ -802,7 +786,7 @@ fn int json_serialize_object(JsonSerializeCtx* jctx, HObject* obj) {
             HString* key_hstr = jctx.prop_keys[p];
 
             // Get value from object
-            TVal? val_opt = obj.get_prop_proto(key_hstr);
+            TVal? val_opt = obj.get_prop(key_hstr);
             TVal val;
             if (try v = val_opt) {
                 val = v;
@@ -973,12 +957,12 @@ fn int json_serialize_array(JsonSerializeCtx* jctx, HObject* arr) {
     holder.set_object(arr);
 
     // Check if dense array fast path is available for element reads
-    bool is_dense = (arr.get_class() == ObjClass.ARRAY || arr.get_class() == ObjClass.ARGUMENTS)
+    bool is_dense = (arr.get_class() == ObjClass.ARRAY)
                     && arr.array_part() != null;
 
     // Always read length from the property (spec-correct)
     HString* len_key = builtin_intern_string(jctx.heap, "length");
-    TVal? len_prop = arr.get_prop_proto(len_key);
+    TVal? len_prop = arr.get_prop(len_key);
     uint len = 0;
     if (try l = len_prop) {
         if (l.is_fastint()) {
@@ -1012,7 +996,7 @@ fn int json_serialize_array(JsonSerializeCtx* jctx, HObject* arr) {
         HString* idx_key = jctx.heap.int_to_hstring((long)i);
 
         if (!found) {
-            TVal? elem_prop = arr.get_prop_proto(idx_key);
+            TVal? elem_prop = arr.get_prop(idx_key);
             if (try e = elem_prop) {
                 elem = e;
                 found = true;
@@ -1229,7 +1213,7 @@ fn void builtin_json_stringify(BuiltinContext* ctx) {
 
                 // Get length
                 HString* len_key = builtin_intern_string(ctx.heap, "length");
-                TVal? len_prop = robj.get_prop_proto(len_key);
+                TVal? len_prop = robj.get_prop(len_key);
                 uint arr_len = 0;
                 if (try l = len_prop) {
                     if (l.is_fastint()) {
@@ -1256,7 +1240,7 @@ fn void builtin_json_stringify(BuiltinContext* ctx) {
                     if (!found) {
                         HString* idx_key = ctx.heap.int_to_hstring((long)i);
                         if (idx_key == null) continue;
-                        TVal? elem_opt = robj.get_prop_proto(idx_key);
+                        TVal? elem_opt = robj.get_prop(idx_key);
                         if (try e = elem_opt) {
                             elem = e;
                             found = true;
@@ -1286,7 +1270,7 @@ fn void builtin_json_stringify(BuiltinContext* ctx) {
                             // ToString(value): call toString() to respect overrides
                             HString* ts_key = (HString*)ctx.heap.strs[heap::BuiltinStr.TO_STRING];
                             if (ts_key != null) {
-                                TVal? toString_fn_opt = eobj.get_prop_proto(ts_key);
+                                TVal? toString_fn_opt = eobj.get_prop(ts_key);
                                 if (try toString_fn = toString_fn_opt) {
                                     bool callable = false;
                                     if (toString_fn.is_object() && toString_fn.get_heapptr() != null) {
@@ -1311,7 +1295,7 @@ fn void builtin_json_stringify(BuiltinContext* ctx) {
                             // ToString(value): call toString() to respect overrides
                             HString* ts_key = (HString*)ctx.heap.strs[heap::BuiltinStr.TO_STRING];
                             if (ts_key != null) {
-                                TVal? toString_fn_opt = eobj.get_prop_proto(ts_key);
+                                TVal? toString_fn_opt = eobj.get_prop(ts_key);
                                 if (try toString_fn = toString_fn_opt) {
                                     bool callable = false;
                                     if (toString_fn.is_object() && toString_fn.get_heapptr() != null) {
@@ -1388,7 +1372,7 @@ fn void builtin_json_stringify(BuiltinContext* ctx) {
                 // ToNumber(space) → call valueOf()
                 HString* vo_key = (HString*)ctx.heap.strs[heap::BuiltinStr.VALUE_OF];
                 if (vo_key != null) {
-                    TVal? vo_opt = sobj.get_prop_proto(vo_key);
+                    TVal? vo_opt = sobj.get_prop(vo_key);
                     if (try vo_fn = vo_opt) {
                         bool callable = false;
                         if (vo_fn.is_object() && vo_fn.get_heapptr() != null) {
@@ -1410,7 +1394,7 @@ fn void builtin_json_stringify(BuiltinContext* ctx) {
                 // ToString(space) → call toString()
                 HString* ts_key = (HString*)ctx.heap.strs[heap::BuiltinStr.TO_STRING];
                 if (ts_key != null) {
-                    TVal? ts_opt = sobj.get_prop_proto(ts_key);
+                    TVal? ts_opt = sobj.get_prop(ts_key);
                     if (try ts_fn = ts_opt) {
                         bool callable = false;
                         if (ts_fn.is_object() && ts_fn.get_heapptr() != null) {
@@ -1477,7 +1461,6 @@ fn void builtin_json_stringify(BuiltinContext* ctx) {
         return;
     }
     HObject* wrapper = wrapper_raw;
-    wrapper.prototype = ctx.heap.object_proto;
 
     TVal wrapper_tv;
     wrapper_tv.set_object(wrapper);

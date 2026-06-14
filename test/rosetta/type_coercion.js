@@ -1,6 +1,8 @@
 // Rosetta Code: Type coercion
 // https://rosettacode.org/wiki/Type_coercion
-// Tests JS implicit/explicit coercion, ==, ===, truthy/falsy.
+// Tests explicit Number/String/Boolean conversion, truthy/falsy, parseInt/
+// parseFloat, and the TinyDuck rule for == / !=. TinyDuck: === / !== is the
+// normal comparison; == / != are only meaningful for null/undefined coalescing.
 
 var pass = 0, fail = 0;
 function assert(cond, msg) { if (cond) pass++; else { fail++; print("FAIL: " + msg); } }
@@ -34,32 +36,32 @@ assert(!!"hello", "non-empty string is truthy");
 assert(!!{}, "object is truthy");
 assert(!![], "array is truthy");
 
-// == vs ===
-assert(1 == "1", "== coerces string to number");
+// === (no coercion)
 assert(1 !== "1", "=== no coercion");
-assert(null == undefined, "== null/undefined");
-assert(null !== undefined, "=== null/undefined differ");
-assert(0 == "", "== 0/empty string");
 assert(0 !== "", "=== 0/empty string differ");
-assert(0 == false, "== 0/false");
-assert(1 == true, "== 1/true");
-assert("" == false, "== empty/false");
+assert(null !== undefined, "=== null/undefined differ");
+
+// == only for null/undefined (standard JS behavior)
+assert(null == undefined, "null == undefined");
+assert(undefined == null, "undefined == null");
+assert(null == null, "null == null");
+assert(undefined == undefined, "undefined == undefined");
 
 // Arithmetic coercion
 assert("5" - 1 === 4, "string - number");
 assert("5" + 1 === "51", "string + number = concat");
 assert(true + true === 2, "bool + bool = number");
 assert(null + 1 === 1, "null + 1 = 1");
-assert(undefined + 1 !== undefined + 1, "undefined + 1 = NaN");
+assert(isNaN(undefined + 1), "undefined + 1 = NaN");
 
-// parseInt/parseFloat coercion
+// parseInt / parseFloat
 assert(parseInt("42px") === 42, "parseInt stops at non-digit");
 assert(parseFloat("3.14abc") === 3.14, "parseFloat stops at non-numeric");
-assert(parseInt("") !== parseInt(""), "parseInt('') is NaN");
+assert(isNaN(parseInt("")), "parseInt('') is NaN");
 
 // Unary + and -
 assert(+"42" === 42, "unary + converts string");
-assert(+"abc" !== +"abc", "unary + NaN for non-numeric");
+assert(isNaN(+"abc"), "unary + NaN for non-numeric");
 assert(-"5" === -5, "unary - converts string");
 
 print("rosetta/type_coercion: " + pass + " passed, " + fail + " failed");

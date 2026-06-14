@@ -82,7 +82,6 @@ fn void builtin_number(BuiltinContext* ctx) {
             return;
         }
         HObject* obj = obj_raw;
-        obj.prototype = ctx.heap.number_proto;
         (*obj.extra_ptr()).prim.primitive_value = num;
         ctx.result.set_object(obj);
     } else {
@@ -450,7 +449,6 @@ fn bool register_number_constructor(EnvRecord* global_env, Heap* heap) {
     HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.NUMBER);
     if (catch err = proto_raw) return false;
     HObject* proto = proto_raw;
-    proto.prototype = null;  // Will be Object.prototype in later phases
     heap.number_proto = proto;
 
     // Add .toString() method

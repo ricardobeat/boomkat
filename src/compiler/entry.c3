@@ -20,9 +20,6 @@ fn CompiledFunction*? compile(Lexer* lex, void* heap) {
     ctx.init(lex, heap);
     ctx.is_global = true;
 
-    // Check for "use strict" directive prologue at program level
-    ctx.parse_directives()!;
-
     // Hoist var and function declarations at the global level.
     ctx.hoist_decls(true)!;
 
@@ -35,42 +32,6 @@ fn CompiledFunction*? compile(Lexer* lex, void* heap) {
     ctx.emit_simple(Opcode.RETUNDEF);
 
     return ctx.finish()!;
-}
-
-/// Compile source as eval code (Program, returns last expression value).
-/// Eval code differs from a regular program in that the value of the last
-/// expression statement is returned (not undefined).
-fn CompiledFunction*? compile_eval(Lexer* lex, void* heap) {
-    CompilerContext ctx;
-    ctx.init(lex, heap);
-    ctx.is_global = true;
-    ctx.eval_mode = true;
-    ctx.eval_acc_reg = ctx.alloc_reg();
-
-    // Initialize eval result accumulator to undefined (for empty eval)
-    ctx.emit_abc(Opcode.LDUNDEF, (uint)ctx.eval_acc_reg, 0, 0);
-
-    // Check for "use strict" directive prologue at eval level
-    ctx.parse_directives()!;
-
-    // Hoist var and function declarations at the eval level.
-    ctx.hoist_decls(true)!;
-
-    // Parse statements until EOF
-    while (!ctx.is_at_end()) {
-        ctx.statement()!;
-    }
-
-    // Return the accumulated eval result (or undefined if no expression)
-    ctx.emit_a_bc(Opcode.RET, (uint)ctx.eval_acc_reg, 0);
-
-    CompiledFunction*? result = ctx.finish()!;
-    if (try func = result) {
-        // Eval code must NOT get its own scope — var declarations must go
-        // to the enclosing scope (global env), not a fresh function scope.
-        func.flags.needs_env = false;
-    }
-    return result;
 }
 
 /// Compile a function expression or declaration.

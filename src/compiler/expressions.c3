@@ -1361,12 +1361,6 @@ fn ushort? CompilerContext.primary_expr(&self) {
                     }
                 }
 
-                // When 'arguments' is referenced inside a non-arrow function body,
-                // set the uses_arguments flag so the VM creates the arguments object.
-                if (str_eq(id_tok.str_value, "arguments") && !self.is_global) {
-                    self.uses_arguments = true;
-                }
-
                 // Not found locally: emit GETVAR to look up by name at runtime
                 uint name_idx = self.add_string_constant(id_tok.str_value);
                 ushort id_reg = self.alloc_reg();
@@ -2092,9 +2086,12 @@ fn ushort? CompilerContext.array_literal(&self) {
 // for-of loop compilation
 // ============================================================================
 
-/// Emit bytecode for a for-of loop.  The iterable expression has already been
+/// Emit bytecode for a for-of loop. The iterable expression has already been
 /// evaluated into `iter_reg` and the RParen was consumed.
-/// Uses the ES6 iterator protocol: Symbol.iterator → .next() → {value, done}.
+///
+/// TinyDuck uses duck-typed iteration: the iterable is itself treated as an
+/// iterator. We just call `.next()` on it in a loop until `done` is true.
+/// (No `Symbol.iterator` step — see tinyduck.md "for...of: Duck-Typed".)
 fn void? CompilerContext.emit_forof_loop(&self, char[] var_name, ushort iter_reg, uint saved_scope, ushort saved_reg, bool is_lexical, bool is_const, bool is_bare) {
     // Declare loop variable register
     ushort loop_var;
@@ -2107,67 +2104,36 @@ fn void? CompilerContext.emit_forof_loop(&self, char[] var_name, ushort iter_reg
 
     uint name_idx = self.add_string_constant(var_name);
 
-    // === Iterator Protocol ===
+    // === Duck-typed iterator protocol ===
 
-    // Step 1: Get Symbol.iterator method from iterable
-    //   sym = GETVAR "Symbol"
-    //   symbol_val = GETPROP sym, "iterator"   (the well-known symbol value)
-    //   method = GETPROP iter_reg, symbol_val   (iterable[Symbol.iterator] → the method)
-    ushort sym_reg = self.alloc_reg();
-    self.emit_a_bc(Opcode.GETVAR, (uint)sym_reg, self.add_string_constant("Symbol"));
-
-    ushort iter_key_reg = self.alloc_reg();
-    self.emit_abc(Opcode.LDCONST, (uint)iter_key_reg, self.add_string_constant("iterator"), 0);
-
-    ushort symbol_val_reg = self.alloc_reg();
-    self.emit_abc(Opcode.GETPROP, (uint)symbol_val_reg, (uint)sym_reg, (uint)iter_key_reg);
-    self.free_reg(iter_key_reg);
-    self.free_reg(sym_reg);
-    // symbol_val_reg holds the Symbol.iterator well-known symbol
-
-    // Look up the method on the iterable using the symbol as property key
-    ushort method_reg = self.alloc_reg();
-    self.emit_abc(Opcode.GETPROP, (uint)method_reg, (uint)iter_reg, (uint)symbol_val_reg);
-    self.free_reg(symbol_val_reg);
-    // method_reg is top of register stack, holds iterable[Symbol.iterator]
-
-    // Step 2: Call iterable[Symbol.iterator]() to get the iterator object
-    //   this_slot = iter_reg            (this = iterable)
-    //   CALL method_reg, method_reg, 0  (iterator = iterable[Symbol.iterator].call(iterable))
-    ushort this_slot = self.alloc_reg();
-    self.emit_abc(Opcode.LDREG, (uint)this_slot, (uint)iter_reg, 0);
-    self.emit_abc(Opcode.CALL, (uint)method_reg, (uint)method_reg, 0);
-    self.free_reg(this_slot);
-    // method_reg is top, now holds the iterator object
-
-    // Step 3: Get .next method from iterator
+    // Step 1: Get .next method from the iterable directly.
     //   next_key = LDCONST "next"
-    //   next = GETPROP iterator, next_key
-    ushort next_reg = self.alloc_reg();
+    //   next = GETPROP iter_reg, next_key
     ushort next_key_reg = self.alloc_reg();
     self.emit_abc(Opcode.LDCONST, (uint)next_key_reg, self.add_string_constant("next"), 0);
-    self.emit_abc(Opcode.GETPROP, (uint)next_reg, (uint)method_reg, (uint)next_key_reg);
+    ushort next_reg = self.alloc_reg();
+    self.emit_abc(Opcode.GETPROP, (uint)next_reg, (uint)iter_reg, (uint)next_key_reg);
     self.free_reg(next_key_reg);
-    // next_reg is top (.next method), method_reg below (iterator)
+    // next_reg is top (.next method), iter_reg below (the iterable, as `this`)
 
-    // Step 4: Set up callee + this pair for .next() calls
+    // Step 2: Set up callee + this for .next() calls
     //   callee = next_reg        (.next method)
-    //   callee_this = method_reg (iterator, as this for .next())
+    //   callee_this = iter_reg   (iterable, as this for .next())
     ushort callee_reg = self.alloc_reg();
     ushort callee_this_reg = self.alloc_reg();
     self.emit_abc(Opcode.LDREG, (uint)callee_reg, (uint)next_reg, 0);
-    self.emit_abc(Opcode.LDREG, (uint)callee_this_reg, (uint)method_reg, 0);
+    self.emit_abc(Opcode.LDREG, (uint)callee_this_reg, (uint)iter_reg, 0);
 
     // Loop start
     uint loop_start = self.code_count;
     self.push_loop(loop_start, true);
 
-    // Step 5: Call .next() each iteration
-    //   result = CALL callee, 0    (result = next.call(iterator))
+    // Step 3: Call .next() each iteration
+    //   result = CALL callee, 0
     ushort result_reg = self.alloc_reg();
     self.emit_abc(Opcode.CALL, (uint)result_reg, (uint)callee_reg, 0);
 
-    // Step 6: Extract .done
+    // Step 4: Extract .done
     //   done_key = LDCONST "done"
     //   done = GETPROP result, done_key
     ushort done_key_reg = self.alloc_reg();
@@ -2176,7 +2142,7 @@ fn void? CompilerContext.emit_forof_loop(&self, char[] var_name, ushort iter_reg
     self.emit_abc(Opcode.GETPROP, (uint)done_reg, (uint)result_reg, (uint)done_key_reg);
     uint exit_jump = self.emit_cond_jump(Opcode.IF_TRUE, (uint)done_reg);
 
-    // Step 7: Extract .value
+    // Step 5: Extract .value
     //   value_key = LDCONST "value"
     //   val = GETPROP result, value_key
     ushort value_key_reg = self.alloc_reg();
@@ -2184,7 +2150,7 @@ fn void? CompilerContext.emit_forof_loop(&self, char[] var_name, ushort iter_reg
     self.emit_abc(Opcode.LDCONST, (uint)value_key_reg, self.add_string_constant("value"), 0);
     self.emit_abc(Opcode.GETPROP, (uint)val_reg, (uint)result_reg, (uint)value_key_reg);
 
-    // Step 8: Assign to loop variable
+    // Step 6: Assign to loop variable
     self.emit_abc(Opcode.LDREG, (uint)loop_var, (uint)val_reg, 0);
 
     if (is_bare) {
@@ -2200,7 +2166,7 @@ fn void? CompilerContext.emit_forof_loop(&self, char[] var_name, ushort iter_reg
     self.free_reg(done_key_reg);
     self.free_reg(result_reg);
 
-    // Step 9: Body
+    // Step 7: Body
     self.statement()!;
 
     // Continue target: jump back to .next() call
@@ -2217,7 +2183,6 @@ fn void? CompilerContext.emit_forof_loop(&self, char[] var_name, ushort iter_reg
     self.free_reg(callee_this_reg);
     self.free_reg(callee_reg);
     self.free_reg(next_reg);
-    self.free_reg(method_reg);
     self.pop_scope_to(saved_scope);
     self.free_regs_to(saved_reg);
 }

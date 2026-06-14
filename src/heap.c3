@@ -200,8 +200,7 @@ struct Heap {
     HObject* regexp_proto;
     HObject* map_proto;
     HObject* set_proto;
-    HObject* weakmap_proto;
-    HObject* weakset_proto;
+    // weakmap_proto / weakset_proto removed in TinyDuck.
     HObject* symbol_proto;
     HObject* promise_proto;
     HObject* generator_proto;
@@ -305,7 +304,7 @@ struct Heap {
 
     // Pool allocators for HObject headers — eliminates per-object malloc overhead.
     // Three size classes matching alloc_size_for_class():
-    //   plain (72B): OBJECT, ERROR, ARGUMENTS, PROXY
+    //   plain (72B): OBJECT, ERROR, PROXY
     //   array (80B): ARRAY
     //   func  (104B): FUNCTION, REGEXP, BOOLEAN, NUMBER, STRING, DATE, etc.
     mempool::FixedBlockPool obj_pool_plain;
@@ -336,7 +335,6 @@ enum BuiltinStr : uint {
     LENGTH,      // "length"
     VALUE,       // "value"
     DONE,        // "done"
-    ARGUMENTS,   // "arguments"
     SYMBOL,      // "symbol"
     NAME,        // "name"
     EMPTY,       // ""
@@ -524,15 +522,15 @@ fn Heap*? create(
 /// is safe to call multiple times.
 fn void Heap.init_builtin_strs(&self) {
     // Each entry: (ZString literal, byte length)
-    ZString[26] literals = {
+    ZString[25] literals = {
         "undefined", "object", "boolean", "number", "string", "function",
         "true", "false", "null", "message", "prototype", "constructor",
-        "length", "value", "done", "arguments", "symbol", "name", "",
+        "length", "value", "done", "symbol", "name", "",
         "NaN", "Infinity", "-Infinity",
         "toString", "valueOf", "[object Object]", "[function]"
     };
-    uint[26] lengths = { 9, 6, 7, 6, 6, 8, 4, 5, 4, 7, 9, 11, 6, 5, 4, 9, 6, 4, 0, 3, 8, 9, 8, 7, 15, 10 };
-    for (uint i = 0; i < 26; i++) {
+    uint[25] lengths = { 9, 6, 7, 6, 6, 8, 4, 5, 4, 7, 9, 11, 6, 5, 4, 6, 4, 0, 3, 8, 9, 8, 7, 15, 10 };
+    for (uint i = 0; i < 25; i++) {
         char* ptr = (char*)literals[i];
         char[] data = ptr[:lengths[i]];
         uint h = self.hash_string(data);
@@ -548,7 +546,7 @@ fn void Heap.init_builtin_strs(&self) {
         }
     }
     // Pin: builtin strings must never be freed by refcounting.
-    for (uint i = 0; i < 26; i++) {
+    for (uint i = 0; i < 25; i++) {
         if (self.strs[i] != null) {
             ((HeapHeader*)self.strs[i]).refcount = STRING_PINNED_REFCOUNT;
         }
@@ -1041,8 +1039,7 @@ fn void Heap.reset(&self) {
     self.regexp_proto     = null;
     self.map_proto        = null;
     self.set_proto        = null;
-    self.weakmap_proto    = null;
-    self.weakset_proto    = null;
+    // weakmap_proto / weakset_proto init removed in TinyDuck.
     self.symbol_proto     = null;
     self.promise_proto    = null;
     self.generator_proto  = null;
@@ -1464,11 +1461,6 @@ fn void Heap.drain_gray(&self) {
     while (self.gray_count > 0) {
         HObject* obj = self.gray_pop();
 
-        // --- Prototype chain ---
-        if (obj.prototype != null) {
-            self.mark_hobject(obj.prototype);
-        }
-
         // --- Named properties ---
         PropValue* pv = obj.prop_values();
         for (uint i = 0; i < obj.prop_count; i++) {
@@ -1574,8 +1566,7 @@ fn void Heap.mark_roots(&self) {
     if (self.regexp_proto != null) { self.mark_hobject(self.regexp_proto); }
     if (self.map_proto != null) { self.mark_hobject(self.map_proto); }
     if (self.set_proto != null) { self.mark_hobject(self.set_proto); }
-    if (self.weakmap_proto != null) { self.mark_hobject(self.weakmap_proto); }
-    if (self.weakset_proto != null) { self.mark_hobject(self.weakset_proto); }
+    // weakmap_proto / weakset_proto GC mark removed in TinyDuck.
     if (self.symbol_proto != null) { self.mark_hobject(self.symbol_proto); }
     if (self.promise_proto != null) { self.mark_hobject(self.promise_proto); }
     if (self.generator_proto != null) { self.mark_hobject(self.generator_proto); }
@@ -1624,7 +1615,6 @@ fn void Heap.mark_roots(&self) {
             for (uint ii = 0; ii < cf.ic_count; ii++) {
                 hobject::ICEntry* ie = &ics[ii];
                 if (ie.key != null) { ((HeapHeader*)ie.key).set_reachable(); }
-                if (ie.proto != null) { self.mark_hobject((HObject*)ie.proto); }
             }
         }
         // Mark VarIC entries: trace cached bindings HObject* and key HString*

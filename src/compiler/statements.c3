@@ -19,7 +19,7 @@ fn void? CompilerContext.statement(&self) {
 
     switch (tt) {
         case TokenType.LBRACE:
-            self.block(false)!;
+            self.block()!;
         case TokenType.VAR:
             self.var_declaration()!;
         case TokenType.LET:
@@ -43,7 +43,8 @@ fn void? CompilerContext.statement(&self) {
         case TokenType.SWITCH:
             self.switch_statement()!;
         case TokenType.WITH:
-            self.with_statement()!;
+            // TinyDuck: `with` is dropped (no runtime scope-chain walking).
+            return COMPILE_ERROR~;
         case TokenType.BREAK:
             self.break_statement()!;
         case TokenType.CONTINUE:
@@ -89,45 +90,6 @@ fn bool is_restricted_name(char[] name) @inline {
         return true;
     }
     return false;
-}
-
-/// Parse directive prologue statements at the start of a function body or program.
-/// Detects "use strict" and enables strict mode if found (ES5 §14.1).
-fn void? CompilerContext.parse_directives(&self) {
-    while (true) {
-        if (!self.check(TokenType.STRING)) {
-            break;
-        }
-
-        Token str_tok = self.advance()!;
-
-        bool has_semicolon = self.check(TokenType.SEMICOLON);
-        bool has_asi = self.lexer.seen_line_term;
-
-        if (has_semicolon || has_asi) {
-            if (has_semicolon) {
-                self.advance()!;
-            }
-
-            if (str_tok.str_value.len == 10) {
-                bool is_use_strict = true;
-                char[] expected = "use strict";
-                for (usz i = 0; i < 10; i++) {
-                    if (str_tok.str_value[i] != expected[i]) {
-                        is_use_strict = false;
-                        break;
-                    }
-                }
-                if (is_use_strict && !self.is_strict) {
-                    self.is_strict = true;
-                    self.lexer.set_strict(true);
-                }
-            }
-        } else {
-            self.lexer.pushback(str_tok);
-            break;
-        }
-    }
 }
 
 /// Pre-scan tokens in the current block to find all `let`/`const` variable
@@ -226,9 +188,8 @@ fn uint CompilerContext.pre_scan_lexical_decls(&self, NameSpan* spans, uint capa
     return count;
 }
 
-/// Parse a block: { statement* }
-/// If `check_directives` is true, checks for "use strict" directive prologue at the start.
-fn void? CompilerContext.block(&self, bool check_directives) {
+/// Parse a block with LBRACE and RBRACE
+fn void? CompilerContext.block(&self) {
     self.expect(TokenType.LBRACE)!;
     uint saved_depth = self.scope_depth;
     ushort saved_reg = self.next_reg;
@@ -265,10 +226,6 @@ fn void? CompilerContext.block(&self, bool check_directives) {
                 break;
             }
         }
-    }
-
-    if (check_directives) {
-        self.parse_directives()!;
     }
 
     while (!self.check(TokenType.RBRACE) && !self.is_at_end()) {
@@ -721,7 +678,7 @@ fn void? CompilerContext.for_statement(&self) {
                 }
             }
 
-            self.expect(TokenType.SEMICOLON)!;
+            self.match(TokenType.SEMICOLON);
         } else {
             Token name_tok = self.expect(TokenType.IDENTIFIER)!;
 
@@ -831,16 +788,16 @@ fn void? CompilerContext.for_statement(&self) {
                 }
             }
 
-            self.expect(TokenType.SEMICOLON)!;
+            self.match(TokenType.SEMICOLON);
         }
     } else if (next_tt != TokenType.SEMICOLON) {
         // Expression init
         ushort init_reg = self.expression()!;
         self.free_reg(init_reg);
-        self.expect(TokenType.SEMICOLON)!;
+        self.match(TokenType.SEMICOLON);
     } else {
         // Empty init
-        self.expect(TokenType.SEMICOLON)!;
+        self.match(TokenType.SEMICOLON);
     }
 
     // --- Rotated for-loop layout ---
@@ -967,7 +924,7 @@ fn void? CompilerContext.for_statement(&self) {
         // in the lexer's pushed_back buffer.
         self.skip_expr_lex();
     }
-    self.expect(TokenType.SEMICOLON)!;  // consume the `;` after condition
+    self.match(TokenType.SEMICOLON);  // consume the `;` after condition
 
     // ----------------------------------------------------------------
     // Step 4: Save lexer state for increment, then skip it.
@@ -1052,7 +1009,7 @@ fn void? CompilerContext.for_statement(&self) {
             Token ident_tok = self.advance()!;
             Token _relop    = self.advance()!;  // consume relop
             Token _num_tok  = self.advance()!;  // consume NUMBER (value already in pinned_rhs_reg)
-            self.expect(TokenType.SEMICOLON)!;  // consume `;`
+            self.match(TokenType.SEMICOLON);  // consume `;`
 
             ushort lhs_reg = self.alloc_reg();
             if (try reg = self.resolve_var(ident_tok.str_value)) {
@@ -1078,7 +1035,7 @@ fn void? CompilerContext.for_statement(&self) {
             self.lexer.has_pushed_back = _cond_haspb; self.lexer.seen_line_term = _cond_slt;
             self.pushback_count = _cond_pbc; self.pushback_stack = _cond_pbs;
             ushort cond_reg = self.expression()!;
-            self.expect(TokenType.SEMICOLON)!;
+            self.match(TokenType.SEMICOLON);
             int back = (int)body_label - (int)self.code_count - 1;
             self.emit(bytecode::make_a_sbx(Opcode.IF_TRUE, (uint)cond_reg, back));
             self.free_reg(cond_reg);
@@ -1198,7 +1155,7 @@ fn void? CompilerContext.try_statement(&self) {
     }
 
     // Compile try block
-    self.block(false)!;
+    self.block()!;
 
     // Emit ENDTRY to pop the try handler (normal exit)
     self.emit_simple(Opcode.ENDTRY);
@@ -1251,7 +1208,7 @@ fn void? CompilerContext.try_statement(&self) {
         }
 
         // Compile catch block
-        self.block(false)!;
+        self.block()!;
 
         self.pop_scope_to(catch_scope);
         self.free_regs_to(catch_saved_reg);
@@ -1269,7 +1226,7 @@ fn void? CompilerContext.try_statement(&self) {
         self.emit_simple(Opcode.FINALLY);
 
         // Compile finally block
-        self.block(false)!;
+        self.block()!;
 
         // Emit ENDFINALLY
         self.emit_simple(Opcode.ENDFINALLY);
@@ -1293,36 +1250,8 @@ fn void? CompilerContext.try_statement(&self) {
     }
 }
 
-/// Parse a `with` statement (ES5 §12.10).
-///
-/// Bytecode layout:
-///   <expr>                              — push object onto valstack (in a register)
-///   WITH_START A                        — A = register holding the with-object
-///   <statement>
-///   WITH_END                            — pop the with-env from the scope chain
-fn void? CompilerContext.with_statement(&self) {
-    if (self.is_strict) {
-        return COMPILE_ERROR~;
-    }
-    self.expect(TokenType.WITH)!;
-
-    // Parse `(expr)`
-    self.expect(TokenType.LPAREN)!;
-    ushort obj_reg = self.expression()!;
-    self.expect(TokenType.RPAREN)!;
-
-    // Emit WITH_START — pushes a new object env-record wrapping obj_reg
-    self.emit_a_bc(Opcode.WITH_START, (uint)obj_reg, 0);
-
-    // Compile the body
-    self.statement()!;
-
-    // Emit WITH_END — restores the previous env chain
-    self.emit_simple(Opcode.WITH_END);
-
-    // Free the object register
-    self.free_reg(obj_reg);
-}
+// `with` statement was removed in TinyDuck — see tinyduck.md "What's Out".
+// The compiler rejects the token in statement() above; no parser entry point.
 
 /// Parse switch statement with correct fall-through (ES5 §12.11).
 ///
@@ -1595,10 +1524,6 @@ fn void? CompilerContext.continue_statement(&self) {
 /// Parse expression statement.
 fn void? CompilerContext.expression_statement(&self) {
     ushort reg = self.expression()!;
-    if (self.eval_mode) {
-        // Preserve the expression result for eval's implicit return value
-        self.emit_abc(Opcode.LDREG, (uint)self.eval_acc_reg, (uint)reg, 0);
-    }
     self.free_reg(reg);
     self.match(TokenType.SEMICOLON);
 }

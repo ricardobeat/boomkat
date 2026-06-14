@@ -392,7 +392,7 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
     self.hoist_decls(false)!;
 
     // Compile function body block
-    self.block(true)!;
+    self.block()!;
 
     // Pop the function-level lexical scope.
     // NOTE: for functions with explicit return, this POP_LEX won't execute,
@@ -605,7 +605,7 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name)
     }
 
     // Compile function body
-    inner_ctx.block(true)!;
+    inner_ctx.block()!;
 
     // Pop the function-level lexical scope
     if (inner_has_func_lex) {

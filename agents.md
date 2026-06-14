@@ -1,50 +1,40 @@
-# Duktape C3 Port
+# TinyDuck
 
-
-> **See spec at PRD.md.**
-> **High-level project phases and progress are tracked in `progress.md`.**
+> **See `tinyduck.md` for the full design spec.**
+> **Phase status and progress are tracked in `progress.md`.**
 > Check it before starting work to understand where we are and what's next.
 
-**Key principle**: This is a faithful port of Duktape v2.7.0 to C3, but we should leverage C3's native features where they improve clarity or safety. Check the stdlib reference for what is available when planning a new feature.
+A deliberate non-conforming JavaScript engine written in C3. Drops the parts of Duktape that add massive implementation cost but are rarely needed in embedded scripting (game logic, config, device control). Target: ~11K LOC, down from Duktape's ~60K.
+
+**Guiding principle**: everything you need, nothing you don't. If a feature isn't in the "What's In" list in `tinyduck.md`, do not implement it.
+
+## Build & Test
+
+- `just build` — default nanboxing build
+- `just test` — run rosetta + unit tests
+- See `justfile` for the full command list
 
 ## Build Flags
 
-- `-D NONANBOX` — disable NaN-boxing, using the 16-byte tagged union `TVal` instead. Default is nanbox-on. Use `just build-nonanbox` or `just test-nonanbox` to exercise the non-nanbox path (e.g., for 16-bit ESP32 targets).
+- `-D NONANBOX` — disable NaN-boxing, use the 16-byte tagged union `TVal` instead. Use `just build-nonanbox` / `just test-nonanbox` for 16-bit targets.
 
-## NaN-Boxing Gotchas (src/types.c3)
+## Target Architecture (~11K LOC)
 
-The NaN-boxing encoding stores tagged values in the mantissa of IEEE 754 NaN values using Duktape's scheme: **16-bit tags in bits 63-48**, 48-bit payload in bits 47-0.
+```
+src/
+  lexer.c3       ~900 LOC   strings, numbers, tokens, regex, template literals
+  parser.c3      ~3000 LOC  recursive descent, classes, async/await, destructuring
+  bytecode.c3    ~500 LOC   opcodes, constants
+  vm.c3          ~3500 LOC  interpreter, calls, classes, for...of, promises
+  gc.c3          ~800 LOC   mark-sweep, closures, upvalues
+  builtins.c3    ~2000 LOC  Array, Object, Math, JSON, String, Number, Date, RegExp, Error, Promise, console
+  modules.c3     ~300 LOC   topological sort, linking
+  types.c3       ~400 LOC   values, objects, arrays, functions, classes
+```
 
-### Current encoding (Duktape-style)
+## When Adding a Feature
 
-Tags are full 16-bit values: `TAG_FASTINT=0xFFF1`, `TAG_UNDEFINED=0xFFF3`, etc. A value is a double if `bits >> 48 <= 0xFFF0`. Tagged values have `bits >> 48 >= 0xFFF1`.
-
-**NaN normalization**: Negative NaNs have bits 63-48 in 0xFFF8-0xFFFF, which collides with tagged values. `set_number()` normalizes any double with bits 63-48 >= 0xFFF8 to the canonical positive NaN `0x7FF8000000000000`.
-
-**Fastint sign extension**: 48-bit payload, branchless: `(long)(bits << 16) >> 16`. Range is ±2^47 (~140 trillion).
-
-### Bugs encountered during implementation
-
-1. **C3 operator precedence in `nanbox_is_double`**: The expression `(v >> 52) & 0x7FF != 0x7FF0` parses as `(v >> 52) & (0x7FF != 0x7FF0)` in C3, which evaluates to `(v >> 52) & 1` — making every tagged value look like a double. Must use parentheses: `((v >> 52) & 0x7FF) != 0x7FF`.
-
-**Rule of thumb**: In C3, always parenthesize bitwise operations mixed with comparisons. `&` / `|` / `^` bind differently than in C.
-
-2. **Small tag scheme collision**: An earlier scheme used 4-bit tags (0-8) shifted into bits 51-48 with `NANBOX_BASE = 0xFFF8000000000000`. This collided because NANBOX_BASE already has bits 51-48 = 0x8, making `nanbox_get_tag(UNDEFINED)` return 8 instead of 0. Fixed by switching to Duktape's 16-bit tag scheme.
-
-3. **Negative NaN collision**: A scheme with `NANBOX_BASE = 0xFFF0000000000000` and 4-bit tags in bits 51-48 worked for positive values but negative NaN doubles (0xFFF8...) had bits 51-48 = 0x8, colliding with tags. Fixed by NaN normalization in `set_number()`.
-
-## Compiler / VM Gotchas
-
-### PUTVAR clears the source register (vm.c3)
-
-After syncing a register value to the environment, `PUTVAR` (line ~6156) decrefs the register and sets it to `undefined`. This prevents reference leaks but means **any variable that's both register-cached and written via PUTVAR will lose its register value**. This broke `for (var k in obj)` in functions: NEXTFOR wrote the key to a register, PUTVAR synced it to the env, then zeroed the register. The body read the register directly (via `resolve_var`) and got `undefined`.
-
-**Fix**: for-in uses a temp register for NEXTFOR output, not a `declare_var`-cached register. The body reads via GETVAR from the environment. **Any future variable-binding work must consider whether PUTVAR will clobber the register.**
-
-### Sliding-window register init must skip argument slots (vm.c3)
-
-When calling a function with zero formal parameters but actual arguments (e.g. `function f() { return arguments[0]; } f(42)`), the register initialization memset starts at `undef_limit = formals = 0`, which overwrites the sliding-window argument slots at `new_regs[0..nargs-1]`. Fix: start the memset at `max(undef_limit, nargs)`.
-
-### Rosetta Code tests as a debugging tool
-
-The 43 rosetta tests cover 22+ JS language features and proved highly effective at finding real engine bugs. The pattern: minimize the failing test to a single-line repro, check if the issue is in the compiler (compile failed) or VM (VM_ERROR / wrong value), then trace through the bytecode. For VM issues, adding `io::printfn` debug prints to the relevant opcode handler was the fastest way to pinpoint the problem.
+1. Confirm it's in the "What's In" list in `tinyduck.md`.
+2. For removed features, ensure no leftover code paths remain.
+3. Keep an eye on the LOC budget.
+4. Add a rosetta test in `test/rosetta/` for any new language feature.

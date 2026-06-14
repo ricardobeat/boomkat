@@ -309,7 +309,6 @@ fn void builtin_date(BuiltinContext* ctx) {
             return;
         }
         HObject* obj = obj_raw;
-        obj.prototype = ctx.heap.date_proto;
 
         double time_val;
         if (ctx.argc == 0) {
@@ -444,48 +443,6 @@ fn void builtin_date_proto_toString(BuiltinContext* ctx) {
     double time_val = date_get_time_value(&this_val);
     char[128] buf;
     usz len = date_format_to_string(time_val, &buf, 128);
-    HString* result = builtin_intern_string(ctx.heap, buf[:len]);
-    ctx.result.set_string(result);
-}
-
-/// Date.prototype.toLocaleString() — ES5 §15.9.5.5
-/// Falls back to toString() (no locale-specific formatting).
-fn void builtin_date_proto_toLocaleString(BuiltinContext* ctx) {
-    builtin_date_proto_toString(ctx);
-}
-
-/// Date.prototype.toLocaleDateString() — ES5 §15.9.5.6
-/// Returns the date portion only (YYYY-MM-DD style).
-fn void builtin_date_proto_toLocaleDateString(BuiltinContext* ctx) {
-    TVal this_val = ctx.regs[ctx.base_reg - 1];
-    double time_val = date_get_time_value(&this_val);
-    if (math::is_nan(time_val)) {
-        HString* inv = builtin_intern_string(ctx.heap, "Invalid Date");
-        ctx.result.set_string(inv);
-        return;
-    }
-    long year, month, day, wday, hour, min, sec;
-    date_break_time(time_val, &year, &month, &day, &wday, &hour, &min, &sec);
-    char[types::FORMAT_BUF] buf;
-    usz len = (usz)libc::snprintf(&buf, types::FORMAT_BUF, "%04d-%02d-%02d", (int)year, (int)(month + 1), (int)day);
-    HString* result = builtin_intern_string(ctx.heap, buf[:len]);
-    ctx.result.set_string(result);
-}
-
-/// Date.prototype.toLocaleTimeString() — ES5 §15.9.5.7
-/// Returns the time portion only (HH:MM:SS style).
-fn void builtin_date_proto_toLocaleTimeString(BuiltinContext* ctx) {
-    TVal this_val = ctx.regs[ctx.base_reg - 1];
-    double time_val = date_get_time_value(&this_val);
-    if (math::is_nan(time_val)) {
-        HString* inv = builtin_intern_string(ctx.heap, "Invalid Date");
-        ctx.result.set_string(inv);
-        return;
-    }
-    long year, month, day, wday, hour, min, sec;
-    date_break_time(time_val, &year, &month, &day, &wday, &hour, &min, &sec);
-    char[types::FORMAT_BUF] buf;
-    usz len = (usz)libc::snprintf(&buf, types::FORMAT_BUF, "%02d:%02d:%02d", (int)hour, (int)min, (int)sec);
     HString* result = builtin_intern_string(ctx.heap, buf[:len]);
     ctx.result.set_string(result);
 }
@@ -1214,7 +1171,6 @@ fn bool register_date_constructor(EnvRecord* global_env, Heap* heap) {
     HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.DATE);
     if (catch err = proto_raw) return false;
     HObject* proto = proto_raw;
-    proto.prototype = null;  // Will be Object.prototype
     heap.date_proto = proto;
 
     // Set .constructor to Date lightfunc
@@ -1339,15 +1295,6 @@ fn bool register_date_constructor(EnvRecord* global_env, Heap* heap) {
 
     // Add Date.prototype.toGMTString() (alias for toUTCString)
     if (!register_string_proto_method(proto, heap, "toGMTString", BUILTIN_DATE_PROTO_TOGMTSTRING)) return false;
-
-    // Add Date.prototype.toLocaleString() — ES5 §15.9.5.5
-    if (!register_string_proto_method(proto, heap, "toLocaleString", BUILTIN_DATE_PROTO_TOLOCALESTRING)) return false;
-
-    // Add Date.prototype.toLocaleDateString() — ES5 §15.9.5.6
-    if (!register_string_proto_method(proto, heap, "toLocaleDateString", BUILTIN_DATE_PROTO_TOLOCALEDATESTRING)) return false;
-
-    // Add Date.prototype.toLocaleTimeString() — ES5 §15.9.5.7
-    if (!register_string_proto_method(proto, heap, "toLocaleTimeString", BUILTIN_DATE_PROTO_TOLOCALETIMESTRING)) return false;
 
     // Add Date.prototype.toDateString() — ES5 §15.9.5.3
     if (!register_string_proto_method(proto, heap, "toDateString", BUILTIN_DATE_PROTO_TODATESTRING)) return false;
