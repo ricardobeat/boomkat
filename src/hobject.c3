@@ -593,61 +593,8 @@ fn CallableKind HObject.callable_kind(&self) @inline {
     return CallableKind.OTHER;
 }
 
-/// Seal the object: clear extensible, mark all own properties as
-/// non-configurable.
-///
-/// Dense array elements are moved to the named property table because the
-/// flat array part can't store non-default per-element flags (no PropFlags
-/// per slot).  After sealing, the array part is abandoned (array_size = 0).
-fn void HObject.seal(&self) {
-    self.flags.extensible = false;
-
-    // Abandon dense array part: move elements to named properties with
-    // non-configurable flag.  The flat array part stores only TVals, not
-    // per-element flags, so we need the property table for the flag change.
-    if (self.array_part() != null && self.array_used > 0 && _active_heap != null) {
-        heap::Heap* h = (heap::Heap*)_active_heap;
-        char[12] digit_buf;
-        for (uint i = 0; i < self.array_size; i++) {
-            TVal v = self.array_part()[i];
-            if (!v.is_undefined()) {
-                int dlen = libc::snprintf(&digit_buf[0], 12, "%u", i);
-                if (dlen > 0) {
-                    HString* key = h.str_intern(digit_buf[:(uint)dlen]);
-                    if (key != null) {
-                        // writable=true, enumerable=true, configurable=false
-                        self.put_prop((void*)key, v, PROP_FLAGS_NEC);
-                    }
-                }
-            }
-        }
-    }
-
-    self.array_size = 0;
-    self.array_used = 0;
-
-    self.make_shape_private();
-    for (uint i = 0; i < self.prop_count; i++) {
-        PropFlags f = self.get_prop_flags(i);
-        f.configurable = false;
-        self.set_prop_flags(i, f);
-    }
-}
-
-/// Freeze the object: seal + mark all data properties non-writable.
-fn void HObject.freeze(&self) {
-    self.seal();
-    for (uint i = 0; i < self.prop_count; i++) {
-        PropFlags f = self.get_prop_flags(i);
-        if (!f.is_accessor) {
-            f.writable = false;
-            self.set_prop_flags(i, f);
-        }
-    }
-}
-
-// ============================================================================
-// Internal: pointer hashing
+// seal() / freeze() removed in TinyDuck — these are prototype/descriptor adjacent.
+// Generation counter — bumped on delete/seal/freeze to invalidate ICs.
 // ============================================================================
 
 /// Hash a pointer value to produce an index into the hash table.

@@ -198,8 +198,7 @@ struct Heap {
     HObject* function_proto;
     HObject* date_proto;
     HObject* regexp_proto;
-    HObject* map_proto;
-    HObject* set_proto;
+    // map_proto / set_proto removed in TinyDuck.
     // weakmap_proto / weakset_proto removed in TinyDuck.
     HObject* symbol_proto;
     HObject* promise_proto;
@@ -1037,8 +1036,7 @@ fn void Heap.reset(&self) {
     self.function_proto   = null;
     self.date_proto       = null;
     self.regexp_proto     = null;
-    self.map_proto        = null;
-    self.set_proto        = null;
+    // map_proto / set_proto init removed in TinyDuck.
     // weakmap_proto / weakset_proto init removed in TinyDuck.
     self.symbol_proto     = null;
     self.promise_proto    = null;
@@ -1564,8 +1562,7 @@ fn void Heap.mark_roots(&self) {
     if (self.bool_proto != null) { self.mark_hobject(self.bool_proto); }
     if (self.date_proto != null) { self.mark_hobject(self.date_proto); }
     if (self.regexp_proto != null) { self.mark_hobject(self.regexp_proto); }
-    if (self.map_proto != null) { self.mark_hobject(self.map_proto); }
-    if (self.set_proto != null) { self.mark_hobject(self.set_proto); }
+    // map_proto / set_proto GC mark removed in TinyDuck.
     // weakmap_proto / weakset_proto GC mark removed in TinyDuck.
     if (self.symbol_proto != null) { self.mark_hobject(self.symbol_proto); }
     if (self.promise_proto != null) { self.mark_hobject(self.promise_proto); }

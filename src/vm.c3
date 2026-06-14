@@ -440,8 +440,7 @@ fn HObject* lightfunc_get_proto(Vm* vm, uint fn_idx) {
         case builtins::BUILTIN_FUNCTION:        return vm.heap.function_proto;
         case builtins::BUILTIN_DATE:            return vm.heap.date_proto;
         case builtins::BUILTIN_REGEXP:          return vm.heap.regexp_proto;
-        case builtins::BUILTIN_MAP:             return vm.heap.map_proto;
-        case builtins::BUILTIN_SET:             return vm.heap.set_proto;
+        // BUILTIN_MAP / BUILTIN_SET removed in TinyDuck.
         // BUILTIN_WEAKMAP / BUILTIN_WEAKSET removed in TinyDuck.
         // BUILTIN_SYMBOL removed in TinyDuck.
         case builtins::BUILTIN_PROMISE:         return vm.heap.promise_proto;
@@ -3139,8 +3138,6 @@ fn TVal? Vm.run(Vm* vm) {
                             case hobject::ObjClass.NUMBER:  class_proto = vm.heap.number_proto; break;
                             case hobject::ObjClass.BOOLEAN: class_proto = vm.heap.bool_proto; break;
                             case hobject::ObjClass.PROMISE: class_proto = vm.heap.promise_proto; break;
-                            case hobject::ObjClass.MAP:     class_proto = vm.heap.map_proto; break;
-                            case hobject::ObjClass.SET:     class_proto = vm.heap.set_proto; break;
                             default: break;
                         }
                         if (class_proto == null && hobj.is_callable()) {
@@ -3450,8 +3447,6 @@ fn TVal? Vm.run(Vm* vm) {
                                 case hobject::ObjClass.NUMBER:  class_proto = vm.heap.number_proto; break;
                                 case hobject::ObjClass.BOOLEAN: class_proto = vm.heap.bool_proto; break;
                                 case hobject::ObjClass.PROMISE: class_proto = vm.heap.promise_proto; break;
-                                case hobject::ObjClass.MAP:     class_proto = vm.heap.map_proto; break;
-                                case hobject::ObjClass.SET:     class_proto = vm.heap.set_proto; break;
                                 default: break;
                             }
                             if (class_proto == null && hobj.is_callable()) {

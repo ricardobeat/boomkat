@@ -318,52 +318,6 @@ fn void builtin_object_keys(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Object.getPrototypeOf — ES5 §15.2.3.2
-// ============================================================================
-/// Returns the [[Prototype]] of an object. Throws TypeError if argument is
-/// not an object (null or undefined).
-fn void builtin_object_getPrototypeOf(BuiltinContext* ctx) {
-    if (ctx.argc < 1) {
-        // Throw TypeError: Object.getPrototypeOf requires an argument
-        HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
-        if (catch err1 = err_raw) {
-            ctx.result.set_undefined();
-            return;
-        }
-        HObject* err = err_raw;
-        HString* msg_key = builtin_intern_string(ctx.heap, "message");
-        HString* msg_str = builtin_intern_string(ctx.heap, "Object.getPrototypeOf requires a value");
-        TVal msg_tv;
-        msg_tv.set_string(msg_str);
-        err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
-        ctx.should_throw = true;
-        ctx.throw_value.set_object(err);
-        return;
-    }
-    TVal arg = ctx.regs[ctx.base_reg];
-    if (!arg.is_object()) {
-        // Throw TypeError for null/undefined/primitives
-        HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
-        if (catch err2 = err_raw) {
-            ctx.result.set_undefined();
-            return;
-        }
-        HObject* err = err_raw;
-        HString* msg_key = builtin_intern_string(ctx.heap, "message");
-        HString* msg_str = builtin_intern_string(ctx.heap, "Object.getPrototypeOf called on non-object");
-        TVal msg_tv;
-        msg_tv.set_string(msg_str);
-        err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
-        ctx.should_throw = true;
-        ctx.throw_value.set_object(err);
-        return;
-    }
-    HObject* obj = (HObject*)arg.get_heapptr();
-    // No prototype chain — getPrototypeOf always returns null
-    ctx.result.set_null();
-}
-
-// ============================================================================
 // Object.entries — ES2017 §19.1.2.21
 // ============================================================================
 /// Returns an array of the given object's own enumerable string-keyed property
@@ -690,57 +644,6 @@ fn void builtin_object_hasOwn(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Object.setPrototypeOf — ES2015 §19.1.2.19
-// ============================================================================
-/// Object.setPrototypeOf(obj, proto) — sets the prototype of obj to proto.
-fn void builtin_object_setPrototypeOf(BuiltinContext* ctx) {
-    if (ctx.argc < 2) {
-        ctx.result.set_undefined();
-        return;
-    }
-    TVal obj_val = ctx.regs[ctx.base_reg];
-    TVal proto_val = ctx.regs[ctx.base_reg + 1];
-    // TypeError if obj is not an object (null/undefined/primitive)
-    if (obj_val.is_null() || obj_val.is_undefined()) {
-        HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
-        if (catch err1 = err_raw) { ctx.result.set_undefined(); return; }
-        HObject* err = err_raw;
-        HString* msg_key = builtin_intern_string(ctx.heap, "message");
-        HString* msg_str = builtin_intern_string(ctx.heap, "Object.setPrototypeOf requires an object");
-        if (msg_key == null || msg_str == null) { ctx.result.set_undefined(); return; }
-        TVal msg_tv; msg_tv.set_string(msg_str);
-        err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
-        ctx.should_throw = true;
-        ctx.throw_value.set_object(err);
-        return;
-    }
-    // TypeError if proto is not an object or null
-    if (!proto_val.is_null() && !proto_val.is_object()) {
-        HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
-        if (catch err2 = err_raw) { ctx.result.set_undefined(); return; }
-        HObject* err = err_raw;
-        HString* msg_key = builtin_intern_string(ctx.heap, "message");
-        HString* msg_str = builtin_intern_string(ctx.heap, "Object.setPrototypeOf requires an object or null");
-        if (msg_key == null || msg_str == null) { ctx.result.set_undefined(); return; }
-        TVal msg_tv; msg_tv.set_string(msg_str);
-        err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
-        ctx.should_throw = true;
-        ctx.throw_value.set_object(err);
-        return;
-    }
-    // Only set prototype on objects (not primitives)
-    if (!obj_val.is_object()) {
-        ctx.result.set_fastint(obj_val.get_fastint());
-        return;
-    }
-    HObject* obj = (HObject*)obj_val.get_heapptr();
-    if (proto_val.is_null()) {
-    } else {
-    }
-    ctx.result.set_object(obj);
-}
-
-// ============================================================================
 // Object.fromEntries — ES2019 §19.1.2.5
 // ============================================================================
 /// Creates a new object from an iterable of [key, value] pairs.
@@ -954,77 +857,12 @@ fn void builtin_object_proto_hasOwnProperty(BuiltinContext* ctx) {
     ctx.result.set_boolean(false);
 }
 
-/// Object.prototype.propertyIsEnumerable — ES5 §15.2.4.7
-fn void builtin_object_proto_propertyIsEnumerable(BuiltinContext* ctx) {
-    // V = first argument, converted to string key
-    TVal arg;
-    if (ctx.argc > 0) {
-        arg = ctx.regs[ctx.base_reg];
-    } else {
-        arg.set_undefined();
-    }
-    HString* key = builtin_to_string(ctx.heap, &arg);
-    if (key == null) {
-        ctx.result.set_boolean(false);
-        return;
-    }
-    // O = ToObject(this value)
-    TVal this_val = ctx.regs[ctx.base_reg - 1];
-    HObject* obj;
-    if (this_val.is_object() && this_val.get_heapptr() != null) {
-        obj = (HObject*)this_val.get_heapptr();
-    } else {
-        ctx.result.set_boolean(false);
-        return;
-    }
-    // Find own property descriptor
-    PropValue*? entry = obj.find_prop(key);
-    if (try e = entry) {
-        uint prop_idx = (uint)((char*)e - (char*)obj.prop_values()) / hobject::PropValue::size;
-        ctx.result.set_boolean(obj.get_prop_flags(prop_idx).enumerable);
-        return;
-    }
-    // STRING exotic: integer indices [0, clen) are enumerable own properties served lazily.
-    if (obj.flags.exotic_stringobj && key.is_arridx() && (*obj.extra_ptr()).prim.primitive_value.is_string()) {
-        HString* prim = (HString*)(*obj.extra_ptr()).prim.primitive_value.get_heapptr();
-        // Indices in [0, clen) are enumerable per ES5 §15.5.5.1
-        ctx.result.set_boolean(prim != null && key.array_index() < prim.char_length());
-        return;
-    }
-    ctx.result.set_boolean(false);
-}
-
 /// Object.prototype.data.valueOf — returns 'this'
 fn void builtin_object_proto_valueOf(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     ctx.result.set_fastint(this_val.get_fastint());
     ctx.result.set_number(this_val.get_number());
     ctx.result.set_object(this_val.get_heapptr());
-}
-
-/// Object.prototype.isPrototypeOf(V) — ES5 §15.2.4.6
-/// Returns true if the object is in the prototype chain of V.
-fn void builtin_object_proto_isPrototypeOf(BuiltinContext* ctx) {
-    ctx.result.set_boolean(false);
-
-    TVal this_val = ctx.regs[ctx.base_reg - 1];
-    if (!this_val.is_object() || this_val.get_heapptr() == null) {
-        return;
-    }
-    HObject* proto = (HObject*)this_val.get_heapptr();
-
-    // Get argument V — must be an object
-    if (ctx.argc == 0) {
-        return;
-    }
-    TVal arg = ctx.regs[ctx.base_reg];
-    if (!arg.is_object() || arg.get_heapptr() == null) {
-        return;
-    }
-    HObject* obj = (HObject*)arg.get_heapptr();
-
-    // No prototype chain — isPrototypeOf always returns false
-    ctx.result.set_boolean(false);
 }
 
 /// Object.prototype.toLocaleString() — ES5 §15.2.4.3
@@ -1081,23 +919,11 @@ fn bool register_object_constructor(EnvRecord* global_env, Heap* heap) {
     hasown_tv.set_lightfunc((void*)(usz)BUILTIN_OBJECT_PROTO_HASOWNPROPERTY);
     proto.put_prop(hasown_key, hasown_tv, hobject::PROP_FLAGS_WC);
 
-    // Add .propertyIsEnumerable() method to Object.prototype (non-enumerable per ES5 §15.2.4.7)
-    HString* propisenum_key = builtin_intern_string(heap, "propertyIsEnumerable");
-    TVal propisenum_tv;
-    propisenum_tv.set_lightfunc((void*)(usz)BUILTIN_OBJECT_PROTO_PROPERTYISENUMERABLE);
-    proto.put_prop(propisenum_key, propisenum_tv, hobject::PROP_FLAGS_WC);
-
     // Add .valueOf() method to Object.prototype (returns 'this')
     HString* valueof_key = (HString*)heap.strs[heap::BuiltinStr.VALUE_OF];
     TVal valueof_tv;
     valueof_tv.set_lightfunc((void*)(usz)BUILTIN_OBJECT_PROTO_VALUEOF);
     proto.put_prop(valueof_key, valueof_tv, hobject::PROP_FLAGS_WC);
-
-    // Add .isPrototypeOf() method to Object.prototype
-    HString* isproto_key = builtin_intern_string(heap, "isPrototypeOf");
-    TVal isproto_tv;
-    isproto_tv.set_lightfunc((void*)(usz)BUILTIN_OBJECT_PROTO_ISPROTOTYPEOF);
-    proto.put_prop(isproto_key, isproto_tv, hobject::PROP_FLAGS_WC);
 
     // Add .toLocaleString() method to Object.prototype (ES5 §15.2.4.3)
     HString* tolocalestring_key = builtin_intern_string(heap, "toLocaleString");
@@ -1142,13 +968,6 @@ fn bool register_object_constructor(EnvRecord* global_env, Heap* heap) {
     keys_tv.set_lightfunc((void*)(usz)BUILTIN_OBJECT_KEYS);
     obj.put_prop(keys_key, keys_tv, hobject::PROP_FLAGS_NWC);
 
-    // Object.getPrototypeOf — ES5 §15.2.3.2
-    HString* getproto_key = builtin_intern_string(heap, "getPrototypeOf");
-    if (getproto_key == null) return false;
-    TVal getproto_tv;
-    getproto_tv.set_lightfunc((void*)(usz)BUILTIN_OBJECT_GETPROTOTYPEOF);
-    obj.put_prop(getproto_key, getproto_tv, hobject::PROP_FLAGS_NWC);
-
     // Object.entries — ES2017 §19.1.2.21
     HString* entries_key = builtin_intern_string(heap, "entries");
     if (entries_key == null) return false;
@@ -1183,13 +1002,6 @@ fn bool register_object_constructor(EnvRecord* global_env, Heap* heap) {
     TVal hasown_static_tv;
     hasown_static_tv.set_lightfunc((void*)(usz)BUILTIN_OBJECT_HASOWN);
     obj.put_prop(hasown_static_key, hasown_static_tv, hobject::PROP_FLAGS_NWC);
-
-    // Object.setPrototypeOf — ES2015 §19.1.2.19
-    HString* setproto_key = builtin_intern_string(heap, "setPrototypeOf");
-    if (setproto_key == null) return false;
-    TVal setproto_tv;
-    setproto_tv.set_lightfunc((void*)(usz)BUILTIN_OBJECT_SETPROTOTYPEOF);
-    obj.put_prop(setproto_key, setproto_tv, hobject::PROP_FLAGS_NWC);
 
     // Object.fromEntries — ES2019 §19.1.2.5
     HString* fromentries_key = builtin_intern_string(heap, "fromEntries");
