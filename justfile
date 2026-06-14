@@ -31,3 +31,19 @@ test:
 # List available commands
 list:
     @just --list
+
+# ── Memory Benchmarks ────────────────────────────────────────────────────────
+
+# Measure peak RSS memory usage across engines
+bench-memory:
+    @echo "=== Memory Usage Benchmark ==="
+    @test -f out/test_vm || { echo "ERROR: out/test_vm not found — run: just build"; exit 1; }
+    @bash scripts/run_memory_bench.sh
+
+# Rebuild and measure memory usage
+bench-memory-compare:
+    @echo "=== Building ==="
+    c3c build test_vm
+    @echo ""
+    @echo "=== MEMORY USAGE ==="
+    @bash scripts/run_memory_bench.sh
