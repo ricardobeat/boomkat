@@ -906,12 +906,109 @@ fn bool desc_get(BuiltinContext* ctx, HObject* obj, hstring::HString* key, TVal*
         *out = ctx.heap.call_fn(ctx.vm, getter, null, 0, this_tv);
         if (ctx.heap.has_error) {
             ctx.should_throw = true;
+            ctx.throw_value = ctx.heap.error_value;
+            ctx.heap.has_error = false;
             return false;
         }
         return true;
     }
     // PROP_DATA
     *out = res.data_val;
+    return true;
+}
+
+/// Perform `[[Set]]` of `key` = `val` on `obj` with Throw=true (Object.assign
+/// semantics, ES2015 §19.1.2.2).  Invokes setters when an accessor exists
+/// (own or on prototype chain).  Throws TypeError when the target is
+/// non-writable for a new/existing data property or non-extensible for a
+/// new property.  Returns true on success, false on error (ctx->should_throw
+/// is set in the latter case).
+fn bool obj_assign_set(BuiltinContext* ctx, HObject* obj, hstring::HString* key, TVal* val) {
+    // Step 1: own property
+    int idx = obj.find_prop_idx((void*)key);
+    if (idx >= 0) {
+        hobject::PropFlags f = obj.get_prop_flags((uint)idx);
+        if (f.is_accessor) {
+            // Accessor — invoke the setter
+            TVal setter = hobject::hobject_access_setter(obj.prop_values()[(uint)idx]);
+            if (setter.is_undefined() || setter.is_null()) {
+                // No setter — Set returns true (no-op, per spec).
+                return true;
+            }
+            if (ctx.heap.call_fn == null || ctx.vm == null) {
+                // VM call_fn unavailable — degrade silently (matches legacy behavior)
+                return true;
+            }
+            TVal this_tv;
+            this_tv.set_object(obj);
+            TVal[1] args = { *val };
+            ctx.heap.call_fn(ctx.vm, setter, &args[0], 1, this_tv);
+            if (ctx.heap.has_error) {
+                ctx.should_throw = true;
+                ctx.throw_value = ctx.heap.error_value;
+                ctx.heap.has_error = false;
+                return false;
+            }
+            return true;
+        }
+        if (!f.writable) {
+            // Non-writable data property → throw TypeError
+            HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
+            if (catch err1 = err_raw) { return false; }
+            HObject* err = err_raw;
+            err.prototype = ctx.heap.type_err_proto;
+            HString* msg_key = builtin_intern_string(ctx.heap, "message");
+            HString* msg_str = builtin_intern_string(ctx.heap, "Cannot assign to read only property");
+            if (msg_key == null || msg_str == null) { return false; }
+            TVal msg_tv; msg_tv.set_string(msg_str);
+            err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
+            ctx.should_throw = true;
+            ctx.throw_value.set_object(err);
+            return false;
+        }
+        // Writable data property — write value (preserve existing flags)
+        TVal* entry = &obj.prop_values()[(uint)idx];
+        ctx.heap.tval_copy_ref(entry, val);
+        return true;
+    }
+
+    // Step 2: not an own property — check prototype chain for accessor
+    hobject::AccessorResult acc = obj.find_accessor_proto((void*)key, false);
+    if (acc.found) {
+        TVal setter = acc.accessor_fn;
+        if (setter.is_undefined() || setter.is_null()) {
+            return true;
+        }
+        if (ctx.heap.call_fn == null || ctx.vm == null) { return true; }
+        TVal this_tv;
+        this_tv.set_object(obj);
+        TVal[1] args = { *val };
+        ctx.heap.call_fn(ctx.vm, setter, &args[0], 1, this_tv);
+        if (ctx.heap.has_error) {
+            ctx.should_throw = true;
+            ctx.throw_value = ctx.heap.error_value;
+            ctx.heap.has_error = false;
+            return false;
+        }
+        return true;
+    }
+
+    // Step 3: not on prototype chain — create new data property if extensible
+    if (!obj.flags.extensible) {
+        HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
+        if (catch err1 = err_raw) { return false; }
+        HObject* err = err_raw;
+        err.prototype = ctx.heap.type_err_proto;
+        HString* msg_key = builtin_intern_string(ctx.heap, "message");
+        HString* msg_str = builtin_intern_string(ctx.heap, "Cannot add property to non-extensible object");
+        if (msg_key == null || msg_str == null) { return false; }
+        TVal msg_tv; msg_tv.set_string(msg_str);
+        err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
+        ctx.should_throw = true;
+        ctx.throw_value.set_object(err);
+        return false;
+    }
+    obj.put_prop((void*)key, *val, hobject::PROP_FLAGS_WEC);
     return true;
 }
 
@@ -2257,22 +2354,17 @@ fn void builtin_object_assign(BuiltinContext* ctx) {
         for (uint i = 0; i < src_obj.prop_count; i++) {
             if (src_obj.get_prop_flags(i).enumerable && src_obj.prop_key_at(i) != null) {
                 void* key = src_obj.prop_key_at(i);
-                TVal val = src_obj.prop_values()[i];
-                // [[Set]]: check own property first
-                int down_idx = downstream.find_prop_idx(key);
-                if (down_idx >= 0) {
-                    hobject::PropFlags f = downstream.get_prop_flags((uint)down_idx);
-                    if (!f.is_accessor && f.writable) {
-                        downstream.put_prop(key, val, hobject::PROP_FLAGS_WEC);
-                    }
-                    // Accessor or non-writable: silently skip (non-strict [[Set]] behavior)
-                } else {
-                    // Not own property — check prototype chain for accessor
-                    hobject::AccessorResult acc = downstream.find_accessor_proto(key, false);
-                    if (!acc.found && downstream.flags.extensible) {
-                        downstream.put_prop(key, val, hobject::PROP_FLAGS_WEC);
-                    }
-                    // Accessor on prototype or non-extensible: silently skip
+                // ES2015 §19.1.2.2 step 5.c: propValue = ? Get(from, nextKey).
+                // Use [[Get]] so source getters are invoked (the raw prop slot
+                // holds the GetterSetter object, not the getter's return value).
+                TVal val;
+                if (!desc_get(ctx, src_obj, (hstring::HString*)key, &val)) {
+                    if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+                    continue;
+                }
+                if (!obj_assign_set(ctx, downstream, (hstring::HString*)key, &val)) {
+                    ctx.result.set_undefined();
+                    return;
                 }
             }
         }
@@ -2286,17 +2378,9 @@ fn void builtin_object_assign(BuiltinContext* ctx) {
                         HString* key = builtin_intern_string(ctx.heap, digit_buf[:(uint)dlen]);
                         if (key != null) {
                             TVal val = src_obj.array_part()[i];
-                            int down_idx = downstream.find_prop_idx((void*)key);
-                            if (down_idx >= 0) {
-                                hobject::PropFlags f = downstream.get_prop_flags((uint)down_idx);
-                                if (!f.is_accessor && f.writable) {
-                                    downstream.put_prop((void*)key, val, hobject::PROP_FLAGS_WEC);
-                                }
-                            } else {
-                                hobject::AccessorResult acc = downstream.find_accessor_proto((void*)key, false);
-                                if (!acc.found && downstream.flags.extensible) {
-                                    downstream.put_prop((void*)key, val, hobject::PROP_FLAGS_WEC);
-                                }
+                            if (!obj_assign_set(ctx, downstream, key, &val)) {
+                                ctx.result.set_undefined();
+                                return;
                             }
                         }
                     }
@@ -2311,30 +2395,15 @@ fn void builtin_object_assign(BuiltinContext* ctx) {
                     HString* ik = ctx.heap.int_to_hstring((long)ci);
                     if (ik == null) continue;
                     // Character properties are always writable, enumerable, configurable
-                    int down_idx = downstream.find_prop_idx((void*)ik);
-                    if (down_idx >= 0) {
-                        hobject::PropFlags f = downstream.get_prop_flags((uint)down_idx);
-                        if (!f.is_accessor && f.writable) {
-                            uint cp = prim.char_at(ci);
-                            char[4] cbuf;
-                            uint cblen = hstring::encode_codepoint(cp, cbuf[:4]);
-                            HString* ch_str = ctx.heap.str_intern(cbuf[:cblen]);
-                            if (ch_str != null) {
-                                TVal ch_tv; ch_tv.set_string(ch_str);
-                                downstream.put_prop((void*)ik, ch_tv, hobject::PROP_FLAGS_WEC);
-                            }
-                        }
-                    } else {
-                        hobject::AccessorResult acc = downstream.find_accessor_proto((void*)ik, false);
-                        if (!acc.found && downstream.flags.extensible) {
-                            uint cp = prim.char_at(ci);
-                            char[4] cbuf;
-                            uint cblen = hstring::encode_codepoint(cp, cbuf[:4]);
-                            HString* ch_str = ctx.heap.str_intern(cbuf[:cblen]);
-                            if (ch_str != null) {
-                                TVal ch_tv; ch_tv.set_string(ch_str);
-                                downstream.put_prop((void*)ik, ch_tv, hobject::PROP_FLAGS_WEC);
-                            }
+                    uint cp = prim.char_at(ci);
+                    char[4] cbuf;
+                    uint cblen = hstring::encode_codepoint(cp, cbuf[:4]);
+                    HString* ch_str = ctx.heap.str_intern(cbuf[:cblen]);
+                    if (ch_str != null) {
+                        TVal ch_tv; ch_tv.set_string(ch_str);
+                        if (!obj_assign_set(ctx, downstream, ik, &ch_tv)) {
+                            ctx.result.set_undefined();
+                            return;
                         }
                     }
                 }
