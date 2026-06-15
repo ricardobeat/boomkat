@@ -57,6 +57,7 @@ echo ""
 for bin in test_vm test_vm_noregexp minimal; do
     path="$PROJ_DIR/out/$bin"
     if [ -f "$path" ]; then
+        strip "$path" 2>/dev/null || true
         size_bytes=$(wc -c < "$path" | tr -d ' ')
         size_kb=$(( size_bytes / 1024 ))
         printf "  %-24s %6d KB\n" "$bin" "$size_kb"

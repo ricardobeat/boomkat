@@ -81,49 +81,6 @@ struct LongjmpState {
     bool     iserror;
 }
 
-// --- GeneratorState (ES6 §25.3) -------------------------------------------
-
-/// Generator execution state per ES6 §25.3.3.1 GeneratorState.
-enum GeneratorStateType : char {
-    GEN_SUSPENDED_START,
-    GEN_SUSPENDED_YIELD,
-    GEN_EXECUTING,
-    GEN_COMPLETED,
-}
-
-/// How a generator was resumed — determines what the YIELD opcode does
-/// when execution reaches a yield point.
-enum ResumeKind : char {
-    NEXT,     /// .next() — yield returns IteratorResult as usual
-    THROW,    /// .throw() — inject exception at yield point
-    RETURN,   /// .return() — inject return at yield point
-}
-
-/// Saved execution context for a generator.
-///
-/// When a generator function is called, instead of executing the body
-/// immediately, the VM saves the initial execution state in this struct
-/// and returns a generator object.  Subsequent calls to .next(), .throw(),
-/// or .return() resume execution from the saved state.
-struct GeneratorState {
-    GeneratorStateType state;
-    void* func;               // CompiledFunction* (opaque to avoid circular deps)
-    TVal* saved_regs;         // malloc'd array of register values
-    uint num_regs;
-    void* saved_pc;           // Instruction* (opaque)
-    void* var_env;            // EnvRecord* (opaque)
-    void* lex_env;            // EnvRecord* (opaque)
-    void* cat;                // Catcher* chain head (opaque) — saved across yields
-    TVal this_binding;
-    TVal resume_value;        // value passed by .next()
-    ResumeKind resume_kind;   // how the generator was resumed
-    TVal throw_value;         // exception to inject (when resume_kind == THROW)
-    TVal return_value;        // value to return (when resume_kind == RETURN)
-    // yield* delegation state
-    void* delegated_iter;     // HObject* — iterator being delegated to
-    uint delegated_index;     // current index in delegation loop
-}
-
 // --- Heap struct ----------------------------------------------------------
 
 struct Heap {
@@ -204,14 +161,7 @@ struct Heap {
     // weakmap_proto / weakset_proto removed in TinyDuck.
     HObject* symbol_proto;
     HObject* promise_proto;
-    HObject* generator_proto;
     HObject* iterator_proto;   // %IteratorPrototype% (ES6 §25.1.2)
-
-    // Generator resume state (set by .next()/.throw()/.return() builtins,
-    // read by the VM CALL handler and YIELD/RET opcodes).
-    GeneratorState* resume_gen;
-    TVal yield_value;          /// Value yielded by YIELD opcode
-    bool did_yield;            /// True when YIELD was just executed
 
     // Global symbol registry for Symbol.for / Symbol.keyFor
     HString** symbol_registry_keys;   /// Array of key HString* pointers
@@ -1006,8 +956,6 @@ fn void Heap.reset(&self) {
     self.curr_thread      = null;
     self.valstack_base    = null;
     self.valstack_top_ptr = null;
-    self.resume_gen       = null;
-    self.did_yield        = false;
     self.gc_root_count    = 0;
     self.gc_running       = false;
     self.gc_trigger_counter = GC_INITIAL_TRIGGER;
@@ -1034,7 +982,6 @@ fn void Heap.reset(&self) {
     // weakmap_proto / weakset_proto init removed in TinyDuck.
     self.symbol_proto     = null;
     self.promise_proto    = null;
-    self.generator_proto  = null;
     self.iterator_proto   = null;
 
     // Clear builtin string cache
@@ -1481,14 +1428,6 @@ fn void Heap.drain_gray(&self) {
                     self.mark_hobject((*obj.extra_ptr()).func.lex_env.bindings);
                 }
                 break;
-            case ObjClass.GENERATOR:
-                if ((*obj.extra_ptr()).gen.var_env != null && (*obj.extra_ptr()).gen.var_env.bindings != null) {
-                    self.mark_hobject((*obj.extra_ptr()).gen.var_env.bindings);
-                }
-                if ((*obj.extra_ptr()).gen.lex_env != null && (*obj.extra_ptr()).gen.lex_env.bindings != null) {
-                    self.mark_hobject((*obj.extra_ptr()).gen.lex_env.bindings);
-                }
-                break;
             case ObjClass.BOOLEAN:
             case ObjClass.NUMBER:
             case ObjClass.STRING:
@@ -1557,7 +1496,6 @@ fn void Heap.mark_roots(&self) {
     // weakmap_proto / weakset_proto GC mark removed in TinyDuck.
     if (self.symbol_proto != null) { self.mark_hobject(self.symbol_proto); }
     if (self.promise_proto != null) { self.mark_hobject(self.promise_proto); }
-    if (self.generator_proto != null) { self.mark_hobject(self.generator_proto); }
     if (self.iterator_proto != null) { self.mark_hobject(self.iterator_proto); }
 
     // Scan the VM value stack as a GC root — all live TVal slots

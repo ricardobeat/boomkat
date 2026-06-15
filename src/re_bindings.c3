@@ -18,7 +18,7 @@ fn void* re_compile(char* pattern, usz pattern_len,
     $if $feature(NO_REGEXP):
         return null;
     $else
-        ReCompiled*? r = tiny_re::tiny_re_compile(pattern, pattern_len, flags, error_msg, error_msg_size);
+        tiny_re::ReCompiled*? r = tiny_re::tiny_re_compile(pattern, pattern_len, flags, error_msg, error_msg_size);
         if (try compiled = r) {
             return (void*)compiled;
         }
@@ -31,9 +31,9 @@ fn int re_exec(void* re, char* input, int input_len,
                int* out_start, int* out_end, int* out_num_captures,
                int* caps_start, int* caps_end, int max_captures) {
     $if $feature(NO_REGEXP):
-        return tiny_re::RE_ERROR;
+        return RE_ERROR;
     $else
-        return tiny_re::tiny_re_exec((ReCompiled*)re, input, input_len, start_offset,
+        return tiny_re::tiny_re_exec((tiny_re::ReCompiled*)re, input, input_len, start_offset,
                                      out_start, out_end, out_num_captures,
                                      caps_start, caps_end, max_captures);
     $endif
@@ -41,6 +41,6 @@ fn int re_exec(void* re, char* input, int input_len,
 
 fn void re_free(void* re) {
     $if !$feature(NO_REGEXP):
-        tiny_re::tiny_re_free((ReCompiled*)re);
+        tiny_re::tiny_re_free((tiny_re::ReCompiled*)re);
     $endif
 }

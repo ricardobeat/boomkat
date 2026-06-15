@@ -341,33 +341,6 @@ enum Opcode : char {
     /// A-only format: A=result_reg, B=0, C=0.
     NEWTARGET,
 
-    // ---- Generators (ES6) ------------------------------------------------
-
-    /// `A = load_resume` — load the value passed to .next() into A.
-    /// Emitted by the compiler after every YIELD instruction so that the
-    /// yield expression evaluates to the value the caller passed to .next(val).
-    /// ABC format: A=result_reg, B=0, C=0.
-    LOAD_RESUME,
-
-    /// `yield A` — suspend generator execution and return the value in A.
-    /// YIELD saves the current activation state (registers, PC, environments)
-    /// to the generator object and returns {value: A, done: false} to the
-    /// caller of .next()/.throw()/.return().
-    /// ABC format: A=value_reg, B=0, C=0.
-    YIELD,
-
-    /// `A = yield* B` — delegate to another generator/iterable.
-    /// ABC format: A=result_reg, B=iterable_reg, C=0.
-    YIELD_STAR,
-
-    /// `return A` from a generator — marks generator as completed,
-    /// wraps result in IteratorResult, and returns.
-    /// Same encoding as RET (ABC format).
-    RET_GEN,
-    /// `return undefined` from a generator.
-    /// Same encoding as RETUNDEF (NONE format).
-    RETUNDEF_GEN,
-
     // ---- Fastint arithmetic fusion ----------------------------------------
 
     /// `A = A + 1` (in-place fastint increment). Hot loop counter idiom.
@@ -469,10 +442,6 @@ fn OpFormat get_op_format(Opcode op) {
         case SUPER_CALL: return ABC;
         case NEWTARGET:  return ABC;
 
-        case LOAD_RESUME:  return ABC;
-        case YIELD:      return ABC;
-        case YIELD_STAR: return ABC;
-
         // A-sBx format (signed 16-bit second operand)
         case LDINT:     return A_SBX;
         case IF_TRUE:   return A_SBX;
@@ -484,7 +453,6 @@ fn OpFormat get_op_format(Opcode op) {
         // No operands
         case NOP:       return NONE;
         case RETUNDEF:  return NONE;
-        case RETUNDEF_GEN: return NONE;
         case DEBUGGER:  return NONE;
         case ENDTRY:    return NONE;
         case ENDFINALLY: return NONE;
@@ -750,8 +718,6 @@ bitstruct FuncFlags : uint {
     bool  has_rest      : 9;
     /// Function is an arrow function (lexical `this`).
     bool  is_arrow      : 11;
-    /// Function is a generator.
-    bool  is_generator  : 13;
     /// Function is an async function.
     bool  is_async      : 14;
     /// Function is a constructor method.
@@ -870,11 +836,6 @@ macro bool CompiledFunction.is_strict(&self) {
 /// Returns `true` when the function is an arrow function.
 macro bool CompiledFunction.is_arrow(&self) {
     return self.flags.is_arrow;
-}
-
-/// Returns `true` when the function is a generator.
-macro bool CompiledFunction.is_generator(&self) {
-    return self.flags.is_generator;
 }
 
 /// Returns `true` when the function is async.
@@ -1046,11 +1007,6 @@ const char*[Opcode.LAST_OP.ordinal + 1] OPCODE_NAMES = {
     [Opcode.CALL_S.ordinal]      = "CALL_S",
     [Opcode.SUPER_CALL.ordinal]  = "SUPER_CALL",
     [Opcode.NEWTARGET.ordinal]   = "NEWTARGET",
-    [Opcode.LOAD_RESUME.ordinal] = "LOAD_RESUME",
-    [Opcode.YIELD.ordinal]       = "YIELD",
-    [Opcode.YIELD_STAR.ordinal]  = "YIELD_STAR",
-    [Opcode.RET_GEN.ordinal]     = "RET_GEN",
-    [Opcode.RETUNDEF_GEN.ordinal] = "RETUNDEF_GEN",
     [Opcode.INC.ordinal]          = "INC",
     [Opcode.DEC.ordinal]          = "DEC",
     [Opcode.INC_VAR.ordinal]      = "INC_VAR",

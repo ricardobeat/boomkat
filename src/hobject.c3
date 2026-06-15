@@ -141,7 +141,6 @@ enum ObjClass : char {
     SET,
     // WEAKMAP / WEAKSET removed in TinyDuck — see tinyduck.md "What's Out".
     PROMISE,
-    GENERATOR,
     ARRAY_ITERATOR,
     STRING_ITERATOR,
     MAP_ITERATOR,
@@ -351,14 +350,6 @@ struct HObjectRegExp {
     int               flags;       // JS flag bits: 1=g, 2=i, 4=m
 }
 
-/// Generator: suspended execution state + captured env.
-struct HObjectGenerator {
-    void*             generator_data;
-    CompiledFunction* comp_func;
-    EnvRecord*        var_env;
-    EnvRecord*        lex_env;
-}
-
 /// Array/Map/Set iterator state.
 /// Active when flags.obj_class is ARRAY_ITERATOR, MAP_ITERATOR, or SET_ITERATOR.
 ///
@@ -378,7 +369,6 @@ union HObjectExtra {
     HObjectFunction  func;
     HObjectPrimitive prim;
     HObjectRegExp    regexp;
-    HObjectGenerator gen;
     HObjectIterator  iter;
 }
 
@@ -465,7 +455,7 @@ fn usz alloc_size_for_class(ObjClass cls) @inline {
 
 /// Accessor for subtype-specific fields.  Returns a reference to the
 /// HObjectExtra union at offset HObjectBase::size from the object.
-/// Valid for FUNCTION, GENERATOR, REGEXP, BOOLEAN, NUMBER, STRING, DATE,
+/// Valid for FUNCTION, REGEXP, BOOLEAN, NUMBER, STRING, DATE,
 /// THREAD, and *_ITERATOR classes.
 fn HObjectExtra* HObject.extra_ptr(&self) @inline {
     return (HObjectExtra*)((char*)self + HObjectBase::size);
