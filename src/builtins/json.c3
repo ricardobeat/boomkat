@@ -1,13 +1,13 @@
 /// JSON.parse and JSON.stringify.
-module duktape::builtins;
-import duktape::types;
+module tinyduck::builtins;
+import tinyduck::types;
 import std::math;
 import libc;
 
-import duktape::heap;
-import duktape::hstring;
-import duktape::hobject;
-import duktape::env;
+import tinyduck::heap;
+import tinyduck::hstring;
+import tinyduck::hobject;
+import tinyduck::env;
 import std::io;
 
 // ============================================================================

@@ -1,9 +1,9 @@
-module duktape::heap;
+module tinyduck::heap;
 
-import duktape::types;
-import duktape::hstring;
-import duktape::hobject;
-import duktape::bytecode;
+import tinyduck::types;
+import tinyduck::hstring;
+import tinyduck::hobject;
+import tinyduck::bytecode;
 import std::io;
 import std::core::mem::alloc;
 import std::core::mem::allocators;

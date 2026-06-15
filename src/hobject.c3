@@ -20,14 +20,14 @@
 ///
 /// The hash table stores uint indices into the props array.  A sentinel
 /// value (HASH_UNUSED / HASH_DELETED) marks empty or tombstone slots.
-module duktape::hobject;
+module tinyduck::hobject;
 
-import duktape::types;
-import duktape::hstring;
-import duktape::bytecode;
-import duktape::env;
-import duktape::re_bindings;
-import duktape::heap;
+import tinyduck::types;
+import tinyduck::hstring;
+import tinyduck::bytecode;
+import tinyduck::env;
+import tinyduck::re_bindings;
+import tinyduck::heap;
 import std::core::mem::alloc;
 import std::core::mem::mempool;
 import libc;

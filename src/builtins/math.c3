@@ -1,11 +1,11 @@
 /// Math built-in object methods.
-module duktape::builtins;
-import duktape::types;
-import duktape::hstring;
-import duktape::env;
+module tinyduck::builtins;
+import tinyduck::types;
+import tinyduck::hstring;
+import tinyduck::env;
 
-import duktape::heap;
-import duktape::hobject;
+import tinyduck::heap;
+import tinyduck::hobject;
 import std::io;
 import std::math;
 

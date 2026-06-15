@@ -3,7 +3,7 @@
 /// This module defines the fundamental value representation (TVal),
 /// garbage-collected heap object headers (HeapHeader), portable type
 /// aliases, numeric constants, and engine fault codes.
-module duktape::types;
+module tinyduck::types;
 
 // ============================================================================
 // Portable type aliases

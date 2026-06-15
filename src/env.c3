@@ -2,12 +2,12 @@
 ///
 /// Provides runtime variable resolution via a scope chain, matching
 /// Duktape's var_env / lex_env architecture.
-module duktape::env;
+module tinyduck::env;
 
-import duktape::types;
-import duktape::hstring;
-import duktape::hobject;
-import duktape::heap;
+import tinyduck::types;
+import tinyduck::hstring;
+import tinyduck::hobject;
+import tinyduck::heap;
 import libc;
 
 // ============================================================================

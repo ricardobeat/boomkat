@@ -5,9 +5,9 @@
 /// binary, float, exponent), string literals with full escape sequence
 /// support, template literals, regular expression literals, and all
 /// ES2015+ punctuators and keywords.
-module duktape::lexer;
+module tinyduck::lexer;
 
-import duktape::types;
+import tinyduck::types;
 import std::math;
 import libc;
 

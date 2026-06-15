@@ -1,6 +1,6 @@
 module tinyduck_runner;
 
-import duktape::heap;
+import tinyduck::heap;
 
 /**
  * Minimal entry point — just initialises and tears down the engine

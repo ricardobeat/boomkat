@@ -1,7 +1,7 @@
 /// RegExp bindings — now using the pure C3 tiny_re engine
-module duktape::re_bindings;
+module tinyduck::re_bindings;
 
-import duktape::tiny_re;
+import tinyduck::tiny_re;
 
 /* Re-export constants for other modules */
 const int RE_FLAG_IGNORECASE = tiny_re::RE_FLAG_IGNORECASE;

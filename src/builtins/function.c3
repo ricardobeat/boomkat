@@ -1,16 +1,16 @@
 /// Function constructor and Function.prototype methods.
-module duktape::builtins;
-import duktape::types;
-import duktape::bytecode;
+module tinyduck::builtins;
+import tinyduck::types;
+import tinyduck::bytecode;
 import std::math;
 import libc;
-import duktape::hstring;
-import duktape::env;
+import tinyduck::hstring;
+import tinyduck::env;
 
-import duktape::heap;
-import duktape::hobject;
-import duktape::compiler;
-import duktape::lexer;
+import tinyduck::heap;
+import tinyduck::hobject;
+import tinyduck::compiler;
+import tinyduck::lexer;
 
 // ============================================================================
 // Function constructor (ES5 §15.3)

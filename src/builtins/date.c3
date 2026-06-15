@@ -1,12 +1,12 @@
 /// Date constructor and Date.prototype methods.
-module duktape::builtins;
-import duktape::types;
+module tinyduck::builtins;
+import tinyduck::types;
 import std::math;
-import duktape::env;
+import tinyduck::env;
 
-import duktape::heap;
-import duktape::hstring;
-import duktape::hobject;
+import tinyduck::heap;
+import tinyduck::hstring;
+import tinyduck::hobject;
 import libc;
 
 // ============================================================================

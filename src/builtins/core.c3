@@ -1,16 +1,16 @@
 /// Built-in function registry for the Duktape C3 port.
 /// Core: shared types, constants, helpers, dispatch table, and registration.
-module duktape::builtins;
+module tinyduck::builtins;
 
-import duktape::types;
-import duktape::bytecode;
-import duktape::hstring;
-import duktape::hobject;
-import duktape::heap;
-import duktape::env;
-import duktape::compiler;
-import duktape::lexer;
-import duktape::re_bindings;
+import tinyduck::types;
+import tinyduck::bytecode;
+import tinyduck::hstring;
+import tinyduck::hobject;
+import tinyduck::heap;
+import tinyduck::env;
+import tinyduck::compiler;
+import tinyduck::lexer;
+import tinyduck::re_bindings;
 import std::io;
 import std::math;
 import libc;

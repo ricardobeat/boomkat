@@ -1,11 +1,11 @@
-module duktape::compiler;
+module tinyduck::compiler;
 
-import duktape::types;
-import duktape::lexer;
-import duktape::bytecode;
-import duktape::hstring;
-import duktape::hobject;
-import duktape::heap;
+import tinyduck::types;
+import tinyduck::lexer;
+import tinyduck::bytecode;
+import tinyduck::hstring;
+import tinyduck::hobject;
+import tinyduck::heap;
 import libc;
 import std::io;
 

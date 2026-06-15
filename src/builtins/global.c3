@@ -1,17 +1,17 @@
 /// Global built-in functions: print, parseInt, parseFloat, isNaN, isFinite, eval, URI encoding/decoding.
-module duktape::builtins;
-import duktape::types;
-import duktape::bytecode;
+module tinyduck::builtins;
+import tinyduck::types;
+import tinyduck::bytecode;
 import std::io;
 import std::math;
 import libc;
-import duktape::lexer;
-import duktape::compiler;
-import duktape::hstring;
-import duktape::hobject;
+import tinyduck::lexer;
+import tinyduck::compiler;
+import tinyduck::hstring;
+import tinyduck::hobject;
 
-import duktape::heap;
-import duktape::env;
+import tinyduck::heap;
+import tinyduck::env;
 
 /// Print a single TVal using proper JS ToString coercion.
 /// For objects, looks up and calls the object's toString() method via call_fn

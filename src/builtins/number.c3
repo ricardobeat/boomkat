@@ -1,13 +1,13 @@
 /// Number constructor and Number.prototype methods.
-module duktape::builtins;
-import duktape::types;
-import duktape::env;
+module tinyduck::builtins;
+import tinyduck::types;
+import tinyduck::env;
 import std::math;
 import libc;
-import duktape::hstring;
+import tinyduck::hstring;
 
-import duktape::heap;
-import duktape::hobject;
+import tinyduck::heap;
+import tinyduck::hobject;
 import std::io;
 
 // ============================================================================

@@ -1,12 +1,12 @@
 /// Promise constructor, Promise.prototype methods, and microtask integration.
-module duktape::builtins;
-import duktape::types;
+module tinyduck::builtins;
+import tinyduck::types;
 import libc;
-import duktape::hstring;
+import tinyduck::hstring;
 
-import duktape::heap;
-import duktape::hobject;
-import duktape::env;
+import tinyduck::heap;
+import tinyduck::hobject;
+import tinyduck::env;
 
 // ============================================================================
 // Promise helpers (ES6 §25.4)

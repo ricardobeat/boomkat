@@ -1,12 +1,12 @@
 /// Error constructors: Error, TypeError, RangeError, ReferenceError, SyntaxError, EvalError, URIError, AggregateError.
-module duktape::builtins;
-import duktape::types;
-import duktape::env;
+module tinyduck::builtins;
+import tinyduck::types;
+import tinyduck::env;
 import libc;
-import duktape::hstring;
-import duktape::hobject;
+import tinyduck::hstring;
+import tinyduck::hobject;
 
-import duktape::heap;
+import tinyduck::heap;
 
 // ============================================================================
 // Error constructor builtins

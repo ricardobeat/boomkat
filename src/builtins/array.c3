@@ -1,13 +1,13 @@
 /// Array constructor and Array.prototype methods.
-module duktape::builtins;
+module tinyduck::builtins;
 
-import duktape::types;
+import tinyduck::types;
 import std::math;
 import libc;
-import duktape::heap;
-import duktape::hstring;
-import duktape::hobject;
-import duktape::env;
+import tinyduck::heap;
+import tinyduck::hstring;
+import tinyduck::hobject;
+import tinyduck::env;
 
 // ============================================================================
 // Additional Array.prototype methods

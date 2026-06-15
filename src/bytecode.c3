@@ -21,10 +21,10 @@
 ///
 /// The `Instruction` bitstruct provides both direct field access and
 /// convenience methods for every layout.
-module duktape::bytecode;
+module tinyduck::bytecode;
 
-import duktape::types;
-import duktape::hobject;
+import tinyduck::types;
+import tinyduck::hobject;
 
 // ============================================================================
 // Constants

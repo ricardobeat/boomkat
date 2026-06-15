@@ -1,13 +1,13 @@
 module test_vm;
 
-import duktape::compiler;
-import duktape::vm;
-import duktape::heap;
-import duktape::env;
-import duktape::lexer;
-import duktape::types;
-import duktape::bytecode;
-import duktape::hstring;
+import tinyduck::compiler;
+import tinyduck::vm;
+import tinyduck::heap;
+import tinyduck::env;
+import tinyduck::lexer;
+import tinyduck::types;
+import tinyduck::bytecode;
+import tinyduck::hstring;
 import std::io;
 import libc;
 

@@ -1,11 +1,11 @@
 /// Boolean constructor and Boolean.prototype methods.
-module duktape::builtins;
-import duktape::types;
-import duktape::env;
-import duktape::hstring;
+module tinyduck::builtins;
+import tinyduck::types;
+import tinyduck::env;
+import tinyduck::hstring;
 
-import duktape::heap;
-import duktape::hobject;
+import tinyduck::heap;
+import tinyduck::hobject;
 
 // ============================================================================
 // Boolean constructor builtins

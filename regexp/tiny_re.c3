@@ -1,10 +1,10 @@
 /// tiny_re — Minimal regexp engine in C3
 ///
 /// Supports: . * + ? {n} {n,m} () | [...] \d \w \s \D \W \S ^ $
-module duktape::tiny_re;
+module tinyduck::tiny_re;
 
 import libc;
-import duktape::types;
+import tinyduck::types;
 
 const int RE_FLAG_IGNORECASE = 2;
 const int RE_FLAG_MULTILINE  = 4;

@@ -4,16 +4,16 @@
 /// - Value stack with activation records indexed by byte offsets
 /// - CALL opcode: A=nargs, BC=base (callee at base, this at base+1, args at base+2..base+1+nargs)
 /// - Bytecode executed via inner loop that restarts on ECMAScript-to-ECMAScript calls
-module duktape::vm;
+module tinyduck::vm;
 
-import duktape::types;
-import duktape::bytecode;
-import duktape::heap;
-import duktape::hstring;
-import duktape::hobject;
-import duktape::env;
-import duktape::builtins;
-import duktape::re_bindings;
+import tinyduck::types;
+import tinyduck::bytecode;
+import tinyduck::heap;
+import tinyduck::hstring;
+import tinyduck::hobject;
+import tinyduck::env;
+import tinyduck::builtins;
+import tinyduck::re_bindings;
 import std::io;
 import std::math;
 import libc;
@@ -33,7 +33,7 @@ const uint MAX_CALLS        = 512;
 const uint INITIAL_VALSTACK = 1024;
 
 // ============================================================================
-// Activation record (matches duk_activation in duktape)
+// Activation record (matches duk_activation in tinyduck)
 // ============================================================================
 
 struct Activation {
@@ -494,7 +494,7 @@ fn HString* typeof_string(Vm* vm, TVal* val) {
     }
 }
 
-// int_to_buf is defined in duktape::hstring and available via the module import.
+// int_to_buf is defined in tinyduck::hstring and available via the module import.
 
 /// Convert a double to an interned HString* using shortest round-trip formatting.
 fn HString*? vm_number_to_string(Vm* vm, double val) {

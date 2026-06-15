@@ -1,12 +1,12 @@
 /// Object constructor and Object.prototype methods.
-module duktape::builtins;
-import duktape::types;
-import duktape::env;
+module tinyduck::builtins;
+import tinyduck::types;
+import tinyduck::env;
 import libc;
 
-import duktape::heap;
-import duktape::hstring;
-import duktape::hobject;
+import tinyduck::heap;
+import tinyduck::hstring;
+import tinyduck::hobject;
 
 // ============================================================================
 // Object constructor builtins

@@ -11,10 +11,10 @@
 /// This module defines the HString struct, its bitstruct flags, allocation
 /// helpers, a standalone hash function, and various UTF-8 / array-index
 /// utilities.
-module duktape::hstring;
+module tinyduck::hstring;
 
-import duktape::types;
-import duktape::heap;
+import tinyduck::types;
+import tinyduck::heap;
 import std::core::mem;
 import libc;
 
@@ -303,7 +303,7 @@ fn HString*? hstring_alloc(void* heap_ptr, char[] data, uint hash) {
 
     void* raw = ((heap::Heap*)heap_ptr).alloc_no_gc(total) ?? null;
     if (raw == null) {
-        return duktape::types::ALLOC_ERROR~;
+        return tinyduck::types::ALLOC_ERROR~;
     }
 
     // Zero-fill the header portion.
@@ -361,7 +361,7 @@ fn HString*? hstring_concat(void* heap_ptr, HString* a, HString* b) {
 
     void* raw = ((heap::Heap*)heap_ptr).alloc_no_gc(total) ?? null;
     if (raw == null) {
-        return duktape::types::ALLOC_ERROR~;
+        return tinyduck::types::ALLOC_ERROR~;
     }
 
     libc::memset(raw, 0, HSTRING_HDR_SIZE);

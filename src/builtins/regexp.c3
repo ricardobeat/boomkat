@@ -1,13 +1,13 @@
 /// RegExp constructor and RegExp.prototype methods.
-module duktape::builtins;
-import duktape::types;
+module tinyduck::builtins;
+import tinyduck::types;
 import libc;
-import duktape::hstring;
-import duktape::env;
+import tinyduck::hstring;
+import tinyduck::env;
 
-import duktape::heap;
-import duktape::hobject;
-import duktape::re_bindings;
+import tinyduck::heap;
+import tinyduck::hobject;
+import tinyduck::re_bindings;
 
 // ============================================================================
 // RegExp constructor builtins

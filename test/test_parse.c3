@@ -1,7 +1,7 @@
 module test_parse;
 
-import duktape::heap;
-import duktape::lexer;
+import tinyduck::heap;
+import tinyduck::lexer;
 import std::io;
 
 fn int main() {

@@ -1,14 +1,14 @@
 /// String constructor and String.prototype methods.
-module duktape::builtins;
-import duktape::types;
-import duktape::env;
+module tinyduck::builtins;
+import tinyduck::types;
+import tinyduck::env;
 import std::math;
 import libc;
 
-import duktape::heap;
-import duktape::hstring;
-import duktape::hobject;
-import duktape::re_bindings;
+import tinyduck::heap;
+import tinyduck::hstring;
+import tinyduck::hobject;
+import tinyduck::re_bindings;
 
 // ============================================================================
 // String constructor builtins
