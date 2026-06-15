@@ -2,13 +2,21 @@
 
 # ── Build ────────────────────────────────────────────────────────────────────
 
-# Default build (VM test runner)
+# Rebuild test_vm (default build target) — includes RegExp
 build:
     c3c build test_vm
 
 # Build with NaN-boxing disabled (16-byte TVal, for 16-bit targets)
 build-nonanbox:
     c3c -D NONANBOX build test_vm
+
+# Build without RegExp support (no libregexp linked)
+build-noregexp:
+    c3c build test_vm_noregexp
+
+# Build the minimal engine (heap init only, no test runner)
+bench:
+    c3c build minimal
 
 # Clean build artifacts
 clean:

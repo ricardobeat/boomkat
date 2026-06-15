@@ -1,5 +1,8 @@
 /*
  * RegExp wrapper — implementation using QuickJS libregexp
+ *
+ * When built with -DNO_REGEXP, all functions become no-ops and no
+ * libregexp symbols are referenced.
  */
 #include <stdlib.h>
 #include <string.h>
@@ -26,14 +29,16 @@ void *lre_realloc(void *opaque, void *ptr, size_t size)
     return realloc(ptr, size);
 }
 
+#ifndef NO_REGEXP
+
 struct ReCompiled {
     uint8_t* bc;
     int      bc_len;
     int      capture_count;
 };
 
-ReCompiled* re_compile(const char* pattern, size_t pattern_len,
-                       int flags, char* error_msg, int error_msg_size)
+ReCompiled* re_compile_extern(const char* pattern, size_t pattern_len,
+                              int flags, char* error_msg, int error_msg_size)
 {
     int lre_flags = 0;
     if (flags & RE_FLAG_IGNORECASE) lre_flags |= LRE_FLAG_IGNORECASE;
@@ -63,10 +68,10 @@ ReCompiled* re_compile(const char* pattern, size_t pattern_len,
     return re;
 }
 
-int re_exec(ReCompiled* re, const char* input, int input_len,
-            int start_offset,
-            int* out_start, int* out_end, int* out_num_captures,
-            int* caps_start, int* caps_end, int max_captures)
+int re_exec_extern(ReCompiled* re, const char* input, int input_len,
+                   int start_offset,
+                   int* out_start, int* out_end, int* out_num_captures,
+                   int* caps_start, int* caps_end, int max_captures)
 {
     if (!re || !re->bc) return RE_ERROR;
 
@@ -99,10 +104,40 @@ int re_exec(ReCompiled* re, const char* input, int input_len,
     return RE_ERROR;
 }
 
-void re_free(ReCompiled* re)
+void re_free_extern(ReCompiled* re)
 {
     if (re) {
         if (re->bc) lre_realloc(NULL, re->bc, 0);
         free(re);
     }
 }
+
+#else /* NO_REGEXP — stubs, no libregexp dependency */
+
+ReCompiled* re_compile_extern(const char* pattern, size_t pattern_len,
+                              int flags, char* error_msg, int error_msg_size)
+{
+    (void)pattern; (void)pattern_len; (void)flags;
+    if (error_msg && error_msg_size > 0) {
+        error_msg[0] = '\0';
+    }
+    return NULL;
+}
+
+int re_exec_extern(ReCompiled* re, const char* input, int input_len,
+                   int start_offset,
+                   int* out_start, int* out_end, int* out_num_captures,
+                   int* caps_start, int* caps_end, int max_captures)
+{
+    (void)re; (void)input; (void)input_len; (void)start_offset;
+    (void)out_start; (void)out_end; (void)out_num_captures;
+    (void)caps_start; (void)caps_end; (void)max_captures;
+    return RE_ERROR;
+}
+
+void re_free_extern(ReCompiled* re)
+{
+    (void)re;
+}
+
+#endif /* NO_REGEXP */
