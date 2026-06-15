@@ -1,8 +1,6 @@
 {
   "langrev": "1",
   "warnings": [ "all" ],
-  "c-sources": [ "libregexp/libregexp.c", "libregexp/libunicode.c", "libregexp/re_wrapper.c" ],
-  "c-include-dirs": [ "libregexp" ],
   "targets": {
     "lib": {
       "type": "static-lib",
@@ -12,7 +10,6 @@
     "minimal": {
       "type": "executable",
       "sources": [ "src", "minimal_runner/main.c3" ],
-      "c-sources-override": [],
       "features": [ "NO_REGEXP" ],
       "opt": "Oz",
       "single-module": true,
@@ -21,7 +18,6 @@
     "test_vm": {
       "type": "executable",
       "sources": [ "src", "test_vm_runner/test_vm.c3" ],
-      "c-sources-override": [ "libregexp/libregexp.c", "libregexp/libunicode.c", "libregexp/re_wrapper.c" ],
       "opt": "Oz",
       "single-module": true,
       "strip-unused": true
@@ -29,8 +25,7 @@
     "test_vm_noregexp": {
       "type": "executable",
       "sources": [ "src", "test_vm_runner/test_vm.c3" ],
-      "c-sources-override": [ "libregexp/re_wrapper.c" ],
-      "cflags": "-DNO_REGEXP",
+      "features": [ "NO_REGEXP" ],
       "opt": "Oz",
       "single-module": true,
       "strip-unused": true
