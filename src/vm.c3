@@ -1895,12 +1895,6 @@ fn TVal? Vm.run(Vm* vm) {
             ra.set_fastint((long)insn.get_sbc());
             break;
 
-        case Opcode.LDINTX: {
-            long ix_high = ra.get_fastint();
-            ra.set_fastint((ix_high << 16) | (long)insn.get_bc());
-            break;
-        }
-
         case Opcode.LDUNDEF:
             ra.set_undefined();
             break;
@@ -4754,10 +4748,6 @@ fn TVal? Vm.run(Vm* vm) {
             continue;
         }
 
-        case Opcode.CALL_PROP:
-            ra.set_undefined();
-            break;
-
         case Opcode.SUPER_CALL: {
             // A = super(B, args...) — call superclass constructor
             // Uses current activation's new.target
@@ -5270,9 +5260,6 @@ fn TVal? Vm.run(Vm* vm) {
             needs_restart = true;
             break;
         }
-
-        case Opcode.TAILCALL:
-            break;
 
         // === RETURNS ===
 
@@ -5813,10 +5800,6 @@ fn TVal? Vm.run(Vm* vm) {
             break;
         }
 
-        case Opcode.DELVAR:
-            ra.set_boolean(true);
-            break;
-
         // === CLOSURES ===
 
         case Opcode.CLOSURE: {
@@ -5873,40 +5856,6 @@ fn TVal? Vm.run(Vm* vm) {
 
                     ra.set_object(func_obj);
                     track_heap_store(act, ra, (uint)insn.a);
-                } else {
-                    ra.set_undefined();
-                }
-            } else {
-                ra.set_undefined();
-            }
-            break;
-        }
-
-        case Opcode.GETBOUND: {
-            uint bc = insn.get_bc();
-            // Constants[bc] = FASTINT depth, constants[bc+1] = STRING name
-            if (bc + 1 < vm.current_func.const_count) {
-                TVal depth_val = constants[bc];
-                TVal name_val = constants[bc + 1];
-                if ((depth_val.is_fastint() || depth_val.is_number()) && name_val.is_string()) {
-                    uint depth = (uint)(depth_val.is_fastint() ? depth_val.get_fastint() : (long)depth_val.get_number());
-                    void* key = name_val.get_heapptr();
-                    TVal? result = env::env_get_at_depth(act.lex_env, depth, key);
-                    if (try v = result) {
-                        vm.heap.tval_copy_ref(ra, &v);
-                        track_heap_store(act, ra, (uint)insn.a);
-                    } else {
-                        // Also check var_env if different
-                        if (act.lex_env != act.var_env) {
-                            result = env::env_get_at_depth(act.var_env, depth, key);
-                            if (try v2 = result) {
-                                vm.heap.tval_copy_ref(ra, &v2);
-                                track_heap_store(act, ra, (uint)insn.a);
-                                break;
-                            }
-                        }
-                        ra.set_undefined();
-                    }
                 } else {
                     ra.set_undefined();
                 }
@@ -6172,12 +6121,6 @@ fn TVal? Vm.run(Vm* vm) {
         case Opcode.DEBUGGER:
             break;
 
-        case Opcode.BREAK:
-            break;
-
-        case Opcode.CONTINUE:
-            break;
-
         case Opcode.INITGET: {
             // A=object, B=key, C=getter_function
             // Define a getter accessor property on object A with key B.
@@ -6241,12 +6184,6 @@ fn TVal? Vm.run(Vm* vm) {
             }
             break;
         }
-
-        case Opcode.INITSETI:
-            break;
-
-        case Opcode.CSVARI:
-            break;
 
         // WITH_START / WITH_END removed in TinyDuck — parser rejects `with`.
 

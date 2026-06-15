@@ -79,9 +79,6 @@ enum Opcode : char {
     LDCONST,
     /// `A = (int)sBx`  — load a signed 16-bit immediate (A-sBx format).
     LDINT,
-    /// `A = (A << 16) | BC`  — extend a previously loaded integer with
-    /// the low 16 bits (A-BC format).
-    LDINTX,
     /// `A = undefined`.
     LDUNDEF,
     /// `A = null`.
@@ -200,11 +197,11 @@ enum Opcode : char {
     /// After call: valstack[A] = return value.
     CALL,
     /// `A = B.C(...)`  — method call (receiver is B).
-    CALL_PROP,
+    // CALL_PROP — removed in TinyDuck; method calls use LDCONST/GETPROP + CALL.
     /// `A = new B(C...)`  — constructor invocation.
     NEW_OBJ,
     /// Tail-call optimisation: reuses the current stack frame.
-    TAILCALL,
+    // TAILCALL — removed in TinyDuck; compiler never emits tail calls.
     /// `return A`  — return register A's value.
     RET,
     /// `return undefined`  — implicit return.
@@ -224,7 +221,7 @@ enum Opcode : char {
     /// Returns "undefined" for unresolvable references per ES5 §11.4.3.
     TYPEOFIDENT,
     /// `A = delete variable[constants[BC]]`  — delete a variable (A-BC).
-    DELVAR,
+    // DELVAR — removed in TinyDuck; `delete x` always returns true at compile time.
 
     // ---- Closures --------------------------------------------------------
 
@@ -233,7 +230,7 @@ enum Opcode : char {
     CLOSURE,
     /// `A = outer_scope[BC]`  — read a captured (bound) variable from an
     /// enclosing scope (A-BC format).
-    GETBOUND,
+    // GETBOUND — removed in TinyDuck; closures use CLOSURE + runtime binding.
 
     // ---- Iterator / for-in -----------------------------------------------
 
@@ -265,9 +262,9 @@ enum Opcode : char {
     /// Trigger a debugger breakpoint.
     DEBUGGER,
     /// Labelled `break` — target label encoded in BC (A-BC format).
-    BREAK,
+    // BREAK — removed in TinyDuck; break/continue use JUMP with patch targets.
     /// Labelled `continue` — target label encoded in BC (A-BC format).
-    CONTINUE,
+    // CONTINUE — removed in TinyDuck; see BREAK comment.
 
     // ---- Special property initialisation ----------------------------------
 
@@ -276,9 +273,9 @@ enum Opcode : char {
     /// Define getter: `Object.defineProperty(A, B, {get: C})`.
     INITGET,
     /// Define setter: `Object.defineProperty(A, B, {set: C})`.
-    INITSETI,
+    // INITSETI — removed in TinyDuck; setters use INITSET.
     /// Create the `arguments` exotic object for the current activation.
-    CSVARI,
+    // CSVARI — removed in TinyDuck; `arguments` not supported.
 
     // ---- with statement ---------------------------------------------------
 
@@ -419,18 +416,13 @@ fn OpFormat get_op_format(Opcode op) {
     switch (op) {
         // A-BC format (16-bit combined second operand)
         case LDCONST:   return A_BC;
-        case LDINTX:    return A_BC;
         case SETALEN:   return A_BC;
         case GETVAR:    return A_BC;
         case TYPEOFIDENT: return A_BC;
         case PUTVAR:    return A_BC;
         case DECLVAR:   return A_BC;
-        case DELVAR:    return A_BC;
         case CLOSURE:   return A_BC;
-        case GETBOUND:  return A_BC;
         case TRY:       return A_BC;
-        case BREAK:     return A_BC;
-        case CONTINUE:  return A_BC;
         // WITH_START — removed in TinyDuck
         case PUTLEX:     return A_BC;
         case PUTLEX_C:   return A_BC;
@@ -922,7 +914,6 @@ const char*[Opcode.LAST_OP.ordinal + 1] OPCODE_NAMES = {
     [Opcode.LDREG.ordinal]       = "LDREG",
     [Opcode.LDCONST.ordinal]     = "LDCONST",
     [Opcode.LDINT.ordinal]       = "LDINT",
-    [Opcode.LDINTX.ordinal]      = "LDINTX",
     [Opcode.LDUNDEF.ordinal]     = "LDUNDEF",
     [Opcode.LDNULL.ordinal]      = "LDNULL",
     [Opcode.LDTRUE.ordinal]      = "LDTRUE",
@@ -967,18 +958,14 @@ const char*[Opcode.LAST_OP.ordinal + 1] OPCODE_NAMES = {
     [Opcode.NEWARR.ordinal]      = "NEWARR",
     [Opcode.SETALEN.ordinal]     = "SETALEN",
     [Opcode.CALL.ordinal]        = "CALL",
-    [Opcode.CALL_PROP.ordinal]   = "CALL_PROP",
     [Opcode.NEW_OBJ.ordinal]     = "NEW_OBJ",
-    [Opcode.TAILCALL.ordinal]    = "TAILCALL",
     [Opcode.RET.ordinal]         = "RET",
     [Opcode.RETUNDEF.ordinal]    = "RETUNDEF",
     [Opcode.GETVAR.ordinal]      = "GETVAR",
     [Opcode.TYPEOFIDENT.ordinal]  = "TYPEOFIDENT",
     [Opcode.PUTVAR.ordinal]      = "PUTVAR",
     [Opcode.DECLVAR.ordinal]     = "DECLVAR",
-    [Opcode.DELVAR.ordinal]      = "DELVAR",
     [Opcode.CLOSURE.ordinal]     = "CLOSURE",
-    [Opcode.GETBOUND.ordinal]    = "GETBOUND",
     [Opcode.INITFOR.ordinal]     = "INITFOR",
     [Opcode.NEXTFOR.ordinal]     = "NEXTFOR",
     [Opcode.TRY.ordinal]         = "TRY",
@@ -989,13 +976,9 @@ const char*[Opcode.LAST_OP.ordinal + 1] OPCODE_NAMES = {
     [Opcode.ENDFINALLY.ordinal]  = "ENDFINALLY",
     [Opcode.NOP.ordinal]         = "NOP",
     [Opcode.DEBUGGER.ordinal]    = "DEBUGGER",
-    [Opcode.BREAK.ordinal]       = "BREAK",
-    [Opcode.CONTINUE.ordinal]    = "CONTINUE",
     [Opcode.INITSET.ordinal]     = "INITSET",
     [Opcode.INITGET.ordinal]     = "INITGET",
-    [Opcode.INITSETI.ordinal]    = "INITSETI",
-    [Opcode.CSVARI.ordinal]      = "CSVARI",
-    // WITH_START / WITH_END removed in TinyDuck — see comment near Opcode enum.
+    // WITH_START / WITH_END removed in TinyDuck.
     [Opcode.PUSH_LEX.ordinal]    = "PUSH_LEX",
     [Opcode.POP_LEX.ordinal]     = "POP_LEX",
     [Opcode.PUTLEX.ordinal]      = "PUTLEX",
