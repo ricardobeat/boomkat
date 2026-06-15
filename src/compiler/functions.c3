@@ -192,11 +192,9 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global) {
             // Re-consume 'function'
             self.expect(TokenType.FUNCTION)!;
 
-            // Handle generator star
-            bool saved_gen = self.is_generator;
-            self.is_generator = false;
+            // Reject generator star
             if (self.match(TokenType.STAR)) {
-                self.is_generator = true;
+                return types::SYNTAX_ERROR~;
             }
 
             Token name_tok2 = self.expect(TokenType.IDENTIFIER)!;
@@ -205,8 +203,6 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global) {
             self.has_local_bindings = true;
 
             CompiledFunction* inner = self.compile_inner_function(name_tok2.str_value)!;
-
-            self.is_generator = saved_gen;
 
             // Add to inner functions table
             uint inner_idx = 0;
@@ -406,13 +402,12 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
     bool has_return = false;
     if (self.code_count > 0) {
         Opcode last_op = self.code[self.code_count - 1].op;
-        if (last_op == Opcode.RET || last_op == Opcode.RETUNDEF ||
-            last_op == Opcode.RET_GEN || last_op == Opcode.RETUNDEF_GEN) {
+        if (last_op == Opcode.RET || last_op == Opcode.RETUNDEF) {
             has_return = true;
         }
     }
     if (!has_return) {
-        self.emit_simple(self.is_generator ? Opcode.RETUNDEF_GEN : Opcode.RETUNDEF);
+        self.emit_simple(Opcode.RETUNDEF);
     }
 }
 
@@ -476,10 +471,6 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name)
     // Strict-only engine: always strict, no propagation needed
     inner_ctx.is_strict = true;
     inner_ctx.lexer.set_strict(true);
-
-    // Propagate generator flag: if the caller is compiling a generator,
-    // the inner context (which parses the body) needs to know it's in a generator.
-    inner_ctx.is_generator = self.is_generator;
 
     // Propagate class context (for super expressions)
     inner_ctx.in_class_body = self.in_class_body;
@@ -616,13 +607,12 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name)
     bool has_return = false;
     if (inner_ctx.code_count > 0) {
         Opcode last_op = inner_ctx.code[inner_ctx.code_count - 1].op;
-        if (last_op == Opcode.RET || last_op == Opcode.RETUNDEF ||
-            last_op == Opcode.RET_GEN || last_op == Opcode.RETUNDEF_GEN) {
+        if (last_op == Opcode.RET || last_op == Opcode.RETUNDEF) {
             has_return = true;
         }
     }
     if (!has_return) {
-        inner_ctx.emit_simple(inner_ctx.is_generator ? Opcode.RETUNDEF_GEN : Opcode.RETUNDEF);
+        inner_ctx.emit_simple(Opcode.RETUNDEF);
     }
 
     CompiledFunction* func = inner_ctx.finish()!;
@@ -640,13 +630,9 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name)
 fn ushort? CompilerContext.function_expr(&self) {
     self.expect(TokenType.FUNCTION)!;
 
-    // Save and reset generator state
-    bool saved_is_generator = self.is_generator;
-    self.is_generator = false;
-
-    // Check for generator star: function* name?() {}
+    // Reject generator star: function* not supported in TinyDuck
     if (self.match(TokenType.STAR)) {
-        self.is_generator = true;
+        return types::SYNTAX_ERROR~;
     }
 
     // Optional function name
@@ -658,9 +644,6 @@ fn ushort? CompilerContext.function_expr(&self) {
 
     // Compile the function body into a sub-context
     CompiledFunction* inner = self.compile_inner_function(name)!;
-
-    // Restore generator flag
-    self.is_generator = saved_is_generator;
 
     // Add to inner functions table
     uint inner_idx = 0;
@@ -770,8 +753,7 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner(&self, char[]* params,
         bool has_explicit_return = false;
         if (arrow_ctx.code_count > 0) {
             Opcode last_op = arrow_ctx.code[arrow_ctx.code_count - 1].op;
-            if (last_op == Opcode.RET || last_op == Opcode.RETUNDEF ||
-                last_op == Opcode.RET_GEN || last_op == Opcode.RETUNDEF_GEN) {
+            if (last_op == Opcode.RET || last_op == Opcode.RETUNDEF) {
                 has_explicit_return = true;
             }
         }

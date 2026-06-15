@@ -1102,10 +1102,10 @@ fn void? CompilerContext.return_statement(&self) {
     TokenType next = self.peek_type();
     if (next == TokenType.SEMICOLON || next == TokenType.RBRACE ||
         next == TokenType.EOF_TOKEN || self.lexer.seen_line_term) {
-        self.emit_simple(self.is_generator ? Opcode.RETUNDEF_GEN : Opcode.RETUNDEF);
+        self.emit_simple(Opcode.RETUNDEF);
     } else {
         ushort val_reg = self.expression()!;
-        self.emit_abc(self.is_generator ? Opcode.RET_GEN : Opcode.RET, (uint)val_reg, 0, 0);
+        self.emit_abc(Opcode.RET, (uint)val_reg, 0, 0);
         // Note: do NOT free_reg(val_reg) here.  The return value register may
         // be a live local variable (e.g. `return i` inside a for-loop body).
         // Calling free_reg would let the allocator reuse it for subsequent
@@ -1535,14 +1535,9 @@ fn void? CompilerContext.function_declaration(&self) {
     // Function declarations are hoisted to function scope — need env.
     self.has_local_bindings = true;
 
-    // Save and reset generator state: nested function declarations
-    // inside a generator do not inherit the generator flag.
-    bool saved_is_generator = self.is_generator;
-    self.is_generator = false;
-
-    // Check for generator star: function* name() {}
+    // Reject generator star: function* not supported in TinyDuck
     if (self.match(TokenType.STAR)) {
-        self.is_generator = true;
+        return types::SYNTAX_ERROR~;
     }
 
     Token name_tok = self.expect(TokenType.IDENTIFIER)!;
@@ -1550,9 +1545,6 @@ fn void? CompilerContext.function_declaration(&self) {
 
     // Compile the function into a nested CompiledFunction
     CompiledFunction* inner = self.compile_inner_function(name_tok.str_value)!;
-
-    // Restore generator flag
-    self.is_generator = saved_is_generator;
 
     // Add to inner functions table
     uint inner_idx = 0;

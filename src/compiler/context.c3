@@ -227,9 +227,6 @@ struct CompilerContext {
     bool in_class_body;         // true when parsing a class body (enables super)
     bool has_super_binding;     // true when class has extends (super() available)
 
-    // Generator tracking
-    bool is_generator;          // true when compiling a generator function (function*)
-
     // Local binding tracking — used to decide needs_env optimisation.
     // Set to true when the function body contains any var/function declarations
     // that would be hoisted to the function scope.
@@ -863,7 +860,6 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     func.flags.is_strict = self.is_strict;
     func.flags.has_rest = self.has_rest;
     func.flags.is_constructable = self.is_constructable;
-    func.flags.is_generator = self.is_generator;
 
     // `needs_env` controls whether the CALL fast path allocates a fresh
     // env record + bindings object per call (2 allocations).  We only need
@@ -875,7 +871,6 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     bool can_skip_env = !needs_runtime_env
                      && !has_params_needing_env
                      && !self.is_arrow
-                     && !self.is_generator
                      && !self.is_async;
     func.flags.needs_env = !can_skip_env;
     func.num_args = self.num_args;
