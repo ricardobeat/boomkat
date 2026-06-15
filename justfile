@@ -18,6 +18,12 @@ build-noregexp:
 bench:
     c3c build minimal
 
+# Cross-compile for RISC-V 64-bit (Linux, static, musl)
+build-riscv64:
+    c3c --target linux-riscv64 --single-module=yes -Oz build test_vm
+    zig cc -target riscv64-linux-musl -static -Oz riscv_crt/crt.c build/obj/linux-riscv64/duktape.bytecode.o -o out/test_vm_rv64 -lm
+    @file out/test_vm_rv64
+
 # Clean build artifacts
 clean:
     c3c clean
