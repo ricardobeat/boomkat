@@ -481,6 +481,14 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
             // overwrites — if rA is already dead at the target regardless, it's fine).
             bool rA_live = false;
             for (uint j = i + 2; j < self.code_count; j++) {
+                Instruction jns = self.code[j];
+                Opcode jop2 = jns.op;
+                // Terminal instructions end the fall-through basic block.
+                if (jop2 == Opcode.RET || jop2 == Opcode.RETUNDEF
+                    || jop2 == Opcode.RET_GEN || jop2 == Opcode.RETUNDEF_GEN
+                    || jop2 == Opcode.THROW || jop2 == Opcode.JUMP) {
+                    break;
+                }
                 if (jump_targets[j]) {
                     // A path from outside arrives at j.  Check if rA is used at j
                     // (or shortly after) before being overwritten on that path.
@@ -509,8 +517,6 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
                     // rA not read at j — continue the fall-through scan.
                     continue;
                 }
-                Instruction jns = self.code[j];
-                Opcode jop2 = jns.op;
                 OpFormat jfmt = bytecode::get_op_format(jop2);
                 // IF_TRUE/IF_FALSE use field A as a source (the register being tested),
                 // not as a destination.  Check them for reads.
@@ -555,6 +561,12 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
                         if (j != (uint)tgt_raw && jump_targets[j]) { rA_live_branch = true; break; }
                         Instruction jns = self.code[j];
                         Opcode jop2 = jns.op;
+                        // Terminal instructions end the branch basic block.
+                        if (jop2 == Opcode.RET || jop2 == Opcode.RETUNDEF
+                            || jop2 == Opcode.RET_GEN || jop2 == Opcode.RETUNDEF_GEN
+                            || jop2 == Opcode.THROW || jop2 == Opcode.JUMP) {
+                            break;
+                        }
                         OpFormat jfmt = bytecode::get_op_format(jop2);
                         if (jop2 == Opcode.IF_TRUE || jop2 == Opcode.IF_FALSE) {
                             if ((uint)jns.a == rA) { rA_live_branch = true; break; }
@@ -735,6 +747,80 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         }
     }
 
+    // Compute needs_env early so we can strip unnecessary DECLVARs before NOP
+    // compaction.  Same rules as below where func.flags.needs_env is stored.
+    bool has_params_needing_env = self.has_rest || self.default_count > 0;
+    bool needs_runtime_env = ((self.has_local_bindings || self.num_args > 0) && self.has_closures)
+                          || self.uses_arguments
+                          || self.has_direct_eval;
+    bool can_skip_env = !needs_runtime_env
+                     && !has_params_needing_env
+                     && !self.is_arrow
+                     && !self.is_generator
+                     && !self.is_async;
+
+    // Even when no closure/arguments/eval is present, the compiler may still
+    // emit GETVAR/PUTVAR/INC_VAR/DEC_VAR for local variables (e.g. for-in loop
+    // variables, where PUTVAR clears the register) or for outer/global bindings.
+    // We can only skip the env if none of these instructions reference a name
+    // declared by this function.  Collect the local binding name indices from
+    // DECLVARs, then check for any env access touching that set.
+    if (can_skip_env && !self.is_global) {
+        bool uses_local_env = false;
+        uint[64] local_names;
+        uint local_name_count = 0;
+        for (uint i = 0; i < self.code_count; i++) {
+            if (self.code[i].op == Opcode.DECLVAR) {
+                uint name_idx = self.code[i].get_bc();
+                bool found = false;
+                for (uint j = 0; j < local_name_count; j++) {
+                    if (local_names[j] == name_idx) { found = true; break; }
+                }
+                if (!found) {
+                    if (local_name_count < 64) {
+                        local_names[local_name_count++] = name_idx;
+                    } else {
+                        // Too many distinct local bindings to track cheaply;
+                        // keep the env to be safe.
+                        uses_local_env = true;
+                        break;
+                    }
+                }
+            }
+        }
+        if (!uses_local_env) {
+            for (uint i = 0; i < self.code_count; i++) {
+                Opcode op = self.code[i].op;
+                if (op == Opcode.GETVAR || op == Opcode.PUTVAR
+                    || op == Opcode.INC_VAR || op == Opcode.DEC_VAR) {
+                    uint name_idx = self.code[i].get_bc();
+                    for (uint j = 0; j < local_name_count; j++) {
+                        if (local_names[j] == name_idx) {
+                            uses_local_env = true;
+                            break;
+                        }
+                    }
+                    if (uses_local_env) break;
+                }
+            }
+        }
+        if (uses_local_env) {
+            can_skip_env = false;
+        }
+    }
+
+    // When the function reuses the parent's env (no closures/eval/arguments),
+    // DECLVAR instructions are unnecessary: parameters and var bindings can live
+    // entirely in registers and no nested code can observe the environment.
+    // Replace them with NOPs so the compaction pass removes them.
+    if (can_skip_env && !self.is_global) {
+        for (uint i = 0; i < self.code_count; i++) {
+            if (self.code[i].op == Opcode.DECLVAR) {
+                self.code[i] = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
+            }
+        }
+    }
+
     // --- NOP Compaction Pass ---
     // Physically remove NOP instructions and remap all pc-relative offsets.
     // Must run last, after all other peepholes have introduced NOPs.
@@ -879,24 +965,8 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     func.flags.is_generator = self.is_generator;
     func.flags.uses_arguments = self.uses_arguments;
 
-    // `needs_env` controls whether the CALL fast path allocates a fresh
-    // env record + bindings object per call (2 allocations).  We only need
-    // a fresh env when the function's scope is actually accessed at runtime:
-    //   - var bindings captured by a nested closure
-    //   - arguments object
-    //   - direct eval
-    // Functions with var declarations but no closures, eval, or arguments
-    // can reuse the parent's env directly.
-    bool has_params_needing_env = self.has_rest || self.default_count > 0;
-    bool needs_runtime_env = ((self.has_local_bindings || self.num_args > 0) && self.has_closures)
-                          || self.uses_arguments
-                          || self.has_direct_eval;
-    bool can_skip_env = !needs_runtime_env
-                     && !has_params_needing_env
-                     && !self.is_arrow
-                     && !self.is_generator
-                     && !self.is_async;
     func.flags.needs_env = !can_skip_env;
+
     func.num_args = self.num_args;
     if (self.has_rest) {
         func.num_formals = self.rest_formal_count;

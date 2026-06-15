@@ -1430,6 +1430,15 @@ fn void decref_callee_regs(Vm* vm, Activation* callee_act) {
     }
 }
 
+/// Zero-initialize a range of registers to undefined.  For the small ranges
+/// typical of function prologues, an inline loop beats libc::memset call
+/// overhead and lets the C3 compiler unroll/optimize the stores.
+fn void zero_regs_undefined(TVal* regs, uint start, uint end) @inline {
+    for (uint i = start; i < end; i++) {
+        regs[i].set_undefined();
+    }
+}
+
 /// val: the return value (or undefined for RETUNDEF)
 /// @inline: critical hot-path, called on every RET instruction.
 fn TVal handle_return(Vm* vm, TVal val) @inline {
@@ -4601,20 +4610,18 @@ fn TVal? Vm.run(Vm* vm) {
                         // Zero remaining registers (temps after rest)
                         uint zero_start = rest_idx + 1;
                         if (zero_start < new_nregs) {
-                            libc::memset(&new_regs[zero_start], 0, (usz)(new_nregs - zero_start) * TVal::size);
+                            zero_regs_undefined(new_regs, zero_start, new_nregs);
                         }
                     } else {
                         uint undef_limit = formals < new_nregs ? formals : new_nregs;
                         if (nargs < undef_limit) {
-                            for (uint i = nargs; i < undef_limit; i++) {
-                                new_regs[i].set_undefined();
-                            }
+                            zero_regs_undefined(new_regs, nargs, undef_limit);
                         }
                         // Zero remaining registers (temps), but skip past any
                         // actual arguments already in the sliding-window slots.
                         uint zero_start = undef_limit > nargs ? undef_limit : nargs;
                         if (zero_start < new_nregs) {
-                            libc::memset(&new_regs[zero_start], 0, (usz)(new_nregs - zero_start) * TVal::size);
+                            zero_regs_undefined(new_regs, zero_start, new_nregs);
                         }
                     }
 
