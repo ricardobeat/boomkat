@@ -6,6 +6,7 @@ import duktape::bytecode;
 import duktape::hstring;
 import duktape::hobject;
 import duktape::heap;
+import duktape::optimizer;
 import libc;
 import std::io;
 
@@ -34,7 +35,11 @@ fn CompiledFunction*? compile(Lexer* lex, void* heap) {
     // Emit implicit "return undefined" at end of program
     ctx.emit_simple(Opcode.RETUNDEF);
 
-    return ctx.finish()!;
+    CompiledFunction*? result = ctx.finish()!;
+    if (try func = result) {
+        optimizer::optimize(func);
+    }
+    return result;
 }
 
 /// Compile source as eval code (Program, returns last expression value).
@@ -66,6 +71,7 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap) {
 
     CompiledFunction*? result = ctx.finish()!;
     if (try func = result) {
+        optimizer::optimize(func);
         // Eval code must NOT get its own scope — var declarations must go
         // to the enclosing scope (global env), not a fresh function scope.
         func.flags.needs_env = false;
@@ -82,5 +88,9 @@ fn CompiledFunction*? compile_function(Lexer* lex, void* heap, bool is_expr) {
     // Parse function body
     ctx.parse_function_body(is_expr)!;
 
-    return ctx.finish()!;
+    CompiledFunction*? result = ctx.finish()!;
+    if (try func = result) {
+        optimizer::optimize(func);
+    }
+    return result;
 }
