@@ -311,6 +311,10 @@ struct Heap {
     //   plain (72B): OBJECT, ERROR, PROXY
     //   array (80B): ARRAY
     //   func  (104B): FUNCTION, REGEXP, BOOLEAN, NUMBER, STRING, DATE, etc.
+    // Backing allocator for pool pages and shape arena.
+    // Stored as interface value — concrete type (LibcAllocator, SimpleHeapAllocator,
+    // ArenaAllocator, etc.) determines the actual allocation strategy.
+    Allocator backing;
     mempool::FixedBlockPool obj_pool_plain;
     mempool::FixedBlockPool obj_pool_array;
     mempool::FixedBlockPool obj_pool_func;
@@ -381,61 +385,37 @@ fn void default_fatal(void* udata, char* msg) {
 // Libc allocator for FixedBlockPool
 // ============================================================================
 
-/// Thin wrapper around libc malloc/calloc/free that satisfies the
-/// std::core::mem::allocator::Allocator interface required by FixedBlockPool.
-struct LibcPoolAllocator (Allocator)
-{
-    char _dummy;
-}
-
-const LibcPoolAllocator LIBC_POOL_ALLOCATOR = {};
-
-fn void*? LibcPoolAllocator.acquire(&self, sz bytes, AllocInitType init_type, sz alignment) @dynamic
-{
-    if (init_type == ZERO) {
-        void* ptr = libc::calloc(1, (usz)bytes);
-        return ptr ?: null;
-    }
-    void* p = libc::malloc((usz)bytes);
-    return p ?: null;
-}
-
-fn void*? LibcPoolAllocator.resize(&self, void* old_ptr, sz new_bytes, sz alignment) @dynamic
-{
-    void* ptr = libc::realloc(old_ptr, (usz)new_bytes);
-    return ptr ?: null;
-}
-
-fn void LibcPoolAllocator.release(&self, void* old_ptr, bool aligned) @dynamic
-{
-    libc::free(old_ptr);
-}
-
 // ============================================================================
 // Heap creation / destruction
 // ============================================================================
 
 /**
- * Allocate and initialise a brand-new Heap.
- *
- * If any allocator callback is `null` the corresponding default (libc)
- * version is used.  Returns a fault on allocation failure.
+ * Allocate and initialise a brand-new Heap with the default libc allocator.
+ * Returns a fault on allocation failure.
  */
 fn Heap*? create(
-    AllocFunc    a,
-    ReallocFunc  r,
-    FreeFunc     f,
-    void*        udata,
-    FatalFunc    fatal
 ) {
-    // Resolve defaults
-    AllocFunc   afn   = a     != null ? a     : &default_alloc;
-    ReallocFunc rfn   = r     != null ? r     : &default_realloc;
-    FreeFunc    ffn   = f     != null ? f     : &default_free;
-    FatalFunc   fatfn = fatal != null ? fatal : &default_fatal;
+    return create_with(&allocators::LIBC_ALLOCATOR);
+}
 
-    // Allocate the Heap struct itself through the chosen allocator
-    void* raw = afn(udata, Heap::size);
+/**
+ * Allocate and initialise a brand-new Heap backed by a custom Allocator.
+ *
+ * All internal allocations (gray stack, string table, promise stack,
+ * microtask queue, shape arena pages, and HObject pool pages) are routed
+ * through `backing`.  The Heap struct itself is still allocated via libc
+ * (chicken-and-egg).
+ *
+ * Pass `&allocators::LIBC_ALLOCATOR` for the standard libc-backed allocator,
+ * or a wrapper like `TrackingAllocator` for heap profiling.
+ *
+ * Returns a fault on allocation failure.
+ */
+fn Heap*? create_with(
+    Allocator backing
+) {
+    // Allocate the Heap struct itself through libc (can't use backing yet).
+    void* raw = libc::malloc(Heap::size);
     if (raw == null) {
         return HEAP_ALLOC_FAULT~;
     }
@@ -445,20 +425,23 @@ fn Heap*? create(
     // Zero-fill the whole struct
     libc::memset(raw, 0, Heap::size);
 
-    // Store allocator pointers
-    h.alloc_func   = afn;
-    h.realloc_func = rfn;
-    h.free_func    = ffn;
-    h.heap_udata   = udata;
-    h.fatal_func   = fatfn;
+    // Store allocator pointers (internal heap allocator, kept for legacy paths).
+    h.alloc_func   = &default_alloc;
+    h.realloc_func = &default_realloc;
+    h.free_func    = &default_free;
+    h.heap_udata   = null;
+    h.fatal_func   = &default_fatal;
+    // Backing allocator for FixedBlockPool pages, shape arena pages,
+    // AND internal structures (gray stack, string table, stacks, queues).
+    h.backing      = backing;
 
     // GC tunables
     h.gc_trigger_counter    = GC_INITIAL_TRIGGER;
 
-    // Allocate gray object stack
-    void* gray_raw = afn(udata, void*::size * GRAY_STACK_INITIAL_CAP);
+    // Allocate gray object stack via backing allocator.
+    void* gray_raw = alloc::malloc(h.backing, (sz)(void*::size * GRAY_STACK_INITIAL_CAP));
     if (gray_raw == null) {
-        ffn(udata, raw);
+        libc::free(raw);
         return HEAP_ALLOC_FAULT~;
     }
     h.gray_objects   = (void**)gray_raw;
@@ -471,14 +454,14 @@ fn Heap*? create(
     // Fixed hash seed (never changes after creation)
     h.hash_seed = h.rnd_state;
 
-    // Allocate the initial string table
+    // Allocate the initial string table via backing allocator.
     usz tbl_bytes = HString*::size * INITIAL_STR_TABLE_SIZE;
-    void* tbl_raw = afn(udata, tbl_bytes);
+    void* tbl_raw = alloc::calloc(h.backing, (sz)tbl_bytes);
     if (tbl_raw == null) {
-        ffn(udata, raw);
+        alloc::free(h.backing, h.gray_objects);
+        libc::free(raw);
         return HEAP_ALLOC_FAULT~;
     }
-    libc::memset(tbl_raw, 0, tbl_bytes);
 
     h.str_table      = (HString**)tbl_raw;
     h.str_table_size = INITIAL_STR_TABLE_SIZE;
@@ -487,34 +470,41 @@ fn Heap*? create(
     // Pre-intern well-known strings
     h.init_builtin_strs();
 
-    // Initialize shape arena (4096 byte pages, backed by libc).
-    h.shape_arena.init(&allocators::LIBC_ALLOCATOR, 4096);
+    // Initialize shape arena (4096 byte pages, backed by backing allocator).
+    h.shape_arena.init(h.backing, 4096);
 
     // Initialize shape system
     h.init_shapes();
 
-    // Allocate Promise resolve/reject target stack (16 slots initial)
+    // Allocate Promise resolve/reject target stack (16 slots initial) via backing.
     h.promise_resolve_cap = 16;
-    h.promise_resolve_stack = (HObject**)afn(udata, HObject*::size * 16);
-    if (h.promise_resolve_stack != null) {
-        libc::memset(h.promise_resolve_stack, 0, HObject*::size * 16);
+    h.promise_resolve_stack = (HObject**)alloc::calloc(h.backing, (sz)(HObject*::size * 16));
+    if (h.promise_resolve_stack == null) {
+        // Non-fatal: stack ops check for null before pushing.
     }
+
     h.promise_resolve_top = 0;
 
-    // Allocate microtask queue (32 entries initial = 16 handler+arg pairs)
+    // Allocate microtask queue (32 entries initial = 16 handler+arg pairs) via backing.
     h.microtask_capacity = 16;
-    h.microtask_queue = (TVal*)afn(udata, TVal::size * 32);
-    if (h.microtask_queue != null) {
-        libc::memset(h.microtask_queue, 0, TVal::size * 32);
+    h.microtask_queue = (TVal*)alloc::malloc(h.backing, (sz)(TVal::size * 32));
+    if (h.microtask_queue == null) {
+        alloc::free(h.backing, h.promise_resolve_stack);
+        alloc::free(h.backing, h.str_table);
+        alloc::free(h.backing, h.gray_objects);
+        libc::free(raw);
+        return HEAP_ALLOC_FAULT~;
     }
+    libc::memset(h.microtask_queue, 0, TVal::size * 32);
     h.microtask_count = 0;
     h.microtask_draining = false;
 
     // Initialize object pool allocators (3 size classes).
+    // Pages are allocated from the backing allocator.
     {
-        h.obj_pool_plain.init(&LIBC_POOL_ALLOCATOR, hobject::OBJ_SIZE_PLAIN, 512);
-        h.obj_pool_array.init(&LIBC_POOL_ALLOCATOR, hobject::OBJ_SIZE_ARRAY, 512);
-        h.obj_pool_func.init(&LIBC_POOL_ALLOCATOR, hobject::OBJ_SIZE_FUNC, 512);
+        h.obj_pool_plain.init(h.backing, hobject::OBJ_SIZE_PLAIN, 512);
+        h.obj_pool_array.init(h.backing, hobject::OBJ_SIZE_ARRAY, 512);
+        h.obj_pool_func.init(h.backing, hobject::OBJ_SIZE_FUNC, 512);
     }
 
     // Activate this heap for RC operations and shape transitions.
@@ -1087,9 +1077,9 @@ fn void Heap.reset(&self) {
     self.obj_pool_array.free();
     self.obj_pool_func.free();
     {
-        self.obj_pool_plain.init(&LIBC_POOL_ALLOCATOR, hobject::OBJ_SIZE_PLAIN, 512);
-        self.obj_pool_array.init(&LIBC_POOL_ALLOCATOR, hobject::OBJ_SIZE_ARRAY, 512);
-        self.obj_pool_func.init(&LIBC_POOL_ALLOCATOR, hobject::OBJ_SIZE_FUNC, 512);
+        self.obj_pool_plain.init(self.backing, hobject::OBJ_SIZE_PLAIN, 512);
+        self.obj_pool_array.init(self.backing, hobject::OBJ_SIZE_ARRAY, 512);
+        self.obj_pool_func.init(self.backing, hobject::OBJ_SIZE_FUNC, 512);
     }
 
     // Reintern builtin strings into the now-empty string table

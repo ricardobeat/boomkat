@@ -7,7 +7,7 @@ import std::io;
 fn int main() {
     char[] source = "var x = 42;";
     
-    Heap* heap = heap::create(null, null, null, null, null)!!;
+    Heap* heap = heap::create()!!;
     
     io::printfn("Tokenizing: var x = 42;");
     

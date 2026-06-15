@@ -7,7 +7,7 @@ import std::io;
 fn int main() {
     char[] source = "var x = 42; if (x > 10) { x = x + 1; }";
     
-    Heap* heap = heap::create(null, null, null, null, null)!!;
+    Heap* heap = heap::create()!!;
     
     io::printfn("Parsing: %s", source);
     

@@ -39,7 +39,7 @@ fn int main(String[] args) {
     char[]? source = file::load_temp(path);
     if (catch err = source) { io::eprintfn("Failed to read"); return 1; }
 
-    Heap*? hp = heap::create(null, null, null, null, null);
+    Heap*? hp = heap::create();
     if (catch h = hp) { io::eprintfn("Failed heap"); return 1; }
     defer hp.destroy();
 

@@ -7,7 +7,7 @@ import std::io;
 fn int main() {
     char[] source = "42";
     
-    Heap* heap = heap::create(null, null, null, null, null)!!;
+    Heap* heap = heap::create()!!;
     
     io::printfn("Parsing: 42");
     

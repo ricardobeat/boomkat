@@ -1096,10 +1096,10 @@ fn void HObject.set_array_idx(&self, uint idx, TVal val) {
         if (new_size == 0) {
             new_size = ARRAY_INITIAL_SIZE;
         }
-        // Overflow-safe doubling: bail if we'd overflow uint on next multiply
+        // Overflow-safe quadrupling: bail if we'd overflow uint on next multiply
         while (new_size <= idx) {
-            if (new_size >= 0x80000000) { return; }
-            new_size *= 2;
+            if (new_size >= 0x40000000) { return; }
+            new_size *= 4;
         }
         self.grow_array(new_size);
         // If grow failed (array_size unchanged), bail out.
