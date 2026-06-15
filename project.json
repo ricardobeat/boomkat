@@ -7,22 +7,22 @@
       "sources": [ "src", "regexp" ],
       "opt": "Os"
     },
-    "minimal": {
+    "tinyduck": {
       "type": "executable",
-      "sources": [ "src", "regexp", "minimal_runner/main.c3" ],
+      "sources": [ "src", "regexp", "tinyduck_runner/main.c3" ],
       "features": [ "NO_REGEXP" ],
       "opt": "Oz",
       "single-module": true,
       "strip-unused": true
     },
-    "test_vm": {
+    "tinyduck_test": {
       "type": "executable",
       "sources": [ "src", "regexp", "test_vm_runner/test_vm.c3" ],
       "opt": "Oz",
       "single-module": true,
       "strip-unused": true
     },
-    "test_vm_noregexp": {
+    "tinyduck_test_noregexp": {
       "type": "executable",
       "sources": [ "src", "regexp", "test_vm_runner/test_vm.c3" ],
       "features": [ "NO_REGEXP" ],

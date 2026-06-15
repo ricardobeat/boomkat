@@ -11,7 +11,7 @@ set -euo pipefail
 
 PROJ_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 BENCH_DIR="$PROJ_DIR/benchmarks"
-ENGINE="$PROJ_DIR/out/test_vm"
+ENGINE="$PROJ_DIR/out/tinyduck_test"
 LABEL="${1:-current}"
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -54,7 +54,7 @@ echo ""
 echo "── Binary Sizes (stripped) ──"
 echo ""
 
-for bin in test_vm test_vm_noregexp minimal; do
+for bin in tinyduck_test tinyduck_test_noregexp tinyduck; do
     path="$PROJ_DIR/out/$bin"
     if [ -f "$path" ]; then
         strip "$path" 2>/dev/null || true

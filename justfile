@@ -2,27 +2,27 @@
 
 # ── Build ────────────────────────────────────────────────────────────────────
 
-# Rebuild test_vm (default build target) — includes RegExp
+# Build the tinyduck engine (default)
 build:
-    c3c build test_vm
+    c3c build tinyduck
 
 # Build with NaN-boxing disabled (16-byte TVal, for 16-bit targets)
 build-nonanbox:
-    c3c -D NONANBOX build test_vm
+    c3c -D NONANBOX build tinyduck
 
-# Build without RegExp support (no libregexp linked)
-build-noregexp:
-    c3c build test_vm_noregexp
+# Build the test runner (includes RegExp)
+build-test:
+    c3c build tinyduck_test
 
-# Build the minimal engine (heap init only, no test runner)
-bench:
-    c3c build minimal
+# Build the test runner without RegExp support
+build-test-noregexp:
+    c3c build tinyduck_test_noregexp
 
 # Cross-compile for RISC-V 64-bit (Linux, static, musl)
 build-riscv64:
-    c3c --target linux-riscv64 --single-module=yes -Oz build test_vm
-    zig cc -target riscv64-linux-musl -static -Oz riscv_crt/crt.c build/obj/linux-riscv64/duktape.bytecode.o -o out/test_vm_rv64 -lm
-    @file out/test_vm_rv64
+    c3c --target linux-riscv64 --single-module=yes -Oz build tinyduck_test
+    zig cc -target riscv64-linux-musl -static -Oz riscv_crt/crt.c build/obj/linux-riscv64/tinyduck_test.o -o out/tinyduck_test_rv64 -lm
+    @file out/tinyduck_test_rv64
 
 # Clean build artifacts
 clean:
@@ -30,41 +30,41 @@ clean:
 
 # ── Run ──────────────────────────────────────────────────────────────────────
 
-# Run a single JS file
+# Build test runner and run a single JS file
 run file="test/hello.js":
-    c3c build test_vm
-    ./out/test_vm {{file}}
+    c3c build tinyduck_test
+    ./out/tinyduck_test {{file}}
 
 # ── Tests ────────────────────────────────────────────────────────────────────
 
-# Run the rosetta suite
+# Build test runner and run the rosetta suite
 test:
-    c3c build test_vm
-    bash test/rosetta/run.sh ./out/test_vm
+    c3c build tinyduck_test
+    bash test/rosetta/run.sh ./out/tinyduck_test
 
 # List available commands
 list:
     @just --list
 
-# ── Memory Benchmarks ────────────────────────────────────────────────────────
+# ── Benchmarks ───────────────────────────────────────────────────────────────
 
 # Measure peak RSS memory usage across engines
 bench-memory:
     @echo "=== Memory Usage Benchmark ==="
-    @test -f out/test_vm || { echo "ERROR: out/test_vm not found — run: just build"; exit 1; }
+    @test -f out/tinyduck_test || { echo "ERROR: out/tinyduck_test not found — run: just build-test"; exit 1; }
     @bash scripts/run_memory_bench.sh
 
 # Full performance benchmark (binary size, time, memory)
 bench-perf label="bytecode":
-    c3c build test_vm
-    c3c build test_vm_noregexp
-    c3c build minimal
+    c3c build tinyduck_test
+    c3c build tinyduck_test_noregexp
+    c3c build tinyduck
     bash scripts/run_benchmarks.sh {{label}}
 
 # Rebuild and measure memory usage
 bench-memory-compare:
     @echo "=== Building ==="
-    c3c build test_vm
+    c3c build tinyduck_test
     @echo ""
     @echo "=== MEMORY USAGE ==="
     @bash scripts/run_memory_bench.sh

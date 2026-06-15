@@ -3,14 +3,14 @@
 #
 # Usage: ./scripts/run_memory_bench.sh [script.js]
 #
-# Compares: C3 port (test_vm), original Duktape (duktape_orig), QuickJS (qjs)
+# Compares: C3 port (tinyduck_test), original Duktape (duktape_orig), QuickJS (qjs)
 # Measures peak RSS via /usr/bin/time -l (macOS) or /usr/bin/time -v (Linux).
 
 set -euo pipefail
 
 PROJ_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 BENCH_DIR="$PROJ_DIR/benchmarks"
-C3_RUNNER="$PROJ_DIR/out/test_vm"
+C3_RUNNER="$PROJ_DIR/out/tinyduck_test"
 DUKTAPE="$PROJ_DIR/out/duktape_orig"
 QJS="$PROJ_DIR/out/qjs"
 
@@ -58,7 +58,7 @@ print_table() {
 
     printf "  %-${col1}s   %-9s   %-8s\n" "$header" "Peak RSS" "vs QJS"
     echo "  ${hbar}---${hbar:0:11}---${hbar:0:10}"
-    printf "  %-${col1}s   %9s   %7sx\n" "test_vm (C3 port)" "$c3_label" "$c3_ratio"
+    printf "  %-${col1}s   %9s   %7sx\n" "tinyduck (C3 port)" "$c3_label" "$c3_ratio"
     printf "  %-${col1}s   %9s   %7sx\n" "duktape_orig (Duktape)" "$duk_label" "$duk_ratio"
     printf "  %-${col1}s   %9s   %7sx\n" "qjs (QuickJS)" "$qjs_label" "$qjs_ratio"
     echo ""

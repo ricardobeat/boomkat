@@ -1,4 +1,4 @@
-module minimal_engine;
+module tinyduck_runner;
 
 import duktape::heap;
 

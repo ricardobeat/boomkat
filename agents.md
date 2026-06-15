@@ -10,7 +10,8 @@ A deliberate non-conforming JavaScript engine written in C3. Drops the parts of 
 
 ## Build & Test
 
-- `just build` — default nanboxing build
+- `just build` — build the tinyduck engine (default)
+- `just build-test` — build the test runner (with JS execution)
 - `just test` — run rosetta + unit tests
 - See `justfile` for the full command list
 

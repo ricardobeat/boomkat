@@ -9,7 +9,8 @@ A deliberate non-conforming JavaScript engine written in [C3](https://c3-lang.or
 ## Quick Start
 
 ```bash
-just build          # build the VM test runner
+just build          # build the tinyduck engine
+just build-test     # build the test runner (with JS execution)
 just test           # run the rosetta suite
 just run file=...   # run a single JS file
 ```
