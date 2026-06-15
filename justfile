@@ -48,6 +48,13 @@ bench-memory:
     @test -f out/test_vm || { echo "ERROR: out/test_vm not found — run: just build"; exit 1; }
     @bash scripts/run_memory_bench.sh
 
+# Full performance benchmark (binary size, time, memory)
+bench-perf label="bytecode":
+    c3c build test_vm
+    c3c build test_vm_noregexp
+    c3c build minimal
+    bash scripts/run_benchmarks.sh {{label}}
+
 # Rebuild and measure memory usage
 bench-memory-compare:
     @echo "=== Building ==="

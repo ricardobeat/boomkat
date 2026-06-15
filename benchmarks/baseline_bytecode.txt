@@ -1,0 +1,25 @@
+============================================================
+  TinyDuck Benchmark Suite
+  Label: bytecode
+  Date: Mon Jun 15 03:50:21 CEST 2026
+============================================================
+
+── Binary Sizes (stripped) ──
+
+  test_vm                     584 KB
+  test_vm_noregexp            478 KB
+  minimal                     109 KB
+
+Benchmark                       Time(ms)   RSS(KB)
+---                                  ---       ---
+          Arithmetic loop (100k)        39      2416
+     Recursive fib(20)                10      2464
+ Function calls (100k)                28      2448
+        Object property (500k)        31      2416
+         Array ops (10k push+read)        13      2640
+        String concat (5k)            39      3008
+       Closures (100k calls)          32      2496
+         Mixed workload               60      2560
+         Memory stress (5k obj)        55      5904
+
+============================================================
