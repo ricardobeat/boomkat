@@ -51,7 +51,37 @@ The 43 rosetta tests cover 22+ JS language features and proved highly effective 
 
 ## Post-compilation Optimizer (src/optimizer.c3)
 
-A small function-local optimizer wired into all three `compiler::compile*` entry points via `optimizer::optimize(func)`. Currently a single pass is enabled: `pass_coalesce_arith_dest` detects `LDINT rX, imm; OP rY = rA, rX; LDREG rZ = rY; CALL rB = rB, nargs` and folds it into `LDINT rX, imm; OP rZ = rA, rX; CALL rB = rB, nargs`, saving one LDREG per recursive call. The pattern shows up for `n * rec(n-1)` style expressions; `bench_recursion` (Fib(32)) drops from ~250ms to ~210ms on macOS arm64 O3, ~16% compile+execute speedup. The pass requires `mov_dest == callee + 2` because the sliding-window register layout puts the first arg there (callee+1 is `this`, cleared to undefined by the VM).
+A small function-local optimizer wired into all three `compiler::compile*` entry points via `optimizer::optimize(func)`. The optimizer runs 4 iterations per basic block, passes in order:
+
+| Pass | Enables | What it does |
+|---|---|---|
+| `pass_coalesce_arith_dest` | yes | `LDINT rX, imm; OP rY = rA, rX; LDREG rZ = rY; CALL rB = rB, nargs` → `LDINT rX, imm; OP rZ = rA, rX; CALL rB = rB, nargs`. Saves one LDREG per call, main win for `bench_recursion` (~16%) |
+| `pass_constant_fold` | yes | Folds arithmetic/bitwise ops where both operands are LDINT/LDCONST fastints into a single LDINT. Handles USHR via `(ulong)` cast. Range-checked to FASTINT_MIN/MAX. |
+| `pass_constant_fold_unary` | yes | Folds UNM (skips -0), BNOT (always fastint), LNOT (produces BOOLEAN via LDFALSE/LDTRUE) |
+| `pass_ldint_through_ldreg` | yes | `LDINT rX, imm; LDREG rY = rX` → `LDINT rY, imm`; also LDCONST-of-fastint → LDINT. Catches the `i = 0` loop-init pattern. |
+| `pass_elide_unused_ldreg` | yes | Removes LDREG rD=rS where rD is overwritten before being read in the same block (conservative: keeps if `!overwritten` because the use might be in a successor block). Self-copies (rD=rD) always removed. |
+| `pass_dead_store` | yes | Removes pure-compute instructions whose result is overwritten before any read in the same block. Pure-compute set: arithmetic, bitwise, comparison, LDINT, LDCONST, LDUNDEF, LDNULL, LDTRUE, LDFALSE, LDTHIS, LDREG, UNM, UNP, BNOT, LNOT, TYPEOF, TYPEOFIDENT. |
+| `pass_copy_propagate` | **no** | Propagates single-use LDREG rA=rB to the consuming op, NOPing the LDREG. Disabled: causes 8/43 rosetta failures (needs more analysis). |
+
+### Block-local design
+
+All passes work within basic blocks to avoid inter-block data-flow analysis. Block boundaries are computed once by `mark_jump_targets`. The conservative rule: if a register definition's destination is `!used && overwritten` (found by scanning within the current block only), it's dead and can be NOPed. If `!used && !overwritten`, the definition might flow to a successor block and is kept.
+
+### reads_register and get_dest_reg helpers
+
+These two functions are the backbone of all passes and had **numerous bugs** that caused nearly all rosetta failures:
+
+**reads_register** — Returns true if `insn` reads `reg` as an operand:
+- ✅ CALL/CALL_S/NEW_OBJ/SUPER_CALL/TAILCALL: the argument window `[B+1, B+1+C]` (this + C explicit args) is implicitly read. Before this fix, dead_store removed argument slot setups, causing VM_ERROR/hangs on almost all tests. CALL_S uses conservative `reg > B` since C is a runtime register.
+- ✅ A_BC format ops: PUTVAR, DECLVAR, SETALEN, WITH_START, PUTLEX, PUTLEX_C all read register A. The original `reads_register` returned false for all A_BC ops, so PUTVAR's source register was never seen as "used".
+- ✅ JMP_N*: A is a signed offset, not a register. B and C are source regs.
+- ✅ THROW/RET/RET_GEN: reads A (value to throw/return) + B + C.
+- ✅ IN: reads A (key/object, both B and C) — A is both source and dest in Duktape.
+- ✅ INC/DEC (NONE format): reads AND writes register A.
+
+**get_dest_reg** — Returns the register defined by `insn`, or NO_REG:
+- ✅ JMP_N*: A is offset, not dest → NO_REG.
+- ✅ A_BC format: only LDCONST, LDINTX, GETVAR, TYPEOFIDENT, DELVAR, CLOSURE, GETBOUND, INC_VAR, DEC_VAR, LDINT write to A. PUTVAR, DECLVAR, TRY, BREAK, CONTINUE, INITTZ, etc. → NO_REG.
 
 ### Env controls
 
@@ -60,14 +90,20 @@ A small function-local optimizer wired into all three `compiler::compile*` entry
 
 ### compact_nops gotchas
 
-The optimizer creates NOPs (replacing the redundant LDREG with `make_abc(Opcode.NOP, 0, 0, 0)`) and `compact_nops` removes them. The first iteration had two non-determinism-producing bugs:
+The optimizer creates NOPs and `compact_nops` removes them. The following bugs were found and fixed:
 
-1. **Use-after-free of the `protected` bit array** — the array was freed right after the `old_to_new` table was built, but the build loop reads `!protected[i]` to decide whether to skip a NOP. By then, malloc's allocator had reused the freed memory for `old_to_new` or `new_code`, leaving `protected[i]` filled with garbage. When the bit happened to be set, the NOP wasn't skipped, the function came out one instruction *shorter than it should be* (real insn removed, NOP kept), and the VM hit a `VM_ERROR` ~10-30% of the time depending on which bits got clobbered. **Fix**: free `protected` only after the build loop completes. The rosetta `mutual_recursion` and `factorial` tests were the canaries.
+1. **Use-after-free of the `protected` bit array** — freed right after the `old_to_new` table was built, but the build loop reads `!protected[i]`. **Fix**: free `protected` only after the build loop completes.
 
-2. **JMP_NLE/NLT/LT/LE/GT/GE/GT/GE remap missing** — `compact_nops` only remapped `JUMP`, `IF_TRUE`, `IF_FALSE`, and `TRY`. When the coalesce pass inserts a NOP before a fused compare-branch, the branch's signed-8-bit offset becomes wrong. Adding the missing remap was straightforward (`get_dest_reg` style cast via `(ichar)insn.a`).
+2. **JMP_NLE/NLT/LT/LE/GT/GE remap missing** — only `JUMP`, `IF_TRUE`, `IF_FALSE`, and `TRY` were remapped. **Fix**: add fused compare-branch remap.
 
-3. **find_old_pc picking the wrong old pc** — when an old position is a NOP and the *surrounding* new positions both have the same `old_to_new[k]` value, a naive linear scan returns the NOP's k. The remap then computes the wrong absolute target. **Fix**: skip `Opcode.NOP` candidates in `find_old_pc`.
+3. **find_old_pc picking the wrong old pc** — naive linear scan returns a NOP's position. **Fix**: skip `Opcode.NOP` candidates.
 
-### `old_to_new` was originally a stack array of 1024
+4. **TRY catch_offset used `insn.a` (flags, 0-3) instead of `insn.get_bc()`** — both in `mark_jump_targets` and `compact_nops`. When a TRY had non-zero flags (e.g. just-catch), `old_catch` pointed 2-3 instructions past TRY instead of the actual catch target. The CATCH landing pad wasn't recognized as a block start. **Fix**: use `insn.get_bc()` in both places.
 
-This overflows for any function > 1024 insns. Heap-allocate it from `func.code_count`.
+5. **TRY make_a_bc swapped A/BC** — `make_a_bc(TRY, new_catch_off, old_flags)` set A=catch_offset, BC=flags, but TRY format is A=flags, BC=catch_offset. The VM read flags from the large catch offset value. **Fix**: `make_a_bc(TRY, old_flags, new_catch_off)`.
+
+6. **Protected NOP after TRY overwritten by find_old_pc fallback** — the NOP at TRY+1 is protected (carries finally offset in BC). `find_old_pc` skips NOPs, so it returned fallback 0 (meaning `func.code[0]`, the first instruction of the function) instead of the actual NOP position. This replaced the NOP with `LDUNDEF r0 = r0, r0`, corrupting the finally offset. **Fix**: use `old_pc + 1` directly instead of `find_old_pc`.
+
+### old_to_new was originally a stack array of 1024
+
+Overflows for any function > 1024 insns. Heap-allocate it from `func.code_count`.
