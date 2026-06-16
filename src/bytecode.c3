@@ -425,6 +425,11 @@ enum Opcode : char {
     /// Fused `GE rB, rC` + `IF_TRUE`: branch if (rB >= rC) is TRUE.
     JMP_GE,
 
+    /// Pre-compiled loop superinstruction.  A = loop_id in the function's
+    /// CompiledLoopTable, BC = number of instructions to skip after running.
+    /// Installed by jit_scan() over the tail of a hot fastint loop body.
+    LOOP_COMPILED,
+
     /// Sentinel — not a real opcode; marks the end of the enum.
     LAST_OP,
 }
@@ -481,6 +486,7 @@ fn OpFormat get_op_format(Opcode op) {
         case LOAD_RESUME:  return ABC;
         case YIELD:      return ABC;
         case YIELD_STAR: return ABC;
+        case LOOP_COMPILED: return A_BC;
 
         // A-sBx format (signed 16-bit second operand)
         case LDINT:     return A_SBX;
@@ -861,6 +867,9 @@ struct CompiledFunction {
     /// for the GETVAR/TYPEOFIDENT at `code[pc_offset]`.
     void*           var_ic_entries;  // VarICEntry* (opaque)
     uint            var_ic_count;
+
+    /// JIT side-data: pointer to CompiledLoopTable, or null if not scanned.
+    void*           jit_data;
 }
 
 // ============================================================================
@@ -1090,6 +1099,7 @@ const char*[Opcode.LAST_OP.ordinal + 1] OPCODE_NAMES = {
     [Opcode.JMP_LE.ordinal]       = "JMP_LE",
     [Opcode.JMP_GT.ordinal]       = "JMP_GT",
     [Opcode.JMP_GE.ordinal]       = "JMP_GE",
+    [Opcode.LOOP_COMPILED.ordinal] = "LOOP_COMPILED",
     [Opcode.LAST_OP.ordinal]     = "LAST_OP",
 };
 

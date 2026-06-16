@@ -6,6 +6,7 @@ import duktape::bytecode;
 import duktape::hstring;
 import duktape::hobject;
 import duktape::heap;
+import duktape::jit;
 import libc;
 import std::io;
 
@@ -34,7 +35,9 @@ fn CompiledFunction*? compile(Lexer* lex, void* heap) {
     // Emit implicit "return undefined" at end of program
     ctx.emit_simple(Opcode.RETUNDEF);
 
-    return ctx.finish()!;
+    CompiledFunction* f = ctx.finish()!;
+    jit::jit_scan(f, (Heap*)heap);
+    return f;
 }
 
 /// Compile source as eval code (Program, returns last expression value).

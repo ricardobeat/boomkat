@@ -14,6 +14,7 @@ import duktape::hobject;
 import duktape::env;
 import duktape::builtins;
 import duktape::re_bindings;
+import duktape::jit;
 import std::io;
 import std::math;
 import libc;
@@ -3060,6 +3061,31 @@ fn TVal? Vm.run(Vm* vm) {
                 jmp_result = jge_b >= jge_c;
             }
             if (jmp_result) { if ((ichar)insn.a < 0) { if (--vm.heap.bwd_gc_budget == 0) { if (vm.heap.gc_pending) { vm.heap.safepoint_gc(); } vm.heap.bwd_gc_budget = heap::BWD_GC_INTERVAL; } } curr_pc += (int)(ichar)insn.a; }
+            break;
+        }
+
+        case Opcode.LOOP_COMPILED: {
+            // A = loop_id in the function's CompiledLoopTable, BC = skip_count.
+            // On first hit: resolve TVal* from VarIC; on subsequent: run tight C3 loop.
+            uint loop_id = insn.a;
+            int  skip    = (int)insn.get_bc();
+            jit::CompiledLoopTable* tbl = (jit::CompiledLoopTable*)vm.current_func.jit_data;
+            if (tbl != null && loop_id < tbl.count) {
+                jit::CompiledLoop* cloop = &tbl.entries[loop_id];
+                if (!cloop.initialized) {
+                    jit::jit_init_loop(cloop, vm.current_func, var_ic_base);
+                }
+                if (cloop.initialized && jit::jit_run_loop(cloop)) {
+                    if (--vm.heap.bwd_gc_budget == 0) {
+                        if (vm.heap.gc_pending) { vm.heap.safepoint_gc(); }
+                        vm.heap.bwd_gc_budget = heap::BWD_GC_INTERVAL;
+                    }
+                    curr_pc = curr_pc + (skip - 1);
+                    break;
+                }
+            }
+            // Fallback: skip the patched block — values already updated or VarIC cold.
+            curr_pc = curr_pc + (skip - 1);
             break;
         }
 
