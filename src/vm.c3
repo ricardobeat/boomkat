@@ -3132,7 +3132,17 @@ fn TVal? Vm.run(Vm* vm) {
                             case hobject::ObjClass.NUMBER:  class_proto = vm.heap.number_proto; break;
                             case hobject::ObjClass.BOOLEAN: class_proto = vm.heap.bool_proto; break;
                             case hobject::ObjClass.PROMISE: class_proto = vm.heap.promise_proto; break;
-                            default: break;
+                            default: {
+                                // User-defined class: check hidden "class" property for method table
+                                HString* class_key = (HString*)vm.heap.strs[heap::BuiltinStr.CLASS];
+                                TVal? ctor = hobj.get_prop(class_key);
+                                if (try ctor_val = ctor) {
+                                    if (ctor_val.is_object()) {
+                                        class_proto = (HObject*)ctor_val.get_heapptr();
+                                    }
+                                }
+                                break;
+                            }
                         }
                         if (class_proto == null && hobj.is_callable()) {
                             class_proto = vm.heap.function_proto;
@@ -3441,7 +3451,17 @@ fn TVal? Vm.run(Vm* vm) {
                                 case hobject::ObjClass.NUMBER:  class_proto = vm.heap.number_proto; break;
                                 case hobject::ObjClass.BOOLEAN: class_proto = vm.heap.bool_proto; break;
                                 case hobject::ObjClass.PROMISE: class_proto = vm.heap.promise_proto; break;
-                                default: break;
+                                default: {
+                                    // User-defined class: check hidden "class" property for method table
+                                    HString* class_key2 = (HString*)vm.heap.strs[heap::BuiltinStr.CLASS];
+                                    TVal? ctor2 = hobj.get_prop(class_key2);
+                                    if (try ctor_val2 = ctor2) {
+                                        if (ctor_val2.is_object()) {
+                                            class_proto = (HObject*)ctor_val2.get_heapptr();
+                                        }
+                                    }
+                                    break;
+                                }
                             }
                             if (class_proto == null && hobj.is_callable()) {
                                 class_proto = vm.heap.function_proto;
@@ -5158,11 +5178,13 @@ fn TVal? Vm.run(Vm* vm) {
             }
             HObject* new_obj = new_obj_raw;
 
-            // Step 2: Set prototype from constructor.prototype
+            // Step 2: Link class method table — store constructor.prototype on instance
+            HString* class_key = (HString*)vm.heap.strs[heap::BuiltinStr.CLASS];
             HString* proto_key = (HString*)vm.heap.strs[heap::BuiltinStr.PROTOTYPE];
             TVal? proto_val = hobj.get_prop(proto_key);
             if (try pv = proto_val) {
                 if (pv.is_object() && pv.get_heapptr() != null) {
+                    new_obj.put_prop(class_key, pv, hobject::PROP_FLAGS_WEC);
                 }
             }
 

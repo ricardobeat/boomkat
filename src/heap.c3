@@ -303,6 +303,7 @@ enum BuiltinStr : uint {
     VALUE_OF,    // "valueOf"
     OBJECT_OBJECT, // "[object Object]"
     FUNCTION_STR,  // "[function]"
+    CLASS,         // "class" — hidden class method table key
 }
 
 // ============================================================================
@@ -469,15 +470,15 @@ fn Heap*? create_with(
 /// is safe to call multiple times.
 fn void Heap.init_builtin_strs(&self) {
     // Each entry: (ZString literal, byte length)
-    ZString[25] literals = {
+    ZString[26] literals = {
         "undefined", "object", "boolean", "number", "string", "function",
         "true", "false", "null", "message", "prototype", "constructor",
         "length", "value", "done", "symbol", "name", "",
         "NaN", "Infinity", "-Infinity",
-        "toString", "valueOf", "[object Object]", "[function]"
+        "toString", "valueOf", "[object Object]", "[function]", "class"
     };
-    uint[25] lengths = { 9, 6, 7, 6, 6, 8, 4, 5, 4, 7, 9, 11, 6, 5, 4, 6, 4, 0, 3, 8, 9, 8, 7, 15, 10 };
-    for (uint i = 0; i < 25; i++) {
+    uint[26] lengths = { 9, 6, 7, 6, 6, 8, 4, 5, 4, 7, 9, 11, 6, 5, 4, 6, 4, 0, 3, 8, 9, 8, 7, 15, 10, 5 };
+    for (uint i = 0; i < 26; i++) {
         char* ptr = (char*)literals[i];
         char[] data = ptr[:lengths[i]];
         uint h = self.hash_string(data);
@@ -493,7 +494,7 @@ fn void Heap.init_builtin_strs(&self) {
         }
     }
     // Pin: builtin strings must never be freed by refcounting.
-    for (uint i = 0; i < 25; i++) {
+    for (uint i = 0; i < 26; i++) {
         if (self.strs[i] != null) {
             ((HeapHeader*)self.strs[i]).refcount = STRING_PINNED_REFCOUNT;
         }
