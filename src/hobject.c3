@@ -370,6 +370,7 @@ union HObjectExtra {
     HObjectPrimitive prim;
     HObjectRegExp    regexp;
     HObjectIterator  iter;
+    uint             array_length;  // For ARRAY objects: dense-element count.
 }
 
 /// The core ECMAScript object representation.
@@ -420,8 +421,7 @@ struct HObjectBase {
 /// by flags.obj_class.
 struct HObject {
     inline HObjectBase base;
-    HObjectExtra      extra;
-    uint              array_length;
+    HObjectExtra      extra;       // offset 64 — includes array_length for ARRAY objects
 }
 
 // ============================================================================
@@ -461,10 +461,11 @@ fn HObjectExtra* HObject.extra_ptr(&self) @inline {
     return (HObjectExtra*)((char*)self + HObjectBase::size);
 }
 
-/// Accessor for array_length.  Returns a pointer to the uint at offset
-/// HObjectBase::size.  Only valid for ARRAY objects (flags.exotic_array).
+/// Accessor for array_length.  Returns a pointer to extra.array_length
+/// (first 4 bytes of the HObjectExtra union at offset HObjectBase::size).
+/// Only valid for ARRAY objects (flags.exotic_array).
 fn uint* HObject.array_len_ptr(&self) @inline {
-    return (uint*)((char*)self + HObjectBase::size);
+    return &self.extra.array_length;
 }
 
 // ============================================================================
