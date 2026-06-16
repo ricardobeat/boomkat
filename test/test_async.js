@@ -6,6 +6,7 @@ async function simple() {
 }
 var p1 = simple();
 print(typeof p1);  // "object"
+print(p1 instanceof Promise ? "PASS: p1 instanceof Promise" : "FAIL");
 
 // Test 2: await on non-promise value passes through
 async function await_val() {
@@ -13,6 +14,7 @@ async function await_val() {
 }
 var p2 = await_val();
 print(typeof p2);  // "object"
+print(p2 instanceof Promise ? "PASS: p2 instanceof Promise" : "FAIL");
 
 // Test 3: async function with computation
 async function compute() {

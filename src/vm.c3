@@ -2973,12 +2973,34 @@ fn TVal? Vm.run(Vm* vm) {
             ra.set_boolean(false);
 
             if (rval.is_lightfunc()) {
-                // LIGHTFUNC builtins are callable; look up their prototype
+                // LIGHTFUNC builtins are callable; check obj_class directly
+                // (no prototype chain in TinyDuck — use the object type tag).
                 uint fn_idx = (uint)(usz)rval.get_heapptr();
                 HObject* proto_obj = lightfunc_get_proto(vm, fn_idx);
                 if (proto_obj != null && lval.is_object()) {
                     HObject* lbh = (HObject*)lval.get_heapptr();
-                    if (lbh == proto_obj) {
+                    hobject::ObjClass expected = hobject::ObjClass.NONE;
+                    switch (fn_idx) {
+                        case builtins::BUILTIN_PROMISE:     expected = hobject::ObjClass.PROMISE;     break;
+                        case builtins::BUILTIN_ARRAY:       expected = hobject::ObjClass.ARRAY;       break;
+                        case builtins::BUILTIN_OBJECT:      expected = hobject::ObjClass.OBJECT;      break;
+                        case builtins::BUILTIN_FUNCTION:    expected = hobject::ObjClass.FUNCTION;    break;
+                        case builtins::BUILTIN_BOOLEAN:     expected = hobject::ObjClass.BOOLEAN;     break;
+                        case builtins::BUILTIN_STRING:      expected = hobject::ObjClass.STRING;      break;
+                        case builtins::BUILTIN_NUMBER:      expected = hobject::ObjClass.NUMBER;      break;
+                        case builtins::BUILTIN_DATE:        expected = hobject::ObjClass.DATE;        break;
+                        case builtins::BUILTIN_REGEXP:      expected = hobject::ObjClass.REGEXP;      break;
+                        case builtins::BUILTIN_ERROR:
+                        case builtins::BUILTIN_TYPE_ERROR:
+                        case builtins::BUILTIN_RANGE_ERROR:
+                        case builtins::BUILTIN_REFERENCE_ERROR:
+                        case builtins::BUILTIN_SYNTAX_ERROR:
+                        case builtins::BUILTIN_EVAL_ERROR:
+                        case builtins::BUILTIN_URI_ERROR:   expected = hobject::ObjClass.ERROR;       break;
+                        case builtins::BUILTIN_AGGREGATE_ERROR: expected = hobject::ObjClass.ERROR;   break;
+                        default: break;
+                    }
+                    if (expected != hobject::ObjClass.NONE && lbh.flags.obj_class == expected) {
                         ra.set_boolean(true);
                     }
                 }
@@ -3031,6 +3053,39 @@ fn TVal? Vm.run(Vm* vm) {
                 break;
             }
 
+            HObject* lbh = (HObject*)lval.get_heapptr();
+
+            // If the constructor is a wrapped builtin (FUNCTION HObject with
+            // a builtin_fn_index), check obj_class directly — no prototype chain.
+            int builtin_idx = (*rfunc.extra_ptr()).func.builtin_fn_index;
+            if (builtin_idx >= 0 && lval.is_object()) {
+                hobject::ObjClass expected = hobject::ObjClass.NONE;
+                switch (builtin_idx) {
+                    case builtins::BUILTIN_PROMISE:     expected = hobject::ObjClass.PROMISE;     break;
+                    case builtins::BUILTIN_ARRAY:       expected = hobject::ObjClass.ARRAY;       break;
+                    case builtins::BUILTIN_OBJECT:      expected = hobject::ObjClass.OBJECT;      break;
+                    case builtins::BUILTIN_FUNCTION:    expected = hobject::ObjClass.FUNCTION;    break;
+                    case builtins::BUILTIN_BOOLEAN:     expected = hobject::ObjClass.BOOLEAN;     break;
+                    case builtins::BUILTIN_STRING:      expected = hobject::ObjClass.STRING;      break;
+                    case builtins::BUILTIN_NUMBER:      expected = hobject::ObjClass.NUMBER;      break;
+                    case builtins::BUILTIN_DATE:        expected = hobject::ObjClass.DATE;        break;
+                    case builtins::BUILTIN_REGEXP:      expected = hobject::ObjClass.REGEXP;      break;
+                    case builtins::BUILTIN_ERROR:
+                    case builtins::BUILTIN_TYPE_ERROR:
+                    case builtins::BUILTIN_RANGE_ERROR:
+                    case builtins::BUILTIN_REFERENCE_ERROR:
+                    case builtins::BUILTIN_SYNTAX_ERROR:
+                    case builtins::BUILTIN_EVAL_ERROR:
+                    case builtins::BUILTIN_URI_ERROR:   expected = hobject::ObjClass.ERROR;       break;
+                    case builtins::BUILTIN_AGGREGATE_ERROR: expected = hobject::ObjClass.ERROR;   break;
+                    default: break;
+                }
+                if (expected != hobject::ObjClass.NONE && lbh.flags.obj_class == expected) {
+                    ra.set_boolean(true);
+                }
+                break;
+            }
+
             // Get rval.prototype
             HString* proto_key_str = (HString*)vm.heap.strs[heap::BuiltinStr.PROTOTYPE];
             TVal proto_val = get_prop_with_proto(rfunc, proto_key_str);
@@ -3043,8 +3098,22 @@ fn TVal? Vm.run(Vm* vm) {
 
             HObject* proto_obj = (HObject*)proto_val.get_heapptr();
             HObject* cur = (HObject*)lval.get_heapptr();
-            if (cur == proto_obj) {
-                ra.set_boolean(true);
+            HString* class_key = (HString*)vm.heap.strs[heap::BuiltinStr.CLASS];
+            // Walk the "class" chain (no prototype chain in TinyDuck).
+            // Each constructed object stores its constructor's .prototype
+            // under the hidden "class" property.
+            while (cur != null) {
+                if (cur == proto_obj) {
+                    ra.set_boolean(true);
+                    break;
+                }
+                if (class_key == null) break;
+                TVal? next_val = cur.get_prop(class_key);
+                if (try nv = next_val) {
+                    if (nv.is_object() && nv.get_heapptr() != null) {
+                        cur = (HObject*)nv.get_heapptr();
+                    } else { break; }
+                } else { break; }
             }
             break;
         }
