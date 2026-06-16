@@ -16,6 +16,53 @@ const uint PROMISE_PENDING   = 0;
 const uint PROMISE_FULFILLED = 1;
 const uint PROMISE_REJECTED  = 2;
 
+// ============================================================================
+// Async resume/reject builtin callbacks
+// ============================================================================
+
+fn void builtin_async_resume_callback(BuiltinContext* ctx) {
+    // Extract AsyncState pointer (stored as fastint) from the function object
+    void* state = null;
+    if (ctx.callee_obj != null) {
+        HString* key = builtin_intern_string(ctx.heap, "\xFFasync_state");
+        if (key != null) {
+            if (try tv = ctx.callee_obj.get_prop(key)) {
+                if (tv.is_fastint()) {
+                    state = (void*)(usz)tv.get_fastint();
+                }
+            }
+        }
+    }
+    if (state == null) {
+        ctx.result.set_undefined();
+        return;
+    }
+    TVal* arg = (ctx.argc >= 1) ? &ctx.regs[ctx.base_reg] : null;
+    ctx.heap.async_resume_fn(ctx.vm, state, arg);
+    ctx.result.set_undefined();
+}
+
+fn void builtin_async_reject_callback(BuiltinContext* ctx) {
+    void* state = null;
+    if (ctx.callee_obj != null) {
+        HString* key = builtin_intern_string(ctx.heap, "\xFFasync_state");
+        if (key != null) {
+            if (try tv = ctx.callee_obj.get_prop(key)) {
+                if (tv.is_fastint()) {
+                    state = (void*)(usz)tv.get_fastint();
+                }
+            }
+        }
+    }
+    if (state == null) {
+        ctx.result.set_undefined();
+        return;
+    }
+    TVal* arg = (ctx.argc >= 1) ? &ctx.regs[ctx.base_reg] : null;
+    ctx.heap.async_reject_fn(ctx.vm, state, arg);
+    ctx.result.set_undefined();
+}
+
 /// Get the promise state from the HObject's array_part[0].
 fn uint promise_get_state(HObject* promise, uint default_state) {
     if (promise.array_part() != null && promise.array_size >= 2) {

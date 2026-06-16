@@ -628,6 +628,17 @@ fn ushort? CompilerContext.unary_expr(&self) {
         case TokenType.NEW:
             return self.new_expr()!;
 
+        case TokenType.AWAIT:
+        {
+            self.advance()!;
+            if (!self.is_async) {
+                return types::SYNTAX_ERROR~;
+            }
+            ushort await_operand = self.unary_expr()!;
+            self.emit_abc(Opcode.AWAIT, (uint)await_operand, 0, 0);
+            return await_operand;
+        }
+
         default:
             return self.postfix_expr()!;
     }
@@ -1486,6 +1497,23 @@ fn ushort? CompilerContext.primary_expr(&self) {
 
         case TokenType.FUNCTION:
             return self.function_expr()!;
+
+        case TokenType.ASYNC:
+        {
+            self.advance()!;
+            if (self.peek_type() == TokenType.FUNCTION) {
+                self.is_async = true;
+                ushort r = self.function_expr()!;
+                self.is_async = false;
+                return r;
+            } else {
+                // bare `async` — treat as identifier
+                ushort async_reg = self.alloc_reg();
+                uint name_idx = self.add_string_constant("async");
+                self.emit_a_bc(Opcode.GETVAR, (uint)async_reg, name_idx);
+                return async_reg;
+            }
+        }
 
         case TokenType.YIELD:
         {

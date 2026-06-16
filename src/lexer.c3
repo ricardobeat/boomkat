@@ -55,7 +55,7 @@ enum TokenType : ushort {
     THIS, THROW, TRY, TYPEOF, VAR, VOID, WHILE, WITH,
 
     // ES2015+ keywords
-    CLASS, CONST, EXPORT, EXTENDS, IMPORT, SUPER, YIELD, LET, STATIC,
+    CLASS, CONST, EXPORT, EXTENDS, IMPORT, SUPER, YIELD, LET, STATIC, ASYNC,
 
     // Future reserved
     ENUM, AWAIT,
@@ -157,6 +157,7 @@ const KeywordEntry[*] KEYWORDS = {
     { "let",         TokenType.LET,         false },
     { "static",      TokenType.STATIC,      false },
     { "enum",        TokenType.ENUM,        false },
+    { "async",       TokenType.ASYNC,       false },
     { "await",       TokenType.AWAIT,       false },
     { "implements",  TokenType.IMPLEMENTS,  true  },
     { "interface",   TokenType.INTERFACE,   true  },

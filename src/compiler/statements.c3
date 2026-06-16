@@ -51,6 +51,20 @@ fn void? CompilerContext.statement(&self) {
             self.continue_statement()!;
         case TokenType.FUNCTION:
             self.function_declaration()!;
+        case TokenType.ASYNC:
+            self.advance()!;
+            if (self.peek_type() == TokenType.FUNCTION) {
+                self.is_async = true;
+                self.function_declaration()!;
+                self.is_async = false;
+            } else {
+                // Not `async function` — fall through to expression statement
+                // Treat `async` as an identifier
+                Token async_tok = lexer::make_token(TokenType.ASYNC, 0, 0);
+                self.pushback(async_tok);
+                self.expression_statement()!;
+            }
+            break;
         case TokenType.CLASS:
             self.class_declaration()!;
         case TokenType.SEMICOLON:

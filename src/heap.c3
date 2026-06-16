@@ -36,6 +36,8 @@ alias MicrotaskAfterFn = fn void(void* heap, void* vm, TVal result, TVal downstr
 /// Takes an opaque VM pointer, the function TVal, args array, arg count, and this TVal.
 /// Returns the result TVal.
 alias VmCallFn = fn TVal(void* vm, TVal func, TVal* args, uint nargs, TVal this_val);
+alias AsyncResumeFn = fn void(void* vm_ptr, void* state_ptr, TVal* arg);
+alias AsyncRejectFn = fn void(void* vm_ptr, void* state_ptr, TVal* arg);
 
 // --- Faults ---------------------------------------------------------------
 
@@ -213,6 +215,10 @@ struct Heap {
 
     // Microtask completion callback (set by builtins init, resolves downstream promises)
     MicrotaskAfterFn    microtask_after_fn;
+
+    // Async resume/reject callbacks (set by vm_create)
+    AsyncResumeFn       async_resume_fn;
+    AsyncRejectFn       async_reject_fn;
 
     // Promise resolve/reject target stack (synchronous executor calls only).
     // Before calling a Promise executor, push the target promise; resolve/reject

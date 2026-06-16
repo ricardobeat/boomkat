@@ -387,6 +387,11 @@ enum Opcode : char {
     /// Fused `GE rB, rC` + `IF_TRUE`: branch if (rB >= rC) is TRUE.
     JMP_GE,
 
+    /// Suspend async function execution. A=register holding the awaited value.
+    /// Saves the current frame and registers, creates a resume callback, and
+    /// returns the outer promise to the caller.
+    AWAIT,
+
     /// Sentinel — not a real opcode; marks the end of the enum.
     LAST_OP,
 }
@@ -1002,6 +1007,7 @@ const char*[Opcode.LAST_OP.ordinal + 1] OPCODE_NAMES = {
     [Opcode.JMP_LE.ordinal]       = "JMP_LE",
     [Opcode.JMP_GT.ordinal]       = "JMP_GT",
     [Opcode.JMP_GE.ordinal]       = "JMP_GE",
+    [Opcode.AWAIT.ordinal]        = "AWAIT",
     [Opcode.LAST_OP.ordinal]     = "LAST_OP",
 };
 

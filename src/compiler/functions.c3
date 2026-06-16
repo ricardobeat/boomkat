@@ -143,7 +143,32 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global) {
             continue;
         }
 
+        // Detect `async function` at brace_depth 0: the pre-scan sees
+        // TokenType.ASYNC first, peeks at FUNCTION, and if so leaves
+        // is_async = true for the next iteration to consume.
+        if (brace_depth == 0 && tt == TokenType.ASYNC) {
+            Token? async_peek = self.lexer.next_token();
+            if (catch _err_peek = async_peek) continue;
+            if (async_peek.type == TokenType.FUNCTION) {
+                // "async" consumed; push "function" back for the next iteration.
+                {
+                    Token fn_tok = async_peek;
+                    self.lexer.pushback(fn_tok);
+                }
+                self.is_async = true;
+                continue;
+            }
+            // Not followed by function — push back the peeked token
+            {
+                Token async_tok = async_peek;
+                self.lexer.pushback(async_tok);
+            }
+        }
+
         if (brace_depth == 0 && tt == TokenType.FUNCTION) {
+            // If we detected `async function` above, is_async is already true.
+            bool hoist_is_async = self.is_async;
+            self.is_async = false;
             // Check for generator star
             Token? star_opt = self.lexer.next_token();
             if (catch _err2 = star_opt) continue;
@@ -202,7 +227,9 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global) {
             ushort func_reg = self.declare_var(name_tok2.str_value, VAR);
             self.has_local_bindings = true;
 
+            self.is_async = hoist_is_async;
             CompiledFunction* inner = self.compile_inner_function(name_tok2.str_value)!;
+            self.is_async = false;
 
             // Add to inner functions table
             uint inner_idx = 0;
@@ -475,6 +502,7 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name)
     // Propagate class context (for super expressions)
     inner_ctx.in_class_body = self.in_class_body;
     inner_ctx.has_super_binding = self.has_super_binding;
+    inner_ctx.is_async = self.is_async;
 
     // Parse parameter list
     inner_ctx.expect(TokenType.LPAREN)!;

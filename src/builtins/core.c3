@@ -183,7 +183,9 @@ const uint BUILTIN_ARRAY_PROTO_REDUCERIGHT = 297;
 const uint BUILTIN_STRING_PROTO_TOLOCALELOWERCASE = 298;
 const uint BUILTIN_STRING_PROTO_TOLOCALEUPPERCASE = 299;
 const uint BUILTIN_STRING_PROTO_LOCALECOMPARE    = 300;
-const uint BUILTIN_COUNT                         = 306;
+const uint BUILTIN_ASYNC_RESUME_CALLBACK        = 306;
+const uint BUILTIN_ASYNC_REJECT_CALLBACK        = 307;
+const uint BUILTIN_COUNT                         = 308;
 
 const uint BUILTIN_MAP                       = 112;  // removed in TinyDuck — dispatch = null
 const uint BUILTIN_MAP_PROTO_SET             = 113;  // removed in TinyDuck
@@ -1592,6 +1594,8 @@ BuiltinFunc[BUILTIN_COUNT] builtin_dispatch_table = {
     [BUILTIN_SYNTAX_ERROR] = &builtin_syntax_error,
     [BUILTIN_TYPE_ERROR] = &builtin_type_error,
     [BUILTIN_URI_ERROR] = &builtin_uri_error,
+    [BUILTIN_ASYNC_RESUME_CALLBACK] = &builtin_async_resume_callback,
+    [BUILTIN_ASYNC_REJECT_CALLBACK] = &builtin_async_reject_callback,
     // BUILTIN_WEAKMAP / BUILTIN_WEAKSET dispatch entries removed in TinyDuck.
 };
 

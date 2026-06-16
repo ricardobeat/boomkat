@@ -874,6 +874,8 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     func.flags.is_strict = self.is_strict;
     func.flags.has_rest = self.has_rest;
     func.flags.is_constructable = self.is_constructable;
+    func.flags.is_async = self.is_async;
+    func.flags.is_arrow = self.is_arrow;
 
     // `needs_env` controls whether the CALL fast path allocates a fresh
     // env record + bindings object per call (2 allocations).  We only need

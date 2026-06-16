@@ -70,6 +70,8 @@ struct Activation {
     uint max_heap_reg;
     /// Caller's valstack_top saved at CALL time — restored on RET without recomputation.
     TVal* caller_valstack_top;
+    /// For async functions: the outer promise that will be resolved/rejected.
+    HObject* async_promise;
 }
 
 const uint ACT_FLAG_STRICT         = 1u << 0;
@@ -102,6 +104,27 @@ struct Catcher {
     Instruction* finally_pc;
     /// Saved return value for return-through-finally (set by RET).
     TVal return_val;
+}
+
+// ============================================================================
+// AsyncState — saved frame for async function suspension
+// ============================================================================
+
+/// Captures the execution state of a suspended async function.
+/// Created by AWAIT, consumed by the resume/reject callbacks.
+/// Allocated with libc::malloc; TVal references are pinned with incref.
+struct AsyncState {
+    CompiledFunction* func;
+    Instruction*      saved_pc;
+    TVal*             saved_regs;
+    uint              num_regs;
+    EnvRecord*        var_env;
+    EnvRecord*        lex_env;
+    TVal              this_binding;
+    uint              max_heap_reg;
+    HObject*          outer_promise;
+    uint              await_reg;
+    TVal*             caller_valstack_top;
 }
 
 // ============================================================================
@@ -1470,8 +1493,119 @@ fn Vm*? vm_create(Heap* heap) {
     heap.call_handler_fn = &vm_call_handler_fn_impl;
     heap.call_fn = &vm_call_fn_impl;
     heap.microtask_after_fn = &builtins::promise_microtask_after;
+    heap.async_resume_fn = &vm_async_resume_impl;
+    heap.async_reject_fn = &vm_async_reject_impl;
 
     return vm;
+}
+
+// ============================================================================
+// Async resume/reject implementations (called via Heap function pointers
+// from builtin callbacks in the builtins module)
+// ============================================================================
+
+fn void vm_async_resume_impl(void* vm_ptr, void* state_ptr, TVal* arg) {
+    Vm* vm = (Vm*)vm_ptr;
+    AsyncState* state = (AsyncState*)state_ptr;
+    if (state == null) return;
+
+    TVal resolved;
+    if (arg != null) { resolved = *arg; } else { resolved.set_undefined(); }
+
+    // Ensure valstack space for saved registers
+    uint needed = (uint)(vm.valstack_top - vm.valstack) + state.num_regs;
+    if (!ensure_valstack(vm, needed)) {
+        // Out of memory — reject the outer promise
+        vm_async_reject_impl(vm_ptr, state_ptr, arg);
+        return;
+    }
+
+    // Push a barrier activation so Vm.run has something to return to
+    Activation* barrier = &vm.activations[vm.activation_count];
+    barrier.func = null;
+    barrier.parent = null;
+    barrier.var_env = null;
+    barrier.lex_env = null;
+    barrier.cat = null;
+    barrier.curr_pc = null;
+    barrier.bottom = vm.valstack_top;
+    barrier.retval = null;
+    barrier.flags = 0;
+    barrier.max_heap_reg = 0;
+    barrier.async_promise = state.outer_promise;
+    barrier.caller_valstack_top = vm.valstack_top;
+    barrier.this_binding.set_undefined();
+    barrier.new_target = null;
+    barrier.tv_func.set_undefined();
+    vm.activation_count++;
+
+    // Push the async function's activation
+    TVal* new_bottom = vm.valstack_top;
+    Activation* new_act = &vm.activations[vm.activation_count];
+    new_act.func = state.func;
+    new_act.parent = barrier;
+    new_act.var_env = state.var_env;
+    new_act.lex_env = state.lex_env;
+    new_act.cat = null;
+    new_act.curr_pc = state.saved_pc;
+    new_act.bottom = new_bottom;
+    new_act.retval = barrier.retval;
+    new_act.flags = state.func.is_strict() ? ACT_FLAG_STRICT : 0;
+    new_act.max_heap_reg = state.max_heap_reg;
+    new_act.async_promise = state.outer_promise;
+    new_act.caller_valstack_top = vm.valstack_top;
+    vm.heap.tval_copy_ref(&new_act.this_binding, &state.this_binding);
+    new_act.new_target = null;
+    new_act.tv_func.set_undefined();
+    vm.activation_count++;
+
+    // Copy saved registers onto valstack and write resolved value
+    TVal* regs = new_bottom;
+    for (uint i = 0; i < state.num_regs; i++) {
+        if (i == state.await_reg) {
+            // Write resolved value to the await register
+            vm.heap.tval_copy_ref(&regs[i], &resolved);
+        } else {
+            // Transfer ownership from saved buffer (already incref'd)
+            regs[i] = state.saved_regs[i];
+        }
+    }
+
+    vm.valstack_top = new_bottom + state.num_regs;
+    vm.valstack_bottom = new_act.bottom;
+
+    // Re-enter the VM to continue the async function
+    TVal? result = Vm.run(vm);
+
+    // Clean up: unpin any remaining saved regs that weren't transferred
+    // (regs that were transferred are now owned by the VM)
+    // The saved_regs buffer itself needs to be freed
+    libc::free(state.saved_regs);
+    libc::free(state);
+}
+
+fn void vm_async_reject_impl(void* vm_ptr, void* state_ptr, TVal* arg) {
+    AsyncState* state = (AsyncState*)state_ptr;
+    if (state == null) return;
+
+    TVal reason;
+    if (arg != null) { reason = *arg; } else { reason.set_undefined(); }
+
+    // Reject the outer promise
+    if (state.outer_promise != null) {
+        builtins::promise_set_state(state.outer_promise, builtins::PROMISE_REJECTED);
+        builtins::promise_set_result(state.outer_promise, &reason);
+        builtins::promise_trigger_reactions(state.outer_promise, ((Vm*)vm_ptr).heap, vm_ptr);
+    }
+
+    // Clean up: unpin saved register heap refs
+    for (uint i = 0; i < state.num_regs; i++) {
+        if (state.saved_regs[i].is_heap_allocated() && state.saved_regs[i].get_heapptr() != null) {
+            ((Vm*)vm_ptr).heap.decref_tval(&state.saved_regs[i]);
+        }
+    }
+    libc::free(state.saved_regs);
+    libc::free(state);
 }
 
 /// Destroy a VM and release all owned resources.
@@ -4368,6 +4502,14 @@ fn TVal? Vm.run(Vm* vm) {
                     new_act.flags = target_fast.is_strict() ? ACT_FLAG_STRICT : 0;
                     new_act.max_heap_reg = 0;
                     new_act.caller_valstack_top = vm.valstack_top;
+                    new_act.async_promise = null;
+                    // For async functions, create the outer promise
+                    if (target_fast.is_async()) {
+                        HObject*? prom_raw = builtins::promise_create(vm.heap);
+                        if (try prom = prom_raw) {
+                            new_act.async_promise = prom;
+                        }
+                    }
                     // Arrow functions use lexical this (inherited from enclosing scope)
                     // Fast path: skip refcounting when this value is not a heap ref
                     {
@@ -5345,6 +5487,19 @@ fn TVal? Vm.run(Vm* vm) {
             // Decref callee registers before popping
             decref_callee_regs(vm, callee_act);
 
+            // Async function: resolve outer promise with the return value,
+            // then return the promise itself (not the raw value).
+            HObject* async_prom = callee_act.async_promise;
+            callee_act.async_promise = null;
+            if (async_prom != null) {
+                builtins::promise_set_state(async_prom, builtins::PROMISE_FULFILLED);
+                builtins::promise_set_result(async_prom, &val);
+                builtins::promise_trigger_reactions(async_prom, vm.heap, (void*)vm);
+                if (val_pinned) vm.heap.decref_tval(&val);
+                val.set_object(async_prom);
+                val_pinned = false;
+            }
+
             vm.activation_count--;
 
             if (vm.activation_count == 0) {
@@ -5420,6 +5575,16 @@ fn TVal? Vm.run(Vm* vm) {
             // Decref callee registers before popping
             decref_callee_regs(vm, callee_act);
 
+            // Async function: resolve outer promise with undefined
+            HObject* async_prom2 = callee_act.async_promise;
+            callee_act.async_promise = null;
+            if (async_prom2 != null) {
+                builtins::promise_set_state(async_prom2, builtins::PROMISE_FULFILLED);
+                builtins::promise_set_result(async_prom2, &undef_val);
+                builtins::promise_trigger_reactions(async_prom2, vm.heap, (void*)vm);
+                undef_val.set_object(async_prom2);
+            }
+
             vm.activation_count--;
 
             if (vm.activation_count == 0) {
@@ -5445,6 +5610,188 @@ fn TVal? Vm.run(Vm* vm) {
             vm.valstack_top = act.caller_valstack_top;
             CompiledFunction* caller_func = (CompiledFunction*)act.func;
             if (caller_func != vm.current_func) {
+                vm.current_func = caller_func;
+                code_base = caller_func.code;
+                code_count = caller_func.code_count;
+                code_end = code_base + code_count;
+                constants = caller_func.constants;
+                ic_base = (hobject::ICEntry*)caller_func.ic_entries;
+                var_ic_base = (hobject::VarICEntry*)caller_func.var_ic_entries;
+                nregs = caller_func.num_regs;
+            }
+            curr_pc = act.curr_pc;
+            regs_base = act.bottom;
+            continue;
+        }
+
+        // === AWAIT (async/await) ===
+
+        case Opcode.AWAIT: {
+            TVal awaited = *ra;
+            HObject* outer_promise = act.async_promise;
+
+            // If not a promise, or already settled, handle synchronously
+            bool is_promise = false;
+            uint pstate = builtins::PROMISE_PENDING;
+            if (awaited.is_object() && awaited.get_heapptr() != null) {
+                HObject* obj = (HObject*)awaited.get_heapptr();
+                if (obj.flags.obj_class == hobject::ObjClass.PROMISE) {
+                    is_promise = true;
+                    pstate = builtins::promise_get_state(obj, builtins::PROMISE_PENDING);
+                }
+            }
+
+            if (!is_promise) {
+                // Non-promise: await returns the value as-is (spec: wrap in Promise.resolve)
+                // For simplicity, just continue with the value in ra
+                break;
+            }
+
+            if (pstate == builtins::PROMISE_FULFILLED) {
+                // Already resolved — unwrap the value in-place
+                HObject* pobj = (HObject*)awaited.get_heapptr();
+                TVal result_val = pobj.array_part()[1];
+                vm.heap.tval_copy_ref(ra, &result_val);
+                break;
+            }
+
+            if (pstate == builtins::PROMISE_REJECTED) {
+                // Already rejected — throw the reason
+                HObject* pobj = (HObject*)awaited.get_heapptr();
+                TVal reason = pobj.array_part()[1];
+                if (!vm_throw_value(vm, reason, act, &curr_pc, &needs_restart)) {
+                    vm.has_error = true;
+                    vm.heap.has_error = true;
+                    vm.heap.tval_copy_ref(&vm.heap.error_value, &reason);
+                    vm.heap.tval_copy_ref(&vm.return_val, &reason);
+                    return VM_ERROR~;
+                }
+                break;
+            }
+
+            // === Pending promise: suspend the async function ===
+
+            // Create AsyncState to save the execution frame
+            AsyncState* state = (AsyncState*)libc::malloc(AsyncState::size);
+            if (state == null) {
+                ra.set_undefined();
+                break;
+            }
+            libc::memset(state, 0, AsyncState::size);
+            state.func = (CompiledFunction*)act.func;
+            state.saved_pc = curr_pc;  // resume at the next instruction
+            state.num_regs = nregs;
+            state.var_env = act.var_env;
+            state.lex_env = act.lex_env;
+            if (act.this_binding.is_heap_allocated() && act.this_binding.get_heapptr() != null) {
+                ((HeapHeader*)act.this_binding.get_heapptr()).incref();
+            }
+            state.this_binding = act.this_binding;
+            state.max_heap_reg = act.max_heap_reg;
+            state.outer_promise = outer_promise;
+            state.await_reg = insn.a;
+            state.caller_valstack_top = act.caller_valstack_top;
+
+            // Copy register file and pin heap references
+            TVal* regs_copy = (TVal*)libc::malloc((usz)nregs * TVal::size);
+            if (regs_copy == null) {
+                libc::free(state);
+                ra.set_undefined();
+                break;
+            }
+            libc::memcpy(regs_copy, regs_base, (usz)nregs * TVal::size);
+            state.saved_regs = regs_copy;
+            for (uint i = 0; i < nregs; i++) {
+                if (regs_copy[i].is_heap_allocated() && regs_copy[i].get_heapptr() != null) {
+                    ((HeapHeader*)regs_copy[i].get_heapptr()).incref();
+                }
+            }
+
+            // Create resume and reject FUNCTION objects
+            HObject*? resume_raw = vm.heap.alloc_object(hobject::ObjClass.FUNCTION);
+            HObject*? reject_raw = vm.heap.alloc_object(hobject::ObjClass.FUNCTION);
+            if (catch err = resume_raw) {
+                for (uint i = 0; i < nregs; i++) {
+                    vm.heap.decref_tval(&regs_copy[i]);
+                }
+                libc::free(regs_copy);
+                libc::free(state);
+                ra.set_undefined();
+                break;
+            }
+            if (catch err = reject_raw) {
+                for (uint i = 0; i < nregs; i++) {
+                    vm.heap.decref_tval(&regs_copy[i]);
+                }
+                libc::free(regs_copy);
+                libc::free(state);
+                ra.set_undefined();
+                break;
+            }
+            HObject* resume_fn = resume_raw;
+            HObject* reject_fn = reject_raw;
+
+            // Wire up as native builtins
+            resume_fn.flags.callable = true;
+            (*resume_fn.extra_ptr()).func.builtin_fn_index = (int)builtins::BUILTIN_ASYNC_RESUME_CALLBACK;
+            reject_fn.flags.callable = true;
+            (*reject_fn.extra_ptr()).func.builtin_fn_index = (int)builtins::BUILTIN_ASYNC_REJECT_CALLBACK;
+
+            // Store AsyncState pointer as fastint on both functions
+            TVal state_tv;
+            state_tv.set_fastint((long)(usz)state);
+            HString* async_key = builtins::builtin_intern_string(vm.heap, "\xFFasync_state");
+            if (async_key != null) {
+                resume_fn.put_prop(async_key, state_tv, hobject::PROP_FLAGS_WEC);
+                reject_fn.put_prop(async_key, state_tv, hobject::PROP_FLAGS_WEC);
+            }
+
+            // Add reactions to the awaited promise
+            {
+                // Create a reaction object with onFulfilled/onRejected
+                HObject*? react_raw = vm.heap.alloc_object(hobject::ObjClass.OBJECT);
+                if (try reaction = react_raw) {
+                    TVal resume_tv;
+                    resume_tv.set_object(resume_fn);
+                    TVal reject_tv;
+                    reject_tv.set_object(reject_fn);
+                    HString* on_fulfilled = builtins::builtin_intern_string(vm.heap, "onFulfilled");
+                    HString* on_rejected = builtins::builtin_intern_string(vm.heap, "onRejected");
+                    if (on_fulfilled != null) reaction.put_prop(on_fulfilled, resume_tv, hobject::PROP_FLAGS_WEC);
+                    if (on_rejected != null) reaction.put_prop(on_rejected, reject_tv, hobject::PROP_FLAGS_WEC);
+
+                    TVal reaction_tv;
+                    reaction_tv.set_object(reaction);
+                    HObject* awaited_promise = (HObject*)awaited.get_heapptr();
+                    builtins::promise_add_reaction(awaited_promise, reaction_tv);
+                }
+            }
+
+            // Pop the async function's activation (like RET)
+            decref_callee_regs(vm, act);
+            vm.activation_count--;
+
+            // Return the outer promise to the caller
+            if (vm.activation_count == 0) {
+                TVal prom_tv;
+                prom_tv.set_object(outer_promise);
+                vm.heap.tval_copy_ref(&vm.return_val, &prom_tv);
+                return vm.return_val;
+            }
+
+            Activation* caller_act = &vm.activations[vm.activation_count - 1];
+            if (caller_act.retval != null) {
+                TVal prom_tv;
+                prom_tv.set_object(outer_promise);
+                vm.heap.tval_copy_ref(caller_act.retval, &prom_tv);
+            }
+
+            // Restore caller state
+            vm.valstack_bottom = caller_act.bottom;
+            vm.valstack_top = act.caller_valstack_top;
+            act = caller_act;
+            CompiledFunction* caller_func = (CompiledFunction*)act.func;
+            if (caller_func != null && caller_func != vm.current_func) {
                 vm.current_func = caller_func;
                 code_base = caller_func.code;
                 code_count = caller_func.code_count;
