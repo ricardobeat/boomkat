@@ -156,6 +156,8 @@ struct Vm {
     // checked by opcode handlers that call vm_to_number)
     TVal throw_value;
     bool throw_pending;
+    /// Enable per-instruction bytecode tracing (used only with DEBUG builds).
+    bool trace;
 }
 
 // ============================================================================
@@ -1862,6 +1864,30 @@ fn TVal? Vm.run(Vm* vm) {
             TVal* ra = regs_base + ((uint)insn.a);
             TVal* rb = regs_base + ((uint)insn.b);
             TVal* rc = regs_base + ((uint)insn.c);
+
+        $if $feature(DEBUG):
+        if (vm.trace) {
+            uint pc_off = (uint)((curr_pc - 1) - code_base);
+            char[128] dis_buf;
+            dis_buf[0] = 0;
+            usz dis_len = insn.disassemble(&dis_buf);
+            dis_buf[dis_len] = 0;
+            io::printf("[0x%04X] ", pc_off);
+            for (usz _j = 0; _j < dis_len; _j++) io::putchar(dis_buf[_j]);
+            io::printf("  | r%d=", (int)insn.a);
+            debug_print_tval(ra);
+            OpFormat _fmt = bytecode::get_op_format(op);
+            if (_fmt == ABC || _fmt == A_BC || _fmt == A_SBX) {
+                io::printf(" r%d=", (int)insn.b);
+                debug_print_tval(rb);
+            }
+            if (_fmt == ABC) {
+                io::printf(" r%d=", (int)insn.c);
+                debug_print_tval(rc);
+            }
+            io::printf("\n");
+        }
+        $endif
 
         switch (op) {
 
@@ -6234,4 +6260,89 @@ fn TVal? Vm.run(Vm* vm) {
     }
     }
     return vm.return_val;
+}
+
+/// Compact TVal formatter for instruction traces and crash dumps.
+fn void debug_print_tval(TVal* v) {
+    $if $feature(DEBUG):
+        if (v.is_undefined()) {
+            io::printf("undef");
+        } else if (v.is_null()) {
+            io::printf("null");
+        } else if (v.is_boolean()) {
+            io::printf(v.get_boolean() ? "true" : "false");
+        } else if (v.is_fastint()) {
+            io::printf("%d", v.get_fastint());
+        } else if (v.is_number()) {
+            double d = v.get_number();
+            if (math::is_nan(d)) {
+                io::printf("NaN");
+            } else if (math::is_inf(d)) {
+                io::printf(d > 0 ? "Inf" : "-Inf");
+            } else if (d == (double)(long)d) {
+                io::printf("%d", (long)d);
+            } else {
+                io::printf("%.4g", d);
+            }
+        } else if (v.is_string()) {
+            HString* s = (HString*)v.get_heapptr();
+            if (s != null) {
+                char[] d = s.get_data();
+                usz n = d.len < 24 ? d.len : 24;
+                io::putchar('"');
+                for (usz _si = 0; _si < n; _si++) io::putchar(d[_si]);
+                if (d.len > 24) io::printf("...");
+                io::putchar('"');
+            } else {
+                io::printf("[null]");
+            }
+        } else if (v.is_object()) {
+            HObject* o = (HObject*)v.get_heapptr();
+            if (o != null && o.is_callable()) {
+                io::printf("[func]");
+            } else {
+                io::printf("[obj]");
+            }
+        } else if (v.is_buffer()) {
+            io::printf("[buf]");
+        } else if (v.is_pointer()) {
+            io::printf("[ptr]");
+        } else if (v.is_lightfunc()) {
+            io::printf("[lfn]");
+        } else {
+            io::printf("?");
+        }
+    $endif
+}
+
+/// Dump full VM state — call stack, register counts, current PC.
+/// Call when Vm.execute() returns an error.
+fn void vm_dump_state(Vm* vm) {
+    $if $feature(DEBUG):
+        io::printf("\n=== VM CRASH (%d activations) ===\n", vm.activation_count);
+        for (uint i = 0; i < vm.activation_count; i++) {
+            Activation* act = &vm.activations[i];
+            CompiledFunction* func = (CompiledFunction*)act.func;
+            if (func != null) {
+                uint pc_rel = (uint)(act.curr_pc - func.code);
+                io::printf("  [%d] ", i);
+                if (func.name_ptr != null && func.name_len > 0) {
+                    for (uint _ni = 0; _ni < func.name_len; _ni++) {
+                        io::putchar(func.name_ptr[_ni]);
+                    }
+                } else {
+                    io::printf("<anon>");
+                }
+                io::printf(" regs=%d pc=%d/%d",
+                    func.num_regs, pc_rel, func.code_count);
+                if (i == vm.activation_count - 1) {
+                    io::printf("  <--");
+                }
+                io::printf("\n");
+            } else {
+                io::printf("  [%d] <native>\n", i);
+            }
+        }
+        io::printf("=== END VM STATE ===\n\n");
+    $endif
 }

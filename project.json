@@ -29,6 +29,21 @@
       "opt": "Oz",
       "single-module": true,
       "strip-unused": true
+    },
+
+    // -- Debug targets (excluded from release builds) ---------------------------
+
+    "tinyduck_debug": {
+      "type": "executable",
+      "sources": [ "src", "regexp", "tinyduck_runner/main.c3" ],
+      "features": [ "NO_REGEXP", "DEBUG" ],
+      "single-module": true
+    },
+    "tinyduck_test_debug": {
+      "type": "executable",
+      "sources": [ "src", "regexp", "test_vm_runner/test_vm.c3" ],
+      "features": [ "DEBUG" ],
+      "single-module": true
     }
   }
 }

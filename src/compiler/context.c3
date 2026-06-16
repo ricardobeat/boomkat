@@ -512,8 +512,19 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
                     }
                 }
                 // For non-WIDE_SABC/WIDE_ABC formats, field A is the destination (overwrite).
+                // CRITICAL: do NOT break on a write — a later instruction may READ rA from
+                // its post-write value.  This matters for the `&&`/`||` pattern: the
+                // LOG_AND/LOG_OR compilation emits
+                //     IF_FALSE/IF_TRUE rA, skip
+                //     ...right side...
+                //     LDREG rA = rT       // writes the result into rA
+                //     skip:
+                // and the caller of `&&`/`||` reads rA as the operator's result.  The peephole
+                // would remove the preceding GE/LE/GT/LT, so when the branch is taken rA would
+                // still hold the compare's LEFT operand instead of the boolean false.  By
+                // continuing past writes we let the scan discover that rA is read later.
                 if (jfmt != OpFormat.WIDE_SABC && jfmt != OpFormat.WIDE_ABC) {
-                    if ((uint)jns.a == rA) { break; }
+                    if ((uint)jns.a == rA) { continue; }
                 }
             }
             if (rA_live) { continue; }
@@ -553,7 +564,10 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
                             }
                         }
                         if (jfmt != OpFormat.WIDE_SABC && jfmt != OpFormat.WIDE_ABC) {
-                            if ((uint)jns.a == rA) { break; }
+                            // Don't break on writes — a later instruction may read the
+                            // post-write value of rA (see the fall-through fix above for
+                            // the rationale; the same concern applies to the branch path).
+                            if ((uint)jns.a == rA) { continue; }
                         }
                     }
                     if (rA_live_branch) { continue; }

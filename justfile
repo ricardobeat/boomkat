@@ -24,6 +24,14 @@ build-riscv64:
     zig cc -target riscv64-linux-musl -static -Oz riscv_crt/crt.c build/obj/linux-riscv64/tinyduck_test.o -o out/tinyduck_test_rv64 -lm
     @file out/tinyduck_test_rv64
 
+# Build debug test runner (includes instruction trace, crash dumps, etc.)
+build-test-debug:
+    c3c build tinyduck_test_debug
+
+# Build debug engine
+build-debug:
+    c3c build tinyduck_debug
+
 # Clean build artifacts
 clean:
     c3c clean
@@ -35,12 +43,27 @@ run file="test/hello.js":
     c3c build tinyduck_test
     ./out/tinyduck_test {{file}}
 
+# Debug build and run a single JS file (with all debug flags)
+run-debug file="test/hello.js":
+    c3c build tinyduck_test_debug
+    ./out/tinyduck_test_debug --trace-vm {{file}}
+
+# Debug build and dump bytecode only (no execution)
+dump file="test/hello.js":
+    c3c build tinyduck_test_debug
+    ./out/tinyduck_test_debug --compile-only {{file}}
+
 # ── Tests ────────────────────────────────────────────────────────────────────
 
 # Build test runner and run the rosetta suite
 test:
     c3c build tinyduck_test
     bash test/rosetta/run.sh ./out/tinyduck_test
+
+# Build debug test runner and run the rosetta suite
+test-debug:
+    c3c build tinyduck_test_debug
+    bash test/rosetta/run.sh ./out/tinyduck_test_debug
 
 # List available commands
 list:
