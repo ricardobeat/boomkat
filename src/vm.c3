@@ -6980,6 +6980,10 @@ fn TVal? Vm.run(Vm* vm) {
 
         case Opcode.DECLVAR: {
             // Declare a `var` binding in the immediate var_env only (no chain walk).
+            // Skip entirely for non-global functions with needs_env=false: all var
+            // accesses in those functions are register-based (resolve_var found them),
+            // so writing to the env is unnecessary — no closure or eval reads it.
+            if (!vm.current_func.needs_env() && !vm.current_func.is_global_fn()) break;
             uint bc = insn.get_bc();
             if (bc < vm.current_func.const_count) {
                 TVal name_val = constants[bc];

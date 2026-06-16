@@ -780,6 +780,9 @@ bitstruct FuncFlags : uint {
     /// Function never creates local bindings — the CALL fast path can
     /// skip `env_create_function_scope` and reuse the parent env directly.
     bool  needs_env       : 17;
+    /// Function is the top-level program or eval — var bindings go into
+    /// the global/eval env and are always accessed via GETVAR/PUTVAR.
+    bool  is_global       : 18;
 }
 
 /// A compiled function template — the immutable bytecode representation of
@@ -915,6 +918,11 @@ macro bool CompiledFunction.is_constructable(&self) {
 /// path can skip `env_create_function_scope`.
 macro bool CompiledFunction.needs_env(&self) {
     return self.flags.needs_env;
+}
+
+/// Returns `true` for the top-level program or eval scope.
+macro bool CompiledFunction.is_global_fn(&self) {
+    return self.flags.is_global;
 }
 
 /// Returns `true` when the function uses `arguments`.

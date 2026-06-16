@@ -917,6 +917,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
                      && !self.is_generator
                      && !self.is_async;
     func.flags.needs_env = !can_skip_env;
+    func.flags.is_global = self.is_global;
     func.num_args = self.num_args;
     if (self.has_rest) {
         func.num_formals = self.rest_formal_count;

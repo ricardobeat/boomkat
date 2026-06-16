@@ -984,13 +984,8 @@ fn void? CompilerContext.for_statement(&self) {
                 // Sync the for-in variable to the environment and reload register
                 uint forin_name_idx = self.add_string_constant(name_tok.str_value);
                 self.emit_var_store(iter_var, forin_name_idx, is_lexical, is_const);
-                // For var, reload after PUTVAR to restore register value
-                // (PUTVAR clears the source register per AGENTS.md).
-                // For let/const, PUTLEX does not clear the register, so the
-                // register-based read via resolve_var/LDREG works directly.
-                if (!is_lexical) {
-                    self.emit_a_bc(Opcode.GETVAR, (uint)iter_var, forin_name_idx);
-                }
+                // No reload needed: DECLVAR/PUTLEX/PUTLEX_C do not clear the source
+                // register, so iter_var still holds the current key after the store.
 
                 // If no more keys, exit
                 uint exit_jump = self.emit_cond_jump(Opcode.IF_FALSE, (uint)has_next);
