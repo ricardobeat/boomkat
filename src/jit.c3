@@ -11,20 +11,27 @@ import libc;
 // ============================================================================
 
 const uint MAX_COMPILED_LOOPS = 32;
+const uint MAX_BODY_INC_VARS  = 4;   // max INC_VAR ops in loop body we capture
 
-/// Describes one loop whose closing INC_VAR+compare+branch has been replaced
-/// by a LOOP_COMPILED superinstruction.
+/// Describes a complete compiled loop: body INC_VARs + tail INC_VAR(ctr) + JMP.
 ///
-/// Pattern A (skip_count=5): INC_VAR(acc) INC_VAR(ctr) GETVAR(ctr_r) GETVAR(lim_r) JMP_*
-/// Pattern B (skip_count=4): INC_VAR(ctr) GETVAR(ctr_r) GETVAR(lim_r) JMP_*
+/// The LOOP_COMPILED instruction is patched at `header_pc` (start of body).
+/// `total_skip` = number of instructions from header_pc through the JMP_*.
+/// At runtime jit_run_loop runs all N iterations in a tight C3 loop.
 struct CompiledLoop {
-    uint  patch_pc;    // index of the LOOP_COMPILED instruction
-    uint  skip_count;  // 5 for pattern A, 4 for pattern B
-    TVal* inc_ptr;     // accumulator TVal* in env bindings (null for pattern B)
-    TVal* ctr_ptr;     // counter TVal* in env bindings
-    TVal* lim_ptr;     // limit TVal* in env bindings
-    bool  initialized; // true once pointers have been resolved from VarIC
-    bool  is_lt;       // true = JMP_LT/JMP_GT condition, false = JMP_LE/JMP_GE
+    uint   header_pc;   // pc of the first body instruction (where LOOP_COMPILED is patched)
+    uint   total_skip;  // instructions covered (header through JMP inclusive)
+
+    // Body accumulator INC_VARs (resolved TVal* pointers)
+    TVal*[4] body_ptrs;
+    uint   body_count;
+
+    // Loop counter and limit
+    TVal*  ctr_ptr;
+    TVal*  lim_ptr;
+
+    bool   initialized;
+    bool   is_lt;       // true = JMP_LT/JMP_GT, false = JMP_LE/JMP_GE
 }
 
 struct CompiledLoopTable {
@@ -33,7 +40,7 @@ struct CompiledLoopTable {
 }
 
 // ============================================================================
-// jit_scan — one-time scan after compilation; patches LOOP_COMPILED in
+// jit_scan — post-compile pass; detects full loops and patches LOOP_COMPILED
 // ============================================================================
 
 fn void jit_scan(CompiledFunction* f, Heap* h) {
@@ -43,65 +50,73 @@ fn void jit_scan(CompiledFunction* f, Heap* h) {
     if (table == null) return;
     f.jit_data = table;
 
+    uint n = f.code_count;
+
+    // Scan for JMP_* with a backward offset — these are loop backedges.
     uint i = 0;
-    while (i < f.code_count) {
+    while (i < n) {
         if (table.count >= MAX_COMPILED_LOOPS) break;
 
-        Opcode op0 = f.code[i].op;
-        if (op0 != Opcode.INC_VAR) { i++; continue; }
+        Opcode op = f.code[i].op;
+        if (!jmp_is_cmp(op)) { i++; continue; }
 
-        // --- Try Pattern A: INC_VAR INC_VAR GETVAR GETVAR JMP_* ---
-        if (i + 5 <= f.code_count
-            && f.code[i+1].op == Opcode.INC_VAR
-            && f.code[i+2].op == Opcode.GETVAR
-            && f.code[i+3].op == Opcode.GETVAR
-            && jmp_is_cmp(f.code[i+4].op)
-            && (ichar)f.code[i+4].a < 0)
-        {
-            uint inc_bc = f.code[i].get_bc();
-            uint ctr_bc = f.code[i+1].get_bc();
-            uint lim_bc = f.code[i+3].get_bc();
-            if (inc_bc < f.const_count && ctr_bc < f.const_count && lim_bc < f.const_count
-                && f.constants[inc_bc].is_string()
-                && f.constants[ctr_bc].is_string()
-                && f.constants[lim_bc].is_string())
-            {
-                uint id = table.count;
-                table.entries[id].patch_pc   = i;
-                table.entries[id].skip_count = 5;
-                table.entries[id].is_lt      = jmp_is_lt(f.code[i+4].op);
-                f.code[i] = bytecode::make_a_bc(Opcode.LOOP_COMPILED, id, 5);
-                table.count++;
-            }
-            i += 5;
-            continue;
+        int offset = (int)(ichar)f.code[i].a;
+        if (offset >= 0) { i++; continue; }  // forward or no-op jump
+
+        // i is the JMP_* instruction.  The backward target (loop header) is:
+        //   header = i + 1 + offset   (curr_pc after fetch + signed offset)
+        int header_signed = (int)i + 1 + offset;
+        if (header_signed < 0) { i++; continue; }
+        uint header = (uint)header_signed;
+        if (header >= i) { i++; continue; }  // sanity
+
+        // The tail pattern just before the JMP is: INC_VAR(ctr) GETVAR(ctr) GETVAR(lim)
+        // That's 3 instructions ending at i-1, i-2, i-3 (before the JMP at i).
+        if (i < 3) { i++; continue; }
+        uint tail_start = i - 3;  // INC_VAR(ctr)
+
+        if (f.code[tail_start].op   != Opcode.INC_VAR) { i++; continue; }
+        if (f.code[tail_start+1].op != Opcode.GETVAR)  { i++; continue; }
+        if (f.code[tail_start+2].op != Opcode.GETVAR)  { i++; continue; }
+
+        // Validate constant indices for INC_VAR(ctr) and GETVAR(lim)
+        uint ctr_bc = f.code[tail_start].get_bc();
+        uint lim_bc = f.code[tail_start+2].get_bc();
+        if (ctr_bc >= f.const_count || lim_bc >= f.const_count) { i++; continue; }
+        if (!f.constants[ctr_bc].is_string() || !f.constants[lim_bc].is_string()) { i++; continue; }
+
+        // Body = instructions [header .. tail_start).
+        // Every instruction in the body must be INC_VAR (we only know how to run those).
+        if (tail_start <= header) { i++; continue; }  // empty body or overlap
+        uint body_len = tail_start - header;
+        if (body_len > MAX_BODY_INC_VARS) { i++; continue; }
+
+        bool body_ok = true;
+        for (uint b = 0; b < body_len; b++) {
+            if (f.code[header + b].op != Opcode.INC_VAR) { body_ok = false; break; }
+            uint bk = f.code[header + b].get_bc();
+            if (bk >= f.const_count || !f.constants[bk].is_string()) { body_ok = false; break; }
         }
+        if (!body_ok) { i++; continue; }
 
-        // --- Try Pattern B: INC_VAR GETVAR GETVAR JMP_* ---
-        if (i + 4 <= f.code_count
-            && f.code[i+1].op == Opcode.GETVAR
-            && f.code[i+2].op == Opcode.GETVAR
-            && jmp_is_cmp(f.code[i+3].op)
-            && (ichar)f.code[i+3].a < 0)
-        {
-            uint ctr_bc = f.code[i].get_bc();
-            uint lim_bc = f.code[i+2].get_bc();
-            if (ctr_bc < f.const_count && lim_bc < f.const_count
-                && f.constants[ctr_bc].is_string()
-                && f.constants[lim_bc].is_string())
-            {
-                uint id = table.count;
-                table.entries[id].patch_pc   = i;
-                table.entries[id].skip_count = 4;
-                table.entries[id].is_lt      = jmp_is_lt(f.code[i+3].op);
-                f.code[i] = bytecode::make_a_bc(Opcode.LOOP_COMPILED, id, 4);
-                table.count++;
-            }
-            i += 4;
-            continue;
-        }
+        // Good loop found.  total_skip covers header..JMP inclusive.
+        uint total_skip = i - header + 1;  // header + body_len + 3 tail + 1 JMP
 
-        i++;
+        uint id = table.count;
+        table.entries[id].header_pc   = header;
+        table.entries[id].total_skip  = total_skip;
+        table.entries[id].body_count  = body_len;
+        table.entries[id].is_lt       = jmp_is_lt(op);
+        table.entries[id].initialized = false;
+        table.entries[id].ctr_ptr     = null;
+        table.entries[id].lim_ptr     = null;
+        for (uint b = 0; b < MAX_BODY_INC_VARS; b++) table.entries[id].body_ptrs[b] = null;
+
+        // Patch the header instruction to LOOP_COMPILED(id, total_skip).
+        f.code[header] = bytecode::make_a_bc(Opcode.LOOP_COMPILED, id, total_skip);
+
+        table.count++;
+        i++;  // continue scanning after the JMP
     }
 }
 
@@ -115,43 +130,33 @@ fn bool jmp_is_lt(Opcode op) @inline {
 }
 
 // ============================================================================
-// jit_init_loop — resolve TVal* pointers from VarIC on first execution
+// jit_init_loop — resolve TVal* from VarIC on first execution
 // ============================================================================
 
-/// Called from the LOOP_COMPILED VM handler the first time this loop executes.
-/// Reads VarIC entries (populated by previous INC_VAR/GETVAR runs) to get
-/// direct TVal* pointers into the env's prop_values array.
-/// Returns false if VarIC is cold (not yet warmed up) — interpreter falls back.
+/// Reads VarIC entries (already warmed by at least one interpreter pass through
+/// the original instructions) to resolve direct TVal* pointers.
 fn bool jit_init_loop(CompiledLoop* loop, CompiledFunction* f, hobject::VarICEntry* var_ic_base) {
     if (var_ic_base == null) return false;
 
-    uint pp = loop.patch_pc;
-    bool pa = (loop.skip_count == 5);
+    uint hp = loop.header_pc;
 
-    if (pa) {
-        // Pattern A: VarIC[pp] = first INC_VAR (acc), VarIC[pp+1] = second INC_VAR (ctr)
-        //            VarIC[pp+3] = GETVAR for limit
-        hobject::VarICEntry* vic_inc = &var_ic_base[pp];
-        if (vic_inc.env == null || vic_inc.bindings == null) return false;
-        loop.inc_ptr = &((HObject*)vic_inc.bindings).prop_values()[vic_inc.prop_idx];
-
-        hobject::VarICEntry* vic_ctr = &var_ic_base[pp + 1];
-        if (vic_ctr.env == null || vic_ctr.bindings == null) return false;
-        loop.ctr_ptr = &((HObject*)vic_ctr.bindings).prop_values()[vic_ctr.prop_idx];
-
-        hobject::VarICEntry* vic_lim = &var_ic_base[pp + 3];
-        if (vic_lim.env == null || vic_lim.bindings == null) return false;
-        loop.lim_ptr = &((HObject*)vic_lim.bindings).prop_values()[vic_lim.prop_idx];
-    } else {
-        // Pattern B: VarIC[pp] = INC_VAR (ctr), VarIC[pp+2] = GETVAR (lim)
-        hobject::VarICEntry* vic_ctr = &var_ic_base[pp];
-        if (vic_ctr.env == null || vic_ctr.bindings == null) return false;
-        loop.ctr_ptr = &((HObject*)vic_ctr.bindings).prop_values()[vic_ctr.prop_idx];
-
-        hobject::VarICEntry* vic_lim = &var_ic_base[pp + 2];
-        if (vic_lim.env == null || vic_lim.bindings == null) return false;
-        loop.lim_ptr = &((HObject*)vic_lim.bindings).prop_values()[vic_lim.prop_idx];
+    // Body INC_VAR accumulators: VarIC[hp+0], VarIC[hp+1], ...
+    for (uint b = 0; b < loop.body_count; b++) {
+        hobject::VarICEntry* vic = &var_ic_base[hp + b];
+        if (vic.env == null || vic.bindings == null) return false;
+        loop.body_ptrs[b] = &((HObject*)vic.bindings).prop_values()[vic.prop_idx];
     }
+
+    // Tail: INC_VAR(ctr) is at hp + body_count; VarIC entry is at that pc.
+    uint tail_start = hp + loop.body_count;
+    hobject::VarICEntry* vic_ctr = &var_ic_base[tail_start];
+    if (vic_ctr.env == null || vic_ctr.bindings == null) return false;
+    loop.ctr_ptr = &((HObject*)vic_ctr.bindings).prop_values()[vic_ctr.prop_idx];
+
+    // Limit GETVAR is at tail_start+2 (after INC_VAR(ctr) and GETVAR(ctr_r)).
+    hobject::VarICEntry* vic_lim = &var_ic_base[tail_start + 2];
+    if (vic_lim.env == null || vic_lim.bindings == null) return false;
+    loop.lim_ptr = &((HObject*)vic_lim.bindings).prop_values()[vic_lim.prop_idx];
 
     loop.initialized = true;
     return true;
@@ -161,17 +166,17 @@ fn bool jit_init_loop(CompiledLoop* loop, CompiledFunction* f, hobject::VarICEnt
 // jit_run_loop — tight C3 fastint loop, no switch dispatch
 // ============================================================================
 
-/// Runs the loop body: increment accumulator and counter until ctr >= lim.
-/// Returns true on normal completion, false if any value is non-fastint
-/// (caller must de-optimize back to the interpreter for those iterations).
 fn bool jit_run_loop(CompiledLoop* loop) {
     if (!loop.initialized) return false;
 
-    if (loop.inc_ptr != null && !loop.inc_ptr.is_fastint()) return false;
+    // All values must be fastint for this path.
+    for (uint b = 0; b < loop.body_count; b++) {
+        if (!loop.body_ptrs[b].is_fastint()) return false;
+    }
     if (!loop.ctr_ptr.is_fastint() || !loop.lim_ptr.is_fastint()) return false;
 
-    bool has_inc = (loop.inc_ptr != null);
-    bool lt      = loop.is_lt;
+    bool lt = loop.is_lt;
+    uint bc = loop.body_count;
 
     while (true) {
         long ctr = loop.ctr_ptr.get_fastint();
@@ -179,12 +184,14 @@ fn bool jit_run_loop(CompiledLoop* loop) {
 
         if (lt ? (ctr >= lim) : (ctr > lim)) break;
 
-        if (has_inc) {
-            long v = loop.inc_ptr.get_fastint() + 1L;
+        // Run body INC_VARs.
+        for (uint b = 0; b < bc; b++) {
+            long v = loop.body_ptrs[b].get_fastint() + 1L;
             if (v > types::FASTINT_MAX) return false;
-            loop.inc_ptr.set_fastint(v);
+            loop.body_ptrs[b].set_fastint(v);
         }
 
+        // Increment counter.
         long next = ctr + 1L;
         if (next > types::FASTINT_MAX) return false;
         loop.ctr_ptr.set_fastint(next);

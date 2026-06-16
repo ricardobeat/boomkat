@@ -3065,8 +3065,9 @@ fn TVal? Vm.run(Vm* vm) {
         }
 
         case Opcode.LOOP_COMPILED: {
-            // A = loop_id in the function's CompiledLoopTable, BC = skip_count.
-            // On first hit: resolve TVal* from VarIC; on subsequent: run tight C3 loop.
+            // A = loop_id in CompiledLoopTable, BC = total instructions covered.
+            // Success: run entire loop in C3, advance past all covered instructions.
+            // Fallback: do nothing — interpreter executes remaining instructions normally.
             uint loop_id = insn.a;
             int  skip    = (int)insn.get_bc();
             jit::CompiledLoopTable* tbl = (jit::CompiledLoopTable*)vm.current_func.jit_data;
@@ -3080,12 +3081,14 @@ fn TVal? Vm.run(Vm* vm) {
                         if (vm.heap.gc_pending) { vm.heap.safepoint_gc(); }
                         vm.heap.bwd_gc_budget = heap::BWD_GC_INTERVAL;
                     }
+                    // skip-1: curr_pc already past LOOP_COMPILED; advance to instruction after JMP.
                     curr_pc = curr_pc + (skip - 1);
                     break;
                 }
             }
-            // Fallback: skip the patched block — values already updated or VarIC cold.
-            curr_pc = curr_pc + (skip - 1);
+            // Fallback: VarIC cold or non-fastint value — fall through to next instruction.
+            // The remaining instructions (body INC_VARs + tail + JMP) execute normally,
+            // warming the VarIC so the next iteration will hit the fast path.
             break;
         }
 
