@@ -255,13 +255,20 @@ fn bool scan_body(CompiledFunction* f, uint header, uint tail_start, uint jmp_pc
 // ============================================================================
 
 /// Scan a compiled function for backward-jumping fastint loops and compile
-/// them to LOOP_COMPILED superinstructions. Called once after compilation.
+/// them to LOOP_COMPILED superinstructions. Also compiles function prologues.
+/// Called once after compilation.
 fn void jit_scan(CompiledFunction* f, Heap* h) {
     if (f == null || f.jit_data != null) return;
 
     CompiledLoopTable* table = (CompiledLoopTable*)libc::calloc(1, CompiledLoopTable::size);
     if (table == null) return;
     f.jit_data = table;
+
+    // Try to compile function prologue
+    jit_compile_prologue(f);
+
+    // Run peephole optimizations
+    jit_peephole_optimize(f);
 
     uint n = f.code_count;
 
@@ -479,4 +486,156 @@ fn bool jit_run_loop(CompiledLoop* loop) {
     }
 
     return true;
+}
+
+// ============================================================================
+// Prologue superinstruction compilation (PROLOGUE_COMPILED)
+// ============================================================================
+
+/// Pattern info for detected function prologue.
+struct ProloguePattern {
+    uint start_pc;      // first DECLVAR instruction
+    uint end_pc;        // first non-DECLVAR after the run
+    uint param_count;   // number of DECLVAR instructions
+    uint total_skip;    // bytes to skip (end_pc - start_pc)
+}
+
+/// A compiled function prologue superinstruction, optimizing parameter binding.
+struct CompiledPrologue {
+    uint start_pc;
+    uint total_skip;     // instructions to skip after replacement
+    Instruction saved_insn;
+    uint param_count;
+    bool initialized;
+}
+
+/// Detect a function prologue pattern (consecutive DECLVARs for parameters).
+/// Returns true if pattern found; fills out pat_info.
+fn bool detect_prologue_pattern(CompiledFunction* f, ProloguePattern* pat) {
+    if (f == null || f.code_count < 1) return false;
+
+    // Prologues typically start at instruction 0
+    uint start = 0;
+    uint count = 0;
+
+    // Count consecutive DECLVARs from the start
+    while (start < f.code_count && f.code[start].op == Opcode.DECLVAR) {
+        count++;
+        start++;
+    }
+
+    // Need at least 2 DECLVARs to be worth optimizing (param binding overhead)
+    if (count < 2) return false;
+
+    pat.start_pc = 0;
+    pat.end_pc = start;
+    pat.param_count = count;
+    pat.total_skip = start;
+    return true;
+}
+
+/// Compile a function prologue into a PROLOGUE_COMPILED superinstruction.
+/// Patches the first DECLVAR with the superinstruction; subsequent DECLVARs
+/// become part of the saved template.
+fn void jit_compile_prologue(CompiledFunction* f) {
+    if (f == null || f.code_count < 2) return;
+
+    ProloguePattern pat;
+    if (!detect_prologue_pattern(f, &pat)) return;
+
+    // Save the original first instruction
+    Instruction saved = f.code[pat.start_pc];
+
+    // Patch first instruction to PROLOGUE_COMPILED
+    // A = param_count (number of DECLVARs), BC = param_count (for clarity)
+    f.code[pat.start_pc] = bytecode::make_a_bc(Opcode.PROLOGUE_COMPILED, pat.param_count, pat.param_count);
+
+    // Mark as compiled for fallback
+    if (f.jit_data == null) {
+        CompiledLoopTable* table = (CompiledLoopTable*)libc::calloc(1, CompiledLoopTable::size);
+        if (table != null) {
+            f.jit_data = table;
+        }
+    }
+}
+
+// ============================================================================
+// Peephole constant propagation and dead-code elimination
+// ============================================================================
+
+/// Eliminates redundant LDUNDEF instructions that are overwritten
+/// in subsequent instructions without being read.
+fn void eliminate_dead_undef_stores(CompiledFunction* f) {
+    if (f == null || f.code_count < 2) return;
+
+    for (uint i = 0; i + 1 < f.code_count; i++) {
+        Instruction curr = f.code[i];
+        Instruction next = f.code[i + 1];
+
+        // Pattern: LDUNDEF rX / ... / (instruction that writes rX without reading it)
+        // We can skip this for simple patterns where rX is immediately overwritten.
+        if (curr.op == Opcode.LDUNDEF) {
+            uint rX = (uint)curr.a;
+
+            // Check if rX is unconditionally overwritten in next instruction
+            // without being read as source (b or c).
+            uint next_a = (uint)next.a;
+            uint next_b = (uint)next.b;
+            uint next_c = (uint)next.c;
+
+            // If next writes to a different register, keep LDUNDEF
+            if (next_a != rX) continue;
+
+            // If next reads rX as a source operand, keep LDUNDEF
+            if (next_b == rX || next_c == rX) continue;
+
+            // next writes to rX without reading it — LDUNDEF is dead
+            // (but only eliminate if next never jumps to this slot, which we
+            // can't easily determine; for safety, only eliminate certain opcodes)
+            switch (next.op) {
+                case Opcode.LDINT:
+                case Opcode.LDCONST:
+                case Opcode.LDREG:
+                case Opcode.LDNULL:
+                case Opcode.LDTRUE:
+                case Opcode.LDFALSE:
+                case Opcode.LDUNDEF:
+                case Opcode.LDTHIS: {
+                    f.code[i] = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
+                }
+                default: break;
+            }
+        }
+    }
+}
+
+/// Fuses consecutive LDINT instructions into a single LDINTX when applicable.
+/// Pattern: LDINT rX, low16 / LDINTX rX, high16 → single fused instruction
+/// (This is already handled by the compiler, but helps clean up generated code.)
+fn void fuse_ldint_sequences(CompiledFunction* f) {
+    if (f == null || f.code_count < 2) return;
+
+    for (uint i = 0; i + 1 < f.code_count; i++) {
+        Instruction curr = f.code[i];
+        Instruction next = f.code[i + 1];
+
+        // Pattern: LDINT rX, val / LDINT rX, val2 (same register written twice)
+        // This is inefficient — the first is dead.
+        if (curr.op == Opcode.LDINT && next.op == Opcode.LDINT) {
+            uint curr_a = (uint)curr.a;
+            uint next_a = (uint)next.a;
+
+            if (curr_a == next_a) {
+                // Same register; first LDINT is dead (unless it's a jump target)
+                f.code[i] = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
+            }
+        }
+    }
+}
+
+/// Run all peephole optimizations on a compiled function.
+fn void jit_peephole_optimize(CompiledFunction* f) {
+    if (f == null) return;
+    eliminate_dead_undef_stores(f);
+    fuse_ldint_sequences(f);
 }

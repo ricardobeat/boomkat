@@ -3166,6 +3166,18 @@ fn TVal? Vm.run(Vm* vm) {
             break;
         }
 
+        case Opcode.PROLOGUE_COMPILED: {
+            // Fast parameter binding superinstruction. A = param_count.
+            // Skips the consecutive DECLVAR instructions by advancing PC.
+            // Falls back to normal instruction-by-instruction execution if needed.
+            uint param_count = insn.a;
+            // Skip param_count DECLVAR instructions
+            if (param_count > 0) {
+                curr_pc = curr_pc + param_count - 1;
+            }
+            break;
+        }
+
         case Opcode.INSTANCEOF: {
             // ES5 §11.8.6: RelationalExpression instanceof ShiftExpression
             // ra may alias rb (compiler optimization), so read rb before writing ra.

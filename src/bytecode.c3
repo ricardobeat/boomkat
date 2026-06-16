@@ -430,6 +430,11 @@ enum Opcode : char {
     /// Installed by jit_scan() over the tail of a hot fastint loop body.
     LOOP_COMPILED,
 
+    /// Pre-compiled function prologue superinstruction. A = param_count
+    /// (number of parameter DECLVAR instructions), BC = param_count.
+    /// Replaces consecutive DECLVARs with a single fast path for parameter binding.
+    PROLOGUE_COMPILED,
+
     /// Sentinel — not a real opcode; marks the end of the enum.
     LAST_OP,
 }
@@ -487,6 +492,7 @@ fn OpFormat get_op_format(Opcode op) {
         case YIELD:      return ABC;
         case YIELD_STAR: return ABC;
         case LOOP_COMPILED: return A_BC;
+        case PROLOGUE_COMPILED: return A_BC;
 
         // A-sBx format (signed 16-bit second operand)
         case LDINT:     return A_SBX;
@@ -1108,6 +1114,7 @@ const char*[Opcode.LAST_OP.ordinal + 1] OPCODE_NAMES = {
     [Opcode.JMP_GT.ordinal]       = "JMP_GT",
     [Opcode.JMP_GE.ordinal]       = "JMP_GE",
     [Opcode.LOOP_COMPILED.ordinal] = "LOOP_COMPILED",
+    [Opcode.PROLOGUE_COMPILED.ordinal] = "PROLOGUE_COMPILED",
     [Opcode.LAST_OP.ordinal]     = "LAST_OP",
 };
 
