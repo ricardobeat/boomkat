@@ -3065,30 +3065,104 @@ fn TVal? Vm.run(Vm* vm) {
         }
 
         case Opcode.LOOP_COMPILED: {
-            // A = loop_id in CompiledLoopTable, BC = total instructions covered.
-            // Success: run entire loop in C3, advance past all covered instructions.
-            // Fallback: do nothing — interpreter executes remaining instructions normally.
+            // Header of a compiled loop. BC = total_skip.
+            // curr_pc already points to header_pc+1.
+            // Success: JIT ran the entire loop; advance by total_skip-1 to skip past JMP.
+            // Fallback: execute saved_insn semantics and continue normally.
             uint loop_id = insn.a;
-            int  skip    = (int)insn.get_bc();
+            int  total_skip = (int)insn.get_bc();
             jit::CompiledLoopTable* tbl = (jit::CompiledLoopTable*)vm.current_func.jit_data;
             if (tbl != null && loop_id < tbl.count) {
                 jit::CompiledLoop* cloop = &tbl.entries[loop_id];
                 if (!cloop.initialized) {
-                    jit::jit_init_loop(cloop, vm.current_func, var_ic_base);
+                    jit::jit_init_loop(cloop, vm.current_func, act.lex_env);
                 }
                 if (cloop.initialized && jit::jit_run_loop(cloop)) {
                     if (--vm.heap.bwd_gc_budget == 0) {
                         if (vm.heap.gc_pending) { vm.heap.safepoint_gc(); }
                         vm.heap.bwd_gc_budget = heap::BWD_GC_INTERVAL;
                     }
-                    // skip-1: curr_pc already past LOOP_COMPILED; advance to instruction after JMP.
-                    curr_pc = curr_pc + (skip - 1);
+                    curr_pc = curr_pc + (total_skip - 1);
                     break;
                 }
+                // Fallback: execute saved_insn (the original header instruction)
+                // so the loop body runs correctly for this iteration.
+                {
+                    Instruction si = cloop.saved_insn;
+                    Opcode si_op = si.op;
+                    TVal* si_ra = regs_base + (uint)si.a;
+
+                    switch (si_op) {
+                        case Opcode.INC_VAR:
+                        case Opcode.DEC_VAR: {
+                            uint si_bc = si.get_bc();
+                            if (si_bc < vm.current_func.const_count) {
+                                TVal nv2 = constants[si_bc];
+                                if (nv2.is_string()) {
+                                    void* key2 = nv2.get_heapptr();
+                                    bool is_inc2 = (si_op == Opcode.INC_VAR);
+                                    EnvRecord* cur2 = act.lex_env;
+                                    while (cur2 != null) {
+                                        int idx2 = cur2.bindings.find_prop_idx(key2);
+                                        if (idx2 >= 0) {
+                                            TVal old2 = cur2.bindings.prop_values()[idx2];
+                                            if (!env::is_tdz_sentinel(&old2) && cur2.bindings.get_prop_flags((uint)idx2).writable) {
+                                                if (old2.is_fastint()) {
+                                                    long v2 = old2.get_fastint() + (is_inc2 ? 1L : -1L);
+                                                    if (v2 >= types::FASTINT_MIN && v2 <= types::FASTINT_MAX) {
+                                                        cur2.bindings.prop_values()[idx2].set_fastint(v2);
+                                                        si_ra.set_fastint(v2);
+                                                    } else {
+                                                        cur2.bindings.prop_values()[idx2].set_number((double)v2);
+                                                        si_ra.set_number((double)v2);
+                                                    }
+                                                }
+                                            }
+                                            break;
+                                        }
+                                        cur2 = cur2.parent;
+                                    }
+                                }
+                            }
+                        }
+                        case Opcode.GETVAR: {
+                            uint si_bc = si.get_bc();
+                            if (si_bc < vm.current_func.const_count) {
+                                TVal nv2 = constants[si_bc];
+                                if (nv2.is_string()) {
+                                    void* key2 = nv2.get_heapptr();
+                                    EnvRecord* cur2 = act.lex_env;
+                                    while (cur2 != null) {
+                                        int idx2 = cur2.bindings.find_prop_idx(key2);
+                                        if (idx2 >= 0) {
+                                            TVal v2 = cur2.bindings.prop_values()[idx2];
+                                            if (!env::is_tdz_sentinel(&v2)) {
+                                                vm.heap.tval_copy_ref(si_ra, &v2);
+                                            }
+                                            break;
+                                        }
+                                        cur2 = cur2.parent;
+                                    }
+                                }
+                            }
+                        }
+                        case Opcode.LDINT: {
+                            si_ra.set_fastint((long)si.get_sbc());
+                        }
+                        case Opcode.LDREG: {
+                            TVal* si_rb = regs_base + (uint)si.b;
+                            if (!si_rb.is_heap_allocated()) {
+                                *si_ra = *si_rb;
+                            } else {
+                                vm.heap.tval_copy_ref(si_ra, si_rb);
+                            }
+                        }
+                        default: break;
+                    }
+                }
+                // Continue from header+1 — interpreter executes remaining body normally.
+                break;
             }
-            // Fallback: VarIC cold or non-fastint value — fall through to next instruction.
-            // The remaining instructions (body INC_VARs + tail + JMP) execute normally,
-            // warming the VarIC so the next iteration will hit the fast path.
             break;
         }
 
