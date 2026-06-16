@@ -650,7 +650,7 @@ fn ushort? CompilerContext.postfix_expr(&self) {
 
         if (lhs_was_getvar) {
             // Replace INC + PUTVAR with INC_VAR + NOP
-            self.emit_a_bc(Opcode.INC_VAR, 0, lhs_getvar_name_idx);
+            self.emit_a_bc(Opcode.INC_VAR, (uint)operand, lhs_getvar_name_idx);
             self.emit_abc(Opcode.NOP, 0, 0, 0);
         } else {
             self.emit_abc(Opcode.INC, (uint)operand, 0, 0);
@@ -666,7 +666,7 @@ fn ushort? CompilerContext.postfix_expr(&self) {
         self.emit_abc(Opcode.LDREG, (uint)saved, (uint)operand, 0);
 
         if (lhs_was_getvar) {
-            self.emit_a_bc(Opcode.DEC_VAR, 0, lhs_getvar_name_idx);
+            self.emit_a_bc(Opcode.DEC_VAR, (uint)operand, lhs_getvar_name_idx);
             self.emit_abc(Opcode.NOP, 0, 0, 0);
         } else {
             self.emit_abc(Opcode.DEC, (uint)operand, 0, 0);
