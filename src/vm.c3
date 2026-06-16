@@ -3043,7 +3043,8 @@ fn TVal? Vm.run(Vm* vm) {
                             // Ultra-fast path: when the IC value is not a heap
                             // pointer (common for fastint/number results), skip
                             // decref/incref/track_heap_store entirely.
-                            TVal ic_val = ic.prop_value_ptr.data.value;
+                            PropValue* ic_pv = ic.cached_prop_alloc != null ? ic.prop_value_ptr : &hobj.prop_values()[ic.prop_idx];
+                            TVal ic_val = ic_pv.data.value;
                             if (!ic_val.is_heap_allocated()) {
                                 *ra = ic_val;
                             } else {
@@ -3393,7 +3394,8 @@ fn TVal? Vm.run(Vm* vm) {
                         if (ic.key == (void*)key_hstr && ic.shape_id == hobj.shape_id) {
                             HObject* ic_owner = hobj;
                             if (ic.cached_prop_alloc == ic_owner.prop_alloc) {
-                                TVal ic_val = ic.prop_value_ptr.data.value;
+                                PropValue* ic_pv = ic.cached_prop_alloc != null ? ic.prop_value_ptr : &hobj.prop_values()[ic.prop_idx];
+                                TVal ic_val = ic_pv.data.value;
                                 if (!ic_val.is_heap_allocated()) {
                                     *ra = ic_val;
                                 } else {
@@ -3682,7 +3684,8 @@ fn TVal? Vm.run(Vm* vm) {
                         if (ic.cached_prop_alloc == hobj.prop_alloc
                             && !ic.prop_flags.is_accessor
                             && ic.prop_flags.writable) {
-                            vm.heap.tval_copy_ref(&ic.prop_value_ptr.data.value, rc);
+                            PropValue* ic_pv = ic.cached_prop_alloc != null ? ic.prop_value_ptr : &hobj.prop_values()[ic.prop_idx];
+                            vm.heap.tval_copy_ref(&ic_pv.data.value, rc);
                             break;
                         }
                     }
