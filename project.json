@@ -30,6 +30,13 @@
       "single-module": true,
       "strip-unused": true
     },
+    "tinyduck_cli": {
+      "type": "executable",
+      "sources": [ "src", "regexp", "cli/main.c3" ],
+      "opt": "Oz",
+      "single-module": true,
+      "strip-unused": true
+    },
 
     // -- Debug targets (excluded from release builds) ---------------------------
 

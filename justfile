@@ -18,6 +18,15 @@ build-test:
 build-test-noregexp:
     c3c build tinyduck_test_noregexp
 
+# Build the CLI script runner (clean output, no debug dump)
+build-cli:
+    c3c build tinyduck_cli
+
+# Build and run a JS file with the CLI
+cli file:
+    @just build-cli
+    ./out/tinyduck_cli {{file}}
+
 # Cross-compile for RISC-V 64-bit (Linux, static, musl)
 build-riscv64:
     c3c --target linux-riscv64 --single-module=yes -Oz build tinyduck_test
