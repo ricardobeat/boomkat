@@ -435,6 +435,10 @@ enum Opcode : char {
     /// Replaces consecutive DECLVARs with a single fast path for parameter binding.
     PROLOGUE_COMPILED,
 
+    /// Specialized GETPROPC: IC is known-warm. Skips ic_base null check and
+    /// key comparison. Falls back to GETPROPC if shape_id or prop_alloc changed.
+    GETPROPC_CACHED,
+
     /// Sentinel — not a real opcode; marks the end of the enum.
     LAST_OP,
 }
@@ -493,6 +497,7 @@ fn OpFormat get_op_format(Opcode op) {
         case YIELD_STAR: return ABC;
         case LOOP_COMPILED: return A_BC;
         case PROLOGUE_COMPILED: return A_BC;
+        case GETPROPC_CACHED: return ABC;
 
         // A-sBx format (signed 16-bit second operand)
         case LDINT:     return A_SBX;
@@ -1115,6 +1120,7 @@ const char*[Opcode.LAST_OP.ordinal + 1] OPCODE_NAMES = {
     [Opcode.JMP_GE.ordinal]       = "JMP_GE",
     [Opcode.LOOP_COMPILED.ordinal] = "LOOP_COMPILED",
     [Opcode.PROLOGUE_COMPILED.ordinal] = "PROLOGUE_COMPILED",
+    [Opcode.GETPROPC_CACHED.ordinal] = "GETPROPC_CACHED",
     [Opcode.LAST_OP.ordinal]     = "LAST_OP",
 };
 

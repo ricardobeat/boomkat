@@ -3868,6 +3868,10 @@ fn TVal? Vm.run(Vm* vm) {
                                     if (key != null) { ((types::HeapHeader*)key).incref(); }
                                     ic.prop_value_ptr = &res.owner.prop_values()[owner_idx];
                                     ic.cached_prop_alloc = (void*)res.owner.prop_values();
+                                    // Upgrade to cached variant now that IC is populated
+                                    // Keep A, B, C operands the same, just change the opcode
+                                    curr_pc[-1] = bytecode::make_abc(bytecode::Opcode.GETPROPC_CACHED,
+                                                                      (uint)insn.a, (uint)insn.b, (uint)insn.c);
                                     // Also populate megamorphic cache for cross-site benefit
                                     hobject::mega_cache_store(vm.heap, hobj, key, res.owner, owner_idx);
                                 }
@@ -4021,6 +4025,36 @@ fn TVal? Vm.run(Vm* vm) {
                 }
             }
             break;
+
+        case Opcode.GETPROPC_CACHED: {
+            // Specialized GETPROPC: IC is known warm. Only checks shape_id + prop_alloc.
+            // Falls back to GETPROPC if the check fails (shape changed or props reallocated).
+            TVal key_tval = constants[(uint)insn.c];
+            HString* key_hstr = (HString*)key_tval.get_heapptr();
+            if (rb.is_object() && ic_base != null) {
+                HObject* hobj = (HObject*)rb.get_heapptr();
+                uint pc_off = (uint)(curr_pc - 1 - code_base);
+                hobject::ICEntry* ic = ic_base + pc_off;
+                if (ic.shape_id == hobj.shape_id) {
+                    HObject* ic_owner = ic.proto == null ? hobj : (HObject*)ic.proto;
+                    if (ic.cached_prop_alloc == (void*)ic_owner.prop_values()) {
+                        TVal ic_val = *ic.prop_value_ptr;
+                        if (!ic_val.is_heap_allocated()) {
+                            *ra = ic_val;
+                        } else {
+                            vm.heap.tval_copy_ref(ra, &ic_val);
+                            track_heap_store(act, ra, (uint)insn.a);
+                        }
+                        break;
+                    }
+                }
+            }
+            // IC miss or ic_base null: downgrade back to GETPROPC and re-execute
+            curr_pc[-1] = bytecode::make_abc(bytecode::Opcode.GETPROPC,
+                                            (uint)insn.a, (uint)insn.b, (uint)insn.c);
+            curr_pc--;
+            continue;
+        }
 
         case Opcode.PUTPROP:
             if (ra.is_object()) {
