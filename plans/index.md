@@ -31,3 +31,4 @@
 | [031-string-intern-bloat.md](031-string-intern-bloat.md) | ✅ DONE | Skip-interning for ADD concat + lazy intern in get_prop_key; memory 15,776→6,688 KB. Fix 2 (GC in alloc_no_gc) retracted post-completion — caused double-frees and the ~1s shape bench regression |
 | [032-gc-safepoints.md](032-gc-safepoints.md) | ✅ DONE | `gc_pending`, `safepoint_gc()`, and `temproot` protection implemented in heap.c3/vm.c3 |
 | [033-memory-next-steps.md](033-memory-next-steps.md) | 🔄 IN PROGRESS | GC on backward jumps (item 2) done; boxed accessor pairs (item 1) done. Remaining: default-prototype elision |
+| [034-novel-vm-optimizations.md](034-novel-vm-optimizations.md) | ✅ DONE | Megamorphic cache, GETPROPC_CACHED adaptive opcode, GETPROPC2 chain fusion. +40% property-heavy benchmarks. |

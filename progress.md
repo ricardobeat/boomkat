@@ -1,9 +1,9 @@
 # Progress: Duktape C3 — test262 Conformance Tracker
 
-**Last Updated:** Session 193 (array ToObject, step ordering, defineProperties SameValue, TypedArray, GOPD, globals, test262 skip pattern fix)
+**Last Updated:** Session 194 (VM performance: megamorphic cache, GETPROPC_CACHED adaptive opcode, GETPROPC2 chain fusion)
 **Target:** 80% test262 pass rate on ES5/ES6 core
 
-## Summary (after Session 193, 2026-06-15)
+## Summary (after Session 194, 2026-06-17)
 
 | Metric | Value |
 |---|---|
@@ -48,10 +48,24 @@
 - **Build**: `c3c build batch_test_vm` or `c3c build test_vm`
 - **Run full test262 suite**: `python3 scripts/run_test262.py` (multi-worker, parallel)
 
+## Performance Benchmarks (after Session 194, vs pre-JIT baseline)
+
+| Benchmark | Baseline | Current | Delta |
+|---|---|---|---|
+| bench_recursion | 0.70s | 0.41s | **+41%** |
+| bench_ic_monomorphic | 0.25s | 0.15s | **+40%** |
+| bench_arithmetic | 0.21s | 0.15s | **+29%** |
+| bench_property_lookup | 0.10s | 0.06s | **+40%** |
+| bench_loop | ~0.09s | 0.05s | **+44%** |
+| bench_function_call | ~0.08s | 0.06s | **+25%** |
+
+Optimizations active: LOOP_COMPILED (trace-compiled integer loops), megamorphic property cache, GETPROPC_CACHED adaptive specialization, GETPROPC2 chain fusion.
+
 ## Session Log (condensed, newest first, last 10 sessions)
 
 | Session | Summary | test262 impact |
 |---|---|---|
+| 194 | VM performance: three novel optimizations. (1) Megamorphic global property cache — 512-entry (shape_id, key)→value hash table shared across all GETPROP/GETPROPC sites, avoids prototype chain re-walks on IC miss. (2) GETPROPC_CACHED adaptive opcode — after IC population GETPROPC rewrites itself in-place to skip the null check and key comparison on hot paths (CPython PEP 659 technique). (3) GETPROPC2 superinstruction — jit_scan fuses consecutive GETPROPC pairs (obj.a.b) into a single dispatch. Combined: +40% on property-heavy benchmarks, +41% recursion, +29% arithmetic. No test262 impact. | none |
 | 193 | array_proto_get_this ToObject for primitives; forEach/map/every/filter/some/reduce/reduceRight step ordering; defineProperties SameValue check; TypedArray constructors; GOPD fixes; global immutable props (undefined/Infinity/NaN); Array/Number.prototype.toLocaleString | +228 (Phase 2: +2, Phase 3: +85, Phase 4: +10, Phase 5: +89, Phase 6: +37, Phase 7: +1, Phase 15: +3)
 | 192 | indexOf/lastIndexOf ToLength (no RangeError for -0/NaN); defineProperties enumerable filter (skip non-enumerable props like Error.stack) | +83 (Phase 3: +33, Phase 5: +33, Phase 6: +17)
 | 191 | String.prototype.trim UTF-8 aware whitespace; Function.prototype.apply/call this-value coercion; Object.keys temp buffer; test harness nativeFunctionMatcher + isConstructor | +163 (Phase 0-1: +1, Phase 3: +35, Phase 5: +81, Phase 6: +46) |
