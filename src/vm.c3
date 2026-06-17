@@ -2334,6 +2334,19 @@ fn TVal? Vm.run(Vm* vm) {
             break;
 
         case Opcode.DIV: {
+            if (rb.is_fastint() && rc.is_fastint()) {
+                long div_b_i = rb.get_fastint();
+                long div_c_i = rc.get_fastint();
+                if (div_c_i != 0 && div_b_i % div_c_i == 0) {
+                    long q = div_b_i / div_c_i;
+                    if (q >= types::FASTINT_MIN && q <= types::FASTINT_MAX) {
+                        ra.set_fastint(q);
+                        break;
+                    }
+                }
+                ra.set_number((double)div_b_i / (double)div_c_i);
+                break;
+            }
             double div_b = vm_to_number(vm,rb);
             if (!vm_check_to_number_throw(vm, act, &curr_pc, &needs_restart)) return VM_ERROR~;
             if (needs_restart) break;
@@ -2404,6 +2417,10 @@ fn TVal? Vm.run(Vm* vm) {
         case Opcode.BNOT:
             // Bitwise NOT always produces Int32, always fits in FASTINT
         {
+            if (rb.is_fastint()) {
+                ra.set_fastint((long)(~(int)rb.get_fastint()));
+                break;
+            }
             int bnot_b = toint32(vm_to_number(vm,rb));
             if (!vm_check_to_number_throw(vm, act, &curr_pc, &needs_restart)) return VM_ERROR~;
             ra.set_fastint((long)(~bnot_b));
@@ -2649,8 +2666,13 @@ fn TVal? Vm.run(Vm* vm) {
         // === BITWISE ===
 
         case Opcode.BAND:
-            // Bitwise ops always produce Int32, always fit in FASTINT
+            // Bitwise ops always produce Int32, always fit in FASTINT.
+            // Fast path: both FASTINT — skip double conversion entirely.
         {
+            if (rb.is_fastint() && rc.is_fastint()) {
+                ra.set_fastint((long)((int)rb.get_fastint() & (int)rc.get_fastint()));
+                break;
+            }
             int band_b = toint32(vm_to_number(vm,rb));
             if (!vm_check_to_number_throw(vm, act, &curr_pc, &needs_restart)) return VM_ERROR~;
             if (needs_restart) break;
@@ -2662,6 +2684,10 @@ fn TVal? Vm.run(Vm* vm) {
 
         case Opcode.BOR:
         {
+            if (rb.is_fastint() && rc.is_fastint()) {
+                ra.set_fastint((long)((int)rb.get_fastint() | (int)rc.get_fastint()));
+                break;
+            }
             int bor_b = toint32(vm_to_number(vm,rb));
             if (!vm_check_to_number_throw(vm, act, &curr_pc, &needs_restart)) return VM_ERROR~;
             if (needs_restart) break;
@@ -2673,6 +2699,10 @@ fn TVal? Vm.run(Vm* vm) {
 
         case Opcode.BXOR:
         {
+            if (rb.is_fastint() && rc.is_fastint()) {
+                ra.set_fastint((long)((int)rb.get_fastint() ^ (int)rc.get_fastint()));
+                break;
+            }
             int bxor_b = toint32(vm_to_number(vm,rb));
             if (!vm_check_to_number_throw(vm, act, &curr_pc, &needs_restart)) return VM_ERROR~;
             if (needs_restart) break;
@@ -2684,6 +2714,10 @@ fn TVal? Vm.run(Vm* vm) {
 
         case Opcode.SHL:
         {
+            if (rb.is_fastint() && rc.is_fastint()) {
+                ra.set_fastint((long)((int)rb.get_fastint() << ((int)rc.get_fastint() & 0x1F)));
+                break;
+            }
             int shl_b = toint32(vm_to_number(vm,rb));
             if (!vm_check_to_number_throw(vm, act, &curr_pc, &needs_restart)) return VM_ERROR~;
             if (needs_restart) break;
@@ -2695,6 +2729,10 @@ fn TVal? Vm.run(Vm* vm) {
 
         case Opcode.SHR:
         {
+            if (rb.is_fastint() && rc.is_fastint()) {
+                ra.set_fastint((long)((int)rb.get_fastint() >> ((int)rc.get_fastint() & 0x1F)));
+                break;
+            }
             int shr_b = toint32(vm_to_number(vm,rb));
             if (!vm_check_to_number_throw(vm, act, &curr_pc, &needs_restart)) return VM_ERROR~;
             if (needs_restart) break;
@@ -2706,6 +2744,11 @@ fn TVal? Vm.run(Vm* vm) {
 
         case Opcode.USHR:
         {
+            if (rb.is_fastint() && rc.is_fastint()) {
+                uint ushr_fib = (uint)(int)rb.get_fastint();
+                ra.set_fastint((long)(ushr_fib >> ((int)rc.get_fastint() & 0x1F)));
+                break;
+            }
             uint ushr_b = (uint)toint32(vm_to_number(vm,rb));
             if (!vm_check_to_number_throw(vm, act, &curr_pc, &needs_restart)) return VM_ERROR~;
             if (needs_restart) break;
