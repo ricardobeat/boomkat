@@ -1790,6 +1790,22 @@ struct VarICEntry {
     void*   search_head;
 }
 
+/// Call-site inline cache entry — tracks monomorphic call specialization.
+/// Populated on first execution, checked on subsequent calls.
+/// If the callee function matches the cached one, fast path bypasses dispatch.
+struct CallICEntry {
+    /// The HObject* of the last called function (null = not populated).
+    void*   func_obj;
+    /// Shape/kind check of the function object (for quick invalidation).
+    ushort  shape_id;
+    /// Generation of shape when entry was populated.
+    uint    generation;
+    /// Call count since last cache miss (for polymorphism detection).
+    uint    call_count;
+    /// Number of distinct functions seen at this call site (0=monomorphic, 1+=polymorphic).
+    uint    func_variants;
+}
+
 /// Single-pass prototype chain search: finds either an accessor or data property.
 /// Returns the kind found. For accessors, sets `acc_out`; for data, sets `data_out`.
 /// If `owner_out` is non-null, sets it to the object owning the found property.

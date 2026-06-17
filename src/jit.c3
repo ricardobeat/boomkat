@@ -644,3 +644,83 @@ fn void jit_peephole_optimize(CompiledFunction* f) {
     eliminate_dead_undef_stores(f);
     fuse_ldint_sequences(f);
 }
+
+// ============================================================================
+// Call-site inline caching (CallIC) for monomorphic dispatch
+// ============================================================================
+
+/// Allocate and initialize call-site IC array for a function.
+/// One entry per CALL/CALL_PROP instruction in the bytecode.
+fn void jit_init_call_ic(CompiledFunction* f, Heap* h) {
+    if (f == null || f.code_count == 0) return;
+
+    // Count CALL instructions
+    uint call_count = 0;
+    for (uint i = 0; i < f.code_count; i++) {
+        Opcode op = f.code[i].op;
+        if (op == Opcode.CALL || op == Opcode.CALL_PROP || op == Opcode.CALL_S) {
+            call_count++;
+        }
+    }
+
+    if (call_count == 0) return;
+
+    // Allocate CallIC array (one entry per call site)
+    uint size = call_count * hobject::CallICEntry::size;
+    void* raw = libc::calloc(call_count, hobject::CallICEntry::size);
+    if (raw == null) return;
+
+    // Store in function (reuse jit_data for now, or create new field)
+    // For now, we'll store call_count in a temporary location during execution
+    // The actual lookup will be by PC-offset like VarIC
+}
+
+/// Update a call-site IC entry with the observed function.
+/// Returns true if entry was successfully recorded (monomorphic so far).
+fn bool jit_call_ic_record(hobject::CallICEntry* entry, void* func_obj) {
+    if (entry == null || func_obj == null) return false;
+
+    if (entry.func_obj == null) {
+        // First call — populate entry
+        HObject* hobj = (HObject*)func_obj;
+        entry.func_obj = func_obj;
+        entry.shape_id = hobj.shape_id;
+        entry.generation = hobject::_active_heap != null ? ((heap::Heap*)hobject::_active_heap).shapes[hobj.shape_id].generation : 0;
+        entry.call_count = 1;
+        entry.func_variants = 0;
+        return true;
+    }
+
+    entry.call_count++;
+
+    // Check if function matches cached entry
+    if (entry.func_obj == func_obj) {
+        HObject* hobj = (HObject*)func_obj;
+        if (hobj.shape_id == entry.shape_id
+            && hobject::_active_heap != null
+            && ((heap::Heap*)hobject::_active_heap).shapes[hobj.shape_id].generation == entry.generation) {
+            // Shape still valid — monomorphic
+            return true;
+        }
+        // Shape invalidated but same object — still use it
+        return true;
+    }
+
+    // Different function observed
+    entry.func_variants++;
+    return entry.func_variants == 0;  // Return true only if still monomorphic
+}
+
+/// Check if a call site is monomorphic (same function called repeatedly).
+/// Returns the cached function object if monomorphic, null if polymorphic or uncached.
+fn void* jit_call_ic_lookup(hobject::CallICEntry* entry) {
+    if (entry == null || entry.func_obj == null) return null;
+    if (entry.func_variants > 0) return null;  // Polymorphic — disable optimization
+    if (entry.call_count < 2) return null;    // Need at least 2 calls to confirm monomorphic
+
+    HObject* cached_obj = (HObject*)entry.func_obj;
+    if (cached_obj == null) return null;
+
+    // Return cached function for monomorphic sites
+    return entry.func_obj;
+}
