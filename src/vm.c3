@@ -4056,6 +4056,164 @@ fn TVal? Vm.run(Vm* vm) {
             continue;
         }
 
+        case Opcode.GETPROPC2: {
+            // Fused two-hop property access. Executes GETPROPC twice in one dispatch.
+            // Format: insn[i] = GETPROPC2 A=dst_temp, B=src, C=key1
+            //         insn[i+1] = (data: A=dst_final, C=key2)
+            // After execution, curr_pc advances past insn[i+1] (skips the data slot).
+
+            TVal key1_tval = constants[(uint)insn.c];
+            HString* key1_hstr = (HString*)key1_tval.get_heapptr();
+
+            // Read second hop's destination and key from the next instruction slot
+            Instruction next_insn = curr_pc[0];  // curr_pc has already advanced past insn
+            uint dst2_reg = (uint)next_insn.a;
+            TVal key2_tval = constants[(uint)next_insn.c];
+            HString* key2_hstr = (HString*)key2_tval.get_heapptr();
+
+            // Advance curr_pc past the data slot
+            curr_pc++;
+
+            TVal* ra2 = regs_base + dst2_reg;
+
+            if (rb.is_object()) {
+                HObject* hobj1 = (HObject*)rb.get_heapptr();
+                uint pc1 = (uint)(curr_pc - 2 - code_base);  // pc of GETPROPC2
+
+                // === Hop 1: hobj1[key1] ===
+                TVal mid_val;
+                mid_val.set_undefined();
+
+                // IC fast path for hop 1
+                if (ic_base != null) {
+                    hobject::ICEntry* ic1 = ic_base + pc1;
+                    if (ic1.key == (void*)key1_hstr && ic1.shape_id == hobj1.shape_id) {
+                        HObject* owner1 = ic1.proto == null ? hobj1 : (HObject*)ic1.proto;
+                        if (ic1.cached_prop_alloc == (void*)owner1.prop_values()) {
+                            mid_val = *ic1.prop_value_ptr;
+                        }
+                    }
+                }
+
+                // Full lookup for hop 1 if IC miss
+                if (mid_val.is_undefined() && key1_hstr != null) {
+                    // ARRAY .length fast path
+                    if (hobj1.get_class() == hobject::ObjClass.ARRAY
+                        && (void*)key1_hstr == (void*)vm.heap.strs[heap::BuiltinStr.LENGTH]) {
+                        mid_val.set_fastint((long)*hobj1.array_len_ptr());
+                    } else {
+                        void* key1 = (void*)key1_hstr;
+                        hobject::PropLookupResult r1 = hobj1.get_prop_or_accessor_proto(key1, true);
+                        if (r1.kind == hobject::PropLookupKind.PROP_DATA) {
+                            mid_val = r1.data_val;
+                            // Populate IC1
+                            if (r1.owner != null && ic_base != null) {
+                                hobject::ICEntry* ic1 = ic_base + pc1;
+                                int idx1 = r1.owner.find_prop_idx(key1);
+                                if (idx1 >= 0) {
+                                    ic1.shape_id = hobj1.shape_id;
+                                    ic1.proto = r1.owner == hobj1 ? null : (void*)r1.owner;
+                                    ic1.prop_idx = (ushort)idx1;
+                                    if (ic1.key != null) { vm.heap.decref((types::HeapHeader*)ic1.key); }
+                                    ic1.key = key1;
+                                    if (key1 != null) { ((types::HeapHeader*)key1).incref(); }
+                                    ic1.prop_value_ptr = &r1.owner.prop_values()[idx1];
+                                    ic1.cached_prop_alloc = (void*)r1.owner.prop_values();
+                                }
+                            }
+                        } else if (r1.kind == hobject::PropLookupKind.PROP_ACCESSOR) {
+                            // Can't fuse accessors easily — abort
+                            mid_val.set_undefined();
+                        }
+                    }
+                }
+
+                // === Hop 2: mid_val[key2] ===
+                if (mid_val.is_object()) {
+                    HObject* hobj2 = (HObject*)mid_val.get_heapptr();
+                    uint pc2 = (uint)(curr_pc - 1 - code_base);  // pc of the data slot
+
+                    // IC fast path for hop 2
+                    if (ic_base != null && key2_hstr != null) {
+                        hobject::ICEntry* ic2 = ic_base + pc2;
+                        if (ic2.key == (void*)key2_hstr && ic2.shape_id == hobj2.shape_id) {
+                            HObject* owner2 = ic2.proto == null ? hobj2 : (HObject*)ic2.proto;
+                            if (ic2.cached_prop_alloc == (void*)owner2.prop_values()) {
+                                TVal ic2_val = *ic2.prop_value_ptr;
+                                if (!ic2_val.is_heap_allocated()) {
+                                    *ra2 = ic2_val;
+                                } else {
+                                    vm.heap.tval_copy_ref(ra2, &ic2_val);
+                                    track_heap_store(act, ra2, dst2_reg);
+                                }
+                                // Also store the intermediate result in ra (temp register)
+                                if (mid_val.is_heap_allocated()) {
+                                    vm.heap.tval_copy_ref(ra, &mid_val);
+                                    track_heap_store(act, ra, (uint)insn.a);
+                                } else {
+                                    *ra = mid_val;
+                                }
+                                break;
+                            }
+                        }
+                    }
+
+                    // Full lookup for hop 2 if IC miss
+                    if (key2_hstr != null) {
+                        // ARRAY .length fast path
+                        if (hobj2.get_class() == hobject::ObjClass.ARRAY
+                            && (void*)key2_hstr == (void*)vm.heap.strs[heap::BuiltinStr.LENGTH]) {
+                            ra2.set_fastint((long)*hobj2.array_len_ptr());
+                        } else {
+                            void* key2 = (void*)key2_hstr;
+                            hobject::PropLookupResult r2 = hobj2.get_prop_or_accessor_proto(key2, true);
+                            if (r2.kind == hobject::PropLookupKind.PROP_DATA) {
+                                vm.heap.tval_copy_ref(ra2, &r2.data_val);
+                                track_heap_store(act, ra2, dst2_reg);
+                                // Populate IC2
+                                if (r2.owner != null && ic_base != null) {
+                                    hobject::ICEntry* ic2 = ic_base + pc2;
+                                    int idx2 = r2.owner.find_prop_idx(key2);
+                                    if (idx2 >= 0) {
+                                        ic2.shape_id = hobj2.shape_id;
+                                        ic2.proto = r2.owner == hobj2 ? null : (void*)r2.owner;
+                                        ic2.prop_idx = (ushort)idx2;
+                                        if (ic2.key != null) { vm.heap.decref((types::HeapHeader*)ic2.key); }
+                                        ic2.key = key2;
+                                        if (key2 != null) { ((types::HeapHeader*)key2).incref(); }
+                                        ic2.prop_value_ptr = &r2.owner.prop_values()[idx2];
+                                        ic2.cached_prop_alloc = (void*)r2.owner.prop_values();
+                                    }
+                                }
+                            } else if (r2.kind == hobject::PropLookupKind.PROP_ACCESSOR) {
+                                // Can't fuse accessors
+                                ra2.set_undefined();
+                            } else {
+                                ra2.set_undefined();
+                            }
+                        }
+                    } else {
+                        ra2.set_undefined();
+                    }
+                } else {
+                    ra2.set_undefined();
+                }
+
+                // Store intermediate result in ra (temp register)
+                if (mid_val.is_heap_allocated()) {
+                    vm.heap.tval_copy_ref(ra, &mid_val);
+                    track_heap_store(act, ra, (uint)insn.a);
+                } else {
+                    *ra = mid_val;
+                }
+            } else {
+                // rb is not an object — both hops fail
+                ra.set_undefined();
+                ra2.set_undefined();
+            }
+            break;
+        }
+
         case Opcode.PUTPROP:
             if (ra.is_object()) {
                 HObject* hobj = (HObject*)ra.get_heapptr();
