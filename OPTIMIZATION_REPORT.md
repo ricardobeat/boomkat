@@ -172,15 +172,42 @@ This pipeline ensures no conflicts and applies transformations at the right abst
 - No regressions in existing benchmarks
 - Fallback paths untested but code structure mirrors `LOOP_COMPILED` precedent
 
-### Benchmark Results (Preliminary)
+### Benchmark Results (Detailed Analysis)
+
+**Baseline (4bb72ba - before optimizations):**
 ```
-Current bench_fast (3 iterations):
-  bench_arithmetic               91 ms
-  bench_array                    26 ms
-  bench_function_call            37 ms ← prologue optimization helps
-  bench_recursion                240 ms
-  bench_loop                     29 ms ← loop optimization (from prior work)
+bench_arithmetic               176 ms
+bench_array                    30 ms
+bench_function_call            38 ms
+bench_ic_monomorphic           114 ms
+bench_ic_proto                 138 ms
+bench_loop                     42 ms
+bench_memory_heavy             74 ms
+bench_object                   52 ms
+bench_property_lookup          42 ms
+bench_recursion                261 ms
 ```
+
+**With Optimizations (3abcd33):**
+```
+bench_arithmetic               128 ms   ✓ +27% FASTER
+bench_array                    29 ms    ✓ +3% faster
+bench_function_call            41 ms    ✗ -8% slower
+bench_ic_monomorphic           134 ms   ✗ -18% slower (WORST)
+bench_ic_proto                 142 ms   ✗ -3% slower
+bench_loop                     49 ms    ✗ -17% slower
+bench_memory_heavy             84 ms    ✗ -14% slower
+bench_object                   53 ms    ✓ +2% faster
+bench_property_lookup          42 ms    ≈ no change
+bench_recursion                261 ms   ≈ no change
+```
+
+**Key Insight**: The optimizations create a **trade-off**, not a net win:
+- **Winners**: Multi-parameter arithmetic (27% gain), array ops (+3%)
+- **Losers**: IC-heavy dispatch (-18%), general JIT overhead (-17%, -14%)
+- **Root Cause**: PROLOGUE_COMPILED opcode increases switch table size, hurting branch prediction on dense opcode sequences (similar to LOOP_COMPILED regression noted in commit 6f28964)
+
+**Recommendation**: Trade-off is acceptable for **proof-of-concept/research** but would need refinement (opcode space reuse, hotness filtering) for production use.
 
 ### Test Suite
 Comprehensive test file: `test_optimizations.js` validates:
