@@ -1761,12 +1761,11 @@ struct ICEntry {
     /// Pointer equality is sufficient (interned strings).
     void*  key;
     /// Cached pointer to the resolved PropValue for direct access.
-    /// Invalidated when prop_alloc is reallocated (prop_alloc comparison).
+    /// Valid while ic_owner.shape_id == shape_id AND shape.generation == generation.
     TVal* prop_value_ptr;
-    /// Snapshot of the owner's prop_alloc pointer at population time.
-    /// IC hit requires this == owner.prop_alloc (single pointer comparison
-    /// replaces the old generation-dereference chain).
-    void*  cached_prop_alloc;
+    /// Shape generation at IC population time. Bumped on prop realloc, delete,
+    /// seal, freeze — any event that invalidates prop_value_ptr without a shape_id change.
+    uint  generation;
 }
 
 /// Global megamorphic property cache entry.
@@ -1778,7 +1777,7 @@ struct MegamorphicEntry {
     ushort  prop_idx;      // property index in owner.prop_values[]
     void*   proto;         // owning object (null = own property)
     TVal*   prop_value_ptr; // direct pointer to value slot
-    void*   cached_prop_alloc; // owner.prop_values() snapshot for invalidation
+    uint    generation;    // shape generation at population time (invalidated by realloc/delete/seal)
 }
 
 /// Hash function for megamorphic cache lookup.
@@ -1793,7 +1792,9 @@ fn MegamorphicEntry* mega_cache_lookup(heap::Heap* h, HObject* hobj, void* key) 
     MegamorphicEntry* e = h.mega_cache + slot;
     if (e.key == key && e.shape_id == hobj.shape_id) {
         HObject* owner = e.proto == null ? hobj : (HObject*)e.proto;
-        if (e.cached_prop_alloc == (void*)owner.prop_values()) {
+        if (owner.shape_id < h.shape_count
+            && h.shapes[owner.shape_id] != null
+            && e.generation == h.shapes[owner.shape_id].generation) {
             return e;
         }
     }
@@ -1810,7 +1811,9 @@ fn void mega_cache_store(heap::Heap* h, HObject* hobj, void* key, HObject* owner
     e.prop_idx = (ushort)prop_idx;
     e.proto = owner == hobj ? null : (void*)owner;
     e.prop_value_ptr = &owner.prop_values()[prop_idx];
-    e.cached_prop_alloc = (void*)owner.prop_values();
+    uint gen = (owner.shape_id < h.shape_count && h.shapes[owner.shape_id] != null)
+        ? h.shapes[owner.shape_id].generation : 0;
+    e.generation = gen;
 }
 
 /// Per GETVAR/TYPEOFIDENT site inline cache. Stores the resolved

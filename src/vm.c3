@@ -3457,7 +3457,7 @@ fn TVal? Vm.run(Vm* vm) {
                     if (rc.is_string()) lookup_key = rc.get_heapptr();
                     if (lookup_key != null && ic.key == lookup_key && ic.shape_id == hobj.shape_id) {
                         HObject* ic_owner = ic.proto == null ? hobj : (HObject*)ic.proto;
-                        if (ic.cached_prop_alloc == (void*)ic_owner.prop_values()) {
+                        if (ic.generation == vm.heap.shapes[ic_owner.shape_id].generation) {
                             // Ultra-fast path: when the IC value is not a heap
                             // pointer (common for fastint/number results), skip
                             // decref/incref/track_heap_store entirely.
@@ -3592,7 +3592,7 @@ fn TVal? Vm.run(Vm* vm) {
                                 ic.key = key;
                                 if (key != null) { ((types::HeapHeader*)key).incref(); }
                                 ic.prop_value_ptr = &res.owner.prop_values()[owner_idx];
-                                ic.cached_prop_alloc = (void*)res.owner.prop_values();
+                                ic.generation = vm.heap.shapes[res.owner.shape_id].generation;
                                 // Also populate megamorphic cache for cross-site benefit
                                 hobject::mega_cache_store(vm.heap, hobj, key, res.owner, owner_idx);
                             }
@@ -3809,7 +3809,7 @@ fn TVal? Vm.run(Vm* vm) {
                         hobject::ICEntry* ic = ic_base + pc_off;
                         if (ic.key == (void*)key_hstr && ic.shape_id == hobj.shape_id) {
                             HObject* ic_owner = ic.proto == null ? hobj : (HObject*)ic.proto;
-                            if (ic.cached_prop_alloc == (void*)ic_owner.prop_values()) {
+                            if (ic.generation == vm.heap.shapes[ic_owner.shape_id].generation) {
                                 TVal ic_val = *ic.prop_value_ptr;
                                 if (!ic_val.is_heap_allocated()) {
                                     *ra = ic_val;
@@ -3910,7 +3910,7 @@ fn TVal? Vm.run(Vm* vm) {
                                     ic.key = key;
                                     if (key != null) { ((types::HeapHeader*)key).incref(); }
                                     ic.prop_value_ptr = &res.owner.prop_values()[owner_idx];
-                                    ic.cached_prop_alloc = (void*)res.owner.prop_values();
+                                    ic.generation = vm.heap.shapes[res.owner.shape_id].generation;
                                     // Upgrade to cached variant now that IC is populated
                                     // Keep A, B, C operands the same, just change the opcode
                                     curr_pc[-1] = bytecode::make_abc(bytecode::Opcode.GETPROPC_CACHED,
@@ -4080,7 +4080,7 @@ fn TVal? Vm.run(Vm* vm) {
                 hobject::ICEntry* ic = ic_base + pc_off;
                 if (ic.shape_id == hobj.shape_id) {
                     HObject* ic_owner = ic.proto == null ? hobj : (HObject*)ic.proto;
-                    if (ic.cached_prop_alloc == (void*)ic_owner.prop_values()) {
+                    if (ic.generation == vm.heap.shapes[ic_owner.shape_id].generation) {
                         TVal ic_val = *ic.prop_value_ptr;
                         if (!ic_val.is_heap_allocated()) {
                             *ra = ic_val;
@@ -4132,7 +4132,7 @@ fn TVal? Vm.run(Vm* vm) {
                     hobject::ICEntry* ic1 = ic_base + pc1;
                     if (ic1.key == (void*)key1_hstr && ic1.shape_id == hobj1.shape_id) {
                         HObject* owner1 = ic1.proto == null ? hobj1 : (HObject*)ic1.proto;
-                        if (ic1.cached_prop_alloc == (void*)owner1.prop_values()) {
+                        if (ic1.generation == vm.heap.shapes[owner1.shape_id].generation) {
                             mid_val = *ic1.prop_value_ptr;
                         }
                     }
@@ -4161,7 +4161,7 @@ fn TVal? Vm.run(Vm* vm) {
                                     ic1.key = key1;
                                     if (key1 != null) { ((types::HeapHeader*)key1).incref(); }
                                     ic1.prop_value_ptr = &r1.owner.prop_values()[idx1];
-                                    ic1.cached_prop_alloc = (void*)r1.owner.prop_values();
+                                    ic1.generation = vm.heap.shapes[r1.owner.shape_id].generation;
                                 }
                             }
                         } else if (r1.kind == hobject::PropLookupKind.PROP_ACCESSOR) {
@@ -4181,7 +4181,7 @@ fn TVal? Vm.run(Vm* vm) {
                         hobject::ICEntry* ic2 = ic_base + pc2;
                         if (ic2.key == (void*)key2_hstr && ic2.shape_id == hobj2.shape_id) {
                             HObject* owner2 = ic2.proto == null ? hobj2 : (HObject*)ic2.proto;
-                            if (ic2.cached_prop_alloc == (void*)owner2.prop_values()) {
+                            if (ic2.generation == vm.heap.shapes[owner2.shape_id].generation) {
                                 TVal ic2_val = *ic2.prop_value_ptr;
                                 if (!ic2_val.is_heap_allocated()) {
                                     *ra2 = ic2_val;
@@ -4225,7 +4225,7 @@ fn TVal? Vm.run(Vm* vm) {
                                         ic2.key = key2;
                                         if (key2 != null) { ((types::HeapHeader*)key2).incref(); }
                                         ic2.prop_value_ptr = &r2.owner.prop_values()[idx2];
-                                        ic2.cached_prop_alloc = (void*)r2.owner.prop_values();
+                                        ic2.generation = vm.heap.shapes[r2.owner.shape_id].generation;
                                     }
                                 }
                             } else if (r2.kind == hobject::PropLookupKind.PROP_ACCESSOR) {
@@ -4289,7 +4289,7 @@ fn TVal? Vm.run(Vm* vm) {
                     hobject::ICEntry* ic = ic_base + pc_off;
                     void* wkey = rb.get_heapptr();
                     if (wkey != null && ic.key == wkey && ic.shape_id == hobj.shape_id && ic.proto == null) {
-                        if (ic.cached_prop_alloc == (void*)hobj.prop_values()
+                        if (ic.generation == vm.heap.shapes[hobj.shape_id].generation
                             && !ic.prop_flags.is_accessor
                             && ic.prop_flags.writable) {
                             vm.heap.tval_copy_ref(ic.prop_value_ptr, rc);
