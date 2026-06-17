@@ -550,6 +550,11 @@ fn void jit_compile_prologue(CompiledFunction* f) {
     // A = param_count (number of DECLVARs), BC = param_count (for clarity)
     f.code[pat.start_pc] = bytecode::make_a_bc(Opcode.PROLOGUE_COMPILED, pat.param_count, pat.param_count);
 
+    // NOP out the subsequent DECLVAR instructions
+    for (uint i = 1; i < pat.param_count; i++) {
+        f.code[pat.start_pc + i] = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
+    }
+
     // Mark as compiled for fallback
     if (f.jit_data == null) {
         CompiledLoopTable* table = (CompiledLoopTable*)libc::calloc(1, CompiledLoopTable::size);
