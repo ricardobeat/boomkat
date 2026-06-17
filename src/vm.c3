@@ -3510,6 +3510,18 @@ fn TVal? Vm.run(Vm* vm) {
                             // lookup so that explicitly assigned out-of-range slots are still found.
                         }
                     }
+                    // Megamorphic cache: try global (shape, key) → offset cache before full chain walk
+                    hobject::MegamorphicEntry* mega = hobject::mega_cache_lookup(vm.heap, hobj, key);
+                    if (mega != null) {
+                        TVal mega_val = *mega.prop_value_ptr;
+                        if (!mega_val.is_heap_allocated()) {
+                            *ra = mega_val;
+                        } else {
+                            vm.heap.tval_copy_ref(ra, &mega_val);
+                            track_heap_store(act, ra, (uint)insn.a);
+                        }
+                        break;
+                    }
                     hobject::PropLookupResult res = hobj.get_prop_or_accessor_proto(key, true);
                     if (res.kind == hobject::PropLookupKind.PROP_ACCESSOR) {
                         TVal obj_val;
@@ -3538,6 +3550,8 @@ fn TVal? Vm.run(Vm* vm) {
                                 if (key != null) { ((types::HeapHeader*)key).incref(); }
                                 ic.prop_value_ptr = &res.owner.prop_values()[owner_idx];
                                 ic.cached_prop_alloc = (void*)res.owner.prop_values();
+                                // Also populate megamorphic cache for cross-site benefit
+                                hobject::mega_cache_store(vm.heap, hobj, key, res.owner, owner_idx);
                             }
                         }
                     } else {
@@ -3814,6 +3828,18 @@ fn TVal? Vm.run(Vm* vm) {
                                 }
                             }
                         }
+                        // Megamorphic cache: try global (shape, key) → offset cache before full chain walk
+                        hobject::MegamorphicEntry* mega = hobject::mega_cache_lookup(vm.heap, hobj, key);
+                        if (mega != null) {
+                            TVal mega_val = *mega.prop_value_ptr;
+                            if (!mega_val.is_heap_allocated()) {
+                                *ra = mega_val;
+                            } else {
+                                vm.heap.tval_copy_ref(ra, &mega_val);
+                                track_heap_store(act, ra, (uint)insn.a);
+                            }
+                            break;
+                        }
                         hobject::PropLookupResult res = hobj.get_prop_or_accessor_proto(key, true);
                         if (res.kind == hobject::PropLookupKind.PROP_ACCESSOR) {
                             TVal obj_val;
@@ -3842,6 +3868,8 @@ fn TVal? Vm.run(Vm* vm) {
                                     if (key != null) { ((types::HeapHeader*)key).incref(); }
                                     ic.prop_value_ptr = &res.owner.prop_values()[owner_idx];
                                     ic.cached_prop_alloc = (void*)res.owner.prop_values();
+                                    // Also populate megamorphic cache for cross-site benefit
+                                    hobject::mega_cache_store(vm.heap, hobj, key, res.owner, owner_idx);
                                 }
                             }
                         } else {

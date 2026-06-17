@@ -1769,6 +1769,50 @@ struct ICEntry {
     void*  cached_prop_alloc;
 }
 
+/// Global megamorphic property cache entry.
+/// Shared across all call sites — keyed by (shape_id, key_ptr).
+/// Avoids repeated prototype chain walks for polymorphic access patterns.
+struct MegamorphicEntry {
+    void*   key;           // interned key pointer (null = empty slot)
+    ushort  shape_id;      // object shape ID at lookup time
+    ushort  prop_idx;      // property index in owner.prop_values[]
+    void*   proto;         // owning object (null = own property)
+    TVal*   prop_value_ptr; // direct pointer to value slot
+    void*   cached_prop_alloc; // owner.prop_values() snapshot for invalidation
+}
+
+/// Hash function for megamorphic cache lookup.
+fn uint mega_hash(ushort shape_id, void* key) @inline {
+    return ((uint)(uptr)key ^ ((uint)shape_id * 2654435761u)) & (heap::MEGA_CACHE_SIZE - 1);
+}
+
+/// Probe the megamorphic cache. Returns pointer to entry if hit, null if miss.
+fn MegamorphicEntry* mega_cache_lookup(heap::Heap* h, HObject* hobj, void* key) @inline {
+    if (h.mega_cache == null) return null;
+    uint slot = mega_hash(hobj.shape_id, key);
+    MegamorphicEntry* e = h.mega_cache + slot;
+    if (e.key == key && e.shape_id == hobj.shape_id) {
+        HObject* owner = e.proto == null ? hobj : (HObject*)e.proto;
+        if (e.cached_prop_alloc == (void*)owner.prop_values()) {
+            return e;
+        }
+    }
+    return null;
+}
+
+/// Populate the megamorphic cache after a successful property lookup.
+fn void mega_cache_store(heap::Heap* h, HObject* hobj, void* key, HObject* owner, int prop_idx) @inline {
+    if (h.mega_cache == null) return;
+    uint slot = mega_hash(hobj.shape_id, key);
+    MegamorphicEntry* e = h.mega_cache + slot;
+    e.key = key;
+    e.shape_id = hobj.shape_id;
+    e.prop_idx = (ushort)prop_idx;
+    e.proto = owner == hobj ? null : (void*)owner;
+    e.prop_value_ptr = &owner.prop_values()[prop_idx];
+    e.cached_prop_alloc = (void*)owner.prop_values();
+}
+
 /// Per GETVAR/TYPEOFIDENT site inline cache. Stores the resolved
 /// environment record and property index to skip the scope-chain walk
 /// on subsequent accesses.

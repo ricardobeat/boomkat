@@ -45,6 +45,7 @@ const uint  INITIAL_STR_TABLE_SIZE  = 256;
 const float STR_TABLE_LOAD_FACTOR   = 0.70;
 const long  GC_INITIAL_TRIGGER      = 1024;
 const long  GC_TRIGGER_GROW_FACTOR  = 2;
+const uint  MEGA_CACHE_SIZE         = 512;
 /// Sentinel refcount for strings that must never be freed (builtins, symbols).
 const uint  STRING_PINNED_REFCOUNT  = 0x7FFF_FFFF;
 /// Initial capacity for the gray object stack (grows as needed).
@@ -308,6 +309,12 @@ struct Heap {
     uint                trans_mask;   // table has mask+1 entries
     uint                trans_count;
 
+    // Global megamorphic property cache: (shape_id, key) → (proto, prop_idx, value)
+    // Shared across all call sites to avoid repeated prototype chain walks.
+    // Lossy single-slot hash table with implicit eviction on collision.
+    // Heap-allocated separately to avoid bloating the hot Heap struct.
+    hobject::MegamorphicEntry* mega_cache;
+
     // Small-integer string cache: pinned HString* for integer keys 0–255.
     // Populated lazily on first use; entries are pinned (STRING_PINNED_REFCOUNT)
     // so they are never freed by RC or GC sweep.
@@ -506,6 +513,12 @@ fn Heap*? create(
 
     // Initialize shape system
     h.init_shapes();
+
+    // Allocate megamorphic property cache (separate allocation to keep Heap struct compact)
+    h.mega_cache = (hobject::MegamorphicEntry*)libc::malloc(MEGA_CACHE_SIZE * hobject::MegamorphicEntry::size);
+    if (h.mega_cache != null) {
+        libc::memset(h.mega_cache, 0, MEGA_CACHE_SIZE * hobject::MegamorphicEntry::size);
+    }
 
     // Allocate Promise resolve/reject target stack (16 slots initial)
     h.promise_resolve_cap = 16;
@@ -923,6 +936,12 @@ fn void Heap.destroy(&self) {
         }
         libc::free(self.shapes);
         self.shapes = null;
+    }
+
+    // Free megamorphic property cache
+    if (self.mega_cache != null) {
+        libc::free(self.mega_cache);
+        self.mega_cache = null;
     }
 
     // Destroy object pool allocators — releases all pool pages to libc.
