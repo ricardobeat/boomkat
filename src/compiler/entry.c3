@@ -140,3 +140,64 @@ fn CompiledFunction*? compile_function(Lexer* lex, void* heap, bool is_expr) {
 
     return ctx.finish()!;
 }
+
+/// Compile an ESM module body. Parses import/export declarations and
+/// emits RETUNDEF (modules return undefined, not the last expression).
+/// `module_name` is used for error messages and relative path resolution.
+/// `module_def` is an opaque ModuleDef* — the compiler writes import/export
+/// metadata into it via the void* current_module field.
+fn CompiledFunction*? compile_module(Lexer* lex, void* heap, char[] module_name, void* module_def) {
+    CompilerContext ctx;
+    ctx.init(lex, heap);
+    ctx.is_global = true;
+    ctx.is_module = true;
+    ctx.current_module = module_def;
+
+    // ── Save lexer state before any pre-processing ───────────────────
+    uint saved_pos    = lex.pos;
+    uint saved_line   = lex.line;
+    uint saved_col    = lex.col;
+    Token saved_cur   = lex.current;
+    Token saved_look  = lex.lookahead;
+    bool  saved_haslk = lex.has_lookahead;
+    Token saved_push  = lex.pushed_back;
+    bool  saved_haspb = lex.has_pushed_back;
+    bool  saved_slt   = lex.seen_line_term;
+
+    // Check for "use strict" directive prologue (accepted but a no-op — modules are always strict)
+    ctx.parse_directives()!;
+
+    // Hoist function declarations at the module level.
+    ctx.hoist_global_fn_decls()!;
+
+    // Hoist var declarations at the module level.
+    ctx.hoist_decls(true)!;
+
+    // ── Restore lexer to beginning for statement parsing ────────────
+    lex.pos             = saved_pos;
+    lex.line            = saved_line;
+    lex.col             = saved_col;
+    lex.current         = saved_cur;
+    lex.lookahead       = saved_look;
+    lex.has_lookahead   = saved_haslk;
+    lex.pushed_back     = saved_push;
+    lex.has_pushed_back = saved_haspb;
+    lex.seen_line_term  = saved_slt;
+
+    // Parse statements until EOF
+    while (!ctx.is_at_end()) {
+        ctx.statement()!;
+    }
+
+    // Free any remaining scope_stack entries (top-level lexical declarations)
+    ctx.pop_scope_to(0);
+
+    // Modules return undefined (no implicit last-expression return)
+    ctx.emit_simple(Opcode.RETUNDEF);
+
+    CompiledFunction*? result = ctx.finish()!;
+    if (try func = result) {
+        func.flags.is_module = true;
+    }
+    return result;
+}

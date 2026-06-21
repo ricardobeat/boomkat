@@ -342,6 +342,12 @@ struct Heap {
     mempool::FixedBlockPool obj_pool_plain;
     mempool::FixedBlockPool obj_pool_array;
     mempool::FixedBlockPool obj_pool_func;
+
+    // Module system — module cache and host hooks.
+    void*       module_cache;       // ModuleDef** — growable array of ModuleDef pointers
+    uint        module_cache_count;
+    uint        module_cache_cap;
+    void*       module_hooks;       // ModuleHostHooks* — pluggable host callbacks
 }
 
 // ============================================================================
@@ -953,6 +959,9 @@ fn void Heap.destroy(&self) {
         self.mega_cache = null;
     }
 
+    // Free module cache
+    self.free_module_cache();
+
     // Destroy object pool allocators — releases all pool pages to libc.
     self.obj_pool_plain.free();
     self.obj_pool_array.free();
@@ -1170,6 +1179,10 @@ fn void Heap.reset(&self) {
     self.shapes[0]   = hobject::shape_create(0, 0, SHAPE_NONE, null);
     self.init_transition_table();
 
+    // Free module cache
+    self.free_module_cache();
+    self.module_hooks = null;
+
     // Destroy and reinitialize object pool allocators — all pool pages are
     // freed to libc, fresh pools start with clean bump + empty freelist.
     self.obj_pool_plain.free();
@@ -1209,6 +1222,33 @@ fn void Heap.track_compiled_func(&self, void* cf) {
     }
     self.compiled_funcs[self.compiled_func_count] = cf;
     self.compiled_func_count++;
+}
+
+// ============================================================================
+// Module system — hooks and cache management
+// ============================================================================
+
+/// Register module host hooks. Call before any module loading.
+/// Pass NULL to use defaults. The hooks pointer must remain valid
+/// for the lifetime of the Heap.
+fn void Heap.set_module_hooks(&self, void* hooks) {
+    self.module_hooks = hooks;
+}
+
+/// Free the module cache and all ModuleDef entries.
+fn void Heap.free_module_cache(&self) {
+    if (self.module_cache != null) {
+        void** cache = (void**)self.module_cache;
+        for (uint i = 0; i < self.module_cache_count; i++) {
+            if (cache[i] != null) {
+                self.free_func(self.heap_udata, cache[i]);
+            }
+        }
+        self.free_func(self.heap_udata, self.module_cache);
+        self.module_cache = null;
+        self.module_cache_count = 0;
+        self.module_cache_cap = 0;
+    }
 }
 
 // ============================================================================

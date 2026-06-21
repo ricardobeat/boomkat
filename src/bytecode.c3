@@ -804,6 +804,8 @@ bitstruct FuncFlags : uint {
     /// connecting the new activation to the function's captured lex scope.
     /// Required for default parameter thunks capturing a parent param scope.
     bool  needs_lex_bridge: 19;
+    /// Function is an ESM module body (top-level import/export).
+    bool  is_module        : 20;
 }
 
 /// A compiled function template — the immutable bytecode representation of

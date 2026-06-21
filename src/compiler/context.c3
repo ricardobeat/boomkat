@@ -280,6 +280,10 @@ struct CompilerContext {
     // Arrow/async tracking — needed for needs_env computation in finish().
     bool is_arrow;
     bool is_async;
+
+    // Module tracking — true when compiling an ESM module body.
+    bool is_module;
+    void* current_module;  // ModuleDef* (opaque to avoid import cycle)
 }
 
 // ============================================================================

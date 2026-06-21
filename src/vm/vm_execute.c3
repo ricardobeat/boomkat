@@ -406,6 +406,51 @@ fn TVal? Vm.execute(Vm* vm, CompiledFunction* func) {
     return result;
 }
 
+/// Execute a compiled function with a specific environment (for ESM modules).
+/// Same as execute() but uses the provided env for var_env/lex_env instead
+/// of the global environment.
+fn TVal? Vm.execute_in_env(Vm* vm, CompiledFunction* func, EnvRecord* env) {
+    Activation* entry_act = &vm.activations[0];
+    vm.activation_count = 1;
+
+    entry_act.func = func;
+    entry_act.parent = null;
+    entry_act.var_env = env;
+    entry_act.lex_env = env;
+    entry_act.cat = null;
+    entry_act.curr_pc = func.code;
+    entry_act.bottom = vm.valstack;
+    entry_act.retval = null;
+    entry_act.flags = 0;
+    if (func.has_direct_eval()) {
+        entry_act.flags |= ACT_FLAG_DIRECT_EVAL;
+    }
+
+    TVal this_val;
+    this_val.set_undefined();
+    vm.heap.tval_copy_ref(&entry_act.this_binding, &this_val);
+
+    uint nregs = func.num_regs;
+    if (!ensure_valstack(vm, nregs)) {
+        return VM_ERROR~;
+    }
+
+    for (uint i = 0; i < nregs; i++) {
+        vm.valstack[i].set_undefined();
+    }
+    vm.valstack_top = (TVal*)((usz)vm.valstack + (usz)nregs * TVal::size);
+    vm.valstack_bottom = vm.valstack;
+    entry_act.caller_valstack_top = vm.valstack_top;
+
+    vm.current_func = func;
+
+    TVal? result = Vm.run(vm);
+
+    vm.heap.drain_microtasks((void*)vm);
+
+    return result;
+}
+
 /// Execute the bytecode dispatch loop. Assumes activation stack and registers
 /// are already set up by the caller.
 fn TVal? Vm.run(Vm* vm) {

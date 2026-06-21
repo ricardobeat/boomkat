@@ -10,6 +10,103 @@ import libc;
 import std::io;
 
 // ============================================================================
+// Compiler-side module metadata (must match module::ModuleDef layout)
+// ============================================================================
+
+struct CompImportEntry {
+    char[] local_name;
+    char[] import_name;
+    uint   req_module_idx;
+    bool   is_star;
+    bool   is_default;
+}
+
+struct CompExportEntry {
+    char[] local_name;
+    char[] export_name;
+    bool   is_indirect;
+    uint   req_module_idx;
+}
+
+struct CompStarExportEntry {
+    uint req_module_idx;
+}
+
+struct CompReqModuleEntry {
+    char[] module_name;
+    void*  resolved;
+}
+
+const uint COMP_MAX_IMPORTS      = 64;
+const uint COMP_MAX_EXPORTS      = 64;
+const uint COMP_MAX_STAR_EXPORTS = 16;
+const uint COMP_MAX_REQ_MODULES  = 32;
+
+/// Compiler-side view of ModuleDef — field layout must match module::ModuleDef.
+struct CompModuleDef {
+    char[]                              module_name;
+    char                                status;
+    CompImportEntry[COMP_MAX_IMPORTS]   imports;
+    uint                                import_count;
+    CompExportEntry[COMP_MAX_EXPORTS]   exports;
+    uint                                export_count;
+    CompStarExportEntry[COMP_MAX_STAR_EXPORTS] star_exports;
+    uint                                star_export_count;
+    CompReqModuleEntry[COMP_MAX_REQ_MODULES] req_modules;
+    uint                                req_module_count;
+}
+
+/// Register a required module specifier, returning its index (deduplicates).
+fn uint mod_register_req_module(CompModuleDef* mod, char[] specifier) {
+    for (uint i = 0; i < mod.req_module_count; i++) {
+        if (mod.req_modules[i].module_name.len == specifier.len) {
+            bool match = true;
+            for (usz j = 0; j < specifier.len; j++) {
+                if (mod.req_modules[i].module_name[j] != specifier[j]) { match = false; break; }
+            }
+            if (match) return i;
+        }
+    }
+    if (mod.req_module_count >= COMP_MAX_REQ_MODULES) return 0;
+    uint idx = mod.req_module_count;
+    mod.req_modules[idx].module_name = specifier;
+    mod.req_modules[idx].resolved = null;
+    mod.req_module_count++;
+    return idx;
+}
+
+/// Register an import entry in the module.
+fn void mod_register_import(CompModuleDef* mod, char[] local_name, char[] import_name, uint req_idx, bool is_star, bool is_default) {
+    if (mod.import_count >= COMP_MAX_IMPORTS) return;
+    uint idx = mod.import_count;
+    mod.imports[idx].local_name = local_name;
+    mod.imports[idx].import_name = import_name;
+    mod.imports[idx].req_module_idx = req_idx;
+    mod.imports[idx].is_star = is_star;
+    mod.imports[idx].is_default = is_default;
+    mod.import_count++;
+}
+
+/// Register an export entry in the module.
+fn void mod_register_export(CompModuleDef* mod, char[] local_name, char[] export_name, bool is_indirect, uint req_idx) {
+    if (mod.export_count >= COMP_MAX_EXPORTS) return;
+    uint idx = mod.export_count;
+    mod.exports[idx].local_name = local_name;
+    mod.exports[idx].export_name = export_name;
+    mod.exports[idx].is_indirect = is_indirect;
+    mod.exports[idx].req_module_idx = req_idx;
+    mod.export_count++;
+}
+
+/// Register a star export entry in the module.
+fn void mod_register_star_export(CompModuleDef* mod, uint req_idx) {
+    if (mod.star_export_count >= COMP_MAX_STAR_EXPORTS) return;
+    uint idx = mod.star_export_count;
+    mod.star_exports[idx].req_module_idx = req_idx;
+    mod.star_export_count++;
+}
+
+// ============================================================================
 // Statement parsing
 // ============================================================================
 
@@ -52,6 +149,10 @@ fn void? CompilerContext.statement(&self) {
             self.function_declaration()!;
         case TokenType.CLASS:
             self.class_declaration()!;
+        case TokenType.IMPORT:
+            self.import_declaration()!;
+        case TokenType.EXPORT:
+            self.export_declaration()!;
         case TokenType.SEMICOLON:
             // Empty statement
             self.advance()!;
@@ -2411,4 +2512,439 @@ fn void? CompilerContext.function_declaration(&self) {
     if (self.is_global) {
         self.free_reg(func_reg);
     }
+}
+
+// ============================================================================
+// ESM Import/Export declarations
+// ============================================================================
+
+/// Get the CompModuleDef* from the opaque current_module pointer.
+/// Returns null if not in module mode.
+fn CompModuleDef* CompilerContext.get_module_def(&self) {
+    return (CompModuleDef*)self.current_module;
+}
+
+/// Expect the contextual keyword `from` (not a reserved word — must be
+/// checked as an identifier with value "from").
+fn void? CompilerContext.expect_from(&self) {
+    Token tok = self.expect(TokenType.IDENTIFIER)!;
+    if (!str_eq(tok.str_value, "from")) {
+        return COMPILE_ERROR~;
+    }
+}
+
+/// Match the contextual keyword `from` — consumes and returns true if the
+/// current token is the identifier "from".
+fn bool CompilerContext.match_from(&self) {
+    if (self.peek_type() != TokenType.IDENTIFIER) return false;
+    // Peek at the actual token to check the string value
+    Token? tok_opt = self.lexer.next_token();
+    if (catch _err = tok_opt) return false;
+    Token tok = tok_opt;
+    if (str_eq(tok.str_value, "from")) {
+        return true;
+    }
+    // Not 'from' — push back
+    self.lexer.pushback(tok);
+    return false;
+}
+
+/// Expect the contextual keyword `as`.
+fn void? CompilerContext.expect_as(&self) {
+    Token tok = self.expect(TokenType.IDENTIFIER)!;
+    if (!str_eq(tok.str_value, "as")) {
+        return COMPILE_ERROR~;
+    }
+}
+
+/// Match the contextual keyword `as`.
+fn bool CompilerContext.match_as(&self) {
+    if (self.peek_type() != TokenType.IDENTIFIER) return false;
+    Token? tok_opt = self.lexer.next_token();
+    if (catch _err = tok_opt) return false;
+    Token tok = tok_opt;
+    if (str_eq(tok.str_value, "as")) {
+        return true;
+    }
+    self.lexer.pushback(tok);
+    return false;
+}
+
+/// Parse an ESM import declaration (ES6 §15.2.2).
+///
+/// Forms:
+///   import 'module'
+///   import defaultName from 'module'
+///   import { a, b as c } from 'module'
+///   import * as ns from 'module'
+///   import defaultName, { a } from 'module'
+///   import defaultName, * as ns from 'module'
+fn void? CompilerContext.import_declaration(&self) {
+    if (!self.is_module) {
+        io::eprintfn("import declarations are only allowed in modules");
+        return COMPILE_ERROR~;
+    }
+
+    self.expect(TokenType.IMPORT)!;
+
+    if (self.current_module == null) return COMPILE_ERROR~;
+    CompModuleDef* mod = self.get_module_def();
+
+    TokenType tt = self.peek_type();
+
+    // Side-effect import: import 'module'
+    if (tt == TokenType.STRING) {
+        Token spec_tok = self.advance()!;
+        uint req_idx = mod_register_req_module(mod, spec_tok.str_value);
+        self.match(TokenType.SEMICOLON);
+        return;
+    }
+
+    // import defaultName ...
+    bool has_default = false;
+    char[] default_local = {};
+    if (tt == TokenType.IDENTIFIER) {
+        Token name_tok = self.advance()!;
+        default_local = name_tok.str_value;
+        has_default = true;
+
+        if (self.peek_type() == TokenType.COMMA) {
+            self.advance()!; // consume ','
+        } else {
+            // Must be: import defaultName from 'module'
+            self.expect_from()!;
+            Token spec_tok = self.expect(TokenType.STRING)!;
+            uint req_idx = mod_register_req_module(mod, spec_tok.str_value);
+            mod_register_import(mod, default_local, "default", req_idx, false, true);
+            self.match(TokenType.SEMICOLON);
+            return;
+        }
+    }
+
+    tt = self.peek_type();
+
+    // import * as ns from 'module'
+    if (tt == TokenType.STAR) {
+        self.advance()!; // consume '*'
+        self.expect_as()!;
+        Token ns_tok = self.expect(TokenType.IDENTIFIER)!;
+        self.expect_from()!;
+        Token spec_tok = self.expect(TokenType.STRING)!;
+        uint req_idx = mod_register_req_module(mod, spec_tok.str_value);
+        mod_register_import(mod, ns_tok.str_value, "*", req_idx, true, false);
+        if (has_default) {
+            mod_register_import(mod, default_local, "default", req_idx, false, true);
+        }
+        self.match(TokenType.SEMICOLON);
+        return;
+    }
+
+    // import { a, b as c } from 'module'
+    if (tt == TokenType.LBRACE) {
+        self.advance()!; // consume '{'
+
+        // We need to collect specifiers first, then get the module specifier,
+        // then emit bindings. Parse the specifier string first by peeking ahead.
+        // Actually, we need the req_idx first. Let's parse specifiers into temp arrays.
+        char[][32] local_names;
+        char[][32] import_names;
+        uint binding_count = 0;
+
+        while (!self.check(TokenType.RBRACE) && !self.is_at_end()) {
+            if (binding_count >= 32) return COMPILE_ERROR~;
+
+            Token name_tok = self.expect(TokenType.IDENTIFIER)!;
+            if (self.match_as()) {
+                Token alias_tok = self.expect(TokenType.IDENTIFIER)!;
+                local_names[binding_count] = alias_tok.str_value;
+                import_names[binding_count] = name_tok.str_value;
+            } else {
+                local_names[binding_count] = name_tok.str_value;
+                import_names[binding_count] = name_tok.str_value;
+            }
+            binding_count++;
+
+            if (!self.match(TokenType.COMMA)) break;
+        }
+        self.expect(TokenType.RBRACE)!;
+        self.expect_from()!;
+        Token spec_tok = self.expect(TokenType.STRING)!;
+        uint req_idx = mod_register_req_module(mod, spec_tok.str_value);
+
+        // Register import metadata (bindings are created at link time by execute_module)
+        for (uint i = 0; i < binding_count; i++) {
+            mod_register_import(mod, local_names[i], import_names[i], req_idx, false, false);
+        }
+
+        if (has_default) {
+            mod_register_import(mod, default_local, "default", req_idx, false, true);
+        }
+
+        self.match(TokenType.SEMICOLON);
+        return;
+    }
+
+    return COMPILE_ERROR~;
+}
+
+/// Parse an ESM export declaration (ES6 §15.2.3).
+///
+/// Forms:
+///   export function foo() {}
+///   export class Foo {}
+///   export const/let/var x = ...
+///   export { a, b as c }
+///   export { a } from './other'
+///   export * from './other'
+///   export * as ns from './other'
+///   export default function() {}
+///   export default <expr>
+///   export default class {}
+fn void? CompilerContext.export_declaration(&self) {
+    if (!self.is_module) {
+        io::eprintfn("export declarations are only allowed in modules");
+        return COMPILE_ERROR~;
+    }
+
+    self.expect(TokenType.EXPORT)!;
+
+    if (self.current_module == null) return COMPILE_ERROR~;
+    CompModuleDef* mod = self.get_module_def();
+
+    TokenType tt = self.peek_type();
+
+    // export default ...
+    if (tt == TokenType.DEFAULT) {
+        self.advance()!; // consume 'default'
+        TokenType next = self.peek_type();
+
+        // export default function() {} or export default function name() {}
+        if (next == TokenType.FUNCTION) {
+            self.advance()!; // consume 'function'
+            bool is_gen = self.match(TokenType.STAR);
+            if (is_gen) self.is_generator = true;
+
+            // Check for named function expression
+            char[] fn_name;
+            if (self.peek_type() == TokenType.IDENTIFIER) {
+                Token name_tok = self.advance()!;
+                fn_name = name_tok.str_value;
+            } else {
+                fn_name = "*default*";
+            }
+
+            bool saved_is_async = self.is_async;
+            self.is_async = false;
+            CompiledFunction* inner = self.compile_inner_function(fn_name)!;
+            self.is_async = saved_is_async;
+            self.is_generator = false;
+
+            uint inner_idx = 0;
+            if (self.inner_func_count < MAX_INNER_FUNCS) {
+                inner_idx = self.inner_func_count;
+                self.inner_funcs[inner_idx] = inner;
+                self.inner_func_count++;
+                self.has_closures = true;
+            }
+
+            ushort func_reg = self.declare_var("*default*", VAR);
+            self.emit_a_bc(Opcode.CLOSURE, (uint)func_reg, inner_idx);
+            uint name_idx = self.add_string_constant("*default*");
+            self.emit_a_bc(Opcode.DECLVAR, (uint)func_reg, name_idx);
+            if (self.is_global) self.free_reg(func_reg);
+
+            mod_register_export(mod, "*default*", "default", false, 0);
+            self.match(TokenType.SEMICOLON);
+            return;
+        }
+
+        // export default class {} or export default class Foo {}
+        if (next == TokenType.CLASS) {
+            // Parse class and assign to *default*
+            self.class_declaration()!;
+            mod_register_export(mod, "*default*", "default", false, 0);
+            self.match(TokenType.SEMICOLON);
+            return;
+        }
+
+        // export default <expr>
+        ushort val_reg = self.assignment_expr()!;
+        uint def_name_idx = self.add_string_constant("*default*");
+        self.emit_a_bc(Opcode.DECLVAR, (uint)val_reg, def_name_idx);
+        self.free_reg(val_reg);
+        mod_register_export(mod, "*default*", "default", false, 0);
+        self.match(TokenType.SEMICOLON);
+        return;
+    }
+
+    // export * from './other'
+    if (tt == TokenType.STAR) {
+        self.advance()!; // consume '*'
+
+        // export * as ns from './other'
+        if (self.match_as()) {
+            Token ns_tok = self.expect(TokenType.IDENTIFIER)!;
+            self.expect_from()!;
+            Token spec_tok = self.expect(TokenType.STRING)!;
+            uint req_idx = mod_register_req_module(mod, spec_tok.str_value);
+            mod_register_export(mod, "*", ns_tok.str_value, true, req_idx);
+            self.match(TokenType.SEMICOLON);
+            return;
+        }
+
+        self.expect_from()!;
+        Token spec_tok = self.expect(TokenType.STRING)!;
+        uint req_idx = mod_register_req_module(mod, spec_tok.str_value);
+        mod_register_star_export(mod, req_idx);
+        self.match(TokenType.SEMICOLON);
+        return;
+    }
+
+    // export { a, b as c } or export { a } from './other'
+    if (tt == TokenType.LBRACE) {
+        self.advance()!; // consume '{'
+
+        char[][32] local_names;
+        char[][32] export_names;
+        uint count = 0;
+
+        while (!self.check(TokenType.RBRACE) && !self.is_at_end()) {
+            if (count >= 32) return COMPILE_ERROR~;
+            Token name_tok = self.expect(TokenType.IDENTIFIER)!;
+            if (self.match_as()) {
+                Token alias_tok = self.expect(TokenType.IDENTIFIER)!;
+                local_names[count] = name_tok.str_value;
+                export_names[count] = alias_tok.str_value;
+            } else {
+                local_names[count] = name_tok.str_value;
+                export_names[count] = name_tok.str_value;
+            }
+            count++;
+            if (!self.match(TokenType.COMMA)) break;
+        }
+        self.expect(TokenType.RBRACE)!;
+
+        // Check for 'from' clause (indirect export)
+        if (self.match_from()) {
+            Token spec_tok = self.expect(TokenType.STRING)!;
+            uint req_idx = mod_register_req_module(mod, spec_tok.str_value);
+            for (uint i = 0; i < count; i++) {
+                mod_register_export(mod, local_names[i], export_names[i], true, req_idx);
+            }
+        } else {
+            // Local export: the names are local bindings
+            for (uint i = 0; i < count; i++) {
+                mod_register_export(mod, local_names[i], export_names[i], false, 0);
+            }
+        }
+
+        self.match(TokenType.SEMICOLON);
+        return;
+    }
+
+    // export function foo() {}
+    if (tt == TokenType.FUNCTION) {
+        self.advance()!; // consume 'function'
+        bool is_gen = self.match(TokenType.STAR);
+        if (is_gen) self.is_generator = true;
+
+        bool saved_is_async = self.is_async;
+        self.is_async = false;
+
+        Token name_tok = self.expect(TokenType.IDENTIFIER)!;
+        ushort func_reg = self.declare_var(name_tok.str_value, VAR);
+
+        CompiledFunction* inner = self.compile_inner_function(name_tok.str_value)!;
+        self.is_async = saved_is_async;
+        self.is_generator = false;
+
+        uint inner_idx = 0;
+        if (self.inner_func_count < MAX_INNER_FUNCS) {
+            inner_idx = self.inner_func_count;
+            self.inner_funcs[inner_idx] = inner;
+            self.inner_func_count++;
+            self.has_closures = true;
+        }
+
+        self.emit_a_bc(Opcode.CLOSURE, (uint)func_reg, inner_idx);
+        uint name_idx = self.add_string_constant(name_tok.str_value);
+        self.emit_a_bc(Opcode.DECLVAR, (uint)func_reg, name_idx);
+        if (self.is_global) self.free_reg(func_reg);
+
+        mod_register_export(mod, name_tok.str_value, name_tok.str_value, false, 0);
+        self.match(TokenType.SEMICOLON);
+        return;
+    }
+
+    // export class Foo {}
+    if (tt == TokenType.CLASS) {
+        // class_declaration() expects CLASS already consumed, but we need the name first.
+        // Read the name, then put tokens back and call class_declaration().
+        // Peek ahead for the class name
+        Token saved_class = self.advance()!; // consume CLASS
+        Token name_tok = self.expect(TokenType.IDENTIFIER)!;
+        // Put both back so class_declaration can re-consume them
+        self.lexer.pushback(name_tok);
+        self.lexer.pushback(saved_class);
+        self.class_declaration()!;
+        mod_register_export(mod, name_tok.str_value, name_tok.str_value, false, 0);
+        self.match(TokenType.SEMICOLON);
+        return;
+    }
+
+    // export const/let/var x = ...
+    if (tt == TokenType.VAR || tt == TokenType.LET || tt == TokenType.CONST) {
+        Token decl_tok = self.advance()!;
+        bool is_const = (decl_tok.type == TokenType.CONST);
+        bool is_lexical = (decl_tok.type == TokenType.LET || decl_tok.type == TokenType.CONST);
+        ScopeKind kind = is_const ? CONST : (decl_tok.type == TokenType.LET ? LET : VAR);
+
+        if (!is_lexical) {
+            self.has_local_bindings = true;
+        }
+
+        for (;;) {
+            Token name_tok = self.expect(TokenType.IDENTIFIER)!;
+            if (is_restricted_name(name_tok.str_value)) {
+                return COMPILE_ERROR~;
+            }
+
+            ushort reg;
+            if (!is_lexical) {
+                ushort? existing = self.resolve_var(name_tok.str_value);
+                if (try er = existing) {
+                    reg = er;
+                } else {
+                    reg = self.declare_var(name_tok.str_value, kind);
+                }
+            } else {
+                reg = self.declare_var(name_tok.str_value, kind);
+            }
+
+            if (self.match(TokenType.ASSIGN)) {
+                ushort val_reg = self.assignment_expr()!;
+                if (val_reg != reg) {
+                    self.emit_abc(Opcode.LDREG, (uint)reg, (uint)val_reg, 0);
+                }
+                self.free_reg(val_reg);
+            } else {
+                if (is_const) return COMPILE_ERROR~;
+                self.emit_abc(Opcode.LDUNDEF, (uint)reg, 0, 0);
+            }
+
+            uint name_idx = self.add_string_constant(name_tok.str_value);
+            self.emit_var_store(reg, name_idx, is_lexical, is_const);
+            if (self.is_global) self.free_reg(reg);
+
+            mod_register_export(mod, name_tok.str_value, name_tok.str_value, false, 0);
+
+            if (!self.match(TokenType.COMMA)) break;
+        }
+
+        self.match(TokenType.SEMICOLON);
+        return;
+    }
+
+    io::eprintfn("unsupported export form");
+    return COMPILE_ERROR~;
 }

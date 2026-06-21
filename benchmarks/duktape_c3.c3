@@ -18,6 +18,7 @@ import duktape::bytecode;
 import duktape::types;
 import duktape::hstring;
 import duktape::hobject;
+import duktape::esm;
 import std::io;
 import std::time;
 import libc;
@@ -29,6 +30,7 @@ fn void print_usage(String argv0) {
     io::eprintfn("  -t, --trace-vm         Trace every instruction (to stderr)");
     io::eprintfn("  --dump-constants       Show constant pool in bytecode dump");
     io::eprintfn("  -d, --debug            Print stage timing");
+    io::eprintfn("  -m, --module           Run as ESM module (import/export)");
     io::eprintfn("  --format json          Structured bytecode output (implies -c)");
     io::eprintfn("  --help                 Show this message");
 }
@@ -44,6 +46,7 @@ fn int main(String[] args) {
     bool trace_vm     = false;
     bool dump_consts  = false;
     bool json_format  = false;
+    bool module_mode  = false;
     String? path_opt;
 
     for (uint i = 1; i < (uint)args.len; i++) {
@@ -59,6 +62,8 @@ fn int main(String[] args) {
             trace_vm = true;
         } else if (a == "--dump-constants") {
             dump_consts = true;
+        } else if (a == "-m" || a == "--module") {
+            module_mode = true;
         } else if (a == "--format" && i + 1 < (uint)args.len && args[i + 1] == "json") {
             json_format = true;
             compile_only = true;
@@ -116,6 +121,37 @@ fn int main(String[] args) {
 
     // ── Compile ──────────────────────────────────────────────────────────────
     time::Time t3 = debug ? time::now() : (time::Time)0;
+
+    if (module_mode) {
+        // ESM module mode: resolve → execute (includes linking)
+        char[] module_name = path;
+        esm::ModuleDef*? mod_opt = esm::resolve_module(hp, module_name, "");
+        if (catch err = mod_opt) {
+            io::eprintfn("module resolve failed");
+            return 1;
+        }
+        esm::ModuleDef* mod = mod_opt;
+        if (mod == null) {
+            io::eprintfn("module resolve returned null");
+            return 1;
+        }
+
+        if (debug) io::printfn("  resolve:     %d us", (int)(time::now() - t3));
+
+        time::Time t4 = debug ? time::now() : (time::Time)0;
+        v.trace = trace_vm;
+        if (!esm::execute_module(hp, v, mod)) {
+            if (v.heap.has_error) {
+                print_uncaught_error(v.heap, &v.heap.error_value);
+            } else {
+                io::eprintfn("module execute failed");
+            }
+            return 1;
+        }
+        if (debug) io::printfn("  execute:     %d us", (int)(time::now() - t4));
+        return 0;
+    }
+
     Lexer lx = lexer::lexer_init(source, hp);
     bytecode::CompiledFunction*? func = compiler::compile(&lx, hp);
     if (catch err = func) {
