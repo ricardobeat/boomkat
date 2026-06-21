@@ -95,7 +95,7 @@ rosetta engine="duktape_c3":
 
 # ── Vendor Library Tests ────────────────────────────────────────────────────
 
-# Run vendor library tests (he, marked, culori, diff) through test_vm
+# Run vendor library ESM tests (marked, hex-rgb, rgb-hex, parse-ms)
 vendor engine="test_vm":
     c3c build "{{engine}}"
     bash test/vendor/run.sh ./out/{{engine}}
