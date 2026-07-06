@@ -228,8 +228,9 @@ const uint BUILTIN_ASYNC_RESUME               = 330;
 const uint BUILTIN_ASYNC_REJECT               = 331;
 
 const uint BUILTIN_PROMISE_SYNTHETIC_EXECUTOR  = 344;
+const uint BUILTIN_FUNCTION_PROTO_SPECIES_GETTER = 345;
 
-const uint BUILTIN_COUNT                       = 345;
+const uint BUILTIN_COUNT                       = 346;
 
 const uint BUILTIN_MAP                       = 112;
 const uint BUILTIN_MAP_PROTO_SET             = 113;
@@ -2202,6 +2203,7 @@ BuiltinFunc[BUILTIN_COUNT] builtin_dispatch_table = {
     [BUILTIN_FUNCTION_PROTO_APPLY] = &builtin_function_proto_apply,
     [BUILTIN_FUNCTION_PROTO_BIND] = &builtin_function_proto_bind,
     [BUILTIN_FUNCTION_PROTO_CALL] = &builtin_function_proto_call,
+    [BUILTIN_FUNCTION_PROTO_SPECIES_GETTER] = &builtin_function_proto_species_getter,
     [BUILTIN_FUNCTION_PROTO_TOSTRING] = &builtin_function_proto_toString,
     [BUILTIN_GENERATOR_FUNCTION] = &builtin_generator_function,
     [BUILTIN_GENERATOR_PROTO_NEXT] = &builtin_generator_proto_next,

@@ -2,7 +2,7 @@
   "langrev": "1",
   "warnings": [ "all" ],
   "c-sources": [ "libregexp/libregexp.c", "libregexp/libunicode.c", "libregexp/re_wrapper.c", "libregexp/unicode_wrapper.c", "quickjs/cutils.c", "quickjs/dtoa.c", "src/dtoa_wrapper.c" ],
-  "c-include-dirs": [ "libregexp", "quickjs" ],
+  "c-include-dirs": [ "quickjs", "libregexp" ],
   "targets": {
     "duktape_c3": {
       "type": "executable",

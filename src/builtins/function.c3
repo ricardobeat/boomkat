@@ -821,6 +821,12 @@ fn void builtin_function_proto_toString(BuiltinContext* ctx) {
     }
 }
 
+/// Function.prototype[@@species] getter — ES6 §19.2.4.7
+/// Returns the this value.
+fn void builtin_function_proto_species_getter(BuiltinContext* ctx) {
+    *ctx.result = ctx.regs[ctx.base_reg - 1];
+}
+
 /// Bound function [[Call]] handler.
 /// When a bound function is called, this handler unwraps the bound data,
 /// prepends bound args to the call args, and re-dispatches.
@@ -1028,6 +1034,26 @@ fn bool register_function_constructor(EnvRecord* global_env, Heap* heap) {
     TVal tostring_tv;
     tostring_tv.set_lightfunc((void*)(usz)BUILTIN_FUNCTION_PROTO_TOSTRING);
     proto.put_prop(tostring_key, tostring_tv, hobject::PROP_FLAGS_WC);
+
+    // Add @@species accessor (ES6 §19.2.4.7): getter returns this.
+    HString* species_sym = ensure_species_symbol(heap);
+    if (species_sym != null) {
+        HObject*? getter_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
+        if (try getter = getter_raw) {
+            getter.flags.callable = true;
+            (*getter.extra_ptr()).func.builtin_fn_index = (int)BUILTIN_FUNCTION_PROTO_SPECIES_GETTER;
+            TVal getter_tv;
+            getter_tv.set_object(getter);
+            TVal undef;
+            undef.set_undefined();
+            hobject::PropFlags acc_flags;
+            acc_flags.writable = false;
+            acc_flags.enumerable = false;
+            acc_flags.configurable = true;
+            acc_flags.is_accessor = true;
+            proto.put_prop(species_sym, hobject::hobject_create_accessors(heap, getter_tv, undef), acc_flags);
+        }
+    }
 
     // Set .constructor to the Function constructor object itself
     HString* constructor_key = (HString*)heap.strs[heap::BuiltinStr.CONSTRUCTOR];
