@@ -19,6 +19,17 @@ const int JS_ATOD_ACCEPT_UNDERSCORES   = (1 << 3);
 
 /* Size in bytes of the scratch buffer expected by duktape_js_atod. */
 const usz DTOA_TMP_SIZE = 216;
+/* Size in bytes of the scratch buffer expected by duktape_js_dtoa. */
+const usz DTOA_FORMAT_TMP_SIZE = 296;
+
+/* JS_DTOA_* flags mirrored from quickjs/dtoa.h. */
+const int JS_DTOA_FORMAT_FREE  = 0;
+const int JS_DTOA_FORMAT_FIXED = 1;
+const int JS_DTOA_FORMAT_FRAC  = 2;
+const int JS_DTOA_EXP_AUTO     = 0;
+const int JS_DTOA_EXP_ENABLED  = 4;
+const int JS_DTOA_EXP_DISABLED = 8;
+const int JS_DTOA_MINUS_ZERO   = 16;
 
 /*
  * Parse a number from `str` (need not be null-terminated).
@@ -34,3 +45,6 @@ const usz DTOA_TMP_SIZE = 216;
  */
 extern fn double duktape_js_atod(char* str, char** pnext, int radix, int flags,
                                  char[DTOA_TMP_SIZE]* tmp);
+
+extern fn int duktape_js_dtoa(char* buf, double d, int radix, int n_digits, int flags,
+                              char[DTOA_FORMAT_TMP_SIZE]* tmp);

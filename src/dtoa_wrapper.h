@@ -45,8 +45,26 @@ extern "C" {
 double duktape_js_atod(const char *str, const char **pnext, int radix, int flags,
                        void *tmp);
 
+/*
+ * Format a double using QuickJS' js_dtoa.
+ *
+ *   buf       — output buffer (must be large enough; use js_dtoa_max_len or
+ *               a buffer of at least 256 bytes).
+ *   d         — value to format.
+ *   radix     — base (10 for JS number formatters).
+ *   n_digits  — number of digits (meaning depends on flags).
+ *   flags     — JS_DTOA_FORMAT_* and JS_DTOA_EXP_* bits.
+ *   tmp       — scratch buffer of DUKTAPE_DTOA_FORMAT_TMP_SIZE bytes.
+ *
+ * Returns the length of the formatted string.
+ */
+int duktape_js_dtoa(char *buf, double d, int radix, int n_digits, int flags,
+                    void *tmp);
+
 /* Size, in bytes, of the scratch buffer expected by duktape_js_atod. */
 #define DUKTAPE_DTOA_TMP_SIZE 216
+/* Size, in bytes, of the scratch buffer expected by duktape_js_dtoa. */
+#define DUKTAPE_DTOA_FORMAT_TMP_SIZE 296
 
 #ifdef __cplusplus
 }

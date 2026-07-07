@@ -8,6 +8,7 @@ import duktape::hstring;
 
 import duktape::heap;
 import duktape::hobject;
+import duktape::dtoa_bindings;
 import std::io;
 
 // ============================================================================
@@ -273,9 +274,12 @@ fn void builtin_number_proto_toFixed(BuiltinContext* ctx) {
         f = (int)(long)f_d;
     }
 
-    char[64] buf;
-    int len = libc::snprintf(&buf, 64, "%.*f", f, d);
-    if (len < 0 || len >= 64) {
+    int flags = dtoa_bindings::JS_DTOA_FORMAT_FRAC;
+    if (math::abs(d) >= 1e21) flags = dtoa_bindings::JS_DTOA_FORMAT_FREE;
+    char[256] buf;
+    char[dtoa_bindings::DTOA_FORMAT_TMP_SIZE] tmp;
+    int len = dtoa_bindings::duktape_js_dtoa(&buf, d, 10, f, flags, &tmp);
+    if (len < 0 || len >= 256) {
         ctx.result.set_undefined();
         return;
     }
@@ -313,66 +317,19 @@ fn void builtin_number_proto_toExponential(BuiltinContext* ctx) {
         f = (int)(long)f_d;
     }
 
-    char[64] buf;
-    int len;
+    int flags = dtoa_bindings::JS_DTOA_FORMAT_FIXED | dtoa_bindings::JS_DTOA_EXP_ENABLED;
+    int n_digits = f + 1;
     if (ctx.argc == 0) {
-        // No arg: find the shortest exponential representation that round-trips.
-        // Start with 0 fractional digits and increase until strtod round-trips.
-        ulong d_bits = bitcast(d, ulong);
-        len = 0;
-        for (int try_f = 0; try_f <= 20; try_f++) {
-            int try_len = libc::snprintf(&buf, 64, "%.*e", try_f, d);
-            if (try_len < 0 || try_len >= 64) {
-                break;
-            }
-            char[64] temp;
-            libc::memcpy(&temp, &buf, (usz)try_len);
-            temp[try_len] = 0;
-            double parsed = libc::strtod(&temp, null);
-            if (bitcast(parsed, ulong) == d_bits) {
-                len = try_len;
-                break;
-            }
-            len = try_len;  // fallback: use full precision
-        }
-    } else {
-        len = libc::snprintf(&buf, 64, "%.*e", f, d);
+        flags = dtoa_bindings::JS_DTOA_FORMAT_FREE | dtoa_bindings::JS_DTOA_EXP_ENABLED;
+        n_digits = 0;
     }
-    if (len < 0 || len >= 64) {
+    char[256] buf;
+    char[dtoa_bindings::DTOA_FORMAT_TMP_SIZE] tmp;
+    int len = dtoa_bindings::duktape_js_dtoa(&buf, d, 10, n_digits, flags, &tmp);
+    if (len < 0 || len >= 256) {
         ctx.result.set_undefined();
         return;
     }
-
-    // Fix platform-dependent exponent width: strip leading zeros from exponent.
-    // C printf uses two-digit exponents (e+02), JS expects single-digit when possible (e+2).
-    // Find the 'e' or 'E' and the sign, then strip leading zeros after the sign.
-    for (int i = 0; i < len; i++) {
-        if (buf[i] == 'e' || buf[i] == 'E') {
-            // buf[i+1] is '+' or '-', buf[i+2..] are digits
-            int sign_pos = i + 1;
-            if (sign_pos < len && (buf[sign_pos] == '+' || buf[sign_pos] == '-')) {
-                int digit_start = sign_pos + 1;
-                // Skip leading zeros in exponent digits
-                int zeros = 0;
-                while (digit_start + zeros < len && buf[digit_start + zeros] == '0') {
-                    zeros++;
-                }
-                if (zeros > 0 && digit_start + zeros < len) {
-                    // Shift remaining digits left to overwrite zeros
-                    int remaining = len - digit_start - zeros;
-                    for (int j = 0; j < remaining; j++) {
-                        buf[digit_start + j] = buf[digit_start + zeros + j];
-                    }
-                    len -= zeros;
-                } else if (zeros > 0 && digit_start + zeros == len) {
-                    // All digits are zeros — exponent is 0; keep one zero
-                    len = digit_start + 1;
-                }
-            }
-            break;
-        }
-    }
-
     HString* s = builtin_intern_string(ctx.heap, buf[:len]);
     ctx.result.set_string(s);
 }
@@ -417,95 +374,14 @@ fn void builtin_number_proto_toPrecision(BuiltinContext* ctx) {
     }
     int p = (int)(long)p_d;
 
-    // Count significant digits in the formatted output to see if we need to
-    // re-add trailing zeros that %g stripped.
-    char[64] buf;
-    int len = libc::snprintf(&buf, 64, "%.*g", p, d);
-    if (len < 0 || len >= 64) {
+    char[256] buf;
+    char[dtoa_bindings::DTOA_FORMAT_TMP_SIZE] tmp;
+    int flags = dtoa_bindings::JS_DTOA_FORMAT_FIXED;
+    int len = dtoa_bindings::duktape_js_dtoa(&buf, d, 10, p, flags, &tmp);
+    if (len < 0 || len >= 256) {
         ctx.result.set_undefined();
         return;
     }
-
-    // Count significant digits in the result.
-    // %g may drop trailing zeros or switch to exponential notation.
-    // If the result has a decimal point, count digits before and after it.
-    // If no decimal point and no 'e', count the digit characters.
-    int digit_count = 0;
-    bool has_dot = false;
-    bool has_exp = false;
-    int dot_pos = -1;
-    for (int i = 0; i < len; i++) {
-        if (buf[i] == '.') {
-            has_dot = true;
-            dot_pos = i;
-        } else if (buf[i] == 'e' || buf[i] == 'E') {
-            has_exp = true;
-        } else if (buf[i] >= '0' && buf[i] <= '9') {
-            digit_count++;
-        }
-    }
-
-    if (digit_count < p && !has_exp) {
-        // %g stripped trailing zeros — re-add them
-        // We need p digits total. We have digit_count.
-        // Append a decimal point if missing, then the zeros.
-        if (!has_dot && digit_count > 0 && p > digit_count) {
-            // No decimal point yet — add it after the existing digits,
-            // then add trailing zeros.
-            // Find where the digit part ends (might have a sign prefix)
-            int insert_pos = len;
-            // We'll rebuild: [existing digits].000...
-            // Simplest: just append '.' then zeros
-            buf[len] = '.';
-            len++;
-            has_dot = true;
-            for (int i = digit_count; i < p; i++) {
-                buf[len++] = '0';
-            }
-        } else if (has_dot) {
-            // Decimal point exists — just append zeros after the last digit
-            // Find the last digit position
-            int last_digit = len - 1;
-            while (last_digit >= 0 && (buf[last_digit] < '0' || buf[last_digit] > '9')) {
-                last_digit--;
-            }
-            int zeros_needed = p - digit_count;
-            // Make room: shift everything after last_digit right by zeros_needed
-            for (int i = len; i > last_digit + 1; i--) {
-                buf[i + zeros_needed - 1] = buf[i - 1];
-            }
-            for (int i = 0; i < zeros_needed; i++) {
-                buf[last_digit + 1 + i] = '0';
-            }
-            len += zeros_needed;
-        }
-    }
-
-    // Fix platform-dependent exponent width: strip leading zeros from exponent.
-    // C printf uses two-digit exponents (e+02), JS expects single-digit when possible (e+2).
-    for (int i = 0; i < len; i++) {
-        if (buf[i] == 'e' || buf[i] == 'E') {
-            int sign_pos = i + 1;
-            if (sign_pos < len && (buf[sign_pos] == '+' || buf[sign_pos] == '-')) {
-                int digit_start = sign_pos + 1;
-                int zeros = 0;
-                while (digit_start + zeros < len && buf[digit_start + zeros] == '0') {
-                    zeros++;
-                }
-                if (zeros > 0 && digit_start + zeros < len) {
-                    int remaining = len - digit_start - zeros;
-                    for (int j = 0; j < remaining; j++) {
-                        buf[digit_start + j] = buf[digit_start + zeros + j];
-                    }
-                    len -= zeros;
-                } else if (zeros > 0 && digit_start + zeros == len) {
-                    len = digit_start + 1;
-                }
-            }
-            break;
-        }
-    }
-
     HString* s = builtin_intern_string(ctx.heap, buf[:len]);
     ctx.result.set_string(s);
 }
