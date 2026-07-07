@@ -2234,16 +2234,16 @@ fn bool concat_process_item(BuiltinContext* ctx, TVal item, HString* concat_sym,
     HObject* item_obj = (HObject*)item.get_heapptr();
 
     // ES2022 §23.1.3.1 step 5.b: spreadable = IsConcatSpreadable(E)
-    // 5.b.ii: Get(E, @@isConcatSpreadable) — get_prop_proto does not invoke
-    //         accessors (raw prop_values); if a getter throws it does not
-    //         surface here. If a getter exists, fall through to is_array.
+    // 5.b.ii: Get(E, @@isConcatSpreadable) — use full Get semantics so
+    //         accessor getters are invoked and their throws propagate.
     // 5.b.iii: If undefined, fall back to IsArray(E).
     bool spread;
     bool is_array = item_obj.get_class() == hobject::ObjClass.ARRAY;
     if (concat_sym != null) {
-        TVal? spreadable_val = item_obj.get_prop_proto(concat_sym);
+        TVal? spreadable_val = builtins_generic_get(item_obj, concat_sym, ctx);
+        if (ctx.should_throw) return false;
         if (try sv = spreadable_val) {
-            spread = builtin_to_boolean(&sv);
+            spread = sv.is_undefined() ? is_array : builtin_to_boolean(&sv);
         } else {
             spread = is_array;
         }
