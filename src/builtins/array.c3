@@ -178,12 +178,15 @@ fn void builtin_array_proto_includes(BuiltinContext* ctx) {
     }
 
     for (ulong i = (ulong)start_i; i < len; i++) {
+        if (ctx.should_throw) { ctx.result.set_undefined(); return; }
         TVal v;
-        if (arr_get_elem_vm(obj, i, ctx.heap, ctx, &v)) {
-            if (same_value_zero(v, search_elem)) {
-                ctx.result.set_boolean(true);
-                return;
-            }
+        if (!arr_get_elem_vm(obj, i, ctx.heap, ctx, &v)) {
+            if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+            v.set_undefined();
+        }
+        if (same_value_zero(v, search_elem)) {
+            ctx.result.set_boolean(true);
+            return;
         }
     }
     ctx.result.set_boolean(false);
