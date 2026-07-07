@@ -2158,61 +2158,15 @@ fn void builtin_string_proto_match(BuiltinContext* ctx) {
                 return;
             }
 
-            // Create result array with full match as element 0
-            HObject*? arr_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
-            if (catch err = arr_raw) { ctx.result.set_null(); return; }
-            HObject* arr = arr_raw;
-            arr.prototype = ctx.heap.array_proto;
-
-            usz match_len = (usz)(out_end - out_start);
-            HString* match_str;
-            if (match_len == 0) {
-                match_str = builtin_intern_string(ctx.heap, "");
-            } else {
-                match_str = builtin_intern_string(ctx.heap, input[out_start : match_len]);
-            }
-            TVal elem;
-            elem.set_string(match_str);
-            HString* zero_key = builtin_intern_string(ctx.heap, "0");
-            arr.put_prop(zero_key, elem, hobject::PROP_FLAGS_WEC);
-
-            // Add capture groups as elements 1..N
-            uint arr_len = 1;
+            // Build result array with .groups and .indices (when d flag is set)
             int num_caps = out_num_captures;
             if (num_caps > re_bindings::RE_MAX_CAPTURES) num_caps = re_bindings::RE_MAX_CAPTURES;
-            for (int i = 0; i < num_caps; i++) {
-                TVal cap_elem;
-                if (caps_start[i] >= 0 && caps_end[i] >= 0) {
-                    usz cap_len = (usz)(caps_end[i] - caps_start[i]);
-                    if (cap_len == 0) {
-                        cap_elem.set_string(builtin_intern_string(ctx.heap, ""));
-                    } else {
-                        cap_elem.set_string(builtin_intern_string(ctx.heap, input[caps_start[i] : cap_len]));
-                    }
-                } else {
-                    cap_elem.set_undefined();
-                }
-                arr.put_prop(ctx.heap.int_to_hstring((long)(i + 1)), cap_elem, hobject::PROP_FLAGS_WEC);
-                arr_len++;
-            }
-
-            // Set index property
-            TVal idx_tv;
-            idx_tv.set_fastint((long)out_start);
-            HString* idx_key = builtin_intern_string(ctx.heap, "index");
-            arr.put_prop(idx_key, idx_tv, hobject::PROP_FLAGS_WEC);
-
-            // Set input property
-            TVal input_tv;
-            input_tv.set_string(s_hstr);
-            HString* input_key = builtin_intern_string(ctx.heap, "input");
-            arr.put_prop(input_key, input_tv, hobject::PROP_FLAGS_WEC);
-
-            TVal len_tv;
-            len_tv.set_fastint((long)arr_len);
-            HString* len_key = builtin_intern_string(ctx.heap, "length");
-            arr.put_prop(len_key, len_tv, hobject::PROP_FLAGS_WEC);
-
+            void* re_data = (*rx.extra_ptr()).regexp.regexp_data;
+            bool has_indices = ((*rx.extra_ptr()).regexp.flags & 64) != 0;
+            HObject* arr = regexp_build_match_result(ctx, re_data, s_hstr, input, input_len,
+                                                     out_start, out_end,
+                                                     &caps_start, &caps_end, num_caps, has_indices);
+            if (arr == null) { ctx.result.set_null(); return; }
             ctx.result.set_object(arr);
             return;
         } else {
