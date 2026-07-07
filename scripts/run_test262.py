@@ -49,6 +49,9 @@ TEST_TIMEOUT = 10
 # see assignment from main without a global statement.
 LOG_FH = [None]
 
+# Optional serial retry of non-pass results (set from --retry-fails in main).
+RETRY_FAILS = [False]
+
 # Per-worker RSS cap in KB. Tests that loop allocating (e.g. huge-length
 # array-like iteration bugs) can balloon a worker to multiple GB within the
 # 10s timeout window; with 4 workers hitting such tests concurrently the
@@ -611,6 +614,51 @@ def build_phase_tests(phase_idx, es5_only=False):
                     continue
                 tests.append(path)
     return tests, skipped
+def rerun_serial(tests, test_timeout):
+    """Rerun a list of tests serially through a single worker.
+
+    Returns a list of (path, result) pairs. Used by --retry-fails to
+    distinguish load-order flakiness from real failures.
+    """
+    results = []
+    w = Worker(VM_BINARY, 99)
+    pending = list(tests)
+    while pending or not w.is_idle:
+        # Feed the worker one test at a time.
+        if w.alive and w.is_idle and pending:
+            w.send_test(pending.pop(0))
+
+        # Wait for a result.
+        if w.alive and not w.is_idle:
+            fds = [w.stdout_fileno]
+            try:
+                readable, _, _ = select.select(fds, [], [], 0.1)
+            except (ValueError, OSError):
+                readable = []
+            if readable:
+                r = w.try_read_result()
+                if r:
+                    results.append(r)
+
+        # Timeout guard.
+        if w.alive and not w.is_idle and w.elapsed() > test_timeout:
+            if w._pending is not None:
+                results.append((w._pending[0], "TIMEOUT"))
+                w._pending = None
+            w.kill()
+            w.restart(VM_BINARY)
+
+        # Dead worker with a pending test.
+        if not w.alive:
+            if w._pending is not None:
+                results.append((w._pending[0], "FAIL"))
+                w._pending = None
+            w = Worker(VM_BINARY, 99)
+
+    w.kill()
+    return results
+
+
 def run_phase(phase_idx, num_workers, test_timeout, es5_only=False):
     """Run a single phase and return (pass_count, fail_count, skip_count, total_count)."""
     phase = PHASES[phase_idx]
@@ -717,6 +765,19 @@ def run_phase(phase_idx, num_workers, test_timeout, es5_only=False):
     for w in workers:
         w.kill()
 
+    # Optional serial retry of non-pass tests to separate real failures from
+    # load-order / GC timing flakiness.
+    if RETRY_FAILS[0]:
+        retry_paths = [p for p, r in results if r != "PASS"]
+        if retry_paths:
+            print(
+                f"  [retry-fails] rerunning {len(retry_paths)} non-pass tests serially",
+                file=sys.stderr,
+            )
+            retry_results = rerun_serial(retry_paths, test_timeout)
+            retry_map = {p: r for p, r in retry_results}
+            results = [(p, retry_map.get(p, r)) for p, r in results]
+
     if LOG_FH[0] is not None:
         for path, r in results:
             rel = os.path.relpath(path, TEST262_DIR)
@@ -767,10 +828,18 @@ def main():
         metavar="FILE",
         help="Write per-test results (RESULT<TAB>relative-path) to FILE for cluster analysis",
     )
+    parser.add_argument(
+        "--retry-fails",
+        action="store_true",
+        help="Rerun FAIL/TIMEOUT/MEMKILL tests serially before reporting to reduce flakiness",
+    )
     args = parser.parse_args()
 
     if args.log:
         LOG_FH[0] = open(args.log, "w")
+
+    if args.retry_fails:
+        RETRY_FAILS[0] = True
 
     # Cap workers to avoid OOM — each worker is a full VM process with its own heap
     if args.workers > 4:
