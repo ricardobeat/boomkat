@@ -3566,10 +3566,12 @@ fn void builtin_array_proto_reduce(BuiltinContext* ctx) {
     }
     ulong len;
     if (!array_to_length(o, ctx.heap, ctx, &len)) { ctx.result.set_undefined(); return; }
-    if (ctx.argc < 1 || !arr_check_callback(ctx.regs[ctx.base_reg], ctx)) {
+    TVal callback_val;
+    if (ctx.argc >= 1) { callback_val = ctx.regs[ctx.base_reg]; } else { callback_val.set_undefined(); }
+    if (!arr_check_callback(callback_val, ctx)) {
         return;
     }
-    TVal callback = ctx.regs[ctx.base_reg];
+    TVal callback = callback_val;
     ulong k = 0;
     TVal acc;
     bool has_acc;
@@ -3629,10 +3631,12 @@ fn void builtin_array_proto_reduceRight(BuiltinContext* ctx) {
     }
     ulong len;
     if (!array_to_length(o, ctx.heap, ctx, &len)) { ctx.result.set_undefined(); return; }
-    if (ctx.argc < 1 || !arr_check_callback(ctx.regs[ctx.base_reg], ctx)) {
+    TVal callback_val;
+    if (ctx.argc >= 1) { callback_val = ctx.regs[ctx.base_reg]; } else { callback_val.set_undefined(); }
+    if (!arr_check_callback(callback_val, ctx)) {
         return;
     }
-    TVal callback = ctx.regs[ctx.base_reg];
+    TVal callback = callback_val;
     if (len == 0 && ctx.argc < 2) {
         arr_throw_type_error(ctx, "Reduce of empty array with no initial value");
         return;
