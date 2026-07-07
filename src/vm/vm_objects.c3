@@ -175,7 +175,7 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
                 HString* len_str = (HString*)vm.heap.strs[heap::BuiltinStr.LENGTH];
                 TVal len_val;
                 len_val.set_fastint((long)count);
-                hobj.put_prop(len_str, len_val, hobject::PROP_FLAGS_WEC);
+                hobj.put_prop(len_str, len_val, hobject::PROP_FLAGS_WENC);
             }
             return (TVal){};
         }

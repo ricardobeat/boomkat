@@ -1495,33 +1495,26 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
             return;
         }
 
+        // Array length is non-configurable and non-enumerable; reject attempts
+        // to change its enumerability (e.g. { enumerable: true }).
+        HString* enum_k = builtin_intern_string(ctx.heap, "enumerable");
+        bool has_enum = (enum_k != null) && desc_obj.find_prop_idx(enum_k) >= 0;
+        if (has_enum && desc_flags.enumerable) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "Cannot redefine property: length");
+            return;
+        }
+
         // ES5 §15.4.5.1 step 2: If 'value' is present, validate it.
         HString* val_k = builtin_intern_string(ctx.heap, "value");
         bool has_value_in_desc = (val_k != null) && desc_obj.find_prop_idx(val_k) >= 0;
         if (has_value_in_desc) {
             TVal new_len_val = desc_vals[0];
-            if (new_len_val.is_undefined()) {
-                builtin_throw(ctx, ctx.heap.type_err_proto, "Invalid array length");
-                return;
-            }
 
-            // ES5 §15.4.5.1 step 3.c: ToNumber then ToUint32
-            double num;
-            if (new_len_val.is_fastint()) {
-                num = (double)new_len_val.get_fastint();
-            } else if (new_len_val.is_number()) {
-                num = new_len_val.get_number();
-            } else {
-                // String/object → ToNumber first
-                TVal num_val;
-                builtin_to_number(&new_len_val, &num_val);
-                if (num_val.is_number()) {
-                    num = num_val.get_number();
-                } else if (num_val.is_fastint()) {
-                    num = (double)num_val.get_fastint();
-                } else {
-                    num = double::nan;
-                }
+            // ES5 §15.4.5.1 step 3.c: ToNumber then ToUint32. Use the VM-aware
+            // helper so object values are converted via ToPrimitive (valueOf/toString).
+            double num = builtin_to_number_vm(ctx, &new_len_val);
+            if (ctx.should_throw) {
+                return;
             }
 
             // ToUint32: reject NaN, ±∞, negative, non-integer, > 2^32-1

@@ -24,7 +24,7 @@ fn void builtin_array_of(BuiltinContext* ctx) {
     uint len = (uint)ctx.argc;
     HString* len_key = builtin_intern_string(ctx.heap, "length");
     TVal len_val; len_val.set_fastint((long)len);
-    arr.put_prop(len_key, len_val, hobject::PROP_FLAGS_WEC);
+    arr.put_prop(len_key, len_val, hobject::PROP_FLAGS_WENC);
 
     for (uint i = 0; i < len; i++) {
         TVal elem = ctx.regs[ctx.base_reg + (uint)i];
