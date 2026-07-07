@@ -61,6 +61,11 @@ fn void? CompilerContext.collect_obj_param_binds(&self,
     for (;;) {
         if (self.check(TokenType.RBRACE)) break;
 
+        // Track whether the last parsed element was a nested pattern (synthetic)
+        // so that a following `= default` applies to the synthetic, not a leaf.
+        ushort outer_synth_idx = 0xFFFF;
+        bool last_was_synth = false;
+
         // Rest element: {...rest}
         if (self.match(TokenType.ELLIPSIS)) {
             Token rest_tok = self.expect(TokenType.IDENTIFIER)!;
@@ -101,6 +106,8 @@ fn void? CompilerContext.collect_obj_param_binds(&self,
                     (*count)++;
                 }
                 ushort synth_idx = (ushort)(*count - 1);
+                outer_synth_idx = synth_idx;
+                last_was_synth = true;
                 self.advance()!; // consume '{' or '['
                 if (is_obj) {
                     self.collect_obj_param_binds(binds, count, src_reg, synth_idx)!;
@@ -139,13 +146,16 @@ fn void? CompilerContext.collect_obj_param_binds(&self,
             }
         }
 
-        // Default: {a = expr} — compile as a thunk function like regular defaults
+        // Default: {a = expr} or {a: pattern = expr} — compile as a thunk
+        // function like regular defaults. When the previous element was a
+        // nested pattern, the default belongs to the synthetic binding.
         if (self.match(TokenType.ASSIGN)) {
             if (*count > 0) {
-                binds[*count - 1].has_default = true;
+                ushort target_idx = last_was_synth ? outer_synth_idx : (ushort)(*count - 1);
+                binds[target_idx].has_default = true;
                 CompiledFunction* default_func = self.compile_default_expr()!;
                 uint def_idx = self.add_inner_func(default_func);
-                    binds[*count - 1].default_func_idx = def_idx;
+                binds[target_idx].default_func_idx = def_idx;
             }
         }
 
@@ -168,6 +178,11 @@ fn void? CompilerContext.collect_arr_param_binds(&self,
     for (;;) {
         if (self.check(TokenType.RBRACKET)) break;
 
+        // Track whether the last parsed element was a nested pattern (synthetic)
+        // so that a following `= default` applies to the synthetic, not a leaf.
+        ushort outer_synth_idx = 0xFFFF;
+        bool last_was_synth = false;
+
         if (self.match(TokenType.COMMA)) {
             elem_idx++;
             continue;
@@ -188,6 +203,8 @@ fn void? CompilerContext.collect_arr_param_binds(&self,
                     (*count)++;
                 }
                 ushort synth_idx = (ushort)(*count - 1);
+                outer_synth_idx = synth_idx;
+                last_was_synth = true;
                 self.advance()!;
                 if (is_obj) {
                     self.collect_obj_param_binds(binds, count, src_reg, synth_idx)!;
@@ -229,6 +246,8 @@ fn void? CompilerContext.collect_arr_param_binds(&self,
                 (*count)++;
             }
             ushort synth_idx = (ushort)(*count - 1);
+            outer_synth_idx = synth_idx;
+            last_was_synth = true;
             self.advance()!;
             if (is_obj) {
                 self.collect_obj_param_binds(binds, count, src_reg, synth_idx)!;
@@ -254,13 +273,16 @@ fn void? CompilerContext.collect_arr_param_binds(&self,
             }
         }
 
-        // Default: [a = expr] — compile as a thunk function like regular defaults
+        // Default: [a = expr] or [pattern = expr] — compile as a thunk
+        // function like regular defaults. When the previous element was a
+        // nested pattern, the default belongs to the synthetic binding.
         if (self.match(TokenType.ASSIGN)) {
             if (*count > 0) {
-                binds[*count - 1].has_default = true;
+                ushort target_idx = last_was_synth ? outer_synth_idx : (ushort)(*count - 1);
+                binds[target_idx].has_default = true;
                 CompiledFunction* default_func = self.compile_default_expr()!;
                 uint def_idx = self.add_inner_func(default_func);
-                    binds[*count - 1].default_func_idx = def_idx;
+                binds[target_idx].default_func_idx = def_idx;
             }
         }
 
@@ -1196,6 +1218,34 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
                     self.free_reg(key_reg);
                 }
 
+                // Default value check for nested patterns: if group_reg is
+                // undefined, evaluate the default thunk before REQUIRE_OBJ.
+                if (destruct_binds[di].has_default) {
+                    ushort undef_reg = self.alloc_reg();
+                    self.emit_abc(Opcode.LDUNDEF, (uint)undef_reg, 0, 0);
+                    ushort cmp_reg = self.alloc_reg();
+                    self.emit_abc(Opcode.SNEQ, (uint)cmp_reg, (uint)group_reg, (uint)undef_reg);
+                    self.free_reg(undef_reg);
+
+                    uint skip_addr = self.code_count;
+                    self.emit(bytecode::make_a_sbx(Opcode.IF_TRUE, (uint)cmp_reg, 0));
+                    self.free_reg(cmp_reg);
+
+                    ushort closure_reg = self.alloc_reg();
+                    self.emit_a_bc(Opcode.CLOSURE, (uint)closure_reg, destruct_binds[di].default_func_idx);
+
+                    ushort call_base = self.alloc_reg();
+                    if (self.next_reg <= call_base + 1) { self.next_reg = call_base + 2; }
+                    self.emit_abc(Opcode.LDREG, (uint)call_base, (uint)closure_reg, 0);
+                    self.emit_abc(Opcode.LDTHIS, (uint)(call_base + 1), 0, 0);
+                    self.emit_abc(Opcode.CALL, (uint)call_base, (uint)call_base, 0);
+                    self.emit_abc(Opcode.LDREG, (uint)group_reg, (uint)call_base, 0);
+                    self.free_regs_to(call_base);
+
+                    int skip_off = (int)self.code_count - (int)skip_addr - 1;
+                    self.code[skip_addr] = bytecode::make_a_sbx(Opcode.IF_TRUE, (uint)cmp_reg, skip_off);
+                }
+
                 // REQUIRE_OBJ — TypeError if null/undefined nested target
                 self.emit_abc(Opcode.REQUIRE_OBJ, (uint)group_reg, 0, 0);
             } else {
@@ -1691,6 +1741,34 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
                     inner_ctx.emit(bytecode::make_a_sbx(Opcode.LDINT, (uint)key_reg, (int)inner_destruct_binds[di].index));
                     inner_ctx.emit_abc(Opcode.GETPROP, (uint)group_reg, (uint)src_reg, (uint)key_reg);
                     inner_ctx.free_reg(key_reg);
+                }
+
+                // Default value check for nested patterns: if group_reg is
+                // undefined, evaluate the default thunk before REQUIRE_OBJ.
+                if (inner_destruct_binds[di].has_default) {
+                    ushort undef_reg = inner_ctx.alloc_reg();
+                    inner_ctx.emit_abc(Opcode.LDUNDEF, (uint)undef_reg, 0, 0);
+                    ushort cmp_reg = inner_ctx.alloc_reg();
+                    inner_ctx.emit_abc(Opcode.SNEQ, (uint)cmp_reg, (uint)group_reg, (uint)undef_reg);
+                    inner_ctx.free_reg(undef_reg);
+
+                    uint skip_addr = inner_ctx.code_count;
+                    inner_ctx.emit(bytecode::make_a_sbx(Opcode.IF_TRUE, (uint)cmp_reg, 0));
+                    inner_ctx.free_reg(cmp_reg);
+
+                    ushort closure_reg = inner_ctx.alloc_reg();
+                    inner_ctx.emit_a_bc(Opcode.CLOSURE, (uint)closure_reg, inner_destruct_binds[di].default_func_idx);
+
+                    ushort call_base = inner_ctx.alloc_reg();
+                    if (inner_ctx.next_reg <= call_base + 1) { inner_ctx.next_reg = call_base + 2; }
+                    inner_ctx.emit_abc(Opcode.LDREG, (uint)call_base, (uint)closure_reg, 0);
+                    inner_ctx.emit_abc(Opcode.LDTHIS, (uint)(call_base + 1), 0, 0);
+                    inner_ctx.emit_abc(Opcode.CALL, (uint)call_base, (uint)call_base, 0);
+                    inner_ctx.emit_abc(Opcode.LDREG, (uint)group_reg, (uint)call_base, 0);
+                    inner_ctx.free_regs_to(call_base);
+
+                    int skip_off = (int)inner_ctx.code_count - (int)skip_addr - 1;
+                    inner_ctx.code[skip_addr] = bytecode::make_a_sbx(Opcode.IF_TRUE, (uint)cmp_reg, skip_off);
                 }
 
                 inner_ctx.emit_abc(Opcode.REQUIRE_OBJ, (uint)group_reg, 0, 0);
@@ -2274,6 +2352,34 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
                     arrow_ctx.emit(bytecode::make_a_sbx(Opcode.LDINT, (uint)key_reg, (int)arrow_destruct_binds[di].index));
                     arrow_ctx.emit_abc(Opcode.GETPROP, (uint)group_reg, (uint)src_reg, (uint)key_reg);
                     arrow_ctx.free_reg(key_reg);
+                }
+
+                // Default value check for nested patterns: if group_reg is
+                // undefined, evaluate the default thunk before REQUIRE_OBJ.
+                if (arrow_destruct_binds[di].has_default) {
+                    ushort undef_reg = arrow_ctx.alloc_reg();
+                    arrow_ctx.emit_abc(Opcode.LDUNDEF, (uint)undef_reg, 0, 0);
+                    ushort cmp_reg = arrow_ctx.alloc_reg();
+                    arrow_ctx.emit_abc(Opcode.SNEQ, (uint)cmp_reg, (uint)group_reg, (uint)undef_reg);
+                    arrow_ctx.free_reg(undef_reg);
+
+                    uint skip_addr = arrow_ctx.code_count;
+                    arrow_ctx.emit(bytecode::make_a_sbx(Opcode.IF_TRUE, (uint)cmp_reg, 0));
+                    arrow_ctx.free_reg(cmp_reg);
+
+                    ushort closure_reg = arrow_ctx.alloc_reg();
+                    arrow_ctx.emit_a_bc(Opcode.CLOSURE, (uint)closure_reg, arrow_destruct_binds[di].default_func_idx);
+
+                    ushort call_base = arrow_ctx.alloc_reg();
+                    if (arrow_ctx.next_reg <= call_base + 1) { arrow_ctx.next_reg = call_base + 2; }
+                    arrow_ctx.emit_abc(Opcode.LDREG, (uint)call_base, (uint)closure_reg, 0);
+                    arrow_ctx.emit_abc(Opcode.LDTHIS, (uint)(call_base + 1), 0, 0);
+                    arrow_ctx.emit_abc(Opcode.CALL, (uint)call_base, (uint)call_base, 0);
+                    arrow_ctx.emit_abc(Opcode.LDREG, (uint)group_reg, (uint)call_base, 0);
+                    arrow_ctx.free_regs_to(call_base);
+
+                    int skip_off = (int)arrow_ctx.code_count - (int)skip_addr - 1;
+                    arrow_ctx.code[skip_addr] = bytecode::make_a_sbx(Opcode.IF_TRUE, (uint)cmp_reg, skip_off);
                 }
 
                 arrow_ctx.emit_abc(Opcode.REQUIRE_OBJ, (uint)group_reg, 0, 0);
