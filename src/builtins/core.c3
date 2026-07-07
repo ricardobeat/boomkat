@@ -229,8 +229,10 @@ const uint BUILTIN_ASYNC_REJECT               = 331;
 
 const uint BUILTIN_PROMISE_SYNTHETIC_EXECUTOR  = 344;
 const uint BUILTIN_FUNCTION_PROTO_SPECIES_GETTER = 345;
+const uint BUILTIN_REGEXP_PROTO_GET_HASINDICES   = 346;
+const uint BUILTIN_REGEXP_PROTO_GET_UNICODESETS  = 347;
 
-const uint BUILTIN_COUNT                       = 346;
+const uint BUILTIN_COUNT                       = 348;
 
 const uint BUILTIN_MAP                       = 112;
 const uint BUILTIN_MAP_PROTO_SET             = 113;
@@ -2331,11 +2333,13 @@ BuiltinFunc[BUILTIN_COUNT] builtin_dispatch_table = {
     [BUILTIN_REGEXP_PROTO_GET_DOTALL] = &builtin_regexp_proto_get_dotAll,
     [BUILTIN_REGEXP_PROTO_GET_FLAGS] = &builtin_regexp_proto_get_flags,
     [BUILTIN_REGEXP_PROTO_GET_GLOBAL] = &builtin_regexp_proto_get_global,
+    [BUILTIN_REGEXP_PROTO_GET_HASINDICES] = &builtin_regexp_proto_get_hasIndices,
     [BUILTIN_REGEXP_PROTO_GET_IGNORECASE] = &builtin_regexp_proto_get_ignoreCase,
     [BUILTIN_REGEXP_PROTO_GET_MULTILINE] = &builtin_regexp_proto_get_multiline,
     [BUILTIN_REGEXP_PROTO_GET_SOURCE] = &builtin_regexp_proto_get_source,
     [BUILTIN_REGEXP_PROTO_GET_STICKY] = &builtin_regexp_proto_get_sticky,
     [BUILTIN_REGEXP_PROTO_GET_UNICODE] = &builtin_regexp_proto_get_unicode,
+    [BUILTIN_REGEXP_PROTO_GET_UNICODESETS] = &builtin_regexp_proto_get_unicodeSets,
     [BUILTIN_REGEXP_PROTO_SYMBOL_MATCH] = &builtin_regexp_proto_symbol_match,
     [BUILTIN_REGEXP_PROTO_SYMBOL_SEARCH] = &builtin_regexp_proto_symbol_search,
     [BUILTIN_REGEXP_PROTO_SYMBOL_REPLACE] = &builtin_regexp_proto_symbol_replace,

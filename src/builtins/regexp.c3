@@ -288,6 +288,173 @@ fn void builtin_regexp_proto_test(BuiltinContext* ctx) {
     ctx.result.set_boolean((result == re_bindings::RE_MATCH));
 }
 
+/// Build a RegExp exec/match result array with .groups and optional .indices.
+fn HObject* regexp_build_match_result(BuiltinContext* ctx, void* re_data, HString* input_str,
+                                      char* input, int input_len,
+                                      int out_start, int out_end,
+                                      int* caps_start, int* caps_end, int num_caps,
+                                      bool with_indices) {
+    HObject*? arr_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
+    if (catch err = arr_raw) return null;
+    HObject* arr = arr_raw;
+    arr.prototype = ctx.heap.array_proto;
+
+    // Element 0: full match string
+    usz match_len = (usz)(out_end - out_start);
+    HString* match_str = match_len == 0
+        ? builtin_intern_string(ctx.heap, "")
+        : builtin_intern_string(ctx.heap, input[out_start : match_len]);
+    TVal elem; elem.set_string(match_str);
+    HString* zero_key = builtin_intern_string(ctx.heap, "0");
+    arr.put_prop(zero_key, elem, hobject::PROP_FLAGS_WEC);
+
+    // Capture groups 1..N
+    int total_captures = 1 + num_caps;
+    for (int i = 0; i < num_caps; i++) {
+        TVal cap_elem;
+        if (caps_start[i] >= 0 && caps_end[i] >= 0) {
+            usz cap_len = (usz)(caps_end[i] - caps_start[i]);
+            cap_elem.set_string(cap_len == 0
+                ? builtin_intern_string(ctx.heap, "")
+                : builtin_intern_string(ctx.heap, input[caps_start[i] : cap_len]));
+        } else {
+            cap_elem.set_undefined();
+        }
+        arr.put_prop(ctx.heap.int_to_hstring((long)(i + 1)), cap_elem, hobject::PROP_FLAGS_WEC);
+    }
+
+    // index property
+    TVal idx_tv; idx_tv.set_fastint((long)out_start);
+    arr.put_prop(builtin_intern_string(ctx.heap, "index"), idx_tv, hobject::PROP_FLAGS_WEC);
+
+    // input property
+    TVal input_tv; input_tv.set_string(input_str);
+    arr.put_prop(builtin_intern_string(ctx.heap, "input"), input_tv, hobject::PROP_FLAGS_WEC);
+
+    // groups property
+    char* group_names = re_bindings::re_get_groupnames(re_data);
+    if (group_names != null) {
+        HObject*? groups_raw = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
+        if (try groups = groups_raw) {
+            groups.prototype = null;
+            int name_count = re_bindings::re_get_capture_count(re_data) - 1;
+            char* p = group_names;
+            for (int gi = 0; gi < name_count; gi++) {
+                usz name_len = libc::strlen((ZString)p);
+                if (name_len > 0) {
+                    HString* name_str = builtin_intern_string(ctx.heap, p[:name_len]);
+                    TVal cap_val;
+                    if (gi < num_caps && caps_start[gi] >= 0 && caps_end[gi] >= 0) {
+                        usz cap_len = (usz)(caps_end[gi] - caps_start[gi]);
+                        cap_val.set_string(cap_len == 0
+                            ? builtin_intern_string(ctx.heap, "")
+                            : builtin_intern_string(ctx.heap, input[caps_start[gi] : cap_len]));
+                    } else {
+                        cap_val.set_undefined();
+                    }
+                    groups.put_prop(name_str, cap_val, hobject::PROP_FLAGS_WEC);
+                }
+                // Each entry is: name bytes + '\0' + scope byte (2 bytes minimum)
+                p += (long)(name_len + 2);
+            }
+            TVal groups_val; groups_val.set_object(groups);
+            arr.put_prop(builtin_intern_string(ctx.heap, "groups"), groups_val, hobject::PROP_FLAGS_WEC);
+        }
+    } else {
+        TVal groups_undef; groups_undef.set_undefined();
+        arr.put_prop(builtin_intern_string(ctx.heap, "groups"), groups_undef, hobject::PROP_FLAGS_WEC);
+    }
+
+    // indices property (ES2022 d-flag)
+    if (with_indices) {
+        HObject*? indices_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
+        if (try indices_arr = indices_raw) {
+            indices_arr.prototype = ctx.heap.array_proto;
+
+            // indices[0]
+            HObject*? pair0_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
+            if (try pair0 = pair0_raw) {
+                pair0.prototype = ctx.heap.array_proto;
+                TVal p0s; p0s.set_fastint((long)out_start);
+                TVal p0e; p0e.set_fastint((long)out_end);
+                pair0.put_prop(builtin_intern_string(ctx.heap, "0"), p0s, hobject::PROP_FLAGS_WEC);
+                pair0.put_prop(builtin_intern_string(ctx.heap, "1"), p0e, hobject::PROP_FLAGS_WEC);
+                TVal pair0_tv; pair0_tv.set_object(pair0);
+                indices_arr.put_prop(builtin_intern_string(ctx.heap, "0"), pair0_tv, hobject::PROP_FLAGS_WEC);
+            }
+
+            for (int i = 0; i < num_caps; i++) {
+                HObject*? pair_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
+                if (catch err = pair_raw) continue;
+                HObject* pair = pair_raw;
+                pair.prototype = ctx.heap.array_proto;
+                TVal pair_tv;
+                if (caps_start[i] >= 0 && caps_end[i] >= 0) {
+                    TVal ps; ps.set_fastint((long)caps_start[i]);
+                    TVal pe; pe.set_fastint((long)caps_end[i]);
+                    pair.put_prop(builtin_intern_string(ctx.heap, "0"), ps, hobject::PROP_FLAGS_WEC);
+                    pair.put_prop(builtin_intern_string(ctx.heap, "1"), pe, hobject::PROP_FLAGS_WEC);
+                    pair_tv.set_object(pair);
+                } else {
+                    pair_tv.set_undefined();
+                }
+                indices_arr.put_prop(ctx.heap.int_to_hstring((long)(i + 1)), pair_tv, hobject::PROP_FLAGS_WEC);
+            }
+
+            // indices.groups
+            if (group_names != null) {
+                HObject*? igroups_raw = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
+                if (try igroups = igroups_raw) {
+                    igroups.prototype = null;
+                    int name_count = re_bindings::re_get_capture_count(re_data) - 1;
+                    char* p = group_names;
+                    for (int gi = 0; gi < name_count; gi++) {
+                        usz name_len = libc::strlen((ZString)p);
+                        if (name_len > 0) {
+                            HString* name_str = builtin_intern_string(ctx.heap, p[:name_len]);
+                            TVal pair_tv;
+                            if (gi < num_caps && caps_start[gi] >= 0 && caps_end[gi] >= 0) {
+                                HObject*? pair_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
+                                if (try pair = pair_raw) {
+                                    pair.prototype = ctx.heap.array_proto;
+                                    TVal ps; ps.set_fastint((long)caps_start[gi]);
+                                    TVal pe; pe.set_fastint((long)caps_end[gi]);
+                                    pair.put_prop(builtin_intern_string(ctx.heap, "0"), ps, hobject::PROP_FLAGS_WEC);
+                                    pair.put_prop(builtin_intern_string(ctx.heap, "1"), pe, hobject::PROP_FLAGS_WEC);
+                                    pair_tv.set_object(pair);
+                                } else {
+                                    pair_tv.set_undefined();
+                                }
+                            } else {
+                                pair_tv.set_undefined();
+                            }
+                            igroups.put_prop(name_str, pair_tv, hobject::PROP_FLAGS_WEC);
+                        }
+                        // Each entry is: name bytes + '\0' + scope byte (2 bytes minimum)
+                        p += (long)(name_len + 2);
+                    }
+                    TVal igroups_tv; igroups_tv.set_object(igroups);
+                    indices_arr.put_prop(builtin_intern_string(ctx.heap, "groups"), igroups_tv, hobject::PROP_FLAGS_WEC);
+                }
+            } else {
+                TVal igroups_undef; igroups_undef.set_undefined();
+                indices_arr.put_prop(builtin_intern_string(ctx.heap, "groups"), igroups_undef, hobject::PROP_FLAGS_WEC);
+            }
+
+            TVal indices_len; indices_len.set_fastint((long)total_captures);
+            indices_arr.put_prop(builtin_intern_string(ctx.heap, "length"), indices_len, hobject::PROP_FLAGS_WEC);
+
+            TVal indices_tv; indices_tv.set_object(indices_arr);
+            arr.put_prop(builtin_intern_string(ctx.heap, "indices"), indices_tv, hobject::PROP_FLAGS_WEC);
+        }
+    }
+
+    TVal len_tv; len_tv.set_fastint((long)total_captures);
+    arr.put_prop(builtin_intern_string(ctx.heap, "length"), len_tv, hobject::PROP_FLAGS_WEC);
+
+    return arr;
+}
+
 /// RegExp.prototype.exec(string) — ES5 §15.10.6.2
 fn void builtin_regexp_proto_exec(BuiltinContext* ctx) {
     HObject* obj = regexp_get_this(ctx);
@@ -374,124 +541,19 @@ fn void builtin_regexp_proto_exec(BuiltinContext* ctx) {
         obj.put_prop(li_key, end_tv, hobject::PROP_FLAGS_WEC);
     }
 
-    // Create result array
-    HObject*? arr_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
-    if (catch err = arr_raw) {
+    // Build result array with .groups and .indices (when d flag is set)
+    void* re_data = (*obj.extra_ptr()).regexp.regexp_data;
+    int num_caps = out_num_captures;
+    if (num_caps > re_bindings::RE_MAX_CAPTURES) num_caps = re_bindings::RE_MAX_CAPTURES;
+    bool has_indices = (jsf & 64) != 0;
+    HString* input_str = builtin_intern_string(ctx.heap, input[:input_len]);
+    HObject* arr = regexp_build_match_result(ctx, re_data, input_str, input, input_len,
+                                             out_start, out_end,
+                                             &caps_start, &caps_end, num_caps, has_indices);
+    if (arr == null) {
         ctx.result.set_null();
         return;
     }
-    HObject* arr = arr_raw;
-    arr.prototype = ctx.heap.array_proto;
-
-    // Element 0: full match string
-    usz match_len = (usz)(out_end - out_start);
-    char[1024] buf;
-    usz copy_len = match_len < 1024 ? match_len : 1024;
-    for (usz i = 0; i < copy_len; i++) {
-        buf[i] = input[(usz)out_start + i];
-    }
-    HString* match_str = builtin_intern_string(ctx.heap, buf[:copy_len]);
-    TVal elem;
-    elem.set_string(match_str);
-    HString* zero_key = builtin_intern_string(ctx.heap, "0");
-    arr.put_prop(zero_key, elem, hobject::PROP_FLAGS_WEC);
-
-    // Elements 1..n: capture groups
-    int num_caps = out_num_captures;
-    if (num_caps > re_bindings::RE_MAX_CAPTURES) num_caps = re_bindings::RE_MAX_CAPTURES;
-    for (int i = 0; i < num_caps; i++) {
-        if (caps_start[i] >= 0 && caps_end[i] >= 0) {
-            usz cap_len = (usz)(caps_end[i] - caps_start[i]);
-            usz cap_copy = cap_len < 1024 ? cap_len : 1024;
-            char[1024] cap_buf;
-            for (usz j = 0; j < cap_copy; j++) {
-                cap_buf[j] = input[(usz)caps_start[i] + j];
-            }
-            HString* cap_str = builtin_intern_string(ctx.heap, cap_buf[:cap_copy]);
-            TVal cap_elem;
-            cap_elem.set_string(cap_str);
-            char[16] idx_buf;
-            int idx_len = libc::snprintf(&idx_buf, 16, "%d", i + 1);
-            HString* idx_key = builtin_intern_string(ctx.heap, idx_buf[:idx_len]);
-            arr.put_prop(idx_key, cap_elem, hobject::PROP_FLAGS_WEC);
-        } else {
-            // Unmatched capture group -> undefined
-            HString* empty_key = builtin_intern_string(ctx.heap, "undefined");
-            TVal undef;
-            undef.set_undefined();
-            char[16] idx_buf;
-            int idx_len = libc::snprintf(&idx_buf, 16, "%d", i + 1);
-            HString* idx_key = builtin_intern_string(ctx.heap, idx_buf[:idx_len]);
-            arr.put_prop(idx_key, undef, hobject::PROP_FLAGS_WEC);
-        }
-    }
-
-    // Set index property
-    HString* index_key = builtin_intern_string(ctx.heap, "index");
-    TVal index_val;
-    index_val.set_fastint((long)out_start);
-    arr.put_prop(index_key, index_val, hobject::PROP_FLAGS_WEC);
-
-    // Set input property
-    HString* input_key = builtin_intern_string(ctx.heap, "input");
-    TVal input_val;
-    input_val.set_string(builtin_intern_string(ctx.heap, input[:input_len]));
-    arr.put_prop(input_key, input_val, hobject::PROP_FLAGS_WEC);
-
-    // Create .groups property (ES2018 §21.2.5.2 steps 36-38)
-    void* re_data = (*obj.extra_ptr()).regexp.regexp_data;
-    char* group_names = re_bindings::re_get_groupnames(re_data);
-    if (group_names != null) {
-        // Has named capture groups — create a plain object (null prototype)
-        HObject*? groups_raw = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
-        if (try groups = groups_raw) {
-            groups.prototype = null;
-            int total_captures = re_bindings::re_get_capture_count(re_data);
-            // total_captures includes group 0; group names has entries for 1..total_captures-1
-            int num_entries = total_captures - 1;
-            char* p = group_names;
-            for (int gi = 0; gi < num_entries; gi++) {
-                usz name_len = libc::strlen((ZString)p);
-                if (name_len > 0) {
-                    // Named capture group — look up the capture value at caps_start[gi] / caps_end[gi]
-                    HString* name_str = builtin_intern_string(ctx.heap, p[:name_len]);
-                    TVal cap_val;
-                    if (gi < num_caps && caps_start[gi] >= 0 && caps_end[gi] >= 0) {
-                        usz cap_len = (usz)(caps_end[gi] - caps_start[gi]);
-                        usz cap_copy = cap_len < 1024 ? cap_len : 1024;
-                        char[1024] cap_buf;
-                        for (usz j = 0; j < cap_copy; j++) {
-                            cap_buf[j] = input[(usz)caps_start[gi] + j];
-                        }
-                        HString* cap_str = builtin_intern_string(ctx.heap, cap_buf[:cap_copy]);
-                        cap_val.set_string(cap_str);
-                    } else {
-                        cap_val.set_undefined();
-                    }
-                    groups.put_prop(name_str, cap_val, hobject::PROP_FLAGS_WEC);
-                }
-                p += (long)(name_len + 1);
-            }
-            TVal groups_val;
-            groups_val.set_object(groups);
-            HString* groups_key = builtin_intern_string(ctx.heap, "groups");
-            arr.put_prop(groups_key, groups_val, hobject::PROP_FLAGS_WEC);
-        }
-    } else {
-        // No named groups — .groups = undefined
-        TVal groups_undef;
-        groups_undef.set_undefined();
-        HString* groups_key = builtin_intern_string(ctx.heap, "groups");
-        arr.put_prop(groups_key, groups_undef, hobject::PROP_FLAGS_WEC);
-    }
-
-    // Set length
-    uint total_elements = 1 + (uint)num_caps;
-    HString* len_key = builtin_intern_string(ctx.heap, "length");
-    TVal len_val;
-    len_val.set_fastint((long)total_elements);
-    arr.put_prop(len_key, len_val, hobject::PROP_FLAGS_WEC);
-
     ctx.result.set_object(arr);
 }
 
@@ -597,54 +659,14 @@ fn void builtin_regexp_proto_symbol_match(BuiltinContext* ctx) {
             return;
         }
 
-        // Create result array
-        HObject*? arr_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
-        if (catch err = arr_raw) { ctx.result.set_null(); return; }
-        HObject* arr = arr_raw;
-        arr.prototype = ctx.heap.array_proto;
-
-        // Element 0: full match
-        usz match_len = (usz)(out_end - out_start);
-        HString* match_str = match_len == 0
-            ? builtin_intern_string(ctx.heap, "")
-            : builtin_intern_string(ctx.heap, input[out_start : match_len]);
-        TVal elem; elem.set_string(match_str);
-        HString* zero_key = builtin_intern_string(ctx.heap, "0");
-        arr.put_prop(zero_key, elem, hobject::PROP_FLAGS_WEC);
-
-        // Capture groups
-        uint arr_len = 1;
+        // Build result array with .groups and .indices (when d flag is set)
         int num_caps = out_num_captures;
         if (num_caps > re_bindings::RE_MAX_CAPTURES) num_caps = re_bindings::RE_MAX_CAPTURES;
-        for (int i = 0; i < num_caps; i++) {
-            TVal cap_elem;
-            if (caps_start[i] >= 0 && caps_end[i] >= 0) {
-                usz cap_len = (usz)(caps_end[i] - caps_start[i]);
-                cap_elem.set_string(cap_len == 0
-                    ? builtin_intern_string(ctx.heap, "")
-                    : builtin_intern_string(ctx.heap, input[caps_start[i] : cap_len]));
-            } else {
-                cap_elem.set_undefined();
-            }
-            arr.put_prop(ctx.heap.int_to_hstring((long)(i + 1)), cap_elem, hobject::PROP_FLAGS_WEC);
-            arr_len++;
-        }
-
-        // Set .index property
-        TVal idx_tv; idx_tv.set_fastint((long)out_start);
-        HString* idx_key = builtin_intern_string(ctx.heap, "index");
-        arr.put_prop(idx_key, idx_tv, hobject::PROP_FLAGS_WEC);
-
-        // Set .input property
-        TVal input_tv; input_tv.set_string(s_hstr);
-        HString* input_key = builtin_intern_string(ctx.heap, "input");
-        arr.put_prop(input_key, input_tv, hobject::PROP_FLAGS_WEC);
-
-        // Set .length
-        TVal len_tv; len_tv.set_fastint((long)arr_len);
-        HString* len_key = builtin_intern_string(ctx.heap, "length");
-        arr.put_prop(len_key, len_tv, hobject::PROP_FLAGS_WEC);
-
+        bool has_indices = ((*rx.extra_ptr()).regexp.flags & 64) != 0;
+        HObject* arr = regexp_build_match_result(ctx, re_data, s_hstr, input, input_len,
+                                                 out_start, out_end,
+                                                 &caps_start, &caps_end, num_caps, has_indices);
+        if (arr == null) { ctx.result.set_null(); return; }
         ctx.result.set_object(arr);
     } else {
         // ── Global: collect all full-match strings ──
@@ -1195,12 +1217,14 @@ fn void builtin_regexp_proto_get_flags(BuiltinContext* ctx) {
     int jsf = (*obj.extra_ptr()).regexp.flags;
     char[8] buf;
     int pos = 0;
-    if ((jsf & 1) != 0)  buf[pos++] = 'g';   // global
-    if ((jsf & 2) != 0)  buf[pos++] = 'i';   // ignoreCase
-    if ((jsf & 4) != 0)  buf[pos++] = 'm';   // multiline
-    if ((jsf & 8) != 0)  buf[pos++] = 's';   // dotAll
-    if ((jsf & 16) != 0) buf[pos++] = 'u';   // unicode
-    if ((jsf & 32) != 0) buf[pos++] = 'y';   // sticky
+    if ((jsf & 64) != 0)  buf[pos++] = 'd';  // hasIndices
+    if ((jsf & 1) != 0)   buf[pos++] = 'g';  // global
+    if ((jsf & 2) != 0)   buf[pos++] = 'i';  // ignoreCase
+    if ((jsf & 4) != 0)   buf[pos++] = 'm';  // multiline
+    if ((jsf & 8) != 0)   buf[pos++] = 's';  // dotAll
+    if ((jsf & 16) != 0)  buf[pos++] = 'u';  // unicode
+    if ((jsf & 128) != 0) buf[pos++] = 'v';  // unicodeSets
+    if ((jsf & 32) != 0)  buf[pos++] = 'y';  // sticky
     HString* result = builtin_intern_string(ctx.heap, buf[:pos]);
     ctx.result.set_string(result);
 }
@@ -1283,6 +1307,20 @@ fn void builtin_regexp_proto_get_unicode(BuiltinContext* ctx) {
     ctx.result.set_boolean(((*obj.extra_ptr()).regexp.flags & 16) != 0);
 }
 
+/// RegExp.prototype.hasIndices — ES2022 §21.2.5.8
+fn void builtin_regexp_proto_get_hasIndices(BuiltinContext* ctx) {
+    HObject* obj = regexp_get_this_or_throw(ctx);
+    if (obj == null) return;
+    ctx.result.set_boolean(((*obj.extra_ptr()).regexp.flags & 64) != 0);
+}
+
+/// RegExp.prototype.unicodeSets — ES2024 §21.2.5.17
+fn void builtin_regexp_proto_get_unicodeSets(BuiltinContext* ctx) {
+    HObject* obj = regexp_get_this_or_throw(ctx);
+    if (obj == null) return;
+    ctx.result.set_boolean(((*obj.extra_ptr()).regexp.flags & 128) != 0);
+}
+
 fn bool register_proto_accessor(HObject* proto, Heap* heap, char[] name, uint getter_index) {
     HString* key = builtin_intern_string(heap, name);
     if (key == null) return false;
@@ -1359,6 +1397,8 @@ fn bool register_regexp_constructor(EnvRecord* global_env, Heap* heap) {
     if (!register_proto_accessor(proto, heap, "dotAll", BUILTIN_REGEXP_PROTO_GET_DOTALL)) return false;
     if (!register_proto_accessor(proto, heap, "sticky", BUILTIN_REGEXP_PROTO_GET_STICKY)) return false;
     if (!register_proto_accessor(proto, heap, "unicode", BUILTIN_REGEXP_PROTO_GET_UNICODE)) return false;
+    if (!register_proto_accessor(proto, heap, "hasIndices", BUILTIN_REGEXP_PROTO_GET_HASINDICES)) return false;
+    if (!register_proto_accessor(proto, heap, "unicodeSets", BUILTIN_REGEXP_PROTO_GET_UNICODESETS)) return false;
 
     // Register RegExp.prototype[@@match] (ES6 §21.2.5.6)
     {
