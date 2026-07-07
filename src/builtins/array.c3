@@ -284,6 +284,10 @@ fn void builtin_array_proto_flatMap(BuiltinContext* ctx) {
         return;
     }
 
+    // ES2019 §22.1.3.11: read LengthOfArrayLike before checking IsCallable.
+    ulong len;
+    if (!array_to_length(obj, ctx.heap, ctx, &len)) { ctx.result.set_undefined(); return; }
+
     // mapFn is required and must be callable (ES2019 §22.1.3.11 step 2-3)
     if (ctx.argc < 1 || !arr_check_callback(ctx.regs[ctx.base_reg], ctx)) {
         return;
@@ -293,9 +297,6 @@ fn void builtin_array_proto_flatMap(BuiltinContext* ctx) {
     TVal callback = ctx.regs[ctx.base_reg];
     TVal thisArg;
     if (ctx.argc >= 2) { thisArg = ctx.regs[ctx.base_reg + 1]; } else { thisArg.set_undefined(); }
-
-    ulong len;
-    if (!array_to_length(obj, ctx.heap, ctx, &len)) { ctx.result.set_undefined(); return; }
 
     HObject*? new_arr = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
     if (catch err = new_arr) { ctx.result.set_undefined(); return; }
@@ -3233,14 +3234,15 @@ fn void builtin_array_proto_map(BuiltinContext* ctx) {
         arr_throw_type_error(ctx, "Cannot convert undefined or null to object");
         return;
     }
+    // ES5 §15.4.4.19: read LengthOfArrayLike before checking IsCallable.
+    ulong len;
+    if (!array_to_length(o, ctx.heap, ctx, &len)) { ctx.result.set_undefined(); return; }
     // Per ES5 §15.4.4.19 step 2: IsCallable(callbackfn) must be true even
     // when argc < 1. Always check so the TypeError is thrown.
     TVal cb_val;
     if (ctx.argc >= 1) { cb_val = ctx.regs[ctx.base_reg]; } else { cb_val.set_undefined(); }
     if (!arr_check_callback(cb_val, ctx)) return;
     TVal callback = cb_val;
-    ulong len;
-    if (!array_to_length(o, ctx.heap, ctx, &len)) { ctx.result.set_undefined(); return; }
     TVal thisArg;
     if (ctx.argc >= 2) { thisArg = ctx.regs[ctx.base_reg + 1]; } else { thisArg.set_undefined(); }
     HObject*? arr_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
@@ -3280,12 +3282,13 @@ fn void builtin_array_proto_filter(BuiltinContext* ctx) {
         arr_throw_type_error(ctx, "Cannot convert undefined or null to object");
         return;
     }
+    // ES5 §15.4.4.20: read LengthOfArrayLike before checking IsCallable.
+    ulong len;
+    if (!array_to_length(o, ctx.heap, ctx, &len)) { ctx.result.set_undefined(); return; }
     TVal cb_val;
     if (ctx.argc >= 1) { cb_val = ctx.regs[ctx.base_reg]; } else { cb_val.set_undefined(); }
     if (!arr_check_callback(cb_val, ctx)) return;
     TVal callback = cb_val;
-    ulong len;
-    if (!array_to_length(o, ctx.heap, ctx, &len)) { ctx.result.set_undefined(); return; }
     TVal thisArg;
     if (ctx.argc >= 2) { thisArg = ctx.regs[ctx.base_reg + 1]; } else { thisArg.set_undefined(); }
     HObject*? arr_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
@@ -3490,12 +3493,13 @@ fn void builtin_array_proto_every(BuiltinContext* ctx) {
         arr_throw_type_error(ctx, "Cannot convert undefined or null to object");
         return;
     }
+    // ES5 §15.4.4.16: read LengthOfArrayLike before checking IsCallable.
+    ulong len;
+    if (!array_to_length(o, ctx.heap, ctx, &len)) { ctx.result.set_undefined(); return; }
     TVal cb_val;
     if (ctx.argc >= 1) { cb_val = ctx.regs[ctx.base_reg]; } else { cb_val.set_undefined(); }
     if (!arr_check_callback(cb_val, ctx)) return;
     TVal callback = cb_val;
-    ulong len;
-    if (!array_to_length(o, ctx.heap, ctx, &len)) { ctx.result.set_undefined(); return; }
     TVal thisArg;
     if (ctx.argc >= 2) { thisArg = ctx.regs[ctx.base_reg + 1]; } else { thisArg.set_undefined(); }
     for (ulong k = 0; k < len; k++) {
@@ -3523,12 +3527,13 @@ fn void builtin_array_proto_some(BuiltinContext* ctx) {
         arr_throw_type_error(ctx, "Cannot convert undefined or null to object");
         return;
     }
+    // ES5 §15.4.4.17: read LengthOfArrayLike before checking IsCallable.
+    ulong len;
+    if (!array_to_length(o, ctx.heap, ctx, &len)) { ctx.result.set_undefined(); return; }
     TVal cb_val;
     if (ctx.argc >= 1) { cb_val = ctx.regs[ctx.base_reg]; } else { cb_val.set_undefined(); }
     if (!arr_check_callback(cb_val, ctx)) return;
     TVal callback = cb_val;
-    ulong len;
-    if (!array_to_length(o, ctx.heap, ctx, &len)) { ctx.result.set_undefined(); return; }
     TVal thisArg;
     if (ctx.argc >= 2) { thisArg = ctx.regs[ctx.base_reg + 1]; } else { thisArg.set_undefined(); }
     for (ulong k = 0; k < len; k++) {
