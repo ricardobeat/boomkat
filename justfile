@@ -18,7 +18,7 @@ build-test:
 build-test-noregexp:
     c3c build tinyduck_test_noregexp
 
-# Build the CLI script runner (clean output, no debug dump)
+# Build the CLI script runner
 build-cli:
     c3c build tinyduck_cli
 
@@ -48,55 +48,32 @@ clean:
 # ── Run ──────────────────────────────────────────────────────────────────────
 
 # Build test runner and run a single JS file
-run file="test/hello.js":
-    c3c build tinyduck_test
+run file='test/hello.js':
+    @just build-test
     ./out/tinyduck_test {{file}}
 
-# Debug build and run a single JS file (with all debug flags)
-run-debug file="test/hello.js":
-    c3c build tinyduck_test_debug
-    ./out/tinyduck_test_debug --trace-vm {{file}}
+# Debug build and run a single JS file
+run-debug file='test/hello.js':
+    @just build-test-debug
+    ./out/tinyduck_test_debug {{file}}
 
 # Debug build and dump bytecode only (no execution)
-dump file="test/hello.js":
-    c3c build tinyduck_test_debug
-    ./out/tinyduck_test_debug --compile-only {{file}}
+dump file='test/hello.js':
+    @just build-test-debug
+    ./out/tinyduck_test_debug {{file}}
 
 # ── Tests ────────────────────────────────────────────────────────────────────
 
 # Build test runner and run the rosetta suite
 test:
-    c3c build tinyduck_test
+    @just build-test
     bash test/rosetta/run.sh ./out/tinyduck_test
 
 # Build debug test runner and run the rosetta suite
 test-debug:
-    c3c build tinyduck_test_debug
+    @just build-test-debug
     bash test/rosetta/run.sh ./out/tinyduck_test_debug
 
 # List available commands
 list:
     @just --list
-
-# ── Benchmarks ───────────────────────────────────────────────────────────────
-
-# Measure peak RSS memory usage across engines
-bench-memory:
-    @echo "=== Memory Usage Benchmark ==="
-    @test -f out/tinyduck_test || { echo "ERROR: out/tinyduck_test not found — run: just build-test"; exit 1; }
-    @bash scripts/run_memory_bench.sh
-
-# Full performance benchmark (binary size, time, memory)
-bench-perf label="bytecode":
-    c3c build tinyduck_test
-    c3c build tinyduck_test_noregexp
-    c3c build tinyduck
-    bash scripts/run_benchmarks.sh {{label}}
-
-# Rebuild and measure memory usage
-bench-memory-compare:
-    @echo "=== Building ==="
-    c3c build tinyduck_test
-    @echo ""
-    @echo "=== MEMORY USAGE ==="
-    @bash scripts/run_memory_bench.sh

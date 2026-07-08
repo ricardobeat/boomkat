@@ -17,14 +17,14 @@
     },
     "tinyduck_test": {
       "type": "executable",
-      "sources": [ "src", "regexp", "test_vm_runner/test_vm.c3" ],
+      "sources": [ "src", "regexp", "cli/main.c3" ],
       "opt": "Oz",
       "single-module": true,
       "strip-unused": true
     },
     "tinyduck_test_noregexp": {
       "type": "executable",
-      "sources": [ "src", "regexp", "test_vm_runner/test_vm.c3" ],
+      "sources": [ "src", "regexp", "cli/main.c3" ],
       "features": [ "NO_REGEXP" ],
       "opt": "Oz",
       "single-module": true,
@@ -48,7 +48,7 @@
     },
     "tinyduck_test_debug": {
       "type": "executable",
-      "sources": [ "src", "regexp", "test_vm_runner/test_vm.c3" ],
+      "sources": [ "src", "regexp", "cli/main.c3" ],
       "features": [ "DEBUG" ],
       "single-module": true
     }
