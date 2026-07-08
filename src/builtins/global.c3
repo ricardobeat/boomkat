@@ -77,16 +77,19 @@ fn void builtin_parse_int(BuiltinContext* ctx) {
         ctx.result.set_number(double::nan);
         return;
     }
+    // ES2015 §18.2.5: parseInt(string, radix) — ToString(string) first.
+    // The previous fast-path returned fastints directly (skipping ToString) and
+    // bailed to NaN for any non-string input — wrong for Number(-0), Number(NaN),
+    // Boolean values, etc. The spec defines parseInt on the string form of the
+    // argument regardless of input type.
     TVal* arg = &ctx.regs[ctx.base_reg];
-    if (arg.is_fastint()) {
-        ctx.result.set_fastint(arg.get_fastint());
-        return;
+    HString* h;
+    if (arg.is_string()) {
+        h = (HString*)arg.get_heapptr();
+    } else {
+        h = builtin_to_string_vm(ctx, arg);
+        if (ctx.should_throw) return;
     }
-    if (!arg.is_string()) {
-        ctx.result.set_number(double::nan);
-        return;
-    }
-    HString* h = (HString*)arg.get_heapptr();
     if (h == null || h.blen == 0) {
         ctx.result.set_number(double::nan);
         return;
@@ -118,7 +121,28 @@ fn void builtin_parse_float(BuiltinContext* ctx) {
         ctx.result.set_number(double::nan);
         return;
     }
-    double d = string_to_double(&ctx.regs[ctx.base_reg]);
+    // ES2015 §18.2.4: parseFloat(string) — ToString(string) first. The previous
+    // direct-call into string_to_double returned NaN for booleans, undefined,
+    // null, and objects — wrong because the spec coerces any input type to a
+    // string first (e.g. parseFloat(true) is NaN, parseFloat("3.14") is 3.14).
+    TVal* arg = &ctx.regs[ctx.base_reg];
+    HString* h;
+    if (arg.is_string()) {
+        h = (HString*)arg.get_heapptr();
+    } else {
+        h = builtin_to_string_vm(ctx, arg);
+        if (ctx.should_throw) return;
+    }
+    if (h == null || h.blen == 0) {
+        ctx.result.set_number(double::nan);
+        return;
+    }
+    char* end;
+    double d = libc::strtod((ZString)h.get_cstr(), &end);
+    if (end == h.get_cstr()) {
+        ctx.result.set_number(double::nan);
+        return;
+    }
     ctx.result.set_number(d);
 }
 
