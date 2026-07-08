@@ -1450,24 +1450,82 @@ fn void builtin_string_proto_replace(BuiltinContext* ctx) {
 
 /// String.prototype.replaceAll(searchValue, replaceValue) — ES2021 §21.1.3.18
 fn void builtin_string_proto_replaceAll(BuiltinContext* ctx) {
-    HString* s_hstr = string_proto_get_this(ctx);
-    if (s_hstr == null) { ctx.result.set_undefined(); return; }
+    // ES2021 §21.1.3.18: RequireObjectCoercible(this) — but we don't ToString
+    // the receiver until after the searchValue regex flags check has run, so
+    // a poisoned `this` whose toString throws won't fire prematurely.
+    TVal this_tv = ctx.regs[ctx.base_reg - 1];
+    if (this_tv.is_undefined() || this_tv.is_null()) {
+        builtin_throw_no_result_change(ctx, ctx.heap.type_err_proto, "String.prototype method called on incompatible value");
+        return;
+    }
 
     if (ctx.argc < 1) {
+        // No searchValue: ToString O(this) and return it unchanged.
+        HString* s_hstr = string_proto_get_this(ctx);
+        if (s_hstr == null) { ctx.result.set_undefined(); return; }
         ctx.result.set_string(s_hstr);
         return;
     }
 
     TVal search_val = ctx.regs[ctx.base_reg];
-    char* input = s_hstr.get_cstr();
-    uint input_len = s_hstr.blen;
 
-    // If searchValue is a regex, check for global flag; throw TypeError if missing
-    if (is_regexp_object(&search_val)) {
+    // Spec step 2.b: if searchValue is a regex, Get(flags) + ToString +
+    // must contain "g" — using generic Get so user code that
+    // Object.defineProperty(rx, "flags", {value: "G"}) to force the
+    // non-global branch (or installs an accessor getter) is honored.
+    // ES2022 §22.1.3.18 step 2.a IsRegExp: true iff value is a RegExp
+    // object OR value has a truthy @@match property. We check both
+    // because a plain object with `[Symbol.match]: true` and a
+    // `flags` getter (no [[RegExpMatcher]] slot) is still "RegExp-like".
+    bool is_regexp_like = is_regexp_object(&search_val);
+    if (!is_regexp_like && search_val.is_object() && search_val.get_heapptr() != null) {
+        HString* match_sym = ensure_match_symbol(ctx.heap);
+        if (match_sym != null) {
+            TVal? match_tv_opt = builtins_generic_get((HObject*)search_val.get_heapptr(), match_sym, ctx);
+            if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+            if (try mtv = match_tv_opt) {
+                if (mtv.is_object()) {
+                    is_regexp_like = true;
+                } else if (mtv.is_boolean()) {
+                    is_regexp_like = mtv.get_boolean();
+                } else if (!mtv.is_undefined() && !mtv.is_null()) {
+                    is_regexp_like = builtin_to_boolean(&mtv);
+                }
+            }
+        }
+    }
+    if (is_regexp_like) {
         HObject* rx = (HObject*)search_val.get_heapptr();
-        // Read global flag directly from internal flags (get_prop doesn't invoke accessor getters)
-        bool global_flag = ((*rx.extra_ptr()).regexp.flags & 1) != 0;
-        if (!global_flag) {
+        TVal? flags_tv_opt = builtins_generic_get(rx, builtin_intern_string(ctx.heap, "flags"), ctx);
+        if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+        HString* flags_hstr = null;
+        if (try fv = flags_tv_opt) {
+            if (fv.is_undefined() || fv.is_null()) {
+                arr_throw_type_error(ctx, "String.prototype.replaceAll: flags is null/undefined");
+                return;
+            }
+            if (is_symbol_val(fv)) {
+                arr_throw_type_error(ctx, "Cannot convert a Symbol value to a string");
+                return;
+            }
+            TVal* fv_ptr = &fv;
+            HString* tostr_hstr = builtin_to_string(ctx.heap, fv_ptr);
+            if (tostr_hstr == null) {
+                arr_throw_type_error(ctx, "Cannot convert flags to string");
+                return;
+            }
+            flags_hstr = tostr_hstr;
+        } else {
+            arr_throw_type_error(ctx, "String.prototype.replaceAll: missing flags");
+            return;
+        }
+        bool has_g = false;
+        char* flags_cstr = flags_hstr.get_cstr();
+        usz flags_len = flags_hstr.blen;
+        for (usz i = 0; i < flags_len; i++) {
+            if (flags_cstr[i] == 'g') { has_g = true; break; }
+        }
+        if (!has_g) {
             HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
             if (try err = err_raw) {
                 err.prototype = ctx.heap.type_err_proto;
@@ -1486,7 +1544,19 @@ fn void builtin_string_proto_replaceAll(BuiltinContext* ctx) {
             ctx.should_throw = true;
             return;
         }
-        // Direct global regex replace-all implementation
+    }
+
+    // Now resolve `this` to a string (lazy ToString).
+    HString* s_hstr = string_proto_get_this(ctx);
+    if (s_hstr == null) { ctx.result.set_undefined(); return; }
+    char* input = s_hstr.get_cstr();
+    uint input_len = s_hstr.blen;
+
+    // ... (the rest of the function)
+
+    // Direct global regex replace-all implementation
+    if (is_regexp_object(&search_val)) {
+        HObject* rx = (HObject*)search_val.get_heapptr();
         bool replace_is_fn = false;
         TVal replace_val;
         replace_val.set_undefined();
