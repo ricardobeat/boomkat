@@ -434,6 +434,20 @@ fn ModuleDef*? resolve_module(Heap* heap, char[] specifier, char[] base_name, bo
     // a SyntaxError.
     lex.html_comments = false;
     lex.skip_hashbang();
+    // TypeScript mode when the module specifier ends in `.ts`/`.mts`/`.cts`.
+    if (normalized.len >= 3) {
+        char[] tail3 = normalized[^3..];
+        if (tail3[0] == '.' && tail3[1] == 't' && tail3[2] == 's') {
+            lex.ts_mode = true;
+        } else if (normalized.len >= 4) {
+            char[] tail4 = normalized[^4..];
+            if (tail4[0] == '.' &&
+                (tail4[1] == 'm' || tail4[1] == 'c') &&
+                tail4[2] == 't' && tail4[3] == 's') {
+                lex.ts_mode = true;
+            }
+        }
+    }
     bytecode::CompiledFunction*? func_opt = compiler::compile_module(&lex, heap, normalized, mod);
     if (catch err = func_opt) {
         char* msg  = &lex.err_msg[0];
