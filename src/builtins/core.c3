@@ -1471,7 +1471,13 @@ fn HString* builtin_to_string_vm(BuiltinContext* ctx, TVal* val) {
     if (val.is_object() && ctx.vm != null) {
         Vm* vm_ptr = (Vm*)ctx.vm;
         TVal prim = vm::to_primitive_value(vm_ptr, val, true);  // hint "string"
-        if (vm_ptr.throw_pending) return null;
+        if (vm_ptr.throw_pending) {
+            // Propagate to BuiltinContext so callers using `if (ctx.should_throw) return;`
+            // bail, and the dispatcher turns the throw into a JS exception.
+            ctx.should_throw = true;
+            ctx.throw_value = vm_ptr.throw_value;
+            return null;
+        }
         if (prim.is_string()) return (HString*)prim.get_heapptr();
         if (prim.is_object()) return null;  // ToPrimitive returned object
         return builtin_to_string(ctx.heap, &prim);
