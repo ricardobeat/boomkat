@@ -485,6 +485,12 @@ struct Lexer {
     /// skip_whitespace_and_comments cannot fail (it returns void and runs from
     /// several non-failing paths), so it latches this and next_token raises.
     bool unterminated_comment;
+    /// True when tokenizing a TypeScript source (`.ts`/`.mts`/`.cts`).
+    /// The lexer itself does not treat any bytes differently; this flag lets the
+    /// parser recognize TS-only contextual keywords (`type`, `as`, `satisfies`,
+    /// `declare`, `readonly`, `abstract`, `override`, `keyof`, `infer`, `is`,
+    /// `asserts`, `namespace`) and skip type annotations.
+    bool ts_mode;
     void* heap;
 
     /// Compile-error state for the compilation owning this lexer. First
@@ -526,6 +532,7 @@ fn Lexer lexer_init(char[] source, void* heap) {
     lex.at_line_start = true;
     lex.html_comments = true;
     lex.unterminated_comment = false;
+    lex.ts_mode = false;
     lex.heap = heap;
     // C3 zero-initialises the rest of the struct, so err_msg/err_line/err_col
     // and ident_buf start clear; the top-level compile entries also reset the
