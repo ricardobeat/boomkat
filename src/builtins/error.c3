@@ -182,7 +182,7 @@ fn void builtin_error_prototype_to_string(BuiltinContext* ctx) {
 
 /// Helper: create a prototype object for an error type.
 /// proto_parent is the [[Prototype]] (e.g. Error.prototype for subclasses).
-fn HObject* register_error_prototype(Heap* heap, HObject* proto_parent, char[] name_str) {
+fn HObject* register_error_prototype(Heap* heap, char[] name_str) {
     HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.ERROR);
     if (catch err = proto_raw) return null;
     HObject* proto = proto_raw;
@@ -207,7 +207,7 @@ fn HObject* register_error_prototype(Heap* heap, HObject* proto_parent, char[] n
 /// Register all Error constructors and prototypes.
 fn bool register_error_builtins(EnvRecord* global_env, Heap* heap) {
     // --- Create Error.prototype ---
-    HObject* err_proto = register_error_prototype(heap, null, "Error");
+    HObject* err_proto = register_error_prototype(heap, "Error");
     if (err_proto == null) return false;
     heap.err_proto = err_proto;
 
@@ -224,37 +224,37 @@ fn bool register_error_builtins(EnvRecord* global_env, Heap* heap) {
     err_proto.put_prop(constructor_key, constructor_tv);
 
     // --- Create TypeError.prototype ---
-    HObject* type_err_proto = register_error_prototype(heap, err_proto, "TypeError");
+    HObject* type_err_proto = register_error_prototype(heap, "TypeError");
     if (type_err_proto == null) return false;
     type_err_proto.put_prop(constructor_key, constructor_tv);
     heap.type_err_proto = type_err_proto;
 
     // --- Create RangeError.prototype ---
-    HObject* range_err_proto = register_error_prototype(heap, err_proto, "RangeError");
+    HObject* range_err_proto = register_error_prototype(heap, "RangeError");
     if (range_err_proto == null) return false;
     range_err_proto.put_prop(constructor_key, constructor_tv);
     heap.range_err_proto = range_err_proto;
 
     // --- Create ReferenceError.prototype ---
-    HObject* ref_err_proto = register_error_prototype(heap, err_proto, "ReferenceError");
+    HObject* ref_err_proto = register_error_prototype(heap, "ReferenceError");
     if (ref_err_proto == null) return false;
     ref_err_proto.put_prop(constructor_key, constructor_tv);
     heap.ref_err_proto = ref_err_proto;
 
     // --- Create SyntaxError.prototype ---
-    HObject* syntax_err_proto = register_error_prototype(heap, err_proto, "SyntaxError");
+    HObject* syntax_err_proto = register_error_prototype(heap, "SyntaxError");
     if (syntax_err_proto == null) return false;
     syntax_err_proto.put_prop(constructor_key, constructor_tv);
     heap.syntax_err_proto = syntax_err_proto;
 
     // --- Create EvalError.prototype ---
-    HObject* eval_err_proto = register_error_prototype(heap, err_proto, "EvalError");
+    HObject* eval_err_proto = register_error_prototype(heap, "EvalError");
     if (eval_err_proto == null) return false;
     eval_err_proto.put_prop(constructor_key, constructor_tv);
     heap.eval_err_proto = eval_err_proto;
 
     // --- Create URIError.prototype ---
-    HObject* uri_err_proto = register_error_prototype(heap, err_proto, "URIError");
+    HObject* uri_err_proto = register_error_prototype(heap, "URIError");
     if (uri_err_proto == null) return false;
     uri_err_proto.put_prop(constructor_key, constructor_tv);
     heap.uri_err_proto = uri_err_proto;
@@ -307,7 +307,7 @@ fn bool register_error_builtins(EnvRecord* global_env, Heap* heap) {
     if (!register_simple_builtin(global_env, heap, "URIError", BUILTIN_URI_ERROR)) return false;
 
     // --- Create AggregateError.prototype (parent = err_proto) ---
-    HObject* aggregate_err_proto = register_error_prototype(heap, err_proto, "AggregateError");
+    HObject* aggregate_err_proto = register_error_prototype(heap, "AggregateError");
     if (aggregate_err_proto == null) return false;
     TVal aggregate_err_constr;
     aggregate_err_constr.set_lightfunc((void*)(usz)BUILTIN_AGGREGATE_ERROR);
