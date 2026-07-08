@@ -415,6 +415,11 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
     ushort super_reg = self.declare_var(super_name, LET);
     uint super_name_idx = self.add_string_constant(super_name);
 
+    // TypeScript: class-level type parameters `class Foo<T, U> { ... }`.
+    if (self.lexer.ts_mode && self.check(TokenType.LT)) {
+        self.skip_generic_params()!;
+    }
+
     // __static_super__ = the class constructor itself. Static method bodies
     // resolve `super.x` against this binding via GETPROTO (HomeObject = the
     // constructor, per §13.3.7.1), independent of the extends clause: it is
@@ -439,6 +444,11 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
         ushort? heritage_reg = self.call_expr();
         self.no_arrow_head = false;
         base_reg = heritage_reg!;
+        // TypeScript: generic args on the base class `extends Foo<T, U>`.
+        // The expression parser will have consumed `Foo` and left `<` next.
+        if (self.lexer.ts_mode && self.check(TokenType.LT)) {
+            self.skip_generic_params()!;
+        }
         // ES2022 §15.7.14 step 5.f: if superclass is not null and not a
         // constructor, throw TypeError BEFORE accessing .prototype.
         self.emit_abc(Opcode.CHKCTOR, (uint)base_reg, 0, 0);
@@ -637,6 +647,15 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
         }
     }
 
+    // TypeScript: `implements Foo, Bar<T>` before the class body.
+    if (self.lexer.ts_mode && self.check(TokenType.IMPLEMENTS)) {
+        Token _impl = self.advance()!;
+        for (;;) {
+            self.skip_type()!;
+            if (!self.match(TokenType.COMMA)) break;
+        }
+    }
+
     // Parse class body
     self.expect(TokenType.LBRACE)!;
 
@@ -675,6 +694,21 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
         // element's closing `}`).
         self.lexer.refresh_token_start();
 
+        // TypeScript-only member modifiers: `public`, `private`, `protected`,
+        // `readonly`, `override`, `abstract`. Strip them; they carry no
+        // runtime semantics under erasable syntax.
+        if (self.lexer.ts_mode) {
+            for (;;) {
+                if (self.match(TokenType.PUBLIC)) continue;
+                if (self.match(TokenType.PRIVATE)) continue;
+                if (self.match(TokenType.PROTECTED)) continue;
+                if (self.match_ts_ident("readonly")) continue;
+                if (self.match_ts_ident("override")) continue;
+                if (self.match_ts_ident("abstract")) continue;
+                break;
+            }
+        }
+
         // Class static initialization block (ES2022 §15.7.11): `static { ... }`.
         // Checked before match_static_modifier, `{` can never start a
         // PropertyName, so this is never ambiguous with `static` used as a
@@ -707,6 +741,16 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
             is_static = true;
             // Refresh so the source-start captured below is after `static`.
             self.lexer.refresh_token_start();
+        }
+
+        // Strip TS modifiers that may come *after* `static` too.
+        if (self.lexer.ts_mode) {
+            for (;;) {
+                if (self.match_ts_ident("readonly")) continue;
+                if (self.match_ts_ident("override")) continue;
+                if (self.match_ts_ident("abstract")) continue;
+                break;
+            }
         }
 
         // Capture source start for Function.prototype.toString (ES2019 §19.2.3.5).

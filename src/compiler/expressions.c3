@@ -1912,6 +1912,31 @@ fn ushort? CompilerContext.postfix_expr(&self) {
 
     ushort operand = self.call_expr()!;
 
+    // TypeScript postfix erasable syntax: non-null `!`, `as T`, `satisfies T`.
+    // Loop because they can chain: `x as unknown as T`.
+    if (self.lexer.ts_mode) {
+        for (;;) {
+            TokenType tt2 = self.peek_type();
+            if (tt2 == TokenType.LOG_NOT) {
+                // Non-null postfix `!` — only valid when followed by something
+                // that continues an expression suffix (`.`, `[`, `(`, operator,
+                // `,`, `;`, etc.). Distinguishing from `!x` (unary) is easy
+                // because `!x` is a *prefix* on a fresh operand; here we already
+                // parsed a primary. So consume unconditionally.
+                Token _bang = self.advance()!;
+                continue;
+            }
+            if (tt2 == TokenType.IDENTIFIER) {
+                if (self.match_ts_ident("as") || self.match_ts_ident("satisfies")) {
+                    // Special case `as const`.
+                    self.skip_type()!;
+                    continue;
+                }
+            }
+            break;
+        }
+    }
+
     bool lhs_was_getvar = self.last_was_getvar;
     bool lhs_was_getglobal = self.last_was_getvar && self.last_was_getglobal;
     bool lhs_was_getglobal_prim = lhs_was_getglobal && self.last_was_getglobal_prim;
