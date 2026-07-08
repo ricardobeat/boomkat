@@ -2730,6 +2730,13 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
     self.in_formal_params = true;
     defer self.in_formal_params = saved_in_fp;
 
+    // TypeScript generic type-parameter list on the function itself:
+    //     function foo<T, U extends V>(...) {...}
+    // The `<` appears between the function name (already consumed) and `(`.
+    if (self.lexer.ts_mode && self.check(TokenType.LT)) {
+        self.skip_generic_params()!;
+    }
+
     // Parse parameter list
     self.expect(TokenType.LPAREN)!;
     ushort arg_count = 0;
@@ -2768,6 +2775,8 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
                 } else {
                     rest_param = self.expect(TokenType.IDENTIFIER)!;
                 }
+                // TypeScript: optional `: T` after rest parameter.
+                self.try_skip_ts_type_annotation()!;
 
                 if (rest_param.str_value.len > 0) {
                     seen_params.declare(rest_param.str_value)!;
@@ -2799,6 +2808,7 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
                 // Emit REQUIRE_OBJ to throw TypeError if null/undefined.
                 self.emit_abc(Opcode.REQUIRE_OBJ, (uint)arg_count, 0, 0);
                 self.collect_obj_param_binds(destruct_binds[..], &destruct_count, (ushort)arg_count, 0xFFFF)!;
+                self.try_skip_ts_type_annotation()!;
                 arg_count++;
                 if (first_default_idx == 0xFFFF) { formal_count++; }
                 if (!self.match(TokenType.COMMA)) break;
@@ -2811,6 +2821,7 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
                 // Emit REQUIRE_OBJ to throw TypeError if null/undefined.
                 self.emit_abc(Opcode.REQUIRE_OBJ, (uint)arg_count, 0, 0);
                 self.collect_arr_param_binds(destruct_binds[..], &destruct_count, (ushort)arg_count, 0xFFFF)!;
+                self.try_skip_ts_type_annotation()!;
                 arg_count++;
                 if (first_default_idx == 0xFFFF) { formal_count++; }
                 if (!self.match(TokenType.COMMA)) break;
@@ -2826,6 +2837,9 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
             // stores this slice into scope_stack, which outlives this token.
             HString* param_hstr = ((Heap*)self.heap).str_intern(param.str_value);
             char[] param_name2 = param_hstr.get_data();
+            // TypeScript: optional `?` then optional `: T` after param name.
+            self.try_skip_ts_optional_marker()!;
+            self.try_skip_ts_type_annotation()!;
             ushort param_reg = self.declare_var(param_name2, VAR, true);
             uint param_name_idx = self.add_string_constant(param_name2);
             arg_count++;
@@ -2884,6 +2898,10 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
     self.formal_count = formal_count;
 
     self.expect(TokenType.RPAREN)!;
+
+    // TypeScript: optional return-type annotation `: T` (may include
+    // predicate `x is T` / `asserts x is T`, both handled by skip_type).
+    self.try_skip_ts_type_annotation()!;
 
     // Destructured leaves are BoundNames too: `function f([a], {a})` is a
     // duplicate-parameter SyntaxError. Checked here, once the whole list is
@@ -3301,6 +3319,10 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
     // helpers no longer toggle this themselves.
     inner_ctx.in_formal_params = true;
 
+    // TypeScript generic type parameters `<T, U>` on the function itself.
+    if (inner_ctx.lexer.ts_mode && inner_ctx.check(TokenType.LT)) {
+        inner_ctx.skip_generic_params()!;
+    }
     // Parse parameter list
     inner_ctx.expect(TokenType.LPAREN)!;
     ushort arg_count = 0;
@@ -3339,6 +3361,8 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
                 } else {
                     rest_param = inner_ctx.expect(TokenType.IDENTIFIER)!;
                 }
+                // TypeScript: optional `: T` after rest parameter.
+                inner_ctx.try_skip_ts_type_annotation()!;
 
                 if (rest_param.str_value.len > 0) {
                     inner_seen.declare(rest_param.str_value)!;
@@ -3375,6 +3399,7 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
                 // parameter's arg slot is known, so its scratch registers
                 // can't clobber a later parameter's live argument.
                 inner_ctx.collect_obj_param_binds(inner_destruct_binds[..], &inner_destruct_count, (ushort)arg_count, 0xFFFF)!;
+                inner_ctx.try_skip_ts_type_annotation()!;
                 bool has_default = inner_ctx.parse_destruct_param_default((ushort)arg_count)!;
                 if (!has_default) {
                     inner_ctx.emit_abc(Opcode.REQUIRE_OBJ, (uint)arg_count, 0, 0);
@@ -3393,6 +3418,7 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
                 inner_ctx.alloc_reg();
                 // Same shape as the LBRACE branch above.
                 inner_ctx.collect_arr_param_binds(inner_destruct_binds[..], &inner_destruct_count, (ushort)arg_count, 0xFFFF)!;
+                inner_ctx.try_skip_ts_type_annotation()!;
                 bool has_default = inner_ctx.parse_destruct_param_default((ushort)arg_count)!;
                 if (!has_default) {
                     inner_ctx.emit_abc(Opcode.REQUIRE_OBJ, (uint)arg_count, 0, 0);
@@ -3419,6 +3445,9 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
             // stores this slice into scope_stack, which outlives this token.
             HString* param_hstr = ((Heap*)inner_ctx.heap).str_intern(param.str_value);
             char[] param_name2 = param_hstr.get_data();
+            // TypeScript: optional `?` then optional `: T` on param name.
+            inner_ctx.try_skip_ts_optional_marker()!;
+            inner_ctx.try_skip_ts_type_annotation()!;
             ushort param_reg = inner_ctx.declare_var(param_name2, VAR, true);
             uint param_name_idx = inner_ctx.add_string_constant(param_name2);
             arg_count++;
@@ -3472,6 +3501,8 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
     inner_ctx.formal_count = formal_count;
 
     inner_ctx.expect(TokenType.RPAREN)!;
+    // TypeScript: optional return-type annotation `: T`.
+    inner_ctx.try_skip_ts_type_annotation()!;
 
     // Destructured leaves are BoundNames too (see parse_function_body).
     inner_seen.declare_destructured(inner_destruct_binds[..], inner_destruct_count)!;

@@ -423,8 +423,42 @@ fn void? CompilerContext.statement(&self) {
         case TokenType.DEBUGGER:
             self.advance()!;
             self.emit_simple(Opcode.DEBUGGER);
-            self.expect_semicolon_or_asi()!;
+            self.match(TokenType.SEMICOLON);
+        case TokenType.INTERFACE:
+            // TypeScript `interface Foo { ... }` — reject outside ts_mode.
+            if (!self.lexer.ts_mode) {
+                return self.fail("unexpected reserved word 'interface'")~;
+            }
+            self.ts_interface_declaration()!;
+        case TokenType.ENUM:
+            // TypeScript `enum` is not erasable — always reject.
+            return self.fail("'enum' is not supported (not erasable syntax)")~;
         default:
+            // TypeScript contextual keyword statements:
+            //   `type X = ...;`, `declare ...`, `namespace X { ... }`, `module X {...}`
+            //   `abstract class X { ... }`
+            if (self.lexer.ts_mode && tt == TokenType.IDENTIFIER) {
+                if (self.check_ts_ident("type")) {
+                    if (self.ts_try_type_alias()) break;
+                }
+                if (self.check_ts_ident("declare")) {
+                    if (self.ts_try_declare_statement()) break;
+                }
+                if (self.check_ts_ident("namespace") || self.check_ts_ident("module")) {
+                    return self.fail("'namespace' / 'module' is not supported (not erasable syntax)")~;
+                }
+                if (self.check_ts_ident("abstract")) {
+                    // `abstract class X {}` — consume `abstract` and fall through
+                    // to normal class_declaration.
+                    Token _abs = self.advance()!;
+                    if (self.check(TokenType.CLASS)) {
+                        self.class_declaration()!;
+                        break;
+                    }
+                    // Not followed by `class`: push back and continue as identifier.
+                    self.pushback(_abs);
+                }
+            }
             // Check for labels: identifier : statement
             // We consume the identifier and check if the next token is ':'
             //
@@ -1719,9 +1753,11 @@ fn void? CompilerContext.var_declaration(&self) {
         if (next == TokenType.LBRACKET) {
             self.advance()!; // consume '['
             self.array_destructure(kind, is_lexical, is_const)!;
+            self.try_skip_ts_type_annotation()!;
         } else if (next == TokenType.LBRACE) {
             self.advance()!; // consume '{'
             self.object_destructure(kind, is_lexical, is_const)!;
+            self.try_skip_ts_type_annotation()!;
         } else {
             // Per ES2024 §13.3.1, BindingIdentifier is an Identifier or
             // `await` in a non-module, non-async context. We're strict-only,
@@ -1752,6 +1788,8 @@ fn void? CompilerContext.var_declaration(&self) {
             // in this same statement will overwrite. declare_var stores this
             // slice into scope_stack, which outlives the current token.
             name_tok.str_value = ((Heap*)self.heap).str_intern(name_tok.str_value).get_data();
+            self.try_skip_ts_definite_marker()!;
+            self.try_skip_ts_type_annotation()!;
             ushort reg;
             bool already_declared = false;
             if (!is_lexical) {
@@ -2837,6 +2875,7 @@ fn void? CompilerContext.for_statement(&self) {
                         // slice into scope_stack, which outlives this token.
                         char[] extra_name2 = ((Heap*)self.heap).str_intern(extra_name.str_value).get_data();
                         self.check_var_lex_conflict(extra_name2, decl_kind)!;
+                        self.try_skip_ts_type_annotation()!;
                         ushort extra_reg = self.declare_var(extra_name2, decl_kind);
                         if (self.match(TokenType.ASSIGN)) {
                             ushort extra_val = self.assignment_expr()!;
@@ -2865,6 +2904,7 @@ fn void? CompilerContext.for_statement(&self) {
             // declare_var stores this slice into scope_stack, which
             // outlives the current token.
             name_tok.str_value = ((Heap*)self.heap).str_intern(name_tok.str_value).get_data();
+            self.try_skip_ts_type_annotation()!;
 
             // Check for "in" (for-in) or "of" (for-of)
             if (self.peek_type() == TokenType.IN) {
@@ -3100,6 +3140,7 @@ fn void? CompilerContext.for_statement(&self) {
                     // outlives this token.
                     char[] extra_name2 = ((Heap*)self.heap).str_intern(extra_name.str_value).get_data();
                     self.check_var_lex_conflict(extra_name2, decl_kind)!;
+                    self.try_skip_ts_type_annotation()!;
                     ushort extra_reg;
                     if (!is_lexical) {
                         ushort? existing2 = self.resolve_var(extra_name2);
