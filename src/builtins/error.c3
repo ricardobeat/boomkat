@@ -31,7 +31,7 @@ fn void builtin_error_constructor_shared(BuiltinContext* ctx, HObject* proto) {
                 TVal msg_val;
                 msg_val.set_string(msg_str);
                 HString* msg_key = builtin_intern_string(ctx.heap, "message");
-                err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WC);
+                err.put_prop(msg_key, msg_val);
             }
         }
     }
@@ -98,20 +98,20 @@ fn void builtin_aggregate_error(BuiltinContext* ctx) {
             TVal msg_prop;
             msg_prop.set_string(msg_str);
             HString* msg_key = builtin_intern_string(ctx.heap, "message");
-            err.put_prop(msg_key, msg_prop, hobject::PROP_FLAGS_WC);
+            err.put_prop(msg_key, msg_prop);
         }
     }
 
     // Set .errors array
     HString* errors_key = builtin_intern_string(ctx.heap, "errors");
     if (!errors_val.is_undefined()) {
-        err.put_prop(errors_key, errors_val, hobject::PROP_FLAGS_WC);
+        err.put_prop(errors_key, errors_val);
     } else {
         HObject*? empty_arr = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
         if (try arr = empty_arr) {
             TVal arr_tv;
             arr_tv.set_object(arr);
-            err.put_prop(errors_key, arr_tv, hobject::PROP_FLAGS_WC);
+            err.put_prop(errors_key, arr_tv);
         }
     }
 
@@ -192,14 +192,14 @@ fn HObject* register_error_prototype(Heap* heap, HObject* proto_parent, char[] n
     HString* name_hstr = builtin_intern_string(heap, name_str);
     TVal name_tv;
     name_tv.set_string(name_hstr);
-    proto.put_prop(name_key, name_tv, hobject::PROP_FLAGS_WC);
+    proto.put_prop(name_key, name_tv);
 
     // Set .message property (empty string)
     HString* msg_key = (HString*)heap.strs[heap::BuiltinStr.MESSAGE];
     HString* msg_hstr = builtin_intern_string(heap, "");
     TVal msg_tv;
     msg_tv.set_string(msg_hstr);
-    proto.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
+    proto.put_prop(msg_key, msg_tv);
 
     return proto;
 }
@@ -215,75 +215,75 @@ fn bool register_error_builtins(EnvRecord* global_env, Heap* heap) {
     HString* tostring_key = (HString*)heap.strs[heap::BuiltinStr.TO_STRING];
     TVal tostring_tv;
     tostring_tv.set_lightfunc((void*)(usz)BUILTIN_ERROR_PROTO_TOSTRING);
-    err_proto.put_prop(tostring_key, tostring_tv, hobject::PROP_FLAGS_WC);
+    err_proto.put_prop(tostring_key, tostring_tv);
 
     // Add .constructor to Error.prototype pointing to Error builtin
     HString* constructor_key = (HString*)heap.strs[heap::BuiltinStr.CONSTRUCTOR];
     TVal constructor_tv;
     constructor_tv.set_lightfunc((void*)(usz)BUILTIN_ERROR);
-    err_proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_WC);
+    err_proto.put_prop(constructor_key, constructor_tv);
 
     // --- Create TypeError.prototype ---
     HObject* type_err_proto = register_error_prototype(heap, err_proto, "TypeError");
     if (type_err_proto == null) return false;
-    type_err_proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_WC);
+    type_err_proto.put_prop(constructor_key, constructor_tv);
     heap.type_err_proto = type_err_proto;
 
     // --- Create RangeError.prototype ---
     HObject* range_err_proto = register_error_prototype(heap, err_proto, "RangeError");
     if (range_err_proto == null) return false;
-    range_err_proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_WC);
+    range_err_proto.put_prop(constructor_key, constructor_tv);
     heap.range_err_proto = range_err_proto;
 
     // --- Create ReferenceError.prototype ---
     HObject* ref_err_proto = register_error_prototype(heap, err_proto, "ReferenceError");
     if (ref_err_proto == null) return false;
-    ref_err_proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_WC);
+    ref_err_proto.put_prop(constructor_key, constructor_tv);
     heap.ref_err_proto = ref_err_proto;
 
     // --- Create SyntaxError.prototype ---
     HObject* syntax_err_proto = register_error_prototype(heap, err_proto, "SyntaxError");
     if (syntax_err_proto == null) return false;
-    syntax_err_proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_WC);
+    syntax_err_proto.put_prop(constructor_key, constructor_tv);
     heap.syntax_err_proto = syntax_err_proto;
 
     // --- Create EvalError.prototype ---
     HObject* eval_err_proto = register_error_prototype(heap, err_proto, "EvalError");
     if (eval_err_proto == null) return false;
-    eval_err_proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_WC);
+    eval_err_proto.put_prop(constructor_key, constructor_tv);
     heap.eval_err_proto = eval_err_proto;
 
     // --- Create URIError.prototype ---
     HObject* uri_err_proto = register_error_prototype(heap, err_proto, "URIError");
     if (uri_err_proto == null) return false;
-    uri_err_proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_WC);
+    uri_err_proto.put_prop(constructor_key, constructor_tv);
     heap.uri_err_proto = uri_err_proto;
 
     // Set .constructor on each error sub-prototype to point to its own builtin
     // (type_err_proto already done above — fix it now with correct index)
     TVal type_err_constr;
     type_err_constr.set_lightfunc((void*)(usz)BUILTIN_TYPE_ERROR);
-    type_err_proto.put_prop(constructor_key, type_err_constr, hobject::PROP_FLAGS_WC);
+    type_err_proto.put_prop(constructor_key, type_err_constr);
 
     TVal range_err_constr;
     range_err_constr.set_lightfunc((void*)(usz)BUILTIN_RANGE_ERROR);
-    range_err_proto.put_prop(constructor_key, range_err_constr, hobject::PROP_FLAGS_WC);
+    range_err_proto.put_prop(constructor_key, range_err_constr);
 
     TVal ref_err_constr;
     ref_err_constr.set_lightfunc((void*)(usz)BUILTIN_REFERENCE_ERROR);
-    ref_err_proto.put_prop(constructor_key, ref_err_constr, hobject::PROP_FLAGS_WC);
+    ref_err_proto.put_prop(constructor_key, ref_err_constr);
 
     TVal syntax_err_constr;
     syntax_err_constr.set_lightfunc((void*)(usz)BUILTIN_SYNTAX_ERROR);
-    syntax_err_proto.put_prop(constructor_key, syntax_err_constr, hobject::PROP_FLAGS_WC);
+    syntax_err_proto.put_prop(constructor_key, syntax_err_constr);
 
     TVal eval_err_constr;
     eval_err_constr.set_lightfunc((void*)(usz)BUILTIN_EVAL_ERROR);
-    eval_err_proto.put_prop(constructor_key, eval_err_constr, hobject::PROP_FLAGS_WC);
+    eval_err_proto.put_prop(constructor_key, eval_err_constr);
 
     TVal uri_err_constr;
     uri_err_constr.set_lightfunc((void*)(usz)BUILTIN_URI_ERROR);
-    uri_err_proto.put_prop(constructor_key, uri_err_constr, hobject::PROP_FLAGS_WC);
+    uri_err_proto.put_prop(constructor_key, uri_err_constr);
 
     // --- Register Error global constructor ---
     if (!register_simple_builtin(global_env, heap, "Error", BUILTIN_ERROR)) return false;
@@ -311,7 +311,7 @@ fn bool register_error_builtins(EnvRecord* global_env, Heap* heap) {
     if (aggregate_err_proto == null) return false;
     TVal aggregate_err_constr;
     aggregate_err_constr.set_lightfunc((void*)(usz)BUILTIN_AGGREGATE_ERROR);
-    aggregate_err_proto.put_prop(constructor_key, aggregate_err_constr, hobject::PROP_FLAGS_WC);
+    aggregate_err_proto.put_prop(constructor_key, aggregate_err_constr);
     heap.aggregate_err_proto = aggregate_err_proto;
 
     if (!register_simple_builtin(global_env, heap, "AggregateError", BUILTIN_AGGREGATE_ERROR)) return false;

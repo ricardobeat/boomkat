@@ -114,7 +114,7 @@ fn HObject* check_promise(BuiltinContext* ctx) {
         if (msg_str != null) {
             TVal msg_tv;
             msg_tv.set_string(msg_str);
-            err.put_prop(builtin_intern_string(ctx.heap, "message"), msg_tv, hobject::PROP_FLAGS_WEC);
+            err.put_prop(builtin_intern_string(ctx.heap, "message"), msg_tv);
         }
         ctx.throw_value.set_object(err);
     } else {
@@ -344,7 +344,7 @@ fn HObject*? promise_create_capability(Heap* heap, HObject* promise) {
     HString* promise_key = builtin_intern_string(heap, "promise");
     TVal promise_val;
     promise_val.set_object(promise);
-    cap.put_prop(promise_key, promise_val, hobject::PROP_FLAGS_WEC);
+    cap.put_prop(promise_key, promise_val);
 
     return cap;
 }
@@ -426,7 +426,7 @@ fn void builtin_promise(BuiltinContext* ctx) {
     HString* promise_key = builtin_intern_string(heap, "\xFFpromise");
     TVal promise_ref;
     promise_ref.set_object(promise);
-    resolve_func.put_prop(promise_key, promise_ref, hobject::PROP_FLAGS_WEC);
+    resolve_func.put_prop(promise_key, promise_ref);
 
     HObject*? reject_func_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
     if (catch err = reject_func_raw) {
@@ -436,7 +436,7 @@ fn void builtin_promise(BuiltinContext* ctx) {
     HObject* reject_func = reject_func_raw;
     (*reject_func.extra_ptr()).func.builtin_fn_index = (int)BUILTIN_PROMISE_REJECT_CALLBACK;
     reject_func.flags.callable = true;
-    reject_func.put_prop(promise_key, promise_ref, hobject::PROP_FLAGS_WEC);
+    reject_func.put_prop(promise_key, promise_ref);
 
     TVal resolve_tv;
     resolve_tv.set_object(resolve_func);
@@ -492,16 +492,16 @@ fn void builtin_promise_proto_then(BuiltinContext* ctx) {
 
     // Store handlers
     HString* onf_key = builtin_intern_string(ctx.heap, "onFulfilled");
-    reaction.put_prop(onf_key, on_fulfilled, hobject::PROP_FLAGS_WEC);
+    reaction.put_prop(onf_key, on_fulfilled);
 
     HString* onr_key = builtin_intern_string(ctx.heap, "onRejected");
-    reaction.put_prop(onr_key, on_rejected, hobject::PROP_FLAGS_WEC);
+    reaction.put_prop(onr_key, on_rejected);
 
     // Store the downstream promise directly on the reaction
     HString* downstream_key = builtin_intern_string(ctx.heap, "downstream");
     TVal downstream_val;
     downstream_val.set_object(new_promise);
-    reaction.put_prop(downstream_key, downstream_val, hobject::PROP_FLAGS_WEC);
+    reaction.put_prop(downstream_key, downstream_val);
 
     // Add reaction to the original promise
     TVal reaction_val;
@@ -813,17 +813,17 @@ fn void builtin_promise_allsettled(BuiltinContext* ctx) {
                 if (try result_obj = result_obj_raw) {
 
                     if (state == PROMISE_FULFILLED) {
-                        result_obj.put_prop(status_key, fulfilled_status, hobject::PROP_FLAGS_WEC);
-                        result_obj.put_prop(value_key, elem_obj.array_part()[1], hobject::PROP_FLAGS_WEC);
+                        result_obj.put_prop(status_key, fulfilled_status);
+                        result_obj.put_prop(value_key, elem_obj.array_part()[1]);
                     } else if (state == PROMISE_REJECTED) {
-                        result_obj.put_prop(status_key, rejected_status, hobject::PROP_FLAGS_WEC);
-                        result_obj.put_prop(reason_key, elem_obj.array_part()[1], hobject::PROP_FLAGS_WEC);
+                        result_obj.put_prop(status_key, rejected_status);
+                        result_obj.put_prop(reason_key, elem_obj.array_part()[1]);
                     } else {
                         // Pending — use "fulfilled" with undefined value (no async yet)
-                        result_obj.put_prop(status_key, fulfilled_status, hobject::PROP_FLAGS_WEC);
+                        result_obj.put_prop(status_key, fulfilled_status);
                         TVal undef;
                         undef.set_undefined();
-                        result_obj.put_prop(value_key, undef, hobject::PROP_FLAGS_WEC);
+                        result_obj.put_prop(value_key, undef);
                     }
                     TVal result_tv;
                     result_tv.set_object(result_obj);
@@ -837,8 +837,8 @@ fn void builtin_promise_allsettled(BuiltinContext* ctx) {
         // Not a promise — store as fulfilled
         HObject*? result_obj_raw = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
         if (try result_obj = result_obj_raw) {
-            result_obj.put_prop(status_key, fulfilled_status, hobject::PROP_FLAGS_WEC);
-            result_obj.put_prop(value_key, elem, hobject::PROP_FLAGS_WEC);
+            result_obj.put_prop(status_key, fulfilled_status);
+            result_obj.put_prop(value_key, elem);
             TVal result_tv;
             result_tv.set_object(result_obj);
             arr.set_array_idx((uint)i, result_tv);
@@ -907,10 +907,10 @@ fn void builtin_promise_any(BuiltinContext* ctx) {
             if (try arr = empty_arr) {
                 TVal arr_tv;
                 arr_tv.set_object(arr);
-                agg.put_prop(errors_key, arr_tv, hobject::PROP_FLAGS_WEC);
+                agg.put_prop(errors_key, arr_tv);
             }
             HString* msg_key = builtin_intern_string(ctx.heap, "message");
-            agg.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
+            agg.put_prop(msg_key, msg_tv);
         }
 
         TVal agg_tv;
@@ -997,12 +997,12 @@ fn void builtin_promise_any(BuiltinContext* ctx) {
         agg_tv.set_undefined();
         if (try agg = agg_raw) {
             HString* errors_key = builtin_intern_string(ctx.heap, "errors");
-            agg.put_prop(errors_key, errors_val, hobject::PROP_FLAGS_WEC);
+            agg.put_prop(errors_key, errors_val);
             HString* msg = builtin_intern_string(ctx.heap, "All promises were rejected");
             TVal msg_tv;
             msg_tv.set_string(msg);
             HString* msg_key = builtin_intern_string(ctx.heap, "message");
-            agg.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
+            agg.put_prop(msg_key, msg_tv);
             agg_tv.set_object(agg);
         }
         promise_set_state(promise, PROMISE_REJECTED);
@@ -1124,55 +1124,50 @@ fn bool register_promise_constructor(EnvRecord* global_env, Heap* heap) {
     HString* constructor_key = (HString*)heap.strs[heap::BuiltinStr.CONSTRUCTOR];
     TVal constructor_tv;
     constructor_tv.set_object(ctor);
-    proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_WEC);
+    proto.put_prop(constructor_key, constructor_tv);
 
     // Wire ctor.prototype → proto (non-writable, non-enumerable, non-configurable)
     HString* prototype_key = (HString*)heap.strs[heap::BuiltinStr.PROTOTYPE];
     TVal proto_tv;
     proto_tv.set_object(proto);
-    PropFlags proto_pflags;
-    proto_pflags.writable = false;
-    proto_pflags.enumerable = false;
-    proto_pflags.configurable = false;
-    proto_pflags.is_accessor = false;
-    ctor.put_prop(prototype_key, proto_tv, proto_pflags);
+    ctor.put_prop(prototype_key, proto_tv);
 
     // Promise.length = 1
     HString* length_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
     TVal length_tv;
     length_tv.set_fastint(1);
-    ctor.put_prop(length_key, length_tv, hobject::PROP_FLAGS_WEC);
+    ctor.put_prop(length_key, length_tv);
 
     // Register static methods on Promise
     HString* resolve_key = builtin_intern_string(heap, "resolve");
     TVal resolve_tv;
     resolve_tv.set_lightfunc((void*)(usz)BUILTIN_PROMISE_RESOLVE);
-    ctor.put_prop(resolve_key, resolve_tv, hobject::PROP_FLAGS_WEC);
+    ctor.put_prop(resolve_key, resolve_tv);
 
     HString* reject_key = builtin_intern_string(heap, "reject");
     TVal reject_tv;
     reject_tv.set_lightfunc((void*)(usz)BUILTIN_PROMISE_REJECT);
-    ctor.put_prop(reject_key, reject_tv, hobject::PROP_FLAGS_WEC);
+    ctor.put_prop(reject_key, reject_tv);
 
     HString* all_key = builtin_intern_string(heap, "all");
     TVal all_tv;
     all_tv.set_lightfunc((void*)(usz)BUILTIN_PROMISE_ALL);
-    ctor.put_prop(all_key, all_tv, hobject::PROP_FLAGS_WEC);
+    ctor.put_prop(all_key, all_tv);
 
     HString* race_key = builtin_intern_string(heap, "race");
     TVal race_tv;
     race_tv.set_lightfunc((void*)(usz)BUILTIN_PROMISE_RACE);
-    ctor.put_prop(race_key, race_tv, hobject::PROP_FLAGS_WEC);
+    ctor.put_prop(race_key, race_tv);
 
     HString* allsettled_key = builtin_intern_string(heap, "allSettled");
     TVal allsettled_tv;
     allsettled_tv.set_lightfunc((void*)(usz)BUILTIN_PROMISE_ALLSETTLED);
-    ctor.put_prop(allsettled_key, allsettled_tv, hobject::PROP_FLAGS_WEC);
+    ctor.put_prop(allsettled_key, allsettled_tv);
 
     HString* any_key = builtin_intern_string(heap, "any");
     TVal any_tv;
     any_tv.set_lightfunc((void*)(usz)BUILTIN_PROMISE_ANY);
-    ctor.put_prop(any_key, any_tv, hobject::PROP_FLAGS_WEC);
+    ctor.put_prop(any_key, any_tv);
 
     // Register "Promise" in global environment
     uint hash = heap.hash_string("Promise");

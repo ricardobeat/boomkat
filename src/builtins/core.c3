@@ -1097,7 +1097,7 @@ fn bool register_array_proto_method(HObject* proto, Heap* heap, char[] name, uin
     if (name_prop_key != null && name_val != null) {
         TVal name_tv;
         name_tv.set_string(name_val);
-        func_obj.put_prop(name_prop_key, name_tv, hobject::PROP_FLAGS_NWC);
+        func_obj.put_prop(name_prop_key, name_tv);
     }
     // Set .length from builtin metadata
     builtins::BuiltinMeta meta = builtins::builtin_get_metadata(fn_index);
@@ -1106,13 +1106,13 @@ fn bool register_array_proto_method(HObject* proto, Heap* heap, char[] name, uin
         if (length_str != null) {
             TVal len_tv;
             len_tv.set_fastint((long)meta.arity);
-            func_obj.put_prop(length_str, len_tv, hobject::PROP_FLAGS_NWC);
+            func_obj.put_prop(length_str, len_tv);
         }
     }
     // Register on prototype
     TVal tv;
     tv.set_object(func_obj);
-    proto.put_prop(key, tv, hobject::PROP_FLAGS_WC);
+    proto.put_prop(key, tv);
     return true;
 }
 
@@ -1143,7 +1143,7 @@ fn bool register_compiled_proto_method(HObject* proto, Heap* heap, EnvRecord* gl
         if (fname != null) {
             TVal name_tv;
             name_tv.set_string(fname);
-            func_obj.put_prop(name_str, name_tv, hobject::PROP_FLAGS_NWC);
+            func_obj.put_prop(name_str, name_tv);
         }
     }
     HString* length_str = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
@@ -1151,7 +1151,7 @@ fn bool register_compiled_proto_method(HObject* proto, Heap* heap, EnvRecord* gl
         TVal len_tv;
         long len_val = length_override >= 0 ? length_override : (long)func.num_formals;
         len_tv.set_fastint(len_val);
-        func_obj.put_prop(length_str, len_tv, hobject::PROP_FLAGS_NWC);
+        func_obj.put_prop(length_str, len_tv);
     }
     uint hash = heap.hash_string(name);
     HString* existing = heap.str_table_lookup(name, hash);
@@ -1166,7 +1166,7 @@ fn bool register_compiled_proto_method(HObject* proto, Heap* heap, EnvRecord* gl
     }
     TVal tv;
     tv.set_object(func_obj);
-    proto.put_prop(key, tv, hobject::PROP_FLAGS_WC);
+    proto.put_prop(key, tv);
     return true;
 }
 
@@ -1194,7 +1194,7 @@ fn bool register_string_proto_method(HObject* proto, Heap* heap, char[] name, ui
     if (name_prop_key != null && name_val != null) {
         TVal name_tv;
         name_tv.set_string(name_val);
-        func_obj.put_prop(name_prop_key, name_tv, hobject::PROP_FLAGS_NWC);
+        func_obj.put_prop(name_prop_key, name_tv);
     }
     // Set .length from builtin metadata
     builtins::BuiltinMeta meta = builtins::builtin_get_metadata(fn_index);
@@ -1203,13 +1203,13 @@ fn bool register_string_proto_method(HObject* proto, Heap* heap, char[] name, ui
         if (length_str != null) {
             TVal len_tv;
             len_tv.set_fastint((long)meta.arity);
-            func_obj.put_prop(length_str, len_tv, hobject::PROP_FLAGS_NWC);
+            func_obj.put_prop(length_str, len_tv);
         }
     }
     // Register on prototype — writable:true, enumerable:false, configurable:true (ES5 §15.3.5.1)
     TVal tv;
     tv.set_object(func_obj);
-    proto.put_prop(key, tv, hobject::PROP_FLAGS_WC);
+    proto.put_prop(key, tv);
     return true;
 }
 
@@ -1227,12 +1227,7 @@ fn bool set_num_static_prop(HObject* obj, Heap* heap, char[] name, double val) {
     }
     TVal tv;
     tv.set_number(val);
-    PropFlags pflags;
-    pflags.writable = false;
-    pflags.enumerable = false;
-    pflags.configurable = false;
-    pflags.is_accessor = false;
-    obj.put_prop(key, tv, pflags);
+    obj.put_prop(key, tv);
     return true;
 }
 
@@ -1251,7 +1246,7 @@ fn bool set_num_prop(HObject* obj, Heap* heap, char[] name, double val) {
     }
     TVal tv;
     tv.set_number(val);
-    obj.put_prop(key, tv, hobject::PROP_FLAGS_WC);
+    obj.put_prop(key, tv);
     return true;
 }
 
@@ -1325,11 +1320,11 @@ fn void set_func_ctor_name_length(HObject* func_obj, Heap* heap, char[] name, in
     HString* name_key = builtin_intern_string(heap, "name");
     HString* name_hstr = builtin_intern_string(heap, name);
     TVal name_tv; name_tv.set_string(name_hstr);
-    func_obj.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC);
+    func_obj.put_prop(name_key, name_tv);
 
     HString* length_key = builtin_intern_string(heap, "length");
     TVal length_tv; length_tv.set_fastint((long)length);
-    func_obj.put_prop(length_key, length_tv, hobject::PROP_FLAGS_NWC);
+    func_obj.put_prop(length_key, length_tv);
 }
 
 /// Set .name on a built-in constructor HObject (when .length is already set).
@@ -1337,7 +1332,7 @@ fn void set_func_ctor_name(HObject* func_obj, Heap* heap, char[] name) {
     HString* name_key = builtin_intern_string(heap, "name");
     HString* name_hstr = builtin_intern_string(heap, name);
     TVal name_tv; name_tv.set_string(name_hstr);
-    func_obj.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC);
+    func_obj.put_prop(name_key, name_tv);
 }
 
 // ============================================================================
@@ -1667,8 +1662,7 @@ fn void builtin_reset_globals(BuiltinContext* ctx) {
         }
         // Restore checkpoint values
         for (uint i = 0; i < heap.checkpoint_count; i++) {
-            globals.put_prop(heap.checkpoint_keys[i], heap.checkpoint_vals[i],
-                             hobject::PROP_FLAGS_WC);
+            globals.put_prop(heap.checkpoint_keys[i], heap.checkpoint_vals[i]);
         }
     }
     ctx.result.set_undefined();
@@ -1711,7 +1705,7 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
 
     TVal log_val;
     log_val.set_lightfunc((void*)(usz)BUILTIN_CONSOLE_LOG);
-    console_obj.put_prop(log_key, log_val, hobject::PROP_FLAGS_NWC);
+    console_obj.put_prop(log_key, log_val);
 
     env::env_declare_nonenum(global_env, console_key, console_val);
 

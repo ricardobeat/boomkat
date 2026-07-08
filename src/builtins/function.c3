@@ -102,7 +102,7 @@ fn void builtin_function(BuiltinContext* ctx) {
             HString* msg_str = builtin_intern_string(ctx.heap, "SyntaxError in Function constructor");
             TVal msg_tv;
             msg_tv.set_string(msg_str);
-            err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
+            err.put_prop(msg_key, msg_tv);
             TVal err_tv;
             err_tv.set_object(err);
             ctx.throw_value.set_object(err_tv.get_heapptr());
@@ -134,7 +134,7 @@ fn void builtin_function(BuiltinContext* ctx) {
         HString* proto_key = builtin_intern_string(ctx.heap, "prototype");
         TVal proto_tv;
         proto_tv.set_object(proto);
-        func_obj.put_prop(proto_key, proto_tv, hobject::PROP_FLAGS_WC);
+        func_obj.put_prop(proto_key, proto_tv);
     }
 
     // Set function length
@@ -143,7 +143,7 @@ fn void builtin_function(BuiltinContext* ctx) {
     HString* len_key = builtin_intern_string(ctx.heap, "length");
     TVal len_tv;
     len_tv.set_fastint((long)num_params);
-    func_obj.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NWC);
+    func_obj.put_prop(len_key, len_tv);
 
     // Return the function object
     ctx.result.set_object(func_obj);
@@ -534,14 +534,9 @@ fn void builtin_function_proto_bind(BuiltinContext* ctx) {
     HString* key_this   = builtin_intern_string(ctx.heap, { '\x00', 'b', 'o', 'u', 'n', 'd', '_', 't', 'h', 'i', 's' });
     HString* key_args   = builtin_intern_string(ctx.heap, { '\x00', 'b', 'o', 'u', 'n', 'd', '_', 'a', 'r', 'g', 's' });
 
-    PropFlags internal_flags;
-    internal_flags.writable = false;
-    internal_flags.enumerable = false;
-    internal_flags.configurable = false;
-    internal_flags.is_accessor = false;
 
-    bound_obj.put_prop(key_downstream, downstream, internal_flags);
-    bound_obj.put_prop(key_this, bound_this, internal_flags);
+    bound_obj.put_prop(key_downstream, downstream);
+    bound_obj.put_prop(key_this, bound_this);
 
     // Store bound args as a JS array
     HObject*? args_arr_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
@@ -552,14 +547,14 @@ fn void builtin_function_proto_bind(BuiltinContext* ctx) {
         HString* len_key = builtin_intern_string(ctx.heap, "length");
         TVal len_tv;
         len_tv.set_fastint(bound_argc);
-        args_arr.put_prop(len_key, len_tv, hobject::PROP_FLAGS_WEC);
+        args_arr.put_prop(len_key, len_tv);
         // Set elements
         for (ushort i = 0; i < bound_argc; i++) {
             char[20] buf;
             int n = libc::snprintf(&buf, 20, "%d", i);
             if (n > 0 && n < 20) {
                 HString* elem_key = builtin_intern_string(ctx.heap, buf[:n]);
-                args_arr.put_prop(elem_key, bound_args_arr[i], hobject::PROP_FLAGS_WEC);
+                args_arr.put_prop(elem_key, bound_args_arr[i]);
             }
         }
     }
@@ -572,7 +567,7 @@ fn void builtin_function_proto_bind(BuiltinContext* ctx) {
     } else {
         args_tv.set_undefined();
     }
-    bound_obj.put_prop(key_args, args_tv, internal_flags);
+    bound_obj.put_prop(key_args, args_tv);
 
     // Set .length on the bound function
     // Length = max(0, downstream.length - bound_argc)
@@ -590,8 +585,7 @@ fn void builtin_function_proto_bind(BuiltinContext* ctx) {
     HString* len_key = builtin_intern_string(ctx.heap, "length");
     TVal len_tv;
     len_tv.set_fastint((long)bound_len);
-    PropFlags wec = hobject::PROP_FLAGS_WEC;
-    bound_obj.put_prop(len_key, len_tv, wec);
+    bound_obj.put_prop(len_key, len_tv);
 
     // Result
     ctx.result.set_object(bound_obj);
@@ -742,42 +736,37 @@ fn bool register_function_constructor(EnvRecord* global_env, Heap* heap) {
     HString* call_key = builtin_intern_string(heap, "call");
     TVal call_tv;
     call_tv.set_lightfunc((void*)(usz)BUILTIN_FUNCTION_PROTO_CALL);
-    proto.put_prop(call_key, call_tv, hobject::PROP_FLAGS_WC);
+    proto.put_prop(call_key, call_tv);
 
     // Add .apply method
     HString* apply_key = builtin_intern_string(heap, "apply");
     TVal apply_tv;
     apply_tv.set_lightfunc((void*)(usz)BUILTIN_FUNCTION_PROTO_APPLY);
-    proto.put_prop(apply_key, apply_tv, hobject::PROP_FLAGS_WC);
+    proto.put_prop(apply_key, apply_tv);
 
     // Add .bind method
     HString* bind_key = builtin_intern_string(heap, "bind");
     TVal bind_tv;
     bind_tv.set_lightfunc((void*)(usz)BUILTIN_FUNCTION_PROTO_BIND);
-    proto.put_prop(bind_key, bind_tv, hobject::PROP_FLAGS_WC);
+    proto.put_prop(bind_key, bind_tv);
 
     // Set .constructor to the Function constructor object itself
     HString* constructor_key = (HString*)heap.strs[heap::BuiltinStr.CONSTRUCTOR];
     TVal constructor_tv;
     constructor_tv.set_object(func_obj);
-    proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_WC);
+    proto.put_prop(constructor_key, constructor_tv);
 
     // Set Function.prototype on the constructor (non-writable, non-enumerable, non-configurable)
     HString* prototype_key = (HString*)heap.strs[heap::BuiltinStr.PROTOTYPE];
     TVal proto_tv;
     proto_tv.set_object(proto);
-    PropFlags proto_pflags;
-    proto_pflags.writable = false;
-    proto_pflags.enumerable = false;
-    proto_pflags.configurable = false;
-    proto_pflags.is_accessor = false;
-    func_obj.put_prop(prototype_key, proto_tv, proto_pflags);
+    func_obj.put_prop(prototype_key, proto_tv);
 
     // Set Function.length (ES5 §15.3.3)
     HString* len_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
     TVal len_tv;
     len_tv.set_fastint(1);
-    func_obj.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NWC);
+    func_obj.put_prop(len_key, len_tv);
 
     // Register Function constructor globally as an OBJECT
     uint hash = heap.hash_string("Function");

@@ -1177,7 +1177,7 @@ fn bool register_date_constructor(EnvRecord* global_env, Heap* heap) {
     HString* constructor_key = (HString*)heap.strs[heap::BuiltinStr.CONSTRUCTOR];
     TVal constructor_tv;
     constructor_tv.set_lightfunc((void*)(usz)BUILTIN_DATE);
-    proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_WC);
+    proto.put_prop(constructor_key, constructor_tv);
 
     // Add Date.prototype.toString()
     if (!register_string_proto_method(proto, heap, "toString", BUILTIN_DATE_PROTO_TOSTRING)) return false;
@@ -1312,12 +1312,7 @@ fn bool register_date_constructor(EnvRecord* global_env, Heap* heap) {
     HString* prototype_key = (HString*)heap.strs[heap::BuiltinStr.PROTOTYPE];
     TVal proto_tv;
     proto_tv.set_object(proto);
-    PropFlags proto_pflags;
-    proto_pflags.writable = false;
-    proto_pflags.enumerable = false;
-    proto_pflags.configurable = false;
-    proto_pflags.is_accessor = false;
-    date_obj.put_prop(prototype_key, proto_tv, proto_pflags);
+    date_obj.put_prop(prototype_key, proto_tv);
 
     // Add Date.now() static method
     if (!register_string_proto_method(date_obj, heap, "now", BUILTIN_DATE_NOW)) return false;

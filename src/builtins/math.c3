@@ -362,7 +362,7 @@ fn bool register_math_method(HObject* math, Heap* heap, char[] name, uint fn_ind
     }
     TVal tv;
     tv.set_lightfunc((void*)(usz)fn_index);
-    math.put_prop(key, tv, hobject::PROP_FLAGS_WC);
+    math.put_prop(key, tv);
     return true;
 }
 
@@ -378,6 +378,6 @@ fn bool set_num_prop_lookup(HObject* obj, Heap* heap, char[] name, double val) {
     }
     TVal tv;
     tv.set_number(val);
-    obj.put_prop(key, tv, hobject::PROP_FLAGS_WC);
+    obj.put_prop(key, tv);
     return true;
 }

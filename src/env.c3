@@ -216,18 +216,18 @@ fn bool env_put(EnvRecord* env, void* key, TVal val) {
         cur = cur.parent;
     }
     // Not found in the entire chain — create in the outermost scope.
-    return last.bindings.put_prop(key, val, hobject::PROP_FLAGS_WEC);
+    return last.bindings.put_prop(key, val);
 }
 
 /// Declare a binding in the given environment only (no chain walk).
 fn bool env_declare(EnvRecord* env, void* key, TVal val) @inline {
-    return env.bindings.put_prop(key, val, hobject::PROP_FLAGS_WEC);
+    return env.bindings.put_prop(key, val);
 }
 
 /// Declare a non-enumerable binding (for built-in globals per ES spec §17).
 /// Built-in properties must be { writable: true, enumerable: false, configurable: true }.
 fn bool env_declare_nonenum(EnvRecord* env, void* key, TVal val) @inline {
-    return env.bindings.put_prop(key, val, hobject::PROP_FLAGS_WC);
+    return env.bindings.put_prop(key, val);
 }
 
 // ============================================================================
@@ -285,7 +285,7 @@ fn TVal? env_get_lex(EnvRecord* lex_env, void* key) {
 /// Used for let/const declarations via PUTLEX — creates the binding
 /// in the current block's scope without walking the parent chain.
 fn bool env_declare_lex(EnvRecord* lex_env, void* key, TVal val) @inline {
-    return lex_env.bindings.put_prop(key, val, hobject::PROP_FLAGS_WEC);
+    return lex_env.bindings.put_prop(key, val);
 }
 
 /// Store a binding in the lexical environment chain, creating or updating
@@ -315,7 +315,7 @@ fn bool env_put_lex(EnvRecord* lex_env, void* key, TVal val) {
         cur = cur.parent;
     }
     // Not found in chain — create in the topmost record
-    return lex_env.bindings.put_prop(key, val, hobject::PROP_FLAGS_WEC);
+    return lex_env.bindings.put_prop(key, val);
 }
 
 /// Check if a binding exists in the lexical environment chain.
@@ -367,7 +367,7 @@ fn bool env_put_at_depth(EnvRecord* env, uint depth, void* key, TVal val) {
         }
         return true;
     }
-    return cur.bindings.put_prop(key, val, hobject::PROP_FLAGS_WEC);
+    return cur.bindings.put_prop(key, val);
 }
 
 /// Check if a binding in the lexical environment chain is writable.

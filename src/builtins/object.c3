@@ -56,7 +56,7 @@ fn bool builtin_to_object(BuiltinContext* ctx, TVal val) {
         HString* len_key = (HString*)ctx.heap.strs[heap::BuiltinStr.LENGTH];
         TVal len_tv;
         len_tv.set_fastint((long)prim_str.char_length());
-        obj.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NNC);
+        obj.put_prop(len_key, len_tv);
         // Indexed character properties are served lazily via the exotic_stringobj flag;
         // no per-character own properties are materialised at construction time.
         ctx.result.set_object(obj);
@@ -70,13 +70,13 @@ fn void builtin_build_data_descriptor(Heap* heap, HObject** out, TVal value, boo
     HObject*? desc_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = desc_raw) { *out = null; return; }
     HObject* desc = desc_raw;
-    desc.put_prop(builtin_intern_string(heap, "value"), value, hobject::PROP_FLAGS_WEC);
+    desc.put_prop(builtin_intern_string(heap, "value"), value);
     TVal w_tv; w_tv.set_boolean(writable);
-    desc.put_prop(builtin_intern_string(heap, "writable"), w_tv, hobject::PROP_FLAGS_WEC);
+    desc.put_prop(builtin_intern_string(heap, "writable"), w_tv);
     TVal e_tv; e_tv.set_boolean(enumerable);
-    desc.put_prop(builtin_intern_string(heap, "enumerable"), e_tv, hobject::PROP_FLAGS_WEC);
+    desc.put_prop(builtin_intern_string(heap, "enumerable"), e_tv);
     TVal c_tv; c_tv.set_boolean(configurable);
-    desc.put_prop(builtin_intern_string(heap, "configurable"), c_tv, hobject::PROP_FLAGS_WEC);
+    desc.put_prop(builtin_intern_string(heap, "configurable"), c_tv);
     *out = desc;
 }
 
@@ -158,7 +158,7 @@ fn void builtin_object(BuiltinContext* ctx) {
         HString* len_key = (HString*)ctx.heap.strs[heap::BuiltinStr.LENGTH];
         TVal len_tv;
         len_tv.set_fastint((long)prim_str.char_length());
-        obj.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NNC);
+        obj.put_prop(len_key, len_tv);
         // Indexed character properties are served lazily via the exotic_stringobj flag;
         // no per-character own properties are materialised at construction time.
         ctx.result.set_object(obj);
@@ -263,7 +263,7 @@ fn void builtin_object_keys(BuiltinContext* ctx) {
                 }
                 for (uint i = 0; i < int_count; i++) {
                     uint si = sort_buf[i * 2 + 1];
-                    if (obj.get_prop_flags(si).enumerable) {
+                    if (true) {
                         HString* key = (HString*)obj.prop_key_at(si);
                         TVal key_tv;
                         key_tv.set_string(key);
@@ -277,7 +277,7 @@ fn void builtin_object_keys(BuiltinContext* ctx) {
     }
     // Phase 2: non-index named properties (insertion order)
     for (uint i = 0; i < obj.prop_count; i++) {
-        if (obj.get_prop_flags(i).enumerable && obj.prop_key_at(i) != null) {
+        if (obj.prop_key_at(i) != null) {
             HString* key = (HString*)obj.prop_key_at(i);
             if (key.is_arridx()) continue;
             if (obj.flags.exotic_stringobj && (void*)key == (void*)ctx.heap.strs[heap::BuiltinStr.LENGTH]) continue;
@@ -313,7 +313,7 @@ fn void builtin_object_keys(BuiltinContext* ctx) {
     TVal len_tv;
     len_tv.set_fastint((long)idx);
     HString* length_key = builtin_intern_string(ctx.heap, "length");
-    arr.put_prop(length_key, len_tv, hobject::PROP_FLAGS_WEC);
+    arr.put_prop(length_key, len_tv);
     ctx.result.set_object(arr);
 }
 
@@ -337,7 +337,7 @@ fn void builtin_object_entries(BuiltinContext* ctx) {
         HString* msg_str = builtin_intern_string(ctx.heap, "Cannot convert undefined or null to object");
         if (msg_key == null || msg_str == null) { ctx.result.set_undefined(); return; }
         TVal msg_tv; msg_tv.set_string(msg_str);
-        err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
+        err.put_prop(msg_key, msg_tv);
         ctx.should_throw = true;
         ctx.throw_value.set_object(err);
         return;
@@ -353,7 +353,7 @@ fn void builtin_object_entries(BuiltinContext* ctx) {
     // Count enumerable own properties
     uint count = 0;
     for (uint i = 0; i < obj.prop_count; i++) {
-        if (obj.get_prop_flags(i).enumerable && obj.prop_key_at(i) != null) count++;
+        if (obj.prop_key_at(i) != null) count++;
     }
     for (uint i = 0; i < obj.array_size; i++) {
         if (!obj.array_part()[i].is_undefined()) count++;
@@ -365,7 +365,7 @@ fn void builtin_object_entries(BuiltinContext* ctx) {
     uint idx = 0;
     // Named properties → [key, value] pairs
     for (uint i = 0; i < obj.prop_count; i++) {
-        if (obj.get_prop_flags(i).enumerable && obj.prop_key_at(i) != null) {
+        if (obj.prop_key_at(i) != null) {
             HString* key = (HString*)obj.prop_key_at(i);
             // Create pair array [key, value]
             HObject*? pair_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
@@ -376,7 +376,7 @@ fn void builtin_object_entries(BuiltinContext* ctx) {
             array_set_elem(pair, 1, obj.prop_values()[i].data.value, ctx.heap);
             TVal len_tv; len_tv.set_fastint(2);
             HString* len_key = builtin_intern_string(ctx.heap, "length");
-            pair.put_prop(len_key, len_tv, hobject::PROP_FLAGS_WEC);
+            pair.put_prop(len_key, len_tv);
             TVal pair_tv; pair_tv.set_object(pair);
             array_set_elem(arr, idx, pair_tv, ctx.heap);
             idx++;
@@ -395,7 +395,7 @@ fn void builtin_object_entries(BuiltinContext* ctx) {
             array_set_elem(pair2, 1, obj.array_part()[i], ctx.heap);
             TVal len_tv2; len_tv2.set_fastint(2);
             HString* len_key2 = builtin_intern_string(ctx.heap, "length");
-            pair2.put_prop(len_key2, len_tv2, hobject::PROP_FLAGS_WEC);
+            pair2.put_prop(len_key2, len_tv2);
             TVal pair_tv2; pair_tv2.set_object(pair2);
             array_set_elem(arr, idx, pair_tv2, ctx.heap);
             idx++;
@@ -404,7 +404,7 @@ fn void builtin_object_entries(BuiltinContext* ctx) {
     // Set .length on result array
     TVal rlen_tv; rlen_tv.set_fastint((long)idx);
     HString* rlen_key = builtin_intern_string(ctx.heap, "length");
-    arr.put_prop(rlen_key, rlen_tv, hobject::PROP_FLAGS_WEC);
+    arr.put_prop(rlen_key, rlen_tv);
     ctx.result.set_object(arr);
 }
 
@@ -427,7 +427,7 @@ fn void builtin_object_values(BuiltinContext* ctx) {
         HString* msg_str = builtin_intern_string(ctx.heap, "Cannot convert undefined or null to object");
         if (msg_key == null || msg_str == null) { ctx.result.set_undefined(); return; }
         TVal msg_tv; msg_tv.set_string(msg_str);
-        err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
+        err.put_prop(msg_key, msg_tv);
         ctx.should_throw = true;
         ctx.throw_value.set_object(err);
         return;
@@ -443,7 +443,7 @@ fn void builtin_object_values(BuiltinContext* ctx) {
     // Count enumerable own properties
     uint count = 0;
     for (uint i = 0; i < obj.prop_count; i++) {
-        if (obj.get_prop_flags(i).enumerable && obj.prop_key_at(i) != null) count++;
+        if (obj.prop_key_at(i) != null) count++;
     }
     for (uint i = 0; i < obj.array_size; i++) {
         if (!obj.array_part()[i].is_undefined()) count++;
@@ -455,7 +455,7 @@ fn void builtin_object_values(BuiltinContext* ctx) {
     uint idx = 0;
     // Named properties
     for (uint i = 0; i < obj.prop_count; i++) {
-        if (obj.get_prop_flags(i).enumerable && obj.prop_key_at(i) != null) {
+        if (obj.prop_key_at(i) != null) {
             array_set_elem(arr, idx, obj.prop_values()[i].data.value, ctx.heap);
             idx++;
         }
@@ -470,7 +470,7 @@ fn void builtin_object_values(BuiltinContext* ctx) {
     // Set .length
     TVal rlen_tv; rlen_tv.set_fastint((long)idx);
     HString* rlen_key = builtin_intern_string(ctx.heap, "length");
-    arr.put_prop(rlen_key, rlen_tv, hobject::PROP_FLAGS_WEC);
+    arr.put_prop(rlen_key, rlen_tv);
     ctx.result.set_object(arr);
 }
 
@@ -493,7 +493,7 @@ fn void builtin_object_assign(BuiltinContext* ctx) {
         HString* msg_str = builtin_intern_string(ctx.heap, "Cannot convert undefined or null to object");
         if (msg_key == null || msg_str == null) { ctx.result.set_undefined(); return; }
         TVal msg_tv; msg_tv.set_string(msg_str);
-        err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
+        err.put_prop(msg_key, msg_tv);
         ctx.should_throw = true;
         ctx.throw_value.set_object(err);
         return;
@@ -516,7 +516,7 @@ fn void builtin_object_assign(BuiltinContext* ctx) {
         HObject* src_obj = (HObject*)source.get_heapptr();
         // Copy enumerable own named properties via [[Set]] per ES2015 §19.1.2.2
         for (uint i = 0; i < src_obj.prop_count; i++) {
-            if (src_obj.get_prop_flags(i).enumerable && src_obj.prop_key_at(i) != null) {
+            if (src_obj.prop_key_at(i) != null) {
                 void* key = src_obj.prop_key_at(i);
                 TVal val = src_obj.prop_values()[i].data.value;
                 // [[Set]]: check own property first
@@ -524,14 +524,14 @@ fn void builtin_object_assign(BuiltinContext* ctx) {
                 if (down_idx >= 0) {
                     hobject::PropFlags f = downstream.get_prop_flags((uint)down_idx);
                     if (!f.is_accessor && f.writable) {
-                        downstream.put_prop(key, val, hobject::PROP_FLAGS_WEC);
+                        downstream.put_prop(key, val);
                     }
                     // Accessor or non-writable: silently skip (non-strict [[Set]] behavior)
                 } else {
                     // Not own property — check prototype chain for accessor
                     hobject::AccessorResult acc = downstream.find_accessor(key, false);
                     if (!acc.found && downstream.flags.extensible) {
-                        downstream.put_prop(key, val, hobject::PROP_FLAGS_WEC);
+                        downstream.put_prop(key, val);
                     }
                     // Accessor on prototype or non-extensible: silently skip
                 }
@@ -551,12 +551,12 @@ fn void builtin_object_assign(BuiltinContext* ctx) {
                             if (down_idx >= 0) {
                                 hobject::PropFlags f = downstream.get_prop_flags((uint)down_idx);
                                 if (!f.is_accessor && f.writable) {
-                                    downstream.put_prop((void*)key, val, hobject::PROP_FLAGS_WEC);
+                                    downstream.put_prop((void*)key, val);
                                 }
                             } else {
                                 hobject::AccessorResult acc = downstream.find_accessor((void*)key, false);
                                 if (!acc.found && downstream.flags.extensible) {
-                                    downstream.put_prop((void*)key, val, hobject::PROP_FLAGS_WEC);
+                                    downstream.put_prop((void*)key, val);
                                 }
                             }
                         }
@@ -601,7 +601,7 @@ fn void builtin_object_hasOwn(BuiltinContext* ctx) {
         HString* msg_str = builtin_intern_string(ctx.heap, "Object.hasOwn requires 2 arguments");
         if (msg_key == null || msg_str == null) { ctx.result.set_undefined(); return; }
         TVal msg_tv; msg_tv.set_string(msg_str);
-        err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
+        err.put_prop(msg_key, msg_tv);
         ctx.should_throw = true;
         ctx.throw_value.set_object(err);
         return;
@@ -617,7 +617,7 @@ fn void builtin_object_hasOwn(BuiltinContext* ctx) {
         HString* msg_str = builtin_intern_string(ctx.heap, "Cannot convert undefined or null to object");
         if (msg_key == null || msg_str == null) { ctx.result.set_undefined(); return; }
         TVal msg_tv; msg_tv.set_string(msg_str);
-        err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
+        err.put_prop(msg_key, msg_tv);
         ctx.should_throw = true;
         ctx.throw_value.set_object(err);
         return;
@@ -662,7 +662,7 @@ fn void builtin_object_fromEntries(BuiltinContext* ctx) {
         HString* msg_str = builtin_intern_string(ctx.heap, "Object.fromEntries requires an iterable");
         if (msg_key == null || msg_str == null) { ctx.result.set_undefined(); return; }
         TVal msg_tv; msg_tv.set_string(msg_str);
-        err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
+        err.put_prop(msg_key, msg_tv);
         ctx.should_throw = true;
         ctx.throw_value.set_object(err);
         return;
@@ -757,7 +757,7 @@ fn void builtin_object_fromEntries(BuiltinContext* ctx) {
             key_str = ctx.heap.str_intern(buf[..slen]);
         }
         if (key_str != null) {
-            obj.put_prop(key_str, val_val, hobject::PROP_FLAGS_WEC);
+            obj.put_prop(key_str, val_val);
         }
     }
     ctx.result.set_object(obj);
@@ -911,25 +911,25 @@ fn bool register_object_constructor(EnvRecord* global_env, Heap* heap) {
     HString* tostring_key = (HString*)heap.strs[heap::BuiltinStr.TO_STRING];
     TVal tostring_tv;
     tostring_tv.set_lightfunc((void*)(usz)BUILTIN_OBJECT_PROTO_TOSTRING);
-    proto.put_prop(tostring_key, tostring_tv, hobject::PROP_FLAGS_WC);
+    proto.put_prop(tostring_key, tostring_tv);
 
     // Add .hasOwnProperty() method to Object.prototype
     HString* hasown_key = builtin_intern_string(heap, "hasOwnProperty");
     TVal hasown_tv;
     hasown_tv.set_lightfunc((void*)(usz)BUILTIN_OBJECT_PROTO_HASOWNPROPERTY);
-    proto.put_prop(hasown_key, hasown_tv, hobject::PROP_FLAGS_WC);
+    proto.put_prop(hasown_key, hasown_tv);
 
     // Add .valueOf() method to Object.prototype (returns 'this')
     HString* valueof_key = (HString*)heap.strs[heap::BuiltinStr.VALUE_OF];
     TVal valueof_tv;
     valueof_tv.set_lightfunc((void*)(usz)BUILTIN_OBJECT_PROTO_VALUEOF);
-    proto.put_prop(valueof_key, valueof_tv, hobject::PROP_FLAGS_WC);
+    proto.put_prop(valueof_key, valueof_tv);
 
     // Add .toLocaleString() method to Object.prototype (ES5 §15.2.4.3)
     HString* tolocalestring_key = builtin_intern_string(heap, "toLocaleString");
     TVal tolocalestring_tv;
     tolocalestring_tv.set_lightfunc((void*)(usz)BUILTIN_OBJECT_PROTO_TOLOCALESTRING);
-    proto.put_prop(tolocalestring_key, tolocalestring_tv, hobject::PROP_FLAGS_WC);
+    proto.put_prop(tolocalestring_key, tolocalestring_tv);
 
     // Create Object constructor as a proper HObject (not LIGHTFUNC)
     // so it can carry .prototype, .length, etc.
@@ -942,73 +942,68 @@ fn bool register_object_constructor(EnvRecord* global_env, Heap* heap) {
     HString* constructor_key = (HString*)heap.strs[heap::BuiltinStr.CONSTRUCTOR];
     TVal constructor_tv;
     constructor_tv.set_object(obj);
-    proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_WC);
+    proto.put_prop(constructor_key, constructor_tv);
 
     // Set Object.prototype on the constructor (non-writable, non-enumerable, non-configurable)
     HString* prototype_key = (HString*)heap.strs[heap::BuiltinStr.PROTOTYPE];
     TVal proto_tv;
     proto_tv.set_object(proto);
-    PropFlags proto_pflags;
-    proto_pflags.writable = false;
-    proto_pflags.enumerable = false;
-    proto_pflags.configurable = false;
-    proto_pflags.is_accessor = false;
-    obj.put_prop(prototype_key, proto_tv, proto_pflags);
+    obj.put_prop(prototype_key, proto_tv);
 
     // Set Object.length (ES5 §15.2.1)
     HString* length_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
     TVal length_tv;
     length_tv.set_fastint(1);
-    obj.put_prop(length_key, length_tv, hobject::PROP_FLAGS_NWC);
+    obj.put_prop(length_key, length_tv);
 
     // Add static methods to Object constructor
     HString* keys_key = builtin_intern_string(heap, "keys");
     if (keys_key == null) return false;
     TVal keys_tv;
     keys_tv.set_lightfunc((void*)(usz)BUILTIN_OBJECT_KEYS);
-    obj.put_prop(keys_key, keys_tv, hobject::PROP_FLAGS_NWC);
+    obj.put_prop(keys_key, keys_tv);
 
     // Object.entries — ES2017 §19.1.2.21
     HString* entries_key = builtin_intern_string(heap, "entries");
     if (entries_key == null) return false;
     TVal entries_tv;
     entries_tv.set_lightfunc((void*)(usz)BUILTIN_OBJECT_ENTRIES);
-    obj.put_prop(entries_key, entries_tv, hobject::PROP_FLAGS_NWC);
+    obj.put_prop(entries_key, entries_tv);
 
     // Object.values — ES2017 §19.1.2.22
     HString* values_key = builtin_intern_string(heap, "values");
     if (values_key == null) return false;
     TVal values_tv;
     values_tv.set_lightfunc((void*)(usz)BUILTIN_OBJECT_VALUES);
-    obj.put_prop(values_key, values_tv, hobject::PROP_FLAGS_NWC);
+    obj.put_prop(values_key, values_tv);
 
     // Object.assign — ES2015 §19.1.2.2
     HString* assign_key = builtin_intern_string(heap, "assign");
     if (assign_key == null) return false;
     TVal assign_tv;
     assign_tv.set_lightfunc((void*)(usz)BUILTIN_OBJECT_ASSIGN);
-    obj.put_prop(assign_key, assign_tv, hobject::PROP_FLAGS_NWC);
+    obj.put_prop(assign_key, assign_tv);
 
     // Object.is — ES6 §19.1.2.10
     HString* is_key = builtin_intern_string(heap, "is");
     if (is_key == null) return false;
     TVal is_tv;
     is_tv.set_lightfunc((void*)(usz)BUILTIN_OBJECT_IS);
-    obj.put_prop(is_key, is_tv, hobject::PROP_FLAGS_NWC);
+    obj.put_prop(is_key, is_tv);
 
     // Object.hasOwn — ES2022 §19.1.2.10
     HString* hasown_static_key = builtin_intern_string(heap, "hasOwn");
     if (hasown_static_key == null) return false;
     TVal hasown_static_tv;
     hasown_static_tv.set_lightfunc((void*)(usz)BUILTIN_OBJECT_HASOWN);
-    obj.put_prop(hasown_static_key, hasown_static_tv, hobject::PROP_FLAGS_NWC);
+    obj.put_prop(hasown_static_key, hasown_static_tv);
 
     // Object.fromEntries — ES2019 §19.1.2.5
     HString* fromentries_key = builtin_intern_string(heap, "fromEntries");
     if (fromentries_key == null) return false;
     TVal fromentries_tv;
     fromentries_tv.set_lightfunc((void*)(usz)BUILTIN_OBJECT_FROMENTRIES);
-    obj.put_prop(fromentries_key, fromentries_tv, hobject::PROP_FLAGS_NWC);
+    obj.put_prop(fromentries_key, fromentries_tv);
 
     // Register Object constructor globally as an OBJECT (not LIGHTFUNC)
     uint hash = heap.hash_string("Object");

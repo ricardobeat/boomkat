@@ -347,7 +347,7 @@ fn void builtin_decode_uri(BuiltinContext* ctx) {
                                 HString* msg = builtin_intern_string(ctx.heap, "URI malformed");
                                 TVal msg_tv; msg_tv.set_string(msg);
                                 HString* msg_key = builtin_intern_string(ctx.heap, "message");
-                                err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
+                                err.put_prop(msg_key, msg_tv);
                                 ctx.should_throw = true;
                                 ctx.throw_value.set_object(err);
                             }
@@ -371,7 +371,7 @@ fn void builtin_decode_uri(BuiltinContext* ctx) {
                                 HString* msg = builtin_intern_string(ctx.heap, "URI malformed");
                                 TVal msg_tv; msg_tv.set_string(msg);
                                 HString* msg_key = builtin_intern_string(ctx.heap, "message");
-                                err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
+                                err.put_prop(msg_key, msg_tv);
                                 ctx.should_throw = true;
                                 ctx.throw_value.set_object(err);
                             }
@@ -388,7 +388,7 @@ fn void builtin_decode_uri(BuiltinContext* ctx) {
                             HString* msg = builtin_intern_string(ctx.heap, "URI malformed");
                             TVal msg_tv; msg_tv.set_string(msg);
                             HString* msg_key = builtin_intern_string(ctx.heap, "message");
-                            err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
+                            err.put_prop(msg_key, msg_tv);
                             ctx.should_throw = true;
                             ctx.throw_value.set_object(err);
                         }
@@ -401,7 +401,7 @@ fn void builtin_decode_uri(BuiltinContext* ctx) {
                         HString* msg = builtin_intern_string(ctx.heap, "URI malformed");
                         TVal msg_tv; msg_tv.set_string(msg);
                         HString* msg_key = builtin_intern_string(ctx.heap, "message");
-                        err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
+                        err.put_prop(msg_key, msg_tv);
                         ctx.should_throw = true;
                         ctx.throw_value.set_object(err);
                     }
@@ -414,7 +414,7 @@ fn void builtin_decode_uri(BuiltinContext* ctx) {
                     HString* msg = builtin_intern_string(ctx.heap, "URI malformed");
                     TVal msg_tv; msg_tv.set_string(msg);
                     HString* msg_key = builtin_intern_string(ctx.heap, "message");
-                    err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
+                    err.put_prop(msg_key, msg_tv);
                     ctx.should_throw = true;
                     ctx.throw_value.set_object(err);
                 }
@@ -456,7 +456,7 @@ fn void builtin_decode_uri_component(BuiltinContext* ctx) {
                         HString* msg = builtin_intern_string(ctx.heap, "URI malformed");
                         TVal msg_tv; msg_tv.set_string(msg);
                         HString* msg_key = builtin_intern_string(ctx.heap, "message");
-                        err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
+                        err.put_prop(msg_key, msg_tv);
                         ctx.should_throw = true;
                         ctx.throw_value.set_object(err);
                     }
@@ -477,7 +477,7 @@ fn void builtin_decode_uri_component(BuiltinContext* ctx) {
                             HString* msg = builtin_intern_string(ctx.heap, "URI malformed");
                             TVal msg_tv; msg_tv.set_string(msg);
                             HString* msg_key = builtin_intern_string(ctx.heap, "message");
-                            err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
+                            err.put_prop(msg_key, msg_tv);
                             ctx.should_throw = true;
                             ctx.throw_value.set_object(err);
                         }
@@ -501,7 +501,7 @@ fn void builtin_decode_uri_component(BuiltinContext* ctx) {
                             HString* msg = builtin_intern_string(ctx.heap, "URI malformed");
                             TVal msg_tv; msg_tv.set_string(msg);
                             HString* msg_key = builtin_intern_string(ctx.heap, "message");
-                            err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
+                            err.put_prop(msg_key, msg_tv);
                             ctx.should_throw = true;
                             ctx.throw_value.set_object(err);
                         }
@@ -517,7 +517,7 @@ fn void builtin_decode_uri_component(BuiltinContext* ctx) {
                         HString* msg = builtin_intern_string(ctx.heap, "URI malformed");
                         TVal msg_tv; msg_tv.set_string(msg);
                         HString* msg_key = builtin_intern_string(ctx.heap, "message");
-                        err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
+                        err.put_prop(msg_key, msg_tv);
                         ctx.should_throw = true;
                         ctx.throw_value.set_object(err);
                     }
@@ -529,7 +529,7 @@ fn void builtin_decode_uri_component(BuiltinContext* ctx) {
                     HString* msg = builtin_intern_string(ctx.heap, "URI malformed");
                     TVal msg_tv; msg_tv.set_string(msg);
                     HString* msg_key = builtin_intern_string(ctx.heap, "message");
-                    err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
+                    err.put_prop(msg_key, msg_tv);
                     ctx.should_throw = true;
                     ctx.throw_value.set_object(err);
                 }

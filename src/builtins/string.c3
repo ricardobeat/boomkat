@@ -27,7 +27,7 @@ fn void populate_string_indexed_props(HObject* obj, HString* s, Heap* heap) {
         if (char_str == null) continue;
         TVal char_tv;
         char_tv.set_string(char_str);
-        obj.put_prop(key, char_tv, hobject::PROP_FLAGS_NEC);
+        obj.put_prop(key, char_tv);
     }
 }
 
@@ -54,7 +54,7 @@ fn void builtin_string(BuiltinContext* ctx) {
         HString* len_key = (HString*)ctx.heap.strs[heap::BuiltinStr.LENGTH];
         TVal len_tv;
         len_tv.set_fastint((long)s.char_length());
-        obj.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NNC);
+        obj.put_prop(len_key, len_tv);
         // Indexed character properties are served lazily via the exotic_stringobj flag;
         // no per-character own properties are materialised at construction time.
         ctx.result.set_object(obj);
@@ -143,7 +143,7 @@ fn void builtin_string_fromcodepoint(BuiltinContext* ctx) {
                 HString* msg = builtin_intern_string(ctx.heap, "Invalid code point value");
                 TVal msg_tv; msg_tv.set_string(msg);
                 HString* msg_key = builtin_intern_string(ctx.heap, "message");
-                err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
+                err.put_prop(msg_key, msg_tv);
                 ctx.should_throw = true;
                 ctx.throw_value.set_object(err);
             }
@@ -230,7 +230,7 @@ fn HString* string_proto_get_this(BuiltinContext* ctx) {
         TVal msg_val;
         msg_val.set_string(msg_str);
         HString* msg_key = builtin_intern_string(ctx.heap, "message");
-        err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WC);
+        err.put_prop(msg_key, msg_val);
         TVal err_tv;
         err_tv.set_object(err);
         ctx.throw_value = err_tv;
@@ -670,11 +670,11 @@ fn void builtin_string_proto_split(BuiltinContext* ctx) {
         TVal elem;
         elem.set_string(s_hstr);
         HString* zero_key = builtin_intern_string(ctx.heap, "0");
-        arr.put_prop(zero_key, elem, hobject::PROP_FLAGS_WEC);
+        arr.put_prop(zero_key, elem);
         TVal len_val;
         len_val.set_fastint(1);
         HString* len_key = builtin_intern_string(ctx.heap, "length");
-        arr.put_prop(len_key, len_val, hobject::PROP_FLAGS_WEC);
+        arr.put_prop(len_key, len_val);
         ctx.result.set_object(arr);
         return;
     }
@@ -697,7 +697,7 @@ fn void builtin_string_proto_split(BuiltinContext* ctx) {
 
         HString* li_key = builtin_intern_string(ctx.heap, "lastIndex");
         TVal zero_tv; zero_tv.set_fastint(0);
-        rx.put_prop(li_key, zero_tv, hobject::PROP_FLAGS_WEC);
+        rx.put_prop(li_key, zero_tv);
 
         uint arr_idx = 0;
         int search_pos = 0;
@@ -733,7 +733,7 @@ fn void builtin_string_proto_split(BuiltinContext* ctx) {
             }
             TVal elem;
             elem.set_string(substr);
-            arr.put_prop(ctx.heap.int_to_hstring((long)arr_idx), elem, hobject::PROP_FLAGS_WEC);
+            arr.put_prop(ctx.heap.int_to_hstring((long)arr_idx), elem);
             arr_idx++;
 
             // Capture groups
@@ -755,7 +755,7 @@ fn void builtin_string_proto_split(BuiltinContext* ctx) {
                 } else {
                     cap_elem.set_undefined();
                 }
-                arr.put_prop(ctx.heap.int_to_hstring((long)arr_idx), cap_elem, hobject::PROP_FLAGS_WEC);
+                arr.put_prop(ctx.heap.int_to_hstring((long)arr_idx), cap_elem);
                 arr_idx++;
             }
 
@@ -782,12 +782,12 @@ fn void builtin_string_proto_split(BuiltinContext* ctx) {
             }
             TVal elem;
             elem.set_string(substr);
-            arr.put_prop(ctx.heap.int_to_hstring((long)arr_idx), elem, hobject::PROP_FLAGS_WEC);
+            arr.put_prop(ctx.heap.int_to_hstring((long)arr_idx), elem);
             arr_idx++;
         }
 
         TVal len_val; len_val.set_fastint((long)arr_idx);
-        arr.put_prop(len_key, len_val, hobject::PROP_FLAGS_WEC);
+        arr.put_prop(len_key, len_val);
         ctx.result.set_object(arr);
         return;
     }
@@ -817,7 +817,7 @@ fn void builtin_string_proto_split(BuiltinContext* ctx) {
         HString* len_key = builtin_intern_string(ctx.heap, "length");
         TVal len_val;
         len_val.set_fastint((long)count);
-        arr.put_prop(len_key, len_val, hobject::PROP_FLAGS_WEC);
+        arr.put_prop(len_key, len_val);
         for (uint i = 0; i < count; i++) {
             char[2] buf;
             buf[0] = data[i];
@@ -825,7 +825,7 @@ fn void builtin_string_proto_split(BuiltinContext* ctx) {
             HString* ch_str = builtin_intern_string(ctx.heap, buf[:1]);
             TVal elem;
             elem.set_string(ch_str);
-            arr.put_prop(ctx.heap.int_to_hstring((long)i), elem, hobject::PROP_FLAGS_WEC);
+            arr.put_prop(ctx.heap.int_to_hstring((long)i), elem);
         }
         ctx.result.set_object(arr);
         return;
@@ -864,7 +864,7 @@ fn void builtin_string_proto_split(BuiltinContext* ctx) {
 
         TVal elem;
         elem.set_string(substr);
-        arr.put_prop(ctx.heap.int_to_hstring((long)arr_idx), elem, hobject::PROP_FLAGS_WEC);
+        arr.put_prop(ctx.heap.int_to_hstring((long)arr_idx), elem);
         arr_idx++;
 
         search_pos = (uint)(found_pos + (int)sep_len);
@@ -884,13 +884,13 @@ fn void builtin_string_proto_split(BuiltinContext* ctx) {
         }
         TVal elem;
         elem.set_string(substr);
-        arr.put_prop(ctx.heap.int_to_hstring((long)arr_idx), elem, hobject::PROP_FLAGS_WEC);
+        arr.put_prop(ctx.heap.int_to_hstring((long)arr_idx), elem);
         arr_idx++;
     }
 
     TVal len_val;
     len_val.set_fastint((long)arr_idx);
-    arr.put_prop(len_key, len_val, hobject::PROP_FLAGS_WEC);
+    arr.put_prop(len_key, len_val);
 
     ctx.result.set_object(arr);
 }
@@ -1116,7 +1116,7 @@ fn void builtin_string_proto_replace(BuiltinContext* ctx) {
             // ── Global: replace all matches ───────────────────────────────
             HString* li_key = builtin_intern_string(ctx.heap, "lastIndex");
             TVal zero_tv; zero_tv.set_fastint(0);
-            rx.put_prop(li_key, zero_tv, hobject::PROP_FLAGS_WEC);
+            rx.put_prop(li_key, zero_tv);
 
             char[8192] buf;
             usz bOff = 0;
@@ -1274,7 +1274,7 @@ fn void builtin_string_proto_replaceAll(BuiltinContext* ctx) {
                     TVal msg_val;
                     msg_val.set_string(msg_str);
                     HString* msg_key = builtin_intern_string(ctx.heap, "message");
-                    err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WC);
+                    err.put_prop(msg_key, msg_val);
                 }
                 TVal err_tv;
                 err_tv.set_object(err);
@@ -1298,7 +1298,7 @@ fn void builtin_string_proto_replaceAll(BuiltinContext* ctx) {
 
         HString* li_key = builtin_intern_string(ctx.heap, "lastIndex");
         TVal zero_tv; zero_tv.set_fastint(0);
-        rx.put_prop(li_key, zero_tv, hobject::PROP_FLAGS_WEC);
+        rx.put_prop(li_key, zero_tv);
 
         char[8192] buf;
         usz bOff = 0;
@@ -1590,7 +1590,7 @@ fn void builtin_string_proto_repeat(BuiltinContext* ctx) {
             HString* msg = builtin_intern_string(ctx.heap, "Invalid count value");
             TVal msg_val; msg_val.set_string(msg);
             HString* msg_key = builtin_intern_string(ctx.heap, "message");
-            err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WC);
+            err.put_prop(msg_key, msg_val);
             TVal err_val; err_val.set_object(err);
             ctx.heap.curr_thread = err;
         }
@@ -1893,24 +1893,24 @@ fn void builtin_string_proto_match(BuiltinContext* ctx) {
             TVal elem;
             elem.set_string(match_str);
             HString* zero_key = builtin_intern_string(ctx.heap, "0");
-            arr.put_prop(zero_key, elem, hobject::PROP_FLAGS_WEC);
+            arr.put_prop(zero_key, elem);
 
             // Set index property
             TVal idx_tv;
             idx_tv.set_fastint((long)out_start);
             HString* idx_key = builtin_intern_string(ctx.heap, "index");
-            arr.put_prop(idx_key, idx_tv, hobject::PROP_FLAGS_WEC);
+            arr.put_prop(idx_key, idx_tv);
 
             // Set input property
             TVal input_tv;
             input_tv.set_string(s_hstr);
             HString* input_key = builtin_intern_string(ctx.heap, "input");
-            arr.put_prop(input_key, input_tv, hobject::PROP_FLAGS_WEC);
+            arr.put_prop(input_key, input_tv);
 
             TVal len_tv;
             len_tv.set_fastint(1);
             HString* len_key = builtin_intern_string(ctx.heap, "length");
-            arr.put_prop(len_key, len_tv, hobject::PROP_FLAGS_WEC);
+            arr.put_prop(len_key, len_tv);
 
             ctx.result.set_object(arr);
             return;
@@ -1921,7 +1921,7 @@ fn void builtin_string_proto_match(BuiltinContext* ctx) {
             // Reset lastIndex to 0
             TVal zero_tv;
             zero_tv.set_fastint(0);
-            rx.put_prop(li_key, zero_tv, hobject::PROP_FLAGS_WEC);
+            rx.put_prop(li_key, zero_tv);
 
             HObject*? arr_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
             if (catch err = arr_raw) { ctx.result.set_null(); return; }
@@ -1957,7 +1957,7 @@ fn void builtin_string_proto_match(BuiltinContext* ctx) {
                 }
                 TVal elem;
                 elem.set_string(match_str);
-                arr.put_prop(ctx.heap.int_to_hstring((long)arr_idx), elem, hobject::PROP_FLAGS_WEC);
+                arr.put_prop(ctx.heap.int_to_hstring((long)arr_idx), elem);
                 arr_idx++;
 
                 // Advance: if empty match, move by one; else go to end of match
@@ -1971,7 +1971,7 @@ fn void builtin_string_proto_match(BuiltinContext* ctx) {
 
             if (arr_idx == 0) {
                 // Reset lastIndex
-                rx.put_prop(li_key, zero_tv, hobject::PROP_FLAGS_WEC);
+                rx.put_prop(li_key, zero_tv);
                 ctx.result.set_null();
                 return;
             }
@@ -1979,12 +1979,12 @@ fn void builtin_string_proto_match(BuiltinContext* ctx) {
             // Update lastIndex on the regexp
             TVal li_tv;
             li_tv.set_fastint(0);
-            rx.put_prop(li_key, li_tv, hobject::PROP_FLAGS_WEC);
+            rx.put_prop(li_key, li_tv);
 
             TVal len_tv;
             len_tv.set_fastint((long)arr_idx);
             HString* len_key = builtin_intern_string(ctx.heap, "length");
-            arr.put_prop(len_key, len_tv, hobject::PROP_FLAGS_WEC);
+            arr.put_prop(len_key, len_tv);
 
             ctx.result.set_object(arr);
             return;
@@ -2020,12 +2020,12 @@ fn void builtin_string_proto_match(BuiltinContext* ctx) {
     TVal elem;
     elem.set_string(search_hstr);
     HString* zero_key = builtin_intern_string(ctx.heap, "0");
-    arr.put_prop(zero_key, elem, hobject::PROP_FLAGS_WEC);
+    arr.put_prop(zero_key, elem);
 
     TVal len_tv;
     len_tv.set_fastint(1);
     HString* len_key = builtin_intern_string(ctx.heap, "length");
-    arr.put_prop(len_key, len_tv, hobject::PROP_FLAGS_WEC);
+    arr.put_prop(len_key, len_tv);
 
     ctx.result.set_object(arr);
 }
@@ -2047,7 +2047,7 @@ fn void builtin_string_proto_matchAll(BuiltinContext* ctx) {
                 TVal msg_val;
                 msg_val.set_string(msg_str);
                 HString* msg_key = builtin_intern_string(ctx.heap, "message");
-                err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WC);
+                err.put_prop(msg_key, msg_val);
             }
             TVal err_tv;
             err_tv.set_object(err);
@@ -2076,7 +2076,7 @@ fn void builtin_string_proto_matchAll(BuiltinContext* ctx) {
                     TVal msg_val;
                     msg_val.set_string(msg_str);
                     HString* msg_key = builtin_intern_string(ctx.heap, "message");
-                    err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WC);
+                    err.put_prop(msg_key, msg_val);
                 }
                 TVal err_tv;
                 err_tv.set_object(err);
@@ -2090,7 +2090,7 @@ fn void builtin_string_proto_matchAll(BuiltinContext* ctx) {
         // Reset lastIndex to 0
         HString* li_key = builtin_intern_string(ctx.heap, "lastIndex");
         TVal zero_tv; zero_tv.set_fastint(0);
-        rx.put_prop(li_key, zero_tv, hobject::PROP_FLAGS_WEC);
+        rx.put_prop(li_key, zero_tv);
 
         // Create result array
         HObject*? arr_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
@@ -2133,7 +2133,7 @@ fn void builtin_string_proto_matchAll(BuiltinContext* ctx) {
             TVal elem;
             elem.set_string(match_str);
             HString* zero_key = builtin_intern_string(ctx.heap, "0");
-            match_arr.put_prop(zero_key, elem, hobject::PROP_FLAGS_WEC);
+            match_arr.put_prop(zero_key, elem);
 
             // Capture groups
             uint match_arr_len = 1;
@@ -2155,7 +2155,7 @@ fn void builtin_string_proto_matchAll(BuiltinContext* ctx) {
                 } else {
                     cap_elem.set_undefined();
                 }
-                match_arr.put_prop(ctx.heap.int_to_hstring((long)(i + 1)), cap_elem, hobject::PROP_FLAGS_WEC);
+                match_arr.put_prop(ctx.heap.int_to_hstring((long)(i + 1)), cap_elem);
                 match_arr_len++;
             }
 
@@ -2163,24 +2163,24 @@ fn void builtin_string_proto_matchAll(BuiltinContext* ctx) {
             TVal idx_tv;
             idx_tv.set_fastint((long)out_start);
             HString* idx_key = builtin_intern_string(ctx.heap, "index");
-            match_arr.put_prop(idx_key, idx_tv, hobject::PROP_FLAGS_WEC);
+            match_arr.put_prop(idx_key, idx_tv);
 
             // Set input property
             TVal input_tv;
             input_tv.set_string(s_hstr);
             HString* input_key = builtin_intern_string(ctx.heap, "input");
-            match_arr.put_prop(input_key, input_tv, hobject::PROP_FLAGS_WEC);
+            match_arr.put_prop(input_key, input_tv);
 
             // Set length
             TVal mlen_tv;
             mlen_tv.set_fastint((long)match_arr_len);
             HString* mlen_key = builtin_intern_string(ctx.heap, "length");
-            match_arr.put_prop(mlen_key, mlen_tv, hobject::PROP_FLAGS_WEC);
+            match_arr.put_prop(mlen_key, mlen_tv);
 
             // Add match result array to outer array
             TVal match_tv;
             match_tv.set_object(match_arr);
-            result_arr.put_prop(ctx.heap.int_to_hstring((long)arr_idx), match_tv, hobject::PROP_FLAGS_WEC);
+            result_arr.put_prop(ctx.heap.int_to_hstring((long)arr_idx), match_tv);
             arr_idx++;
 
             // Advance: if empty match, move by one; else go to end of match
@@ -2194,13 +2194,13 @@ fn void builtin_string_proto_matchAll(BuiltinContext* ctx) {
 
         // Reset lastIndex
         TVal li_tv; li_tv.set_fastint(0);
-        rx.put_prop(li_key, li_tv, hobject::PROP_FLAGS_WEC);
+        rx.put_prop(li_key, li_tv);
 
         // Set length on result array
         TVal len_tv;
         len_tv.set_fastint((long)arr_idx);
         HString* len_key = builtin_intern_string(ctx.heap, "length");
-        result_arr.put_prop(len_key, len_tv, hobject::PROP_FLAGS_WEC);
+        result_arr.put_prop(len_key, len_tv);
 
         ctx.result.set_object(result_arr);
         return;
@@ -2221,7 +2221,7 @@ fn void builtin_string_proto_matchAll(BuiltinContext* ctx) {
         // Empty pattern: return empty array
         TVal len_tv; len_tv.set_fastint(0);
         HString* len_key = builtin_intern_string(ctx.heap, "length");
-        result_arr.put_prop(len_key, len_tv, hobject::PROP_FLAGS_WEC);
+        result_arr.put_prop(len_key, len_tv);
         ctx.result.set_object(result_arr);
         return;
     }
@@ -2245,30 +2245,30 @@ fn void builtin_string_proto_matchAll(BuiltinContext* ctx) {
         TVal elem;
         elem.set_string(search_hstr);
         HString* zero_key = builtin_intern_string(ctx.heap, "0");
-        match_arr.put_prop(zero_key, elem, hobject::PROP_FLAGS_WEC);
+        match_arr.put_prop(zero_key, elem);
 
         // Set index property
         TVal idx_tv;
         idx_tv.set_fastint((long)pos);
         HString* idx_key = builtin_intern_string(ctx.heap, "index");
-        match_arr.put_prop(idx_key, idx_tv, hobject::PROP_FLAGS_WEC);
+        match_arr.put_prop(idx_key, idx_tv);
 
         // Set input property
         TVal input_tv;
         input_tv.set_string(s_hstr);
         HString* input_key = builtin_intern_string(ctx.heap, "input");
-        match_arr.put_prop(input_key, input_tv, hobject::PROP_FLAGS_WEC);
+        match_arr.put_prop(input_key, input_tv);
 
         // Set length = 1
         TVal mlen_tv;
         mlen_tv.set_fastint(1);
         HString* mlen_key = builtin_intern_string(ctx.heap, "length");
-        match_arr.put_prop(mlen_key, mlen_tv, hobject::PROP_FLAGS_WEC);
+        match_arr.put_prop(mlen_key, mlen_tv);
 
         // Add to result array
         TVal match_tv;
         match_tv.set_object(match_arr);
-        result_arr.put_prop(ctx.heap.int_to_hstring((long)arr_idx), match_tv, hobject::PROP_FLAGS_WEC);
+        result_arr.put_prop(ctx.heap.int_to_hstring((long)arr_idx), match_tv);
         arr_idx++;
 
         pos += search_len;
@@ -2278,7 +2278,7 @@ fn void builtin_string_proto_matchAll(BuiltinContext* ctx) {
     TVal len_tv;
     len_tv.set_fastint((long)arr_idx);
     HString* len_key = builtin_intern_string(ctx.heap, "length");
-    result_arr.put_prop(len_key, len_tv, hobject::PROP_FLAGS_WEC);
+    result_arr.put_prop(len_key, len_tv);
 
     ctx.result.set_object(result_arr);
 }
@@ -2323,7 +2323,7 @@ fn void builtin_string_proto_normalize(BuiltinContext* ctx) {
                     TVal msg_val;
                     msg_val.set_string(msg_str);
                     HString* msg_key = builtin_intern_string(ctx.heap, "message");
-                    err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WC);
+                    err.put_prop(msg_key, msg_val);
                     TVal err_tv;
                     err_tv.set_object(err);
                     ctx.throw_value = err_tv;
@@ -2404,13 +2404,13 @@ fn bool register_string_constructor(EnvRecord* global_env, Heap* heap) {
     HString* tostring_key = (HString*)heap.strs[heap::BuiltinStr.TO_STRING];
     TVal tostring_tv;
     tostring_tv.set_lightfunc((void*)(usz)BUILTIN_STRING_PROTO_TOSTRING);
-    proto.put_prop(tostring_key, tostring_tv, hobject::PROP_FLAGS_WC);
+    proto.put_prop(tostring_key, tostring_tv);
 
     // Add .valueOf() method
     HString* valueof_key = (HString*)heap.strs[heap::BuiltinStr.VALUE_OF];
     TVal valueof_tv;
     valueof_tv.set_lightfunc((void*)(usz)BUILTIN_STRING_PROTO_VALUEOF);
-    proto.put_prop(valueof_key, valueof_tv, hobject::PROP_FLAGS_WC);
+    proto.put_prop(valueof_key, valueof_tv);
 
     // Add String.prototype methods (Phase 6b)
     if (!register_string_proto_method(proto, heap, "charAt",     BUILTIN_STRING_PROTO_CHARAT))     return false;
@@ -2456,18 +2456,13 @@ fn bool register_string_constructor(EnvRecord* global_env, Heap* heap) {
     HString* constructor_key = (HString*)heap.strs[heap::BuiltinStr.CONSTRUCTOR];
     TVal constructor_tv;
     constructor_tv.set_object(str_obj);
-    proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_WC);
+    proto.put_prop(constructor_key, constructor_tv);
 
     // Set String.prototype on the constructor (non-writable, non-enumerable, non-configurable)
     HString* prototype_key = (HString*)heap.strs[heap::BuiltinStr.PROTOTYPE];
     TVal proto_tv;
     proto_tv.set_object(proto);
-    PropFlags proto_pflags;
-    proto_pflags.writable = false;
-    proto_pflags.enumerable = false;
-    proto_pflags.configurable = false;
-    proto_pflags.is_accessor = false;
-    str_obj.put_prop(prototype_key, proto_tv, proto_pflags);
+    str_obj.put_prop(prototype_key, proto_tv);
 
     // Add String.fromCharCode (ES5 §15.5.3.2)
     if (!register_string_proto_method(str_obj, heap, "fromCharCode", BUILTIN_STRING_FROMCHARCODE)) return false;

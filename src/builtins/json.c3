@@ -214,7 +214,7 @@ fn TVal json_parse_array(JsonParseCtx* jctx) {
 
             HString* idx_key = jctx.heap.int_to_hstring((long)idx);
             if (idx_key != null) {
-                arr.put_prop(idx_key, elem, hobject::PROP_FLAGS_WEC);
+                arr.put_prop(idx_key, elem);
             }
             idx++;
 
@@ -236,7 +236,7 @@ fn TVal json_parse_array(JsonParseCtx* jctx) {
 
     TVal len_val;
     len_val.set_fastint((long)idx);
-    arr.put_prop(len_key, len_val, hobject::PROP_FLAGS_WEC);
+    arr.put_prop(len_key, len_val);
 
     TVal result;
     result.set_object(arr);
@@ -274,7 +274,7 @@ fn TVal json_parse_object(JsonParseCtx* jctx) {
                 if (val.is_undefined() && val.get_heapptr() == null && jctx.pos < jctx.len) {
                     TVal r; r.set_undefined(); return r;
                 }
-                obj.put_prop(k, val, hobject::PROP_FLAGS_WEC);
+                obj.put_prop(k, val);
                 json_skip_ws(jctx);
                 if (jctx.pos >= jctx.len) {
                     TVal r; r.set_undefined(); return r;
@@ -392,7 +392,7 @@ fn TVal json_walk(Heap* heap, TVal reviver, TVal holder, HString* name) {
                 if (new_elem.is_undefined()) {
                     obj.delete_prop(idx_key);
                 } else {
-                    obj.put_prop(idx_key, new_elem, hobject::PROP_FLAGS_WEC);
+                    obj.put_prop(idx_key, new_elem);
                 }
             }
         } else if (obj.get_class() == ObjClass.OBJECT) {
@@ -404,7 +404,7 @@ fn TVal json_walk(Heap* heap, TVal reviver, TVal holder, HString* name) {
                     if (new_val.is_undefined()) {
                         obj.delete_prop(key_str);
                     } else {
-                        obj.put_prop(key_str, new_val, hobject::PROP_FLAGS_WEC);
+                        obj.put_prop(key_str, new_val);
                     }
                 }
             }
@@ -431,7 +431,7 @@ fn void json_throw_syntax_error(BuiltinContext* ctx, char[] msg) {
         TVal msg_tv;
         msg_tv.set_string(msg_str);
         HString* msg_key = builtin_intern_string(ctx.heap, "message");
-        err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
+        err.put_prop(msg_key, msg_tv);
         ctx.throw_value.set_object(err);
     } else {
         ctx.throw_value.set_undefined();
@@ -495,7 +495,7 @@ fn void builtin_json_parse(BuiltinContext* ctx) {
             HObject*? holder_raw = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
             if (try holder = holder_raw) {
                 HString* empty_key = builtin_intern_string(ctx.heap, "");
-                holder.put_prop(empty_key, result, hobject::PROP_FLAGS_WEC);
+                holder.put_prop(empty_key, result);
 
                 TVal holder_tv;
                 holder_tv.set_object(holder);
@@ -1467,7 +1467,7 @@ fn void builtin_json_stringify(BuiltinContext* ctx) {
 
     // Set wrapper[""] = value
     HString* empty_key = builtin_intern_string(ctx.heap, "");
-    wrapper.put_prop(empty_key, value, hobject::PROP_FLAGS_WEC);
+    wrapper.put_prop(empty_key, value);
 
     // Initialize serialization context
     char[16384] buf;

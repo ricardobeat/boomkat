@@ -207,82 +207,27 @@ bitstruct ObjFlags : uint {
 // PropFlags — per-property attribute bits
 // ============================================================================
 
-/// ECMAScript property descriptor attribute flags.
+/// Property type flags (minimal — no descriptors, no prototype).
 ///
-/// Matches the spec's [[Writable]], [[Enumerable]], [[Configurable]]
-/// attributes plus an accessor flag.
+/// Only two bits remain after ripping out enumerable/configurable.
+/// - is_accessor: the property holds a getter/setter pair
+/// - writable: false only for `const` bindings in env records
 bitstruct PropFlags : char {
-    /// Property value can be changed.
-    bool writable     : 0;
-    /// Property appears in for-in and Object.keys().
-    bool enumerable   : 1;
-    /// Property can be deleted and its attributes changed.
-    bool configurable : 2;
     /// When true the property is an accessor (getter/setter pair) rather
     /// than a data property.
-    bool is_accessor  : 3;
+    bool is_accessor  : 0;
+    /// Property value can be changed. Only false for `const` env bindings.
+    bool writable     : 1;
 }
 
-/// Convenience constant: default flags for a normal data property created
-/// by assignment (writable, enumerable, configurable).
-const PropFlags PROP_FLAGS_WEC = {
-    .writable     = true,
-    .enumerable   = true,
-    .configurable = true,
-    .is_accessor  = false
-};
+/// Default data property (writable, not accessor).
+const PropFlags PROP_DEFAULT  = { .is_accessor = false, .writable = true };
 
-/// Convenience constant: non-enumerable data property (writable, configurable).
-/// Used for built-in prototype methods per ES5 spec.
-const PropFlags PROP_FLAGS_WC = {
-    .writable     = true,
-    .enumerable   = false,
-    .configurable = true,
-    .is_accessor  = false
-};
+/// Accessor property — getter/setter pair.
+const PropFlags PROP_ACCESSOR = { .is_accessor = true, .writable = false };
 
-/// Convenience constant: non-writable data property (enumerable, configurable).
-/// Used for `const` bindings to prevent reassignment.
-const PropFlags PROP_FLAGS_EC = {
-    .writable     = false,
-    .enumerable   = true,
-    .configurable = true,
-    .is_accessor  = false
-};
-
-/// Convenience constant: accessor property (enumerable, configurable).
-/// Used for getter/setter properties in object literals and class bodies.
-const PropFlags PROP_FLAGS_ACCESSOR = {
-    .writable     = false,
-    .enumerable   = true,
-    .configurable = true,
-    .is_accessor  = true
-};
-
-/// Convenience constant: non-writable, non-enumerable, configurable.
-/// Used for .name and .length properties of built-in functions.
-const PropFlags PROP_FLAGS_NWC = {
-    .writable     = false,
-    .enumerable   = false,
-    .configurable = true,
-    .is_accessor  = false
-};
-
-/// Non-writable, non-enumerable, non-configurable — String exotic .length (ES5 §15.5.5.1)
-const PropFlags PROP_FLAGS_NNC = {
-    .writable     = false,
-    .enumerable   = false,
-    .configurable = false,
-    .is_accessor  = false
-};
-
-/// Writable, enumerable, non-configurable — String exotic indexed properties (ES5 §15.5.5.1)
-const PropFlags PROP_FLAGS_NEC = {
-    .writable     = true,
-    .enumerable   = true,
-    .configurable = false,
-    .is_accessor  = false
-};
+/// Non-writable data property — env-record `const` bindings only.
+const PropFlags PROP_CONST    = { .is_accessor = false, .writable = false };
 
 // ============================================================================
 // PropValue — per-object property value storage (QuickJS-style)
@@ -835,7 +780,7 @@ fn bool HObject.is_prop_writable(&self, void* key) {
 /// necessary).  The caller is responsible for updating the shape
 /// (via Heap.transition_shape) when a new property is added.
 /// Returns `true` on success, `false` on allocation failure.
-fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags) {
+fn bool HObject.put_prop(&self, void* key, TVal val) {
     // --- Update existing property ---
     int idx = self.find_prop_idx(key);
     if (idx >= 0) {
@@ -850,7 +795,7 @@ fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags) {
                 ((types::HeapHeader*)ptr).incref();
             }
         }
-        self.set_prop_flags((uint)idx, pflags);
+        self.set_prop_flags((uint)idx, PROP_DEFAULT);
         // Sync array_length shadow cache on LENGTH writes to ARRAY exotic
         if (self.flags.exotic_array && key == builtin_length_key) {
             if (val.is_fastint()) {
@@ -934,9 +879,8 @@ fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags) {
         // set_prop_flags handles making the shape private if shared.
         if (self.prop_count > 0) {
             PropFlags shape_f = self.get_prop_flags(new_idx);
-            if (shape_f.writable != pflags.writable || shape_f.enumerable != pflags.enumerable ||
-                shape_f.configurable != pflags.configurable || shape_f.is_accessor != pflags.is_accessor) {
-                self.set_prop_flags(new_idx, pflags);
+            if (shape_f.writable != PROP_DEFAULT.writable || shape_f.is_accessor != PROP_DEFAULT.is_accessor) {
+                self.set_prop_flags(new_idx, PROP_DEFAULT);
             }
         }
     }
@@ -976,6 +920,19 @@ fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags) {
         }
     }
 
+    return true;
+}
+
+/// Set an accessor property (getter/setter pair) by interned key.
+/// Like put_prop but stores PROP_ACCESSOR flags instead of PROP_DEFAULT.
+fn bool HObject.put_prop_accessor(&self, void* key, TVal val) {
+    // Create with default flags, then mark as accessor
+    if (!self.put_prop(key, val)) return false;
+    // Override the new property's flags to be accessor
+    int idx = self.find_prop_idx(key);
+    if (idx >= 0) {
+        self.set_prop_flags((uint)idx, PROP_ACCESSOR);
+    }
     return true;
 }
 
@@ -1370,13 +1327,8 @@ fn void hobject_free(HObject* obj, void* heap_ptr) {
 
 /// Returns the number of own enumerable properties.
 fn uint HObject.enumerable_count(&self) {
-    uint count = 0;
-    for (uint i = 0; i < self.prop_count; i++) {
-        if (self.get_prop_flags(i).enumerable) {
-            count++;
-        }
-    }
-    return count;
+    // All props are enumerable in TinyDuck (no descriptor distinction).
+    return self.prop_count;
 }
 
 /// Returns the property entry at the given raw index, or `null` if `idx`
@@ -1471,14 +1423,14 @@ fn Shape* shape_create(heap::Heap* heap, uint own_count, uint offset, uint paren
 
 /// Create a new shape that extends `parent` by adding one property.
 /// Only stores the NEW property (delta).  Returns null on allocation failure.
-fn Shape* shape_extend(heap::Heap* heap, Shape* parent, uint parent_id, void* new_key, PropFlags flags) {
+fn Shape* shape_extend(heap::Heap* heap, Shape* parent, uint parent_id, void* new_key) {
     uint offset = parent.offset + parent.own_count;
     Shape* ns = shape_create(heap, 1, offset, parent_id, parent);
     if (ns == null) return null;
 
     // Set the single new property
     ns.props()[0].key   = new_key;
-    ns.props()[0].flags = flags;
+    ns.props()[0].flags = PROP_DEFAULT;
 
     // Incref the key: this new shape holds a ref to the key.
     if (new_key != null) {
@@ -1563,8 +1515,8 @@ fn bool HObject.es_delete_prop(&self, void* key) {
     if (idx < 0) {
         return true;  // Not found → [[Delete]] returns true.
     }
-    if (!self.get_prop_flags((uint)idx).configurable) {
-        return false;  // Non-configurable → [[Delete]] returns false.
+    if (!self.get_prop_flags((uint)idx).writable) {
+        return false;
     }
     return self.delete_prop(key);
 }

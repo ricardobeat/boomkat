@@ -722,7 +722,7 @@ fn void vm_set_toprimitive_error(Vm* vm) {
             msg_val.set_string(msg_str);
             HString* msg_key = intern_string(vm, "message");
             if (msg_key != null) {
-                err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WEC);
+                err.put_prop(msg_key, msg_val);
             }
         }
         TVal err_val;
@@ -742,7 +742,7 @@ fn void vm_set_type_error(Vm* vm, char[] msg) {
             msg_val.set_string(msg_str);
             HString* msg_key = intern_string(vm, "message");
             if (msg_key != null) {
-                err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WEC);
+                err.put_prop(msg_key, msg_val);
             }
         }
         TVal err_val;
@@ -991,7 +991,7 @@ fn ForInState* collect_forin_keys(Vm* vm, HObject* obj) {
         }
         // Phase 2: non-index named properties (insertion order)
         for (uint i = 0; i < cur.prop_count; i++) {
-            if (cur.get_prop_flags(i).enumerable && cur.prop_key_at(i) != null) {
+            if (cur.prop_key_at(i) != null) {
                 HString* k = (HString*)cur.prop_key_at(i);
                 if (k.is_arridx()) continue;
                 if (cur.flags.exotic_stringobj && (void*)k == vm.heap.strs[heap::BuiltinStr.LENGTH]) continue;
@@ -2444,7 +2444,7 @@ fn TVal? Vm.run(Vm* vm) {
                                 TVal emsg_val;
                                 emsg_val.set_string(emsg);
                                 HString* ekey = (HString*)vm.heap.strs[heap::BuiltinStr.MESSAGE];
-                                err.put_prop(ekey, emsg_val, hobject::PROP_FLAGS_WEC);
+                                err.put_prop(ekey, emsg_val);
                             }
                             TVal err_val;
                             err_val.set_object(err);
@@ -2469,7 +2469,7 @@ fn TVal? Vm.run(Vm* vm) {
                                 TVal emsg_val;
                                 emsg_val.set_string(emsg);
                                 HString* ekey = (HString*)vm.heap.strs[heap::BuiltinStr.MESSAGE];
-                                err.put_prop(ekey, emsg_val, hobject::PROP_FLAGS_WEC);
+                                err.put_prop(ekey, emsg_val);
                             }
                             TVal err_val;
                             err_val.set_object(err);
@@ -2541,7 +2541,7 @@ fn TVal? Vm.run(Vm* vm) {
                             TVal emsg_val;
                             emsg_val.set_string(emsg);
                             HString* ekey = (HString*)vm.heap.strs[heap::BuiltinStr.MESSAGE];
-                            err.put_prop(ekey, emsg_val, hobject::PROP_FLAGS_WEC);
+                            err.put_prop(ekey, emsg_val);
                         }
                         TVal err_val;
                         err_val.set_object(err);
@@ -3015,7 +3015,7 @@ fn TVal? Vm.run(Vm* vm) {
                     HString* msg_val = intern_string(vm, "Right-hand side of instanceof is not an object");
                     TVal msg_tv;
                     msg_tv.set_string(msg_val);
-                    err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WEC);
+                    err.put_prop(msg_key, msg_tv);
                     TVal err_val;
                     err_val.set_object(err);
                     if (!vm_throw_value(vm, err_val, act, &curr_pc, &needs_restart)) {
@@ -3036,7 +3036,7 @@ fn TVal? Vm.run(Vm* vm) {
                     HString* msg_val = intern_string(vm, "Right-hand side of instanceof is not callable");
                     TVal msg_tv;
                     msg_tv.set_string(msg_val);
-                    err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WEC);
+                    err.put_prop(msg_key, msg_tv);
                     TVal err_val;
                     err_val.set_object(err);
                     if (!vm_throw_value(vm, err_val, act, &curr_pc, &needs_restart)) {
@@ -3134,7 +3134,7 @@ fn TVal? Vm.run(Vm* vm) {
                     HString* msg_val = intern_string(vm, "in requires an object");
                     TVal msg_tv;
                     msg_tv.set_string(msg_val);
-                    err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WEC);
+                    err.put_prop(msg_key, msg_tv);
                     TVal err_val;
                     err_val.set_object(err);
                     if (!vm_throw_value(vm, err_val, act, &curr_pc, &needs_restart)) {
@@ -3380,7 +3380,7 @@ fn TVal? Vm.run(Vm* vm) {
                         if (class_proto != null) {
                             TVal? m = class_proto.get_prop(key);
                             if (try mv = m) {
-                                hobj.put_prop(key, mv, hobject::PROP_FLAGS_WEC);
+                                hobj.put_prop(key, mv);
                                 vm.heap.tval_copy_ref(ra, &mv);
                                 track_heap_store(act, ra, (uint)insn.a);
                                 break;
@@ -3409,7 +3409,7 @@ fn TVal? Vm.run(Vm* vm) {
                             TVal msg_val;
                             msg_val.set_string(msg_str);
                             HString* msg_key = (HString*)vm.heap.strs[heap::BuiltinStr.MESSAGE];
-                            err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WEC);
+                            err.put_prop(msg_key, msg_val);
                         }
                     }
                     TVal err_val;
@@ -3700,7 +3700,7 @@ fn TVal? Vm.run(Vm* vm) {
                             if (class_proto != null) {
                                 TVal? m = class_proto.get_prop(key);
                                 if (try mv = m) {
-                                    hobj.put_prop(key, mv, hobject::PROP_FLAGS_WEC);
+                                    hobj.put_prop(key, mv);
                                     vm.heap.tval_copy_ref(ra, &mv);
                                     track_heap_store(act, ra, (uint)insn.a);
                                     break;
@@ -3723,7 +3723,7 @@ fn TVal? Vm.run(Vm* vm) {
                             TVal msg_val;
                             msg_val.set_string(msg_str);
                             HString* msg_key = (HString*)vm.heap.strs[heap::BuiltinStr.MESSAGE];
-                            err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WEC);
+                            err.put_prop(msg_key, msg_val);
                         }
                         TVal err_val;
                         err_val.set_object(err);
@@ -3988,7 +3988,7 @@ fn TVal? Vm.run(Vm* vm) {
                                     HString* msg_val = intern_string(vm, "Cannot assign to read only property");
                                     TVal msg_tv;
                                     msg_tv.set_string(msg_val);
-                                    err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WEC);
+                                    err.put_prop(msg_key, msg_tv);
                                     TVal err_val;
                                     err_val.set_object(err);
                                     if (!vm_throw_value(vm, err_val, act, &curr_pc, &needs_restart)) {
@@ -4061,7 +4061,7 @@ fn TVal? Vm.run(Vm* vm) {
                         } else {
                             // No accessor: insert new property
                             if (hobj.flags.extensible) {
-                                hobj.put_prop(key, put_val, hobject::PROP_FLAGS_WEC);
+                                hobj.put_prop(key, put_val);
                             }
                         }
                     }
@@ -4084,7 +4084,7 @@ fn TVal? Vm.run(Vm* vm) {
                             TVal msg_val;
                             msg_val.set_string(msg_str);
                             HString* msg_key = (HString*)vm.heap.strs[heap::BuiltinStr.MESSAGE];
-                            err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WEC);
+                            err.put_prop(msg_key, msg_val);
                         }
                     }
                     TVal err_val;
@@ -4228,7 +4228,7 @@ fn TVal? Vm.run(Vm* vm) {
                                 HString* lastindex_key = intern_string(vm, "lastIndex");
                                 TVal lastindex_tv;
                                 lastindex_tv.set_fastint(0);
-                                obj.put_prop(lastindex_key, lastindex_tv, hobject::PROP_FLAGS_WEC);
+                                obj.put_prop(lastindex_key, lastindex_tv);
                                 ra.set_object(obj);
                                 track_heap_store(act, ra, (uint)insn.a);
                             } else {
@@ -4272,7 +4272,7 @@ fn TVal? Vm.run(Vm* vm) {
                 HString* len_str = (HString*)vm.heap.strs[heap::BuiltinStr.LENGTH];
                 TVal len_val;
                 len_val.set_fastint((long)count);
-                hobj.put_prop(len_str, len_val, hobject::PROP_FLAGS_WEC);
+                hobj.put_prop(len_str, len_val);
             }
             break;
         }
@@ -4292,7 +4292,7 @@ fn TVal? Vm.run(Vm* vm) {
                     if (msg_str != null) {
                         TVal msg_val; msg_val.set_string(msg_str);
                         HString* msg_key = (HString*)vm.heap.strs[heap::BuiltinStr.MESSAGE];
-                        err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WEC);
+                        err.put_prop(msg_key, msg_val);
                     }
                     TVal err_val; err_val.set_object(err);
                     if (!vm_throw_value(vm, err_val, act, &curr_pc, &needs_restart)) return VM_ERROR~;
@@ -4334,7 +4334,7 @@ fn TVal? Vm.run(Vm* vm) {
                     if (msg_str != null) {
                         TVal msg_val; msg_val.set_string(msg_str);
                         HString* msg_key = (HString*)vm.heap.strs[heap::BuiltinStr.MESSAGE];
-                        err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WEC);
+                        err.put_prop(msg_key, msg_val);
                     }
                     TVal err_val; err_val.set_object(err);
                     if (!vm_throw_value(vm, err_val, act, &curr_pc, &needs_restart)) { return VM_ERROR~; }
@@ -4374,7 +4374,7 @@ fn TVal? Vm.run(Vm* vm) {
                 if (try vv = value_opt) {
                     HString* pk = vm.heap.int_to_hstring(idx + (long)k);
                     if (pk != null) {
-                        target.put_prop(pk, vv, hobject::PROP_FLAGS_WEC);
+                        target.put_prop(pk, vv);
                     }
                     k++;
                 } else { break; }
@@ -4397,7 +4397,7 @@ fn TVal? Vm.run(Vm* vm) {
                     if (msg_str != null) {
                         TVal msg_val; msg_val.set_string(msg_str);
                         HString* msg_key = (HString*)vm.heap.strs[heap::BuiltinStr.MESSAGE];
-                        err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WEC);
+                        err.put_prop(msg_key, msg_val);
                     }
                     TVal err_val; err_val.set_object(err);
                     if (!vm_throw_value(vm, err_val, act, &curr_pc, &needs_restart)) return VM_ERROR~;
@@ -4431,7 +4431,7 @@ fn TVal? Vm.run(Vm* vm) {
                     if (msg_str != null) {
                         TVal msg_val; msg_val.set_string(msg_str);
                         HString* msg_key = (HString*)vm.heap.strs[heap::BuiltinStr.MESSAGE];
-                        err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WEC);
+                        err.put_prop(msg_key, msg_val);
                     }
                     TVal err_val; err_val.set_object(err);
                     if (!vm_throw_value(vm, err_val, act, &curr_pc, &needs_restart)) return VM_ERROR~;
@@ -4612,13 +4612,13 @@ fn TVal? Vm.run(Vm* vm) {
                             for (uint ri = 0; ri < overflow; ri++) {
                                 HString* rkey = vm.heap.int_to_hstring((long)ri);
                                 if (rkey != null) {
-                                    rest_arr.put_prop(rkey, new_regs[rest_idx + ri], hobject::PROP_FLAGS_WEC);
+                                    rest_arr.put_prop(rkey, new_regs[rest_idx + ri]);
                                 }
                             }
                             HString* len_str = (HString*)vm.heap.strs[heap::BuiltinStr.LENGTH];
                             TVal len_val;
                             len_val.set_fastint((long)overflow);
-                            rest_arr.put_prop(len_str, len_val, hobject::PROP_FLAGS_WEC);
+                            rest_arr.put_prop(len_str, len_val);
                             new_regs[rest_idx].set_object(rest_arr);
                         } else {
                             new_regs[rest_idx].set_undefined();
@@ -4722,7 +4722,7 @@ fn TVal? Vm.run(Vm* vm) {
                         TVal msg_val;
                         msg_val.set_string(msg_str);
                         HString* msg_key = (HString*)vm.heap.strs[heap::BuiltinStr.MESSAGE];
-                        err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WEC);
+                        err.put_prop(msg_key, msg_val);
                     }
                     TVal err_val;
                     err_val.set_object(err);
@@ -4750,7 +4750,7 @@ fn TVal? Vm.run(Vm* vm) {
                         TVal msg_val;
                         msg_val.set_string(msg_str);
                         HString* msg_key = (HString*)vm.heap.strs[heap::BuiltinStr.MESSAGE];
-                        err2.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WEC);
+                        err2.put_prop(msg_key, msg_val);
                     }
                     TVal err_val2;
                     err_val2.set_object(err2);
@@ -4855,7 +4855,7 @@ fn TVal? Vm.run(Vm* vm) {
                             TVal msg_val;
                             msg_val.set_string(msg_str);
                             HString* msg_key = (HString*)vm.heap.strs[heap::BuiltinStr.MESSAGE];
-                            err2.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WEC);
+                            err2.put_prop(msg_key, msg_val);
                         }
                         TVal err_val2;
                         err_val2.set_object(err2);
@@ -4944,14 +4944,14 @@ fn TVal? Vm.run(Vm* vm) {
                         HString* key = vm.heap.int_to_hstring((long)i);
                         if (key != null) {
                             TVal elem = old_args[copy_count + i];
-                            a.put_prop(key, elem, hobject::PROP_FLAGS_WEC);
+                            a.put_prop(key, elem);
                         }
                     }
                     // Set .length
                     HString* len_str = (HString*)vm.heap.strs[heap::BuiltinStr.LENGTH];
                     TVal len_val;
                     len_val.set_fastint((long)overflow);
-                    a.put_prop(len_str, len_val, hobject::PROP_FLAGS_WEC);
+                    a.put_prop(len_str, len_val);
 
                     new_regs[rest_idx].set_object(a);
                 } else {
@@ -5031,7 +5031,7 @@ fn TVal? Vm.run(Vm* vm) {
                         TVal msg_val;
                         msg_val.set_string(msg_str);
                         HString* msg_key = (HString*)vm.heap.strs[heap::BuiltinStr.MESSAGE];
-                        err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WEC);
+                        err.put_prop(msg_key, msg_val);
                     }
                     TVal err_val;
                     err_val.set_object(err);
@@ -5056,7 +5056,7 @@ fn TVal? Vm.run(Vm* vm) {
                         TVal msg_val;
                         msg_val.set_string(msg_str);
                         HString* msg_key = (HString*)vm.heap.strs[heap::BuiltinStr.MESSAGE];
-                        err2.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WEC);
+                        err2.put_prop(msg_key, msg_val);
                     }
                     TVal err_val2;
                     err_val2.set_object(err2);
@@ -5159,14 +5159,14 @@ fn TVal? Vm.run(Vm* vm) {
                         HString* key = vm.heap.int_to_hstring((long)j);
                         if (key != null) {
                             TVal elem = old_args[copy_count + j];
-                            rest_obj.put_prop(key, elem, hobject::PROP_FLAGS_WEC);
+                            rest_obj.put_prop(key, elem);
                         }
                     }
                     // Set .length
                     HString* len_key = (HString*)vm.heap.strs[heap::BuiltinStr.LENGTH];
                     TVal len_val;
                     len_val.set_fastint((long)overflow);
-                    rest_obj.put_prop(len_key, len_val, hobject::PROP_FLAGS_WEC);
+                    rest_obj.put_prop(len_key, len_val);
                     new_regs[rest_idx].set_object(rest_obj);
                 } else {
                     new_regs[rest_idx].set_undefined();
@@ -5253,7 +5253,7 @@ fn TVal? Vm.run(Vm* vm) {
                         TVal msg_val;
                         msg_val.set_string(msg_str);
                         HString* msg_key = (HString*)vm.heap.strs[heap::BuiltinStr.MESSAGE];
-                        err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WEC);
+                        err.put_prop(msg_key, msg_val);
                     }
                     TVal err_val;
                     err_val.set_object(err);
@@ -5280,7 +5280,7 @@ fn TVal? Vm.run(Vm* vm) {
                         TVal msg_val;
                         msg_val.set_string(msg_str);
                         HString* msg_key = (HString*)vm.heap.strs[heap::BuiltinStr.MESSAGE];
-                        err2.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WEC);
+                        err2.put_prop(msg_key, msg_val);
                     }
                     TVal err_val2;
                     err_val2.set_object(err2);
@@ -5369,7 +5369,7 @@ fn TVal? Vm.run(Vm* vm) {
                         TVal msg_val;
                         msg_val.set_string(msg_str);
                         HString* msg_key = (HString*)vm.heap.strs[heap::BuiltinStr.MESSAGE];
-                        err2.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WEC);
+                        err2.put_prop(msg_key, msg_val);
                     }
                     TVal err_val2;
                     err_val2.set_object(err2);
@@ -5397,7 +5397,7 @@ fn TVal? Vm.run(Vm* vm) {
                         TVal msg_val;
                         msg_val.set_string(msg_str);
                         HString* msg_key = (HString*)vm.heap.strs[heap::BuiltinStr.MESSAGE];
-                        err3.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WEC);
+                        err3.put_prop(msg_key, msg_val);
                     }
                     TVal err_val3;
                     err_val3.set_object(err3);
@@ -5424,7 +5424,7 @@ fn TVal? Vm.run(Vm* vm) {
             TVal? proto_val = hobj.get_prop(proto_key);
             if (try pv = proto_val) {
                 if (pv.is_object() && pv.get_heapptr() != null) {
-                    new_obj.put_prop(class_key, pv, hobject::PROP_FLAGS_WEC);
+                    new_obj.put_prop(class_key, pv);
                 }
             }
 
@@ -5490,13 +5490,13 @@ fn TVal? Vm.run(Vm* vm) {
                         HString* key2 = vm.heap.int_to_hstring((long)i);
                         if (key2 != null) {
                             TVal elem2 = old_args2[copy_count + i];
-                            a2.put_prop(key2, elem2, hobject::PROP_FLAGS_WEC);
+                            a2.put_prop(key2, elem2);
                         }
                     }
                     HString* len_str2 = (HString*)vm.heap.strs[heap::BuiltinStr.LENGTH];
                     TVal len_val2;
                     len_val2.set_fastint((long)overflow);
-                    a2.put_prop(len_str2, len_val2, hobject::PROP_FLAGS_WEC);
+                    a2.put_prop(len_str2, len_val2);
 
                     new_regs2[rest_idx].set_object(a2);
                 } else {
@@ -5811,8 +5811,8 @@ fn TVal? Vm.run(Vm* vm) {
             state_tv.set_fastint((long)(usz)state);
             HString* async_key = builtins::builtin_intern_string(vm.heap, "\xFFasync_state");
             if (async_key != null) {
-                resume_fn.put_prop(async_key, state_tv, hobject::PROP_FLAGS_WEC);
-                reject_fn.put_prop(async_key, state_tv, hobject::PROP_FLAGS_WEC);
+                resume_fn.put_prop(async_key, state_tv);
+                reject_fn.put_prop(async_key, state_tv);
             }
 
             // Add reactions to the awaited promise
@@ -5826,8 +5826,8 @@ fn TVal? Vm.run(Vm* vm) {
                     reject_tv.set_object(reject_fn);
                     HString* on_fulfilled = builtins::builtin_intern_string(vm.heap, "onFulfilled");
                     HString* on_rejected = builtins::builtin_intern_string(vm.heap, "onRejected");
-                    if (on_fulfilled != null) reaction.put_prop(on_fulfilled, resume_tv, hobject::PROP_FLAGS_WEC);
-                    if (on_rejected != null) reaction.put_prop(on_rejected, reject_tv, hobject::PROP_FLAGS_WEC);
+                    if (on_fulfilled != null) reaction.put_prop(on_fulfilled, resume_tv);
+                    if (on_rejected != null) reaction.put_prop(on_rejected, reject_tv);
 
                     TVal reaction_tv;
                     reaction_tv.set_object(reaction);
@@ -5927,7 +5927,7 @@ fn TVal? Vm.run(Vm* vm) {
                                         TVal msg_val;
                                         msg_val.set_string(msg_str);
                                         HString* msg_key = (HString*)vm.heap.strs[heap::BuiltinStr.MESSAGE];
-                                        err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WEC);
+                                        err.put_prop(msg_key, msg_val);
                                     }
                                     TVal err_val;
                                     err_val.set_object(err);
@@ -5988,7 +5988,7 @@ fn TVal? Vm.run(Vm* vm) {
                                 TVal msg_val;
                                 msg_val.set_string(msg_str);
                                 HString* msg_key = (HString*)vm.heap.strs[heap::BuiltinStr.MESSAGE];
-                                err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WEC);
+                                err.put_prop(msg_key, msg_val);
                             }
                             TVal err_val;
                             err_val.set_object(err);
@@ -6062,7 +6062,7 @@ fn TVal? Vm.run(Vm* vm) {
                                         TVal msg_val;
                                         msg_val.set_string(msg_str);
                                         HString* msg_key = (HString*)vm.heap.strs[heap::BuiltinStr.MESSAGE];
-                                        err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WEC);
+                                        err.put_prop(msg_key, msg_val);
                                     }
                                     TVal err_val;
                                     err_val.set_object(err);
@@ -6142,7 +6142,7 @@ fn TVal? Vm.run(Vm* vm) {
                                 TVal msg_val;
                                 msg_val.set_string(msg_str);
                                 HString* msg_key = (HString*)vm.heap.strs[heap::BuiltinStr.MESSAGE];
-                                err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WEC);
+                                err.put_prop(msg_key, msg_val);
                             }
                             TVal err_val;
                             err_val.set_object(err);
@@ -6244,7 +6244,7 @@ fn TVal? Vm.run(Vm* vm) {
                 TVal name_val = constants[bc];
                 if (name_val.is_string()) {
                     void* key = name_val.get_heapptr();
-                    act.lex_env.bindings.put_prop(key, *ra, hobject::PROP_FLAGS_EC);
+                    act.lex_env.bindings.put_prop(key, *ra);
                 }
             }
             break;
@@ -6261,7 +6261,7 @@ fn TVal? Vm.run(Vm* vm) {
                 if (name_val.is_string()) {
                     void* key = name_val.get_heapptr();
                     TVal tdz = env::tdz_sentinel();
-                    act.lex_env.bindings.put_prop(key, tdz, hobject::PROP_FLAGS_WEC);
+                    act.lex_env.bindings.put_prop(key, tdz);
                 }
             }
             break;
@@ -6294,14 +6294,14 @@ fn TVal? Vm.run(Vm* vm) {
                     if (name_hstr != null) {
                         TVal name_tv;
                         name_tv.set_string(name_hstr);
-                        func_obj.put_prop((HString*)vm.heap.strs[heap::BuiltinStr.NAME], name_tv, hobject::PROP_FLAGS_NWC);
+                        func_obj.put_prop((HString*)vm.heap.strs[heap::BuiltinStr.NAME], name_tv);
                     }
 
                     // Set .length property (ES5 §15.3.5.1: non-writable, non-enumerable, configurable)
                     HString* len_key = (HString*)vm.heap.strs[heap::BuiltinStr.LENGTH];
                     TVal len_val;
                     len_val.set_fastint((long)template.num_formals);
-                    func_obj.put_prop(len_key, len_val, hobject::PROP_FLAGS_NWC);
+                    func_obj.put_prop(len_key, len_val);
 
                     // Arrow functions don't get a .prototype property (ES6 §14.2.16)
                     if (!template.is_arrow()) {
@@ -6312,12 +6312,12 @@ fn TVal? Vm.run(Vm* vm) {
                             HString* constr_key = (HString*)vm.heap.strs[heap::BuiltinStr.CONSTRUCTOR];
                             TVal constr_val;
                             constr_val.set_object(func_obj);
-                            proto_obj.put_prop(constr_key, constr_val, hobject::PROP_FLAGS_WEC);
+                            proto_obj.put_prop(constr_key, constr_val);
                             // Set .prototype on the function
                             HString* proto_key = (HString*)vm.heap.strs[heap::BuiltinStr.PROTOTYPE];
                             TVal proto_tv;
                             proto_tv.set_object(proto_obj);
-                            func_obj.put_prop(proto_key, proto_tv, hobject::PROP_FLAGS_WEC);
+                            func_obj.put_prop(proto_key, proto_tv);
                         }
                     }
 
@@ -6363,7 +6363,7 @@ fn TVal? Vm.run(Vm* vm) {
                 HString* len_key = (HString*)vm.heap.strs[heap::BuiltinStr.LENGTH];
                 TVal len_tv;
                 len_tv.set_fastint((long)prim_str.char_length());
-                obj.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NNC);
+                obj.put_prop(len_key, len_tv);
             } else if (ra.is_number() || ra.is_fastint()) {
                 HObject*? wrapped = vm.heap.alloc_object(hobject::ObjClass.NUMBER);
                 if (catch _err = wrapped) { rb.set_null(); break; }
@@ -6606,7 +6606,7 @@ fn TVal? Vm.run(Vm* vm) {
                         // Create new accessor property
                         TVal undef;
                         undef.set_undefined();
-                        hobj.put_prop(key, undef, hobject::PROP_FLAGS_ACCESSOR);
+                        hobj.put_prop_accessor(key, undef);
                         // Find it again (put_prop may have grown the array)
                         int new_idx = hobj.find_prop_idx(key);
                         if (new_idx >= 0) {
@@ -6638,7 +6638,7 @@ fn TVal? Vm.run(Vm* vm) {
                         // Create new accessor property
                         TVal undef;
                         undef.set_undefined();
-                        hobj.put_prop(key, undef, hobject::PROP_FLAGS_ACCESSOR);
+                        hobj.put_prop_accessor(key, undef);
                         // Find it again (put_prop may have grown the array)
                         int new_idx = hobj.find_prop_idx(key);
                         if (new_idx >= 0) {
