@@ -23,7 +23,6 @@ fn CompiledFunction*? make_default_constructor(bool has_super) {
 
     CompiledFunction* func = (CompiledFunction*)raw;
     func.flags.htype = HType.OBJECT;
-    func.flags.is_strict = true;
     func.flags.is_constructable = true;
 
     if (has_super) {

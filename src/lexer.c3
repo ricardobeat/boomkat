@@ -358,7 +358,7 @@ fn Lexer lexer_init(char[] source, void* heap) {
     lex.lookahead = make_token(TokenType.EOF_TOKEN, 1, 1);
     lex.has_lookahead = false;
     lex.has_pushed_back = false;
-    lex.strict_mode = true;
+    lex.strict_mode = true; /* TinyDuck: always strict */
     lex.seen_line_term = false;
     lex.heap = heap;
     lex.template_balance_stack_depth = 0;

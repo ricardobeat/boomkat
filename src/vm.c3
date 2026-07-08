@@ -1550,7 +1550,7 @@ fn void vm_async_resume_impl(void* vm_ptr, void* state_ptr, TVal* arg) {
     new_act.curr_pc = state.saved_pc;
     new_act.bottom = new_bottom;
     new_act.retval = barrier.retval;
-    new_act.flags = state.func.is_strict() ? ACT_FLAG_STRICT : 0;
+    new_act.flags = ACT_FLAG_STRICT;
     new_act.max_heap_reg = state.max_heap_reg;
     new_act.async_promise = state.outer_promise;
     new_act.caller_valstack_top = vm.valstack_top;
@@ -1865,7 +1865,7 @@ fn TVal? Vm.execute(Vm* vm, CompiledFunction* func) {
     entry_act.retval = null;
     // ES5 §10.4.1: at the top level of a script, the global `this` is the
     // global object in non-strict mode, and `undefined` in strict mode.
-    entry_act.flags = func.is_strict() ? ACT_FLAG_STRICT : 0;
+    entry_act.flags = ACT_FLAG_STRICT;
 
     TVal this_val;
     if (func.is_strict()) {
@@ -3981,7 +3981,7 @@ fn TVal? Vm.run(Vm* vm) {
                                 }
                             }
                         } else if (!exist_flags.writable) {
-                            if (act.flags & ACT_FLAG_STRICT) {
+                            if (true) { /* always strict */
                                 HObject*? err_raw = vm.heap.alloc_object(hobject::ObjClass.ERROR);
                                 if (try err = err_raw) {
                                     HString* msg_key = (HString*)vm.heap.strs[heap::BuiltinStr.MESSAGE];
@@ -4568,7 +4568,7 @@ fn TVal? Vm.run(Vm* vm) {
                     new_act.curr_pc = target_fast.code;
                     new_act.bottom = new_bottom;
                     new_act.retval = regs_base + result_reg;
-                    new_act.flags = target_fast.is_strict() ? ACT_FLAG_STRICT : 0;
+                    new_act.flags = ACT_FLAG_STRICT;
                     new_act.max_heap_reg = 0;
                     new_act.caller_valstack_top = vm.valstack_top;
                     new_act.async_promise = null;

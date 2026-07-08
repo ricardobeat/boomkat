@@ -708,7 +708,7 @@ bitstruct FuncFlags : uint {
     // ---- Function-specific flags (bits 7+) ----
 
     /// Function uses strict-mode semantics.
-    bool  is_strict     : 7;
+    
     /// Function is a named function expression.
     bool  is_namebinding: 8;
     /// Function has a `...rest` parameter.
@@ -827,7 +827,7 @@ macro HeapHeader* CompiledFunction.as_header(&self) {
 
 /// Returns `true` when the function uses strict-mode semantics.
 macro bool CompiledFunction.is_strict(&self) {
-    return self.flags.is_strict;
+    return true;
 }
 
 /// Returns `true` when the function is an arrow function.

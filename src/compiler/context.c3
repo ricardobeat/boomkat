@@ -871,7 +871,6 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     }
 
     func.num_regs = self.max_reg;
-    func.flags.is_strict = self.is_strict;
     func.flags.has_rest = self.has_rest;
     func.flags.is_constructable = self.is_constructable;
     func.flags.is_async = self.is_async;
