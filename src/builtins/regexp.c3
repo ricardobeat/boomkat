@@ -640,7 +640,10 @@ fn void builtin_regexp_proto_symbol_match(BuiltinContext* ctx) {
 
     if (!global_flag) {
         // 7.a. Return ? RegExpExec(rx, S).
-        if (!regexp_exec_call(ctx, rx, &s_tv)) {
+        // Pass the ToString-coerced string S — per spec, Call(exec, R, «S»)
+        // passes S as the arg, not the original input.
+        TVal s_hstr_tv; s_hstr_tv.set_string(s_hstr);
+        if (!regexp_exec_call(ctx, rx, &s_hstr_tv)) {
             return;
         }
         return;
@@ -864,54 +867,82 @@ fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
     }
 
     if (!global_flag) {
-        // ── Non-global: single match ──
-        int out_start = 0;
-        int out_end = 0;
-        int out_num_captures = 0;
-        int[re_bindings::RE_MAX_CAPTURES] caps_start;
-        int[re_bindings::RE_MAX_CAPTURES] caps_end;
-        libc::memset(&caps_start, 0, re_bindings::RE_MAX_CAPTURES * int::size);
-        libc::memset(&caps_end, 0, re_bindings::RE_MAX_CAPTURES * int::size);
-
-        int result = re_bindings::re_exec(
-            re_data, input, input_len, 0,
-            &out_start, &out_end, &out_num_captures,
-            &caps_start, &caps_end, re_bindings::RE_MAX_CAPTURES
-        );
-
-        if (result != re_bindings::RE_MATCH) {
+        // ── Non-global: single match via RegExpExec (ES2017 §21.2.5.8) ──
+        // Reset lastIndex for sticky.
+        if (sticky_flag) {
+            HString* li_key = builtin_intern_string(ctx.heap, "lastIndex");
+            TVal zero_tv; zero_tv.set_fastint(0);
+            if (!rx.put_prop((void*)li_key, zero_tv, hobject::PROP_FLAGS_WEC)) {
+                builtin_throw_no_result_change(ctx, ctx.heap.type_err_proto, "Cannot set lastIndex");
+                return;
+            }
+        }
+        TVal s_hstr_tv; s_hstr_tv.set_string(s_hstr);
+        if (!regexp_exec_call(ctx, rx, &s_hstr_tv)) return;
+        TVal match = *ctx.result;
+        if (match.is_null()) {
             ctx.result.set_string(s_hstr);
             return;
         }
+        if (!match.is_object() || match.get_heapptr() == null) {
+            ctx.result.set_string(s_hstr);
+            return;
+        }
+        HObject* m = (HObject*)match.get_heapptr();
+
+        // Get index via Get so user-overridable
+        HString* idx_key = builtin_intern_string(ctx.heap, "index");
+        TVal? idx_opt = builtins_generic_get(m, idx_key, ctx);
+        if (ctx.should_throw) return;
+        int out_start = 0;
+        if (try iv = idx_opt) {
+            if (iv.is_fastint()) { out_start = (int)iv.get_fastint(); }
+            else if (iv.is_number()) { out_start = (int)iv.get_number(); }
+        }
+        // Get "0" via Get for matched string
+        HString* zero_key = builtin_intern_string(ctx.heap, "0");
+        TVal? z_opt = builtins_generic_get(m, zero_key, ctx);
+        if (ctx.should_throw) return;
+        TVal z_tv; z_tv.set_undefined();
+        if (try zv = z_opt) { z_tv = zv; }
+        usz m_len = 0;
+        if (z_tv.is_string() && z_tv.get_heapptr() != null) {
+            HString* zs = (HString*)z_tv.get_heapptr();
+            m_len = zs.blen;
+        }
+        int out_end = out_start + (int)m_len;
 
         HString* replace_str;
         if (replace_is_fn && ctx.heap.call_fn != null && ctx.vm != null) {
-            int num_caps = out_num_captures;
+            // Get num_caps from length - 1
+            HString* len_key = builtin_intern_string(ctx.heap, "length");
+            TVal? len_opt = builtins_generic_get(m, len_key, ctx);
+            if (ctx.should_throw) return;
+            int num_caps = 0;
+            if (try lv = len_opt) {
+                if (lv.is_fastint()) { num_caps = (int)lv.get_fastint() - 1; }
+                else if (lv.is_number()) { num_caps = (int)lv.get_number() - 1; }
+            }
+            if (num_caps < 0) num_caps = 0;
             if (num_caps > re_bindings::RE_MAX_CAPTURES) num_caps = re_bindings::RE_MAX_CAPTURES;
+
             TVal[36] fn_args;
             int arg_count = 0;
-            usz m_len = (usz)(out_end - out_start);
-            fn_args[arg_count].set_string(
-                m_len == 0 ? builtin_intern_string(ctx.heap, "")
-                           : builtin_intern_string(ctx.heap, input[out_start : m_len]));
-            arg_count++;
+            fn_args[arg_count++] = z_tv;
             for (int i = 0; i < num_caps; i++) {
-                if (caps_start[i] >= 0 && caps_end[i] >= 0) {
-                    usz cap_len = (usz)(caps_end[i] - caps_start[i]);
-                    fn_args[arg_count].set_string(
-                        cap_len == 0 ? builtin_intern_string(ctx.heap, "")
-                                     : builtin_intern_string(ctx.heap, input[caps_start[i] : cap_len]));
-                } else {
-                    fn_args[arg_count].set_undefined();
-                }
-                arg_count++;
+                HString* cap_key = ctx.heap.int_to_hstring((long)(i + 1));
+                TVal? cap_opt = builtins_generic_get(m, cap_key, ctx);
+                if (ctx.should_throw) return;
+                TVal cap_tv; cap_tv.set_undefined();
+                if (try cv = cap_opt) { cap_tv = cv; }
+                fn_args[arg_count++] = cap_tv;
             }
             TVal offset_tv; offset_tv.set_fastint((long)out_start);
             fn_args[arg_count++] = offset_tv;
             fn_args[arg_count++].set_string(s_hstr);
             TVal this_val; this_val.set_undefined();
             TVal res = ctx.heap.call_fn(ctx.vm, replace_val, &fn_args[0], (uint)arg_count, this_val);
-            if (ctx.heap.has_error) { ctx.should_throw = true; return; }
+            if (ctx.heap.has_error) { ctx.should_throw = true; ctx.throw_value = ctx.heap.error_value; ctx.heap.has_error = false; return; }
             replace_str = builtin_to_string_vm(ctx, &res);
             if (ctx.should_throw) return;
             if (replace_str == null) replace_str = builtin_intern_string(ctx.heap, "undefined");
@@ -921,9 +952,63 @@ fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
                 : builtin_intern_string(ctx.heap, "undefined");
             if (ctx.should_throw) return;
             if (raw_replace == null) { ctx.result.set_string(s_hstr); return; }
+            replace_str = raw_replace;
+            // Substitution: for non-global, the user can specify $1 $2 etc.
+            // The local fast path used caps positions; here we treat the
+            // captured strings literally. For built-in re_exec results the
+            // captures are valid strings; for user-exec results we still
+            // substitute against the input via the spec's GetSubstitution.
+            int[re_bindings::RE_MAX_CAPTURES] cap_s;
+            int[re_bindings::RE_MAX_CAPTURES] cap_e;
+            libc::memset(&cap_s, -1, re_bindings::RE_MAX_CAPTURES * int::size);
+            libc::memset(&cap_e, -1, re_bindings::RE_MAX_CAPTURES * int::size);
+            // Build from the match object's "1","2"... capture strings.
+            // To stay simple and avoid an exhaustive search, we provide
+            // positions of -1 when captures are missing (treat as undefined).
+            // builtin_replace_substitute already handles undefined captures.
+            HString* len_key = builtin_intern_string(ctx.heap, "length");
+            TVal? len_opt = builtins_generic_get(m, len_key, ctx);
+            if (ctx.should_throw) return;
+            int num_caps = 0;
+            if (try lv = len_opt) {
+                if (lv.is_fastint()) { num_caps = (int)lv.get_fastint() - 1; }
+                else if (lv.is_number()) { num_caps = (int)lv.get_number() - 1; }
+            }
+            if (num_caps < 0) num_caps = 0;
+            if (num_caps > re_bindings::RE_MAX_CAPTURES) num_caps = re_bindings::RE_MAX_CAPTURES;
+            // Convert captured strings back to positions in input by searching
+            // for them starting at out_start. This is approximate but sufficient
+            // for the common single-match substitution case.
+            int[re_bindings::RE_MAX_CAPTURES] bs;
+            int[re_bindings::RE_MAX_CAPTURES] be;
+            for (int i = 0; i < num_caps; i++) {
+                HString* cap_key = ctx.heap.int_to_hstring((long)(i + 1));
+                TVal? cap_opt = builtins_generic_get(m, cap_key, ctx);
+                if (ctx.should_throw) return;
+                TVal cap_tv; cap_tv.set_undefined();
+                if (try cv = cap_opt) { cap_tv = cv; }
+                bs[i] = -1;
+                be[i] = -1;
+                if (cap_tv.is_string() && cap_tv.get_heapptr() != null) {
+                    HString* cs = (HString*)cap_tv.get_heapptr();
+                    if (cs.blen == 0) { bs[i] = out_start; be[i] = out_start; }
+                    else {
+                        // Find cs starting at out_start
+                        char* cdat = cs.get_cstr();
+                        usz cl = cs.blen;
+                        for (int j = out_start; j + (int)cl <= input_len; j++) {
+                            bool match_ok = true;
+                            for (usz k = 0; k < cl; k++) {
+                                if (input[j + (int)k] != cdat[k]) { match_ok = false; break; }
+                            }
+                            if (match_ok) { bs[i] = j; be[i] = j + (int)cl; break; }
+                        }
+                    }
+                }
+            }
             replace_str = builtin_replace_substitute(ctx.heap, raw_replace,
                 input, input_len, out_start, out_end,
-                &caps_start, &caps_end, out_num_captures);
+                &bs[0], &be[0], num_caps);
             if (replace_str == null) replace_str = raw_replace;
         }
 
