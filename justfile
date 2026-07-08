@@ -6,21 +6,21 @@ justfile := "benchmarks/README.md"
 # Build everything (default)
 all: build-lib build-vm build-batch build-bench build-orig-duktape
 
-# Build the static library
+# Build the static library (skips c3c if nothing changed — see Makefile)
 build-lib:
-    c3c build lib
+    @make out/lib.a
 
-# Build the single-file test runner
+# Build the single-file test runner (skips c3c if nothing changed — see Makefile)
 build-vm:
-    c3c build test_vm
+    @make out/test_vm
 
-# Build the batch test262 runner
+# Build the batch test262 runner (skips c3c if nothing changed — see Makefile)
 build-batch:
-    c3c build batch_test_vm
+    @make out/batch_test_vm
 
-# Build the C3 Duktape CLI (for benchmarks)
+# Build the C3 Duktape CLI (skips c3c if nothing changed — see Makefile)
 build-bench:
-    c3c build duktape_c3
+    @make out/duktape_c3
 
 # Build original Duktape v2.7.0 for comparison benchmarks
 build-orig-duktape:
@@ -77,14 +77,14 @@ clean:
 
 # ── Run ──────────────────────────────────────────────────────────────────────
 
-# Run a single JS file through the VM test runner
+# Run a single JS file through the VM test runner (skips c3c if nothing changed)
 run file="test/simple.js":
-    @test -f out/test_vm && echo "need: c3c build test_vm" ; c3c build test_vm 2>/dev/null || true
+    @make out/test_vm
     ./out/test_vm {{file}}
 
-# Run a JS file as an ESM module (import/export)
+# Run a JS file as an ESM module (import/export) (skips c3c if nothing changed)
 run-module file="test/mod_main.js":
-    @test -f out/duktape_c3 || { echo "Building duktape_c3..."; c3c build duktape_c3; }
+    @make out/duktape_c3
     ./out/duktape_c3 --module {{file}}
 
 # Run all ESM module tests
