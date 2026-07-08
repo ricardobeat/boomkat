@@ -177,9 +177,24 @@ fn void builtin_array_proto_includes(BuiltinContext* ctx) {
     ulong len;
     if (!array_to_length(obj, ctx.heap, ctx, &len)) { ctx.result.set_undefined(); return; }
 
+    // ES2022 §23.1.3.12 style: If len is 0, return false (no fromIndex eval).
+    if (len == 0) {
+        ctx.result.set_boolean(false);
+        return;
+    }
+
+    // Use ToInteger per spec (per ES2022 §23.1.3.11 step 4). Use
+    // builtin_to_integer_vm so valueOf abrupt propagates, and reject Symbol
+    // inputs with TypeError (ToNumber(Symbol) throws).
     long start_i = 0;
-    if (ctx.argc > 1) {
-        double sd = builtin_to_number_getdouble(ctx, &ctx.regs[ctx.base_reg + 1]);
+    if (ctx.argc > 1 && !ctx.regs[ctx.base_reg + 1].is_undefined()) {
+        TVal* arg = &ctx.regs[ctx.base_reg + 1];
+        if (is_symbol_val(*arg)) {
+            arr_throw_type_error(ctx, "Cannot convert a Symbol value to a number");
+            return;
+        }
+        double sd = builtin_to_integer_vm(ctx, arg);
+        if (ctx.should_throw) { ctx.result.set_undefined(); return; }
         start_i = (long)sd;
         if (start_i < 0) { start_i = (long)len + start_i; if (start_i < 0) start_i = 0; }
         if ((ulong)start_i > len) start_i = (long)len;
@@ -534,7 +549,11 @@ fn double invoke_getter_as_length(HObject* obj, TVal getter_fn, Heap* heap, Buil
         heap.has_error = false;
         return 0;
     }
-    return builtin_to_number_getdouble(null, &result);
+    // Per ES ToLength, the result of the length getter is itself ToNumber'd
+    // (which for an object means calling valueOf/toString via the VM). Using
+    // builtin_to_number_vm here is what makes `length: { valueOf: ... }`
+    // style tests like `15.4.4.14-5-27` / `length-near-integer-limit` work.
+    return builtin_to_number_vm(ctx, &result);
 }
 
 /// Read the raw 'length' property as a double from an array-like object.
@@ -2093,12 +2112,21 @@ fn void builtin_array_proto_indexOf(BuiltinContext* ctx) {
     ulong len;
     if (!array_to_length_checked(obj, ctx.heap, ctx, &len)) { ctx.result.set_undefined(); return; }
 
-    if (ctx.argc == 0) {
+    // ES2022 §23.1.3.12 step 3: If len is 0, return -1.
+    // Done before ToInteger(fromIndex) so side-effect order tests (e.g.
+    // `length-zero-returns-minus-one.js`) don't trigger fromIndex's valueOf.
+    if (len == 0) {
         ctx.result.set_fastint(-1);
         return;
     }
 
-    TVal search_elem = ctx.regs[ctx.base_reg];
+    // Per spec, when searchElement is missing we use undefined, not -1.
+    TVal search_elem;
+    if (ctx.argc > 0) {
+        search_elem = ctx.regs[ctx.base_reg];
+    } else {
+        search_elem.set_undefined();
+    }
 
     // Get fromIndex (default 0) — per ES5 §15.4.4.14 step 3.
     // builtin_to_integer handles Infinity / -Infinity / NaN / hex strings.
@@ -2127,9 +2155,19 @@ fn void builtin_array_proto_indexOf(BuiltinContext* ctx) {
 
     for (; k < len; k++) {
         TVal v;
+        // arr_get_elem_vm returns false if the element is missing OR if the
+        // getter threw (sets ctx.should_throw). Spec: terminate iteration on
+        // an unhandled exception (tests 15.4.4.14-9-b-i-30/31).
+        if (ctx.should_throw) { ctx.result.set_undefined(); return; }
         if (arr_get_elem_vm(obj, k, ctx.heap, ctx, &v)) {
             if (array_strict_equals(v, search_elem)) {
-                ctx.result.set_fastint((long)k);
+                // Indices can exceed the 48-bit fastint range (up to 2^53-1),
+                // so use set_number for large values to avoid silent truncation.
+                if (k <= (ulong)types::FASTINT_MAX) {
+                    ctx.result.set_fastint((long)k);
+                } else {
+                    ctx.result.set_number((double)k);
+                }
                 return;
             }
         }
@@ -2148,12 +2186,21 @@ fn void builtin_array_proto_lastIndexOf(BuiltinContext* ctx) {
     ulong len;
     if (!array_to_length_checked(obj, ctx.heap, ctx, &len)) { ctx.result.set_undefined(); return; }
 
-    if (ctx.argc == 0) {
+    // ES2022 §23.1.3.13 step 3: If len is 0, return -1.
+    // Done before ToInteger(fromIndex) so side-effect order tests don't
+    // trigger fromIndex's valueOf.
+    if (len == 0) {
         ctx.result.set_fastint(-1);
         return;
     }
 
-    TVal search_elem = ctx.regs[ctx.base_reg];
+    // Per spec, when searchElement is missing we use undefined, not -1.
+    TVal search_elem;
+    if (ctx.argc > 0) {
+        search_elem = ctx.regs[ctx.base_reg];
+    } else {
+        search_elem.set_undefined();
+    }
 
     // Get fromIndex (default len - 1) — per ES5 §15.4.4.15 step 3.
     double relative_start = (double)(len - 1);
@@ -2179,9 +2226,19 @@ fn void builtin_array_proto_lastIndexOf(BuiltinContext* ctx) {
 
     for (; k >= 0; k--) {
         TVal v;
+        // arr_get_elem_vm returns false if the element is missing OR if the
+        // getter threw (sets ctx.should_throw). Spec: terminate iteration on
+        // an unhandled exception.
+        if (ctx.should_throw) { ctx.result.set_undefined(); return; }
         if (arr_get_elem_vm(obj, (ulong)k, ctx.heap, ctx, &v)) {
             if (array_strict_equals(v, search_elem)) {
-                ctx.result.set_fastint((long)k);
+                // Indices can exceed the 48-bit fastint range (up to 2^53-1),
+                // so use set_number for large values to avoid silent truncation.
+                if ((ulong)k <= (ulong)types::FASTINT_MAX) {
+                    ctx.result.set_fastint(k);
+                } else {
+                    ctx.result.set_number((double)k);
+                }
                 return;
             }
         }
