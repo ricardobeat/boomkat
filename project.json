@@ -9,7 +9,7 @@
     },
     "tinyduck": {
       "type": "executable",
-      "sources": [ "src", "regexp", "tinyduck_runner/main.c3" ],
+      "sources": [ "src", "regexp", "cli/main.c3" ],
       "features": [ "NO_REGEXP" ],
       "opt": "Oz",
       "single-module": true,
@@ -42,7 +42,7 @@
 
     "tinyduck_debug": {
       "type": "executable",
-      "sources": [ "src", "regexp", "tinyduck_runner/main.c3" ],
+      "sources": [ "src", "regexp", "cli/main.c3" ],
       "features": [ "NO_REGEXP", "DEBUG" ],
       "single-module": true
     },
