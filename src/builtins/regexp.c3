@@ -792,19 +792,28 @@ fn void builtin_regexp_proto_symbol_search(BuiltinContext* ctx) {
 // ============================================================================
 // RegExp.prototype[@@replace] — ES6 §21.2.5.8
 // ============================================================================
+// RegExp.prototype[@@replace] — ES6 §21.2.5.8
+//
+// Spec algorithm (simplified):
+//   1. ToString(string)
+//   2. Determine functionalReplace and merged flags (force "g" when callable)
+//   3. If replaceValue is callable, call it per-match; else substitute $1, $2, …
+//   4. global/unicode/sticky are derived from `Get(rx, "flags")` + ToBoolean,
+//      not the compiled bytecode (rx may have overridden properties).
 fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
     HObject* rx = regexp_get_this_or_throw(ctx);
     if (rx == null) return;
     void* re_data = (*rx.extra_ptr()).regexp.regexp_data;
     if (re_data == null) { ctx.result.set_undefined(); return; }
 
-    // Get string argument
+    // Get string argument — ToString per spec step 3.
     HString* s_hstr;
     if (ctx.argc > 0) {
         if (ctx.regs[ctx.base_reg].is_string()) {
             s_hstr = (HString*)ctx.regs[ctx.base_reg].get_heapptr();
         } else {
-            s_hstr = builtin_to_string(ctx.heap, &ctx.regs[ctx.base_reg]);
+            s_hstr = builtin_to_string_vm(ctx, &ctx.regs[ctx.base_reg]);
+            if (ctx.should_throw) return;
         }
     } else {
         s_hstr = builtin_intern_string(ctx.heap, "");
@@ -814,7 +823,7 @@ fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
     char* input = s_hstr.get_cstr();
     int input_len = (int)s_hstr.blen;
 
-    // Get replaceValue (second argument)
+    // Get replaceValue (second argument) — IsCallable per spec step 4.
     bool replace_is_fn = false;
     TVal replace_val;
     replace_val.set_undefined();
@@ -826,7 +835,27 @@ fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
         }
     }
 
-    bool global_flag = ((*rx.extra_ptr()).regexp.flags & 1) != 0;
+    // ES6 §21.2.5.8 step 8: global = ToBoolean(Get(rx, "global")). The user
+    // can override .global on a regexp at runtime; spec reads the property,
+    // not the compiled flag. Same shape for sticky.
+    HString* global_key = builtin_intern_string(ctx.heap, "global");
+    TVal? global_liv = builtins_generic_get(rx, global_key, ctx);
+    if (ctx.should_throw) return;
+    bool global_flag;
+    if (try gv = global_liv) {
+        global_flag = builtin_to_boolean(&gv);
+    } else {
+        global_flag = false;
+    }
+    HString* sticky_key = builtin_intern_string(ctx.heap, "sticky");
+    TVal? sticky_liv = builtins_generic_get(rx, sticky_key, ctx);
+    if (ctx.should_throw) return;
+    bool sticky_flag;
+    if (try sv = sticky_liv) {
+        sticky_flag = builtin_to_boolean(&sv);
+    } else {
+        sticky_flag = false;
+    }
 
     if (!global_flag) {
         // ── Non-global: single match ──
@@ -877,12 +906,14 @@ fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
             TVal this_val; this_val.set_undefined();
             TVal res = ctx.heap.call_fn(ctx.vm, replace_val, &fn_args[0], (uint)arg_count, this_val);
             if (ctx.heap.has_error) { ctx.should_throw = true; return; }
-            replace_str = builtin_to_string(ctx.heap, &res);
+            replace_str = builtin_to_string_vm(ctx, &res);
+            if (ctx.should_throw) return;
             if (replace_str == null) replace_str = builtin_intern_string(ctx.heap, "undefined");
         } else {
             HString* raw_replace = ctx.argc > 1
-                ? builtin_to_string(ctx.heap, &ctx.regs[ctx.base_reg + 1])
+                ? builtin_to_string_vm(ctx, &ctx.regs[ctx.base_reg + 1])
                 : builtin_intern_string(ctx.heap, "undefined");
+            if (ctx.should_throw) return;
             if (raw_replace == null) { ctx.result.set_string(s_hstr); return; }
             replace_str = builtin_replace_substitute(ctx.heap, raw_replace,
                 input, input_len, out_start, out_end,
@@ -955,12 +986,14 @@ fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
                 TVal this_val; this_val.set_undefined();
                 TVal res = ctx.heap.call_fn(ctx.vm, replace_val, &fn_args[0], (uint)arg_count, this_val);
                 if (ctx.heap.has_error) { ctx.should_throw = true; return; }
-                replace_str = builtin_to_string(ctx.heap, &res);
+                replace_str = builtin_to_string_vm(ctx, &res);
+                if (ctx.should_throw) return;
                 if (replace_str == null) replace_str = builtin_intern_string(ctx.heap, "undefined");
             } else {
                 HString* raw_replace = ctx.argc > 1
-                    ? builtin_to_string(ctx.heap, &ctx.regs[ctx.base_reg + 1])
+                    ? builtin_to_string_vm(ctx, &ctx.regs[ctx.base_reg + 1])
                     : builtin_intern_string(ctx.heap, "undefined");
+                if (ctx.should_throw) return;
                 if (raw_replace == null) break;
                 replace_str = builtin_replace_substitute(ctx.heap, raw_replace,
                     input, input_len, out_start, out_end,
