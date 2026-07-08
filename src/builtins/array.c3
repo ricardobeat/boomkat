@@ -52,23 +52,38 @@ fn void builtin_array_proto_fill(BuiltinContext* ctx) {
     }
 
     long start_i = 0;
-    if (ctx.argc > 1) {
-        double sd = builtin_to_number_getdouble(ctx, &ctx.regs[ctx.base_reg + 1]);
+    if (ctx.argc > 1 && !ctx.regs[ctx.base_reg + 1].is_undefined()) {
+        TVal* start_arg = &ctx.regs[ctx.base_reg + 1];
+        if (is_symbol_val(*start_arg)) {
+            arr_throw_type_error(ctx, "Cannot convert a Symbol value to a number");
+            return;
+        }
+        double sd = builtin_to_integer_vm(ctx, start_arg);
+        if (ctx.should_throw) { ctx.result.set_undefined(); return; }
         start_i = (long)sd;
         if (start_i < 0) { start_i = (long)len + start_i; if (start_i < 0) start_i = 0; }
         if ((ulong)start_i > len) start_i = (long)len;
     }
 
     long end_i = (long)len;
-    if (ctx.argc > 2) {
-        double ed = builtin_to_number_getdouble(ctx, &ctx.regs[ctx.base_reg + 2]);
+    if (ctx.argc > 2 && !ctx.regs[ctx.base_reg + 2].is_undefined()) {
+        TVal* end_arg = &ctx.regs[ctx.base_reg + 2];
+        if (is_symbol_val(*end_arg)) {
+            arr_throw_type_error(ctx, "Cannot convert a Symbol value to a number");
+            return;
+        }
+        double ed = builtin_to_integer_vm(ctx, end_arg);
+        if (ctx.should_throw) { ctx.result.set_undefined(); return; }
         end_i = (long)ed;
         if (end_i < 0) { end_i = (long)len + end_i; if (end_i < 0) end_i = 0; }
         if ((ulong)end_i > len) end_i = (long)len;
     }
 
     for (ulong i = (ulong)start_i; i < (ulong)end_i; i++) {
-        array_set_elem_ulong(obj, i, fill_val, ctx.heap);
+        if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+        if (!array_set_elem_ulong_set(ctx, obj, i, fill_val)) {
+            return;
+        }
     }
     ctx.result.set_object(obj);
 }

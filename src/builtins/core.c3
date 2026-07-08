@@ -1426,6 +1426,14 @@ fn double builtin_to_number_getdouble(BuiltinContext* ctx, TVal* val) {
 fn double builtin_to_number_vm(BuiltinContext* ctx, TVal* val) {
     if (val.is_fastint()) return (double)val.get_fastint();
     if (val.get_tag() == types::TValTag.NUMBER) return val.get_number();
+    // ToNumber on a Symbol value must throw TypeError (ES2022 §7.1.3).
+    if (val.is_string()) {
+        HString* hs = (HString*)val.get_heapptr();
+        if (hs != null && hs.is_symbol()) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "Cannot convert a Symbol value to a number");
+            return 0.0 / 0.0;
+        }
+    }
     if (val.is_object() && ctx.vm != null) {
         Vm* vm_ptr = (Vm*)ctx.vm;
         TVal prim = vm::to_primitive_value(vm_ptr, val, false);  // hint "number"
