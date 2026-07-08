@@ -1478,21 +1478,75 @@ fn bool regexp_exec_call(BuiltinContext* ctx, HObject* rx, TVal* input_str_tv) {
 }
 
 /// RegExp.prototype.flags — ES6 §21.2.5.7
-/// Returns a string of flags in alphabetical order: "dgimsuy"
+/// Returns a string of flags in alphabetical order: "dgimsuy".
+/// ES2017 §22.2.3.4: walks the receiver for each individual flag via
+/// Get + ToBoolean, so user-overridden `this.global`, `this.sticky`, etc.
+/// are honored. Any Object is a valid receiver (only primitives throw).
 fn void builtin_regexp_proto_get_flags(BuiltinContext* ctx) {
-    HObject* obj = regexp_get_this_or_throw(ctx);
-    if (obj == null) return;
-    int jsf = (*obj.extra_ptr()).regexp.flags;
+    if (!ctx.this_val.is_object() || ctx.this_val.get_heapptr() == null) {
+        builtin_throw_no_result_change(ctx, ctx.heap.type_err_proto,
+            "RegExp.prototype.flags called on incompatible receiver");
+        return;
+    }
+    HObject* rx = (HObject*)ctx.this_val.get_heapptr();
     char[8] buf;
     int pos = 0;
-    if ((jsf & 64) != 0)  buf[pos++] = 'd';  // hasIndices
-    if ((jsf & 1) != 0)   buf[pos++] = 'g';  // global
-    if ((jsf & 2) != 0)   buf[pos++] = 'i';  // ignoreCase
-    if ((jsf & 4) != 0)   buf[pos++] = 'm';  // multiline
-    if ((jsf & 8) != 0)   buf[pos++] = 's';  // dotAll
-    if ((jsf & 16) != 0)  buf[pos++] = 'u';  // unicode
-    if ((jsf & 128) != 0) buf[pos++] = 'v';  // unicodeSets
-    if ((jsf & 32) != 0)  buf[pos++] = 'y';  // sticky
+    // hasIndices
+    HString* hi_key = builtin_intern_string(ctx.heap, "hasIndices");
+    TVal? hi_opt = builtins_generic_get(rx, hi_key, ctx);
+    if (ctx.should_throw) return;
+    if (try hv = hi_opt) {
+        if (builtin_to_boolean(&hv)) buf[pos++] = 'd';
+    }
+    // global
+    HString* g_key = builtin_intern_string(ctx.heap, "global");
+    TVal? g_opt = builtins_generic_get(rx, g_key, ctx);
+    if (ctx.should_throw) return;
+    if (try gv = g_opt) {
+        if (builtin_to_boolean(&gv)) buf[pos++] = 'g';
+    }
+    // ignoreCase
+    HString* i_key = builtin_intern_string(ctx.heap, "ignoreCase");
+    TVal? i_opt = builtins_generic_get(rx, i_key, ctx);
+    if (ctx.should_throw) return;
+    if (try iv = i_opt) {
+        if (builtin_to_boolean(&iv)) buf[pos++] = 'i';
+    }
+    // multiline
+    HString* m_key = builtin_intern_string(ctx.heap, "multiline");
+    TVal? m_opt = builtins_generic_get(rx, m_key, ctx);
+    if (ctx.should_throw) return;
+    if (try mv = m_opt) {
+        if (builtin_to_boolean(&mv)) buf[pos++] = 'm';
+    }
+    // dotAll
+    HString* s_key = builtin_intern_string(ctx.heap, "dotAll");
+    TVal? s_opt = builtins_generic_get(rx, s_key, ctx);
+    if (ctx.should_throw) return;
+    if (try sv = s_opt) {
+        if (builtin_to_boolean(&sv)) buf[pos++] = 's';
+    }
+    // unicode
+    HString* u_key = builtin_intern_string(ctx.heap, "unicode");
+    TVal? u_opt = builtins_generic_get(rx, u_key, ctx);
+    if (ctx.should_throw) return;
+    if (try uv = u_opt) {
+        if (builtin_to_boolean(&uv)) buf[pos++] = 'u';
+    }
+    // unicodeSets
+    HString* v_key = builtin_intern_string(ctx.heap, "unicodeSets");
+    TVal? v_opt = builtins_generic_get(rx, v_key, ctx);
+    if (ctx.should_throw) return;
+    if (try vv = v_opt) {
+        if (builtin_to_boolean(&vv)) buf[pos++] = 'v';
+    }
+    // sticky
+    HString* y_key = builtin_intern_string(ctx.heap, "sticky");
+    TVal? y_opt = builtins_generic_get(rx, y_key, ctx);
+    if (ctx.should_throw) return;
+    if (try yv = y_opt) {
+        if (builtin_to_boolean(&yv)) buf[pos++] = 'y';
+    }
     HString* result = builtin_intern_string(ctx.heap, buf[:pos]);
     ctx.result.set_string(result);
 }
