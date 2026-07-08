@@ -390,6 +390,8 @@ fn void? CompilerContext.statement(&self) {
         case TokenType.CLASS:
             self.class_declaration()!;
         case TokenType.IMPORT:
+            // TS: `import type ...` is fully erased, no module scope required.
+            if (self.lexer.ts_mode && self.ts_try_skip_type_only_import()!) break;
         {
             // `import(...)` (dynamic import) and `import.meta` (meta-property,
             // ES2024 §13.3.12) at statement level are ExpressionStatements, not
@@ -411,6 +413,8 @@ fn void? CompilerContext.statement(&self) {
             }
         }
         case TokenType.EXPORT:
+            // TS: `export type ...` is fully erased, no module scope required.
+            if (self.lexer.ts_mode && self.ts_try_skip_type_only_export()!) break;
             // Likewise an ExportDeclaration is a ModuleItem: never valid
             // inside a block, loop/switch body, label or try/catch/finally.
             if (!at_module_top) {
@@ -4490,6 +4494,7 @@ fn void? CompilerContext.try_statement(&self) {
                 } else {
                     self.compile_catch_array_pattern(catch_val_reg)!;
                 }
+                if (self.lexer.ts_mode) self.try_skip_ts_type_annotation()!;
                 self.expect(TokenType.RPAREN)!;
                 self.free_reg(catch_val_reg);
             } else {
@@ -4499,6 +4504,7 @@ fn void? CompilerContext.try_statement(&self) {
                 // expect_binding_identifier applies the restricted-name rule
                 // to the plain-identifier path only, exactly matching that.
                 Token catch_param = self.expect_binding_identifier()!;
+                if (self.lexer.ts_mode) self.try_skip_ts_type_annotation()!;
                 self.expect(TokenType.RPAREN)!;
 
                 // Marked as a parameter: the catch body's `let`/`const` may not

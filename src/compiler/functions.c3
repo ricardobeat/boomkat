@@ -4036,6 +4036,7 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
                     // [Await] in, see the propagation above).
                     rest_param = arrow_ctx.expect_binding_identifier()!;
                 }
+                if (arrow_ctx.lexer.ts_mode) arrow_ctx.try_skip_ts_type_annotation()!;
 
                 if (rest_param.str_value.len > 0) {
                     // expect_binding_identifier already made the enclosing
@@ -4068,6 +4069,7 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
                 arrow_ctx.advance()!;
                 arrow_ctx.alloc_reg();
                 arrow_ctx.collect_obj_param_binds(arrow_destruct_binds[..], &arrow_destruct_count, (ushort)arg_count, 0xFFFF)!;
+                if (arrow_ctx.lexer.ts_mode) arrow_ctx.try_skip_ts_type_annotation()!;
                 bool has_default = arrow_ctx.parse_destruct_param_default((ushort)arg_count)!;
                 if (!has_default) {
                     arrow_ctx.emit_abc(Opcode.REQUIRE_OBJ, (uint)arg_count, 0, 0);
@@ -4084,6 +4086,7 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
                 arrow_ctx.advance()!;
                 arrow_ctx.alloc_reg();
                 arrow_ctx.collect_arr_param_binds(arrow_destruct_binds[..], &arrow_destruct_count, (ushort)arg_count, 0xFFFF)!;
+                if (arrow_ctx.lexer.ts_mode) arrow_ctx.try_skip_ts_type_annotation()!;
                 bool has_default = arrow_ctx.parse_destruct_param_default((ushort)arg_count)!;
                 if (!has_default) {
                     arrow_ctx.emit_abc(Opcode.REQUIRE_OBJ, (uint)arg_count, 0, 0);
@@ -4111,6 +4114,10 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
             // stores this slice into scope_stack, which outlives this token.
             HString* param_hstr = ((Heap*)arrow_ctx.heap).str_intern(param.str_value);
             char[] param_name2 = param_hstr.get_data();
+            if (arrow_ctx.lexer.ts_mode) {
+                arrow_ctx.try_skip_ts_optional_marker()!;
+                arrow_ctx.try_skip_ts_type_annotation()!;
+            }
             ushort param_reg = arrow_ctx.declare_var(param_name2, VAR, true);
             uint param_name_idx = arrow_ctx.add_string_constant(param_name2);
             arg_count++;
@@ -4163,6 +4170,7 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
     arrow_ctx.formal_count = formal_count;
 
     arrow_ctx.expect(TokenType.RPAREN)!;
+    if (arrow_ctx.lexer.ts_mode) arrow_ctx.try_skip_ts_type_annotation()!;
 
     // Destructured leaves are BoundNames too (see parse_function_body).
     arrow_seen.declare_destructured(arrow_destruct_binds[..], arrow_destruct_count)!;

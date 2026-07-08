@@ -366,3 +366,81 @@ fn bool CompilerContext.check_ts_ident(&self, char[] kw) {
     self.pushback(cur);
     return ok;
 }
+
+/// Swallow all tokens until (and including) the terminating semicolon at
+/// depth 0. Used to erase `import type ...` and `export type ...` forms which
+/// have no runtime effect but may span multiple tokens including braces.
+fn void? CompilerContext.ts_swallow_to_semi(&self) {
+    int paren = 0;
+    int bracket = 0;
+    int brace = 0;
+    for (;;) {
+        TokenType tt = self.peek_type();
+        int depth = paren + bracket + brace;
+        if (tt == TokenType.EOF_TOKEN) return;
+        if (depth == 0 && tt == TokenType.SEMICOLON) {
+            Token _semi = self.advance()!;
+            return;
+        }
+        // Also stop before EOF-adjacent tokens that clearly cannot belong to
+        // this erased statement (defensive — TS import/export always end in
+        // `;` or a newline-terminated statement per ASI).
+        Token _t = self.advance()!;
+        switch (tt) {
+            case TokenType.LPAREN:   paren++;
+            case TokenType.RPAREN:   if (paren > 0) paren--;
+            case TokenType.LBRACKET: bracket++;
+            case TokenType.RBRACKET: if (bracket > 0) bracket--;
+            case TokenType.LBRACE:   brace++;
+            case TokenType.RBRACE:   if (brace > 0) brace--;
+            default: break;
+        }
+        // ASI: if we hit a newline at depth 0 with no `;` in sight, stop too.
+        if (depth == 0 && self.lexer.seen_line_term) {
+            TokenType nt = self.peek_type();
+            if (nt != TokenType.COMMA && nt != TokenType.DOT) return;
+        }
+    }
+}
+
+/// `import type ...` — consume and discard.
+/// Also handles the mixed form `import { type Foo, bar } from "x"` by
+/// only erasing the pure `import type` variant (leaves the mixed form for
+/// the normal import_declaration path).
+fn bool? CompilerContext.ts_try_skip_type_only_import(&self) {
+    if (!self.lexer.ts_mode) return false;
+    // We're positioned at `import`. Peek the next token *without consuming*
+    // `import` — if it's the identifier `type`, this whole thing is erased.
+    Token import_tok = self.advance()!; // consume `import`
+    if (self.peek_type() != TokenType.IDENTIFIER || self.lexer.seen_line_term) {
+        self.pushback(import_tok);
+        return false;
+    }
+    Token maybe_type = self.advance()!;
+    if (!ident_is(maybe_type.str_value, "type")) {
+        self.pushback(maybe_type);
+        self.pushback(import_tok);
+        return false;
+    }
+    // Confirmed `import type ...` — swallow the rest.
+    self.ts_swallow_to_semi()!;
+    return true;
+}
+
+/// `export type X = T;` and `export type { A, B }` — consume and discard.
+fn bool? CompilerContext.ts_try_skip_type_only_export(&self) {
+    if (!self.lexer.ts_mode) return false;
+    Token export_tok = self.advance()!;
+    if (self.peek_type() != TokenType.IDENTIFIER || self.lexer.seen_line_term) {
+        self.pushback(export_tok);
+        return false;
+    }
+    Token maybe_type = self.advance()!;
+    if (!ident_is(maybe_type.str_value, "type")) {
+        self.pushback(maybe_type);
+        self.pushback(export_tok);
+        return false;
+    }
+    self.ts_swallow_to_semi()!;
+    return true;
+}

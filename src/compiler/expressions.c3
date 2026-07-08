@@ -3547,6 +3547,13 @@ fn ushort? CompilerContext.primary_expr(&self) {
     bool reject_arrow_head = self.no_arrow_head;
     self.no_arrow_head = false;
 
+    // TypeScript generic arrow: `<T,>(params) => body`. Skip the type params
+    // then fall through to the normal LPAREN/IDENTIFIER arrow path.
+    if (self.lexer.ts_mode && tt == TokenType.LT) {
+        self.skip_generic_params()!;
+        tt = self.peek_type();
+    }
+
     switch (tt) {
         case TokenType.NUMBER:
             self.last_was_getvar = false;
@@ -3755,6 +3762,8 @@ fn ushort? CompilerContext.primary_expr(&self) {
             // Check for empty parens: () => ...
             if (self.check(TokenType.RPAREN)) {
                 self.advance()!;  // consume ')'
+                // TS: `() : T => ...` — skip return-type before ARROW.
+                if (self.lexer.ts_mode) self.try_skip_ts_type_annotation()!;
                 if (!reject_arrow_head && self.check_arrow()) {
                     // No-param arrow: () => ...
                     // Restore lexer to right after '(', parse_arrow_function_reparse
@@ -3842,8 +3851,13 @@ fn ushort? CompilerContext.primary_expr(&self) {
                         param_names[pc++] = t.str_value;
                         has_rest = true;
 
+                        // TS: rest param may carry a type annotation.
+                        if (self.lexer.ts_mode) self.try_skip_ts_type_annotation()!;
+
                         if (self.check(TokenType.RPAREN)) {
                             self.advance()!;  // consume ')'
+                            // TS: skip return type annotation before ARROW.
+                            if (self.lexer.ts_mode) self.try_skip_ts_type_annotation()!;
                             if (self.check_arrow()) {
                                 is_arrow = true;
                             }
@@ -3862,6 +3876,8 @@ fn ushort? CompilerContext.primary_expr(&self) {
                     if (self.check(TokenType.LBRACE) || self.check(TokenType.LBRACKET)) {
                         self.advance()!;
                         self.skip_destructure_pattern();
+                        // TS: type annotation after destructure pattern.
+                        if (self.lexer.ts_mode) self.try_skip_ts_type_annotation()!;
                     } else {
                         // An unreserved `await` is a param name here too, so
                         // `(a, await) => 1` scans as an arrow head.
@@ -3871,6 +3887,11 @@ fn ushort? CompilerContext.primary_expr(&self) {
                             break;  // not a param name, can't be arrow
                         }
                         param_names[pc++] = t.str_value;
+                        // TS: optional marker and type annotation on the param.
+                        if (self.lexer.ts_mode) {
+                            self.try_skip_ts_optional_marker()!;
+                            self.try_skip_ts_type_annotation()!;
+                        }
                     }
 
                     // Skip default value if present: = <expression>
@@ -3882,6 +3903,8 @@ fn ushort? CompilerContext.primary_expr(&self) {
 
                     if (self.check(TokenType.RPAREN)) {
                         self.advance()!;  // consume ')'
+                        // TS: return type annotation before ARROW.
+                        if (self.lexer.ts_mode) self.try_skip_ts_type_annotation()!;
                         if (self.check_arrow()) {
                             is_arrow = true;
                         }
@@ -3895,6 +3918,8 @@ fn ushort? CompilerContext.primary_expr(&self) {
                     // Trailing comma: ',)' is valid per ES2017
                     if (self.check(TokenType.RPAREN)) {
                         self.advance()!;  // consume ')'
+                        // TS: return type annotation before ARROW.
+                        if (self.lexer.ts_mode) self.try_skip_ts_type_annotation()!;
                         if (self.check_arrow()) {
                             is_arrow = true;
                         }

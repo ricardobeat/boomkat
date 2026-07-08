@@ -158,6 +158,8 @@ fn void? CompilerContext.array_destructure(&self, ScopeKind kind, bool is_lexica
     }
 
     // No initializer (`var [a, b];`): bind everything to undefined.
+    if (self.lexer.ts_mode) self.try_skip_ts_type_annotation()!;
+
     if (!self.match(TokenType.ASSIGN)) {
         for (uint i = 0; i < count; i++) {
             if (binds[i].is_synthetic) continue;
@@ -250,6 +252,8 @@ fn void? CompilerContext.object_destructure(&self, ScopeKind kind, bool is_lexic
     // No initializer (`var {a};`, only valid via for-in/of heads, but keep the
     // path): bind everything to undefined. RequireObjectCoercible does not apply
     // without a source value.
+    if (self.lexer.ts_mode) self.try_skip_ts_type_annotation()!;
+
     if (!self.match(TokenType.ASSIGN)) {
         for (uint i = 0; i < count; i++) {
             if (binds[i].is_synthetic) continue;
