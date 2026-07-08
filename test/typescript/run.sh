@@ -99,6 +99,13 @@ expect_ok "$DIR/recursive_type.ts"     "6"
 expect_ok "$DIR/optional_param.ts"     "a
 b#2"
 
+# --- ESM modules -----------------------------------------------------------
+expect_ok "$DIR/mod_main.ts"        "42
+hi world"
+expect_ok "$DIR/mod_use_default.ts" "42"
+expect_ok "$DIR/mod_use_ns.ts"      "42
+hi ns"
+
 # --- rejects ---------------------------------------------------------------
 expect_reject "$DIR/reject_enum.ts"       "not erasable syntax"
 expect_reject "$DIR/reject_namespace.ts"  "not erasable syntax"
