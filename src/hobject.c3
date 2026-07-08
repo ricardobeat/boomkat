@@ -197,8 +197,6 @@ bitstruct ObjFlags : uint {
     bool exotic_array      : 12;
     /// Exotic behaviour for String wrapper objects.
     bool exotic_stringobj  : 13;
-    /// Exotic behaviour for Proxy objects.
-    bool exotic_proxyobj   : 14;
     /// Internal [[Class]] tag (6 bits → up to 64 classes).
     ObjClass obj_class     : 15..20;
     /// Set when pool allocation was exhausted and this object fell back to malloc.
@@ -1294,8 +1292,6 @@ fn HObject*? hobject_alloc(void* heap_ptr, ObjClass cls) {
     } else if (cls == ObjClass.ARRAY) {
         obj.flags.exotic_array = true;
         obj.array_len_ptr()[0] = 0;
-    } else if (cls == ObjClass.PROXY) {
-        obj.flags.exotic_proxyobj = true;
     }
 
     obj.shape_id = 0;

@@ -1,4 +1,3 @@
-/// Built-in function registry for the Duktape C3 port.
 /// Core: shared types, constants, helpers, dispatch table, and registration.
 module tinyduck::builtins;
 
@@ -1797,7 +1796,7 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
     // so that Function.prototype.isPrototypeOf(Number) and similar work.
     // We look them up in the global environment by name.
     if (heap.function_proto != null) {
-        char[][] ctor_names = { "Object", "Number", "Boolean", "String", "Array", "Function", "Date", "RegExp", "Error", "TypeError", "RangeError", "ReferenceError", "SyntaxError", "EvalError", "URIError", "Promise", "GeneratorFunction" };
+        char[][] ctor_names = { "Object", "Number", "Boolean", "String", "Array", "Function", "Date", "RegExp", "Error", "TypeError", "RangeError", "ReferenceError", "SyntaxError", "EvalError", "URIError", "Promise" };
         for (int i = 0; i < ctor_names.len; i++) {
             TVal? optv = env::env_get(global_env, builtin_intern_string(heap, ctor_names[i]));
             if (try tv = optv) {

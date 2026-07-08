@@ -6,27 +6,6 @@ Current `src/` size: **36,958 LOC** (spec target was ~11,400 LOC). This report h
 
 ## Part 1 — What to cut now
 
-### Confirmed broken (fix, don't just clean)
-
-**`just build` is currently broken.** `project.json`'s `tinyduck` and `tinyduck_debug` targets point at `tinyduck_runner/main.c3`, which does not exist:
-
-```
-$ just build
-Failed to resolve tinyduck_runner/main.c3
-error: recipe `build` failed on line 7 with exit code 1
-```
-
-Git history shows `cli/main.c3` (`tinyduck_cli` target) was added later as the real runner (`aa1d6b4 feat: add tinyduck_cli runner`), but nobody updated the older `tinyduck`/`tinyduck_debug` targets to match. Fix: point those targets at `cli/main.c3`, or delete them if `tinyduck_cli` fully supersedes them.
-
-`test_vm_runner/test_vm.c3` is untracked (`git status` shows `??`) but is a live, needed file referenced by the `tinyduck_test*` targets — not cruft, just needs `git add`.
-
-### Whole directories that are dead
-
-- **`duktape/` (288 files, full old Duktape C source tree, incl. `duktape/src-separate/`)** — not referenced anywhere in `project.json`. TinyDuck's engine now lives entirely in `src/*.c3`. This is a vestigial copy from before the C3 rewrite. **Delete the whole directory.**
-- **`libregexp/` (11 C files)** — same story: the live regex engine is `regexp/` (C3, `tiny_re.c3`), wired into every build target's `sources`. `libregexp/` is the old Duktape C regex backend, unreferenced. **Delete.**
-
-Together these two account for a large chunk of the repo's file count (though not `src/`'s LOC count) and are pure historical baggage from the Duktape-port era, before the "reboot" described in `progress.md`.
-
 ### Reachable-from-nowhere internals (real runtime code, but for features that were never wired up to JS)
 
 These are the interesting ones — not comments or stale files, but live logic maintained and GC-rooted every cycle for a global (`Symbol`) that is **never registered**, so no script can ever reach it:
@@ -95,4 +74,4 @@ Verified directly against the installed `c3c 0.8.1` compiler (not just docs) —
 
 ## Suggested next step
 
-The dead-weight items in Part 1 are safe, mechanical deletions (mostly "delete unreferenced things") except for the broken build target, which should be fixed first since it blocks `just build` entirely. The two pervasive refactors (descriptors, strict/sloppy) should stay sequenced last, per the existing `progress.md` plan. Part 2 is exploratory — recommend banking the "quick wins" (AOT bytecode embed, threaded dispatch, class-table-tailored IC) after the LOC-reduction phases finish, and treating copy-and-patch JIT / static-subset AOT as a later design spike once the bytecode format has stopped changing.
+The dead-weight items in Part 1 are real removals of unreachable runtime code (Symbol registry, toPrimitive protocol, Map/Set table remnants, proxy flag) — not file-level deletions. The two pervasive refactors (descriptors, strict/sloppy) should stay sequenced last, per the existing `progress.md` plan. Part 2 is exploratory — recommend banking the "quick wins" (AOT bytecode embed, threaded dispatch, class-table-tailored IC) after the LOC-reduction phases finish, and treating copy-and-patch JIT / static-subset AOT as a later design spike once the bytecode format has stopped changing.

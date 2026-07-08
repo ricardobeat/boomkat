@@ -163,13 +163,7 @@ struct Heap {
     // weakmap_proto / weakset_proto removed in TinyDuck.
     HObject* symbol_proto;
     HObject* promise_proto;
-    HObject* iterator_proto;   // %IteratorPrototype% (ES6 §25.1.2)
-
-    // Global symbol registry for Symbol.for / Symbol.keyFor
-    HString** symbol_registry_keys;   /// Array of key HString* pointers
-    HString** symbol_registry_syms;   /// Array of symbol HString* pointers
-    uint      symbol_registry_count;  /// Number of entries
-    uint      symbol_registry_cap;    /// Allocated capacity
+    // iterator_proto removed in TinyDuck.
 
     // Global checkpoint for __resetGlobals() — saves initial global state
     void**    checkpoint_keys;   /// Array of HString* pointers
@@ -928,17 +922,7 @@ fn void Heap.reset(&self) {
         self.str_table_used = 0;
     }
 
-    // Free symbol registry
-    if (self.symbol_registry_keys != null) {
-        libc::free(self.symbol_registry_keys);
-        self.symbol_registry_keys = null;
-    }
-    if (self.symbol_registry_syms != null) {
-        libc::free(self.symbol_registry_syms);
-        self.symbol_registry_syms = null;
-    }
-    self.symbol_registry_count = 0;
-    self.symbol_registry_cap   = 0;
+    // Free symbol registry removed in TinyDuck.
 
     // Free checkpoint state
     if (self.checkpoint_keys != null) {
@@ -989,7 +973,7 @@ fn void Heap.reset(&self) {
     // weakmap_proto / weakset_proto init removed in TinyDuck.
     self.symbol_proto     = null;
     self.promise_proto    = null;
-    self.iterator_proto   = null;
+    // iterator_proto init removed in TinyDuck.
 
     // Clear builtin string cache
     for (usz i = 0; i < STRS_CACHE_SIZE; i++) {
@@ -1503,7 +1487,7 @@ fn void Heap.mark_roots(&self) {
     // weakmap_proto / weakset_proto GC mark removed in TinyDuck.
     if (self.symbol_proto != null) { self.mark_hobject(self.symbol_proto); }
     if (self.promise_proto != null) { self.mark_hobject(self.promise_proto); }
-    if (self.iterator_proto != null) { self.mark_hobject(self.iterator_proto); }
+    // iterator_proto GC mark removed in TinyDuck.
 
     // Scan the VM value stack as a GC root — all live TVal slots
     // (from base to top) may reference heap objects or strings.
@@ -1514,14 +1498,6 @@ fn void Heap.mark_roots(&self) {
             self.mark_tval(scan);
             scan++;
         }
-    }
-
-    // Mark symbol registry entries
-    for (uint i = 0; i < self.symbol_registry_count; i++) {
-        HString* key = self.symbol_registry_keys[i];
-        HString* sym = self.symbol_registry_syms[i];
-        if (key != null) { ((HeapHeader*)key).set_reachable(); }
-        if (sym != null) { ((HeapHeader*)sym).set_reachable(); }
     }
 
     // Mark built-in cached strings
