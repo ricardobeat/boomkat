@@ -230,13 +230,41 @@ fn ModuleDef* heap_find_loaded_module(Heap* heap, char[] name) {
 /// buffer allocated from the engine's `mem` (libc-backed) heap. The returned
 /// slice is exactly the file's bytes; the lexer scans by length (no NUL
 /// sentinel required).
+/// Probes `normalized_name` as-is, then with module extensions appended, so
+/// a host resolve hook that returns a bare name still finds `./x.ts`
+/// (Node/Deno-style resolution).
 fn char[]? default_module_read(char[] normalized_name, void* udata) {
-    char[] data = file::load(mem, (String)normalized_name) ?? MODULE_ERROR~!;
-    if (data.len == 0) {
-        mem::free(data.ptr);
-        return MODULE_ERROR~;
+    char[] data = file::load(mem, (String)normalized_name) ?? null;
+    if (data != null) {
+        if (data.len == 0) {
+            mem::free(data.ptr);
+            return MODULE_ERROR~;
+        }
+        return data;
     }
-    return data;
+    // Probe common extensions: `.ts`/`.mts`/`.cts` before `.js`/`.mjs`/`.cjs`
+    // so a TS import `./x` finds `./x.ts` before a stale `./x.js`.
+    String[6] exts = { ".ts", ".mts", ".cts", ".js", ".mjs", ".cjs" };
+    for (usz e = 0; e < 6; e++) {
+        String ext = exts[e];
+        usz total = normalized_name.len + ext.len;
+        void* raw = alloc::malloc_try(mem, (sz)(total + 1)) ?? null;
+        if (raw == null) return MODULE_ERROR~;
+        mem::copy(raw, normalized_name.ptr, (sz)(normalized_name.len));
+        mem::copy((char*)raw + normalized_name.len, ext.ptr, (sz)(ext.len));
+        ((char*)raw)[total] = 0;
+        char[] candidate = ((char*)raw)[:total];
+        char[]? probe = file::load(mem, (String)candidate);
+        mem::free(raw);
+        if (probe != null) {
+            if (probe.len == 0) {
+                mem::free(probe.ptr);
+                return MODULE_ERROR~;
+            }
+            return probe;
+        }
+    }
+    return MODULE_ERROR~;
 }
 
 // ============================================================================
@@ -244,6 +272,57 @@ fn char[]? default_module_read(char[] normalized_name, void* udata) {
 // ============================================================================
 
 /// Call the host's resolve_name hook, or use the default.
+/// Return true if `name` already has a recognized module extension.
+fn bool has_module_ext(char[] name) {
+    if (name.len >= 3 && name[^3..] == ".ts") return true;
+    if (name.len >= 3 && name[^3..] == ".js") return true;
+    if (name.len >= 4) {
+        char[] t = name[^4..];
+        if (t == ".mts" || t == ".cts" || t == ".mjs" || t == ".cjs") return true;
+    }
+    return false;
+}
+
+/// Try appending common extensions to `path` until one of the resulting
+/// files exists. Returns the full path (with extension) or the original if
+/// nothing matched. The returned buffer is heap-owned when different from
+/// input, otherwise input is returned as-is.
+fn char[] resolve_extension(char[] path) {
+    if (has_module_ext(path)) return path;
+    // Check if bare path exists.
+    usz plen = path.len;
+    void* pbuf = alloc::malloc_try(mem, (sz)(plen + 1)) ?? null;
+    if (pbuf == null) return path;
+    mem::copy(pbuf, path.ptr, (sz)(plen));
+    ((char*)pbuf)[plen] = 0;
+    char[] bare = ((char*)pbuf)[:plen];
+    char[]? bare_load = file::load(mem, (String)bare);
+    mem::free(pbuf);
+    if (bare_load != null) {
+        mem::free(bare_load.ptr);
+        return path;
+    }
+
+    String[6] exts = { ".ts", ".mts", ".cts", ".js", ".mjs", ".cjs" };
+    for (usz e = 0; e < 6; e++) {
+        String ext = exts[e];
+        usz total = plen + ext.len;
+        void* buf = alloc::malloc_try(mem, (sz)(total + 1)) ?? null;
+        if (buf == null) return path;
+        mem::copy(buf, path.ptr, (sz)(plen));
+        mem::copy((char*)buf + plen, ext.ptr, (sz)(ext.len));
+        ((char*)buf)[total] = 0;
+        char[] candidate = ((char*)buf)[:total];
+        char[]? probe = file::load(mem, (String)candidate);
+        if (probe != null) {
+            mem::free(probe.ptr);
+            return candidate;
+        }
+        mem::free(buf);
+    }
+    return path;
+}
+
 fn char[]? call_resolve_name(Heap* heap, char[] base_name, char[] specifier) {
     if (heap.module_hooks != null) {
         ModuleHostHooks* hooks = (ModuleHostHooks*)heap.module_hooks;
@@ -251,8 +330,9 @@ fn char[]? call_resolve_name(Heap* heap, char[] base_name, char[] specifier) {
             return hooks.resolve_name(base_name, specifier, hooks.udata);
         }
     }
-    // A bare specifier, meaning no leading dot, is returned unchanged.
-    if (specifier.len > 0 && specifier[0] != '.') return specifier;
+    // A bare specifier, meaning no leading dot, is returned unchanged
+    // (plus an extension probe so `import 'x'` can find `x.ts`).
+    if (specifier.len > 0 && specifier[0] != '.') return resolve_extension(specifier);
     // A relative specifier resolves against base_name's directory. A leading
     // "./" must be stripped in every case (not just when base_name itself
     // has a directory component) so the same file always normalizes to the
@@ -267,13 +347,13 @@ fn char[]? call_resolve_name(Heap* heap, char[] base_name, char[] specifier) {
     if (rel.len >= 2 && rel[0] == '.' && rel[1] == '/') {
         rel = rel[2..];
     }
-    if (base_name.len == 0) return rel;
+    if (base_name.len == 0) return resolve_extension(rel);
     // Find last '/' in base_name to get directory
     int last_slash = -1;
     for (usz i = 0; i < base_name.len; i++) {
         if (base_name[i] == '/') last_slash = (int)i;
     }
-    if (last_slash < 0) return rel;
+    if (last_slash < 0) return resolve_extension(rel);
     char[] dir = base_name[:last_slash + 1];
     usz total = dir.len + rel.len;
     void* raw = alloc::malloc_try(mem, (sz)(total + 1)) ?? null;
@@ -281,8 +361,8 @@ fn char[]? call_resolve_name(Heap* heap, char[] base_name, char[] specifier) {
     mem::copy(raw, dir.ptr, (sz)(dir.len));
     mem::copy((char*)raw + dir.len, rel.ptr, (sz)(rel.len));
     ((char*)raw)[total] = 0;
-    char[] result = ((char*)raw)[:total];
-    return result;
+    char[] joined = ((char*)raw)[:total];
+    return resolve_extension(joined);
 }
 
 /// Call the host's read_source hook, or use the default.
@@ -713,7 +793,7 @@ fn bool link_module(Heap* heap, vm::Vm* vm, ModuleDef* mod, EnvRecord* global_en
         heap.register_gc_root(mod.env.bindings.as_header());
     }
 
-    // Link dependencies first
+    // Link dependencies first with the same parent env.
     for (uint i = 0; i < mod.req_module_count; i++) {
         ReqModuleEntry* rme = &mod.req_modules[i];
         if (rme.resolved == null) continue;

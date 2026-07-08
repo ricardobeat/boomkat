@@ -5939,6 +5939,10 @@ fn void? CompilerContext.export_declaration(&self) {
             // in this same statement will overwrite. declare_var stores this
             // slice into scope_stack, which outlives the current token.
             name_tok.str_value = ((Heap*)self.heap).str_intern(name_tok.str_value).get_data();
+            if (self.lexer.ts_mode) {
+                self.try_skip_ts_definite_marker()!;
+                self.try_skip_ts_type_annotation()!;
+            }
 
             ushort reg;
             if (!is_lexical) {
