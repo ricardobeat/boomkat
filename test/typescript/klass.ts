@@ -10,7 +10,7 @@ class Base<T> implements Greeter {
     }
 }
 
-class Impl extends Base {
+class Impl extends Base<string> {
     kind(): string {
         return "impl";
     }
