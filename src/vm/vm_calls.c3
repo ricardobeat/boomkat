@@ -963,8 +963,14 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                     }
                 }
                 if (nargs < new_nregs) {
-                    // Set missing parameter registers to undefined (for default param checks).
-                    // Only formal parameter slots need undefined; temp registers can stay zero.
+                    // Mirror the fast-path register-zeroing: only formal
+                    // parameter slots that don't have a value are set to
+                    // undefined, and the temp-register zeroing starts at
+                    // max(formals, nargs) so the call args themselves stay
+                    // in place. Without this, a bound re-dispatch where
+                    // nargs > num_formals zeros the arg slots and the
+                    // arguments object built from new_regs[0..nargs-1] is
+                    // filled with zeros.
                     uint formals = (uint)target.num_formals;
                     uint undef_limit = formals < new_nregs ? formals : new_nregs;
                     if (nargs < undef_limit) {
@@ -972,9 +978,44 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                             new_regs[zi].set_undefined();
                         }
                     }
-                    // Zero remaining registers (temps)
-                    if (undef_limit < new_nregs) {
-                        libc::memset(&new_regs[undef_limit], 0, (usz)(new_nregs - undef_limit) * TVal::size);
+                    uint zero_start = undef_limit > nargs ? undef_limit : nargs;
+                    if (zero_start < new_nregs) {
+                        libc::memset(&new_regs[zero_start], 0, (usz)(new_nregs - zero_start) * TVal::size);
+                    }
+                }
+            }
+
+            // Create arguments object for the new activation if the target
+            // function references it. This is the slow-path mirror of the
+            // fast-path version above — needed when the call re-dispatched
+            // through a bound function (BUILTIN_FN → bound call → compiled
+            // target via the fallback generic path) and the target uses
+            // `arguments`. Without this, the function sees `arguments is
+            // not defined` because the arguments object was never created.
+            if (target.uses_arguments()) {
+                HObject*? args_obj_raw = vm.heap.alloc_object(hobject::ObjClass.ARGUMENTS);
+                if (try args_obj = args_obj_raw) {
+                    for (uint ai = 0; ai < nargs; ai++) {
+                        args_obj.set_array_idx(ai, new_regs[ai]);
+                    }
+                    args_obj.prototype = vm.heap.object_proto;
+                    HString* callee_key = (HString*)vm.heap.strs[heap::BuiltinStr.CALLEE];
+                    if (callee_key != null) {
+                        TVal callee_tv;
+                        callee_tv.set_object(hobj);
+                        args_obj.put_prop(callee_key, callee_tv, hobject::PROP_FLAGS_WC);
+                    }
+                    HString* length_key = (HString*)vm.heap.strs[heap::BuiltinStr.LENGTH];
+                    if (length_key != null) {
+                        TVal length_tv;
+                        length_tv.set_fastint((long)nargs);
+                        args_obj.put_prop(length_key, length_tv, hobject::PROP_FLAGS_WC);
+                    }
+                    HString* args_name = (HString*)vm.heap.strs[heap::BuiltinStr.ARGUMENTS];
+                    if (args_name != null) {
+                        TVal args_tv;
+                        args_tv.set_object(args_obj);
+                        env::env_declare(new_act.var_env, args_name, args_tv);
                     }
                 }
             }
