@@ -838,6 +838,27 @@ fn void? CompilerContext.for_statement(&self) {
     ushort for_var_reg = 0;
     uint for_var_name_idx = 0;
 
+    // Per-iteration lexical environment tracking: when a for-init let/const binding
+    // is captured by a closure inside the loop body, each iteration must get its own
+    // environment so closures created in different iterations see distinct values
+    // (ES2015 §14.7.4.2 CreatePerIterationEnvironment). Tracked here and emitted
+    // as a prologue at the start of each body iteration (see body_label below).
+    //
+    // At non-global scope: only bindings actually captured by a nested closure need
+    // per-iter envs; common non-capturing loops pay no overhead.
+    // At global scope: the pre_scan_captures pass is not run (no way to know which
+    // names closures capture), so we conservatively enable per-iter for ALL global
+    // for-let/for-const loops (the PUSH_LEX/POP_LEX/PUTLEX cost is negligible
+    // compared to typical loop bodies, and correct semantics must be preserved).
+    // In both cases the env is authoritative: at non-global scope captures use
+    // INC_VAR (env-resident); at global scope primary_expr always uses GETVAR
+    // and i++ compiles to INC_VAR via a peephole, keeping the env in sync.
+    bool needs_periterenv = false;
+    char[][8] periterenv_names;
+    uint[8] periterenv_name_idxs;
+    bool[8] periterenv_is_const;
+    uint periterenv_count = 0;
+
     // Check for for-in / for-of
     TokenType next_tt = self.peek_type();
 
@@ -2815,6 +2836,20 @@ fn void? CompilerContext.for_statement(&self) {
                        && !self.is_captured_name(name_tok.str_value);
             for_var_reg = var_reg;
             for_var_name_idx = self.add_string_constant(name_tok.str_value);
+            // Collect per-iter binding: a let/const binding needs a fresh env each
+            // iteration so closures in different iterations capture distinct values.
+            // At non-global scope only captured bindings trigger per-iter (perf guard).
+            // At global scope all let/const bindings trigger per-iter conservatively
+            // (capture analysis is not run for global scripts).
+            if (is_lexical && (self.is_global || self.is_captured_name(name_tok.str_value))) {
+                needs_periterenv = true;
+            }
+            if (is_lexical && periterenv_count < 8) {
+                periterenv_names[periterenv_count] = name_tok.str_value;
+                periterenv_name_idxs[periterenv_count] = for_var_name_idx;
+                periterenv_is_const[periterenv_count] = is_const;
+                periterenv_count++;
+            }
             if (is_lexical) { self.emit_simple(Opcode.PUSH_LEX); }
             if (self.match(TokenType.ASSIGN)) {
                 ushort init_val = self.assignment_expr()!;
@@ -2861,6 +2896,16 @@ fn void? CompilerContext.for_statement(&self) {
                     }
                     uint extra_name_idx = self.add_string_constant(extra_name.str_value);
                     self.emit_var_store(extra_reg, extra_name_idx, is_lexical, is_const);
+                    // Track extra let/const bindings for per-iter env prologue.
+                    if (is_lexical && (self.is_global || self.is_captured_name(extra_name.str_value))) {
+                        needs_periterenv = true;
+                    }
+                    if (is_lexical && periterenv_count < 8) {
+                        periterenv_names[periterenv_count] = extra_name.str_value;
+                        periterenv_name_idxs[periterenv_count] = extra_name_idx;
+                        periterenv_is_const[periterenv_count] = is_const;
+                        periterenv_count++;
+                    }
                 }
             }
 
@@ -3059,9 +3104,38 @@ fn void? CompilerContext.for_statement(&self) {
     _post_pbc   = self.pushback_count; _post_pbs   = self.pushback_stack;
 
     // ----------------------------------------------------------------
-    // Step 6: incr_label — patch continue_target, then compile increment.
+    // Step 6: incr_label — CreatePerIterationEnvironment, then compile increment.
     // ----------------------------------------------------------------
+    // Per-iteration environment (ES2015 §14.7.4.2 CreatePerIterationEnvironment):
+    // The spec runs CreatePerIterationEnvironment *after* the body and *before*
+    // the increment on every iteration (ForBodyEvaluation step 3.e). We emit the
+    // env-cycling code here at incr_label so that `continue` also triggers it,
+    // keeping the semantics correct: GETVAR reads the binding's current value (the
+    // env is authoritative — INC_VAR and PUTVAR both update it), then POP_LEX/
+    // PUSH_LEX/PUTLEX installs that value into a fresh env. The increment then runs
+    // in the fresh env, and the next body iteration will read the updated value
+    // from that same env through its captured reference.
     uint incr_label = self.code_count;
+    if (needs_periterenv) {
+        ushort pi_tmp = self.alloc_reg();
+        for (uint pi = 0; pi < periterenv_count; pi++) {
+            // GETVAR walks the lex_env chain and returns the current (post-body)
+            // value of the binding. Both INC_VAR (i++) and PUTVAR (x = expr)
+            // update the env, so the env is always authoritative here.
+            self.emit_a_bc(Opcode.GETVAR, (uint)pi_tmp, periterenv_name_idxs[pi]);
+            if (pi == 0) {
+                // Pop/push once — all bindings go into the same fresh env.
+                self.emit_simple(Opcode.POP_LEX);
+                self.emit_simple(Opcode.PUSH_LEX);
+            }
+            if (periterenv_is_const[pi]) {
+                self.emit_a_bc(Opcode.PUTLEX_C, (uint)pi_tmp, periterenv_name_idxs[pi]);
+            } else {
+                self.emit_a_bc(Opcode.PUTLEX, (uint)pi_tmp, periterenv_name_idxs[pi]);
+            }
+        }
+        self.free_reg(pi_tmp);
+    }
     if (self.loop_depth > 0) {
         self.loop_stack[self.loop_depth - 1].continue_target = incr_label;
     }
