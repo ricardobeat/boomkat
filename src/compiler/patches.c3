@@ -50,6 +50,8 @@ fn void CompilerContext.push_loop(&self, uint continue_target, bool is_loop) {
         // lex_env. Any nested block with a PUSH_LEX adds to cur_lex_depth;
         // the break/continue must pop those extras before jumping.
         self.loop_stack[self.loop_depth].saved_lex_depth = self.cur_lex_depth;
+        // No iterator object by default; set explicitly for for-of loops.
+        self.loop_stack[self.loop_depth].iter_obj_reg = 0;
         self.loop_depth++;
     }
 }

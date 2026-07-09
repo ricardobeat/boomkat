@@ -3032,6 +3032,9 @@ fn void? CompilerContext.emit_forof_loop(&self, char[] var_name, ushort iter_reg
     uint loop_start = self.code_count;
     self.push_loop(loop_start, true);
 
+    // Record the iterator object register so return_statement can emit IteratorClose.
+    self.loop_stack[self.loop_depth - 1].iter_obj_reg = method_reg;
+
     // Step 5: Load callee + this, then call .next() each iteration
     //   result = CALL callee, 0    (result = next.call(iterator))
     self.emit_abc(Opcode.LDREG, (uint)callee_reg, (uint)next_reg, 0);

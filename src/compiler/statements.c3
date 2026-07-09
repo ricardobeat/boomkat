@@ -4960,6 +4960,47 @@ fn void? CompilerContext.do_while_statement(&self) {
     self.pop_loop();
 }
 
+/// Emit IteratorClose for each for-of loop enclosing the current return/break.
+/// Iterates the loop stack from innermost to outermost, calling iterator.return()
+/// on each for-of iterator (identified by a non-zero iter_obj_reg). Per ES2015
+/// §7.4.6, .return() is only called when the method exists on the iterator object.
+///
+/// Register layout for the call frame (VM CALL convention: func at B, this at B+1):
+///   call_fn_reg   (N)   — .return method fetched from iterator
+///   call_this_reg (N+1) — iterator object as `this` for .return()
+///   call_res_reg  (N+2) — receives the return value (discarded)
+///   key_reg lives only during the GETPROP and is a scratch below the call frame.
+fn void CompilerContext.emit_iterator_closes_for_return(&self) {
+    if (self.loop_depth == 0) return;
+    // Walk from innermost to outermost loop.
+    uint i = self.loop_depth;
+    while (i > 0) {
+        i--;
+        ushort iter_reg = self.loop_stack[i].iter_obj_reg;
+        if (iter_reg == 0) continue;
+        // Allocate the three-slot call frame: fn/this/result (N, N+1, N+2).
+        // An extra key_reg scratch lives at N-1 only during the GETPROP.
+        ushort call_fn_reg   = self.alloc_reg(); // N
+        ushort call_this_reg = self.alloc_reg(); // N+1
+        ushort call_res_reg  = self.alloc_reg(); // N+2
+        // Load "return" key using call_res_reg as scratch (highest register in block).
+        // Then GETPROP iterator["return"] into call_fn_reg.
+        self.emit_abc(Opcode.LDCONST, (uint)call_res_reg, self.add_string_constant("return"), 0);
+        self.emit_abc(Opcode.GETPROP, (uint)call_fn_reg, (uint)iter_reg, (uint)call_res_reg);
+        // Skip the call when .return is absent (undefined/null are falsy).
+        uint skip_jump = self.emit_cond_jump(Opcode.IF_FALSE, (uint)call_fn_reg);
+        // Load iterator as `this` (must be at call_fn_reg+1 for CALL convention).
+        self.emit_abc(Opcode.LDREG, (uint)call_this_reg, (uint)iter_reg, 0);
+        // call_res_reg (N+2) receives the return value; result is discarded.
+        self.emit_abc(Opcode.CALL, (uint)call_res_reg, (uint)call_fn_reg, 0);
+        self.patch_jump(skip_jump);
+        // Free in reverse allocation order.
+        self.free_reg(call_res_reg);
+        self.free_reg(call_this_reg);
+        self.free_reg(call_fn_reg);
+    }
+}
+
 /// Parse return statement.
 fn void? CompilerContext.return_statement(&self) {
     self.expect(TokenType.RETURN)!;
@@ -4969,9 +5010,14 @@ fn void? CompilerContext.return_statement(&self) {
     TokenType next = self.peek_type();
     if (next == TokenType.SEMICOLON || next == TokenType.RBRACE ||
         next == TokenType.EOF_TOKEN || self.lexer.seen_line_term) {
+        // Close any enclosing for-of iterators before returning (ES2015 §7.4.6).
+        self.emit_iterator_closes_for_return();
         self.emit_simple((self.is_generator && !self.is_async) ? Opcode.RETUNDEF_GEN : Opcode.RETUNDEF);
     } else {
         ushort val_reg = self.expression()!;
+        // Close any enclosing for-of iterators before returning (ES2015 §7.4.6).
+        // The return value register remains live throughout the close sequence.
+        self.emit_iterator_closes_for_return();
         self.emit_abc((self.is_generator && !self.is_async) ? Opcode.RET_GEN : Opcode.RET, (uint)val_reg, 0, 0);
         // Note: do NOT free_reg(val_reg) here.  The return value register may
         // be a live local variable (e.g. `return i` inside a for-loop body).
