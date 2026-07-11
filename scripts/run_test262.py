@@ -26,10 +26,13 @@ Usage:
     python3 scripts/run_test262.py --workers 4  # override worker count
     python3 scripts/run_test262.py --es5        # ES5-only (skip tests with feature flags)
     python3 scripts/run_test262.py --log out/test262_results.tsv   # per-test log
+    python3 scripts/run_test262.py --phase 2 --shuffle --workers 1 --no-retry-fails  # contamination detect
+    python3 scripts/run_test262.py --phase 2 --fresh-process   # one worker per test (slow, clean)
 """
 
 import argparse
 import os
+import random
 import re
 import select
 import signal
@@ -53,6 +56,16 @@ LOG_FH = [None]
 # pressure ~30 tests per full run fail spuriously (timeout/GC timing); the
 # serial rerun reclassifies them. Disable with --no-retry-fails.
 RETRY_FAILS = [True]
+
+# Shuffle test order within each phase (for contamination detection).
+# When combined with --workers 1 --no-retry-fails, running twice with and
+# without --shuffle and diffing the logs reveals order-dependent reset bugs.
+SHUFFLE = [False]
+
+# Fresh-process-per-test mode: spawn a new batch_test_vm --worker for each
+# test. Slow, but immune to all cross-test contamination. For final
+# confirmation runs before merging.
+FRESH_PROCESS = [False]
 
 # Per-worker RSS cap in KB. Tests that loop allocating (e.g. huge-length
 # array-like iteration bugs) can balloon a worker to multiple GB within the
@@ -631,6 +644,8 @@ def build_phase_tests(phase_idx, es5_only=False):
                     skipped += 1
                     continue
                 tests.append(path)
+    if SHUFFLE[0]:
+        random.shuffle(tests)
     return tests, skipped
 def rerun_serial(tests, test_timeout):
     """Rerun a list of tests serially through a single worker.
@@ -677,6 +692,55 @@ def rerun_serial(tests, test_timeout):
     return results
 
 
+def run_fresh_process(tests, test_timeout):
+    """Run each test in a fresh batch_test_vm --worker process.
+
+    Spawns a new worker per test, reads one result, kills the worker.
+    Slow (~10-20x slower than batch mode), but completely immune to
+    cross-test contamination from incomplete heap.reset().
+
+    Returns a list of (path, result) pairs.
+    """
+    results = []
+    for i, path in enumerate(tests):
+        try:
+            proc = subprocess.Popen(
+                [VM_BINARY, "--worker"],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                bufsize=0,
+            )
+            proc.stdin.write((path + "\n").encode())
+            proc.stdin.flush()
+
+            # Read one result line with timeout
+            import select as _select
+            readable, _, _ = _select.select([proc.stdout], [], [], test_timeout)
+            if readable:
+                line = proc.stdout.readline().decode().strip()
+                if line.startswith("PASS "):
+                    results.append((path, "PASS"))
+                elif line.startswith("COMPILE_ERROR "):
+                    results.append((path, "COMPILE_ERROR"))
+                elif line.startswith("FAIL "):
+                    results.append((path, "FAIL"))
+                else:
+                    results.append((path, "FAIL"))
+            else:
+                results.append((path, "TIMEOUT"))
+            proc.kill()
+            proc.wait()
+        except Exception:
+            results.append((path, "FAIL"))
+
+        if (i + 1) % 100 == 0:
+            p = sum(1 for _, r in results if r == "PASS")
+            print(f"  [{i+1}/{len(tests)}] pass={p}", file=sys.stderr)
+
+    return results
+
+
 def run_phase(phase_idx, num_workers, test_timeout, es5_only=False):
     """Run a single phase and return (pass_count, fail_count, skip_count, total_count)."""
     phase = PHASES[phase_idx]
@@ -685,6 +749,12 @@ def run_phase(phase_idx, num_workers, test_timeout, es5_only=False):
 
     if not tests:
         return (0, 0, skipped, total, 0, {"expected-parse": 0, "expected-runtime": 0, "unexpected": 0})
+
+    # Fresh-process mode: one worker per test, completely immune to reset bugs
+    if FRESH_PROCESS[0]:
+        results = run_fresh_process(tests, test_timeout)
+        # Fall through to the common result-processing code below
+        return _summarize_results(results, skipped, total, test_timeout)
 
     workers = [Worker(VM_BINARY, i) for i in range(num_workers)]
     results = []  # (path, "PASS"|"FAIL"|"COMPILE_ERROR"|"TIMEOUT"|"MEMKILL")
@@ -796,6 +866,11 @@ def run_phase(phase_idx, num_workers, test_timeout, es5_only=False):
             retry_map = {p: r for p, r in retry_results}
             results = [(p, retry_map.get(p, r)) for p, r in results]
 
+    return _summarize_results(results, skipped, total, test_timeout)
+
+
+def _summarize_results(results, skipped, total, test_timeout):
+    """Summarize (path, result) pairs into the standard 6-tuple."""
     if LOG_FH[0] is not None:
         for path, r in results:
             rel = os.path.relpath(path, TEST262_DIR)
@@ -856,6 +931,16 @@ def main():
         action="store_true",
         help="Disable the serial retry of non-pass tests",
     )
+    parser.add_argument(
+        "--shuffle",
+        action="store_true",
+        help="Shuffle test order within each phase (contamination detection)",
+    )
+    parser.add_argument(
+        "--fresh-process",
+        action="store_true",
+        help="Spawn a fresh batch_test_vm per test (slow, immune to reset bugs)",
+    )
     args = parser.parse_args()
 
     if args.log:
@@ -863,6 +948,12 @@ def main():
 
     if args.no_retry_fails:
         RETRY_FAILS[0] = False
+
+    if args.shuffle:
+        SHUFFLE[0] = True
+
+    if args.fresh_process:
+        FRESH_PROCESS[0] = True
 
     # Cap workers to avoid OOM — each worker is a full VM process with its own heap
     if args.workers > 4:

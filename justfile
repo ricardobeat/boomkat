@@ -115,6 +115,18 @@ test262: build-batch
 test262-phase phase="0": build-batch
     python3 scripts/run_test262.py --phase {{phase}}
 
+# Detect test contamination: run a phase with --workers 1 in fixed vs shuffled
+# order and diff — any delta is a reset bug by definition.
+test262-contamination phase="0": build-batch
+    python3 scripts/run_test262.py --phase {{phase}} --workers 1 --no-retry-fails --log /tmp/t262_fixed.tsv
+    python3 scripts/run_test262.py --phase {{phase}} --workers 1 --no-retry-fails --log /tmp/t262_shuffled.tsv --shuffle
+    diff /tmp/t262_fixed.tsv /tmp/t262_shuffled.tsv && echo "CLEAN: no contamination detected" || echo "CONTAMINATION: diff found"
+
+# Guard Heap.reset() against field drift — fails if a new Heap field is not
+# touched by reset() and not in the allowlist.
+check-heap-drift:
+    python3 scripts/check_heap_reset_drift.py
+
 # ── Benchmarks ───────────────────────────────────────────────────────────────
 
 # Run all benchmarks without rebuilding (default: 3 iterations)

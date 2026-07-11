@@ -187,6 +187,30 @@ fn void load_test_includes(Vm* v, Heap* hp, char[] src) {
     }
 }
 
+/// Detect if test source has `flags: [async]` in its frontmatter.
+fn bool is_async_test(char[] src) {
+    usz scan_end = src.len < 4096 ? src.len : (usz)4096;
+    usz i = 0;
+    // Find "flags:" within the frontmatter
+    while (i + 6 < scan_end) {
+        if (src[i] == 'f' && src[i+1] == 'l' && src[i+2] == 'a' && src[i+3] == 'g'
+            && src[i+4] == 's' && src[i+5] == ':') {
+            i += 6;
+            break;
+        }
+        i++;
+    }
+    if (i + 6 >= scan_end) return false;
+    // Look for "async" within the brackets
+    while (i < scan_end && src[i] != ']') {
+        if (src[i] == 'a' && src[i+1] == 's' && src[i+2] == 'y' && src[i+3] == 'n' && src[i+4] == 'c') {
+            return true;
+        }
+        i++;
+    }
+    return false;
+}
+
 fn int run_one_test(Vm* v, Heap* hp, char[] test_path, char[] assert_src, char[] property_helper_src) {
     char[]? source = file::load_temp((String)test_path);
     if (catch err = source) { return 1; }
@@ -215,11 +239,19 @@ fn int run_one_test(Vm* v, Heap* hp, char[] test_path, char[] assert_src, char[]
     if (exec_js(v, hp, HOST262_HARNESS) != 0) { io::eprintfn("  FAIL: HOST262_HARNESS"); }
 
     // Load $DONE helper for async tests (tests with `flags: [async]`).
+    // For async tests, we wrap $DONE to set a completion flag so we can
+    // verify the test actually settled (not just that __test262_fail stayed 0).
+    bool async_test = is_async_test(src);
     char[]? done_src_opt = file::load_temp((String)"test262/harness/doneprintHandle.js");
     char[] done_src;
     if (try ds = done_src_opt) {
         done_src = ds;
         if (exec_js(v, hp, done_src) != 0) { io::eprintfn("  FAIL: doneprintHandle.js"); }
+    }
+    if (async_test) {
+        // Set completion flag and wrap $DONE to track settlement
+        char[] async_setup = "var __test262_async_done=0;var __test262_async_error=null;(function(){var _origDONE=$DONE;$DONE=function(err){__test262_async_done=1;if(err){__test262_async_error=String(err);__test262_fail++;}_origDONE(err);};})();";
+        exec_js(v, hp, async_setup);
     }
 
     // Load per-test `includes:` harness files (testTypedArray.js, detachArrayBuffer.js, etc.)
@@ -260,6 +292,24 @@ fn int run_one_test(Vm* v, Heap* hp, char[] test_path, char[] assert_src, char[]
     // Drain pending microtasks so async tests (those relying on Promise / .then
     // reactions) get a chance to run before we read __test262_fail.
     hp.drain_microtasks(v);
+
+    // For async tests, verify that $DONE was actually called — a test that
+    // sets up a promise but never settles is a harness failure, not a pass.
+    if (async_test) {
+        char[] adk = "__test262_async_done";
+        uint adh = hp.hash_string(adk);
+        HString*? ads = hp.str_table_lookup(adk, adh);
+        if (try adks = ads) {
+            TVal? adtv = env::env_get(v.global_env, adks);
+            if (try adval = adtv) {
+                if (adval.get_fastint() == 0) {
+                    // $DONE was never called — async test didn't settle
+                    io::eprintfn("  FAIL: async test never called $DONE");
+                    return 1;
+                }
+            }
+        }
+    }
 
     char[] kn = "__test262_fail";
     uint hh = hp.hash_string(kn);
