@@ -225,9 +225,17 @@ Small residual after session 284: `built-ins/RegExp/CharacterClassEscapes`
   `Symbol.toStringTag`, `toString/*` (2). Sample when convenient.
 
 ### JSON parse + stringify (9+7=16)
-- [ ] **J1 — JSON.parse reviver error propagation** (9):
-  `revived-proxy{,revoked}`, `reviver-{array,object}-{define-prop,delete,
-  length-coerce,length-get,own-keys}-err`.
+- [x] **J1 — JSON.parse reviver error propagation** (9). Already shipped in
+  `d6cbc2d` (json_walk routes through js_get / proxy_filtered_own_keys /
+  proxy_mop_delete / object_define_own and checks `heap.has_error` after each
+  internal method). All 9 target tests pass on session 287 worktree
+  verification (revived-proxy{,revoked}, reviver-{array,object}-{define-prop,
+  delete,length-coerce,length-get,own-keys}-err) plus all 72 JSON/parse
+  entries in Phase 8. Date.toJSON companion (3 tests, to-object.js /
+  to-primitive-symbol.js / invoke-abrupt.js) was shipped in `7bcf02f`
+  (toJSON propagates thrown getter/call errors, boxes primitive `this` via
+  ToObject, uses Number ToPrimitive hint). Both clusters closed; only J2
+  (JSON.stringify edges) remains.
 - [ ] **J2 — JSON.stringify** (7): sample.
 
 ### Optional chaining (8) + Arrow function (8)
