@@ -51,11 +51,25 @@ Merged to main (`7c47e9c..6c8d663`), ~549 real tests recovered + 39 reclassified
   the table, or grow-on-demand). Round-4 candidate.
 
 ### Follow-ups surfaced this session
-- [ ] **Promise combinator GC-rooting** (~4): builtin-thrown error object can be
-  swept before use across a call-boundary safepoint (`any`/`race`
-  resolve-throws-*, capability-resolve-throws). Diagnosed, not fixed.
-- [ ] **Promise no-handler microtask ordering** (1): no-handler reactions settle
-  synchronously instead of via queued microtask (`race/resolved-then-catch-finally`).
+- [x] **Promise combinator GC-rooting** (~4) + **Promise no-handler microtask
+  ordering** (1) — **fixed** by `34a5269` ("promise: fix stale vm.has_error
+  channel and no-handler reaction timing"). Both bugs lived in the shared
+  error/microtask plumbing rather than GC-rooting as originally suspected:
+  1. `promise_clear_error_channels` cleared `heap.has_error` and
+     `vm.throw_pending` but left `vm.has_error` (set by `vm_call_fn_impl` on a
+     reentrant callee throw) stale — a later CALL-opcode dispatch then
+     misreported its own clean result as a re-throw of the earlier error.
+     `Promise.{all,any,allSettled,race}` IteratorClose / capability-reject
+     error paths intermittently forwarded the wrong value or hung.
+  2. `promise_trigger_reactions` settled no-handler reactions inline instead
+     of queuing a `PromiseReactionJob` microtask, violating ES2015+ §27.2.2.1.
+     Added `BUILTIN_PROMISE_IDENTITY` / `BUILTIN_PROMISE_THROWER` lightfuncs
+     so the no-handler case reuses the has-handler job-enqueue path, fixing
+     settle-order for chains with no rejection handler.
+  All 11 originally-listed Promise combinator/no-handler tests now pass
+  (verified 2026-07-18 via `scripts/run_single_test.sh` per file). See
+  commit message for the unrelated bound-fn `this`-corruption regression
+  (`9566c0c`) that this fix exposes.
 - [ ] **`arguments` has no `Symbol.iterator`** — breaks `[...arguments]`/spread.
 - [ ] **Iterators lack a shared prototype `next`** (Array/Map/Set/String): each
   instance gets its own `next`, so `Object.getPrototypeOf(iter).next = …`
