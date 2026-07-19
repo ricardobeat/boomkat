@@ -6,7 +6,6 @@ import duktape::bytecode;
 import duktape::hstring;
 import duktape::hobject;
 import duktape::heap;
-import libc;
 import duktape::jit;
 import std::io;
 
@@ -172,7 +171,7 @@ fn bool get_disable_optimize()       { return g_disable_optimize; }
 fn void set_compile_error(char[] msg) {
     if (g_last_err_msg[0] != 0) return;
     usz copy_len = msg.len < (g_last_err_msg.len - 1) ? msg.len : (g_last_err_msg.len - 1);
-    libc::memcpy(&g_last_err_msg[0], msg.ptr, copy_len);
+    mem::copy(&g_last_err_msg[0], msg.ptr, (sz)(copy_len));
     g_last_err_msg[copy_len] = 0;
 }
 
@@ -478,7 +477,7 @@ struct CompilerContext {
 // ============================================================================
 
 fn void CompilerContext.init(&self, Lexer* lex, void* heap) {
-    libc::memset(self, 0, CompilerContext::size);
+    mem::clear(self, (sz)(CompilerContext::size));
     self.lexer = lex;
     self.heap = heap;
     self.disable_optimize = g_disable_optimize;
@@ -509,7 +508,7 @@ fn void CompilerContext.init(&self, Lexer* lex, void* heap) {
     self.const_hash_fill = INITIAL_CONST_HASH - INITIAL_CONST_HASH / 4;
     self.const_hash = (ConstHashEntry*)h.alloc_func(h.heap_udata, (usz)(INITIAL_CONST_HASH * ConstHashEntry::size));
     if (self.const_hash != null) {
-        libc::memset(self.const_hash, 0, (usz)(INITIAL_CONST_HASH * ConstHashEntry::size));
+        mem::clear(self.const_hash, (sz)((usz)(INITIAL_CONST_HASH * ConstHashEntry::size)));
     }
     self.inner_func_cap = INITIAL_INNER_FUNCS;
     self.inner_funcs = (CompiledFunction**)h.alloc_func(h.heap_udata, (usz)(INITIAL_INNER_FUNCS * CompiledFunction*::size));
@@ -585,7 +584,7 @@ fn void CompilerContext.ensure_const_cap(&self) {
     self.const_hash_cap = new_hash_cap;
     self.const_hash_fill = new_hash_cap - new_hash_cap / 4;
     // Rehash: clear and reinsert
-    libc::memset(self.const_hash, 0, (usz)(new_hash_cap * ConstHashEntry::size));
+    mem::clear(self.const_hash, (sz)((usz)(new_hash_cap * ConstHashEntry::size)));
     self.const_hash_count = 0;
     for (uint i = 0; i < self.const_count; i++) {
         self.insert_constant_hash(self.constants[i].get_raw_bits(), i);
@@ -718,7 +717,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     if (raw == null) {
         return COMPILE_ERROR~;
     }
-    libc::memset(raw, 0, CompiledFunction::size);
+    mem::clear(raw, (sz)(CompiledFunction::size));
 
     CompiledFunction* func = (CompiledFunction*)raw;
     func.flags.htype = HType.OBJECT;
@@ -837,7 +836,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         //   to worry about them here.
         bool* jump_targets = (bool*)h.alloc_func(h.heap_udata, (usz)self.code_cap);
         if (jump_targets == null) { self.cleanup(); return COMPILE_ERROR~; }
-        libc::memset(jump_targets, 0, (usz)self.code_count);
+        mem::clear(jump_targets, (sz)((usz)self.code_count));
         for (uint i = 0; i < self.code_count; i++) {
             Instruction ins = self.code[i];
             switch (ins.op) {
@@ -1305,7 +1304,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         // Step 1: mark TRY jump slots as non-removable.
         bool* nop_keep = (bool*)h.alloc_func(h.heap_udata, (usz)self.code_cap);
         if (nop_keep == null) { self.cleanup(); return COMPILE_ERROR~; }
-        libc::memset(nop_keep, 0, (usz)self.code_count);
+        mem::clear(nop_keep, (sz)((usz)self.code_count));
         for (uint i = 0; i < self.code_count; i++) {
             if (self.code[i].op == Opcode.TRY && i + 1 < self.code_count) {
                 nop_keep[i + 1] = true;
@@ -1435,7 +1434,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
             h.free_func(h.heap_udata, raw);
             return COMPILE_ERROR~;
         }
-        libc::memcpy(const_raw, &self.constants[0], const_bytes);
+        mem::copy(const_raw, &self.constants[0], (sz)(const_bytes));
         func.constants = (TVal*)const_raw;
         func.const_count = self.const_count;
     }
@@ -1450,7 +1449,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
             h.free_func(h.heap_udata, raw);
             return COMPILE_ERROR~;
         }
-        libc::memcpy(inner_raw, &self.inner_funcs[0], inner_bytes);
+        mem::copy(inner_raw, &self.inner_funcs[0], (sz)(inner_bytes));
         func.inner_funcs = (CompiledFunction**)inner_raw;
         func.inner_count = self.inner_func_count;
     }
@@ -1513,7 +1512,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         usz ic_bytes = (usz)func.code_count * hobject::ICEntry::size;
         void* ic_raw = h.alloc_func(h.heap_udata, ic_bytes);
         if (ic_raw != null) {
-            libc::memset(ic_raw, 0, ic_bytes);
+            mem::clear(ic_raw, (sz)(ic_bytes));
             func.ic_entries = ic_raw;
             func.ic_count = func.code_count;
         }
@@ -1522,7 +1521,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         usz vic_bytes = (usz)func.code_count * hobject::VarICEntry::size;
         void* vic_raw = h.alloc_func(h.heap_udata, vic_bytes);
         if (vic_raw != null) {
-            libc::memset(vic_raw, 0, vic_bytes);
+            mem::clear(vic_raw, (sz)(vic_bytes));
             func.var_ic_entries = vic_raw;
             func.var_ic_count = func.code_count;
         }

@@ -318,7 +318,7 @@ fn HString*? hstring_alloc(void* heap_ptr, char[] data, uint hash) {
     }
 
     // Zero-fill the header portion.
-    mem::clear(raw, HSTRING_HDR_SIZE);
+    mem::clear(raw, (sz)(HSTRING_HDR_SIZE));
 
     HString* s = (HString*)raw;
 
@@ -354,7 +354,7 @@ fn HString*? hstring_alloc(void* heap_ptr, char[] data, uint hash) {
     // --- Copy bytes + NUL terminate ---
     char* dest = (char*)((usz)raw + HSTRING_HDR_SIZE);
     if (data.len > 0) {
-        mem::copy(dest, data.ptr, data.len);
+        mem::copy(dest, data.ptr, (sz)(data.len));
     }
     dest[data.len] = 0;  // NUL terminator
 
@@ -375,7 +375,7 @@ fn HString*? hstring_concat(void* heap_ptr, HString* a, HString* b) {
         return duktape::types::ALLOC_ERROR~;
     }
 
-    mem::clear(raw, HSTRING_HDR_SIZE);
+    mem::clear(raw, (sz)(HSTRING_HDR_SIZE));
 
     HString* s = (HString*)raw;
     s.flags.htype = HType.STRING;

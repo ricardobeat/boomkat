@@ -884,17 +884,17 @@ fn void json_stack_pop(JsonSerializeCtx* jctx) {
 fn usz json_number_to_string(double d, char* buf, usz buf_size) {
     // NaN → "NaN"
     if (math::is_nan(d)) {
-        libc::memcpy(buf, "NaN", 3);
+        mem::copy(buf, "NaN", (sz)(3));
         return 3;
     }
     // +Infinity → "Infinity"
     if (math::is_inf(d) && d > 0.0) {
-        libc::memcpy(buf, "Infinity", 8);
+        mem::copy(buf, "Infinity", (sz)(8));
         return 8;
     }
     // -Infinity → "-Infinity"
     if (math::is_inf(d) && d < 0.0) {
-        libc::memcpy(buf, "-Infinity", 9);
+        mem::copy(buf, "-Infinity", (sz)(9));
         return 9;
     }
     // +0 / -0 → "0"  (ES5 §9.8.1 step 2)
@@ -1525,17 +1525,17 @@ fn int json_serialize_array(JsonSerializeCtx* jctx, HObject* arr) {
         // null for omitted/undefined elements
         if (omit || elem.is_undefined()) {
             if (jctx.offset + 5 > jctx.buf_size) return -1;
-            libc::memcpy(jctx.buf + jctx.offset, "null", 4);
+            mem::copy(jctx.buf + jctx.offset, "null", (sz)(4));
             jctx.offset += 4;
         } else if (elem.is_lightfunc()) {
             if (jctx.offset + 5 > jctx.buf_size) return -1;
-            libc::memcpy(jctx.buf + jctx.offset, "null", 4);
+            mem::copy(jctx.buf + jctx.offset, "null", (sz)(4));
             jctx.offset += 4;
         } else if (elem.is_object() && elem.get_heapptr() != null) {
             HObject* vobj = (HObject*)elem.get_heapptr();
             if (vobj.get_class() == ObjClass.FUNCTION) {
                 if (jctx.offset + 5 > jctx.buf_size) return -1;
-                libc::memcpy(jctx.buf + jctx.offset, "null", 4);
+                mem::copy(jctx.buf + jctx.offset, "null", (sz)(4));
                 jctx.offset += 4;
             } else {
                 jctx.depth++;
@@ -1587,11 +1587,11 @@ fn int json_serialize_val(JsonSerializeCtx* jctx, TVal* val) {
         case BOOLEAN: {
             if (val.get_boolean()) {
                 if (jctx.offset + 5 > jctx.buf_size) return -1;
-                libc::memcpy(jctx.buf + jctx.offset, "true", 4);
+                mem::copy(jctx.buf + jctx.offset, "true", (sz)(4));
                 jctx.offset += 4;
             } else {
                 if (jctx.offset + 6 > jctx.buf_size) return -1;
-                libc::memcpy(jctx.buf + jctx.offset, "false", 5);
+                mem::copy(jctx.buf + jctx.offset, "false", (sz)(5));
                 jctx.offset += 5;
             }
             return 0;
@@ -1600,7 +1600,7 @@ fn int json_serialize_val(JsonSerializeCtx* jctx, TVal* val) {
             double d = val.get_number();
             if (math::is_nan(d) || math::is_inf(d)) {
                 if (jctx.offset + 5 > jctx.buf_size) return -1;
-                libc::memcpy(jctx.buf + jctx.offset, "null", 4);
+                mem::copy(jctx.buf + jctx.offset, "null", (sz)(4));
                 jctx.offset += 4;
                 return 0;
             }
@@ -1639,7 +1639,7 @@ fn int json_serialize_val(JsonSerializeCtx* jctx, TVal* val) {
         case OBJECT: {
             if (val.get_heapptr() == null) {
                 if (jctx.offset + 5 > jctx.buf_size) return -1;
-                libc::memcpy(jctx.buf + jctx.offset, "null", 4);
+                mem::copy(jctx.buf + jctx.offset, "null", (sz)(4));
                 jctx.offset += 4;
                 return 0;
             }
@@ -1647,7 +1647,7 @@ fn int json_serialize_val(JsonSerializeCtx* jctx, TVal* val) {
             if (obj.is_callable()) {
                 // Functions (including callable Proxies) serialize as null in JSON.
                 if (jctx.offset + 5 > jctx.buf_size) return -1;
-                libc::memcpy(jctx.buf + jctx.offset, "null", 4);
+                mem::copy(jctx.buf + jctx.offset, "null", (sz)(4));
                 jctx.offset += 4;
                 return 0;
             }
@@ -1667,7 +1667,7 @@ fn int json_serialize_val(JsonSerializeCtx* jctx, TVal* val) {
         case LIGHTFUNC: {
             // Functions serialize as null
             if (jctx.offset + 5 > jctx.buf_size) return -1;
-            libc::memcpy(jctx.buf + jctx.offset, "null", 4);
+            mem::copy(jctx.buf + jctx.offset, "null", (sz)(4));
             jctx.offset += 4;
             return 0;
         }
@@ -1677,7 +1677,7 @@ fn int json_serialize_val(JsonSerializeCtx* jctx, TVal* val) {
         default:
             // Undefined, Buffer, Pointer -> serialize as null
             if (jctx.offset + 5 > jctx.buf_size) return -1;
-            libc::memcpy(jctx.buf + jctx.offset, "null", 4);
+            mem::copy(jctx.buf + jctx.offset, "null", (sz)(4));
             jctx.offset += 4;
             return 0;
     }
@@ -1878,7 +1878,7 @@ fn void builtin_json_stringify(BuiltinContext* ctx) {
                 if (count > 0) {
                     prop_keys = (HString**)ctx.heap.alloc_func(ctx.heap.heap_udata, count * HString*::size);
                     if (prop_keys != null) {
-                        libc::memcpy(prop_keys, &temp_keys[0], count * HString*::size);
+                        mem::copy(prop_keys, &temp_keys[0], (sz)(count * HString*::size));
                         prop_key_count = count;
                     }
                 }

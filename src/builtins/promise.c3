@@ -1,7 +1,6 @@
 /// Promise constructor, Promise.prototype methods, and microtask integration.
 module duktape::builtins;
 import duktape::types;
-import libc;
 import duktape::hstring;
 import std::io;
 

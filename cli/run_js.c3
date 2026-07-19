@@ -16,7 +16,6 @@ import duktape::types;
 import duktape::bytecode;
 import duktape::esm;
 import std::io;
-import libc;
 
 fn int main(String[] args) {
     vm::test262_host_enabled = true;

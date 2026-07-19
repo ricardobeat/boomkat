@@ -68,7 +68,7 @@ fn bool is_canonical_numeric_index(Heap* heap, HString* s, double* out) {
     HString* restr = builtin_number_to_hstring(heap, d);
     if (restr == null) return false;
     if (restr.blen != s.blen) return false;
-    if (libc::memcmp(restr.get_cstr(), s.get_cstr(), s.blen) != 0) return false;
+    if (!mem::equals(restr.get_cstr(), s.get_cstr(), s.blen)) return false;
     *out = d;
     return true;
 }
@@ -85,7 +85,7 @@ fn HObject* typedarray_alloc_buffer(BuiltinContext* ctx, uint byte_length) {
     if (byte_length > 0) {
         data = (char*)ctx.heap.alloc_func(ctx.heap.heap_udata, (usz)byte_length);
         if (data == null) return null;
-        libc::memset(data, 0, (usz)byte_length);
+        mem::clear(data, (sz)((usz)byte_length));
     }
     HObject*? raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAYBUFFER);
     if (catch err = raw) {
@@ -199,25 +199,25 @@ fn TVal ta_load_element(char* p, hobject::ObjClass cls, uint idx) {
         }
         case hobject::ObjClass.INT16ARRAY: {
             short v;
-            libc::memcpy(&v, ep, 2);
+            mem::copy(&v, ep, (sz)(2));
             out.set_fastint((long)v);
             break;
         }
         case hobject::ObjClass.UINT16ARRAY: {
             ushort v;
-            libc::memcpy(&v, ep, 2);
+            mem::copy(&v, ep, (sz)(2));
             out.set_fastint((long)v);
             break;
         }
         case hobject::ObjClass.INT32ARRAY: {
             int v;
-            libc::memcpy(&v, ep, 4);
+            mem::copy(&v, ep, (sz)(4));
             out.set_fastint((long)v);
             break;
         }
         case hobject::ObjClass.UINT32ARRAY: {
             uint v;
-            libc::memcpy(&v, ep, 4);
+            mem::copy(&v, ep, (sz)(4));
             if (v < 2147483648u) {
                 out.set_fastint((long)v);
             } else {
@@ -227,13 +227,13 @@ fn TVal ta_load_element(char* p, hobject::ObjClass cls, uint idx) {
         }
         case hobject::ObjClass.FLOAT32ARRAY: {
             float v;
-            libc::memcpy(&v, ep, 4);
+            mem::copy(&v, ep, (sz)(4));
             out.set_number((double)v);
             break;
         }
         case hobject::ObjClass.FLOAT64ARRAY: {
             double v;
-            libc::memcpy(&v, ep, 8);
+            mem::copy(&v, ep, (sz)(8));
             out.set_number(v);
             break;
         }
@@ -295,7 +295,7 @@ fn void ta_write_element(char* p, hobject::ObjClass cls, TVal* val, BuiltinConte
             if (ctx.should_throw) return;
             long iv = double_to_int32(d);
             short sv = (short)(iv & 0xFFFF);
-            libc::memcpy(p, &sv, 2);
+            mem::copy(p, &sv, (sz)(2));
             break;
         }
         case hobject::ObjClass.INT32ARRAY:
@@ -304,20 +304,20 @@ fn void ta_write_element(char* p, hobject::ObjClass cls, TVal* val, BuiltinConte
             if (ctx.should_throw) return;
             long iv = double_to_int32(d);
             int v32 = (int)iv;
-            libc::memcpy(p, &v32, 4);
+            mem::copy(p, &v32, (sz)(4));
             break;
         }
         case hobject::ObjClass.FLOAT32ARRAY: {
             double d = ta_val_to_number(val, ctx);
             if (ctx.should_throw) return;
             float f = (float)d;
-            libc::memcpy(p, &f, 4);
+            mem::copy(p, &f, (sz)(4));
             break;
         }
         case hobject::ObjClass.FLOAT64ARRAY: {
             double d = ta_val_to_number(val, ctx);
             if (ctx.should_throw) return;
-            libc::memcpy(p, &d, 8);
+            mem::copy(p, &d, (sz)(8));
             break;
         }
         default:
@@ -460,7 +460,7 @@ fn void typed_array_construct(BuiltinContext* ctx, hobject::ObjClass obj_class) 
 
                 char* src_base = (*src_buf.extra_ptr()).ab.data + (*arg_obj.extra_ptr()).view.byte_offset;
                 if (src_cls == obj_class) {
-                    if (total_bytes > 0) libc::memcpy((*buf.extra_ptr()).ab.data, src_base, (usz)total_bytes);
+                    if (total_bytes > 0) mem::copy((*buf.extra_ptr()).ab.data, src_base, (sz)((usz)total_bytes));
                 } else {
                     for (uint i = 0; i < count; i++) {
                         TVal v = ta_load_element(src_base, src_cls, i);
@@ -558,7 +558,7 @@ fn void typed_array_construct(BuiltinContext* ctx, hobject::ObjClass obj_class) 
                         uint new_cap = cap * 2;
                         TVal* new_items = (TVal*)heap.alloc_func(heap.heap_udata, (usz)new_cap * TVal::size);
                         if (new_items == null) { heap.free_func(heap.heap_udata, items); ctx.result.set_undefined(); return; }
-                        libc::memcpy(new_items, items, (usz)count * TVal::size);
+                        mem::copy(new_items, items, (sz)((usz)count * TVal::size));
                         heap.free_func(heap.heap_udata, items);
                         items = new_items;
                         cap = new_cap;
@@ -956,7 +956,7 @@ fn void builtin_ta_proto_set(BuiltinContext* ctx) {
             if (src_cls == dst_cls) {
                 // Same element type: memmove handles overlap (same buffer).
                 uint byte_count = src_len << dst_shift;
-                if (byte_count > 0) libc::memmove(dst_data, src_data, (usz)byte_count);
+                if (byte_count > 0) mem::move(dst_data, src_data, (sz)((usz)byte_count));
             } else if (src_buf == dst_buf) {
                 // Cross-class, same buffer: copy elements via temporary scratch.
                 uint scratch_bytes = src_len * TVal::size;
@@ -1245,10 +1245,10 @@ fn void builtin_ta_proto_fill(BuiltinContext* ctx) {
         if (cls == hobject::ObjClass.UINT8ARRAY || cls == hobject::ObjClass.INT8ARRAY) {
             // Single-byte fill: truncate to int8, then bulk memset.
             char fill_byte = (char)(double_to_int32(fill_d) & 0xFF);
-            libc::memset(base + k, (int)fill_byte, (usz)(final_k - k));
+            mem::set(base + k, (int)fill_byte, (sz)((usz)(final_k - k)));
         } else if (cls == hobject::ObjClass.UINT8CLAMPEDARRAY) {
             char clamped = ta_to_uint8_clamped(fill_d);
-            libc::memset(base + k, (int)clamped, (usz)(final_k - k));
+            mem::set(base + k, (int)clamped, (sz)((usz)(final_k - k)));
         } else {
             TVal fill_tv; fill_tv.set_number(fill_d);
             for (uint i = k; i < final_k; i++) {
@@ -1311,7 +1311,7 @@ fn void builtin_ta_proto_copyWithin(BuiltinContext* ctx) {
 
     if (count > 0) {
         char* base = (*buf.extra_ptr()).ab.data + byte_off;
-        libc::memmove(base + (to << shift), base + (from << shift), (usz)(count << shift));
+        mem::move(base + (to << shift), base + (from << shift), (sz)((usz)(count << shift)));
     }
 
     *ctx.result = ctx.this_val;
@@ -1371,7 +1371,7 @@ fn void builtin_ta_proto_slice(BuiltinContext* ctx) {
         uint result_shift = ta_elem_shift(result_cls);
         if (result_cls == cls && result_buf != src_buf) {
             // Same element type, disjoint buffers: bulk copy is safe.
-            libc::memcpy(dst_data, src_data, (usz)(count << shift));
+            mem::copy(dst_data, src_data, (sz)((usz)(count << shift)));
         } else {
             // Either different types, or same buffer (shared between src and result
             // via species constructor): element-by-element copy per spec step 14g.
@@ -1778,11 +1778,11 @@ fn void builtin_ta_proto_join(BuiltinContext* ctx) {
     usz off = 0;
     for (uint i = 0; i < len; i++) {
         if (i > 0 && sep.len > 0) {
-            libc::memcpy(&rbuf[off], &sep[0], sep.len);
+            mem::copy(&rbuf[off], &sep[0], (sz)(sep.len));
             off += sep.len;
         }
         char[] ed = elem_strs[i].get_data();
-        if (ed.len > 0) { libc::memcpy(&rbuf[off], &ed[0], ed.len); off += ed.len; }
+        if (ed.len > 0) { mem::copy(&rbuf[off], &ed[0], (sz)(ed.len)); off += ed.len; }
         heap.decref((types::HeapHeader*)elem_strs[i]);
     }
     if (sep_hs != null) heap.decref((types::HeapHeader*)sep_hs);
@@ -2247,9 +2247,9 @@ fn void builtin_ta_proto_reverse(BuiltinContext* ctx) {
     while (lo < hi) {
         char* lp = base + lo * elem_sz;
         char* hp = base + hi * elem_sz;
-        libc::memcpy(&tmp[0], lp, (usz)elem_sz);
-        libc::memcpy(lp, hp, (usz)elem_sz);
-        libc::memcpy(hp, &tmp[0], (usz)elem_sz);
+        mem::copy(&tmp[0], lp, (sz)((usz)elem_sz));
+        mem::copy(lp, hp, (sz)((usz)elem_sz));
+        mem::copy(hp, &tmp[0], (sz)((usz)elem_sz));
         lo++;
         hi--;
     }
@@ -2275,7 +2275,7 @@ fn void builtin_ta_proto_toReversed(BuiltinContext* ctx) {
     char* dst = (*res_buf.extra_ptr()).ab.data;
 
     for (uint i = 0; i < len; i++) {
-        libc::memcpy(dst + i * elem_sz, src + (len - 1 - i) * elem_sz, (usz)elem_sz);
+        mem::copy(dst + i * elem_sz, src + (len - 1 - i) * elem_sz, (sz)((usz)elem_sz));
     }
     ctx.result.set_object(result);
 }
@@ -2476,7 +2476,7 @@ fn void builtin_ta_proto_toSorted(BuiltinContext* ctx) {
     char* dst = (*res_buf.extra_ptr()).ab.data;
 
     // Copy source bytes into result, then sort result in place.
-    if (len > 0) libc::memcpy(dst, src, (usz)(len * elem_sz));
+    if (len > 0) mem::copy(dst, src, (sz)((usz)(len * elem_sz)));
 
     if (len <= 1) { ctx.result.set_object(result); return; }
 
@@ -2681,11 +2681,11 @@ fn void builtin_ta_proto_toLocaleString(BuiltinContext* ctx) {
     usz off = 0;
     for (uint i = 0; i < done; i++) {
         if (i > 0 && sep.len > 0) {
-            libc::memcpy(&rbuf[off], &sep[0], sep.len);
+            mem::copy(&rbuf[off], &sep[0], (sz)(sep.len));
             off += sep.len;
         }
         char[] ed = elem_strs[i].get_data();
-        if (ed.len > 0) { libc::memcpy(&rbuf[off], &ed[0], ed.len); off += ed.len; }
+        if (ed.len > 0) { mem::copy(&rbuf[off], &ed[0], (sz)(ed.len)); off += ed.len; }
         heap.decref((types::HeapHeader*)elem_strs[i]);
     }
     if (sep_hs != null) heap.decref((types::HeapHeader*)sep_hs);
@@ -2991,7 +2991,7 @@ fn void builtin_ta_from(BuiltinContext* ctx) @noinline {
                     ctx.result.set_undefined();
                     return;
                 }
-                libc::memcpy(new_items, items, (usz)count * TVal::size);
+                mem::copy(new_items, items, (sz)((usz)count * TVal::size));
                 heap.free_func(heap.heap_udata, items);
                 items = new_items;
                 cap = new_cap;

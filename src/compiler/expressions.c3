@@ -6,7 +6,6 @@ import duktape::bytecode;
 import duktape::hstring;
 import duktape::hobject;
 import duktape::heap;
-import libc;
 import std::io;
 
 // ============================================================================
@@ -226,7 +225,7 @@ fn ushort? CompilerContext.assignment_expr(&self) {
             g_last_err_col  = self.lexer.col;
             char[] msg = "Invalid left-hand side in assignment";
             usz copy_len = msg.len < (g_last_err_msg.len - 1) ? msg.len : (g_last_err_msg.len - 1);
-            libc::memcpy(&g_last_err_msg[0], msg.ptr, copy_len);
+            mem::copy(&g_last_err_msg[0], msg.ptr, (sz)(copy_len));
             g_last_err_msg[copy_len] = 0;
         }
         return COMPILE_ERROR~;
@@ -238,7 +237,7 @@ fn ushort? CompilerContext.assignment_expr(&self) {
             g_last_err_col  = self.lexer.col;
             char[] msg = "Invalid left-hand side in assignment";
             usz copy_len = msg.len < (g_last_err_msg.len - 1) ? msg.len : (g_last_err_msg.len - 1);
-            libc::memcpy(&g_last_err_msg[0], msg.ptr, copy_len);
+            mem::copy(&g_last_err_msg[0], msg.ptr, (sz)(copy_len));
             g_last_err_msg[copy_len] = 0;
         }
         return COMPILE_ERROR~;

@@ -13,7 +13,6 @@ module duktape::hbigint;
 
 import duktape::types;
 import duktape::heap;
-import libc;
 
 // ============================================================================
 // Bounds

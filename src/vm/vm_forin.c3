@@ -10,7 +10,6 @@ import duktape::builtins;
 import duktape::re_bindings;
 import std::io;
 import std::math;
-import libc;
 
 const uint FORIN_INITIAL_CAP = 64;
 

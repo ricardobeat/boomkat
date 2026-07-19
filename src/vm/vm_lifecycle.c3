@@ -7,7 +7,6 @@ import duktape::hstring;
 import duktape::hobject;
 import duktape::env;
 import duktape::builtins;
-import libc;
 
 // ============================================================================
 // VM creation / destruction
@@ -25,7 +24,7 @@ fn Vm*? vm_create(Heap* heap) {
     if (raw == null) {
         return VM_ERROR~;
     }
-    libc::memset(raw, 0, Vm::size);
+    mem::clear(raw, (sz)(Vm::size));
 
     Vm* vm = (Vm*)raw;
     vm.heap = heap;

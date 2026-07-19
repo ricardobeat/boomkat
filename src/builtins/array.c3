@@ -1315,13 +1315,13 @@ fn void builtin_array_proto_join(BuiltinContext* ctx) {
     usz offset = 0;
     for (uint i = 0; i < len; i++) {
         if (i > 0) {
-            libc::memcpy(&result_buf[offset], &sep[0], sep.len);
+            mem::copy(&result_buf[offset], &sep[0], (sz)(sep.len));
             offset += sep.len;
         }
         HString* elem_str = elem_strs[i];
         char[] elem_data = elem_str.get_data();
         if (elem_data.len > 0) {
-            libc::memcpy(&result_buf[offset], &elem_data[0], elem_data.len);
+            mem::copy(&result_buf[offset], &elem_data[0], (sz)(elem_data.len));
             offset += elem_data.len;
         }
     }

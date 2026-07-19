@@ -4,7 +4,6 @@ import duktape::hobject;
 import duktape::hstring;
 import duktape::types;
 import std::io;
-import libc;
 
 fn int main(String[] args) {
     Heap*? hp = heap::create(null, null, null, null, null);

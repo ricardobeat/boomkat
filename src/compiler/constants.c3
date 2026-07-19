@@ -7,7 +7,6 @@ import duktape::hstring;
 import duktape::hbigint;
 import duktape::hobject;
 import duktape::heap;
-import libc;
 import std::io;
 
 // ============================================================================

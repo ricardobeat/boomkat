@@ -7,7 +7,6 @@ import duktape::hstring;
 import duktape::hobject;
 import duktape::env;
 import duktape::builtins;
-import libc;
 import duktape::re_bindings;
 import std::math;
 
@@ -262,7 +261,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     return vm_uncaught_error(vm, &oom_reason);
                 }
                 GeneratorState* gs = (GeneratorState*)gs_raw;
-                libc::memset(gs_raw, 0, GeneratorState::size);
+                mem::clear(gs_raw, (sz)(GeneratorState::size));
                 gs.pending_resume_reg = 0xFFFF;
 
                 CompiledFunction* cur_func = (CompiledFunction*)ds.act.func;
@@ -284,7 +283,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     return (TVal){};
                 }
                 gs.saved_regs = (TVal*)regs_mem;
-                libc::memset(regs_mem, 0, regs_bytes);
+                mem::clear(regs_mem, (sz)(regs_bytes));
                 TVal* regs_src = ds.act.bottom;
                 for (uint i = 0; i < gs.num_regs; i++) {
                     vm.heap.tval_copy_ref(&gs.saved_regs[i], &regs_src[i]);

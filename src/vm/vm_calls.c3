@@ -7,7 +7,6 @@ import duktape::hstring;
 import duktape::hobject;
 import duktape::env;
 import duktape::builtins;
-import libc;
 import duktape::re_bindings;
 import std::math;
 
@@ -240,7 +239,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                     if (target_fast.is_class_ctor()) {
                         char[256] name_buf;
                         uint copy_len = target_fast.name_len < 255 ? target_fast.name_len : 255;
-                        libc::memcpy(&name_buf, target_fast.name_ptr, copy_len);
+                        mem::copy(&name_buf, target_fast.name_ptr, (sz)(copy_len));
                         name_buf[copy_len] = 0;
                         if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Class constructor %s cannot be invoked without 'new'", &name_buf[0], ds.act, &ds.curr_pc, &ds.needs_restart)) {
                             return VM_ERROR~;
@@ -852,7 +851,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
             if (target.is_class_ctor()) {
                 char[256] name_buf;
                 uint copy_len = target.name_len < 255 ? target.name_len : 255;
-                libc::memcpy(&name_buf, target.name_ptr, copy_len);
+                mem::copy(&name_buf, target.name_ptr, (sz)(copy_len));
                 name_buf[copy_len] = 0;
                 if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Class constructor %s cannot be invoked without 'new'", &name_buf[0], ds.act, &ds.curr_pc, &ds.needs_restart)) {
                     return VM_ERROR~;
@@ -1084,7 +1083,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                     return (TVal){};
                 }
                 GeneratorState* gs = (GeneratorState*)gs_raw;
-                libc::memset(gs_raw, 0, GeneratorState::size);
+                mem::clear(gs_raw, (sz)(GeneratorState::size));
                 gs.pending_resume_reg = 0xFFFF;
 
                 gs.func = target;
@@ -1101,7 +1100,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                         ds.regs_base[result_reg].set_undefined();
                         return (TVal){};
                     }
-                    libc::memset(regs_raw, 0, regs_bytes);
+                    mem::clear(regs_raw, (sz)(regs_bytes));
                 } else {
                     regs_raw = null;
                 }
@@ -1411,7 +1410,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
 
                 // Fill remaining registers with UNDEFINED (after the rest param)
                 if (rest_idx + 1 < new_nregs) {
-                    libc::memset(&new_regs[rest_idx + 1], 0, (usz)(new_nregs - rest_idx - 1) * TVal::size);
+                    mem::clear(&new_regs[rest_idx + 1], (sz)((usz)(new_nregs - rest_idx - 1) * TVal::size));
                 }
             } else {
                 // Args are already in position (new_regs == old_args, sliding window).
@@ -1976,7 +1975,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                     vm.heap.tval_copy_ref(&new_regs[i], &old_args[i]);
                 }
                 if (nargs < new_nregs) {
-                    libc::memset(&new_regs[nargs], 0, (usz)(new_nregs - nargs) * TVal::size);
+                    mem::clear(&new_regs[nargs], (sz)((usz)(new_nregs - nargs) * TVal::size));
                 }
             }
 
@@ -2439,7 +2438,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                 }
 
                 if (rest_idx + 1 < new_nregs2) {
-                    libc::memset(&new_regs2[rest_idx + 1], 0, (usz)(new_nregs2 - rest_idx - 1) * TVal::size);
+                    mem::clear(&new_regs2[rest_idx + 1], (sz)((usz)(new_nregs2 - rest_idx - 1) * TVal::size));
                 }
             } else {
                 for (uint i = 0; i < nargs && i < (uint)target.num_args; i++) {

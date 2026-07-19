@@ -20,7 +20,7 @@ macro fault CompilerContext.fail(&self, char[] msg) {
         g_last_err_col  = self.lexer.col;
         // Copy msg into fixed buffer (truncate if necessary, always NUL-terminate).
         usz copy_len = msg.len < (g_last_err_msg.len - 1) ? msg.len : (g_last_err_msg.len - 1);
-        libc::memcpy(&g_last_err_msg[0], msg.ptr, copy_len);
+        mem::copy(&g_last_err_msg[0], msg.ptr, (sz)(copy_len));
         g_last_err_msg[copy_len] = 0;
     }
     return COMPILE_ERROR;
@@ -53,12 +53,12 @@ fn Token? CompilerContext.advance(&self) {
                 usz n = (usz)libc::snprintf(&buf[0], buf.len,
                     "unexpected character '%c' (not supported)", c);
                 usz copy_len = n < (g_last_err_msg.len - 1) ? n : (g_last_err_msg.len - 1);
-                libc::memcpy(&g_last_err_msg[0], &buf[0], copy_len);
+                mem::copy(&g_last_err_msg[0], &buf[0], (sz)(copy_len));
                 g_last_err_msg[copy_len] = 0;
             } else {
                 char[] msg = "unexpected end of input";
                 usz copy_len = msg.len < (g_last_err_msg.len - 1) ? msg.len : (g_last_err_msg.len - 1);
-                libc::memcpy(&g_last_err_msg[0], msg.ptr, copy_len);
+                mem::copy(&g_last_err_msg[0], msg.ptr, (sz)(copy_len));
                 g_last_err_msg[copy_len] = 0;
             }
         }
@@ -83,7 +83,7 @@ fn Token? CompilerContext.expect(&self, TokenType tt) {
             g_last_err_line = tok.line;
             g_last_err_col  = tok.col;
             usz copy_len = n < (g_last_err_msg.len - 1) ? n : (g_last_err_msg.len - 1);
-            libc::memcpy(&g_last_err_msg[0], &buf[0], copy_len);
+            mem::copy(&g_last_err_msg[0], &buf[0], (sz)(copy_len));
             g_last_err_msg[copy_len] = 0;
         }
         return COMPILE_ERROR~;
@@ -121,12 +121,12 @@ fn TokenType CompilerContext.peek_type(&self) {
                 usz n = (usz)libc::snprintf(&buf[0], buf.len,
                     "unexpected character '%c' (not supported)", c);
                 usz copy_len = n < (g_last_err_msg.len - 1) ? n : (g_last_err_msg.len - 1);
-                libc::memcpy(&g_last_err_msg[0], &buf[0], copy_len);
+                mem::copy(&g_last_err_msg[0], &buf[0], (sz)(copy_len));
                 g_last_err_msg[copy_len] = 0;
             } else {
                 char[] msg = "unexpected end of input";
                 usz copy_len = msg.len < (g_last_err_msg.len - 1) ? msg.len : (g_last_err_msg.len - 1);
-                libc::memcpy(&g_last_err_msg[0], msg.ptr, copy_len);
+                mem::copy(&g_last_err_msg[0], msg.ptr, (sz)(copy_len));
                 g_last_err_msg[copy_len] = 0;
             }
         }

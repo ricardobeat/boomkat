@@ -11,7 +11,6 @@ import duktape::esm;
 import duktape::re_bindings;
 import std::io;
 import std::math;
-import libc;
 
 /// Set up a named-function-expression's lexical environment.
 /// Returns a fresh declarative env with `name_hstr` bound immutably to
@@ -319,7 +318,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
             void* saved_resume_gen = saved_resume_gen_outer;  // captured before Case 1/2 could overwrite it
 
             Activation[MAX_CALLS] saved_acts;
-            libc::memcpy(&saved_acts, &vm.activations, saved_act_count * Activation::size);
+            mem::copy(&saved_acts, &vm.activations, (sz)(saved_act_count * Activation::size));
 
             // Zero out activation slots 1..saved_act_count-1.  The outer
             // activations are safely stored in saved_acts.  The live slots
@@ -328,7 +327,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
             // undefined (no-op) rather than the stale global-object reference
             // left behind by the outer activation's memcpy bits.
             if (saved_act_count > 1) {
-                libc::memset(&vm.activations[1], 0, (usz)(saved_act_count - 1) * Activation::size);
+                mem::clear(&vm.activations[1], (sz)((usz)(saved_act_count - 1) * Activation::size));
             }
 
             TVal* frame = true_top;
@@ -471,7 +470,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                 && vm.heap.gen_initial_gs == null) {
                 void* cfn_gs_raw = vm.heap.alloc_func(vm.heap.heap_udata, GeneratorState::size);
                 if (cfn_gs_raw != null) {
-                    libc::memset(cfn_gs_raw, 0, GeneratorState::size);
+                    mem::clear(cfn_gs_raw, (sz)(GeneratorState::size));
                     GeneratorState* cfn_gs = (GeneratorState*)cfn_gs_raw;
                     cfn_gs.pending_resume_reg = 0xFFFF;
                     cfn_gs.func = target;
@@ -484,7 +483,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                     if (cfn_regs_bytes > 0 && cfn_regs_raw == null) {
                         vm.heap.free_func(vm.heap.heap_udata, cfn_gs_raw);
                     } else {
-                        if (cfn_regs_raw != null) libc::memset(cfn_regs_raw, 0, cfn_regs_bytes);
+                        if (cfn_regs_raw != null) mem::clear(cfn_regs_raw, (sz)(cfn_regs_bytes));
                         cfn_gs.saved_regs = (TVal*)cfn_regs_raw;
                         HObject*? cfn_gen_obj_raw = vm.heap.alloc_object(hobject::ObjClass.GENERATOR);
                         if (try cfn_gen_obj = cfn_gen_obj_raw) {
@@ -628,7 +627,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
             // Restore VM state (caller registers were never touched)
             vm.activation_count = saved_act_count;
             vm.current_func = saved_current_func;
-            libc::memcpy(&vm.activations, &saved_acts, saved_act_count * Activation::size);
+            mem::copy(&vm.activations, &saved_acts, (sz)(saved_act_count * Activation::size));
             vm.valstack_bottom = saved_valstack_bottom;
             vm.valstack_top = saved_valstack_top;
             vm.heap.resume_gen = (GeneratorState*)saved_resume_gen;  // restore after nested generator
@@ -853,13 +852,13 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
     void* saved_resume_gen = saved_resume_gen_outer2;  // captured before the builtin-constructor dispatch above could overwrite it
 
     Activation[MAX_CALLS] saved_acts;
-    libc::memcpy(&saved_acts, &vm.activations, saved_act_count * Activation::size);
+    mem::copy(&saved_acts, &vm.activations, (sz)(saved_act_count * Activation::size));
 
     // Zero out activation slots 1..saved_act_count-1 (same as vm_call_fn_impl):
     // prevents tval_copy_ref in the inner run's inline CALLs from decreffing
     // stale this_binding values left in these slots by the outer activations.
     if (saved_act_count > 1) {
-        libc::memset(&vm.activations[1], 0, (usz)(saved_act_count - 1) * Activation::size);
+        mem::clear(&vm.activations[1], (sz)((usz)(saved_act_count - 1) * Activation::size));
     }
 
     TVal* frame = vm.valstack_top;
@@ -992,7 +991,7 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
     // Restore VM state.
     vm.activation_count = saved_act_count;
     vm.current_func = saved_current_func;
-    libc::memcpy(&vm.activations, &saved_acts, saved_act_count * Activation::size);
+    mem::copy(&vm.activations, &saved_acts, (sz)(saved_act_count * Activation::size));
     vm.valstack_bottom = saved_valstack_bottom;
     vm.valstack_top = saved_valstack_top;
     vm.heap.resume_gen = (GeneratorState*)saved_resume_gen;
@@ -1260,7 +1259,7 @@ fn bool? Vm.execute_module_nested(Vm* vm, CompiledFunction* func, EnvRecord* env
     void* saved_resume_gen = vm.heap.resume_gen;
 
     Activation[MAX_CALLS] saved_acts;
-    libc::memcpy(&saved_acts, &vm.activations, saved_act_count * Activation::size);
+    mem::copy(&saved_acts, &vm.activations, (sz)(saved_act_count * Activation::size));
 
     // Zero out activation slots 1..saved_act_count-1 (same as
     // vm_call_fn_impl). The outer activations are safely stored in
@@ -1269,7 +1268,7 @@ fn bool? Vm.execute_module_nested(Vm* vm, CompiledFunction* func, EnvRecord* env
     // undefined (no-op) rather than the stale reference left behind by the
     // memcpy'd-out outer activation.
     if (saved_act_count > 1) {
-        libc::memset(&vm.activations[1], 0, (usz)(saved_act_count - 1) * Activation::size);
+        mem::clear(&vm.activations[1], (sz)((usz)(saved_act_count - 1) * Activation::size));
     }
 
     bool is_async_body = func.is_async();
@@ -1395,7 +1394,7 @@ fn bool? Vm.execute_module_nested(Vm* vm, CompiledFunction* func, EnvRecord* env
     // Restore VM state (caller registers were never touched).
     vm.activation_count = saved_act_count;
     vm.current_func = saved_current_func;
-    libc::memcpy(&vm.activations, &saved_acts, saved_act_count * Activation::size);
+    mem::copy(&vm.activations, &saved_acts, (sz)(saved_act_count * Activation::size));
     vm.valstack_bottom = saved_valstack_bottom;
     vm.valstack_top = saved_valstack_top;
     vm.heap.resume_gen = (GeneratorState*)saved_resume_gen;
@@ -1651,11 +1650,11 @@ fn TVal? Vm.run(Vm* vm) {
                             heap_allocated = true;
                         }
                         if (rb.is_string()) {
-                            libc::memcpy(buf, str.get_cstr(), s_len);
-                            libc::memcpy(buf + s_len, &int_buf, (usz)int_len);
+                            mem::copy(buf, str.get_cstr(), (sz)(s_len));
+                            mem::copy(buf + s_len, &int_buf, (sz)((usz)int_len));
                         } else {
-                            libc::memcpy(buf, &int_buf, (usz)int_len);
-                            libc::memcpy(buf + int_len, str.get_cstr(), s_len);
+                            mem::copy(buf, &int_buf, (sz)((usz)int_len));
+                            mem::copy(buf + int_len, str.get_cstr(), (sz)(s_len));
                         }
                         // Skip interning for accumulator (ra == source register),
                         // intern for new strings that may be used as property keys.
@@ -1720,10 +1719,10 @@ fn TVal? Vm.run(Vm* vm) {
 
                     // Copy both halves directly into buffer
                     if (a_len > 0) {
-                        libc::memcpy(buf, ls.get_cstr(), a_len);
+                        mem::copy(buf, ls.get_cstr(), (sz)(a_len));
                     }
                     if (b_len > 0) {
-                        libc::memcpy(buf + a_len, rs.get_cstr(), b_len);
+                        mem::copy(buf + a_len, rs.get_cstr(), (sz)(b_len));
                     }
 
                     // Skip interning for accumulator (ra == source register),

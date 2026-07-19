@@ -10,7 +10,6 @@ import duktape::builtins;
 import duktape::re_bindings;
 import std::io;
 import std::math;
-import libc;
 
 /// Duktape bytecode virtual machine — register-based interpreter.
 ///
@@ -30,7 +29,6 @@ import duktape::builtins;
 import duktape::re_bindings;
 import std::io;
 import std::math;
-import libc;
 
 // ============================================================================
 // Fault codes

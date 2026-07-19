@@ -542,7 +542,7 @@ fn Heap*? create(
     Heap* h = (Heap*)raw;
 
     // Zero-fill the whole struct
-    libc::memset(raw, 0, Heap::size);
+    mem::clear(raw, (sz)(Heap::size));
 
     // Store allocator pointers
     h.alloc_func   = afn;
@@ -579,7 +579,7 @@ fn Heap*? create(
         ffn(udata, raw);
         return HEAP_ALLOC_FAULT~;
     }
-    libc::memset(tbl_raw, 0, tbl_bytes);
+    mem::clear(tbl_raw, (sz)(tbl_bytes));
 
     h.str_table      = (HString**)tbl_raw;
     h.str_table_size = INITIAL_STR_TABLE_SIZE;
@@ -594,7 +594,7 @@ fn Heap*? create(
     // Allocate megamorphic property cache (separate allocation to keep Heap struct compact)
     h.mega_cache = (hobject::MegamorphicEntry*)libc::malloc(MEGA_CACHE_SIZE * hobject::MegamorphicEntry::size);
     if (h.mega_cache != null) {
-        libc::memset(h.mega_cache, 0, MEGA_CACHE_SIZE * hobject::MegamorphicEntry::size);
+        mem::clear(h.mega_cache, (sz)(MEGA_CACHE_SIZE * hobject::MegamorphicEntry::size));
     }
 
     // Allocate microtask queue: 16 entries, each a (handler, arg, downstream)
@@ -603,7 +603,7 @@ fn Heap*? create(
     h.microtask_capacity = 16;
     h.microtask_queue = (TVal*)afn(udata, TVal::size * 48);
     if (h.microtask_queue != null) {
-        libc::memset(h.microtask_queue, 0, TVal::size * 48);
+        mem::clear(h.microtask_queue, (sz)(TVal::size * 48));
     }
     h.microtask_count = 0;
     h.microtask_draining = false;
@@ -711,7 +711,7 @@ fn void Heap.init_transition_table(&self) {
     self.trans_count = 0;
     usz bytes = (usz)SHAPE_TRANS_INITIAL * TransitionEntry::size;
     self.trans_table = (TransitionEntry*)self.alloc_func(self.heap_udata, bytes);
-    libc::memset(self.trans_table, 0xFF, bytes);
+    mem::set(self.trans_table, 0xFF, (sz)(bytes));
 }
 
 fn uint hash_transition(uint parent_id, void* key) @inline {
@@ -743,7 +743,7 @@ fn void Heap.transition_table_grow(&self) {
     uint new_mask = new_cap - 1;
     usz bytes = (usz)new_cap * TransitionEntry::size;
     TransitionEntry* new_table = (TransitionEntry*)self.alloc_func(self.heap_udata, bytes);
-    libc::memset(new_table, 0xFF, bytes);
+    mem::set(new_table, 0xFF, (sz)(bytes));
     TransitionEntry* old_table = self.trans_table;
     for (uint i = 0; i <= old_mask; i++) {
         TransitionEntry* e = &old_table[i];
@@ -783,7 +783,7 @@ fn void Heap.init_shapes(&self) {
     // Allocate pointer array
     usz bytes = (usz)SHAPE_INITIAL_CAP * (void*::size);
     self.shapes = (hobject::Shape**)self.alloc_func(self.heap_udata, bytes);
-    libc::memset(self.shapes, 0, bytes);
+    mem::clear(self.shapes, (sz)(bytes));
     // Allocate root shape: 0 properties, minimum hash (mask=0 → 2 slots)
     self.shapes[0] = hobject::shape_create(0, 0, SHAPE_NONE, null);
     // Init transition dedup table
@@ -799,7 +799,7 @@ fn uint Heap.alloc_shape_slot(&self) {
         if (new_raw == null) return SHAPE_NONE;
         // Zero new slots
         usz old_bytes = (usz)self.shape_capacity * (void*::size);
-        libc::memset((char*)new_raw + old_bytes, 0, (usz)new_cap * (void*::size) - old_bytes);
+        mem::clear((char*)new_raw + old_bytes, (sz)((usz)new_cap * (void*::size) - old_bytes));
         self.shapes = (hobject::Shape**)new_raw;
         self.shape_capacity = new_cap;
     }
@@ -1062,7 +1062,7 @@ fn void Heap.reset(&self) {
             usz tbl_bytes = HString*::size * INITIAL_STR_TABLE_SIZE;
             void* new_tbl = self.alloc_func(self.heap_udata, tbl_bytes);
             if (new_tbl != null) {
-                libc::memset(new_tbl, 0, tbl_bytes);
+                mem::clear(new_tbl, (sz)(tbl_bytes));
                 self.str_table      = (HString**)new_tbl;
                 self.str_table_size = INITIAL_STR_TABLE_SIZE;
             }
@@ -1133,7 +1133,7 @@ fn void Heap.reset(&self) {
     // same initial addresses, new objects can get false cache hits with the
     // old (now freed) entries and return wrong property values.
     if (self.mega_cache != null) {
-        libc::memset(self.mega_cache, 0, MEGA_CACHE_SIZE * hobject::MegamorphicEntry::size);
+        mem::clear(self.mega_cache, (sz)(MEGA_CACHE_SIZE * hobject::MegamorphicEntry::size));
     }
 
     // Clear builtin prototype pointers
@@ -1181,7 +1181,7 @@ fn void Heap.reset(&self) {
     }
 
     // Clear lightfunc virtual property deletion tracking
-    libc::memset(&self.lf_deleted_props[0], 0, LF_DELETED_WORDS * 8);
+    mem::clear(&self.lf_deleted_props[0], (sz)(LF_DELETED_WORDS * 8));
 
     // Clear longjmp state
     self.lj.lj_type = LjType.UNKNOWN;
@@ -1230,7 +1230,7 @@ fn void Heap.reset(&self) {
             }
         }
         // Reuse the pointer array, just zero it
-        libc::memset(self.shapes, 0, (usz)self.shape_capacity * (void*::size));
+        mem::clear(self.shapes, (sz)((usz)self.shape_capacity * (void*::size)));
     }
     self.shape_count = 1;
     self.shape_gen   = 0;
@@ -2495,7 +2495,7 @@ fn void*? Heap.str_table_grow(&self) {
     if (raw == null) {
         return HEAP_ALLOC_FAULT~;
     }
-    libc::memset(raw, 0, new_bytes);
+    mem::clear(raw, (sz)(new_bytes));
 
     HString** new_table = (HString**)raw;
 
@@ -2531,7 +2531,7 @@ fn void Heap.str_table_shrink(&self) {
     usz new_bytes = HString*::size * new_size;
     void* raw = self.alloc_func(self.heap_udata, new_bytes);
     if (raw == null) { return; }
-    libc::memset(raw, 0, new_bytes);
+    mem::clear(raw, (sz)(new_bytes));
 
     HString** new_table = (HString**)raw;
 
@@ -2774,8 +2774,7 @@ fn void Heap.enqueue_microtask(&self, TVal handler, TVal arg, TVal downstream) {
         TVal* new_q = (TVal*)self.realloc_func(self.heap_udata, self.microtask_queue, new_bytes);
         if (new_q == null) { return; }
         // Zero the new slots
-        libc::memset(new_q + self.microtask_capacity * 3, 0,
-                     (long)(new_cap - self.microtask_capacity) * TVal::size * 3);
+        mem::clear(new_q + self.microtask_capacity * 3, (sz)((long)(new_cap - self.microtask_capacity) * TVal::size * 3));
         self.microtask_queue = new_q;
         self.microtask_capacity = new_cap;
     }

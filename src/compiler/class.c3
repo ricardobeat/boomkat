@@ -22,7 +22,7 @@ import std::io;
 fn CompiledFunction*? make_default_constructor(Heap* hp, bool has_super, char[] class_name) {
     void* raw = hp.alloc_func(hp.heap_udata, CompiledFunction::size);
     if (raw == null) return COMPILE_ERROR~;
-    libc::memset(raw, 0, CompiledFunction::size);
+    mem::clear(raw, (sz)(CompiledFunction::size));
 
     CompiledFunction* func = (CompiledFunction*)raw;
     func.flags.htype = HType.OBJECT;

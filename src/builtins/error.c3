@@ -89,7 +89,7 @@ fn void builtin_error_constructor_shared(BuiltinContext* ctx, HObject* proto) {
 
         // Copy name
         if (name_str.blen > 0) {
-            libc::memcpy(&stack_buf[pos], name_str.get_cstr(), name_str.blen);
+            mem::copy(&stack_buf[pos], name_str.get_cstr(), (sz)(name_str.blen));
             pos += (int)name_str.blen;
         }
 
@@ -99,7 +99,7 @@ fn void builtin_error_constructor_shared(BuiltinContext* ctx, HObject* proto) {
 
         // Copy message (or empty string if no message)
         if (msg_str != null && msg_str.blen > 0) {
-            libc::memcpy(&stack_buf[pos], msg_str.get_cstr(), msg_str.blen);
+            mem::copy(&stack_buf[pos], msg_str.get_cstr(), (sz)(msg_str.blen));
             pos += (int)msg_str.blen;
         }
 
@@ -186,7 +186,7 @@ fn void builtin_aggregate_error(BuiltinContext* ctx) {
         // Copy "AggregateError"
         HString* name_str = builtin_intern_string(ctx.heap, "AggregateError");
         if (name_str.blen > 0) {
-            libc::memcpy(&stack_buf[pos], name_str.get_cstr(), name_str.blen);
+            mem::copy(&stack_buf[pos], name_str.get_cstr(), (sz)(name_str.blen));
             pos += (int)name_str.blen;
         }
 
@@ -196,7 +196,7 @@ fn void builtin_aggregate_error(BuiltinContext* ctx) {
 
         // Copy message (or empty string if no message)
         if (msg_str != null && msg_str.blen > 0) {
-            libc::memcpy(&stack_buf[pos], msg_str.get_cstr(), msg_str.blen);
+            mem::copy(&stack_buf[pos], msg_str.get_cstr(), (sz)(msg_str.blen));
             pos += (int)msg_str.blen;
         }
 

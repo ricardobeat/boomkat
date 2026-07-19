@@ -325,7 +325,7 @@ fn void builtin_string_raw(BuiltinContext* ctx) {
                 buf = new_buf;
                 buf_cap = new_cap;
             }
-            libc::memcpy(&buf[buf_len], seg_str.get_cstr(), seg_str.blen);
+            mem::copy(&buf[buf_len], seg_str.get_cstr(), (sz)(seg_str.blen));
             buf_len += (usz)seg_str.blen;
         }
 
@@ -354,7 +354,7 @@ fn void builtin_string_raw(BuiltinContext* ctx) {
                     buf = new_buf;
                     buf_cap = new_cap;
                 }
-                libc::memcpy(&buf[buf_len], sub_str.get_cstr(), sub_str.blen);
+                mem::copy(&buf[buf_len], sub_str.get_cstr(), (sz)(sub_str.blen));
                 buf_len += (usz)sub_str.blen;
             }
         }
@@ -1327,8 +1327,8 @@ fn void builtin_string_proto_split(BuiltinContext* ctx) {
             int out_num_captures = 0;
             int[re_bindings::RE_MAX_CAPTURES] caps_start;
             int[re_bindings::RE_MAX_CAPTURES] caps_end;
-            libc::memset(&caps_start, 0, re_bindings::RE_MAX_CAPTURES * int::size);
-            libc::memset(&caps_end, 0, re_bindings::RE_MAX_CAPTURES * int::size);
+            mem::clear(&caps_start, (sz)(re_bindings::RE_MAX_CAPTURES * int::size));
+            mem::clear(&caps_end, (sz)(re_bindings::RE_MAX_CAPTURES * int::size));
 
             int result = re_bindings::re_exec(
                 (*rx.extra_ptr()).regexp.regexp_data, input, input_len, search_pos,
@@ -1725,8 +1725,8 @@ fn void builtin_string_proto_replace(BuiltinContext* ctx) {
             int out_num_captures = 0;
             int[re_bindings::RE_MAX_CAPTURES] caps_start;
             int[re_bindings::RE_MAX_CAPTURES] caps_end;
-            libc::memset(&caps_start, 0, re_bindings::RE_MAX_CAPTURES * int::size);
-            libc::memset(&caps_end, 0, re_bindings::RE_MAX_CAPTURES * int::size);
+            mem::clear(&caps_start, (sz)(re_bindings::RE_MAX_CAPTURES * int::size));
+            mem::clear(&caps_end, (sz)(re_bindings::RE_MAX_CAPTURES * int::size));
 
             int result = re_bindings::re_exec(
                 (*rx.extra_ptr()).regexp.regexp_data, input, input_len, 0,
@@ -1812,8 +1812,8 @@ fn void builtin_string_proto_replace(BuiltinContext* ctx) {
                 int out_num_captures = 0;
                 int[re_bindings::RE_MAX_CAPTURES] caps_start;
                 int[re_bindings::RE_MAX_CAPTURES] caps_end;
-                libc::memset(&caps_start, 0, re_bindings::RE_MAX_CAPTURES * int::size);
-                libc::memset(&caps_end, 0, re_bindings::RE_MAX_CAPTURES * int::size);
+                mem::clear(&caps_start, (sz)(re_bindings::RE_MAX_CAPTURES * int::size));
+                mem::clear(&caps_end, (sz)(re_bindings::RE_MAX_CAPTURES * int::size));
 
                 int result = re_bindings::re_exec(
                     (*rx.extra_ptr()).regexp.regexp_data, input, input_len, search_pos,
@@ -2421,7 +2421,7 @@ fn void builtin_string_proto_repeat(BuiltinContext* ctx) {
     if (buf == null) { ctx.result.set_undefined(); return; }
     char* src = s_hstr.get_cstr();
     for (uint i = 0; i < count; i++) {
-        libc::memcpy(&buf[i * s_hstr.blen], src, s_hstr.blen);
+        mem::copy(&buf[i * s_hstr.blen], src, (sz)(s_hstr.blen));
     }
     buf[total] = 0;
 
@@ -2583,7 +2583,7 @@ fn void builtin_string_proto_padStart(BuiltinContext* ctx) {
         off += ulen;
         fill_byte_off += ulen;
     }
-    if (src.len > 0) { libc::memcpy(&buf_ptr[off], src.ptr, src.len); }
+    if (src.len > 0) { mem::copy(&buf_ptr[off], src.ptr, (sz)(src.len)); }
     off += (usz)src.len;
 
     HString* result = ctx.heap.str_intern(buf_ptr[:off]);
@@ -2628,7 +2628,7 @@ fn void builtin_string_proto_padEnd(BuiltinContext* ctx) {
     if (buf_ptr == null) { ctx.result.set_undefined(); return; }
 
     usz off = 0;
-    if (src.len > 0) { libc::memcpy(buf_ptr, src.ptr, src.len); }
+    if (src.len > 0) { mem::copy(buf_ptr, src.ptr, (sz)(src.len)); }
     off += (usz)src.len;
 
     uint fill_byte_off = 0;
@@ -2817,7 +2817,7 @@ fn void builtin_string_proto_match(BuiltinContext* ctx) {
         if (regexp_arg != null && regexp_arg.is_null()) {
             char[] s = "null";
             pat_len = s.len;
-            libc::memcpy(&pat_buf[0], s.ptr, s.len);
+            mem::copy(&pat_buf[0], s.ptr, (sz)(s.len));
         }
         HObject* rx = create_regexp_from_string(ctx.heap, pat_buf[:pat_len], 0);
         if (rx == null) { ctx.result.set_null(); return; }
@@ -2841,8 +2841,8 @@ fn void builtin_string_proto_match_regexp(BuiltinContext* ctx, HString* s_hstr, 
             int out_num_captures = 0;
             int[re_bindings::RE_MAX_CAPTURES] caps_start;
             int[re_bindings::RE_MAX_CAPTURES] caps_end;
-            libc::memset(&caps_start, 0, re_bindings::RE_MAX_CAPTURES * int::size);
-            libc::memset(&caps_end, 0, re_bindings::RE_MAX_CAPTURES * int::size);
+            mem::clear(&caps_start, (sz)(re_bindings::RE_MAX_CAPTURES * int::size));
+            mem::clear(&caps_end, (sz)(re_bindings::RE_MAX_CAPTURES * int::size));
 
             // Get lastIndex
             HString* li_key = builtin_intern_string(ctx.heap, "lastIndex");
@@ -2897,8 +2897,8 @@ fn void builtin_string_proto_match_regexp(BuiltinContext* ctx, HString* s_hstr, 
                 int out_num_captures = 0;
                 int[re_bindings::RE_MAX_CAPTURES] caps_start;
                 int[re_bindings::RE_MAX_CAPTURES] caps_end;
-                libc::memset(&caps_start, 0, re_bindings::RE_MAX_CAPTURES * int::size);
-                libc::memset(&caps_end, 0, re_bindings::RE_MAX_CAPTURES * int::size);
+                mem::clear(&caps_start, (sz)(re_bindings::RE_MAX_CAPTURES * int::size));
+                mem::clear(&caps_end, (sz)(re_bindings::RE_MAX_CAPTURES * int::size));
 
                 int result = re_bindings::re_exec(
                     (*rx.extra_ptr()).regexp.regexp_data, input, input_len, search_pos,
@@ -3216,7 +3216,7 @@ fn void builtin_string_proto_matchAll(BuiltinContext* ctx) {
         if (regexp_arg != null && regexp_arg.is_null()) {
             char[] s = "null";
             pat_len = (int)s.len;
-            libc::memcpy(&pat_buf[0], s.ptr, s.len);
+            mem::copy(&pat_buf[0], s.ptr, (sz)(s.len));
         }
         HObject* rx = create_regexp_from_string(heap, pat_buf[:pat_len], 1);
         if (rx == null) { ctx.result.set_undefined(); return; }
@@ -3567,7 +3567,7 @@ fn void builtin_string_proto_search(BuiltinContext* ctx) {
         if (regexp_arg != null && regexp_arg.is_null()) {
             char[] s = "null";
             pat_len = s.len;
-            libc::memcpy(&pat_buf[0], s.ptr, s.len);
+            mem::copy(&pat_buf[0], s.ptr, (sz)(s.len));
         }
         HObject* rx = create_regexp_from_string(ctx.heap, pat_buf[:pat_len], 0);
         if (rx == null) { ctx.result.set_fastint(-1); return; }

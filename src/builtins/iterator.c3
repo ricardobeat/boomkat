@@ -500,8 +500,8 @@ fn void builtin_regexp_string_iterator_next(BuiltinContext* ctx) {
     int out_num_captures = 0;
     int[re_bindings::RE_MAX_CAPTURES] caps_start;
     int[re_bindings::RE_MAX_CAPTURES] caps_end;
-    libc::memset(&caps_start, 0, re_bindings::RE_MAX_CAPTURES * int::size);
-    libc::memset(&caps_end, 0, re_bindings::RE_MAX_CAPTURES * int::size);
+    mem::clear(&caps_start, (sz)(re_bindings::RE_MAX_CAPTURES * int::size));
+    mem::clear(&caps_end, (sz)(re_bindings::RE_MAX_CAPTURES * int::size));
 
     int exec_result = re_bindings::re_exec(
         (*rx.extra_ptr()).regexp.regexp_data, input, input_len, search_pos,

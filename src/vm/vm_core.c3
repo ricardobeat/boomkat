@@ -7,7 +7,6 @@ import duktape::hstring;
 import duktape::hobject;
 import duktape::env;
 import duktape::builtins;
-import libc;
 
 // ============================================================================
 // GC activation marking
@@ -288,7 +287,7 @@ fn bool invoke_getter(Vm* vm, hobject::AccessorResult* acc,
     // Clear registers and copy args (getters have 0 args)
     TVal* new_regs = new_act.bottom;
     uint new_nregs = target.num_regs;
-    libc::memset(new_regs, 0, (usz)new_nregs * TVal::size);
+    mem::clear(new_regs, (sz)((usz)new_nregs * TVal::size));
 
     vm.valstack_top = new_regs + new_nregs;
     vm.valstack_bottom = new_act.bottom;
@@ -348,7 +347,7 @@ fn void decref_callee_regs(Vm* vm, Activation* callee_act) {
 /// val: the return value (or undefined for RETUNDEF)
 /// @inline: critical hot-path, called on every RET instruction.
 /// Zero-initialize a range of registers to undefined.  For the small ranges
-/// typical of function prologues, an inline loop beats libc::memset call
+/// typical of function prologues, an inline loop beats a bulk memset call
 /// overhead and lets the C3 compiler unroll/optimize the stores.
 fn void zero_regs_undefined(TVal* regs, uint start, uint end) @inline {
     for (uint i = start; i < end; i++) {

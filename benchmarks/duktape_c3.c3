@@ -436,7 +436,7 @@ fn void print_uncaught_error(heap::Heap* h, TVal* err_val) {
                         if (s != null) {
                             char[] d = s.get_data();
                             usz copy_len = d.len < (name_buf.len - 1) ? d.len : (name_buf.len - 1);
-                            libc::memcpy(&name_buf[0], &d[0], copy_len);
+                            mem::copy(&name_buf[0], &d[0], (sz)(copy_len));
                             name_len = copy_len;
                             found_name = true;
                         }
@@ -446,7 +446,7 @@ fn void print_uncaught_error(heap::Heap* h, TVal* err_val) {
                         if (s != null) {
                             char[] d = s.get_data();
                             usz copy_len = d.len < (msg_buf.len - 1) ? d.len : (msg_buf.len - 1);
-                            libc::memcpy(&msg_buf[0], &d[0], copy_len);
+                            mem::copy(&msg_buf[0], &d[0], (sz)(copy_len));
                             msg_len = copy_len;
                             found_msg = true;
                         }

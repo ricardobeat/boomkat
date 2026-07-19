@@ -4,7 +4,6 @@ import duktape::bytecode;
 import duktape::types;
 import duktape::heap;
 import duktape::hobject;
-import libc;
 
 // ============================================================================
 // GETPROPC2 chain fusion

@@ -940,7 +940,7 @@ fn void HObject.ensure_prop_hash(&self) {
         new_table = libc::malloc(new_bytes);
     }
     if (new_table == null) return;
-    libc::memset(new_table, 0, new_bytes);
+    mem::clear(new_table, (sz)(new_bytes));
 
     HashEntry* entries = (HashEntry*)new_table;
     uint mask = new_mask;
@@ -1281,7 +1281,7 @@ fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags) {
 
     // --- Append new value at the next slot ---
     uint new_idx = self.prop_count;
-    libc::memset(&self.prop_values()[new_idx], 0, PropValue::size);
+    mem::clear(&self.prop_values()[new_idx], (sz)(PropValue::size));
     self.prop_values()[new_idx] = val;
     if (_active_heap != null && val.is_string()) {
         void* ptr = val.get_heapptr();
@@ -1407,7 +1407,7 @@ fn bool HObject.delete_prop(&self, void* key) {
     for (uint i = ui; i < new_count; i++) {
         self.prop_values()[i] = self.prop_values()[i + 1];
     }
-    libc::memset(&self.prop_values()[new_count], 0, PropValue::size);
+    mem::clear(&self.prop_values()[new_count], (sz)(PropValue::size));
     self.prop_count = new_count;
 
     // When all properties are removed, reuse the root shape (slot 0).
@@ -1590,7 +1590,7 @@ fn void HObject.grow_props(&self) {
         }
         if (new_raw == null) return;
         PropValue* inline_src = self.inline_props_ptr();
-        libc::memcpy(new_raw, inline_src, (usz)self.prop_count * PropValue::size);
+        mem::copy(new_raw, inline_src, (sz)((usz)self.prop_count * PropValue::size));
     } else {
         usz old_size = self.prop_alloc_size();
         usz old_prop_bytes = (usz)self.prop_capacity * PropValue::size;
@@ -1621,16 +1621,14 @@ fn void HObject.grow_props(&self) {
         usz old_arr_off = (usz)old_prop_capacity * PropValue::size;
         usz new_arr_off = (usz)new_cap * PropValue::size;
         if (old_arr_off != new_arr_off) {
-            libc::memmove((char*)self.prop_alloc + new_arr_off,
-                          (char*)self.prop_alloc + old_arr_off,
-                          (usz)self.array_size * TVal::size);
+            mem::move((char*)self.prop_alloc + new_arr_off, (char*)self.prop_alloc + old_arr_off, (sz)((usz)self.array_size * TVal::size));
         }
     }
 
     if (new_cap > old_prop_capacity) {
         usz added_bytes = (usz)(new_cap - old_prop_capacity) * PropValue::size;
         void* start = (void*)((char*)self.prop_values() + (usz)old_prop_capacity * PropValue::size);
-        libc::memset(start, 0, added_bytes);
+        mem::clear(start, (sz)(added_bytes));
     }
 }
 
@@ -1655,7 +1653,7 @@ fn void HObject.grow_array(&self, uint new_size) {
         }
         if (new_raw == null) return;
         PropValue* inline_src = self.inline_props_ptr();
-        libc::memcpy(new_raw, inline_src, (usz)self.prop_count * PropValue::size);
+        mem::copy(new_raw, inline_src, (sz)((usz)self.prop_count * PropValue::size));
     } else {
         if (_active_heap != null) {
             heap::Heap* h = (heap::Heap*)_active_heap;
@@ -1725,7 +1723,7 @@ fn HObject*? hobject_alloc(void* heap_ptr, ObjClass cls) {
 
     // FixedBlockPool.alloc() zero-initializes via freelist path (mem::clear).
     // Bump-allocator path returns non-zeroed memory, so memset is still needed.
-    libc::memset(raw, 0, alloc_sz);
+    mem::clear(raw, (sz)(alloc_sz));
 
     HObject* obj = (HObject*)raw;
 
@@ -2062,7 +2060,7 @@ fn Shape* shape_create(uint own_count, uint offset, uint parent_id, Shape* paren
         raw = libc::malloc(bytes);
     }
     if (raw == null) return null;
-    libc::memset(raw, 0, bytes);
+    mem::clear(raw, (sz)(bytes));
 
     Shape* sh = (Shape*)raw;
     sh.generation   = 0;

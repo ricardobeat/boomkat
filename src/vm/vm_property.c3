@@ -2447,7 +2447,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                         vm.heap.tval_copy_ref(&new_act.this_binding, &obj_tv);
 
                                         TVal* new_regs = new_act.bottom;
-                                        libc::memset(new_regs, 0, (usz)target.num_regs * TVal::size);
+                                        mem::clear(new_regs, (sz)((usz)target.num_regs * TVal::size));
                                         // A setter always receives exactly one argument (the
                                         // assigned value). Any additional declared formal
                                         // parameters must be `undefined`, not the raw zeroed
@@ -2581,7 +2581,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                     vm.heap.tval_copy_ref(&new_act.this_binding, &obj_tv);
 
                                     TVal* new_regs = new_act.bottom;
-                                    libc::memset(new_regs, 0, (usz)target.num_regs * TVal::size);
+                                    mem::clear(new_regs, (sz)((usz)target.num_regs * TVal::size));
                                     vm.heap.tval_copy_ref(&new_regs[0], &put_val);
 
                                     vm.valstack_top = new_regs + target.num_regs;

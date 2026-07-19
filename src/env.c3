@@ -8,7 +8,6 @@ import duktape::types;
 import duktape::hstring;
 import duktape::hobject;
 import duktape::heap;
-import libc;
 
 // ============================================================================
 // EnvRecord pool
@@ -26,7 +25,7 @@ fn EnvRecord*? env_pool_alloc(Heap* h) {
     if (h.env_freelist != null) {
         EnvRecord* env = (EnvRecord*)h.env_freelist;
         h.env_freelist = env.parent;
-        libc::memset(env, 0, EnvRecord::size);
+        mem::clear(env, (sz)(EnvRecord::size));
         return env;
     }
 
@@ -34,7 +33,7 @@ fn EnvRecord*? env_pool_alloc(Heap* h) {
     usz block_sz = EnvPoolBlock::size + EnvRecord::size * ENV_POOL_BLOCK_SIZE;
     void* raw = h.alloc_func(h.heap_udata, block_sz);
     if (raw == null) return null;
-    libc::memset(raw, 0, block_sz);
+    mem::clear(raw, (sz)(block_sz));
 
     // Link into block list
     EnvPoolBlock* block = (EnvPoolBlock*)raw;
@@ -56,7 +55,7 @@ fn EnvRecord*? env_pool_alloc(Heap* h) {
 /// Return an EnvRecord to the pool.
 fn void env_pool_free(Heap* h, EnvRecord* env) {
     if (env == null) return;
-    libc::memset(env, 0, EnvRecord::size);
+    mem::clear(env, (sz)(EnvRecord::size));
     env.parent = (EnvRecord*)h.env_freelist;
     h.env_freelist = env;
 }

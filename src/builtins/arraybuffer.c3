@@ -194,7 +194,7 @@ fn void builtin_arraybuffer(BuiltinContext* ctx) {
             arraybuffer_throw_range_error(ctx, "Out of memory allocating ArrayBuffer");
             return;
         }
-        libc::memset(data, 0, (usz)byte_length);
+        mem::clear(data, (sz)((usz)byte_length));
     }
     (*obj.extra_ptr()).ab.data = data;
     (*obj.extra_ptr()).ab.byte_length = byte_length;
@@ -385,7 +385,7 @@ fn void builtin_arraybuffer_proto_slice(BuiltinContext* ctx) {
         char* new_data = null;
         if (new_len > 0) {
             new_data = (char*)ctx.heap.alloc_func(ctx.heap.heap_udata, (usz)new_len);
-            if (new_data != null) libc::memset(new_data, 0, (usz)new_len);
+            if (new_data != null) mem::clear(new_data, (sz)((usz)new_len));
         }
         (*new_buf.extra_ptr()).ab.data = new_data;
         (*new_buf.extra_ptr()).ab.byte_length = (uint)new_len;
@@ -401,7 +401,7 @@ fn void builtin_arraybuffer_proto_slice(BuiltinContext* ctx) {
     }
 
     if (new_len > 0 && (*new_buf.extra_ptr()).ab.data != null) {
-        libc::memcpy((*new_buf.extra_ptr()).ab.data, (*obj.extra_ptr()).ab.data + start_idx, (usz)new_len);
+        mem::copy((*new_buf.extra_ptr()).ab.data, (*obj.extra_ptr()).ab.data + start_idx, (sz)((usz)new_len));
     }
 
     ctx.result.set_object(new_buf);

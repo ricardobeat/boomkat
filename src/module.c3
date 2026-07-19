@@ -174,7 +174,7 @@ fn char[]? default_module_read(char[] normalized_name, void* udata) {
     usz len = normalized_name.len;
     void* raw = libc::malloc(len + 1);
     if (raw == null) return MODULE_ERROR~;
-    libc::memcpy(raw, normalized_name.ptr, len);
+    mem::copy(raw, normalized_name.ptr, (sz)(len));
     ((char*)raw)[len] = 0;
 
     libc::CFile fp = libc::fopen((ZString)raw, "r");
@@ -234,8 +234,8 @@ fn char[]? call_resolve_name(Heap* heap, char[] base_name, char[] specifier) {
     usz total = dir.len + rel.len;
     void* raw = libc::malloc(total + 1);
     if (raw == null) return MODULE_ERROR~;
-    libc::memcpy(raw, dir.ptr, dir.len);
-    libc::memcpy((char*)raw + dir.len, rel.ptr, rel.len);
+    mem::copy(raw, dir.ptr, (sz)(dir.len));
+    mem::copy((char*)raw + dir.len, rel.ptr, (sz)(rel.len));
     ((char*)raw)[total] = 0;
     char[] result = ((char*)raw)[:total];
     return result;
@@ -291,7 +291,7 @@ fn ModuleDef*? heap_ensure_module(Heap* heap, char[] name) {
     // Allocate new ModuleDef
     void* raw = heap.alloc_func(heap.heap_udata, ModuleDef::size);
     if (raw == null) return MODULE_ERROR~;
-    libc::memset(raw, 0, ModuleDef::size);
+    mem::clear(raw, (sz)(ModuleDef::size));
     ModuleDef* mod = (ModuleDef*)raw;
     mod.module_name = name;
     mod.status = ModuleStatus.UNLOADED;
@@ -355,7 +355,7 @@ fn ModuleDef*? resolve_module(Heap* heap, char[] specifier, char[] base_name) {
         // Build the module name portion into a temp buffer for printing.
         char[512] name_buf;
         usz name_copy = normalized.len < 511 ? normalized.len : 511;
-        libc::memcpy(&name_buf[0], normalized.ptr, name_copy);
+        mem::copy(&name_buf[0], normalized.ptr, (sz)(name_copy));
         name_buf[name_copy] = 0;
         if (msg_len > 0) {
             io::eprintfn("%s: compile error at line %d:%d: %s",
@@ -756,7 +756,7 @@ fn TVal? dynamic_import(Heap* heap, Vm* vm, char[] specifier) {
         oom_result.set_object(prom);
         return oom_result;
     }
-    if (specifier.len > 0) libc::memcpy(dup_raw, specifier.ptr, specifier.len);
+    if (specifier.len > 0) mem::copy(dup_raw, specifier.ptr, (sz)(specifier.len));
     char[] dup_spec = ((char*)dup_raw)[:specifier.len];
 
     // Base name for relative resolution: the currently executing function's

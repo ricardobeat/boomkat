@@ -147,7 +147,7 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
                         usz plen = pattern_data.len;
                         char* pattern_buf_heap = (char*)libc::malloc(plen + 1);
                         if (pattern_buf_heap != null) {
-                            libc::memcpy(pattern_buf_heap, pattern_data.ptr, plen);
+                            mem::copy(pattern_buf_heap, pattern_data.ptr, (sz)(plen));
                             pattern_buf_heap[plen] = 0;
                         }
                         char[128] error_buf;

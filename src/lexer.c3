@@ -12,7 +12,6 @@ import duktape::dtoa_bindings;
 import duktape::unicode_bindings;
 import std::math;
 import std::io;
-import libc;
 
 // ============================================================================
 // Fault codes
@@ -1043,7 +1042,7 @@ fn Token? Lexer.scan_number(&self) {
         uint len = self.pos - start_pos;
         char[64] buf;
         if (len < 64) {
-            libc::memcpy(&buf, &self.source[start_pos], len);
+            mem::copy(&buf, &self.source[start_pos], (sz)(len));
             // Strip numeric separators (_) before passing to js_atod
             uint j = 0;
             for (uint i = 0; i < len; i++) {
