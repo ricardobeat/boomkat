@@ -6,7 +6,7 @@ import duktape::hobject;
 import duktape::bytecode;
 import std::io;
 import std::core::mem::mempool;
-import libc;
+import std::core::mem::allocators;
 
 // ============================================================================
 // Heap management — allocator, GC bookkeeping, string table
@@ -451,64 +451,42 @@ enum BuiltinStr : uint {
 }
 
 // ============================================================================
-// Default allocator functions (libc-backed)
+// Default allocator functions
 // ============================================================================
+//
+// These are the C-ABI allocator hooks selected when heap::create is passed
+// null callbacks.  They keep the (void* udata, ...) function-pointer shape so
+// embedders can still supply their own malloc/realloc/free, but the default
+// bodies now route through the C3 thread allocator (`mem`), which is the
+// libc-backed LIBC_ALLOCATOR by default.  The `_try ?? null` form preserves the
+// OOM-returns-null contract the heap's GC-retry paths depend on (bare
+// mem::malloc panics on OOM).
 
 fn void* default_alloc(void* udata, usz size) {
     if (size == 0) { return null; }
-    return libc::malloc(size);
+    return alloc::malloc_try(mem, (sz)size) ?? null;
 }
 
 fn void* default_realloc(void* udata, void* ptr, usz size) {
     if (size == 0) {
-        libc::free(ptr);
+        mem::free(ptr);
         return null;
     }
-    return libc::realloc(ptr, size);
+    return alloc::realloc_try(mem, ptr, (sz)size) ?? null;
 }
 
 fn void default_free(void* udata, void* ptr) {
-    libc::free(ptr);
+    mem::free(ptr);
 }
 
 fn void default_fatal(void* udata, char* msg) {
     io::eprintfn("DUKTAPE FATAL: %s", msg);
-    libc::abort();
+    abort("duktape fatal error");
 }
 
-// ============================================================================
-// Libc allocator for FixedBlockPool
-// ============================================================================
-
-/// Thin wrapper around libc malloc/calloc/free that satisfies the
-/// std::core::mem::allocator::Allocator interface required by FixedBlockPool.
-struct LibcPoolAllocator (Allocator)
-{
-    char _dummy;
-}
-
-const LibcPoolAllocator LIBC_POOL_ALLOCATOR = {};
-
-fn void*? LibcPoolAllocator.acquire(&self, sz bytes, AllocInitType init_type, sz alignment) @dynamic
-{
-    if (init_type == ZERO) {
-        void* ptr = libc::calloc(1, (usz)bytes);
-        return ptr ?: null;
-    }
-    void* p = libc::malloc((usz)bytes);
-    return p ?: null;
-}
-
-fn void*? LibcPoolAllocator.resize(&self, void* old_ptr, sz new_bytes, sz alignment) @dynamic
-{
-    void* ptr = libc::realloc(old_ptr, (usz)new_bytes);
-    return ptr ?: null;
-}
-
-fn void LibcPoolAllocator.release(&self, void* old_ptr, bool aligned) @dynamic
-{
-    libc::free(old_ptr);
-}
+// The FixedBlockPools are backed directly by the stdlib libc allocator
+// singleton `allocators::LIBC_ALLOCATOR` (a strict superset of the old
+// hand-rolled LibcPoolAllocator).
 
 // ============================================================================
 // Heap creation / destruction
@@ -592,7 +570,7 @@ fn Heap*? create(
     h.init_shapes();
 
     // Allocate megamorphic property cache (separate allocation to keep Heap struct compact)
-    h.mega_cache = (hobject::MegamorphicEntry*)libc::malloc(MEGA_CACHE_SIZE * hobject::MegamorphicEntry::size);
+    h.mega_cache = (hobject::MegamorphicEntry*)alloc::malloc_try(mem, (sz)(MEGA_CACHE_SIZE * hobject::MegamorphicEntry::size)) ?? null;
     if (h.mega_cache != null) {
         mem::clear(h.mega_cache, (sz)(MEGA_CACHE_SIZE * hobject::MegamorphicEntry::size));
     }
@@ -610,9 +588,9 @@ fn Heap*? create(
 
     // Initialize object pool allocators (3 size classes).
     {
-        h.obj_pool_plain.init(&LIBC_POOL_ALLOCATOR, hobject::OBJ_SIZE_PLAIN, 512);
-        h.obj_pool_array.init(&LIBC_POOL_ALLOCATOR, hobject::OBJ_SIZE_ARRAY, 512);
-        h.obj_pool_func.init(&LIBC_POOL_ALLOCATOR, hobject::OBJ_SIZE_FUNC, 512);
+        h.obj_pool_plain.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_PLAIN, 512);
+        h.obj_pool_array.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_ARRAY, 512);
+        h.obj_pool_func.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_FUNC, 512);
     }
 
     // Activate this heap for RC operations and shape transitions.
@@ -953,7 +931,7 @@ fn void Heap.destroy(&self) {
 
     // Free megamorphic property cache
     if (self.mega_cache != null) {
-        libc::free(self.mega_cache);
+        mem::free(self.mega_cache);
         self.mega_cache = null;
     }
 
@@ -1248,9 +1226,9 @@ fn void Heap.reset(&self) {
     self.obj_pool_array.free();
     self.obj_pool_func.free();
     {
-        self.obj_pool_plain.init(&LIBC_POOL_ALLOCATOR, hobject::OBJ_SIZE_PLAIN, 512);
-        self.obj_pool_array.init(&LIBC_POOL_ALLOCATOR, hobject::OBJ_SIZE_ARRAY, 512);
-        self.obj_pool_func.init(&LIBC_POOL_ALLOCATOR, hobject::OBJ_SIZE_FUNC, 512);
+        self.obj_pool_plain.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_PLAIN, 512);
+        self.obj_pool_array.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_ARRAY, 512);
+        self.obj_pool_func.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_FUNC, 512);
     }
 
     // Reintern builtin strings into the now-empty string table
@@ -2692,11 +2670,11 @@ fn HString* Heap.str_intern(&self, char[] data) {
     // sequences at all, so skip the scratch allocation entirely.
     if (hstring::has_raw_utf8_astral(data)) {
         usz cap = (usz)data.len + ((usz)data.len / 4) * 2 + 1;
-        char* scratch = (char*)libc::malloc(cap);
+        char* scratch = (char*)alloc::malloc_try(mem, (sz)cap) ?? null;
         if (scratch != null) {
             uint norm_len = hstring::normalize_to_cesu8(data, scratch[:cap]);
             HString* result = self.str_intern_normalized(scratch[:norm_len]);
-            libc::free(scratch);
+            mem::free(scratch);
             return result;
         }
     }
