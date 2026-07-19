@@ -19,7 +19,6 @@ import duktape::compiler;
 import duktape::builtins;
 import duktape::vm;
 import std::io;
-import libc;
 
 // ============================================================================
 // Fault codes
@@ -168,40 +167,17 @@ fn ModuleDef* heap_find_loaded_module(Heap* heap, char[] name) {
 // Default module host callbacks
 // ============================================================================
 
-/// Default source reader: read file from disk via libc.
+/// Default source reader: read a module file from disk into a caller-owned
+/// buffer allocated from the engine's `mem` (libc-backed) heap. The returned
+/// slice is exactly the file's bytes; the lexer scans by length (no NUL
+/// sentinel required).
 fn char[]? default_module_read(char[] normalized_name, void* udata) {
-    // Null-terminate for fopen
-    usz len = normalized_name.len;
-    void* raw = alloc::malloc_try(mem, (sz)(len + 1)) ?? null;
-    if (raw == null) return MODULE_ERROR~;
-    mem::copy(raw, normalized_name.ptr, (sz)(len));
-    ((char*)raw)[len] = 0;
-
-    libc::CFile fp = libc::fopen((ZString)raw, "r");
-    mem::free(raw);
-    if (fp == null) return MODULE_ERROR~;
-
-    // Get file size
-    libc::fseek(fp, 0, libc::SEEK_END);
-    long size = libc::ftell(fp);
-    libc::fseek(fp, 0, libc::SEEK_SET);
-
-    if (size <= 0) {
-        libc::fclose(fp);
+    char[] data = file::load(mem, (String)normalized_name) ?? MODULE_ERROR~!;
+    if (data.len == 0) {
+        mem::free(data.ptr);
         return MODULE_ERROR~;
     }
-
-    // Allocate buffer and read
-    void* buf = alloc::malloc_try(mem, (sz)((usz)size + 1)) ?? null;
-    if (buf == null) {
-        libc::fclose(fp);
-        return MODULE_ERROR~;
-    }
-    usz n = libc::fread(buf, 1, (usz)size, fp);
-    libc::fclose(fp);
-
-    ((char*)buf)[n] = 0;
-    return ((char*)buf)[:n];
+    return data;
 }
 
 // ============================================================================

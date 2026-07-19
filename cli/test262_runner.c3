@@ -35,7 +35,6 @@ import duktape::hobject;
 import duktape::hstring;
 import duktape::builtins;
 import std::io;
-import libc;
 
 // ============================================================================
 // Manifest mode: read test paths from a file, run tests
@@ -50,9 +49,10 @@ fn int run_manifest_loop(char[] mpath) {
     char[] ph_src;
     if (try p = ph_src_opt) { ph_src = p; }
 
-    libc::CFile fp = libc::fopen((ZString)mpath.ptr, "r");
-    if (fp == null) { io::eprintfn("Failed to open: %s", mpath); return 1; }
-    defer libc::fclose(fp);
+    File? fp_opt = file::open((String)mpath, "r");
+    if (catch fp_opt) { io::eprintfn("Failed to open: %s", mpath); return 1; }
+    File fp = fp_opt;
+    defer (void)fp.close();
 
     // Allocate the long-lived heap and VM once
     Heap*? hp_opt = heap::create(null, null, null, null, null);
@@ -68,14 +68,9 @@ fn int run_manifest_loop(char[] mpath) {
     int pass = 0;
     int fail = 0;
     int total = 0;
-    char[4096] buf;
-
-    while (libc::fgets(&buf[0], 4096, fp) != null) {
+    while (try line = io::treadline(&fp)) {
         @pool() {
-            usz len = (usz)((ZString)&buf[0]).len();
-            while (len > 0 && (buf[len - 1] == '\n' || buf[len - 1] == '\r')) { len--; }
-            buf[len] = 0;
-            if (len == 0) { continue; }
+            if (line.len == 0) { continue; }
 
             bool report = (total % 100 == 0);
 
@@ -94,7 +89,7 @@ fn int run_manifest_loop(char[] mpath) {
             }
             v = v2;
 
-            char[] path = buf[:len];
+            char[] path = (char[])line;
             int rc = run_one_test(v, hp, path, assert_src, ph_src);
             if (rc == 0) { pass++; } else { fail++; }
             total++;
@@ -654,13 +649,9 @@ fn int run_worker_loop() {
     if (catch err = v_opt) { return 1; }
     Vm* v = v_opt;
 
-    char[4096] buf;
-    while (libc::fgets(&buf[0], 4096, libc::stdin()) != null) {
+    while (try line = io::treadline(io::stdin())) {
         @pool() {
-            usz len = (usz)((ZString)&buf[0]).len();
-            while (len > 0 && (buf[len - 1] == '\n' || buf[len - 1] == '\r')) { len--; }
-            buf[len] = 0;
-            if (len == 0) { continue; }
+            if (line.len == 0) { continue; }
 
             // Reset heap+VM — destroy+recreate VM to avoid stale-reference bugs.
             // Null out `v` between destroy and a successful recreate so that a
@@ -671,13 +662,13 @@ fn int run_worker_loop() {
             v = null;
             Vm*? v2 = vm::vm_create(hp);
             if (catch err = v2) {
-                io::printfn("FAIL %s", (String)buf[:len]);
-                libc::fflush(libc::stdout());
+                io::printfn("FAIL %s", line);
+                (void)io::stdout().flush();
                 continue;
             }
             v = v2;
 
-            char[] path = buf[:len];
+            char[] path = (char[])line;
             int rc = run_one_test(v, hp, path, assert_src, ph_src);
 
             if (rc == 0) {
@@ -687,7 +678,7 @@ fn int run_worker_loop() {
             } else {
                 io::printfn("FAIL %s", (String)path);
             }
-            libc::fflush(libc::stdout());
+            (void)io::stdout().flush();
         };
     }
     vm::vm_destroy(v);
