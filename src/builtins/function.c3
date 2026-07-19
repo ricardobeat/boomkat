@@ -3,6 +3,7 @@ module duktape::builtins;
 import duktape::types;
 import duktape::bytecode;
 import std::math;
+import std::io;
 import libc;
 import duktape::hstring;
 import duktape::env;
@@ -109,12 +110,12 @@ fn void builtin_function(BuiltinContext* ctx) {
     char[16384] src_buf;
     int src_pos = 0;
 
-    src_pos += libc::snprintf(&src_buf[src_pos], (usz)(16384 - src_pos), "(%s\n){\n", param_buf);
+    src_pos += (int)(io::bprintf(src_buf[src_pos..], "(%s\n){\n", (ZString)&param_buf) ?? src_buf[:0]).len;
     // Copy body (up to remaining buffer space)
     for (usz i = 0; i < body_len && src_pos < 16377; i++) {
         src_buf[src_pos++] = body_str[i];
     }
-    src_pos += libc::snprintf(&src_buf[src_pos], (usz)(16384 - src_pos), "\n}");
+    src_pos += (int)(io::bprintf(src_buf[src_pos..], "\n}") ?? src_buf[:0]).len;
 
     // Lex and compile as a function expression
     Lexer lex = lexer::lexer_init(src_buf[:src_pos], ctx.heap);
@@ -134,11 +135,11 @@ fn void builtin_function(BuiltinContext* ctx) {
     {
         char[16384] spec_buf;
         int spec_pos = 0;
-        spec_pos += libc::snprintf(&spec_buf[spec_pos], (usz)(16384 - spec_pos), "function anonymous(%s\n) {\n", param_buf);
+        spec_pos += (int)(io::bprintf(spec_buf[spec_pos..], "function anonymous(%s\n) {\n", (ZString)&param_buf) ?? spec_buf[:0]).len;
         for (usz i = 0; i < body_len && spec_pos < 16378; i++) {
             spec_buf[spec_pos++] = body_str[i];
         }
-        spec_pos += libc::snprintf(&spec_buf[spec_pos], (usz)(16384 - spec_pos), "\n}");
+        spec_pos += (int)(io::bprintf(spec_buf[spec_pos..], "\n}") ?? spec_buf[:0]).len;
         if (spec_pos > 0) {
             char* spec_heap = (char*)alloc::malloc_try(mem, (sz)((usz)spec_pos)) ?? null;
             if (spec_heap != null) {
@@ -472,7 +473,7 @@ fn void apply_call(BuiltinContext* ctx, TVal target, TVal this_arg, TVal arg_arr
         }
 
         char[20] buf;
-        int n = libc::snprintf(&buf, 20, "%d", i);
+        int n = (int)(io::bprintf(&buf, "%d", i) ?? buf[:0]).len;
         if (n <= 0 || n >= 20) break;
         HString* key_hstr = builtin_intern_string(ctx.heap, buf[:n]);
         if (key_hstr == null) { break; }
@@ -750,7 +751,7 @@ fn void builtin_function_proto_bind(BuiltinContext* ctx) {
         // Set elements
         for (ushort i = 0; i < bound_argc; i++) {
             char[20] buf;
-            int n = libc::snprintf(&buf, 20, "%d", i);
+            int n = (int)(io::bprintf(&buf, "%d", i) ?? buf[:0]).len;
             if (n > 0 && n < 20) {
                 HString* elem_key = builtin_intern_string(ctx.heap, buf[:n]);
                 args_arr.put_prop(elem_key, bound_args_arr[i], hobject::PROP_FLAGS_WEC);
@@ -897,7 +898,7 @@ fn void builtin_function_proto_toString(BuiltinContext* ctx) {
         
         // Build "function name() { [native code] }"
         char[256] buf;
-        int len = libc::snprintf(&buf, 256, "function %s() { [native code] }", name.ptr);
+        int len = (int)(io::bprintf(&buf, "function %s() { [native code] }", (String)name) ?? buf[:0]).len;
         if (len > 0 && len < 256) {
             HString* result = builtin_intern_string(ctx.heap, buf[:len]);
             ctx.result.set_string(result);
@@ -1193,7 +1194,7 @@ fn void builtin_bound_call(BuiltinContext* ctx) {
             if (arr != null && arr.get_class() == hobject::ObjClass.ARRAY) {
                 for (uint i = 0; i < bound_argc && actual_total < max_total; i++) {
                     char[20] buf;
-                    int n = libc::snprintf(&buf, 20, "%d", i);
+                    int n = (int)(io::bprintf(&buf, "%d", i) ?? buf[:0]).len;
                     if (n > 0 && n < 20) {
                         HString* ek = builtin_intern_string(ctx.heap, buf[:n]);
                         TVal? e = arr.get_prop_proto(ek);

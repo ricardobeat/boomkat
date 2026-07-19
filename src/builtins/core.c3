@@ -1471,7 +1471,7 @@ fn HString* builtin_number_to_hstring(Heap* heap, double d) {
     // through dtoa's FREE format below to match ES ToString semantics.
     if (d == math::trunc(d) && d > -9007199254740992.0 && d < 9007199254740992.0) {
         char[64] ibuf;
-        int ilen = libc::snprintf(&ibuf, 64, "%.0f", d);
+        int ilen = (int)(io::bprintf(&ibuf, "%.0f", d) ?? ibuf[:0]).len;
         if (ilen >= 0 && ilen < 64) {
             return builtin_intern_string(heap, ibuf[:ilen]);
         }
@@ -1484,7 +1484,7 @@ fn HString* builtin_number_to_hstring(Heap* heap, double d) {
         return builtin_intern_string(heap, buf[:len]);
     }
     // Unreachable for finite doubles; keep a safe fallback.
-    int flen = libc::snprintf(&buf, 64, "%.17g", d);
+    int flen = (int)(io::bprintf(&buf, "%.17g", d) ?? buf[:0]).len;
     return builtin_intern_string(heap, buf[:flen]);
 }
 
@@ -1520,7 +1520,7 @@ fn HString* builtin_to_string(Heap* heap, TVal* val) {
         }
         case FASTINT: {
             char[64] buf;
-            int len = libc::snprintf(&buf, 64, "%ld", (long)val.get_fastint());
+            int len = (int)(io::bprintf(&buf, "%d", (long)val.get_fastint()) ?? buf[:0]).len;
             if (len < 0 || len >= 64) return null;
             return builtin_intern_string(heap, buf[:len]);
         }
@@ -2539,7 +2539,7 @@ fn void module_binding_throw_tdz(BuiltinContext* ctx, HString* name) {
     if (try err = err_raw) {
         err.prototype = ctx.heap.ref_err_proto;
         char[256] buf;
-        int len = libc::snprintf(&buf, 256, "Cannot access '%s' before initialization", name.get_cstr());
+        int len = (int)(io::bprintf(&buf, "Cannot access '%s' before initialization", (ZString)name.get_cstr()) ?? buf[:0]).len;
         char[] msg = len > 0 && len < 256 ? buf[:len] : buf[:0];
         HString* msg_str = builtin_intern_string(ctx.heap, msg);
         if (msg_str != null) {

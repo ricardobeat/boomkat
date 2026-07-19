@@ -29,6 +29,7 @@ import duktape::env;
 import duktape::re_bindings;
 import duktape::heap;
 import std::core::mem::mempool;
+import std::io;
 import libc;
 
 // Faults for optional returns
@@ -834,7 +835,7 @@ fn void HObject.seal(&self) {
         for (uint i = 0; i < self.array_size; i++) {
             TVal v = self.array_part()[i];
             if (!v.is_undefined()) {
-                int dlen = libc::snprintf(&digit_buf[0], 12, "%u", i);
+                int dlen = (int)(io::bprintf(&digit_buf, "%d", i) ?? digit_buf[:0]).len;
                 if (dlen > 0) {
                     HString* key = h.str_intern(digit_buf[:(uint)dlen]);
                     if (key != null) {

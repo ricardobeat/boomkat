@@ -246,9 +246,9 @@ fn void dump_inner_tree(bytecode::CompiledFunction* f, uint idx, String path, bo
     char[128] label_buf;
     int n;
     if (path.len == 0) {
-        n = libc::snprintf(&label_buf[0], label_buf.len, "%d", idx);
+        n = (int)(io::bprintf(&label_buf, "%d", idx) ?? label_buf[:0]).len;
     } else {
-        n = libc::snprintf(&label_buf[0], label_buf.len, "%.*s.%d", (int)path.len, path.ptr, idx);
+        n = (int)(io::bprintf(&label_buf, "%s.%d", path, idx) ?? label_buf[:0]).len;
     }
     if (n < 0 || n >= label_buf.len) return;
     String label = (String)label_buf[0:n];

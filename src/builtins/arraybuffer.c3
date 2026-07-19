@@ -5,6 +5,7 @@ module duktape::builtins;
 
 import duktape::types;
 import libc;
+import std::io;
 import duktape::hstring;
 import duktape::heap;
 import duktape::hobject;
@@ -481,8 +482,7 @@ fn bool register_arraybuffer_accessor(HObject* proto, Heap* heap, char[] name, u
     func_obj.prototype = heap.function_proto;
 
     char[64] name_buf;
-    libc::snprintf(&name_buf, 64, "get %s", name.ptr);
-    usz total_len = libc::strlen((ZString)&name_buf);
+    usz total_len = (usz)(io::bprintf(&name_buf, "get %s", (String)name) ?? name_buf[:0]).len;
     HString* fn_name = builtin_intern_string(heap, name_buf[:total_len]);
     if (fn_name != null) {
         TVal name_tv;

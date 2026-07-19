@@ -1,6 +1,7 @@
 /// Iterator protocol: %IteratorPrototype%, Array/String/Map/Set/RegExpString iterators.
 module duktape::builtins;
 import duktape::types;
+import std::io;
 import libc;
 
 import duktape::heap;
@@ -243,7 +244,7 @@ fn void builtin_array_iterator_next(BuiltinContext* ctx) {
         } else {
             // Not in dense part — try property table via stringified index
             char[32] idx_buf;
-            int idx_len = libc::snprintf(&idx_buf[0], 32, "%u", idx);
+            int idx_len = (int)(io::bprintf(&idx_buf, "%d", idx) ?? idx_buf[:0]).len;
             uint idx_hash = heap.hash_string(idx_buf[:idx_len]);
             HString* idx_str = heap.str_table_lookup(idx_buf[:idx_len], idx_hash);
             if (idx_str == null) {

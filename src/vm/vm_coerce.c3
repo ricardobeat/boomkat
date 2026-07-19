@@ -387,7 +387,7 @@ fn HString*? vm_number_to_string(Vm* vm, double val) {
     // ES5 §9.8.1 steps 5-7: integers with |val| < 10^21 use decimal notation
     if (val == math::trunc(val) && val > -1e21 && val < 1e21) {
         char[64] ibuf;
-        int ilen = libc::snprintf(&ibuf, 64, "%.0f", val);
+        int ilen = (int)(io::bprintf(&ibuf, "%.0f", val) ?? ibuf[:0]).len;
         if (ilen >= 0 && ilen < 64) {
             return vm.heap.str_intern(ibuf[:ilen]);
         }

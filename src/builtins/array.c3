@@ -3,6 +3,7 @@ module duktape::builtins;
 
 import duktape::types;
 import std::math;
+import std::io;
 import libc;
 import duktape::heap;
 import duktape::hstring;
@@ -1141,7 +1142,7 @@ fn void builtin_array_proto_toString(BuiltinContext* ctx) {
                             char[] tag_bytes = tag_str.get_data();
                             int tag_len = (int)tag_bytes.len;
                             if (tag_len > 0 && tag_len < 64) {
-                                int pos = libc::snprintf(&buf, 64, "[object %.*s]", tag_len, tag_bytes.ptr);
+                                int pos = (int)(io::bprintf(&buf, "[object %s]", (String)tag_bytes[:tag_len]) ?? buf[:0]).len;
                                 if (pos > 0 && pos < 64) {
                                     ctx.result.set_string(builtin_intern_string(ctx.heap, buf[:pos]));
                                     return;
@@ -1152,7 +1153,7 @@ fn void builtin_array_proto_toString(BuiltinContext* ctx) {
                 }
             }
 
-            int len = libc::snprintf(&buf, 64, "[object %s]", class_name);
+            int len = (int)(io::bprintf(&buf, "[object %s]", (ZString)class_name) ?? buf[:0]).len;
             if (len > 0 && len < 64) {
                 ctx.result.set_string(builtin_intern_string(ctx.heap, buf[:len]));
                 return;

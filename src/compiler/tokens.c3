@@ -7,6 +7,7 @@ import duktape::hstring;
 import duktape::hobject;
 import duktape::heap;
 import libc;
+import std::io;
 
 // ============================================================================
 // Error recording helper
@@ -50,8 +51,7 @@ fn Token? CompilerContext.advance(&self) {
             if (bad_pos < (uint)self.lexer.source.len) {
                 char c = self.lexer.source[bad_pos];
                 char[128] buf;
-                usz n = (usz)libc::snprintf(&buf[0], buf.len,
-                    "unexpected character '%c' (not supported)", c);
+                usz n = (usz)(io::bprintf(&buf, "unexpected character '%c' (not supported)", c) ?? buf[:0]).len;
                 usz copy_len = n < (g_last_err_msg.len - 1) ? n : (g_last_err_msg.len - 1);
                 mem::copy(&g_last_err_msg[0], &buf[0], (sz)(copy_len));
                 g_last_err_msg[copy_len] = 0;
@@ -77,9 +77,8 @@ fn Token? CompilerContext.expect(&self, TokenType tt) {
             char[128] buf;
             char[] want = lexer::token_type_name(tt);
             char[] got  = lexer::token_type_name(tok.type);
-            usz n = (usz)libc::snprintf(&buf[0], buf.len, "expected '%.*s', got '%.*s'",
-                                        (int)want.len, want.ptr,
-                                        (int)got.len,  got.ptr);
+            usz n = (usz)(io::bprintf(&buf, "expected '%s', got '%s'",
+                                        (String)want, (String)got) ?? buf[:0]).len;
             g_last_err_line = tok.line;
             g_last_err_col  = tok.col;
             usz copy_len = n < (g_last_err_msg.len - 1) ? n : (g_last_err_msg.len - 1);
@@ -118,8 +117,7 @@ fn TokenType CompilerContext.peek_type(&self) {
             if (bad_pos < (uint)self.lexer.source.len) {
                 char c = self.lexer.source[bad_pos];
                 char[128] buf;
-                usz n = (usz)libc::snprintf(&buf[0], buf.len,
-                    "unexpected character '%c' (not supported)", c);
+                usz n = (usz)(io::bprintf(&buf, "unexpected character '%c' (not supported)", c) ?? buf[:0]).len;
                 usz copy_len = n < (g_last_err_msg.len - 1) ? n : (g_last_err_msg.len - 1);
                 mem::copy(&g_last_err_msg[0], &buf[0], (sz)(copy_len));
                 g_last_err_msg[copy_len] = 0;

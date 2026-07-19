@@ -16,6 +16,7 @@ import duktape::types;
 import std::math;
 import duktape::hstring;
 import duktape::env;
+import std::io;
 import libc;
 
 import duktape::heap;
@@ -432,8 +433,8 @@ fn int proxy_find_trap(void* vm, Heap* heap, HObject* proxy, char[] name,
     HObject* target = proxy_target(proxy);
     if (handler == null || target == null) {
         char[types::ERROR_MSG_BUF] buf;
-        int len = libc::snprintf(&buf, types::ERROR_MSG_BUF,
-            "Cannot perform '%.*s' on a proxy that has been revoked", (int)name.len, name.ptr);
+        int len = (int)(io::bprintf(&buf,
+            "Cannot perform '%s' on a proxy that has been revoked", (String)name) ?? buf[:0]).len;
         char[] slice = (len > 0 && len < types::ERROR_MSG_BUF) ? buf[:len] : buf[:0];
         proxy_throw_type(heap, slice);
         return 0;
@@ -447,8 +448,8 @@ fn int proxy_find_trap(void* vm, Heap* heap, HObject* proxy, char[] name,
     if (trap.is_undefined() || trap.is_null()) return 1;
     if (!tval_is_callable(trap)) {
         char[types::ERROR_MSG_BUF] buf;
-        int len = libc::snprintf(&buf, types::ERROR_MSG_BUF,
-            "'%.*s' trap is not a function", (int)name.len, name.ptr);
+        int len = (int)(io::bprintf(&buf,
+            "'%s' trap is not a function", (String)name) ?? buf[:0]).len;
         char[] slice = (len > 0 && len < types::ERROR_MSG_BUF) ? buf[:len] : buf[:0];
         proxy_throw_type(heap, slice);
         return 0;

@@ -1,6 +1,7 @@
 /// RegExp constructor and RegExp.prototype methods.
 module duktape::builtins;
 import duktape::types;
+import std::io;
 import libc;
 import duktape::hstring;
 import duktape::env;
@@ -248,7 +249,7 @@ fn void builtin_regexp(BuiltinContext* ctx) {
             if (try err = err_raw) {
                 err.prototype = ctx.heap.syntax_err_proto;
                 char[80] buf;
-                int len = libc::snprintf(&buf, 80, "Invalid flags supplied to RegExp constructor '%c'", f);
+                int len = (int)(io::bprintf(&buf, "Invalid flags supplied to RegExp constructor '%c'", f) ?? buf[:0]).len;
                 if (len > 0 && len < 80) {
                     HString* msg_str = builtin_intern_string(ctx.heap, buf[:len]);
                     TVal msg_tv;
@@ -269,7 +270,7 @@ fn void builtin_regexp(BuiltinContext* ctx) {
             if (try err = err_raw) {
                 err.prototype = ctx.heap.syntax_err_proto;
                 char[80] buf;
-                int len = libc::snprintf(&buf, 80, "Invalid flags supplied to RegExp constructor '%c'", f);
+                int len = (int)(io::bprintf(&buf, "Invalid flags supplied to RegExp constructor '%c'", f) ?? buf[:0]).len;
                 if (len > 0 && len < 80) {
                     HString* msg_str = builtin_intern_string(ctx.heap, buf[:len]);
                     TVal msg_tv;
@@ -2519,8 +2520,7 @@ fn bool register_proto_accessor(HObject* proto, Heap* heap, char[] name, uint ge
 
     // Set .name = "get <name>" per ES6 §17 (non-writable, non-enumerable, configurable)
     char[64] name_buf;
-    libc::snprintf(&name_buf, 64, "get %s", name.ptr);
-    usz total_len = libc::strlen((ZString)&name_buf);
+    usz total_len = (usz)(io::bprintf(&name_buf, "get %s", (String)name) ?? name_buf[:0]).len;
     HString* fn_name = builtin_intern_string(heap, name_buf[:total_len]);
     if (fn_name != null) {
         TVal name_tv;

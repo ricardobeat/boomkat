@@ -9,6 +9,7 @@ import duktape::heap;
 import duktape::hobject;
 import duktape::compiler;
 import duktape::lexer;
+import std::io;
 import libc;
 
 // ============================================================================
@@ -50,9 +51,9 @@ fn void builtin_dynamic_gen_function(BuiltinContext* ctx, bool is_gen, bool is_a
     // Compilation source: (params\n) {\n body \n}
     char[16384] src_buf;
     int src_pos = 0;
-    src_pos += libc::snprintf(&src_buf[src_pos], (usz)(16384 - src_pos), "(%s\n){\n", param_buf);
+    src_pos += (int)(io::bprintf(src_buf[src_pos..], "(%s\n){\n", (ZString)&param_buf) ?? src_buf[:0]).len;
     for (usz i = 0; i < body_len && src_pos < 16377; i++) src_buf[src_pos++] = body_str[i];
-    src_pos += libc::snprintf(&src_buf[src_pos], (usz)(16384 - src_pos), "\n}");
+    src_pos += (int)(io::bprintf(src_buf[src_pos..], "\n}") ?? src_buf[:0]).len;
 
     lexer::Lexer lex = lexer::lexer_init(src_buf[:src_pos], ctx.heap);
     CompiledFunction*? cf = compiler::compile_function_kind(&lex, ctx.heap, true, is_gen, is_async);
@@ -69,9 +70,9 @@ fn void builtin_dynamic_gen_function(BuiltinContext* ctx, bool is_gen, bool is_a
         char[16384] spec_buf;
         int spec_pos = 0;
         char[] kw = is_async ? (is_gen ? "async function* " : "async function ") : (is_gen ? "function* " : "function ");
-        spec_pos += libc::snprintf(&spec_buf[spec_pos], (usz)(16384 - spec_pos), "%.*sanonymous(%s\n) {\n", (int)kw.len, kw.ptr, param_buf);
+        spec_pos += (int)(io::bprintf(spec_buf[spec_pos..], "%sanonymous(%s\n) {\n", (String)kw, (ZString)&param_buf) ?? spec_buf[:0]).len;
         for (usz i = 0; i < body_len && spec_pos < 16378; i++) spec_buf[spec_pos++] = body_str[i];
-        spec_pos += libc::snprintf(&spec_buf[spec_pos], (usz)(16384 - spec_pos), "\n}");
+        spec_pos += (int)(io::bprintf(spec_buf[spec_pos..], "\n}") ?? spec_buf[:0]).len;
         if (spec_pos > 0) {
             char* spec_heap = (char*)alloc::malloc_try(mem, (sz)((usz)spec_pos)) ?? null;
             if (spec_heap != null) {

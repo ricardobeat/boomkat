@@ -8,6 +8,7 @@ import duktape::hobject;
 import duktape::env;
 import duktape::builtins;
 import libc;
+import std::io;
 import duktape::re_bindings;
 import std::math;
 
@@ -304,9 +305,9 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             && key_hs_get.is_hidden()) {
                             char[] priv_desc = key_hs_get.blen > 2 ? key_hs_get.get_data()[2..] : (char[])"?";
                             char[160] set_only_buf;
-                            int set_only_len = libc::snprintf(&set_only_buf, set_only_buf.len,
-                                "Cannot read private member #%.*s from an object because it only has a setter",
-                                (int)priv_desc.len, priv_desc.ptr);
+                            int set_only_len = (int)(io::bprintf(&set_only_buf,
+                                "Cannot read private member #%s from an object because it only has a setter",
+                                (String)priv_desc) ?? set_only_buf[:0]).len;
                             char[] set_only_msg = set_only_len > 0 && (usz)set_only_len < set_only_buf.len
                                 ? set_only_buf[:(usz)set_only_len]
                                 : (char[])"Cannot read private member from an object because it only has a setter";
@@ -373,12 +374,12 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 char[types::ERROR_MSG_BUF] msg_buf;
                 int msg_len;
                 if (name_hstr != null) {
-                    msg_len = libc::snprintf(&msg_buf, types::ERROR_MSG_BUF, "Cannot read properties of %s (reading '%s')",
+                    msg_len = (int)(io::bprintf(&msg_buf, "Cannot read properties of %s (reading '%s')",
                                               (rb.is_null() ? "null" : "undefined"),
-                                              name_hstr.get_cstr());
+                                              (ZString)name_hstr.get_cstr()) ?? msg_buf[:0]).len;
                 } else {
-                    msg_len = libc::snprintf(&msg_buf, types::ERROR_MSG_BUF, "Cannot read properties of %s",
-                                              (rb.is_null() ? "null" : "undefined"));
+                    msg_len = (int)(io::bprintf(&msg_buf, "Cannot read properties of %s",
+                                              (rb.is_null() ? "null" : "undefined")) ?? msg_buf[:0]).len;
                 }
                 char[] msg_slice = (msg_len > 0 && msg_len < types::ERROR_MSG_BUF) ? msg_buf[:msg_len] : msg_buf[:0];
                 if (!vm_throw_error(vm, vm.heap.type_err_proto, msg_slice, ds.act, &ds.curr_pc, &ds.needs_restart)) {
@@ -768,12 +769,12 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     char[types::ERROR_MSG_BUF] msg_buf;
                     int msg_len;
                     if (key_hstr != null) {
-                        msg_len = libc::snprintf(&msg_buf, types::ERROR_MSG_BUF, "Cannot read properties of %s (reading '%s')",
+                        msg_len = (int)(io::bprintf(&msg_buf, "Cannot read properties of %s (reading '%s')",
                                                   (rb.is_null() ? "null" : "undefined"),
-                                                  key_hstr.get_cstr());
+                                                  (ZString)key_hstr.get_cstr()) ?? msg_buf[:0]).len;
                     } else {
-                        msg_len = libc::snprintf(&msg_buf, types::ERROR_MSG_BUF, "Cannot read properties of %s",
-                                                  (rb.is_null() ? "null" : "undefined"));
+                        msg_len = (int)(io::bprintf(&msg_buf, "Cannot read properties of %s",
+                                                  (rb.is_null() ? "null" : "undefined")) ?? msg_buf[:0]).len;
                     }
                     char[] msg_slice = (msg_len > 0 && msg_len < types::ERROR_MSG_BUF) ? msg_buf[:msg_len] : msg_buf[:0];
                     if (!vm_throw_error(vm, vm.heap.type_err_proto, msg_slice, ds.act, &ds.curr_pc, &ds.needs_restart)) {
@@ -2642,12 +2643,12 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 char[types::ERROR_MSG_BUF] msg_buf;
                 int msg_len;
                 if (name_hstr != null) {
-                    msg_len = libc::snprintf(&msg_buf, types::ERROR_MSG_BUF, "Cannot set properties of %s (setting '%s')",
+                    msg_len = (int)(io::bprintf(&msg_buf, "Cannot set properties of %s (setting '%s')",
                                               (ra.is_null() ? "null" : "undefined"),
-                                              name_hstr.get_cstr());
+                                              (ZString)name_hstr.get_cstr()) ?? msg_buf[:0]).len;
                 } else {
-                    msg_len = libc::snprintf(&msg_buf, types::ERROR_MSG_BUF, "Cannot set properties of %s",
-                                              (ra.is_null() ? "null" : "undefined"));
+                    msg_len = (int)(io::bprintf(&msg_buf, "Cannot set properties of %s",
+                                              (ra.is_null() ? "null" : "undefined")) ?? msg_buf[:0]).len;
                 }
                 char[] msg_slice = (msg_len > 0 && msg_len < types::ERROR_MSG_BUF) ? msg_buf[:msg_len] : msg_buf[:0];
                 if (!vm_throw_error(vm, vm.heap.type_err_proto, msg_slice, ds.act, &ds.curr_pc, &ds.needs_restart)) {
@@ -2662,11 +2663,11 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 char[types::ERROR_MSG_BUF] msg_buf;
                 int msg_len;
                 if (name_hstr != null) {
-                    msg_len = libc::snprintf(&msg_buf, types::ERROR_MSG_BUF, "Cannot create property '%s' on %s",
-                                              name_hstr.get_cstr(), type_hstr.get_cstr());
+                    msg_len = (int)(io::bprintf(&msg_buf, "Cannot create property '%s' on %s",
+                                              (ZString)name_hstr.get_cstr(), (ZString)type_hstr.get_cstr()) ?? msg_buf[:0]).len;
                 } else {
-                    msg_len = libc::snprintf(&msg_buf, types::ERROR_MSG_BUF, "Cannot create property on %s",
-                                              type_hstr.get_cstr());
+                    msg_len = (int)(io::bprintf(&msg_buf, "Cannot create property on %s",
+                                              (ZString)type_hstr.get_cstr()) ?? msg_buf[:0]).len;
                 }
                 char[] msg_slice = (msg_len > 0 && msg_len < types::ERROR_MSG_BUF) ? msg_buf[:msg_len] : msg_buf[:0];
                 if (!vm_throw_error(vm, vm.heap.type_err_proto, msg_slice, ds.act, &ds.curr_pc, &ds.needs_restart)) {

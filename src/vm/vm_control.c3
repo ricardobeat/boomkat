@@ -8,6 +8,7 @@ import duktape::hobject;
 import duktape::env;
 import duktape::builtins;
 import libc;
+import std::io;
 import duktape::re_bindings;
 import std::math;
 
@@ -1203,9 +1204,9 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, In
                     }
                 }
                 char[160] msg_buf;
-                int len = libc::snprintf(&msg_buf, msg_buf.len,
-                    "Cannot access private member #%.*s from an object whose class did not declare it",
-                    (int)priv_name.len, priv_name.ptr);
+                int len = (int)(io::bprintf(&msg_buf,
+                    "Cannot access private member #%s from an object whose class did not declare it",
+                    (String)priv_name) ?? msg_buf[:0]).len;
                 char[] msg = len > 0 && (usz)len < msg_buf.len ? msg_buf[:(usz)len] : (char[])"Cannot access private member from an object whose class did not declare it";
                 if (!vm_throw_error(vm, vm.heap.type_err_proto, msg,
                         ds.act, &ds.curr_pc, &ds.needs_restart)) {

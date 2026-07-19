@@ -8,6 +8,7 @@ import duktape::hobject;
 import duktape::env;
 import duktape::builtins;
 import libc;
+import std::io;
 import duktape::re_bindings;
 import std::math;
 
@@ -453,7 +454,7 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
                 char[12] digit_buf;
                 for (uint i = 0; i < source.array_size; i++) {
                     if (!source.array_part()[i].is_undefined()) {
-                        int dlen = libc::snprintf(&digit_buf, 12, "%u", i);
+                        int dlen = (int)(io::bprintf(&digit_buf, "%d", i) ?? digit_buf[:0]).len;
                         if (dlen > 0) {
                             HString* key = intern_string(vm, digit_buf[:(uint)dlen]);
                             if (key != null) {

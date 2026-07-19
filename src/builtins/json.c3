@@ -905,7 +905,7 @@ fn usz json_number_to_string(double d, char* buf, usz buf_size) {
     // Shortest round-trip decimal via QuickJS js_dtoa (FREE mode), same as
     // ToString(Number) — spec exponent format, correct final-digit rounding.
     if (buf_size < 64) {
-        int glen = libc::snprintf(buf, buf_size, "%.17g", d);
+        int glen = (int)(io::bprintf(buf[:buf_size], "%.17g", d) ?? buf[:0]).len;
         return (glen > 0) ? (usz)glen : 0;
     }
     char[dtoa_bindings::DTOA_FORMAT_TMP_SIZE] tmp;
@@ -914,7 +914,7 @@ fn usz json_number_to_string(double d, char* buf, usz buf_size) {
     if (len > 0 && (usz)len < buf_size) {
         return (usz)len;
     }
-    int flen = libc::snprintf(buf, buf_size, "%.17g", d);
+    int flen = (int)(io::bprintf(buf[:buf_size], "%.17g", d) ?? buf[:0]).len;
     return (flen > 0) ? (usz)flen : 0;
 }
 

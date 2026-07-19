@@ -2,6 +2,7 @@
 module duktape::builtins;
 import duktape::types;
 import std::math;
+import std::io;
 import duktape::env;
 import duktape::vm;
 
@@ -138,7 +139,7 @@ fn void date_break_time_local_fields(double time_val, long* year, long* month, l
 fn usz date_format_to_string(double time_val, char* buf, usz buf_size) {
     // For NaN, return "Invalid Date"
     if (math::is_nan(time_val)) {
-        return (usz)libc::snprintf(buf, buf_size, "Invalid Date");
+        return (usz)(io::bprintf(buf[:buf_size], "Invalid Date") ?? buf[:0]).len;
     }
     long t_sec = (long)(time_val / 1000.0);
     long year_val, month, day, wday, hour, minute, second;
@@ -188,25 +189,25 @@ fn usz date_format_to_string(double time_val, char* buf, usz buf_size) {
     // For abs(year) >= 10000 use the full integer width (no padding).
     char[24] year_str;
     if (year_val < 0 && year_val > -10000) {
-        libc::snprintf(&year_str[0], 24, "-%04ld", -year_val);
+        (void)io::bprintf(&year_str, "-%04d", -year_val);
     } else if (year_val <= -10000) {
-        libc::snprintf(&year_str[0], 24, "%ld", year_val);
+        (void)io::bprintf(&year_str, "%d", year_val);
     } else {
-        libc::snprintf(&year_str[0], 24, "%04ld", year_val);
+        (void)io::bprintf(&year_str, "%04d", year_val);
     }
 
-    return (usz)libc::snprintf(buf, buf_size, "%s %s %02d %s %02d:%02d:%02d GMT%c%02d%02d",
-        wday_name, mon_name,
-        (int)day, &year_str[0],
+    return (usz)(io::bprintf(buf[:buf_size], "%s %s %02d %s %02d:%02d:%02d GMT%c%02d%02d",
+        (ZString)wday_name, (ZString)mon_name,
+        (int)day, (ZString)&year_str[0],
         (int)hour, (int)minute, (int)second,
-        tz_sign, offs_hours, offs_mins);
+        tz_sign, offs_hours, offs_mins) ?? buf[:0]).len;
 }
 
 /// Format a Date as ISO 8601 string (used by toJSON).
 /// Uses UTC components. Large years (>=10000 or <=-9999) use expanded format.
 fn usz date_format_iso(double time_val, char* buf, usz buf_size) {
     if (math::is_nan(time_val)) {
-        return (usz)libc::snprintf(buf, buf_size, "null");
+        return (usz)(io::bprintf(buf[:buf_size], "null") ?? buf[:0]).len;
     }
     long year, month, day, wday, hour, min, sec;
     date_break_time_utc(time_val, &year, &month, &day, &wday, &hour, &min, &sec);
@@ -935,7 +936,7 @@ fn void builtin_date_proto_toLocaleDateString(BuiltinContext* ctx) {
     long year, month, day, wday, hour, min, sec;
     date_break_time(time_val, &year, &month, &day, &wday, &hour, &min, &sec);
     char[types::FORMAT_BUF] buf;
-    usz len = (usz)libc::snprintf(&buf, types::FORMAT_BUF, "%04d-%02d-%02d", (int)year, (int)(month + 1), (int)day);
+    usz len = (usz)(io::bprintf(&buf, "%04d-%02d-%02d", (int)year, (int)(month + 1), (int)day) ?? buf[:0]).len;
     HString* result = builtin_intern_string(ctx.heap, buf[:len]);
     ctx.result.set_string(result);
 }
@@ -954,7 +955,7 @@ fn void builtin_date_proto_toLocaleTimeString(BuiltinContext* ctx) {
     long year, month, day, wday, hour, min, sec;
     date_break_time(time_val, &year, &month, &day, &wday, &hour, &min, &sec);
     char[types::FORMAT_BUF] buf;
-    usz len = (usz)libc::snprintf(&buf, types::FORMAT_BUF, "%02d:%02d:%02d", (int)hour, (int)min, (int)sec);
+    usz len = (usz)(io::bprintf(&buf, "%02d:%02d:%02d", (int)hour, (int)min, (int)sec) ?? buf[:0]).len;
     HString* result = builtin_intern_string(ctx.heap, buf[:len]);
     ctx.result.set_string(result);
 }
@@ -1003,17 +1004,17 @@ fn void builtin_date_proto_toDateString(BuiltinContext* ctx) {
     // ES6 §21.4.3.4 ToDateString year format: 4-digit zero-padded positive;
     // "-%04d" for negative year in [-9999, 0); full integer for |y| >= 10000.
     // We write the year into a temp buffer first to support all forms, then
-    // copy into buf. Use snprintf with the appropriate width format.
+    // copy into buf. Use bprintf with the appropriate width format.
     char[24] year_str;
     if (year < 0 && year > -10000) {
-        libc::snprintf(&year_str[0], 24, "-%04ld", -year);
+        (void)io::bprintf(&year_str, "-%04d", -year);
     } else if (year <= -10000) {
-        libc::snprintf(&year_str[0], 24, "%ld", year);
+        (void)io::bprintf(&year_str, "%d", year);
     } else {
-        libc::snprintf(&year_str[0], 24, "%04ld", year);
+        (void)io::bprintf(&year_str, "%04d", year);
     }
-    usz len = (usz)libc::snprintf(&buf, types::FORMAT_BUF, "%s %s %02d %s",
-        wday_name, mon_name, (int)day, &year_str[0]);
+    usz len = (usz)(io::bprintf(&buf, "%s %s %02d %s",
+        (ZString)wday_name, (ZString)mon_name, (int)day, (ZString)&year_str[0]) ?? buf[:0]).len;
     HString* result = builtin_intern_string(ctx.heap, buf[:len]);
     ctx.result.set_string(result);
 }
@@ -1044,9 +1045,9 @@ fn void builtin_date_proto_toTimeString(BuiltinContext* ctx) {
     }
 
     char[types::FORMAT_BUF] buf;
-    usz len = (usz)libc::snprintf(&buf, types::FORMAT_BUF, "%02d:%02d:%02d GMT%c%02d%02d",
+    usz len = (usz)(io::bprintf(&buf, "%02d:%02d:%02d GMT%c%02d%02d",
         (int)hour, (int)minute, (int)second,
-        tz_sign, offs_hours, offs_mins);
+        tz_sign, offs_hours, offs_mins) ?? buf[:0]).len;
     HString* result = builtin_intern_string(ctx.heap, buf[:len]);
     ctx.result.set_string(result);
 }
@@ -2346,17 +2347,17 @@ fn void builtin_date_proto_toUTCString(BuiltinContext* ctx) {
     // "-%04d" for negative year in [-9999, 0); full integer for |y| >= 10000.
     char[24] year_str;
     if (year < 0 && year > -10000) {
-        libc::snprintf(&year_str[0], 24, "-%04ld", -year);
+        (void)io::bprintf(&year_str, "-%04d", -year);
     } else if (year <= -10000) {
-        libc::snprintf(&year_str[0], 24, "%ld", year);
+        (void)io::bprintf(&year_str, "%d", year);
     } else {
-        libc::snprintf(&year_str[0], 24, "%04ld", year);
+        (void)io::bprintf(&year_str, "%04d", year);
     }
     char[types::FORMAT_BUF] buf;
     // "Thu, 01 Jan 1970 00:00:00 GMT" / "Thu, 01 Jan -0001 00:00:00 GMT"
-    usz len = (usz)libc::snprintf(&buf, types::FORMAT_BUF, "%.3s, %02d %.3s %s %02d:%02d:%02d GMT",
-        &day_names[wday][0], (int)day, &mon_names[month][0],
-        &year_str[0], (int)hour, (int)min, (int)sec);
+    usz len = (usz)(io::bprintf(&buf, "%.3s, %02d %.3s %s %02d:%02d:%02d GMT",
+        (ZString)&day_names[wday][0], (int)day, (ZString)&mon_names[month][0],
+        (ZString)&year_str[0], (int)hour, (int)min, (int)sec) ?? buf[:0]).len;
     ctx.result.set_string(builtin_intern_string(ctx.heap, buf[:len]));
 }
 

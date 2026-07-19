@@ -3,6 +3,7 @@ module duktape::builtins;
 import duktape::types;
 import duktape::env;
 import libc;
+import std::io;
 import duktape::hstring;
 import duktape::hobject;
 
@@ -307,7 +308,7 @@ fn void builtin_error_prototype_to_string(BuiltinContext* ctx) {
         char[256] buf;
         char* name_cstr = name_str.get_cstr();
         char* msg_cstr = msg_str.get_cstr();
-        int len = libc::snprintf(&buf, 256, "%s: %s", name_cstr, msg_cstr);
+        int len = (int)(io::bprintf(&buf, "%s: %s", (ZString)name_cstr, (ZString)msg_cstr) ?? buf[:0]).len;
         if (len > 0 && len < 256) {
             HString* result_str = builtin_intern_string(ctx.heap, buf[:len]);
             ctx.result.set_string(result_str);
