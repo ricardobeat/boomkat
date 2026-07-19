@@ -5,6 +5,7 @@ import duktape::bytecode;
 import std::io;
 import std::math;
 import libc;
+import duktape::dtoa_bindings;
 import duktape::lexer;
 import duktape::compiler;
 import duktape::hstring;
@@ -309,7 +310,7 @@ fn void builtin_parse_float(BuiltinContext* ctx) {
     lit_buf[copy_len] = 0;
 
     char* end;
-    double d = libc::strtod((ZString)&lit_buf[0], &end);
+    double d = dtoa_bindings::atod_strtod_compat((ZString)&lit_buf[0], &end);
     ctx.result.set_number(d);
 }
 

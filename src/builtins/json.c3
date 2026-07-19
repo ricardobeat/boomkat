@@ -184,7 +184,7 @@ fn TVal json_parse_number(JsonParseCtx* jctx) {
     char saved = jctx.src[end];
     jctx.src[end] = 0;
     char* endptr;
-    double d = libc::strtod(jctx.src + start, &endptr);
+    double d = dtoa_bindings::atod_strtod_compat(jctx.src + start, &endptr);
     jctx.src[end] = saved;
 
     // Try fastint preservation. Guard against negative zero: (long)(-0.0)==0

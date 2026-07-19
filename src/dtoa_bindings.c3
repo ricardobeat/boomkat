@@ -48,3 +48,21 @@ extern fn double duktape_js_atod(char* str, char** pnext, int radix, int flags,
 
 extern fn int duktape_js_dtoa(char* buf, double d, int radix, int n_digits, int flags,
                               char[DTOA_FORMAT_TMP_SIZE]* tmp);
+
+/*
+ * strtod-compatible decimal parser backed by js_atod.
+ *
+ * Presents the classic (str, &endptr) -> double interface so it can drop into
+ * the ToNumber / JSON number paths that previously called libc::strtod: parses
+ * a base-10 number at `str`, writes the first unconsumed char to `*endptr`, and
+ * on parse failure leaves `*endptr == str` (matching strtod's "nothing
+ * consumed" signal) and returns NaN.  Uses the same David-Gay parser as the
+ * lexer, so decimal rounding is spec-accurate and consistent engine-wide.
+ */
+fn double atod_strtod_compat(char* str, char** endptr) {
+    char[DTOA_TMP_SIZE] tmp;
+    char* next = str;
+    double v = duktape_js_atod(str, &next, 10, 0, &tmp);
+    *endptr = next;
+    return v;
+}

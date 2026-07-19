@@ -568,7 +568,7 @@ fn double hstring_to_number(HString* hstr) {
 
     // --- Decimal via libc::strtod ---
     char* endptr;
-    double result = libc::strtod(p, &endptr);
+    double result = dtoa_bindings::atod_strtod_compat(p, &endptr);
 
     // Nothing was consumed -> NaN
     if (endptr == p) {

@@ -660,7 +660,7 @@ fn double string_to_double(TVal* val) {
         HString* h = (HString*)val.get_heapptr();
         if (h == null || h.blen == 0) return double::nan;
         char* end;
-        double r = libc::strtod((ZString)h.get_cstr(), &end);
+        double r = dtoa_bindings::atod_strtod_compat((ZString)h.get_cstr(), &end);
         if (end == h.get_cstr()) return double::nan;
         return r;
     }
@@ -867,7 +867,7 @@ fn double builtin_string_to_number(HString* hstr) {
 
     // --- Decimal via libc::strtod ---
     char* endptr;
-    double result = libc::strtod(p, &endptr);
+    double result = dtoa_bindings::atod_strtod_compat(p, &endptr);
 
     // Nothing was consumed -> NaN
     if (endptr == p) {
