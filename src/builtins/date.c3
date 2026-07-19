@@ -9,7 +9,7 @@ import duktape::vm;
 import duktape::heap;
 import duktape::hstring;
 import duktape::hobject;
-import libc;
+import std::time;
 
 /// ES2015+ §21.4.1.14 MakeTime: ((h*msPerHour + m*msPerMinute) + s*msPerSecond) + milli,
 /// evaluated in exact left-to-right IEEE-754 order. Implemented in a separate
@@ -32,8 +32,49 @@ const long EPOCH_YEAR = 1970;
 
 /// Helper: get current time in milliseconds since epoch.
 fn double date_now_ms() {
-    long t = libc::time(null);
-    return (double)t * 1000.0;
+    // time::now() is microseconds since the Unix epoch.
+    return (double)((long)time::now()) / 1000.0;
+}
+
+/// Convert a Unix time (seconds since 1970-01-01 UTC, may be negative) into
+/// proleptic-Gregorian UTC broken-down fields. Pure integer calendar math
+/// (Howard Hinnant's days-from-civil), so it is reliable across the full
+/// ECMAScript date range without relying on libc's historical tzdata — the
+/// same rationale the surrounding code already applied to gmtime_r.
+///
+/// Outputs match the previous gmtime_r usage: `year` is the full year,
+/// `month` is 0-based (0=January), `wday` is 0-based with 0=Sunday.
+fn void civil_from_seconds(long secs, long* year, long* month, long* day,
+                           long* wday, long* hour, long* minute, long* second) {
+    // Split into whole days and the second-of-day, flooring toward -inf so
+    // negative epoch times land on the correct civil day.
+    long days = secs / 86400;
+    long rem  = secs % 86400;
+    if (rem < 0) { rem += 86400; days -= 1; }
+
+    *hour   = rem / 3600;
+    *minute = (rem % 3600) / 60;
+    *second = rem % 60;
+
+    // Day of week: 1970-01-01 was a Thursday (4). Euclidean mod keeps it 0..6.
+    long w = (days % 7 + 4) % 7;
+    if (w < 0) { w += 7; }
+    *wday = w;
+
+    // days-from-civil, inverted (Hinnant). Shift epoch to 0000-03-01.
+    long z = days + 719468;
+    long era = (z >= 0 ? z : z - 146096) / 146097;
+    long doe = z - era * 146097;                       // [0, 146096]
+    long yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;  // [0, 399]
+    long y = yoe + era * 400;
+    long doy = doe - (365 * yoe + yoe / 4 - yoe / 100); // [0, 365]
+    long mp = (5 * doy + 2) / 153;                      // [0, 11] (Mar=0)
+    long d = doy - (153 * mp + 2) / 5 + 1;              // [1, 31]
+    long m = mp < 10 ? mp + 3 : mp - 9;                 // [1, 12]
+
+    *year  = y + (m <= 2 ? 1 : 0);
+    *month = m - 1;                                     // 0-based
+    *day   = d;
 }
 
 /// Helper: get the time value from a Date object, or NaN if not a Date.
@@ -106,11 +147,14 @@ fn double date_local_to_ms(long year, long month, long day,
 /// tm_mday subtraction, which breaks whenever local and UTC dates fall in
 /// different months).
 fn long date_tz_offset_seconds(long t_sec) {
-    Tm local_result;
-    libc::localtime_r(&t_sec, &local_result);
-    double local_ms = date_utc_to_ms((long)local_result.tm_year + 1900L, (long)local_result.tm_mon,
-        (long)local_result.tm_mday, (long)local_result.tm_hour, (long)local_result.tm_min,
-        (long)local_result.tm_sec, 0);
+    // Source the local broken-down time from std::time (which performs the
+    // platform localtime_r lookup), then reinterpret those wall-clock fields
+    // through the engine's own proleptic-Gregorian date_utc_to_ms — same
+    // arithmetic as before, without a direct libc call.
+    TzDateTime local = datetime::from_time((Time)(t_sec * 1_000_000)).to_local();
+    double local_ms = date_utc_to_ms((long)local.year, (long)local.month.ordinal,
+        (long)local.day, (long)local.hour, (long)local.min,
+        (long)local.sec, 0);
     return (long)(local_ms / 1000.0) - t_sec;
 }
 
@@ -124,15 +168,7 @@ fn void date_break_time_local_fields(double time_val, long* year, long* month, l
     long t_sec = (long)(time_val / 1000.0);
     long offset = date_tz_offset_seconds(t_sec);
     long local_sec = t_sec + offset;
-    Tm result;
-    libc::gmtime_r(&local_sec, &result);
-    *year   = (long)(result.tm_year) + 1900L;
-    *month  = (long)(result.tm_mon);
-    *day    = (long)(result.tm_mday);
-    *wday   = (long)(result.tm_wday);
-    *hour   = result.tm_hour;
-    *minute = result.tm_min;
-    *second = result.tm_sec;
+    civil_from_seconds(local_sec, year, month, day, wday, hour, minute, second);
 }
 
 /// Format a Date as a string like "Mon Jan 01 2024 12:00:00 GMT+0000".
@@ -1418,15 +1454,7 @@ fn void date_break_time_utc(double time_val, long* year, long* month, long* day,
         return;
     }
     long t_sec = (long)(time_val / 1000.0);
-    Tm result;
-    libc::gmtime_r(&t_sec, &result);
-    *year   = (long)(result.tm_year) + 1900L;
-    *month  = (long)(result.tm_mon);
-    *day    = (long)(result.tm_mday);
-    *wday   = (long)(result.tm_wday);
-    *hour   = result.tm_hour;
-    *minute = result.tm_min;
-    *second = result.tm_sec;
+    civil_from_seconds(t_sec, year, month, day, wday, hour, minute, second);
 }
 
 /// Helper: convert UTC time components to epoch ms (no timezone adjustment).
