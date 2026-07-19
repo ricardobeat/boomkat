@@ -681,6 +681,11 @@ enum Opcode : char {
     /// ABC format: A=object_reg, B=key_reg, C=value_reg.
     INITPROP_PRIV,
 
+    /// `A = ToNumeric(B)` — coercion used by postfix ++/-- to compute the
+    /// returned old value.  Unlike UNP (unary plus), a BigInt operand passes
+    /// through unchanged rather than throwing (ES2020 §7.1.3 ToNumeric).
+    TONUMERIC,
+
     /// Sentinel — not a real opcode; marks the end of the enum.
     LAST_OP,
 }

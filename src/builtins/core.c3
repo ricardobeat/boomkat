@@ -5,6 +5,7 @@ module duktape::builtins;
 import duktape::types;
 import duktape::bytecode;
 import duktape::hstring;
+import duktape::hbigint;
 import duktape::hobject;
 import duktape::heap;
 import duktape::env;
@@ -643,6 +644,10 @@ fn void print_tval(TVal* val) {
             io::printf("[object Object]");
         case LIGHTFUNC:
             io::printf("[function]");
+        case BIGINT:
+            char[48] bbuf;
+            char[] bs = hbigint::int128_to_decimal(val.get_bigint(), bbuf[..]);
+            for (usz bi = 0; bi < bs.len; bi++) { io::putchar(bs[bi]); }
         default:
             io::printf("[unknown]");
     }
@@ -1530,6 +1535,11 @@ fn HString* builtin_to_string(Heap* heap, TVal* val) {
             return builtin_intern_string(heap, "[object Object]");
         case LIGHTFUNC:
             return builtin_intern_string(heap, "[function]");
+        case BIGINT: {
+            char[48] bbuf;
+            char[] bs = hbigint::int128_to_decimal(val.get_bigint(), bbuf[..]);
+            return builtin_intern_string(heap, bs);
+        }
         default:
             return null;
     }

@@ -21,6 +21,13 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
     Vm* vm = ds.vm;
     switch (op) {
         case Opcode.UNP:
+            if (rb.is_bigint()) {
+                // ES2020 §12.5.4: unary + on a BigInt throws TypeError.
+                if (vm_bigint_unary(vm, Opcode.UNP, ra, rb) == BigIntOpResult.THREW) {
+                    if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                }
+                return (TVal){};
+            }
             if (rb.is_fastint()) {
                 // Unary + on FASTINT stays FASTINT
                 ra.set_fastint(rb.get_fastint());
@@ -31,7 +38,29 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
             }
             return (TVal){};
 
+        case Opcode.TONUMERIC:
+            // ES2020 §7.1.3 ToNumeric: BigInt passes through unchanged;
+            // everything else behaves like unary plus (ToNumber).
+            if (rb.is_bigint()) {
+                vm.heap.tval_copy_ref(ra, rb);
+                return (TVal){};
+            }
+            if (rb.is_fastint()) {
+                ra.set_fastint(rb.get_fastint());
+            } else {
+                double tn_b = vm_to_number(vm,rb);
+                if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                ra.set_number(tn_b);
+            }
+            return (TVal){};
+
         case Opcode.UNM:
+            if (rb.is_bigint()) {
+                if (vm_bigint_unary(vm, Opcode.UNM, ra, rb) == BigIntOpResult.THREW) {
+                    if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                }
+                return (TVal){};
+            }
             if (rb.is_fastint()) {
                 long unm_val = rb.get_fastint();
                 if (unm_val == 0) {
@@ -50,6 +79,12 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
         case Opcode.BNOT:
             // Bitwise NOT always produces Int32, always fits in FASTINT
         {
+            if (rb.is_bigint()) {
+                if (vm_bigint_unary(vm, Opcode.BNOT, ra, rb) == BigIntOpResult.THREW) {
+                    if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                }
+                return (TVal){};
+            }
             int bnot_b = toint32(vm_to_number(vm,rb));
             if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
             ra.set_fastint((long)(~bnot_b));
@@ -75,6 +110,10 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
         case Opcode.INC:
             if (ra.is_fastint()) {
                 ra.set_fastint(ra.get_fastint() + 1L);
+            } else if (ra.is_bigint()) {
+                if (vm_bigint_incdec(vm, ra, true) == BigIntOpResult.THREW) {
+                    if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                }
             } else {
                 // Slow path: convert to number, increment, store back
                 double d = vm_to_number(vm,ra);
@@ -85,6 +124,10 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
         case Opcode.DEC:
             if (ra.is_fastint()) {
                 ra.set_fastint(ra.get_fastint() - 1L);
+            } else if (ra.is_bigint()) {
+                if (vm_bigint_incdec(vm, ra, false) == BigIntOpResult.THREW) {
+                    if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                }
             } else {
                 double d = vm_to_number(vm,ra);
                 if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
@@ -153,6 +196,18 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                                     b.prop_values()[vic.prop_idx].set_number((double)v);
                                     ra.set_number((double)v);
                                 }
+                            } else if (old_val.is_bigint()) {
+                                int128? nr = bigint_step(old_val.get_bigint(), is_inc);
+                                if (catch nr) {
+                                    vm_set_range_error(vm, "BigInt value exceeds supported precision");
+                                    if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                                    return (TVal){};
+                                }
+                                if (!vm_set_reg_bigint(vm, &b.prop_values()[vic.prop_idx], nr)) {
+                                    if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                                    return (TVal){};
+                                }
+                                vm.heap.tval_copy_ref(ra, &b.prop_values()[vic.prop_idx]);
                             } else {
                                 double d = vm_to_number(vm,&old_val);
                                 if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
@@ -206,6 +261,18 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                             cur.bindings.prop_values()[idx].set_number((double)v);
                             ra.set_number((double)v);
                         }
+                    } else if (old_val.is_bigint()) {
+                        int128? nr = bigint_step(old_val.get_bigint(), is_inc);
+                        if (catch nr) {
+                            vm_set_range_error(vm, "BigInt value exceeds supported precision");
+                            if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                            return (TVal){};
+                        }
+                        if (!vm_set_reg_bigint(vm, &cur.bindings.prop_values()[idx], nr)) {
+                            if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                            return (TVal){};
+                        }
+                        vm.heap.tval_copy_ref(ra, &cur.bindings.prop_values()[idx]);
                     } else {
                         double d = vm_to_number(vm,&old_val);
                         if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);

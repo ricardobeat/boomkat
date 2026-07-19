@@ -166,6 +166,16 @@ bool g_disable_optimize = false;
 fn void set_disable_optimize(bool v) { g_disable_optimize = v; }
 fn bool get_disable_optimize()       { return g_disable_optimize; }
 
+/// Record a compile-error message into the module-level buffer (first writer
+/// wins, matching existing error sites).  Position defaults to zero unless
+/// callers set g_last_err_line / g_last_err_col separately.
+fn void set_compile_error(char[] msg) {
+    if (g_last_err_msg[0] != 0) return;
+    usz copy_len = msg.len < (g_last_err_msg.len - 1) ? msg.len : (g_last_err_msg.len - 1);
+    libc::memcpy(&g_last_err_msg[0], msg.ptr, copy_len);
+    g_last_err_msg[copy_len] = 0;
+}
+
 /// Retrieve the last compile error message (pointer to the module-level buffer).
 fn char* last_error_msg()   { return &g_last_err_msg[0]; }
 fn uint  last_error_line()  { return g_last_err_line; }

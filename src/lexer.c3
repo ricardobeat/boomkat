@@ -2093,6 +2093,7 @@ fn bool Lexer.prev_was_operand(&self) {
         case TokenType.RBRACE:
         case TokenType.IDENTIFIER:
         case TokenType.NUMBER:
+        case TokenType.BIGINT:
         case TokenType.STRING:
         case TokenType.REGEXP:
         case TokenType.TEMPLATE:

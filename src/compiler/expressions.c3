@@ -1157,10 +1157,11 @@ fn ushort? CompilerContext.postfix_expr(&self) {
             return COMPILE_ERROR~;
         }
         self.advance()!;
-        // Save original value and convert to ToNumber (ES5 §11.3.1)
+        // Save original value and convert to ToNumeric (ES2020 §13.4.3.1):
+        // BigInt passes through, other types coerce to Number.
         ushort saved = self.alloc_reg();
         self.emit_abc(Opcode.LDREG, (uint)saved, (uint)operand, 0);
-        self.emit_abc(Opcode.UNP, (uint)saved, (uint)saved, 0);
+        self.emit_abc(Opcode.TONUMERIC, (uint)saved, (uint)saved, 0);
 
         // If the LHS was a member expression (e.g. obj.prop), emit INC +
         // PUTPROP to write the new value back. The GETPROP emitted by
@@ -1199,10 +1200,11 @@ fn ushort? CompilerContext.postfix_expr(&self) {
             return COMPILE_ERROR~;
         }
         self.advance()!;
-        // Save original value and convert to ToNumber (ES5 §11.3.1)
+        // Save original value and convert to ToNumeric (ES2020 §13.4.3.1):
+        // BigInt passes through, other types coerce to Number.
         ushort saved = self.alloc_reg();
         self.emit_abc(Opcode.LDREG, (uint)saved, (uint)operand, 0);
-        self.emit_abc(Opcode.UNP, (uint)saved, (uint)saved, 0);
+        self.emit_abc(Opcode.TONUMERIC, (uint)saved, (uint)saved, 0);
 
         bool handled = false;
         if (self.last_was_member) {
@@ -2397,7 +2399,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
         case TokenType.BIGINT:
             self.last_was_getvar = false;
             Token bi_tok = self.advance()!;
-            uint bi_idx = self.add_bigint_constant(bi_tok.str_value);
+            uint bi_idx = self.add_bigint_constant(bi_tok.str_value)!;
             ushort bi_reg = self.alloc_reg();
             self.emit(bytecode::make_a_bc(Opcode.LDCONST, (uint)bi_reg, bi_idx));
             return bi_reg;

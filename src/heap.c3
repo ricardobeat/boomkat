@@ -1450,7 +1450,7 @@ fn void Heap.decref(&self, HeapHeader* hdr) {
             if (hdr.is_object()) {
                 hobject::hobject_free((HObject*)hdr, (void*)self);
             } else {
-                // Buffer
+                // Buffer or BigInt box — leaf, free directly.
                 self.free_func(self.heap_udata, hdr);
             }
         }
@@ -1618,10 +1618,16 @@ fn void Heap.mark_tval(&self, TVal* v) {
                 self.gray_push(obj);
             }
         }
-    } else if (v.is_string() || v.is_bigint()) {
+    } else if (v.is_string()) {
         HString* s = (HString*)v.get_heapptr();
         if (s != null) {
             ((HeapHeader*)s).set_reachable();
+        }
+    } else if (v.is_bigint()) {
+        // BigInt box is a GC leaf on the heap_allocated list — mark only.
+        HeapHeader* b = (HeapHeader*)v.get_heapptr();
+        if (b != null) {
+            b.set_reachable();
         }
     }
 }

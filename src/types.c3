@@ -131,7 +131,7 @@ const ulong NANBOX_PAYLOAD_MASK = 0x0000FFFFFFFFFFFF;  // bits 47-0
 /// stored in bits 63-48, matching Duktape's encoding. All doubles must
 /// have bits 63-48 <= 0xFFF0 (achieved by NaN normalization in set_number).
 const ulong TAG_FASTINT    = 0xFFF1;  // embed: 48-bit signed integer
-const ulong TAG_BIGINT     = 0xFFF2;  // embed: HString* ptr (interned digit string)
+const ulong TAG_BIGINT     = 0xFFF2;  // embed: HBigInt* ptr (int128 box)
 const ulong TAG_UNDEFINED  = 0xFFF3;  // embed: nothing
 const ulong TAG_NULL_VAL   = 0xFFF4;  // embed: nothing
 const ulong TAG_BOOLEAN    = 0xFFF5;  // embed: 0 or 1
@@ -669,11 +669,13 @@ $endif
 // HeapHeader — common header for all GC-managed objects
 // ============================================================================
 
-/// Discriminator for the three heap-allocated object families.
+/// Discriminator for the heap-allocated object families.
+/// Stored in a 2-bit field (see HeapFlags.htype), so at most 4 values.
 enum HType : char {
     STRING,
     OBJECT,
     BUFFER,
+    BIGINT,
 }
 
 /// Bit-packed flags stored at the front of every heap header.
@@ -716,6 +718,8 @@ fn bool  HeapHeader.is_object(&self) { return self.flags.htype == HType.OBJECT; 
 fn bool  HeapHeader.is_string(&self) { return self.flags.htype == HType.STRING; }
 /// Returns true when this header belongs to a buffer.
 fn bool  HeapHeader.is_buffer(&self) { return self.flags.htype == HType.BUFFER; }
+/// Returns true when this header belongs to a BigInt box.
+fn bool  HeapHeader.is_bigint(&self) { return self.flags.htype == HType.BIGINT; }
 
 /// Increments the reference count of this heap object.
 /// Safe to call on null pointers (no-op).

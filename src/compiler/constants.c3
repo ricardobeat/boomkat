@@ -4,6 +4,7 @@ import duktape::types;
 import duktape::lexer;
 import duktape::bytecode;
 import duktape::hstring;
+import duktape::hbigint;
 import duktape::hobject;
 import duktape::heap;
 import libc;
@@ -137,50 +138,52 @@ fn uint CompilerContext.add_number_constant(&self, double val) {
     return self.add_constant(tv);
 }
 
-/// Add a BigInt constant (interned digit string) and return its index.
-fn uint CompilerContext.add_bigint_constant(&self, char[] digits) {
+/// Add a BigInt constant and return its index.
+///
+/// `digits` is the lexer's literal text (possibly carrying a `0x`/`0o`/`0b`
+/// radix prefix and `_` separators).  It is parsed into a native int128 and
+/// boxed as an HBigInt.  A literal exceeding ±(2^127 − 1) — beyond this
+/// engine's fixed-width BigInt range — is a compile error (RangeError-ish).
+fn uint? CompilerContext.add_bigint_constant(&self, char[] digits) {
     Heap* hp = (Heap*)self.heap;
-    uint hash = hp.hash_string(digits);
 
-    // Intern the digit string
-    HString* hstr = hp.str_table_lookup(digits, hash);
-    if (hstr == null) {
-        hstr = hstring::hstring_alloc(self.heap, digits, hash) ?? null;
-        if (hstr != null) {
-            hp.str_table_insert(hstr);
-            ((types::HeapHeader*)hstr).incref();
-            hstr.flags.is_interned = true;
+    int128? parsed = hbigint::parse_bigint_literal(digits);
+    if (catch excuse = parsed) {
+        if (excuse == hbigint::BIGINT_OVERFLOW) {
+            set_compile_error("BigInt value exceeds supported precision");
+        } else {
+            set_compile_error("Invalid BigInt literal");
         }
+        return COMPILE_ERROR~;
     }
 
-    // Wrap as BIGINT TVal (set_bigint does incref)
-    TVal tv;
-    if (hstr != null) {
-        tv.set_bigint(hstr);
-    } else {
-        tv.set_bigint(null);
+    // Box the value.  hbigint_alloc registers it on the mark-and-sweep list and
+    // flags it a temproot; the constant-pool slot below is its anchoring ref.
+    hbigint::HBigInt*? box_r = hbigint::hbigint_alloc(hp, parsed);
+    if (catch box_r) {
+        set_compile_error("out of memory allocating BigInt");
+        return COMPILE_ERROR~;
     }
+    hbigint::HBigInt* box = box_r;
+
+    // Wrap as a BIGINT TVal (set_bigint does an incref → refcount now 2:
+    // the alloc's initial ref + this one).  Release the alloc's initial ref so
+    // the pool slot holds exactly one reference.
+    TVal tv;
+    tv.set_bigint(box);
+    hp.decref((types::HeapHeader*)box);
 
     ulong val_bits = tv.get_raw_bits();
 
-    // Check if this bigint (by pointer) is already in the constant pool
-    uint found_idx = self.lookup_constant_hash(val_bits);
-    if (found_idx < self.const_count) {
-        // Release tv's reference; pool already has one
-        if (hstr != null) { hp.decref((types::HeapHeader*)hstr); }
-        return found_idx;
-    }
-
     self.ensure_const_cap();
     if (self.const_count >= self.const_cap) {
-        if (hstr != null) { hp.decref((types::HeapHeader*)hstr); }
+        // No pool slot available — drop our reference.
+        hp.decref((types::HeapHeader*)box);
         return self.const_count;
     }
     uint idx = self.const_count;
     self.constants[idx] = tv;
     self.insert_constant_hash(val_bits, idx);
-    // Pool entry takes over tv's reference; give it one more for the pool slot
-    if (hstr != null) { ((types::HeapHeader*)hstr).incref(); }
     self.const_count++;
     return idx;
 }

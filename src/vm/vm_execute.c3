@@ -1746,6 +1746,13 @@ fn TVal? Vm.run(Vm* vm) {
                 } else {
                     ra.set_undefined();
                 }
+            } else if (prim_b.is_bigint() || prim_c.is_bigint()) {
+                // ES2020 §12.8.5: neither primitive is a String → numeric add.
+                // BigInt operands: both must be BigInt (else TypeError).
+                if (vm_bigint_binop(vm, Opcode.ADD, ra, &prim_b, &prim_c) == BigIntOpResult.THREW) {
+                    if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                    if (ds.needs_restart) break;
+                }
             } else {
                 double add_b = vm_to_number(vm,&prim_b);
                 if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
@@ -1756,6 +1763,13 @@ fn TVal? Vm.run(Vm* vm) {
         }
 
         case Opcode.SUB:
+            if (rb.is_bigint() || rc.is_bigint()) {
+                if (vm_bigint_binop(vm, Opcode.SUB, ra, rb, rc) == BigIntOpResult.THREW) {
+                    if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                    if (ds.needs_restart) break;
+                }
+                continue;
+            }
             if (types::both_fastint(rb, rc)) {
                 long diff = rb.get_fastint() - rc.get_fastint();
                 if (diff >= types::FASTINT_MIN && diff <= types::FASTINT_MAX) {
@@ -1774,6 +1788,13 @@ fn TVal? Vm.run(Vm* vm) {
             continue;
 
         case Opcode.MUL:
+            if (rb.is_bigint() || rc.is_bigint()) {
+                if (vm_bigint_binop(vm, Opcode.MUL, ra, rb, rc) == BigIntOpResult.THREW) {
+                    if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                    if (ds.needs_restart) break;
+                }
+                continue;
+            }
             if (types::both_fastint(rb, rc)) {
                 // 48-bit operands can overflow 64-bit signed long (2^47 * 2^47 = 2^94).
                 // Guard: if both operands fit in 31 bits the product fits in 62 bits
@@ -1802,6 +1823,13 @@ fn TVal? Vm.run(Vm* vm) {
             continue;
 
         case Opcode.DIV: {
+            if (rb.is_bigint() || rc.is_bigint()) {
+                if (vm_bigint_binop(vm, Opcode.DIV, ra, rb, rc) == BigIntOpResult.THREW) {
+                    if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                    if (ds.needs_restart) break;
+                }
+                continue;
+            }
             double div_b = vm_to_number(vm,rb);
             if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
             if (ds.needs_restart) break;
@@ -1812,6 +1840,13 @@ fn TVal? Vm.run(Vm* vm) {
         }
 
         case Opcode.MOD:
+            if (rb.is_bigint() || rc.is_bigint()) {
+                if (vm_bigint_binop(vm, Opcode.MOD, ra, rb, rc) == BigIntOpResult.THREW) {
+                    if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                    if (ds.needs_restart) break;
+                }
+                continue;
+            }
             if (types::both_fastint(rb, rc) && rc.get_fastint() != 0) {
                 long mod_result = rb.get_fastint() % rc.get_fastint();
                 if (mod_result == 0 && rb.get_fastint() < 0) {
@@ -1831,6 +1866,13 @@ fn TVal? Vm.run(Vm* vm) {
             continue;
 
         case Opcode.EXP: {
+            if (rb.is_bigint() || rc.is_bigint()) {
+                if (vm_bigint_binop(vm, Opcode.EXP, ra, rb, rc) == BigIntOpResult.THREW) {
+                    if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                    if (ds.needs_restart) break;
+                }
+                continue;
+            }
             double exp_b = vm_to_number(vm,rb);
             if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
             if (ds.needs_restart) break;
@@ -1854,6 +1896,7 @@ fn TVal? Vm.run(Vm* vm) {
         case Opcode.LNOT:
         case Opcode.TYPEOF:
         case Opcode.VOID:
+        case Opcode.TONUMERIC:
         case Opcode.INC:
         case Opcode.DEC:
         case Opcode.PUTARG:
@@ -1868,6 +1911,13 @@ fn TVal? Vm.run(Vm* vm) {
             // Fast path: FASTINTs are already integer-valued; cast directly to int
             // instead of round-tripping through double + toint32.
         {
+            if (rb.is_bigint() || rc.is_bigint()) {
+                if (vm_bigint_binop(vm, Opcode.BAND, ra, rb, rc) == BigIntOpResult.THREW) {
+                    if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                    if (ds.needs_restart) break;
+                }
+                continue;
+            }
             if (types::both_fastint(rb, rc)) {
                 ra.set_fastint((long)((int)rb.get_fastint() & (int)rc.get_fastint()));
                 continue;
@@ -1883,6 +1933,13 @@ fn TVal? Vm.run(Vm* vm) {
 
         case Opcode.BOR:
         {
+            if (rb.is_bigint() || rc.is_bigint()) {
+                if (vm_bigint_binop(vm, Opcode.BOR, ra, rb, rc) == BigIntOpResult.THREW) {
+                    if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                    if (ds.needs_restart) break;
+                }
+                continue;
+            }
             if (types::both_fastint(rb, rc)) {
                 ra.set_fastint((long)((int)rb.get_fastint() | (int)rc.get_fastint()));
                 continue;
@@ -1898,6 +1955,13 @@ fn TVal? Vm.run(Vm* vm) {
 
         case Opcode.BXOR:
         {
+            if (rb.is_bigint() || rc.is_bigint()) {
+                if (vm_bigint_binop(vm, Opcode.BXOR, ra, rb, rc) == BigIntOpResult.THREW) {
+                    if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                    if (ds.needs_restart) break;
+                }
+                continue;
+            }
             if (types::both_fastint(rb, rc)) {
                 ra.set_fastint((long)((int)rb.get_fastint() ^ (int)rc.get_fastint()));
                 continue;
@@ -1913,6 +1977,13 @@ fn TVal? Vm.run(Vm* vm) {
 
         case Opcode.SHL:
         {
+            if (rb.is_bigint() || rc.is_bigint()) {
+                if (vm_bigint_binop(vm, Opcode.SHL, ra, rb, rc) == BigIntOpResult.THREW) {
+                    if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                    if (ds.needs_restart) break;
+                }
+                continue;
+            }
             if (types::both_fastint(rb, rc)) {
                 ra.set_fastint((long)((int)rb.get_fastint() << ((int)rc.get_fastint() & 0x1F)));
                 continue;
@@ -1928,6 +1999,13 @@ fn TVal? Vm.run(Vm* vm) {
 
         case Opcode.SHR:
         {
+            if (rb.is_bigint() || rc.is_bigint()) {
+                if (vm_bigint_binop(vm, Opcode.SHR, ra, rb, rc) == BigIntOpResult.THREW) {
+                    if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                    if (ds.needs_restart) break;
+                }
+                continue;
+            }
             if (types::both_fastint(rb, rc)) {
                 ra.set_fastint((long)((int)rb.get_fastint() >> ((int)rc.get_fastint() & 0x1F)));
                 continue;
@@ -1943,6 +2021,13 @@ fn TVal? Vm.run(Vm* vm) {
 
         case Opcode.USHR:
         {
+            if (rb.is_bigint() || rc.is_bigint()) {
+                if (vm_bigint_binop(vm, Opcode.USHR, ra, rb, rc) == BigIntOpResult.THREW) {
+                    if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                    if (ds.needs_restart) break;
+                }
+                continue;
+            }
             uint ushr_b = (uint)toint32(vm_to_number(vm,rb));
             if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
             if (ds.needs_restart) break;
@@ -1996,6 +2081,7 @@ fn TVal? Vm.run(Vm* vm) {
                     case LIGHTFUNC: seq_r = (rb.get_heapptr() == rc.get_heapptr()); break;
                     case POINTER:   seq_r = (rb.get_heapptr() == rc.get_heapptr()); break;
                     case BUFFER:    seq_r = (rb.get_heapptr() == rc.get_heapptr()); break;
+                    case BIGINT:    seq_r = (rb.get_bigint() == rc.get_bigint()); break;
                     default: break;
                 }
             } else if ((tag_b == NUMBER && tag_c == FASTINT) ||
@@ -2004,6 +2090,7 @@ fn TVal? Vm.run(Vm* vm) {
                 double nc = (tag_c == FASTINT) ? (double)rc.get_fastint() : rc.get_number();
                 seq_r = (nb == nc);
             }
+            // Cross-type (e.g. BigInt === Number) is always false for ===.
             ra.set_boolean(seq_r);
             continue;
         }
@@ -2040,6 +2127,7 @@ fn TVal? Vm.run(Vm* vm) {
                     case LIGHTFUNC: sneq_r = (rb.get_heapptr() != rc.get_heapptr()); break;
                     case POINTER:   sneq_r = (rb.get_heapptr() != rc.get_heapptr()); break;
                     case BUFFER:    sneq_r = (rb.get_heapptr() != rc.get_heapptr()); break;
+                    case BIGINT:    sneq_r = (rb.get_bigint() != rc.get_bigint()); break;
                     default: break;
                 }
             } else if ((tag_b == NUMBER && tag_c == FASTINT) ||

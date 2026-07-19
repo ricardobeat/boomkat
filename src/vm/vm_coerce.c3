@@ -4,6 +4,7 @@ import duktape::types;
 import duktape::bytecode;
 import duktape::heap;
 import duktape::hstring;
+import duktape::hbigint;
 import duktape::hobject;
 import duktape::env;
 import duktape::builtins;
@@ -97,6 +98,13 @@ fn int vm_relational_compare(Vm* vm, TVal* x, TVal* y, bool* is_undef) {
             return c < 0 ? -1 : (c > 0 ? 1 : 0);
         }
     }
+
+    // === BigInt relational comparison (ES2020 §7.2.13 by mathematical value) ===
+    if (px.is_bigint() || py.is_bigint()) {
+        int r = vm_bigint_relational(vm, &px, &py, is_undef);
+        return r;
+    }
+
     double dx = vm_to_number(vm, &px);
     if (vm.throw_pending) return 0;
     double dy = vm_to_number(vm, &py);
@@ -399,6 +407,14 @@ fn HString*? vm_number_to_string(Vm* vm, double val) {
     return vm.heap.str_intern(buf[:len]);
 }
 
+/// Convert a BigInt's int128 value to an interned decimal HString*.
+/// (BigInt.prototype.toString handles non-decimal radices separately.)
+fn HString*? vm_bigint_to_string(Vm* vm, int128 val) {
+    char[48] buf;
+    char[] s = hbigint::int128_to_decimal(val, buf[..]);
+    return vm.heap.str_intern(s);
+}
+
 /// Convert a FASTINT to an interned HString* using the small-integer cache
 /// for values 0–255, or fast int-to-string conversion for larger values.
 fn HString*? vm_fastint_to_string(Vm* vm, long val) {
@@ -424,6 +440,8 @@ fn HString*? vm_to_string(Vm* vm, TVal* val) {
             return vm_number_to_string(vm, val.get_number());
         case FASTINT:
             return vm_fastint_to_string(vm, val.get_fastint());
+        case BIGINT:
+            return vm_bigint_to_string(vm, val.get_bigint());
         case BOOLEAN:
             if (val.get_boolean()) {
                 return (HString*)h.strs[heap::BuiltinStr.TRUE];
@@ -615,6 +633,27 @@ fn void vm_set_type_error(Vm* vm, char[] msg) {
     HObject*? err_raw = vm.heap.alloc_object(hobject::ObjClass.ERROR);
     if (try err = err_raw) {
         err.prototype = vm.heap.type_err_proto;
+        HString* msg_str = intern_string(vm, msg);
+        if (msg_str != null) {
+            TVal msg_val;
+            msg_val.set_string(msg_str);
+            HString* msg_key = intern_string(vm, "message");
+            if (msg_key != null) {
+                err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WEC);
+            }
+        }
+        TVal err_val;
+        err_val.set_object(err);
+        vm.heap.tval_copy_ref(&vm.throw_value, &err_val);
+    }
+    vm.throw_pending = true;
+}
+
+/// Helper: create a RangeError with a custom message and set vm.throw_pending.
+fn void vm_set_range_error(Vm* vm, char[] msg) {
+    HObject*? err_raw = vm.heap.alloc_object(hobject::ObjClass.ERROR);
+    if (try err = err_raw) {
+        err.prototype = vm.heap.range_err_proto;
         HString* msg_str = intern_string(vm, msg);
         if (msg_str != null) {
             TVal msg_val;

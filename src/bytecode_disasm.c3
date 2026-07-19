@@ -254,6 +254,7 @@ const char*[Opcode.LAST_OP.ordinal + 1] OPCODE_NAMES = {
     [Opcode.ADD_BRAND.ordinal]   = "ADD_BRAND",
     [Opcode.CHK_BRAND.ordinal]   = "CHK_BRAND",
     [Opcode.INITPROP_PRIV.ordinal] = "INITPROP_PRIV",
+    [Opcode.TONUMERIC.ordinal]   = "TONUMERIC",
     [Opcode.LAST_OP.ordinal]     = "LAST_OP",
 };
 
