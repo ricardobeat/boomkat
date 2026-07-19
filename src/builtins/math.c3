@@ -142,29 +142,22 @@ fn void builtin_math_pow(BuiltinContext* ctx) {
     double x = math_arg(ctx, 0);
     double y = math_arg(ctx, 1);
     ctx.result.set_number(0.0);
-    // ES6 §20.2.2.26 Math.pow(x, y):
-    // 1. If y is NaN, the result is NaN (unless x is 1)
-    // 2. If y is +0 or -0, the result is 1, even if x is NaN
-    // 3. If x is +1, the result is 1, even if y is NaN or ±∞
-    // 4. If |x| is 1 and y is ±∞, the result is NaN
-    if (x == 1.0) {
-        ctx.result.set_number(1.0);
-        return;
-    }
-    if (y == 0.0) {
-        ctx.result.set_number(1.0);
-        return;
-    }
-    if (math::is_nan(y)) {
-        ctx.result.set_number(double::nan);
-        return;
-    }
-    if (math::is_inf(y)) {
-        if (x == -1.0) {
-            ctx.result.set_number(double::nan);
-            return;
-        }
-    }
+    // Number::exponentiate(base, exponent) — ES2024 §13.6.4
+    // 1. If exponent is NaN, return NaN.
+    // 2. If exponent is +0𝔽 or -0𝔽, return 1𝔽.
+    // 3. If base is NaN, return NaN.
+    // 4. If base is +∞𝔽, then [sign of ∞ determines result]
+    // 5. If base is -∞𝔽, then [...]
+    // 6. If base is +0𝔽 or -0𝔽, then [...]
+    // 7. If base is 1𝔽, return 1𝔽.
+    // 8. If exponent is +∞𝔽, return NaN.
+    // 9. If exponent is -∞𝔽, return NaN.
+    if (math::is_nan(y)) { return ctx.result.set_number(double::nan); }
+    if (y == 0.0) { return ctx.result.set_number(1.0); }
+    if (math::is_nan(x)) { return ctx.result.set_number(double::nan); }
+    if (math::abs(x) == 1.0 && math::is_inf(y)) { return ctx.result.set_number(double::nan); }
+    if (x == 1.0) { return ctx.result.set_number(1.0); }
+    if (x == -1.0 && math::is_inf(y)) { return ctx.result.set_number(double::nan); }
     ctx.result.set_number(math_pow(x, y));
 }
 
