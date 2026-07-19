@@ -12,7 +12,6 @@ import duktape::re_bindings;
 import duktape::dtoa_bindings;
 import std::io;
 import std::math;
-import libc;
 
 // ============================================================================
 // Helpers

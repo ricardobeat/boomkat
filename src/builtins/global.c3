@@ -4,7 +4,6 @@ import duktape::types;
 import duktape::bytecode;
 import std::io;
 import std::math;
-import libc;
 import duktape::dtoa_bindings;
 import duktape::lexer;
 import duktape::compiler;

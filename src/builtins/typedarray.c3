@@ -9,7 +9,6 @@ import duktape::hstring;
 import duktape::hobject;
 import duktape::heap;
 import duktape::vm;
-import libc;
 import std::io;
 import std::math;
 

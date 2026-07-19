@@ -4,7 +4,6 @@
 module duktape::builtins;
 
 import duktape::types;
-import libc;
 import std::io;
 import duktape::hstring;
 import duktape::heap;

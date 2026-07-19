@@ -10,7 +10,6 @@ import duktape::hobject;
 import duktape::compiler;
 import duktape::lexer;
 import std::io;
-import libc;
 
 // ============================================================================
 // GeneratorFunction constructor (ES6 §25.2.1)

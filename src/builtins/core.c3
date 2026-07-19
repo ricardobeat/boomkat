@@ -16,7 +16,6 @@ import duktape::vm;
 import duktape::dtoa_bindings;
 import std::io;
 import std::math;
-import libc;
 
 // Math functions forwarded to std::math (LLVM intrinsics; verified
 // bit-identical to libm). Kept behind these `math_*` names so the Math.*

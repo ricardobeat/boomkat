@@ -3,7 +3,6 @@ module duktape::builtins;
 import duktape::types;
 import duktape::env;
 import std::math;
-import libc;
 
 import duktape::heap;
 import duktape::hstring;

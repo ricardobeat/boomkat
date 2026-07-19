@@ -30,7 +30,6 @@ import duktape::re_bindings;
 import duktape::heap;
 import std::core::mem::mempool;
 import std::io;
-import libc;
 
 // Faults for optional returns
 faultdef PROP_NOT_FOUND;

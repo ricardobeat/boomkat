@@ -22,7 +22,6 @@ import duktape::hobject;
 import duktape::esm;
 import std::io;
 import std::time;
-import libc;
 
 fn void print_usage(String argv0) {
     io::eprintfn("Usage:  %s [flags] <js_file>", argv0);

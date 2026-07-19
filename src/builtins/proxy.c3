@@ -17,7 +17,6 @@ import std::math;
 import duktape::hstring;
 import duktape::env;
 import std::io;
-import libc;
 
 import duktape::heap;
 import duktape::hobject;
