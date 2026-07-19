@@ -16,7 +16,6 @@ module duktape::hstring;
 import duktape::types;
 import duktape::heap;
 import std::core::mem;
-import libc;
 
 // ============================================================================
 // Constants
@@ -149,7 +148,7 @@ fn bool HString.equals(&self, char[] data) {
     if (data.len == 0) {
         return true;
     }
-    return libc::memcmp(self.get_cstr(), data.ptr, data.len) == 0;
+    return mem::equals(self.get_cstr(), data.ptr, data.len);
 }
 
 /// Compares two HStrings for equality.  When both are interned pointer
@@ -161,9 +160,17 @@ fn bool HString.equals_hstring(&self, HString* other) {
     if (!self.flags.is_interned || !other.flags.is_interned) {
         if (self.blen != other.blen) return false;
         if (self.hash != other.hash) return false;
-        return libc::memcmp(self.get_cstr(), other.get_cstr(), self.blen) == 0;
+        return mem::equals(self.get_cstr(), other.get_cstr(), self.blen);
     }
     return false;
+}
+
+/// Three-way byte comparison over `n` bytes: -1, 0, or 1.
+fn int byte_compare(char* a, char* b, usz n) @local {
+    for (usz i = 0; i < n; i++) {
+        if (a[i] != b[i]) return a[i] < b[i] ? -1 : 1;
+    }
+    return 0;
 }
 
 /// Lexicographic comparison of two HStrings.
@@ -173,8 +180,8 @@ fn bool HString.equals_hstring(&self, HString* other) {
 /// UTF-8).
 fn int hstring_compare(HString* a, HString* b) {
     int min_len = (int)(a.blen < b.blen ? a.blen : b.blen);
-    int cmp = libc::memcmp(a.get_cstr(), b.get_cstr(), (usz)min_len);
-    if (cmp != 0) return cmp > 0 ? 1 : -1;
+    int cmp = byte_compare(a.get_cstr(), b.get_cstr(), (usz)min_len);
+    if (cmp != 0) return cmp;
     if (a.blen == b.blen) return 0;
     return a.blen > b.blen ? 1 : -1;
 }
@@ -311,7 +318,7 @@ fn HString*? hstring_alloc(void* heap_ptr, char[] data, uint hash) {
     }
 
     // Zero-fill the header portion.
-    libc::memset(raw, 0, HSTRING_HDR_SIZE);
+    mem::clear(raw, HSTRING_HDR_SIZE);
 
     HString* s = (HString*)raw;
 
@@ -347,7 +354,7 @@ fn HString*? hstring_alloc(void* heap_ptr, char[] data, uint hash) {
     // --- Copy bytes + NUL terminate ---
     char* dest = (char*)((usz)raw + HSTRING_HDR_SIZE);
     if (data.len > 0) {
-        libc::memcpy(dest, data.ptr, data.len);
+        mem::copy(dest, data.ptr, data.len);
     }
     dest[data.len] = 0;  // NUL terminator
 
@@ -368,7 +375,7 @@ fn HString*? hstring_concat(void* heap_ptr, HString* a, HString* b) {
         return duktape::types::ALLOC_ERROR~;
     }
 
-    libc::memset(raw, 0, HSTRING_HDR_SIZE);
+    mem::clear(raw, HSTRING_HDR_SIZE);
 
     HString* s = (HString*)raw;
     s.flags.htype = HType.STRING;
@@ -383,11 +390,11 @@ fn HString*? hstring_concat(void* heap_ptr, HString* a, HString* b) {
     char* dest = (char*)((usz)raw + HSTRING_HDR_SIZE);
     if (a_len > 0) {
         char* src_a = (char*)((usz)a + HSTRING_HDR_SIZE);
-        libc::memcpy(dest, src_a, a_len);
+        mem::copy(dest, src_a, (sz)a_len);
     }
     if (b_len > 0) {
         char* src_b = (char*)((usz)b + HSTRING_HDR_SIZE);
-        libc::memcpy(dest + a_len, src_b, b_len);
+        mem::copy(dest + a_len, src_b, (sz)b_len);
     }
     dest[a_len + b_len] = 0;
 
@@ -841,7 +848,7 @@ fn int int_to_buf(long val, char* buf, usz cap) {
     }
     usz len = cap - pos;
     if (pos > 0) {
-        libc::memmove(buf, buf + pos, len);
+        mem::move(buf, buf + pos, (sz)len);
     }
     return (int)len;
 }
