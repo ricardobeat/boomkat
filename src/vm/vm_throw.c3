@@ -6,7 +6,6 @@ import duktape::hobject;
 import duktape::hstring;
 import duktape::heap;
 import duktape::builtins;
-import libc;
 
 // ============================================================================
 // Catcher chain — helper functions
@@ -216,26 +215,48 @@ fn bool vm_throw_error(Vm* vm, HObject* proto, char[] msg, Activation* act,
     return false;
 }
 
+/// Splice a format string containing `%s` placeholders and NUL-terminated
+/// `char*` args into `buf`, returning the bytes written (truncated to fit).
+/// All error-message formats used here are `%s`-only, so this fully replaces
+/// the previous snprintf without pulling in a printf implementation.
+fn int splice_fmt(char[] buf, char* fmt, char*[] args) @local {
+    int out = 0;
+    int cap = (int)buf.len;
+    int ai = 0;
+    for (int fi = 0; fmt[fi] != 0; fi++) {
+        if (fmt[fi] == '%' && fmt[fi + 1] == 's' && ai < args.len) {
+            char* a = args[ai++];
+            fi++;  // consume 's'
+            if (a != null) {
+                for (int j = 0; a[j] != 0; j++) {
+                    if (out >= cap) return out;
+                    buf[out++] = a[j];
+                }
+            }
+            continue;
+        }
+        if (out >= cap) return out;
+        buf[out++] = fmt[fi];
+    }
+    return out;
+}
+
 /// Create and throw an error with a single %s formatted message.
 fn bool vm_throw_error_fmt(Vm* vm, HObject* proto, char* fmt, char* arg,
                            Activation* act, Instruction** curr_pc, bool* needs_restart) {
     char[types::ERROR_MSG_BUF] buf;
-    int len = libc::snprintf(&buf, types::ERROR_MSG_BUF, (ZString)fmt, arg);
-    if (len > 0 && len < types::ERROR_MSG_BUF) {
-        return vm_throw_error(vm, proto, buf[:len], act, curr_pc, needs_restart);
-    }
-    return vm_throw_error(vm, proto, buf[:0], act, curr_pc, needs_restart);
+    char*[1] args = { arg };
+    int len = splice_fmt(&buf, fmt, args[..]);
+    return vm_throw_error(vm, proto, buf[:len], act, curr_pc, needs_restart);
 }
 
 /// Create and throw an error with two %s formatted arguments.
 fn bool vm_throw_error_fmt2(Vm* vm, HObject* proto, char* fmt, char* arg1, char* arg2,
                             Activation* act, Instruction** curr_pc, bool* needs_restart) {
     char[types::ERROR_MSG_BUF] buf;
-    int len = libc::snprintf(&buf, types::ERROR_MSG_BUF, (ZString)fmt, arg1, arg2);
-    if (len > 0 && len < types::ERROR_MSG_BUF) {
-        return vm_throw_error(vm, proto, buf[:len], act, curr_pc, needs_restart);
-    }
-    return vm_throw_error(vm, proto, buf[:0], act, curr_pc, needs_restart);
+    char*[2] args = { arg1, arg2 };
+    int len = splice_fmt(&buf, fmt, args[..]);
+    return vm_throw_error(vm, proto, buf[:len], act, curr_pc, needs_restart);
 }
 
 /// Helper to get index from valstack base to a pointer
