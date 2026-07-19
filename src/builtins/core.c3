@@ -18,26 +18,30 @@ import std::io;
 import std::math;
 import libc;
 
-// Math library externals (link-time resolved via @MathLibc)
-extern fn double math_pow(double x, double y) @MathLibc("pow");
-extern fn double math_sqrt(double x)          @MathLibc("sqrt");
-extern fn double math_exp(double x)           @MathLibc("exp");
-extern fn double math_log(double x)           @MathLibc("log");
-extern fn double math_sin(double x)           @MathLibc("sin");
-extern fn double math_cos(double x)           @MathLibc("cos");
-extern fn double math_tan(double x)           @MathLibc("tan");
-extern fn double math_acos(double x)          @MathLibc("acos");
-extern fn double math_asin(double x)          @MathLibc("asin");
-extern fn double math_atan(double x)          @MathLibc("atan");
-extern fn double math_atan2(double y, double x) @MathLibc("atan2");
-extern fn double math_cosh(double x)          @MathLibc("cosh");
-extern fn double math_sinh(double x)          @MathLibc("sinh");
-extern fn double math_tanh(double x)          @MathLibc("tanh");
-extern fn double math_acosh(double x)         @MathLibc("acosh");
-extern fn double math_asinh(double x)         @MathLibc("asinh");
-extern fn double math_atanh(double x)         @MathLibc("atanh");
-extern fn double math_log2(double x)          @MathLibc("log2");
-extern fn double math_log10(double x)         @MathLibc("log10");
+// Math functions forwarded to std::math (LLVM intrinsics; verified
+// bit-identical to libm). Kept behind these `math_*` names so the Math.*
+// builtin call sites are unchanged.
+fn double math_pow(double x, double y)  => math::pow(x, y);
+fn double math_sqrt(double x)           => math::sqrt(x);
+fn double math_exp(double x)            => math::exp(x);
+fn double math_log(double x)            => math::ln(x);
+fn double math_sin(double x)            => math::sin(x);
+fn double math_cos(double x)            => math::cos(x);
+fn double math_tan(double x)            => math::tan(x);
+fn double math_acos(double x)           => math::acos(x);
+fn double math_asin(double x)           => math::asin(x);
+fn double math_atan(double x)           => math::atan(x);
+fn double math_atan2(double y, double x) => math::atan2(y, x);
+fn double math_cosh(double x)           => math::cosh(x);
+fn double math_sinh(double x)           => math::sinh(x);
+fn double math_tanh(double x)           => math::tanh(x);
+fn double math_acosh(double x)          => math::acosh(x);
+fn double math_asinh(double x)          => math::asinh(x);
+fn double math_atanh(double x)          => math::atanh(x);
+fn double math_log2(double x)           => math::log2(x);
+fn double math_log10(double x)          => math::log10(x);
+
+// No std::math equivalent — these three remain link-time libm externs.
 extern fn double math_log1p(double x)         @MathLibc("log1p");
 extern fn double math_expm1(double x)         @MathLibc("expm1");
 extern fn double math_cbrt(double x)          @MathLibc("cbrt");
