@@ -535,9 +535,9 @@ fn double hstring_to_number(HString* hstr) {
     char* p = cstr + start;
 
     // --- Infinity / -Infinity / +Infinity ---
-    if (libc::strcmp((ZString)p, "Infinity") == 0)   return double::inf;
-    if (libc::strcmp((ZString)p, "+Infinity") == 0)  return double::inf;
-    if (libc::strcmp((ZString)p, "-Infinity") == 0)  return -double::inf;
+    if ((ZString)p == (ZString)"Infinity")   return double::inf;
+    if ((ZString)p == (ZString)"+Infinity")  return double::inf;
+    if ((ZString)p == (ZString)"-Infinity")  return -double::inf;
 
     // --- Hex integer literal (0x...) ---
     if (p[0] == '0' && (p[1] == 'x' || p[1] == 'X')) {
@@ -577,9 +577,9 @@ fn double hstring_to_number(HString* hstr) {
 
     // strtod accepts case-insensitive "infinity" but ES requires exact case
     if (result == double::inf || result == -double::inf) {
-        if (libc::strcmp((ZString)p, "Infinity") != 0 &&
-            libc::strcmp((ZString)p, "+Infinity") != 0 &&
-            libc::strcmp((ZString)p, "-Infinity") != 0) {
+        if ((ZString)p != (ZString)"Infinity" &&
+            (ZString)p != (ZString)"+Infinity" &&
+            (ZString)p != (ZString)"-Infinity") {
             return double::nan;
         }
     }

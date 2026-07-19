@@ -351,7 +351,7 @@ fn ModuleDef*? resolve_module(Heap* heap, char[] specifier, char[] base_name) {
         char* msg  = compiler::last_error_msg();
         uint  line = compiler::last_error_line();
         uint  col  = compiler::last_error_col();
-        usz   msg_len = (usz)libc::strlen((ZString)msg);
+        usz   msg_len = (usz)((ZString)msg).len();
         // Build the module name portion into a temp buffer for printing.
         char[512] name_buf;
         usz name_copy = normalized.len < 511 ? normalized.len : 511;

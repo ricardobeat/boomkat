@@ -500,7 +500,7 @@ fn HObject* regexp_build_match_result(BuiltinContext* ctx, void* re_data, HStrin
             int name_count = re_bindings::re_get_capture_count(re_data) - 1;
             char* p = group_names;
             for (int gi = 0; gi < name_count; gi++) {
-                usz name_len = libc::strlen((ZString)p);
+                usz name_len = (usz)((ZString)p).len();
                 if (name_len > 0) {
                     HString* name_str = builtin_intern_string(ctx.heap, p[:name_len]);
                     TVal cap_val;
@@ -569,7 +569,7 @@ fn HObject* regexp_build_match_result(BuiltinContext* ctx, void* re_data, HStrin
                     int name_count = re_bindings::re_get_capture_count(re_data) - 1;
                     char* p = group_names;
                     for (int gi = 0; gi < name_count; gi++) {
-                        usz name_len = libc::strlen((ZString)p);
+                        usz name_len = (usz)((ZString)p).len();
                         if (name_len > 0) {
                             HString* name_str = builtin_intern_string(ctx.heap, p[:name_len]);
                             TVal pair_tv;

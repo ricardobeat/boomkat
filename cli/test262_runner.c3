@@ -72,7 +72,7 @@ fn int run_manifest_loop(char[] mpath) {
 
     while (libc::fgets(&buf[0], 4096, fp) != null) {
         @pool() {
-            usz len = libc::strlen((ZString)&buf[0]);
+            usz len = (usz)((ZString)&buf[0]).len();
             while (len > 0 && (buf[len - 1] == '\n' || buf[len - 1] == '\r')) { len--; }
             buf[len] = 0;
             if (len == 0) { continue; }
@@ -657,7 +657,7 @@ fn int run_worker_loop() {
     char[4096] buf;
     while (libc::fgets(&buf[0], 4096, libc::stdin()) != null) {
         @pool() {
-            usz len = libc::strlen((ZString)&buf[0]);
+            usz len = (usz)((ZString)&buf[0]).len();
             while (len > 0 && (buf[len - 1] == '\n' || buf[len - 1] == '\r')) { len--; }
             buf[len] = 0;
             if (len == 0) { continue; }
@@ -700,7 +700,7 @@ fn int run_worker_loop() {
 
 fn int main(String[] args) {
     vm::test262_host_enabled = true;
-    if (args.len >= 2 && libc::strcmp((ZString)args[1].ptr, "--worker") == 0) {
+    if (args.len >= 2 && (ZString)args[1].ptr == (ZString)"--worker") {
         return run_worker_loop();
     }
     if (args.len < 2) {

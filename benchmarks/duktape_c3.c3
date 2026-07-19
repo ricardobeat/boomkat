@@ -163,7 +163,7 @@ fn int main(String[] args) {
         char* msg  = compiler::last_error_msg();
         uint  line = compiler::last_error_line();
         uint  col  = compiler::last_error_col();
-        usz   msg_len = (usz)libc::strlen((ZString)msg);
+        usz   msg_len = (usz)((ZString)msg).len();
         if (msg_len > 0) {
             io::eprintfn("%s: compile error at line %d:%d: %s", path, line, col, (ZString)msg);
         } else {

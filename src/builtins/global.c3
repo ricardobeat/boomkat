@@ -260,7 +260,7 @@ fn void builtin_parse_float(BuiltinContext* ctx) {
     usz start = i;
     if (i < blen && (cstr[i] == '+' || cstr[i] == '-')) i++;
 
-    if (i + 8 <= blen && libc::strncmp(&cstr[i], "Infinity", 8) == 0) {
+    if (i + 8 <= blen && mem::equals(&cstr[i], (char*)"Infinity", 8)) {
         double inf = (cstr[start] == '-') ? -double::inf : double::inf;
         ctx.result.set_number(inf);
         return;

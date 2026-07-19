@@ -772,7 +772,7 @@ fn double builtin_string_to_number(HString* hstr) {
         double inf_sign = 1.0;
         if (*q == '+') { q++; }
         else if (*q == '-') { inf_sign = -1.0; q++; }
-        if (libc::strncmp((ZString)q, "Infinity", 8) == 0) {
+        if (mem::equals(q, (char*)"Infinity", 8)) {
             uint rest = (uint)(q - cstr) + 8;
             uint tail = rest;
             bool only_ws = true;
@@ -884,9 +884,9 @@ fn double builtin_string_to_number(HString* hstr) {
         if (q[0] == '+' || q[0] == '-') q++;
         bool is_inf_text = (q[0] == 'i' || q[0] == 'I');
         if (is_inf_text &&
-            libc::strcmp((ZString)p, "Infinity") != 0 &&
-            libc::strcmp((ZString)p, "+Infinity") != 0 &&
-            libc::strcmp((ZString)p, "-Infinity") != 0) {
+            (ZString)p != (ZString)"Infinity" &&
+            (ZString)p != (ZString)"+Infinity" &&
+            (ZString)p != (ZString)"-Infinity") {
             return double::nan;
         }
     }
