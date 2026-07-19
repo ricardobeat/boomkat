@@ -2941,7 +2941,7 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
     // that outlives the compile context, so each CompiledFunction holds its
     // own stable copy of its name.
     if (name.len > 0) {
-        char* name_heap = (char*)libc::malloc((usz)name.len + 1);
+        char* name_heap = (char*)alloc::malloc_try(mem, (sz)((usz)name.len + 1)) ?? null;
         if (name_heap != null) {
             for (usz i = 0; i < (usz)name.len; i++) name_heap[i] = name[i];
             name_heap[name.len] = 0;
@@ -2984,7 +2984,7 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
         bool needs_async_prefix = inner_ctx.is_async && !span_has_async;
         usz alloc_len = (usz)slen + (needs_async_prefix ? (usz)6 : (usz)0);
         if (slen > 0) {
-            char* src_heap = (char*)libc::malloc((usz)alloc_len + 1);
+            char* src_heap = (char*)alloc::malloc_try(mem, (sz)((usz)alloc_len + 1)) ?? null;
             if (src_heap != null) {
                 usz off = 0;
                 if (needs_async_prefix) {
@@ -3151,7 +3151,7 @@ fn ushort? CompilerContext.parse_arrow_function_reparse(&self, uint src_start = 
     CompiledFunction* inner = self.compile_arrow_inner_reparse(effective_src_start, arrow_is_async)!;
 
     if (arrow_name.len > 0) {
-        char* name_heap = (char*)libc::malloc((usz)arrow_name.len + 1);
+        char* name_heap = (char*)alloc::malloc_try(mem, (sz)((usz)arrow_name.len + 1)) ?? null;
         if (name_heap != null) {
             for (usz i = 0; i < (usz)arrow_name.len; i++) name_heap[i] = arrow_name[i];
             name_heap[arrow_name.len] = 0;
@@ -3572,7 +3572,7 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
         if (src_end > (uint)arrow_ctx.lexer.source.len) src_end = (uint)arrow_ctx.lexer.source.len;
         uint slen = src_end - src_start;
         if (slen > 0) {
-            char* src_heap = (char*)libc::malloc((usz)slen + 1);
+            char* src_heap = (char*)alloc::malloc_try(mem, (sz)((usz)slen + 1)) ?? null;
             if (src_heap != null) {
                 for (usz i = 0; i < (usz)slen; i++) src_heap[i] = arrow_ctx.lexer.source[src_start + i];
                 src_heap[slen] = 0;
@@ -3618,7 +3618,7 @@ fn ushort? CompilerContext.parse_arrow_function(&self, char[]* params, ushort pa
     // Set the function's display name from the inferred source. This is a
     // non-binding name (no lexical scope entry) — only the name property.
     if (arrow_name.len > 0) {
-        char* name_heap = (char*)libc::malloc((usz)arrow_name.len + 1);
+        char* name_heap = (char*)alloc::malloc_try(mem, (sz)((usz)arrow_name.len + 1)) ?? null;
         if (name_heap != null) {
             for (usz i = 0; i < (usz)arrow_name.len; i++) name_heap[i] = arrow_name[i];
             name_heap[arrow_name.len] = 0;
@@ -3810,7 +3810,7 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner(&self, char[]* params,
         if (src_end > (uint)arrow_ctx.lexer.source.len) src_end = (uint)arrow_ctx.lexer.source.len;
         uint slen = src_end - src_start;
         if (slen > 0) {
-            char* src_heap = (char*)libc::malloc((usz)slen + 1);
+            char* src_heap = (char*)alloc::malloc_try(mem, (sz)((usz)slen + 1)) ?? null;
             if (src_heap != null) {
                 for (usz i = 0; i < (usz)slen; i++) src_heap[i] = arrow_ctx.lexer.source[src_start + i];
                 src_heap[slen] = 0;

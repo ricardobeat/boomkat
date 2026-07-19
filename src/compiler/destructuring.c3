@@ -384,7 +384,7 @@ fn bool? CompilerContext.parse_assign_target_lhs(&self,
 /// IteratorClose guard.
 fn void? CompilerContext.collect_assign_target(&self, DestructBind* bind)
 {
-    DeferredTarget* snap = (DeferredTarget*)libc::malloc(DeferredTarget::size);
+    DeferredTarget* snap = (DeferredTarget*)alloc::malloc_try(mem, (sz)(DeferredTarget::size)) ?? null;
     snap.lexer = *self.lexer;
     snap.pushback = self.pushback_stack;
     snap.pushback_count = self.pushback_count;
@@ -396,7 +396,7 @@ fn void? CompilerContext.collect_assign_target(&self, DestructBind* bind)
     uint   tgt_name = 0xFFFFFFFF;
     bool? is_member_res = self.parse_assign_target_lhs(&tgt_obj, &tgt_key, &tgt_name);
     if (catch err = is_member_res) {
-        libc::free(snap);
+        mem::free(snap);
         return err~;
     }
     bool is_member = is_member_res;
@@ -410,7 +410,7 @@ fn void? CompilerContext.collect_assign_target(&self, DestructBind* bind)
         self.free_regs_to(pre_reg);
         bind.deferred_target = snap;
     } else {
-        libc::free(snap);
+        mem::free(snap);
     }
 }
 
@@ -434,7 +434,7 @@ fn void CompilerContext.emit_deferred_target(&self, DestructBind* bind)
         self.pushback_stack = saved_pb;
         self.pushback_count = saved_pbc;
         bind.deferred_target = null;
-        libc::free(snap);
+        mem::free(snap);
     }
 
     ushort pre_reg = self.next_reg;
@@ -470,7 +470,7 @@ fn void CompilerContext.emit_deferred_computed_key(&self, DestructBind* bind)
         self.pushback_stack = saved_pb;
         self.pushback_count = saved_pbc;
         bind.deferred_computed_key = null;
-        libc::free(snap);
+        mem::free(snap);
     }
 
     ushort pre_reg = self.next_reg;
@@ -568,7 +568,7 @@ fn void? CompilerContext.collect_arr_assign_binds(&self,
                 DestructBind* b = count < (uint)MAX_DESTRUCT_BINDS ? &binds[count] : &overflow;
                 self.collect_assign_target(b)!;
                 if (b == &overflow && overflow.deferred_target != null) {
-                    libc::free(overflow.deferred_target);
+                    mem::free(overflow.deferred_target);
                 }
                 if (count < (uint)MAX_DESTRUCT_BINDS) {
                     binds[count].key_idx    = 0xFFFF;   // 0xFFFF = rest sentinel
@@ -628,7 +628,7 @@ fn void? CompilerContext.collect_arr_assign_binds(&self,
             DestructBind* b = count < (uint)MAX_DESTRUCT_BINDS ? &binds[count] : &overflow;
             self.collect_assign_target(b)!;
             if (b == &overflow && overflow.deferred_target != null) {
-                libc::free(overflow.deferred_target);
+                mem::free(overflow.deferred_target);
             }
             if (count < (uint)MAX_DESTRUCT_BINDS) {
                 binds[count].key_idx           = (uint)elem_idx;  // array index
@@ -827,7 +827,7 @@ fn void? CompilerContext.collect_obj_assign_binds(&self,
         DeferredTarget* deferred_key = null;
         if (self.check(TokenType.LBRACKET)) {
             self.advance()!; // consume '['
-            DeferredTarget* snap = (DeferredTarget*)libc::malloc(DeferredTarget::size);
+            DeferredTarget* snap = (DeferredTarget*)alloc::malloc_try(mem, (sz)(DeferredTarget::size)) ?? null;
             snap.lexer = *self.lexer;
             snap.pushback = self.pushback_stack;
             snap.pushback_count = self.pushback_count;
@@ -835,7 +835,7 @@ fn void? CompilerContext.collect_obj_assign_binds(&self,
             ushort pre_reg = self.next_reg;
             ushort? key_expr_res = self.assignment_expr();
             if (catch err = key_expr_res) {
-                libc::free(snap);
+                mem::free(snap);
                 return err~;
             }
             self.code_count = pre_code;
@@ -895,7 +895,7 @@ fn void? CompilerContext.collect_obj_assign_binds(&self,
                 binds[*count].is_synthetic = true;
                 (*count)++;
             } else if (deferred_key != null) {
-                libc::free(deferred_key);
+                mem::free(deferred_key);
             }
             self.advance()!; // consume '[' or '{'
             if (nested_is_obj) {
@@ -919,7 +919,7 @@ fn void? CompilerContext.collect_obj_assign_binds(&self,
             // after both the RHS and the source property read).
             DestructBind tgt_bind;
             if (catch err = self.collect_assign_target(&tgt_bind)) {
-                if (deferred_key != null) libc::free(deferred_key);
+                if (deferred_key != null) mem::free(deferred_key);
                 return err~;
             }
             bool is_member = tgt_bind.is_member_target;
@@ -927,7 +927,7 @@ fn void? CompilerContext.collect_obj_assign_binds(&self,
             if (!is_member) {
                 HString* hs = (HString*)self.constants[tgt_name].get_heapptr();
                 if (is_restricted_name(hs.get_data())) {
-                    if (deferred_key != null) libc::free(deferred_key);
+                    if (deferred_key != null) mem::free(deferred_key);
                     return COMPILE_ERROR~;
                 }
             }
@@ -947,8 +947,8 @@ fn void? CompilerContext.collect_obj_assign_binds(&self,
                 binds[*count].name_len         = 0;
                 (*count)++;
             } else {
-                if (deferred_key != null) libc::free(deferred_key);
-                if (tgt_bind.deferred_target != null) libc::free(tgt_bind.deferred_target);
+                if (deferred_key != null) mem::free(deferred_key);
+                if (tgt_bind.deferred_target != null) mem::free(tgt_bind.deferred_target);
             }
             if (self.match(TokenType.ASSIGN)) {
                 binds[*count - 1].has_default = true;

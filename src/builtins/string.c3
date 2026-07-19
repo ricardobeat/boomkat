@@ -320,7 +320,7 @@ fn void builtin_string_raw(BuiltinContext* ctx) {
             if (need > buf_cap) {
                 usz new_cap = buf_cap * 2;
                 if (new_cap < need) new_cap = need + 64;
-                char* new_buf = (char*)libc::realloc(buf, new_cap);
+                char* new_buf = (char*)alloc::realloc_try(mem, buf, (sz)(new_cap)) ?? null;
                 if (new_buf == null) { heap.free_func(heap.heap_udata, buf); ctx.result.set_undefined(); return; }
                 buf = new_buf;
                 buf_cap = new_cap;
@@ -349,7 +349,7 @@ fn void builtin_string_raw(BuiltinContext* ctx) {
                 if (need > buf_cap) {
                     usz new_cap = buf_cap * 2;
                     if (new_cap < need) new_cap = need + 64;
-                    char* new_buf = (char*)libc::realloc(buf, new_cap);
+                    char* new_buf = (char*)alloc::realloc_try(mem, buf, (sz)(new_cap)) ?? null;
                     if (new_buf == null) { heap.free_func(heap.heap_udata, buf); ctx.result.set_undefined(); return; }
                     buf = new_buf;
                     buf_cap = new_cap;
@@ -870,11 +870,11 @@ fn uint cesu8_encode_codepoint(uint cp, char* buf, uint buf_remaining) {
 }
 
 /// Decode the entire CESU-8 string into a heap-allocated uint[] of codepoints.
-/// Returns pointer to allocated array (caller must libc::free) and sets *out_n.
+/// Returns pointer to allocated array (caller must mem::free) and sets *out_n.
 fn uint* cesu8_to_codepoints(char* data, uint blen, uint* out_n) {
-    if (blen == 0) { *out_n = 0; return (uint*)libc::malloc(4); }
+    if (blen == 0) { *out_n = 0; return (uint*)alloc::malloc_try(mem, (sz)(4)) ?? null; }
     // Upper bound: each codepoint is at least 1 byte
-    uint* cps = (uint*)libc::malloc((usz)blen * 4);
+    uint* cps = (uint*)alloc::malloc_try(mem, (sz)((usz)blen * 4)) ?? null;
     if (cps == null) { *out_n = 0; return null; }
     uint n = 0;
     uint i = 0;
@@ -961,7 +961,7 @@ fn HString* unicode_case_convert_str(Heap* heap, char* data, uint blen, int conv
             if ((uint)data[ai] >= 0x80) { all_ascii = false; break; }
         }
         if (all_ascii) {
-            char* out_buf = (char*)libc::malloc((usz)blen + 1);
+            char* out_buf = (char*)alloc::malloc_try(mem, (sz)((usz)blen + 1)) ?? null;
             if (out_buf == null) return null;
             for (uint ai = 0; ai < blen; ai++) {
                 char c = data[ai];
@@ -973,7 +973,7 @@ fn HString* unicode_case_convert_str(Heap* heap, char* data, uint blen, int conv
                 out_buf[ai] = c;
             }
             HString* result = builtin_intern_string(heap, out_buf[:blen]);
-            libc::free(out_buf);
+            mem::free(out_buf);
             return result;
         }
     }
@@ -985,9 +985,9 @@ fn HString* unicode_case_convert_str(Heap* heap, char* data, uint blen, int conv
 
     // Apply case mapping: each input codepoint can expand to up to 3 output codepoints
     uint out_max = num_cps * 3 + 1;
-    uint* out_cps = (uint*)libc::malloc((usz)out_max * 4);
+    uint* out_cps = (uint*)alloc::malloc_try(mem, (sz)((usz)out_max * 4)) ?? null;
     if (out_cps == null) {
-        libc::free(cps);
+        mem::free(cps);
         return null;
     }
 
@@ -1008,14 +1008,14 @@ fn HString* unicode_case_convert_str(Heap* heap, char* data, uint blen, int conv
             }
         }
     }
-    libc::free(cps);
+    mem::free(cps);
 
     // Encode output codepoints back to CESU-8
     // Worst case: 6 bytes per codepoint
     usz out_bytes_max = (usz)out_n * 6 + 1;
-    char* out_bytes = (char*)libc::malloc(out_bytes_max);
+    char* out_bytes = (char*)alloc::malloc_try(mem, (sz)(out_bytes_max)) ?? null;
     if (out_bytes == null) {
-        libc::free(out_cps);
+        mem::free(out_cps);
         return null;
     }
 
@@ -1025,10 +1025,10 @@ fn HString* unicode_case_convert_str(Heap* heap, char* data, uint blen, int conv
                                               (uint)(out_bytes_max - byte_off));
         byte_off += written;
     }
-    libc::free(out_cps);
+    mem::free(out_cps);
 
     HString* result = builtin_intern_string(heap, out_bytes[:byte_off]);
-    libc::free(out_bytes);
+    mem::free(out_bytes);
     return result;
 }
 
@@ -1543,9 +1543,9 @@ fn void builtin_string_proto_concat(BuiltinContext* ctx) {
     }
 
     // Allocate output buffer and copy.
-    char* out_buf = (char*)libc::malloc((usz)total_len + 1);
+    char* out_buf = (char*)alloc::malloc_try(mem, (sz)((usz)total_len + 1)) ?? null;
     if (out_buf == null) { ctx.result.set_string(s_hstr); return; }
-    defer libc::free(out_buf);
+    defer mem::free(out_buf);
 
     usz offset = 0;
     for (usz i = 0; i < (usz)len; i++) out_buf[offset++] = data[i];
@@ -3293,17 +3293,17 @@ fn void builtin_string_proto_normalize(BuiltinContext* ctx) {
     int out_len = 0;
     uint* result_cps = unicode_bindings::unicode_normalize_simple(src_cps,
                         (int)num_cps, n_type, &out_len);
-    libc::free(src_cps);
+    mem::free(src_cps);
 
     if (result_cps == null || out_len < 0) {
-        if (result_cps != null) libc::free(result_cps);
+        if (result_cps != null) mem::free(result_cps);
         ctx.result.set_string(s_hstr);
         return;
     }
 
     // Handle empty result
     if (out_len == 0) {
-        libc::free(result_cps);
+        mem::free(result_cps);
         ctx.result.set_string(builtin_intern_string(ctx.heap, ""));
         return;
     }
@@ -3311,9 +3311,9 @@ fn void builtin_string_proto_normalize(BuiltinContext* ctx) {
     // ── Step 3: Encode normalized codepoints back to CESU-8 ─────────────────
     // Worst case: 6 bytes per codepoint (astral in CESU-8)
     usz out_bytes_max = (usz)out_len * 6 + 1;
-    char* out_buf = (char*)libc::malloc(out_bytes_max);
+    char* out_buf = (char*)alloc::malloc_try(mem, (sz)(out_bytes_max)) ?? null;
     if (out_buf == null) {
-        libc::free(result_cps);
+        mem::free(result_cps);
         ctx.result.set_string(s_hstr);
         return;
     }
@@ -3324,11 +3324,11 @@ fn void builtin_string_proto_normalize(BuiltinContext* ctx) {
                                               (uint)(out_bytes_max - out_off));
         out_off += written;
     }
-    libc::free(result_cps);
+    mem::free(result_cps);
 
     // ── Step 4: Create HString from CESU-8 bytes ────────────────────────────
     HString* result_hstr = ctx.heap.str_intern(out_buf[:out_off]);
-    libc::free(out_buf);
+    mem::free(out_buf);
 
     if (result_hstr != null) {
         ctx.result.set_string(result_hstr);

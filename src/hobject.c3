@@ -937,7 +937,7 @@ fn void HObject.ensure_prop_hash(&self) {
         heap::Heap* h = (heap::Heap*)_active_heap;
         new_table = h.alloc_func(h.heap_udata, new_bytes);
     } else {
-        new_table = libc::malloc(new_bytes);
+        new_table = alloc::malloc_try(mem, (sz)(new_bytes)) ?? null;
     }
     if (new_table == null) return;
     mem::clear(new_table, (sz)(new_bytes));
@@ -968,7 +968,7 @@ fn void HObject.ensure_prop_hash(&self) {
             heap::Heap* h = (heap::Heap*)_active_heap;
             h.free_func(h.heap_udata, self.prop_hash.table);
         } else {
-            libc::free(self.prop_hash.table);
+            mem::free(self.prop_hash.table);
         }
         self.prop_hash.mask = new_mask;
         self.prop_hash.count = self.prop_count;
@@ -979,14 +979,14 @@ fn void HObject.ensure_prop_hash(&self) {
             heap::Heap* h = (heap::Heap*)_active_heap;
             phi = (PropHashInfo*)h.alloc_func(h.heap_udata, PropHashInfo::size);
         } else {
-            phi = (PropHashInfo*)libc::malloc(PropHashInfo::size);
+            phi = (PropHashInfo*)alloc::malloc_try(mem, (sz)(PropHashInfo::size)) ?? null;
         }
         if (phi == null) {
             if (_active_heap != null) {
                 heap::Heap* h = (heap::Heap*)_active_heap;
                 h.free_func(h.heap_udata, new_table);
             } else {
-                libc::free(new_table);
+                mem::free(new_table);
             }
             return;
         }
@@ -1480,8 +1480,8 @@ fn bool HObject.delete_prop(&self, void* key) {
             h.free_func(h.heap_udata, self.prop_hash.table);
             h.free_func(h.heap_udata, self.prop_hash);
         } else {
-            libc::free(self.prop_hash.table);
-            libc::free(self.prop_hash);
+            mem::free(self.prop_hash.table);
+            mem::free(self.prop_hash);
         }
         self.prop_hash = null;
         self.ensure_prop_hash();
@@ -1586,7 +1586,7 @@ fn void HObject.grow_props(&self) {
             heap::Heap* h = (heap::Heap*)_active_heap;
             new_raw = h.alloc_func(h.heap_udata, new_size);
         } else {
-            new_raw = libc::malloc(new_size);
+            new_raw = alloc::malloc_try(mem, (sz)(new_size)) ?? null;
         }
         if (new_raw == null) return;
         PropValue* inline_src = self.inline_props_ptr();
@@ -1599,7 +1599,7 @@ fn void HObject.grow_props(&self) {
             heap::Heap* h = (heap::Heap*)_active_heap;
             new_raw = h.realloc_func(h.heap_udata, self.prop_alloc, new_size);
         } else {
-            new_raw = libc::realloc(self.prop_alloc, new_size);
+            new_raw = alloc::realloc_try(mem, self.prop_alloc, (sz)(new_size)) ?? null;
         }
     }
     if (new_raw == null) return;
@@ -1649,7 +1649,7 @@ fn void HObject.grow_array(&self, uint new_size) {
             heap::Heap* h = (heap::Heap*)_active_heap;
             new_raw = h.alloc_func(h.heap_udata, new_bytes);
         } else {
-            new_raw = libc::malloc(new_bytes);
+            new_raw = alloc::malloc_try(mem, (sz)(new_bytes)) ?? null;
         }
         if (new_raw == null) return;
         PropValue* inline_src = self.inline_props_ptr();
@@ -1659,7 +1659,7 @@ fn void HObject.grow_array(&self, uint new_size) {
             heap::Heap* h = (heap::Heap*)_active_heap;
             new_raw = h.realloc_func(h.heap_udata, self.prop_alloc, new_bytes);
         } else {
-            new_raw = libc::realloc(self.prop_alloc, new_bytes);
+            new_raw = alloc::realloc_try(mem, self.prop_alloc, (sz)(new_bytes)) ?? null;
         }
     }
     if (new_raw == null) return;
@@ -1767,7 +1767,7 @@ fn HObject*? hobject_alloc(void* heap_ptr, ObjClass cls) {
 ///
 /// Pool-allocated objects (flags.pool_fallback == false) are returned to
 /// their FixedBlockPool for reuse.  Malloc-allocated objects are freed
-/// via the heap's allocator (libc::free fallback when heap is inactive).
+/// via the heap's allocator (mem::free fallback when heap is inactive).
 fn void hobject_free(HObject* obj, void* heap_ptr) {
     if (obj == null) { return; }
 
@@ -1802,8 +1802,8 @@ fn void hobject_free(HObject* obj, void* heap_ptr) {
             h.free_func(h.heap_udata, obj.prop_hash.table);
             h.free_func(h.heap_udata, obj.prop_hash);
         } else {
-            libc::free(obj.prop_hash.table);
-            libc::free(obj.prop_hash);
+            mem::free(obj.prop_hash.table);
+            mem::free(obj.prop_hash);
         }
     }
 
@@ -1849,7 +1849,7 @@ fn void hobject_free(HObject* obj, void* heap_ptr) {
             heap::Heap* h = (heap::Heap*)_active_heap;
             h.free_func(h.heap_udata, obj.prop_alloc);
         } else {
-            libc::free(obj.prop_alloc);
+            mem::free(obj.prop_alloc);
         }
         obj.prop_alloc = null;
     }
@@ -1860,7 +1860,7 @@ fn void hobject_free(HObject* obj, void* heap_ptr) {
             heap::Heap* h = (heap::Heap*)_active_heap;
             h.free_func(h.heap_udata, obj);
         } else {
-            libc::free(obj);
+            mem::free(obj);
         }
     } else {
         void* pool = pool_for_class(heap_ptr, obj.flags.obj_class);
@@ -1871,7 +1871,7 @@ fn void hobject_free(HObject* obj, void* heap_ptr) {
                 heap::Heap* h = (heap::Heap*)_active_heap;
                 h.free_func(h.heap_udata, obj);
             } else {
-                libc::free(obj);
+                mem::free(obj);
             }
         }
     }
@@ -2057,7 +2057,7 @@ fn Shape* shape_create(uint own_count, uint offset, uint parent_id, Shape* paren
         heap::Heap* h = (heap::Heap*)_active_heap;
         raw = h.alloc_func(h.heap_udata, bytes);
     } else {
-        raw = libc::malloc(bytes);
+        raw = alloc::malloc_try(mem, (sz)(bytes)) ?? null;
     }
     if (raw == null) return null;
     mem::clear(raw, (sz)(bytes));
@@ -2109,7 +2109,7 @@ fn void shape_free(Shape* sh, void* heap_ptr) {
         heap::Heap* h = (heap::Heap*)_active_heap;
         h.free_func(h.heap_udata, sh);
     } else {
-        libc::free(sh);
+        mem::free(sh);
     }
 }
 

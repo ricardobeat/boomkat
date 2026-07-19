@@ -870,11 +870,11 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
         if (src_end > (uint)self.lexer.source.len) src_end = (uint)self.lexer.source.len;
         uint slen = src_end > class_src_start ? (src_end - class_src_start) : 0;
         if (slen > 0) {
-            char* src_heap = (char*)libc::malloc((usz)slen + 1);
+            char* src_heap = (char*)alloc::malloc_try(mem, (sz)((usz)slen + 1)) ?? null;
             if (src_heap != null) {
                 for (uint i = 0; i < slen; i++) src_heap[i] = self.lexer.source[class_src_start + i];
                 src_heap[slen] = 0;
-                if (ctor_cf.src_ptr != null) libc::free(ctor_cf.src_ptr);
+                if (ctor_cf.src_ptr != null) mem::free(ctor_cf.src_ptr);
                 ctor_cf.src_ptr = src_heap;
                 ctor_cf.src_len = slen;
             }

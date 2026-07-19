@@ -5,7 +5,9 @@ module duktape::unicode_bindings;
 
 /*
  * Normalize a string of uint32_t codepoints.
- * Returns newly malloc'd uint32_t array (caller must free with libc::free).
+ * Returns a uint32_t array malloc'd by the C wrapper. The caller frees it
+ * with mem::free, which is compatible only while `mem` is the libc-backed
+ * default allocator (C malloc / libc free must pair).
  * Returns NULL on failure. Sets *out_len to the number of codepoints.
  */
 extern fn uint* unicode_normalize_simple(uint* src, int src_len,

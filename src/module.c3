@@ -172,13 +172,13 @@ fn ModuleDef* heap_find_loaded_module(Heap* heap, char[] name) {
 fn char[]? default_module_read(char[] normalized_name, void* udata) {
     // Null-terminate for fopen
     usz len = normalized_name.len;
-    void* raw = libc::malloc(len + 1);
+    void* raw = alloc::malloc_try(mem, (sz)(len + 1)) ?? null;
     if (raw == null) return MODULE_ERROR~;
     mem::copy(raw, normalized_name.ptr, (sz)(len));
     ((char*)raw)[len] = 0;
 
     libc::CFile fp = libc::fopen((ZString)raw, "r");
-    libc::free(raw);
+    mem::free(raw);
     if (fp == null) return MODULE_ERROR~;
 
     // Get file size
@@ -192,7 +192,7 @@ fn char[]? default_module_read(char[] normalized_name, void* udata) {
     }
 
     // Allocate buffer and read
-    void* buf = libc::malloc((usz)size + 1);
+    void* buf = alloc::malloc_try(mem, (sz)((usz)size + 1)) ?? null;
     if (buf == null) {
         libc::fclose(fp);
         return MODULE_ERROR~;
@@ -232,7 +232,7 @@ fn char[]? call_resolve_name(Heap* heap, char[] base_name, char[] specifier) {
         rel = rel[2..];
     }
     usz total = dir.len + rel.len;
-    void* raw = libc::malloc(total + 1);
+    void* raw = alloc::malloc_try(mem, (sz)(total + 1)) ?? null;
     if (raw == null) return MODULE_ERROR~;
     mem::copy(raw, dir.ptr, (sz)(dir.len));
     mem::copy((char*)raw + dir.len, rel.ptr, (sz)(rel.len));

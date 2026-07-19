@@ -140,11 +140,11 @@ fn void builtin_function(BuiltinContext* ctx) {
         }
         spec_pos += libc::snprintf(&spec_buf[spec_pos], (usz)(16384 - spec_pos), "\n}");
         if (spec_pos > 0) {
-            char* spec_heap = (char*)libc::malloc((usz)spec_pos);
+            char* spec_heap = (char*)alloc::malloc_try(mem, (sz)((usz)spec_pos)) ?? null;
             if (spec_heap != null) {
                 for (int i = 0; i < spec_pos; i++) spec_heap[i] = spec_buf[i];
                 // Free any existing src_ptr (may have been set by compile_function)
-                if (func.src_ptr != null) libc::free(func.src_ptr);
+                if (func.src_ptr != null) mem::free(func.src_ptr);
                 func.src_ptr = spec_heap;
                 func.src_len = (uint)spec_pos;
             }

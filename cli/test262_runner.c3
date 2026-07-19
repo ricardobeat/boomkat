@@ -518,7 +518,7 @@ fn int run_one_test(Vm* v, Heap* hp, char[] test_path, char[] assert_src, char[]
     if (only_strict) {
         const char[] PREFIX = "\"use strict\";\n";
         usz total = PREFIX.len + src.len + 1;
-        strict_buf = (char*)libc::malloc(total);
+        strict_buf = (char*)alloc::malloc_try(mem, (sz)(total)) ?? null;
         if (strict_buf != null) {
             for (usz k = 0; k < PREFIX.len; k++) { strict_buf[k] = PREFIX[k]; }
             for (usz k = 0; k < src.len; k++) { strict_buf[PREFIX.len + k] = src[k]; }
@@ -526,7 +526,7 @@ fn int run_one_test(Vm* v, Heap* hp, char[] test_path, char[] assert_src, char[]
             exec_src = strict_buf[:PREFIX.len + src.len];
         }
     }
-    defer if (strict_buf != null) { libc::free(strict_buf); }
+    defer if (strict_buf != null) { mem::free(strict_buf); }
 
     // `flags: [module]` tests must be parsed as ES modules so module-only
     // rules apply (e.g. `await` reserved, top-level import/export). Otherwise

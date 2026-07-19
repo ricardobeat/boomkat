@@ -145,7 +145,7 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
                         // supported (the old 256-byte stack buffer truncated
                         // patterns longer than 255 chars).
                         usz plen = pattern_data.len;
-                        char* pattern_buf_heap = (char*)libc::malloc(plen + 1);
+                        char* pattern_buf_heap = (char*)alloc::malloc_try(mem, (sz)(plen + 1)) ?? null;
                         if (pattern_buf_heap != null) {
                             mem::copy(pattern_buf_heap, pattern_data.ptr, (sz)(plen));
                             pattern_buf_heap[plen] = 0;
@@ -154,7 +154,7 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
                         void* compiled = (pattern_buf_heap != null)
                             ? re_bindings::re_compile(pattern_buf_heap, plen, flags, &error_buf, 128)
                             : null;
-                        if (pattern_buf_heap != null) libc::free(pattern_buf_heap);
+                        if (pattern_buf_heap != null) mem::free(pattern_buf_heap);
 
                         if (compiled != null) {
                             HObject*? obj_raw = vm.heap.alloc_object(hobject::ObjClass.REGEXP);
