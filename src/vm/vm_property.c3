@@ -2675,16 +2675,59 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     return VM_ERROR~;
                 }
             } else {
-                // Strict mode: assigning a property to a Boolean/Number/String/Symbol/
-                // BigInt primitive throws TypeError — the ephemeral wrapper ToObject
-                // would create is discarded immediately, so the property never sticks.
-                HString* type_hstr = typeof_string(vm, ra);
-                HString* name_hstr = rb.is_string() ? (HString*)rb.get_heapptr() : null;
+                // ES6 §6.2.3.2 PutValue: a primitive property base is first
+                // boxed with ToObject, then [[Set]] is called with the original
+                // primitive as Receiver.  Using the primitive Receiver preserves
+                // strict-mode failures for ordinary writes (including immutable
+                // string indices), while still allowing inherited setters and
+                // Proxy [[Set]] traps to observe the assignment.
+                TVal error_base = *ra;
+                HString* error_name = rb.is_string() ? (HString*)rb.get_heapptr() : null;
+                bool boxable_primitive = ra.is_boolean() || ra.is_number() || ra.is_fastint()
+                    || ra.is_bigint() || ra.is_string();  // strings include Symbols
+                if (boxable_primitive) {
+                    TVal primitive_base = *ra;
+                    TVal put_val = *rc;
+                    TVal boxed_base;
+                    boxed_base.set_undefined();
+                    builtins::BuiltinContext box_ctx;
+                    box_ctx.heap = vm.heap;
+                    box_ctx.result = &boxed_base;
+                    if (!builtins::builtin_to_object(&box_ctx, primitive_base)
+                        || !boxed_base.is_object() || boxed_base.get_heapptr() == null) {
+                        return VM_ERROR~;
+                    }
+
+                    void* key = get_prop_key(vm, rb);
+                    if (key == null) {
+                        if (vm.throw_pending) {
+                            vm.throw_pending = false;
+                            if (!vm_throw_value(vm, vm.throw_value, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                return vm_uncaught_error(vm, &vm.throw_value);
+                            }
+                        }
+                        return (TVal){};
+                    }
+
+                    error_name = (HString*)key;
+                    bool set_ok;
+                    if (!builtins::js_set_with_receiver(vm, vm.heap,
+                        (HObject*)boxed_base.get_heapptr(), (HString*)key,
+                        put_val, primitive_base, &set_ok)) {
+                        return vm_proxy_rethrow(vm, ds);
+                    }
+                    if (set_ok) return (TVal){};
+                }
+
+                // Strict mode turns [[Set]] returning false into a TypeError.
+                // This is the normal result when no inherited setter/proxy
+                // handles a write whose Receiver is still primitive.
+                HString* type_hstr = typeof_string(vm, &error_base);
                 char[types::ERROR_MSG_BUF] msg_buf;
                 int msg_len;
-                if (name_hstr != null) {
+                if (error_name != null) {
                     msg_len = (int)(io::bprintf(&msg_buf, "Cannot create property '%s' on %s",
-                                              (ZString)name_hstr.get_cstr(), (ZString)type_hstr.get_cstr()) ?? msg_buf[:0]).len;
+                                              (ZString)error_name.get_cstr(), (ZString)type_hstr.get_cstr()) ?? msg_buf[:0]).len;
                 } else {
                     msg_len = (int)(io::bprintf(&msg_buf, "Cannot create property on %s",
                                               (ZString)type_hstr.get_cstr()) ?? msg_buf[:0]).len;

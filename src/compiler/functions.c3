@@ -3682,6 +3682,12 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner(&self, char[]* params,
     if (has_rest && param_count > 0) {
         formal_count = param_count - 1;
     }
+    // Per ES2015 §9.2.10 step 32: strict-mode arrow functions create a fresh
+    // declarative environment for parameters and body vars, isolating them
+    // from the captured lexical environment. PUSH_VAR creates a fresh env with
+    // the captured lex as the outer, then DECLVAR writes the parameter to it
+    // instead of polluting the parent's bindings.
+    arrow_ctx.emit_simple(Opcode.PUSH_VAR);
     for (ushort i = 0; i < param_count; i++) {
         char[] name = params[i];
         if (is_restricted_name(name)) {
@@ -3745,6 +3751,8 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner(&self, char[]* params,
 
     // Pop the function-level lexical scope
     arrow_ctx.emit_simple(Opcode.POP_LEX);
+    // Pop the function-level variable scope (PUSH_VAR for parameter isolation)
+    arrow_ctx.emit_simple(Opcode.POP_VAR);
 
     // Set rest and formal counts before finish()
     arrow_ctx.has_rest = has_rest;

@@ -3167,6 +3167,50 @@ fn ushort? CompilerContext.primary_expr(&self) {
                     return COMPILE_ERROR~;
                 }
 
+                // `delete super.x` / `delete super[x]` — ES2022 §13.5.1.2 step 5.b
+                // (and the test262 super-property-* tests): the IsSuperReference
+                // check throws ReferenceError for ANY delete of a super property,
+                // regardless of the super base's value. This check must run BEFORE
+                // ToPropertyKey (for super[expr]) and BEFORE RequireObjectCoercible
+                // on the super base (for super.x with null/undefined base). Emit
+                // THROW_REF upfront; the rest of the super-resolution parsing
+                // produces unreachable dead code that the runtime never executes.
+                if (self.del_mode) {
+                    uint msg_idx = self.add_string_constant("Cannot delete a super property");
+                    ushort throw_reg = self.alloc_reg();
+                    self.emit(bytecode::make_a_bc(Opcode.THROW_REF, (uint)throw_reg, msg_idx));
+                    // Consume the property-name / computed-key tokens so the
+                    // surrounding parser sees a clean state. We still parse
+                    // `super[expr]` correctly for syntax errors, but the emitted
+                    // bytecode is dead code (unreachable after THROW_REF).
+                    if (self.match(TokenType.DOT)) {
+                        char[] prop_str = self.read_property_name()!;
+                    } else if (self.match(TokenType.LBRACKET)) {
+                        // Save register state — the inner expression's emitted
+                        // code is unreachable, so its register allocations
+                        // must not leak into the surrounding scope.
+                        ushort saved_next_reg = self.next_reg;
+                        ushort saved_max_reg = self.max_reg;
+                        self.expression()!;
+                        self.expect(TokenType.RBRACKET)!;
+                        self.next_reg = saved_next_reg;
+                        self.max_reg = saved_max_reg;
+                    }
+                    // Reset the member/getvar tracking so the enclosing DELETE
+                    // handler doesn't double-emit THROW_REF or try to patch a
+                    // non-existent GETPROP into DELPROP.
+                    self.last_was_member = false;
+                    self.last_was_getvar = false;
+                    self.last_member_is_super = false;
+                    self.last_member_obj_reg = 0;
+                    self.last_member_prop_reg = 0;
+                    self.last_member_is_private = false;
+                    self.last_was_local_var = false;
+                    self.last_was_optional_chain = false;
+                    self.call_prop_obj_reg = MAX_REGISTERS;
+                    return throw_reg;
+                }
+
                 // Helper macro-inline: compute super base into super_proto_reg.
                 // Defined here so both DOT and LBRACKET branches can call it after
                 // key evaluation (important for super[expr]: key must be evaluated

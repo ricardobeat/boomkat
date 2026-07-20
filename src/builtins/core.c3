@@ -1417,8 +1417,8 @@ fn void coll_set_entry(BuiltinContext* ctx, HObject* coll, uint stride, bool req
 /// for iteration), false for WeakSet (not iterable).
 fn void coll_add_value(BuiltinContext* ctx, HObject* coll, bool require_object_value,
                         char[] invalid_value_msg, bool grow_hwm) {
-    if (ctx.argc < 1) { ctx.result.set_undefined(); return; }
-    TVal value = ctx.regs[ctx.base_reg];
+    TVal value; value.set_undefined();
+    if (ctx.argc >= 1) value = ctx.regs[ctx.base_reg];
     if (require_object_value && (!value.is_object() || value.get_heapptr() == null)) {
         builtin_throw_no_result_change(ctx, ctx.heap.type_err_proto, invalid_value_msg);
         ctx.result.set_undefined();
