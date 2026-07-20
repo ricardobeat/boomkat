@@ -18,13 +18,18 @@ import duktape::vm;
 fn void builtin_array_of(BuiltinContext* ctx) {
     uint len = (uint)ctx.argc;
 
-    // Step 3-4: If IsConstructor(C), A = new C(len); else A = ArrayCreate(len).
+    // Step 3-4: If IsConstructor(C), A = Construct(C, «len»); else ArrayCreate(len).
+    // IsConstructor requires callable + constructable: lightfuncs (Math.cos)
+    // are not objects so already excluded; bound functions inherit the
+    // constructable bit from their target (Math.cos.bind(Math) is therefore
+    // NOT a constructor), so they fall through to ArrayCreate here.
     HObject* arr;
     bool ctor_used = false;
     TVal c = ctx.this_val;
     if (c.is_object() && c.get_heapptr() != null) {
         HObject* c_obj = (HObject*)c.get_heapptr();
-        if (c_obj.is_callable() && ctx.heap.construct_fn != null && ctx.vm != null) {
+        if (c_obj.is_callable() && c_obj.is_constructable()
+            && ctx.heap.construct_fn != null && ctx.vm != null) {
             TVal len_arg; len_arg.set_fastint((long)len);
             TVal result_tv = ctx.heap.construct_fn(ctx.vm, c, &len_arg, 1, c);
             if (ctx.heap.has_error) {
@@ -54,18 +59,22 @@ fn void builtin_array_of(BuiltinContext* ctx) {
         if (!array_set_elem_ulong_checked(ctx, arr, (ulong)i, elem)) return;
     }
 
-    // Step 9: Set(A, "length", len, true).
+    // Step 9: Set(A, "length", len, true). Must go through [[Set]] so an own
+    // or inherited "length" setter on the result is invoked (and its abrupt
+    // completion propagated). For ARRAY results, array_set_length updates
+    // array_len_ptr directly so the descriptor stays
+    // {writable, enumerable:false, configurable:false}; for everything else
+    // (including proxy results and user-defined constructors), use the
+    // arr_set_length_or_throw helper which handles proxy [[Set]], own
+    // accessors, inherited accessors, and writable/non-writable data props.
     HString* len_key = builtin_intern_string(ctx.heap, "length");
-    if (arr.flags.exotic_proxyobj) {
-        TVal len_tv; len_tv.set_fastint((long)len);
-        TVal recv; recv.set_object(arr);
-        bool sres;
-        if (!proxy_mop_set(ctx.vm, ctx.heap, arr, len_key, len_tv, recv, &sres)) {
-            proxy_ctx_ok(ctx); return;
-        }
+    if (arr.get_class() == hobject::ObjClass.ARRAY) {
+        array_set_length(arr, len, ctx.heap);
     } else {
-        TVal len_val; len_val.set_fastint((long)len);
-        arr.put_prop(len_key, len_val, hobject::PROP_FLAGS_WENC);
+        if (!arr_set_length_or_throw(ctx, arr, len_key, (ulong)len)) {
+            ctx.result.set_undefined();
+            return;
+        }
     }
     ctx.result.set_object(arr);
 }

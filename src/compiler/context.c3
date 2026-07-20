@@ -294,6 +294,15 @@ struct CompilerContext {
     // to eval_acc_reg for eval's implicit return value.
     bool   eval_mode;
     ushort eval_acc_reg;
+    /// True iff this is direct-eval code being processed from a
+    /// non-ArrowFunction's FunctionBody (ES2015 Annex B / §14.2.1):
+    /// the ONLY context in which `new.target` is a permitted syntax inside
+    /// the eval source. `false` for indirect eval, eval from script top
+    /// level, eval from an ArrowFunction, eval from a class constructor,
+    /// etc. — `new_expr()` reads it to decide whether to reject new.target
+    /// as a SyntaxError. Set by `compile_eval` based on the activation
+    /// the runtime passes in (see builtin_eval in src/builtins/global.c3).
+    bool   eval_direct_in_function;
 
     // Token pushback buffer for limited backtracking (used by arrow function parsing).
     Token[4] pushback_stack;

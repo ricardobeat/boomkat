@@ -372,6 +372,17 @@ fn void builtin_eval(BuiltinContext* ctx) {
     usz precheck_act_count = precheck_vm.activation_count;
     vm::Activation* precheck_caller = null;
     bool caller_has_direct_eval = false;
+    // ES2015 Annex B: `new.target` is a permitted syntax inside an eval
+    // source ONLY when the eval is being processed by direct eval from
+    // non-ArrowFunction FunctionBody code. ACT_FLAG_DIRECT_EVAL covers
+    // the "direct eval" half (the activation is flagged at compile time
+    // when the calling function body contains direct eval calls); we
+    // additionally rule out top-level script activation
+    // (is_global_fn()==true, the script's CompiledFunction template) and
+    // ArrowFunction activations (is_arrow()==true) so global direct eval
+    // and arrow direct eval both reject new.target like the spec
+    // requires. See compile_eval's `direct_in_function` doc comment.
+    bool caller_direct_eval_in_function = false;
     void* parent_priv_names = null;
     uint parent_priv_count = 0;
     if (precheck_act_count > 0) {
@@ -388,6 +399,9 @@ fn void builtin_eval(BuiltinContext* ctx) {
             // flag that's only ever set on compiled function bodies.
             CompiledFunction* caller_cf = (CompiledFunction*)precheck_caller.func;
             if (caller_cf != null) {
+                if (!caller_cf.is_arrow() && !caller_cf.is_global_fn()) {
+                    caller_direct_eval_in_function = true;
+                }
                 parent_priv_names = caller_cf.eval_private_names;
                 parent_priv_count = caller_cf.eval_private_name_count;
             }
@@ -398,6 +412,7 @@ fn void builtin_eval(BuiltinContext* ctx) {
     Lexer lex = lexer::lexer_init(src_cstr[:src_len], ctx.heap);
     lex.skip_hashbang();
     CompiledFunction*? cf = compiler::compile_eval(&lex, ctx.heap, caller_has_direct_eval,
+                                                    caller_direct_eval_in_function,
                                                     parent_priv_names, parent_priv_count);
     CompiledFunction* func;
     if (try f = cf) {

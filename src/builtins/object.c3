@@ -1,6 +1,7 @@
 /// Object constructor and Object.prototype methods.
 module duktape::builtins;
 import duktape::types;
+import duktape::bytecode;
 import duktape::env;
 import std::math;
 import std::io;
@@ -4297,6 +4298,26 @@ fn bool ordinary_set_proto(BuiltinContext* ctx, HObject* obj, HObject* new_proto
     }
 
     obj.prototype = new_proto;
+
+    // Class constructors currently resolve super() through the captured
+    // __super__ binding. Keep that binding synchronized with the constructor's
+    // mutable [[Prototype]], which is what GetSuperConstructor reads.
+    if (obj.get_class() == hobject::ObjClass.FUNCTION) {
+        CompiledFunction* func = (*obj.extra_ptr()).func.comp_func;
+        EnvRecord* lex_env = (*obj.extra_ptr()).func.lex_env;
+        if (func != null && func.is_class_ctor() && lex_env != null) {
+            HString* super_key = builtin_intern_string(ctx.heap, "__super__");
+            if (super_key != null) {
+                TVal super_val;
+                if (new_proto == null) {
+                    super_val.set_null();
+                } else {
+                    super_val.set_object(new_proto);
+                }
+                env::env_put(lex_env, super_key, super_val);
+            }
+        }
+    }
     return true;
 }
 
@@ -4320,9 +4341,25 @@ fn void builtin_object_setPrototypeOf(BuiltinContext* ctx) {
         // Missing proto arg → undefined, which is neither Object nor Null
         proto_val.set_undefined();
     }
-    if (!proto_val.is_null() && !proto_val.is_object()) {
+    if (!proto_val.is_null() && !proto_val.is_object() && !proto_val.is_lightfunc()) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "Object.setPrototypeOf requires an object or null");
         return;
+    }
+    // LIGHTFUNC is an internal compact representation for built-in function
+    // objects. Materialize it before storing the [[Prototype]] so functions
+    // have the same object semantics as ordinary callable HObjects.
+    if (proto_val.is_lightfunc()) {
+        uint fn_idx = (uint)(usz)proto_val.get_heapptr();
+        BuiltinMeta meta = builtin_get_metadata(fn_idx);
+        HObject* proto_func = alloc_builtin_fn(ctx.heap, fn_idx, meta.name, meta.arity);
+        if (proto_func == null) {
+            ctx.result.set_undefined();
+            return;
+        }
+        if (ctx.vm != null) {
+            proto_func.flags.constructable = vm::builtin_fn_is_constructor((Vm*)ctx.vm, fn_idx);
+        }
+        proto_val.set_object(proto_func);
     }
     // ES2015 §19.1.2.19 step 3: If Type(O) is not Object, return O
     if (!obj_val.is_object()) {

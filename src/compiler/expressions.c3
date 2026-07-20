@@ -1898,6 +1898,38 @@ fn ushort? CompilerContext.new_expr(&self) {
             && target_name[3] == 'g'
             && target_name[4] == 'e'
             && target_name[5] == 't') {
+            // ES2015 Annex B / §14.2.1: `new.target` is a SyntaxError in
+            // any of these contexts:
+            //   - eval source from a non-direct eval (indirect eval)
+            //   - eval source from script top-level (even direct)
+            //   - eval source from inside an ArrowFunction (even direct)
+            // and is only permitted inside an eval source that is being
+            // processed by direct eval whose call site sits inside a
+            // non-ArrowFunction's FunctionBody. compile_eval sets
+            // eval_mode=true and eval_direct_in_function=true ONLY in
+            // that last case, so a missing flag means we must reject.
+            //
+            // We also reject when not in eval mode AND not otherwise in
+            // a constructable context (e.g. class constructor) — global
+            // / module / function code outside a constructor body has no
+            // [[NewTarget]] either (ES2015 §13.3.1.1 step 1 / step 5).
+            // Top-level code is already rejected by is_global + !constructable,
+            // but inside a class constructor the NEWTARGET opcode is the
+            // correct implementation of `new.target` (returns the
+            // constructor itself).
+            if (self.eval_mode && !self.eval_direct_in_function) {
+                // Indirect eval, global eval, or eval from arrow:
+                // new.target is a SyntaxError per spec.
+                if (g_last_err_msg[0] == 0) {
+                    g_last_err_line = self.lexer.line;
+                    g_last_err_col  = self.lexer.col;
+                    char[] msg = "new.target is not allowed in this eval context";
+                    usz copy_len = msg.len < (g_last_err_msg.len - 1) ? msg.len : (g_last_err_msg.len - 1);
+                    mem::copy(&g_last_err_msg[0], msg.ptr, (sz)(copy_len));
+                    g_last_err_msg[copy_len] = 0;
+                }
+                return COMPILE_ERROR~;
+            }
             ushort result_reg = self.alloc_reg();
             self.emit_abc(Opcode.NEWTARGET, (uint)result_reg, 0, 0);
             ctor_reg = result_reg;

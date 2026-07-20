@@ -537,10 +537,17 @@ alias BuiltinFunc = fn void(BuiltinContext*);
 
 /// ES2015 §9.1.14 OrdinaryCreateFromConstructor / §9.1.15 GetPrototypeFromConstructor.
 ///
-/// If ctx.new_target is non-null, read its "prototype" property; if that is an
-/// object return it as the instance prototype.  Otherwise return default_proto.
-/// This makes `class Sub extends Builtin {}` produce instances whose __proto__ is
-/// Sub.prototype rather than the built-in prototype.
+/// If ctx.new_target is non-null, perform a full `Get(C, "prototype")` on it;
+/// if the result is an object, return it as the instance prototype.  Otherwise
+/// return default_proto.  This makes `class Sub extends Builtin {}` produce
+/// instances whose __proto__ is Sub.prototype rather than the built-in prototype.
+///
+/// Uses full Get semantics (not get_prop_proto) so an accessor "prototype"
+/// getter on `new_target` is actually invoked, and a throwing getter propagates
+/// as an abrupt completion via ctx.should_throw per ES2015 §9.1.14 step 3
+/// (test262 built-ins/Promise/get-prototype-abrupt).  Returns default_proto on
+/// error so the VM can still consult ctx.should_throw / ctx.throw_value to
+/// raise the original error when the calling builtin returns.
 fn HObject* builtin_proto_from_new_target(BuiltinContext* ctx, HObject* default_proto) {
     HObject* nt = ctx.new_target;
     if (nt == null) return default_proto;
@@ -549,7 +556,8 @@ fn HObject* builtin_proto_from_new_target(BuiltinContext* ctx, HObject* default_
     // correct to do the lookup for callee-less lightfunc paths.
     HString* proto_key = (HString*)ctx.heap.strs[heap::BuiltinStr.PROTOTYPE];
     if (proto_key == null) return default_proto;
-    TVal? proto_tv = nt.get_prop_proto(proto_key);
+    TVal? proto_tv = builtins_generic_get(nt, proto_key, ctx);
+    if (ctx.should_throw) return default_proto;
     if (try ptv = proto_tv) {
         if (ptv.is_object() && ptv.get_heapptr() != null) {
             return (HObject*)ptv.get_heapptr();

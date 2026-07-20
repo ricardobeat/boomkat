@@ -115,7 +115,23 @@ fn CompiledFunction*? compile(Lexer* lex, void* heap) {
 /// activation or `ACT_FLAG_DIRECT_EVAL` not set on the caller) leaves the
 /// parameter null; `#name` references then correctly throw SyntaxError
 /// (no enclosing PrivateEnvironment).
+///
+/// `direct_in_function`: true iff this eval source is being compiled
+/// inside a direct-eval call from a non-ArrowFunction's FunctionBody —
+/// the ONLY context that legally permits `new.target` per ES2015 Annex
+/// B / §14.2.1 (ScriptedTasks: "It is a Syntax Error if StatementList
+/// Contains NewTarget unless the source code containing NewTarget is
+/// eval code that is being processed by a direct eval that is contained
+/// in function code that is not the function code of an ArrowFunction").
+/// Pass false (the default) for indirect eval, eval from script top
+/// level, or eval from an arrow function — `new_expr()` then rejects
+/// new.target as a SyntaxError.  `allow_super` and
+/// `direct_in_function` track the same call-site conditions, so the two
+/// are usually equal; they're kept as separate parameters to avoid
+/// silently coupling super-reference permission to new.target permission
+/// (either can be added independently in the future).
 fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = false,
+                                    bool direct_in_function = false,
                                     void* parent_private_names = null,
                                     uint  parent_private_name_count = 0) {
     g_last_err_msg[0] = 0;
@@ -126,6 +142,7 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
     ctx.is_global = true;
     ctx.eval_mode = true;
     ctx.has_super_binding = allow_super;
+    ctx.eval_direct_in_function = direct_in_function;
     ctx.eval_acc_reg = ctx.alloc_reg();
 
     // Adopt caller's private-name snapshot (ES2022 §8.7.1). When the caller
