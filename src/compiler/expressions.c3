@@ -2058,6 +2058,33 @@ fn ushort? CompilerContext.new_expr(&self) {
             self.emit_abc(Opcode.LDUNDEF, (uint)ctor_reg, 0, 0);
             self.patch_jump(skip);
         } else if (self.match(TokenType.DOT)) {
+            if (self.check(TokenType.HASH_IDENT)) {
+                // new X().#name — private field access on a freshly constructed
+                // object. Resolves to a COMPILE_ERROR if no enclosing class
+                // declares the name (e.g. eval("new C().#x") with no
+                // PrivateEnvironment in scope); mirrors member_expr's DOT
+                // branch in expressions.c3.
+                Token priv_tok = self.advance()!;
+                ushort priv_prop_reg = self.emit_private_access(priv_tok.str_value, ctor_reg)!;
+                ushort priv_result = self.alloc_reg();
+                self.emit_abc(Opcode.GETPROP, (uint)priv_result, (uint)ctor_reg, (uint)priv_prop_reg);
+
+                if (self.check(TokenType.LPAREN) || self.check(TokenType.OPT_CHAIN) || self.is_next_template()) {
+                    self.free_reg(priv_prop_reg);
+                    self.last_was_member = false;
+                    self.call_prop_obj_reg = ctor_reg;
+                } else {
+                    self.last_was_member = true;
+                    self.last_member_is_super = false;
+                    self.last_member_is_private = true;
+                    self.last_member_obj_reg = ctor_reg;
+                    self.last_member_prop_reg = priv_prop_reg;
+                    self.call_prop_obj_reg = ctor_reg;
+                }
+                ctor_reg = priv_result;
+                self.next_reg = ctor_reg + 1;
+                continue;
+            }
             Token? prop_name_opt = self.lexer.next_token();
             if (catch err = prop_name_opt) return COMPILE_ERROR~;
             Token prop_name = prop_name_opt;

@@ -104,7 +104,21 @@ fn CompiledFunction*? compile(Lexer* lex, void* heap) {
 /// direct eval that chain IS the caller's, so a genuinely absent binding
 /// still throws ReferenceError there, same as the spec's HasSuperBinding
 /// check would.
-fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = false) {
+///
+/// `parent_private_names`/`parent_private_name_count`: ES2022 §8.7.1 says
+/// direct eval inherits the calling execution context's PrivateEnvironment.
+/// `parent_private_names` is a heap-tracked snapshot of the caller's
+/// CompilerContext's private-names table (populated when the caller's
+/// CompiledFunction was finished and stashed in `eval_private_names`). When
+/// non-null, the eval CompilerContext adopts this table — subsequent
+/// `#name` references resolve through it (so `this.#m` inside a class
+/// method's eval body finds the class's `#m`). Indirect eval (no caller
+/// activation or `ACT_FLAG_DIRECT_EVAL` not set on the caller) leaves the
+/// parameter null; `#name` references then correctly throw SyntaxError
+/// (no enclosing PrivateEnvironment).
+fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = false,
+                                    void* parent_private_names = null,
+                                    uint  parent_private_name_count = 0) {
     g_last_err_msg[0] = 0;
     g_last_err_line = 0;
     g_last_err_col  = 0;
@@ -114,6 +128,69 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
     ctx.eval_mode = true;
     ctx.has_super_binding = allow_super;
     ctx.eval_acc_reg = ctx.alloc_reg();
+
+    // Adopt caller's private-name snapshot (ES2022 §8.7.1). When the caller
+    // has none (top-level eval or an indirect eval), the fresh empty table
+    // from init() stays in place — `#name` then resolves to nothing, which
+    // fails compile_private_name with SyntaxError exactly as the spec
+    // requires for eval without an enclosing PrivateEnvironment.
+    if (parent_private_names != null && parent_private_name_count > 0) {
+        // The caller stashed a snapshot whose `name`/`slot_name`/
+        // `brand_slot_name` slices point at interned HString data (stable).
+        //
+        // We COPY the inherited entries into a freshly-allocated table that
+        // this context OWNS. Borrowing the snapshot's buffer directly (à la
+        // compile_inner_function's adopt_private_names) would corrupt the
+        // caller's snapshot if eval declared any new private name — the
+        // inherited entries sit at indices [0..parent_count) and a new
+        // class body's #x would land at index parent_count via
+        // declare_private_name → ensure_private_name_cap → realloc_func,
+        // which would move/extend the snapshot's buffer while the caller
+        // still references the old address through CompiledFunction.
+        // Copy + own avoids that and matches the per-eval PrivateEnvironment
+        // of the spec (the eval body's PrivateEnvironment is logically a
+        // fresh env chained to the caller's, not literally the same array).
+        if (ctx.owns_private_names && ctx.private_names != null) {
+            // init() allocated an empty table; free it before allocating.
+            heap::Heap* h = (heap::Heap*)ctx.heap;
+            h.free_func(h.heap_udata, ctx.private_names);
+        }
+        usz inherited_bytes = (usz)parent_private_name_count * PrivateNameEntry::size;
+        // Size for growable: start at INITIAL_PRIVATE_NAMES to leave room for
+        // any new private names the eval body might declare (e.g. `class D {
+        // #x }` inside eval).
+        uint new_cap = INITIAL_PRIVATE_NAMES;
+        if ((uint)parent_private_name_count >= new_cap) {
+            new_cap = parent_private_name_count * 2;
+        }
+        usz new_bytes = (usz)new_cap * PrivateNameEntry::size;
+        heap::Heap* h2 = (heap::Heap*)ctx.heap;
+        PrivateNameEntry* new_table = (PrivateNameEntry*)h2.alloc_func(h2.heap_udata, new_bytes);
+        if (new_table != null) {
+            libc::memcpy(new_table, parent_private_names, inherited_bytes);
+            // Zero the rest so uninitialised entries don't carry garbage.
+            if ((usz)new_cap * PrivateNameEntry::size > inherited_bytes) {
+                libc::memset((char*)new_table + inherited_bytes, 0,
+                              (usz)new_cap * PrivateNameEntry::size - inherited_bytes);
+            }
+            ctx.private_names = new_table;
+            ctx.private_name_count = parent_private_name_count;
+            ctx.private_name_cap = new_cap;
+            ctx.owns_private_names = true;
+        }
+        // If alloc fails, leave private_names null — eval will treat every
+        // #x reference as SyntaxError (no inherited names visible). The
+        // pre-fix behaviour already did this for top-level eval; matching
+        // it here on OOM is the safest fallback.
+        // has_lexical_bindings must propagate too: each inherited private
+        // name was declared via declare_priv_slot in the class-enclosing
+        // context, and the class's PUSH_LEX is what keeps the runtime env
+        // alive so PUTLEX/GETVAR can find the binding. Direct eval inherits
+        // the env chain, but our compiler emits GETVAR-by-name anyway; the
+        // flag's only effect here is on needs_env elision in finish(), and
+        // eval always needs its env anyway (var declarations must reach the
+        // caller's var_env).
+    }
 
     // Initialize eval result accumulator to undefined (for empty eval)
     ctx.emit_abc(Opcode.LDUNDEF, (uint)ctx.eval_acc_reg, 0, 0);

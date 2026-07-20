@@ -1532,6 +1532,37 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     heap::Heap* hp = (heap::Heap*)self.heap;
     hp.track_compiled_func(raw);
 
+    // Direct-eval private-name snapshot (ES2022 §8.7.1): if this function has
+    // `direct eval` calls AND inherited private names from a parent class body,
+    // copy the table into a heap-tracked buffer so builtin_eval can later
+    // hand it to compile_eval. cleanup() below would otherwise free the
+    // scratch buffer; the snapshot needs to outlive this context.
+    //
+    // Only snapshot when the table was ADOPTED from a parent — `owns_private_names
+    // == false` means an outer class compiled the entries. A table owned by
+    // this context means WE declared the names here, so direct eval can only
+    // see them via the lex env chain (no class scope to inherit), and a
+    // snapshot would just duplicate what GETVAR already finds at runtime.
+    if (self.has_direct_eval
+        && self.private_name_count > 0
+        && !self.owns_private_names
+        && self.private_names != null) {
+        usz snap_bytes = (usz)self.private_name_count * PrivateNameEntry::size;
+        PrivateNameEntry* snap = (PrivateNameEntry*)h.alloc_func(h.heap_udata, snap_bytes);
+        if (snap != null) {
+            // memcpy the entire entry table — every entry's name/slot_name/
+            // brand_slot_name slices point at interned HString data (stable),
+            // so the byte-level copy is safe.
+            libc::memcpy(snap, self.private_names, snap_bytes);
+            func.eval_private_names = (void*)snap;
+            func.eval_private_name_count = self.private_name_count;
+        }
+        // If alloc fails, leave the snapshot null — eval will just not see
+        // inherited private names (matches the pre-fix behaviour). Failing
+        // the compile here would be worse: a transient alloc hiccup would
+        // break every class-body eval test.
+    }
+
     // Run JIT optimizations (GETPROPC2 chain fusion, etc.)
     jit::jit_scan(func, hp);
 

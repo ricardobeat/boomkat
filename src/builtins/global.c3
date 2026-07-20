@@ -357,20 +357,48 @@ fn void builtin_eval(BuiltinContext* ctx) {
     // hidden binding, so `super.x`/`super[x]` may legally appear in the
     // source. Detect this before compiling so the eval CompilerContext can
     // permit the syntax (see compile_eval's allow_super doc comment).
+    //
+    // Per ES2022 §8.7.1, direct eval ALSO inherits the caller's
+    // PrivateEnvironment — i.e. private field/method references inside the
+    // eval body resolve against the calling class body's declared names.
+    // The caller (the function whose body contains `eval(...)`) stashed a
+    // snapshot of its private-name table into its CompiledFunction when it
+    // finished compiling (see context.c3 CompilerContext.finish). At runtime
+    // we read that snapshot here and hand it to compile_eval, which adopts
+    // it into the fresh eval CompilerContext — after that the eval body's
+    // `this.#m` reference resolves through `resolve_private_name` exactly
+    // like a method body's reference would.
+    vm::Vm* precheck_vm = (vm::Vm*)ctx.vm;
+    usz precheck_act_count = precheck_vm.activation_count;
+    vm::Activation* precheck_caller = null;
     bool caller_has_direct_eval = false;
-    {
-        vm::Vm* precheck_vm = (vm::Vm*)ctx.vm;
-        usz precheck_act_count = precheck_vm.activation_count;
-        if (precheck_act_count > 0) {
-            vm::Activation* precheck_caller = &precheck_vm.activations[precheck_act_count - 1];
-            caller_has_direct_eval = (precheck_caller.flags & vm::ACT_FLAG_DIRECT_EVAL) != 0;
+    void* parent_priv_names = null;
+    uint parent_priv_count = 0;
+    if (precheck_act_count > 0) {
+        precheck_caller = &precheck_vm.activations[precheck_act_count - 1];
+        caller_has_direct_eval = (precheck_caller.flags & vm::ACT_FLAG_DIRECT_EVAL) != 0;
+        if (caller_has_direct_eval) {
+            // precheck_caller.func is the caller's CompiledFunction template
+            // (for natfunc frames — like this builtin itself — the func slot
+            // isn't a CompiledFunction, so guard the cast). For compiled
+            // function frames (the only paths that set ACT_FLAG_DIRECT_EVAL),
+            // func is always the corresponding CompiledFunction* — see
+            // vm_core.c3 act_creation paths and how `target` is read.
+            // The cast is safe because has_direct_eval is a function-level
+            // flag that's only ever set on compiled function bodies.
+            CompiledFunction* caller_cf = (CompiledFunction*)precheck_caller.func;
+            if (caller_cf != null) {
+                parent_priv_names = caller_cf.eval_private_names;
+                parent_priv_count = caller_cf.eval_private_name_count;
+            }
         }
     }
 
     // Compile the source string as eval code
     Lexer lex = lexer::lexer_init(src_cstr[:src_len], ctx.heap);
     lex.skip_hashbang();
-    CompiledFunction*? cf = compiler::compile_eval(&lex, ctx.heap, caller_has_direct_eval);
+    CompiledFunction*? cf = compiler::compile_eval(&lex, ctx.heap, caller_has_direct_eval,
+                                                    parent_priv_names, parent_priv_count);
     CompiledFunction* func;
     if (try f = cf) {
         func = f;
@@ -422,14 +450,17 @@ fn void builtin_eval(BuiltinContext* ctx) {
     EnvRecord* var_env_for_eval = ctx.global_env;
     TVal caller_this;
     caller_this.set_undefined();
-    if (act_count > 0) {
-        vm::Activation* caller_act = &eval_vm.activations[act_count - 1];
-        if ((caller_act.flags & vm::ACT_FLAG_DIRECT_EVAL) != 0) {
-            is_direct_eval = true;
-            lex_env_for_eval = caller_act.lex_env;
-            var_env_for_eval = caller_act.var_env;
-            caller_this = caller_act.this_binding;
-        }
+    // Reuse the activation captured in the precheck above — by the time we
+    // get here, the only thing that could have changed is act_count itself
+    // (no extra activations can be pushed between the precheck and this
+    // block because builtin_eval runs to completion on this thread before
+    // any subsequent VM dispatch). The direct-eval decision below is
+    // therefore guaranteed consistent with `caller_has_direct_eval`.
+    if (caller_has_direct_eval && precheck_caller != null) {
+        is_direct_eval = true;
+        lex_env_for_eval = precheck_caller.lex_env;
+        var_env_for_eval = precheck_caller.var_env;
+        caller_this = precheck_caller.this_binding;
     }
     // Declaration-instantiation leak semantics follow the eval SOURCE's own
     // strictness (ES2015 §18.2.1.1 PerformEval step 12), independent of the

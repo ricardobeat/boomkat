@@ -327,6 +327,9 @@ struct Heap {
     // Cached iterator symbol (lazily created, rooted via this field).
     HString*            iterator_symbol;
 
+    // Cached Symbol.toStringTag (lazily created, rooted via this field).
+    HString*            tostringtag_symbol;
+
     // Cached Symbol.toPrimitive (lazily created, rooted via this field).
     HString*            toprimitive_symbol;
 
@@ -909,6 +912,10 @@ fn void Heap.destroy(&self) {
                 if (cf.line_table != null) { self.free_func(self.heap_udata, cf.line_table); }
                 if (cf.ic_entries != null) { self.free_func(self.heap_udata, cf.ic_entries); }
                 if (cf.var_ic_entries != null) { self.free_func(self.heap_udata, cf.var_ic_entries); }
+                // Direct-eval private-name snapshot (compiler/context.c3
+                // finish() — heap-tracked when a function had direct eval AND
+                // inherited names from a parent class body).
+                if (cf.eval_private_names != null) { self.free_func(self.heap_udata, cf.eval_private_names); }
                 self.free_func(self.heap_udata, cf);
             }
         }
@@ -1050,6 +1057,8 @@ fn void Heap.reset(&self) {
             if (cf.line_table != null) { self.free_func(self.heap_udata, cf.line_table); }
             if (cf.ic_entries != null) { self.free_func(self.heap_udata, cf.ic_entries); }
             if (cf.var_ic_entries != null) { self.free_func(self.heap_udata, cf.var_ic_entries); }
+            // Direct-eval private-name snapshot (see destroy() above).
+            if (cf.eval_private_names != null) { self.free_func(self.heap_udata, cf.eval_private_names); }
             self.free_func(self.heap_udata, cf);
         }
     }
@@ -1216,6 +1225,7 @@ fn void Heap.reset(&self) {
     // string table and must not be reused after reset.  They are
     // re-populated lazily by ensure_iterator_symbol / ensure_toprimitive_symbol.
     self.iterator_symbol = null;
+    self.tostringtag_symbol = null;
     self.toprimitive_symbol = null;
     self.concatspreadable_symbol = null;
     self.hasinstance_symbol = null;
@@ -1942,6 +1952,11 @@ fn void Heap.mark_roots(&self) {
     // Mark the cached iterator symbol (may not be in strs[] or symbol registry)
     if (self.iterator_symbol != null) {
         ((HeapHeader*)self.iterator_symbol).set_reachable();
+    }
+
+    // Mark the cached Symbol.toStringTag (may not be in strs[] or symbol registry)
+    if (self.tostringtag_symbol != null) {
+        ((HeapHeader*)self.tostringtag_symbol).set_reachable();
     }
 
     // Mark the cached Symbol.toPrimitive (may not be in strs[] or symbol registry)

@@ -1127,6 +1127,34 @@ struct CompiledFunction {
     /// stamps no brand. A raw HString* (not a constant-pool index) for the
     /// same reason as field_init_func.
     void*           brand_name_hstr;
+
+    // ---- Direct-eval private-name snapshot (ES2022 §8.7.1) ------------------
+    //
+    // Per spec, direct eval inherits the calling execution context's
+    // PrivateEnvironment. The compiler can't know at eval-compile-time what
+    // those private names are (eval compiles against a fresh CompilerContext),
+    // so the OUTER function (the one whose body contains `eval(...)`) saves
+    // a snapshot of its private-name table here before its CompilerContext's
+    // scratch buffer is freed by cleanup(). At eval-call time builtin_eval
+    // reads this snapshot from the caller's activation and passes it to
+    // compile_eval so the eval body can resolve `#x` references against the
+    // inherited names.
+    //
+    // Only populated when the function has_direct_eval AND inherited any
+    // private names from a parent class body (i.e. private_name_count > 0
+    // AND the table was adopted, not owned). NULL/0 otherwise.
+    //
+    // Heap-tracked: when the heap tears down, this buffer is freed alongside
+    // the other CompiledFunction sub-arrays (see Heap.free_compiled_funcs).
+    // The string fields inside each PrivateNameEntry point at interned HString
+    // data (stable for the heap's lifetime), so copying the entry structs is
+    // safe — the data they reference outlives the snapshot.
+    //
+    // void* (not PrivateNameEntry*) because that type lives in the compiler
+    // module which bytecode.c3 doesn't import; the compiler and builtin_eval
+    // cast both sides consistently.
+    void*           eval_private_names;
+    uint            eval_private_name_count;
 }
 
 // ============================================================================
