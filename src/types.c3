@@ -488,6 +488,18 @@ $else
 $endif
 }
 
+/// Store an integer result, boxing as a fastint when it fits the fastint range
+/// and falling back to a double otherwise.  This is the canonical way to write
+/// the result of integer arithmetic (ADD/SUB/ADDI/SUBI/...) — do not open-code
+/// the range check at call sites.
+macro void TVal.set_fastint_or_number(&self, long val) {
+    if (val >= FASTINT_MIN && val <= FASTINT_MAX) {
+        self.set_fastint(val);
+    } else {
+        self.set_number((double)val);
+    }
+}
+
 macro void TVal.set_string(&self, void* ptr) {
 $if USE_NANBOX:
     self.bits = nanbox_encode_tagged(TAG_STRING, (usz)ptr);

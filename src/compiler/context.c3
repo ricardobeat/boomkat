@@ -1230,6 +1230,76 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         }
     }
 
+    // --- Peephole: fuse LDINT rK, imm + ADD/SUB rD = …,rK → NOP + ADDI/SUBI rD = rS, imm ---
+    // Runs AFTER copy-propagation (above): that pass NOPs the LDREG moves that
+    // otherwise sit between an LDINT literal and its arithmetic consumer, so the
+    // consumer of rK is now the next NON-NOP instruction. We skip NOPs to reach
+    // it rather than requiring physical adjacency (compaction hasn't run yet).
+    //
+    //   LDINT rK, imm            (imm fits signed 8-bit: -128..127)
+    //   <NOP>*                   (copy-propagated LDREG moves)
+    //   ADD/SUB rD = rX, rY      exactly one source is rK
+    //     → NOP / … / ADDI|SUBI rD = rS, imm     (rS = the surviving source)
+    // Saves a dispatch and frees a register per `expr ± literal` site (fib's
+    // `n-1`/`n-2`, loop `i+1`, …). The immediate is baked into the fused op, so
+    // control landing on the NOP'd LDINT slot still falls through correctly.
+    //
+    // Commutativity: ADD folds with rK as either source (rS+imm == imm+rS).
+    // SUB folds only `rS - imm` (rK the right source); `imm - rS` is not a
+    // subtract-immediate and is left alone.
+    if (!self.disable_optimize && self.code_count >= 2) {
+        for (uint i = 0; i < self.code_count; i++) {
+            if (self.code[i].op != Opcode.LDINT) { continue; }
+            int imm = self.code[i].get_sbc();
+            if (imm < -128 || imm > 127) { continue; }
+            uint rK = (uint)self.code[i].a;
+
+            // Locate the consumer: the next non-NOP instruction.
+            uint k = i + 1;
+            while (k < self.code_count && self.code[k].op == Opcode.NOP) { k++; }
+            if (k >= self.code_count) { continue; }
+
+            Opcode aop = self.code[k].op;
+            bool is_add = (aop == Opcode.ADD);
+            bool is_sub = (aop == Opcode.SUB);
+            if (!is_add && !is_sub) { continue; }
+
+            uint rD = (uint)self.code[k].a;
+            uint rX = (uint)self.code[k].b;
+            uint rY = (uint)self.code[k].c;
+
+            uint rS;
+            if (is_sub) {
+                if (rY != rK || rX == rK) { continue; }   // need `rX - rK`
+                rS = rX;
+            } else {
+                if (rX == rK && rY != rK)      { rS = rY; }
+                else if (rY == rK && rX != rK) { rS = rX; }
+                else { continue; }
+            }
+
+            // rK must be dead after the consumer (fresh literal temp; scan to be
+            // safe against register reuse). Start past the consumer at k+1.
+            bool rK_used_after = false;
+            for (uint j = k + 1; j < self.code_count; j++) {
+                Instruction jns = self.code[j];
+                if (jns.op == Opcode.IF_TRUE || jns.op == Opcode.IF_FALSE) {
+                    if ((uint)jns.a == rK) { rK_used_after = true; break; }
+                    continue;
+                }
+                if (bytecode::get_op_format(jns.op) == bytecode::OpFormat.ABC) {
+                    if ((uint)jns.b == rK || (uint)jns.c == rK) { rK_used_after = true; break; }
+                }
+                if ((uint)jns.a == rK) { break; }   // overwritten → dead from here
+            }
+            if (rK_used_after) { continue; }
+
+            Opcode fused = is_sub ? Opcode.SUBI : Opcode.ADDI;
+            self.code[i] = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
+            self.code[k] = bytecode::make_abc(fused, rD, rS, (uint)(ichar)imm);
+        }
+    }
+
     // --- Register-resident locals: elide dead env ops when no scope is needed ---
     // Must run BEFORE the NOP compaction below so the NOPs we introduce here are
     // physically removed too. When this function needs no runtime scope object

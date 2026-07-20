@@ -1786,6 +1786,57 @@ fn TVal? Vm.run(Vm* vm) {
             }
             continue;
 
+        case Opcode.ADDI: {
+            // A = B + imm.  C is a signed 8-bit immediate (-128..127), the folded
+            // constant from a fused LDINT+ADD.  Operand types are only known at
+            // runtime, so the fastint check is a correctness dispatch, not a
+            // fallback hedge: fastint B takes the branch-free path; everything
+            // else routes through the shared numeric/bigint coercion with the
+            // immediate synthesized as a fastint TVal.
+            long imm = (long)(ichar)insn.c;
+            if (rb.is_fastint()) {
+                long sum = rb.get_fastint() + imm;
+                ra.set_fastint_or_number(sum);
+                continue;
+            }
+            TVal immv; immv.set_fastint(imm);
+            if (rb.is_bigint()) {
+                if (vm_bigint_binop(vm, Opcode.ADD, ra, rb, &immv) == BigIntOpResult.THREW) {
+                    if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                    if (ds.needs_restart) break;
+                }
+                continue;
+            }
+            double add_b = vm_to_number(vm, rb);
+            if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+            if (ds.needs_restart) break;
+            ra.set_number(add_b + (double)imm);
+            continue;
+        }
+
+        case Opcode.SUBI: {
+            // A = B - imm.  C is a signed 8-bit immediate (-128..127).
+            long imm = (long)(ichar)insn.c;
+            if (rb.is_fastint()) {
+                long diff = rb.get_fastint() - imm;
+                ra.set_fastint_or_number(diff);
+                continue;
+            }
+            TVal immv; immv.set_fastint(imm);
+            if (rb.is_bigint()) {
+                if (vm_bigint_binop(vm, Opcode.SUB, ra, rb, &immv) == BigIntOpResult.THREW) {
+                    if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                    if (ds.needs_restart) break;
+                }
+                continue;
+            }
+            double sub_b = vm_to_number(vm, rb);
+            if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+            if (ds.needs_restart) break;
+            ra.set_number(sub_b - (double)imm);
+            continue;
+        }
+
         case Opcode.MUL:
             if (rb.is_bigint() || rc.is_bigint()) {
                 if (vm_bigint_binop(vm, Opcode.MUL, ra, rb, rc) == BigIntOpResult.THREW) {

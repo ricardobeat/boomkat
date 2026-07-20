@@ -119,6 +119,13 @@ enum Opcode : char {
     MOD,
     /// `A = B ** C`  — exponentiation.
     EXP,
+    /// `A = B + imm8`  — add small unsigned immediate (fused LDINT+ADD).
+    /// C holds an 8-bit unsigned immediate (0..255); B is the source register.
+    /// Fastint fast path only; falls back to the same coercion as ADD.
+    ADDI,
+    /// `A = B - imm8`  — subtract small unsigned immediate (fused LDINT+SUB).
+    /// C holds an 8-bit unsigned immediate (0..255); B is the source register.
+    SUBI,
 
     // ---- Unary (A = op B) ------------------------------------------------
 
