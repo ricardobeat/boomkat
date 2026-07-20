@@ -111,6 +111,24 @@ fn void builtin_build_data_descriptor(Heap* heap, HObject** out, TVal value, boo
 /// If value is already an Object, returns it.
 /// Otherwise, wraps the primitive (boolean/number/string) in a wrapper object.
 fn void builtin_object(BuiltinContext* ctx) {
+    // ES2015 §19.1.1.1 Object([value]) step 1: when NewTarget is neither
+    // undefined nor the active function object (i.e. Object was invoked via
+    // super() from a subclass like `class O extends Object {}`, or
+    // `Reflect.construct(Object, args, O)`), the value argument is completely
+    // ignored — return an ordinary object whose [[Prototype]] is
+    // NewTarget.prototype.
+    if (ctx.is_constructor && ctx.new_target != null && ctx.new_target != ctx.callee_obj) {
+        HObject*? obj_raw = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
+        if (catch err = obj_raw) {
+            ctx.result.set_undefined();
+            return;
+        }
+        HObject* obj = obj_raw;
+        obj.prototype = builtin_proto_from_new_target(ctx, ctx.heap.object_proto);
+        ctx.result.set_object(obj);
+        return;
+    }
+
     // Object() with no args — create and return new empty object
     // Both Object() function call and new Object() with no args.
     if (ctx.argc == 0) {

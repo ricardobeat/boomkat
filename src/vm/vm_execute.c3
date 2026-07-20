@@ -2749,9 +2749,18 @@ fn TVal? Vm.run(Vm* vm) {
                 // infinitely back to the same finally block.
                 if (!(ret_cat.flags & CATCHER_FLAG_PENDING_RETURN)) {
                     ret_cat.flags |= CATCHER_FLAG_PENDING_RETURN;
-                    // Jump to finally handler
-                    ds.curr_pc = ret_cat.finally_pc;
-                    ds.act.curr_pc = ds.curr_pc;
+                    // Only jump to finally_pc if we're NOT already executing
+                    // the finally body. The finally block can be entered via
+                    // a throw from the try (caught by catch which then throws,
+                    // landing us in finally via vm_throw_value), or via the
+                    // catch handler returning. In those paths PENDING_RETURN
+                    // is not yet set when the first RET inside the finally
+                    // body runs. Jumping to finally_pc again would re-enter
+                    // the FINALLY opcode and re-execute the finally body.
+                    if ((ret_cat.flags & CATCHER_FLAG_IN_FINALLY) == 0) {
+                        ds.curr_pc = ret_cat.finally_pc;
+                        ds.act.curr_pc = ds.curr_pc;
+                    }
                 }
                 continue;
             }
@@ -2922,8 +2931,12 @@ fn TVal? Vm.run(Vm* vm) {
                 ret2_cat.return_val.set_undefined();
                 if (!(ret2_cat.flags & CATCHER_FLAG_PENDING_RETURN)) {
                     ret2_cat.flags |= CATCHER_FLAG_PENDING_RETURN;
-                    ds.curr_pc = ret2_cat.finally_pc;
-                    ds.act.curr_pc = ds.curr_pc;
+                    // Don't jump to finally_pc if we're already inside the
+                    // finally body — see RET handler for details.
+                    if ((ret2_cat.flags & CATCHER_FLAG_IN_FINALLY) == 0) {
+                        ds.curr_pc = ret2_cat.finally_pc;
+                        ds.act.curr_pc = ds.curr_pc;
+                    }
                 }
                 continue;
             }

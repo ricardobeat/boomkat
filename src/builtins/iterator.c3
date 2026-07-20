@@ -239,25 +239,23 @@ fn void builtin_array_iterator_next(BuiltinContext* ctx) {
         if (try v = elem) {
             value = v;
         } else {
-            // Not in dense part — try property table via stringified index
-            char[32] idx_buf;
-            int idx_len = (int)(io::bprintf(&idx_buf, "%d", idx) ?? idx_buf[:0]).len;
-            uint idx_hash = heap.hash_string(idx_buf[:idx_len]);
-            HString* idx_str = heap.str_table_lookup(idx_buf[:idx_len], idx_hash);
-            if (idx_str == null) {
-                HString*? new_str = hstring::hstring_alloc(heap, idx_buf[:idx_len], idx_hash);
-                if (try s = new_str) {
-                    heap.str_table_insert(s);
-                    idx_str = s;
-                }
+            // Not in dense part — use full [[Get]] semantics (per ES2015 §22.1.5.2
+            // step 9): walks the prototype chain, invokes any accessor's getter,
+            // and surfaces getter-thrown errors via ctx.should_throw so the
+            // surrounding for-of statement propagates them. The previous code
+            // called get_prop_proto, which returned the raw accessor slot and
+            // silently yielded the GETTER_SETTER object instead of invoking the
+            // getter — causing array-key-get-error.js to fail.
+            TVal elem_val;
+            if (arr_get_elem_vm(target, (ulong)idx, heap, ctx, &elem_val)) {
+                value = elem_val;
+            } else if (ctx.should_throw) {
+                // Getter threw — bail out so the dispatch loop can transfer
+                // control to the nearest for-of catcher.
+                ctx.result.set_undefined();
+                return;
             }
-            if (idx_str != null) {
-                TVal? elem_val = target.get_prop_proto(idx_str);
-                if (try ev = elem_val) {
-                    value = ev;
-                }
-                // else: element is a hole — value stays undefined
-            }
+            // else: element is a hole — value stays undefined
         }
     }
     }

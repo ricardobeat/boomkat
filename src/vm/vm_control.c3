@@ -98,8 +98,12 @@ fn TVal? dispatch_returns(Dispatch* ds, Opcode op, TVal* ra) {
                 ret_cat.return_val = ra[0];
                 if (!(ret_cat.flags & CATCHER_FLAG_PENDING_RETURN)) {
                     ret_cat.flags |= CATCHER_FLAG_PENDING_RETURN | CATCHER_FLAG_PENDING_RETURN_GEN;
-                    ds.curr_pc = ret_cat.finally_pc;
-                    ds.act.curr_pc = ds.curr_pc;
+                    // Don't jump to finally_pc if we're already inside the
+                    // finally body — see plain RET for details.
+                    if ((ret_cat.flags & CATCHER_FLAG_IN_FINALLY) == 0) {
+                        ds.curr_pc = ret_cat.finally_pc;
+                        ds.act.curr_pc = ds.curr_pc;
+                    }
                 }
                 return (TVal){};
             }
@@ -115,8 +119,10 @@ fn TVal? dispatch_returns(Dispatch* ds, Opcode op, TVal* ra) {
                 ret_cat2.return_val = undef_val;
                 if (!(ret_cat2.flags & CATCHER_FLAG_PENDING_RETURN)) {
                     ret_cat2.flags |= CATCHER_FLAG_PENDING_RETURN | CATCHER_FLAG_PENDING_RETURN_GEN;
-                    ds.curr_pc = ret_cat2.finally_pc;
-                    ds.act.curr_pc = ds.curr_pc;
+                    if ((ret_cat2.flags & CATCHER_FLAG_IN_FINALLY) == 0) {
+                        ds.curr_pc = ret_cat2.finally_pc;
+                        ds.act.curr_pc = ds.curr_pc;
+                    }
                 }
                 return (TVal){};
             }

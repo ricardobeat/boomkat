@@ -160,6 +160,15 @@ fn TVal? dispatch_exceptions(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 Catcher* fin_cat = (Catcher*)ds.act.cat;
                 if (fin_cat != null) {
                     fin_cat.flags |= CATCHER_FLAG_IN_FINALLY;
+                    // Clear CATCH_ENABLED: once we enter the finally block, the
+                    // try block has already completed (normal, abrupt, or via
+                    // catch). A throw inside the finally must NOT be caught by
+                    // THIS try/catch's catch clause — per ES2015 §13.15.1.2 the
+                    // catch only handles throws from the try block. Without
+                    // this, a throw in the finally jumps to catch_pc, the catch
+                    // body runs, then falls through to FINALLY and re-executes
+                    // the finally body (double-execution bug).
+                    fin_cat.flags &= ~CATCHER_FLAG_CATCH_ENABLED;
                     // Exceptional entry skipped POP_LEX ops (harmless no-op on
                     // the balanced normal-flow entry).
                     if (fin_cat.saved_lex_env != null) {

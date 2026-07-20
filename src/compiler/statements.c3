@@ -1903,20 +1903,32 @@ fn void? CompilerContext.for_statement(&self) {
                 }
                 ushort[MAX_DESTRUCT_BINDS] fdgroup_regs;
                 ushort[MAX_DESTRUCT_BINDS] fdbinding_regs;
+                uint[MAX_DESTRUCT_BINDS] fd_periter_name_idxs;
+                bool[MAX_DESTRUCT_BINDS] fd_periter_is_const;
+                uint fd_periter_count = 0;
+                bool fd_needs_periter = false;
                 for (uint i = 0; i < fdcount; i++) { fdgroup_regs[i] = 0xFFFF; fdbinding_regs[i] = 0xFFFF; }
                 for (uint i = 0; i < fdcount; i++) {
                     if (fdbinds[i].is_synthetic) continue;
                     HString* hs = (HString*)self.constants[fdbinds[i].name_idx].get_heapptr();
                     fdbinding_regs[i] = self.declare_var(hs.get_data(), decl_kind);
+                    if (is_lexical && (self.is_global || self.is_captured_name(hs.get_data()))) {
+                        fd_periter_name_idxs[fd_periter_count] = fdbinds[i].name_idx;
+                        fd_periter_is_const[fd_periter_count] = is_const;
+                        fd_periter_count++;
+                        fd_needs_periter = true;
+                    }
                 }
 
                 self.expect(TokenType.IN)!;
-
                 obj_reg = self.assignment_expr()!;
                 self.expect(TokenType.RPAREN)!;
 
                 if (is_lexical) {
+                    // The initial environment is the first iteration's
+                    // environment.  It is replaced after each body evaluation.
                     self.emit_simple(Opcode.PUSH_LEX);
+                    self.cur_lex_depth++;
                 }
 
                 ushort iter_state = self.alloc_reg();
@@ -1946,8 +1958,17 @@ fn void? CompilerContext.for_statement(&self) {
                                                 DestructStoreMode.DECLARE, is_lexical, is_const);
                 }
 
-
                 self.statement()!;
+
+                // CreatePerIterationEnvironment.  Copy all leaf bindings before
+                // replacing the current environment so closures from this body
+                // retain the values for this iteration.
+                uint cycle_label = self.code_count;
+                if (fd_needs_periter) {
+                    self.emit_create_per_iteration_env(fd_periter_name_idxs[..],
+                                                       fd_periter_is_const[..], fd_periter_count);
+                }
+                self.loop_stack[self.loop_depth - 1].continue_target = cycle_label;
 
                 int back_offset = (int)loop_start - (int)self.code_count - 1;
                 self.emit(bytecode::make_sabc(Opcode.JUMP, back_offset));
@@ -1957,6 +1978,7 @@ fn void? CompilerContext.for_statement(&self) {
 
                 if (is_lexical) {
                     self.emit_simple(Opcode.POP_LEX);
+                    self.cur_lex_depth--;
                 }
 
                 self.free_reg(iter_state);
@@ -2024,11 +2046,16 @@ fn void? CompilerContext.for_statement(&self) {
                 ushort obj_reg = self.assignment_expr()!;
                 self.expect(TokenType.RPAREN)!;
 
-                // For let/const, push a new lexical environment so the loop
-                // variable is block-scoped (not visible outside the loop) and
-                // closures inside the body capture from this lex_env.
+                // For let/const, push the loop's initial per-iteration lexical
+                // environment.  The environment is replaced after each body
+                // evaluation; the first iteration uses this initial environment.
+                // Keep cur_lex_depth in sync so break/continue unwind to this
+                // environment before reaching the loop exit/rotation path.
+                bool needs_forin_periter = is_lexical
+                    && (self.is_global || self.is_captured_name(name_tok.str_value));
                 if (is_lexical) {
                     self.emit_simple(Opcode.PUSH_LEX);
+                    self.cur_lex_depth++;
                 }
 
                 // Emit INITFOR to set up the iterator
@@ -2041,18 +2068,33 @@ fn void? CompilerContext.for_statement(&self) {
                 // Emit NEXTFOR: iter_var = next key, B = has_next
                 ushort has_next = self.alloc_reg();
                 self.emit_abc(Opcode.NEXTFOR, (uint)iter_var, (uint)has_next, (uint)iter_state);
-                // Sync the for-in variable to the environment
-                uint forin_name_idx = self.add_string_constant(name_tok.str_value);
-                self.emit_var_store(iter_var, forin_name_idx, is_lexical, is_const);
-                // No reload needed: DECLVAR/PUTLEX/PUTLEX_C do not clear the source
-                // register, so iter_var still holds the current key after the store.
 
-                // If no more keys, exit
+                // A completed NEXTFOR does not perform BindingInitialization.
+                // Test has_next before storing A, because NEXTFOR sets A to
+                // undefined on exhaustion and the last closure must retain the
+                // last actual iteration value.
                 uint exit_jump = self.emit_cond_jump(Opcode.IF_FALSE, (uint)has_next);
                 self.free_reg(has_next);
 
+                // Store the current key in the active per-iteration environment.
+                uint forin_name_idx = self.add_string_constant(name_tok.str_value);
+                self.emit_var_store(iter_var, forin_name_idx, is_lexical, is_const);
+
                 // Compile body
                 self.statement()!;
+
+                // CreatePerIterationEnvironment: copy the current binding into a
+                // fresh environment before the next NEXTFOR.  Closures created
+                // in this body therefore retain this iteration's environment.
+                uint cycle_label = self.code_count;
+                if (needs_forin_periter) {
+                    uint[1] cycle_name_idxs;
+                    bool[1] cycle_is_const;
+                    cycle_name_idxs[0] = forin_name_idx;
+                    cycle_is_const[0] = is_const;
+                    self.emit_create_per_iteration_env(cycle_name_idxs[..], cycle_is_const[..], 1);
+                }
+                self.loop_stack[self.loop_depth - 1].continue_target = cycle_label;
 
                 // Jump back to loop start
                 int back_offset = (int)loop_start - (int)self.code_count - 1;
@@ -2061,10 +2103,11 @@ fn void? CompilerContext.for_statement(&self) {
                 self.patch_jump(exit_jump);
                 self.pop_loop();
 
-                // Pop the lexical scope for let/const, removing the
-                // block-scoped binding from the VM's lex_env chain.
+                // Pop the final lexical environment for let/const.  Earlier
+                // environments remain alive when captured by loop closures.
                 if (is_lexical) {
                     self.emit_simple(Opcode.POP_LEX);
+                    self.cur_lex_depth--;
                 }
 
                 self.free_reg(iter_state);
