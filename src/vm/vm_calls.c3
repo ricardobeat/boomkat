@@ -357,9 +357,18 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                     // spuriously observes that constructor. Arrow functions
                     // instead resolve new.target lexically, from the value
                     // captured at their closure creation (§9.2.1).
+                    //
+                    // Eval functions (is_eval_fn) inherit new.target from
+                    // their direct caller (ES2015 §18.2.1.1 PerformEval +
+                    // §13.3.5.1 EvaluateNewTarget). compile_eval rejected
+                    // new.target in eval-from-script / eval-from-arrow, so
+                    // any eval body that contains NEWTARGET was compiled
+                    // inside a non-arrow function body; we just propagate
+                    // the caller's new_target into the eval activation so
+                    // the opcode reads the right value.
                     new_act.new_target = target_fast.is_arrow()
                         ? (*hobj_fast.extra_ptr()).func.captured_new_target
-                        : null;
+                        : (target_fast.is_eval_fn() ? ds.act.new_target : null);
                     new_act.max_heap_reg = 0;
                     new_act.caller_valstack_top = vm.valstack_top;
                     // Arrow functions use lexical this — captured once at
@@ -1326,9 +1335,22 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
             // A regular (non-construct) call has no [[NewTarget]]; clear the
             // stale value from a prior `new` that reused this pooled slot.
             // Arrows resolve new.target lexically from their captured value.
+            //
+            // Eval functions are special (ES2015 §18.2.1.1 PerformEval step
+            // 11, plus §13.3.5.1 EvaluateNewTarget): an eval body has no
+            // own [[NewTarget]] — it inherits the new.target of its direct
+            // caller (the function whose body contains the eval call). For
+            // direct eval from a function, that's the caller's new_target;
+            // for eval from script top-level / arrow / indirect call, it's
+            // null. compile_eval already validated the syntax (rejects
+            // new.target in eval-from-arrow / eval-from-script), so by the
+            // time we run this opcode the eval body is guaranteed to be
+            // inside a non-arrow function body — but the runtime still has
+            // to actually copy the new_target through to the activation,
+            // because NEWTARGET reads it directly from `act.new_target`.
             new_act.new_target = target.is_arrow()
                 ? (*hobj.extra_ptr()).func.captured_new_target
-                : null;
+                : (target.is_eval_fn() ? ds.act.new_target : null);
             if (async_prom != null) {
                 // Async function entered from the generator block above
                 new_act.flags |= ACT_FLAG_ASYNC;
