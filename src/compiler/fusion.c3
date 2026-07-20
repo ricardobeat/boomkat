@@ -22,6 +22,7 @@
 module duktape::compiler;
 
 import duktape::bytecode;
+import duktape::types;
 
 /// FUSION_PHASE_NOTE — ordering of every fusion-shaped pass in finish(),
 /// documented once here instead of re-derived per pass:
@@ -52,13 +53,17 @@ struct FusionMatch {
 /// A trigger predicate: does this instruction introduce a fusable scratch
 /// value (e.g. an in-range LDINT), and what register/immediate does it
 /// carry? Returning `matched = false` skips this instruction as a trigger.
-alias FusionTriggerFn = fn FusionMatch(Instruction trigger);
+/// `ctx` is an opaque per-rule pointer threaded through unchanged from
+/// `run_fusion_rule`'s caller (e.g. the constant pool, for rules whose
+/// guard depends on more than the raw instruction bits); rules that don't
+/// need it simply ignore the parameter.
+alias FusionTriggerFn = fn FusionMatch(Instruction trigger, void* ctx);
 
 /// A consumer predicate: given the already-validated trigger and a
 /// candidate consumer instruction (the next non-NOP instruction after the
 /// trigger), does it consume the trigger's scratch register in a fusable
 /// way? On match, fills in rewrite_op/dest_reg/src_reg/imm.
-alias FusionConsumerFn = fn FusionMatch(Instruction trigger, Instruction consumer, uint scratch_reg);
+alias FusionConsumerFn = fn FusionMatch(Instruction trigger, Instruction consumer, uint scratch_reg, void* ctx);
 
 /// One declarative fusion rule: {trigger predicate, consumer predicate}.
 /// The shared driver (`run_fusion_rule`) owns NOP-skipping and the
@@ -104,16 +109,16 @@ fn bool fusion_reg_live_from(Instruction* code, uint code_count, uint start, uin
 /// consumer, which no longer depends on the trigger's register), which is
 /// why every trigger-then-consumer fusion (not e.g. a fused *branch*) can
 /// share this driver unconditionally.
-fn void run_fusion_rule(Instruction* code, uint code_count, FusionRule rule) {
+fn void run_fusion_rule(Instruction* code, uint code_count, FusionRule rule, void* ctx = null) {
     for (uint i = 0; i < code_count; i++) {
-        FusionMatch tm = rule.trigger(code[i]);
+        FusionMatch tm = rule.trigger(code[i], ctx);
         if (!tm.matched) { continue; }
 
         uint k = i + 1;
         while (k < code_count && code[k].op == Opcode.NOP) { k++; }
         if (k >= code_count) { continue; }
 
-        FusionMatch cm = rule.consumer(code[i], code[k], tm.dest_reg);
+        FusionMatch cm = rule.consumer(code[i], code[k], tm.dest_reg, ctx);
         if (!cm.matched) { continue; }
 
         if (fusion_reg_live_from(code, code_count, k + 1, tm.dest_reg)) { continue; }
@@ -136,7 +141,7 @@ fn void run_fusion_rule(Instruction* code, uint code_count, FusionRule rule) {
 // SUB folds only `rS - imm` (rK must be the right/second source); `imm -
 // rS` is not a subtract-immediate and is left alone.
 
-fn FusionMatch fusion_addi_subi_trigger(Instruction trigger) {
+fn FusionMatch fusion_addi_subi_trigger(Instruction trigger, void* ctx) {
     FusionMatch m;
     if (trigger.op != Opcode.LDINT) { return m; }
     int imm = trigger.get_sbc();
@@ -147,7 +152,7 @@ fn FusionMatch fusion_addi_subi_trigger(Instruction trigger) {
     return m;
 }
 
-fn FusionMatch fusion_addi_subi_consumer(Instruction trigger, Instruction consumer, uint rK) {
+fn FusionMatch fusion_addi_subi_consumer(Instruction trigger, Instruction consumer, uint rK, void* ctx) {
     FusionMatch m;
     bool is_add = consumer.op == Opcode.ADD;
     bool is_sub = consumer.op == Opcode.SUB;
@@ -188,4 +193,64 @@ const FusionRule FUSION_ADDI_SUBI = {
 /// CompilerContext.finish().
 fn void fuse_addi_subi(Instruction* code, uint code_count) {
     run_fusion_rule(code, code_count, FUSION_ADDI_SUBI);
+}
+
+// ============================================================================
+// Rule: LDCONST rK, idx  +  GETPROP ra = rb, rK  ->  NOP + GETPROPC ra = rb, idx
+// ============================================================================
+//
+// Ported from the hand-written pass in CompilerContext.finish() (search
+// "fuse LDCONST rK, idx" in context.c3 for the original). Verified
+// byte-identical against it via the golden-bytecode suite.
+//
+// `ctx` carries the constant pool (`TVal*`) so the trigger can check
+// `idx <= 255` (GETPROPC.c is 8 bits) and that the constant is a string
+// (GETPROPC assumes string keys) — the only rule so far that needs more
+// than the raw instruction bits to validate its trigger.
+//
+// Liveness: the shared dead-after scan (`fusion_reg_live_from`) already
+// implements the exact rK-liveness rule the hand-written pass re-derived
+// (IF_TRUE/IF_FALSE read `a`; ABC-format ops read `b`/`c`; any write to
+// `a` ends the scan) — including the "rK kept alive for a following
+// PUTPROP/DELPROP in LHS/assignment mode" case, which is just "rK is read
+// again before it's overwritten", i.e. the ordinary dead-after-liveness
+// predicate. No special-casing needed.
+
+fn FusionMatch fusion_getpropc_trigger(Instruction trigger, void* ctx) {
+    FusionMatch m;
+    if (trigger.op != Opcode.LDCONST) { return m; }
+    uint idx = trigger.get_bc();
+    if (idx > 255) { return m; }
+    TVal* constants = (TVal*)ctx;
+    if (!constants[idx].is_string()) { return m; }
+    m.matched  = true;
+    m.dest_reg = (uint)trigger.a;   // rK: the scratch register holding the key
+    m.imm      = idx;
+    return m;
+}
+
+fn FusionMatch fusion_getpropc_consumer(Instruction trigger, Instruction consumer, uint rK, void* ctx) {
+    FusionMatch m;
+    if (consumer.op != Opcode.GETPROP) { return m; }
+    if ((uint)consumer.c != rK) { return m; }
+
+    m.matched    = true;
+    m.rewrite_op = Opcode.GETPROPC;
+    m.dest_reg   = (uint)consumer.a;
+    m.src_reg    = (uint)consumer.b;
+    m.imm        = trigger.get_bc();
+    return m;
+}
+
+const FusionRule FUSION_GETPROPC = {
+    .trigger  = &fusion_getpropc_trigger,
+    .consumer = &fusion_getpropc_consumer,
+};
+
+/// Run the declarative GETPROPC fusion over `code[0..code_count)`.
+/// Drop-in replacement for the hand-written pass at the same site in
+/// CompilerContext.finish(). `constants` is the function's constant pool,
+/// needed to validate the trigger (string key, index fits GETPROPC.c).
+fn void fuse_getpropc(Instruction* code, uint code_count, TVal* constants) {
+    run_fusion_rule(code, code_count, FUSION_GETPROPC, (void*)constants);
 }

@@ -755,60 +755,14 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     // GETPROPC.c, so jumping into the NOP slot (if rK's LDCONST happened to be a jump
     // target) still produces correct results: NOP falls through to GETPROPC which reads
     // the index from the instruction itself, not from rK.
-    // Condition: idx must fit in 8 bits (≤ 255) because GETPROPC.c is 8 bits.
-    // Register safety: rK is the freshly-allocated key temp used only as GETPROP.c;
-    // the two instructions are adjacent so no other use of rK can appear between them.
+    //
+    // Declarative — see src/compiler/fusion.c3 (FUSION_GETPROPC rule) for the
+    // pattern/guard/rewrite definition and the shared NOP-skip + dead-after-
+    // liveness driver (run_fusion_rule). Ported 1:1 from the original
+    // hand-written pass; equivalence is checked by the golden-bytecode suite
+    // (test/golden_bytecode/, `just test-golden-bytecode`).
     if (!self.disable_optimize && self.code_count >= 2) {
-        for (uint i = 0; i + 1 < self.code_count; i++) {
-            if (self.code[i].op == Opcode.LDCONST && self.code[i + 1].op == Opcode.GETPROP) {
-                uint rK = (uint)self.code[i].a;
-                uint idx = self.code[i].get_bc();
-                // rK must be the key operand of GETPROP, idx must fit in 8 bits,
-                // and the constant must be a string (GETPROPC assumes string keys).
-                if ((uint)self.code[i + 1].c == rK && idx <= 255 && self.constants[idx].is_string()) {
-                    // Safety: rK must not be used by any later instruction.
-                    // In LHS (assignment) mode the compiler keeps rK alive for the
-                    // PUTPROP/DELPROP that follows (possibly with intervening instructions
-                    // for the RHS).  Scan forward from i+2; if any instruction reads rK
-                    // before a definite overwrite of rK, the LDCONST is load-bearing and
-                    // we must not NOP it.
-                    bool rK_used_after = false;
-                    for (uint j = i + 2; j < self.code_count; j++) {
-                        Instruction jns = self.code[j];
-                        Opcode jop2 = jns.op;
-                        // IF_TRUE/IF_FALSE: field A is a READ (the condition register),
-                        // not a write.  Must be checked before the general A=write rule.
-                        if (jop2 == Opcode.IF_TRUE || jop2 == Opcode.IF_FALSE) {
-                            if ((uint)jns.a == rK) { rK_used_after = true; break; }
-                            continue;
-                        }
-                        OpFormat jfmt = bytecode::get_op_format(jop2);
-                        // Only ABC-format opcodes have register operands in b and c.
-                        // For A_BC (LDCONST, LDINT, GETVAR, PUTVAR, DECLVAR, ...),
-                        // A_SBX (IF_TRUE, IF_FALSE, LDINT), and wide/no-operand formats,
-                        // only field A is a register; the rest are immediate values or
-                        // branch offsets and must NOT be misread as register references.
-                        if (jfmt == bytecode::OpFormat.ABC) {
-                            // If rK is read as b or c (source operands), it's still live.
-                            if ((uint)jns.b == rK || (uint)jns.c == rK) {
-                                rK_used_after = true;
-                                break;
-                            }
-                        }
-                        // If rK is written (a is destination), it is no longer live.
-                        // For A_BC/A_SBX/wide formats, A is the only register operand;
-                        // for ABC, A is the destination (write).
-                        if ((uint)jns.a == rK) { break; }
-                    }
-                    if (!rK_used_after) {
-                        uint ra = (uint)self.code[i + 1].a;
-                        uint rb = (uint)self.code[i + 1].b;
-                        self.code[i]     = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
-                        self.code[i + 1] = bytecode::make_abc(Opcode.GETPROPC, ra, rb, idx);
-                    }
-                }
-            }
-        }
+        fuse_getpropc(self.code, self.code_count, self.constants);
     }
 
     // --- Peephole: fuse LT/LE/GT/GE + IF_FALSE/IF_TRUE → JMP_NLT/NLE/NGT/NGE / JMP_LT/LE/GT/GE + NOP ---
