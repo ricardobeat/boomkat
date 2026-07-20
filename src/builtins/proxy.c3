@@ -20,6 +20,7 @@ import std::io;
 
 import duktape::heap;
 import duktape::hobject;
+import duktape::vm;
 
 // ============================================================================
 // Storage accessors
@@ -1411,6 +1412,38 @@ fn bool proxy_is_array(Heap* heap, HObject* obj, bool* out) {
 // ============================================================================
 
 fn HObject* proxy_create(BuiltinContext* ctx, TVal target_tv, TVal handler_tv) {
+    // LIGHTFUNC is an internal compact representation for built-in function
+    // objects (e.g. Object.prototype.hasOwnProperty, parseInt, eval). The
+    // ProxyCreate spec accepts any Object as the target/handler; since
+    // lightfuncs satisfy `typeof === "function"` and `IsCallable`, materialize
+    // them into full callable HObjects before storing the proxy slots — same
+    // pattern as Object.setPrototypeOf's lightfunc handling.
+    if (target_tv.is_lightfunc()) {
+        uint fn_idx = (uint)(usz)target_tv.get_heapptr();
+        BuiltinMeta meta = builtin_get_metadata(fn_idx);
+        HObject* target_obj = alloc_builtin_fn(ctx.heap, fn_idx, meta.name, meta.arity);
+        if (target_obj == null) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "out of memory");
+            return null;
+        }
+        if (ctx.vm != null) {
+            target_obj.flags.constructable = vm::builtin_fn_is_constructor((Vm*)ctx.vm, fn_idx);
+        }
+        target_tv.set_object(target_obj);
+    }
+    if (handler_tv.is_lightfunc()) {
+        uint fn_idx = (uint)(usz)handler_tv.get_heapptr();
+        BuiltinMeta meta = builtin_get_metadata(fn_idx);
+        HObject* handler_obj = alloc_builtin_fn(ctx.heap, fn_idx, meta.name, meta.arity);
+        if (handler_obj == null) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "out of memory");
+            return null;
+        }
+        if (ctx.vm != null) {
+            handler_obj.flags.constructable = vm::builtin_fn_is_constructor((Vm*)ctx.vm, fn_idx);
+        }
+        handler_tv.set_object(handler_obj);
+    }
     if (!target_tv.is_object() || !handler_tv.is_object()) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "Cannot create proxy with a non-object as target or handler");
         return null;

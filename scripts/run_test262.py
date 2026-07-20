@@ -337,6 +337,13 @@ SKIP_FILES = {
     "built-ins/Function/S15.3_A3_T2.js",   # `return this.color` — relies on sloppy global substitution
     "built-ins/Function/S15.3_A3_T5.js",   # `return this.planet` — strict `this` is undefined
     "built-ins/Function/S15.3_A3_T6.js",   # `return this.planet` — strict `this` is undefined
+    # F2b — Sputnik-era Function-constructor [[Call]] tests that exercise the
+    # same sloppy-mode `this` substitution as F2 but via the constructor body
+    # directly. The bodies do `this.y = N;` then assert `y === N` at the call
+    # site; strict-only constructor bodies make `this` undefined so `this.y = N`
+    # throws TypeError. Unsatisfiable while strict-only.
+    "built-ins/Function/S15.3.5_A2_T1.js",   # `Function("var x=1; this.y=2; return 'OK';")()` — strict this.y=2 throws
+    "built-ins/Function/S15.3.5_A2_T2.js",   # `new Function("arg1,arg2","...this.y=arg2;...")("1",2)` — same
     # F3 — Function() constructor `onlyStrict` tests assert the BODY is non-strict
     # (allowed duplicate params, `eval`/`arguments` as parameter names). The engine
     # forces every compilation unit strict, so these otherwise-legal non-strict

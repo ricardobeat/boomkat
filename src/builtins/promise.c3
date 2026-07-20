@@ -1423,9 +1423,69 @@ fn HObject*? promise_make_finally_wrapper(Heap* heap, uint builtin_index, TVal o
     return wrap_fn;
 }
 
+/// PromiseResolve(C, x) abstract operation used by ThenFinally/CatchFinally.
+/// Unlike Promise.resolve(), this does not Get(C, "resolve").  In particular,
+/// when x is already a Promise whose constructor is C, it returns x directly
+/// without observably creating an extra PromiseCapability.
+fn bool promise_resolve_abstract(BuiltinContext* ctx, HObject* ctor, TVal value, TVal* out) {
+    Heap* heap = ctx.heap;
+    out.set_undefined();
+    if (ctor == null) return false;
+
+    // ES2018 §25.4.4.5.1 steps 2.a-b: IsPromise(x), then compare the
+    // observable x.constructor value with C before creating a capability.
+    if (value.is_object() && value.get_heapptr() != null) {
+        HObject* value_obj = (HObject*)value.get_heapptr();
+        if (value_obj.flags.obj_class == hobject::ObjClass.PROMISE) {
+            HString* constructor_key = builtin_intern_string(heap, "constructor");
+            if (constructor_key == null) return false;
+            TVal value_ctor;
+            if (!promise_object_get(heap, ctx.vm, value_obj, constructor_key, &value_ctor)) {
+                if (heap.has_error) {
+                    ctx.should_throw = true;
+                    ctx.throw_value = heap.error_value;
+                    heap.has_error = false;
+                }
+                return false;
+            }
+            if (value_ctor.is_object() && value_ctor.get_heapptr() != null &&
+                (HObject*)value_ctor.get_heapptr() == ctor) {
+                *out = value;
+                return true;
+            }
+        }
+    }
+
+    // Otherwise NewPromiseCapability(C), call its resolve function with x,
+    // and return the capability's promise.
+    HObject*? hole_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
+    if (catch err = hole_raw) return false;
+    HObject* hole = hole_raw;
+    hole.prototype = heap.object_proto;
+    TVal ctor_tv; ctor_tv.set_object(ctor);
+    if (!promise_new_capability_full(heap, ctx.vm, ctor_tv, hole)) {
+        promise_throw_capability_failure(ctx, hole);
+        return false;
+    }
+
+    if (heap.call_fn == null || ctx.vm == null) return false;
+    TVal resolve = promise_hole_get_resolve(heap, hole);
+    TVal undef; undef.set_undefined();
+    heap.call_fn(ctx.vm, resolve, &value, 1, undef);
+    if (heap.has_error) {
+        ctx.should_throw = true;
+        ctx.throw_value = heap.error_value;
+        heap.has_error = false;
+        return false;
+    }
+
+    *out = promise_hole_get_promise(heap, hole);
+    return true;
+}
+
 /// Shared body for ThenFinally/CatchFinally (ES2018 §27.2.5.3 steps 4.a.i-4.a.vii):
 /// call onFinally() with no args; if it throws, propagate that throw as the
-/// wrapper's own completion. Otherwise Promise.resolve(C, result), and
+/// wrapper's own completion. Otherwise PromiseResolve(C, result), and
 /// .then() a passthrough handler that returns `passthrough_value` (for
 /// ThenFinally) or re-throws it (for CatchFinally, is_reject=true).
 fn void promise_finally_wrapper_body(BuiltinContext* ctx, bool is_reject) {
@@ -1461,42 +1521,11 @@ fn void promise_finally_wrapper_body(BuiltinContext* ctx, bool is_reject) {
         return;
     }
 
-    // Promise.resolve(C, result) — call C.resolve(result) if available,
-    // else fall back to the builtin resolve procedure.
+    // PromiseResolve(C, result).  This is the abstract operation, not an
+    // observable call to C.resolve; it first returns a same-constructor
+    // Promise unchanged and only otherwise creates a new capability.
     TVal resolved_promise;
-    resolved_promise.set_undefined();
-    HString* resolve_key = builtin_intern_string(heap, "resolve");
-    TVal resolve_fn; resolve_fn.set_undefined();
-    bool have_resolve_fn = false;
-    if (resolve_key != null && ctor != null) {
-        if (promise_object_get(heap, ctx.vm, ctor, resolve_key, &resolve_fn)) {
-            have_resolve_fn = resolve_fn.is_lightfunc() ||
-                (resolve_fn.is_object() && resolve_fn.get_heapptr() != null &&
-                 ((HObject*)resolve_fn.get_heapptr()).is_callable());
-        } else if (heap.has_error) {
-            ctx.should_throw = true;
-            ctx.throw_value = heap.error_value;
-            heap.has_error = false;
-            return;
-        }
-    }
-    if (have_resolve_fn) {
-        TVal ctor_tv; ctor_tv.set_object(ctor);
-        TVal[1] r_args; r_args[0] = result;
-        resolved_promise = heap.call_fn(ctx.vm, resolve_fn, &r_args[0], 1, ctor_tv);
-        if (heap.has_error) {
-            ctx.should_throw = true;
-            ctx.throw_value = heap.error_value;
-            heap.has_error = false;
-            return;
-        }
-    } else {
-        HObject*? prom_raw = promise_create(heap);
-        if (catch err = prom_raw) return;
-        HObject* prom = prom_raw;
-        promise_settle(prom, PROMISE_FULFILLED, &result, heap);
-        resolved_promise.set_object(prom);
-    }
+    if (!promise_resolve_abstract(ctx, ctor, result, &resolved_promise)) return;
 
     // valueThunk / thrower passthrough handler: a tiny builtin closure
     // carrying `passthrough` so .then(valueThunk) returns it unchanged (or,
@@ -1530,7 +1559,7 @@ fn void promise_finally_wrapper_body(BuiltinContext* ctx, bool is_reject) {
     TVal undef_fulfill; undef_fulfill.set_undefined();
     TVal thunk_tv; thunk_tv.set_object(thunk);
     TVal invoke_result;
-    if (!promise_invoke_then(heap, ctx.vm, resolved_promise, thunk_tv, undef_fulfill, &invoke_result)) {
+    if (!promise_invoke_then(heap, ctx.vm, resolved_promise, thunk_tv, undef_fulfill, &invoke_result, true)) {
         if (heap.has_error) {
             ctx.should_throw = true;
             ctx.throw_value = heap.error_value;
@@ -3129,7 +3158,10 @@ fn void promise_combinator_reject(Heap* heap, void* vm, TVal cap_reject_tv, TVal
     promise_clear_error_channels(heap, vm);
 }
 
-/// Invoke nextPromise.then(onFulfilled, onRejected) per spec step.
+/// Invoke nextPromise.then(onFulfilled, onRejected) per spec step. When
+/// `single_argument` is true, omit onRejected entirely (used by finally's
+/// Invoke(promise, "then", « valueThunk/thrower »), where arguments.length is
+/// observable).
 /// Returns true on success; on failure sets heap.has_error. When `out_result`
 /// is non-null, receives the value returned by the `.then()` call itself
 /// (the newly created downstream promise) — needed by callers whose own
@@ -3137,7 +3169,8 @@ fn void promise_combinator_reject(Heap* heap, void* vm, TVal cap_reject_tv, TVal
 /// returning `? Invoke(promise, "then", « valueThunk »)` verbatim), as
 /// opposed to combinator callers that only care about success/failure.
 fn bool promise_invoke_then(Heap* heap, void* vm, TVal next_promise,
-                             TVal on_fulfilled, TVal on_rejected, TVal* out_result = null) {
+                             TVal on_fulfilled, TVal on_rejected, TVal* out_result = null,
+                             bool single_argument = false) {
     if (!next_promise.is_object() || next_promise.get_heapptr() == null) return false;
     HObject* np_obj = (HObject*)next_promise.get_heapptr();
     HString* then_key = builtin_intern_string(heap, "then");
@@ -3150,7 +3183,8 @@ fn bool promise_invoke_then(Heap* heap, void* vm, TVal next_promise,
         return false;
     }
 
-    // Call(then, nextPromise, [onFulfilled, onRejected]) — may throw
+    // Call(then, nextPromise, [onFulfilled, onRejected]) — may throw. The
+    // finally wrappers use the one-element argument list required by spec.
     bool then_callable = then_method.is_lightfunc() ||
         (then_method.is_object() && then_method.get_heapptr() != null &&
          ((HObject*)then_method.get_heapptr()).is_callable());
@@ -3160,7 +3194,8 @@ fn bool promise_invoke_then(Heap* heap, void* vm, TVal next_promise,
     TVal[2] then_args;
     then_args[0] = on_fulfilled;
     then_args[1] = on_rejected;
-    TVal then_ret = heap.call_fn(vm, then_method, &then_args[0], 2, next_promise);
+    uint then_argc = single_argument ? 1 : 2;
+    TVal then_ret = heap.call_fn(vm, then_method, &then_args[0], then_argc, next_promise);
     if (heap.has_error) return false;
     if (out_result != null) *out_result = then_ret;
     return true;

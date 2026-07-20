@@ -28,19 +28,11 @@ fn void create_array_iterator(BuiltinContext* ctx, uint kind) {
     (*iter.extra_ptr()).iter.target = iterable;
     (*iter.extra_ptr()).iter.index = 0;
     (*iter.extra_ptr()).iter.kind = kind;
-    iter.prototype = heap.iterator_proto;
-    HString* next_key = builtin_intern_string(heap, "next");
-    if (next_key != null) {
-        HObject*? fn_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
-        if (try fn_obj = fn_raw) {
-            (*fn_obj.extra_ptr()).func.builtin_fn_index = (int)Builtin.ARRAY_ITERATOR_NEXT.ordinal;
-            fn_obj.flags.callable = true;
-            fn_obj.prototype = heap.function_proto;
-            TVal fn_tv;
-            fn_tv.set_object(fn_obj);
-            iter.put_prop(next_key, fn_tv, hobject::PROP_FLAGS_NWC);
-        }
-    }
+    // Array iterators inherit the shared %ArrayIteratorPrototype%, whose
+    // `next` method is observable and may be replaced by user code.  Do not
+    // install an own `next` property here: GetIterator consumers must perform
+    // Get(iterator, "next") through the prototype chain.
+    iter.prototype = heap.array_iterator_proto;
     ctx.result.set_object(iter);
 }
 
@@ -631,8 +623,9 @@ fn void builtin_regexp_string_iterator_next(BuiltinContext* ctx) {
     ctx.result.set_object(iter_result);
 }
 
-/// Create %IteratorPrototype% (ES6 §25.1.2).
-/// %IteratorPrototype% has [Symbol.iterator]() that returns `this`.
+/// Create %IteratorPrototype% (ES6 §25.1.2) and %ArrayIteratorPrototype%.
+/// %IteratorPrototype% has [Symbol.iterator]() that returns `this`, while
+/// %ArrayIteratorPrototype% owns the shared ArrayIterator.prototype.next method.
 fn bool register_iterator_prototype(Heap* heap) {
     HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = proto_raw) return false;
@@ -640,7 +633,13 @@ fn bool register_iterator_prototype(Heap* heap) {
     proto.prototype = null;  // will be wired to object_proto later
     heap.iterator_proto = proto;
 
-    // Add [Symbol.iterator]() → returns `this`
+    HObject*? array_proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
+    if (catch err = array_proto_raw) return false;
+    HObject* array_proto = array_proto_raw;
+    array_proto.prototype = proto;
+    heap.array_iterator_proto = array_proto;
+
+    // Add [Symbol.iterator]() → returns `this`.
     HString* iter_sym = ensure_iterator_symbol(heap);
     if (iter_sym != null) {
         HObject*? fn_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
@@ -668,6 +667,21 @@ fn bool register_iterator_prototype(Heap* heap) {
         iter_tv.set_object(fn_obj);
         proto.put_prop(iter_sym, iter_tv, hobject::PROP_FLAGS_WC);
     }
+
+    // ArrayIteratorPrototype.next is shared by all ArrayIterator instances.
+    // Keeping it on the prototype is required so replacing that property is
+    // observed by GetIterator consumers such as TypedArray constructors.
+    HString* next_key = builtin_intern_string(heap, "next");
+    if (next_key == null) return true;
+    HObject*? next_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
+    if (catch err = next_raw) return false;
+    HObject* next_fn = next_raw;
+    (*next_fn.extra_ptr()).func.builtin_fn_index = (int)Builtin.ARRAY_ITERATOR_NEXT.ordinal;
+    next_fn.flags.callable = true;
+    next_fn.prototype = heap.function_proto;
+    TVal next_tv;
+    next_tv.set_object(next_fn);
+    array_proto.put_prop(next_key, next_tv, hobject::PROP_FLAGS_WC);
 
     return true;
 }
