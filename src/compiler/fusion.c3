@@ -32,11 +32,12 @@ import duktape::types;
 ///      declarative, this file: FUSION_INC_DEC_VAR / run_fusion3_rule)
 ///   2. LDCONST+GETPROP -> GETPROPC                (same — order-independent;
 ///      declarative, this file: FUSION_GETPROPC / run_fusion_rule)
-///   3. comparison+IF_FALSE -> JMP_N*              (same — order-independent;
-///      hand-written, deliberately: needs a whole-function jump-target
-///      bitset and a dual-path liveness scan with bridge/short-circuit
-///      corrections that don't amortize over any other rule — see
-///      plans/058-fusion-rule-framework.md)
+///   3. compare+IF_FALSE/IF_TRUE -> JMP_N*/JMP_*/JMP_SEQ/JMP_SNEQ
+///      (order-independent; declarative, this file: run_cmp_branch_fusion —
+///      a distinct jump-aware driver that owns the whole-function jump-target
+///      bitset, dual-path liveness, and bridge/short-circuit corrections, and
+///      is table-driven over the compare form (CMP_BRANCH_RULES). Loose
+///      EQ/NEQ are excluded — they coerce and can throw.)
 ///   4. copy-propagation (LDREG rT=rX substitution) — MUST run before any
 ///      rule whose trigger's consumer may be separated from it by a
 ///      parser-emitted LDREG move (rule 5 depends on this). Hand-written,
@@ -44,10 +45,11 @@ import duktape::types;
 ///      (no new opcode is ever installed).
 ///   5. LDINT+ADD/SUB -> ADDI/SUBI                 (declarative, this file)
 ///
-/// Rule 3 and the dead-LDREG-before-INC/DEC DCE pass (which runs alongside
-/// rule 4, same reasoning) are the only fusion-shaped passes left
-/// hand-written in context.c3 — see plans/058-fusion-rule-framework.md for
-/// the full "why" on each.
+/// The copy-propagation pass (rule 4) and the dead-LDREG-before-INC/DEC DCE
+/// pass (same reasoning) are the only fusion-shaped passes left hand-written
+/// in context.c3 — and they are not superinstruction fusions at all (they
+/// install no new opcode). All four true fusions are declarative. See
+/// plans/058-fusion-rule-framework.md for the full "why" on each.
 
 /// Result of matching a fusion's trigger+consumer pair, produced by a
 /// rule's `match_consumer` callback.

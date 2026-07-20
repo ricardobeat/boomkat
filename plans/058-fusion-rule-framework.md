@@ -1,9 +1,13 @@
 # Bytecode fusion framework
 
 Two deliverables: a golden-bytecode test suite that makes fusion regressions
-fail loudly, and a declarative rule framework, now covering 3 of the 5
-fusion-shaped peephole passes in `CompilerContext.finish()` (ADDI/SUBI,
-GETPROPC, INC_VAR/DEC_VAR — see "Final tally" below for the other two).
+fail loudly, and a declarative rule framework, now covering all four
+superinstruction fusions in `CompilerContext.finish()` — ADDI/SUBI, GETPROPC,
+INC_VAR/DEC_VAR (register-baking drivers), and the comparison/equality →
+JMP_* branch fusion (a distinct jump-aware driver, extended to strict `===`/
+`!==`). The only fusion-shaped passes left hand-written are the two copy-
+propagation / dead-LDREG DCE passes, which are not superinstruction fusions
+at all (see "Deliberately left hand-written" below).
 
 ## 1. Golden-bytecode test suite
 
@@ -115,14 +119,16 @@ Guard predicates (i8-immediate-fits, which-operand-is-the-scratch-register,
 commutativity) live entirely inside a rule's `trigger`/`consumer`
 callbacks — the driver has zero opcode-specific knowledge.
 
-**Jump-target safety is deliberately NOT part of the driver.** Every
-trigger→consumer fusion in this shape rewrites the trigger slot to `NOP`
-(always a safe jump target — control falls through into the still-valid
-consumer) and leaves the consumer's own position unchanged (only its opcode
-and operands are replaced in place, so anything jumping to the consumer
-slot still lands on a valid instruction start). This is why ADDI/SUBI and
-GETPROPC don't need a jump-target bitset at all, unlike the comparison
-fusion below, which rewrites a *branch* — see "what doesn't fit" below.
+**Jump-target safety is not part of the register-baking driver** (and
+doesn't need to be). Every trigger→consumer fusion in this shape rewrites
+the trigger slot to `NOP` (always a safe jump target — control falls through
+into the still-valid consumer) and leaves the consumer's own position
+unchanged (only its opcode and operands are replaced in place, so anything
+jumping to the consumer slot still lands on a valid instruction start). This
+is why ADDI/SUBI and GETPROPC don't build a jump-target bitset. The
+comparison/equality fusion rewrites a *branch* and therefore does need one —
+that machinery lives in its own jump-aware driver (`run_cmp_branch_fusion`),
+kept separate precisely so the register-baking driver stays this simple.
 
 ### Ported: ADDI/SUBI
 
@@ -193,53 +199,50 @@ post-port; added a `dec_var` golden (DEC_VAR had no prior coverage) which
 fires correctly. `--check-noop` unaffected (INC_VAR/DEC_VAR were already on
 the check-noop opcode list).
 
-### Deliberately left hand-written: comparison fusion
+### Ported: comparison/equality fusion (jump-aware driver)
 
-**`LT/LE/GT/GE + IF_FALSE/IF_TRUE → JMP_N*/JMP_*`** (context.c3:814, now the
-only remaining hand-written peephole pass besides the two copy-prop passes
-below) is a genuine mismatch with both driver shapes above, not a "would be
-nice to generalize eventually" gap:
+**`LT/LE/GT/GE/SEQ/SNEQ + IF_FALSE/IF_TRUE → JMP_N*/JMP_*/JMP_SEQ/JMP_SNEQ`**
+(`run_cmp_branch_fusion` in fusion.c3) is now declarative. It does NOT share
+the two register-baking drivers above — it fuses a compare into a *branch*,
+which means it reasons about control flow, not a dying scratch register — so
+it is its own third driver. What makes it worth a driver rather than a
+hand-written pass is that the branch-specific machinery, all previously
+inline and re-derived, is now written exactly once and shared across every
+compare form via the `CMP_BRANCH_RULES` table:
 
-- It rewrites the *branch itself* — the fused op replaces both the compare
-  AND the following conditional jump's semantics — rather than collapsing a
-  trigger+consumer pair that share a dying scratch register. There's no
-  register being retired into an immediate; the entire *control-flow shape*
-  of the two-instruction pair changes.
-- It requires a **whole-function jump-target bitset**, built *before* any
-  rewriting (scanning JUMP/BREAK/CONTINUE/IF_TRUE/IF_FALSE/TRY for static
-  targets), to reject fusing when the branch slot is itself a jump target.
-  Neither existing driver builds or threads one; retrofitting it as an
-  optional driver-level guard would mean the "generic" driver has to know
-  what a jump target even is for every opcode shape in the ISA (JUMP vs TRY
-  vs IF_*), which is exactly the opcode-specific knowledge the drivers are
-  built to keep out.
-- It runs **two separate liveness scans** (fall-through path from `i+2`,
-  AND the branch-target path from `i+2+sbx`), each of which special-cases
-  jump-targets differently *mid-scan* (probe-and-continue on the
-  fall-through side, immediate live on the branch side) — a shape neither
-  `fusion_reg_live_from` nor any single-scan liveness helper supports.
-- It carries three empirically-discovered correctness patches with no
-  general form: the B23/B26 "bridge" fix (extend the fused offset past a
-  chained short-circuit IF_FALSE/IF_TRUE), the B28 fix (only treat a
-  *forward* bridge as a bridge — a negative offset is a loop back-edge, and
-  extending through it inverts the jump direction), and the B27
-  short-circuit-skip veto (don't fuse when the branch target is immediately
-  followed by an LDREG writing the compare's result register — the `&&`/`||`
-  short-circuit path needs that boolean materialized, which the fused
-  branch never does). These aren't guard predicates in the trigger/consumer
-  sense; they're targeted corrections against specific loop and
-  short-circuit-operator code shapes found by testing, and forcing them
-  into a declarative schema would mean exposing the same amount of detail
-  through callback parameters instead of removing it.
+- the **whole-function jump-target bitset** (scanning JUMP/BREAK/CONTINUE/
+  IF_TRUE/IF_FALSE/TRY for static targets) that rejects fusing when the
+  branch slot is itself a jump target;
+- the **dual-path liveness scan** (`cmp_result_live_from`, run on both the
+  fall-through path from `i+2` and the taken-branch path from `i+2+sbx`),
+  requiring the compare-result register to be dead on both;
+- the **bridge correction** (B23/B26/B28 — extend the fused offset past a
+  chained *forward* short-circuit IF_FALSE/IF_TRUE, but never a backward
+  loop back-edge, which would invert the jump);
+- the **short-circuit-skip veto** (B27 — don't fuse when the branch target is
+  preceded by an LDREG writing the result register: the `&&`/`||` path needs
+  that boolean materialized);
+- **alias preservation** (when the result register aliases a compare operand,
+  the taken path keeps the operand's pre-compare value);
+- signed-8-bit offset fit.
 
-Given the task's explicit permission to make this call: this is left as a
-hand-written pass. "Fuse two straight-line ops that share a scratch
-register" and "fuse a compare into a branch, with jump-target and dual-path
-liveness analysis" are different enough operations that a forced common
-schema would just relocate the branch-specific complexity into extra
-`FusionMatch`/`FusionRule` fields with no reuse benefit — no other fusion
-in this compiler needs a jump-target bitset or a second liveness scan, so
-there is no second caller to amortize the abstraction over.
+Adding a compare kind is now a one-line `CMP_BRANCH_RULES` entry, which is
+exactly how strict equality was added: `SEQ`/`SNEQ` map onto new
+`JMP_SEQ`/`JMP_SNEQ` opcodes and reuse every line of the driver. Loose
+`EQ`/`NEQ` are present in the table as **NOP sentinels** (deliberately not
+fused) because `abstract_eq` can coerce operands via user code and throw; a
+fused loose-equality branch would have to replicate the needs_restart/throw
+dance and is out of scope.
+
+**Regression caught during the port (why differential testing, not just
+goldens):** the NOP-compaction offset-remap switch in context.c3 listed the
+relational JMP_N*/JMP_* ops but not the new JMP_SEQ/JMP_SNEQ, so their
+offsets weren't adjusted when NOPs were removed — producing a wrong branch
+target that broke `switch` dispatch (which compiles case tests as
+`SEQ+IF_TRUE`). Golden `.expected` files alone would have masked this by
+baking the wrong offset as "expected"; the behavioral differential (0 diffs
+across 263 files, ms-stripped) surfaced it. The `switch_seq` golden now
+guards specifically against this.
 
 ### Deliberately left hand-written: copy-propagation and dead-LDREG DCE
 
@@ -291,16 +294,25 @@ is for without offering these two passes anywhere cleaner to live.
 |---|---|---|
 | ADDI/SUBI | declarative | `FUSION_ADDI_SUBI` / `run_fusion_rule` (pre-existing) |
 | GETPROPC | declarative | `FUSION_GETPROPC` / `run_fusion_rule` + `ctx` |
-| INC_VAR/DEC_VAR | declarative | `FUSION_INC_DEC_VAR` / `run_fusion3_rule` (new 3-slot driver) |
-| comparison → JMP_N*/JMP_* | hand-written (deliberate) | jump-target bitset + dual-path liveness + bridge/short-circuit patches don't amortize over a second caller |
+| INC_VAR/DEC_VAR | declarative | `FUSION_INC_DEC_VAR` / `run_fusion3_rule` (3-slot driver) |
+| compare/equality → JMP_N*/JMP_*/JMP_SEQ/JMP_SNEQ | declarative | `CMP_BRANCH_RULES` / `run_cmp_branch_fusion` (jump-aware driver; extended to strict `===`/`!==`) |
 | copy-propagation (LDREG elision) | hand-written (deliberate) | DCE/copy-prop, not fusion — no new opcode, no trigger/consumer pattern |
 | dead-LDREG-before-INC elision | hand-written (deliberate) | same — pure DCE |
 
-3 of 5 fusion-shaped passes are now declarative (all 3 that are actually
-superinstruction fusions in the "N ops → 1 new op" sense); the comparison
-fusion is a real branch-rewrite with correctness machinery that has no
-second caller to justify generalizing; the two copy-prop/DCE passes were
-never fusions to begin with.
+All four superinstruction fusions (the "N ops → 1 new op" passes) are now
+declarative, across three drivers: the 2-slot register-baking driver
+(ADDI/SUBI, GETPROPC), the 3-slot register-surviving driver (INC_VAR/
+DEC_VAR), and the jump-aware branch driver (compare/equality → JMP_*). Only
+the two copy-prop/DCE passes remain hand-written — they were never fusions.
+
+**Line count, honestly:** this is a net *increase* of ~210 lines
+(context.c3 −385, fusion.c3 +597 including doc comments and the three
+drivers), not a reduction. The win is structural, not size: the error-prone
+machinery (NOP-skip, liveness, jump-target bitset, offset math) is written
+once instead of copy-pasted per pass, adding a fusion is largely a table
+entry, and the golden suite + `--check-noop` invariant make a broken fusion
+fail loudly. If compactness were the goal over refactor-safety, hand-written
+passes would be terser — that trade was made deliberately.
 
 ### Gaps / follow-ups
 
