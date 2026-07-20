@@ -37,8 +37,9 @@ $if $feature(TRACE_VM):
     // a full name table could be added later).
     pos = write_opcode_name(op, buf, pos);
 
-    // Pad to column 14 for alignment.
-    while (pos < 14 && pos < buf.len) {
+    // Pad to column 16 for alignment (widest mnemonic is CALL_UNDEF_THIS,
+    // 15 chars — leave at least one trailing space before the operands).
+    while (pos < 16 && pos < buf.len) {
         buf[pos] = ' ';
         pos++;
     }
@@ -219,6 +220,7 @@ const char*[Opcode.LAST_OP.ordinal + 1] OPCODE_NAMES = {
     [Opcode.SPREAD_ARG.ordinal]  = "SPREAD_ARG",
     [Opcode.FWD_ARGS.ordinal]    = "FWD_ARGS",
     [Opcode.CALL_S.ordinal]      = "CALL_S",
+    [Opcode.CALL_UNDEF_THIS.ordinal] = "CALL_UNDEF_THIS",
     [Opcode.OBJSPRD.ordinal]     = "OBJSPRD",
     [Opcode.SETPROTO.ordinal]    = "SETPROTO",
     [Opcode.GETPROTO.ordinal]    = "GETPROTO",
