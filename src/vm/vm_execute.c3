@@ -272,8 +272,8 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
             uint nregs = target.num_regs;
 
             // Compute the true top of the current activation's register file.
-            // vm.valstack_top is NOT updated for inline JS-to-JS calls (CALL
-            // opcode uses vm_setup_call which skips the update), so it may
+            // vm.valstack_top is NOT updated for inline JS-to-JS calls (the
+            // CALL fast path in dispatch_calls skips the update), so it may
             // point below the current function's full register space, causing
             // the callee frame to overlap live caller registers.
             TVal* true_top = vm.valstack_top;
