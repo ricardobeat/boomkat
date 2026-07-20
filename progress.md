@@ -10,7 +10,7 @@
 - **Per-test results**: add `--log out/test262_results.tsv`; cluster with `awk -F'\t' '$1=="FAIL"{print $2}' … | xargs -n1 dirname | sort | uniq -c | sort -rn`.
 - **Single-test repro**: `bash scripts/run_single_test.sh <path>` (`--keep` for `just lldb` / `--trace-vm`).
 - **Phase counts**: `bash scripts/count_test262_by_phase.sh` · **Delta**: `bash scripts/test262_delta.sh`.
-- **Build**: `c3c build test262_runner` or `c3c build run_js`.
+- **Build**: `c3c build test262_runner` or `c3c build duktape_c3` (plain runner; `duktape_c3_debug` for `-c`/`-t` inspection).
 
 ## Session Log (last 10, oldest first)
 

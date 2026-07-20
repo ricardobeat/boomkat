@@ -41,8 +41,12 @@ A port of the [Duktape JavaScript engine](https://duktape.org/) from C to [C3](h
 c3c build
 
 # Plain JS runner
-c3c build run_js
-./out/run_js test/simple.js
+c3c build duktape_c3
+./out/duktape_c3 test/simple.js
+
+# Inspection build (bytecode disassembly, tracing): duktape_c3_debug
+c3c build duktape_c3_debug
+./out/duktape_c3_debug -c test/simple.js       # disassemble, don't run
 
 # test262 conformance suite
 c3c build test262_runner
@@ -88,7 +92,7 @@ duktape-c3/
 │   ├── builtins/         # Built-in objects and functions
 │   ├── vm.c3             # Bytecode interpreter
 │   └── re_bindings.c3    # RegExp bindings
-├── cli/              # CLI frontends: run_js (plain JS) + test262_runner (test262 harness)
+├── cli/              # CLI frontends: duktape_c3 (plain JS) + duktape_c3_debug (inspect) + test262_runner (test262 harness)
 ├── benchmarks/       # Performance and memory benchmarks
 ├── test/             # Unit tests and JS test scripts
 ├── scripts/          # Automation scripts

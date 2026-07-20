@@ -9,7 +9,7 @@ import libc;
 
 fn int main(String[] args) {
     if (args.len < 2) {
-        io::eprintfn("Usage: run_js <file.js>");
+        io::eprintfn("Usage: duktape_c3 <file.js>");
         return 1;
     }
     

@@ -13,7 +13,7 @@ ok=0
 for i in $(seq 1 "$iters"); do
     total=$((total + 1))
     start=$(date +%s)
-    timeout "$timeout" ./out/run_js "$file" > /dev/null 2>&1
+    timeout "$timeout" ./out/duktape_c3 "$file" > /dev/null 2>&1
     rc=$?
     end=$(date +%s)
     elapsed=$((end - start))

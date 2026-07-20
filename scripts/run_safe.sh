@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run a JS file through run_js with timeout and RSS limit.
+# Run a JS file through duktape_c3 with timeout and RSS limit.
 # Usage: bash scripts/run_safe.sh <js-file> [--timeout N] [--memlimit MB]
 # Default: 10s timeout, 2048 MB RSS limit (SIGKILL on exceed).
 set -uo pipefail
@@ -16,7 +16,7 @@ while [[ $# -gt 0 ]]; do
 done
 ulimit_v=$((memlimit_mb * 1024))
 ulimit -v "$ulimit_v" 2>/dev/null || true
-timeout "$timeout_s" ./out/run_js "$file" 2>/dev/null
+timeout "$timeout_s" ./out/duktape_c3 "$file" 2>/dev/null
 rc=$?
 if   [ "$rc" -eq 124 ]; then echo "TIMEOUT ($timeout_s s)"
 elif [ "$rc" -eq 137 ]; then echo "MEMKILL ($memlimit_mb MB)"

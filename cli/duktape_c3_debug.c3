@@ -1,4 +1,8 @@
-/// Duktape C3 port — CLI runner with debug flags.
+/// Duktape C3 port — debug/inspection CLI.
+///
+/// The inspection counterpart to the plain `duktape_c3` runner: same engine,
+/// plus flags to disassemble bytecode, trace execution, and time stages. To
+/// just run a file, use `duktape_c3` (`cli/duktape_c3.c3`).
 ///
 /// Flags (any order, file is the non-flag argument):
 ///   <js_file>               Run JS file (default)
@@ -9,7 +13,7 @@
 ///   --no-optimize            Disable compiler peephole passes (debug aid)
 ///   --format json            Structured bytecode output (implies -c)
 ///   --help                   Show usage
-module duktape_c3;
+module duktape_c3_debug;
 
 import duktape::compiler;
 import duktape::vm;

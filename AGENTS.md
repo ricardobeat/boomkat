@@ -27,8 +27,9 @@ All common tasks are `just` recipes (`just list` to see them all). The fast debu
 
 | Task | Command |
 |------|---------|
-| Run one JS file | `just run <file>` (rebuilds `run_js`, runs `./out/run_js <file>`) |
-| Build a target | `just build <target>` (e.g. `run_js`, `duktape_c3`, `test262_runner`) |
+| Run one JS file | `just run <file>` (rebuilds `duktape_c3`, runs `./out/duktape_c3 <file>`) |
+| Inspect bytecode | `./out/duktape_c3_debug -c <file>` (disassemble, skip run) — build with `just build-trace` |
+| Build a target | `just build <target>` (e.g. `duktape_c3`, `duktape_c3_debug`, `test262_runner`) |
 | Build everything | `just all` |
 | Debug build (`-O0`) | `just build-debug <target>` |
 | Rosetta suite | `just rosetta` (22+ language features; the go-to regression check) |
@@ -68,7 +69,11 @@ Tagged values live in the mantissa of IEEE 754 NaNs (Duktape's scheme): **16-bit
 - **`is_async` must not leak into nested functions**: `function_declaration`/`function_expr` restore `is_async` only around the `compile_inner_function` call, then reset it.
 - **break/continue across finally** (vm.c3): `BREAK`/`CONTINUE` are jump-offset opcodes that walk the catcher chain and redirect through active `finally` blocks via `pending_pc`. Flags: `CATCHER_FLAG_PENDING_BREAK/CONTINUE/IN_FINALLY`. `IN_FINALLY` guards against throw/return-in-finally infinite loops.
 
-The `duktape_c3` CLI (`benchmarks/duktape_c3.c3`) has debug flags (no perf impact on release builds):
+Two CLI binaries share the engine (`src`): **`duktape_c3`** (`cli/duktape_c3.c3`) is
+the plain runner — run a file, or `--module <file>` for ESM, nothing else. **`duktape_c3_debug`**
+(`cli/duktape_c3_debug.c3`, built via `just build-trace`) is the inspection binary and is the
+one that carries the debug flags below. The plain `duktape_c3` does NOT understand `-c`/`-t` —
+it treats them as a file path. Debug flags (no perf impact on release builds):
 - `-c` / `--compile-only` — disassemble bytecode, skip execution (`--format json` for structured output)
 - `-t` / `--trace-vm` — print each instruction + register values before dispatch (stderr)
 - `--dump-constants` — dump the constant pool

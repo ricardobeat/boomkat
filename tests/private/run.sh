@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run every .js test in this directory through ../../out/run_js and print a
+# Run every .js test in this directory through ../../out/duktape_c3 and print a
 # per-file PASS/FAIL table plus a totals line.
 #
 # Convention:
@@ -11,10 +11,10 @@
 # Usage: tests/private/run.sh
 set -u
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-RUN_JS="$SCRIPT_DIR/../../out/run_js"
+RUN_JS="$SCRIPT_DIR/../../out/duktape_c3"
 
 if [ ! -x "$RUN_JS" ]; then
-    echo "error: $RUN_JS not found or not executable (build it with 'make run_js')" >&2
+    echo "error: $RUN_JS not found or not executable (build it with 'make duktape_c3')" >&2
     exit 1
 fi
 

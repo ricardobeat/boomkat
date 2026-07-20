@@ -4,21 +4,17 @@ justfile := "benchmarks/README.md"
 # ── Build ────────────────────────────────────────────────────────────────────
 
 # Build everything (default)
-all: build-lib build-vm build-batch build-bench build-orig-duktape
+all: build-lib build-batch build-bench build-orig-duktape
 
 # Build the static library (skips c3c if nothing changed — see Makefile)
 build-lib:
     @make out/lib.a
 
-# Build the plain JS runner (skips c3c if nothing changed — see Makefile)
-build-vm:
-    @make out/run_js
-
 # Build the batch test262 runner (skips c3c if nothing changed — see Makefile)
 build-batch:
     @make out/test262_runner
 
-# Build the C3 Duktape CLI (skips c3c if nothing changed — see Makefile)
+# Build the C3 Duktape CLI — the plain runner (skips c3c if nothing changed)
 build-bench:
     @make out/duktape_c3
 
@@ -34,10 +30,10 @@ build-quickjs:
     @rm -f out/bench_cache_qjs.txt
 
 # Build with shape pointer cache disabled (`-D NOSHAPECACHE`)
-build-noshape t="run_js":
+build-noshape t="duktape_c3":
     c3c -D NOSHAPECACHE build "{{t}}"
 
-# Build a specific target: `just build <target>`  (e.g. just build run_js)
+# Build a specific target: `just build <target>`  (e.g. just build duktape_c3)
 build t="duktape_c3":
     c3c build "{{t}}"
 
@@ -45,20 +41,20 @@ build t="duktape_c3":
 build-debug t="duktape_c3":
     c3c -O0 build "{{t}}"
 
-# Build the C3 Duktape CLI with `-D TRACE_VM` so `-c`/`--format json`/`-t`
-# (`--trace-vm`) dump bytecode, dump JSON, and trace every instruction
-# respectively. Output: `out/duktape_c3_debug`.
+# Build the inspection CLI (`out/duktape_c3_debug`): the `duktape_c3_debug`
+# target carries `-D TRACE_VM`, so `-c`/`--format json`/`-t` (`--trace-vm`)
+# dump bytecode, dump JSON, and trace every instruction respectively.
 build-trace:
     c3c build duktape_c3_debug
 
 # Build with heap verification enabled (`-D HEAP_VERIFY`) — validates GC roots at yield/resume
-build-verify t="run_js":
+build-verify t="duktape_c3":
     c3c -D HEAP_VERIFY -O0 build "{{t}}"
 
-# Build run_js with heap verification and run a JS file
+# Build duktape_c3 with heap verification and run a JS file
 run-verify file="test/simple.js":
-    c3c -D HEAP_VERIFY -O0 build run_js
-    ./out/run_js {{file}}
+    c3c -D HEAP_VERIFY -O0 build duktape_c3
+    ./out/duktape_c3 {{file}}
 
 # ── Debugging ─────────────────────────────────────────────────────────────────
 
@@ -69,13 +65,13 @@ lldb file="test/simple.js":
     lldb ./out/duktape_c3 -b -o "run {{file}}" -o "bt"
 
 # Build with NaN-boxing disabled (`-D NONANBOX`)
-build-nonanbox t="run_js":
+build-nonanbox t="duktape_c3":
     c3c -D NONANBOX build "{{t}}"
 
-# Build run_js with NaN-boxing disabled and run a smoke test
+# Build duktape_c3 with NaN-boxing disabled and run a smoke test
 test-nonanbox file="test/simple.js":
-    c3c -D NONANBOX build run_js
-    ./out/run_js {{file}}
+    c3c -D NONANBOX build duktape_c3
+    ./out/duktape_c3 {{file}}
 
 # Clean build artifacts
 clean:
@@ -83,10 +79,10 @@ clean:
 
 # ── Run ──────────────────────────────────────────────────────────────────────
 
-# Run a single JS file through the VM test runner (skips c3c if nothing changed)
+# Run a single JS file (skips c3c if nothing changed)
 run file="test/simple.js":
-    @make out/run_js
-    ./out/run_js {{file}}
+    @make out/duktape_c3
+    ./out/duktape_c3 {{file}}
 
 # Run a JS file as an ESM module (import/export) (skips c3c if nothing changed)
 run-module file="test/mod_main.js":

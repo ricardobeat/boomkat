@@ -22,7 +22,7 @@
       "type": "executable",
       "sources": [
         "src",
-        "benchmarks/duktape_c3.c3"
+        "cli/duktape_c3.c3"
       ],
       "opt": "O2",
       "single-module": true,
@@ -34,7 +34,7 @@
       "type": "executable",
       "sources": [
         "src",
-        "benchmarks/duktape_c3.c3"
+        "cli/duktape_c3_debug.c3"
       ],
       "opt": "O2",
       "single-module": true,
@@ -45,11 +45,21 @@
         "TRACE_VM"
       ]
     },
+    "duktape_c3_asan": {
+      "type": "executable",
+      "sources": [
+        "src",
+        "cli/duktape_c3.c3"
+      ],
+      "opt": "O0",
+      "single-module": true,
+      "sanitize": "address"
+    },
     "duktape_c3_envstrict": {
       "type": "executable",
       "sources": [
         "src",
-        "benchmarks/duktape_c3.c3"
+        "cli/duktape_c3.c3"
       ],
       "opt": "O0",
       "features": [
@@ -61,15 +71,6 @@
       "sources": [
         "src"
       ]
-    },
-    "run_js": {
-      "type": "executable",
-      "sources": [
-        "src",
-        "cli/run_js.c3"
-      ],
-      "opt": "O2",
-      "single-module": true
     },
     "test262_runner": {
       "type": "executable",
@@ -105,16 +106,6 @@
         "benchmarks/test_closure_put.c3"
       ],
       "opt": "O0"
-    },
-    "run_js_asan": {
-      "type": "executable",
-      "sources": [
-        "src",
-        "cli/run_js.c3"
-      ],
-      "opt": "O0",
-      "single-module": true,
-      "sanitize": "address"
     }
   }
 }
