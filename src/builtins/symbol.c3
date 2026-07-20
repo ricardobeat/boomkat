@@ -195,239 +195,161 @@ fn HString* symbol_registry_get_key(Heap* heap, HString* sym) {
     return null;
 }
 
-/// Ensure the well-known @@toStringTag symbol exists in the global registry.
+/// Ensure the well-known @@toStringTag symbol exists.
 /// Returns the symbol HString* (usable as a property key).
+/// Well-known symbols are NOT in the global symbol registry per ES2020 §19.4 —
+/// only symbols created by Symbol.for live there. Heap-level cache keeps it
+/// unique across the engine.
 fn HString* ensure_tostringtag_symbol(Heap* heap) {
+    if (heap.tostringtag_symbol != null) return heap.tostringtag_symbol;
     char[] desc = "Symbol.toStringTag";
-    HString* existing = symbol_registry_get(heap, desc);
-    if (existing != null) return existing;
     HString* sym = create_symbol_string(heap, desc);
     if (sym == null) return null;
-    symbol_registry_put(heap, desc, sym);
+    heap.tostringtag_symbol = sym;
+    ((types::HeapHeader*)sym).refcount = heap::STRING_PINNED_REFCOUNT;
     return sym;
 }
 
-/// Ensure the well-known @@iterator symbol exists in the global registry.
+/// Ensure the well-known @@iterator symbol exists.
 /// Returns the symbol HString* (usable as a property key).
+/// Well-known symbols are NOT added to the global symbol registry per ES2020
+/// §19.4 (the registry only contains symbols created by Symbol.for); the
+/// heap-level cache (heap.iterator_symbol) is sufficient to keep them unique.
 fn HString* ensure_iterator_symbol(Heap* heap) {
     // Fast path: already cached on the heap
     if (heap.iterator_symbol != null) return heap.iterator_symbol;
     char[] desc = "Symbol.iterator";
-    HString* existing = symbol_registry_get(heap, desc);
-    if (existing != null) {
-        heap.iterator_symbol = existing;
-        ((types::HeapHeader*)existing).refcount = heap::STRING_PINNED_REFCOUNT;
-        return existing;
-    }
     HString* sym = create_symbol_string(heap, desc);
     if (sym == null) return null;
-    symbol_registry_put(heap, desc, sym);
     heap.iterator_symbol = sym;
     ((types::HeapHeader*)sym).refcount = heap::STRING_PINNED_REFCOUNT;
     return sym;
 }
 
-/// Ensure the well-known @@toPrimitive symbol exists in the global registry.
+/// Ensure the well-known @@toPrimitive symbol exists.
 /// Returns the symbol HString* (usable as a property key).
 fn HString* ensure_toprimitive_symbol(Heap* heap) {
     if (heap.toprimitive_symbol != null) return heap.toprimitive_symbol;
     char[] desc = "Symbol.toPrimitive";
-    HString* existing = symbol_registry_get(heap, desc);
-    if (existing != null) {
-        heap.toprimitive_symbol = existing;
-        ((types::HeapHeader*)existing).refcount = heap::STRING_PINNED_REFCOUNT;
-        return existing;
-    }
     HString* sym = create_symbol_string(heap, desc);
     if (sym == null) return null;
-    symbol_registry_put(heap, desc, sym);
     heap.toprimitive_symbol = sym;
     ((types::HeapHeader*)sym).refcount = heap::STRING_PINNED_REFCOUNT;
     return sym;
 }
 
-/// Ensure the well-known @@isConcatSpreadable symbol exists in the global registry.
+/// Ensure the well-known @@isConcatSpreadable symbol exists.
 /// Returns the symbol HString* (usable as a property key).
 fn HString* ensure_concatspreadable_symbol(Heap* heap) {
     if (heap.concatspreadable_symbol != null) return heap.concatspreadable_symbol;
     char[] desc = "Symbol.isConcatSpreadable";
-    HString* existing = symbol_registry_get(heap, desc);
-    if (existing != null) {
-        heap.concatspreadable_symbol = existing;
-        ((types::HeapHeader*)existing).refcount = heap::STRING_PINNED_REFCOUNT;
-        return existing;
-    }
     HString* sym = create_symbol_string(heap, desc);
     if (sym == null) return null;
-    symbol_registry_put(heap, desc, sym);
     heap.concatspreadable_symbol = sym;
     ((types::HeapHeader*)sym).refcount = heap::STRING_PINNED_REFCOUNT;
     return sym;
 }
 
-/// Ensure the well-known @@hasInstance symbol exists in the global registry.
+/// Ensure the well-known @@hasInstance symbol exists.
 /// Returns the symbol HString* (usable as a property key).
 fn HString* ensure_hasinstance_symbol(Heap* heap) {
     if (heap.hasinstance_symbol != null) return heap.hasinstance_symbol;
     char[] desc = "Symbol.hasInstance";
-    HString* existing = symbol_registry_get(heap, desc);
-    if (existing != null) {
-        heap.hasinstance_symbol = existing;
-        ((types::HeapHeader*)existing).refcount = heap::STRING_PINNED_REFCOUNT;
-        return existing;
-    }
     HString* sym = create_symbol_string(heap, desc);
     if (sym == null) return null;
-    symbol_registry_put(heap, desc, sym);
     heap.hasinstance_symbol = sym;
     ((types::HeapHeader*)sym).refcount = heap::STRING_PINNED_REFCOUNT;
     return sym;
 }
 
-/// Ensure the well-known @@match symbol exists in the global registry.
+/// Ensure the well-known @@match symbol exists.
 /// Returns the symbol HString* (usable as a property key).
 fn HString* ensure_match_symbol(Heap* heap) {
     if (heap.match_symbol != null) return heap.match_symbol;
     char[] desc = "Symbol.match";
-    HString* existing = symbol_registry_get(heap, desc);
-    if (existing != null) {
-        heap.match_symbol = existing;
-        ((types::HeapHeader*)existing).refcount = heap::STRING_PINNED_REFCOUNT;
-        return existing;
-    }
     HString* sym = create_symbol_string(heap, desc);
     if (sym == null) return null;
-    symbol_registry_put(heap, desc, sym);
     heap.match_symbol = sym;
     ((types::HeapHeader*)sym).refcount = heap::STRING_PINNED_REFCOUNT;
     return sym;
 }
 
-/// Ensure the well-known @@search symbol exists in the global registry.
+/// Ensure the well-known @@search symbol exists.
 fn HString* ensure_search_symbol(Heap* heap) {
     if (heap.search_symbol != null) return heap.search_symbol;
     char[] desc = "Symbol.search";
-    HString* existing = symbol_registry_get(heap, desc);
-    if (existing != null) {
-        heap.search_symbol = existing;
-        ((types::HeapHeader*)existing).refcount = heap::STRING_PINNED_REFCOUNT;
-        return existing;
-    }
     HString* sym = create_symbol_string(heap, desc);
     if (sym == null) return null;
-    symbol_registry_put(heap, desc, sym);
     heap.search_symbol = sym;
     ((types::HeapHeader*)sym).refcount = heap::STRING_PINNED_REFCOUNT;
     return sym;
 }
 
-/// Ensure the well-known @@replace symbol exists in the global registry.
+/// Ensure the well-known @@replace symbol exists.
 fn HString* ensure_replace_symbol(Heap* heap) {
     if (heap.replace_symbol != null) return heap.replace_symbol;
     char[] desc = "Symbol.replace";
-    HString* existing = symbol_registry_get(heap, desc);
-    if (existing != null) {
-        heap.replace_symbol = existing;
-        ((types::HeapHeader*)existing).refcount = heap::STRING_PINNED_REFCOUNT;
-        return existing;
-    }
     HString* sym = create_symbol_string(heap, desc);
     if (sym == null) return null;
-    symbol_registry_put(heap, desc, sym);
     heap.replace_symbol = sym;
     ((types::HeapHeader*)sym).refcount = heap::STRING_PINNED_REFCOUNT;
     return sym;
 }
 
-/// Ensure the well-known @@split symbol exists in the global registry.
+/// Ensure the well-known @@split symbol exists.
 fn HString* ensure_split_symbol(Heap* heap) {
     if (heap.split_symbol != null) return heap.split_symbol;
     char[] desc = "Symbol.split";
-    HString* existing = symbol_registry_get(heap, desc);
-    if (existing != null) {
-        heap.split_symbol = existing;
-        ((types::HeapHeader*)existing).refcount = heap::STRING_PINNED_REFCOUNT;
-        return existing;
-    }
     HString* sym = create_symbol_string(heap, desc);
     if (sym == null) return null;
-    symbol_registry_put(heap, desc, sym);
     heap.split_symbol = sym;
     ((types::HeapHeader*)sym).refcount = heap::STRING_PINNED_REFCOUNT;
     return sym;
 }
 
-/// Ensure the well-known @@species symbol exists in the global registry.
+/// Ensure the well-known @@species symbol exists.
 /// Returns the symbol HString* (usable as a property key).
 fn HString* ensure_species_symbol(Heap* heap) {
     if (heap.species_symbol != null) return heap.species_symbol;
     char[] desc = "Symbol.species";
-    HString* existing = symbol_registry_get(heap, desc);
-    if (existing != null) {
-        heap.species_symbol = existing;
-        ((types::HeapHeader*)existing).refcount = heap::STRING_PINNED_REFCOUNT;
-        return existing;
-    }
     HString* sym = create_symbol_string(heap, desc);
     if (sym == null) return null;
-    symbol_registry_put(heap, desc, sym);
     heap.species_symbol = sym;
     ((types::HeapHeader*)sym).refcount = heap::STRING_PINNED_REFCOUNT;
     return sym;
 }
 
-/// Ensure the well-known @@unscopables symbol exists in the global registry.
+/// Ensure the well-known @@unscopables symbol exists.
 /// Returns the symbol HString* (usable as a property key).
 fn HString* ensure_unscopables_symbol(Heap* heap) {
     if (heap.unscopables_symbol != null) return heap.unscopables_symbol;
     char[] desc = "Symbol.unscopables";
-    HString* existing = symbol_registry_get(heap, desc);
-    if (existing != null) {
-        heap.unscopables_symbol = existing;
-        ((types::HeapHeader*)existing).refcount = heap::STRING_PINNED_REFCOUNT;
-        return existing;
-    }
     HString* sym = create_symbol_string(heap, desc);
     if (sym == null) return null;
-    symbol_registry_put(heap, desc, sym);
     heap.unscopables_symbol = sym;
     ((types::HeapHeader*)sym).refcount = heap::STRING_PINNED_REFCOUNT;
     return sym;
 }
 
-/// Ensure the well-known @@matchAll symbol exists in the global registry.
+/// Ensure the well-known @@matchAll symbol exists.
 /// Returns the symbol HString* (usable as a property key).
 fn HString* ensure_matchall_symbol(Heap* heap) {
     if (heap.matchall_symbol != null) return heap.matchall_symbol;
     char[] desc = "Symbol.matchAll";
-    HString* existing = symbol_registry_get(heap, desc);
-    if (existing != null) {
-        heap.matchall_symbol = existing;
-        ((types::HeapHeader*)existing).refcount = heap::STRING_PINNED_REFCOUNT;
-        return existing;
-    }
     HString* sym = create_symbol_string(heap, desc);
     if (sym == null) return null;
-    symbol_registry_put(heap, desc, sym);
     heap.matchall_symbol = sym;
     ((types::HeapHeader*)sym).refcount = heap::STRING_PINNED_REFCOUNT;
     return sym;
 }
 
-/// Ensure the well-known @@asyncIterator symbol exists in the global registry.
+/// Ensure the well-known @@asyncIterator symbol exists.
 /// Returns the symbol HString* (usable as a property key).
 fn HString* ensure_asynciterator_symbol(Heap* heap) {
     if (heap.asynciterator_symbol != null) return heap.asynciterator_symbol;
     char[] desc = "Symbol.asyncIterator";
-    HString* existing = symbol_registry_get(heap, desc);
-    if (existing != null) {
-        heap.asynciterator_symbol = existing;
-        ((types::HeapHeader*)existing).refcount = heap::STRING_PINNED_REFCOUNT;
-        return existing;
-    }
     HString* sym = create_symbol_string(heap, desc);
     if (sym == null) return null;
-    symbol_registry_put(heap, desc, sym);
     heap.asynciterator_symbol = sym;
     ((types::HeapHeader*)sym).refcount = heap::STRING_PINNED_REFCOUNT;
     return sym;
@@ -446,11 +368,15 @@ fn void builtin_symbol(BuiltinContext* ctx) {
     // Get description from first argument (ToString if present). Per ES2019
     // §19.4.1.1, `description` is undefined — and the Symbol has NO
     // description — both when omitted and when explicitly passed `undefined`.
+    // ToString(symbol) must throw TypeError (desc-to-string-symbol.js), so use
+    // the VM-aware variant which honors that and also routes object→ToPrimitive
+    // through the VM so toString/valueOf can throw or return primitives.
     char[] desc = "";
     bool has_desc = false;
     if (ctx.argc >= 1 && !ctx.regs[ctx.base_reg].is_undefined()) {
         TVal arg = ctx.regs[ctx.base_reg];
-        HString* desc_str = builtin_to_string(ctx.heap, &arg);
+        HString* desc_str = builtin_to_string_vm(ctx, &arg);
+        if (ctx.should_throw) return;  // ToString threw (e.g. Symbol arg)
         if (desc_str != null) {
             desc = desc_str.get_data();
         }
@@ -474,8 +400,11 @@ fn void builtin_symbol_for(BuiltinContext* ctx) {
         return;
     }
 
+    // ToString(key) — must throw TypeError for Symbol and propagate errors
+    // from toString/valueOf (for/to-string-err.js, for/description.js).
     TVal key_val = ctx.regs[ctx.base_reg];
-    HString* key_str = builtin_to_string(ctx.heap, &key_val);
+    HString* key_str = builtin_to_string_vm(ctx, &key_val);
+    if (ctx.should_throw) return;
     if (key_str == null) {
         ctx.result.set_undefined();
         return;
@@ -847,12 +776,13 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
     ctor.put_prop(keyfor_key, keyfor_tv, hobject::PROP_FLAGS_WC);
 
     // Register Symbol.toStringTag as a well-known symbol property
+    // Per ES6 §19.4.2.14: non-writable, non-enumerable, non-configurable
     HString* tostrtag_sym = ensure_tostringtag_symbol(heap);
     if (tostrtag_sym != null) {
         HString* tostrtag_key = builtin_intern_string(heap, "toStringTag");
         TVal tostrtag_val;
         tostrtag_val.set_string(tostrtag_sym);
-        ctor.put_prop(tostrtag_key, tostrtag_val, hobject::PROP_FLAGS_WC);
+        ctor.put_prop(tostrtag_key, tostrtag_val, hobject::PROP_FLAGS_NNC);
     }
 
     // Register Symbol.iterator as a well-known symbol property (non-writable, non-enumerable, non-configurable per ES6 §19.4.2.12)
@@ -862,120 +792,114 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
         if (iter_key != null) {
             TVal iter_val;
             iter_val.set_string(iter_sym);
-            ctor.put_prop(iter_key, iter_val, hobject::PROP_FLAGS_NWC);
+            ctor.put_prop(iter_key, iter_val, hobject::PROP_FLAGS_NNC);
         }
     }
 
-    // Register Symbol.toPrimitive as a well-known symbol property (non-writable, non-enumerable, non-configurable per ES6 §19.4.2.12)
+    // Register Symbol.toPrimitive as a well-known symbol property (non-writable, non-enumerable, non-configurable per ES6 §19.4.2.6)
     HString* toprim_sym = ensure_toprimitive_symbol(heap);
     if (toprim_sym != null) {
         HString* toprim_key = builtin_intern_string(heap, "toPrimitive");
         if (toprim_key != null) {
             TVal toprim_val;
             toprim_val.set_string(toprim_sym);
-            ctor.put_prop(toprim_key, toprim_val, hobject::PROP_FLAGS_NWC);
+            ctor.put_prop(toprim_key, toprim_val, hobject::PROP_FLAGS_NNC);
         }
     }
 
     // Register Symbol.isConcatSpreadable as a well-known symbol property
-    // Per ES6 §19.4.2.3: writable=true, enumerable=false, configurable=false
+    // Per ES6 §19.4.2.3: non-writable, non-enumerable, non-configurable
     HString* concat_sym = ensure_concatspreadable_symbol(heap);
     if (concat_sym != null) {
         HString* concat_key = builtin_intern_string(heap, "isConcatSpreadable");
         if (concat_key != null) {
             TVal concat_val;
             concat_val.set_string(concat_sym);
-            hobject::PropFlags concat_flags;
-            concat_flags.writable = true;
-            concat_flags.enumerable = false;
-            concat_flags.configurable = false;
-            concat_flags.is_accessor = false;
-            ctor.put_prop(concat_key, concat_val, concat_flags);
+            ctor.put_prop(concat_key, concat_val, hobject::PROP_FLAGS_NNC);
         }
     }
 
     // Register Symbol.hasInstance as a well-known symbol property
-    // Per ES6 §19.4.2.5: non-writable, non-enumerable, non-configurable
+    // Per ES6 §19.4.2.2: non-writable, non-enumerable, non-configurable
     HString* hasinst_sym = ensure_hasinstance_symbol(heap);
     if (hasinst_sym != null) {
         HString* hasinst_key = builtin_intern_string(heap, "hasInstance");
         if (hasinst_key != null) {
             TVal hasinst_val;
             hasinst_val.set_string(hasinst_sym);
-            ctor.put_prop(hasinst_key, hasinst_val, hobject::PROP_FLAGS_NWC);
+            ctor.put_prop(hasinst_key, hasinst_val, hobject::PROP_FLAGS_NNC);
         }
     }
 
     // Register Symbol.match as a well-known symbol property
+    // Per ES6 §19.4.2.5: non-writable, non-enumerable, non-configurable
     HString* match_sym = ensure_match_symbol(heap);
     if (match_sym != null) {
         HString* match_key = builtin_intern_string(heap, "match");
         if (match_key != null) {
             TVal match_val;
             match_val.set_string(match_sym);
-            ctor.put_prop(match_key, match_val, hobject::PROP_FLAGS_NWC);
+            ctor.put_prop(match_key, match_val, hobject::PROP_FLAGS_NNC);
         }
     }
 
     // Register Symbol.search as a well-known symbol property
+    // Per ES6 §19.4.2.8: non-writable, non-enumerable, non-configurable
     HString* search_sym = ensure_search_symbol(heap);
     if (search_sym != null) {
         HString* search_key = builtin_intern_string(heap, "search");
         if (search_key != null) {
             TVal search_val;
             search_val.set_string(search_sym);
-            ctor.put_prop(search_key, search_val, hobject::PROP_FLAGS_NWC);
+            ctor.put_prop(search_key, search_val, hobject::PROP_FLAGS_NNC);
         }
     }
 
     // Register Symbol.replace as a well-known symbol property
+    // Per ES6 §19.4.2.7: non-writable, non-enumerable, non-configurable
     HString* replace_sym = ensure_replace_symbol(heap);
     if (replace_sym != null) {
         HString* replace_key = builtin_intern_string(heap, "replace");
         if (replace_key != null) {
             TVal replace_val;
             replace_val.set_string(replace_sym);
-            ctor.put_prop(replace_key, replace_val, hobject::PROP_FLAGS_NWC);
+            ctor.put_prop(replace_key, replace_val, hobject::PROP_FLAGS_NNC);
         }
     }
 
     // Register Symbol.split as a well-known symbol property
+    // Per ES6 §19.4.2.11: non-writable, non-enumerable, non-configurable
     HString* split_sym = ensure_split_symbol(heap);
     if (split_sym != null) {
         HString* split_key = builtin_intern_string(heap, "split");
         if (split_key != null) {
             TVal split_val;
             split_val.set_string(split_sym);
-            ctor.put_prop(split_key, split_val, hobject::PROP_FLAGS_NWC);
+            ctor.put_prop(split_key, split_val, hobject::PROP_FLAGS_NNC);
         }
     }
 
     // Register Symbol.species as a well-known symbol property
-    // Per ES6 §19.4.2.6: writable=true, enumerable=false, configurable=false
+    // Per ES6 §19.4.2.10: non-writable, non-enumerable, non-configurable
     HString* species_sym = ensure_species_symbol(heap);
     if (species_sym != null) {
         HString* species_key = builtin_intern_string(heap, "species");
         if (species_key != null) {
             TVal species_val;
             species_val.set_string(species_sym);
-            hobject::PropFlags species_flags;
-            species_flags.writable = true;
-            species_flags.enumerable = false;
-            species_flags.configurable = false;
-            species_flags.is_accessor = false;
-            ctor.put_prop(species_key, species_val, species_flags);
+            ctor.put_prop(species_key, species_val, hobject::PROP_FLAGS_NNC);
         }
     }
 
     // Register Symbol.unscopables as a well-known symbol property
-    // Per ES6 §19.4.2.7: non-writable, non-enumerable, non-configurable
+    // Per ES6 §19.4.2.13: non-writable, non-enumerable, non-configurable
     HString* unscop_sym = ensure_unscopables_symbol(heap);
     if (unscop_sym != null) {
         HString* unscop_key = builtin_intern_string(heap, "unscopables");
         if (unscop_key != null) {
             TVal unscop_val;
             unscop_val.set_string(unscop_sym);
-            ctor.put_prop(unscop_key, unscop_val, hobject::PROP_FLAGS_NWC);
+            ctor.put_prop(unscop_key, unscop_val, hobject::PROP_FLAGS_NNC);
         }
     }
 
@@ -987,19 +911,19 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
         if (matchall_key != null) {
             TVal matchall_val;
             matchall_val.set_string(matchall_sym);
-            ctor.put_prop(matchall_key, matchall_val, hobject::PROP_FLAGS_NWC);
+            ctor.put_prop(matchall_key, matchall_val, hobject::PROP_FLAGS_NNC);
         }
     }
 
     // Register Symbol.asyncIterator as a well-known symbol property
-    // Per ES2018 §19.4.2.13: non-writable, non-enumerable, non-configurable
+    // Per ES2018 §19.4.2.4: non-writable, non-enumerable, non-configurable
     HString* asynciter_sym = ensure_asynciterator_symbol(heap);
     if (asynciter_sym != null) {
         HString* asynciter_key = builtin_intern_string(heap, "asyncIterator");
         if (asynciter_key != null) {
             TVal asynciter_val;
             asynciter_val.set_string(asynciter_sym);
-            ctor.put_prop(asynciter_key, asynciter_val, hobject::PROP_FLAGS_NWC);
+            ctor.put_prop(asynciter_key, asynciter_val, hobject::PROP_FLAGS_NNC);
         }
     }
 
