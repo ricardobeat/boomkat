@@ -2480,24 +2480,38 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
             }
         }
 
-        // ES2024 ArraySetLength step 3: validate the new length FIRST so that
-        // an out-of-range value (negative, NaN, >2^32-1) throws RangeError
-        // before descriptor-field validation can throw TypeError. The
+        // ES2024 ArraySetLength steps 3-4: apply BOTH ToUint32 and ToNumber to
+        // Desc.[[Value]] BEFORE descriptor-field validation. Each coercion runs
+        // ToPrimitive("number") once, so two coercions mean two observable
+        // valueOf/Symbol.toPrimitive calls (the second can have side effects
+        // that flip length to non-writable, which the writable:true check below
+        // then rejects). The overflow check on the resulting length is also
+        // performed here so an out-of-range value still throws RangeError
+        // before descriptor-field validation can throw TypeError — see
         // describe-own-prop-length-error.js and
-        // define-own-prop-length-overflow-order.js tests rely on this ordering.
+        // define-own-prop-length-overflow-order.js for the ordering tests.
         HString* val_k = builtin_intern_string(ctx.heap, "value");
         bool has_value_in_desc = (val_k != null) && desc_obj.find_prop_idx(val_k) >= 0;
         uint arr_new_len = old_len;
         bool arr_has_new_len = false;
         if (has_value_in_desc) {
             TVal new_len_val = desc_vals[0];
-            double num = builtin_to_number_vm(ctx, &new_len_val);
+            // Step 3: ToUint32 — ToPrimitive("number") + ToNumber, then uint32 cast.
+            double num1 = builtin_to_number_vm(ctx, &new_len_val);
             if (ctx.should_throw) return;
-            if (num != num || num < 0.0 || num > 4294967295.0 || num != math::floor(num)) {
+            uint new_len_uint = to_uint32(num1);
+            // Step 4: ToNumber — ToPrimitive("number") a second time. The second
+            // valueOf call is observable and can mutate the length descriptor.
+            double num2 = builtin_to_number_vm(ctx, &new_len_val);
+            if (ctx.should_throw) return;
+            // Step 5: newLen ≠ numberLen → RangeError. This single comparison
+            // catches NaN, ±Infinity, negative, > 2^32-1, and non-integer
+            // because to_uint32 only yields values in [0, 2^32-1].
+            if ((double)new_len_uint != num2) {
                 builtin_throw(ctx, ctx.heap.range_err_proto, "Invalid array length");
                 return;
             }
-            arr_new_len = (uint)num;
+            arr_new_len = new_len_uint;
             arr_has_new_len = true;
         }
 
@@ -3062,13 +3076,21 @@ fn void builtin_object_defineProperties(BuiltinContext* ctx) {
                 bool arr_has_new_len2 = false;
                 if (has_val_f) {
                     TVal new_len_val2 = desc_vals[0];
-                    double num2 = builtin_to_number_vm(ctx, &new_len_val2);
+                    // ArraySetLength steps 3-4: apply BOTH ToUint32 and ToNumber
+                    // BEFORE descriptor-field validation. Two observable
+                    // valueOf/Symbol.toPrimitive calls so a side effect in the
+                    // second call can flip length to non-writable and cause the
+                    // writable:true check above to reject the descriptor.
+                    double num1_2 = builtin_to_number_vm(ctx, &new_len_val2);
                     if (ctx.should_throw) return;
-                    if (num2 != num2 || num2 < 0.0 || num2 > 4294967295.0 || num2 != math::floor(num2)) {
+                    uint new_len_uint2 = to_uint32(num1_2);
+                    double num2_2 = builtin_to_number_vm(ctx, &new_len_val2);
+                    if (ctx.should_throw) return;
+                    if ((double)new_len_uint2 != num2_2) {
                         builtin_throw(ctx, ctx.heap.range_err_proto, "Invalid array length");
                         return;
                     }
-                    arr_new_len2 = (uint)num2;
+                    arr_new_len2 = new_len_uint2;
                     arr_has_new_len2 = true;
                 }
                 if (arr_has_new_len2 && !len_is_writable && arr_new_len2 != old_len) {
@@ -3763,6 +3785,16 @@ fn void builtin_object_isSealed(BuiltinContext* ctx) {
     }
     HObject* obj = (HObject*)arg.get_heapptr();
 
+    if (obj.flags.exotic_proxyobj) {
+        bool sealed;
+        if (!proxy_test_integrity_level(ctx.vm, ctx.heap, obj, false, &sealed)) {
+            proxy_ctx_ok(ctx);
+            return;
+        }
+        ctx.result.set_boolean(sealed);
+        return;
+    }
+
     // Dense array elements are always writable and configurable (no per-element
     // flags in the flat array part).  If any exist, the object can't be sealed.
     if (obj.array_used > 0) {
@@ -3803,6 +3835,16 @@ fn void builtin_object_isFrozen(BuiltinContext* ctx) {
         return;
     }
     HObject* obj = (HObject*)arg.get_heapptr();
+
+    if (obj.flags.exotic_proxyobj) {
+        bool frozen;
+        if (!proxy_test_integrity_level(ctx.vm, ctx.heap, obj, true, &frozen)) {
+            proxy_ctx_ok(ctx);
+            return;
+        }
+        ctx.result.set_boolean(frozen);
+        return;
+    }
 
     // Dense array elements are always writable and configurable (no per-element
     // flags in the flat array part).  If any exist, the object can't be frozen.

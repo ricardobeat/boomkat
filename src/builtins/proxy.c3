@@ -1388,6 +1388,40 @@ fn bool proxy_set_integrity_level(void* vm, Heap* heap, HObject* proxy, bool fro
     return true;
 }
 
+/// TestIntegrityLevel(O, level) — ES2015 §7.3.15 — for a Proxy.
+/// The proxy MOP calls are required even when their traps are absent: in that
+/// case proxy_mop_own_keys forwards to the target's [[OwnPropertyKeys]], while
+/// [[GetOwnProperty]] still runs on the outer proxy for every forwarded key.
+fn bool proxy_test_integrity_level(void* vm, Heap* heap, HObject* proxy,
+                                   bool frozen, bool* out) {
+    bool ext;
+    if (!proxy_mop_is_extensible(vm, heap, proxy, &ext)) return false;
+    if (ext) {
+        *out = false;
+        return true;
+    }
+
+    HObject* karr;
+    if (!proxy_mop_own_keys(vm, heap, proxy, &karr)) return false;
+    for (uint i = 0; i < karr.array_used; i++) {
+        TVal el = karr.array_part()[i];
+        if (!el.is_string()) continue;
+        HString* k = (HString*)el.get_heapptr();
+
+        ProxyDesc current;
+        if (!proxy_mop_get_own(vm, heap, proxy, k, &current)) return false;
+        if (!current.found) continue;
+        if (current.configurable
+            || (frozen && current.is_data_desc() && current.writable)) {
+            *out = false;
+            return true;
+        }
+    }
+
+    *out = true;
+    return true;
+}
+
 // ============================================================================
 // IsArray recursion (§7.2.2) — a Proxy is an array iff its target is.
 // ============================================================================
