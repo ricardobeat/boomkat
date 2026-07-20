@@ -1424,7 +1424,11 @@ fn void builtin_array_proto_push(BuiltinContext* ctx) {
         return;
     }
 
-    ctx.result.set_fastint((long)new_len);
+    if (new_len <= (ulong)types::FASTINT_MAX) {
+        ctx.result.set_fastint((long)new_len);
+    } else {
+        ctx.result.set_number((double)new_len);
+    }
 }
 
 // ============================================================================
@@ -2361,7 +2365,11 @@ fn void builtin_array_proto_unshift(BuiltinContext* ctx) {
         ctx.result.set_undefined(); return;
     }
 
-    ctx.result.set_fastint((long)new_len);
+    if (new_len <= (ulong)types::FASTINT_MAX) {
+        ctx.result.set_fastint((long)new_len);
+    } else {
+        ctx.result.set_number((double)new_len);
+    }
 }
 
 // ============================================================================
