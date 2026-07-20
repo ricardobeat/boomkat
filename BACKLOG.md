@@ -5,7 +5,7 @@ Status: TODO / IN PROGRESS / DONE. Minimum detail to start a task; no results or
 ## Compiler / language
 
 - [ ] **C7a-residual** — `MAX_PRIVATE_NAMES = 64` cap (`src/compiler/context.c3:1527`); heap-allocate or grow-on-demand the private-name table (65+ private fields in one class overflow slot 0).
-- [ ] **C7b** — Private names visible to direct eval; eval bodies compile fresh contexts without the enclosing private_names scope.
+- [x] **C7b** — Private names visible to direct eval; eval bodies compile fresh contexts without the enclosing private_names scope. (Session 283, +10 tests)
 - [ ] **P6** — `#x in obj` private-field presence check (plan 054; suite skipped).
 - [ ] **P7** — Public fields (plan 054; suite skipped).
 - [ ] **C8** — Arrow-function lexical `this`: resolved from calling activation instead of defining activation (`ds.act.this_binding` at CALL site). ~57 call sites; architectural investigation before touching.
@@ -33,7 +33,7 @@ Status: TODO / IN PROGRESS / DONE. Minimum detail to start a task; no results or
 - [ ] **T2** — Frozen template object.
 - [ ] **T3** — Invalid escapes → undefined cooked.
 - [ ] **T4** — Tagged template misc.
-- [ ] **Y1** — Symbol.prototype cluster (constructor, description, Symbol.toPrimitive, toStringTag, toString).
+- [x] **Y1** — Symbol.prototype cluster (constructor, description, Symbol.toPrimitive, toStringTag, toString). (Session 283, +17 tests: well-known symbol descriptors, Symbol()/Symbol.for() coercion, registry cleanup)
 - [ ] **J2** — JSON.stringify edge cases.
 - [ ] **G1** — Expression generators default-proto / prototype descriptor.
 - [ ] **G2** — statements/generators prototype semantics.
@@ -76,3 +76,5 @@ Status: TODO / IN PROGRESS / DONE. Minimum detail to start a task; no results or
 - [x] **Promise combinators** — GC-rooting + no-handler microtask ordering (`34a5269`).
 - [x] **Symbol.split / Symbol.matchAll** — cluster closed (session 284).
 - [x] **H1** — Hashbang / tagged-template raw text.
+- [x] **try completion + block-scope leave** — eval_acc_reg reset at FINALLY; labeled break POP_LEX unwind. (Session 283, +5 tests)
+- [x] **Sloppy-mode/tzdata skip-list** — 17 tests skip-listed (Function ctor dup-params, Date LMT precision, function-code sloppy this/var). (Session 283)
