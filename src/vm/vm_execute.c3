@@ -2293,6 +2293,52 @@ fn TVal? Vm.run(Vm* vm) {
             continue;
         }
 
+        case Opcode.JMP_SEQ:
+        case Opcode.JMP_SNEQ: {
+            // Fused strict-equality branch. Mirrors the SEQ handler's value
+            // compare exactly (no coercion, no throw). JMP_SEQ branches when the
+            // operands are strictly equal; JMP_SNEQ branches when they are not.
+            bool seq;
+            if (types::both_fastint(rb, rc)) {
+                seq = rb.get_fastint() == rc.get_fastint();
+            } else {
+                seq = false;
+                TValTag tag_b = rb.get_tag();
+                TValTag tag_c = rc.get_tag();
+                if (tag_b == tag_c) {
+                    switch (tag_b) {
+                        case UNDEFINED: seq = true;
+                        case NULL_VAL:  seq = true;
+                        case BOOLEAN:   seq = (rb.get_boolean() == rc.get_boolean());
+                        case NUMBER:
+                            seq = !math::is_nan(rb.get_number()) && !math::is_nan(rc.get_number())
+                                  && (rb.get_number() == rc.get_number());
+                        case FASTINT:   seq = (rb.get_fastint() == rc.get_fastint());
+                        case STRING: {
+                            HString* sa = (HString*)rb.get_heapptr();
+                            HString* sb = (HString*)rc.get_heapptr();
+                            seq = sa != null && sb != null && sa.equals_hstring(sb);
+                        }
+                        case OBJECT:    seq = (rb.get_heapptr() == rc.get_heapptr());
+                        case LIGHTFUNC: seq = (rb.get_heapptr() == rc.get_heapptr());
+                        case POINTER:   seq = (rb.get_heapptr() == rc.get_heapptr());
+                        case BUFFER:    seq = (rb.get_heapptr() == rc.get_heapptr());
+                        case BIGINT:    seq = (rb.get_bigint() == rc.get_bigint());
+                        default: break;
+                    }
+                } else if ((tag_b == NUMBER && tag_c == FASTINT) ||
+                           (tag_b == FASTINT && tag_c == NUMBER)) {
+                    double nb = (tag_b == FASTINT) ? (double)rb.get_fastint() : rb.get_number();
+                    double nc = (tag_c == FASTINT) ? (double)rc.get_fastint() : rc.get_number();
+                    seq = (nb == nc);
+                }
+                // Cross-type is always unequal for === (seq stays false).
+            }
+            bool take = (op == Opcode.JMP_SEQ) ? seq : !seq;
+            if (take) { if ((ichar)insn.a < 0) { if (--vm.heap.bwd_gc_budget == 0) { if (vm.heap.gc_pending) { vm.heap.safepoint_gc(); } vm.heap.bwd_gc_budget = heap::BWD_GC_INTERVAL; } } ds.curr_pc += (int)(ichar)insn.a; }
+            continue;
+        }
+
         case Opcode.INSTANCEOF: {
             // ES5 §11.8.6: RelationalExpression instanceof ShiftExpression
             // ra may alias rb (compiler optimization), so read rb before writing ra.

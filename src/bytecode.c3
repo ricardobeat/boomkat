@@ -621,6 +621,20 @@ enum Opcode : char {
     /// Fused `GE rB, rC` + `IF_TRUE`: branch if (rB >= rC) is TRUE.
     JMP_GE,
 
+    // ---- Fused strict-equality compare-and-branch ----------------------------
+    // Strict equality (===/!==) never coerces operands, so unlike the loose
+    // EQ/NEQ path these can never call user code or throw — the fused handler is
+    // a pure value compare with no needs_restart/throw dance. Two opcodes cover
+    // all four source patterns: SEQ+IF_TRUE and SNEQ+IF_FALSE both branch when
+    // the operands are strictly equal (JMP_SEQ); SNEQ+IF_TRUE and SEQ+IF_FALSE
+    // both branch when they are not (JMP_SNEQ). Format ABC: A = signed 8-bit
+    // offset (cast via char), B/C = operand registers.
+
+    /// Fused strict-equality branch: branch if (rB === rC).
+    JMP_SEQ,
+    /// Fused strict-inequality branch: branch if (rB !== rC).
+    JMP_SNEQ,
+
     /// Fused two-hop property access: A=dst_temp, B=src, C=key1_const_idx.
     /// The second key and final register are stored in the NEXT instruction slot (which becomes NOP).
     /// Format: insn[i]  = GETPROPC2 A=dst_temp, B=src, C=key1

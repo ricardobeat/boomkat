@@ -361,3 +361,237 @@ const Fusion3Rule FUSION_INC_DEC_VAR = {
 fn void fuse_inc_dec_var(Instruction* code, uint code_count, uint const_count) {
     run_fusion3_rule(code, code_count, FUSION_INC_DEC_VAR, (void*)&const_count);
 }
+
+// ============================================================================
+// Jump-aware fusion driver: compare + IF_FALSE/IF_TRUE -> fused compare-branch
+// ============================================================================
+//
+// This is the jump-fusing driver — structurally distinct from the two
+// register-baking drivers above. It rewrites the compare slot into a fused
+// compare-and-branch and NOPs the branch slot, which means it must reason
+// about control flow (jump targets, branch offsets, both post-branch paths),
+// not just a dying scratch register. It owns, once, all the machinery the
+// original hand-written pass re-derived inline:
+//   - a whole-function jump-target bitset (a fusion is illegal when the branch
+//     slot is itself a jump target)
+//   - dual-path liveness: the compare-result register must be dead on BOTH the
+//     fall-through and the taken-branch path (after fusion the compare is gone,
+//     so a later read of its result register would see a stale value)
+//   - the bridge correction (B23/B26/B28): when the branch chains into another
+//     forward IF_FALSE/IF_TRUE (an `&&`/`||` continuation), the fused offset
+//     must reach past it; a *backward* continuation is a loop back-edge and
+//     must NOT be treated as a bridge
+//   - the short-circuit skip guard (B27): a branch whose target is preceded by
+//     an LDREG writing the result register is materializing the operator's
+//     value; fusing would drop it
+//   - alias preservation: when the result register aliases a compare operand,
+//     the taken-branch path legitimately keeps the pre-compare value
+//   - signed-8-bit offset fit
+//
+// A rule is pure data: the compare opcode it triggers on, and the fused op to
+// install for each branch direction. Relational (LT/LE/GT/GE) and strict
+// equality (SEQ/SNEQ) rules share every line of the driver — adding a compare
+// form is a table entry, not a new hand-written scan.
+//
+// NOT included: loose EQ/NEQ. Those coerce operands via abstract_eq, which can
+// call user code and throw; a fused branch would have to replicate the
+// needs_restart/throw dance and is deliberately out of scope here.
+
+/// One compare→branch fusion rule: `cmp_op` is the comparison opcode; the two
+/// fused ops are what to install when the following instruction is IF_FALSE
+/// (branch-when-compare-false) vs IF_TRUE (branch-when-compare-true).
+struct CmpBranchRule {
+    Opcode cmp_op;
+    Opcode fused_if_false;
+    Opcode fused_if_true;
+}
+
+/// The full compare→branch fusion table. Relational forms map onto the
+/// existing JMP_N*/JMP_* opcodes; strict-equality forms map onto JMP_SEQ/
+/// JMP_SNEQ. Note the polarity: SEQ+IF_FALSE branches when NOT strictly equal
+/// (JMP_SNEQ) and SNEQ+IF_FALSE branches when strictly equal (JMP_SEQ).
+const CmpBranchRule[8] CMP_BRANCH_RULES = {
+    { Opcode.LT,   Opcode.JMP_NLT,  Opcode.JMP_LT   },
+    { Opcode.LE,   Opcode.JMP_NLE,  Opcode.JMP_LE   },
+    { Opcode.GT,   Opcode.JMP_NGT,  Opcode.JMP_GT   },
+    { Opcode.GE,   Opcode.JMP_NGE,  Opcode.JMP_GE   },
+    { Opcode.SEQ,  Opcode.JMP_SNEQ, Opcode.JMP_SEQ  },
+    { Opcode.SNEQ, Opcode.JMP_SEQ,  Opcode.JMP_SNEQ },
+    { Opcode.EQ,   Opcode.NOP,      Opcode.NOP      },  // sentinel: not fused (see note above)
+    { Opcode.NEQ,  Opcode.NOP,      Opcode.NOP      },  // sentinel: not fused
+};
+
+/// Look up the fused opcode for a (compare, branch-direction) pair. Returns
+/// NOP (never a real fused op) when the compare op has no fusion rule or is a
+/// deliberately-excluded sentinel (EQ/NEQ).
+fn Opcode cmp_branch_fused_op(Opcode cmp_op, bool is_if_false) {
+    foreach (&rule : CMP_BRANCH_RULES) {
+        if (rule.cmp_op == cmp_op) {
+            Opcode fused = is_if_false ? rule.fused_if_false : rule.fused_if_true;
+            return fused;
+        }
+    }
+    return Opcode.NOP;
+}
+
+/// Scan a basic-block-local range [start, code_count) and report whether `reg`
+/// is read before it is overwritten. Stops (treating `reg` as live) at the
+/// first jump target — a new basic block we can't prove dead across — and at
+/// terminal instructions (RET/THROW/JUMP) which end the block cleanly (dead).
+/// This is the compare-result liveness rule the hand-written pass ran on both
+/// the fall-through and taken-branch paths. `skip_first_target` lets the
+/// branch-path scan ignore the jump-target flag on its own entry slot.
+fn bool cmp_result_live_from(Instruction* code, uint code_count, bool* jump_targets,
+                             uint start, uint reg, bool skip_first_target) {
+    for (uint j = start; j < code_count; j++) {
+        if (jump_targets[j] && !(skip_first_target && j == start)) {
+            // A path from outside reaches j; probe this one slot for a read of
+            // reg. If reg isn't read here, keep scanning (matches the original
+            // one-instruction probe at cross-edge targets).
+            Instruction tj = code[j];
+            Opcode top = tj.op;
+            if (top == Opcode.IF_TRUE || top == Opcode.IF_FALSE) {
+                if ((uint)tj.a == reg) { return true; }
+            } else if (bytecode::get_op_format(top) == OpFormat.ABC) {
+                if (top == Opcode.GETPROPC) {
+                    if ((uint)tj.b == reg) { return true; }
+                } else if ((uint)tj.b == reg || (uint)tj.c == reg) {
+                    return true;
+                }
+            }
+            continue;
+        }
+        Instruction jns = code[j];
+        Opcode jop = jns.op;
+        if (jop == Opcode.RET || jop == Opcode.RETUNDEF
+            || jop == Opcode.RET_GEN || jop == Opcode.RETUNDEF_GEN
+            || jop == Opcode.THROW || jop == Opcode.JUMP) {
+            return false;   // block ends without reading reg → dead
+        }
+        if (jop == Opcode.IF_TRUE || jop == Opcode.IF_FALSE) {
+            if ((uint)jns.a == reg) { return true; }
+            continue;
+        }
+        OpFormat jfmt = bytecode::get_op_format(jop);
+        if (jfmt == OpFormat.ABC) {
+            if (jop == Opcode.GETPROPC) {
+                if ((uint)jns.b == reg) { return true; }
+            } else if ((uint)jns.b == reg || (uint)jns.c == reg) {
+                return true;
+            }
+        }
+        if (jfmt != OpFormat.WIDE_SABC && jfmt != OpFormat.WIDE_ABC) {
+            if ((uint)jns.a == reg) { return false; }   // overwritten → dead
+        }
+    }
+    return false;
+}
+
+/// Run all compare→branch fusions over `code[0..code_count)`. `jump_targets`
+/// is a caller-provided scratch buffer of at least `code_count` bools (kept out
+/// of this module so fusion.c3 stays free of any heap dependency). Drop-in
+/// replacement for the hand-written comparison→JMP_N* pass in
+/// CompilerContext.finish().
+fn void run_cmp_branch_fusion(Instruction* code, uint code_count, bool* jump_targets) {
+    if (code_count < 2) { return; }
+
+    // --- Build the jump-target bitset. ---
+    for (uint i = 0; i < code_count; i++) { jump_targets[i] = false; }
+    for (uint i = 0; i < code_count; i++) {
+        Instruction ins = code[i];
+        switch (ins.op) {
+            case Opcode.JUMP:
+            case Opcode.BREAK:
+            case Opcode.CONTINUE: {
+                int off = ins.get_sabc();
+                int tgt = (int)i + 1 + off;
+                if (tgt >= 0 && (uint)tgt < code_count) { jump_targets[tgt] = true; }
+            }
+            case Opcode.IF_TRUE:
+            case Opcode.IF_FALSE: {
+                int off = ins.get_sbc();
+                int tgt = (int)i + 1 + off;
+                if (tgt >= 0 && (uint)tgt < code_count) { jump_targets[tgt] = true; }
+            }
+            case Opcode.TRY: {
+                uint catch_off = ins.get_bc();
+                uint catch_tgt = i + catch_off;
+                if (catch_tgt < code_count) { jump_targets[catch_tgt] = true; }
+                if (i + 1 < code_count) {
+                    uint finally_off = code[i + 1].get_bc();
+                    if (finally_off != 0) {
+                        uint finally_tgt = i + finally_off;
+                        if (finally_tgt < code_count) { jump_targets[finally_tgt] = true; }
+                    }
+                }
+            }
+            default: {}
+        }
+    }
+
+    // --- Fuse each compare + IF_FALSE/IF_TRUE. ---
+    for (uint i = 0; i + 1 < code_count; i++) {
+        Opcode cmp_op = code[i].op;
+        bool is_if_false = (code[i + 1].op == Opcode.IF_FALSE);
+        bool is_if_true  = (code[i + 1].op == Opcode.IF_TRUE);
+        if (!is_if_false && !is_if_true) { continue; }
+
+        Opcode fused_op = cmp_branch_fused_op(cmp_op, is_if_false);
+        if (fused_op == Opcode.NOP) { continue; }   // no rule / excluded compare
+
+        // Compare writes rA; the branch reads rA via its `a` field.
+        uint rA = (uint)code[i].a;
+        if ((uint)code[i + 1].a != rA) { continue; }
+
+        // The branch slot must not be a jump target (landing there post-fusion
+        // would fall through the NOP without branching).
+        if (jump_targets[i + 1]) { continue; }
+
+        int sbx = code[i + 1].get_sbc();
+
+        // Bridge correction (B23/B26/B28): a FORWARD IF_FALSE/IF_TRUE at the
+        // branch's target is an `&&`/`||` continuation; extend the fused offset
+        // past it. A backward continuation is a loop back-edge — not a bridge.
+        int bridge_sbx = 0;
+        uint bridge_slot = (uint)((int)i + 2 + sbx);
+        if (bridge_slot < code_count) {
+            Opcode bop = code[bridge_slot].op;
+            if (bop == Opcode.IF_FALSE || bop == Opcode.IF_TRUE) {
+                int cand = code[bridge_slot].get_sbc();
+                if (cand > 0) { bridge_sbx = cand; }
+            }
+        }
+
+        // Short-circuit skip guard (B27): if the branch target is immediately
+        // preceded by an LDREG writing rA, the branch materializes the
+        // operator's boolean result; fusing would drop it.
+        uint skip_tgt = (uint)((int)i + 2 + sbx + bridge_sbx + (bridge_sbx != 0 ? 1 : 0));
+        if (skip_tgt >= 1 && skip_tgt < code_count) {
+            Instruction ti = code[skip_tgt - 1];
+            if (ti.op == Opcode.LDREG && (uint)ti.a == rA) { continue; }
+        }
+        int fused_off = sbx + 1 + bridge_sbx + (bridge_sbx != 0 ? 1 : 0);
+
+        // (a) fall-through path: rA must be dead from i+2.
+        if (cmp_result_live_from(code, code_count, jump_targets, i + 2, rA, false)) { continue; }
+
+        // (b) taken-branch path: rA must be dead from the branch target, UNLESS
+        // rA aliases a compare operand (then the fused op preserves the operand's
+        // pre-compare value, which is exactly what the target expects).
+        uint rB = (uint)code[i].b;
+        uint rC = (uint)code[i].c;
+        bool ra_aliases_src = (rA == rB || rA == rC);
+        if (!ra_aliases_src) {
+            int tgt_raw = (int)i + 2 + sbx;
+            if (tgt_raw >= 0 && (uint)tgt_raw < code_count) {
+                if (cmp_result_live_from(code, code_count, jump_targets, (uint)tgt_raw, rA, true)) { continue; }
+            }
+        }
+
+        // Adjusted offset must fit signed 8 bits (stored in field A).
+        if (fused_off < -128 || fused_off > 127) { continue; }
+
+        code[i]     = bytecode::make_abc(fused_op, (uint)(char)fused_off, rB, rC);
+        code[i + 1] = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
+    }
+}
