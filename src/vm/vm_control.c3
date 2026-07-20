@@ -889,8 +889,13 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, In
         case Opcode.PUSH_VAR: {
             // Push a new declarative environment for the function body's var scope.
             // Per §9.2.10 step 27: when hasParameterExpressions is true, body vars
-            // must not share the same environment as parameter bindings.
-            EnvRecord*? pvar_raw = env::env_create_declarative(vm.heap, ds.act.var_env);
+            // must not share the same environment as parameter bindings. The new
+            // env's outer is the parameter environment — i.e. the current lex_env
+            // (which PUSH_LEX advanced past var_env to hold TDZ'd/defaulted
+            // params) — not the stale pre-PUSH_LEX var_env, or default-param
+            // values written via PUTLEX/PUTVAR into the parameter scope would be
+            // unreachable from the body's env chain.
+            EnvRecord*? pvar_raw = env::env_create_declarative(vm.heap, ds.act.lex_env);
             if (try new_var_env = pvar_raw) {
                 ds.act.var_env = new_var_env;
                 // lex_env must also advance so PUTLEX / GETVAR resolve in the right scope
