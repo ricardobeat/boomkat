@@ -1481,6 +1481,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     // paths only set ACT_FLAG_DIRECT_EVAL (which builtin_eval checks) when
     // this flag is present on the compiled function.
     func.flags.has_direct_eval = self.has_direct_eval;
+    func.flags.has_home_object = self.super_is_home_object;
 
     // `needs_env` controls whether the CALL fast path allocates a fresh
     // env record + bindings object per call (2 allocations).  We only need

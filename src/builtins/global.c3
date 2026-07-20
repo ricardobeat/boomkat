@@ -383,6 +383,7 @@ fn void builtin_eval(BuiltinContext* ctx) {
     // and arrow direct eval both reject new.target like the spec
     // requires. See compile_eval's `direct_in_function` doc comment.
     bool caller_direct_eval_in_function = false;
+    bool caller_eval_allows_super = false;
     void* parent_priv_names = null;
     uint parent_priv_count = 0;
     if (precheck_act_count > 0) {
@@ -402,6 +403,15 @@ fn void builtin_eval(BuiltinContext* ctx) {
                 if (!caller_cf.is_arrow() && !caller_cf.is_global_fn()) {
                     caller_direct_eval_in_function = true;
                 }
+                // super.x/super[x] in eval is only allowed when the calling
+                // function is a method with a [[HomeObject]] (ES2022 §15.7.3
+                // PerformEval step 7: "If thisEnvRec has a [[HomeObject]]
+                // field"). has_home_object is set at compile time when
+                // super_is_home_object is true (i.e. the function is a
+                // method or accessor in an object literal or class body).
+                if (caller_cf.has_home_object()) {
+                    caller_eval_allows_super = true;
+                }
                 parent_priv_names = caller_cf.eval_private_names;
                 parent_priv_count = caller_cf.eval_private_name_count;
             }
@@ -411,7 +421,7 @@ fn void builtin_eval(BuiltinContext* ctx) {
     // Compile the source string as eval code
     Lexer lex = lexer::lexer_init(src_cstr[:src_len], ctx.heap);
     lex.skip_hashbang();
-    CompiledFunction*? cf = compiler::compile_eval(&lex, ctx.heap, caller_has_direct_eval,
+    CompiledFunction*? cf = compiler::compile_eval(&lex, ctx.heap, caller_eval_allows_super,
                                                     caller_direct_eval_in_function,
                                                     parent_priv_names, parent_priv_count);
     CompiledFunction* func;

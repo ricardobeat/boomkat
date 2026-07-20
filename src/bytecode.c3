@@ -1013,6 +1013,9 @@ bitstruct FuncFlags : uint {
     /// eval installs its `var`/`function` bindings on the global object. Only
     /// meaningful on is_eval functions.
     bool  eval_src_strict  : 25;
+    /// Function is a method/accessor with a [[HomeObject]] (enables super.x
+    /// syntax).  Set at compile time when super_is_home_object is true.
+    bool  has_home_object  : 26;
 }
 
 /// A compiled function template — the immutable bytecode representation of
@@ -1255,6 +1258,12 @@ macro bool CompiledFunction.uses_arguments(&self) {
 /// Returns `true` when the function contains direct `eval()` calls.
 macro bool CompiledFunction.has_direct_eval(&self) {
     return self.flags.has_direct_eval;
+}
+
+/// Returns `true` when the function is a method/accessor with a [[HomeObject]]
+/// (enables super.x/super[x] syntax in direct eval).
+macro bool CompiledFunction.has_home_object(&self) {
+    return self.flags.has_home_object;
 }
 
 /// Returns `true` when the function has a rest parameter.
