@@ -71,16 +71,19 @@ var all_pass = true;
     all_pass &= check("obj setter name", d.set.name, "set x");
 }
 
-// ── Computed property key — no inference ───────────────────────────────────
+// ── Computed property key — inference from the runtime key value ──────────
+// ES2015 §12.2.6.9 PropertyDefinitionEvaluation step 6 runs NamedEvaluation
+// whenever IsAnonymousFunctionDefinition is true, with no exception for
+// computed keys — SetFunctionName uses whatever propKey evaluates to.
 {
     var key = "dynamic";
     var o4 = { [key]: function() {} };
-    all_pass &= check("computed key name empty", o4.dynamic.name, "");
+    all_pass &= check("computed key name", o4.dynamic.name, "dynamic");
 }
 
 {
     var o5 = { ["dyn" + "amic"]: function() {} };
-    all_pass &= check("computed expression name empty", o5.dynamic.name, "");
+    all_pass &= check("computed expression name", o5.dynamic.name, "dynamic");
 }
 
 // ── Class methods ──────────────────────────────────────────────────────────
