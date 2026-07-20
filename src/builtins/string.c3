@@ -38,21 +38,31 @@ fn void builtin_string(BuiltinContext* ctx) {
     HString* s;
     if (ctx.argc > 0) {
         TVal* arg = &ctx.regs[ctx.base_reg];
-        // Per ES2019+ §7.1.12, ToString(symbol) wraps as "Symbol(description)".
-        // builtin_to_string_vm leaves symbol HString unchanged; wrap explicitly here.
+        // ES6 §21.1.1.1 String(value):
+        //   2a. If NewTarget is undefined and Type(value) is Symbol, return
+        //       SymbolDescriptiveString(value).
+        //   2b. Let s be ? ToString(value).
+        // So `String(symbol)` (no `new`) returns "Symbol(description)", but
+        // `new String(symbol)` must call ToString which throws TypeError.
+        // builtin_to_string_vm implements the throwing path (it treats any
+        // symbol HString as a TypeError); builtin_to_string wraps it. Only
+        // take the wrapping path when NewTarget is undefined.
+        bool arg_is_symbol = false;
         if (arg.is_string()) {
             HString* hs = (HString*)arg.get_heapptr();
-            if (hs != null && hs.is_symbol()) {
-                s = builtin_to_string(ctx.heap, arg);
-                if (s == null) {
-                    // Should never happen: builtin_to_string never fails for symbol storage
-                    ctx.result.set_undefined();
-                    return;
-                }
-            } else {
-                s = hs;
+            arg_is_symbol = (hs != null && hs.is_symbol());
+        }
+        if (arg_is_symbol && !ctx.is_constructor) {
+            // String(symbol) → SymbolDescriptiveString, no throw.
+            s = builtin_to_string(ctx.heap, arg);
+            if (s == null) {
+                // Should never happen: builtin_to_string never fails for symbol storage.
+                ctx.result.set_undefined();
+                return;
             }
         } else {
+            // new String(symbol) → ToString throws TypeError (§7.1.17).
+            // All other primitives and objects go through ToPrimitive + ToString.
             s = builtin_to_string_vm(ctx, arg);
             if (s == null) {
                 // Caller already has ctx.should_throw set if applicable.
@@ -167,7 +177,7 @@ fn void builtin_string_fromcodepoint(BuiltinContext* ctx) {
             d = arg.get_number();
         } else if (arg.is_boolean()) {
             d = arg.get_boolean() ? 1.0 : 0.0;
-        } else if (arg.is_undefined() || arg.is_null()) {
+        } else if (arg.is_null()) {
             d = 0.0;
         } else {
             d = builtin_to_number_vm(ctx, arg);

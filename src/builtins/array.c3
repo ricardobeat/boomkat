@@ -1104,80 +1104,14 @@ fn void builtin_array_proto_toString(BuiltinContext* ctx) {
     }
 
     if (!join_callable) {
-        // Fall back to Object.prototype.toString
-        // Build the toString result directly based on object class and Symbol.toStringTag
-        if (obj != null) {
-            char[64] buf;
-            char* class_name = "Object";
-            switch (obj.get_class()) {
-                case hobject::ObjClass.ARRAY:     class_name = "Array"; break;
-                case hobject::ObjClass.FUNCTION:  class_name = "Function"; break;
-                case hobject::ObjClass.BOOLEAN:   class_name = "Boolean"; break;
-                case hobject::ObjClass.NUMBER:    class_name = "Number"; break;
-                case hobject::ObjClass.STRING:    class_name = "String"; break;
-                case hobject::ObjClass.ERROR:     class_name = "Error"; break;
-                case hobject::ObjClass.JSON:      class_name = "JSON"; break;
-                case hobject::ObjClass.MATH:      class_name = "Math"; break;
-                case hobject::ObjClass.DATE:      class_name = "Date"; break;
-                case hobject::ObjClass.REGEXP:    class_name = "RegExp"; break;
-                case hobject::ObjClass.MAP:       class_name = "Map"; break;
-                case hobject::ObjClass.SET:       class_name = "Set"; break;
-                case hobject::ObjClass.WEAKMAP:   class_name = "WeakMap"; break;
-                case hobject::ObjClass.WEAKSET:   class_name = "WeakSet"; break;
-                case hobject::ObjClass.SYMBOL:    class_name = "Symbol"; break;
-                case hobject::ObjClass.PROMISE:   class_name = "Promise"; break;
-                case hobject::ObjClass.GENERATOR: class_name = "Generator"; break;
-                default:                          class_name = "Object"; break;
-            }
-
-            // Check @@toStringTag
-            HString* tag_sym = ensure_tostringtag_symbol(ctx.heap);
-            if (tag_sym != null) {
-                TVal? tag_val = obj.get_prop_proto(tag_sym);
-                if (try tv = tag_val) {
-                    if (tv.is_string()) {
-                        HString* tag_str = (HString*)tv.get_heapptr();
-                        if (tag_str != null && !tag_str.is_symbol()) {
-                            char[] tag_bytes = tag_str.get_data();
-                            int tag_len = (int)tag_bytes.len;
-                            if (tag_len > 0 && tag_len < 64) {
-                                int pos = (int)(io::bprintf(&buf, "[object %s]", (String)tag_bytes[:tag_len]) ?? buf[:0]).len;
-                                if (pos > 0 && pos < 64) {
-                                    ctx.result.set_string(builtin_intern_string(ctx.heap, buf[:pos]));
-                                    return;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            int len = (int)(io::bprintf(&buf, "[object %s]", (ZString)class_name) ?? buf[:0]).len;
-            if (len > 0 && len < 64) {
-                ctx.result.set_string(builtin_intern_string(ctx.heap, buf[:len]));
-                return;
-            }
-            ctx.result.set_undefined();
-            return;
-        } else if (this_val.is_undefined()) {
-            ctx.result.set_string(builtin_intern_string(ctx.heap, "[object Undefined]"));
-            return;
-        } else if (this_val.is_null()) {
-            ctx.result.set_string(builtin_intern_string(ctx.heap, "[object Null]"));
-            return;
-        } else {
-            // Primitive (string, number, boolean) — use toString on the type
-            // Actually Object.prototype.toString with a primitive this should return "[object <type>]"
-            // But primitives get boxed by ToObject, so we'd need the wrapper's class.
-            // For simplicity, call builtin_to_string.
-            HString* s = builtin_to_string(ctx.heap, &this_val);
-            if (s != null) {
-                ctx.result.set_string(s);
-                return;
-            }
-            ctx.result.set_undefined();
-            return;
-        }
+        // Step 3 (ES2022 §22.1.3.30): set func to the *intrinsic* %Object.prototype.toString%.
+        // The user may have deleted Object.prototype.toString (see test262
+        // built-ins/Array/prototype/toString/non-callable-join-string-tag.js), so we must NOT
+        // re-look it up on Object.prototype. Call the built-in function directly: its
+        // BuiltinContext dispatch is keyed off the lightfunc ordinal (Builtin.OBJECT_PROTO_TOSTRING),
+        // which is the spec-defined "intrinsic" reference and survives property deletion.
+        builtin_object_proto_toString(ctx);
+        return;
     }
 
     // Step 4: Return Call(func, array) — call join with the object as this

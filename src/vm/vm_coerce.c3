@@ -703,40 +703,65 @@ fn TVal to_primitive_value(Vm* vm, TVal* val, int hint = 0) {
     if (val.is_object() && val.get_heapptr() != null) {
         HObject* obj = (HObject*)val.get_heapptr();
         hobject::ObjClass cls = obj.get_class();
-        // Fast path: wrapper objects unwrap directly
-        if (cls == hobject::ObjClass.BOOLEAN &&
-            (*obj.extra_ptr()).prim.primitive_value.is_boolean()) {
-            TVal result;
-            result.set_boolean((*obj.extra_ptr()).prim.primitive_value.get_boolean());
-            return result;
+        // Fast path: wrapper objects unwrap directly.
+        //
+        // Guard: the fast path is only correct when the instance has not
+        // redefined valueOf/toString/@@toPrimitive. OrdinaryToPrimitive
+        // (ES §7.1.1) must invoke the user-defined method on the instance;
+        // returning the wrapped primitive directly would silently skip
+        // `__str__instance.valueOf = function(){ return "ed" }`-style
+        // overrides and break equality like `new String("abc") == "ed"`.
+        Heap* hp = (vm != null) ? vm.heap : null;
+        bool can_fast_unwrap = (hp != null);
+        if (can_fast_unwrap) {
+            // Skip fast path if the instance carries its own valueOf / toString
+            // / @@toPrimitive — those would shadow the prototype methods that
+            // the fast path implicitly relies on.
+            HString* vo_key = (HString*)hp.strs[heap::BuiltinStr.VALUE_OF];
+            HString* ts_key = (HString*)hp.strs[heap::BuiltinStr.TO_STRING];
+            if (vo_key != null && obj.has_prop((void*)vo_key)) can_fast_unwrap = false;
+            if (can_fast_unwrap && ts_key != null && obj.has_prop((void*)ts_key)) can_fast_unwrap = false;
+            if (can_fast_unwrap && hp.toprimitive_symbol != null
+                && obj.has_prop((void*)hp.toprimitive_symbol)) can_fast_unwrap = false;
         }
-        if (cls == hobject::ObjClass.NUMBER &&
-            ((*obj.extra_ptr()).prim.primitive_value.is_number() || (*obj.extra_ptr()).prim.primitive_value.is_fastint())) {
-            TVal result;
-            result.set_number((*obj.extra_ptr()).prim.primitive_value.get_number_or_fastint());
-            return result;
-        }
-        if (cls == hobject::ObjClass.STRING &&
-            (*obj.extra_ptr()).prim.primitive_value.is_string()) {
-            TVal result;
-            result.set_string((*obj.extra_ptr()).prim.primitive_value.get_heapptr());
-            return result;
-        }
-        // Fast path: Symbol wrapper → unwrap directly. Symbol.prototype[@@toPrimitive]
-        // ignores its hint and always returns [[SymbolData]] unwrapped, so skipping
-        // straight to the primitive is equivalent to calling it — but ONLY while
-        // that well-known method is still the original built-in. If it has been
-        // redefined/deleted, ToPrimitive must fall through to the exotic-method
-        // check below (which sees it's gone) and then to OrdinaryToPrimitive,
-        // which for hint "string" tries toString() (≠ the raw symbol) first.
-        if (cls == hobject::ObjClass.SYMBOL &&
-            (*obj.extra_ptr()).prim.primitive_value.is_string()
-            && vm != null && builtins::symbol_proto_toprimitive_is_original(vm.heap)) {
-            HString* s = (HString*)(*obj.extra_ptr()).prim.primitive_value.get_heapptr();
-            if (s != null && s.is_symbol()) {
+        if (can_fast_unwrap) {
+            if (cls == hobject::ObjClass.BOOLEAN &&
+                (*obj.extra_ptr()).prim.primitive_value.is_boolean()) {
                 TVal result;
-                result.set_string(s);
+                result.set_boolean((*obj.extra_ptr()).prim.primitive_value.get_boolean());
                 return result;
+            }
+            if (cls == hobject::ObjClass.NUMBER &&
+                ((*obj.extra_ptr()).prim.primitive_value.is_number() || (*obj.extra_ptr()).prim.primitive_value.is_fastint())) {
+                TVal result;
+                result.set_number((*obj.extra_ptr()).prim.primitive_value.get_number_or_fastint());
+                return result;
+            }
+            if (cls == hobject::ObjClass.STRING &&
+                (*obj.extra_ptr()).prim.primitive_value.is_string()) {
+                TVal result;
+                result.set_string((*obj.extra_ptr()).prim.primitive_value.get_heapptr());
+                return result;
+            }
+            // Fast path: Symbol wrapper → unwrap directly. Symbol.prototype[@@toPrimitive]
+            // ignores its hint and always returns [[SymbolData]] unwrapped, so skipping
+            // straight to the primitive is equivalent to calling it — but ONLY while
+            // that well-known method is still the original built-in. If it has been
+            // redefined/deleted, ToPrimitive must fall through to the exotic-method
+            // check below (which sees it's gone) and then to OrdinaryToPrimitive,
+            // which for hint "string" tries toString() (≠ the raw symbol) first.
+            // The `can_fast_unwrap` guard above already rules out an @@toPrimitive
+            // override on the instance; symbol_proto_toprimitive_is_original
+            // additionally confirms the prototype still has the original.
+            if (cls == hobject::ObjClass.SYMBOL &&
+                (*obj.extra_ptr()).prim.primitive_value.is_string()
+                && builtins::symbol_proto_toprimitive_is_original(hp)) {
+                HString* s = (HString*)(*obj.extra_ptr()).prim.primitive_value.get_heapptr();
+                if (s != null && s.is_symbol()) {
+                    TVal result;
+                    result.set_string(s);
+                    return result;
+                }
             }
         }
         // Check Symbol.toPrimitive (ES6 §7.1.1)
