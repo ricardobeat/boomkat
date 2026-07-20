@@ -1,7 +1,9 @@
 # Bytecode fusion framework
 
 Two deliverables: a golden-bytecode test suite that makes fusion regressions
-fail loudly, and a declarative rule framework proven on the ADDI/SUBI pass.
+fail loudly, and a declarative rule framework, now covering 3 of the 5
+fusion-shaped peephole passes in `CompilerContext.finish()` (ADDI/SUBI,
+GETPROPC, INC_VAR/DEC_VAR — see "Final tally" below for the other two).
 
 ## 1. Golden-bytecode test suite
 
@@ -24,19 +26,21 @@ fails the specific golden with a unified diff, not a silent perf drop.
 | `fib_subi.js` | `SUBI` fires twice (`n-1`, `n-2`) — the original bug-motivating case |
 | `loop_addi.js` | `ADDI` fires on `i = i + 1` inside a `for` loop |
 | `sub_out_of_range.js` | `x - 256` (imm > 127) stays plain `SUB` — proves the signed-8-bit guard |
-| `inc_var.js` | `GETVAR+INC+PUTVAR → INC_VAR` still fires (existing hand-written pass, unrelated to ADDI/SUBI, included so the suite isn't ADDI/SUBI-only) |
+| `inc_var.js` | `GETVAR+INC+PUTVAR → INC_VAR` fires (declarative since the INC_VAR/DEC_VAR port) |
+| `dec_var.js` | `GETVAR+DEC+PUTVAR → DEC_VAR` fires (same pass, DEC side) |
+| `getpropc.js` | `LDCONST+GETPROP → GETPROPC` fires (declarative since the GETPROPC port) |
 
-`inc_var.js` needs the loop variable captured by a closure — otherwise the
-register-resident-locals pass elides `GETVAR`/`PUTVAR` for `i` entirely
-(it never touches the runtime scope object) and the INC_VAR pattern never
-gets a chance to match. This was the first thing the golden suite caught
-during authoring: a naive `while (i<5) i++;` produces zero `GETVAR`/`PUTVAR`
-in this compiler.
+`inc_var.js`/`dec_var.js` need the loop variable captured by a closure —
+otherwise the register-resident-locals pass elides `GETVAR`/`PUTVAR` for `i`
+entirely (it never touches the runtime scope object) and the INC_VAR/DEC_VAR
+pattern never gets a chance to match. This was the first thing the golden
+suite caught during authoring: a naive `while (i<5) i++;` produces zero
+`GETVAR`/`PUTVAR` in this compiler.
 
 **Running it:**
 
 ```
-just test-golden-bytecode          # build duktape_c3_debug, run + diff all 4, plus --check-noop
+just test-golden-bytecode          # build duktape_c3_debug, run + diff all 6, plus --check-noop
 python3 scripts/run_golden_bytecode.py fib_subi     # single golden
 python3 scripts/run_golden_bytecode.py --update     # regenerate .expected after an intentional change
 ```
@@ -139,72 +143,182 @@ and the full `test/*.js` smoke suite (7 pre-existing unrelated fails —
 `with`, module-mode files needing `-m`, strict-mode-by-design — unchanged
 from before the port) as broader regression checks.
 
-### What wasn't ported, and how it would map
+### Ported: GETPROPC
 
-Only ADDI/SUBI was ported, per the task's risk budget. The other three:
+`FUSION_GETPROPC` fits the 2-slot framework exactly as predicted above:
+trigger = LDCONST (guard: `idx <= 255` and constant is a string), consumer =
+GETPROP (guard: `c == rK`), same `fusion_reg_live_from` dead-after scan
+(which already implements the "rK kept alive for a following PUTPROP/DELPROP
+in LHS mode" case for free — that's just ordinary dead-after liveness, not a
+special case).
 
-**GETPROPC (`LDCONST rK, idx + GETPROP → GETPROPC`)** — fits the framework
-shape exactly as-is: trigger = LDCONST (guard: `idx <= 255` and constant is
-a string), consumer = GETPROP (guard: `c == rK`), same dead-after scan. This
-is the next easiest port; the only wrinkle is that `context.c3` currently
-starts its liveness scan from `i+2` (immediately after the pair) rather
-than `k+1` (after NOP-skipping) — since this pass requires *physical*
-adjacency (no NOP-skip window), `i+2 == k+1` always holds here, so
-`run_fusion_rule`'s NOP-skip degrades to a no-op check and the port would
-be behavior-preserving.
+This is the first rule whose trigger guard needs more than the raw
+instruction bits (it has to look up the constant pool to check
+`is_string()`), so the framework grew one small, deliberately generic
+extension for it: `FusionTriggerFn`/`FusionConsumerFn` both take an opaque
+`void* ctx` parameter, threaded unchanged through `run_fusion_rule(code,
+code_count, rule, ctx = null)`. ADDI/SUBI's callbacks take and ignore it;
+GETPROPC's trigger casts it to `TVal*` (the constant pool). This keeps the
+driver itself opcode-agnostic while letting individual rules opt into
+whatever context they need.
 
-**INC_VAR/DEC_VAR (`GETVAR r,name + INC/DEC r + PUTVAR r,name`)** — does
-NOT fit the 2-slot trigger/consumer shape: it's a 3-instruction window with
-no scratch register at all (all three instructions reference the *same*
-register `r`, which survives the fusion rather than dying). It would need
-either a 3-slot variant (`FusionRule3` with a `middle` matcher) or
-reframing as "trigger = GETVAR, consumer = INC/DEC, then a *second*
-mandatory follow-up matcher for PUTVAR" — a `FusionRule` with an optional
-`tail` callback. Not attempted; the win is smaller than the ADDI/SUBI
-guard-logic complexity would suggest, so it wasn't worth the schema
-extension in this budget.
+**Equivalence proof:** added a `getpropc` golden (`obj.x` property read)
+that fires GETPROPC; disasm is unchanged pre/post-port for all existing
+goldens, and `--check-noop` confirms GETPROPC doesn't fire under
+`--no-optimize`.
 
-**Comparison fusion (`LT/LE/GT/GE + IF_FALSE/IF_TRUE → JMP_N*/JMP_*`)** —
-the one genuine mismatch with the current framework's safety assumption.
-This fusion rewrites the *consumer* into a branch and deletes the original
-branch's semantics from that slot, so (a) it needs the jump-target bitset
-the current driver doesn't build (a jump landing on the fused branch slot
-must not have been targeting the old IF_FALSE/IF_TRUE for different
-reasons), and (b) it has an extra offset-arithmetic guard (`sbx+1` must
-still fit signed 8-bit) that has no analog in `FusionMatch`. Mapping this
-in would mean either extending `FusionRule` with an optional
-`jump_target_bitset` guard the driver checks before rewriting, or leaving
-branch-rewriting fusions as a deliberately separate category outside this
-framework (arguably the more honest design — "fuse two straight-line ops"
-and "fuse a compare into a branch" are different enough operations that
-forcing them through one schema may just relocate the complexity rather
-than remove it).
+### Ported: INC_VAR/DEC_VAR
+
+`GETVAR r,name + INC/DEC r + PUTVAR r,name → INC_VAR/DEC_VAR name` does NOT
+fit the 2-slot trigger/consumer shape, confirming the original prediction:
+it's a fixed 3-instruction window over ONE register that *survives* the
+fusion (a live variable, not a dying scratch temp), so there is nothing to
+NOP-skip to and no liveness scan to run at all — correctness is pure
+structural/name-index equality across all three slots, and the rewrite
+lands on the *middle* slot (not the trailing one, unlike every 2-slot rule).
+
+Rather than force this into `FusionMatch` (which would mean inventing
+dummy `src_reg`/liveness semantics that don't apply here), it got its own
+small parallel schema: `Fusion3Match` / `Fusion3Rule` / `run_fusion3_rule`,
+using the same `void* ctx` threading convention as the 2-slot driver (here
+carrying a pointer to `const_count`, mirroring the original pass's `name0 <
+self.const_count` bound). This is a second driver, not a second framework —
+both share the same rule-shape philosophy (declarative match callback +
+one shared driver owning the mechanical NOP/rewrite emission), they just
+can't share the *same* driver because the rewrite geometry differs (2 slots
+→ 1 vs. 3 slots → 1-in-the-middle).
+
+**Equivalence proof:** the existing `inc_var` golden stayed byte-identical
+post-port; added a `dec_var` golden (DEC_VAR had no prior coverage) which
+fires correctly. `--check-noop` unaffected (INC_VAR/DEC_VAR were already on
+the check-noop opcode list).
+
+### Deliberately left hand-written: comparison fusion
+
+**`LT/LE/GT/GE + IF_FALSE/IF_TRUE → JMP_N*/JMP_*`** (context.c3:814, now the
+only remaining hand-written peephole pass besides the two copy-prop passes
+below) is a genuine mismatch with both driver shapes above, not a "would be
+nice to generalize eventually" gap:
+
+- It rewrites the *branch itself* — the fused op replaces both the compare
+  AND the following conditional jump's semantics — rather than collapsing a
+  trigger+consumer pair that share a dying scratch register. There's no
+  register being retired into an immediate; the entire *control-flow shape*
+  of the two-instruction pair changes.
+- It requires a **whole-function jump-target bitset**, built *before* any
+  rewriting (scanning JUMP/BREAK/CONTINUE/IF_TRUE/IF_FALSE/TRY for static
+  targets), to reject fusing when the branch slot is itself a jump target.
+  Neither existing driver builds or threads one; retrofitting it as an
+  optional driver-level guard would mean the "generic" driver has to know
+  what a jump target even is for every opcode shape in the ISA (JUMP vs TRY
+  vs IF_*), which is exactly the opcode-specific knowledge the drivers are
+  built to keep out.
+- It runs **two separate liveness scans** (fall-through path from `i+2`,
+  AND the branch-target path from `i+2+sbx`), each of which special-cases
+  jump-targets differently *mid-scan* (probe-and-continue on the
+  fall-through side, immediate live on the branch side) — a shape neither
+  `fusion_reg_live_from` nor any single-scan liveness helper supports.
+- It carries three empirically-discovered correctness patches with no
+  general form: the B23/B26 "bridge" fix (extend the fused offset past a
+  chained short-circuit IF_FALSE/IF_TRUE), the B28 fix (only treat a
+  *forward* bridge as a bridge — a negative offset is a loop back-edge, and
+  extending through it inverts the jump direction), and the B27
+  short-circuit-skip veto (don't fuse when the branch target is immediately
+  followed by an LDREG writing the compare's result register — the `&&`/`||`
+  short-circuit path needs that boolean materialized, which the fused
+  branch never does). These aren't guard predicates in the trigger/consumer
+  sense; they're targeted corrections against specific loop and
+  short-circuit-operator code shapes found by testing, and forcing them
+  into a declarative schema would mean exposing the same amount of detail
+  through callback parameters instead of removing it.
+
+Given the task's explicit permission to make this call: this is left as a
+hand-written pass. "Fuse two straight-line ops that share a scratch
+register" and "fuse a compare into a branch, with jump-target and dual-path
+liveness analysis" are different enough operations that a forced common
+schema would just relocate the branch-specific complexity into extra
+`FusionMatch`/`FusionRule` fields with no reuse benefit — no other fusion
+in this compiler needs a jump-target bitset or a second liveness scan, so
+there is no second caller to amortize the abstraction over.
+
+### Deliberately left hand-written: copy-propagation and dead-LDREG DCE
+
+**Copy-propagation** (context.c3:1101, `LDREG rT=rS` substituted into a
+consumer's b/c operands) and **dead-LDREG-before-INC/DEC elision**
+(context.c3:1180) were judged, per the task's instruction to assess fit,
+NOT to be fusions at all:
+
+- Neither produces a new superinstruction opcode. Copy-prop's consumer
+  keeps its *original* opcode (`ADD`, `LT`, `JMP_NLT`, ...) with only its
+  register operands rewritten; dead-LDREG elision doesn't rewrite anything
+  downstream, it just NOPs an instruction whose result is proven unread.
+  `FusionMatch.rewrite_op`/`imm` (the "bake a scratch value into an
+  immediate" contract every other rule in this file follows) has no
+  meaning for either pass.
+  Copy-prop's cop_reads_b_c matches JMP_N*+LT/LE/GT/GE/ADD/SUB/MUL,
+  which is an ad-hoc opcode whitelist, not a trigger/consumer *pattern* —
+  there's no single "consumer shape" being recognized.
+- These are classic dead-code-elimination / value-numbering passes that
+  happen to be implemented as narrow, single-instruction-lookback peephole
+  scans in this compiler, not a fusion in the "two adjacent ops collapse
+  into a superinstruction" sense the rest of this file is about.
+
+Both are left in `context.c3` as-is; `fusion.c3` is scoped to true
+superinstruction fusion (a new fused opcode replaces N old ones), and
+widening that scope to cover general peephole DCE would blur what the file
+is for without offering these two passes anywhere cleaner to live.
 
 ### Files changed
 
-- `src/compiler/fusion.c3` — new: `FusionMatch`, `FusionRule`,
-  `run_fusion_rule`, `fusion_reg_live_from`, `FUSION_ADDI_SUBI`,
-  `fuse_addi_subi`.
-- `src/compiler/context.c3` — `finish()`'s hand-written ADDI/SUBI pass
-  (~68 lines) replaced with a single call to `fuse_addi_subi`.
-- `test/golden_bytecode/*.js`, `*.expected` — new golden fixtures.
-- `scripts/run_golden_bytecode.py` — new runner.
-- `justfile` — `test-golden-bytecode`, `update-golden-bytecode` recipes.
+- `src/compiler/fusion.c3` — `FusionMatch`/`FusionRule`/`run_fusion_rule`/
+  `fusion_reg_live_from`/`FUSION_ADDI_SUBI`/`fuse_addi_subi` (existing);
+  added `ctx: void*` threading to the 2-slot driver, `FUSION_GETPROPC`/
+  `fuse_getpropc`, and the new 3-slot driver
+  (`Fusion3Match`/`Fusion3Rule`/`run_fusion3_rule`) with
+  `FUSION_INC_DEC_VAR`/`fuse_inc_dec_var`.
+- `src/compiler/context.c3` — the GETPROPC and INC_VAR/DEC_VAR hand-written
+  passes replaced with single calls to `fuse_getpropc`/`fuse_inc_dec_var`;
+  the comparison-fusion and both copy-prop/DCE passes are unchanged.
+- `test/golden_bytecode/*.js`, `*.expected` — added `getpropc` and
+  `dec_var` goldens (6 total now, up from 4); `inc_var` already existed
+  and stays byte-identical post-port, proving INC_VAR's driver swap.
+- `scripts/run_golden_bytecode.py`, `justfile` — unchanged (already wired
+  from the ADDI/SUBI port).
+
+### Final tally
+
+| pass | status | mechanism |
+|---|---|---|
+| ADDI/SUBI | declarative | `FUSION_ADDI_SUBI` / `run_fusion_rule` (pre-existing) |
+| GETPROPC | declarative | `FUSION_GETPROPC` / `run_fusion_rule` + `ctx` |
+| INC_VAR/DEC_VAR | declarative | `FUSION_INC_DEC_VAR` / `run_fusion3_rule` (new 3-slot driver) |
+| comparison → JMP_N*/JMP_* | hand-written (deliberate) | jump-target bitset + dual-path liveness + bridge/short-circuit patches don't amortize over a second caller |
+| copy-propagation (LDREG elision) | hand-written (deliberate) | DCE/copy-prop, not fusion — no new opcode, no trigger/consumer pattern |
+| dead-LDREG-before-INC elision | hand-written (deliberate) | same — pure DCE |
+
+3 of 5 fusion-shaped passes are now declarative (all 3 that are actually
+superinstruction fusions in the "N ops → 1 new op" sense); the comparison
+fusion is a real branch-rewrite with correctness machinery that has no
+second caller to justify generalizing; the two copy-prop/DCE passes were
+never fusions to begin with.
 
 ### Gaps / follow-ups
 
-- Only 1 of 5 fusion-shaped passes ported; see above for how the other 3
-  would map (2 fit cleanly, 1 needs a 3-slot schema, 1 needs a
-  jump-target-bitset extension).
-- The golden suite has 4 goldens; it proves the framework and the specific
-  bug class that motivated this task, but is not exhaustive coverage of
-  every opcode. Natural next additions: a GETPROPC golden once that pass is
-  ported, and a golden that exercises the comparison fusion's offset-clamp
-  guard (`sbx+1` overflow).
-- `run_fusion_rule` assumes a single register is both the trigger's output
-  and the sole liveness-tracked value (`dest_reg` in `FusionMatch` doubles
-  as "the scratch register to check for death" on the trigger side and
-  "the destination register of the rewritten op" on the consumer side).
-  This coincidence holds for ADDI/SUBI and would hold for GETPROPC, but is
-  worth flagging explicitly if a future rule's trigger register and
-  rewritten-destination register diverge — the field would need splitting.
+- The golden suite has 6 goldens (up from 4): `fib_subi`, `loop_addi`,
+  `sub_out_of_range` (ADDI/SUBI), `inc_var`, `dec_var` (INC_VAR/DEC_VAR),
+  `getpropc` (GETPROPC). No golden yet exercises the comparison fusion's
+  offset-clamp guard (`sbx+1` overflow) or its bridge/short-circuit
+  patches — worth adding if that pass is ever touched, declarative or not,
+  since it's the most correctness-fragile of the six passes in `finish()`.
+- `run_fusion_rule` and `run_fusion3_rule` both still assume a single
+  register is the sole liveness-tracked/shared value per rule (`dest_reg`
+  in `FusionMatch`, `reg` in `Fusion3Match`). Holds for all three ported
+  rules; would need splitting if a future rule's trigger register and
+  rewritten-destination register diverge.
+- If the comparison fusion is ever ported, the natural shape is a third
+  driver (not a retrofit of the two above) that owns: building the
+  jump-target bitset once per `finish()` call, a `Fusion2PathMatch` result
+  carrying both liveness-scan starting points, and a dedicated rewrite step
+  that installs the fused branch op in slot `i` and NOPs slot `i+1` (mirror
+  image of the current NOP-then-consumer geometry, since here the surviving
+  slot is first, not second).

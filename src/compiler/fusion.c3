@@ -28,17 +28,26 @@ import duktape::types;
 /// documented once here instead of re-derived per pass:
 ///
 ///   1. GETVAR+INC/DEC+PUTVAR -> INC_VAR/DEC_VAR   (no scratch-reg dependency;
-///      order-independent, could run anywhere before NOP compaction)
-///   2. LDCONST+GETPROP -> GETPROPC                (same — order-independent)
-///   3. comparison+IF_FALSE -> JMP_N*              (same — order-independent)
+///      order-independent, could run anywhere before NOP compaction —
+///      declarative, this file: FUSION_INC_DEC_VAR / run_fusion3_rule)
+///   2. LDCONST+GETPROP -> GETPROPC                (same — order-independent;
+///      declarative, this file: FUSION_GETPROPC / run_fusion_rule)
+///   3. comparison+IF_FALSE -> JMP_N*              (same — order-independent;
+///      hand-written, deliberately: needs a whole-function jump-target
+///      bitset and a dual-path liveness scan with bridge/short-circuit
+///      corrections that don't amortize over any other rule — see
+///      plans/058-fusion-rule-framework.md)
 ///   4. copy-propagation (LDREG rT=rX substitution) — MUST run before any
 ///      rule whose trigger's consumer may be separated from it by a
-///      parser-emitted LDREG move (rule 5 depends on this).
+///      parser-emitted LDREG move (rule 5 depends on this). Hand-written,
+///      deliberately: pure copy-prop/DCE, not a superinstruction fusion
+///      (no new opcode is ever installed).
 ///   5. LDINT+ADD/SUB -> ADDI/SUBI                 (declarative, this file)
 ///
-/// Rules 1-3 don't interact with LDREG copy-prop and are left as hand-written
-/// passes (see the design doc out/fusion-framework.md for how they'd map
-/// onto this same framework). Rule 5 is the one ported below.
+/// Rule 3 and the dead-LDREG-before-INC/DEC DCE pass (which runs alongside
+/// rule 4, same reasoning) are the only fusion-shaped passes left
+/// hand-written in context.c3 — see plans/058-fusion-rule-framework.md for
+/// the full "why" on each.
 
 /// Result of matching a fusion's trigger+consumer pair, produced by a
 /// rule's `match_consumer` callback.
