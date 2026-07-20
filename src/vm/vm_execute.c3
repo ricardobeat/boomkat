@@ -1514,6 +1514,20 @@ fn TVal? Vm.run(Vm* vm) {
                 continue;
             }
 
+        $if $feature(THREADED_DISPATCH):
+            {
+                init_threaded_handlers();
+                ColdCtx cold;
+                cold.vm = vm;
+                cold.act = ds.act;
+                cold.code_base = ds.code_base;
+                cold.constants = ds.constants;
+                cold.var_ic_base = ds.var_ic_base;
+                ds.curr_pc = run_threaded_burst(ds.curr_pc, ds.code_end, ds.regs_base, &cold);
+                if (ds.curr_pc >= ds.code_end) continue;
+            }
+        $endif
+
             Instruction insn = *ds.curr_pc;
             ds.curr_pc++;
 
