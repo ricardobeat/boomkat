@@ -1523,6 +1523,14 @@ fn TVal? Vm.run(Vm* vm) {
             TVal* rb = ds.regs_base + ((uint)insn.b);
             TVal* rc = ds.regs_base + ((uint)insn.c);
 
+            if (@unlikely(g_cpuprofile.enabled)) {
+                g_cpuprofile.insn_counter++;
+                if (g_cpuprofile.insn_counter >= CHECK_INSTRUCTIONS) {
+                    g_cpuprofile.insn_counter = 0;
+                    g_cpuprofile.maybe_sample(ds.act);
+                }
+            }
+
         $if $feature(TRACE_VM):
         if (@unlikely(vm.trace)) {
             trace_instruction(vm, ds.curr_pc - 1, (uint)((ds.curr_pc - 1) - ds.code_base),

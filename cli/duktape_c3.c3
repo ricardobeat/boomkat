@@ -34,7 +34,18 @@ fn int main(String[] args) {
         if (rc != 0) io::eprintfn("module rc=%d", rc);
         return rc;
     }
-    String path = args.len > 1 ? args[1] : "test/simple.js";
+    // `--cpuprofile <out.cpuprofile>` samples the VM's call stack during
+    // execution and writes a Chrome DevTools / speedscope compatible
+    // .cpuprofile JSON file. Off by default (single runtime flag check in
+    // the dispatch loop; see src/vm/cpuprofile.c3).
+    char* cpuprofile_out = null;
+    usz path_idx = 1;
+    if (args.len > 2 && args[1] == "--cpuprofile") {
+        cpuprofile_out = (char*)(ZString)args[2];
+        path_idx = 3;
+    }
+
+    String path = args.len > path_idx ? args[path_idx] : "test/simple.js";
     char[]? source = file::load_temp(path);
     if (catch err = source) { io::eprintfn("Failed to read"); return 1; }
 
@@ -45,6 +56,10 @@ fn int main(String[] args) {
     Vm*? v = vm::vm_create(hp);
     if (catch err = v) { io::eprintfn("VM failed"); return 1; }
     defer vm::vm_destroy(v);
+
+    if (cpuprofile_out != null) {
+        vm::g_cpuprofile.init(cpuprofile_out);
+    }
 
     Lexer lex = lexer::lexer_init(source, hp);
     lex.skip_hashbang();
@@ -59,6 +74,11 @@ fn int main(String[] args) {
     }
 
     TVal? result = v.execute(f);
+
+    if (cpuprofile_out != null) {
+        vm::g_cpuprofile.finish((char*)(ZString)path);
+    }
+
     if (catch err = result) {
         io::eprintfn("VM error: %s (at execute)", err);
         if (v.heap.has_error) {
