@@ -1233,6 +1233,23 @@ fn Token? Lexer.scan_string(&self) {
                         self.advance_char();
                     }
 
+                case 0xE2:
+                    // LineContinuation also allows LS (U+2028 = 0xE2 0x80 0xA8)
+                    // and PS (U+2029 = 0xE2 0x80 0xA9). The first byte (0xE2)
+                    // was already consumed as `esc`; if the next two bytes form
+                    // an LS/PS sequence, consume them as a line continuation
+                    // (produces the empty code unit sequence). Otherwise fall
+                    // through and emit 0xE2 as a literal character.
+                    if (self.remaining() >= 2
+                        && self.peek_char() == 0x80
+                        && (self.peek_char_at(1) == 0xA8 || self.peek_char_at(1) == 0xA9)) {
+                        self.advance_char(); // consume 0x80
+                        self.advance_char(); // consume 0xA8 or 0xA9
+                    } else {
+                        buf[buf_len] = esc;
+                        buf_len++;
+                    }
+
                 default:
                     // Non-escape: in non-strict mode, treat as literal.
                     // In strict mode, digit escapes (\1-\9) are octal/identity escapes

@@ -143,14 +143,10 @@ fn void builtin_math_pow(BuiltinContext* ctx) {
     double y = math_arg(ctx, 1);
     ctx.result.set_number(0.0);
     // ES6 §20.2.2.26 Math.pow(x, y):
-    // 1. If y is NaN, the result is NaN (unless x is 1)
-    // 2. If y is +0 or -0, the result is 1, even if x is NaN
-    // 3. If x is +1, the result is 1, even if y is NaN or ±∞
-    // 4. If |x| is 1 and y is ±∞, the result is NaN
-    if (x == 1.0) {
-        ctx.result.set_number(1.0);
-        return;
-    }
+    // 1. If y is +0 or -0, the result is 1, even if x is NaN
+    // 2. If y is NaN, the result is NaN
+    // 3. If |x| is 1 and y is ±∞, the result is NaN
+    // 4. If x is +1 and y is finite and non-zero, the result is 1
     if (y == 0.0) {
         ctx.result.set_number(1.0);
         return;
@@ -159,11 +155,13 @@ fn void builtin_math_pow(BuiltinContext* ctx) {
         ctx.result.set_number(double::nan);
         return;
     }
-    if (math::is_inf(y)) {
-        if (x == -1.0) {
-            ctx.result.set_number(double::nan);
-            return;
-        }
+    if (math::abs(x) == 1.0 && math::is_inf(y)) {
+        ctx.result.set_number(double::nan);
+        return;
+    }
+    if (x == 1.0) {
+        ctx.result.set_number(1.0);
+        return;
     }
     ctx.result.set_number(math_pow(x, y));
 }

@@ -2271,12 +2271,58 @@ fn TVal? Vm.run(Vm* vm) {
             }
 
             HObject* rfunc = (HObject*)rval.get_heapptr();
-            if (rfunc == null || !rfunc.is_callable()) {
-                // TypeError: right-hand side must be callable
-                if (!vm_throw_error(vm, vm.heap.type_err_proto, "Right-hand side of instanceof is not callable", ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                    return VM_ERROR~;
+
+            // ES6 §12.9.4: GetMethod(C, @@hasInstance) is step 2 — must run
+            // BEFORE the IsCallable check (step 5). Get() must invoke any
+            // accessor getter and propagate its error (test get-err).
+            if (vm.heap.hasinstance_symbol != null) {
+                HString* hasinst_key = vm.heap.hasinstance_symbol;
+                TVal hasinst_val;
+                hasinst_val.set_undefined();
+                bool have_value = false;
+                AccessorResult hi_acc = rfunc.find_accessor_proto(hasinst_key, true);
+                if (hi_acc.found) {
+                    // Accessor property: invoke the getter (this = original
+                    // receiver = rfunc). Getter may throw — propagate.
+                    TVal this_for_getter;
+                    this_for_getter.set_object(rfunc);
+                    TVal getter_result = vm.heap.call_fn(vm, hi_acc.accessor_fn, null, 0, this_for_getter);
+                    if (vm_check_call_fn_error(vm)) {
+                        if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                        continue;
+                    }
+                    hasinst_val = getter_result;
+                    have_value = true;
+                } else {
+                    // Data property (or not present). Read raw value via the
+                    // prototype chain; fall back to undefined if missing.
+                    TVal? raw = rfunc.get_prop_proto(hasinst_key);
+                    if (try raw_v = raw) {
+                        hasinst_val = raw_v;
+                        have_value = true;
+                    }
                 }
-                continue;
+                // ES6 §7.3.9 GetMethod: undefined/null → no method (fall through).
+                // Anything else must be callable; otherwise TypeError.
+                if (have_value && !hasinst_val.is_undefined() && !hasinst_val.is_null()) {
+                    bool hasinst_callable = hasinst_val.is_lightfunc() ||
+                        (hasinst_val.is_object() && hasinst_val.get_heapptr() != null &&
+                         ((HObject*)hasinst_val.get_heapptr()).is_callable());
+                    if (!hasinst_callable) {
+                        if (!vm_throw_error(vm, vm.heap.type_err_proto, "Symbol.hasInstance value is not a function", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                            return VM_ERROR~;
+                        }
+                        continue;
+                    }
+                    // Call @@hasInstance with this=C(rval), arg=O(lval)
+                    TVal result = vm.heap.call_fn(vm, hasinst_val, &lval, 1, rval);
+                    if (vm_check_call_fn_error(vm)) {
+                        if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                        continue;
+                    }
+                    ra.set_boolean(builtins::builtin_to_boolean(&result));
+                    continue;
+                }
             }
 
             // Proxy exotic on the RHS: OrdinaryHasInstance with [[Get]] of
@@ -2307,25 +2353,13 @@ fn TVal? Vm.run(Vm* vm) {
                 continue;
             }
 
-            // ES6 §12.10.4: Check Symbol.hasInstance on the constructor
-            if (vm.heap.hasinstance_symbol != null) {
-                HString* hasinst_key = vm.heap.hasinstance_symbol;
-                TVal? hasinst_val = rfunc.get_prop_proto(hasinst_key);
-                if (try hasinst_fn = hasinst_val) {
-                    bool hasinst_callable = hasinst_fn.is_lightfunc() ||
-                        (hasinst_fn.is_object() && hasinst_fn.get_heapptr() != null &&
-                         ((HObject*)hasinst_fn.get_heapptr()).is_callable());
-                    if (hasinst_callable) {
-                        // Call @@hasInstance with this=rval, arg=lval
-                        TVal result = vm.heap.call_fn(vm, hasinst_fn, &lval, 1, rval);
-                        if (vm_check_call_fn_error(vm)) {
-                            if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
-                            continue;
-                        }
-                        ra.set_boolean(builtins::builtin_to_boolean(&result));
-                        continue;
-                    }
+            // ES6 §12.9.4 step 5: If IsCallable(C) is false, throw TypeError.
+            // (Reached only when @@hasInstance is undefined/missing.)
+            if (!rfunc.is_callable()) {
+                if (!vm_throw_error(vm, vm.heap.type_err_proto, "Right-hand side of instanceof is not callable", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                    return VM_ERROR~;
                 }
+                continue;
             }
 
             // §15.3.5.3 step 1: If Type(lval) is not Object → false

@@ -459,6 +459,19 @@ fn ushort? CompilerContext.assignment_expr(&self) {
         }
     }
 
+    // For plain assignment to an identifier, strip the GETVAR emitted during
+    // LHS parsing. Per ES2022 §13.15.2 step 1, evaluating the LHS
+    // IdentifierReference produces a Reference (not a value) — GetValue
+    // is never called on the LHS reference. The PUTVAR_ASSIGN at the end
+    // handles the actual write (and throws ReferenceError for undeclared
+    // variables). Stripping GETVAR ensures the RHS is evaluated first.
+    if (is_assign && lhs_was_getvar && self.code_count > 0) {
+        Instruction lhs_last = self.code[self.code_count - 1];
+        if (lhs_last.op == Opcode.GETVAR && (ushort)lhs_last.a == left) {
+            self.code_count--;
+        }
+    }
+
     // ES2015 §12.15.4 AssignmentExpression: `x = anonymousFn` — when the LHS
     // is a simple IdentifierReference (not a member expression), pass the
     // name through for NamedEvaluation of an anonymous function/class/arrow
