@@ -14,14 +14,12 @@
 [  2] RET           r0 = r0, r0
 [  3] GETVAR        r1, 1
 [  4] LDUNDEF       r2 = r0, r0
-[  5] SUBI          r4 = r0, r1
-[  6] LDREG         r3 = r4, r0
-[  7] CALL          r1 = r1, r1
-[  8] GETVAR        r2, 1
-[  9] LDUNDEF       r3 = r0, r0
-[ 10] SUBI          r5 = r0, r2
-[ 11] LDREG         r4 = r5, r0
-[ 12] CALL          r2 = r2, r1
-[ 13] ADD           r1 = r1, r2
-[ 14] RET           r1 = r0, r0
+[  5] SUBI          r3 = r0, r1
+[  6] CALL          r1 = r1, r1
+[  7] GETVAR        r2, 1
+[  8] LDUNDEF       r3 = r0, r0
+[  9] SUBI          r4 = r0, r2
+[ 10] CALL          r2 = r2, r1
+[ 11] ADD           r1 = r1, r2
+[ 12] RET           r1 = r0, r0
 --- End bytecode ---
