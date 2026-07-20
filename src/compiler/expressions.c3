@@ -1615,15 +1615,25 @@ fn ushort? CompilerContext.emit_call(&self, ushort callee_reg) {
             self.next_reg = callee_reg + 2;
         }
     }
-    // Place undefined 'this' slot (or the property object for method calls)
-    // DEBUG: check call_prop_obj_reg
+    // Place undefined 'this' slot (or the property object for method calls).
+    // For a plain (non-method) call the receiver is always undefined; rather
+    // than emit an `LDUNDEF callee_reg+1` here (a dispatch executed on every
+    // call), we mark the call as CALL_UNDEF_THIS below and let the VM
+    // materialize the undefined receiver directly in its call handler. The
+    // this-slot register is still reserved (not written) so argument
+    // allocation and the callee-relocation logic above stay correct.
+    bool undef_this = false;
     if (self.call_prop_obj_reg != MAX_REGISTERS) {
-        // DEBUG: print the register number via stderr
         self.emit_abc(Opcode.LDREG, (uint)(callee_reg + 1), (uint)self.call_prop_obj_reg, 0);
         self.free_reg(self.call_prop_obj_reg);
         self.call_prop_obj_reg = MAX_REGISTERS;
     } else {
-        self.emit_abc(Opcode.LDUNDEF, (uint)(callee_reg + 1), 0, 0);
+        undef_this = true;
+        // Reserve the this-slot without writing it (the VM clears it): keep
+        // next_reg past callee_reg+1 so arguments never alias the slot.
+        if (self.next_reg <= callee_reg + 1) {
+            self.next_reg = callee_reg + 2;
+        }
     }
     if (self.next_reg < first_arg) {
         self.next_reg = first_arg;
@@ -1718,10 +1728,21 @@ fn ushort? CompilerContext.emit_call(&self, ushort callee_reg) {
 
     self.expect(TokenType.RPAREN)!;
 
-    // Emit CALL or CALL_S, reusing callee_reg as result (callee+this consumed by call)
+    // Emit CALL / CALL_S / CALL_UNDEF_THIS, reusing callee_reg as result
+    // (callee+this consumed by call).
     if (has_spread) {
+        // CALL_S reads nargs from a register and has no undef-this variant;
+        // if we elided the this-slot write above, materialize it now so the
+        // slow-path receiver read is correct.
+        if (undef_this) {
+            self.emit_abc(Opcode.LDUNDEF, (uint)(callee_reg + 1), 0, 0);
+        }
         // CALL_S: A=result, B=callee_reg, C=nargs_reg — reuse callee_reg for result
         self.emit_abc(Opcode.CALL_S, (uint)callee_reg, (uint)callee_reg, (uint)total_count_reg);
+    } else if (undef_this) {
+        // Plain non-method call: receiver is undefined, materialized by the VM
+        // (no per-call LDUNDEF dispatch). A=result, B=callee_reg, C=nargs.
+        self.emit_abc(Opcode.CALL_UNDEF_THIS, (uint)callee_reg, (uint)callee_reg, (uint)arg_count);
     } else {
         self.emit_abc(Opcode.CALL, (uint)callee_reg, (uint)callee_reg, (uint)arg_count);
     }

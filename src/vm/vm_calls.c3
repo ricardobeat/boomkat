@@ -215,7 +215,8 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
     Vm* vm = ds.vm;
     switch (op) {
         case Opcode.CALL:
-        case Opcode.CALL_S: {
+        case Opcode.CALL_S:
+        case Opcode.CALL_UNDEF_THIS: {
             // Safe point: run deferred GC before entering callee
             if (vm.heap.gc_pending) { vm.heap.safepoint_gc(); }
             // Compiler convention: A=result_reg, B=callee_reg, C=nargs (or nargs_reg for CALL_S)
@@ -234,6 +235,18 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                 }
             } else {
                 nargs = insn.c;
+            }
+
+            // CALL_UNDEF_THIS (plain non-method calls `f(...)`) elides the
+            // per-call `LDUNDEF callee_reg+1` dispatch the compiler would
+            // otherwise emit for CALL. The receiver of a plain call is always
+            // undefined, so materialize that here — once, before any fast/slow
+            // path reads the this-slot (compiled-fn fast path via saved_this,
+            // and bound/builtin/lightfunc slow paths via regs_base[callee_reg+1]).
+            // Replacing one full opcode dispatch with one register store into an
+            // already-hot slot is the net win.
+            if (op == Opcode.CALL_UNDEF_THIS) {
+                ds.regs_base[callee_reg + 1].set_undefined();
             }
 
             TVal* func_slot = ds.regs_base + callee_reg;

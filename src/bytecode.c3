@@ -467,6 +467,14 @@ enum Opcode : char {
     /// runtime argument count (for spread arguments).
     /// ABC format: A=result_reg, B=callee_reg, C=nargs_reg.
     CALL_S,
+    /// `A = B(C..C+N)` with an implicitly-undefined `this` — identical to
+    /// CALL, but the callee's this-binding is taken to be `undefined`
+    /// without reading the `callee_reg+1` slot. Emitted by the compiler for
+    /// plain (non-method) calls `f(...)`, where the receiver is always
+    /// undefined; this elides the per-call `LDUNDEF callee_reg+1` dispatch
+    /// that CALL would otherwise depend on. ABC format: A=result register,
+    /// B=callee register, C=argument count.
+    CALL_UNDEF_THIS,
     /// `A = spread(C) into object` — copy all own enumerable properties
     /// from source C into target object A.  null/undefined sources are
     /// silently skipped (as in Object.assign).  ABC format:
