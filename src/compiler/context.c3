@@ -913,6 +913,35 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         fuse_addi_subi(self.code, self.code_count);
     }
 
+    // --- Liveness-based move elimination: `producer rT=... ; LDREG rDst=rT`
+    // -> retarget producer to write rDst directly, NOP the LDREG.
+    // Runs AFTER copy-propagation and every fusion pass above (so the
+    // producer immediately preceding a surviving LDREG is in its final
+    // form) and BEFORE NOP compaction (so the NOPs it introduces are
+    // physically removed). See src/compiler/moveelim.c3 for the liveness
+    // analysis and the full safety-condition reasoning.
+    if (!self.disable_optimize && self.code_count >= 2) {
+        usz bufsz = (usz)self.code_cap;
+        bool* me_jump_targets = (bool*)h.alloc_func(h.heap_udata, bufsz);
+        bool* me_in_try       = (bool*)h.alloc_func(h.heap_udata, bufsz);
+        usz regsetsz = (usz)self.code_cap * RegSet::size;
+        RegSet* me_live_out = (RegSet*)h.alloc_func(h.heap_udata, regsetsz);
+        RegSet* me_live_in  = (RegSet*)h.alloc_func(h.heap_udata, regsetsz);
+        if (me_jump_targets == null || me_in_try == null || me_live_out == null || me_live_in == null) {
+            if (me_jump_targets != null) { h.free_func(h.heap_udata, me_jump_targets); }
+            if (me_in_try != null) { h.free_func(h.heap_udata, me_in_try); }
+            if (me_live_out != null) { h.free_func(h.heap_udata, me_live_out); }
+            if (me_live_in != null) { h.free_func(h.heap_udata, me_live_in); }
+            self.cleanup();
+            return COMPILE_ERROR~;
+        }
+        run_move_elimination(self.code, self.code_count, me_jump_targets, me_in_try, me_live_out, me_live_in);
+        h.free_func(h.heap_udata, me_jump_targets);
+        h.free_func(h.heap_udata, me_in_try);
+        h.free_func(h.heap_udata, me_live_out);
+        h.free_func(h.heap_udata, me_live_in);
+    }
+
     // --- Register-resident locals: elide dead env ops when no scope is needed ---
     // Must run BEFORE the NOP compaction below so the NOPs we introduce here are
     // physically removed too. When this function needs no runtime scope object
