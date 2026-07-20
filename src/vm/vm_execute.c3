@@ -3040,7 +3040,27 @@ fn TVal? Vm.run(Vm* vm) {
         // === FUNCTION CALLS ===
         case Opcode.CALL:
         case Opcode.CALL_S:
-        case Opcode.CALL_UNDEF_THIS:
+        case Opcode.CALL_UNDEF_THIS: {
+            // Inline the direct-compiled-function fast path (the fib/recursion
+            // shape) so the hot loop avoids the `bl dispatch_calls` + its own
+            // inner-switch dispatch entirely. Guard checks live inside the
+            // @inline helper itself; anything that doesn't fit (generators,
+            // class ctors called without new, bound/builtin/lightfunc callees,
+            // non-callables) falls back to dispatch_calls unchanged.
+            bool fast_handled = false;
+            TVal? fast_result = try_fast_compiled_call(&ds, op, insn, &fast_handled);
+            if (fast_handled) {
+                if (catch err = fast_result) { return err~; }
+                continue;
+            }
+            if (catch err = dispatch_calls(&ds, op, ra, rb, rc, insn)) { return err~; }
+            // Refresh regs_base after builtin calls that may have triggered valstack
+            // reallocation via heap.call_fn (compiled-function paths set needs_restart
+            // and reload via the outer loop; builtin paths return without setting it).
+            if (!ds.needs_restart) { ds.regs_base = ds.act.bottom; }
+            continue;
+        }
+
         case Opcode.CALL_PROP:
         case Opcode.SETPROTO:
         case Opcode.GETPROTO:
