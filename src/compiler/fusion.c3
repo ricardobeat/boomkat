@@ -254,3 +254,101 @@ const FusionRule FUSION_GETPROPC = {
 fn void fuse_getpropc(Instruction* code, uint code_count, TVal* constants) {
     run_fusion_rule(code, code_count, FUSION_GETPROPC, (void*)constants);
 }
+
+// ============================================================================
+// 3-slot fusion driver: fixed physically-adjacent triple, middle slot rewrite
+// ============================================================================
+//
+// ADDI/SUBI and GETPROPC both shrink a trigger+consumer pair down to one
+// instruction by discarding a dying scratch register. GETVAR+INC/DEC+PUTVAR
+// is shaped differently: it's a *three*-instruction window over ONE register
+// that survives the fusion (it's a live variable, not a scratch temp), so
+// there is nothing to NOP-skip to and no dead-after-liveness scan to run —
+// the three ops are always physically adjacent by construction (the parser
+// never interposes anything between a variable read, its increment, and the
+// write-back), and correctness comes entirely from an equality match across
+// all three slots, not from proving a register's death. Forcing this through
+// `FusionMatch`/`run_fusion_rule` (which NOPs the trigger and rewrites the
+// consumer) would mean inventing dummy liveness/immediate fields that don't
+// mean anything for this pattern, so it gets its own minimal parallel
+// schema instead of a mangled fit into the 2-slot one.
+
+/// Result of matching a 3-slot fusion window.
+struct Fusion3Match {
+    bool   matched;
+    Opcode rewrite_op;   // opcode to install at the middle slot
+    uint   reg;          // the shared register (dest_reg field of the rewrite)
+    uint   imm;          // immediate baked into the rewrite (e.g. a name index)
+}
+
+/// Given the three physically-adjacent instructions of a candidate window,
+/// report whether they fuse. `slot0`/`slot1`/`slot2` are `code[i]`,
+/// `code[i+1]`, `code[i+2]` — no NOP-skipping; this pattern requires exact
+/// adjacency. `ctx` mirrors the 2-slot driver's opaque per-rule pointer
+/// (see `FusionTriggerFn`).
+alias Fusion3MatchFn = fn Fusion3Match(Instruction slot0, Instruction slot1, Instruction slot2, void* ctx);
+
+struct Fusion3Rule {
+    Fusion3MatchFn match;
+}
+
+/// Run one 3-slot fusion rule over the whole instruction stream. On match,
+/// NOPs slot0 and slot2 and installs the rewrite (A-BC format: reg, imm) at
+/// slot1 — the middle slot is always a valid landing point for control flow
+/// (both a jump to slot0, which falls through, and a jump to slot1 itself,
+/// which now finds the fused op) so no jump-target bitset is needed, exactly
+/// as with the 2-slot driver's trigger-NOP.
+fn void run_fusion3_rule(Instruction* code, uint code_count, Fusion3Rule rule, void* ctx = null) {
+    if (code_count < 3) { return; }
+    for (uint i = 0; i + 2 < code_count; i++) {
+        Fusion3Match m = rule.match(code[i], code[i + 1], code[i + 2], ctx);
+        if (!m.matched) { continue; }
+
+        code[i]     = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
+        code[i + 1] = bytecode::make_a_bc(m.rewrite_op, m.reg, m.imm);
+        code[i + 2] = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
+    }
+}
+
+// ============================================================================
+// Rule: GETVAR r,name + INC/DEC r + PUTVAR r,name  ->  NOP + INC_VAR/DEC_VAR r,name + NOP
+// ============================================================================
+//
+// Ported from the hand-written pass in CompilerContext.finish() (search
+// "fuse GETVAR + INC/DEC + PUTVAR" in context.c3 for the original). `ctx`
+// carries the const_count bound (mirroring GETPROPC's use of `ctx` for the
+// constant pool), so the match fn can reject a name index the constant pool
+// hasn't grown to yet — see fuse_inc_dec_var below for how it's threaded.
+
+fn Fusion3Match fusion_inc_dec_var_match(Instruction slot0, Instruction slot1, Instruction slot2, void* ctx) {
+    Fusion3Match m;
+    if (slot0.op != Opcode.GETVAR) { return m; }
+    if (slot1.op != Opcode.INC && slot1.op != Opcode.DEC) { return m; }
+    if (slot2.op != Opcode.PUTVAR) { return m; }
+
+    uint reg_a = (uint)slot0.a;
+    if ((uint)slot1.a != reg_a || (uint)slot2.a != reg_a) { return m; }
+
+    uint name0 = slot0.get_bc();
+    uint name2 = slot2.get_bc();
+    uint const_count = *((uint*)ctx);
+    if (name0 != name2 || name0 >= const_count) { return m; }
+
+    m.matched    = true;
+    m.rewrite_op = (slot1.op == Opcode.INC) ? Opcode.INC_VAR : Opcode.DEC_VAR;
+    m.reg        = reg_a;
+    m.imm        = name0;
+    return m;
+}
+
+const Fusion3Rule FUSION_INC_DEC_VAR = {
+    .match = &fusion_inc_dec_var_match,
+};
+
+/// Run the declarative INC_VAR/DEC_VAR fusion over `code[0..code_count)`.
+/// Drop-in replacement for the hand-written pass at the same site in
+/// CompilerContext.finish(). `const_count` bounds the GETVAR/PUTVAR name
+/// index, mirroring the original pass's `name0 < self.const_count` guard.
+fn void fuse_inc_dec_var(Instruction* code, uint code_count, uint const_count) {
+    run_fusion3_rule(code, code_count, FUSION_INC_DEC_VAR, (void*)&const_count);
+}

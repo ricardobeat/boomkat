@@ -727,27 +727,14 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     // Pattern: GETVAR r, name  /  INC r  /  PUTVAR r, name
     //   → NOP  /  INC_VAR name  /  NOP
     // Saves 2 dispatches per loop iteration on the hot counter path.
+    //
+    // Declarative — see src/compiler/fusion.c3 (FUSION_INC_DEC_VAR rule,
+    // run_fusion3_rule driver) for the pattern/guard/rewrite definition.
+    // Ported 1:1 from the original hand-written pass; equivalence is checked
+    // by the golden-bytecode suite (test/golden_bytecode/, `just
+    // test-golden-bytecode`).
     if (!self.disable_optimize && self.code_count >= 3) {
-        for (uint i = 0; i + 2 < self.code_count; i++) {
-            Opcode op0 = self.code[i].op;
-            Opcode op1 = self.code[i + 1].op;
-            Opcode op2 = self.code[i + 2].op;
-            if (op0 == Opcode.GETVAR
-                && (op1 == Opcode.INC || op1 == Opcode.DEC)
-                && op2 == Opcode.PUTVAR) {
-                uint reg_a = self.code[i].a;
-                if (self.code[i + 1].a == reg_a && self.code[i + 2].a == reg_a) {
-                    uint name0 = self.code[i].get_bc();
-                    uint name2 = self.code[i + 2].get_bc();
-                    if (name0 == name2 && name0 < self.const_count) {
-                        Opcode fused = (op1 == Opcode.INC) ? Opcode.INC_VAR : Opcode.DEC_VAR;
-                        self.code[i] = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
-                        self.code[i + 1] = bytecode::make_a_bc(fused, reg_a, name0);
-                        self.code[i + 2] = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
-                    }
-                }
-            }
-        }
+        fuse_inc_dec_var(self.code, self.code_count, self.const_count);
     }
 
     // --- Peephole: fuse LDCONST rK, idx + GETPROP ra = rb, rK → NOP + GETPROPC ra = rb, idx ---
