@@ -22,12 +22,18 @@ import std::math;
 /// through a try/finally in a generator body).
 fn void vm_complete_generator_return(Dispatch* ds, TVal* val) {
     Vm* vm = ds.vm;
-    GeneratorState* gs = vm.heap.resume_gen;
+    // Prefer async_gen_state from the completing activation — a stable
+    // reference that isn't affected by resume_gen having already been
+    // cleared/reused by a nested call to a fresh instance of the same (or
+    // another) generator function earlier in this body's execution (e.g. a
+    // recursive `yield*` self-delegation elsewhere in the call tree).
+    GeneratorState* gs = (GeneratorState*)ds.act.async_gen_state;
+    if (gs == null) { gs = vm.heap.resume_gen; }
     if (gs != null) {
         gs.state = GEN_COMPLETED;
         vm.heap.tval_copy_ref(&vm.heap.yield_value, val);
         vm.heap.did_yield = false;
-        vm.heap.resume_gen = null;
+        if (vm.heap.resume_gen == gs) { vm.heap.resume_gen = null; }
     }
 
     HObject*? robj_raw = vm.heap.alloc_object(hobject::ObjClass.OBJECT);

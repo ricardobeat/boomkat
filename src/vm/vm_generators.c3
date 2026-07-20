@@ -123,8 +123,16 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     return (TVal){};
                 }
 
-                // Normal NEXT — load resume value
+                // Normal NEXT — load resume value.
                 vm.heap.tval_copy_ref(&ra[0], &gs_lr.resume_value);
+                // Clear resume_gen now that the resume has been fully consumed:
+                // the generator body may go on to call a fresh instance of the
+                // same (or another) generator function before it next yields
+                // (e.g. recursive `yield*` self-delegation). If resume_gen
+                // stayed set, that unrelated CALL would spuriously match on
+                // function identity and resume this gs again instead of
+                // creating a new instance.
+                if (vm.heap.resume_gen == gs_lr) { vm.heap.resume_gen = null; }
             }
             // If resume_gen is null (e.g., after AWAIT with non-thenable),
             // don't overwrite the register — the value is already correct.
