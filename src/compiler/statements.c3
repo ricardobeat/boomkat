@@ -3472,6 +3472,21 @@ fn void? CompilerContext.try_statement(&self) {
         // Emit FINALLY marker
         self.emit_simple(Opcode.FINALLY);
 
+        // In eval mode, reset eval_acc_reg to undefined at the start of the
+        // finally block.  Per ES2015 §13.15.1, `If F.[[Type]] is normal, set
+        // F to C. Return Completion(UpdateEmpty(F, undefined)).` — but for
+        // abrupt completions (break/continue/return/throw) inside the finally
+        // block with no preceding expression statement, the abrupt
+        // completion's empty value must surface as undefined (UpdateEmpty),
+        // not leak the try block's value B.  Setting eval_acc_reg = undefined
+        // here means a `break;` with no preceding expression leaves eval_acc
+        // as undefined when ENDFINALLY jumps away to handle the abrupt
+        // completion.  Matches the pattern in while/for/switch which reset
+        // eval_acc_reg at the top of each iteration.
+        if (eval_try_tracking) {
+            self.emit_abc(Opcode.LDUNDEF, (uint)self.eval_acc_reg, 0, 0);
+        }
+
         // Compile finally block
         self.block(false)!;
 
@@ -3804,6 +3819,20 @@ fn void? CompilerContext.break_statement(&self) {
         for (uint i = 0; i < self.label_count; i++) {
             if (str_eq(self.labels[i].name, label_name)) {
                 uint loop_idx = self.labels[i].loop_index;
+                // Unwind the lex_env stack back to the labeled loop's depth.
+                // Same pattern as the unlabeled break below — the labeled
+                // branch was previously missing this, so a `break label`
+                // inside a labeled block with a `let` (which pushed a
+                // PUSH_LEX via block()) left the inner binding visible after
+                // the jump.  Patching jumps via pop_loop() targets the
+                // address AFTER the block's own POP_LEX (since break doesn't
+                // fall through), so we must pop here at the jump site to
+                // keep the runtime lex_env stack balanced.
+                int target_lex = self.loop_stack[loop_idx].saved_lex_depth;
+                while (self.cur_lex_depth > target_lex) {
+                    self.emit_simple(Opcode.POP_LEX);
+                    self.cur_lex_depth--;
+                }
                 uint jump_addr = self.emit_jump(Opcode.BREAK);
                 self.loop_stack[loop_idx].break_patch_head =
                     self.add_patch(self.loop_stack[loop_idx].break_patch_head, jump_addr);
