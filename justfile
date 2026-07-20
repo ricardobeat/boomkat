@@ -47,6 +47,22 @@ build-debug t="duktape_c3":
 build-trace:
     c3c build duktape_c3_debug
 
+# Run the golden-bytecode fusion test suite (test/golden_bytecode/): diffs
+# `duktape_c3_debug -c` disasm against checked-in .expected files so a
+# compiler change that silently breaks a peephole fusion (ADDI/SUBI,
+# INC_VAR, GETPROPC, JMP_N*, ...) fails loudly instead of only showing up
+# as an unexplained benchmark regression. --check-noop also asserts the
+# `--no-optimize` output is fusion-free (disable_optimize invariant).
+test-golden-bytecode: build-trace
+    python3 scripts/run_golden_bytecode.py --check-noop
+
+# Regenerate test/golden_bytecode/*.expected from current compiler output.
+# Only run this after confirming a disasm diff is an intentional change to
+# the fusion (new pass, changed register allocation, etc.), never to paper
+# over a regression.
+update-golden-bytecode: build-trace
+    python3 scripts/run_golden_bytecode.py --update
+
 # Build with heap verification enabled (`-D HEAP_VERIFY`) — validates GC roots at yield/resume
 build-verify t="duktape_c3":
     c3c -D HEAP_VERIFY -O0 build "{{t}}"

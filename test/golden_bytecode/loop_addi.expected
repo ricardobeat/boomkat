@@ -1,0 +1,25 @@
+--- Bytecode ---
+[  0] CHKGLOBALFUNC r0, 0
+[  1] CLOSURE       r0, 0
+[  2] DECLVAR       r0, 0
+[  3] GETVAR        r0, 0
+[  4] LDUNDEF       r1 = r0, r0
+[  5] LDINT         r2, +5
+[  6] CALL          r0 = r0, r1
+[  7] RETUNDEF      
+
+--- Inner function 0 ---
+[  0] LDUNDEF       r1 = r0, r0
+[  1] LDUNDEF       r2 = r0, r0
+[  2] LDINT         r3, 0
+[  3] LDREG         r1 = r3, r0
+[  4] LDINT         r3, 0
+[  5] LDREG         r2 = r3, r0
+[  6] JUMP          +4
+[  7] ADD           r3 = r1, r2
+[  8] LDREG         r1 = r3, r0
+[  9] ADDI          r4 = r2, r1
+[ 10] LDREG         r2 = r4, r0
+[ 11] JMP_LT        -5, r2, r0
+[ 12] RET           r1 = r0, r0
+--- End bytecode ---
