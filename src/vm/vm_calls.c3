@@ -361,6 +361,15 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                         }
                     }
                     new_act.cat = null;
+                    // Activation slots are pooled by depth index and NOT
+                    // zeroed before reuse. Every other call path (generator
+                    // resume, tailcall, super-call) explicitly initializes
+                    // async_gen_state; this fast path must too, or a plain
+                    // call reusing a slot last occupied by a generator body
+                    // at the same depth inherits a stale non-null pointer
+                    // that vm_throw.c3's unwind walk and the YIELD paths read
+                    // unconditionally. One store, no measurable cost.
+                    new_act.async_gen_state = null;
                     new_act.curr_pc = target_fast.code;
                     new_act.bottom = new_bottom;
                     new_act.retval = ds.regs_base + result_reg;
