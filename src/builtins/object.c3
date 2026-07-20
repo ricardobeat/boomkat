@@ -5075,6 +5075,93 @@ fn void builtin_object_proto_valueOf(BuiltinContext* ctx) {
     // ctx.result was set by builtin_to_object
 }
 
+/// Object.prototype.__proto__ getter — ES2015 Annex B §B.2.2.1.
+/// Wraps Object.getPrototypeOf: ToObject(this) and return its [[Prototype]].
+fn void builtin_object_proto___proto___getter(BuiltinContext* ctx) {
+    TVal this_val = ctx.regs[ctx.base_reg - 1];
+    // §B.2.2.1 step 1: ToObject(this) — throws TypeError for null/undefined.
+    if (this_val.is_null() || this_val.is_undefined()) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "Object.prototype.__proto__ called on null or undefined");
+        return;
+    }
+    // Primitive this: wrap in a temporary exotic object so we can read [[Prototype]].
+    if (!this_val.is_object() || this_val.get_heapptr() == null) {
+        if (!builtin_to_object(ctx, this_val)) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "Object.prototype.__proto__: ToObject failed");
+            return;
+        }
+        this_val = *ctx.result;
+    }
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    // Proxy exotic: route through [[GetPrototypeOf]] so traps fire.
+    if (obj.flags.exotic_proxyobj) {
+        TVal proto_val;
+        if (!proxy_mop_get_proto(ctx.vm, ctx.heap, obj, &proto_val)) { proxy_ctx_ok(ctx); return; }
+        *ctx.result = proto_val;
+        return;
+    }
+    HObject* proto = obj.prototype;
+    if (proto == null) {
+        ctx.result.set_null();
+    } else {
+        ctx.result.set_object(proto);
+    }
+}
+
+/// Object.prototype.__proto__ setter — ES2015 Annex B §B.2.2.2.
+/// Argument must be Object or null; this must be object-coercible.
+/// Calls the equivalent of Object.setPrototypeOf(this, value) on success.
+fn void builtin_object_proto___proto___setter(BuiltinContext* ctx) {
+    TVal this_val = ctx.regs[ctx.base_reg - 1];
+    // §B.2.2.2 step 1: RequireObjectCoercible(this).
+    if (this_val.is_null() || this_val.is_undefined()) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "Object.prototype.__proto__ setter called on null or undefined");
+        return;
+    }
+    // The setter is a no-op when invoked with no argument (undefined → TypeError by spec).
+    TVal proto_val;
+    if (ctx.argc >= 1) {
+        proto_val = ctx.regs[ctx.base_reg];
+    } else {
+        proto_val.set_undefined();
+    }
+    // §B.2.2.2 step 2: If proto is neither Object nor null, throw TypeError.
+    if (!proto_val.is_null() && !proto_val.is_object() && !proto_val.is_lightfunc()) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "Object.prototype.__proto__: prototype must be an object or null");
+        return;
+    }
+    // LIGHTFUNC proto: not allowed by Annex B §B.2.2.2 — throw TypeError.
+    if (proto_val.is_lightfunc()) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "Object.prototype.__proto__: prototype must be an object or null");
+        return;
+    }
+    // §B.2.2.2 step 3: ToObject(this); primitives return the primitive unchanged.
+    if (!this_val.is_object() || this_val.get_heapptr() == null) {
+        // Primitive this — per §B.2.2.2 step 3, return `this` unchanged.
+        *ctx.result = this_val;
+        return;
+    }
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    // Proxy exotic: route through [[SetPrototypeOf]] so traps fire.
+    if (obj.flags.exotic_proxyobj) {
+        bool ok;
+        if (!proxy_mop_set_proto(ctx.vm, ctx.heap, obj, proto_val, &ok)) { proxy_ctx_ok(ctx); return; }
+        if (!ok) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "Object.prototype.__proto__: 'setPrototypeOf' trap returned falsish");
+            return;
+        }
+        ctx.result.set_undefined();
+        return;
+    }
+    HObject* new_proto = proto_val.is_null() ? null : (HObject*)proto_val.get_heapptr();
+    if (!ordinary_set_proto(ctx, obj, new_proto)) {
+        if (ctx.should_throw) return;
+        builtin_throw(ctx, ctx.heap.type_err_proto, "Object.prototype.__proto__: cannot set prototype (object is not extensible or would create a cycle)");
+        return;
+    }
+    ctx.result.set_undefined();
+}
+
 /// Object.prototype.isPrototypeOf(V) — ES2022 §20.1.3.3
 /// Step 1: If V is not Object, return false.
 /// Step 2: Let O = ? ToObject(this value) — throws TypeError for null/undefined.
@@ -5254,6 +5341,59 @@ fn bool register_object_constructor(EnvRecord* global_env, Heap* heap) {
     TVal tolocalestring_tv;
     tolocalestring_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_PROTO_TOLOCALESTRING.ordinal);
     proto.put_prop(tolocalestring_key, tolocalestring_tv, hobject::PROP_FLAGS_WC);
+
+    // Add .__proto__ accessor (ES2015 Annex B §B.2.2.1 / §B.2.2.2) — getter
+    // returns Object.getPrototypeOf(this); setter is Object.setPrototypeOf(this, value).
+    // Needed because test262 tests use `obj.__proto__` directly as a synonym for
+    // Object.getPrototypeOf(obj); without this accessor the property is undefined.
+    {
+        HString* proto_accessor_key = builtin_intern_string(heap, "__proto__");
+        if (proto_accessor_key != null) {
+            HObject*? getter_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
+            HObject*? setter_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
+            if (catch err = getter_raw) return false;
+            if (catch err = setter_raw) return false;
+            HObject* getter = getter_raw;
+            HObject* setter = setter_raw;
+            getter.flags.callable = true;
+            getter.flags.constructable = false;
+            getter.prototype = heap.function_proto;
+            (*getter.extra_ptr()).func.builtin_fn_index = (int)Builtin.OBJECT_PROTO___PROTO___GETTER.ordinal;
+            setter.flags.callable = true;
+            setter.flags.constructable = false;
+            setter.prototype = heap.function_proto;
+            (*setter.extra_ptr()).func.builtin_fn_index = (int)Builtin.OBJECT_PROTO___PROTO___SETTER.ordinal;
+            // Set .name = "get __proto__" / "set __proto__" per Annex B.
+            HString* name_key = builtin_intern_string(heap, "name");
+            if (name_key != null) {
+                HString* gname_str = builtin_intern_string(heap, "get __proto__");
+                if (gname_str != null) {
+                    TVal gname_tv; gname_tv.set_string(gname_str);
+                    getter.put_prop(name_key, gname_tv, hobject::PROP_FLAGS_NWC);
+                }
+                HString* sname_str = builtin_intern_string(heap, "set __proto__");
+                if (sname_str != null) {
+                    TVal sname_tv; sname_tv.set_string(sname_str);
+                    setter.put_prop(name_key, sname_tv, hobject::PROP_FLAGS_NWC);
+                }
+            }
+            HString* length_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
+            if (length_key != null) {
+                TVal glen_tv; glen_tv.set_fastint(0);
+                getter.put_prop(length_key, glen_tv, hobject::PROP_FLAGS_NWC);
+                TVal slen_tv; slen_tv.set_fastint(1);
+                setter.put_prop(length_key, slen_tv, hobject::PROP_FLAGS_NWC);
+            }
+            TVal getter_tv; getter_tv.set_object(getter);
+            TVal setter_tv; setter_tv.set_object(setter);
+            hobject::PropFlags acc_flags;
+            acc_flags.writable = false;
+            acc_flags.enumerable = false;
+            acc_flags.configurable = true;
+            acc_flags.is_accessor = true;
+            proto.put_prop(proto_accessor_key, hobject::hobject_create_accessors(heap, getter_tv, setter_tv), acc_flags);
+        }
+    }
 
     // Create Object constructor as a proper HObject (not LIGHTFUNC)
     // so it can carry .prototype, .length, etc.

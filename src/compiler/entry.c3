@@ -225,6 +225,17 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
     // Check for "use strict" directive prologue at eval level
     ctx.parse_directives()!;
 
+    // EvalDeclarationInstantiation must validate every global function/var
+    // declaration before creating any binding (ES2015 §18.2.1.2 steps 8/10).
+    // Only non-strict indirect eval uses the global Environment Record as its
+    // varEnv; direct eval and strict indirect eval get a fresh declarative env.
+    // Emit the CanDeclareGlobalFunction/Var checks as a prologue so a failure
+    // is atomic (no earlier declaration from the same eval has leaked yet).
+    if (!allow_super && !ctx.saw_use_strict) {
+        ctx.hoist_global_fn_decls(true)!;
+        ctx.hoist_decls(true, true)!;
+    }
+
     // Hoist function declarations at the eval level (ES5 §10.2.1.1).
     ctx.hoist_global_fn_decls()!;
 

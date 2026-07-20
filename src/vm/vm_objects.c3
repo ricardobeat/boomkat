@@ -287,18 +287,39 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
             }
 
             // --- Iterator protocol ---
+            // GetMethod(obj, @@iterator) (§7.3.11): must invoke an accessor
+            // getter if @@iterator is defined as one, and propagate any throw
+            // from that getter instead of misreporting "not iterable".
             HString* iter_sym = vm.heap.iterator_symbol;
             TVal iter_method;
             bool has_method = false;
             if (iter_sym != null) {
-                TVal? method_opt;
+                HObject* iter_lookup_obj = null;
                 if (src_tv.is_object() && src_tv.get_heapptr() != null) {
-                    method_opt = ((HObject*)src_tv.get_heapptr()).get_prop_proto(iter_sym);
+                    iter_lookup_obj = (HObject*)src_tv.get_heapptr();
                 } else if (src_tv.is_string() && vm.heap.string_proto != null) {
-                    method_opt = vm.heap.string_proto.get_prop_proto(iter_sym);
+                    iter_lookup_obj = vm.heap.string_proto;
                 }
-                if (try m = method_opt) {
-                    iter_method = m;
+                if (iter_lookup_obj != null) {
+                    hobject::PropLookupResult im_res = iter_lookup_obj.get_prop_or_accessor_proto((void*)iter_sym, true);
+                    if (im_res.kind == hobject::PropLookupKind.PROP_ACCESSOR) {
+                        iter_method = vm.heap.call_fn(vm, im_res.acc.accessor_fn, null, 0, src_tv);
+                        if (vm.has_error) {
+                            TVal err_im = vm.return_val;
+                            vm.has_error = false;
+                            if (!vm_throw_value(vm, err_im, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                return vm_uncaught_error(vm, &err_im);
+                            }
+                            return (TVal){};
+                        }
+                        // call_fn may have invoked user JS, reallocating the
+                        // register file — re-derive `rc` before reusing it.
+                        rc = ds.regs_base + (uint)insn.c;
+                    } else if (im_res.kind == hobject::PropLookupKind.PROP_DATA) {
+                        iter_method = im_res.data_val;
+                    } else {
+                        iter_method.set_undefined();
+                    }
                     bool callable = iter_method.is_lightfunc() ||
                         (iter_method.is_object() && iter_method.get_heapptr() != null &&
                          ((HObject*)iter_method.get_heapptr()).is_callable());
@@ -323,7 +344,15 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
                 }
                 return (TVal){};
             }
-            if (!iterator.is_object() || iterator.get_heapptr() == null) { break; }
+            // GetIterator (§7.4.1) step 3: a non-object iterator result is a TypeError
+            // (also covers the @@iterator function returning a non-object value).
+            if (!iterator.is_object() || iterator.get_heapptr() == null) {
+                if (!vm_throw_error(vm, vm.heap.type_err_proto, "Result of the Symbol.iterator method is not an object",
+                                    ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                    return VM_ERROR~;
+                }
+                return (TVal){};
+            }
 
             // Loop: next() → {value, done}
             HString* next_key = intern_string(vm, "next");

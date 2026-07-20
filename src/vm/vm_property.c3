@@ -2559,6 +2559,58 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         if (acc.found && acc.accessor_fn.is_object() && acc.accessor_fn.get_heapptr() != null) {
                             // Invoke setter from prototype
                             HObject* setter_obj = (HObject*)acc.accessor_fn.get_heapptr();
+                            // BUILTIN_FN setter (e.g. Object.prototype.__proto__). Stage a
+                            // call frame with [callee, this, value] above the current
+                            // activation (mirrors the own-property setter path).
+                            if (setter_obj.is_callable()
+                                && setter_obj.callable_kind() == hobject::CallableKind.BUILTIN_FN
+                                && (*setter_obj.extra_ptr()).func.builtin_fn_index >= 0) {
+                                uint setter_fn_idx = (uint)(*setter_obj.extra_ptr()).func.builtin_fn_index;
+                                uint cur_num_regs = ds.act.func != null
+                                    ? ((CompiledFunction*)ds.act.func).num_regs
+                                    : (uint)(vm.valstack_top - ds.act.bottom);
+                                uint stage_offset = cur_num_regs;
+                                uint needed = (uint)(ds.act.bottom - vm.valstack) + stage_offset + 4;
+                                if (!ensure_valstack(vm, needed)) {
+                                    return VM_ERROR~;
+                                }
+                                ds.regs_base = ds.act.bottom;
+                                TVal* stage = ds.act.bottom + stage_offset;
+                                TVal* stage_top = stage + 4;
+                                if (stage_top > vm.valstack_top) { vm.valstack_top = stage_top; }
+
+                                TVal setter_result; setter_result.set_undefined();
+                                builtins::BuiltinContext sctx;
+                                sctx.vm = vm;
+                                sctx.regs = vm.valstack;
+                                sctx.base_reg = (ushort)((uint)(stage - vm.valstack) + 2);
+                                sctx.argc = 1;
+                                sctx.result = &setter_result;
+                                sctx.heap = vm.heap;
+                                TVal setter_this; setter_this.set_object(hobj);
+                                sctx.this_val = setter_this;
+                                sctx.is_constructor = false;
+                                sctx.needs_re_dispatch = false;
+                                sctx.re_nargs = 0;
+                                sctx.global_env = vm.global_env;
+                                sctx.should_throw = false;
+                                sctx.callee_obj = setter_obj;
+                                stage[0] = acc.accessor_fn;
+                                stage[1] = setter_this;
+                                if (put_val.is_heap_allocated()) {
+                                    ((types::HeapHeader*)put_val.get_heapptr()).incref();
+                                }
+                                stage[2] = put_val;
+                                builtins::dispatch_builtin(setter_fn_idx, &sctx);
+                                ds.regs_base = ds.act.bottom;
+                                vm.heap.decref_tval(&stage[2]);
+                                if (sctx.should_throw) {
+                                    if (!vm_throw_value(vm, sctx.throw_value, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                        return vm_uncaught_error(vm, &sctx.throw_value);
+                                    }
+                                }
+                                return (TVal){};
+                            }
                             if (setter_obj.is_callable() && (*setter_obj.extra_ptr()).func.comp_func != null) {
                                 CompiledFunction* target = (*setter_obj.extra_ptr()).func.comp_func;
 

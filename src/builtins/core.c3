@@ -79,6 +79,8 @@ enum Builtin : uint {
     OBJECT,
     OBJECT_PROTO_TOSTRING,
     OBJECT_PROTO_VALUEOF,
+    OBJECT_PROTO___PROTO___GETTER,
+    OBJECT_PROTO___PROTO___SETTER,
     ARRAY,
     MATH_ABS,
     MATH_FLOOR,
@@ -1884,6 +1886,8 @@ fn BuiltinMeta builtin_get_metadata(uint idx) {
         case Builtin.OBJECT.ordinal: return { "Object", 1 };
         case Builtin.OBJECT_PROTO_TOSTRING.ordinal: return { "toString", 0 };
         case Builtin.OBJECT_PROTO_VALUEOF.ordinal: return { "valueOf", 0 };
+        case Builtin.OBJECT_PROTO___PROTO___GETTER.ordinal: return { "get __proto__", 0 };
+        case Builtin.OBJECT_PROTO___PROTO___SETTER.ordinal: return { "set __proto__", 1 };
         case Builtin.ARRAY.ordinal: return { "Array", 0 };
         case Builtin.MATH_ABS.ordinal: return { "abs", 1 };
         case Builtin.MATH_FLOOR.ordinal: return { "floor", 1 };
@@ -2892,6 +2896,8 @@ BuiltinFunc[Builtin.LAST.ordinal] builtin_dispatch_table = {
     [Builtin.OBJECT_PROTO_TOLOCALESTRING.ordinal] = &builtin_object_proto_toLocaleString,
     [Builtin.OBJECT_PROTO_TOSTRING.ordinal] = &builtin_object_proto_toString,
     [Builtin.OBJECT_PROTO_VALUEOF.ordinal] = &builtin_object_proto_valueOf,
+    [Builtin.OBJECT_PROTO___PROTO___GETTER.ordinal] = &builtin_object_proto___proto___getter,
+    [Builtin.OBJECT_PROTO___PROTO___SETTER.ordinal] = &builtin_object_proto___proto___setter,
     [Builtin.OBJECT_SEAL.ordinal] = &builtin_object_seal,
     [Builtin.OBJECT_SETPROTOTYPEOF.ordinal] = &builtin_object_setPrototypeOf,
     [Builtin.OBJECT_VALUES.ordinal] = &builtin_object_values,
