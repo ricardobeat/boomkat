@@ -265,6 +265,9 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                     TVal* new_bottom = ds.regs_base + frame_start;
                     uint needed = (uint)(new_bottom - vm.valstack) + target_fast.num_regs;
 
+                $if $feature(OPCODE_PROFILE):
+                    ulong prof_t_valstack = profile_now();
+                $endif
                     if (!ensure_valstack(vm, needed)) {
                         ds.regs_base[result_reg].set_undefined();
                         return (TVal){};
@@ -273,6 +276,9 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                     ds.regs_base = ds.act.bottom;
                     // Recompute new_bottom after realloc (ds.act.bottom may have moved)
                     new_bottom = ds.regs_base + frame_start;
+                $if $feature(OPCODE_PROFILE):
+                    profile_phase(CallPhase.VALSTACK_ENSURE, prof_t_valstack);
+                $endif
 
                     if (vm.activation_count >= MAX_CALLS) {
                         if (!vm_throw_error(vm, vm.heap.range_err_proto, "Maximum call stack size exceeded", ds.act, &ds.curr_pc, &ds.needs_restart)) {
@@ -289,6 +295,9 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
 
                     Activation* new_act = &vm.activations[vm.activation_count];
 
+                $if $feature(OPCODE_PROFILE):
+                    ulong prof_t_lexenv = profile_now();
+                $endif
                     EnvRecord* fast_var_env;
                     // Arrow functions inherit their enclosing lexical environment —
                     // they don't get a fresh function scope, and they don't have a
@@ -337,6 +346,10 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                             }
                         }
                     }
+                $if $feature(OPCODE_PROFILE):
+                    profile_phase(CallPhase.LEX_ENV_RESOLVE, prof_t_lexenv);
+                    ulong prof_t_actsetup = profile_now();
+                $endif
                     new_act.cat = null;
                     new_act.curr_pc = target_fast.code;
                     new_act.bottom = new_bottom;
@@ -362,6 +375,10 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                         : null;
                     new_act.max_heap_reg = 0;
                     new_act.caller_valstack_top = vm.valstack_top;
+                $if $feature(OPCODE_PROFILE):
+                    profile_phase(CallPhase.ACTIVATION_SETUP, prof_t_actsetup);
+                    ulong prof_t_this = profile_now();
+                $endif
                     // Arrow functions use lexical this — captured once at
                     // CLOSURE-creation time (§9.2.1 [[ThisMode]]=lexical), not
                     // the calling activation's this_binding (which only
@@ -403,10 +420,16 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                         }
                         (void)used_coerced;
                     }
+                $if $feature(OPCODE_PROFILE):
+                    profile_phase(CallPhase.REFCOUNT_THIS, prof_t_this);
+                $endif
 
                     // Activation fully initialized — now make it visible to GC.
                     vm.activation_count++;
 
+                $if $feature(OPCODE_PROFILE):
+                    ulong prof_t_argmove = profile_now();
+                $endif
                     TVal* new_regs = new_act.bottom;
                     uint new_nregs = target_fast.num_regs;
 
@@ -478,6 +501,9 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                             zero_regs_undefined(new_regs, zero_start, new_nregs);
                         }
                     }
+                $if $feature(OPCODE_PROFILE):
+                    profile_phase(CallPhase.ARG_MOVE, prof_t_argmove);
+                $endif
 
                     vm.valstack_top = new_regs + new_nregs;
                     vm.valstack_bottom = new_act.bottom;

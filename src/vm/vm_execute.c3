@@ -1514,6 +1514,10 @@ fn TVal? Vm.run(Vm* vm) {
                 continue;
             }
 
+        $if $feature(OPCODE_PROFILE):
+            profile_tick();
+        $endif
+
             Instruction insn = *ds.curr_pc;
             ds.curr_pc++;
 
@@ -1528,6 +1532,10 @@ fn TVal? Vm.run(Vm* vm) {
             trace_instruction(vm, ds.curr_pc - 1, (uint)((ds.curr_pc - 1) - ds.code_base),
                               ra, rb, rc, ds.regs_base, ds.act);
         }
+        $endif
+
+        $if $feature(OPCODE_PROFILE):
+            profile_mark_op(op);
         $endif
 
         switch (op) @jump {
@@ -2887,7 +2895,13 @@ fn TVal? Vm.run(Vm* vm) {
             }
 
             // Decref callee registers before popping
+        $if $feature(OPCODE_PROFILE):
+            ulong prof_t_retref = profile_now();
+        $endif
             decref_callee_regs(vm, callee_act);
+        $if $feature(OPCODE_PROFILE):
+            profile_phase(CallPhase.RET_REFCOUNT, prof_t_retref);
+        $endif
 
             vm.activation_count--;
 
@@ -2943,6 +2957,9 @@ fn TVal? Vm.run(Vm* vm) {
                 }
             }
             if (val_pinned) vm.heap.decref_tval(&val);
+        $if $feature(OPCODE_PROFILE):
+            ulong prof_t_retrestore = profile_now();
+        $endif
             // Restore caller state inline — skip outer loop restart.
             ds.act = &vm.activations[vm.activation_count - 1];
             vm.valstack_bottom = ds.act.bottom;
@@ -2960,6 +2977,9 @@ fn TVal? Vm.run(Vm* vm) {
             }
             ds.curr_pc = ds.act.curr_pc;
             ds.regs_base = ds.act.bottom;
+        $if $feature(OPCODE_PROFILE):
+            profile_phase(CallPhase.RET_RESTORE, prof_t_retrestore);
+        $endif
 
             // After a super-constructor returns (callee was CONSTRUCT, caller is DERIVED),
             // initialize the derived constructor's this_binding with the constructed object.

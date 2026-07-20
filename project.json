@@ -45,6 +45,21 @@
         "TRACE_VM"
       ]
     },
+    "duktape_c3_prof": {
+      "type": "executable",
+      "sources": [
+        "src",
+        "cli/duktape_c3.c3"
+      ],
+      "opt": "O2",
+      "single-module": true,
+      "fp-math": "relaxed",
+      "panic-msg": false,
+      "debug-info": "none",
+      "features": [
+        "OPCODE_PROFILE"
+      ]
+    },
     "duktape_c3_asan": {
       "type": "executable",
       "sources": [

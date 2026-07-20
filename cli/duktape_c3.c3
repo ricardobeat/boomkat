@@ -83,5 +83,8 @@ fn int main(String[] args) {
         }
         return 1;
     }
+$if $feature(OPCODE_PROFILE):
+    vm::profile_dump();
+$endif
     return 0;
 }
