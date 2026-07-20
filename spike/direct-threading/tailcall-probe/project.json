@@ -1,0 +1,10 @@
+{
+    "targets": {
+        "tailtest": {
+            "type": "executable",
+            "sources": ["src"],
+            "opt": "O2",
+            "single-module": true
+        }
+    }
+}

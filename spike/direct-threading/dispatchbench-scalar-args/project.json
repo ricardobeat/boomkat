@@ -1,0 +1,10 @@
+{
+    "targets": {
+        "dispatchbench2": {
+            "type": "executable",
+            "sources": ["src"],
+            "opt": "O2",
+            "single-module": true
+        }
+    }
+}
