@@ -211,55 +211,66 @@ fn HObject* super_walk_new_target(Vm* vm, Activation* act) {
     }
 }
 
-fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, Instruction insn) {
+/// Fast path for CALL/CALL_S/CALL_UNDEF_THIS on a direct (non-generator,
+/// non-class-ctor) compiled-function callee — the overwhelmingly common
+/// shape for ordinary recursive/iterative JS calls. Hoisted out of
+/// dispatch_calls so Vm.run's CALL case can @inline it directly and skip
+/// the `bl dispatch_calls` + full inner-switch dispatch entirely for this
+/// shape; dispatch_calls' own CALL case still calls this same helper (one
+/// copy of the logic) for callers that don't warrant duplicating it (e.g.
+/// after a lightfunc/builtin re-dispatch lands back on a compiled fn).
+/// Sets *handled=true and returns the (possibly faulting) result if this
+/// call was fully handled here; sets *handled=false (return value unused)
+/// if the guard conditions weren't met and the caller must fall back to
+/// the full dispatch_calls slow path.
+fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, Instruction insn, bool* handled) @inline {
     Vm* vm = ds.vm;
-    switch (op) {
-        case Opcode.CALL:
-        case Opcode.CALL_S:
-        case Opcode.CALL_UNDEF_THIS: {
-            // Safe point: run deferred GC before entering callee
-            if (vm.heap.gc_pending) { vm.heap.safepoint_gc(); }
-            // Compiler convention: A=result_reg, B=callee_reg, C=nargs (or nargs_reg for CALL_S)
-            uint result_reg = insn.a;
-            uint callee_reg = insn.b;
-            uint nargs;
-            if (op == Opcode.CALL_S) {
-                // Read nargs from the register at index C
-                TVal* nargs_slot = ds.regs_base + insn.c;
-                if (nargs_slot.is_fastint()) {
-                    nargs = (uint)nargs_slot.get_fastint();
-                } else if (nargs_slot.is_number()) {
-                    nargs = (uint)nargs_slot.get_number();
-                } else {
-                    nargs = 0;
-                }
-            } else {
-                nargs = insn.c;
-            }
+    *handled = false;
 
-            // CALL_UNDEF_THIS (plain non-method calls `f(...)`) elides the
-            // per-call `LDUNDEF callee_reg+1` dispatch the compiler would
-            // otherwise emit for CALL. The receiver of a plain call is always
-            // undefined, so materialize that here — once, before any fast/slow
-            // path reads the this-slot (compiled-fn fast path via saved_this,
-            // and bound/builtin/lightfunc slow paths via regs_base[callee_reg+1]).
-            // Replacing one full opcode dispatch with one register store into an
-            // already-hot slot is the net win.
-            if (op == Opcode.CALL_UNDEF_THIS) {
-                ds.regs_base[callee_reg + 1].set_undefined();
-            }
+    // Safe point: run deferred GC before entering callee
+    if (vm.heap.gc_pending) { vm.heap.safepoint_gc(); }
+    // Compiler convention: A=result_reg, B=callee_reg, C=nargs (or nargs_reg for CALL_S)
+    uint result_reg = insn.a;
+    uint callee_reg = insn.b;
+    uint nargs;
+    if (op == Opcode.CALL_S) {
+        // Read nargs from the register at index C
+        TVal* nargs_slot = ds.regs_base + insn.c;
+        if (nargs_slot.is_fastint()) {
+            nargs = (uint)nargs_slot.get_fastint();
+        } else if (nargs_slot.is_number()) {
+            nargs = (uint)nargs_slot.get_number();
+        } else {
+            nargs = 0;
+        }
+    } else {
+        nargs = insn.c;
+    }
 
-            TVal* func_slot = ds.regs_base + callee_reg;
-            TVal func_val = *func_slot;
+    // CALL_UNDEF_THIS (plain non-method calls `f(...)`) elides the
+    // per-call `LDUNDEF callee_reg+1` dispatch the compiler would
+    // otherwise emit for CALL. The receiver of a plain call is always
+    // undefined, so materialize that here — once, before any fast/slow
+    // path reads the this-slot (compiled-fn fast path via saved_this,
+    // and bound/builtin/lightfunc slow paths via regs_base[callee_reg+1]).
+    // Replacing one full opcode dispatch with one register store into an
+    // already-hot slot is the net win.
+    if (op == Opcode.CALL_UNDEF_THIS) {
+        ds.regs_base[callee_reg + 1].set_undefined();
+    }
 
-            // === Fast path: direct compiled HObject call (most common) ===
-            if (func_val.is_object()) {
-                HObject* hobj_fast = (HObject*)func_val.get_heapptr();
-                if (hobj_fast != null && hobj_fast.is_callable() && hobj_fast.callable_kind() == hobject::CallableKind.COMPILED_FN) {
-                    CompiledFunction* target_fast = (*hobj_fast.extra_ptr()).func.comp_func;
-                    if (target_fast == null) { ds.regs_base[result_reg].set_undefined(); break; }
+    TVal* func_slot = ds.regs_base + callee_reg;
+    TVal func_val = *func_slot;
+
+    // === Fast path: direct compiled HObject call (most common) ===
+    if (func_val.is_object()) {
+        HObject* hobj_fast = (HObject*)func_val.get_heapptr();
+        if (hobj_fast != null && hobj_fast.is_callable() && hobj_fast.callable_kind() == hobject::CallableKind.COMPILED_FN) {
+            CompiledFunction* target_fast = (*hobj_fast.extra_ptr()).func.comp_func;
+            if (target_fast == null) { *handled = true; ds.regs_base[result_reg].set_undefined(); return (TVal){}; }
                     // ES2015 §9.2.1 step 1: class constructors cannot be called without 'new'
                     if (target_fast.is_class_ctor()) {
+                        *handled = true;
                         char[256] name_buf;
                         uint copy_len = target_fast.name_len < 255 ? target_fast.name_len : 255;
                         mem::copy(&name_buf, target_fast.name_ptr, (sz)(copy_len));
@@ -270,6 +281,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                         return (TVal){};
                     }
                     if (!target_fast.is_generator()) {
+                    *handled = true;
 
                     // Async function: create Promise before entering body
                     HObject* async_prom = null;
@@ -542,6 +554,46 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                     }
                 }
             }
+
+            *handled = false;
+            return (TVal){};
+}
+
+fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, Instruction insn) {
+    Vm* vm = ds.vm;
+    switch (op) {
+        case Opcode.CALL:
+        case Opcode.CALL_S:
+        case Opcode.CALL_UNDEF_THIS: {
+            bool fast_handled = false;
+            TVal? fast_result = try_fast_compiled_call(ds, op, insn, &fast_handled);
+            if (fast_handled) {
+                return fast_result;
+            }
+            // Slow path: re-derive result_reg/callee_reg/nargs/func_val (the
+            // fast-path helper already applied CALL_UNDEF_THIS's this-slot
+            // clear, which is idempotent to repeat here).
+            uint result_reg = insn.a;
+            uint callee_reg = insn.b;
+            uint nargs;
+            if (op == Opcode.CALL_S) {
+                TVal* nargs_slot = ds.regs_base + insn.c;
+                if (nargs_slot.is_fastint()) {
+                    nargs = (uint)nargs_slot.get_fastint();
+                } else if (nargs_slot.is_number()) {
+                    nargs = (uint)nargs_slot.get_number();
+                } else {
+                    nargs = 0;
+                }
+            } else {
+                nargs = insn.c;
+            }
+            if (op == Opcode.CALL_UNDEF_THIS) {
+                ds.regs_base[callee_reg + 1].set_undefined();
+            }
+
+            TVal* func_slot = ds.regs_base + callee_reg;
+            TVal func_val = *func_slot;
 
             if (func_val.is_lightfunc()) {
                 uint fn_idx = (uint)(usz)func_val.get_heapptr();
