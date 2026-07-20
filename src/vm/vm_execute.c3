@@ -3020,6 +3020,7 @@ fn TVal? Vm.run(Vm* vm) {
         // === FUNCTION CALLS ===
         case Opcode.CALL:
         case Opcode.CALL_S:
+        case Opcode.CALL_UNDEF_THIS:
         case Opcode.CALL_PROP:
         case Opcode.SETPROTO:
         case Opcode.GETPROTO:
