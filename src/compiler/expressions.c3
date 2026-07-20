@@ -1312,7 +1312,7 @@ fn ushort? CompilerContext.call_expr(&self) {
                 Token priv_tok2 = self.advance()!;
                 ushort priv_prop_reg = self.emit_private_access(priv_tok2.str_value, callee)!;
                 ushort priv_result = self.alloc_reg();
-                self.emit_abc(Opcode.GETPROP, (uint)priv_result, (uint)callee, (uint)priv_prop_reg);
+                self.emit_abc(Opcode.GETPROP_PRIVATE, (uint)priv_result, (uint)callee, (uint)priv_prop_reg);
 
                 if (self.check(TokenType.LPAREN) || self.check(TokenType.OPT_CHAIN) || self.is_next_template()) {
                     self.free_reg(priv_prop_reg);
@@ -1451,7 +1451,7 @@ fn ushort? CompilerContext.call_expr(&self) {
                 Token priv_tok3 = self.advance()!;
                 ushort priv_prop_reg2 = self.emit_private_access(priv_tok3.str_value, callee)!;
                 ushort priv_result2 = self.alloc_reg();
-                self.emit_abc(Opcode.GETPROP, (uint)priv_result2, (uint)callee, (uint)priv_prop_reg2);
+                self.emit_abc(Opcode.GETPROP_PRIVATE, (uint)priv_result2, (uint)callee, (uint)priv_prop_reg2);
                 self.free_reg(priv_prop_reg2);
 
                 self.last_was_member = false;
@@ -2111,7 +2111,7 @@ fn ushort? CompilerContext.new_expr(&self) {
                 Token priv_tok = self.advance()!;
                 ushort priv_prop_reg = self.emit_private_access(priv_tok.str_value, ctor_reg)!;
                 ushort priv_result = self.alloc_reg();
-                self.emit_abc(Opcode.GETPROP, (uint)priv_result, (uint)ctor_reg, (uint)priv_prop_reg);
+                self.emit_abc(Opcode.GETPROP_PRIVATE, (uint)priv_result, (uint)ctor_reg, (uint)priv_prop_reg);
 
                 if (self.check(TokenType.LPAREN) || self.check(TokenType.OPT_CHAIN) || self.is_next_template()) {
                     self.free_reg(priv_prop_reg);
@@ -2245,7 +2245,7 @@ fn ushort? CompilerContext.member_expr(&self) {
                 ushort prop_reg = self.emit_private_access(priv_tok.str_value, obj)!;
 
                 ushort result = self.alloc_reg();
-                self.emit_abc(Opcode.GETPROP, (uint)result, (uint)obj, (uint)prop_reg);
+                self.emit_abc(Opcode.GETPROP_PRIVATE, (uint)result, (uint)obj, (uint)prop_reg);
 
                 self.last_was_member = true;
                 self.last_member_is_super = false;

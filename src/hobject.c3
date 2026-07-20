@@ -1153,6 +1153,44 @@ fn TVal? HObject.get_prop(&self, void* key) {
     return self.prop_values()[idx];
 }
 
+/// Look up an own property by key, returning a PropLookupResult that
+/// distinguishes data properties from accessors. Unlike
+/// get_prop_or_accessor_proto, this does NOT walk the prototype chain
+/// and does NOT check proxy traps — used for private field access
+/// (PrivateFieldGet) which must bypass proxy [[Get]].
+fn PropLookupResult HObject.get_prop_or_accessor_own(&self, void* key, bool want_getter) {
+    int idx = self.find_prop_idx(key);
+    if (idx >= 0) {
+        if (self.get_prop_flags((uint)idx).is_accessor) {
+            TVal gs_slot = self.prop_values()[idx];
+            TVal accessor_fn = want_getter ? hobject_access_getter(gs_slot) : hobject_access_setter(gs_slot);
+            return {
+                .kind = PropLookupKind.PROP_ACCESSOR,
+                .acc = {
+                    .accessor_fn = accessor_fn,
+                    .this_obj = self,
+                    .found = true
+                }
+            };
+        }
+        return {
+            .kind = PropLookupKind.PROP_DATA,
+            .data_val = self.prop_values()[idx],
+            .owner = self
+        };
+    }
+    // ARRAY / ARGUMENTS exotic: dense array part
+    TVal dense;
+    if (self.dense_arridx_lookup(key, &dense)) {
+        return {
+            .kind = PropLookupKind.PROP_DATA,
+            .data_val = dense,
+            .owner = null
+        };
+    }
+    return { .kind = PropLookupKind.PROP_NOT_FOUND };
+}
+
 /// Look up an array-index string key ("0", "1", ...) in the dense array part
 /// of an ARRAY / ARGUMENTS exotic object. Returns true and stores the value in
 /// `out` when the slot exists and is not a hole (undefined = hole sentinel).

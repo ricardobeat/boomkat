@@ -126,6 +126,16 @@ fn bool? vm_init_private_members(Vm* vm, EnvRecord* ctor_lex_env, EnvRecord* cto
                         }
                         return false;
                     }
+                    // ES2022 §7.3.26 PrivateBrandAdd step 4:
+                    // If O.[[Extensible]] is false, throw TypeError.
+                    if (!this_hobj.is_extensible()) {
+                        if (!vm_throw_error(vm, vm.heap.type_err_proto,
+                                "Cannot add private brand to non-extensible object", act,
+                                curr_pc, needs_restart)) {
+                            return VM_ERROR~;
+                        }
+                        return false;
+                    }
                     TVal true_tv;
                     true_tv.set_boolean(true);
                     this_hobj.put_prop(brand_key, true_tv, hobject::PROP_FLAGS_NNC);

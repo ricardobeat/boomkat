@@ -681,6 +681,13 @@ enum Opcode : char {
     /// ABC format: A=object_reg, B=key_reg, C=value_reg.
     INITPROP_PRIV,
 
+    /// Private field read: `A = B[C]` bypassing proxy [[Get]] traps.
+    /// Same as GETPROP but skips the proxy exotic dispatch — used for
+    /// private field/method access (`this.#x`) where spec PrivateFieldGet
+    /// does a direct internal-slot lookup, not [[Get]].
+    /// ABC format: A=dst_reg, B=obj_reg, C=key_reg.
+    GETPROP_PRIVATE,
+
     /// `A = ToNumeric(B)` — coercion used by postfix ++/-- to compute the
     /// returned old value.  Unlike UNP (unary plus), a BigInt operand passes
     /// through unchanged rather than throwing (ES2020 §7.1.3 ToNumeric).
@@ -752,6 +759,7 @@ case PUTLEX:     return A_BC;
         case ADD_BRAND:  return ABC;
         case CHK_BRAND:  return ABC;
         case INITPROP_PRIV: return ABC;
+        case GETPROP_PRIVATE: return ABC;
 
         case LOAD_RESUME:  return ABC;
         case YIELD:      return ABC;

@@ -283,6 +283,22 @@ struct CompilerContext {
     /// when the next token is not a call (e.g. RPAREN closing the parens).
     bool inside_parens;
 
+    /// When true, emit_private_access skips the CHK_BRAND instruction.
+    /// Used by emit_deferred_target for private field targets in destructuring
+    /// assignments: per ES2022 §13.15.5.6, the target lref is evaluated before
+    /// GetV(value, propertyName), but the brand check must NOT run until after
+    /// the source property is read. The caller (emit_destruct_bindings) emits
+    /// the deferred CHK_BRAND after the GETPROP.
+    bool defer_brand_check;
+    /// Register holding the deferred CHK_BRAND's brand symbol (set by
+    /// emit_private_access when defer_brand_check is true). The caller must
+    /// emit CHK_BRAND with this register and then free it.
+    ushort deferred_brand_reg;
+    /// Constant-pool index for the private name in the deferred CHK_BRAND.
+    uint deferred_brand_name_c;
+    /// Object register for the deferred CHK_BRAND.
+    ushort deferred_brand_obj_reg;
+
     /// Property call: the object register to use as 'this' in emit_call.
     /// Set to MAX_REGISTERS when not in a property call.
     ushort call_prop_obj_reg;
@@ -1481,7 +1497,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     // paths only set ACT_FLAG_DIRECT_EVAL (which builtin_eval checks) when
     // this flag is present on the compiled function.
     func.flags.has_direct_eval = self.has_direct_eval;
-    func.flags.has_home_object = self.super_is_home_object;
+    func.flags.has_home_object = self.in_class_body || self.super_is_home_object;
 
     // `needs_env` controls whether the CALL fast path allocates a fresh
     // env record + bindings object per call (2 allocations).  We only need

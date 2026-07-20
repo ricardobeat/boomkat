@@ -3831,6 +3831,7 @@ fn TVal? Vm.run(Vm* vm) {
         case Opcode.ADD_BRAND:
         case Opcode.CHK_BRAND:
         case Opcode.INITPROP_PRIV:
+        case Opcode.GETPROP_PRIVATE:
             if (catch err = dispatch_misc(&ds, op, ra, rb, rc, insn)) { return err~; }
             continue;
 

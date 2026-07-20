@@ -129,6 +129,7 @@ fn TVal? dispatch_returns(Dispatch* ds, Opcode op, TVal* ra) {
             vm_complete_generator_return(ds, &undef_val);
             return (TVal){};
         }
+
         default:
             return (TVal){};
     }
@@ -1235,14 +1236,92 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, In
         case Opcode.INITPROP_PRIV: {
             // A=object, B=key register (private symbol), C=value register.
             // Define an own data property {writable:true, enumerable:false,
-            // configurable:false}, bypassing setters, proxies, and the
-            // extensibility check (spec PrivateFieldAdd).
+            // configurable:false}, bypassing setters and proxies.
+            // Per ES2022 PrivateFieldAdd: if O.[[Extensible]] is false, throw TypeError.
             if (ra.is_object() && rb.is_string()) {
                 HObject* hobj = (HObject*)ra.get_heapptr();
                 void* key = rb.get_heapptr();
                 if (hobj != null && key != null) {
+                    if (!hobj.is_extensible()) {
+                        if (!vm_throw_error(vm, vm.heap.type_err_proto,
+                                "Cannot add private field to non-extensible object",
+                                ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                            return VM_ERROR~;
+                        }
+                        return (TVal){};
+                    }
                     hobj.put_prop(key, *rc, hobject::PROP_FLAGS_WENC);
                 }
+            }
+            return (TVal){};
+        }
+
+        case Opcode.GETPROP_PRIVATE: {
+            // Private field read: A=B[C] bypassing proxy [[Get]] traps.
+            // PrivateFieldGet does a direct internal-slot lookup, not [[Get]].
+            // Must handle both data properties and private accessors.
+            // Walks the prototype chain (for private methods/accessors on the
+            // class prototype) but never invokes proxy traps.
+            if (rb.is_object() && rc.is_string()) {
+                HObject* hobj = (HObject*)rb.get_heapptr();
+                void* key = rc.get_heapptr();
+                if (hobj != null && key != null) {
+                    HObject* cur = hobj;
+                    uint depth = 0;
+                    bool found = false;
+                    while (cur != null && depth < 256) {
+                        hobject::PropLookupResult res = cur.get_prop_or_accessor_own(key, true);
+                        if (res.kind == hobject::PropLookupKind.PROP_ACCESSOR) {
+                            // Private accessor: invoke getter if present,
+                            // otherwise return undefined for set-only accessors.
+                            // Per ES2022 PrivateFieldGet step 6b: "If P does not
+                            // have a [[Get]] field, throw TypeError."  However,
+                            // for assignment targets the compiler emits
+                            // GETPROP_PRIVATE followed by PUTPROP — the result
+                            // of GETPROP_PRIVATE is unused (PUTPROP invokes the
+                            // setter).  Throwing here would prevent valid
+                            // setter-only private assignments like `o.#m = v`.
+                            // Return undefined for set-only; the brand check
+                            // (not-found → TypeError) still fires correctly.
+                            HString* key_hs = (HString*)key;
+                            if ((!res.acc.accessor_fn.is_object() || res.acc.accessor_fn.get_heapptr() == null)
+                                && key_hs.is_hidden()) {
+                                ra.set_undefined();
+                                found = true;
+                                break;
+                            }
+                            TVal obj_val;
+                            obj_val.set_object(hobj); // receiver is always original this
+                            if (invoke_getter(vm, &res.acc, &obj_val, (uint)insn.a,
+                                              ds.act, &ds.curr_pc, &ds.needs_restart, ds.regs_base)) {
+                                ds.regs_base = ds.act.bottom;
+                                return (TVal){};
+                            }
+                            if (vm.has_error) return VM_ERROR~;
+                            found = true;
+                            break;
+                        } else if (res.kind == hobject::PropLookupKind.PROP_DATA) {
+                            vm.heap.tval_copy_ref(ra, &res.data_val);
+                            track_heap_store(ds.act, ra, (uint)insn.a);
+                            found = true;
+                            break;
+                        }
+                        // Skip proxy exotic objects — go directly to their target
+                        if (cur.flags.exotic_proxyobj) {
+                            cur = builtins::proxy_target(cur);
+                        } else {
+                            cur = cur.prototype;
+                        }
+                        depth++;
+                    }
+                    if (!found) {
+                        ra.set_undefined();
+                    }
+                } else {
+                    ra.set_undefined();
+                }
+            } else {
+                ra.set_undefined();
             }
             return (TVal){};
         }

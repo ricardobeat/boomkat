@@ -433,6 +433,11 @@ fn void? CompilerContext.collect_assign_target(&self, DestructBind* bind)
 /// are copied down into the bind's pre-allocated persistent pair (below every
 /// iterator/push callee window, so they survive the protocol CALLs up to the
 /// final PUTPROP); the parse temporaries are then released.
+///
+/// For private field targets (this.#field), the brand check (CHK_BRAND) is
+/// deferred: emit_private_access loads the brand symbol but skips the check.
+/// The bind's is_private_target flag and deferred_brand_* fields carry the
+/// state so emit_destruct_bindings can emit the CHK_BRAND after GetV.
 fn void CompilerContext.emit_deferred_target(&self, DestructBind* bind)
 {
     DeferredTarget* snap = bind.deferred_target;
@@ -450,14 +455,37 @@ fn void CompilerContext.emit_deferred_target(&self, DestructBind* bind)
         mem::free(snap);
     }
 
+    // Enable deferred brand check: for private field targets, emit_private_access
+    // loads the brand symbol but skips CHK_BRAND. We detect the private target
+    // after parsing by checking deferred_brand_reg.
+    self.defer_brand_check = true;
+    self.deferred_brand_reg = 0xFFFF;
+    self.deferred_brand_name_c = 0xFF;
+    self.deferred_brand_obj_reg = 0xFFFF;
+
     ushort pre_reg = self.next_reg;
     ushort tgt_obj  = 0xFFFF;
     ushort tgt_key  = 0xFFFF;
     uint   tgt_name = 0xFFFFFFFF;
     if (catch self.parse_assign_target_lhs(&tgt_obj, &tgt_key, &tgt_name)) {
         // Unreachable: the same token stream parsed successfully at collection.
+        self.defer_brand_check = false;
         return;
     }
+
+    // Check if a brand check was deferred (private field target).
+    if (self.deferred_brand_reg != 0xFFFF) {
+        bind.is_private_target = true;
+        bind.private_brand_reg = self.deferred_brand_reg;
+        bind.private_brand_name_c = self.deferred_brand_name_c;
+        bind.private_brand_obj_reg = self.deferred_brand_obj_reg;
+        // DO NOT free deferred_brand_reg here — it will be freed by
+        // emit_destruct_bindings after emitting the deferred CHK_BRAND.
+    } else {
+        bind.is_private_target = false;
+    }
+    self.defer_brand_check = false;
+
     self.emit_abc(Opcode.LDREG, (uint)bind.member_obj_reg, (uint)tgt_obj, 0);
     self.emit_abc(Opcode.LDREG, (uint)bind.member_prop_reg, (uint)tgt_key, 0);
     self.free_regs_to(pre_reg);

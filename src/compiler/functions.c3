@@ -93,6 +93,18 @@ struct DestructBind {
     // Heap-allocated; null = not deferred (param/declare paths still evaluate
     // the key eagerly at collect time via computed_key_reg directly).
     DeferredTarget* deferred_computed_key;
+    // Private field target: the member target is a private field (this.#field).
+    // Used by emit_destruct_bindings to defer the CHK_BRAND until after the
+    // source property is read (GetV), per ES2022 §13.15.5.6 evaluation order.
+    bool is_private_target;
+    // Brand register: for private targets, holds the register with the
+    // CHK_BRAND operand (the brand symbol). Set by emit_deferred_target when
+    // is_private_target is true and deferred_brand_check is active.
+    ushort private_brand_reg;
+    // Constant-pool index for the private name in the deferred CHK_BRAND.
+    uint private_brand_name_c;
+    // Object register for the deferred CHK_BRAND.
+    ushort private_brand_obj_reg;
 }
 
 /// Lexer position captured by collect_assign_target for a deferred member
@@ -934,18 +946,22 @@ fn void CompilerContext.emit_destruct_bindings(&self,
                     if (binds[di].deferred_computed_key != null) {
                         self.emit_deferred_computed_key(&binds[di]);
                     }
-                    // Per ES2022 §12.15.5.4 KeyedDestructuringAssignmentEvaluation:
-                    // the target lref (e.g. a member expression
-                    // `target()[targetKey()]`) is evaluated as part of
-                    // AssignmentElement BEFORE `v` (the property) is read from
-                    // the source (GetV(value, propertyName) is step 2, after
-                    // lref evaluation in step 1). PutValue's own ToPropertyKey
-                    // coercion of the target's key still runs naturally at
-                    // PUTPROP time, after this GETPROP.
+                    // Per ES2022 §13.15.5.6 KeyedDestructuringAssignmentEvaluation:
+                    // 1. Evaluate target (lref) — get object + key reference.
+                    // 2. GetV(value, propertyName) — read source property.
+                    // 3. PutValue — assign (including brand check for private fields).
+                    // So emit_deferred_target runs first, then GETPROP, then the
+                    // deferred CHK_BRAND for private targets.
                     if (binds[di].deferred_target != null) {
                         self.emit_deferred_target(&binds[di]);
                     }
                     self.emit_abc(Opcode.GETPROP, (uint)bind_reg, (uint)src_reg, (uint)binds[di].computed_key_reg);
+                    // Deferred CHK_BRAND for private field targets: the brand check
+                    // must run AFTER the source property is read (GetV), per spec.
+                    if (binds[di].is_private_target) {
+                        self.emit_abc(Opcode.CHK_BRAND, (uint)binds[di].private_brand_obj_reg, (uint)binds[di].private_brand_reg, binds[di].private_brand_name_c);
+                        self.free_reg(binds[di].private_brand_reg);
+                    }
                 } else {
                     if (binds[di].deferred_target != null) {
                         self.emit_deferred_target(&binds[di]);
@@ -954,6 +970,12 @@ fn void CompilerContext.emit_destruct_bindings(&self,
                     self.emit_a_bc(Opcode.LDCONST, (uint)key_reg, binds[di].key_idx);
                     self.emit_abc(Opcode.GETPROP, (uint)bind_reg, (uint)src_reg, (uint)key_reg);
                     self.free_reg(key_reg);
+                    // Deferred CHK_BRAND for private field targets: the brand check
+                    // must run AFTER the source property is read (GetV), per spec.
+                    if (binds[di].is_private_target) {
+                        self.emit_abc(Opcode.CHK_BRAND, (uint)binds[di].private_brand_obj_reg, (uint)binds[di].private_brand_reg, binds[di].private_brand_name_c);
+                        self.free_reg(binds[di].private_brand_reg);
+                    }
                 }
             } else {
                 if (binds[di].key_idx == 0xFFFF) {

@@ -462,6 +462,11 @@ fn void CompilerContext.restore_prescan_lexer(&self, uint pos, uint line, uint c
 /// name's own runtime symbol into a fresh register via GETVAR. Returns the
 /// register holding the resolved field symbol — the caller emits
 /// GETPROP/PUTPROP with it.
+///
+/// When `defer_brand_check` is true, the CHK_BRAND is skipped (but the brand
+/// symbol is still loaded). The caller must emit the CHK_BRAND later and free
+/// the brand_reg via `self.free_reg(self.deferred_brand_reg)`. The register
+/// is stored in `self.deferred_brand_reg` for the caller to retrieve.
 fn ushort? CompilerContext.emit_private_access(&self, char[] name, ushort obj_reg) {
     PrivateNameEntry* entry = self.resolve_private_name(name)!;
     // The binding-name constants go into THIS context's pool — entry only
@@ -473,8 +478,16 @@ fn ushort? CompilerContext.emit_private_access(&self, char[] name, ushort obj_re
     self.emit(bytecode::make_a_bc(Opcode.GETVAR, (uint)brand_reg, brand_bind_idx));
     uint name_const_idx = self.add_string_constant(name);
     uint name_c = name_const_idx <= 0xFE ? name_const_idx : 0xFF;
-    self.emit_abc(Opcode.CHK_BRAND, (uint)obj_reg, (uint)brand_reg, name_c);
-    self.free_reg(brand_reg);
+    if (self.defer_brand_check) {
+        // Defer CHK_BRAND: store the register so the caller can emit the brand
+        // check after reading the source property (GetV), per ES2022 §13.15.5.6.
+        self.deferred_brand_reg = brand_reg;
+        self.deferred_brand_name_c = name_c;
+        self.deferred_brand_obj_reg = obj_reg;
+    } else {
+        self.emit_abc(Opcode.CHK_BRAND, (uint)obj_reg, (uint)brand_reg, name_c);
+        self.free_reg(brand_reg);
+    }
 
     ushort key_reg = self.alloc_reg();
     uint slot_bind_idx = self.add_string_constant(entry.slot_name);
