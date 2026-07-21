@@ -224,6 +224,52 @@ fn bool moveelim_producer_allowed(Opcode op) {
     }
 }
 
+/// Whether `op` is safe to retarget into rDst EVEN WHEN the producer reads
+/// rDst as one of its own source operands — i.e. `A = f(A, ...)` (or the
+/// unary `A = f(A)`) is a correct in-place accumulate on this register
+/// machine. This holds for exactly the arithmetic and bitwise value ops,
+/// each of which reads ALL of its source operands (rb, rc) into locals and
+/// computes the full result BEFORE writing its A destination (verified
+/// against vm_execute.c3 / vm_arith.c3 / vm_bigint.c3): the fastint fast
+/// paths read rb/rc then `ra.set_*` last; the numeric slow paths compute
+/// both `vm_to_number` results before the final `ra.set_*`; and the bigint
+/// paths (`vm_bigint_binop`/`vm_bigint_unary`) copy `*rb`/`*rc` into locals
+/// at entry and only write `*ra` at the very end. So aliasing ra==rb (or
+/// ra==rc) never clobbers an operand before it is read.
+///
+/// This is a strict SUBSET of `moveelim_producer_allowed`. Ops deliberately
+/// excluded (even though they too write A last): comparisons and the
+/// property/var loads (GETPROP/GETVAR/etc), which are covered by the base
+/// allow-list for the non-aliasing case but are kept conservative here since
+/// the cross-axis accumulate win comes only from the arithmetic/bitwise
+/// family. LDREG is excluded because a producer whose A==rDst would be a
+/// self-copy already filtered upstream.
+fn bool moveelim_accum_safe(Opcode op) {
+    switch (op) {
+        case Opcode.ADD:
+        case Opcode.SUB:
+        case Opcode.MUL:
+        case Opcode.DIV:
+        case Opcode.MOD:
+        case Opcode.EXP:
+        case Opcode.ADDI:
+        case Opcode.SUBI:
+        case Opcode.UNP:
+        case Opcode.UNM:
+        case Opcode.BNOT:
+        case Opcode.LNOT:
+        case Opcode.BAND:
+        case Opcode.BOR:
+        case Opcode.BXOR:
+        case Opcode.SHL:
+        case Opcode.SHR:
+        case Opcode.USHR:
+            return true;
+        default:
+            return false;
+    }
+}
+
 /// Re-encode `ins` (whose opcode is `op`) with A replaced by `new_a`,
 /// preserving B/C or the combined BC/immediate payload according to `op`'s
 /// operand format. Only ever called on opcodes accepted by
@@ -263,7 +309,17 @@ fn void moveelim_add_uses(Instruction ins, RegSet* live) {
         // register alive and could suppress a valid elimination, but never
         // corrupt correctness either way since over-conservative liveness
         // is always safe). Excluded explicitly for precision.
-        if (op == Opcode.GETPROPC || op == Opcode.GETPROPC2 || op == Opcode.GETPROPC_CACHED) {
+        //
+        // LDREG (`A = B`) defaults to ABC but its C field is unused — the VM
+        // reads only rb (verified in vm_execute.c3). Marking C (encoded 0) as
+        // a use spuriously keeps r0 live across every LDREG, which in
+        // particular defeats the accumulate move-elimination whenever the
+        // accumulator lives in r0 (`s = s + 1` with s in r0): the copy's own
+        // C=0 makes r0 look live-out of the producer. Reading only B here is
+        // both correct (C is genuinely never read) and necessary for that
+        // optimization to fire.
+        if (op == Opcode.GETPROPC || op == Opcode.GETPROPC2 || op == Opcode.GETPROPC_CACHED
+            || op == Opcode.LDREG) {
             live.set((uint)ins.b);
         } else {
             live.set((uint)ins.b);
@@ -530,17 +586,6 @@ fn void run_move_elimination(Instruction* code, uint code_count, bool* jump_targ
         uint i = (uint)pi;
         if (in_try[i]) { continue; }
 
-        // The producer slot must not be a jump target either: a jump
-        // landing directly on the producer bypasses whatever came before
-        // it, so the producer may be shared by more than one logical path
-        // (e.g. this LDREG's textual predecessor AND a separate jump-in
-        // entry point that reaches the producer for an unrelated purpose).
-        // Retargeting it to rDst would silently change every such path,
-        // not just the one this LDREG belongs to. Excluding jump-target
-        // producers is always conservative — it only forfeits eliminations
-        // where the producer happens to double as a branch landing site.
-        if (jump_targets[i]) { continue; }
-
         Instruction producer = code[i];
         Opcode pop = producer.op;
         if (!moveelim_producer_allowed(pop)) { continue; }
@@ -549,26 +594,70 @@ fn void run_move_elimination(Instruction* code, uint code_count, bool* jump_targ
         if (!moveelim_get_def(producer, &def_reg)) { continue; }
         if (def_reg != rT) { continue; }   // not this LDREG's producer
 
-        // rDst must not be read by the producer itself as a source operand
-        // (retargeting would make it read its own about-to-be-clobbered
-        // destination instead of the original value).
+        bool accum = moveelim_accum_safe(pop);
+
+        // The producer slot must not be a jump target: a jump landing
+        // directly on the producer bypasses whatever came before it, so the
+        // producer may be shared by more than one logical path (e.g. this
+        // LDREG's textual predecessor AND a separate jump-in entry point
+        // that reaches the producer for an unrelated purpose). Retargeting
+        // it to rDst would silently change every such path.
+        //
+        // For the ACCUMULATE case (`A = A op B`) this guard is relaxed: the
+        // hottest instance is exactly a jump-target producer — the loop-body
+        // entry `s = s + 1` that the back-edge conditional jumps onto. The
+        // retarget is safe for EVERY entry path because (a) every path
+        // reaching the producer falls straight through to this LDREG (only
+        // NOPs between; the LDREG being a separate jump target is excluded
+        // above), so retarget+NOP is consistent on all paths; and (b) the
+        // whole-function backward liveness below already models the jump/
+        // back-edges into the producer, so `live_out[i].test(rDst)` catches
+        // any path on which rDst would still be needed after the producer.
+        // rT dead-out of the LDREG is checked above and covers the loss of
+        // rT's copy. So no extra jump-target-producer guard is needed here.
+        if (!accum && jump_targets[i]) { continue; }
+
+        // Does the producer read rDst as one of its own source operands?
+        // Normally this bails: retargeting would make the producer read its
+        // own just-clobbered destination. But for the arithmetic/bitwise
+        // accumulate ops (`A = A op B`, `A = op(A)` — the `s = s + 1` /
+        // `acc = acc * x` / `n = n - 1` family) it is CORRECT: every op in
+        // `moveelim_accum_safe` reads all its source operands before writing
+        // A, so aliasing ra==rb/rc reads the old value first. See that
+        // helper for the per-op read-before-write verification.
         RegSet producer_uses;
         producer_uses.clear();
         moveelim_add_uses(producer, &producer_uses);
-        if (producer_uses.test(rDst)) { continue; }
+        bool producer_reads_rdst = producer_uses.test(rDst);
+        if (producer_reads_rdst && !accum) { continue; }
 
         // rDst must not be live-in at the producer's site: live_in[i] is
         // computed as uses(i) U (live_out[i] - defs(i)); since defs(i) is
         // rT (not rDst), rDst is live-in here iff either the producer uses
-        // it (already excluded above) or it's live-out of the producer.
-        // live_out[i] with the producer's own def removed is exactly
-        // live_in[i] minus uses(i) — but the simplest direct and always-
-        // correct check is: is rDst live going INTO instruction i, i.e.
-        // is it in live_in[i]? A register in live_in[i] but not among the
-        // producer's own uses is live purely because it survives i to some
-        // later point — precisely the "already resident value that must
-        // not be clobbered" case this guard exists for.
-        if (live_in[i].test(rDst)) { continue; }
+        // it or it's live-out of the producer.
+        //
+        // For the ordinary (non-accumulate) case the producer does NOT read
+        // rDst, so live_in[i].test(rDst) == live_out[i].test(rDst): a set
+        // bit means an already-resident value survives past i and must not
+        // be clobbered — bail.
+        //
+        // For the accumulate case the producer DOES read rDst, so rDst is in
+        // live_in[i] purely because of that read — which is exactly the value
+        // we want to consume, not a survival hazard. The real hazard is rDst
+        // being needed AFTER the producer, i.e. rDst in live_out[i]. But rDst
+        // can never be live-out of the producer here: the only successor
+        // reachable before rDst's next def is the LDREG at k (only NOPs sit
+        // between i and k), and the LDREG defines rDst — so it kills rDst on
+        // the path from i, leaving live_out[i] free of rDst except when a NOP
+        // between i and k spuriously marks r0. Checking live_out[i] (not
+        // live_in[i]) for the accumulate case is therefore the correct guard:
+        // it ignores the producer's own consuming read while still catching
+        // any genuine post-producer survival of rDst.
+        if (accum && producer_reads_rdst) {
+            if (live_out[i].test(rDst)) { continue; }
+        } else {
+            if (live_in[i].test(rDst)) { continue; }
+        }
 
         // The LDREG slot itself must not be a jump target that also serves
         // as a target for skip-shortcircuit style materialization tricks —
