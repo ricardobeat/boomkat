@@ -1596,6 +1596,17 @@ fn TVal? Vm.run(Vm* vm) {
         // checking it every instruction, check it only right after those
         // specific call sites below.
         for (; !ds.needs_restart; ) {
+        $if $feature(THREADED_DISPATCH):
+            {
+                init_threaded_handlers();
+                ColdCtx cold;
+                cold.vm = vm;
+                cold.act = ds.act;
+                cold.code_base = ds.code_base;
+                ds.curr_pc = run_threaded_burst(ds.curr_pc, ds.code_end, ds.regs_base, &cold);
+            }
+        $endif
+
             Instruction insn = *ds.curr_pc;
             ds.curr_pc++;
 
