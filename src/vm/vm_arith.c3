@@ -392,15 +392,21 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                 uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                 hobject::VarICEntry* gic = ds.var_ic_base + pc_off;
                 HObject* gb = (HObject*)gic.bindings;
-                if (gb != null && gb.shape_id == gic.shape_id) {
-                    TVal old_val = gb.prop_values()[gic.prop_idx];
+                // VarRef fast path: one pointer compare (prop_alloc unchanged)
+                // then a direct slot read-modify-write. Gated on varref_store_ok
+                // (writable non-configurable data global — descriptor immutable),
+                // so no writability re-check is needed.
+                if (gb != null && gic.varref_store_ok && gic.varref_alloc != null
+                    && gb.prop_alloc == gic.varref_alloc) {
+                    TVal* slot = gic.varref_ptr;
+                    TVal old_val = *slot;
                     if (old_val.is_fastint()) {
                         long v = old_val.get_fastint() + (is_inc ? 1L : -1L);
                         if (v >= types::FASTINT_MIN && v <= types::FASTINT_MAX) {
-                            gb.prop_values()[gic.prop_idx].set_fastint(v);
+                            slot.set_fastint(v);
                             ra.set_fastint(v);
                         } else {
-                            gb.prop_values()[gic.prop_idx].set_number((double)v);
+                            slot.set_number((double)v);
                             ra.set_number((double)v);
                         }
                         return (TVal){};
@@ -408,7 +414,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                         double d = vm_to_number(vm,&old_val);
                         if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
                         double new_d = d + (is_inc ? 1.0 : -1.0);
-                        gb.prop_values()[gic.prop_idx].set_number(new_d);
+                        slot.set_number(new_d);
                         ra.set_number(new_d);
                         return (TVal){};
                     }
@@ -420,6 +426,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
             bool found = false;
             EnvRecord* ic_env = null;
             int ic_prop_idx = -1;
+            bool ic_store_ok = false;
             EnvRecord* cur = ds.act.lex_env;
             while (cur != null) {
                 int idx = cur.bindings.find_prop_idx(key);
@@ -479,6 +486,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                     // the slow path via the is_bigint fall-through above.
                     ic_env = cur;
                     ic_prop_idx = idx;
+                    ic_store_ok = !fl.configurable;
                     break;
                 }
                 cur = cur.parent;
@@ -511,6 +519,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                         found = true;
                         ic_env = ds.act.var_env;
                         ic_prop_idx = vidx;
+                        ic_store_ok = !fl.configurable;
                     }
                 }
             }
@@ -530,6 +539,9 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                 gic.bindings = (void*)ic_env.bindings;
                 gic.shape_id = ic_env.bindings.shape_id;
                 gic.prop_idx = (ushort)ic_prop_idx;
+                gic.varref_ptr = &ic_env.bindings.prop_values()[ic_prop_idx];
+                gic.varref_alloc = ic_env.bindings.prop_alloc;
+                gic.varref_store_ok = ic_store_ok;
             }
             return (TVal){};
         }
