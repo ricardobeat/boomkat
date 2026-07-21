@@ -2526,6 +2526,10 @@ fn void? CompilerContext.for_statement(&self) {
         if (self.next_reg < saved_reg) {
             self.next_reg = saved_reg;
         }
+        // The update clause's value is discarded (see free_reg below) — signal
+        // the void context so a plain assignment skips its result-preservation
+        // moves.
+        self.void_ctx = true;
         ushort incr_reg = self.expression()!;
         self.free_reg(incr_reg);
     }
@@ -3981,6 +3985,12 @@ fn void? CompilerContext.continue_statement(&self) {
 
 /// Parse expression statement.
 fn void? CompilerContext.expression_statement(&self) {
+    // The statement's value is discarded — except in eval, where the last
+    // expression statement supplies the implicit completion value. Signal the
+    // void context so a plain assignment can skip its result-preservation moves.
+    if (!self.eval_mode) {
+        self.void_ctx = true;
+    }
     ushort reg = self.expression()!;
     if (self.eval_mode) {
         // Preserve the expression result for eval's implicit return value
