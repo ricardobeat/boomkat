@@ -1583,6 +1583,24 @@ fn void Heap.store_builtin_result(&self, TVal* dst, TVal* transient) @inline {
     }
 }
 
+/// Move a TVal from a register (src) into a heap slot (dst), transferring src's
+/// reference to dst: the old dst value is decref'd, src's bits are moved in, and
+/// src is cleared to undefined by the caller (no incref — ownership transfers).
+/// The combined branch skips the decref when the old dst value is primitive
+/// (nothing to free). Used on the hot global-slot write path (PUTGLOBAL).
+/// Correctness: whether src is heap or primitive is irrelevant to the OLD-dst
+/// decref decision — the move preserves src's refcount either way; only the
+/// value being overwritten (dst) determines whether a decref is owed.
+fn void Heap.tval_move_slot_fast(&self, TVal* dst, TVal* src) @inline {
+    if (dst.is_heap_allocated()) {
+        void* ptr = dst.get_heapptr();
+        if (ptr != null) {
+            self.decref((HeapHeader*)ptr);
+        }
+    }
+    *dst = *src;
+}
+
 // ============================================================================
 // Managed-object linked-list operations (doubly-linked via HeapHeader)
 // ============================================================================

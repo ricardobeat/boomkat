@@ -267,8 +267,14 @@ fn Instruction* th_getglobal(Instruction* pc, Instruction* code_end, TVal* regs,
     TVal* pv = gic.varref_ptr;
     if (env::is_tdz_sentinel(pv)) return pc; // TDZ -> switch throws
     TVal* ra = regs + insn.a;
-    vm.heap.tval_copy_ref(ra, pv);
-    track_heap_store(cold.act, ra, (uint)insn.a);
+    if (!pv.is_heap_allocated() && !ra.is_heap_allocated()) {
+        // prim -> prim: no refcount, no heap ref lands in the register, so no
+        // track_heap_store.
+        *ra = *pv;
+    } else {
+        vm.heap.tval_copy_ref(ra, pv);
+        track_heap_store(cold.act, ra, (uint)insn.a);
+    }
     pc++;
     return th_next(pc, code_end, regs, cold);
 }
@@ -287,8 +293,7 @@ fn Instruction* th_putglobal(Instruction* pc, Instruction* code_end, TVal* regs,
         || gb.prop_alloc != gic.varref_alloc) return pc;
     TVal* ra = regs + insn.a;
     TVal* pv = gic.varref_ptr;
-    vm.heap.decref_tval(pv);
-    *pv = *ra;
+    vm.heap.tval_move_slot_fast(pv, ra);
     ra.set_undefined();
     pc++;
     return th_next(pc, code_end, regs, cold);
