@@ -1276,6 +1276,22 @@ fn ushort? CompilerContext.unary_expr(&self) {
     }
 }
 
+/// After a postfix ++/-- token has been consumed, decide whether the update
+/// result is actually discarded. Only valid when the caller already holds a
+/// true postfix_void signal (statement / for-update position). The token now at
+/// the cursor is whatever follows the ++/--: any binary/assignment/ternary/comma
+/// operator (or `(`, `[`, `.`) would consume the produced value, so we skip the
+/// materialization only for the clear statement/clause terminators. A newline
+/// after the ++/-- means ASI ends the statement here, which also discards it.
+fn bool CompilerContext.postfix_result_discarded(&self) {
+    if (self.lexer.seen_line_term) return true;
+    TokenType next = self.peek_type();
+    return next == TokenType.SEMICOLON
+        || next == TokenType.RPAREN
+        || next == TokenType.RBRACE
+        || next == TokenType.EOF_TOKEN;
+}
+
 /// Parse postfix expressions (++, --).
 ///
 /// NOTE: We deliberately do NOT set `self.lhs_mode = true` here. Doing so
@@ -1292,6 +1308,13 @@ fn ushort? CompilerContext.unary_expr(&self) {
 /// and we will overwrite `operand` with INC) and use the saved obj/prop
 /// registers to emit a follow-up PUTPROP that writes the new value back.
 fn ushort? CompilerContext.postfix_expr(&self) {
+    // Consume the discarded-result signal once, before descending. Clearing it
+    // here means any nested sub-expression reached via call_expr (subscripts,
+    // call arguments) sees postfix_void=false — only the outermost postfix in
+    // the statement/for-update descent can skip old-value materialization.
+    bool result_discarded = self.postfix_void;
+    self.postfix_void = false;
+
     ushort operand = self.call_expr()!;
 
     bool lhs_was_getvar = self.last_was_getvar;
@@ -1326,6 +1349,38 @@ fn ushort? CompilerContext.postfix_expr(&self) {
             return COMPILE_ERROR~;
         }
         self.advance()!;
+        // When the result is provably discarded (see postfix_result_discarded),
+        // skip the old-value materialization entirely and compile identically to
+        // the prefix form: no LDREG/TONUMERIC, and GETVAR/GETGLOBAL is rewritten
+        // in place to INC_VAR/INC_GLOBAL (single instruction, no trailing NOP).
+        if (result_discarded && self.postfix_result_discarded()) {
+            if (self.last_was_member) {
+                ushort obj_reg = self.last_member_obj_reg;
+                ushort prop_reg = self.last_member_prop_reg;
+                self.emit_abc(Opcode.INC, (uint)operand, 0, 0);
+                self.emit_abc(Opcode.PUTPROP, (uint)obj_reg, (uint)prop_reg, (uint)operand);
+                self.free_reg(prop_reg);
+                self.free_reg(obj_reg);
+            } else if (lhs_was_getvar && !lhs_was_getglobal && self.code_count > 0
+                && self.code[self.code_count - 1].op == Opcode.GETVAR) {
+                uint name_idx = self.code[self.code_count - 1].get_bc();
+                uint getvar_reg = self.code[self.code_count - 1].a;
+                self.code[self.code_count - 1] = bytecode::make_a_bc(Opcode.INC_VAR, getvar_reg, name_idx);
+            } else if (lhs_was_getglobal && self.code_count > 0
+                && self.code[self.code_count - 1].op == Opcode.GETGLOBAL) {
+                uint name_idx = self.code[self.code_count - 1].get_bc();
+                uint getglobal_reg = self.code[self.code_count - 1].a;
+                self.code[self.code_count - 1] = bytecode::make_a_bc(Opcode.INC_GLOBAL, getglobal_reg, name_idx);
+            } else {
+                self.emit_abc(Opcode.INC, (uint)operand, 0, 0);
+                if (lhs_was_getvar) {
+                    self.emit_a_bc(lhs_was_getglobal ? Opcode.PUTGLOBAL : Opcode.PUTVAR_ASSIGN, (uint)operand, lhs_getvar_name_idx);
+                }
+            }
+            self.last_was_getvar = false;
+            self.last_was_member = false;
+            return operand;
+        }
         // Save original value and convert to ToNumeric (ES2020 §13.4.3.1):
         // BigInt passes through, other types coerce to Number.
         ushort saved = self.alloc_reg();
@@ -1372,6 +1427,36 @@ fn ushort? CompilerContext.postfix_expr(&self) {
             return COMPILE_ERROR~;
         }
         self.advance()!;
+        // Discarded result: compile like prefix (no old-value materialization).
+        // See the INC case above for the rationale.
+        if (result_discarded && self.postfix_result_discarded()) {
+            if (self.last_was_member) {
+                ushort obj_reg = self.last_member_obj_reg;
+                ushort prop_reg = self.last_member_prop_reg;
+                self.emit_abc(Opcode.DEC, (uint)operand, 0, 0);
+                self.emit_abc(Opcode.PUTPROP, (uint)obj_reg, (uint)prop_reg, (uint)operand);
+                self.free_reg(prop_reg);
+                self.free_reg(obj_reg);
+            } else if (lhs_was_getvar && !lhs_was_getglobal && self.code_count > 0
+                && self.code[self.code_count - 1].op == Opcode.GETVAR) {
+                uint name_idx = self.code[self.code_count - 1].get_bc();
+                uint getvar_reg = self.code[self.code_count - 1].a;
+                self.code[self.code_count - 1] = bytecode::make_a_bc(Opcode.DEC_VAR, getvar_reg, name_idx);
+            } else if (lhs_was_getglobal && self.code_count > 0
+                && self.code[self.code_count - 1].op == Opcode.GETGLOBAL) {
+                uint name_idx = self.code[self.code_count - 1].get_bc();
+                uint getglobal_reg = self.code[self.code_count - 1].a;
+                self.code[self.code_count - 1] = bytecode::make_a_bc(Opcode.DEC_GLOBAL, getglobal_reg, name_idx);
+            } else {
+                self.emit_abc(Opcode.DEC, (uint)operand, 0, 0);
+                if (lhs_was_getvar) {
+                    self.emit_a_bc(lhs_was_getglobal ? Opcode.PUTGLOBAL : Opcode.PUTVAR_ASSIGN, (uint)operand, lhs_getvar_name_idx);
+                }
+            }
+            self.last_was_getvar = false;
+            self.last_was_member = false;
+            return operand;
+        }
         // Save original value and convert to ToNumeric (ES2020 §13.4.3.1):
         // BigInt passes through, other types coerce to Number.
         ushort saved = self.alloc_reg();
