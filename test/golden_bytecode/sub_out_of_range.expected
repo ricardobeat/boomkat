@@ -1,13 +1,15 @@
 --- Bytecode ---
-[  0] CHKGLOBALFUNC   r0, 0
-[  1] CLOSURE         r0, 0
-[  2] DECLVAR         r0, 0
-[  3] LDINT           r2, +1000
-[  4] CALL_VAR        r0, argc=1, K[0]
-[  5] RETUNDEF        
+[  0] CHKGLOBALFUNC r0, 0
+[  1] CLOSURE       r0, 0
+[  2] DECLVAR       r0, 0
+[  3] GETGLOBAL     r0, 0
+[  4] LDUNDEF       r1 = r0, r0
+[  5] LDINT         r2, +1000
+[  6] CALL          r0 = r0, r1
+[  7] RETUNDEF      
 
 --- Inner function 0 ---
-[  0] LDINT           r1, +256
-[  1] SUB             r2 = r0, r1
-[  2] RET             r2 = r0, r0
+[  0] LDINT         r1, +256
+[  1] SUB           r2 = r0, r1
+[  2] RET           r2 = r0, r0
 --- End bytecode ---

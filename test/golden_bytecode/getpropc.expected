@@ -1,15 +1,17 @@
 --- Bytecode ---
-[  0] CHKGLOBALFUNC   r0, 0
-[  1] CLOSURE         r0, 0
-[  2] DECLVAR         r0, 0
-[  3] NEWOBJ          r2 = r0, r0
-[  4] LDCONST         r3, 1
-[  5] LDINT           r4, +42
-[  6] ???             r2 = r3, r4
-[  7] CALL_VAR        r0, argc=1, K[0]
-[  8] RETUNDEF        
+[  0] CHKGLOBALFUNC r0, 0
+[  1] CLOSURE       r0, 0
+[  2] DECLVAR       r0, 0
+[  3] GETGLOBAL     r0, 0
+[  4] LDUNDEF       r1 = r0, r0
+[  5] NEWOBJ        r2 = r0, r0
+[  6] LDCONST       r3, 1
+[  7] LDINT         r4, +42
+[  8] ???           r2 = r3, r4
+[  9] CALL          r0 = r0, r1
+[ 10] RETUNDEF      
 
 --- Inner function 0 ---
-[  0] GETPROPC        r2 = r0, r1
-[  1] RET             r2 = r0, r0
+[  0] GETPROPC      r2 = r0, r1
+[  1] RET           r2 = r0, r0
 --- End bytecode ---
