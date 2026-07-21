@@ -70,6 +70,19 @@
       "single-module": true,
       "sanitize": "address"
     },
+    "duktape_c3_threaded_asan": {
+      "type": "executable",
+      "sources": [
+        "src",
+        "cli/duktape_c3.c3"
+      ],
+      "opt": "O0",
+      "single-module": true,
+      "sanitize": "address",
+      "features": [
+        "THREADED_DISPATCH"
+      ]
+    },
     "duktape_c3_envstrict": {
       "type": "executable",
       "sources": [
