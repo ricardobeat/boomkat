@@ -1898,8 +1898,11 @@ fn void builtin_object_getOwnPropertyDescriptor(BuiltinContext* ctx) {
         desc.put_prop(configurable_key, c_tv, hobject::PROP_FLAGS_WEC);
     } else {
         // Data descriptor: { value, writable, enumerable, configurable }
+        // Cell-backed global var slots hold a pointer to the stable cell — read
+        // the cell's value, not the raw pointer slot.
+        TVal data_val = entry_flags.is_cell ? *env::cell_value_ptr(entry) : *entry;
         HString* value_key = builtin_intern_string(ctx.heap, "value");
-        desc.put_prop(value_key, *entry, hobject::PROP_FLAGS_WEC);
+        desc.put_prop(value_key, data_val, hobject::PROP_FLAGS_WEC);
 
         HString* writable_key = builtin_intern_string(ctx.heap, "writable");
         TVal w_tv;

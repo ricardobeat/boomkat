@@ -338,6 +338,12 @@ struct Heap {
     /// Callback to mark activation-record env bindings during GC (set by vm_create).
     MarkActivationsFn   mark_activations_fn;
 
+    /// Callback that walks the per-realm global-cell list and marks each
+    /// cell's TVal, so heap values held only by a global variable stay alive.
+    /// Set by vm_create (implemented in the vm module, which can see
+    /// env::GlobalCell). Null before vm_create.
+    MarkActivationsFn   mark_global_cells_fn;
+
     // Cached iterator symbol (lazily created, rooted via this field).
     HString*            iterator_symbol;
 
@@ -910,6 +916,7 @@ fn void Heap.destroy(&self) {
                     }
                     self.free_func(self.heap_udata, cf.regexp_cache);
                 }
+                if (cf.global_cell_cache != null) { self.free_func(self.heap_udata, cf.global_cell_cache); }
                 // Direct-eval private-name snapshot (compiler/context.c3
                 // finish() — heap-tracked when a function had direct eval AND
                 // inherited names from a parent class body).
@@ -1061,6 +1068,7 @@ fn void Heap.reset(&self) {
                 }
                 self.free_func(self.heap_udata, cf.regexp_cache);
             }
+            if (cf.global_cell_cache != null) { self.free_func(self.heap_udata, cf.global_cell_cache); }
             // Direct-eval private-name snapshot (see destroy() above).
             if (cf.eval_private_names != null) { self.free_func(self.heap_udata, cf.eval_private_names); }
             self.free_func(self.heap_udata, cf);
@@ -2022,6 +2030,11 @@ fn void Heap.mark_roots(&self) {
     // Mark activation-record env bindings (fresh per-call envs not otherwise rooted)
     if (self.mark_activations_fn != null && self.curr_thread != null) {
         self.mark_activations_fn(self.curr_thread, self);
+    }
+
+    // Mark global-variable cell values (stable cells outside the object graph)
+    if (self.mark_global_cells_fn != null && self.curr_thread != null) {
+        self.mark_global_cells_fn(self.curr_thread, self);
     }
 
     // Mark the generator object being initialized during an initial generator call.

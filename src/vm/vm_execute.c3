@@ -1502,6 +1502,37 @@ fn bool? Vm.execute_module_nested(Vm* vm, CompiledFunction* func, EnvRecord* env
     return !run_faulted;
 }
 
+/// Lazily allocate the per-function global-cell cache (one GlobalCell* slot
+/// per instruction, parallel to the code stream). Returns the cache pointer or
+/// null if allocation failed (the opcode then just re-resolves each time).
+fn env::GlobalCell** vm_ensure_cell_cache(Vm* vm, CompiledFunction* cf) {
+    if (cf.global_cell_cache != null) return (env::GlobalCell**)cf.global_cell_cache;
+    if (cf.code_count == 0) return null;
+    usz bytes = (usz)cf.code_count * (usz)(env::GlobalCell*::size);
+    void* raw = vm.heap.alloc_func(vm.heap.heap_udata, bytes);
+    if (raw == null) return null;
+    mem::clear(raw, (sz)bytes);
+    cf.global_cell_cache = (void**)raw;
+    cf.global_cell_cache_count = cf.code_count;
+    return (env::GlobalCell**)raw;
+}
+
+/// Resolve the GETGLOBAL_CELL/PUTGLOBAL_CELL constant operand to its stable
+/// cell (looking it up in the realm registry) and ensure the per-func cache
+/// exists. Returns null only if the name has no cell yet (should not happen
+/// for a correctly-hoisted global var/function).
+fn env::GlobalCell* vm_resolve_global_cell(Vm* vm, TVal* constants, Instruction insn) {
+    uint bc = insn.get_bc();
+    if (bc >= vm.current_func.const_count) return null;
+    TVal name_val = constants[bc];
+    if (!name_val.is_string()) return null;
+    void* key = name_val.get_heapptr();
+    env::GlobalCell* cell = vm.cell_reg.lookup(key);
+    if (cell == null) return null;
+    vm_ensure_cell_cache(vm, vm.current_func);
+    return cell;
+}
+
 /// Execute the bytecode dispatch loop. Assumes activation stack and registers
 /// are already set up by the caller.
 fn TVal? Vm.run(Vm* vm) {
@@ -3602,6 +3633,14 @@ fn TVal? Vm.run(Vm* vm) {
                             // throws and are caught by test/test_register_locals.js.
 
                             TVal v_raw = cur.bindings.prop_values()[idx];
+                            if (cur.bindings.get_prop_flags((uint)idx).is_cell) {
+                                // Cell-backed global var: read through the stable cell.
+                                TVal cv = *env::cell_value_ptr(&v_raw);
+                                vm.heap.tval_copy_ref(ra, &cv);
+                                track_heap_store(ds.act, ra, (uint)insn.a);
+                                found = true;
+                                break;
+                            }
                             if (env::is_tdz_sentinel(&v_raw)) {
                                 HString* name_hstr = (HString*)key;
                                 if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "Cannot access '%s' before initialization", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
@@ -3696,6 +3735,9 @@ fn TVal? Vm.run(Vm* vm) {
                                     }
                                 } else {
                                     TVal v2 = vcur.bindings.prop_values()[vidx];
+                                    if (vcur.bindings.get_prop_flags((uint)vidx).is_cell) {
+                                        v2 = *env::cell_value_ptr(&v2);
+                                    }
                                     vm.heap.tval_copy_ref(ra, &v2);
                                 }
                                 track_heap_store(ds.act, ra, (uint)insn.a);
@@ -3793,6 +3835,13 @@ fn TVal? Vm.run(Vm* vm) {
                             // throws and are caught by test/test_register_locals.js.
 
                             TVal v_raw = cur.bindings.prop_values()[idx];
+                            if (cur.bindings.get_prop_flags((uint)idx).is_cell) {
+                                TVal cv = *env::cell_value_ptr(&v_raw);
+                                HString* ts = typeof_string(vm, &cv);
+                                vm.heap.set_reg_string(ra, ts);
+                                found = true;
+                                break;
+                            }
                             if (env::is_tdz_sentinel(&v_raw)) {
                                 // TDZ: throw ReferenceError (ES6 behavior)
                                 HString* name_hstr = (HString*)key;
@@ -4043,7 +4092,7 @@ fn TVal? Vm.run(Vm* vm) {
                         }
                         if (owner != null && owner_idx >= 0) {
                             hobject::PropFlags fl = owner.bindings.get_prop_flags((uint)owner_idx);
-                            if (fl.writable && !fl.is_accessor) {
+                            if (fl.writable && !fl.is_accessor && !fl.is_cell) {
                                 uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                                 hobject::VarICEntry* vic = ds.var_ic_base + pc_off;
                                 vic.env = (void*)owner;
@@ -4115,7 +4164,11 @@ fn TVal? Vm.run(Vm* vm) {
                         HObject* b = ds.act.var_env.bindings;
                         if (b != null) {
                             int idx = b.find_prop_idx(key);
-                            if (idx >= 0) {
+                            // Never IC-cache a cell-backed slot: a direct
+                            // *pv=*ra write would clobber the cell pointer.
+                            // env_declare_var already routed the value through
+                            // the cell on the slow path.
+                            if (idx >= 0 && !b.get_prop_flags((uint)idx).is_cell) {
                                 vic.env = (void*)ds.act.var_env;
                                 vic.bindings = (void*)b;
                                 vic.shape_id = b.shape_id;
@@ -4129,6 +4182,74 @@ fn TVal? Vm.run(Vm* vm) {
                 }
             }
             continue;
+        }
+
+        case Opcode.DECLGLOBAL_CELL: {
+            // Declare a cell-backed top-level global var/function binding.
+            uint bc = insn.get_bc();
+            if (bc < vm.current_func.const_count) {
+                TVal name_val = ds.constants[bc];
+                if (name_val.is_string()) {
+                    void* key = name_val.get_heapptr();
+                    env::env_declare_global_cell(&vm.cell_reg, ds.act.var_env, key, *ra,
+                        ra.is_undefined(),
+                        ((CompiledFunction*)ds.act.func).is_eval_fn());
+                }
+            }
+            continue;
+        }
+
+        case Opcode.GETGLOBAL_CELL: {
+            // Hot path: read a global var through its stable cell.
+            uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
+            CompiledFunction* cf = vm.current_func;
+            env::GlobalCell** cache = (env::GlobalCell**)cf.global_cell_cache;
+            if (cache != null) {
+                env::GlobalCell* cell = cache[pc_off];
+                if (cell != null) {
+                    vm.heap.tval_copy_ref(ra, &cell.value);
+                    track_heap_store(ds.act, ra, (uint)insn.a);
+                    break;
+                }
+            }
+            // Cold: resolve name → cell (populate cache lazily). A GETGLOBAL_CELL
+            // is only emitted for a top-level var/function name whose
+            // DECLGLOBAL_CELL runs during hoisting, so the cell exists by now.
+            env::GlobalCell* cell = vm_resolve_global_cell(vm, ds.constants, insn);
+            if (cell != null) {
+                cache = (env::GlobalCell**)cf.global_cell_cache;
+                if (cache != null) cache[pc_off] = cell;
+                vm.heap.tval_copy_ref(ra, &cell.value);
+                track_heap_store(ds.act, ra, (uint)insn.a);
+                break;
+            }
+            ra.set_undefined();
+            break;
+        }
+
+        case Opcode.PUTGLOBAL_CELL: {
+            // Hot path: write a global var through its stable cell.
+            uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
+            CompiledFunction* cf = vm.current_func;
+            env::GlobalCell** cache = (env::GlobalCell**)cf.global_cell_cache;
+            if (cache != null) {
+                env::GlobalCell* cell = cache[pc_off];
+                if (cell != null) {
+                    vm.heap.tval_copy_ref(&cell.value, ra);
+                    vm.heap.decref_tval(ra);
+                    ra.set_undefined();
+                    break;
+                }
+            }
+            env::GlobalCell* cell = vm_resolve_global_cell(vm, ds.constants, insn);
+            if (cell != null) {
+                cache = (env::GlobalCell**)cf.global_cell_cache;
+                if (cache != null) cache[pc_off] = cell;
+                vm.heap.tval_copy_ref(&cell.value, ra);
+            }
+            vm.heap.decref_tval(ra);
+            ra.set_undefined();
+            break;
         }
 
         case Opcode.PUTLEX: {

@@ -240,6 +240,10 @@ struct CompilerContext {
     // Track last identifier resolved via GETVAR (for assignment write-back)
     bool last_was_getvar;
     uint last_getvar_name_idx;
+    /// Set alongside last_was_getvar when the last identifier read was emitted
+    /// as GETGLOBAL_CELL (a cell-backed top-level global). Assignment write-back
+    /// then emits PUTGLOBAL_CELL and the read-strip logic recognizes the cell op.
+    bool last_was_global_cell;
     /// Set when the last primary_expr returned a live local variable register directly.
     bool last_was_local_var;
     ushort last_local_var_reg;
@@ -305,6 +309,14 @@ struct CompilerContext {
 
     // Global scope flag: when true, all var decls use environment only (no register cache)
     bool is_global;
+
+    // Cell-backed global names: interned HString* pointers of top-level
+    // var/function declarations in a Script (not module, not eval) that are
+    // installed as stable-cell globals. Bare reads/writes of these names at
+    // global scope emit GETGLOBAL_CELL / PUTGLOBAL_CELL. Grown on demand.
+    void** cell_global_names;   // HString*[]
+    uint   cell_global_name_count;
+    uint   cell_global_name_cap;
 
     // Eval mode: when true, expression statements save their last result
     // to eval_acc_reg for eval's implicit return value.
@@ -563,6 +575,17 @@ fn void CompilerContext.cleanup(&self) {
     if (self.owns_private_names && self.private_names != null) {
         h.free_func(h.heap_udata, self.private_names);
         self.private_names = null;
+    }
+    if (self.cell_global_names != null) {
+        for (uint i = 0; i < self.cell_global_name_count; i++) {
+            if (self.cell_global_names[i] != null) {
+                h.decref((types::HeapHeader*)self.cell_global_names[i]);
+            }
+        }
+        h.free_func(h.heap_udata, self.cell_global_names);
+        self.cell_global_names = null;
+        self.cell_global_name_count = 0;
+        self.cell_global_name_cap = 0;
     }
 }
 
@@ -1244,6 +1267,20 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
             mem::clear(vic_raw, (sz)(vic_bytes));
             func.var_ic_entries = vic_raw;
             func.var_ic_count = func.code_count;
+        }
+
+        // Allocate the global-cell cache (one GlobalCell* slot per instruction)
+        // for a Script's top-level function, which is the only unit that emits
+        // GETGLOBAL_CELL/PUTGLOBAL_CELL. Avoids a lazy runtime allocation on the
+        // hot path.
+        if (self.uses_global_cells()) {
+            usz gcc_bytes = (usz)func.code_count * (usz)void*::size;
+            void* gcc_raw = h.alloc_func(h.heap_udata, gcc_bytes);
+            if (gcc_raw != null) {
+                mem::clear(gcc_raw, (sz)(gcc_bytes));
+                func.global_cell_cache = (void**)gcc_raw;
+                func.global_cell_cache_count = func.code_count;
+            }
         }
 
         // Allocate NEWREGEXP literal compile cache — one ReCompiled* slot per

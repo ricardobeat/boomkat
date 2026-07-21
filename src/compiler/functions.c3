@@ -1785,7 +1785,12 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
                 self.has_local_bindings = true;
                 self.emit_abc(Opcode.LDUNDEF, (uint)var_reg, 0, 0);
                 uint var_name_idx = self.add_string_constant(name_tok2.str_value);
-                self.emit_a_bc(Opcode.DECLVAR, (uint)var_reg, var_name_idx);
+                if (self.uses_global_cells()) {
+                    self.mark_cell_global(name_tok2.str_value);
+                    self.emit_a_bc(Opcode.DECLGLOBAL_CELL, (uint)var_reg, var_name_idx);
+                } else {
+                    self.emit_a_bc(Opcode.DECLVAR, (uint)var_reg, var_name_idx);
+                }
                 // At global scope, var bindings are env-resident (accessed via
                 // GETVAR/PUTVAR); the register is only a temporary DECLVAR source.
                 // Free it immediately so 500+ var declarations don't exhaust the

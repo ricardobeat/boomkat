@@ -247,6 +247,14 @@ bitstruct PropFlags : char {
     /// When true the property is an accessor (getter/setter pair) rather
     /// than a data property.
     bool is_accessor  : 3;
+    /// When true the property's `prop_values()` slot does not hold the value
+    /// directly — it holds a pointer (as a TVal pointer payload) to a stable
+    /// env::GlobalCell whose `.value` field is the canonical storage. Set only
+    /// on the global object's bindings for top-level global var/function
+    /// bindings (see env::CellRegistry). Readers/writers that see this bit
+    /// indirect through the cell; the hot GETGLOBAL_CELL/PUTGLOBAL_CELL path
+    /// bypasses the object entirely and touches the cell directly.
+    bool is_cell      : 4;
 }
 
 /// Convenience constant: default flags for a normal data property created
@@ -1150,6 +1158,9 @@ fn TVal? HObject.get_prop(&self, void* key) {
         }
         return PROP_NOT_FOUND~;
     }
+    if (self.get_prop_flags((uint)idx).is_cell) {
+        return *(TVal*)self.prop_values()[idx].get_heapptr();
+    }
     return self.prop_values()[idx];
 }
 
@@ -1173,9 +1184,15 @@ fn PropLookupResult HObject.get_prop_or_accessor_own(&self, void* key, bool want
                 }
             };
         }
+        TVal dv = self.prop_values()[idx];
+        if (self.get_prop_flags((uint)idx).is_cell) {
+            // Cell-backed global var: the slot holds a pointer to the stable
+            // cell whose field-0 is the canonical value.
+            dv = *(TVal*)dv.get_heapptr();
+        }
         return {
             .kind = PropLookupKind.PROP_DATA,
-            .data_val = self.prop_values()[idx],
+            .data_val = dv,
             .owner = self
         };
     }
@@ -1379,7 +1396,8 @@ fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags) {
         if (self.prop_count > 0) {
             PropFlags shape_f = self.get_prop_flags(new_idx);
             if (shape_f.writable != pflags.writable || shape_f.enumerable != pflags.enumerable ||
-                shape_f.configurable != pflags.configurable || shape_f.is_accessor != pflags.is_accessor) {
+                shape_f.configurable != pflags.configurable || shape_f.is_accessor != pflags.is_accessor ||
+                shape_f.is_cell != pflags.is_cell) {
                 self.set_prop_flags(new_idx, pflags);
             }
         }
@@ -2231,6 +2249,9 @@ fn MegamorphicEntry* mega_cache_lookup(heap::Heap* h, HObject* hobj, void* key) 
 fn void mega_cache_store(heap::Heap* h, HObject* hobj, void* key, HObject* owner, int prop_idx) @inline {
     if (h.mega_cache == null) return;
     if (owner != hobj) return;  // don't cache inherited lookups
+    // Never cache a cell-backed slot: its value pointer is the cell pointer,
+    // not the value (the resolver indirects through the cell instead).
+    if (owner.get_prop_flags((uint)prop_idx).is_cell) return;
     uint slot = mega_hash(hobj.shape_id, key);
     MegamorphicEntry* e = h.mega_cache + slot;
     e.key = key;
@@ -2302,6 +2323,13 @@ fn PropLookupResult HObject.get_prop_or_accessor_proto(&self, void* key, bool wa
                         .found = true
                     }
                 };
+            }
+            if (cur.get_prop_flags((uint)idx).is_cell) {
+                // Cell-backed global var: indirect through the stable cell.
+                // owner=null so the caller's inline cache is not populated (the
+                // slot holds a cell pointer, not the value).
+                TVal dv = *(TVal*)cur.prop_values()[idx].get_heapptr();
+                return { .kind = PropLookupKind.PROP_DATA, .data_val = dv, .owner = null };
             }
             return {
                 .kind = PropLookupKind.PROP_DATA,

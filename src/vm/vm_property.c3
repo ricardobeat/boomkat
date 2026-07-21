@@ -339,7 +339,11 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                 uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                                 hobject::ICEntry* ic = ds.ic_base + pc_off;
                                 int owner_idx = res.owner.find_prop_idx(key);
-                                if (owner_idx >= 0) {
+                                // Never IC-cache a cell-backed global slot: the slot
+                                // holds a cell pointer, not the value, and the resolver
+                                // already indirected. Leave the IC empty so cell reads
+                                // re-take the slow path (globalThis.x is not hot).
+                                if (owner_idx >= 0 && !res.owner.get_prop_flags((uint)owner_idx).is_cell) {
                                     ic.shape_id = hobj.shape_id;
                                     ic.proto = null;  // own property
                                     ic.prop_idx = (ushort)owner_idx;
@@ -745,7 +749,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                     uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                                     hobject::ICEntry* ic = ds.ic_base + pc_off;
                                     int owner_idx = res.owner.find_prop_idx(key);
-                                    if (owner_idx >= 0) {
+                                    if (owner_idx >= 0 && !res.owner.get_prop_flags((uint)owner_idx).is_cell) {
                                         ic.shape_id = hobj.shape_id;
                                         ic.proto = is_own ? null : (void*)res.owner;
                                         ic.prop_idx = (ushort)owner_idx;
@@ -2411,6 +2415,11 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                     }
                                 }
                             }
+                        } else if (exist_flags.is_cell) {
+                            // Cell-backed global var slot: write through the
+                            // stable cell so `globalThis.x = v` and the fast
+                            // GETGLOBAL_CELL/PUTGLOBAL_CELL path stay coherent.
+                            vm.heap.tval_copy_ref(env::cell_value_ptr(entry), &put_val);
                         } else if (!exist_flags.writable) {
                             // Strict-only engine: non-writable property assignment always throws.
                             if (!vm_throw_error(vm, vm.heap.type_err_proto, "Cannot assign to read only property", ds.act, &ds.curr_pc, &ds.needs_restart)) {

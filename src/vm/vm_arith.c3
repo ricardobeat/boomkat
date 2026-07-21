@@ -274,6 +274,51 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                     // lookup, not own-local. Own-local leaks surface as 'not defined'
                     // throws and are caught by test/test_register_locals.js.
 
+                    // Cell-backed global var: operate on the stable cell so the
+                    // fast GETGLOBAL_CELL/PUTGLOBAL_CELL path stays coherent.
+                    // Never populate the VarIC (ic_env stays null) — a direct
+                    // slot write would clobber the cell pointer.
+                    if (cur.bindings.get_prop_flags((uint)idx).is_cell) {
+                        TVal slot = cur.bindings.prop_values()[idx];
+                        TVal* cellv = env::cell_value_ptr(&slot);
+                        if (env::is_tdz_sentinel(cellv)) {
+                            HString* name_hstr = (HString*)key;
+                            if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "%s is not defined", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                return VM_ERROR~;
+                            }
+                            return (TVal){};
+                        }
+                        if (cellv.is_fastint()) {
+                            long v = cellv.get_fastint() + (is_inc ? 1L : -1L);
+                            if (v >= types::FASTINT_MIN && v <= types::FASTINT_MAX) {
+                                cellv.set_fastint(v);
+                                ra.set_fastint(v);
+                            } else {
+                                cellv.set_number((double)v);
+                                ra.set_number((double)v);
+                            }
+                        } else if (cellv.is_bigint()) {
+                            int128? nr = bigint_step(cellv.get_bigint(), is_inc);
+                            if (catch nr) {
+                                vm_set_range_error(vm, "BigInt value exceeds supported precision");
+                                if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                                return (TVal){};
+                            }
+                            if (!vm_set_reg_bigint(vm, cellv, nr)) {
+                                if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                                return (TVal){};
+                            }
+                            vm.heap.tval_copy_ref(ra, cellv);
+                        } else {
+                            double d = vm_to_number(vm, cellv);
+                            if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                            double new_d = d + (is_inc ? 1.0 : -1.0);
+                            cellv.set_number(new_d);
+                            ra.set_number(new_d);
+                        }
+                        return (TVal){};
+                    }
+
                     TVal old_val = cur.bindings.prop_values()[idx];
                     if (env::is_tdz_sentinel(&old_val)) {
                         HString* name_hstr = (HString*)key;

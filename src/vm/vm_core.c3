@@ -59,6 +59,18 @@ fn void vm_mark_activations(void* vm_ptr, void* heap_ptr) {
     }
 }
 
+/// GC callback: mark every global-variable cell's value so heap objects held
+/// only through a global var survive collection.
+fn void vm_mark_global_cells(void* vm_ptr, void* heap_ptr) {
+    Vm* vm = (Vm*)vm_ptr;
+    heap::Heap* h = (heap::Heap*)heap_ptr;
+    env::GlobalCell* cell = vm.cell_reg.cells_head;
+    while (cell != null) {
+        h.mark_tval(&cell.value);
+        cell = cell.next;
+    }
+}
+
 // ============================================================================
 // Call handling (matches duk_js_call.c)
 // ============================================================================

@@ -130,6 +130,55 @@ fn uint CompilerContext.add_string_constant(&self, char[] str) {
     return idx;
 }
 
+/// True when this compilation unit's top-level globals should be cell-backed:
+/// a real Script's global scope (not a module — module top-level bindings are
+/// declarative, not global-object properties — and not eval, whose created
+/// bindings are configurable and may target a caller's scope).
+fn bool CompilerContext.uses_global_cells(&self) @inline {
+    return self.is_global && !self.is_module && !self.eval_mode;
+}
+
+/// Register `name` (source bytes) as a cell-backed global. Interns the name and
+/// records its stable HString* pointer so later identifier reads/writes can be
+/// matched by pointer. Idempotent.
+fn void CompilerContext.mark_cell_global(&self, char[] name) {
+    Heap* hp = (Heap*)self.heap;
+    HString* hstr = hp.str_intern(name);
+    if (hstr == null) return;
+    // str_intern returns a BORROWED reference for an already-interned string
+    // (only new strings get an incref for the table). Take our own ref so the
+    // pointer we store stays valid (and its address can't be recycled) for the
+    // life of this CompilerContext; cleanup() releases it.
+    void* key = (void*)hstr;
+    for (uint i = 0; i < self.cell_global_name_count; i++) {
+        if (self.cell_global_names[i] == key) return;
+    }
+    if (self.cell_global_name_count >= self.cell_global_name_cap) {
+        uint new_cap = self.cell_global_name_cap == 0 ? 16 : self.cell_global_name_cap * 2;
+        void* p = hp.realloc_func(hp.heap_udata, self.cell_global_names, (usz)(new_cap * (usz)void*::size));
+        if (p == null) return;
+        self.cell_global_names = (void**)p;
+        self.cell_global_name_cap = new_cap;
+    }
+    ((types::HeapHeader*)hstr).incref();
+    self.cell_global_names[self.cell_global_name_count++] = key;
+}
+
+/// True if `name` is a registered cell-backed global. Interns the name to get
+/// its stable pointer (str_intern returns a borrowed ref for an already-
+/// interned string — no decref needed) and compares by pointer.
+fn bool CompilerContext.is_cell_global(&self, char[] name) {
+    if (self.cell_global_name_count == 0) return false;
+    Heap* hp = (Heap*)self.heap;
+    HString* hstr = hp.str_intern(name);
+    if (hstr == null) return false;
+    void* key = (void*)hstr;
+    for (uint i = 0; i < self.cell_global_name_count; i++) {
+        if (self.cell_global_names[i] == key) return true;
+    }
+    return false;
+}
+
 /// Add a number constant and return its index.
 fn uint CompilerContext.add_number_constant(&self, double val) {
     TVal tv;

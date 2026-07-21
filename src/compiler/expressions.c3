@@ -254,6 +254,7 @@ fn ushort? CompilerContext.assignment_expr(&self) {
 
     // Save LHS info (will be overwritten by RHS evaluation)
     bool lhs_was_getvar = self.last_was_getvar;
+    bool lhs_was_global_cell = self.last_was_global_cell;
     uint lhs_getvar_name_idx = self.last_getvar_name_idx;
     ushort lhs_ref_reg = MAX_REGISTERS;
     bool lhs_was_member = self.last_was_member;
@@ -470,7 +471,14 @@ fn ushort? CompilerContext.assignment_expr(&self) {
     // value. Non-strict code keeps the old value-discarding path.
     if (is_assign && lhs_was_getvar && self.code_count > 0) {
         Instruction lhs_last = self.code[self.code_count - 1];
-        if (lhs_last.op == Opcode.GETVAR && (ushort)lhs_last.a == left) {
+        if (lhs_was_global_cell && lhs_last.op == Opcode.GETGLOBAL_CELL && (ushort)lhs_last.a == left) {
+            // A cell-backed global is always resolvable, so no RESOLVEVAR/
+            // THROW_UNRESOLVED guard is needed. The LHS read value is discarded
+            // (the write comes from the RHS), so neutralize it to a cheap
+            // LDUNDEF that keeps `left`'s register bookkeeping identical to the
+            // value-producing path the assign code below assumes.
+            self.code[self.code_count - 1] = bytecode::make_abc(Opcode.LDUNDEF, (uint)left, 0, 0);
+        } else if (!lhs_was_global_cell && lhs_last.op == Opcode.GETVAR && (ushort)lhs_last.a == left) {
             if (self.is_strict) {
                 self.code[self.code_count - 1] = bytecode::make_a_bc(Opcode.RESOLVEVAR, (uint)left, lhs_getvar_name_idx);
                 lhs_ref_reg = left;
@@ -529,7 +537,8 @@ fn ushort? CompilerContext.assignment_expr(&self) {
                 // in a temp before writing back to the environment.
                 ushort tmp = self.alloc_reg();
                 self.emit_abc(Opcode.LDREG, (uint)tmp, (uint)left, 0);
-                self.emit_a_bc(Opcode.PUTVAR_ASSIGN, (uint)left, lhs_getvar_name_idx);
+                Opcode put_op = lhs_was_global_cell ? Opcode.PUTGLOBAL_CELL : Opcode.PUTVAR_ASSIGN;
+                self.emit_a_bc(put_op, (uint)left, lhs_getvar_name_idx);
                 self.free_reg(left);
                 left = tmp;
             }
@@ -573,7 +582,8 @@ fn ushort? CompilerContext.assignment_expr(&self) {
             // so the result survives the clobber.
             ushort tmp = self.alloc_reg();
             self.emit_abc(Opcode.LDREG, (uint)tmp, (uint)left, 0);
-            self.emit_a_bc(Opcode.PUTVAR_ASSIGN, (uint)left, lhs_getvar_name_idx);
+            Opcode put_op = lhs_was_global_cell ? Opcode.PUTGLOBAL_CELL : Opcode.PUTVAR_ASSIGN;
+            self.emit_a_bc(put_op, (uint)left, lhs_getvar_name_idx);
             self.free_reg(left);
             left = tmp;
         }
@@ -2620,10 +2630,17 @@ fn ushort? CompilerContext.primary_expr(&self) {
                     self.uses_arguments = true;
                 }
 
-                // Not found locally: emit GETVAR to look up by name at runtime
+                // Not found locally: emit GETVAR to look up by name at runtime,
+                // or GETGLOBAL_CELL for a cell-backed top-level global.
                 uint name_idx = self.add_string_constant(id_tok.str_value);
                 ushort id_reg = self.alloc_reg();
-                self.emit(bytecode::make_a_bc(Opcode.GETVAR, (uint)id_reg, name_idx));
+                if (self.uses_global_cells() && self.is_cell_global(id_tok.str_value)) {
+                    self.emit(bytecode::make_a_bc(Opcode.GETGLOBAL_CELL, (uint)id_reg, name_idx));
+                    self.last_was_global_cell = true;
+                } else {
+                    self.emit(bytecode::make_a_bc(Opcode.GETVAR, (uint)id_reg, name_idx));
+                    self.last_was_global_cell = false;
+                }
                 self.last_was_getvar = true;
                 self.last_getvar_name_idx = name_idx;
                 self.save_lhs_ident_name(id_tok.str_value);

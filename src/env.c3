@@ -78,6 +78,148 @@ struct EnvRecord {
 }
 
 // ============================================================================
+// Global variable cells (QuickJS JSVarRef analog)
+// ============================================================================
+
+/// A stable, address-invariant storage cell for a single top-level global
+/// variable / function binding. Allocated from a block pool whose blocks are
+/// never realloc'd, so a `GlobalCell*` handed out is valid for the life of the
+/// realm. The hot-path GETGLOBAL_CELL/PUTGLOBAL_CELL opcodes read/write
+/// `cell.value` directly — no object base-load, no shape check, no name compare.
+///
+/// The value is ALSO reflected as a property of the global object's bindings
+/// HObject (whose slot stores a pointer to this cell, flagged `is_cell`), so
+/// `globalThis.x`, enumeration, delete and eval-created reads stay coherent —
+/// they indirect through the same cell.
+struct GlobalCell {
+    TVal value;
+    /// Interned name (HString*) — used for GC-safe identity and rebinding.
+    void* name;
+    /// Intrusive link so the heap can walk/mark/free all live cells.
+    GlobalCell* next;
+}
+
+const uint CELL_POOL_BLOCK_SIZE = 128;
+
+struct CellPoolBlock { void* next; }
+
+/// Cell registry: a per-realm name→cell map + allocation pool. Lives on the
+/// Vm (see vm.cell_reg). The map is a small open-addressed table keyed by the
+/// interned HString* pointer; globals are few (tens–hundreds) so linear/probe
+/// cost is negligible and only paid on the first execution of each opcode site
+/// (result is then cached per-PC).
+struct CellRegistry {
+    Heap* heap;
+    GlobalCell* cells_head;   /// linked list of all cells (GC + teardown)
+    void* pool_blocks;        /// CellPoolBlock* list
+    GlobalCell* freelist;     /// unused (cells never freed individually) — reserved
+    // name → cell hash table (pointer-keyed)
+    GlobalCell** table;       /// slots (null = empty)
+    uint table_cap;           /// power of two
+    uint table_count;
+}
+
+fn void CellRegistry.init(&self, Heap* h) {
+    self.heap = h;
+    self.cells_head = null;
+    self.pool_blocks = null;
+    self.freelist = null;
+    self.table = null;
+    self.table_cap = 0;
+    self.table_count = 0;
+}
+
+fn GlobalCell* CellRegistry.alloc_cell(&self, void* name) {
+    // Bump-allocate from a stable block.
+    if (self.freelist == null) {
+        usz block_sz = CellPoolBlock::size + GlobalCell::size * CELL_POOL_BLOCK_SIZE;
+        void* raw = self.heap.alloc_func(self.heap.heap_udata, block_sz);
+        if (raw == null) return null;
+        mem::clear(raw, (sz)(block_sz));
+        CellPoolBlock* block = (CellPoolBlock*)raw;
+        block.next = self.pool_blocks;
+        self.pool_blocks = block;
+        char* base = (char*)raw + CellPoolBlock::size;
+        for (uint i = 0; i < CELL_POOL_BLOCK_SIZE; i++) {
+            GlobalCell* c = (GlobalCell*)(base + i * GlobalCell::size);
+            c.next = self.freelist;
+            self.freelist = c;
+        }
+    }
+    GlobalCell* cell = self.freelist;
+    self.freelist = cell.next;
+    cell.value.set_undefined();
+    cell.name = name;
+    cell.next = self.cells_head;
+    self.cells_head = cell;
+    return cell;
+}
+
+fn void CellRegistry.grow_table(&self) {
+    uint new_cap = self.table_cap == 0 ? 16 : self.table_cap * 2;
+    GlobalCell** new_table = (GlobalCell**)self.heap.alloc_func(self.heap.heap_udata, (usz)(new_cap * GlobalCell*::size));
+    if (new_table == null) return;
+    mem::clear(new_table, (sz)(new_cap * GlobalCell*::size));
+    uint mask = new_cap - 1;
+    for (uint i = 0; i < self.table_cap; i++) {
+        GlobalCell* c = self.table[i];
+        if (c == null) continue;
+        uint h = (uint)((usz)c.name >> 3) & mask;
+        while (new_table[h] != null) h = (h + 1) & mask;
+        new_table[h] = c;
+    }
+    if (self.table != null) self.heap.free_func(self.heap.heap_udata, self.table);
+    self.table = new_table;
+    self.table_cap = new_cap;
+}
+
+/// Look up an existing cell by interned name pointer, or null.
+fn GlobalCell* CellRegistry.lookup(&self, void* name) {
+    if (self.table_cap == 0) return null;
+    uint mask = self.table_cap - 1;
+    uint h = (uint)((usz)name >> 3) & mask;
+    while (self.table[h] != null) {
+        if (self.table[h].name == name) return self.table[h];
+        h = (h + 1) & mask;
+    }
+    return null;
+}
+
+/// Get an existing cell for `name` or create one (idempotent).
+fn GlobalCell* CellRegistry.get_or_create(&self, void* name) {
+    GlobalCell* existing = self.lookup(name);
+    if (existing != null) return existing;
+    if ((self.table_count + 1) * 4 >= self.table_cap * 3) self.grow_table();
+    GlobalCell* cell = self.alloc_cell(name);
+    if (cell == null) return null;
+    uint mask = self.table_cap - 1;
+    uint h = (uint)((usz)name >> 3) & mask;
+    while (self.table[h] != null) h = (h + 1) & mask;
+    self.table[h] = cell;
+    self.table_count++;
+    return cell;
+}
+
+/// Free all cell pool blocks + the hash table (realm teardown).
+fn void CellRegistry.destroy(&self) {
+    void* b = self.pool_blocks;
+    while (b != null) {
+        void* next = ((CellPoolBlock*)b).next;
+        self.heap.free_func(self.heap.heap_udata, b);
+        b = next;
+    }
+    self.pool_blocks = null;
+    self.cells_head = null;
+    self.freelist = null;
+    if (self.table != null) {
+        self.heap.free_func(self.heap.heap_udata, self.table);
+        self.table = null;
+    }
+    self.table_cap = 0;
+    self.table_count = 0;
+}
+
+// ============================================================================
 // Creation / destruction
 // ============================================================================
 
@@ -158,7 +300,11 @@ fn TVal? env_get(EnvRecord* env, void* key) {
     while (cur != null) {
         int idx = cur.bindings.find_prop_idx(key);
         if (idx >= 0) {
-            return cur.bindings.prop_values()[idx];
+            TVal v = cur.bindings.prop_values()[idx];
+            if (cur.bindings.get_prop_flags((uint)idx).is_cell) {
+                return *cell_value_ptr(&v);
+            }
+            return v;
         }
         cur = cur.parent;
     }
@@ -194,6 +340,11 @@ fn bool env_put(EnvRecord* env, void* key, TVal val) {
         if (idx >= 0) {
             // Found the binding — update it here (even if it's in an outer scope).
             TVal* pv = &cur.bindings.prop_values()[idx];
+            // Cell-backed global var: redirect the write into the stable cell
+            // so the fast GETGLOBAL_CELL/PUTGLOBAL_CELL path stays coherent.
+            if (cur.bindings.get_prop_flags((uint)idx).is_cell) {
+                pv = cell_value_ptr(pv);
+            }
             if (hobject::_active_heap != null) {
                 heap::Heap* h = (heap::Heap*)hobject::_active_heap;
                 if (pv.is_string() || pv.is_bigint()) { h.decref_tval(pv); }
@@ -214,6 +365,73 @@ fn bool env_put(EnvRecord* env, void* key, TVal val) {
 /// Declare a binding in the given environment only (no chain walk).
 fn bool env_declare(EnvRecord* env, void* key, TVal val) @inline {
     return env.bindings.put_prop(key, val, hobject::PROP_FLAGS_WEC);
+}
+
+/// Read the canonical value of a cell-backed global property slot.
+/// `slot` is the `prop_values()` entry whose flags carry `is_cell`; its
+/// payload is a GlobalCell* and the cell's `value` field is field 0, so the
+/// cell pointer aliases a `TVal*` straight at the value.
+macro TVal* cell_value_ptr(TVal* slot) {
+    return (TVal*)((GlobalCell*)slot.get_heapptr());
+}
+
+/// Install (or update) a cell-backed global var/function binding. Creates the
+/// stable cell via the registry if absent, points the global object's
+/// property slot at it (flagged is_cell), and stores `val` into the cell.
+/// Mirrors env_declare_var's existing-undefined-var short-circuit and
+/// script-vs-eval configurability.
+fn bool env_declare_global_cell(CellRegistry* reg, EnvRecord* env, void* key, TVal val,
+                                bool is_undefined_hoist, bool is_eval_code) {
+    HObject* g = env.bindings;
+    int idx = g.find_prop_idx(key);
+    if (idx >= 0) {
+        hobject::PropFlags fl = g.get_prop_flags((uint)idx);
+        if (fl.is_cell) {
+            // Already cell-backed: value-only update, unless this is a bare
+            // `var x;` hoist stub (undefined) which must not clobber an
+            // existing value.
+            if (!is_undefined_hoist) {
+                GlobalCell* cell = (GlobalCell*)g.prop_values()[idx].get_heapptr();
+                reg.heap.tval_copy_ref(&cell.value, &val);
+            }
+            return true;
+        }
+        // Existing non-cell own property (e.g. a prior FunctionDeclaration
+        // hoisted via DECLVAR, or a builtin). Promote it to a cell-backed slot
+        // so cell reads/writes and globalThis stay coherent, preserving the
+        // current value (a bare `var x;` hoist stub keeps it; a real
+        // initializer overwrites it).
+        if (fl.writable && fl.configurable == false) {
+            // Non-configurable script global (WE) — promote in place.
+            GlobalCell* pc = reg.get_or_create(key);
+            if (pc == null) return false;
+            TVal cur = g.prop_values()[idx];
+            reg.heap.tval_copy_ref(&pc.value, &cur);
+            if (!is_undefined_hoist) reg.heap.tval_copy_ref(&pc.value, &val);
+            // Repoint the slot at the cell; the old value's ref now lives in
+            // the cell, so decref the slot copy before overwriting it.
+            TVal* slotp = &g.prop_values()[idx];
+            reg.heap.decref_tval(slotp);
+            slotp.set_pointer(pc);
+            hobject::PropFlags nf = fl;
+            nf.is_cell = true;
+            g.set_prop_flags((uint)idx, nf);
+            return true;
+        }
+        // Configurable/other existing property (builtin, eval global): leave it
+        // on the ordinary path.
+        if (is_undefined_hoist) return true;
+        return env_declare_var(env, key, val, true, is_eval_code);
+    }
+    // No existing property: create a cell and a cell-backed property.
+    GlobalCell* cell = reg.get_or_create(key);
+    if (cell == null) return false;
+    reg.heap.tval_copy_ref(&cell.value, &val);
+    hobject::PropFlags flags = is_eval_code ? hobject::PROP_FLAGS_WEC : hobject::PROP_FLAGS_WE;
+    flags.is_cell = true;
+    TVal slot;
+    slot.set_pointer(cell);
+    return g.put_prop(key, slot, flags);
 }
 
 /// Declare a `var`/FunctionDeclaration binding in the given environment
@@ -255,6 +473,26 @@ fn bool env_declare(EnvRecord* env, void* key, TVal val) @inline {
 /// re-declaration's value write, which is the narrower, less surprising
 /// side to be wrong on.
 fn bool env_declare_var(EnvRecord* env, void* key, TVal val, bool is_global, bool is_eval_code) @inline {
+    if (is_global) {
+        // A cell-backed global var already installed by DECLGLOBAL_CELL: any
+        // later var (re)declaration/initializer (e.g. `for (var i=0; …)`,
+        // destructuring `var`, a second `var x = …`) must write THROUGH the
+        // stable cell, not overwrite the property slot with a plain value —
+        // otherwise the object slot and the cell (which GETGLOBAL_CELL reads)
+        // diverge. A bare hoist stub (undefined) leaves the cell untouched.
+        int idx = env.bindings.find_prop_idx(key);
+        if (idx >= 0 && env.bindings.get_prop_flags((uint)idx).is_cell) {
+            if (!val.is_undefined()) {
+                TVal* cellv = cell_value_ptr(&env.bindings.prop_values()[idx]);
+                if (hobject::_active_heap != null) {
+                    ((heap::Heap*)hobject::_active_heap).tval_copy_ref(cellv, &val);
+                } else {
+                    *cellv = val;
+                }
+            }
+            return true;
+        }
+    }
     if (is_global && val.is_undefined() && env.bindings.has_prop(key)) {
         return true;
     }
@@ -329,7 +567,11 @@ fn TVal? env_get_lex(EnvRecord* lex_env, void* key) {
     while (cur != null) {
         int idx = cur.bindings.find_prop_idx(key);
         if (idx >= 0) {
-            return cur.bindings.prop_values()[idx];
+            TVal v = cur.bindings.prop_values()[idx];
+            if (cur.bindings.get_prop_flags((uint)idx).is_cell) {
+                return *cell_value_ptr(&v);
+            }
+            return v;
         }
         cur = cur.parent;
     }
@@ -366,7 +608,11 @@ fn TVal? env_get_at_depth(EnvRecord* env, uint depth, void* key) {
     if (cur == null) return hobject::PROP_NOT_FOUND~;
     int idx = cur.bindings.find_prop_idx(key);
     if (idx >= 0) {
-        return cur.bindings.prop_values()[idx];
+        TVal v = cur.bindings.prop_values()[idx];
+        if (cur.bindings.get_prop_flags((uint)idx).is_cell) {
+            return *cell_value_ptr(&v);
+        }
+        return v;
     }
     return hobject::PROP_NOT_FOUND~;
 }
@@ -436,6 +682,9 @@ fn int env_try_put_lex(EnvRecord* lex_env, void* key, TVal val, bool check_tdz =
                 return -1;
             }
             TVal* pv = &cur.bindings.prop_values()[idx];
+            if (cur.bindings.get_prop_flags((uint)idx).is_cell) {
+                pv = cell_value_ptr(pv);
+            }
             if (hobject::_active_heap != null) {
                 heap::Heap* h = (heap::Heap*)hobject::_active_heap;
                 // Strings and BigInts are reference-counted primitives held by

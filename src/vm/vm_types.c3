@@ -204,6 +204,13 @@ struct Vm {
     // Global environment
     EnvRecord* global_env;
 
+    // Per-realm stable cells for top-level global var/function bindings.
+    // Hot-path GETGLOBAL_CELL/PUTGLOBAL_CELL resolve a name to a GlobalCell*
+    // once (cached per-PC) then read/write cell.value with no shape check.
+    // Shared across scripts in the same realm (harness + includes + test).
+    env::CellRegistry cell_reg;
+    bool cell_reg_ready;
+
     // Global lexical environment — the Global Environment Record's
     // DeclarativeRecord (ES2015 §8.1.1.4). Holds top-level `let`/`const`/
     // `class` bindings, which are NOT properties of the global object.

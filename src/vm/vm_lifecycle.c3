@@ -62,6 +62,13 @@ fn Vm*? vm_create(Heap* heap) {
     }
     vm.global_env = global;
 
+    // Initialize the per-realm global-cell registry (stable value cells for
+    // top-level var/function bindings). Cells are GC-marked via
+    // heap.mark_global_cells_fn below.
+    vm.cell_reg.init(heap);
+    vm.cell_reg_ready = true;
+    heap.mark_global_cells_fn = &vm_mark_global_cells;
+
     // Register the global environment's bindings object as a GC root
     // so that mark-and-sweep never collects the global scope.
     heap.register_gc_root(global.bindings.as_header());
@@ -123,6 +130,11 @@ fn void vm_destroy(Vm* vm) {
     if (vm.valstack != null) {
         vm.heap.free_func(vm.heap.heap_udata, vm.valstack);
     }
+    if (vm.cell_reg_ready) {
+        vm.cell_reg.destroy();
+        vm.cell_reg_ready = false;
+    }
+    vm.heap.mark_global_cells_fn = null;
     // Clear heap's valstack GC root pointers
     vm.heap.valstack_base = null;
     vm.heap.valstack_top_ptr = null;
@@ -170,6 +182,13 @@ fn bool vm_reset(Vm* vm, Heap* heap) {
     vm.heap.valstack_top_ptr = &vm.valstack_top;
     vm.heap.curr_thread = vm;
     vm.heap.mark_activations_fn = &vm_mark_activations;
+
+    // Rebuild the global-cell registry for the fresh realm — old cells hold
+    // freed HString name pointers and stale heap values after heap.reset().
+    if (vm.cell_reg_ready) { vm.cell_reg.destroy(); }
+    vm.cell_reg.init(heap);
+    vm.cell_reg_ready = true;
+    vm.heap.mark_global_cells_fn = &vm_mark_global_cells;
 
     // Fresh global environment on the reset heap
     EnvRecord*? global = env::env_create(heap, null);

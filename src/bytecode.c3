@@ -277,6 +277,25 @@ enum Opcode : char {
     /// a let/const binding still in its temporal dead zone (assignment before
     /// initialization). Emitted only for genuine assignment expressions.
     PUTVAR_ASSIGN,
+    /// `A = *cell(constants[BC])`  — read a top-level global var/function
+    /// binding through its stable value cell (A-BC). The BC operand names the
+    /// binding; on first execution the name is resolved to a GlobalCell* which
+    /// is cached in a per-PC table, so subsequent executions are a single
+    /// pointer deref with no shape check or object base-load. Falls back to the
+    /// GETVAR name path only if the cell has not been created yet (TDZ / not
+    /// yet declared). See env::CellRegistry.
+    GETGLOBAL_CELL,
+    /// `declare cell(constants[BC]) = A`  — declare+initialize a top-level
+    /// global var/function binding backed by a stable cell (A-BC). Creates the
+    /// cell if absent, installs a cell-backed (is_cell) property on the global
+    /// object for observability, and stores A into the cell. Bare `var x;`
+    /// hoist stubs (A holds undefined) never clobber an existing value.
+    DECLGLOBAL_CELL,
+    /// `*cell(constants[BC]) = A`  — write a top-level global var binding
+    /// through its stable value cell (A-BC). Mirror of GETGLOBAL_CELL for the
+    /// hot write path (plain assignment to a declared global). Reflected into
+    /// the global object's property slot for observability.
+    PUTGLOBAL_CELL,
     /// `declare variable[constants[BC]] = A`  — declare+initialize a `var` in
     /// the immediate var_env only (does not walk the scope chain).
     DECLVAR,
@@ -778,6 +797,9 @@ fn OpFormat get_op_format(Opcode op) {
         case THROW_UNRESOLVED: return A_BC;
         case TYPEOFIDENT: return A_BC;
         case PUTVAR:    return A_BC;
+        case GETGLOBAL_CELL: return A_BC;
+        case DECLGLOBAL_CELL: return A_BC;
+        case PUTGLOBAL_CELL: return A_BC;
         case DECLVAR:   return A_BC;
         case DELVAR:    return A_BC;
         case CLOSURE:   return A_BC;
@@ -1188,6 +1210,16 @@ struct CompiledFunction {
     /// the function is freed. Borrowing RegExp objects take their own ref.
     void**          regexp_cache;    // ReCompiled*[] (opaque), or null
     uint            regexp_cache_count;
+
+    // ---- Global-cell cache (GETGLOBAL_CELL / PUTGLOBAL_CELL) --------------
+    /// Per-PC-offset cache of resolved GlobalCell* pointers, parallel to the
+    /// instruction stream: `global_cell_cache[pc_offset]` holds the stable
+    /// cell for the GETGLOBAL_CELL/PUTGLOBAL_CELL at `code[pc_offset]`. Cells
+    /// never move or die during the realm's life, so a cached pointer needs no
+    /// validation — the hot path is `cell = cache[pc]; *ra = cell.value`.
+    /// Lazily allocated (null = not yet needed); sized to code_count.
+    void**          global_cell_cache; // env::GlobalCell*[] (opaque), or null
+    uint            global_cell_cache_count;
 
     // ---- Source-text retention (Function.prototype.toString) ------------
     /// Heap-owned copy of the original source text spanned by this function
