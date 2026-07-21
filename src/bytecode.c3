@@ -632,6 +632,13 @@ enum Opcode : char {
     /// `variable[constants[BC]] = variable[constants[BC]] - 1` — fused
     /// GETVAR + DEC + PUTVAR.  Same layout as INC_VAR.
     DEC_VAR,
+    /// Global-scope variants of INC_VAR / DEC_VAR: fused read+op+write against
+    /// a top-level global binding, using GETGLOBAL's lean slot IC (single
+    /// shape-id compare + direct indexed access, no env/key/search_head/
+    /// generation checks). Emitted only at true global scope. A-BC format:
+    /// A=result reg, BC=constant pool index of the name.
+    INC_GLOBAL,
+    DEC_GLOBAL,
 
     // ---- Fused compare-and-branch -------------------------------------------
 
@@ -879,6 +886,8 @@ case PUTLEX:     return A_BC;
         case NEW_OBJ_S:  return ABC;
         case INC_VAR:    return A_BC;
         case DEC_VAR:    return A_BC;
+        case INC_GLOBAL: return A_BC;
+        case DEC_GLOBAL: return A_BC;
         case GETPROPC2:  return ABC;
         case REQUIRE_OBJ: return ABC;
         case ITER_CLOSE: return ABC;
