@@ -251,6 +251,10 @@ struct CompilerContext {
     /// fuse a bare-identifier callee's GETVAR into CALL_VAR even though other
     /// instructions (arg setup) are emitted between the GETVAR and the call.
     uint last_getvar_code_pos;
+    /// Set alongside last_was_getvar when the read was emitted as GETGLOBAL
+    /// (true global scope, no nested lexical env). The assignment write-back
+    /// then emits PUTGLOBAL instead of PUTVAR_ASSIGN.
+    bool last_was_getglobal;
     /// Set when the last primary_expr returned a live local variable register directly.
     bool last_was_local_var;
     ushort last_local_var_reg;
