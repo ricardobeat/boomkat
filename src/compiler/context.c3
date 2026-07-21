@@ -924,59 +924,6 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         }
     }
 
-    // --- Peephole: NOP dead LDREG rT = rX immediately before INC/DEC rX (or INC_VAR/DEC_VAR) ---
-    // Pattern: LDREG rT = rX / INC rX  (postfix i++ in statement position)
-    //   → NOP / INC rX
-    // The saved value rT is never read — the postfix result is discarded when i++ appears
-    // in the for-update slot or as an expression statement.  We verify rT is dead by
-    // scanning forward from i+2; if rT never appears as a source (b or c in ABC format)
-    // before being overwritten (written as a), it is dead and the LDREG is safe to NOP.
-    // Jump-target safety: it is fine to NOP a LDREG that is itself a jump target — the
-    // NOP simply falls through to the INC, which is the behaviour we want.
-    if (!self.disable_optimize && self.code_count >= 2) {
-        for (uint i = 0; i + 1 < self.code_count; i++) {
-            if (self.code[i].op != Opcode.LDREG) { continue; }
-            Opcode next_op = self.code[i + 1].op;
-            bool next_is_inc_dec = (next_op == Opcode.INC || next_op == Opcode.DEC
-                                    || next_op == Opcode.INC_VAR || next_op == Opcode.DEC_VAR);
-            if (!next_is_inc_dec) { continue; }
-
-            uint rT = (uint)self.code[i].a;   // destination of LDREG (the saved value)
-            uint rX = (uint)self.code[i].b;   // source of LDREG (the variable)
-
-            // For INC/DEC the operand is in field a; for INC_VAR/DEC_VAR the name idx
-            // is in bc and a is 0 — rX must match either way.
-            if (next_op == Opcode.INC || next_op == Opcode.DEC) {
-                if ((uint)self.code[i + 1].a != rX) { continue; }
-            }
-            // (For INC_VAR/DEC_VAR we can't directly verify the variable register here,
-            //  but in postfix_expr the INC_VAR is only emitted when lhs_was_getvar, and
-            //  the LDREG immediately precedes it — the pair is always a unit.)
-
-            // rT must be dead: scan forward from i+2.
-            // IF_TRUE/IF_FALSE use field A as a READ — handle them explicitly.
-            bool rT_live = false;
-            for (uint j = i + 2; j < self.code_count; j++) {
-                Instruction jns = self.code[j];
-                Opcode jop2 = jns.op;
-                if (jop2 == Opcode.IF_TRUE || jop2 == Opcode.IF_FALSE) {
-                    if ((uint)jns.a == rT) { rT_live = true; break; }
-                    continue;
-                }
-                OpFormat jfmt = bytecode::get_op_format(jop2);
-                if (jfmt == OpFormat.ABC) {
-                    if ((uint)jns.b == rT || (uint)jns.c == rT) { rT_live = true; break; }
-                }
-                if (jfmt != OpFormat.WIDE_SABC && jfmt != OpFormat.WIDE_ABC) {
-                    if ((uint)jns.a == rT) { break; }
-                }
-            }
-            if (rT_live) { continue; }
-
-            self.code[i] = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
-        }
-    }
-
     // --- Peephole: fuse LDINT rK, imm + ADD/SUB rD = …,rK → NOP + ADDI/SUBI rD = rS, imm ---
     // Runs AFTER copy-propagation (above): that pass NOPs the LDREG moves that
     // otherwise sit between an LDINT literal and its arithmetic consumer, so the
