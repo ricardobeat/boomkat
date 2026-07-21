@@ -475,6 +475,17 @@ enum Opcode : char {
     /// that CALL would otherwise depend on. ABC format: A=result register,
     /// B=callee register, C=argument count.
     CALL_UNDEF_THIS,
+    /// Fused GETVAR + CALL_UNDEF_THIS: `A = variable[constants[C]](A+2..A+1+B)`.
+    /// Loads the callee by name (via the same VarIC path as GETVAR, keyed on
+    /// this instruction's own pc) directly into register A, then performs a
+    /// plain-undefined-this call — one dispatch instead of two. Emitted only
+    /// when the callee is a bare identifier reference (not a local variable
+    /// register) immediately followed by a call with no spread arguments,
+    /// and the name's constant-pool index fits in 8 bits (else the compiler
+    /// falls back to plain GETVAR + CALL_UNDEF_THIS). ABC format:
+    /// A=result/callee register, B=argument count, C=constant pool index
+    /// of the callee's name (must be < 256).
+    CALL_VAR,
     /// `A = spread(C) into object` — copy all own enumerable properties
     /// from source C into target object A.  null/undefined sources are
     /// silently skipped (as in Object.assign).  ABC format:
