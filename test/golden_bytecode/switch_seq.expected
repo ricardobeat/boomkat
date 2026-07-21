@@ -2,18 +2,14 @@
 [  0] CHKGLOBALFUNC   r0, 0
 [  1] CLOSURE         r0, 0
 [  2] DECLVAR         r0, 0
-[  3] GETVAR          r0, 1
-[  4] GETVAR          r2, 0
-[  5] LDINT           r4, +1
-[  6] CALL_UNDEF_THIS r2 = r2, r1
-[  7] GETVAR          r3, 0
-[  8] LDINT           r5, +2
-[  9] CALL_UNDEF_THIS r3 = r3, r1
-[ 10] GETVAR          r4, 0
-[ 11] LDINT           r6, +3
-[ 12] CALL_UNDEF_THIS r4 = r4, r1
-[ 13] CALL_UNDEF_THIS r0 = r0, r3
-[ 14] RETUNDEF        
+[  3] LDINT           r4, +1
+[  4] CALL_VAR        r2, argc=1, K[0]
+[  5] LDINT           r5, +2
+[  6] CALL_VAR        r3, argc=1, K[0]
+[  7] LDINT           r6, +3
+[  8] CALL_VAR        r4, argc=1, K[0]
+[  9] CALL_VAR        r0, argc=3, K[1]
+[ 10] RETUNDEF        
 
 --- Inner function 0 ---
 [  0] LDINT           r1, +1
