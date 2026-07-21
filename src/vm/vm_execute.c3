@@ -3752,27 +3752,33 @@ fn TVal? Vm.run(Vm* vm) {
         case Opcode.GETGLOBAL: {
             // Read a top-level global binding. Emitted only where lex_env ==
             // global_lex_env and var_env == global_env, both permanent objects.
-            // The per-PC IC caches the resolved (bindings, shape_id, prop_idx);
-            // a hit is a single shape compare + direct indexed load. No name
-            // compare (the name-constant is fixed per PC), no env-chain walk,
-            // no generation dependent-load, no accessor-flag check (only data
-            // slots are ever cached — a data→accessor conversion changes the
-            // object's shape_id and thus misses).
+            // The per-PC IC caches a stable pointer to the binding's slot; a hit
+            // is one pointer compare (prop_alloc unchanged) plus a single
+            // dereference — no name compare (the name-constant is fixed per PC),
+            // no env-chain walk, no shape-id load, no accessor-flag check. Only
+            // data slots are cached; an accessor global takes the slow path.
             uint bc = insn.get_bc();
             if (bc < vm.current_func.const_count) {
                 TVal name_val = ds.constants[bc];
                 if (name_val.is_string()) {
                     void* key = name_val.get_heapptr();
 
-                    // --- Slot IC fast path ---
+                    // --- VarRef fast path: stable-pointer dereference ---
+                    // A hit is one pointer compare (bindings.prop_alloc still
+                    // equals the captured varref_alloc) followed by a single
+                    // dereference of the cached slot pointer — no shape-id load,
+                    // no find_prop, no prop-index recompute. This mirrors
+                    // QuickJS OP_get_var_ref (`*var_refs[i]->pvalue`); the only
+                    // per-access guard is the prop_alloc compare, which fails
+                    // solely when the object's property table was reallocated.
                     if (ds.var_ic_base != null) {
                         uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                         hobject::VarICEntry* gic = ds.var_ic_base + pc_off;
                         HObject* gb = (HObject*)gic.bindings;
-                        if (gb != null && gb.shape_id == gic.shape_id) {
-                            TVal v = gb.prop_values()[gic.prop_idx];
-                            if (!env::is_tdz_sentinel(&v)) {
-                                vm.heap.tval_copy_ref(ra, &v);
+                        if (gb != null && gic.varref_alloc != null && gb.prop_alloc == gic.varref_alloc) {
+                            TVal* pv = gic.varref_ptr;
+                            if (!env::is_tdz_sentinel(pv)) {
+                                vm.heap.tval_copy_ref(ra, pv);
                                 track_heap_store(ds.act, ra, (uint)insn.a);
                                 break;
                             }
@@ -3886,6 +3892,8 @@ fn TVal? Vm.run(Vm* vm) {
                             gic.bindings = (void*)ic_env.bindings;
                             gic.shape_id = ic_env.bindings.shape_id;
                             gic.prop_idx = (ushort)ic_prop_idx;
+                            gic.varref_ptr = &ic_env.bindings.prop_values()[ic_prop_idx];
+                            gic.varref_alloc = ic_env.bindings.prop_alloc;
                         }
                     } else {
                         HString* name_hstr = (HString*)key;
@@ -3912,20 +3920,23 @@ fn TVal? Vm.run(Vm* vm) {
                 if (name_val.is_string()) {
                     void* key = name_val.get_heapptr();
 
-                    // --- Slot IC fast path: direct indexed store ---
+                    // --- VarRef fast path: stable-pointer store ---
+                    // Enabled only for writable non-configurable data globals
+                    // (varref_store_ok), whose descriptor is immutable, so the
+                    // writability/accessor re-check is unnecessary. A hit is one
+                    // pointer compare + a decref + a raw slot write — no shape
+                    // load, no flags-chain walk.
                     if (ds.var_ic_base != null) {
                         uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                         hobject::VarICEntry* gic = ds.var_ic_base + pc_off;
                         HObject* gb = (HObject*)gic.bindings;
-                        if (gb != null && gb.shape_id == gic.shape_id) {
-                            TVal* pv = &gb.prop_values()[gic.prop_idx];
-                            hobject::PropFlags fl = gb.get_prop_flags(gic.prop_idx);
-                            if (!env::is_tdz_sentinel(pv) && fl.writable && !fl.is_accessor) {
-                                vm.heap.decref_tval(pv);
-                                *pv = *ra;
-                                ra.set_undefined();
-                                break;
-                            }
+                        if (gb != null && gic.varref_store_ok && gic.varref_alloc != null
+                            && gb.prop_alloc == gic.varref_alloc) {
+                            TVal* pv = gic.varref_ptr;
+                            vm.heap.decref_tval(pv);
+                            *pv = *ra;
+                            ra.set_undefined();
+                            break;
                         }
                     }
 
@@ -3981,6 +3992,12 @@ fn TVal? Vm.run(Vm* vm) {
                                 gic.bindings = (void*)owner.bindings;
                                 gic.shape_id = owner.bindings.shape_id;
                                 gic.prop_idx = (ushort)owner_idx;
+                                gic.varref_ptr = &owner.bindings.prop_values()[owner_idx];
+                                gic.varref_alloc = owner.bindings.prop_alloc;
+                                // Only a writable, non-configurable data global
+                                // has an immutable descriptor safe for the
+                                // re-check-free store path.
+                                gic.varref_store_ok = !fl.configurable;
                             }
                         }
                     }

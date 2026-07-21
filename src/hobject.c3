@@ -2298,6 +2298,24 @@ struct VarICEntry {
     /// act.lex_env at population time; a hit requires the same chain head
     /// so entries never serve a different activation's environment.
     void*   search_head;
+    /// VarRef fast path (GETGLOBAL/PUTGLOBAL/INC_GLOBAL/DEC_GLOBAL): a direct
+    /// stable pointer to the binding's TVal slot inside the owner object's
+    /// prop_values() block. Valid as long as `bindings.prop_alloc` still equals
+    /// `varref_alloc` — a property-table growth reallocates prop_alloc and
+    /// invalidates this pointer, at which point the slow path re-resolves.
+    /// This replaces the shape-id compare on the global hot path with a single
+    /// pointer compare + one dereference (QuickJS OP_get_var_ref pvalue model).
+    TVal*   varref_ptr;
+    /// The value of `bindings.prop_values()` captured when varref_ptr was set.
+    void*   varref_alloc;
+    /// Set only for PUTGLOBAL slots whose property is a writable,
+    /// NON-configurable data property (i.e. a genuine global `var`/function
+    /// binding, ES §9.3.4 CreateGlobalVarBinding). Such a descriptor can never
+    /// be redefined to an accessor or made read-only, so the varref store path
+    /// may skip the per-access writability/accessor re-check. Configurable
+    /// globals (e.g. those created by `eval`) leave this false and fall to the
+    /// re-checking slow path.
+    bool    varref_store_ok;
 }
 
 /// Single-pass prototype chain search: finds either an accessor or data property.
