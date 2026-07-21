@@ -375,6 +375,165 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
             return (TVal){};
         }
 
+        case Opcode.INC_GLOBAL:
+        case Opcode.DEC_GLOBAL: {
+            // Global-scope fused read+op+write. Slot IC: single shape-id
+            // compare + direct indexed access (no env/key/search_head/generation
+            // check). Only writable, non-accessor data slots are cached, so the
+            // hit assumes a plain slot.
+            uint bc = insn.get_bc();
+            if (bc >= vm.current_func.const_count) return (TVal){};
+            TVal name_val = ds.constants[bc];
+            if (!name_val.is_string()) return (TVal){};
+            void* key = name_val.get_heapptr();
+            bool is_inc = (op == Opcode.INC_GLOBAL);
+
+            if (ds.var_ic_base != null) {
+                uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
+                hobject::VarICEntry* gic = ds.var_ic_base + pc_off;
+                HObject* gb = (HObject*)gic.bindings;
+                if (gb != null && gb.shape_id == gic.shape_id) {
+                    TVal old_val = gb.prop_values()[gic.prop_idx];
+                    if (old_val.is_fastint()) {
+                        long v = old_val.get_fastint() + (is_inc ? 1L : -1L);
+                        if (v >= types::FASTINT_MIN && v <= types::FASTINT_MAX) {
+                            gb.prop_values()[gic.prop_idx].set_fastint(v);
+                            ra.set_fastint(v);
+                        } else {
+                            gb.prop_values()[gic.prop_idx].set_number((double)v);
+                            ra.set_number((double)v);
+                        }
+                        return (TVal){};
+                    } else if (!old_val.is_bigint() && !env::is_tdz_sentinel(&old_val)) {
+                        double d = vm_to_number(vm,&old_val);
+                        if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                        double new_d = d + (is_inc ? 1.0 : -1.0);
+                        gb.prop_values()[gic.prop_idx].set_number(new_d);
+                        ra.set_number(new_d);
+                        return (TVal){};
+                    }
+                    // BigInt / TDZ: fall through to slow path.
+                }
+            }
+
+            // Slow path: resolve against the global objects, apply, populate IC.
+            bool found = false;
+            EnvRecord* ic_env = null;
+            int ic_prop_idx = -1;
+            EnvRecord* cur = ds.act.lex_env;
+            while (cur != null) {
+                int idx = cur.bindings.find_prop_idx(key);
+                if (idx >= 0) {
+                    TVal old_val = cur.bindings.prop_values()[idx];
+                    if (env::is_tdz_sentinel(&old_val)) {
+                        HString* name_hstr = (HString*)key;
+                        if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "Cannot access '%s' before initialization", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                            return VM_ERROR~;
+                        }
+                        return (TVal){};
+                    }
+                    hobject::PropFlags fl = cur.bindings.get_prop_flags((uint)idx);
+                    if (!fl.writable) {
+                        HString* name_hstr = (HString*)key;
+                        if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                            return VM_ERROR~;
+                        }
+                        return (TVal){};
+                    }
+                    if (fl.is_accessor) {
+                        // Accessor global: no slot semantics — cannot fast-inc.
+                        return VM_ERROR~;
+                    }
+                    if (old_val.is_fastint()) {
+                        long v = old_val.get_fastint() + (is_inc ? 1L : -1L);
+                        if (v >= types::FASTINT_MIN && v <= types::FASTINT_MAX) {
+                            cur.bindings.prop_values()[idx].set_fastint(v);
+                            ra.set_fastint(v);
+                        } else {
+                            cur.bindings.prop_values()[idx].set_number((double)v);
+                            ra.set_number((double)v);
+                        }
+                    } else if (old_val.is_bigint()) {
+                        int128? nr = bigint_step(old_val.get_bigint(), is_inc);
+                        if (catch nr) {
+                            vm_set_range_error(vm, "BigInt value exceeds supported precision");
+                            if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                            return (TVal){};
+                        }
+                        if (!vm_set_reg_bigint(vm, &cur.bindings.prop_values()[idx], nr)) {
+                            if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                            return (TVal){};
+                        }
+                        vm.heap.tval_copy_ref(ra, &cur.bindings.prop_values()[idx]);
+                    } else {
+                        double d = vm_to_number(vm,&old_val);
+                        if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                        double new_d = d + (is_inc ? 1.0 : -1.0);
+                        cur.bindings.prop_values()[idx].set_number(new_d);
+                        ra.set_number(new_d);
+                    }
+                    found = true;
+                    // Cache only plain data slots (fastint/number path). BigInt
+                    // slots are fine to cache too (guard re-reads value), but the
+                    // fast path handles only fastint/number, so BigInt re-takes
+                    // the slow path via the is_bigint fall-through above.
+                    ic_env = cur;
+                    ic_prop_idx = idx;
+                    break;
+                }
+                cur = cur.parent;
+            }
+
+            if (!found && ds.act.lex_env != ds.act.var_env) {
+                int vidx = ds.act.var_env.bindings.find_prop_idx(key);
+                if (vidx >= 0) {
+                    TVal old_val = ds.act.var_env.bindings.prop_values()[vidx];
+                    hobject::PropFlags fl = ds.act.var_env.bindings.get_prop_flags((uint)vidx);
+                    if (!fl.is_accessor && fl.writable && !env::is_tdz_sentinel(&old_val)) {
+                        if (old_val.is_fastint()) {
+                            long v = old_val.get_fastint() + (is_inc ? 1L : -1L);
+                            if (v >= types::FASTINT_MIN && v <= types::FASTINT_MAX) {
+                                ds.act.var_env.bindings.prop_values()[vidx].set_fastint(v);
+                                ra.set_fastint(v);
+                            } else {
+                                ds.act.var_env.bindings.prop_values()[vidx].set_number((double)v);
+                                ra.set_number((double)v);
+                            }
+                        } else if (!old_val.is_bigint()) {
+                            double d = vm_to_number(vm,&old_val);
+                            if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                            double new_d = d + (is_inc ? 1.0 : -1.0);
+                            ds.act.var_env.bindings.prop_values()[vidx].set_number(new_d);
+                            ra.set_number(new_d);
+                        } else {
+                            return VM_ERROR~;
+                        }
+                        found = true;
+                        ic_env = ds.act.var_env;
+                        ic_prop_idx = vidx;
+                    }
+                }
+            }
+
+            if (!found) {
+                HString* name_hstr = (HString*)key;
+                if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "%s is not defined", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                    return VM_ERROR~;
+                }
+                return (TVal){};
+            }
+
+            if (ds.var_ic_base != null && ic_env != null) {
+                uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
+                hobject::VarICEntry* gic = ds.var_ic_base + pc_off;
+                gic.env = (void*)ic_env;
+                gic.bindings = (void*)ic_env.bindings;
+                gic.shape_id = ic_env.bindings.shape_id;
+                gic.prop_idx = (ushort)ic_prop_idx;
+            }
+            return (TVal){};
+        }
+
         default:
             return (TVal){};
     }
