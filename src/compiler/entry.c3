@@ -14,7 +14,16 @@ import std::io;
 
 /// Compile a complete program (sequence of statements).
 /// Returns the top-level CompiledFunction or a fault on error.
-fn CompiledFunction*? compile(Lexer* lex, void* heap) {
+///
+/// `shared_global_realm`: true when this script is compiled into a global
+/// realm that OTHER already-compiled code can observe — $262.evalScript, the
+/// Function constructor, or any subsequent script in the same realm. Their
+/// top-level `var`s must be real globalThis properties (a later/other unit
+/// reads them via the env), so register-residency is disabled. The primary
+/// program runner passes false: it is the sole unit, nothing else can observe
+/// its vars except via eval/Function/globalThis, which pre_scan_captures
+/// already detects and poisons.
+fn CompiledFunction*? compile(Lexer* lex, void* heap, bool shared_global_realm = false) {
     // Reset error state for this top-level compilation.
     g_last_err_msg[0] = 0;
     g_last_err_line = 0;
@@ -22,6 +31,7 @@ fn CompiledFunction*? compile(Lexer* lex, void* heap) {
     CompilerContext ctx;
     ctx.init(lex, heap);
     ctx.is_global = true;
+    if (shared_global_realm) { ctx.capture_all = true; }
 
     // ── Save lexer state before any pre-processing ───────────────────
     uint saved_pos    = lex.pos;

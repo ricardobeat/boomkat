@@ -111,6 +111,10 @@ fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false) {
     // brace inside `${}` is mis-consumed as the template close, desyncing the
     // scan for everything after it.
     uint[16] template_brace_base;
+    // Depth of open `[` brackets. An `=` at global scope inside brackets is a
+    // destructuring-pattern default (whose closure reads outer bindings from
+    // the env) → poison global-var residency conservatively.
+    uint pattern_bracket_depth = 0;
     int  combined_depth = 0;     // parens + brackets + braces (expression extents)
     int  region_depth = -1;      // brace_depth where the outermost callable body began
     int  expr_region_depth = -1; // combined_depth of an expression-bodied arrow
@@ -212,10 +216,22 @@ fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false) {
             if (expr_region_depth >= 0 && combined_depth < expr_region_depth) expr_region_depth = -1;
         } else if (tt == TokenType.LBRACKET) {
             combined_depth++;
+            pattern_bracket_depth++;
         } else if (tt == TokenType.RBRACKET) {
             combined_depth--;
+            if (pattern_bracket_depth > 0) pattern_bracket_depth--;
             if (expr_mode && combined_depth < 0) done = true;
             if (expr_region_depth >= 0 && combined_depth < expr_region_depth) expr_region_depth = -1;
+        } else if (tt == TokenType.ASSIGN && self.is_global && pattern_bracket_depth > 0
+                   && region_depth < 0 && expr_region_depth < 0) {
+            // An `=` inside `[...]` at global top level is a destructuring
+            // default (`var [x = expr] = ...`). Its default is compiled as a
+            // closure that reads outer bindings from the ENV, so any global it
+            // references must be env-resident — the pre-scan can't know which,
+            // so poison conservatively. (Also covers array-pattern defaults
+            // nested in object patterns.) Rare shape; only forgoes the
+            // optimization, never miscompiles.
+            self.capture_all = true;
         } else if (tt == TokenType.ARROW) {
             pending_arrow = true;
         } else if (tt == TokenType.CLASS) {

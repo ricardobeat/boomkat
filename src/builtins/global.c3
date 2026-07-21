@@ -582,7 +582,10 @@ fn void builtin_eval_script(BuiltinContext* ctx) {
 
     Lexer lex = lexer::lexer_init(src_cstr[:src_len], ctx.heap);
     lex.skip_hashbang();
-    CompiledFunction*? cf = compiler::compile(&lex, ctx.heap);
+    // Shared global realm: evalScript'd top-level vars must be real globalThis
+    // properties (the enclosing/other scripts observe them), so no register-
+    // residency. See compile()'s shared_global_realm param.
+    CompiledFunction*? cf = compiler::compile(&lex, ctx.heap, true);
     CompiledFunction* func;
     if (try f = cf) {
         func = f;

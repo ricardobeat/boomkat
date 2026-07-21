@@ -99,7 +99,14 @@ fn ushort CompilerContext.declare_var(&self, char[] name, ScopeKind kind) {
         if (self.is_global && kind == VAR && !captured) {
             self.reg_resident_global_count++;
         }
-        self.scope_stack[self.scope_depth].name = name;
+        // Escaped identifiers (\uXXXX) are decoded by the lexer into a reused
+        // scratch buffer, so `name` may be transient — a later escaped
+        // identifier overwrites it, aliasing two distinct bindings in the
+        // scope stack (resolve_var would then return the wrong register). At
+        // global scope these entries persist for the whole compilation, so
+        // intern the name into stable HString storage before storing it.
+        char[] stable_name = self.is_global ? self.intern_slot_name(name) : name;
+        self.scope_stack[self.scope_depth].name = stable_name;
         self.scope_stack[self.scope_depth].reg = reg;
         self.scope_stack[self.scope_depth].kind = kind;
         self.scope_stack[self.scope_depth].is_captured = captured;

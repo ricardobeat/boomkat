@@ -116,7 +116,12 @@ fn int run_manifest_loop(char[] mpath) {
 fn int exec_js(Vm* v, Heap* hp, char[] src) {
     Lexer lx = lexer::lexer_init(src, hp);
     lx.skip_hashbang();
-    CompiledFunction*? f = compiler::compile(&lx, hp);
+    // Each test262 case is executed as multiple scripts sharing one global
+    // realm (boilerplate harness + per-test includes + the test file), so a
+    // top-level `var` in any unit must be a real globalThis property that the
+    // other units observe. Compile with shared_global_realm=true (no global
+    // register-residency). Matches how a browser runs multiple <script>s.
+    CompiledFunction*? f = compiler::compile(&lx, hp, true);
     if (catch err = f) {
         io::eprintfn("  COMPILE ERROR");
         return 2;  // 2 = compile error (distinct from runtime error)
