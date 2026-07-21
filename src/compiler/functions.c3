@@ -1760,6 +1760,7 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
                     if (is_global && !self.is_module) {
                         uint chk_idx = self.add_string_constant(name_tok2.str_value);
                         self.emit_a_bc(Opcode.CHKGLOBALVAR, 0, chk_idx);
+                        self.record_declared_global(chk_idx);
                     }
                     // Consume initializer / comma so the scan advances the same
                     // way the real pass does, without emitting any binding.
@@ -2049,6 +2050,7 @@ fn void? CompilerContext.hoist_global_fn_decls(&self, bool checks_only = false) 
                 if (!already && self.is_global && !self.is_module) {
                     uint chk_idx = self.add_string_constant(fn_name);
                     self.emit_a_bc(Opcode.CHKGLOBALFUNC, 0, chk_idx);
+                    self.record_declared_global(chk_idx);
                 }
                 self.skip_function_body();
                 prev_toplevel = TokenType.RBRACE;
