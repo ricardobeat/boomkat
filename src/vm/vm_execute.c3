@@ -3040,7 +3040,8 @@ fn TVal? Vm.run(Vm* vm) {
         // === FUNCTION CALLS ===
         case Opcode.CALL:
         case Opcode.CALL_S:
-        case Opcode.CALL_UNDEF_THIS: {
+        case Opcode.CALL_UNDEF_THIS:
+        case Opcode.CALL_VAR: {
             // Inline the direct-compiled-function fast path (the fib/recursion
             // shape) so the hot loop avoids the `bl dispatch_calls` + its own
             // inner-switch dispatch entirely. Guard checks live inside the

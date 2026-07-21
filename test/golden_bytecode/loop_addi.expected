@@ -2,10 +2,9 @@
 [  0] CHKGLOBALFUNC   r0, 0
 [  1] CLOSURE         r0, 0
 [  2] DECLVAR         r0, 0
-[  3] GETVAR          r0, 0
-[  4] LDINT           r2, +5
-[  5] CALL_UNDEF_THIS r0 = r0, r1
-[  6] RETUNDEF        
+[  3] LDINT           r2, +5
+[  4] CALL_VAR        r0, argc=1, K[0]
+[  5] RETUNDEF        
 
 --- Inner function 0 ---
 [  0] LDUNDEF         r1 = r0, r0
