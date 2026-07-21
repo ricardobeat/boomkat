@@ -1,37 +1,35 @@
 --- Bytecode ---
-[  0] CHKGLOBALFUNC r0, 0
-[  1] CLOSURE       r0, 0
-[  2] DECLVAR       r0, 0
-[  3] GETGLOBAL     r0, 0
-[  4] LDUNDEF       r1 = r0, r0
-[  5] CALL          r0 = r0, r0
-[  6] RETUNDEF      
+[  0] CHKGLOBALFUNC   r0, 0
+[  1] CLOSURE         r0, 0
+[  2] DECLVAR         r0, 0
+[  3] GETGLOBAL       r0, 0
+[  4] CALL_UNDEF_THIS r0 = r0, r0
+[  5] RETUNDEF        
 
 --- Inner function 0 ---
-[  0] LDUNDEF       r0 = r0, r0
-[  1] DECLVAR       r0, 0
-[  2] CLOSURE       r1, 0
-[  3] DECLVAR       r1, 1
-[  4] LDINT         r2, 0
-[  5] LDREG         r0 = r2, r0
-[  6] DECLVAR       r0, 0
-[  7] CLOSURE       r2, 1
-[  8] DECLVAR       r2, 1
-[  9] LDINT         r3, +5
-[ 10] JUMP          +1
-[ 11] INC_VAR       r4, 0
-[ 12] GETVAR        r4, 0
-[ 13] JMP_LT        -3, r4, r3
-[ 14] LDREG         r3 = r2, r0
-[ 15] LDUNDEF       r4 = r0, r0
-[ 16] CALL          r3 = r3, r0
-[ 17] RET           r3 = r0, r0
+[  0] LDUNDEF         r0 = r0, r0
+[  1] DECLVAR         r0, 0
+[  2] CLOSURE         r1, 0
+[  3] DECLVAR         r1, 1
+[  4] LDINT           r2, 0
+[  5] LDREG           r0 = r2, r0
+[  6] DECLVAR         r0, 0
+[  7] CLOSURE         r2, 1
+[  8] DECLVAR         r2, 1
+[  9] LDINT           r3, +5
+[ 10] JUMP            +1
+[ 11] INC_VAR         r4, 0
+[ 12] GETVAR          r4, 0
+[ 13] JMP_LT          -3, r4, r3
+[ 14] LDREG           r3 = r2, r0
+[ 15] CALL_UNDEF_THIS r3 = r3, r0
+[ 16] RET             r3 = r0, r0
 
 --- Inner function 0.0 ---
-[  0] GETVAR        r0, 0
-[  1] RET           r0 = r0, r0
+[  0] GETVAR          r0, 0
+[  1] RET             r0 = r0, r0
 
 --- Inner function 0.1 ---
-[  0] GETVAR        r0, 0
-[  1] RET           r0 = r0, r0
+[  0] GETVAR          r0, 0
+[  1] RET             r0 = r0, r0
 --- End bytecode ---
