@@ -1119,8 +1119,19 @@ fn void CompilerContext.emit_destruct_bindings(&self,
                     // Member-expression targets (e.g. [obj.x] = v) use PUTPROP
                     // rather than PUTVAR. The deferred target evaluation code was
                     // already re-emitted before IteratorStep (ES2022 §13.15.5.6),
-                    // so here we just do the assignment.
+                    // so here we just do the assignment. For private member
+                    // targets, the brand check was deferred and must run AFTER
+                    // the value has been extracted into bind_reg, matching the
+                    // object-pattern code path's structure (see emit_deferred_target
+                    // — it set is_private_target during the earlier emit).
                     if (binds[di].is_member_target) {
+                        if (binds[di].is_private_target) {
+                            self.emit_abc(Opcode.CHK_BRAND,
+                                (uint)binds[di].private_brand_obj_reg,
+                                (uint)binds[di].private_brand_reg,
+                                binds[di].private_brand_name_c);
+                            self.free_reg(binds[di].private_brand_reg);
+                        }
                         self.emit_abc(Opcode.PUTPROP,
                             (uint)binds[di].member_obj_reg,
                             (uint)binds[di].member_prop_reg,

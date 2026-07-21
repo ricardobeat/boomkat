@@ -685,6 +685,12 @@ enum Opcode : char {
     /// Same as GETPROP but skips the proxy exotic dispatch — used for
     /// private field/method access (`this.#x`) where spec PrivateFieldGet
     /// does a direct internal-slot lookup, not [[Get]].
+    /// Throws TypeError if the private member has no [[Get]] field (set-only
+    /// accessor) per PrivateFieldGet step 6b. For assignment-target contexts
+    /// (`obj.#m = v`), the compiler strips this opcode entirely so the
+    /// read step never runs; CHK_BRAND emitted by emit_private_access (which
+    /// runs unconditionally as part of the prelude) still enforces brand
+    /// check at PUTPROP time, while [[Set]] handles set-vs-getter correctly.
     /// ABC format: A=dst_reg, B=obj_reg, C=key_reg.
     GETPROP_PRIVATE,
 

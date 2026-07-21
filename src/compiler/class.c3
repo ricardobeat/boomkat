@@ -172,16 +172,11 @@ fn void? CompilerContext.class_declaration(&self, char[]* out_name = null, bool 
 
     // Parse extends clause and class body.  Methods CLOSURE here, capturing
     // classScope as their lex_env so the class name resolves to the
-    // constructor from inside method bodies.
-    ushort ctor_reg = self.parse_class_tail_with_name(class_name, class_decl_src_start, false)!;
-
-    // Initialize the classScope's immutable binding with the constructor value
-    // (overwriting the TDZ placeholder).
-    self.emit_abc(Opcode.LDREG, (uint)class_reg, (uint)ctor_reg, 0);
-    self.emit_a_bc(Opcode.PUTLEX_C, (uint)class_reg, class_name_idx);
-
-    // Pop the classScope — methods retain it via CLOSURE capture.
-    self.emit_simple(Opcode.POP_LEX);
+    // constructor from inside method bodies. parse_class_tail_with_name
+    // emits the PUTLEX_C (initializing the class-name binding) and the
+    // matching POP_LEX BEFORE the static initializer runs — required so
+    // static field initializers can see the class name (§15.7.14).
+    ushort ctor_reg = self.parse_class_tail_with_name(class_name, class_decl_src_start, false, class_reg, class_name_idx)!;
 
     // Store the constructor into the OUTER let binding so `Foo` resolves to
     // the constructor from outside the class declaration as well.
@@ -244,17 +239,18 @@ fn ushort? CompilerContext.class_expression(&self) {
 
     // Parse extends clause and class body.
     // Anonymous class expression: pass empty name so default constructor
-    // has empty .name (per ES2015 anonymous class expression).
-    ushort ctor_reg = self.parse_class_tail_with_name(name, class_expr_src_start, true)!;
-
-    // For named class expressions, initialize the classScope's immutable
-    // binding with the constructor, then pop classScope.  Methods retain it
-    // via CLOSURE capture, so `C` inside methods resolves to the class.
-    if (has_name) {
-        self.emit_abc(Opcode.LDREG, (uint)name_reg, (uint)ctor_reg, 0);
-        self.emit_a_bc(Opcode.PUTLEX_C, (uint)name_reg, class_name_idx);
-        self.emit_simple(Opcode.POP_LEX);
-    }
+    // has empty .name (per ES2015 anonymous class expression). The
+    // className binding (when set up above) is initialized by
+    // parse_class_tail_with_name itself, BEFORE its static initializer,
+    // so its POP_LEX also happens inside the call and outer binding
+    // initialization must NOT be repeated here.  Pass name_reg/idx for the
+    // named case (so PUTLEX_C + POP_LEX are emitted internally) and
+    // MAX_REGISTERS/0 for the anonymous case (so neither runs).
+    ushort ctor_reg = self.parse_class_tail_with_name(
+        name, class_expr_src_start, true,
+        has_name ? name_reg : MAX_REGISTERS,
+        has_name ? class_name_idx : 0
+    )!;
 
     return ctor_reg;
 }
@@ -263,7 +259,15 @@ fn ushort? CompilerContext.class_expression(&self) {
 /// Returns the register holding the constructor function.
 /// `class_name`: when non-empty, the default constructor inherits this name
 /// as its `.name` property (ES2015 §14.5.14 + SetFunctionName).
-fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, uint class_src_start = 0xFFFFFFFF, bool is_expr = false) {
+/// `class_name_reg`/`class_name_str_idx`: when supplied (non-zero), the
+/// compiler-emitted classScope binding for the class name is initialized with
+/// the constructor AND the matching POP_LEX is emitted BEFORE the static
+/// initializer runs.  This satisfies ES2022 §15.7.14 ClassDefinitionEvaluation:
+/// the class name binding must be live by the time static field initializers
+/// run (so e.g. `(Object.preventExtensions(C), "Test262")` inside a static
+/// initializer can refer to `C`).  When zero, the caller is responsible for
+/// the PUTLEX_C/POP_LEX — pass through to the previous single-mode behaviour.
+fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, uint class_src_start = 0xFFFFFFFF, bool is_expr = false, ushort class_name_reg = MAX_REGISTERS, uint class_name_str_idx = 0) {
     // Save state for restoration after class body
     bool saved_in_class_body = self.in_class_body;
     bool saved_has_super = self.has_super_binding;
@@ -1060,11 +1064,17 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
 
     self.free_reg(proto_reg);
 
-    // P5: run __static_init__ once, right after class evaluation, with
-    // `this` = the constructor (spec: static field initializers evaluate
-    // during ClassDefinitionEvaluation, not per-instance — unlike instance
-    // fields, this needs no VM construct-path hook; it's plain
-    // compiler-emitted bytecode using the already-live ctor_reg).
+    // P5: CLOSURE __static_init__ captures the CURRENT lex_env (still the
+    // classScope pushed at the start of class_decl, with className bound).
+    // Per ES2022 §15.7.14 ClassDefinitionEvaluation, static field initializers
+    // must be able to resolve the class name — so the className binding
+    // (initially TDZ from INITTZ at the top of class_decl/class_expr) is
+    // initialized with the constructor HERE, before the matching POP_LEX
+    // and the CALL that runs the initializer.  Without this, `static #g =
+    // (Object.preventExtensions(C), "Test262")` throws ReferenceError on `C`
+    // because the classScope binding is still TDZ when the initializer runs.
+    // Gated on `class_name_reg` only — the string-constant index may
+    // legitimately be 0 (the first string added to the pool).
     if (has_static_init) {
         // finish() already registers static_init_func with the heap's
         // teardown tracking — no extra track_compiled_func here (double-free
@@ -1072,11 +1082,37 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
         uint static_init_idx = self.add_inner_func(static_init_func);
         ushort si_reg = self.alloc_reg();
         self.emit(bytecode::make_a_bc(Opcode.CLOSURE, (uint)si_reg, static_init_idx));
+        // Initialize the class-name binding inside the classScope while it
+        // is still the current lex scope (the CLOSURE above just captured
+        // it for static_init, methods on the class already captured it
+        // earlier).  These three instructions (LDREG, PUTLEX_C, POP_LEX)
+        // MUST be emitted as a block right before the CALL — CLOSURE must
+        // come first (so it captures classScope), and the CALL must come
+        // last (so className has been initialized in static_init's view of
+        // the scope).  When `class_name_reg == MAX_REGISTERS`, the class
+        // had no name (anonymous class expression) and neither LDREG nor
+        // PUTLEX_C nor POP_LEX are emitted; the caller never pushed a
+        // classScope for the anonymous case so there is nothing to pop.
+        if (class_name_reg != MAX_REGISTERS) {
+            self.emit_abc(Opcode.LDREG, (uint)class_name_reg, (uint)ctor_reg, 0);
+            self.emit_a_bc(Opcode.PUTLEX_C, (uint)class_name_reg, class_name_str_idx);
+            self.emit_simple(Opcode.POP_LEX);
+        }
         ushort si_this_slot = self.alloc_reg();  // must be si_reg + 1
         self.emit_abc(Opcode.LDREG, (uint)si_this_slot, (uint)ctor_reg, 0);
         self.emit_abc(Opcode.CALL, (uint)si_reg, (uint)si_reg, 0);
         self.free_reg(si_this_slot);
         self.free_reg(si_reg);
+    } else if (class_name_reg != MAX_REGISTERS) {
+        // No static initializer, but the classScope className binding still
+        // needs to be initialized with the constructor (so e.g. methods
+        // referenced via `this.constructor` after a `super()`-without-extends
+        // class body resolve correctly) and the scope popped (so the outer
+        // binding installation doesn't double-pop).  PUSH_LEX/POP_LEX are
+        // balanced at module level.
+        self.emit_abc(Opcode.LDREG, (uint)class_name_reg, (uint)ctor_reg, 0);
+        self.emit_a_bc(Opcode.PUTLEX_C, (uint)class_name_reg, class_name_str_idx);
+        self.emit_simple(Opcode.POP_LEX);
     }
 
     // Restore class body state

@@ -1268,27 +1268,27 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, In
                 if (hobj != null && key != null) {
                     HObject* cur = hobj;
                     uint depth = 0;
-                    bool found = false;
                     while (cur != null && depth < 256) {
                         hobject::PropLookupResult res = cur.get_prop_or_accessor_own(key, true);
                         if (res.kind == hobject::PropLookupKind.PROP_ACCESSOR) {
-                            // Private accessor: invoke getter if present,
-                            // otherwise return undefined for set-only accessors.
-                            // Per ES2022 PrivateFieldGet step 6b: "If P does not
-                            // have a [[Get]] field, throw TypeError."  However,
-                            // for assignment targets the compiler emits
-                            // GETPROP_PRIVATE followed by PUTPROP — the result
-                            // of GETPROP_PRIVATE is unused (PUTPROP invokes the
-                            // setter).  Throwing here would prevent valid
-                            // setter-only private assignments like `o.#m = v`.
-                            // Return undefined for set-only; the brand check
-                            // (not-found → TypeError) still fires correctly.
+                            // Private accessor: invoke getter if present;
+                            // throw TypeError if no [[Get]] field per ES2022
+                            // PrivateFieldGet step 6b ("If P does not have a
+                            // [[Get]] field, throw a TypeError exception").
+                            // For assignment-target contexts (`obj.#m = v`),
+                            // the compiler strips this opcode before the
+                            // matching PUTPROP runs, so the read step never
+                            // fires for plain assignment; only reading and
+                            // compound assignment (`obj.#m += 1`) reach here.
                             HString* key_hs = (HString*)key;
                             if ((!res.acc.accessor_fn.is_object() || res.acc.accessor_fn.get_heapptr() == null)
                                 && key_hs.is_hidden()) {
-                                ra.set_undefined();
-                                found = true;
-                                break;
+                                if (!vm_throw_error(vm, vm.heap.type_err_proto,
+                                        "Cannot read private member from an object whose class only has a setter",
+                                        ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                    return VM_ERROR~;
+                                }
+                                return (TVal){};
                             }
                             TVal obj_val;
                             obj_val.set_object(hobj); // receiver is always original this
@@ -1298,13 +1298,11 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, In
                                 return (TVal){};
                             }
                             if (vm.has_error) return VM_ERROR~;
-                            found = true;
-                            break;
+                            return (TVal){};
                         } else if (res.kind == hobject::PropLookupKind.PROP_DATA) {
                             vm.heap.tval_copy_ref(ra, &res.data_val);
                             track_heap_store(ds.act, ra, (uint)insn.a);
-                            found = true;
-                            break;
+                            return (TVal){};
                         }
                         // Skip proxy exotic objects — go directly to their target
                         if (cur.flags.exotic_proxyobj) {
@@ -1314,15 +1312,16 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, In
                         }
                         depth++;
                     }
-                    if (!found) {
-                        ra.set_undefined();
+                    // Brand check failure: PrivateFieldFind returned empty.
+                    if (!vm_throw_error(vm, vm.heap.type_err_proto,
+                            "Cannot access private member from an object whose class did not declare it",
+                            ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                        return VM_ERROR~;
                     }
-                } else {
-                    ra.set_undefined();
+                    return (TVal){};
                 }
-            } else {
-                ra.set_undefined();
             }
+            ra.set_undefined();
             return (TVal){};
         }
 

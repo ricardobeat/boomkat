@@ -431,9 +431,13 @@ fn ushort? CompilerContext.assignment_expr(&self) {
     // writeback for the follow-up PUTPROP to be idempotent).
     if (is_assign && lhs_was_member && self.code_count > 0) {
         Instruction lhs_last = self.code[self.code_count - 1];
-        if ((lhs_last.op == Opcode.GETPROP || lhs_last.op == Opcode.GETPROP_CACHE)
+        if ((lhs_last.op == Opcode.GETPROP || lhs_last.op == Opcode.GETPROP_CACHE
+            || lhs_last.op == Opcode.GETPROP_PRIVATE)
             && (ushort)lhs_last.a == left
             && (ushort)lhs_last.b == lhs_member_obj && (ushort)lhs_last.c == lhs_member_prop) {
+            // Strip the read for plain assignment so a getter (private
+            // accessor) isn't invoked as a side effect of LHS evaluation —
+            // PrivateFieldSet reads nothing, only CHK_BRAND + [[Set]] runs.
             self.code_count--;
         } else if (self.last_member_is_super) {
             // super.x / super[x] emits GETPROP_SUPER usually followed by an
