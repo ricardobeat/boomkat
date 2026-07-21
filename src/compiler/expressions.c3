@@ -504,7 +504,20 @@ fn ushort? CompilerContext.assignment_expr(&self) {
         Instruction lhs_last = self.code[self.code_count - 1];
         if ((lhs_last.op == Opcode.GETVAR || lhs_last.op == Opcode.GETGLOBAL)
             && (ushort)lhs_last.a == left) {
-            if (self.is_strict) {
+            // A strict plain assignment must, per PutValue, capture LHS
+            // resolvability BEFORE the RHS runs — hence the RESOLVEVAR probe
+            // and IF_TRUE/THROW_REF guard emitted below. But when the LHS is a
+            // GETGLOBAL naming a global THIS unit hoisted (CHKGLOBALVAR /
+            // CHKGLOBALFUNC ran for it), resolvability is statically TRUE, so
+            // the guard is provably dead: strip the read (its value is
+            // discarded) and leave lhs_ref_reg unset. Undeclared globals keep
+            // the guard — e.g. `undeclared = (this.undeclared = 5)` must still
+            // throw even though the RHS would create the global.
+            if (self.is_strict
+                && lhs_last.op == Opcode.GETGLOBAL
+                && self.is_declared_global(lhs_getvar_name_idx)) {
+                self.code_count--;
+            } else if (self.is_strict) {
                 self.code[self.code_count - 1] = bytecode::make_a_bc(Opcode.RESOLVEVAR, (uint)left, lhs_getvar_name_idx);
                 lhs_ref_reg = left;
             } else {
