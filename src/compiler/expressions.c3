@@ -526,7 +526,9 @@ fn ushort? CompilerContext.assignment_expr(&self) {
             if (!right_is_local) { self.free_reg(right); }
             if (lhs_was_getvar) {
                 // PUTVAR clears the source register, so save the value
-                // in a temp before writing back to the environment.
+                // in a temp before writing back to the environment. When the
+                // assignment result is discarded (statement-level `x = expr`)
+                // this temp copy is NOP'd by a peephole in finalize().
                 ushort tmp = self.alloc_reg();
                 self.emit_abc(Opcode.LDREG, (uint)tmp, (uint)left, 0);
                 self.emit_a_bc(Opcode.PUTVAR_ASSIGN, (uint)left, lhs_getvar_name_idx);

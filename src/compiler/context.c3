@@ -930,6 +930,51 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         }
     }
 
+    // --- Peephole: NOP dead LDREG rT = rS immediately before PUTVAR(_ASSIGN) rS ---
+    // Pattern: LDREG rT = rS / PUTVAR_ASSIGN rS  (statement-level `x = expr`)
+    //   → NOP / PUTVAR_ASSIGN rS
+    // A simple assignment used as a statement copies its RHS value into a temp
+    // (rT) purely to hold the assignment-expression result, since PUTVAR clears
+    // its source register. When that result is discarded (rT dead afterward),
+    // the copy is pure overhead — one extra move per assignment on the hot path.
+    // PUTVAR(_ASSIGN)'s field A is the source register it reads and clears.
+    // Jump-target safety: NOPing a LDREG that is itself a jump target falls
+    // through to the PUTVAR — the intended behaviour.
+    if (!self.disable_optimize && self.code_count >= 2) {
+        for (uint i = 0; i + 1 < self.code_count; i++) {
+            if (self.code[i].op != Opcode.LDREG) { continue; }
+            Opcode next_op = self.code[i + 1].op;
+            if (next_op != Opcode.PUTVAR && next_op != Opcode.PUTVAR_ASSIGN) { continue; }
+
+            uint rT = (uint)self.code[i].a;   // destination of LDREG (saved value)
+            uint rS = (uint)self.code[i].b;   // source of LDREG (the value being stored)
+            if ((uint)self.code[i + 1].a != rS) { continue; }
+            if (rT == rS) { continue; }       // degenerate; leave for the standard passes
+
+            // rT must be dead: scan forward from i+2.
+            // IF_TRUE/IF_FALSE use field A as a READ — handle them explicitly.
+            bool rT_live = false;
+            for (uint j = i + 2; j < self.code_count; j++) {
+                Instruction jns = self.code[j];
+                Opcode jop2 = jns.op;
+                if (jop2 == Opcode.IF_TRUE || jop2 == Opcode.IF_FALSE) {
+                    if ((uint)jns.a == rT) { rT_live = true; break; }
+                    continue;
+                }
+                OpFormat jfmt = bytecode::get_op_format(jop2);
+                if (jfmt == OpFormat.ABC) {
+                    if ((uint)jns.b == rT || (uint)jns.c == rT) { rT_live = true; break; }
+                }
+                if (jfmt != OpFormat.WIDE_SABC && jfmt != OpFormat.WIDE_ABC) {
+                    if ((uint)jns.a == rT) { break; }
+                }
+            }
+            if (rT_live) { continue; }
+
+            self.code[i] = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
+        }
+    }
+
     // --- Peephole: fuse LDINT rK, imm + ADD/SUB rD = …,rK → NOP + ADDI/SUBI rD = rS, imm ---
     // Runs AFTER copy-propagation (above): that pass NOPs the LDREG moves that
     // otherwise sit between an LDINT literal and its arithmetic consumer, so the

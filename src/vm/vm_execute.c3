@@ -3575,8 +3575,15 @@ fn TVal? Vm.run(Vm* vm) {
                                         // lex_env == parent env, so a hit here is a legitimate parent
                                         // lookup, not own-local. Own-local leaks surface as 'not defined'
                                         // throws and are caught by test/test_register_locals.js.
-                                        vm.heap.tval_copy_ref(ra, &v);
-                                        track_heap_store(ds.act, ra, (uint)insn.a);
+                                        if (!v.is_heap_allocated()) {
+                                            if (ra.is_heap_allocated()) {
+                                                vm.heap.decref_tval(ra);
+                                            }
+                                            *ra = v;
+                                        } else {
+                                            vm.heap.tval_copy_ref(ra, &v);
+                                            track_heap_store(ds.act, ra, (uint)insn.a);
+                                        }
                                         break;
                                     }
                                     // TDZ: fall through to slow path (error)
