@@ -67,14 +67,27 @@ fn ushort CompilerContext.declare_var(&self, char[] name, ScopeKind kind) {
     // Push to scope_stack for all lexical declarations (even at global scope)
     // so duplicate let/const can be detected.  Var at global scope is still
     // hoisted to the function-scoped environment and doesn't need scope tracking.
-    bool push_scope = !self.is_global || kind != VAR;
+    // Global `var`s are now ALSO pushed to the scope stack (unless poisoned by
+    // capture_all) so resolve_var returns their register → register-residency.
+    // When capture_all is set (eval/this/globalThis/window/Function/closure
+    // reference at global scope), the var is NOT pushed, so resolve_var misses
+    // it and reads/writes fall back to env GETVAR/PUTVAR — the safe, observable
+    // path. The global env binding is still created by the hoist/DECLVAR pass
+    // for the CHKGLOBALVAR conflict prologue and cross-observer visibility.
+    bool push_scope = !self.is_global || kind != VAR || !self.capture_all;
     if (push_scope && self.scope_depth < MAX_SCOPE_DEPTH) {
         // Locals referenced inside nested callable bodies (or reachable by
         // direct eval) must be env-resident: force every access through
         // GETVAR/PUTVAR so closure and eval reads/writes stay coherent
-        // (plan 045; the pre_scan_captures pass fills the capture set).
-        bool captured = !self.is_global && kind != SCOPEMARK
-                     && self.is_captured_name(name);
+        // (plan 045; the pre_scan_captures pass fills the capture set). At
+        // global scope, capture_all forces env-residency for the same reason;
+        // additionally only plain `var` (kind==VAR) is eligible for register-
+        // residency there — global let/const stay env-resident so their
+        // runtime TDZ / const-assignment checks (PUTVAR_ASSIGN / PUTLEX) and
+        // block-scoped lifetime are preserved.
+        bool captured = kind != SCOPEMARK
+                     && (self.capture_all || self.is_captured_name(name)
+                         || (self.is_global && kind != VAR));
         self.scope_stack[self.scope_depth].name = name;
         self.scope_stack[self.scope_depth].reg = reg;
         self.scope_stack[self.scope_depth].kind = kind;
@@ -83,6 +96,29 @@ fn ushort CompilerContext.declare_var(&self, char[] name, ScopeKind kind) {
         self.scope_depth++;
     }
     return reg;
+}
+
+/// Force a scope-stack binding to be environment-resident (resolve_var will
+/// return SCOPE_ERROR for it, so reads/writes use GETVAR/PUTVAR). Used for
+/// global function declarations, which are hoisted as CLOSURE+DECLVAR into the
+/// global env and whose closure identity must stay env-canonical rather than
+/// living in a body register. Marks the nearest matching entry.
+fn void CompilerContext.mark_env_resident(&self, char[] name) {
+    uint i = self.scope_depth;
+    while (i > 0) {
+        i--;
+        if (str_eq(self.scope_stack[i].name, name)) {
+            self.scope_stack[i].is_captured = true;
+            // Env-resident global (function decl / destructuring target): its
+            // env binding is load-bearing, so disable the whole-context env-
+            // write elision — otherwise this binding's DECLVAR would be NOP'd
+            // and reads (GETVAR) would hit a nonexistent binding. Pure plain-
+            // var programs (no function decls / destructuring globals) have no
+            // such binding and still elide → keep the register-residency win.
+            if (self.is_global) { self.has_captured_local = true; }
+            return;
+        }
+    }
 }
 
 /// Resolve a variable name to its register. Searches from innermost scope out.

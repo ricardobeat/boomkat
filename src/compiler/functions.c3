@@ -1712,6 +1712,10 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
             Token name_tok2 = self.expect(TokenType.IDENTIFIER)!;
 
             ushort func_reg = self.declare_var(name_tok2.str_value, VAR);
+            // Global function declarations stay env-resident (CLOSURE+DECLVAR
+            // into the global env); their register is a temporary and is freed
+            // below, so reads must go through GETVAR, not the reused register.
+            if (self.is_global) { self.mark_env_resident(name_tok2.str_value); }
             self.has_local_bindings = true;
 
             // Regular function declarations are constructable per ES2015 §14.1.2.
@@ -1780,12 +1784,15 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
                 self.emit_abc(Opcode.LDUNDEF, (uint)var_reg, 0, 0);
                 uint var_name_idx = self.add_string_constant(name_tok2.str_value);
                 self.emit_a_bc(Opcode.DECLVAR, (uint)var_reg, var_name_idx);
-                // At global scope, var bindings are env-resident (accessed via
-                // GETVAR/PUTVAR); the register is only a temporary DECLVAR source.
-                // Free it immediately so 500+ var declarations don't exhaust the
-                // register file.  Non-global hoisting must keep the register alive
-                // as the function's actual local-variable slot.
-                if (is_global) { self.free_reg(var_reg); }
+                // At global scope: when the program is observable (capture_all —
+                // eval/this/globalThis/window/Function), global vars stay
+                // env-resident and the register is only a temporary DECLVAR
+                // source, so free it (500+ vars would otherwise exhaust the
+                // file). When NOT observable, declare_var pushed the var to the
+                // scope stack and this register is its PERMANENT home — keep it
+                // (like non-global hoisting) so resolve_var reads/writes hit it.
+                // entry.c3 sets reserved_regs after hoisting to protect these.
+                if (is_global && self.capture_all) { self.free_reg(var_reg); }
 
                 // Check for initializer or comma
                 Token? sep_opt = self.lexer.next_token();
@@ -2090,6 +2097,10 @@ fn void? CompilerContext.hoist_global_fn_decls(&self, bool checks_only = false) 
             Token name_tok2 = self.expect(TokenType.IDENTIFIER)!;
 
             ushort func_reg = self.declare_var(name_tok2.str_value, VAR);
+            // Global function declarations stay env-resident (CLOSURE+DECLVAR
+            // into the global env); their register is a temporary and is freed
+            // below, so reads must go through GETVAR, not the reused register.
+            if (self.is_global) { self.mark_env_resident(name_tok2.str_value); }
             self.has_local_bindings = true;
 
             // Regular function declarations are constructable per ES2015 §14.1.2.

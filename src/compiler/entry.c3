@@ -37,6 +37,15 @@ fn CompiledFunction*? compile(Lexer* lex, void* heap) {
     // Check for "use strict" directive prologue at program level
     ctx.parse_directives()!;
 
+    // Scan the whole program for capture/observability signals BEFORE any var
+    // is declared, so declare_var can decide whether a top-level `var` may be
+    // register-resident. Sets capture_all when anything (eval / this /
+    // globalThis / window / Function / a nested-closure reference) could
+    // observe a top-level var as a globalThis property; when clean, un-observed
+    // global vars become register-resident and their dead env writes are elided
+    // (context.c3 elision). pre_scan_captures saves/restores lexer state.
+    ctx.pre_scan_captures();
+
     // GlobalDeclarationInstantiation static checks (ES2015 §15.1.11) must run
     // before ANY var/function/lexical binding is instantiated, so a collision
     // throws with no observable side effects. Emit the check prologue for
@@ -140,6 +149,9 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
     CompilerContext ctx;
     ctx.init(lex, heap);
     ctx.is_global = true;
+    // Eval code shares the surrounding global environment and can reference or
+    // create globals observed by the enclosing program — never register-resident.
+    ctx.capture_all = true;
     ctx.eval_mode = true;
     ctx.has_super_binding = allow_super;
     ctx.eval_direct_in_function = direct_in_function;

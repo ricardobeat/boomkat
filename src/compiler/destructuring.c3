@@ -118,6 +118,11 @@ fn void? CompilerContext.array_destructure(&self, ScopeKind kind, bool is_lexica
         if (binds[i].is_synthetic) continue;
         HString* hs = (HString*)self.constants[binds[i].name_idx].get_heapptr();
         ushort dreg = self.declare_var(hs.get_data(), kind);
+        // Global destructuring targets stay env-resident: the pattern-store
+        // machinery writes them via the env, and register-residency here would
+        // desync (the iterator/pattern temps reuse low registers). Keep them
+        // on the GETVAR/PUTVAR path.
+        if (self.is_global) { self.mark_env_resident(hs.get_data()); }
         binding_regs[i] = dreg;
         // Surface each leaf binding name (interned, stable) so `export var
         // [ a, b ] = ...` can register them as exports.
@@ -196,6 +201,11 @@ fn void? CompilerContext.object_destructure(&self, ScopeKind kind, bool is_lexic
         if (binds[i].is_synthetic) continue;
         HString* hs = (HString*)self.constants[binds[i].name_idx].get_heapptr();
         ushort dreg = self.declare_var(hs.get_data(), kind);
+        // Global destructuring targets stay env-resident: the pattern-store
+        // machinery writes them via the env, and register-residency here would
+        // desync (the iterator/pattern temps reuse low registers). Keep them
+        // on the GETVAR/PUTVAR path.
+        if (self.is_global) { self.mark_env_resident(hs.get_data()); }
         binding_regs[i] = dreg;
         // Surface each leaf binding name (interned, stable) so `export var
         // { a, b } = ...` can register them as exports.
@@ -813,11 +823,9 @@ fn ushort? CompilerContext.array_destructure_assign(&self) {
             HString* hs = (HString*)self.constants[binds[i].name_idx].get_heapptr();
             name = hs.get_data();
         }
-        if (!self.is_global) {
-            if (try existing = self.resolve_var(name)) {
-                binding_regs[i] = existing;
-                continue;
-            }
+        if (try existing = self.resolve_var(name)) {
+            binding_regs[i] = existing;
+            continue;
         }
         // Env-resident target: temp + forced PUTVAR so const-assignment throws.
         binding_regs[i] = self.alloc_reg();
@@ -1089,9 +1097,7 @@ fn ushort? CompilerContext.object_destructure_assign(&self) {
         }
         HString* hs = (HString*)self.constants[binds[i].name_idx].get_heapptr();
         char[] name = hs.get_data();
-        if (!self.is_global) {
-            if (try existing = self.resolve_var(name)) { binding_regs[i] = existing; continue; }
-        }
+        if (try existing = self.resolve_var(name)) { binding_regs[i] = existing; continue; }
         // Env-resident target (global, or captured/undeclared from a nested
         // scope): use a temp and force PUTVAR so the const-assignment check runs.
         binding_regs[i] = self.alloc_reg();

@@ -1085,10 +1085,21 @@ fn void? CompilerContext.var_declaration(&self) {
                 self.emit_abc(Opcode.LDUNDEF, (uint)reg, 0, 0);
             }
 
+            // Is this a register-resident global var? True when at global
+            // scope, not poisoned (capture_all), and it's a plain `var` that
+            // declare_var pushed to the scope stack (resolve_var finds it).
+            // For such a var the value lives in `reg`; the env write is dead
+            // (elided) and its register is its PERMANENT home — must NOT be
+            // PUTVAR'd (PUTVAR clears its source) nor freed.
+            bool global_reg_resident = false;
+            if (self.is_global && !is_lexical) {
+                if (try _rr = self.resolve_var(name_tok.str_value)) { global_reg_resident = true; }
+            }
+
             // Store in the environment so inner functions can find it
             // var → var_env (function-scoped), let/const → lex_env (block-scoped)
             // For already-declared vars, only emit store if there's an initializer
-            if (!already_declared || has_init) {
+            if ((!already_declared || has_init) && !global_reg_resident) {
                 uint name_idx = self.add_string_constant(name_tok.str_value);
                 if (self.is_global && !is_lexical && has_init) {
                     // `var x = <expr>` at global scope is a declaration (already
@@ -1107,15 +1118,17 @@ fn void? CompilerContext.var_declaration(&self) {
             }
 
             // At global scope, free the var register and any leaked temporaries
-            // from the initializer evaluation.  Global vars use PUTVAR/GETVAR
-            // at runtime — the register is only needed briefly as the PUTVAR source.
-            // Lexical declarations (let/const) at global scope have their registers
-            // managed by pop_scope_to() from the enclosing block() or from the
-            // top-level compile() cleanup.
+            // from the initializer evaluation.  Env-resident global vars use
+            // PUTVAR/GETVAR at runtime — the register is only needed briefly as
+            // the PUTVAR source. But a register-resident global var's register
+            // is its permanent home — keep it. Lexical declarations (let/const)
+            // at global scope have their registers managed by pop_scope_to().
             if (self.is_global) {
-                if (!is_lexical) {
+                if (!is_lexical && !global_reg_resident) {
                     self.free_reg(reg);
                 }
+                // Free initializer scratch temps (above saved_reg). The var's
+                // home register (below saved_reg, reserved) is unaffected.
                 self.free_regs_to(saved_reg);
             }
         }
@@ -1362,14 +1375,9 @@ fn void? CompilerContext.while_statement(&self) {
         self.expect(TokenType.RPAREN)!;      // consume ')'
 
         ushort lhs_reg = self.alloc_reg();
-        if (!self.is_global) {
-            if (try reg = self.resolve_var(ident_tok.str_value)) {
-                if (reg != lhs_reg) {
-                    self.emit_abc(Opcode.LDREG, (uint)lhs_reg, (uint)reg, 0);
-                }
-            } else {
-                uint name_idx2 = self.add_string_constant(ident_tok.str_value);
-                self.emit_a_bc(Opcode.GETVAR, (uint)lhs_reg, name_idx2);
+        if (try reg = self.resolve_var(ident_tok.str_value)) {
+            if (reg != lhs_reg) {
+                self.emit_abc(Opcode.LDREG, (uint)lhs_reg, (uint)reg, 0);
             }
         } else {
             uint name_idx2 = self.add_string_constant(ident_tok.str_value);
@@ -2560,17 +2568,12 @@ fn void? CompilerContext.for_statement(&self) {
             self.expect(TokenType.SEMICOLON)!;  // consume `;`
 
             ushort lhs_reg = self.alloc_reg();
-            // Mirror primary_expr: at global scope, all identifiers go through GETVAR
-            // (registers are not kept in sync with the env by the body). resolve_var is
-            // only safe when the body also uses the register directly (non-global scope).
-            if (!self.is_global) {
-                if (try reg = self.resolve_var(ident_tok.str_value)) {
-                    if (reg != lhs_reg) {
-                        self.emit_abc(Opcode.LDREG, (uint)lhs_reg, (uint)reg, 0);
-                    }
-                } else {
-                    uint name_idx2 = self.add_string_constant(ident_tok.str_value);
-                    self.emit_a_bc(Opcode.GETVAR, (uint)lhs_reg, name_idx2);
+            // resolve_var returns the home register for a register-resident
+            // binding (incl. un-observed global vars); otherwise falls back to
+            // an env GETVAR.
+            if (try reg = self.resolve_var(ident_tok.str_value)) {
+                if (reg != lhs_reg) {
+                    self.emit_abc(Opcode.LDREG, (uint)lhs_reg, (uint)reg, 0);
                 }
             } else {
                 uint name_idx2 = self.add_string_constant(ident_tok.str_value);
@@ -3026,9 +3029,7 @@ fn void? CompilerContext.emit_bare_forof_destruct_loop(&self, bool is_array_patt
         if (dbinds[i].is_member_target) { dbinding_regs[i] = self.alloc_reg(); continue; }
         HString* hs = (HString*)self.constants[dbinds[i].name_idx].get_heapptr();
         char[] name = hs.get_data();
-        if (!self.is_global) {
-            if (try existing = self.resolve_var(name)) { dbinding_regs[i] = existing; continue; }
-        }
+        if (try existing = self.resolve_var(name)) { dbinding_regs[i] = existing; continue; }
         // Env-resident target: temp + forced PUTVAR so const-assignment throws.
         dbinding_regs[i] = self.alloc_reg();
         dbinds[i].assign_needs_putvar = true;

@@ -958,10 +958,17 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         bool elide_needs_runtime_env = ((self.has_local_bindings || self.has_lexical_bindings || self.num_args > 0) && self.has_closures)
                               || self.uses_arguments
                               || self.has_direct_eval;
+        // Global scope: top-level `var`s are spec-mandated globalThis
+        // properties, so their env writes may only be elided when NOTHING can
+        // observe the global object as a property bag. capture_all captures
+        // exactly that (eval/this/globalThis/window/Function/closure ref at
+        // global scope). When clear, un-observed global vars live purely in
+        // registers and their DECLVAR/PUTVAR writes are dead — same as a local.
+        bool elide_global_ok = !self.is_global || !self.capture_all;
         bool elide_ok = !elide_needs_runtime_env
                      && !elide_has_params_needing_env
                      && !self.has_captured_local
-                     && !self.is_global   // global/eval vars are env-resident (resolve_var skips global scope)
+                     && elide_global_ok
                      && !self.is_arrow
                      && !self.is_generator
                      && !self.is_async;

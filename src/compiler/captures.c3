@@ -38,6 +38,17 @@ fn bool is_control_paren_kw(TokenType tt) {
         || tt == TokenType.SWITCH || tt == TokenType.CATCH;
 }
 
+/// Names whose appearance at global scope can dynamically observe the global
+/// object as a property bag, making top-level `var`s reachable independently
+/// of their register slots. When present, global-var register-residency is
+/// unsafe → fall back to full env-residency (see pre_scan_captures). `eval`
+/// and `this` are handled separately at their token sites.
+fn bool is_global_observability_name(char[] name) {
+    return str_eq(name, "globalThis")
+        || str_eq(name, "window")
+        || str_eq(name, "Function");
+}
+
 /// Record a name referenced inside a nested callable body.
 fn void CompilerContext.add_captured_name(&self, char[] name) {
     if (self.capture_all) return;
@@ -93,6 +104,13 @@ fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false) {
 
     uint brace_depth = 0;        // `{`/`}` nesting within the scanned span
     uint template_depth = 0;     // open template substitution levels (TEMPLATE_HEAD opens, TEMPLATE_TAIL closes)
+    // brace_depth at which each open `${` substitution began. An RBRACE closes
+    // the substitution only when brace_depth is back to its base — otherwise
+    // the RBRACE belongs to an object literal / block inside the substitution
+    // (e.g. `${ {x:1}.x }`), not the template. Without this, an object-literal
+    // brace inside `${}` is mis-consumed as the template close, desyncing the
+    // scan for everything after it.
+    uint[16] template_brace_base;
     int  combined_depth = 0;     // parens + brackets + braces (expression extents)
     int  region_depth = -1;      // brace_depth where the outermost callable body began
     int  expr_region_depth = -1; // combined_depth of an expression-bodied arrow
@@ -129,15 +147,31 @@ fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false) {
             if ((was_pending_brace || was_pending_arrow) && region_depth < 0) {
                 region_depth = (int)brace_depth;
             }
-            if (!expr_mode && !started && brace_depth == 0) started = true;
+            // Global scope has no enclosing `{}` delimiting the "body" — the
+            // whole program is scanned to EOF. Marking `started` on the first
+            // top-level brace (a closure/object/block) would end the scan at
+            // its matching `}` (see the RBRACE branch), missing captures in
+            // every later top-level closure. Nested callable bodies are still
+            // found via region_depth (set on `) {` / `=>`), independent of this.
+            if (!expr_mode && !self.is_global && !started && brace_depth == 0) started = true;
             brace_depth++;
             combined_depth++;
         } else if (tt == TokenType.TEMPLATE_HEAD) {
-            // The lexer consumed `...${; the expression tokens follow, then a
-            // RBRACE that belongs to the template substitution, not any JS block.
-            template_depth++;
+            // A template substitution `${...}` at global scope. Handling it in
+            // the pre-scan requires calling scan_template_after_expr (which
+            // advances the real lexer) and disambiguating substitution braces
+            // from object-literal braces — fragile and, when it desyncs,
+            // corrupts the scan for everything after. Since the pre-scan only
+            // gates the register-residency optimization, bail conservatively:
+            // capture_all makes the whole program env-resident (always correct,
+            // just forgoes the optimization for programs containing a template).
+            self.capture_all = true;
         } else if (tt == TokenType.RBRACE) {
-            if (template_depth > 0) {
+            // Only close the template substitution when brace_depth is back at
+            // the level where `${` opened; otherwise this RBRACE closes an
+            // object literal / block inside the substitution expression.
+            if (template_depth > 0 && template_depth <= 16
+                && brace_depth == template_brace_base[template_depth - 1]) {
                 // This RBRACE closes a template substitution, not a JS block.
                 Token? part_opt = self.lexer.scan_template_after_expr();
                 if (catch _err2 = part_opt) break;
@@ -197,11 +231,21 @@ fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false) {
                 && region_depth < 0) {
                 done = true;  // end of arrow expression body
             }
+        } else if (tt == TokenType.THIS && self.is_global) {
+            // At global scope `this` is globalThis: `this.x` can observe a
+            // top-level `var x` as a property → poison global-var residency.
+            self.capture_all = true;
         } else if (tt == TokenType.IDENTIFIER) {
             char[] name = tok.str_value;
             if (name.len == 4 && name[0] == 'e' && name[1] == 'v'
                 && name[2] == 'a' && name[3] == 'l') {
                 // Direct eval can read/assign any caller binding by name.
+                self.capture_all = true;
+            } else if (self.is_global && is_global_observability_name(name)) {
+                // globalThis/window (property reads/enumeration) or Function
+                // (compiles fresh global-scope code resolving globals via the
+                // real env) can observe a top-level var as a globalThis
+                // property → poison all global-var residency conservatively.
                 self.capture_all = true;
             } else if (region_depth >= 0 || expr_region_depth >= 0) {
                 self.add_captured_name(name);

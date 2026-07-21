@@ -834,12 +834,10 @@ fn ushort? CompilerContext.unary_expr(&self) {
 
                 if (matched) {
                     Token idTok2 = matched_id;
-                    if (!self.is_global) {
-                        if (try local_reg = self.resolve_var(idTok2.str_value)) {
-                            ushort res_typeof = self.alloc_reg();
-                            self.emit_abc(Opcode.TYPEOF, (uint)res_typeof, (uint)local_reg, 0);
-                            return res_typeof;
-                        }
+                    if (try local_reg = self.resolve_var(idTok2.str_value)) {
+                        ushort res_typeof = self.alloc_reg();
+                        self.emit_abc(Opcode.TYPEOF, (uint)res_typeof, (uint)local_reg, 0);
+                        return res_typeof;
                     }
                     uint name_idx = self.add_string_constant(idTok2.str_value);
                     ushort res_typeof = self.alloc_reg();
@@ -888,12 +886,10 @@ fn ushort? CompilerContext.unary_expr(&self) {
                             // env (register-resident locals optimization). Captured
                             // vars and globals still use TYPEOFIDENT (handles the
                             // unresolvable-reference case per ES5 §11.4.3).
-                            if (!self.is_global) {
-                                if (try local_reg = self.resolve_var(idTok.str_value)) {
-                                    ushort res_typeof = self.alloc_reg();
-                                    self.emit_abc(Opcode.TYPEOF, (uint)res_typeof, (uint)local_reg, 0);
-                                    return res_typeof;
-                                }
+                            if (try local_reg = self.resolve_var(idTok.str_value)) {
+                                ushort res_typeof = self.alloc_reg();
+                                self.emit_abc(Opcode.TYPEOF, (uint)res_typeof, (uint)local_reg, 0);
+                                return res_typeof;
                             }
                             uint name_idx = self.add_string_constant(idTok.str_value);
                             ushort res_typeof = self.alloc_reg();
@@ -1002,12 +998,15 @@ fn ushort? CompilerContext.unary_expr(&self) {
                 self.last_was_member = false;
                 // op_del is the A register of the patched DELPROP (boolean).
                 return op_del;
-            } else if (self.last_was_getvar) {
+            } else if (self.last_was_getvar || self.last_was_local_var) {
                 // `delete IdentifierReference` — Annex B.3.1 (ES5 11.4.1 step 1):
                 // strict mode rejects this as a SyntaxError. Sloppy mode runs
                 // the deletion against the variable environment. Since this
-                // engine is strict-only, we always reject.
+                // engine is strict-only, we always reject. This also covers a
+                // register-resident local/global var (last_was_local_var):
+                // deleting it is still an unqualified-identifier delete.
                 self.last_was_getvar = false;
+                self.last_was_local_var = false;
                 return self.fail("delete of an unqualified identifier in strict mode")~;
             } else {
                 // Delete of a non-reference (literal, expression result, etc.).
@@ -2594,14 +2593,12 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 self.callee_is_eval = str_eq(id_tok.str_value, "eval");
 
                 // Try to resolve as a local variable first (skip at global scope — use environment)
-                if (!self.is_global) {
-                    if (try var_reg = self.resolve_var(id_tok.str_value)) {
-                        self.last_was_getvar = false;
-                        self.last_was_local_var = true;
-                        self.last_local_var_reg = var_reg;
-                        self.save_lhs_ident_name(id_tok.str_value);
-                        return var_reg;
-                    }
+                if (try var_reg = self.resolve_var(id_tok.str_value)) {
+                    self.last_was_getvar = false;
+                    self.last_was_local_var = true;
+                    self.last_local_var_reg = var_reg;
+                    self.save_lhs_ident_name(id_tok.str_value);
+                    return var_reg;
                 }
 
                 // When 'arguments' is referenced inside a non-arrow function body,
@@ -2915,14 +2912,12 @@ fn ushort? CompilerContext.primary_expr(&self) {
                     return self.parse_arrow_function(&params_arr[0], 1, false, ident_arrow_src)!;
                 }
                 self.callee_is_eval = str_eq(id_tok.str_value, "eval");
-                if (!self.is_global) {
-                    if (try var_reg = self.resolve_var(id_tok.str_value)) {
-                        self.last_was_getvar = false;
-                        self.last_was_local_var = true;
-                        self.last_local_var_reg = var_reg;
-                        self.save_lhs_ident_name(id_tok.str_value);
-                        return var_reg;
-                    }
+                if (try var_reg = self.resolve_var(id_tok.str_value)) {
+                    self.last_was_getvar = false;
+                    self.last_was_local_var = true;
+                    self.last_local_var_reg = var_reg;
+                    self.save_lhs_ident_name(id_tok.str_value);
+                    return var_reg;
                 }
                 if (str_eq(id_tok.str_value, "arguments") && !self.is_global) {
                     if (self.forbid_arguments) {
@@ -3017,14 +3012,12 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 // Resolve via the standard identifier path: local var lookup,
                 // else runtime GETVAR. Same semantics as the IDENTIFIER branch.
                 self.callee_is_eval = str_eq(id_tok.str_value, "eval");
-                if (!self.is_global) {
-                    if (try var_reg = self.resolve_var(id_tok.str_value)) {
-                        self.last_was_getvar = false;
-                        self.last_was_local_var = true;
-                        self.last_local_var_reg = var_reg;
-                        self.save_lhs_ident_name(id_tok.str_value);
-                        return var_reg;
-                    }
+                if (try var_reg = self.resolve_var(id_tok.str_value)) {
+                    self.last_was_getvar = false;
+                    self.last_was_local_var = true;
+                    self.last_local_var_reg = var_reg;
+                    self.save_lhs_ident_name(id_tok.str_value);
+                    return var_reg;
                 }
                 if (str_eq(id_tok.str_value, "arguments") && !self.is_global) {
                     if (self.forbid_arguments) {
@@ -3371,6 +3364,14 @@ fn ushort? CompilerContext.primary_expr(&self) {
             // been redefined/removed. Coerce here so the ADD below (both
             // operands already strings) is a plain concat, not a second
             // ToPrimitive pass.
+            // TOSTR mutates its register in place; if expr_reg is a live
+            // variable's home register (e.g. a register-resident global),
+            // copy to a temp first so we don't stringify the variable itself.
+            if (self.is_local_var_reg(expr_reg)) {
+                ushort tmp_s = self.alloc_reg();
+                self.emit_abc(Opcode.LDREG, (uint)tmp_s, (uint)expr_reg, 0);
+                expr_reg = tmp_s;
+            }
             self.emit_abc(Opcode.TOSTR, (uint)expr_reg, 0, 0);
 
             // Concatenate: result = result + expr  (ADD handles string coercion)
@@ -3405,6 +3406,12 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 next_tok = self.lexer.scan_template_after_expr()!;
 
                 // ToString the substitution value (see head-substitution comment above).
+                // Shield a live variable's home register from in-place TOSTR.
+                if (self.is_local_var_reg(next_expr_reg)) {
+                    ushort tmp_s2 = self.alloc_reg();
+                    self.emit_abc(Opcode.LDREG, (uint)tmp_s2, (uint)next_expr_reg, 0);
+                    next_expr_reg = tmp_s2;
+                }
                 self.emit_abc(Opcode.TOSTR, (uint)next_expr_reg, 0, 0);
 
                 // Concatenate expression
@@ -3846,11 +3853,9 @@ fn ushort? CompilerContext.object_literal(&self) {
                 // — and only fall back to a dynamic GETVAR-by-name lookup when
                 // it isn't a local (global scope, or a name not locally bound).
                 bool resolved_local = false;
-                if (!self.is_global) {
-                    if (try val_reg = self.resolve_var(shorthand_name)) {
-                        self.emit_abc(Opcode.INITPROP, (uint)obj_reg, (uint)key_reg, (uint)val_reg);
-                        resolved_local = true;
-                    }
+                if (try val_reg = self.resolve_var(shorthand_name)) {
+                    self.emit_abc(Opcode.INITPROP, (uint)obj_reg, (uint)key_reg, (uint)val_reg);
+                    resolved_local = true;
                 }
                 if (!resolved_local) {
                     ushort val_reg = self.alloc_reg();
@@ -4040,13 +4045,9 @@ fn void? CompilerContext.emit_forof_loop(&self, char[] var_name, ushort iter_reg
         // Bare `for (b of ...)` assigns to an existing binding. If that binding
         // is a register-cached local, bind straight into its home register so
         // the body's register read sees the value (PUTVAR alone desyncs it).
-        if (!self.is_global) {
-            if (try home = self.resolve_var(var_name)) {
-                loop_var = home;
-                reg_resident = true;
-            } else {
-                loop_var = self.alloc_reg();
-            }
+        if (try home = self.resolve_var(var_name)) {
+            loop_var = home;
+            reg_resident = true;
         } else {
             loop_var = self.alloc_reg();
         }
