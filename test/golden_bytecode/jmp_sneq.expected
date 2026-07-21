@@ -10,10 +10,9 @@
 --- Inner function 0 ---
 [  0] LDUNDEF         r1 = r0, r0
 [  1] LDINT           r1, 0
-[  2] JUMP            +2
-[  3] ADDI            r3 = r1, r1
-[  4] LDREG           r1 = r3, r0
-[  5] LDREG           r2 = r1, r0
-[  6] JMP_SNEQ        r252 = r2, r0
-[  7] RET             r1 = r0, r0
+[  2] JUMP            +1
+[  3] ADDI            r1 = r1, r1
+[  4] LDREG           r2 = r1, r0
+[  5] JMP_SNEQ        r253 = r2, r0
+[  6] RET             r1 = r0, r0
 --- End bytecode ---
