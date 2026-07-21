@@ -4,6 +4,7 @@ import duktape::types;
 import duktape::bytecode;
 import duktape::heap;
 import duktape::hobject;
+import duktape::env;
 
 // ============================================================================
 // Direct-threaded dispatch CEILING SPIKE (feature THREADED_DISPATCH; NOT wired
@@ -49,6 +50,32 @@ fn void init_threaded_handlers() {
     g_threaded_handlers[Opcode.ADDI.ordinal]   = &th_addi;
     g_threaded_handlers[Opcode.LDREG.ordinal]  = &th_ldreg;
     g_threaded_handlers[Opcode.JMP_LT.ordinal] = &th_jmp_lt;
+
+    // --- Recursion (fib) cheap ops ---
+    g_threaded_handlers[Opcode.LDINT.ordinal]  = &th_ldint;
+    g_threaded_handlers[Opcode.SUBI.ordinal]   = &th_subi;
+    g_threaded_handlers[Opcode.ADD.ordinal]    = &th_add;
+    // Comparison-branch family (branch-if-false and branch-if-true). fib uses
+    // JMP_NLE for `if (n <= 1)`. One handler covers all eight via opcode switch.
+    g_threaded_handlers[Opcode.JMP_NLT.ordinal] = &th_cmp_branch;
+    g_threaded_handlers[Opcode.JMP_NLE.ordinal] = &th_cmp_branch;
+    g_threaded_handlers[Opcode.JMP_NGT.ordinal] = &th_cmp_branch;
+    g_threaded_handlers[Opcode.JMP_NGE.ordinal] = &th_cmp_branch;
+    g_threaded_handlers[Opcode.JMP_LE.ordinal]  = &th_cmp_branch;
+    g_threaded_handlers[Opcode.JMP_GT.ordinal]  = &th_cmp_branch;
+    g_threaded_handlers[Opcode.JMP_GE.ordinal]  = &th_cmp_branch;
+    // CALL_VAR / CALL_UNDEF_THIS / RET / RETUNDEF stay on the switch: their
+    // handler bodies (activation push/pop, valstack, refcount, edge cases) are
+    // too large to thread cheaply. They bail via th_bailout automatically.
+
+    // --- Assignment (g_assign) hot ops ---
+    // GETVAR / PUTVAR_ASSIGN thread only their VarIC-hit fast path; any IC miss
+    // bails to the switch (which handles the env-chain walk + IC populate).
+    g_threaded_handlers[Opcode.GETVAR.ordinal]       = &th_getvar;
+    g_threaded_handlers[Opcode.PUTVAR_ASSIGN.ordinal] = &th_putvar_assign;
+    g_threaded_handlers[Opcode.INC_VAR.ordinal]      = &th_inc_var;
+    g_threaded_handlers[Opcode.JUMP.ordinal]         = &th_jump;
+    g_threaded_handlers[Opcode.TONUMERIC.ordinal]    = &th_tonumeric;
 }
 
 // Bail: return the resume pc WITHOUT consuming *pc -- the switch loop
@@ -113,6 +140,212 @@ fn Instruction* th_jmp_lt(Instruction* pc, Instruction* code_end, TVal* regs, Co
         }
         pc += (int)(ichar)insn.a;
     }
+    return th_next(pc, code_end, regs, cold);
+}
+
+fn Instruction* th_ldint(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    Instruction insn = *pc;
+    TVal* ra = regs + insn.a;
+    ra.set_fastint((long)insn.get_sbc());
+    pc++;
+    return th_next(pc, code_end, regs, cold);
+}
+
+fn Instruction* th_subi(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    Instruction insn = *pc;
+    TVal* rb = regs + insn.b;
+    if (!rb.is_fastint()) return pc; // bigint / coercion / throw -> switch
+    TVal* ra = regs + insn.a;
+    long imm = (long)(ichar)insn.c;
+    ra.set_fastint_or_number(rb.get_fastint() - imm);
+    pc++;
+    return th_next(pc, code_end, regs, cold);
+}
+
+fn Instruction* th_add(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    Instruction insn = *pc;
+    TVal* rb = regs + insn.b;
+    TVal* rc = regs + insn.c;
+    // Threaded fast path: FASTINT + FASTINT only. String concat / object
+    // ToPrimitive / bigint all bail to the switch.
+    if (!types::both_fastint(rb, rc)) return pc;
+    TVal* ra = regs + insn.a;
+    long sum = rb.get_fastint() + rc.get_fastint();
+    if (sum >= types::FASTINT_MIN && sum <= types::FASTINT_MAX) {
+        ra.set_fastint(sum);
+    } else {
+        ra.set_number((double)sum);
+    }
+    pc++;
+    return th_next(pc, code_end, regs, cold);
+}
+
+fn Instruction* th_jump(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    Instruction insn = *pc;
+    // Unconditional relative jump (sABC). No try-finally interception (that is
+    // BREAK/CONTINUE, not JUMP). Backward jumps run the GC safepoint budget.
+    int off = insn.get_sabc();
+    pc++;
+    if (off < 0) {
+        if (--cold.vm.heap.bwd_gc_budget == 0) {
+            if (cold.vm.heap.gc_pending) { cold.vm.heap.safepoint_gc(); }
+            cold.vm.heap.bwd_gc_budget = heap::BWD_GC_INTERVAL;
+        }
+    }
+    pc += off;
+    return th_next(pc, code_end, regs, cold);
+}
+
+// Fused compare-and-branch family (JMP_N{LT,LE,GT,GE} branch-if-false and
+// JMP_{LE,GT,GE} branch-if-true; JMP_LT has its own handler above). Threads
+// the fastint / number fast path only; anything requiring ToPrimitive /
+// relational coercion (may call user code or throw) bails to the switch.
+fn Instruction* th_cmp_branch(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    Instruction insn = *pc;
+    TVal* rb = regs + insn.b;
+    TVal* rc = regs + insn.c;
+    bool cmp_lt;
+    bool cmp_le;
+    if (types::both_fastint(rb, rc)) {
+        long lb = rb.get_fastint();
+        long lc = rc.get_fastint();
+        cmp_lt = lb <  lc;
+        cmp_le = lb <= lc;
+    } else if ((rb.is_fastint() || rb.is_number()) && (rc.is_fastint() || rc.is_number())) {
+        double db = tval_numeric_to_double(rb);
+        double dc = tval_numeric_to_double(rc);
+        cmp_lt = db <  dc;
+        cmp_le = db <= dc;
+    } else {
+        return pc; // coercion / user code / throw -> switch
+    }
+    bool cmp_result;
+    bool branch_on;
+    switch (insn.op) {
+        case Opcode.JMP_NLT: cmp_result = cmp_lt;  branch_on = false;
+        case Opcode.JMP_NLE: cmp_result = cmp_le;  branch_on = false;
+        case Opcode.JMP_NGT: cmp_result = !cmp_le; branch_on = false;
+        case Opcode.JMP_NGE: cmp_result = !cmp_lt; branch_on = false;
+        case Opcode.JMP_LE:  cmp_result = cmp_le;  branch_on = true;
+        case Opcode.JMP_GT:  cmp_result = !cmp_le; branch_on = true;
+        default:             cmp_result = !cmp_lt; branch_on = true;   // JMP_GE
+    }
+    pc++;
+    if (cmp_result == branch_on) {
+        if ((ichar)insn.a < 0) {
+            if (--cold.vm.heap.bwd_gc_budget == 0) {
+                if (cold.vm.heap.gc_pending) { cold.vm.heap.safepoint_gc(); }
+                cold.vm.heap.bwd_gc_budget = heap::BWD_GC_INTERVAL;
+            }
+        }
+        pc += (int)(ichar)insn.a;
+    }
+    return th_next(pc, code_end, regs, cold);
+}
+
+// --- Variable access: VarIC hit path only; any miss bails to the switch. ---
+//
+// pc points AT the current instruction (unlike the switch loop, where curr_pc
+// has already been incremented), so the IC slot index is (pc - code_base),
+// matching the switch's (curr_pc - 1 - code_base).
+
+fn Instruction* th_getvar(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    Instruction insn = *pc;
+    Vm* vm = cold.vm;
+    Activation* act = cold.act;
+    uint bc = insn.get_bc();
+    if (bc >= vm.current_func.const_count) return pc;
+    TVal name_val = vm.current_func.constants[bc];
+    if (!name_val.is_string()) return pc;
+    void* key = name_val.get_heapptr();
+    hobject::VarICEntry* vic_base = (hobject::VarICEntry*)vm.current_func.var_ic_entries;
+    if (vic_base == null) return pc;
+    uint pc_off = (uint)(pc - cold.code_base);
+    hobject::VarICEntry* vic = vic_base + pc_off;
+    if (vic.env == null || vic.key != key || vic.search_head != (void*)act.lex_env) return pc;
+    HObject* b = (HObject*)vic.bindings;
+    if (b.shape_id != vic.shape_id
+        || vm.heap.shapes[b.shape_id].generation != vic.generation) return pc;
+    if (b.get_prop_flags(vic.prop_idx).is_accessor) return pc; // getter -> switch
+    TVal v = b.prop_values()[vic.prop_idx];
+    if (env::is_tdz_sentinel(&v)) return pc; // TDZ error -> switch
+    TVal* ra = regs + insn.a;
+    vm.heap.tval_copy_ref(ra, &v);
+    track_heap_store(act, ra, (uint)insn.a);
+    pc++;
+    return th_next(pc, code_end, regs, cold);
+}
+
+fn Instruction* th_putvar_assign(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    Instruction insn = *pc;
+    Vm* vm = cold.vm;
+    Activation* act = cold.act;
+    uint bc = insn.get_bc();
+    if (bc >= vm.current_func.const_count) return pc;
+    TVal name_val = vm.current_func.constants[bc];
+    if (!name_val.is_string()) return pc;
+    void* key = name_val.get_heapptr();
+    hobject::VarICEntry* vic_base = (hobject::VarICEntry*)vm.current_func.var_ic_entries;
+    if (vic_base == null) return pc;
+    uint pc_off = (uint)(pc - cold.code_base);
+    hobject::VarICEntry* vic = vic_base + pc_off;
+    if (vic.env == null || vic.key != key || vic.search_head != (void*)act.lex_env) return pc;
+    HObject* b = (HObject*)vic.bindings;
+    if (b.shape_id != vic.shape_id
+        || vm.heap.shapes[b.shape_id].generation != vic.generation) return pc;
+    TVal* pv = &b.prop_values()[vic.prop_idx];
+    hobject::PropFlags fl = b.get_prop_flags(vic.prop_idx);
+    if (env::is_tdz_sentinel(pv) || !fl.writable || fl.is_accessor) return pc;
+    TVal* ra = regs + insn.a;
+    vm.heap.decref_tval(pv);
+    *pv = *ra;
+    ra.set_undefined();
+    pc++;
+    return th_next(pc, code_end, regs, cold);
+}
+
+fn Instruction* th_inc_var(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    Instruction insn = *pc;
+    Vm* vm = cold.vm;
+    Activation* act = cold.act;
+    uint bc = insn.get_bc();
+    if (bc >= vm.current_func.const_count) return pc;
+    TVal name_val = vm.current_func.constants[bc];
+    if (!name_val.is_string()) return pc;
+    void* key = name_val.get_heapptr();
+    hobject::VarICEntry* vic_base = (hobject::VarICEntry*)vm.current_func.var_ic_entries;
+    if (vic_base == null) return pc;
+    uint pc_off = (uint)(pc - cold.code_base);
+    hobject::VarICEntry* vic = vic_base + pc_off;
+    if (vic.env == null || vic.key != key || vic.search_head != (void*)act.lex_env) return pc;
+    HObject* b = (HObject*)vic.bindings;
+    if (b.shape_id != vic.shape_id
+        || vm.heap.shapes[b.shape_id].generation != vic.generation) return pc;
+    TVal old_val = b.prop_values()[vic.prop_idx];
+    if (env::is_tdz_sentinel(&old_val) || !b.get_prop_flags(vic.prop_idx).writable) return pc;
+    // Threaded fast path: fastint only. bigint / ToNumber coercion -> switch.
+    if (!old_val.is_fastint()) return pc;
+    TVal* ra = regs + insn.a;
+    long v = old_val.get_fastint() + 1L;
+    if (v >= types::FASTINT_MIN && v <= types::FASTINT_MAX) {
+        b.prop_values()[vic.prop_idx].set_fastint(v);
+        ra.set_fastint(v);
+    } else {
+        b.prop_values()[vic.prop_idx].set_number((double)v);
+        ra.set_number((double)v);
+    }
+    pc++;
+    return th_next(pc, code_end, regs, cold);
+}
+
+fn Instruction* th_tonumeric(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    Instruction insn = *pc;
+    TVal* rb = regs + insn.b;
+    // Threaded fast path: fastint passthrough. bigint / ToNumber -> switch.
+    if (!rb.is_fastint()) return pc;
+    TVal* ra = regs + insn.a;
+    ra.set_fastint(rb.get_fastint());
+    pc++;
     return th_next(pc, code_end, regs, cold);
 }
 
