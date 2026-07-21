@@ -121,6 +121,12 @@ const uint ACT_FLAG_DERIVED        = 1u << 6;
 /// Activation was created by SUPER_CALL — on return, its constructed object
 /// initializes the pending derived-constructor this_binding up the chain.
 const uint ACT_FLAG_SUPER_CTOR     = 1u << 7;
+/// The callee for this activation was BORROWED from a permanent global
+/// binding: it was written into the caller's callee register (== retval slot
+/// for CALL_VAR) with a plain copy, no incref, and not tracked by
+/// track_heap_store. On return the result overwrites that same slot, so the
+/// write-back must NOT decref the (non-owned) old value. See resolve_call_var.
+const uint ACT_FLAG_BORROWED_CALLEE = 1u << 8;
 
 // ============================================================================
 // Catcher — exception handler chain entry
