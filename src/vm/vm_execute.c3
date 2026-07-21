@@ -3184,6 +3184,10 @@ fn TVal? Vm.run(Vm* vm) {
             }
             // Write return value to caller's result register
             if (callee_result != null) {
+                // Borrowed callee (CALL_VAR from a global binding): the old
+                // value in callee_result is the borrowed closure, which this
+                // frame never incref'd — overwrite it raw, never decref.
+                bool ret_borrowed = (callee_act.flags & ACT_FLAG_BORROWED_CALLEE) != 0;
                 // Constructor: if callee returned an object, use it; otherwise use 'this'.
                 // (Derived non-object non-undefined case was already converted to a throw above.)
                 if ((callee_act.flags & ACT_FLAG_CONSTRUCT) != 0) {
@@ -3195,15 +3199,19 @@ fn TVal? Vm.run(Vm* vm) {
                 } else {
                     // Fast path: skip refcounting when return value is not a heap ref
                     if (!val.is_heap_allocated()) {
-                        if (callee_result.is_heap_allocated()) {
+                        if (!ret_borrowed && callee_result.is_heap_allocated()) {
                             vm.heap.decref_tval(callee_result);
                         }
                         *callee_result = val;
                     } else if (val_pinned) {
                         // Transfer the pin reference: decref dst, raw write.
-                        vm.heap.decref_tval(callee_result);
+                        if (!ret_borrowed) vm.heap.decref_tval(callee_result);
                         *callee_result = val;
                         val_pinned = false;
+                    } else if (ret_borrowed) {
+                        // Incref new value, raw-overwrite the borrowed old value.
+                        ((HeapHeader*)val.get_heapptr()).incref();
+                        *callee_result = val;
                     } else {
                         vm.heap.tval_copy_ref(callee_result, &val);
                     }
@@ -3372,7 +3380,10 @@ fn TVal? Vm.run(Vm* vm) {
                 if ((callee_act.flags & ACT_FLAG_CONSTRUCT) != 0) {
                     vm.heap.tval_copy_ref(callee_result, &callee_act.this_binding);
                 } else {
-                    if (callee_result.is_heap_allocated()) {
+                    // Borrowed callee: the old value is the non-owned borrowed
+                    // closure — overwrite raw, never decref.
+                    if ((callee_act.flags & ACT_FLAG_BORROWED_CALLEE) == 0
+                            && callee_result.is_heap_allocated()) {
                         vm.heap.decref_tval(callee_result);
                     }
                     *callee_result = undef_val;
