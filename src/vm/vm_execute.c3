@@ -3664,6 +3664,246 @@ fn TVal? Vm.run(Vm* vm) {
             continue;
         }
 
+        case Opcode.GETGLOBAL: {
+            // Read a top-level global binding. Emitted only where lex_env ==
+            // global_lex_env and var_env == global_env, both permanent objects.
+            // The per-PC IC caches the resolved (bindings, shape_id, prop_idx);
+            // a hit is a single shape compare + direct indexed load. No name
+            // compare (the name-constant is fixed per PC), no env-chain walk,
+            // no generation dependent-load, no accessor-flag check (only data
+            // slots are ever cached — a data→accessor conversion changes the
+            // object's shape_id and thus misses).
+            uint bc = insn.get_bc();
+            if (bc < vm.current_func.const_count) {
+                TVal name_val = ds.constants[bc];
+                if (name_val.is_string()) {
+                    void* key = name_val.get_heapptr();
+
+                    // --- Slot IC fast path ---
+                    if (ds.var_ic_base != null) {
+                        uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
+                        hobject::VarICEntry* gic = ds.var_ic_base + pc_off;
+                        HObject* gb = (HObject*)gic.bindings;
+                        if (gb != null && gb.shape_id == gic.shape_id) {
+                            TVal v = gb.prop_values()[gic.prop_idx];
+                            if (!env::is_tdz_sentinel(&v)) {
+                                vm.heap.tval_copy_ref(ra, &v);
+                                track_heap_store(ds.act, ra, (uint)insn.a);
+                                break;
+                            }
+                            // TDZ: fall through to slow path (throw).
+                        }
+                    }
+
+                    // --- Slow path: resolve against the global objects,
+                    //     mirroring GETVAR but confined to the global scope. ---
+                    bool found = false;
+                    EnvRecord* ic_env = null;
+                    int ic_prop_idx = -1;
+                    bool ic_cacheable = false;
+
+                    EnvRecord* cur = ds.act.lex_env;
+                    while (cur != null) {
+                        int idx = cur.bindings.find_prop_idx(key);
+                        if (idx >= 0) {
+                            TVal v_raw = cur.bindings.prop_values()[idx];
+                            if (env::is_tdz_sentinel(&v_raw)) {
+                                HString* name_hstr = (HString*)key;
+                                if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "Cannot access '%s' before initialization", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                    return VM_ERROR~;
+                                }
+                                found = true;
+                            } else if (cur.bindings.get_prop_flags((uint)idx).is_accessor) {
+                                TVal getter = hobject::hobject_access_getter(v_raw);
+                                if (!getter.is_undefined() && !getter.is_null() && vm.heap.call_fn != null) {
+                                    TVal this_tv;
+                                    this_tv.set_object(cur.bindings);
+                                    TVal getter_val = vm.heap.call_fn(vm, getter, null, 0, this_tv);
+                                    if (vm.heap.has_error) {
+                                        vm.heap.has_error = false;
+                                        TVal err_val = vm.heap.error_value;
+                                        if (!vm_throw_value(vm, err_val, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                            vm.has_error = true;
+                                            vm.heap.has_error = true;
+                                            return VM_ERROR~;
+                                        }
+                                        found = true;
+                                    } else {
+                                        vm.heap.tval_copy_ref(ra, &getter_val);
+                                        track_heap_store(ds.act, ra, (uint)insn.a);
+                                        found = true;
+                                    }
+                                } else {
+                                    ra.set_undefined();
+                                    track_heap_store(ds.act, ra, (uint)insn.a);
+                                    found = true;
+                                }
+                            } else {
+                                vm.heap.tval_copy_ref(ra, &v_raw);
+                                track_heap_store(ds.act, ra, (uint)insn.a);
+                                found = true;
+                                ic_env = cur;
+                                ic_prop_idx = idx;
+                                ic_cacheable = true;
+                            }
+                            break;
+                        }
+                        cur = cur.parent;
+                    }
+
+                    if (!found && ds.act.lex_env != ds.act.var_env) {
+                        EnvRecord* vcur = ds.act.var_env;
+                        while (vcur != null) {
+                            int vidx = vcur.bindings.find_prop_idx(key);
+                            if (vidx >= 0) {
+                                if (vcur.bindings.get_prop_flags((uint)vidx).is_accessor) {
+                                    TVal gs_slot = vcur.bindings.prop_values()[vidx];
+                                    TVal getter = hobject::hobject_access_getter(gs_slot);
+                                    if (!getter.is_undefined() && !getter.is_null() && vm.heap.call_fn != null) {
+                                        TVal this_tv;
+                                        this_tv.set_object(vcur.bindings);
+                                        TVal getter_val = vm.heap.call_fn(vm, getter, null, 0, this_tv);
+                                        if (vm.heap.has_error) {
+                                            vm.heap.has_error = false;
+                                            TVal err_val = vm.heap.error_value;
+                                            if (!vm_throw_value(vm, err_val, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                                vm.has_error = true;
+                                                vm.heap.has_error = true;
+                                                return VM_ERROR~;
+                                            }
+                                            found = true;
+                                            break;
+                                        }
+                                        vm.heap.tval_copy_ref(ra, &getter_val);
+                                    } else {
+                                        ra.set_undefined();
+                                    }
+                                } else {
+                                    TVal v2 = vcur.bindings.prop_values()[vidx];
+                                    vm.heap.tval_copy_ref(ra, &v2);
+                                    ic_env = vcur;
+                                    ic_prop_idx = vidx;
+                                    ic_cacheable = true;
+                                }
+                                track_heap_store(ds.act, ra, (uint)insn.a);
+                                found = true;
+                                break;
+                            }
+                            vcur = vcur.parent;
+                        }
+                    }
+
+                    if (found) {
+                        if (ic_cacheable && ds.var_ic_base != null && ic_env != null) {
+                            uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
+                            hobject::VarICEntry* gic = ds.var_ic_base + pc_off;
+                            gic.env = (void*)ic_env;
+                            gic.bindings = (void*)ic_env.bindings;
+                            gic.shape_id = ic_env.bindings.shape_id;
+                            gic.prop_idx = (ushort)ic_prop_idx;
+                        }
+                    } else {
+                        HString* name_hstr = (HString*)key;
+                        if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "%s is not defined", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                            return VM_ERROR~;
+                        }
+                    }
+                } else {
+                    ra.set_undefined();
+                }
+            } else {
+                ra.set_undefined();
+            }
+            continue;
+        }
+
+        case Opcode.PUTGLOBAL: {
+            // User assignment to a top-level global binding (TDZ + const-throw
+            // like PUTVAR_ASSIGN), specialized to the global objects with the
+            // same slot IC as GETGLOBAL for the write-back.
+            uint bc = insn.get_bc();
+            if (bc < vm.current_func.const_count) {
+                TVal name_val = ds.constants[bc];
+                if (name_val.is_string()) {
+                    void* key = name_val.get_heapptr();
+
+                    // --- Slot IC fast path: direct indexed store ---
+                    if (ds.var_ic_base != null) {
+                        uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
+                        hobject::VarICEntry* gic = ds.var_ic_base + pc_off;
+                        HObject* gb = (HObject*)gic.bindings;
+                        if (gb != null && gb.shape_id == gic.shape_id) {
+                            TVal* pv = &gb.prop_values()[gic.prop_idx];
+                            hobject::PropFlags fl = gb.get_prop_flags(gic.prop_idx);
+                            if (!env::is_tdz_sentinel(pv) && fl.writable && !fl.is_accessor) {
+                                vm.heap.decref_tval(pv);
+                                *pv = *ra;
+                                ra.set_undefined();
+                                break;
+                            }
+                        }
+                    }
+
+                    int put_result = env::env_try_put_lex(ds.act.lex_env, key, *ra, true);
+                    if (put_result == -1) {
+                        HString* name_hstr = (HString*)key;
+                        if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                            return VM_ERROR~;
+                        }
+                        break;
+                    } else if (put_result == -2) {
+                        HString* name_hstr = (HString*)key;
+                        if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "Cannot access '%s' before initialization", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                            return VM_ERROR~;
+                        }
+                        break;
+                    } else if (put_result == 0) {
+                        // Not in lex env — check var env. Strict-mode: assigning
+                        // to an undeclared name throws ReferenceError.
+                        if (vm.current_func.is_strict() && !env::env_has(ds.act.var_env, key)) {
+                            HString* name_hstr = (HString*)key;
+                            if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "'%s' is not defined", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                return VM_ERROR~;
+                            }
+                            break;
+                        }
+                        env::env_put(ds.act.var_env, key, *ra);
+                    }
+                    vm.heap.decref_tval(ra);
+                    ra.set_undefined();
+
+                    // Populate the slot IC (data, writable, non-accessor only).
+                    if (ds.var_ic_base != null) {
+                        EnvRecord* owner = null;
+                        int owner_idx = -1;
+                        if (put_result == 1) {
+                            EnvRecord* pcur = ds.act.lex_env;
+                            while (pcur != null) {
+                                int idx = pcur.bindings.find_prop_idx(key);
+                                if (idx >= 0) { owner = pcur; owner_idx = idx; break; }
+                                pcur = pcur.parent;
+                            }
+                        } else {
+                            int idx = ds.act.var_env.bindings.find_prop_idx(key);
+                            if (idx >= 0) { owner = ds.act.var_env; owner_idx = idx; }
+                        }
+                        if (owner != null && owner_idx >= 0) {
+                            hobject::PropFlags fl = owner.bindings.get_prop_flags((uint)owner_idx);
+                            if (fl.writable && !fl.is_accessor) {
+                                uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
+                                hobject::VarICEntry* gic = ds.var_ic_base + pc_off;
+                                gic.env = (void*)owner;
+                                gic.bindings = (void*)owner.bindings;
+                                gic.shape_id = owner.bindings.shape_id;
+                                gic.prop_idx = (ushort)owner_idx;
+                            }
+                        }
+                    }
+                }
+            }
+            continue;
+        }
+
         case Opcode.TYPEOFIDENT: {
             // ES5 §11.4.3: typeof on an unresolvable reference returns "undefined"
             // instead of throwing ReferenceError.
