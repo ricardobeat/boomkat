@@ -1584,61 +1584,18 @@ fn TVal? Vm.run(Vm* vm) {
         ds.regs_base = ds.act.bottom;
 
         // Inner dispatch loop
+        //
+        // SPIKE EXPERIMENT 1: fall-off-end check removed from the hot path.
+        // Every compiled function/script is guaranteed (by the compiler) to
+        // end with an explicit RET/RETUNDEF-family instruction, so curr_pc
+        // can never legitimately reach code_end during normal dispatch.
+        //
+        // SPIKE EXPERIMENT 2: ds.halt is only ever set by a handful of
+        // return/generator opcodes (RET/RETUNDEF/RET_GEN/RETUNDEF_GEN and the
+        // sub-dispatch helpers in vm_control.c3/vm_generators.c3). Instead of
+        // checking it every instruction, check it only right after those
+        // specific call sites below.
         for (; !ds.needs_restart; ) {
-            if (ds.halt) {
-                return ds.halt_value;
-            }
-            if (ds.curr_pc >= ds.code_end) {
-                // Inline handle_return for fall-off-end — avoids function call overhead.
-                Activation* callee_act = &vm.activations[vm.activation_count - 1];
-                TVal* callee_result = callee_act.retval;
-
-                // Decref callee registers before popping
-                decref_callee_regs(vm, callee_act);
-
-                vm.activation_count--;
-
-                if (vm.activation_count == 0) {
-                    TVal undef_val;
-                    undef_val.set_undefined();
-                    vm.heap.tval_copy_ref(&vm.return_val, &undef_val);
-                    return vm.return_val;
-                }
-
-                Activation* caller_act = &vm.activations[vm.activation_count - 1];
-                vm.valstack_bottom = caller_act.bottom;
-
-                TVal undef_val;
-                undef_val.set_undefined();
-                TVal final_val = undef_val;
-                if ((callee_act.flags & ACT_FLAG_CONSTRUCT) != 0) {
-                    if (!final_val.is_object() || final_val.get_heapptr() == null) {
-                        if (callee_act.this_binding.is_object() && callee_act.this_binding.get_heapptr() != null) {
-                            final_val = callee_act.this_binding;
-                        }
-                    }
-                }
-                vm.heap.tval_copy_ref(callee_result, &final_val);
-
-                CompiledFunction* caller_func = (CompiledFunction*)caller_act.func;
-
-                ds.act = caller_act;
-                vm.valstack_top = callee_act.caller_valstack_top;
-                if (caller_func != vm.current_func) {
-                    vm.current_func = caller_func;
-                    ds.code_base = caller_func.code;
-                    ds.code_count = caller_func.code_count;
-                    ds.code_end = ds.code_base + ds.code_count;
-                    ds.constants = caller_func.constants;
-                    ds.ic_base = (hobject::ICEntry*)caller_func.ic_entries;
-                    ds.var_ic_base = (hobject::VarICEntry*)caller_func.var_ic_entries;
-                    ds.nregs = caller_func.num_regs;
-                }
-                ds.curr_pc = ds.act.curr_pc;
-                ds.regs_base = ds.act.bottom;
-                continue;
-            }
-
             Instruction insn = *ds.curr_pc;
             ds.curr_pc++;
 
@@ -3077,6 +3034,7 @@ fn TVal? Vm.run(Vm* vm) {
                 continue;
             }
             if (catch err = dispatch_calls(&ds, op, ra, rb, rc, insn)) { return err~; }
+            if (ds.halt) { return ds.halt_value; }
             // Refresh regs_base after builtin calls that may have triggered valstack
             // reallocation via heap.call_fn (compiled-function paths set needs_restart
             // and reload via the outer loop; builtin paths return without setting it).
@@ -3094,6 +3052,7 @@ fn TVal? Vm.run(Vm* vm) {
         case Opcode.NEW_OBJ_S:
         case Opcode.TAILCALL:
             if (catch err = dispatch_calls(&ds, op, ra, rb, rc, insn)) { return err~; }
+            if (ds.halt) { return ds.halt_value; }
             // Refresh regs_base after builtin calls that may have triggered valstack
             // reallocation via heap.call_fn (compiled-function paths set needs_restart
             // and reload via the outer loop; builtin paths return without setting it).
@@ -3107,6 +3066,7 @@ fn TVal? Vm.run(Vm* vm) {
         case Opcode.YIELD_STAR:
         case Opcode.GEN_START:
             if (catch err = dispatch_generators(&ds, op, ra, rb, rc, insn)) { return err~; }
+            if (ds.halt) { return ds.halt_value; }
             continue;
 
         // === DYNAMIC IMPORT ===
@@ -3242,9 +3202,7 @@ fn TVal? Vm.run(Vm* vm) {
             if (vm.activation_count == 0) {
                 vm.heap.tval_copy_ref(&vm.return_val, &val);
                 if (val_pinned) vm.heap.decref_tval(&val);
-                ds.halt = true;
-                ds.halt_value = vm.return_val;
-                continue;
+                return vm.return_val;
             }
             // Write return value to caller's result register
             if (callee_result != null) {
@@ -3428,9 +3386,7 @@ fn TVal? Vm.run(Vm* vm) {
             if (vm.activation_count == 0) {
                 vm.heap.tval_copy_ref(&vm.return_val, &undef_val);
                 if (async_ret) vm.heap.decref_tval(&undef_val);
-                ds.halt = true;
-                ds.halt_value = vm.return_val;
-                continue;
+                return vm.return_val;
             }
             // Write return value to caller's result register
             if (callee_result != null) {
@@ -3521,6 +3477,7 @@ fn TVal? Vm.run(Vm* vm) {
         case Opcode.RET_GEN:
         case Opcode.RETUNDEF_GEN:
             if (catch err = dispatch_returns(&ds, op, ra)) { return err~; }
+            if (ds.halt) { return ds.halt_value; }
             continue;
 
         case Opcode.RESOLVEVAR: {
@@ -4375,6 +4332,7 @@ fn TVal? Vm.run(Vm* vm) {
         case Opcode.FINALLY:
         case Opcode.ENDFINALLY:
             if (catch err = dispatch_exceptions(&ds, op, ra, rb, rc, insn)) { return err~; }
+            if (ds.halt) { return ds.halt_value; }
             continue;
 
         // === MISC ===
