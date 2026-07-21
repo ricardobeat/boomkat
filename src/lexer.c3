@@ -12,6 +12,7 @@ import duktape::dtoa_bindings;
 import duktape::unicode_bindings;
 import std::math;
 import std::io;
+import libc;
 
 // ============================================================================
 // Fault codes
@@ -358,20 +359,20 @@ fn bool is_whitespace(char c) {
 
 /// Encode a Unicode codepoint as UTF-8 into the buffer at the given offset.
 /// Returns the new offset.
-fn uint encode_utf8_to_buf(char[STRING_BUF_SIZE]* buf, uint offset, uint cp) {
+fn uint encode_utf8_to_buf(char* buf, uint offset, uint cp) {
     if (cp < 0x80) {
-        (*buf)[offset] = (char)cp;
+        buf[offset] = (char)cp;
         return offset + 1;
     }
     if (cp < 0x800) {
-        (*buf)[offset]     = (char)(0xC0 | (cp >> 6));
-        (*buf)[offset + 1] = (char)(0x80 | (cp & 0x3F));
+        buf[offset]     = (char)(0xC0 | (cp >> 6));
+        buf[offset + 1] = (char)(0x80 | (cp & 0x3F));
         return offset + 2;
     }
     if (cp < 0x10000) {
-        (*buf)[offset]     = (char)(0xE0 | (cp >> 12));
-        (*buf)[offset + 1] = (char)(0x80 | ((cp >> 6) & 0x3F));
-        (*buf)[offset + 2] = (char)(0x80 | (cp & 0x3F));
+        buf[offset]     = (char)(0xE0 | (cp >> 12));
+        buf[offset + 1] = (char)(0x80 | ((cp >> 6) & 0x3F));
+        buf[offset + 2] = (char)(0x80 | (cp & 0x3F));
         return offset + 3;
     }
     // Supplementary plane: ECMAScript strings are UTF-16 code unit
@@ -381,12 +382,12 @@ fn uint encode_utf8_to_buf(char[STRING_BUF_SIZE]* buf, uint offset, uint cp) {
     uint v = cp - 0x1_0000;
     uint high = 0xD800 + (v >> 10);
     uint low  = 0xDC00 + (v & 0x3FF);
-    (*buf)[offset]     = (char)(0xE0 | (high >> 12));
-    (*buf)[offset + 1] = (char)(0x80 | ((high >> 6) & 0x3F));
-    (*buf)[offset + 2] = (char)(0x80 | (high & 0x3F));
-    (*buf)[offset + 3] = (char)(0xE0 | (low >> 12));
-    (*buf)[offset + 4] = (char)(0x80 | ((low >> 6) & 0x3F));
-    (*buf)[offset + 5] = (char)(0x80 | (low & 0x3F));
+    buf[offset]     = (char)(0xE0 | (high >> 12));
+    buf[offset + 1] = (char)(0x80 | ((high >> 6) & 0x3F));
+    buf[offset + 2] = (char)(0x80 | (high & 0x3F));
+    buf[offset + 3] = (char)(0xE0 | (low >> 12));
+    buf[offset + 4] = (char)(0x80 | ((low >> 6) & 0x3F));
+    buf[offset + 5] = (char)(0x80 | (low & 0x3F));
     return offset + 6;
 }
 
@@ -432,6 +433,19 @@ struct Lexer {
     void* heap;
 
     char[4096] ident_buf;
+    /// Per-Lexer scratch for decoded string literals (escape slow path),
+    /// heap-backed so a returned Token.str_value with str_owns_memory==false
+    /// remains valid after scan_string returns — a borrow until the next scan,
+    /// matching ident_buf's contract. It was previously a STRING_BUF_SIZE
+    /// stack local, whose slice dangled into the reclaimed frame once
+    /// scan_string returned. Kept off the Lexer's inline storage (which is
+    /// stack-allocated by callers) to stay under the 64Kb stack-object limit.
+    /// Allocated once in lexer_init/reset; never GC-managed.
+    char* str_buf;
+    /// Companion heap scratch for the template-literal slow path's raw text
+    /// (str_buf holds the cooked text). Same borrow-until-next-scan contract
+    /// and the same reason for being heap-backed rather than a stack local.
+    char* raw_buf;
 }
 
 // ============================================================================
@@ -455,6 +469,8 @@ fn Lexer lexer_init(char[] source, void* heap) {
     lex.seen_line_term = false;
     lex.at_line_start = true;
     lex.heap = heap;
+    lex.str_buf = (char*)libc::malloc(STRING_BUF_SIZE);
+    lex.raw_buf = (char*)libc::malloc(STRING_BUF_SIZE);
     return lex;
 }
 
@@ -501,6 +517,10 @@ fn void Lexer.reset(&self, char[] source) {
     self.lookahead_token_start = 0;
     self.has_pushed_back = false;
     self.force_regex_after_brace = false;
+    // Ensure the decode scratch buffers exist even when the Lexer was
+    // zero-initialized directly (bypassing lexer_init) before reset.
+    if (self.str_buf == null) { self.str_buf = (char*)libc::malloc(STRING_BUF_SIZE); }
+    if (self.raw_buf == null) { self.raw_buf = (char*)libc::malloc(STRING_BUF_SIZE); }
 }
 
 // ============================================================================
@@ -1136,8 +1156,10 @@ fn Token? Lexer.scan_string(&self) {
         return tok;
     }
 
-    // Slow path: build decoded string in stack buffer.
-    char[STRING_BUF_SIZE] buf;
+    // Slow path: build decoded string in the per-Lexer scratch buffer.
+    // Using self.str_buf (not a stack local) keeps the returned str_value
+    // slice valid after this function returns — a borrow until the next scan,
+    // matching the str_owns_memory==false contract (see the field comment).
     uint buf_len = 0;
     bool found_octal = false;
 
@@ -1148,7 +1170,7 @@ fn Token? Lexer.scan_string(&self) {
             self.advance_char(); // consume closing quote
             Token tok = make_token(TokenType.STRING, start_line, start_col);
             if (buf_len > 0) {
-                tok.str_value = buf[0..buf_len-1];
+                tok.str_value = self.str_buf[0..buf_len-1];
             } else {
                 tok.str_value = {};
             }
@@ -1167,21 +1189,21 @@ fn Token? Lexer.scan_string(&self) {
 
             char esc = self.advance_char();
             switch (esc) {
-                case 'n':  buf[buf_len] = '\n'; buf_len++;
-                case 'r':  buf[buf_len] = '\r'; buf_len++;
-                case 't':  buf[buf_len] = '\t'; buf_len++;
-                case 'b':  buf[buf_len] = 0x08; buf_len++;
-                case 'f':  buf[buf_len] = 0x0C; buf_len++;
-                case 'v':  buf[buf_len] = 0x0B; buf_len++;
+                case 'n':  self.str_buf[buf_len] = '\n'; buf_len++;
+                case 'r':  self.str_buf[buf_len] = '\r'; buf_len++;
+                case 't':  self.str_buf[buf_len] = '\t'; buf_len++;
+                case 'b':  self.str_buf[buf_len] = 0x08; buf_len++;
+                case 'f':  self.str_buf[buf_len] = 0x0C; buf_len++;
+                case 'v':  self.str_buf[buf_len] = 0x0B; buf_len++;
                 case '0':
-                    buf[buf_len] = 0;
+                    self.str_buf[buf_len] = 0;
                     buf_len++;
                     if (self.strict_mode && !self.at_end() && self.peek_char() >= '0' && self.peek_char() <= '9') {
                         found_octal = true;
                     }
-                case '\'': buf[buf_len] = '\''; buf_len++;
-                case '"':  buf[buf_len] = '"';  buf_len++;
-                case '\\': buf[buf_len] = '\\'; buf_len++;
+                case '\'': self.str_buf[buf_len] = '\''; buf_len++;
+                case '"':  self.str_buf[buf_len] = '"';  buf_len++;
+                case '\\': self.str_buf[buf_len] = '\\'; buf_len++;
 
                 case 'x':
                     // \xHH — Unicode codepoint U+00HH, encoded as UTF-8.
@@ -1193,7 +1215,7 @@ fn Token? Lexer.scan_string(&self) {
                     char h2 = self.advance_char();
                     if (!is_hex_digit(h1) || !is_hex_digit(h2)) return LEX_ERROR~;
                     uint hval = hex_value(h1) * 16 + hex_value(h2);
-                    buf_len = encode_utf8_to_buf(&buf, buf_len, hval);
+                    buf_len = encode_utf8_to_buf(self.str_buf, buf_len, hval);
 
                 case 'u':
                     if (self.at_end()) return LEX_ERROR~;
@@ -1211,7 +1233,7 @@ fn Token? Lexer.scan_string(&self) {
                         }
                         if (self.at_end() || udigits == 0) return LEX_ERROR~;
                         self.advance_char(); // consume }
-                        buf_len = encode_utf8_to_buf(&buf, buf_len, ucp);
+                        buf_len = encode_utf8_to_buf(self.str_buf, buf_len, ucp);
                     } else {
                         // \uHHHH — exactly 4 hex digits
                         if (self.remaining() < 4) return LEX_ERROR~;
@@ -1221,7 +1243,7 @@ fn Token? Lexer.scan_string(&self) {
                             if (!is_hex_digit(hc)) return LEX_ERROR~;
                             ucp4 = ucp4 * 16 + hex_value(hc);
                         }
-                        buf_len = encode_utf8_to_buf(&buf, buf_len, ucp4);
+                        buf_len = encode_utf8_to_buf(self.str_buf, buf_len, ucp4);
                     }
 
                 case '\n':
@@ -1246,7 +1268,7 @@ fn Token? Lexer.scan_string(&self) {
                         self.advance_char(); // consume 0x80
                         self.advance_char(); // consume 0xA8 or 0xA9
                     } else {
-                        buf[buf_len] = esc;
+                        self.str_buf[buf_len] = esc;
                         buf_len++;
                     }
 
@@ -1257,12 +1279,12 @@ fn Token? Lexer.scan_string(&self) {
                     if (self.strict_mode && esc >= '1' && esc <= '9') {
                         found_octal = true;
                     }
-                    buf[buf_len] = esc;
+                    self.str_buf[buf_len] = esc;
                     buf_len++;
             }
         } else {
             // Regular character
-            buf[buf_len] = ch;
+            self.str_buf[buf_len] = ch;
             buf_len++;
             self.advance_char();
         }
@@ -1776,13 +1798,16 @@ fn char[]? Lexer.scan_template_content(&self, char* end_char, bool* has_escapes,
         return {};
     }
 
-    // Slow path: build decoded (cooked) and raw text in parallel stack buffers.
-    // The raw buffer mirrors the source text exactly except that bare CR and
-    // CRLF sequences are normalized to LF, per the TRV of LineTerminatorSequence
-    // (ES2015 11.8.6.1) — this applies to raw text just as much as cooked.
-    char[STRING_BUF_SIZE] buf;
+    // Slow path: build decoded (cooked) and raw text in parallel per-Lexer
+    // scratch buffers. The raw buffer mirrors the source text exactly except
+    // that bare CR and CRLF sequences are normalized to LF, per the TRV of
+    // LineTerminatorSequence (ES2015 11.8.6.1) — this applies to raw text just
+    // as much as cooked. Both point at heap-backed Lexer fields (not stack
+    // locals) so the returned cooked/raw slices stay valid after this function
+    // returns — a borrow until the next scan (see str_buf's field comment).
+    char* buf = self.str_buf;
     uint buf_len = 0;
-    char[STRING_BUF_SIZE] raw_buf;
+    char* raw_buf = self.raw_buf;
     uint raw_len = 0;
 
     while (!self.at_end()) {
@@ -1880,7 +1905,7 @@ fn char[]? Lexer.scan_template_content(&self, char* end_char, bool* has_escapes,
                         char h1 = self.advance_char();
                         char h2 = self.advance_char();
                         uint hval = hex_value(h1) * 16 + hex_value(h2);
-                        buf_len = encode_utf8_to_buf(&buf, buf_len, hval);
+                        buf_len = encode_utf8_to_buf(buf, buf_len, hval);
                     }
 
                 case 'u':
@@ -1909,7 +1934,7 @@ fn char[]? Lexer.scan_template_content(&self, char* end_char, bool* has_escapes,
                             self.advance_char();
                         }
                         self.advance_char(); // }
-                        buf_len = encode_utf8_to_buf(&buf, buf_len, ucp);
+                        buf_len = encode_utf8_to_buf(buf, buf_len, ucp);
                     } else {
                         if (self.remaining() < 4 ||
                             !is_hex_digit(self.peek_char()) ||
@@ -1924,7 +1949,7 @@ fn char[]? Lexer.scan_template_content(&self, char* end_char, bool* has_escapes,
                             char hc = self.advance_char();
                             ucp4 = ucp4 * 16 + hex_value(hc);
                         }
-                        buf_len = encode_utf8_to_buf(&buf, buf_len, ucp4);
+                        buf_len = encode_utf8_to_buf(buf, buf_len, ucp4);
                     }
 
                 default:
