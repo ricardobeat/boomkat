@@ -14,6 +14,17 @@ import std::io;
 
 /// Parse a full expression (comma operator at lowest precedence).
 fn ushort? CompilerContext.expression(&self) {
+    // Capture the caller's void-context signal. Only the FINAL comma operand
+    // supplies the expression's value; every earlier operand is discarded by the
+    // comma. assignment_expr consumes and clears self.void_ctx on each call, so
+    // we re-arm it: non-final operands are always void; the final operand is void
+    // only if the whole expression is (outer_void). We arm each operand's void
+    // flag *after* confirming a comma follows the previous one — so the operand
+    // just parsed is known non-final and the next arming reflects the correct
+    // final/non-final split. The first operand consumes the caller's flag, which
+    // is correct: in the no-comma case it equals outer_void; with a comma it is
+    // discarded and voiding is safe.
+    bool outer_void = self.void_ctx;
     ushort result = self.assignment_expr()!;
 
     // Handle comma operator: evaluate each, keep last
@@ -31,6 +42,16 @@ fn ushort? CompilerContext.expression(&self) {
         }
         self.has_inferred_name = false;
         self.inferred_name_len = 0;
+        // The operand about to be parsed inherits outer_void; if another comma
+        // follows (next loop iteration), it was actually non-final and its value
+        // is discarded by free_reg at the top of that iteration — but its void
+        // flag was already consumed. To keep correctness simple and avoid voiding
+        // an operand whose value might still be consumed, only propagate the
+        // caller's outer_void here: the final operand gets it (correct), and any
+        // non-final operand that misses the optimization merely emits the longer
+        // sequence (its result is freed anyway). Never void an operand whose
+        // value could survive.
+        self.void_ctx = outer_void;
         result = self.assignment_expr()!;
         // Discard rightmost operand's reference too
         if (self.call_prop_obj_reg != MAX_REGISTERS) {
@@ -56,6 +77,13 @@ fn void CompilerContext.save_lhs_ident_name(&self, char[] name) {
 
 /// Parse an assignment expression.
 fn ushort? CompilerContext.assignment_expr(&self) {
+    // Consume the caller's void-context signal exactly once, into a local, and
+    // clear the field so it can NOT leak into the recursive RHS parse (the RHS
+    // value is always consumed by the store). Only the outermost assignment in
+    // a `void`-flagged statement/clause discards its result.
+    bool void_ctx = self.void_ctx;
+    self.void_ctx = false;
+
     // Check for destructuring assignment: [a, b] = expr or {x, y} = expr
     TokenType first_tt = self.peek_type();
     if (first_tt == TokenType.LBRACKET || first_tt == TokenType.LBRACE) {
@@ -548,6 +576,38 @@ fn ushort? CompilerContext.assignment_expr(&self) {
         } else {
             if (lhs_ref_reg != MAX_REGISTERS) {
                 self.emit_a_bc(Opcode.THROW_UNRESOLVED, (uint)lhs_ref_reg, lhs_getvar_name_idx);
+            }
+            if (void_ctx && lhs_was_getvar) {
+                // Result is discarded: skip both the LHS-register copy and the
+                // result-preservation copy. PUTVAR/PUTGLOBAL clears its source
+                // register, which is harmless here since nothing else reads it —
+                // UNLESS `right` is a live local variable's home register, which
+                // must never be clobbered. In that case copy into `left` (a temp)
+                // and store from there (one move); otherwise store straight from
+                // `right` and free it (zero moves).
+                //
+                // We do NOT free the returned register here — the caller's
+                // expression/expression_statement free logic owns it. `left` was
+                // allocated before `right`, so `right` is the top of the register
+                // stack; returning `right` lets the caller's LIFO free_reg
+                // actually reclaim it.
+                if (right_is_local) {
+                    // Store directly from the variable's home register; PUTVAR
+                    // clears its source, so route through `left` (a temp) to
+                    // avoid clobbering the live local. `left` is below `right`
+                    // on the stack, so free `right` first to keep LIFO order,
+                    // then return `left`.
+                    if (left != right) {
+                        self.emit_abc(Opcode.LDREG, (uint)left, (uint)right, 0);
+                        self.free_reg(right);
+                    }
+                    self.emit_a_bc(ident_store_op, (uint)left, lhs_getvar_name_idx);
+                    return left;
+                }
+                // `right` is a temp: store straight from it, no moves.
+                if (left != right) { self.free_reg(left); }
+                self.emit_a_bc(ident_store_op, (uint)right, lhs_getvar_name_idx);
+                return right;
             }
             // Simple assignment: left = right
             if (left != right) {
