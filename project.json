@@ -30,6 +30,21 @@
       "panic-msg": false,
       "debug-info": "none"
     },
+    "duktape_c3_threaded": {
+      "type": "executable",
+      "sources": [
+        "src",
+        "cli/duktape_c3.c3"
+      ],
+      "opt": "O2",
+      "single-module": true,
+      "fp-math": "relaxed",
+      "panic-msg": false,
+      "debug-info": "none",
+      "features": [
+        "THREADED_DISPATCH"
+      ]
+    },
     "duktape_c3_debug": {
       "type": "executable",
       "sources": [
