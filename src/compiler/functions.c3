@@ -1784,15 +1784,18 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
                 self.emit_abc(Opcode.LDUNDEF, (uint)var_reg, 0, 0);
                 uint var_name_idx = self.add_string_constant(name_tok2.str_value);
                 self.emit_a_bc(Opcode.DECLVAR, (uint)var_reg, var_name_idx);
-                // At global scope: when the program is observable (capture_all —
-                // eval/this/globalThis/window/Function), global vars stay
-                // env-resident and the register is only a temporary DECLVAR
-                // source, so free it (500+ vars would otherwise exhaust the
-                // file). When NOT observable, declare_var pushed the var to the
-                // scope stack and this register is its PERMANENT home — keep it
-                // (like non-global hoisting) so resolve_var reads/writes hit it.
-                // entry.c3 sets reserved_regs after hoisting to protect these.
-                if (is_global && self.capture_all) { self.free_reg(var_reg); }
+                // At global scope, free the DECLVAR temp register unless this
+                // var ended up register-resident (declare_var pushed it and
+                // resolve_var now returns it) — in which case the register is
+                // its PERMANENT home and must be kept (entry.c3's reserved_regs
+                // protects it). Env-resident globals (observable program, over
+                // the register-resident budget, or otherwise captured) free the
+                // register so thousands of top-level vars don't exhaust the file.
+                if (is_global) {
+                    bool reg_resident = false;
+                    if (try _rr = self.resolve_var(name_tok2.str_value)) { reg_resident = true; }
+                    if (!reg_resident) { self.free_reg(var_reg); }
+                }
 
                 // Check for initializer or comma
                 Token? sep_opt = self.lexer.next_token();

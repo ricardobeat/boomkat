@@ -85,9 +85,20 @@ fn ushort CompilerContext.declare_var(&self, char[] name, ScopeKind kind) {
         // residency there — global let/const stay env-resident so their
         // runtime TDZ / const-assignment checks (PUTVAR_ASSIGN / PUTLEX) and
         // block-scoped lifetime are preserved.
+        // Budget: cap how many top-level `var`s are register-resident so their
+        // slots stay within the 8-bit-addressable register range; the rest are
+        // env-resident. Counter (not the reusable register number) so freeing
+        // over-budget vars' temp registers can't let a later var slip back
+        // under budget. Only applies to global `var`s.
+        bool over_reg_budget = self.is_global && kind == VAR
+                            && self.reg_resident_global_count >= MAX_REG_RESIDENT_GLOBALS;
         bool captured = kind != SCOPEMARK
                      && (self.capture_all || self.is_captured_name(name)
-                         || (self.is_global && kind != VAR));
+                         || (self.is_global && kind != VAR)
+                         || over_reg_budget);
+        if (self.is_global && kind == VAR && !captured) {
+            self.reg_resident_global_count++;
+        }
         self.scope_stack[self.scope_depth].name = name;
         self.scope_stack[self.scope_depth].reg = reg;
         self.scope_stack[self.scope_depth].kind = kind;

@@ -25,6 +25,14 @@ faultdef CONST_OVERFLOW;
 
 const uint MAX_REGISTERS  = 512;
 const uint MAX_PARAMS     = 32;
+// Register-resident global-var budget. Bytecode ABC operands are 8 bits, so
+// only registers 0..255 are addressable; each register-resident top-level
+// `var` permanently occupies one. Cap how many globals may be register-
+// resident, leaving ample headroom for expression temporaries — past this a
+// global var falls back to env-residency (GETVAR/PUTVAR, 16-bit constant-pool
+// index, unbounded). A program with thousands of top-level vars (rare) thus
+// stays correct instead of exhausting the register file.
+const uint MAX_REG_RESIDENT_GLOBALS = 192;
 // Initial capacities for growable compiler arrays.
 // These are the starting sizes; the arrays double when full.
 const uint INITIAL_CODE        = 512;
@@ -420,6 +428,12 @@ struct CompilerContext {
     // (parse_function_body, inner/arrow bodies, program/eval/module entry);
     // free_reg / free_regs_to never release registers below it.
     ushort reserved_regs;
+
+    // Count of top-level `var`s made register-resident so far (monotonic).
+    // Gates MAX_REG_RESIDENT_GLOBALS — using a counter, not the reusable
+    // register number, so freeing over-budget vars' temp registers doesn't
+    // let a later var slip back under the budget.
+    uint reg_resident_global_count;
 
     // Closure tracking — set to true when a nested function is defined in
     // this function's body.  Combined with has_local_bindings to decide
