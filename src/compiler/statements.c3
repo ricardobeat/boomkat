@@ -2688,6 +2688,7 @@ fn void? CompilerContext.for_statement(&self) {
         // the void context so a plain assignment skips its result-preservation
         // moves.
         self.void_ctx = true;
+        self.postfix_void = true;
         ushort incr_reg = self.expression()!;
         self.free_reg(incr_reg);
     }
@@ -4174,6 +4175,7 @@ fn void? CompilerContext.expression_statement(&self) {
     // void context so a plain assignment can skip its result-preservation moves.
     if (!self.eval_mode) {
         self.void_ctx = true;
+        self.postfix_void = true;
     }
     ushort reg = self.expression()!;
     if (self.eval_mode) {

@@ -307,6 +307,17 @@ struct CompilerContext {
     /// the result-preservation LDREG copies and writes the LHS directly.
     bool void_ctx;
 
+    /// Set by a caller immediately before invoking expression() when a postfix
+    /// ++/-- result at the top of that expression would be provably discarded
+    /// (expression statement, for-update clause). postfix_expr reads it once at
+    /// its top into a local and clears the field, so it never leaks into any
+    /// nested sub-expression (subscripts, call arguments, assignment RHS): the
+    /// outermost postfix_expr in the descent consumes it before descending into
+    /// call_expr. When the flag is set AND the token immediately after the ++/--
+    /// is a statement/clause terminator, the old-value materialization (LDREG +
+    /// TONUMERIC) is skipped and the increment compiles like the prefix form.
+    bool postfix_void;
+
     /// When true, emit_private_access skips the CHK_BRAND instruction.
     /// Used by emit_deferred_target for private field targets in destructuring
     /// assignments: per ES2022 §13.15.5.6, the target lref is evaluated before
