@@ -2136,6 +2136,8 @@ fn TVal? Vm.run(Vm* vm) {
         case Opcode.PUTARG:
         case Opcode.INC_VAR:
         case Opcode.DEC_VAR:
+        case Opcode.INC_GLOBAL:
+        case Opcode.DEC_GLOBAL:
             if (catch err = dispatch_unary(&ds, op, ra, rb, rc, insn)) { return err~; }
             continue;
 

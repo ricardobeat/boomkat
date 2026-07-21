@@ -302,6 +302,11 @@ fn ushort? CompilerContext.assignment_expr(&self) {
                     uint name_idx = self.code[self.code_count - 1].get_bc();
                     uint getvar_reg = self.code[self.code_count - 1].a;
                     self.code[self.code_count - 1] = bytecode::make_a_bc(Opcode.DEC_VAR, getvar_reg, name_idx);
+                } else if (lhs_was_getglobal && self.code_count > 0
+                    && self.code[self.code_count - 1].op == Opcode.GETGLOBAL) {
+                    uint name_idx = self.code[self.code_count - 1].get_bc();
+                    uint getglobal_reg = self.code[self.code_count - 1].a;
+                    self.code[self.code_count - 1] = bytecode::make_a_bc(Opcode.DEC_GLOBAL, getglobal_reg, name_idx);
                 } else {
                     self.emit_abc(Opcode.DEC, (uint)left, 0, 0);
                     if (lhs_was_getvar) {
@@ -1152,6 +1157,12 @@ fn ushort? CompilerContext.unary_expr(&self) {
                 uint name_idx = self.code[self.code_count - 1].get_bc();
                 uint getvar_reg = self.code[self.code_count - 1].a;
                 self.code[self.code_count - 1] = bytecode::make_a_bc(Opcode.INC_VAR, getvar_reg, name_idx);
+            } else if (inc_was_getglobal && self.code_count > 0
+                && self.code[self.code_count - 1].op == Opcode.GETGLOBAL) {
+                // Replace GETGLOBAL with INC_GLOBAL: 1 lean dispatch.
+                uint name_idx = self.code[self.code_count - 1].get_bc();
+                uint getglobal_reg = self.code[self.code_count - 1].a;
+                self.code[self.code_count - 1] = bytecode::make_a_bc(Opcode.INC_GLOBAL, getglobal_reg, name_idx);
             } else {
                 self.emit_abc(Opcode.INC, (uint)op_inc, 0, 0);
                 if (inc_was_getvar) {
@@ -1198,6 +1209,11 @@ fn ushort? CompilerContext.unary_expr(&self) {
                 uint name_idx = self.code[self.code_count - 1].get_bc();
                 uint getvar_reg = self.code[self.code_count - 1].a;
                 self.code[self.code_count - 1] = bytecode::make_a_bc(Opcode.DEC_VAR, getvar_reg, name_idx);
+            } else if (dec_was_getglobal && self.code_count > 0
+                && self.code[self.code_count - 1].op == Opcode.GETGLOBAL) {
+                uint name_idx = self.code[self.code_count - 1].get_bc();
+                uint getglobal_reg = self.code[self.code_count - 1].a;
+                self.code[self.code_count - 1] = bytecode::make_a_bc(Opcode.DEC_GLOBAL, getglobal_reg, name_idx);
             } else {
                 self.emit_abc(Opcode.DEC, (uint)op_dec, 0, 0);
                 if (dec_was_getvar) {
@@ -1235,6 +1251,7 @@ fn ushort? CompilerContext.postfix_expr(&self) {
     ushort operand = self.call_expr()!;
 
     bool lhs_was_getvar = self.last_was_getvar;
+    bool lhs_was_getglobal = self.last_was_getvar && self.last_was_getglobal;
     uint lhs_getvar_name_idx = self.last_getvar_name_idx;
 
     // Note: self.last_was_getvar / self.last_was_member remain set so that
@@ -1291,7 +1308,10 @@ fn ushort? CompilerContext.postfix_expr(&self) {
             handled = true;
         }
         if (!handled) {
-            if (lhs_was_getvar) {
+            if (lhs_was_getglobal) {
+                self.emit_a_bc(Opcode.INC_GLOBAL, (uint)operand, lhs_getvar_name_idx);
+                self.emit_abc(Opcode.NOP, 0, 0, 0);
+            } else if (lhs_was_getvar) {
                 self.emit_a_bc(Opcode.INC_VAR, (uint)operand, lhs_getvar_name_idx);
                 self.emit_abc(Opcode.NOP, 0, 0, 0);
             } else {
@@ -1325,7 +1345,10 @@ fn ushort? CompilerContext.postfix_expr(&self) {
             handled = true;
         }
         if (!handled) {
-            if (lhs_was_getvar) {
+            if (lhs_was_getglobal) {
+                self.emit_a_bc(Opcode.DEC_GLOBAL, (uint)operand, lhs_getvar_name_idx);
+                self.emit_abc(Opcode.NOP, 0, 0, 0);
+            } else if (lhs_was_getvar) {
                 self.emit_a_bc(Opcode.DEC_VAR, (uint)operand, lhs_getvar_name_idx);
                 self.emit_abc(Opcode.NOP, 0, 0, 0);
             } else {
