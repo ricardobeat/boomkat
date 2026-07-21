@@ -3811,8 +3811,14 @@ fn TVal? Vm.run(Vm* vm) {
                         if (gb != null && gic.varref_alloc != null && gb.prop_alloc == gic.varref_alloc) {
                             TVal* pv = gic.varref_ptr;
                             if (!env::is_tdz_sentinel(pv)) {
-                                vm.heap.tval_copy_ref(ra, pv);
-                                track_heap_store(ds.act, ra, (uint)insn.a);
+                                if (!pv.is_heap_allocated() && !ra.is_heap_allocated()) {
+                                    // prim -> prim: no refcount, and no heap ref
+                                    // lands in the register, so no track_heap_store.
+                                    *ra = *pv;
+                                } else {
+                                    vm.heap.tval_copy_ref(ra, pv);
+                                    track_heap_store(ds.act, ra, (uint)insn.a);
+                                }
                                 break;
                             }
                             // TDZ: fall through to slow path (throw).
@@ -3966,8 +3972,7 @@ fn TVal? Vm.run(Vm* vm) {
                         if (gb != null && gic.varref_store_ok && gic.varref_alloc != null
                             && gb.prop_alloc == gic.varref_alloc) {
                             TVal* pv = gic.varref_ptr;
-                            vm.heap.decref_tval(pv);
-                            *pv = *ra;
+                            vm.heap.tval_move_slot_fast(pv, ra);
                             ra.set_undefined();
                             break;
                         }
