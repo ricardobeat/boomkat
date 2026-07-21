@@ -2169,6 +2169,7 @@ fn void? CompilerContext.for_statement(&self) {
                 // common exit path below emits the matching POP_LEX).
                 if (is_lexical) {
                     self.emit_simple(Opcode.PUSH_LEX);
+                    self.cur_lex_depth++;
                 }
                 if (after_decl == TokenType.LBRACKET) {
                     self.advance()!; // consume '['
@@ -2367,7 +2368,7 @@ fn void? CompilerContext.for_statement(&self) {
                 periterenv_is_const[periterenv_count] = is_const;
                 periterenv_count++;
             }
-            if (is_lexical) { self.emit_simple(Opcode.PUSH_LEX); }
+            if (is_lexical) { self.emit_simple(Opcode.PUSH_LEX); self.cur_lex_depth++; }
             if (self.match(TokenType.ASSIGN)) {
                 ushort init_val = self.assignment_expr()!;
                 if (init_val != var_reg) {
@@ -2760,7 +2761,7 @@ fn void? CompilerContext.for_statement(&self) {
 
     // exit: pop_loop patches all break jumps to current position.
     self.pop_loop();
-    if (is_lexical) { self.emit_simple(Opcode.POP_LEX); }
+    if (is_lexical) { self.emit_simple(Opcode.POP_LEX); self.cur_lex_depth--; }
 
     // For uncaptured for-init vars the environment was not updated each
     // iteration, so write the final register value once before the register

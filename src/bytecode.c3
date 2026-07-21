@@ -280,6 +280,19 @@ enum Opcode : char {
     /// `declare variable[constants[BC]] = A`  — declare+initialize a `var` in
     /// the immediate var_env only (does not walk the scope chain).
     DECLVAR,
+    /// `A = global[constants[BC]]` — read a top-level global binding by name
+    /// (A-BC). Emitted only at true global scope (no nested lexical env), where
+    /// lex_env == global_lex_env and var_env == global_env are both permanent
+    /// GC roots. A per-PC inline cache records (bindings, shape_id, prop_idx) so
+    /// a hit is a single shape compare + direct indexed load into the global
+    /// object's property storage — no env-chain walk, no generation dependent
+    /// load, no name compare. Falls back to the GETVAR slow path on a miss.
+    GETGLOBAL,
+    /// `global[constants[BC]] = A` — user assignment to a top-level global
+    /// binding by name (A-BC). Like PUTVAR_ASSIGN (TDZ + const-assignment
+    /// throws) but specialized to the two global objects, with the same slot
+    /// inline cache as GETGLOBAL for the write-back.
+    PUTGLOBAL,
     /// `A = typeof identifier`  — typeof on a variable name (A-BC format).
     /// Returns "undefined" for unresolvable references per ES5 §11.4.3.
     TYPEOFIDENT,
@@ -806,6 +819,8 @@ fn OpFormat get_op_format(Opcode op) {
         case TYPEOFIDENT: return A_BC;
         case PUTVAR:    return A_BC;
         case DECLVAR:   return A_BC;
+        case GETGLOBAL: return A_BC;
+        case PUTGLOBAL: return A_BC;
         case DELVAR:    return A_BC;
         case CLOSURE:   return A_BC;
         case GETBOUND:  return A_BC;
