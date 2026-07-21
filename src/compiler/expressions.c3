@@ -1612,6 +1612,22 @@ fn ushort? CompilerContext.call_expr(&self) {
 /// The result is placed in a separate result register (A field).
 /// The VM reads args from callee_reg + 1, so we must guarantee that layout.
 fn ushort? CompilerContext.emit_call(&self, ushort callee_reg) {
+    // CALL_VAR fusion candidate: the callee is a bare-identifier reference
+    // (GETVAR emitted by primary_expr, not a local variable register) whose
+    // producing instruction is still the one sitting at last_getvar_code_pos
+    // and targets this exact callee register, with nothing emitted since.
+    // Captured before anything below (eval detection, callee relocation, arg
+    // compilation) can invalidate last_was_getvar / append to the code
+    // array. The name's constant pool index must fit CALL_VAR's 8-bit C
+    // field; larger indices fall back to plain GETVAR + CALL_UNDEF_THIS.
+    bool getvar_callee = self.last_was_getvar
+        && self.last_getvar_code_pos + 1 == self.code_count
+        && self.code[self.last_getvar_code_pos].op == Opcode.GETVAR
+        && self.code[self.last_getvar_code_pos].a == callee_reg
+        && self.last_getvar_name_idx <= bytecode::MAX_C;
+    uint getvar_code_pos = self.last_getvar_code_pos;
+    uint getvar_name_idx = self.last_getvar_name_idx;
+
     self.expect(TokenType.LPAREN)!;
 
     // Detect direct eval: callee was the identifier `eval` (set by primary_expr)
@@ -1635,6 +1651,12 @@ fn ushort? CompilerContext.emit_call(&self, ushort callee_reg) {
     // binding (e.g. `function f(){} f(); f();` with f's register at the top
     // of the stack — the first call's result clobbers f).
     if (callee_reg + 1 < self.next_reg || self.is_local_var_reg(callee_reg)) {
+        // Relocation invalidates the CALL_VAR fusion: the GETVAR at
+        // getvar_code_pos wrote into the OLD callee_reg (about to be
+        // superseded by this LDREG copy), so fusing would either read a
+        // stale/freed register or require rewriting the relocation too.
+        // Fall back to plain GETVAR + CALL_UNDEF_THIS for this call.
+        getvar_callee = false;
         ushort new_callee = self.next_reg;
         self.emit_abc(Opcode.LDREG, (uint)new_callee, (uint)callee_reg, 0);
         callee_reg = new_callee;
@@ -1643,6 +1665,14 @@ fn ushort? CompilerContext.emit_call(&self, ushort callee_reg) {
         if (self.next_reg <= callee_reg + 1) {
             self.next_reg = callee_reg + 2;
         }
+    } else if (getvar_callee) {
+        // No relocation: the GETVAR at getvar_code_pos is still the last
+        // emitted instruction and nothing has read callee_reg's value yet
+        // (arg compilation below only uses callee_reg as a register-number
+        // anchor). Drop it from the code stream entirely — CALL_VAR at the
+        // end of this call will load the callee itself. This is what
+        // actually elides the dispatch: the GETVAR's bytes never execute.
+        self.code_count = getvar_code_pos;
     }
     // Place undefined 'this' slot (or the property object for method calls).
     // For a plain (non-method) call the receiver is always undefined; rather
@@ -1766,8 +1796,22 @@ fn ushort? CompilerContext.emit_call(&self, ushort callee_reg) {
         if (undef_this) {
             self.emit_abc(Opcode.LDUNDEF, (uint)(callee_reg + 1), 0, 0);
         }
+        // CALL_S reads the callee value from callee_reg directly (no
+        // fused variant). If the GETVAR was stripped speculatively above
+        // (spread-ness is only known once args are fully parsed), restore
+        // it here — CALL_S needs the real value in the register.
+        if (getvar_callee) {
+            self.emit(bytecode::make_a_bc(Opcode.GETVAR, (uint)callee_reg, getvar_name_idx));
+        }
         // CALL_S: A=result, B=callee_reg, C=nargs_reg — reuse callee_reg for result
         self.emit_abc(Opcode.CALL_S, (uint)callee_reg, (uint)callee_reg, (uint)total_count_reg);
+    } else if (undef_this && getvar_callee) {
+        // Fuse the callee's GETVAR into this call: the GETVAR instruction
+        // was never actually emitted (call_expr removed it from the code
+        // stream up front, before arg compilation), so CALL_VAR here is
+        // the only dispatch that loads AND calls the callee. One dispatch
+        // instead of two.
+        self.emit_abc(Opcode.CALL_VAR, (uint)callee_reg, (uint)arg_count, getvar_name_idx);
     } else if (undef_this) {
         // Plain non-method call: receiver is undefined, materialized by the VM
         // (no per-call LDUNDEF dispatch). A=result, B=callee_reg, C=nargs.
@@ -2726,7 +2770,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 // Not found locally: emit GETVAR to look up by name at runtime
                 uint name_idx = self.add_string_constant(id_tok.str_value);
                 ushort id_reg = self.alloc_reg();
-                self.emit(bytecode::make_a_bc(Opcode.GETVAR, (uint)id_reg, name_idx));
+                self.last_getvar_code_pos = self.emit(bytecode::make_a_bc(Opcode.GETVAR, (uint)id_reg, name_idx));
                 self.last_was_getvar = true;
                 self.last_getvar_name_idx = name_idx;
                 self.save_lhs_ident_name(id_tok.str_value);
@@ -3048,7 +3092,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 }
                 uint name_idx = self.add_string_constant(id_tok.str_value);
                 ushort id_reg = self.alloc_reg();
-                self.emit(bytecode::make_a_bc(Opcode.GETVAR, (uint)id_reg, name_idx));
+                self.last_getvar_code_pos = self.emit(bytecode::make_a_bc(Opcode.GETVAR, (uint)id_reg, name_idx));
                 self.last_was_getvar = true;
                 self.last_getvar_name_idx = name_idx;
                 self.save_lhs_ident_name(id_tok.str_value);
@@ -3153,7 +3197,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 }
                 uint name_idx = self.add_string_constant(id_tok.str_value);
                 ushort id_reg = self.alloc_reg();
-                self.emit(bytecode::make_a_bc(Opcode.GETVAR, (uint)id_reg, name_idx));
+                self.last_getvar_code_pos = self.emit(bytecode::make_a_bc(Opcode.GETVAR, (uint)id_reg, name_idx));
                 self.last_was_getvar = true;
                 self.last_getvar_name_idx = name_idx;
                 self.save_lhs_ident_name(id_tok.str_value);

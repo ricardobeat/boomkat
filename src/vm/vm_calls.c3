@@ -211,6 +211,170 @@ fn HObject* super_walk_new_target(Vm* vm, Activation* act) {
     }
 }
 
+/// Resolve CALL_VAR's callee-by-name lookup into ds.regs_base[callee_reg].
+/// Mirrors the GETVAR opcode handler in vm_execute.c3 (same VarIC keyed on
+/// this instruction's own pc_off, same env-chain walk, same getter/TDZ
+/// handling) so CALL_VAR keeps GETVAR's IC hit rate instead of falling back
+/// to an uncached lookup on every call. Returns VM_ERROR~ (via the usual
+/// vm_throw_value/vm_throw_error_fmt + needs_restart protocol) on a
+/// ReferenceError, TDZ access, or a propagated getter throw.
+fn void? resolve_call_var(Dispatch* ds, uint name_const_idx, uint callee_reg) @inline {
+    Vm* vm = ds.vm;
+    TVal* ra = ds.regs_base + callee_reg;
+
+    if (name_const_idx >= vm.current_func.const_count) {
+        ra.set_undefined();
+        return;
+    }
+    TVal name_val = ds.constants[name_const_idx];
+    if (!name_val.is_string()) {
+        ra.set_undefined();
+        return;
+    }
+    void* key = name_val.get_heapptr();
+
+    // --- Variable IC fast path ---
+    if (ds.var_ic_base != null) {
+        uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
+        hobject::VarICEntry* vic = ds.var_ic_base + pc_off;
+        if (vic.env != null && vic.key == key && vic.search_head == (void*)ds.act.lex_env) {
+            HObject* b = (HObject*)vic.bindings;
+            if (b.shape_id == vic.shape_id
+                && vm.heap.shapes[b.shape_id].generation == vic.generation) {
+                if (!b.get_prop_flags(vic.prop_idx).is_accessor) {
+                    TVal v = b.prop_values()[vic.prop_idx];
+                    if (!env::is_tdz_sentinel(&v)) {
+                        vm.heap.tval_copy_ref(ra, &v);
+                        track_heap_store(ds.act, ra, callee_reg);
+                        return;
+                    }
+                    // TDZ: fall through to slow path (error)
+                }
+                // Accessor property: fall through to slow path which invokes getter
+            }
+            vic.env = null;
+        }
+    }
+
+    // --- Slow path: full environment chain walk ---
+    bool found = false;
+    EnvRecord* ic_env = null;
+    int ic_prop_idx = -1;
+
+    EnvRecord* cur = ds.act.lex_env;
+    while (cur != null) {
+        int idx = cur.bindings.find_prop_idx(key);
+        if (idx >= 0) {
+            TVal v_raw = cur.bindings.prop_values()[idx];
+            if (env::is_tdz_sentinel(&v_raw)) {
+                HString* name_hstr = (HString*)key;
+                if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "Cannot access '%s' before initialization", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                    return VM_ERROR~;
+                }
+                found = true; // prevent duplicate error
+            } else if (cur.bindings.get_prop_flags((uint)idx).is_accessor) {
+                TVal getter = hobject::hobject_access_getter(v_raw);
+                if (!getter.is_undefined() && !getter.is_null() && vm.heap.call_fn != null) {
+                    TVal this_tv;
+                    this_tv.set_object(cur.bindings);
+                    TVal getter_val = vm.heap.call_fn(vm, getter, null, 0, this_tv);
+                    if (vm.heap.has_error) {
+                        vm.heap.has_error = false;
+                        TVal err_val = vm.heap.error_value;
+                        if (!vm_throw_value(vm, err_val, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                            vm.has_error = true;
+                            vm.heap.has_error = true;
+                            return VM_ERROR~;
+                        }
+                        found = true; // prevent duplicate error
+                    } else {
+                        vm.heap.tval_copy_ref(ra, &getter_val);
+                        track_heap_store(ds.act, ra, callee_reg);
+                        found = true;
+                        ic_env = cur;
+                        ic_prop_idx = idx;
+                    }
+                } else {
+                    ra.set_undefined();
+                    track_heap_store(ds.act, ra, callee_reg);
+                    found = true;
+                    ic_env = cur;
+                    ic_prop_idx = idx;
+                }
+            } else {
+                vm.heap.tval_copy_ref(ra, &v_raw);
+                track_heap_store(ds.act, ra, callee_reg);
+                found = true;
+                ic_env = cur;
+                ic_prop_idx = idx;
+            }
+            break;
+        }
+        cur = cur.parent;
+    }
+
+    if (!found && ds.act.lex_env != ds.act.var_env) {
+        EnvRecord* vcur = ds.act.var_env;
+        while (vcur != null) {
+            int vidx = vcur.bindings.find_prop_idx(key);
+            if (vidx >= 0) {
+                if (vcur.bindings.get_prop_flags((uint)vidx).is_accessor) {
+                    TVal gs_slot = vcur.bindings.prop_values()[vidx];
+                    TVal getter = hobject::hobject_access_getter(gs_slot);
+                    if (!getter.is_undefined() && !getter.is_null() && vm.heap.call_fn != null) {
+                        TVal this_tv;
+                        this_tv.set_object(vcur.bindings);
+                        TVal getter_val = vm.heap.call_fn(vm, getter, null, 0, this_tv);
+                        if (vm.heap.has_error) {
+                            vm.heap.has_error = false;
+                            TVal err_val = vm.heap.error_value;
+                            if (!vm_throw_value(vm, err_val, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                vm.has_error = true;
+                                vm.heap.has_error = true;
+                                return VM_ERROR~;
+                            }
+                            found = true;
+                            break;
+                        }
+                        vm.heap.tval_copy_ref(ra, &getter_val);
+                    } else {
+                        ra.set_undefined();
+                    }
+                } else {
+                    TVal v2 = vcur.bindings.prop_values()[vidx];
+                    vm.heap.tval_copy_ref(ra, &v2);
+                }
+                track_heap_store(ds.act, ra, callee_reg);
+                found = true;
+                break;
+            }
+            vcur = vcur.parent;
+        }
+    }
+
+    if (found) {
+        if (ds.var_ic_base != null && ic_env != null) {
+            uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
+            hobject::VarICEntry* vic = ds.var_ic_base + pc_off;
+            vic.env = ic_env;
+            vic.bindings = ic_env.bindings;
+            vic.shape_id = ic_env.bindings.shape_id;
+            vic.generation = vm.heap.shapes[ic_env.bindings.shape_id].generation;
+            vic.prop_idx = (ushort)ic_prop_idx;
+            if (vic.key != null) { vm.heap.decref((types::HeapHeader*)vic.key); }
+            vic.key = key;
+            if (key != null) { ((types::HeapHeader*)key).incref(); }
+            vic.search_head = (void*)ds.act.lex_env;
+        }
+    } else {
+        HString* name_hstr = (HString*)key;
+        if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "%s is not defined", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+            return VM_ERROR~;
+        }
+    }
+    return;
+}
+
 /// Fast path for CALL/CALL_S/CALL_UNDEF_THIS on a direct (non-generator,
 /// non-class-ctor) compiled-function callee — the overwhelmingly common
 /// shape for ordinary recursive/iterative JS calls. Hoisted out of
@@ -229,9 +393,13 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, Instruction insn, bool*
 
     // Safe point: run deferred GC before entering callee
     if (vm.heap.gc_pending) { vm.heap.safepoint_gc(); }
-    // Compiler convention: A=result_reg, B=callee_reg, C=nargs (or nargs_reg for CALL_S)
+    // Compiler convention: A=result_reg, B=callee_reg, C=nargs (or nargs_reg
+    // for CALL_S). CALL_VAR is the odd one out — it has no separate callee
+    // register operand (the callee is loaded BY this instruction, not read
+    // from a register another instruction wrote): A=result_reg=callee_reg,
+    // B=nargs, C=name constant-pool index.
     uint result_reg = insn.a;
-    uint callee_reg = insn.b;
+    uint callee_reg = op == Opcode.CALL_VAR ? insn.a : insn.b;
     uint nargs;
     if (op == Opcode.CALL_S) {
         // Read nargs from the register at index C
@@ -243,6 +411,8 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, Instruction insn, bool*
         } else {
             nargs = 0;
         }
+    } else if (op == Opcode.CALL_VAR) {
+        nargs = insn.b;
     } else {
         nargs = insn.c;
     }
@@ -254,9 +424,30 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, Instruction insn, bool*
     // path reads the this-slot (compiled-fn fast path via saved_this,
     // and bound/builtin/lightfunc slow paths via regs_base[callee_reg+1]).
     // Replacing one full opcode dispatch with one register store into an
-    // already-hot slot is the net win.
-    if (op == Opcode.CALL_UNDEF_THIS) {
+    // already-hot slot is the net win. CALL_VAR is likewise always a plain
+    // (undefined-this) call — same reasoning applies.
+    if (op == Opcode.CALL_UNDEF_THIS || op == Opcode.CALL_VAR) {
         ds.regs_base[callee_reg + 1].set_undefined();
+    }
+
+    if (op == Opcode.CALL_VAR) {
+        if (catch cverr = resolve_call_var(ds, insn.c, callee_reg)) {
+            // Uncaught (vm_throw_value/vm_throw_error_fmt found no catcher):
+            // propagate the fault as usual.
+            *handled = true;
+            return VM_ERROR~;
+        }
+        // A TDZ access or getter throw that WAS caught also routes through
+        // vm_throw_value inside resolve_call_var, which sets needs_restart
+        // and installs the catch handler's activation/pc — but returns
+        // successfully (not a fault) since the error was handled. ra was
+        // never written in that case (there is no resolved callee value),
+        // so this call must not proceed to read/invoke func_slot; bail out
+        // and let the outer restart loop reload state at the catch handler.
+        if (ds.needs_restart) {
+            *handled = true;
+            return (TVal){};
+        }
     }
 
     TVal* func_slot = ds.regs_base + callee_reg;
@@ -564,7 +755,8 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
     switch (op) {
         case Opcode.CALL:
         case Opcode.CALL_S:
-        case Opcode.CALL_UNDEF_THIS: {
+        case Opcode.CALL_UNDEF_THIS:
+        case Opcode.CALL_VAR: {
             bool fast_handled = false;
             TVal? fast_result = try_fast_compiled_call(ds, op, insn, &fast_handled);
             if (fast_handled) {
@@ -572,9 +764,10 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
             }
             // Slow path: re-derive result_reg/callee_reg/nargs/func_val (the
             // fast-path helper already applied CALL_UNDEF_THIS's this-slot
-            // clear, which is idempotent to repeat here).
+            // clear, which is idempotent to repeat here — and for CALL_VAR,
+            // already resolved the callee-by-name into ds.regs_base[callee_reg]).
             uint result_reg = insn.a;
-            uint callee_reg = insn.b;
+            uint callee_reg = op == Opcode.CALL_VAR ? insn.a : insn.b;
             uint nargs;
             if (op == Opcode.CALL_S) {
                 TVal* nargs_slot = ds.regs_base + insn.c;
@@ -585,12 +778,17 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                 } else {
                     nargs = 0;
                 }
+            } else if (op == Opcode.CALL_VAR) {
+                nargs = insn.b;
             } else {
                 nargs = insn.c;
             }
             if (op == Opcode.CALL_UNDEF_THIS) {
                 ds.regs_base[callee_reg + 1].set_undefined();
             }
+            // CALL_VAR's this-slot clear + callee resolution already
+            // happened inside try_fast_compiled_call above (before the
+            // fast-path guard decided *handled=false), so nothing to redo.
 
             TVal* func_slot = ds.regs_base + callee_reg;
             TVal func_val = *func_slot;

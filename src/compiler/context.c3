@@ -246,6 +246,11 @@ struct CompilerContext {
     /// binary operand without parentheses (ES §13.16, §13.15). Cleared by
     /// binary_expr once the unary_expr return is consumed.
     bool last_was_arrow_expr;
+    /// Code index of the GETVAR instruction that produced the last identifier
+    /// reference (valid whenever last_was_getvar is true). Lets call_expr
+    /// fuse a bare-identifier callee's GETVAR into CALL_VAR even though other
+    /// instructions (arg setup) are emitted between the GETVAR and the call.
+    uint last_getvar_code_pos;
     /// Set when the last primary_expr returned a live local variable register directly.
     bool last_was_local_var;
     ushort last_local_var_reg;
