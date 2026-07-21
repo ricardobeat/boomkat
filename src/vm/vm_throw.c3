@@ -72,7 +72,9 @@ fn bool vm_throw_value(Vm* vm, TVal thrown_val, Activation* act,
                     // completing any generator body we unwind through.
                     while (vm.activation_count > 0
                            && &vm.activations[vm.activation_count - 1] != search_act) {
-                        vm_complete_gen_on_unwind(vm, &vm.activations[vm.activation_count - 1]);
+                        Activation* popping = &vm.activations[vm.activation_count - 1];
+                        vm_complete_gen_on_unwind(vm, popping);
+                        clear_borrowed_callee_slot(popping);
                         vm.activation_count--;
                     }
                     // Restore the valstack_bottom for the target activation
@@ -100,7 +102,9 @@ fn bool vm_throw_value(Vm* vm, TVal thrown_val, Activation* act,
                 if (search_act != act) {
                     while (vm.activation_count > 0
                            && &vm.activations[vm.activation_count - 1] != search_act) {
-                        vm_complete_gen_on_unwind(vm, &vm.activations[vm.activation_count - 1]);
+                        Activation* popping = &vm.activations[vm.activation_count - 1];
+                        vm_complete_gen_on_unwind(vm, popping);
+                        clear_borrowed_callee_slot(popping);
                         vm.activation_count--;
                     }
                     vm.valstack_bottom = search_act.bottom;
@@ -134,7 +138,9 @@ fn bool vm_throw_value(Vm* vm, TVal thrown_val, Activation* act,
             // Pop every activation above and including the async frame.
             while (vm.activation_count > 0
                    && &vm.activations[vm.activation_count - 1] != search_act) {
-                vm_complete_gen_on_unwind(vm, &vm.activations[vm.activation_count - 1]);
+                Activation* popping = &vm.activations[vm.activation_count - 1];
+                vm_complete_gen_on_unwind(vm, popping);
+                clear_borrowed_callee_slot(popping);
                 vm.activation_count--;
             }
             if (search_act.async_gen_state != null

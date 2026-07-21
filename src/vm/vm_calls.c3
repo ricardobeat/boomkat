@@ -211,6 +211,16 @@ fn HObject* super_walk_new_target(Vm* vm, Activation* act) {
     }
 }
 
+/// True when `b` is the bindings object of a permanent global environment
+/// record (the global object record or the top-level declarative record).
+/// A binding in either is a permanent GC root for the life of the realm, so
+/// a callee resolved there can be safely borrowed into a register without an
+/// owning reference.
+fn bool is_global_bindings(Vm* vm, HObject* b) @inline {
+    return (vm.global_env != null && b == vm.global_env.bindings)
+        || (vm.global_lex_env != null && b == vm.global_lex_env.bindings);
+}
+
 /// Resolve CALL_VAR's callee-by-name lookup into ds.regs_base[callee_reg].
 /// Mirrors the GETVAR opcode handler in vm_execute.c3 (same VarIC keyed on
 /// this instruction's own pc_off, same env-chain walk, same getter/TDZ
@@ -218,9 +228,21 @@ fn HObject* super_walk_new_target(Vm* vm, Activation* act) {
 /// to an uncached lookup on every call. Returns VM_ERROR~ (via the usual
 /// vm_throw_value/vm_throw_error_fmt + needs_restart protocol) on a
 /// ReferenceError, TDZ access, or a propagated getter throw.
-fn void? resolve_call_var(Dispatch* ds, uint name_const_idx, uint callee_reg) @inline {
+///
+/// `borrowed` (out): set true when the callee resolved to a *global*
+/// binding (the global object record or the top-level declarative record).
+/// Those environments are permanent GC roots, so their binding slot cannot
+/// be freed for the duration of the call; the callee value is written into
+/// the register WITHOUT an incref (a plain copy) and NOT registered via
+/// track_heap_store. The caller (try_fast_compiled_call) commits this borrow
+/// only when it also takes the compiled-function fast path — where the result
+/// overwrites the same register on return and must therefore skip decref-ing
+/// the (non-owned) old value. For any other callee kind the caller "un-borrows"
+/// by incref+track before dispatching, so every slow path stays balanced.
+fn void? resolve_call_var(Dispatch* ds, uint name_const_idx, uint callee_reg, bool* borrowed) @inline {
     Vm* vm = ds.vm;
     TVal* ra = ds.regs_base + callee_reg;
+    *borrowed = false;
 
     if (name_const_idx >= vm.current_func.const_count) {
         ra.set_undefined();
@@ -244,8 +266,14 @@ fn void? resolve_call_var(Dispatch* ds, uint name_const_idx, uint callee_reg) @i
                 if (!b.get_prop_flags(vic.prop_idx).is_accessor) {
                     TVal v = b.prop_values()[vic.prop_idx];
                     if (!env::is_tdz_sentinel(&v)) {
-                        vm.heap.tval_copy_ref(ra, &v);
-                        track_heap_store(ds.act, ra, callee_reg);
+                        if (is_global_bindings(vm, b)) {
+                            // Borrow: permanent global root, no incref/track.
+                            *ra = v;
+                            *borrowed = true;
+                        } else {
+                            vm.heap.tval_copy_ref(ra, &v);
+                            track_heap_store(ds.act, ra, callee_reg);
+                        }
                         return;
                     }
                     // TDZ: fall through to slow path (error)
@@ -302,8 +330,13 @@ fn void? resolve_call_var(Dispatch* ds, uint name_const_idx, uint callee_reg) @i
                     ic_prop_idx = idx;
                 }
             } else {
-                vm.heap.tval_copy_ref(ra, &v_raw);
-                track_heap_store(ds.act, ra, callee_reg);
+                if (is_global_bindings(vm, cur.bindings)) {
+                    *ra = v_raw;
+                    *borrowed = true;
+                } else {
+                    vm.heap.tval_copy_ref(ra, &v_raw);
+                    track_heap_store(ds.act, ra, callee_reg);
+                }
                 found = true;
                 ic_env = cur;
                 ic_prop_idx = idx;
@@ -342,6 +375,12 @@ fn void? resolve_call_var(Dispatch* ds, uint name_const_idx, uint callee_reg) @i
                     }
                 } else {
                     TVal v2 = vcur.bindings.prop_values()[vidx];
+                    if (is_global_bindings(vm, vcur.bindings)) {
+                        *ra = v2;
+                        *borrowed = true;
+                        found = true;
+                        break;
+                    }
                     vm.heap.tval_copy_ref(ra, &v2);
                 }
                 track_heap_store(ds.act, ra, callee_reg);
@@ -430,8 +469,9 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, Instruction insn, bool*
         ds.regs_base[callee_reg + 1].set_undefined();
     }
 
+    bool callee_borrowed = false;
     if (op == Opcode.CALL_VAR) {
-        if (catch cverr = resolve_call_var(ds, insn.c, callee_reg)) {
+        if (catch cverr = resolve_call_var(ds, insn.c, callee_reg, &callee_borrowed)) {
             // Uncaught (vm_throw_value/vm_throw_error_fmt found no catcher):
             // propagate the fault as usual.
             *handled = true;
@@ -452,6 +492,38 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, Instruction insn, bool*
 
     TVal* func_slot = ds.regs_base + callee_reg;
     TVal func_val = *func_slot;
+
+    // The borrow (no incref) is only committed when this call takes the
+    // compiled-function activation-setup fast path below, where the result
+    // overwrites the borrowed callee register on return and the write-back
+    // is taught (via ACT_FLAG_BORROWED_CALLEE) to skip decref-ing the old
+    // (non-owned) value. Any other callee kind — generator, class ctor,
+    // lightfunc/builtin/bound (slow path) — reads and rewrites the callee
+    // register with ordinary owned semantics, so restore the owning
+    // reference here before proceeding.
+    if (callee_borrowed) {
+        bool commit = false;
+        if (func_val.is_object()) {
+            HObject* hb = (HObject*)func_val.get_heapptr();
+            if (hb != null && hb.is_callable() && hb.callable_kind() == hobject::CallableKind.COMPILED_FN) {
+                CompiledFunction* tf = (*hb.extra_ptr()).func.comp_func;
+                // Async callees are excluded: their promise result is written
+                // back to the callee register across suspension/resumption and
+                // rejection-unwind paths, where borrowed-slot bookkeeping would
+                // be fragile. Plain (sync) compiled functions only.
+                if (tf != null && !tf.is_class_ctor() && !tf.is_generator() && !tf.is_async()) {
+                    commit = true;
+                }
+            }
+        }
+        if (!commit) {
+            if (func_val.is_heap_allocated() && func_val.get_heapptr() != null) {
+                ((types::HeapHeader*)func_val.get_heapptr()).incref();
+            }
+            track_heap_store(ds.act, func_slot, callee_reg);
+            callee_borrowed = false;
+        }
+    }
 
     // === Fast path: direct compiled HObject call (most common) ===
     if (func_val.is_object()) {
@@ -577,6 +649,9 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, Instruction insn, bool*
                     new_act.bottom = new_bottom;
                     new_act.retval = ds.regs_base + result_reg;
                     new_act.flags = 0;
+                    if (callee_borrowed) {
+                        new_act.flags |= ACT_FLAG_BORROWED_CALLEE;
+                    }
                     if (target_fast.has_direct_eval()) {
                         new_act.flags |= ACT_FLAG_DIRECT_EVAL;
                     }

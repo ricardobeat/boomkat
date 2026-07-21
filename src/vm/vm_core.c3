@@ -296,6 +296,19 @@ fn bool derived_ctor_returns_undefined_uninitialized(Activation* callee_act) @in
         && env::is_tdz_sentinel(&callee_act.this_binding);
 }
 
+/// When an activation whose callee was BORROWED (ACT_FLAG_BORROWED_CALLEE) is
+/// unwound abnormally (exception), its retval slot in the surviving caller
+/// still holds the borrowed, non-owned callee value. A later decref_callee_regs
+/// sweep of that caller frame would decref a reference the caller never owned
+/// (the callee register is inside the caller's [0..max_heap_reg] range whenever
+/// a heap argument was passed). Neutralize the borrowed bits with a raw
+/// overwrite so the sweep skips over harmless undefined. No decref: borrowed.
+fn void clear_borrowed_callee_slot(Activation* act) @inline {
+    if ((act.flags & ACT_FLAG_BORROWED_CALLEE) != 0 && act.retval != null) {
+        act.retval.set_undefined();
+    }
+}
+
 /// Decrement the reference count of every register in the given activation.
 /// Must be called BEFORE the activation is popped, while the register range
 /// is still valid.  Safe to call on activations with null func (no registers).
@@ -387,7 +400,17 @@ fn TVal handle_return(Vm* vm, TVal val) @inline {
             }
         }
         TVal* result_slot = callee_result;
-        vm.heap.tval_copy_ref(result_slot, &final_val);
+        if ((callee_act.flags & ACT_FLAG_BORROWED_CALLEE) != 0) {
+            // Borrowed callee: the old value in result_slot is the non-owned
+            // borrowed closure — incref the result and raw-overwrite, never
+            // decref the borrowed value.
+            if (final_val.is_heap_allocated() && final_val.get_heapptr() != null) {
+                ((HeapHeader*)final_val.get_heapptr()).incref();
+            }
+            *result_slot = final_val;
+        } else {
+            vm.heap.tval_copy_ref(result_slot, &final_val);
+        }
     }
 
     // Release the this_binding reference AFTER the result has been written
