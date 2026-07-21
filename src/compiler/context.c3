@@ -299,6 +299,14 @@ struct CompilerContext {
     /// when the next token is not a call (e.g. RPAREN closing the parens).
     bool inside_parens;
 
+    /// Set by a caller immediately before invoking assignment_expr()/expression()
+    /// when the produced value is provably discarded (expression statement,
+    /// for-update clause, non-final comma operand). assignment_expr reads it
+    /// once at its top into a local and clears it, so it never leaks into the
+    /// recursive RHS. In void context a plain bare-identifier assignment skips
+    /// the result-preservation LDREG copies and writes the LHS directly.
+    bool void_ctx;
+
     /// When true, emit_private_access skips the CHK_BRAND instruction.
     /// Used by emit_deferred_target for private field targets in destructuring
     /// assignments: per ES2022 §13.15.5.6, the target lref is evaluated before
