@@ -11,11 +11,9 @@
 [  1] LDUNDEF         r2 = r0, r0
 [  2] LDINT           r1, 0
 [  3] LDINT           r2, 0
-[  4] JUMP            +4
-[  5] ADD             r3 = r1, r2
-[  6] LDREG           r1 = r3, r0
-[  7] ADDI            r4 = r2, r1
-[  8] LDREG           r2 = r4, r0
-[  9] JMP_LT          -5, r2, r0
-[ 10] RET             r1 = r0, r0
+[  4] JUMP            +2
+[  5] ADD             r1 = r1, r2
+[  6] ADDI            r2 = r2, r1
+[  7] JMP_LT          -3, r2, r0
+[  8] RET             r1 = r0, r0
 --- End bytecode ---
