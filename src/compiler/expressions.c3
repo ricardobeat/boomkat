@@ -254,7 +254,11 @@ fn ushort? CompilerContext.assignment_expr(&self) {
 
     // Save LHS info (will be overwritten by RHS evaluation)
     bool lhs_was_getvar = self.last_was_getvar;
+    bool lhs_was_getglobal = self.last_was_getvar && self.last_was_getglobal;
     uint lhs_getvar_name_idx = self.last_getvar_name_idx;
+    // The opcode that writes back a bare-identifier LHS: PUTGLOBAL at true
+    // global scope (mirrors GETGLOBAL), else PUTVAR_ASSIGN.
+    Opcode ident_store_op = lhs_was_getglobal ? Opcode.PUTGLOBAL : Opcode.PUTVAR_ASSIGN;
     ushort lhs_ref_reg = MAX_REGISTERS;
     bool lhs_was_member = self.last_was_member;
     ushort lhs_member_obj = self.last_member_obj_reg;
@@ -277,7 +281,7 @@ fn ushort? CompilerContext.assignment_expr(&self) {
             double nv = num_tok2.num_value;
             if (nv == 1.0 && compound_op == Opcode.SUB) {
                 self.advance()!;
-                if (lhs_was_getvar && self.code_count > 0
+                if (lhs_was_getvar && !lhs_was_getglobal && self.code_count > 0
                     && self.code[self.code_count - 1].op == Opcode.GETVAR) {
                     uint name_idx = self.code[self.code_count - 1].get_bc();
                     uint getvar_reg = self.code[self.code_count - 1].a;
@@ -285,7 +289,14 @@ fn ushort? CompilerContext.assignment_expr(&self) {
                 } else {
                     self.emit_abc(Opcode.DEC, (uint)left, 0, 0);
                     if (lhs_was_getvar) {
-                        self.emit_a_bc(Opcode.PUTVAR_ASSIGN, (uint)left, lhs_getvar_name_idx);
+                        // The store clears its source register, so preserve the
+                        // decremented value in a temp for the expression result
+                        // (matters for eval completion value / chained use).
+                        ushort tmp = self.alloc_reg();
+                        self.emit_abc(Opcode.LDREG, (uint)tmp, (uint)left, 0);
+                        self.emit_a_bc(ident_store_op, (uint)left, lhs_getvar_name_idx);
+                        self.free_reg(left);
+                        left = tmp;
                     }
                 }
                 return left;
@@ -332,7 +343,7 @@ fn ushort? CompilerContext.assignment_expr(&self) {
                     // PUTVAR reads from left (the GETVAR register) and clears it;
                     // lor_res already holds the value and is our result.
                     self.emit_abc(Opcode.LDREG, (uint)left, (uint)lor_res, 0);
-                    self.emit_a_bc(Opcode.PUTVAR_ASSIGN, (uint)left, lhs_getvar_name_idx);
+                    self.emit_a_bc(ident_store_op, (uint)left, lhs_getvar_name_idx);
                 }
                 la_result = lor_res;
             }
@@ -360,7 +371,7 @@ fn ushort? CompilerContext.assignment_expr(&self) {
                 if (!right_is_local_land) { self.free_reg(right); }
                 if (lhs_was_getvar) {
                     self.emit_abc(Opcode.LDREG, (uint)left, (uint)land_res, 0);
-                    self.emit_a_bc(Opcode.PUTVAR_ASSIGN, (uint)left, lhs_getvar_name_idx);
+                    self.emit_a_bc(ident_store_op, (uint)left, lhs_getvar_name_idx);
                 }
                 la_result = land_res;
             }
@@ -406,7 +417,7 @@ fn ushort? CompilerContext.assignment_expr(&self) {
                 if (lhs_was_getvar) {
                     // PUTVAR clears its source; copy to left first, then write env.
                     self.emit_abc(Opcode.LDREG, (uint)left, (uint)nc_res, 0);
-                    self.emit_a_bc(Opcode.PUTVAR_ASSIGN, (uint)left, lhs_getvar_name_idx);
+                    self.emit_a_bc(ident_store_op, (uint)left, lhs_getvar_name_idx);
                 }
                 la_result = nc_res;
             }
@@ -470,7 +481,8 @@ fn ushort? CompilerContext.assignment_expr(&self) {
     // value. Non-strict code keeps the old value-discarding path.
     if (is_assign && lhs_was_getvar && self.code_count > 0) {
         Instruction lhs_last = self.code[self.code_count - 1];
-        if (lhs_last.op == Opcode.GETVAR && (ushort)lhs_last.a == left) {
+        if ((lhs_last.op == Opcode.GETVAR || lhs_last.op == Opcode.GETGLOBAL)
+            && (ushort)lhs_last.a == left) {
             if (self.is_strict) {
                 self.code[self.code_count - 1] = bytecode::make_a_bc(Opcode.RESOLVEVAR, (uint)left, lhs_getvar_name_idx);
                 lhs_ref_reg = left;
@@ -529,7 +541,7 @@ fn ushort? CompilerContext.assignment_expr(&self) {
                 // in a temp before writing back to the environment.
                 ushort tmp = self.alloc_reg();
                 self.emit_abc(Opcode.LDREG, (uint)tmp, (uint)left, 0);
-                self.emit_a_bc(Opcode.PUTVAR_ASSIGN, (uint)left, lhs_getvar_name_idx);
+                self.emit_a_bc(ident_store_op, (uint)left, lhs_getvar_name_idx);
                 self.free_reg(left);
                 left = tmp;
             }
@@ -573,7 +585,7 @@ fn ushort? CompilerContext.assignment_expr(&self) {
             // so the result survives the clobber.
             ushort tmp = self.alloc_reg();
             self.emit_abc(Opcode.LDREG, (uint)tmp, (uint)left, 0);
-            self.emit_a_bc(Opcode.PUTVAR_ASSIGN, (uint)left, lhs_getvar_name_idx);
+            self.emit_a_bc(ident_store_op, (uint)left, lhs_getvar_name_idx);
             self.free_reg(left);
             left = tmp;
         }
@@ -1051,6 +1063,7 @@ fn ushort? CompilerContext.unary_expr(&self) {
             // value leaves the last emitted instruction as GETPROP (not
             // GETVAR), so the GETVAR branch would also miss its target.
             bool inc_was_getvar = self.last_was_getvar;
+            bool inc_was_getglobal = self.last_was_getvar && self.last_was_getglobal;
             uint inc_getvar_name_idx = self.last_getvar_name_idx;
             bool inc_was_member = self.last_was_member;
             ushort inc_member_obj = self.last_member_obj_reg;
@@ -1062,7 +1075,7 @@ fn ushort? CompilerContext.unary_expr(&self) {
                 self.emit_abc(Opcode.PUTPROP, (uint)inc_member_obj, (uint)inc_member_prop, (uint)op_inc);
                 self.free_reg(inc_member_prop);
                 self.free_reg(inc_member_obj);
-            } else if (inc_was_getvar && self.code_count > 0
+            } else if (inc_was_getvar && !inc_was_getglobal && self.code_count > 0
                 && self.code[self.code_count - 1].op == Opcode.GETVAR) {
                 // Replace GETVAR with INC_VAR: 1 dispatch instead of 3
                 uint name_idx = self.code[self.code_count - 1].get_bc();
@@ -1071,7 +1084,7 @@ fn ushort? CompilerContext.unary_expr(&self) {
             } else {
                 self.emit_abc(Opcode.INC, (uint)op_inc, 0, 0);
                 if (inc_was_getvar) {
-                    self.emit_a_bc(Opcode.PUTVAR_ASSIGN, (uint)op_inc, inc_getvar_name_idx);
+                    self.emit_a_bc(inc_was_getglobal ? Opcode.PUTGLOBAL : Opcode.PUTVAR_ASSIGN, (uint)op_inc, inc_getvar_name_idx);
                 }
             }
             self.last_was_getvar = false;
@@ -1097,6 +1110,7 @@ fn ushort? CompilerContext.unary_expr(&self) {
             }
             // See INC case above for why member takes priority over getvar.
             bool dec_was_getvar = self.last_was_getvar;
+            bool dec_was_getglobal = self.last_was_getvar && self.last_was_getglobal;
             uint dec_getvar_name_idx = self.last_getvar_name_idx;
             bool dec_was_member = self.last_was_member;
             ushort dec_member_obj = self.last_member_obj_reg;
@@ -1108,7 +1122,7 @@ fn ushort? CompilerContext.unary_expr(&self) {
                 self.emit_abc(Opcode.PUTPROP, (uint)dec_member_obj, (uint)dec_member_prop, (uint)op_dec);
                 self.free_reg(dec_member_prop);
                 self.free_reg(dec_member_obj);
-            } else if (dec_was_getvar && self.code_count > 0
+            } else if (dec_was_getvar && !dec_was_getglobal && self.code_count > 0
                 && self.code[self.code_count - 1].op == Opcode.GETVAR) {
                 uint name_idx = self.code[self.code_count - 1].get_bc();
                 uint getvar_reg = self.code[self.code_count - 1].a;
@@ -1116,7 +1130,7 @@ fn ushort? CompilerContext.unary_expr(&self) {
             } else {
                 self.emit_abc(Opcode.DEC, (uint)op_dec, 0, 0);
                 if (dec_was_getvar) {
-                    self.emit_a_bc(Opcode.PUTVAR_ASSIGN, (uint)op_dec, dec_getvar_name_idx);
+                    self.emit_a_bc(dec_was_getglobal ? Opcode.PUTGLOBAL : Opcode.PUTVAR_ASSIGN, (uint)op_dec, dec_getvar_name_idx);
                 }
             }
             self.last_was_getvar = false;
@@ -2620,10 +2634,10 @@ fn ushort? CompilerContext.primary_expr(&self) {
                     self.uses_arguments = true;
                 }
 
-                // Not found locally: emit GETVAR to look up by name at runtime
+                // Not found locally: emit GETVAR/GETGLOBAL to look up by name at runtime
                 uint name_idx = self.add_string_constant(id_tok.str_value);
                 ushort id_reg = self.alloc_reg();
-                self.emit(bytecode::make_a_bc(Opcode.GETVAR, (uint)id_reg, name_idx));
+                self.emit_ident_read((uint)id_reg, name_idx);
                 self.last_was_getvar = true;
                 self.last_getvar_name_idx = name_idx;
                 self.save_lhs_ident_name(id_tok.str_value);
@@ -2939,7 +2953,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 }
                 uint name_idx = self.add_string_constant(id_tok.str_value);
                 ushort id_reg = self.alloc_reg();
-                self.emit(bytecode::make_a_bc(Opcode.GETVAR, (uint)id_reg, name_idx));
+                self.emit_ident_read((uint)id_reg, name_idx);
                 self.last_was_getvar = true;
                 self.last_getvar_name_idx = name_idx;
                 self.save_lhs_ident_name(id_tok.str_value);
@@ -3041,7 +3055,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 }
                 uint name_idx = self.add_string_constant(id_tok.str_value);
                 ushort id_reg = self.alloc_reg();
-                self.emit(bytecode::make_a_bc(Opcode.GETVAR, (uint)id_reg, name_idx));
+                self.emit_ident_read((uint)id_reg, name_idx);
                 self.last_was_getvar = true;
                 self.last_getvar_name_idx = name_idx;
                 self.save_lhs_ident_name(id_tok.str_value);
@@ -3476,7 +3490,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 }
                 uint name_idx = self.add_string_constant(let_tok.str_value);
                 ushort let_reg = self.alloc_reg();
-                self.emit(bytecode::make_a_bc(Opcode.GETVAR, (uint)let_reg, name_idx));
+                self.emit_ident_read((uint)let_reg, name_idx);
                 return let_reg;
             }
             return self.literal_keyword()!;
@@ -3861,7 +3875,7 @@ fn ushort? CompilerContext.object_literal(&self) {
                 }
                 if (!resolved_local) {
                     ushort val_reg = self.alloc_reg();
-                    self.emit(bytecode::make_a_bc(Opcode.GETVAR, (uint)val_reg, shorthand_name_idx));
+                    self.emit_ident_read((uint)val_reg, shorthand_name_idx);
                     self.emit_abc(Opcode.INITPROP, (uint)obj_reg, (uint)key_reg, (uint)val_reg);
                     self.free_reg(val_reg);
                 }
