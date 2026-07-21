@@ -42,6 +42,22 @@ fn bool CompilerContext.at_global_slot_scope(&self) @inline {
     return self.is_global && self.cur_lex_depth == 0;
 }
 
+/// Record the constant-pool index of a top-level var/function name as a
+/// statically-declared global, so a later strict assignment whose LHS name
+/// interns to the same index can elide the resolvability guard. Interned
+/// constants dedupe by content, so the index uniquely identifies the name.
+fn void CompilerContext.record_declared_global(&self, uint name_idx) {
+    if (self.declared_global_name_idxs.contains(name_idx)) return;
+    self.declared_global_name_idxs.push(name_idx);
+}
+
+/// True when the LHS name (given by its constant-pool index) is a global this
+/// unit itself hoisted (var/function), so a strict plain assignment to it is
+/// statically resolvable and needs no RESOLVEVAR/THROW_REF guard.
+fn bool CompilerContext.is_declared_global(&self, uint name_idx) {
+    return self.declared_global_name_idxs.contains(name_idx);
+}
+
 /// Emit a bare-identifier read: GETGLOBAL at global slot scope, else GETVAR.
 /// Records last_was_getglobal so the assignment write-back picks PUTGLOBAL.
 fn uint CompilerContext.emit_ident_read(&self, uint reg, uint name_idx) {
