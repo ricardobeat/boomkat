@@ -8,6 +8,7 @@ import duktape::hobject;
 import duktape::heap;
 import duktape::jit;
 import std::io;
+import std::collections::list;
 
 // ============================================================================
 // Fault codes
@@ -498,6 +499,19 @@ struct CompilerContext {
     char[][256] hoisted_fn_names;
     ushort hoisted_fn_count;
 
+    // Constant-pool indices of the top-level `var` / `function` names this
+    // Script unit declares as globals (the exact names for which the check-
+    // prologue emits CHKGLOBALVAR / CHKGLOBALFUNC). A strict-mode plain
+    // assignment whose bare-identifier LHS name interns to one of these indices
+    // is statically resolvable, so the RESOLVEVAR/THROW_REF guard is provably
+    // dead and elided. Indices (not slices) are stored because interned string
+    // constants dedupe by content, so the same name always maps to the same
+    // pool index within a context — sidestepping the lexer scratch-buffer
+    // lifetime hazard of escaped identifiers. Populated only for Script global
+    // scope (not modules — those bind via GETVAR, and not eval). Grows on the
+    // thread allocator; freed in cleanup().
+    List{uint} declared_global_name_idxs;
+
     // Direct eval tracking — when true, the CALL path must create a fresh env.
     bool has_direct_eval;
     /// Set by primary_expr when the identifier "eval" is resolved; checked and
@@ -584,6 +598,10 @@ fn void CompilerContext.init(&self, Lexer* lex, void* heap) {
     self.private_names = (PrivateNameEntry*)h.alloc_func(h.heap_udata, (usz)(INITIAL_PRIVATE_NAMES * PrivateNameEntry::size));
     self.owns_private_names = true;
 
+    // Persistent (non-temp) allocator for the declared-global name-index set so
+    // entries survive the whole compile; freed in cleanup().
+    self.declared_global_name_idxs.allocator = mem;
+
     // Strict-only engine: lexer always in strict mode (affects FutureReservedWord
     // keyword recognition — implements/interface/package/private/protected/public).
     self.lexer.set_strict(true);
@@ -600,6 +618,7 @@ fn void CompilerContext.cleanup(&self) {
         h.free_func(h.heap_udata, self.private_names);
         self.private_names = null;
     }
+    self.declared_global_name_idxs.free();
 }
 
 /// Borrow the private-names table from an enclosing context (a method,
