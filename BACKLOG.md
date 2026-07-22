@@ -53,7 +53,7 @@ Target: feature parity with vendored QuickJS 2025-09-13 (`out/qjs`), measured by
 
 ## Known bugs (pre-existing, exposed by un-skips)
 
-- [ ] **Getter/setter methods never create `arguments`** — `{get x(){ arguments }}` fails standalone; `static-init-arguments-methods.js`.
+- [x] **Getter/setter methods never create `arguments`** — `{get x(){ arguments }}` fails standalone; `static-init-arguments-methods.js`. Fix: getter/setter invocations now declare `arguments` in their activation's var_env (matching CALL paths). Setters get the assigned value at index 0; getters get an empty arguments object.
 - [ ] **`let x; var x;` redeclaration not rejected** — no conflict detection anywhere; `static-init-invalid-lex-var.js`.
 - [ ] **`await` as BindingIdentifier in nested-function positions** — function-decl name, catch param, generator/accessor param names, `{await}` shorthand, arrow param-default; 9 tests, no class involvement.
 - [ ] **`new Set(string)` throws** — `coll_construct` checks is-object before the iterable protocol; affects the whole keyed-collection constructor family.

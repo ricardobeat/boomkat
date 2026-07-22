@@ -189,6 +189,25 @@ fn bool invoke_getter(Vm* vm, hobject::AccessorResult* acc,
     uint new_nregs = target.num_regs;
     mem::clear(new_regs, (sz)((usz)new_nregs * TVal::size));
 
+    // Create the arguments object for getters/setters that reference `arguments`.
+    // Per ES2015 §14.3 step 7 + §14.5.14 step 11 (Runtime Semantics: ClassDefinitionEvaluation
+    // for MethodDefinition), the `arguments` object is bound for getter/setter bodies just
+    // like for ordinary methods — without this, a getter body doing `var a = arguments`
+    // raises ReferenceError. Getters/setters never receive user-supplied args (the
+    // property-access syntax passes none), so the object is always empty.
+    if (target.uses_arguments()) {
+        HObject*? args_obj_raw_ig = vm.heap.alloc_object(hobject::ObjClass.ARGUMENTS);
+        if (try args_obj_ig = args_obj_raw_ig) {
+            args_obj_ig.prototype = vm.heap.object_proto;
+            finish_arguments_object(vm, args_obj_ig, func_obj, 0);
+            HString* args_name_ig = (HString*)vm.heap.strs[heap::BuiltinStr.ARGUMENTS];
+            if (args_name_ig != null) {
+                TVal args_tv_ig; args_tv_ig.set_object(args_obj_ig);
+                env::env_declare(new_act.var_env, args_name_ig, args_tv_ig);
+            }
+        }
+    }
+
     vm.valstack_top = new_regs + new_nregs;
     vm.valstack_bottom = new_act.bottom;
 

@@ -2401,6 +2401,24 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                         }
                                         vm.heap.tval_copy_ref(&new_regs[0], &put_val);
 
+                                        // Setter bodies that reference `arguments` need a
+                                        // bound arguments object (ES2015 §14.3 step 7). The
+                                        // setter receives exactly one user arg (the assigned
+                                        // value) and the rest are undefined if declared.
+                                        if (target.uses_arguments()) {
+                                            HObject*? args_obj_s_raw = vm.heap.alloc_object(hobject::ObjClass.ARGUMENTS);
+                                            if (try args_obj_s = args_obj_s_raw) {
+                                                args_obj_s.set_array_idx(0, put_val);
+                                                args_obj_s.prototype = vm.heap.object_proto;
+                                                finish_arguments_object(vm, args_obj_s, setter_obj, 1);
+                                                HString* args_name_s = (HString*)vm.heap.strs[heap::BuiltinStr.ARGUMENTS];
+                                                if (args_name_s != null) {
+                                                    TVal args_tv_s; args_tv_s.set_object(args_obj_s);
+                                                    env::env_declare(new_act.var_env, args_name_s, args_tv_s);
+                                                }
+                                            }
+                                        }
+
                                         vm.valstack_top = new_regs + target.num_regs;
                                         vm.valstack_bottom = new_act.bottom;
 
@@ -2578,6 +2596,23 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                     TVal* new_regs = new_act.bottom;
                                     mem::clear(new_regs, (sz)((usz)target.num_regs * TVal::size));
                                     vm.heap.tval_copy_ref(&new_regs[0], &put_val);
+
+                                    // Setter bodies that reference `arguments` need a
+                                    // bound arguments object (ES2015 §14.3 step 7). Mirror
+                                    // of the own-property setter path above.
+                                    if (target.uses_arguments()) {
+                                        HObject*? args_obj_s2_raw = vm.heap.alloc_object(hobject::ObjClass.ARGUMENTS);
+                                        if (try args_obj_s2 = args_obj_s2_raw) {
+                                            args_obj_s2.set_array_idx(0, put_val);
+                                            args_obj_s2.prototype = vm.heap.object_proto;
+                                            finish_arguments_object(vm, args_obj_s2, setter_obj, 1);
+                                            HString* args_name_s2 = (HString*)vm.heap.strs[heap::BuiltinStr.ARGUMENTS];
+                                            if (args_name_s2 != null) {
+                                                TVal args_tv_s2; args_tv_s2.set_object(args_obj_s2);
+                                                env::env_declare(new_act.var_env, args_name_s2, args_tv_s2);
+                                            }
+                                        }
+                                    }
 
                                     vm.valstack_top = new_regs + target.num_regs;
                                     vm.valstack_bottom = new_act.bottom;
