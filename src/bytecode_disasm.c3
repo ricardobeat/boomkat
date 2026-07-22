@@ -56,7 +56,7 @@ $if $feature(TRACE_VM):
                 pos = write_uint(buf, pos, self.b);
                 pos = write_str(buf, pos, ", r");
                 pos = write_uint(buf, pos, self.c);
-            } else if (op == Opcode.CALL_VAR) {
+            } else if (op == Opcode.CALL_VAR || op == Opcode.CALL_GLOBAL) {
                 // A=result/callee reg, B=argc (not a register), C=name const idx.
                 pos = write_str(buf, pos, "r");
                 pos = write_uint(buf, pos, self.a);
@@ -236,6 +236,7 @@ const char*[Opcode.LAST_OP.ordinal + 1] OPCODE_NAMES = {
     [Opcode.CALL_S.ordinal]      = "CALL_S",
     [Opcode.CALL_UNDEF_THIS.ordinal] = "CALL_UNDEF_THIS",
     [Opcode.CALL_VAR.ordinal]    = "CALL_VAR",
+    [Opcode.CALL_GLOBAL.ordinal] = "CALL_GLOBAL",
     [Opcode.OBJSPRD.ordinal]     = "OBJSPRD",
     [Opcode.SETPROTO.ordinal]    = "SETPROTO",
     [Opcode.GETPROTO.ordinal]    = "GETPROTO",

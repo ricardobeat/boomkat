@@ -522,6 +522,20 @@ enum Opcode : char {
     /// A=result/callee register, B=argument count, C=constant pool index
     /// of the callee's name (must be < 256).
     CALL_VAR,
+    /// Fused GETGLOBAL + CALL_UNDEF_THIS: `A = global[constants[C]](A+2..A+1+B)`.
+    /// The global-scope analog of CALL_VAR. Resolves the callee — a bare
+    /// top-level global-function binding — via GETGLOBAL's lean stable-pointer
+    /// varref IC (keyed on this instruction's own pc) directly into register A,
+    /// then performs a plain-undefined-this call: one dispatch instead of the
+    /// GETGLOBAL + CALL_UNDEF_THIS pair. The global object owns the binding, so
+    /// the callee is borrowed (no incref/decref) exactly as CALL_VAR does for a
+    /// global-resolved callee. Emitted only when the callee read was emitted as
+    /// GETGLOBAL (true global slot scope, non-prim binding) immediately before a
+    /// plain non-method call with no spread arguments, and the name's constant
+    /// index fits in 8 bits (else falls back to GETGLOBAL + CALL_UNDEF_THIS).
+    /// ABC format: A=result/callee register, B=argument count, C=constant pool
+    /// index of the callee's name (must be < 256).
+    CALL_GLOBAL,
     /// `A = spread(C) into object` — copy all own enumerable properties
     /// from source C into target object A.  null/undefined sources are
     /// silently skipped (as in Object.assign).  ABC format:

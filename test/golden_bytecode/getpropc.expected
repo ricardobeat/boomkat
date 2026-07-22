@@ -2,13 +2,12 @@
 [  0] CHKGLOBALFUNC   r0, 0
 [  1] CLOSURE         r0, 0
 [  2] DECLVAR         r0, 0
-[  3] GETGLOBAL       r0, 0
-[  4] NEWOBJ          r2 = r0, r0
-[  5] LDCONST         r3, 1
-[  6] LDINT           r4, +42
-[  7] ???             r2 = r3, r4
-[  8] CALL_UNDEF_THIS r0 = r0, r1
-[  9] RETUNDEF        
+[  3] NEWOBJ          r2 = r0, r0
+[  4] LDCONST         r3, 1
+[  5] LDINT           r4, +42
+[  6] ???             r2 = r3, r4
+[  7] CALL_GLOBAL     r0, argc=1, K[0]
+[  8] RETUNDEF        
 
 --- Inner function 0 ---
 [  0] GETPROPC        r2 = r0, r1

@@ -1845,6 +1845,24 @@ fn ushort? CompilerContext.emit_call(&self, ushort callee_reg) {
         && self.code[self.last_getvar_code_pos].op == Opcode.GETVAR
         && self.code[self.last_getvar_code_pos].a == callee_reg
         && self.last_getvar_name_idx <= bytecode::MAX_C;
+    // CALL_GLOBAL fusion candidate: the global-scope analog. The callee read
+    // was emitted as plain GETGLOBAL (true global slot scope, non-prim-only
+    // binding — GETGLOBAL_PRIM globals are never functions, so a callee is
+    // always plain GETGLOBAL) and is still the last instruction targeting this
+    // exact callee register. Fuses into CALL_GLOBAL, which reloads the callee
+    // via GETGLOBAL's varref IC and calls in one dispatch.
+    // last_was_getglobal (unlike last_was_getvar) is only cleared inside
+    // emit_ident_read, so it can stay stale-true through a member-access
+    // callee (a method call). Require call_prop_obj_reg == MAX_REGISTERS so
+    // this fires only for a plain bare-global call — the same non-method
+    // precondition that makes the CALL_GLOBAL emission below reachable.
+    bool getglobal_callee = self.last_was_getvar
+        && self.last_was_getglobal
+        && self.call_prop_obj_reg == MAX_REGISTERS
+        && self.last_getvar_code_pos + 1 == self.code_count
+        && self.code[self.last_getvar_code_pos].op == Opcode.GETGLOBAL
+        && self.code[self.last_getvar_code_pos].a == callee_reg
+        && self.last_getvar_name_idx <= bytecode::MAX_C;
     uint getvar_code_pos = self.last_getvar_code_pos;
     uint getvar_name_idx = self.last_getvar_name_idx;
 
@@ -1877,6 +1895,7 @@ fn ushort? CompilerContext.emit_call(&self, ushort callee_reg) {
         // stale/freed register or require rewriting the relocation too.
         // Fall back to plain GETVAR + CALL_UNDEF_THIS for this call.
         getvar_callee = false;
+        getglobal_callee = false;
         ushort new_callee = self.next_reg;
         self.emit_abc(Opcode.LDREG, (uint)new_callee, (uint)callee_reg, 0);
         callee_reg = new_callee;
@@ -1885,13 +1904,13 @@ fn ushort? CompilerContext.emit_call(&self, ushort callee_reg) {
         if (self.next_reg <= callee_reg + 1) {
             self.next_reg = callee_reg + 2;
         }
-    } else if (getvar_callee) {
-        // No relocation: the GETVAR at getvar_code_pos is still the last
-        // emitted instruction and nothing has read callee_reg's value yet
+    } else if (getvar_callee || getglobal_callee) {
+        // No relocation: the GETVAR/GETGLOBAL at getvar_code_pos is still the
+        // last emitted instruction and nothing has read callee_reg's value yet
         // (arg compilation below only uses callee_reg as a register-number
-        // anchor). Drop it from the code stream entirely — CALL_VAR at the
-        // end of this call will load the callee itself. This is what
-        // actually elides the dispatch: the GETVAR's bytes never execute.
+        // anchor). Drop it from the code stream entirely — CALL_VAR/CALL_GLOBAL
+        // at the end of this call will load the callee itself. This is what
+        // actually elides the dispatch: the load's bytes never execute.
         self.code_count = getvar_code_pos;
     }
     // Place undefined 'this' slot (or the property object for method calls).
@@ -2017,11 +2036,13 @@ fn ushort? CompilerContext.emit_call(&self, ushort callee_reg) {
             self.emit_abc(Opcode.LDUNDEF, (uint)(callee_reg + 1), 0, 0);
         }
         // CALL_S reads the callee value from callee_reg directly (no
-        // fused variant). If the GETVAR was stripped speculatively above
-        // (spread-ness is only known once args are fully parsed), restore
+        // fused variant). If the GETVAR/GETGLOBAL was stripped speculatively
+        // above (spread-ness is only known once args are fully parsed), restore
         // it here — CALL_S needs the real value in the register.
         if (getvar_callee) {
             self.emit(bytecode::make_a_bc(Opcode.GETVAR, (uint)callee_reg, getvar_name_idx));
+        } else if (getglobal_callee) {
+            self.emit(bytecode::make_a_bc(Opcode.GETGLOBAL, (uint)callee_reg, getvar_name_idx));
         }
         // CALL_S: A=result, B=callee_reg, C=nargs_reg — reuse callee_reg for result
         self.emit_abc(Opcode.CALL_S, (uint)callee_reg, (uint)callee_reg, (uint)total_count_reg);
@@ -2032,6 +2053,11 @@ fn ushort? CompilerContext.emit_call(&self, ushort callee_reg) {
         // the only dispatch that loads AND calls the callee. One dispatch
         // instead of two.
         self.emit_abc(Opcode.CALL_VAR, (uint)callee_reg, (uint)arg_count, getvar_name_idx);
+    } else if (undef_this && getglobal_callee) {
+        // Global-scope analog: the callee's GETGLOBAL was stripped above, so
+        // CALL_GLOBAL is the only dispatch that loads (via GETGLOBAL's varref
+        // IC) AND calls the global callee. One dispatch instead of two.
+        self.emit_abc(Opcode.CALL_GLOBAL, (uint)callee_reg, (uint)arg_count, getvar_name_idx);
     } else if (undef_this) {
         // Plain non-method call: receiver is undefined, materialized by the VM
         // (no per-call LDUNDEF dispatch). A=result, B=callee_reg, C=nargs.
