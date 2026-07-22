@@ -534,7 +534,8 @@ fn ushort? CompilerContext.assignment_expr(&self) {
     // value. Non-strict code keeps the old value-discarding path.
     if (is_assign && lhs_was_getvar && self.code_count > 0) {
         Instruction lhs_last = self.code[self.code_count - 1];
-        if ((lhs_last.op == Opcode.GETVAR || lhs_last.op == Opcode.GETGLOBAL)
+        if ((lhs_last.op == Opcode.GETVAR || lhs_last.op == Opcode.GETGLOBAL
+             || lhs_last.op == Opcode.GETGLOBAL_PRIM)
             && (ushort)lhs_last.a == left) {
             // A strict plain assignment must, per PutValue, capture LHS
             // resolvability BEFORE the RHS runs — hence the RESOLVEVAR probe
@@ -544,10 +545,13 @@ fn ushort? CompilerContext.assignment_expr(&self) {
             // the guard is provably dead: strip the read (its value is
             // discarded) and leave lhs_ref_reg unset. Undeclared globals keep
             // the guard — e.g. `undeclared = (this.undeclared = 5)` must still
-            // throw even though the RHS would create the global.
+            // throw even though the RHS would create the global. A GETGLOBAL_PRIM
+            // LHS is by construction a declared primitive-only global, so it is
+            // statically resolvable too — strip its dead read.
             if (self.is_strict
-                && lhs_last.op == Opcode.GETGLOBAL
-                && self.is_declared_global(lhs_getvar_name_idx)) {
+                && (lhs_last.op == Opcode.GETGLOBAL_PRIM
+                    || (lhs_last.op == Opcode.GETGLOBAL
+                        && self.is_declared_global(lhs_getvar_name_idx)))) {
                 self.code_count--;
             } else if (self.is_strict) {
                 self.code[self.code_count - 1] = bytecode::make_a_bc(Opcode.RESOLVEVAR, (uint)left, lhs_getvar_name_idx);
