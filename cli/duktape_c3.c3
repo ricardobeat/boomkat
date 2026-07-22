@@ -65,6 +65,46 @@ fn int main(String[] args) {
             interp_r.get_fastint(), jit_r.get_fastint(), interp_r.bits == jit_r.bits);
         return interp_r.bits == jit_r.bits ? 0 : 1;
     }
+    // Hidden: compile fib's body to native code and run fib(10) through the
+    // JIT'd body, comparing to the interpreter.
+    if (args.len > 1 && args[1] == "--jit-fib-selftest") {
+        Heap*? jhp = heap::create(null, null, null, null, null);
+        if (catch h = jhp) { io::eprintfn("Failed heap"); return 1; }
+        defer jhp.destroy();
+        Vm*? jv = vm::vm_create(jhp);
+        if (catch err = jv) { io::eprintfn("VM failed"); return 1; }
+        defer vm::vm_destroy(jv);
+        char[] jsrc = (char[])"function fib(n){ if(n<=1) return n; return fib(n-1)+fib(n-2); } fib(1);";
+        Lexer jlex = lexer::lexer_init(jsrc, jhp);
+        CompiledFunction*? jfunc = compiler::compile(&jlex, jhp);
+        CompiledFunction* jf;
+        if (try ff = jfunc) { jf = ff; } else { io::eprintfn("compile failed"); return 1; }
+        TVal? jr = jv.execute(jf);
+        if (catch e = jr) { io::eprintfn("exec failed"); return 1; }
+        HString* fib_key = vm::intern_string(jv, (char[])"fib");
+        TVal? fib_tv_opt = jv.global_env.bindings.get_prop((void*)fib_key);
+        TVal fib_tv;
+        if (try t = fib_tv_opt) { fib_tv = t; } else { io::eprintfn("no fib"); return 1; }
+        HObject* fib_obj = (HObject*)fib_tv.get_heapptr();
+        CompiledFunction* fib_body = (*fib_obj.extra_ptr()).func.comp_func;
+        // JIT-compile fib's body.
+        vm::JitCode jc = vm::jit_compile(fib_body);
+        if (jc.body == null) { io::eprintfn("jit_compile bailed"); return 1; }
+        // Interpreter reference.
+        types::TVal[1] iargs; iargs[0].set_fastint(10);
+        types::TVal undef; undef.set_undefined();
+        types::TVal interp_r = vm::vm_call_fn_impl((void*)jv, fib_tv, &iargs[0], 1, undef);
+        // JIT body: register file with regs[0]=n. fib_body.num_regs slots.
+        types::TVal[64] jregs;
+        for (uint i = 0; i < 64; i++) jregs[i].set_undefined();
+        jregs[0].set_fastint(10);
+        ulong jit_bits = jc.body((void*)jv, &jregs[0], fib_tv.bits);
+        types::TVal jit_r; jit_r.bits = jit_bits;
+        bool ok = interp_r.bits == jit_r.bits;
+        io::printfn("interp fib(10) = %d ; jit-body fib(10) = %d ; match=%s",
+            interp_r.get_fastint(), jit_r.is_fastint() ? jit_r.get_fastint() : -999, ok);
+        return ok ? 0 : 1;
+    }
     // `--module <path>` drives the full ESM resolve->link->evaluate pipeline.
     if (args.len > 2 && args[1] == "--module") {
         String mpath = args[2];

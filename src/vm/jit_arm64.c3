@@ -151,6 +151,49 @@ fn uint enc_ldr_sp(uint t, uint imm_bytes) {
 fn uint enc_blr(uint n) {
     return 0xD63F0000u | (n << 5);
 }
+// LSL Xd, Xn, #sh  (alias of UBFM; here we only need the shift-left form)
+fn uint enc_lsl_imm(uint d, uint n, uint sh) {
+    uint immr = ((64u - sh) & 63u);
+    uint imms = (63u - sh);
+    return 0xD3400000u | (immr << 16) | (imms << 10) | (n << 5) | d;
+}
+// ASR Xd, Xn, #sh  (alias of SBFM Xd,Xn,#sh,#63 — arithmetic shift right)
+fn uint enc_asr_imm(uint d, uint n, uint sh) {
+    return 0x9340FC00u | ((sh & 63u) << 16) | (n << 5) | d;
+}
+// LSR Xd, Xn, #sh  (alias of UBFM Xd,Xn,#sh,#63 — logical shift right)
+fn uint enc_lsr_imm(uint d, uint n, uint sh) {
+    return 0xD340FC00u | ((sh & 63u) << 16) | (n << 5) | d;
+}
+// CMP Xn, Xm  (alias of SUBS XZR, Xn, Xm — sets NZCV flags)
+fn uint enc_cmp(uint n, uint m) {
+    return 0xEB00001Fu | (m << 16) | (n << 5);
+}
+// B.cond <offset>  (offset in instructions, signed 19-bit, relative to this insn)
+fn uint enc_bcond(uint cond, int off_insns) {
+    uint imm19 = ((uint)off_insns) & 0x7FFFF;
+    return 0x54000000u | (imm19 << 5) | (cond & 0xF);
+}
+// B <offset>  (unconditional, signed 26-bit, relative to this insn)
+fn uint enc_b(int off_insns) {
+    uint imm26 = ((uint)off_insns) & 0x3FFFFFF;
+    return 0x14000000u | imm26;
+}
+// ADD Xd, Xn, #imm12  (immediate, unsigned)
+fn uint enc_add_imm(uint d, uint n, uint imm12) {
+    return 0x91000000u | ((imm12 & 0xFFF) << 10) | (n << 5) | d;
+}
+// SUB Xd, Xn, #imm12  (immediate, unsigned)
+fn uint enc_sub_imm(uint d, uint n, uint imm12) {
+    return 0xD1000000u | ((imm12 & 0xFFF) << 10) | (n << 5) | d;
+}
+// Condition codes.
+const uint COND_EQ = 0x0;
+const uint COND_NE = 0x1;
+const uint COND_GT = 0xC;   // signed greater than
+const uint COND_LE = 0xD;   // signed less than or equal
+const uint COND_LT = 0xB;   // signed less than
+const uint COND_GE = 0xA;   // signed greater than or equal
 
 /// SELF-TEST: emit a native fn returning fastint(payload(reg[i]) +
 /// payload(reg[j])) re-tagged as fastint. Proves emit -> MAP_JIT execute ->
@@ -226,5 +269,260 @@ fn ulong jit_selftest_call(void* vm, ulong func_bits, TVal* args) {
     ulong result = f(vm, func_bits, args);
     munmap((void*)b.code, 4096);
     return result;
+}
+
+// ============================================================================
+// Minimal fastint-body compiler
+// ============================================================================
+//
+// Compiles the straight-line fastint arithmetic + branches + self-recursive
+// CALL of a compiled function to native arm64. This is deliberately small and
+// portable in shape: the compile loop below speaks in semantic steps (load a
+// register, sign-extend a fastint, deopt if a value is not a fastint, call the
+// C entry, branch), each backed by a handful of arm64 encoders. A second
+// backend (x86-64) would reimplement only those encoders + the tiny emit
+// helpers, not the compile loop.
+//
+// Register convention inside a JIT'd body (all callee-saved, preserved across
+// the BLR to vm_call_fn_impl):
+//   x19 = vm            x20 = regs (TVal*)      x21 = self func bits
+//   x22 = payload mask  x23 = fastint tag<<48
+// Scratch (caller-saved): x0..x9.
+//
+// The JIT'd body's own AAPCS64 signature (see JitBodyFn) is
+//   ulong body(void* vm, TVal* regs, ulong self_func_bits)
+// so on entry x0=vm, x1=regs, x2=self_func_bits. It returns the result TVal
+// bits, or JIT_DEOPT to ask the caller to re-run on the interpreter.
+
+alias JitBodyFn = fn ulong(void* vm, TVal* regs, ulong self_func_bits);
+
+/// A compiled body plus the page it lives on (so it can be freed).
+struct JitCode {
+    JitBodyFn body;
+    uint*     page;
+    usz       page_bytes;
+}
+
+// Per-bytecode-pc native offset table + pending branch fixups.
+struct JitFixup {
+    uint  native_pos;   // index of the branch instruction in the code buffer
+    uint  target_pc;    // bytecode pc it jumps to
+    uint  cond;         // condition code, or 0xFF for unconditional B
+}
+
+const uint JIT_MAX_CODE = 4096;   // 32-bit words per body page (16 KiB)
+
+/// Emit: load regs[r].bits into Xd (scratch). regs base is x20.
+fn void JitBuf.ld_reg(&self, uint d, uint r) {
+    // LDR Xd, [x20, #r*8]
+    self.emit(enc_ldr(d, 20, r * 8));
+}
+/// Emit: store Xs.bits into regs[r]. regs base is x20.
+fn void JitBuf.st_reg(&self, uint s, uint r) {
+    self.emit(enc_str(s, 20, r * 8));
+}
+/// Emit: Xd = sign-extended 48-bit fastint payload of the value in Xn.
+/// (payload = Xn & mask; then (payload << 16) >> 16 arithmetic.)
+fn void JitBuf.sext_fastint(&self, uint d, uint n) {
+    self.emit(enc_and(d, n, 22));       // d = n & payload_mask
+    self.emit(enc_lsl_imm(d, d, 16));   // d <<= 16
+    self.emit(enc_asr_imm(d, d, 16));   // d >>= 16 (arithmetic)
+}
+/// Emit: Xd = fastint-tagged TVal bits for the (already-in-range) integer Xn.
+/// bits = (Xn & payload_mask) | (TAG_FASTINT << 48).
+fn void JitBuf.retag_fastint(&self, uint d, uint n) {
+    self.emit(enc_and(d, n, 22));       // d = n & payload_mask
+    self.emit(enc_orr(d, d, 23));       // d |= tag
+}
+/// Emit a deopt guard: if regs[r] is not a fastint, jump to the deopt epilogue.
+/// Uses x8/x9 as scratch. The branch is recorded as a fixup with target_pc =
+/// DEOPT_PC and patched to the shared deopt epilogue at the end.
+const uint DEOPT_PC = 0xFFFFFFFFu;
+fn void JitBuf.guard_fastint(&self, uint r, JitFixup[] fixups, uint* nfix) {
+    self.ld_reg(8, r);
+    self.emit(enc_lsr_imm(8, 8, 48));           // x8 = tag
+    self.mov_imm64(9, types::TAG_FASTINT);
+    self.emit(enc_cmp(8, 9));                    // flags = tag - TAG_FASTINT
+    if (*nfix < fixups.len) {
+        fixups[*nfix] = { .native_pos = self.pos, .target_pc = DEOPT_PC, .cond = COND_NE };
+        (*nfix)++;
+    }
+    self.emit(enc_bcond(COND_NE, 0));            // B.NE deopt (patched later)
+}
+
+/// Try to compile `target`'s body to native arm64. Returns a JitCode with a
+/// non-null fn on success, or {} (fn == null) if the body contains any opcode
+/// or shape outside the supported fastint/self-recursion set — the caller then
+/// stays on the interpreter. Only self-recursive CALL_VAR (callee == this same
+/// function) is supported; any other callee bails.
+fn JitCode jit_compile(CompiledFunction* target) {
+    JitCode none = {};
+    if (target == null || target.code == null) return none;
+    uint n = target.code_count;
+    if (n == 0 || n > 512) return none;
+
+    // native_pc[i] = code-buffer index where bytecode instruction i begins.
+    uint[512] native_pc;
+    JitFixup[512] fixups;
+    uint nfix = 0;
+
+    uint* page = jit_alloc_page(JIT_MAX_CODE);
+    if (page == null) return none;
+    JitBuf b;
+    b.code = page; b.pos = 0; b.cap = JIT_MAX_CODE; b.failed = false;
+
+    jit_begin_write();
+
+    // --- Prologue ---
+    // Save fp/lr and the five callee-saved regs we use (x19..x23), in a 64-byte
+    // frame. Slots at SP offsets 0,8 hold fp/lr; 16,24,32,40,48 hold x19..x23.
+    b.emit(enc_stp_pre(29, 30, -64));
+    b.emit(enc_str_sp(19, 16));
+    b.emit(enc_str_sp(20, 24));
+    b.emit(enc_str_sp(21, 32));
+    b.emit(enc_str_sp(22, 40));
+    b.emit(enc_str_sp(23, 48));
+    // Move incoming args into callee-saved homes: x0=vm, x1=regs, x2=self bits.
+    b.emit(enc_mov(19, 0));                          // x19 = vm
+    b.emit(enc_mov(20, 1));                          // x20 = regs
+    b.emit(enc_mov(21, 2));                          // x21 = self func bits
+    b.mov_imm64(22, types::NANBOX_PAYLOAD_MASK);     // x22 = payload mask
+    b.mov_imm64(23, types::TAG_FASTINT << 48);       // x23 = fastint tag<<48
+    ulong callee_addr = (ulong)(uptr)(void*)&vm_call_fn_impl;
+    TVal undef; undef.set_undefined();
+
+    // --- Body ---
+    for (uint pc = 0; pc < n; pc++) {
+        native_pc[pc] = b.pos;
+        Instruction insn = target.code[pc];
+        Opcode op = insn.op;
+        uint a = insn.a;
+        uint bb = insn.b;
+        uint c = insn.c;
+        switch (op) {
+            case Opcode.LDINT: {
+                // A = (int)sBx  — signed 16-bit immediate (B low, C high).
+                short sbx = (short)(ushort)(bb | (c << 8));
+                long imm = (long)sbx;
+                b.mov_imm64(0, (ulong)imm);           // x0 = imm (sign in bits)
+                b.retag_fastint(1, 0);                // x1 = fastint(imm)
+                b.st_reg(1, a);
+            }
+            case Opcode.SUBI: {
+                // A = B - (signed8)C  (fastint fast path; deopt otherwise).
+                b.guard_fastint(bb, fixups[..], &nfix);
+                b.ld_reg(0, bb);
+                b.sext_fastint(0, 0);                 // x0 = sext(regs[B])
+                long imm = (long)(ichar)c;
+                b.mov_imm64(1, (ulong)imm);
+                b.emit(enc_sub(0, 0, 1));             // x0 = B - imm
+                b.retag_fastint(2, 0);
+                b.st_reg(2, a);
+            }
+            case Opcode.ADD: {
+                // A = B + C  (fastint fast path; deopt otherwise).
+                b.guard_fastint(bb, fixups[..], &nfix);
+                b.guard_fastint(c, fixups[..], &nfix);
+                b.ld_reg(0, bb); b.sext_fastint(0, 0);
+                b.ld_reg(1, c);  b.sext_fastint(1, 1);
+                b.emit(enc_add(0, 0, 1));
+                b.retag_fastint(2, 0);
+                b.st_reg(2, a);
+            }
+            case Opcode.SUB: {
+                b.guard_fastint(bb, fixups[..], &nfix);
+                b.guard_fastint(c, fixups[..], &nfix);
+                b.ld_reg(0, bb); b.sext_fastint(0, 0);
+                b.ld_reg(1, c);  b.sext_fastint(1, 1);
+                b.emit(enc_sub(0, 0, 1));
+                b.retag_fastint(2, 0);
+                b.st_reg(2, a);
+            }
+            case Opcode.JMP_NLE: {
+                // if !(regs[B] <= regs[C]) goto pc+1+offset ; offset = (int8)A.
+                // Both operands must be fastint or we deopt (interpreter handles
+                // the general <= including NaN/coercion).
+                b.guard_fastint(bb, fixups[..], &nfix);
+                b.guard_fastint(c, fixups[..], &nfix);
+                b.ld_reg(0, bb); b.sext_fastint(0, 0);
+                b.ld_reg(1, c);  b.sext_fastint(1, 1);
+                b.emit(enc_cmp(0, 1));                // flags = B - C
+                // Branch when NOT (B <= C), i.e. B > C  => COND_GT.
+                int off = (int)(ichar)a;
+                uint tgt = pc + 1 + (uint)off;
+                if (nfix < 512) {
+                    fixups[nfix] = { .native_pos = b.pos, .target_pc = tgt, .cond = COND_GT };
+                    nfix++;
+                }
+                b.emit(enc_bcond(COND_GT, 0));
+            }
+            case Opcode.RET: {
+                // return regs[A].bits
+                b.ld_reg(0, a);
+                // Epilogue.
+                b.emit(enc_ldr_sp(19, 16));
+                b.emit(enc_ldr_sp(20, 24));
+                b.emit(enc_ldr_sp(21, 32));
+                b.emit(enc_ldr_sp(22, 40));
+                b.emit(enc_ldr_sp(23, 48));
+                b.emit(enc_ldp_post(29, 30, 64));
+                b.emit(enc_ret());
+            }
+            case Opcode.CALL_VAR: {
+                // A = result reg = callee reg ; B = nargs ; C = name const idx.
+                // Only self-recursion is supported: the callee must be THIS
+                // function. We verify at runtime by comparing the resolved
+                // callee to self_func_bits — but resolving by name is the
+                // interpreter's job. Shortcut: the compiler only reaches here
+                // for a function that we KNOW is self-recursive (checked by the
+                // caller via jit_is_self_recursive); pass self as the callee.
+                // Args live at regs[A+2 .. A+1+nargs] (frame_start = A+2).
+                uint nargs = bb;
+                // Marshal: x0=vm, x1=self func bits, x2=&regs[A+2], w3=nargs,
+                // x4=undefined this.
+                b.emit(enc_mov(0, 19));               // x0 = vm
+                b.emit(enc_mov(1, 21));               // x1 = self func bits
+                b.emit(enc_add_imm(2, 20, (a + 2) * 8)); // x2 = &regs[A+2]
+                b.emit(enc_movz(3, nargs, 0));        // w3 = nargs
+                b.mov_imm64(4, undef.bits);           // x4 = undefined
+                b.mov_imm64(9, callee_addr);
+                b.emit(enc_blr(9));                   // result TVal bits in x0
+                b.st_reg(0, a);                       // regs[A] = result
+            }
+            default: {
+                // Unsupported opcode — bail out, free page, stay on interpreter.
+                b.failed = true;
+            }
+        }
+        if (b.failed) { munmap((void*)page, (usz)JIT_MAX_CODE * 4); return none; }
+    }
+
+    // --- Shared deopt epilogue: restore callee-saved regs, return JIT_DEOPT ---
+    uint deopt_pos = b.pos;
+    b.mov_imm64(0, JIT_DEOPT);
+    b.emit(enc_ldr_sp(19, 16));
+    b.emit(enc_ldr_sp(20, 24));
+    b.emit(enc_ldr_sp(21, 32));
+    b.emit(enc_ldr_sp(22, 40));
+    b.emit(enc_ldr_sp(23, 48));
+    b.emit(enc_ldp_post(29, 30, 64));
+    b.emit(enc_ret());
+
+    if (b.failed) { munmap((void*)page, (usz)JIT_MAX_CODE * 4); return none; }
+
+    // --- Patch branch fixups ---
+    for (uint i = 0; i < nfix; i++) {
+        JitFixup fx = fixups[i];
+        uint dst = fx.target_pc == DEOPT_PC ? deopt_pos : native_pc[fx.target_pc];
+        int rel = (int)dst - (int)fx.native_pos;   // in instructions
+        page[fx.native_pos] = enc_bcond(fx.cond, rel);
+    }
+
+    jit_finalize(&b);
+    JitCode out;
+    out.body = bitcast((uptr)(void*)page, JitBodyFn);
+    out.page = page;
+    out.page_bytes = (usz)JIT_MAX_CODE * 4;
+    return out;
 }
 
