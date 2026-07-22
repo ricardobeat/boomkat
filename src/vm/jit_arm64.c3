@@ -359,6 +359,7 @@ const uint DEOPT_PC = 0xFFFFFFFFu;
 // Special fixup targets/conditions for non-conditional branches.
 const uint BODY_ENTRY_PC = 0xFFFFFFFEu;   // target = native pc 0 (body prologue)
 const uint CORE_ENTRY_PC = 0xFFFFFFFDu;   // target = the re-entrant body core
+const uint FAST_ENTRY_PC = 0xFFFFFFFCu;   // target = the guard-skipping fast entry
 const uint COND_BL = 0xFEu;               // fixup emits BL, not B.cond
 fn void JitBuf.guard_fastint(&self, uint r, JitFixup[] fixups, uint* nfix) {
     self.ld_reg(8, r);
@@ -526,6 +527,26 @@ fn JitCode jit_compile(CompiledFunction* target) {
             ncached++;
         }
     }
+
+    // FAST recursive entry (single-fastint-parameter functions only). The
+    // recursive call jumps here having stored a PROVEN-fastint argument to
+    // window[0] and pointed x20 at the window, so this entry skips the fastint
+    // GUARD the general entry performs (load + tag-check + branch) — it just
+    // loads window[0] and sign-extends into the cached param x24. The general
+    // entry branches over this preamble to body_start; the fast entry runs the
+    // preamble then falls into body_start.
+    uint fast_pos = 0;
+    bool has_fast_entry = (nparams == 1 && ncached == 1 && param_sext_reg[0] == 24);
+    uint gen_skip_pos = 0;
+    if (has_fast_entry) {
+        gen_skip_pos = b.pos;
+        b.emit(enc_b(0));                           // general entry: B body_start (patched)
+        fast_pos = b.pos;
+        b.emit(enc_mov(23, 30));                    // x23 = return address
+        b.emit(enc_ldr(0, 20, 0));                  // x0 = window[0].bits (no guard)
+        b.sext_fastint(24, 0);                      // x24 = sext(arg)
+    }
+    uint body_start = b.pos;                         // shared body begins here
 
     // --- Body ---
     for (uint pc = 0; pc < n; pc++) {
@@ -706,11 +727,17 @@ fn JitCode jit_compile(CompiledFunction* target) {
                 // regs (x19/x21/x22) stay live — no reload. The nested core will
                 // overwrite x23 and the cached-param regs; we restore them after.
                 b.emit(enc_add_imm(20, 31, win_off));     // x20 = sp + win_off (window)
+                // Use the guard-skipping FAST entry when the single argument is a
+                // proven fastint (so the callee needn't re-guard it).
+                bool use_fast = has_fast_entry && nargs == 1
+                    && (a + 2) < 64 && known_fi[a + 2];
                 if (nfix < 512) {
-                    fixups[nfix] = { .native_pos = b.pos, .target_pc = CORE_ENTRY_PC, .cond = COND_BL };
+                    fixups[nfix] = { .native_pos = b.pos,
+                        .target_pc = use_fast ? FAST_ENTRY_PC : CORE_ENTRY_PC,
+                        .cond = COND_BL };
                     nfix++;
                 }
-                b.emit(enc_bl(0));                        // BL core (patched)
+                b.emit(enc_bl(0));                        // BL core/fast (patched)
                 // Restore core-return addr, our regs ptr, and cached-param regs.
                 b.emit(enc_ldr_sp(23, 0));                // restore x23
                 b.emit(enc_ldr_sp(20, 8));                // restore x20 = our regs
@@ -765,6 +792,10 @@ fn JitCode jit_compile(CompiledFunction* target) {
 
     // Patch the outer prologue's BL into the core.
     page[outer_call_pos] = enc_bl((int)core_pos - (int)outer_call_pos);
+    // Patch the general entry's branch over the fast-entry preamble to body_start.
+    if (has_fast_entry) {
+        page[gen_skip_pos] = enc_b((int)body_start - (int)gen_skip_pos);
+    }
 
     // --- Patch branch fixups ---
     for (uint i = 0; i < nfix; i++) {
@@ -773,6 +804,7 @@ fn JitCode jit_compile(CompiledFunction* target) {
         if (fx.target_pc == DEOPT_PC) { dst = deopt_pos; }
         else if (fx.target_pc == BODY_ENTRY_PC) { dst = 0; }   // body prologue
         else if (fx.target_pc == CORE_ENTRY_PC) { dst = core_pos; }
+        else if (fx.target_pc == FAST_ENTRY_PC) { dst = fast_pos; }
         else { dst = native_pc[fx.target_pc]; }
         int rel = (int)dst - (int)fx.native_pos;   // in instructions
         if (fx.cond == COND_BL) { page[fx.native_pos] = enc_bl(rel); }
