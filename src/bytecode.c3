@@ -293,6 +293,18 @@ enum Opcode : char {
     /// throws) but specialized to the two global objects, with the same slot
     /// inline cache as GETGLOBAL for the write-back.
     PUTGLOBAL,
+    /// `A = global[constants[BC]]` — read a top-level global binding that a
+    /// whole-program compile-time proof classified as primitive-only (every
+    /// assignment anywhere in the unit, including nested functions, stores a
+    /// provably-primitive value; no eval/globalThis/Function/with observability).
+    /// Because the slot can never hold a heap value at runtime, the read is a
+    /// raw `*dst = *slot` — no is_heap check, no refcount, no track_heap_store.
+    /// Shares GETGLOBAL's varref slot IC for stable-pointer resolution.
+    GETGLOBAL_PRIM,
+    /// `global[constants[BC]] = A` — write to a proven primitive-only global
+    /// (see GETGLOBAL_PRIM). A raw `*slot = A` with no decref of the overwritten
+    /// value (provably primitive) and no incref/track of the stored value.
+    PUTGLOBAL_PRIM,
     /// `A = typeof identifier`  — typeof on a variable name (A-BC format).
     /// Returns "undefined" for unresolvable references per ES5 §11.4.3.
     TYPEOFIDENT,
@@ -828,6 +840,8 @@ fn OpFormat get_op_format(Opcode op) {
         case DECLVAR:   return A_BC;
         case GETGLOBAL: return A_BC;
         case PUTGLOBAL: return A_BC;
+        case GETGLOBAL_PRIM: return A_BC;
+        case PUTGLOBAL_PRIM: return A_BC;
         case DELVAR:    return A_BC;
         case CLOSURE:   return A_BC;
         case GETBOUND:  return A_BC;
