@@ -815,10 +815,24 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, Instruction insn, bool*
                     // removes a per-call function call on the hot recursion/call
                     // path (~8% on call40); byte-identical result in this case.
                     EnvRecord* cap_lex_fast = (*hobj_fast.extra_ptr()).func.lex_env;
+                    EnvRecord* own_var_env_fast = (*hobj_fast.extra_ptr()).func.var_env;
                     if ((cap_lex_fast == null || cap_lex_fast == fast_var_env
                             || !cap_lex_fast.is_declarative)
                         && !target_fast.is_namebinding()) {
                         new_act.lex_env = fast_var_env;
+                    } else if (fast_var_env == own_var_env_fast
+                        && !target_fast.is_namebinding()
+                        && !target_fast.needs_lex_bridge()) {
+                        // cap_lex is a distinct declarative scope, but the callee
+                        // reuses its own captured var_env (needs_env==false: no
+                        // fresh scope this call). resolve_call_lex_env's splice
+                        // requires var_env != own_var_env, so it can't splice and
+                        // simply returns cap_lex as the lexical search head.
+                        // Inline that result — avoids the per-call function call
+                        // for every global leaf/closure that reads captured
+                        // bindings via the scope chain (the common global-call
+                        // shape; ~4% of the call/recursion hot path in profiles).
+                        new_act.lex_env = cap_lex_fast;
                     } else {
                         new_act.lex_env = resolve_call_lex_env(vm, hobj_fast, target_fast, fast_var_env);
                     }
