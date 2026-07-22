@@ -414,6 +414,180 @@ fn void? resolve_call_var(Dispatch* ds, uint name_const_idx, uint callee_reg, bo
     return;
 }
 
+/// Resolve CALL_GLOBAL's callee-by-name lookup into ds.regs_base[callee_reg].
+/// The global-scope analog of resolve_call_var: mirrors the GETGLOBAL opcode
+/// handler (same per-PC stable-pointer varref IC, same global-scope-confined
+/// env walk, same getter/TDZ handling) so CALL_GLOBAL keeps GETGLOBAL's IC hit
+/// rate. Emitted only where lex_env == global_lex_env and var_env ==
+/// global_env, so any binding it resolves lives in a permanent global
+/// environment record — a GC root for the life of the realm. The data-slot
+/// callee is therefore borrowed (plain copy, no incref, no track_heap_store),
+/// exactly as resolve_call_var does for a global-resolved callee; `borrowed`
+/// is set true. The caller commits the borrow only on the compiled-fn fast
+/// path and un-borrows (incref + track) otherwise. Returns VM_ERROR~ (via the
+/// vm_throw_value/vm_throw_error_fmt + needs_restart protocol) on a
+/// ReferenceError, TDZ access, or a propagated getter throw.
+fn void? resolve_call_global(Dispatch* ds, uint name_const_idx, uint callee_reg, bool* borrowed) @inline {
+    Vm* vm = ds.vm;
+    TVal* ra = ds.regs_base + callee_reg;
+    *borrowed = false;
+
+    if (name_const_idx >= vm.current_func.const_count) {
+        ra.set_undefined();
+        return;
+    }
+    TVal name_val = ds.constants[name_const_idx];
+    if (!name_val.is_string()) {
+        ra.set_undefined();
+        return;
+    }
+    void* key = name_val.get_heapptr();
+
+    // --- VarRef fast path: stable-pointer dereference (GETGLOBAL's IC) ---
+    if (ds.var_ic_base != null) {
+        uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
+        hobject::VarICEntry* gic = ds.var_ic_base + pc_off;
+        HObject* gb = (HObject*)gic.bindings;
+        if (gb != null && gic.varref_alloc != null && gb.prop_alloc == gic.varref_alloc) {
+            TVal* pv = gic.varref_ptr;
+            if (!env::is_tdz_sentinel(pv)) {
+                // The cached binding is a permanent global env record: borrow.
+                *ra = *pv;
+                *borrowed = true;
+                return;
+            }
+            // TDZ: fall through to slow path (throw).
+        }
+    }
+
+    // --- Slow path: resolve against the global objects (mirrors GETGLOBAL). ---
+    bool found = false;
+    EnvRecord* ic_env = null;
+    int ic_prop_idx = -1;
+    bool ic_cacheable = false;
+
+    EnvRecord* cur = ds.act.lex_env;
+    while (cur != null) {
+        int idx = cur.bindings.find_prop_idx(key);
+        if (idx >= 0) {
+            TVal v_raw = cur.bindings.prop_values()[idx];
+            if (env::is_tdz_sentinel(&v_raw)) {
+                HString* name_hstr = (HString*)key;
+                if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "Cannot access '%s' before initialization", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                    return VM_ERROR~;
+                }
+                found = true;
+            } else if (cur.bindings.get_prop_flags((uint)idx).is_accessor) {
+                TVal getter = hobject::hobject_access_getter(v_raw);
+                if (!getter.is_undefined() && !getter.is_null() && vm.heap.call_fn != null) {
+                    TVal this_tv;
+                    this_tv.set_object(cur.bindings);
+                    TVal getter_val = vm.heap.call_fn(vm, getter, null, 0, this_tv);
+                    if (vm.heap.has_error) {
+                        vm.heap.has_error = false;
+                        TVal err_val = vm.heap.error_value;
+                        if (!vm_throw_value(vm, err_val, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                            vm.has_error = true;
+                            vm.heap.has_error = true;
+                            return VM_ERROR~;
+                        }
+                        found = true;
+                    } else {
+                        vm.heap.tval_copy_ref(ra, &getter_val);
+                        track_heap_store(ds.act, ra, callee_reg);
+                        found = true;
+                    }
+                } else {
+                    ra.set_undefined();
+                    track_heap_store(ds.act, ra, callee_reg);
+                    found = true;
+                }
+            } else {
+                if (is_global_bindings(vm, cur.bindings)) {
+                    *ra = v_raw;
+                    *borrowed = true;
+                } else {
+                    vm.heap.tval_copy_ref(ra, &v_raw);
+                    track_heap_store(ds.act, ra, callee_reg);
+                }
+                found = true;
+                ic_env = cur;
+                ic_prop_idx = idx;
+                ic_cacheable = true;
+            }
+            break;
+        }
+        cur = cur.parent;
+    }
+
+    if (!found && ds.act.lex_env != ds.act.var_env) {
+        EnvRecord* vcur = ds.act.var_env;
+        while (vcur != null) {
+            int vidx = vcur.bindings.find_prop_idx(key);
+            if (vidx >= 0) {
+                if (vcur.bindings.get_prop_flags((uint)vidx).is_accessor) {
+                    TVal gs_slot = vcur.bindings.prop_values()[vidx];
+                    TVal getter = hobject::hobject_access_getter(gs_slot);
+                    if (!getter.is_undefined() && !getter.is_null() && vm.heap.call_fn != null) {
+                        TVal this_tv;
+                        this_tv.set_object(vcur.bindings);
+                        TVal getter_val = vm.heap.call_fn(vm, getter, null, 0, this_tv);
+                        if (vm.heap.has_error) {
+                            vm.heap.has_error = false;
+                            TVal err_val = vm.heap.error_value;
+                            if (!vm_throw_value(vm, err_val, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                vm.has_error = true;
+                                vm.heap.has_error = true;
+                                return VM_ERROR~;
+                            }
+                            found = true;
+                            break;
+                        }
+                        vm.heap.tval_copy_ref(ra, &getter_val);
+                    } else {
+                        ra.set_undefined();
+                    }
+                    track_heap_store(ds.act, ra, callee_reg);
+                } else {
+                    TVal v2 = vcur.bindings.prop_values()[vidx];
+                    if (is_global_bindings(vm, vcur.bindings)) {
+                        *ra = v2;
+                        *borrowed = true;
+                    } else {
+                        vm.heap.tval_copy_ref(ra, &v2);
+                        track_heap_store(ds.act, ra, callee_reg);
+                    }
+                    ic_env = vcur;
+                    ic_prop_idx = vidx;
+                    ic_cacheable = true;
+                }
+                found = true;
+                break;
+            }
+            vcur = vcur.parent;
+        }
+    }
+
+    if (found) {
+        if (ic_cacheable && ds.var_ic_base != null && ic_env != null) {
+            uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
+            hobject::VarICEntry* gic = ds.var_ic_base + pc_off;
+            gic.env = (void*)ic_env;
+            gic.bindings = (void*)ic_env.bindings;
+            gic.shape_id = ic_env.bindings.shape_id;
+            gic.prop_idx = (ushort)ic_prop_idx;
+            gic.varref_ptr = &ic_env.bindings.prop_values()[ic_prop_idx];
+            gic.varref_alloc = ic_env.bindings.prop_alloc;
+        }
+    } else {
+        HString* name_hstr = (HString*)key;
+        if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "%s is not defined", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+            return VM_ERROR~;
+        }
+    }
+    return;
+}
+
 /// Fast path for CALL/CALL_S/CALL_UNDEF_THIS on a direct (non-generator,
 /// non-class-ctor) compiled-function callee — the overwhelmingly common
 /// shape for ordinary recursive/iterative JS calls. Hoisted out of
@@ -438,7 +612,8 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, Instruction insn, bool*
     // from a register another instruction wrote): A=result_reg=callee_reg,
     // B=nargs, C=name constant-pool index.
     uint result_reg = insn.a;
-    uint callee_reg = op == Opcode.CALL_VAR ? insn.a : insn.b;
+    bool is_fused_var = op == Opcode.CALL_VAR || op == Opcode.CALL_GLOBAL;
+    uint callee_reg = is_fused_var ? insn.a : insn.b;
     uint nargs;
     if (op == Opcode.CALL_S) {
         // Read nargs from the register at index C
@@ -450,7 +625,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, Instruction insn, bool*
         } else {
             nargs = 0;
         }
-    } else if (op == Opcode.CALL_VAR) {
+    } else if (is_fused_var) {
         nargs = insn.b;
     } else {
         nargs = insn.c;
@@ -465,13 +640,19 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, Instruction insn, bool*
     // Replacing one full opcode dispatch with one register store into an
     // already-hot slot is the net win. CALL_VAR is likewise always a plain
     // (undefined-this) call — same reasoning applies.
-    if (op == Opcode.CALL_UNDEF_THIS || op == Opcode.CALL_VAR) {
+    if (op == Opcode.CALL_UNDEF_THIS || is_fused_var) {
         ds.regs_base[callee_reg + 1].set_undefined();
     }
 
     bool callee_borrowed = false;
-    if (op == Opcode.CALL_VAR) {
-        if (catch cverr = resolve_call_var(ds, insn.c, callee_reg, &callee_borrowed)) {
+    if (is_fused_var) {
+        bool cv_faulted = false;
+        if (op == Opcode.CALL_GLOBAL) {
+            if (catch cverr = resolve_call_global(ds, insn.c, callee_reg, &callee_borrowed)) { cv_faulted = true; }
+        } else {
+            if (catch cverr = resolve_call_var(ds, insn.c, callee_reg, &callee_borrowed)) { cv_faulted = true; }
+        }
+        if (cv_faulted) {
             // Uncaught (vm_throw_value/vm_throw_error_fmt found no catcher):
             // propagate the fault as usual.
             *handled = true;
@@ -831,7 +1012,8 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
         case Opcode.CALL:
         case Opcode.CALL_S:
         case Opcode.CALL_UNDEF_THIS:
-        case Opcode.CALL_VAR: {
+        case Opcode.CALL_VAR:
+        case Opcode.CALL_GLOBAL: {
             bool fast_handled = false;
             TVal? fast_result = try_fast_compiled_call(ds, op, insn, &fast_handled);
             if (fast_handled) {
@@ -839,10 +1021,12 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
             }
             // Slow path: re-derive result_reg/callee_reg/nargs/func_val (the
             // fast-path helper already applied CALL_UNDEF_THIS's this-slot
-            // clear, which is idempotent to repeat here — and for CALL_VAR,
-            // already resolved the callee-by-name into ds.regs_base[callee_reg]).
+            // clear, which is idempotent to repeat here — and for CALL_VAR /
+            // CALL_GLOBAL, already resolved the callee-by-name into
+            // ds.regs_base[callee_reg]).
+            bool is_fused_var = op == Opcode.CALL_VAR || op == Opcode.CALL_GLOBAL;
             uint result_reg = insn.a;
-            uint callee_reg = op == Opcode.CALL_VAR ? insn.a : insn.b;
+            uint callee_reg = is_fused_var ? insn.a : insn.b;
             uint nargs;
             if (op == Opcode.CALL_S) {
                 TVal* nargs_slot = ds.regs_base + insn.c;
@@ -853,7 +1037,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                 } else {
                     nargs = 0;
                 }
-            } else if (op == Opcode.CALL_VAR) {
+            } else if (is_fused_var) {
                 nargs = insn.b;
             } else {
                 nargs = insn.c;
