@@ -621,6 +621,154 @@ fn uint CompilerContext.pre_scan_lexical_decls(&self, NameSpan* spans, uint capa
     return count;
 }
 
+/// Pre-scan tokens in the current block body to find all `var` declarators
+/// at any brace_depth (excluding nested function/class bodies, which are
+/// separate VarDeclaredNames scopes per ES2024 §13.2.13 / §14.5 / §13.15.1).
+/// Together with pre_scan_lexical_decls this feeds the
+/// BlockDeclarationInstantiation conflict check in block()
+/// (ES2024 §13.2.1 / §15.7.11: a name cannot be both LexicallyDeclaredNames
+/// and VarDeclaredNames). VarDeclaredNames recursively descends into nested
+/// BlockStatements per §13.2.5, so var names at any brace_depth inside the
+/// block contribute. Saves/restores lexer state so normal parsing can
+/// proceed afterwards.
+fn uint CompilerContext.pre_scan_var_decls(&self, NameSpan* spans, uint capacity) {
+    uint saved_pos    = self.lexer.pos;
+    uint saved_line   = self.lexer.line;
+    uint saved_col    = self.lexer.col;
+    Token saved_cur   = self.lexer.current;
+    Token saved_look  = self.lexer.lookahead;
+    bool  saved_haslk = self.lexer.has_lookahead;
+    Token saved_push  = self.lexer.pushed_back;
+    bool  saved_haspb = self.lexer.has_pushed_back;
+    bool  saved_slt   = self.lexer.seen_line_term;
+
+    char* source_base = &self.lexer.source[0];
+
+    uint count           = 0;
+    uint brace_depth     = 0;
+    // Stack of nested function/class scopes to skip. Pushed when entering a
+    // `function`/`function*`/`async function`/named `class` declaration; we
+    // bump scope_depth on LBRACE after them and decrement on the matching
+    // RBRACE. While inside one of these scopes, `var` names belong to the
+    // nested function/class, not this block's VarDeclaredNames.
+    int[16] skip_stack;
+    int skip_top = 0;
+
+    while (count < capacity) {
+        Token? tok_opt = self.lexer.next_token();
+        if (catch _err = tok_opt) break;
+        Token tok = tok_opt;
+        TokenType tt = tok.type;
+
+        if (tt == TokenType.EOF_TOKEN) break;
+
+        if (tt == TokenType.LBRACE) {
+            brace_depth++;
+            continue;
+        }
+        if (tt == TokenType.RBRACE) {
+            if (brace_depth == 0) break;
+            brace_depth--;
+            if (skip_top > 0 && skip_stack[skip_top - 1] == (int)brace_depth) skip_top--;
+            continue;
+        }
+
+        // Skip var names while we're inside a nested function/class body.
+        bool in_nested_scope = skip_top > 0 && (int)brace_depth > skip_stack[skip_top - 1];
+
+        // function / function* / async function — find the body and mark
+        // its LBRACE as a scope boundary. The function's parameter list
+        // `(...)` opens its own RPAREN-balanced nested scope; we tolerate
+        // arbitrary token types between `function` and the body's `{`.
+        if (tt == TokenType.FUNCTION) {
+            // Skip ahead until matching RBRACE at the function body level.
+            // Naive but bounded: walk tokens until we see `{` at brace_depth+1,
+            // push that depth onto skip_stack, then keep scanning until RBRACE.
+            int depth = (int)brace_depth;
+            int body_lbrace = -1;
+            while (true) {
+                Token? t_opt = self.lexer.next_token();
+                if (catch _e = t_opt) break;
+                Token t = t_opt;
+                if (t.type == TokenType.LBRACE) {
+                    depth++;
+                    if (body_lbrace < 0 && depth == (int)brace_depth + 1) body_lbrace = depth;
+                } else if (t.type == TokenType.RBRACE) {
+                    if (body_lbrace >= 0 && depth == body_lbrace) {
+                        // The function body's closing RBRACE — pop the skip
+                        // marker and stop scanning the function.
+                        if (skip_top < 16) skip_stack[skip_top++] = body_lbrace;
+                        // We've now consumed the closing RBRACE ourselves; let
+                        // the outer loop's brace bookkeeping handle it via the
+                        // break below by treating this as "skip rest of body".
+                        // Simpler: re-push the RBRACE for the outer loop and
+                        // break. Use pushback.
+                        self.lexer.pushback(t);
+                        break;
+                    }
+                    depth--;
+                }
+            }
+            continue;
+        }
+
+        // class { ... } — same treatment for the class body.
+        if (tt == TokenType.CLASS) {
+            int depth = (int)brace_depth;
+            int body_lbrace = -1;
+            while (true) {
+                Token? t_opt = self.lexer.next_token();
+                if (catch _e = t_opt) break;
+                Token t = t_opt;
+                if (t.type == TokenType.LBRACE) {
+                    depth++;
+                    if (body_lbrace < 0 && depth == (int)brace_depth + 1) body_lbrace = depth;
+                } else if (t.type == TokenType.RBRACE) {
+                    if (body_lbrace >= 0 && depth == body_lbrace) {
+                        if (skip_top < 16) skip_stack[skip_top++] = body_lbrace;
+                        self.lexer.pushback(t);
+                        break;
+                    }
+                    depth--;
+                }
+            }
+            continue;
+        }
+
+        // Collect var declarators anywhere inside this block, except inside
+        // a nested function/class body that has its own VarDeclaredNames scope.
+        if (!in_nested_scope && tt == TokenType.VAR) {
+            for (;;) {
+                Token? name_opt = self.lexer.next_token();
+                if (catch _err2 = name_opt) break;
+                Token name_tok = name_opt;
+                if (name_tok.type != TokenType.IDENTIFIER) break;
+                if (count < capacity) {
+                    self.record_name_span(&spans[count], name_tok, source_base);
+                    count++;
+                }
+                Token? sep_opt = self.lexer.next_token();
+                if (catch _err3 = sep_opt) break;
+                Token sep = sep_opt;
+                if (sep.type != TokenType.COMMA) break;
+            }
+            continue;
+        }
+    }
+
+    self.lexer.pos             = saved_pos;
+    self.lexer.line            = saved_line;
+    self.lexer.col             = saved_col;
+    self.lexer.current         = saved_cur;
+    self.lexer.lookahead       = saved_look;
+    self.lexer.has_lookahead   = saved_haslk;
+    self.lexer.pushed_back     = saved_push;
+    self.lexer.has_pushed_back = saved_haspb;
+    self.lexer.seen_line_term  = saved_slt;
+
+    return count;
+}
+
 /// Pre-scan tokens in the current switch CaseBlock to find all lexically
 /// scoped declarations directly inside case/default clauses: `let`/`const`
 /// bindings, `class` declarations, and (non-strict-hoisted) `function`/
@@ -869,6 +1017,26 @@ fn void? CompilerContext.block(&self, bool check_directives, bool suppress_regex
         num_lex = self.pre_scan_switch_lexical_decls(&lex_spans, MAX_PRESCAN_NAMES);
     } else {
         num_lex = self.pre_scan_lexical_decls(&lex_spans, MAX_PRESCAN_NAMES);
+    }
+
+    // ES2024 §13.2.1 / §15.7.11 BlockDeclarationInstantiation: the
+    // LexicallyDeclaredNames and VarDeclaredNames of this block must not
+    // intersect. A `let x; var x;` (or vice versa) at the same block level
+    // is a SyntaxError. Function bodies inherit the same rule (the body is
+    // itself a block per §14.1). Switch blocks' ClassStaticBlock-style
+    // early-error check is delegated to a separate call site.
+    if (num_lex > 0) {
+        NameSpan[MAX_PRESCAN_NAMES] var_spans;
+        uint num_var = self.pre_scan_var_decls(&var_spans, MAX_PRESCAN_NAMES);
+        for (uint li = 0; li < num_lex; li++) {
+            char[] lname = self.name_span_text(lex_spans[li]);
+            for (uint vi = 0; vi < num_var; vi++) {
+                char[] vname = self.name_span_text(var_spans[vi]);
+                if (str_eq(lname, vname)) {
+                    return self.fail("lexical declaration cannot share a name with a var declaration")~;
+                }
+            }
+        }
     }
 
     // Push a new lexical scope for let/const/class/function declarations inside
