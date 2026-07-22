@@ -804,7 +804,24 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, Instruction insn, bool*
                     // Captured block scope + named-function-expression name
                     // binding (ES2015 §14.1.20) — shared with every other call
                     // path; see resolve_call_lex_env.
-                    new_act.lex_env = resolve_call_lex_env(vm, hobj_fast, target_fast, fast_var_env);
+                    //
+                    // Inline the common case: resolve_call_lex_env does real
+                    // work ONLY when the callee captured a distinct declarative
+                    // lex scope (cap_lex != null && cap_lex != var_env &&
+                    // cap_lex.is_declarative) or is a named function expression
+                    // (is_namebinding). For a plain global/leaf function (fib,
+                    // g) neither holds — cap_lex is null or == var_env — so the
+                    // function just returns var_env. Skipping the call here
+                    // removes a per-call function call on the hot recursion/call
+                    // path (~8% on call40); byte-identical result in this case.
+                    EnvRecord* cap_lex_fast = (*hobj_fast.extra_ptr()).func.lex_env;
+                    if ((cap_lex_fast == null || cap_lex_fast == fast_var_env
+                            || !cap_lex_fast.is_declarative)
+                        && !target_fast.is_namebinding()) {
+                        new_act.lex_env = fast_var_env;
+                    } else {
+                        new_act.lex_env = resolve_call_lex_env(vm, hobj_fast, target_fast, fast_var_env);
+                    }
                     // Bridge captured lex scope for default thunks that need
                     // to see TDZ sentinels in the parent's param scope.
                     if (target_fast.needs_lex_bridge()) {
