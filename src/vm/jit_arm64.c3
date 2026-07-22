@@ -461,12 +461,29 @@ fn JitCode jit_compile(CompiledFunction* target) {
     // JMP_NLE only skips the base-case RET, never merges divergent states into a
     // value use.)
     bool[64] known_fi;
-    // Compile-time constant tracking: reg_is_const[r] ⇒ the register currently
+    // Compile-time constant tracking: reg_is_const[r] ⇒ the register logically
     // holds the literal fastint reg_const[r] (set by LDINT, cleared on any other
-    // write). Lets a following compare/arith use an immediate form.
+    // write). Lets a following compare/arith use an immediate form. LDINT is
+    // LAZY: it does not emit the register store; pending_const[r] means the
+    // store hasn't been materialized yet. Consumers that can't fold the constant
+    // (ADD/SUB/RET/CALL reads, and any branch target) materialize it first.
     bool[64] reg_is_const;
+    bool[64] pending_const;
     long[64] reg_const;
-    for (uint i = 0; i < 64; i++) { known_fi[i] = false; reg_is_const[i] = false; }
+    // Which bytecode PCs are branch targets — pending consts must be flushed
+    // there so a jump into that pc sees a materialized register file.
+    bool[512] is_branch_target;
+    for (uint i = 0; i < 512; i++) is_branch_target[i] = false;
+    for (uint i = 0; i < 64; i++) { known_fi[i] = false; reg_is_const[i] = false; pending_const[i] = false; }
+    // Pre-scan branch targets (JMP_NLE offset).
+    for (uint pc = 0; pc < n; pc++) {
+        Instruction ins = target.code[pc];
+        if (ins.op == Opcode.JMP_NLE) {
+            int off = (int)(ichar)ins.a;
+            uint tgt = pc + 1 + (uint)off;
+            if (tgt < 512) is_branch_target[tgt] = true;
+        }
+    }
     // Guard + mark the parameters once at entry.
     uint nparams = target.num_args;
     for (uint i = 0; i < nparams && i < 64; i++) {
@@ -476,6 +493,18 @@ fn JitCode jit_compile(CompiledFunction* target) {
 
     // --- Body ---
     for (uint pc = 0; pc < n; pc++) {
+        // At a branch target, materialize any pending LDINT stores so a jump
+        // into this pc observes a consistent register file.
+        if (pc < 512 && is_branch_target[pc]) {
+            for (uint r = 0; r < 64; r++) {
+                if (pending_const[r]) {
+                    b.mov_imm64(0, (ulong)reg_const[r]);
+                    b.retag_fastint(1, 0);
+                    b.st_reg(1, r);
+                    pending_const[r] = false;
+                }
+            }
+        }
         native_pc[pc] = b.pos;
         Instruction insn = target.code[pc];
         Opcode op = insn.op;
@@ -485,19 +514,20 @@ fn JitCode jit_compile(CompiledFunction* target) {
         switch (op) {
             case Opcode.LDINT: {
                 // A = (int)sBx  — signed 16-bit immediate (B low, C high).
+                // LAZY: record the constant; the store is emitted only if a
+                // non-foldable consumer (or a branch target) forces it.
                 short sbx = (short)(ushort)(bb | (c << 8));
                 long imm = (long)sbx;
-                b.mov_imm64(0, (ulong)imm);           // x0 = imm (sign in bits)
-                b.retag_fastint(1, 0);                // x1 = fastint(imm)
-                b.st_reg(1, a);
                 if (a < 64) {
                     known_fi[a] = true;               // a literal int is fastint
                     reg_is_const[a] = true;
                     reg_const[a] = imm;               // remember the literal value
+                    pending_const[a] = true;          // store not yet emitted
                 }
             }
             case Opcode.SUBI: {
                 // A = B - (signed8)C  (fastint fast path; deopt otherwise).
+                if (bb < 64 && pending_const[bb]) { b.mov_imm64(0, (ulong)reg_const[bb]); b.retag_fastint(1, 0); b.st_reg(1, bb); pending_const[bb] = false; }
                 if (bb < 64 && !known_fi[bb]) b.guard_fastint(bb, fixups[..], &nfix);
                 b.ld_reg(0, bb);
                 b.sext_fastint(0, 0);                 // x0 = sext(regs[B])
@@ -509,10 +539,13 @@ fn JitCode jit_compile(CompiledFunction* target) {
                 b.guard_fits_fastint(0, fixups[..], &nfix); // overflow → deopt
                 b.retag_fastint(2, 0);
                 b.st_reg(2, a);
-                if (a < 64) { known_fi[a] = true; reg_is_const[a] = false; } // proven in-range fastint
+                if (a < 64) { known_fi[a] = true; reg_is_const[a] = false; pending_const[a] = false; } // proven in-range fastint
             }
             case Opcode.ADD: {
                 // A = B + C  (fastint fast path; deopt otherwise).
+                // Materialize pending-const operands before reading them.
+                if (bb < 64 && pending_const[bb]) { b.mov_imm64(0, (ulong)reg_const[bb]); b.retag_fastint(1, 0); b.st_reg(1, bb); pending_const[bb] = false; }
+                if (c  < 64 && pending_const[c])  { b.mov_imm64(0, (ulong)reg_const[c]);  b.retag_fastint(1, 0); b.st_reg(1, c);  pending_const[c]  = false; }
                 if (bb < 64 && !known_fi[bb]) b.guard_fastint(bb, fixups[..], &nfix);
                 if (c < 64 && !known_fi[c]) b.guard_fastint(c, fixups[..], &nfix);
                 b.ld_reg(0, bb); b.sext_fastint(0, 0);
@@ -521,9 +554,11 @@ fn JitCode jit_compile(CompiledFunction* target) {
                 b.guard_fits_fastint(0, fixups[..], &nfix);
                 b.retag_fastint(2, 0);
                 b.st_reg(2, a);
-                if (a < 64) { known_fi[a] = true; reg_is_const[a] = false; }
+                if (a < 64) { known_fi[a] = true; reg_is_const[a] = false; pending_const[a] = false; }
             }
             case Opcode.SUB: {
+                if (bb < 64 && pending_const[bb]) { b.mov_imm64(0, (ulong)reg_const[bb]); b.retag_fastint(1, 0); b.st_reg(1, bb); pending_const[bb] = false; }
+                if (c  < 64 && pending_const[c])  { b.mov_imm64(0, (ulong)reg_const[c]);  b.retag_fastint(1, 0); b.st_reg(1, c);  pending_const[c]  = false; }
                 if (bb < 64 && !known_fi[bb]) b.guard_fastint(bb, fixups[..], &nfix);
                 if (c < 64 && !known_fi[c]) b.guard_fastint(c, fixups[..], &nfix);
                 b.ld_reg(0, bb); b.sext_fastint(0, 0);
@@ -532,7 +567,7 @@ fn JitCode jit_compile(CompiledFunction* target) {
                 b.guard_fits_fastint(0, fixups[..], &nfix);
                 b.retag_fastint(2, 0);
                 b.st_reg(2, a);
-                if (a < 64) { known_fi[a] = true; reg_is_const[a] = false; }
+                if (a < 64) { known_fi[a] = true; reg_is_const[a] = false; pending_const[a] = false; }
             }
             case Opcode.JMP_NLE: {
                 // if !(regs[B] <= regs[C]) goto pc+1+offset ; offset = (int8)A.
@@ -563,8 +598,13 @@ fn JitCode jit_compile(CompiledFunction* target) {
                 // Core returns the result in x0 to its caller (outer prologue or
                 // a recursive call site) via its stashed return address in x23.
                 // No frame teardown here — invariants stay live in callee-saved
-                // registers.
-                b.ld_reg(0, a);
+                // registers. A pending-const return value is loaded directly.
+                if (a < 64 && pending_const[a]) {
+                    b.mov_imm64(0, (ulong)reg_const[a]);
+                    b.retag_fastint(0, 0);
+                } else {
+                    b.ld_reg(0, a);
+                }
                 b.emit(enc_mov(30, 23));              // x30 = saved return addr
                 b.emit(enc_ret());
             }
@@ -591,8 +631,15 @@ fn JitCode jit_compile(CompiledFunction* target) {
                 b.emit(enc_str_sp(23, 0));                // save our core-return addr
                 b.emit(enc_str_sp(20, 8));                // save this frame's regs ptr
                 // Copy args from caller regs[A+2+i] to window[i] (at SP+16+i*8).
+                // A pending-const arg is materialized straight into x0.
                 for (uint i = 0; i < nargs; i++) {
-                    b.ld_reg(0, a + 2 + i);               // x0 = regs[A+2+i] (via x20)
+                    uint ar = a + 2 + i;
+                    if (ar < 64 && pending_const[ar]) {
+                        b.mov_imm64(0, (ulong)reg_const[ar]);
+                        b.retag_fastint(0, 0);
+                    } else {
+                        b.ld_reg(0, ar);                  // x0 = regs[A+2+i] (via x20)
+                    }
                     b.emit(enc_str_sp(0, 16 + i * 8));    // window[i]
                 }
                 // Point x20 at the callee window and re-enter the core. Invariant
