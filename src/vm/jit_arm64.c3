@@ -116,6 +116,13 @@ fn void JitBuf.mov_imm64(&self, uint d, ulong v) {
 fn uint enc_and(uint d, uint n, uint m) {
     return 0x8A000000u | (m << 16) | (n << 5) | d;
 }
+// AND Xd, Xn, #0x0000FFFFFFFFFFFF  (mask low 48 bits — the NaN-box payload).
+// This is the AND (immediate) form with the precomputed logical-immediate
+// encoding for 48 contiguous low ones: N=1, immr=0, imms=47.
+fn uint enc_and_payload_imm(uint d, uint n) {
+    // sf=1, opc=00 (AND), N=1, immr=000000, imms=101111 (47).
+    return 0x92400000u | (1u << 22) | (0u << 16) | (47u << 10) | (n << 5) | d;
+}
 // ORR Xd, Xn, Xm  (re-tag)
 fn uint enc_orr(uint d, uint n, uint m) {
     return 0xAA000000u | (m << 16) | (n << 5) | d;
@@ -328,17 +335,18 @@ fn void JitBuf.st_reg(&self, uint s, uint r) {
     self.emit(enc_str(s, 20, r * 8));
 }
 /// Emit: Xd = sign-extended 48-bit fastint payload of the value in Xn.
-/// (payload = Xn & mask; then (payload << 16) >> 16 arithmetic.)
+/// Since sign-extending discards the top 16 bits anyway, the payload mask is
+/// unnecessary: (Xn << 16) >> 16 already yields the sign-extended low 48 bits.
 fn void JitBuf.sext_fastint(&self, uint d, uint n) {
-    self.emit(enc_and(d, n, 22));       // d = n & payload_mask
-    self.emit(enc_lsl_imm(d, d, 16));   // d <<= 16
-    self.emit(enc_asr_imm(d, d, 16));   // d >>= 16 (arithmetic)
+    self.emit(enc_lsl_imm(d, n, 16));   // d = n << 16
+    self.emit(enc_asr_imm(d, d, 16));   // d >>= 16 (arithmetic; keeps low 48)
 }
 /// Emit: Xd = fastint-tagged TVal bits for the (already-in-range) integer Xn.
-/// bits = (Xn & payload_mask) | (TAG_FASTINT << 48).
+/// bits = (Xn & payload_mask) | (TAG_FASTINT << 48). The mask is an AND
+/// immediate (no register needed); the tag lives in x22.
 fn void JitBuf.retag_fastint(&self, uint d, uint n) {
-    self.emit(enc_and(d, n, 22));       // d = n & payload_mask
-    self.emit(enc_orr(d, d, 23));       // d |= tag
+    self.emit(enc_and_payload_imm(d, n));   // d = n & payload_mask (imm)
+    self.emit(enc_orr(d, d, 22));           // d |= tag (x22)
 }
 /// Emit a deopt guard: if regs[r] is not a fastint, jump to the deopt epilogue.
 /// Uses x8/x9 as scratch. The branch is recorded as a fixup with target_pc =
@@ -350,7 +358,7 @@ const uint COND_BL = 0xFEu;               // fixup emits BL, not B.cond
 fn void JitBuf.guard_fastint(&self, uint r, JitFixup[] fixups, uint* nfix) {
     self.ld_reg(8, r);
     self.emit(enc_lsr_imm(8, 8, 48));           // x8 = tag
-    self.mov_imm64(9, types::TAG_FASTINT);
+    self.emit(enc_movz(9, (uint)types::TAG_FASTINT, 0)); // x9 = TAG_FASTINT (16-bit)
     self.emit(enc_cmp(8, 9));                    // flags = tag - TAG_FASTINT
     if (*nfix < fixups.len) {
         fixups[*nfix] = { .native_pos = self.pos, .target_pc = DEOPT_PC, .cond = COND_NE };
@@ -383,20 +391,20 @@ fn JitCode jit_compile(CompiledFunction* target) {
     jit_begin_write();
 
     // --- Prologue ---
-    // Save fp/lr and the five callee-saved regs we use (x19..x23), in a 64-byte
-    // frame. Slots at SP offsets 0,8 hold fp/lr; 16,24,32,40,48 hold x19..x23.
-    b.emit(enc_stp_pre(29, 30, -64));
+    // Save fp/lr and the four callee-saved regs we use (x19..x22), in a 48-byte
+    // frame. Slots at SP offsets 0,8 hold fp/lr; 16,24,32,40 hold x19..x22.
+    // (The payload mask is now an AND immediate — no register needed.)
+    b.emit(enc_stp_pre(29, 30, -48));
     b.emit(enc_str_sp(19, 16));
     b.emit(enc_str_sp(20, 24));
     b.emit(enc_str_sp(21, 32));
     b.emit(enc_str_sp(22, 40));
-    b.emit(enc_str_sp(23, 48));
     // Move incoming args into callee-saved homes: x0=vm, x1=regs, x2=self bits.
     b.emit(enc_mov(19, 0));                          // x19 = vm
     b.emit(enc_mov(20, 1));                          // x20 = regs
     b.emit(enc_mov(21, 2));                          // x21 = self func bits
-    b.mov_imm64(22, types::NANBOX_PAYLOAD_MASK);     // x22 = payload mask
-    b.mov_imm64(23, types::TAG_FASTINT << 48);       // x23 = fastint tag<<48
+    // x22 = TAG_FASTINT << 48 — a single MOVZ (only the top 16 bits are set).
+    b.emit(enc_movz(22, (uint)types::TAG_FASTINT, 3));
     // The lean self-recursion entry, plus this function's own CompiledFunction*
     // (a compile-time constant) that jit_recurse needs to re-enter the body.
     ulong recurse_addr = (ulong)(uptr)(void*)&jit_recurse;
@@ -475,8 +483,7 @@ fn JitCode jit_compile(CompiledFunction* target) {
                 b.emit(enc_ldr_sp(20, 24));
                 b.emit(enc_ldr_sp(21, 32));
                 b.emit(enc_ldr_sp(22, 40));
-                b.emit(enc_ldr_sp(23, 48));
-                b.emit(enc_ldp_post(29, 30, 64));
+                b.emit(enc_ldp_post(29, 30, 48));
                 b.emit(enc_ret());
             }
             case Opcode.CALL_VAR: {
@@ -549,8 +556,7 @@ fn JitCode jit_compile(CompiledFunction* target) {
     b.emit(enc_ldr_sp(20, 24));
     b.emit(enc_ldr_sp(21, 32));
     b.emit(enc_ldr_sp(22, 40));
-    b.emit(enc_ldr_sp(23, 48));
-    b.emit(enc_ldp_post(29, 30, 64));
+    b.emit(enc_ldp_post(29, 30, 48));
     b.emit(enc_ret());
 
     if (b.failed) { munmap((void*)page, (usz)JIT_MAX_CODE * 4); return none; }
