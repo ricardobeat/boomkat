@@ -119,6 +119,38 @@ fn uint enc_and(uint d, uint n, uint m) {
 fn uint enc_orr(uint d, uint n, uint m) {
     return 0xAA000000u | (m << 16) | (n << 5) | d;
 }
+// MOV Xd, Xn  (alias of ORR Xd, XZR, Xn — reg 31 = XZR here)
+fn uint enc_mov(uint d, uint n) {
+    return 0xAA0003E0u | (n << 16) | d;
+}
+// MOVN Xd, #imm16, LSL #(shift*16)  (Xd = ~(imm16 << shift*16); for negative imms)
+fn uint enc_movn(uint d, uint imm16, uint shift) {
+    return 0x92800000u | (shift << 21) | ((imm16 & 0xFFFF) << 5) | d;
+}
+// STP Xt1, Xt2, [SP, #imm]!  (pre-index, imm scaled by 8, signed 7-bit)
+fn uint enc_stp_pre(uint t1, uint t2, int imm_bytes) {
+    uint imm7 = ((uint)(imm_bytes / 8)) & 0x7F;
+    return 0xA9800000u | (imm7 << 15) | (t2 << 10) | (31u << 5) | t1;
+}
+// LDP Xt1, Xt2, [SP], #imm  (post-index, imm scaled by 8, signed 7-bit)
+fn uint enc_ldp_post(uint t1, uint t2, int imm_bytes) {
+    uint imm7 = ((uint)(imm_bytes / 8)) & 0x7F;
+    return 0xA8C00000u | (imm7 << 15) | (t2 << 10) | (31u << 5) | t1;
+}
+// STR Xt, [SP, #imm]  (SP-relative, imm scaled by 8, unsigned)
+fn uint enc_str_sp(uint t, uint imm_bytes) {
+    uint imm12 = (imm_bytes / 8) & 0xFFF;
+    return 0xF9000000u | (imm12 << 10) | (31u << 5) | t;
+}
+// LDR Xt, [SP, #imm]  (SP-relative)
+fn uint enc_ldr_sp(uint t, uint imm_bytes) {
+    uint imm12 = (imm_bytes / 8) & 0xFFF;
+    return 0xF9400000u | (imm12 << 10) | (31u << 5) | t;
+}
+// BLR Xn  (branch with link to register)
+fn uint enc_blr(uint n) {
+    return 0xD63F0000u | (n << 5);
+}
 
 /// SELF-TEST: emit a native fn returning fastint(payload(reg[i]) +
 /// payload(reg[j])) re-tagged as fastint. Proves emit -> MAP_JIT execute ->
@@ -147,6 +179,51 @@ fn ulong jit_selftest_add(TVal* regs, uint i, uint j) {
 
     JitFn f = bitcast((uptr)(void*)b.code, JitFn);
     ulong result = f(regs);
+    munmap((void*)b.code, 4096);
+    return result;
+}
+
+// Native signature for the call round-trip selftest below.
+alias JitCallFn = fn ulong(void* vm, ulong func_bits, TVal* args);
+
+/// SELF-TEST: emit a native fn that invokes `vm_call_fn_impl(vm, func, args, 1,
+/// undefined)` and returns the callee's result TVal bits. Proves the JIT->C
+/// call ABI end to end — arm64 prologue/epilogue (fp/lr save), AAPCS64 arg
+/// marshalling (x0=vm, x1=func.bits by value, x2=args, w3=nargs, x4=this.bits),
+/// BLR through a materialized function-pointer address, and the 8-byte struct
+/// return in x0 — WITHOUT yet emitting the full fib body. This is the hard core
+/// the recursive JIT needs; verifying it in isolation catches any
+/// frame/register/ABI error before it can corrupt the heap inside a real call.
+/// Returns the callee result bits, or 0 on alloc/emit failure.
+fn ulong jit_selftest_call(void* vm, ulong func_bits, TVal* args) {
+    JitBuf b;
+    b.code = jit_alloc_page(64);
+    if (b.code == null) { return 0; }
+    b.pos = 0; b.cap = 64; b.failed = false;
+
+    // Address of the C call entry, materialized as a 64-bit immediate.
+    ulong callee_addr = (ulong)(uptr)(void*)&vm_call_fn_impl;
+    // Undefined TVal bits (tag TAG_UNDEFINED, zero payload).
+    TVal undef; undef.set_undefined();
+
+    jit_begin_write();
+    // Prologue: save fp(x29)/lr(x30), open a 16-byte frame.
+    b.emit(enc_stp_pre(29, 30, -16));
+    // Args are already in x0(vm), x1(func_bits), x2(args) per JitCallFn's own
+    // AAPCS64 mapping — which matches vm_call_fn_impl's first three params
+    // (void* vm, TVal func, TVal* args) exactly. Set the remaining two:
+    b.emit(enc_movz(3, 1, 0));                        // w3 = nargs = 1
+    b.mov_imm64(4, undef.bits);                       // x4 = this = undefined
+    b.mov_imm64(9, callee_addr);                      // x9 = &vm_call_fn_impl
+    b.emit(enc_blr(9));                               // call; result TVal in x0
+    // Epilogue: restore fp/lr, return (result already in x0).
+    b.emit(enc_ldp_post(29, 30, 16));
+    b.emit(enc_ret());
+    if (b.failed) { munmap((void*)b.code, 4096); return 0; }
+    jit_finalize(&b);
+
+    JitCallFn f = bitcast((uptr)(void*)b.code, JitCallFn);
+    ulong result = f(vm, func_bits, args);
     munmap((void*)b.code, 4096);
     return result;
 }
