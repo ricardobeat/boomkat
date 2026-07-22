@@ -890,6 +890,14 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, Instruction insn, bool*
                     // parent/shadow_act_list walk super_init_this_chain() uses
                     // to mutate it — a stale TDZ snapshot would never observe
                     // that later mutation.
+                    // Undefined-this calls (CALL_UNDEF_THIS / CALL_VAR /
+                    // CALL_GLOBAL) into a NON-arrow function: the receiver is
+                    // undefined by construction, so skip the arrow/coercion/
+                    // this-src resolution below and set it directly. Arrows use
+                    // lexical captured_this and MUST take the full path.
+                    if ((op == Opcode.CALL_UNDEF_THIS || is_fused_var) && !target_fast.is_arrow()) {
+                        new_act.this_binding.set_undefined();
+                    } else {
                     TVal arrow_live_this;
                     if (target_fast.is_arrow() && env::is_tdz_sentinel(&(*hobj_fast.extra_ptr()).func.captured_this)) {
                         arrow_live_this = super_walk_live_this(vm, ds.act);
@@ -919,6 +927,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, Instruction insn, bool*
                             new_act.flags |= ACT_FLAG_THIS_OWNED;
                         }
                         (void)used_coerced;
+                    }
                     }
 
                     // Activation fully initialized — now make it visible to GC.
