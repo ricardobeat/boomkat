@@ -62,14 +62,145 @@ fn void builtin_print(BuiltinContext* ctx) {
 }
 
 fn void builtin_console_log(BuiltinContext* ctx) {
+    console_print_args(ctx, false);
+}
+
+fn void builtin_console_info(BuiltinContext* ctx) {
+    console_print_args(ctx, false);
+}
+
+fn void builtin_console_debug(BuiltinContext* ctx) {
+    console_print_args(ctx, false);
+}
+
+fn void builtin_console_trace(BuiltinContext* ctx) {
+    console_print_args(ctx, false);
+}
+
+fn void builtin_console_warn(BuiltinContext* ctx) {
+    console_print_args(ctx, true);
+}
+
+fn void builtin_console_error(BuiltinContext* ctx) {
+    console_print_args(ctx, true);
+}
+
+fn void builtin_console_dir(BuiltinContext* ctx) {
+    // console.dir(obj) — for now identical output to console.log (no util.inspect
+    // formatting). Spec only requires this be callable and return undefined.
+    console_print_args(ctx, false);
+}
+
+/// console.assert(expr, ...msg) — if expr is falsy, emit "Assertion failed:" and
+/// the remaining args to stderr. If truthy, produce no output. Returns undefined.
+fn void builtin_console_assert(BuiltinContext* ctx) {
+    if (ctx.argc < 1) {
+        io::eprintfn("Assertion failed:");
+        ctx.result.set_undefined();
+        return;
+    }
+    if (builtin_to_boolean(&ctx.regs[ctx.base_reg])) {
+        ctx.result.set_undefined();
+        return;
+    }
+    io::eprintfn("Assertion failed:");
+    for (ushort i = 1; i < ctx.argc; i++) {
+        if (i > 1) {
+            io::eprintf(" ");
+        }
+        print_tval_err_ctx(ctx, &ctx.regs[ctx.base_reg + i]);
+    }
+    io::eprintf("\n");
+    ctx.result.set_undefined();
+}
+
+/// Shared body for console.log/info/debug/trace (stdout) and console.warn/error (stderr).
+fn void console_print_args(BuiltinContext* ctx, bool use_stderr) {
     for (ushort i = 0; i < ctx.argc; i++) {
         if (i > 0) {
-            io::putchar(' ');
+            if (use_stderr) {
+                io::eprintf(" ");
+            } else {
+                io::printf(" ");
+            }
         }
-        print_tval_ctx(ctx, &ctx.regs[ctx.base_reg + i]);
+        if (use_stderr) {
+            print_tval_err_ctx(ctx, &ctx.regs[ctx.base_reg + i]);
+        } else {
+            print_tval_ctx(ctx, &ctx.regs[ctx.base_reg + i]);
+        }
     }
-    io::putchar('\n');
+    if (use_stderr) {
+        io::eprintf("\n");
+    } else {
+        io::printf("\n");
+    }
     ctx.result.set_undefined();
+}
+
+/// Stderr byte sink used by write_cesu8_as_utf8.
+fn void eputc(char c) {
+    io::eprintf("%c", c);
+}
+
+/// Mirror of print_tval_ctx that writes to stderr instead of stdout.
+fn void print_tval_err_ctx(BuiltinContext* ctx, TVal* val) {
+    if (val.is_object() && val.get_heapptr() != null && ctx.vm != null && ctx.heap.call_fn != null) {
+        HObject* obj = (HObject*)val.get_heapptr();
+        HString* tostr_key = builtin_intern_string(ctx.heap, "toString");
+        if (tostr_key != null) {
+            if (try method_val = obj.get_prop_proto(tostr_key)) {
+                if (method_val.is_object() || method_val.is_lightfunc()) {
+                    TVal str_result = ctx.heap.call_fn(ctx.vm, method_val, null, 0, *val);
+                    if (ctx.heap.has_error) { ctx.should_throw = true; ctx.heap.has_error = false; return; }
+                    if (str_result.is_string()) {
+                        HString* s = (HString*)str_result.get_heapptr();
+                        if (s != null) {
+                            hstring::write_cesu8_as_utf8(s.get_data(), &eputc);
+                            return;
+                        }
+                    }
+                    if (!str_result.is_object()) {
+                        print_tval_err(&str_result);
+                        return;
+                    }
+                }
+            }
+        }
+        io::eprint("[object Object]");
+        return;
+    }
+    print_tval_err(val);
+}
+
+/// Stderr counterpart of print_tval (primitives only; objects handled by
+/// print_tval_err_ctx, which falls back here for non-string toString results).
+fn void print_tval_err(TVal* val) {
+    switch (val.get_tag()) {
+        case UNDEFINED: io::eprint("undefined");
+        case NULL_VAL:  io::eprint("null");
+        case BOOLEAN:   io::eprint(val.get_boolean() ? "true" : "false");
+        case FASTINT:   io::eprintf("%d", val.get_fastint());
+        case STRING: {
+            HString* s = (HString*)val.get_heapptr();
+            if (s != null) {
+                char[] d = s.get_data();
+                for (usz i = 0; i < d.len; i++) { io::eprintf("%c", d[i]); }
+            }
+        }
+        case NUMBER: {
+            double v = val.get_number();
+            if (math::is_nan(v)) {
+                io::eprint("NaN");
+            } else if (math::is_inf(v)) {
+                io::eprint(v > 0 ? "Infinity" : "-Infinity");
+            } else {
+                io::eprintf("%g", v);
+            }
+        }
+        default:
+            io::eprint("[object Object]");
+    }
 }
 
 fn void builtin_parse_int(BuiltinContext* ctx) {

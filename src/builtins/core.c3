@@ -56,6 +56,13 @@ extern fn double math_cbrt(double x)          @MathLibc("cbrt");
 enum Builtin : uint {
     PRINT,
     CONSOLE_LOG,
+    CONSOLE_INFO,
+    CONSOLE_DEBUG,
+    CONSOLE_TRACE,
+    CONSOLE_WARN,
+    CONSOLE_ERROR,
+    CONSOLE_DIR,
+    CONSOLE_ASSERT,
     PARSE_INT,
     PARSE_FLOAT,
     IS_NAN,
@@ -2279,6 +2286,13 @@ fn BuiltinMeta builtin_get_metadata(uint idx) {
     switch (idx) {
         case Builtin.PRINT.ordinal:  return { "print", 1 };
         case Builtin.CONSOLE_LOG.ordinal:  return { "log", 1 };
+        case Builtin.CONSOLE_INFO.ordinal:  return { "info", 1 };
+        case Builtin.CONSOLE_DEBUG.ordinal: return { "debug", 1 };
+        case Builtin.CONSOLE_TRACE.ordinal: return { "trace", 1 };
+        case Builtin.CONSOLE_WARN.ordinal:  return { "warn", 1 };
+        case Builtin.CONSOLE_ERROR.ordinal: return { "error", 1 };
+        case Builtin.CONSOLE_DIR.ordinal:   return { "dir", 1 };
+        case Builtin.CONSOLE_ASSERT.ordinal: return { "assert", 1 };
         case Builtin.PARSE_INT.ordinal:  return { "parseInt", 2 };
         case Builtin.PARSE_FLOAT.ordinal:  return { "parseFloat", 1 };
         case Builtin.IS_NAN.ordinal:  return { "isNaN", 1 };
@@ -3184,6 +3198,13 @@ BuiltinFunc[Builtin.LAST.ordinal] builtin_dispatch_table = {
     [Builtin.BOOLEAN_PROTO_VALUEOF.ordinal] = &builtin_boolean_proto_valueOf,
     [Builtin.BOUND_CALL.ordinal] = &builtin_bound_call,
     [Builtin.CONSOLE_LOG.ordinal] = &builtin_console_log,
+    [Builtin.CONSOLE_INFO.ordinal] = &builtin_console_info,
+    [Builtin.CONSOLE_DEBUG.ordinal] = &builtin_console_debug,
+    [Builtin.CONSOLE_TRACE.ordinal] = &builtin_console_trace,
+    [Builtin.CONSOLE_WARN.ordinal] = &builtin_console_warn,
+    [Builtin.CONSOLE_ERROR.ordinal] = &builtin_console_error,
+    [Builtin.CONSOLE_DIR.ordinal] = &builtin_console_dir,
+    [Builtin.CONSOLE_ASSERT.ordinal] = &builtin_console_assert,
     [Builtin.DATE.ordinal] = &builtin_date,
     [Builtin.DATE_NOW.ordinal] = &builtin_date_now,
     [Builtin.DATE_PARSE.ordinal] = &builtin_date_parse,
@@ -3714,19 +3735,10 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
         return false;
     }
 
+    if (!register_console_methods(console_obj, heap)) return false;
+
     TVal console_val;
     console_val.set_object(console_obj);
-
-    char[] log_name = "log";
-    HString* log_key = heap.str_intern(log_name);
-    if (log_key == null) {
-        return false;
-    }
-
-    TVal log_val;
-    log_val.set_lightfunc((void*)(usz)Builtin.CONSOLE_LOG.ordinal);
-    console_obj.put_prop(log_key, log_val, hobject::PROP_FLAGS_NWC);
-
     env::env_declare_nonenum(global_env, console_key, console_val);
 
     // Register parseInt
@@ -4000,6 +4012,37 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
         global_env.bindings.prototype = heap.object_proto;
     }
 
+    return true;
+}
+
+/// Helper: register all console.* methods on the console object.
+fn bool register_console_methods(HObject* console, Heap* heap) {
+    if (!register_console_method(console, heap, "log",    Builtin.CONSOLE_LOG.ordinal))    return false;
+    if (!register_console_method(console, heap, "info",   Builtin.CONSOLE_INFO.ordinal))   return false;
+    if (!register_console_method(console, heap, "debug",  Builtin.CONSOLE_DEBUG.ordinal))  return false;
+    if (!register_console_method(console, heap, "trace",  Builtin.CONSOLE_TRACE.ordinal))  return false;
+    if (!register_console_method(console, heap, "warn",   Builtin.CONSOLE_WARN.ordinal))   return false;
+    if (!register_console_method(console, heap, "error",  Builtin.CONSOLE_ERROR.ordinal))  return false;
+    if (!register_console_method(console, heap, "dir",    Builtin.CONSOLE_DIR.ordinal))    return false;
+    if (!register_console_method(console, heap, "assert", Builtin.CONSOLE_ASSERT.ordinal)) return false;
+    return true;
+}
+
+fn bool register_console_method(HObject* console, Heap* heap, char[] name, uint fn_index) {
+    uint hash = heap.hash_string(name);
+    HString* existing = heap.str_table_lookup(name, hash);
+    void* key;
+    if (existing != null) {
+        key = existing;
+    } else {
+        HString*? new_key = hstring::hstring_alloc(heap, name, hash);
+        if (catch err = new_key) return false;
+        heap.str_table_insert(new_key);
+        key = new_key;
+    }
+    TVal tv;
+    tv.set_lightfunc((void*)(usz)fn_index);
+    console.put_prop(key, tv, hobject::PROP_FLAGS_WC);
     return true;
 }
 
