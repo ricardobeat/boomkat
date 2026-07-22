@@ -1326,6 +1326,15 @@ struct CompiledFunction {
     // cast both sides consistently.
     void*           eval_private_names;
     uint            eval_private_name_count;
+
+    // ---- JIT (arm64) -----------------------------------------------------
+    /// Cached native-compiled body (JitBodyFn), or null if not (yet) JIT'd.
+    /// Opaque here to avoid a vm->bytecode import cycle; the vm module casts.
+    void*           jit_body;
+    /// Tri-state JIT status: 0 = not attempted, 1 = compiled (jit_body set),
+    /// 2 = attempted and unsupported (never retry). Avoids recompiling a body
+    /// that already bailed on every call.
+    uint            jit_status;
 }
 
 // ============================================================================

@@ -287,6 +287,20 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
             CompiledFunction* target = (*hobj.extra_ptr()).func.comp_func;
             uint nregs = target.num_regs;
 
+            // === JIT fast path ===
+            // If this function has a native-compiled body and every argument is
+            // a fastint, run the native body directly instead of the
+            // interpreter. The body may DEOPT (non-fastint intermediate,
+            // unsupported runtime state) — in which case we fall through to the
+            // interpreter with the same inputs. Recursive CALL_VAR inside the
+            // body re-enters this same path, so recursion runs entirely native.
+            if (jit_enabled) {
+                TVal jr;
+                if (try_jit_call(vm, target, func, args, nargs, &jr)) {
+                    return jr;
+                }
+            }
+
             // Compute the true top of the current activation's register file.
             // vm.valstack_top is NOT updated for inline JS-to-JS calls (the
             // CALL fast path in dispatch_calls skips the update), so it may

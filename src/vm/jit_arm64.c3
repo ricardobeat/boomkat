@@ -12,6 +12,7 @@ module duktape::vm;
 
 import duktape::bytecode;
 import duktape::types;
+import duktape::hstring;
 import std::core::mem;
 
 // --- libc / Darwin JIT FFI ---
@@ -388,8 +389,10 @@ fn JitCode jit_compile(CompiledFunction* target) {
     b.emit(enc_mov(21, 2));                          // x21 = self func bits
     b.mov_imm64(22, types::NANBOX_PAYLOAD_MASK);     // x22 = payload mask
     b.mov_imm64(23, types::TAG_FASTINT << 48);       // x23 = fastint tag<<48
-    ulong callee_addr = (ulong)(uptr)(void*)&vm_call_fn_impl;
-    TVal undef; undef.set_undefined();
+    // The lean self-recursion entry, plus this function's own CompiledFunction*
+    // (a compile-time constant) that jit_recurse needs to re-enter the body.
+    ulong recurse_addr = (ulong)(uptr)(void*)&jit_recurse;
+    ulong target_ptr = (ulong)(uptr)(void*)target;
 
     // --- Body ---
     for (uint pc = 0; pc < n; pc++) {
@@ -478,14 +481,14 @@ fn JitCode jit_compile(CompiledFunction* target) {
                 // caller via jit_is_self_recursive); pass self as the callee.
                 // Args live at regs[A+2 .. A+1+nargs] (frame_start = A+2).
                 uint nargs = bb;
-                // Marshal: x0=vm, x1=self func bits, x2=&regs[A+2], w3=nargs,
-                // x4=undefined this.
+                // Marshal for jit_recurse(vm, target, self_bits, &regs[A+2],
+                // nargs): x0=vm, x1=target, x2=self bits, x3=&regs[A+2], w4=nargs.
                 b.emit(enc_mov(0, 19));               // x0 = vm
-                b.emit(enc_mov(1, 21));               // x1 = self func bits
-                b.emit(enc_add_imm(2, 20, (a + 2) * 8)); // x2 = &regs[A+2]
-                b.emit(enc_movz(3, nargs, 0));        // w3 = nargs
-                b.mov_imm64(4, undef.bits);           // x4 = undefined
-                b.mov_imm64(9, callee_addr);
+                b.mov_imm64(1, target_ptr);           // x1 = target CompiledFunction*
+                b.emit(enc_mov(2, 21));               // x2 = self func bits
+                b.emit(enc_add_imm(3, 20, (a + 2) * 8)); // x3 = &regs[A+2]
+                b.emit(enc_movz(4, nargs, 0));        // w4 = nargs
+                b.mov_imm64(9, recurse_addr);
                 b.emit(enc_blr(9));                   // result TVal bits in x0
                 b.st_reg(0, a);                       // regs[A] = result
             }
@@ -524,5 +527,125 @@ fn JitCode jit_compile(CompiledFunction* target) {
     out.page = page;
     out.page_bytes = (usz)JIT_MAX_CODE * 4;
     return out;
+}
+
+// Runtime master switch for the JIT. Off by default; the CLI / a future
+// heuristic flips it on. Keeping it a plain global (not a $feature) means the
+// wiring is exercised by the normal build and can be toggled without a rebuild.
+bool jit_enabled = false;
+
+/// Lean self-recursion entry the JIT'd body calls for CALL_VAR (instead of the
+/// heavyweight vm_call_fn_impl). Because the callee is THIS function (verified
+/// self-recursive at compile time), we go straight to the native body via
+/// try_jit_call, keeping the recursion native→native with no interpreter
+/// dispatch. Only a genuine deopt (a non-fastint argument, or a runtime bail)
+/// falls back to the full call path. Args are at `argbase[0..nargs-1]`; returns
+/// the result TVal bits.
+fn ulong jit_recurse(Vm* vm, CompiledFunction* target, ulong func_bits,
+                     TVal* argbase, uint nargs) {
+    // Hot path: the body is already compiled (jit_status==1 guaranteed, since
+    // this entry only exists in a compiled body). Re-enter native directly,
+    // inlining the tiny register-file setup to avoid a second call frame.
+    if (target.jit_status == 1) {
+        uint na = target.num_args;
+        // Fast fastint-arg check + register setup fused. Bail on non-fastint.
+        bool all_fi = nargs <= na;
+        for (uint i = 0; all_fi && i < nargs; i++) {
+            if (!argbase[i].is_fastint()) { all_fi = false; }
+        }
+        if (all_fi) {
+            uint nregs = target.num_regs;
+            TVal[64] regs;
+            for (uint i = 0; i < nregs; i++) {
+                regs[i] = i < nargs ? argbase[i] : (TVal){ .bits = types::TAG_UNDEFINED << 48 };
+            }
+            JitBodyFn body = bitcast((uptr)target.jit_body, JitBodyFn);
+            ulong r = body((void*)vm, &regs[0], func_bits);
+            if (r != JIT_DEOPT) { return r; }
+        }
+    }
+    // Deopt / non-fastint: fall back to the full interpreter call path.
+    TVal func; func.bits = func_bits;
+    TVal undef; undef.set_undefined();
+    TVal ir = vm_call_fn_impl((void*)vm, func, argbase, nargs, undef);
+    return ir.bits;
+}
+
+/// Return true if `target`'s body is within the JIT's supported subset:
+/// only fastint arithmetic + JMP_NLE + RET + self-recursive CALL_VAR, and every
+/// CALL_VAR must resolve to THIS function by name (so the body's hardcoded
+/// self-call is sound). Anything else → not jittable.
+fn bool jit_is_jittable(CompiledFunction* target) {
+    if (target == null || target.code == null) return false;
+    if (target.code_count == 0 || target.code_count > 512) return false;
+    if (target.num_regs > 60) return false;   // register file cap (see try_jit_call)
+    char[] self_name = target.get_name();
+    if (self_name.len == 0) return false;      // need a name to verify self-calls
+    for (uint pc = 0; pc < target.code_count; pc++) {
+        Instruction insn = target.code[pc];
+        switch (insn.op) {
+            case Opcode.LDINT:
+            case Opcode.SUBI:
+            case Opcode.ADD:
+            case Opcode.SUB:
+            case Opcode.JMP_NLE:
+            case Opcode.RET:
+                break;
+            case Opcode.CALL_VAR: {
+                // Verify constants[C] is a string equal to the function's own
+                // name — otherwise the JIT'd body would call the wrong callee.
+                uint ci = insn.c;
+                if (ci >= target.const_count) return false;
+                TVal name_tv = target.constants[ci];
+                if (!name_tv.is_string()) return false;
+                HString* nh = (HString*)name_tv.get_heapptr();
+                if (nh == null) return false;
+                char[] cd = nh.get_data();
+                if (cd.len != self_name.len) return false;
+                for (usz k = 0; k < cd.len; k++) {
+                    if (cd[k] != self_name[k]) return false;
+                }
+            }
+            default:
+                return false;
+        }
+    }
+    return true;
+}
+
+/// Attempt to run `target` natively for a call with `nargs` args. Returns true
+/// (with *out set) if the JIT handled the call to completion; false if the call
+/// must fall back to the interpreter (not jittable, args not all fastint, or a
+/// runtime deopt). Lazily compiles + caches the body on first eligible call.
+fn bool try_jit_call(Vm* vm, CompiledFunction* target, TVal func,
+                     TVal* args, uint nargs, TVal* out) {
+    // Status: 0 = untried, 1 = compiled, 2 = unsupported.
+    if (target.jit_status == 2) return false;
+    if (target.jit_status == 0) {
+        if (!jit_is_jittable(target)) { target.jit_status = 2; return false; }
+        JitCode jc = jit_compile(target);
+        if (jc.body == null) { target.jit_status = 2; return false; }
+        target.jit_body = (void*)jc.body;
+        target.jit_status = 1;
+    }
+    if (target.jit_body == null) return false;
+    // All args must be fastint (the body's arithmetic assumes it; non-fastint
+    // args would hit a deopt guard immediately — cheaper to check here).
+    if (nargs > target.num_args) return false;
+    for (uint i = 0; i < nargs; i++) {
+        if (!args[i].is_fastint()) return false;
+    }
+    // Register file: args in regs[0..nargs-1], the rest undefined.
+    TVal[64] regs;
+    uint nregs = target.num_regs;
+    for (uint i = 0; i < nregs; i++) {
+        if (i < nargs) { regs[i] = args[i]; }
+        else { regs[i].set_undefined(); }
+    }
+    JitBodyFn body = bitcast((uptr)target.jit_body, JitBodyFn);
+    ulong r = body((void*)vm, &regs[0], func.bits);
+    if (r == JIT_DEOPT) return false;
+    out.bits = r;
+    return true;
 }
 

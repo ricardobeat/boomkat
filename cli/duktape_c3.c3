@@ -118,7 +118,13 @@ fn int main(String[] args) {
         if (rc != 0) io::eprintfn("module rc=%d", rc);
         return rc;
     }
-    String path = args.len > 1 ? args[1] : "test/simple.js";
+    // `--jit <path>`: run with the arm64 JIT enabled (experimental).
+    uint arg_i = 1;
+    if (args.len > arg_i && args[arg_i] == "--jit") {
+        vm::jit_enabled = true;
+        arg_i++;
+    }
+    String path = args.len > arg_i ? args[arg_i] : "test/simple.js";
     char[]? source = file::load_temp(path);
     if (catch err = source) { io::eprintfn("Failed to read"); return 1; }
 
