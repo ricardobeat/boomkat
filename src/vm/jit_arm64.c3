@@ -495,29 +495,36 @@ fn JitCode jit_compile(CompiledFunction* target) {
             if (tgt < 512) is_branch_target[tgt] = true;
         }
     }
-    // Guard + mark the parameters once at entry.
+    // Guard + register-cache the sign-extended parameters once at entry, sharing
+    // a single load per parameter. fib re-reads `n` from memory and re-sign-
+    // extends it on every op; caching the sext in a callee-saved reg (x24..x27)
+    // removes that per-op load+lsl+asr. `param_sext_reg[r]` names the arm64
+    // register holding sext(regs[r]), or 0 if not cached; valid only while the
+    // parameter register is never overwritten (invalidated on any write below).
+    // The outer prologue and every recursive call site save/restore the used
+    // regs. Up to 4 params cached; any beyond that are still guarded.
     uint nparams = target.num_args;
-    for (uint i = 0; i < nparams && i < 64; i++) {
-        b.guard_fastint(i, fixups[..], &nfix);
-        known_fi[i] = true;
-    }
-
-    // Register-cache the sign-extended parameters in callee-saved regs x24+.
-    // fib re-reads `n` from memory and re-sign-extends it on every op; caching
-    // the sext once removes that per-op load+lsl+asr. `param_sext_reg[r]` names
-    // the arm64 register holding sext(regs[r]), or 0 if not cached. Only valid
-    // while the parameter register is never overwritten (invalidated on any
-    // write below). x24..x27 give up to 4 cached params; the outer prologue and
-    // every recursive call site save/restore exactly the ones used.
     uint[64] param_sext_reg;
     for (uint i = 0; i < 64; i++) param_sext_reg[i] = 0;
     uint ncached = 0;
-    for (uint i = 0; i < nparams && i < 64 && ncached < 4; i++) {
-        uint pr = 24 + ncached;                     // x24, x25, x26, x27
-        b.ld_reg(0, i);
-        b.sext_fastint(pr, 0);                      // x(pr) = sext(regs[i])
-        param_sext_reg[i] = pr;
-        ncached++;
+    for (uint i = 0; i < nparams && i < 64; i++) {
+        b.ld_reg(0, i);                             // x0 = regs[i].bits (one load)
+        // Guard: tag(x0) must be TAG_FASTINT.
+        b.emit(enc_lsr_imm(8, 0, 48));
+        b.emit(enc_movz(9, (uint)types::TAG_FASTINT, 0));
+        b.emit(enc_cmp(8, 9));
+        if (nfix < 512) {
+            fixups[nfix] = { .native_pos = b.pos, .target_pc = DEOPT_PC, .cond = COND_NE };
+            nfix++;
+        }
+        b.emit(enc_bcond(COND_NE, 0));
+        known_fi[i] = true;
+        if (ncached < 4) {
+            uint pr = 24 + ncached;                 // x24, x25, x26, x27
+            b.sext_fastint(pr, 0);                  // x(pr) = sext(x0), reusing the load
+            param_sext_reg[i] = pr;
+            ncached++;
+        }
     }
 
     // --- Body ---
@@ -646,6 +653,10 @@ fn JitCode jit_compile(CompiledFunction* target) {
                 if (a < 64 && pending_const[a]) {
                     b.mov_imm64(0, (ulong)reg_const[a]);
                     b.retag_fastint(0, 0);
+                } else if (a < 64 && param_sext_reg[a] != 0) {
+                    // Cached parameter — re-tag the sign-extended value in place
+                    // of a memory reload (the base-case `return n`).
+                    b.retag_fastint(0, param_sext_reg[a]);
                 } else {
                     b.ld_reg(0, a);
                 }
