@@ -1562,13 +1562,24 @@ fn void builtin_ta_proto_slice(BuiltinContext* ctx) {
     HObject* result = ta_species_create(ctx, obj, count);
     if (result == null) return;
 
-    // Re-check source detach after species construction (user code may detach).
-    if (ta_is_detached(obj)) {
-        arraybuffer_throw_type_error(ctx, "TypedArray.slice: source buffer detached during species construction");
-        return;
+    // §23.2.3.26 step 14: after TypedArraySpeciesCreate (which may run user
+    // code that resizes the source's backing buffer):
+    //   a-b. If the source is now out of bounds, throw a TypeError.
+    //   c-d. Otherwise clamp endIndex to the current length and re-derive the
+    //        number of elements to copy. Elements beyond the shrunk source stay
+    //        zero in the (zero-initialized) result.
+    uint copy_count = count;
+    if (count > 0) {
+        if (ta_is_detached(obj)) {
+            arraybuffer_throw_type_error(ctx, "TypedArray.slice: source buffer went out of bounds during species construction");
+            return;
+        }
+        uint cur_len = ta_element_count(obj);
+        uint end_index = final_k < cur_len ? final_k : cur_len;
+        copy_count = end_index > k ? end_index - k : 0;
     }
 
-    if (count > 0) {
+    if (copy_count > 0) {
         hobject::ObjClass result_cls = result.flags.obj_class;
         HObject* result_buf = (*result.extra_ptr()).view.buffer;
         uint result_byte_off = (*result.extra_ptr()).view.byte_offset;
@@ -1578,13 +1589,13 @@ fn void builtin_ta_proto_slice(BuiltinContext* ctx) {
         uint result_shift = ta_elem_shift(result_cls);
         if (result_cls == cls && result_buf != src_buf) {
             // Same element type, disjoint buffers: bulk copy is safe.
-            mem::copy(dst_data, src_data, (sz)((usz)(count << shift)));
+            mem::copy(dst_data, src_data, (sz)((usz)(copy_count << shift)));
         } else {
             // Either different types, or same buffer (shared between src and result
             // via species constructor): element-by-element copy per spec step 14g.
             // For same-buffer cases the spec requires reading each src element before
             // writing to dst (which may overlap), so element-by-element is required.
-            for (uint i = 0; i < count; i++) {
+            for (uint i = 0; i < copy_count; i++) {
                 TVal v = ta_load_element(ctx.heap, src_data, cls, i);
                 char* dp = dst_data + (i << result_shift);
                 ta_write_element(dp, result_cls, &v, ctx);

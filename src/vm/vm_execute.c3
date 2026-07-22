@@ -1050,10 +1050,20 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
 
     TVal? result_opt = Vm.run(vm);
     TVal result;
+    bool ctor_faulted = false;
+    TVal ctor_error; ctor_error.set_undefined();
     if (try r = result_opt) {
         result = r;
     } else {
         result = vm.return_val;
+        // An uncaught throw inside the constructor (e.g. super() to a
+        // TypedArray ctor raising RangeError) unwinds Vm.run to a fault.
+        // vm_uncaught_error already latched heap.error_value; preserve it so
+        // the caller sees a thrown error rather than a swallowed stale value.
+        if (vm.heap.has_error) {
+            ctor_faulted = true;
+            vm.heap.tval_copy_ref(&ctor_error, &vm.heap.error_value);
+        }
     }
 
     // ES6 §12.3.5.2: if constructor returns an object, that's the new instance.
@@ -1093,6 +1103,16 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
     vm.heap.resume_gen = (GeneratorState*)saved_resume_gen;
 
     vm.heap.drain_microtasks((void*)vm);
+
+    // Re-surface a constructor fault after state restore and the microtask
+    // drain (either can clear the error channel). Callers of construct_fn
+    // (e.g. TypedArray subarray/slice species paths) check heap.has_error.
+    if (ctor_faulted) {
+        vm.has_error = true;
+        vm.heap.has_error = true;
+        vm.heap.tval_copy_ref(&vm.heap.error_value, &ctor_error);
+        return ctor_error;
+    }
     return final_this;
 }
 

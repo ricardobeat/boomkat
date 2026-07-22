@@ -1620,7 +1620,9 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                 ctx.new_target = lf_new_target;
                 builtins::dispatch_builtin(fn_idx, &ctx);
                 if (ctx.should_throw) {
-                    vm_throw_value(vm, ctx.throw_value, ds.act, &ds.curr_pc, &ds.needs_restart);
+                    if (!vm_throw_value(vm, ctx.throw_value, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                        return vm_uncaught_error(vm, &ctx.throw_value);
+                    }
                 } else if (env::is_tdz_sentinel(&ds.act.this_binding)) {
                     // Initialize the derived constructor's this_binding with the
                     // object returned by the builtin super constructor (§9.2.2).
@@ -1703,7 +1705,9 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                     builtins::dispatch_builtin(sc_bound_fn_idx, &sc_bound_ctx);
                     ds.regs_base = ds.act.bottom;
                     if (sc_bound_ctx.should_throw) {
-                        vm_throw_value(vm, sc_bound_ctx.throw_value, ds.act, &ds.curr_pc, &ds.needs_restart);
+                        if (!vm_throw_value(vm, sc_bound_ctx.throw_value, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                            return vm_uncaught_error(vm, &sc_bound_ctx.throw_value);
+                        }
                         return (TVal){};
                     }
                     if (sc_bound_ctx.needs_re_dispatch) {
@@ -1772,7 +1776,9 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                 sc_lf_ctx.new_target = new_target;
                 builtins::dispatch_builtin(sc_lf_idx, &sc_lf_ctx);
                 if (sc_lf_ctx.should_throw) {
-                    vm_throw_value(vm, sc_lf_ctx.throw_value, ds.act, &ds.curr_pc, &ds.needs_restart);
+                    if (!vm_throw_value(vm, sc_lf_ctx.throw_value, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                        return vm_uncaught_error(vm, &sc_lf_ctx.throw_value);
+                    }
                 } else if (env::is_tdz_sentinel(&ds.act.this_binding)) {
                     TVal* sc_lf_result = ds.regs_base + result_reg;
                     bool sc_lf_already_bound = false;
@@ -1816,7 +1822,9 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                     ctx.new_target = new_target;
                     builtins::dispatch_builtin(fn_idx, &ctx);
                     if (ctx.should_throw) {
-                        vm_throw_value(vm, ctx.throw_value, ds.act, &ds.curr_pc, &ds.needs_restart);
+                        if (!vm_throw_value(vm, ctx.throw_value, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                            return vm_uncaught_error(vm, &ctx.throw_value);
+                        }
                     } else if (env::is_tdz_sentinel(&ds.act.this_binding)) {
                         // Initialize the derived constructor's this_binding with the
                         // object returned by the builtin super constructor (§9.2.2).
