@@ -167,10 +167,8 @@ UNSUPPORTED_PATTERN = re.compile(
     r"async-generator|"
     # Class features not yet implemented (private fields/methods/accessors/
     # static private landed in plan 054 P2-P5; public fields P7; static
-    # initialization blocks landed session 292 — still missing: the `#x in
-    # obj` operator (P6) — note class-fields-private-in must stay listed
-    # explicitly now that the broader class-fields-private pattern is gone)
-    r"class-fields-private-in|"
+    # initialization blocks landed session 292; #x in obj (P6) landed in
+    # the same session — `class-fields-private-in` removed).
     # Other unimplemented ES features
     r"object-rest|logical-assignment|numeric-separator-literal|align-detached-buffer-semantics-with-web-reality"
     r")\b"

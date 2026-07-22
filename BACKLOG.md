@@ -33,7 +33,7 @@ Target: feature parity with vendored QuickJS 2025-09-13 (`out/qjs`), measured by
 - [ ] **`Array.fromAsync`**.
 - [ ] **`Math.sumPrecise`**.
 - [ ] **`Iterator.concat`** (`iterator-sequencing`).
-- [ ] **`#x in obj`** (`class-fields-private-in`, plan 054 P6) — parser + existing brand-check reuse.
+- [x] **`#x in obj`** (`class-fields-private-in`, plan 054 P6) — parser + existing brand-check reuse. Fix: `binary_expr` peeks for `HASH_IDENT in` and emits a new `HAS_BRAND` opcode (ABC: A=dst, B=obj, C=brand-reg) that sets a boolean from the existing own-property brand check (no throw on miss). Throws TypeError if RHS is not an object per spec. `class-fields-private-in` removed from `UNSUPPORTED_PATTERN`.
 - [ ] **Reflect un-skip** — surface implemented (A9); un-skip and fix what fails.
 
 ### Todo — architecture (batch 3)

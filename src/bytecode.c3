@@ -718,6 +718,14 @@ enum Opcode : char {
     /// Object.create(instance).#x would falsely pass. ABC format.
     CHK_BRAND,
 
+    /// Boolean brand check for the `#x in obj` ergonomic brand probe
+    /// (ES2022 class-fields-private-in). Like CHK_BRAND but sets ra to a
+    /// boolean instead of throwing on miss — the probe tests presence,
+    /// not access. A=object, B=register holding the brand symbol,
+    /// C=constant pool index of the private name (for error messages,
+    /// not currently used here since this opcode never throws).
+    HAS_BRAND,
+
     /// Define an own data property bypassing setters AND the extensibility
     /// check (CreateDataProperty semantics without the [[Extensible]] gate,
     /// for private field installation per PrivateFieldAdd).
@@ -809,6 +817,7 @@ case PUTLEX:     return A_BC;
         case NEW_PRIV_SYM: return A_BC;
         case ADD_BRAND:  return ABC;
         case CHK_BRAND:  return ABC;
+        case HAS_BRAND: return ABC;
         case INITPROP_PRIV: return ABC;
         case GETPROP_PRIVATE: return ABC;
 

@@ -621,6 +621,54 @@ fn ushort? CompilerContext.conditional_expr(&self) {
 /// Parse binary expressions using a Pratt parser with precedence climbing.
 fn ushort? CompilerContext.binary_expr(&self, int min_prec) {
     self.last_was_local_var = false;
+
+    // ES2022 class-fields-private-in: `[+In] PrivateIdentifier in ShiftExpression`.
+    // The grammar gives the PrivateIdentifier as a standalone LHS of the `in`
+    // operator — `#x` is not a value expression by itself. If the next token is
+    // HASH_IDENT immediately followed by `in`, consume both and emit the
+    // HAS_BRAND probe; any other HASH_IDENT use is rejected below.
+    if (min_prec <= get_binary_precedence(TokenType.IN)
+            && self.peek_type() == TokenType.HASH_IDENT) {
+        Token hash_tok = self.advance()!;
+        if (self.peek_type() == TokenType.IN) {
+            self.advance()!;  // consume 'in'
+            // Resolve #name to its slot entry (a SyntaxError if the private
+            // name has no declaration in any enclosing class — matches
+            // AllPrivateIdentifiersValid early-error semantics).
+            PrivateNameEntry* entry = self.resolve_private_name(hash_tok.str_value)!;
+            // The brand binding lives in this context's pool.
+            uint brand_bind_idx = self.add_string_constant(entry.brand_slot_name);
+            ushort brand_reg = self.alloc_reg();
+            self.emit(bytecode::make_a_bc(Opcode.GETVAR, (uint)brand_reg, brand_bind_idx));
+
+            // Parse RHS as a ShiftExpression (precedence > IN). min_prec gating
+            // ensures the `in` operator's left-binding doesn't accidentally
+            // chain another relational op above.
+            ushort rhs = self.binary_expr(get_binary_precedence(TokenType.IN) + 1)!;
+
+            // Emit HAS_BRAND: A=dst, B=object, C=brand-register. The brand
+            // register is a string constant lookup we just loaded via
+            // GETVAR; the object lives in `rhs`. Both operands are 8-bit
+            // register fields — the existing CHK_BRAND opcode (used by
+            // emit_private_access for read/write paths) follows the same
+            // layout and inherits the same register-budget constraint
+            // (MAX_REGISTERS=512 vs. 8-bit encoding). Deeper functions may
+            // need a wider encoding variant; out of scope here.
+            ushort dst = self.alloc_reg();
+            uint name_const_idx = self.add_string_constant(hash_tok.str_value);
+            uint name_c = name_const_idx <= 0xFE ? name_const_idx : 0xFF;
+            self.emit_abc(Opcode.HAS_BRAND, (uint)dst, (uint)rhs, (uint)brand_reg);
+            self.free_reg(brand_reg);
+            self.free_reg(rhs);
+            return dst;
+        }
+        // Not followed by `in` — `#x` alone is not a valid expression.
+        // Push the HASH_IDENT back so the caller can surface a real error
+        // rather than silently consuming it.
+        self.lexer.pushback(hash_tok);
+        return self.unary_expr()!;
+    }
+
     ushort left = self.unary_expr()!;
     bool left_is_local = self.last_was_local_var;
 

@@ -1510,6 +1510,35 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, In
             return (TVal){};
         }
 
+        case Opcode.HAS_BRAND: {
+            // A=dst, B=object, C=register holding the brand symbol. Set A
+            // to true iff B is an object with the brand symbol as an OWN
+            // property. Own-only matches the CHK_BRAND rule (spec private
+            // brand check is own-property) and ensures `Object.create(obj)`
+            // doesn't falsely pass. If B isn't an object, throw TypeError
+            // — the `in` operator requires an object RHS per
+            // ES2022 RelationalExpression[+In]PrivateIdentifier in
+            // ShiftExpression step 4; a primitive RHS must reject with
+            // TypeError so callers can branch on it (test262
+            // private-field-rhs-non-object).
+            if (!rb.is_object()) {
+                if (!vm_throw_error(vm, vm.heap.type_err_proto,
+                        "Cannot use 'in' operator to search for private field in a non-object",
+                        ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                    return VM_ERROR~;
+                }
+                return (TVal){};
+            }
+            bool has = false;
+            HObject* hobj = (HObject*)rb.get_heapptr();
+            void* key = rc.get_heapptr();
+            if (hobj != null && key != null) {
+                has = hobj.find_prop_idx(key) >= 0;
+            }
+            ra.set_boolean(has);
+            return (TVal){};
+        }
+
         case Opcode.INITPROP_PRIV: {
             // A=object, B=key register (private symbol), C=value register.
             // Define an own data property {writable:true, enumerable:false,
