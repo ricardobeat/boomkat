@@ -283,10 +283,13 @@ fn ushort? CompilerContext.assignment_expr(&self) {
     // Save LHS info (will be overwritten by RHS evaluation)
     bool lhs_was_getvar = self.last_was_getvar;
     bool lhs_was_getglobal = self.last_was_getvar && self.last_was_getglobal;
+    bool lhs_was_getglobal_prim = lhs_was_getglobal && self.last_was_getglobal_prim;
     uint lhs_getvar_name_idx = self.last_getvar_name_idx;
-    // The opcode that writes back a bare-identifier LHS: PUTGLOBAL at true
-    // global scope (mirrors GETGLOBAL), else PUTVAR_ASSIGN.
-    Opcode ident_store_op = lhs_was_getglobal ? Opcode.PUTGLOBAL : Opcode.PUTVAR_ASSIGN;
+    // The opcode that writes back a bare-identifier LHS: PUTGLOBAL_PRIM for a
+    // proven primitive-only global (guard-free), PUTGLOBAL at true global scope
+    // (mirrors GETGLOBAL), else PUTVAR_ASSIGN.
+    Opcode ident_store_op = lhs_was_getglobal_prim ? Opcode.PUTGLOBAL_PRIM
+        : (lhs_was_getglobal ? Opcode.PUTGLOBAL : Opcode.PUTVAR_ASSIGN);
     ushort lhs_ref_reg = MAX_REGISTERS;
     bool lhs_was_member = self.last_was_member;
     ushort lhs_member_obj = self.last_member_obj_reg;
@@ -315,7 +318,8 @@ fn ushort? CompilerContext.assignment_expr(&self) {
                     uint getvar_reg = self.code[self.code_count - 1].a;
                     self.code[self.code_count - 1] = bytecode::make_a_bc(Opcode.DEC_VAR, getvar_reg, name_idx);
                 } else if (lhs_was_getglobal && self.code_count > 0
-                    && self.code[self.code_count - 1].op == Opcode.GETGLOBAL) {
+                    && (self.code[self.code_count - 1].op == Opcode.GETGLOBAL
+                        || self.code[self.code_count - 1].op == Opcode.GETGLOBAL_PRIM)) {
                     uint name_idx = self.code[self.code_count - 1].get_bc();
                     uint getglobal_reg = self.code[self.code_count - 1].a;
                     self.code[self.code_count - 1] = bytecode::make_a_bc(Opcode.DEC_GLOBAL, getglobal_reg, name_idx);
@@ -1142,6 +1146,7 @@ fn ushort? CompilerContext.unary_expr(&self) {
             // GETVAR), so the GETVAR branch would also miss its target.
             bool inc_was_getvar = self.last_was_getvar;
             bool inc_was_getglobal = self.last_was_getvar && self.last_was_getglobal;
+            bool inc_was_getglobal_prim = inc_was_getglobal && self.last_was_getglobal_prim;
             uint inc_getvar_name_idx = self.last_getvar_name_idx;
             bool inc_was_member = self.last_was_member;
             ushort inc_member_obj = self.last_member_obj_reg;
@@ -1160,15 +1165,20 @@ fn ushort? CompilerContext.unary_expr(&self) {
                 uint getvar_reg = self.code[self.code_count - 1].a;
                 self.code[self.code_count - 1] = bytecode::make_a_bc(Opcode.INC_VAR, getvar_reg, name_idx);
             } else if (inc_was_getglobal && self.code_count > 0
-                && self.code[self.code_count - 1].op == Opcode.GETGLOBAL) {
-                // Replace GETGLOBAL with INC_GLOBAL: 1 lean dispatch.
+                && (self.code[self.code_count - 1].op == Opcode.GETGLOBAL
+                    || self.code[self.code_count - 1].op == Opcode.GETGLOBAL_PRIM)) {
+                // Replace GETGLOBAL/GETGLOBAL_PRIM with INC_GLOBAL: 1 lean
+                // dispatch. INC_GLOBAL's in-place numeric update is correct for
+                // any global (prim or not), so it subsumes the PRIM read too.
                 uint name_idx = self.code[self.code_count - 1].get_bc();
                 uint getglobal_reg = self.code[self.code_count - 1].a;
                 self.code[self.code_count - 1] = bytecode::make_a_bc(Opcode.INC_GLOBAL, getglobal_reg, name_idx);
             } else {
                 self.emit_abc(Opcode.INC, (uint)op_inc, 0, 0);
                 if (inc_was_getvar) {
-                    self.emit_a_bc(inc_was_getglobal ? Opcode.PUTGLOBAL : Opcode.PUTVAR_ASSIGN, (uint)op_inc, inc_getvar_name_idx);
+                    Opcode inc_store = inc_was_getglobal_prim ? Opcode.PUTGLOBAL_PRIM
+                        : (inc_was_getglobal ? Opcode.PUTGLOBAL : Opcode.PUTVAR_ASSIGN);
+                    self.emit_a_bc(inc_store, (uint)op_inc, inc_getvar_name_idx);
                 }
             }
             self.last_was_getvar = false;
@@ -1195,6 +1205,7 @@ fn ushort? CompilerContext.unary_expr(&self) {
             // See INC case above for why member takes priority over getvar.
             bool dec_was_getvar = self.last_was_getvar;
             bool dec_was_getglobal = self.last_was_getvar && self.last_was_getglobal;
+            bool dec_was_getglobal_prim = dec_was_getglobal && self.last_was_getglobal_prim;
             uint dec_getvar_name_idx = self.last_getvar_name_idx;
             bool dec_was_member = self.last_was_member;
             ushort dec_member_obj = self.last_member_obj_reg;
@@ -1212,14 +1223,17 @@ fn ushort? CompilerContext.unary_expr(&self) {
                 uint getvar_reg = self.code[self.code_count - 1].a;
                 self.code[self.code_count - 1] = bytecode::make_a_bc(Opcode.DEC_VAR, getvar_reg, name_idx);
             } else if (dec_was_getglobal && self.code_count > 0
-                && self.code[self.code_count - 1].op == Opcode.GETGLOBAL) {
+                && (self.code[self.code_count - 1].op == Opcode.GETGLOBAL
+                    || self.code[self.code_count - 1].op == Opcode.GETGLOBAL_PRIM)) {
                 uint name_idx = self.code[self.code_count - 1].get_bc();
                 uint getglobal_reg = self.code[self.code_count - 1].a;
                 self.code[self.code_count - 1] = bytecode::make_a_bc(Opcode.DEC_GLOBAL, getglobal_reg, name_idx);
             } else {
                 self.emit_abc(Opcode.DEC, (uint)op_dec, 0, 0);
                 if (dec_was_getvar) {
-                    self.emit_a_bc(dec_was_getglobal ? Opcode.PUTGLOBAL : Opcode.PUTVAR_ASSIGN, (uint)op_dec, dec_getvar_name_idx);
+                    Opcode dec_store = dec_was_getglobal_prim ? Opcode.PUTGLOBAL_PRIM
+                        : (dec_was_getglobal ? Opcode.PUTGLOBAL : Opcode.PUTVAR_ASSIGN);
+                    self.emit_a_bc(dec_store, (uint)op_dec, dec_getvar_name_idx);
                 }
             }
             self.last_was_getvar = false;
@@ -1277,6 +1291,7 @@ fn ushort? CompilerContext.postfix_expr(&self) {
 
     bool lhs_was_getvar = self.last_was_getvar;
     bool lhs_was_getglobal = self.last_was_getvar && self.last_was_getglobal;
+    bool lhs_was_getglobal_prim = lhs_was_getglobal && self.last_was_getglobal_prim;
     uint lhs_getvar_name_idx = self.last_getvar_name_idx;
 
     // Note: self.last_was_getvar / self.last_was_member remain set so that
@@ -1325,14 +1340,17 @@ fn ushort? CompilerContext.postfix_expr(&self) {
                 uint getvar_reg = self.code[self.code_count - 1].a;
                 self.code[self.code_count - 1] = bytecode::make_a_bc(Opcode.INC_VAR, getvar_reg, name_idx);
             } else if (lhs_was_getglobal && self.code_count > 0
-                && self.code[self.code_count - 1].op == Opcode.GETGLOBAL) {
+                && (self.code[self.code_count - 1].op == Opcode.GETGLOBAL
+                    || self.code[self.code_count - 1].op == Opcode.GETGLOBAL_PRIM)) {
                 uint name_idx = self.code[self.code_count - 1].get_bc();
                 uint getglobal_reg = self.code[self.code_count - 1].a;
                 self.code[self.code_count - 1] = bytecode::make_a_bc(Opcode.INC_GLOBAL, getglobal_reg, name_idx);
             } else {
                 self.emit_abc(Opcode.INC, (uint)operand, 0, 0);
                 if (lhs_was_getvar) {
-                    self.emit_a_bc(lhs_was_getglobal ? Opcode.PUTGLOBAL : Opcode.PUTVAR_ASSIGN, (uint)operand, lhs_getvar_name_idx);
+                    Opcode pf_store = lhs_was_getglobal_prim ? Opcode.PUTGLOBAL_PRIM
+                        : (lhs_was_getglobal ? Opcode.PUTGLOBAL : Opcode.PUTVAR_ASSIGN);
+                    self.emit_a_bc(pf_store, (uint)operand, lhs_getvar_name_idx);
                 }
             }
             self.last_was_getvar = false;
@@ -1401,14 +1419,17 @@ fn ushort? CompilerContext.postfix_expr(&self) {
                 uint getvar_reg = self.code[self.code_count - 1].a;
                 self.code[self.code_count - 1] = bytecode::make_a_bc(Opcode.DEC_VAR, getvar_reg, name_idx);
             } else if (lhs_was_getglobal && self.code_count > 0
-                && self.code[self.code_count - 1].op == Opcode.GETGLOBAL) {
+                && (self.code[self.code_count - 1].op == Opcode.GETGLOBAL
+                    || self.code[self.code_count - 1].op == Opcode.GETGLOBAL_PRIM)) {
                 uint name_idx = self.code[self.code_count - 1].get_bc();
                 uint getglobal_reg = self.code[self.code_count - 1].a;
                 self.code[self.code_count - 1] = bytecode::make_a_bc(Opcode.DEC_GLOBAL, getglobal_reg, name_idx);
             } else {
                 self.emit_abc(Opcode.DEC, (uint)operand, 0, 0);
                 if (lhs_was_getvar) {
-                    self.emit_a_bc(lhs_was_getglobal ? Opcode.PUTGLOBAL : Opcode.PUTVAR_ASSIGN, (uint)operand, lhs_getvar_name_idx);
+                    Opcode pf_store = lhs_was_getglobal_prim ? Opcode.PUTGLOBAL_PRIM
+                        : (lhs_was_getglobal ? Opcode.PUTGLOBAL : Opcode.PUTVAR_ASSIGN);
+                    self.emit_a_bc(pf_store, (uint)operand, lhs_getvar_name_idx);
                 }
             }
             self.last_was_getvar = false;

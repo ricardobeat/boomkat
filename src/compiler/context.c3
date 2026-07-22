@@ -250,6 +250,10 @@ struct CompilerContext {
     /// (true global scope, no nested lexical env). The assignment write-back
     /// then emits PUTGLOBAL instead of PUTVAR_ASSIGN.
     bool last_was_getglobal;
+    /// Set alongside last_was_getglobal when the read was emitted as the
+    /// guard-free GETGLOBAL_PRIM (name proven primitive-only). The assignment
+    /// write-back then emits PUTGLOBAL_PRIM instead of PUTGLOBAL.
+    bool last_was_getglobal_prim;
     /// Set when the last primary_expr returned a live local variable register directly.
     bool last_was_local_var;
     ushort last_local_var_reg;
@@ -504,6 +508,17 @@ struct CompilerContext {
     // thread allocator; freed in cleanup().
     List{uint} declared_global_name_idxs;
 
+    // Constant-pool indices of top-level `var`/`function` globals that a
+    // whole-program pre-scan proved PRIMITIVE-ONLY: every assignment to the
+    // name anywhere in the unit (including nested function bodies) stores a
+    // provably-primitive value, and the unit has no eval/globalThis/Function/
+    // with observability that could inject a heap value out of the compiler's
+    // view. Reads/writes of such a global emit GETGLOBAL_PRIM/PUTGLOBAL_PRIM,
+    // which skip the is_heap/refcount machinery entirely. Populated by
+    // pre_scan_prim_globals at Script global scope only; empty otherwise so the
+    // guarded GETGLOBAL/PUTGLOBAL path is used by default (conservative).
+    List{uint} prim_only_name_idxs;
+
     // Direct eval tracking — when true, the CALL path must create a fresh env.
     bool has_direct_eval;
     /// Set by primary_expr when the identifier "eval" is resolved; checked and
@@ -593,6 +608,7 @@ fn void CompilerContext.init(&self, Lexer* lex, void* heap) {
     // Persistent (non-temp) allocator for the declared-global name-index set so
     // entries survive the whole compile; freed in cleanup().
     self.declared_global_name_idxs.allocator = mem;
+    self.prim_only_name_idxs.allocator = mem;
 
     // Strict-only engine: lexer always in strict mode (affects FutureReservedWord
     // keyword recognition — implements/interface/package/private/protected/public).
@@ -611,6 +627,7 @@ fn void CompilerContext.cleanup(&self) {
         self.private_names = null;
     }
     self.declared_global_name_idxs.free();
+    self.prim_only_name_idxs.free();
 }
 
 /// Borrow the private-names table from an enclosing context (a method,

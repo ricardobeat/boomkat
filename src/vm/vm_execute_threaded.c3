@@ -72,6 +72,8 @@ fn void init_threaded_handlers() {
     // --- Assignment (g_assign) hot ops: perf-all global-slot opcodes ---
     g_threaded_handlers[Opcode.GETGLOBAL.ordinal]  = &th_getglobal;
     g_threaded_handlers[Opcode.PUTGLOBAL.ordinal]  = &th_putglobal;
+    g_threaded_handlers[Opcode.GETGLOBAL_PRIM.ordinal] = &th_getglobal_prim;
+    g_threaded_handlers[Opcode.PUTGLOBAL_PRIM.ordinal] = &th_putglobal_prim;
     g_threaded_handlers[Opcode.INC_GLOBAL.ordinal] = &th_inc_global;
     g_threaded_handlers[Opcode.DEC_GLOBAL.ordinal] = &th_dec_global;
 
@@ -275,6 +277,48 @@ fn Instruction* th_getglobal(Instruction* pc, Instruction* code_end, TVal* regs,
         vm.heap.tval_copy_ref(ra, pv);
         track_heap_store(cold.act, ra, (uint)insn.a);
     }
+    pc++;
+    return th_next(pc, code_end, regs, cold);
+}
+
+// Proven primitive-only global read (see GETGLOBAL_PRIM in bytecode.c3): the
+// slot can never hold a heap value, so no source incref, no track_heap_store.
+// The destination register may still hold a stale heap ref, so decref it.
+fn Instruction* th_getglobal_prim(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    Instruction insn = *pc;
+    Vm* vm = cold.vm;
+    hobject::VarICEntry* vic_base = (hobject::VarICEntry*)vm.current_func.var_ic_entries;
+    if (vic_base == null) return pc;
+    uint pc_off = (uint)(pc - cold.code_base);
+    hobject::VarICEntry* gic = vic_base + pc_off;
+    HObject* gb = (HObject*)gic.bindings;
+    if (gb == null || gic.varref_alloc == null || gb.prop_alloc != gic.varref_alloc) return pc;
+    TVal* pv = gic.varref_ptr;
+    if (env::is_tdz_sentinel(pv)) return pc;
+    TVal* ra = regs + insn.a;
+    if (ra.is_heap_allocated()) vm.heap.decref_tval(ra);
+    *ra = *pv;
+    pc++;
+    return th_next(pc, code_end, regs, cold);
+}
+
+// Proven primitive-only global write: the overwritten slot value is provably
+// primitive (no decref) and the stored value is provably primitive (no incref/
+// track). Raw slot write.
+fn Instruction* th_putglobal_prim(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    Instruction insn = *pc;
+    Vm* vm = cold.vm;
+    hobject::VarICEntry* vic_base = (hobject::VarICEntry*)vm.current_func.var_ic_entries;
+    if (vic_base == null) return pc;
+    uint pc_off = (uint)(pc - cold.code_base);
+    hobject::VarICEntry* gic = vic_base + pc_off;
+    HObject* gb = (HObject*)gic.bindings;
+    if (gb == null || !gic.varref_store_ok || gic.varref_alloc == null
+        || gb.prop_alloc != gic.varref_alloc) return pc;
+    TVal* ra = regs + insn.a;
+    TVal* pv = gic.varref_ptr;
+    *pv = *ra;
+    ra.set_undefined();
     pc++;
     return th_next(pc, code_end, regs, cold);
 }
