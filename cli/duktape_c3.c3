@@ -105,6 +105,33 @@ fn int main(String[] args) {
             interp_r.get_fastint(), jit_r.is_fastint() ? jit_r.get_fastint() : -999, ok);
         return ok ? 0 : 1;
     }
+    // Hidden: compile fib and print the emitted arm64 words (hex) for disasm.
+    if (args.len > 1 && args[1] == "--jit-dump") {
+        Heap*? jhp = heap::create(null, null, null, null, null);
+        if (catch h = jhp) { return 1; }
+        defer jhp.destroy();
+        Vm*? jv = vm::vm_create(jhp);
+        if (catch err = jv) { return 1; }
+        defer vm::vm_destroy(jv);
+        char[] jsrc = (char[])"function fib(n){ if(n<=1) return n; return fib(n-1)+fib(n-2); } fib(1);";
+        Lexer jlex = lexer::lexer_init(jsrc, jhp);
+        CompiledFunction*? jfunc = compiler::compile(&jlex, jhp);
+        CompiledFunction* jf;
+        if (try ff = jfunc) { jf = ff; } else { return 1; }
+        if (catch e = jv.execute(jf)) { return 1; }
+        HString* fib_key = vm::intern_string(jv, (char[])"fib");
+        TVal? fib_tv_opt = jv.global_env.bindings.get_prop((void*)fib_key);
+        TVal fib_tv;
+        if (try t = fib_tv_opt) { fib_tv = t; } else { return 1; }
+        HObject* fib_obj = (HObject*)fib_tv.get_heapptr();
+        CompiledFunction* fib_body = (*fib_obj.extra_ptr()).func.comp_func;
+        vm::JitCode jc = vm::jit_compile(fib_body);
+        if (jc.body == null) { io::eprintfn("bailed"); return 1; }
+        for (uint i = 0; i < vm::jit_last_words; i++) {
+            io::printfn("0x%08x", vm::jit_last_page[i]);
+        }
+        return 0;
+    }
     // `--module <path>` drives the full ESM resolve->link->evaluate pipeline.
     if (args.len > 2 && args[1] == "--module") {
         String mpath = args[2];

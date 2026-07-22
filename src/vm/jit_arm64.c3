@@ -368,6 +368,22 @@ fn void JitBuf.guard_fastint(&self, uint r, JitFixup[] fixups, uint* nfix) {
     self.emit(enc_bcond(COND_NE, 0));            // B.NE deopt (patched later)
 }
 
+/// Emit a deopt guard on the signed integer in Xn: if it does not fit a signed
+/// 48-bit fastint payload, jump to the deopt epilogue. Checks by sign-extending
+/// the low 48 bits and comparing to the original: equal ⇒ in range. Uses x8 as
+/// scratch (Xn must not be x8). Makes an arithmetic result provably fastint so
+/// downstream guards on it can be skipped.
+fn void JitBuf.guard_fits_fastint(&self, uint n, JitFixup[] fixups, uint* nfix) {
+    self.emit(enc_lsl_imm(8, n, 16));           // x8 = n << 16
+    self.emit(enc_asr_imm(8, 8, 16));           // x8 = sext48(n)
+    self.emit(enc_cmp(n, 8));                    // flags = n - sext48(n)
+    if (*nfix < fixups.len) {
+        fixups[*nfix] = { .native_pos = self.pos, .target_pc = DEOPT_PC, .cond = COND_NE };
+        (*nfix)++;
+    }
+    self.emit(enc_bcond(COND_NE, 0));            // B.NE deopt (out of range)
+}
+
 /// Try to compile `target`'s body to native arm64. Returns a JitCode with a
 /// non-null fn on success, or {} (fn == null) if the body contains any opcode
 /// or shape outside the supported fastint/self-recursion set — the caller then
@@ -432,6 +448,23 @@ fn JitCode jit_compile(CompiledFunction* target) {
     ulong recurse_addr = (ulong)(uptr)(void*)&jit_recurse;
     ulong target_ptr = (ulong)(uptr)(void*)target;
 
+    // Dataflow: which registers are provably fastint at the current pc, so a
+    // guard_fastint on them can be skipped. The parameters (regs[0..num_args-1])
+    // are guarded once at entry; arithmetic results are made provably fastint by
+    // an overflow-to-deopt check; recursive-call results are fastint-or-deopt.
+    // Conservative: any register not proven is guarded. (Straight-line + forward
+    // branches only in the supported set, so a single forward pass is sound —
+    // JMP_NLE only skips the base-case RET, never merges divergent states into a
+    // value use.)
+    bool[64] known_fi;
+    for (uint i = 0; i < 64; i++) known_fi[i] = false;
+    // Guard + mark the parameters once at entry.
+    uint nparams = target.num_args;
+    for (uint i = 0; i < nparams && i < 64; i++) {
+        b.guard_fastint(i, fixups[..], &nfix);
+        known_fi[i] = true;
+    }
+
     // --- Body ---
     for (uint pc = 0; pc < n; pc++) {
         native_pc[pc] = b.pos;
@@ -448,43 +481,50 @@ fn JitCode jit_compile(CompiledFunction* target) {
                 b.mov_imm64(0, (ulong)imm);           // x0 = imm (sign in bits)
                 b.retag_fastint(1, 0);                // x1 = fastint(imm)
                 b.st_reg(1, a);
+                if (a < 64) known_fi[a] = true;       // a literal int is fastint
             }
             case Opcode.SUBI: {
                 // A = B - (signed8)C  (fastint fast path; deopt otherwise).
-                b.guard_fastint(bb, fixups[..], &nfix);
+                if (bb < 64 && !known_fi[bb]) b.guard_fastint(bb, fixups[..], &nfix);
                 b.ld_reg(0, bb);
                 b.sext_fastint(0, 0);                 // x0 = sext(regs[B])
                 long imm = (long)(ichar)c;
                 b.mov_imm64(1, (ulong)imm);
                 b.emit(enc_sub(0, 0, 1));             // x0 = B - imm
+                b.guard_fits_fastint(0, fixups[..], &nfix); // overflow → deopt
                 b.retag_fastint(2, 0);
                 b.st_reg(2, a);
+                if (a < 64) known_fi[a] = true;       // proven in-range fastint
             }
             case Opcode.ADD: {
                 // A = B + C  (fastint fast path; deopt otherwise).
-                b.guard_fastint(bb, fixups[..], &nfix);
-                b.guard_fastint(c, fixups[..], &nfix);
+                if (bb < 64 && !known_fi[bb]) b.guard_fastint(bb, fixups[..], &nfix);
+                if (c < 64 && !known_fi[c]) b.guard_fastint(c, fixups[..], &nfix);
                 b.ld_reg(0, bb); b.sext_fastint(0, 0);
                 b.ld_reg(1, c);  b.sext_fastint(1, 1);
                 b.emit(enc_add(0, 0, 1));
+                b.guard_fits_fastint(0, fixups[..], &nfix);
                 b.retag_fastint(2, 0);
                 b.st_reg(2, a);
+                if (a < 64) known_fi[a] = true;
             }
             case Opcode.SUB: {
-                b.guard_fastint(bb, fixups[..], &nfix);
-                b.guard_fastint(c, fixups[..], &nfix);
+                if (bb < 64 && !known_fi[bb]) b.guard_fastint(bb, fixups[..], &nfix);
+                if (c < 64 && !known_fi[c]) b.guard_fastint(c, fixups[..], &nfix);
                 b.ld_reg(0, bb); b.sext_fastint(0, 0);
                 b.ld_reg(1, c);  b.sext_fastint(1, 1);
                 b.emit(enc_sub(0, 0, 1));
+                b.guard_fits_fastint(0, fixups[..], &nfix);
                 b.retag_fastint(2, 0);
                 b.st_reg(2, a);
+                if (a < 64) known_fi[a] = true;
             }
             case Opcode.JMP_NLE: {
                 // if !(regs[B] <= regs[C]) goto pc+1+offset ; offset = (int8)A.
                 // Both operands must be fastint or we deopt (interpreter handles
                 // the general <= including NaN/coercion).
-                b.guard_fastint(bb, fixups[..], &nfix);
-                b.guard_fastint(c, fixups[..], &nfix);
+                if (bb < 64 && !known_fi[bb]) b.guard_fastint(bb, fixups[..], &nfix);
+                if (c < 64 && !known_fi[c]) b.guard_fastint(c, fixups[..], &nfix);
                 b.ld_reg(0, bb); b.sext_fastint(0, 0);
                 b.ld_reg(1, c);  b.sext_fastint(1, 1);
                 b.emit(enc_cmp(0, 1));                // flags = B - C
@@ -605,6 +645,8 @@ fn JitCode jit_compile(CompiledFunction* target) {
     }
 
     jit_finalize(&b);
+    jit_last_page = page;
+    jit_last_words = b.pos;
     JitCode out;
     out.body = bitcast((uptr)(void*)page, JitBodyFn);
     out.page = page;
@@ -616,6 +658,10 @@ fn JitCode jit_compile(CompiledFunction* target) {
 // heuristic flips it on. Keeping it a plain global (not a $feature) means the
 // wiring is exercised by the normal build and can be toggled without a rebuild.
 bool jit_enabled = false;
+
+// Debug: the most recently compiled page + its instruction count (for --jit-dump).
+uint* jit_last_page = null;
+uint  jit_last_words = 0;
 
 /// Lean self-recursion entry the JIT'd body calls for CALL_VAR (instead of the
 /// heavyweight vm_call_fn_impl). Because the callee is THIS function (verified
