@@ -2385,6 +2385,229 @@ fn void builtin_ta_proto_toReversed(BuiltinContext* ctx) {
     ctx.result.set_object(result);
 }
 
+/// %TypedArray%.prototype.with(index, value) — §23.2.3.36. Spec order:
+/// 1. validate receiver + non-detached buffer
+/// 2. len := O.[[ArrayLength]]
+/// 3. ToIntegerOrInfinity(index) → relativeIndex  (may throw)
+/// 4. if relativeIndex < 0: actualIndex = max(len + relativeIndex, 0)
+///    else                 actualIndex = min(relativeIndex, len)
+///    (NaN / +∞ / −∞ handled by ToIntegerOrInfinity)
+/// 5. if actualIndex >= len: RangeError
+/// 6. value coercion: ToBigInt for BigInt kinds, ToNumber otherwise (may run user code)
+/// 7. re-check detach (coercion may have detached the buffer)
+/// 8. allocate same-class TypedArray of length len, copy byte-for-byte except
+///    at actualIndex, where we write the freshly-coerced element.
+/// 9. return new TA
+///
+/// Note: TypedArray.prototype.with ignores Object.defineProperty(ta, "length")
+/// and the prototype `length` getter (test: length-property-ignored.js) — we
+/// use [[ArrayLength]] (the byte_length-derived count), NOT a JS .length lookup.
+fn void builtin_ta_proto_with(BuiltinContext* ctx) {
+    HObject* obj = ta_validate(ctx);
+    if (obj == null) return;
+    hobject::ObjClass cls = obj.flags.obj_class;
+    uint shift = ta_elem_shift(cls);
+    uint elem_sz = ta_elem_size(cls);
+    HObject* buf = (*obj.extra_ptr()).view.buffer;
+    uint byte_off = (*obj.extra_ptr()).view.byte_offset;
+    uint len = (*obj.extra_ptr()).view.byte_length >> shift;
+    char* src = (*buf.extra_ptr()).ab.data + byte_off;
+
+    // Index: ToIntegerOrInfinity (step 4 — runs before value coercion per
+    // order-of-evaluation.js; the index may legitimately be OOB; we still
+    // value-coerce before range-checking so that a throwing value.valueOf()
+    // can propagate even when the index is out of range —
+    // value-throw-completion.js).
+    TVal index_arg; index_arg.set_undefined();
+    if (ctx.argc >= 1) index_arg = ctx.regs[ctx.base_reg];
+    double index_d = ta_val_to_number(&index_arg, ctx);
+    if (ctx.should_throw) return;
+    // Convert double → integer-or-infinity, then clamp negative to len + idx.
+    // NaN → 0 (ToIntegerOrInfinity); ±Infinity handled below.
+    // For huge |index_d| the cast to long may saturate / overflow; we detect
+    // those and pin actual_index to a sentinel that always fails the range
+    // check.
+    long rel_idx;
+    bool huge_negative = false;
+    bool huge_positive = false;
+    if (index_d != index_d) {
+        rel_idx = 0;
+    } else if (index_d >= 9007199254740991.0) {
+        huge_positive = true;
+        rel_idx = (long)len;
+    } else if (index_d <= -9007199254740991.0) {
+        huge_negative = true;
+        rel_idx = 0;
+    } else {
+        rel_idx = (long)index_d;
+    }
+    long actual_index;
+    if (huge_positive) {
+        actual_index = (long)len;
+    } else if (huge_negative) {
+        actual_index = -1;
+    } else if (rel_idx < 0) {
+        long v = (long)len + rel_idx;
+        actual_index = v < 0 ? -1 : v;
+    } else {
+        actual_index = rel_idx;
+    }
+
+    // Value coercion: ToBigInt for BigInt kinds, else ToNumber/ToPrimitive.
+    // Spec step 7/8: runs after index normalization but before the range
+    // check, so a throwing value.valueOf() propagates even for an OOB index.
+    TVal value_arg; value_arg.set_undefined();
+    if (ctx.argc >= 2) value_arg = ctx.regs[ctx.base_reg + 1];
+    char[8] scratch;
+    TVal converted = value_arg;
+    ta_write_element((char*)&scratch, cls, &converted, ctx);
+    if (ctx.should_throw) return;
+
+    // Coercion may have detached the buffer. Re-check.
+    if (ta_is_detached(obj)) return;
+
+    if (actual_index < 0 || actual_index >= (long)len) {
+        arraybuffer_throw_range_error(ctx, "TypedArray.prototype.with: index out of range");
+        return;
+    }
+
+    // Allocate result and copy all elements byte-for-byte then overwrite at
+    // actual_index.
+    HObject* result = ta_alloc_same_class_from(ctx, obj, len);
+    if (result == null) return;
+    HObject* res_buf = (*result.extra_ptr()).view.buffer;
+    char* dst = (*res_buf.extra_ptr()).ab.data;
+    if (len > 0) {
+        mem::copy(dst, src, (sz)((usz)(len * elem_sz)));
+    }
+    mem::copy(dst + (usz)actual_index * (usz)elem_sz, &scratch, (sz)((usz)elem_sz));
+    ctx.result.set_object(result);
+}
+
+/// %TypedArray%.prototype.toSpliced(start, deleteCount, ...items) — §23.2.3.32.
+/// Returns a new TypedArray of the same class with the [start, start+deleteCount)
+/// range removed and items spliced in. Spec:
+///   1. validate receiver + non-detached buffer
+///   2. len := O.[[ArrayLength]]
+///   3. relativeStart := ToIntegerOrInfinity(start)   (may throw)
+///   4. actualStart := clamp(relativeStart, 0, len)
+///   5. if argc >= 2: itemsCount := max(0, argc-2), skip deleteCount coercion
+///      else          itemsCount := 0
+///      (Spec: if start was given but deleteCount was NOT given, items also
+///       get spliced starting at actualStart with deleteCount = len - actualStart.)
+///   6. if argc >= 2: ToIntegerOrInfinity(deleteCount) → relativeDeleteCount,
+///      actualDeleteCount := clamp(relativeDeleteCount, 0, len - actualStart)
+///      else:            actualDeleteCount := len - actualStart
+///   7. newLen := len - actualDeleteCount + itemsCount
+///   8. allocate new TA of class with length = newLen
+///   9. copy [0, actualStart) from src, then write items, then copy
+///      [actualStart + actualDeleteCount, len)
+fn void builtin_ta_proto_toSpliced(BuiltinContext* ctx) {
+    HObject* obj = ta_validate(ctx);
+    if (obj == null) return;
+    hobject::ObjClass cls = obj.flags.obj_class;
+    uint shift = ta_elem_shift(cls);
+    uint elem_sz = ta_elem_size(cls);
+    HObject* buf = (*obj.extra_ptr()).view.buffer;
+    uint byte_off = (*obj.extra_ptr()).view.byte_offset;
+    uint len = (*obj.extra_ptr()).view.byte_length >> shift;
+    char* src = (*buf.extra_ptr()).ab.data + byte_off;
+
+    // relativeStart (ToIntegerOrInfinity).
+    double relative_start = 0.0;
+    if (ctx.argc >= 1) {
+        TVal arg = ctx.regs[ctx.base_reg];
+        relative_start = ta_val_to_number(&arg, ctx);
+        if (ctx.should_throw) return;
+    }
+    long start_l;
+    if (relative_start >= 9007199254740991.0) {
+        start_l = (long)len;
+    } else if (relative_start <= -9007199254740991.0) {
+        start_l = 0;
+    } else {
+        start_l = (long)relative_start;
+    }
+    uint actual_start;
+    if (start_l < 0) {
+        long v = (long)len + start_l;
+        actual_start = v < 0 ? 0u : (uint)v;
+    } else {
+        actual_start = (uint)start_l > len ? len : (uint)start_l;
+    }
+
+    // Items count = argc - 2 when argc >= 2.
+    uint items_count = 0;
+    if (ctx.argc >= 2) items_count = (uint)(ctx.argc - 2);
+
+    // actualDeleteCount.
+    uint actual_delete_count;
+    if (ctx.argc == 0) {
+        // No `start` argument: spec §23.2.3.32 step 8 — actualDeleteCount = 0.
+        actual_delete_count = 0;
+    } else if (ctx.argc == 1) {
+        // `start` given but no `deleteCount`: spec step 9 — actualDeleteCount
+        // defaults to "delete everything from actualStart to end".
+        actual_delete_count = len - actual_start;
+    } else {
+        TVal arg = ctx.regs[ctx.base_reg + 1];
+        double delete_count = ta_val_to_number(&arg, ctx);
+        if (ctx.should_throw) return;
+        long dc_l;
+        if (delete_count >= 9007199254740991.0) {
+            dc_l = (long)(len - actual_start);
+        } else if (delete_count <= -9007199254740991.0) {
+            dc_l = 0;
+        } else {
+            dc_l = (long)delete_count;
+        }
+        uint dc = dc_l < 0 ? 0u : (uint)dc_l;
+        uint avail = len - actual_start;
+        actual_delete_count = dc > avail ? avail : dc;
+    }
+
+    // Detect overflow: newLen may exceed uint range if items_count is huge.
+    // (items_count is u16-derived from argc; len is derived from byte_length.
+    // Compute via long arithmetic to be safe.)
+    long new_len_l = (long)len - (long)actual_delete_count + (long)items_count;
+    if (new_len_l < 0) new_len_l = 0;
+    if (new_len_l > (long)0xFFFFFFFFu) {
+        arraybuffer_throw_range_error(ctx, "TypedArray.prototype.toSpliced: result too large");
+        return;
+    }
+    uint new_len = (uint)new_len_l;
+
+    HObject* result = ta_alloc_same_class_from(ctx, obj, new_len);
+    if (result == null) return;
+    HObject* res_buf = (*result.extra_ptr()).view.buffer;
+    char* dst = (*res_buf.extra_ptr()).ab.data;
+
+    // Copy prefix [0, actual_start).
+    if (actual_start > 0) {
+        mem::copy(dst, src, (sz)((usz)(actual_start * elem_sz)));
+    }
+    // Write items (coerce each via ta_write_element; ta_write_element may
+    // throw via user code — but here the items come straight from the JS
+    // call args, so they may legitimately run user code via ToNumber/valueOf).
+    uint offset = actual_start;
+    for (uint i = 0; i < items_count; i++) {
+        if (ta_is_detached(obj)) return;
+        TVal item = ctx.regs[ctx.base_reg + 2 + i];
+        ta_write_element(dst + (usz)offset * (usz)elem_sz, cls, &item, ctx);
+        if (ctx.should_throw) return;
+        offset++;
+    }
+    // Copy suffix [actual_start + actual_delete_count, len).
+    uint suffix_start = actual_start + actual_delete_count;
+    uint suffix_len = len - suffix_start;
+    if (suffix_len > 0) {
+        mem::copy(dst + (usz)offset * (usz)elem_sz,
+                  src + (usz)suffix_start * (usz)elem_sz,
+                  (sz)((usz)(suffix_len * elem_sz)));
+    }
+    ctx.result.set_object(result);
+}
+
 /// %TypedArray%.prototype.at(index) — §23.2.3.1.
 fn void builtin_ta_proto_at(BuiltinContext* ctx) {
     HObject* obj = ta_validate(ctx);
@@ -3501,6 +3724,8 @@ fn bool register_typed_array_constructors(EnvRecord* global_env, Heap* heap) {
     if (!register_string_proto_method(proto, heap, "findLastIndex",   Builtin.TA_PROTO_FIND_LAST_INDEX.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "reverse",         Builtin.TA_PROTO_REVERSE.ordinal))         return false;
     if (!register_string_proto_method(proto, heap, "toReversed",      Builtin.TA_PROTO_TO_REVERSED.ordinal))     return false;
+    if (!register_string_proto_method(proto, heap, "with",            Builtin.TA_PROTO_WITH.ordinal))            return false;
+    if (!register_string_proto_method(proto, heap, "toSpliced",       Builtin.TA_PROTO_TO_SPLICED.ordinal))      return false;
     if (!register_string_proto_method(proto, heap, "at",              Builtin.TA_PROTO_AT.ordinal))              return false;
     if (!register_string_proto_method(proto, heap, "sort",            Builtin.TA_PROTO_SORT.ordinal))            return false;
     if (!register_string_proto_method(proto, heap, "toSorted",        Builtin.TA_PROTO_TO_SORTED.ordinal))       return false;

@@ -1960,9 +1960,21 @@ fn void builtin_array_proto_toReversed(BuiltinContext* ctx) {
     result.prototype = ctx.heap.array_proto;
 
     for (ulong i = 0; i < len; i++) {
+        // Spec §23.1.3.33 uses Get(O, Pk) followed by CreateDataPropertyOrThrow
+        // for every index — holes materialize as `undefined` and own props
+        // exist on the result for every index (holes-not-preserved.js). For
+        // holes use put_prop (the dense-array fast path treats undefined as
+        // "not own").
         TVal elem;
         if (arr_get_elem_vm(obj, len - 1 - i, ctx.heap, ctx, &elem)) {
             if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+        } else {
+            elem.set_undefined();
+        }
+        if (elem.is_undefined()) {
+            HString* key = ctx.heap.int_to_hstring((long)i);
+            if (key != null) result.put_prop(key, elem, hobject::PROP_FLAGS_WEC);
+        } else {
             array_set_elem_ulong(result, i, elem, ctx.heap);
         }
     }
@@ -1972,7 +1984,12 @@ fn void builtin_array_proto_toReversed(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Array.prototype.toSorted (ES2023 §23.1.3.34) — default compare (no comparefn)
+// Array.prototype.toSorted (ES2023 §23.1.3.34) — copies this array, sorts the
+// copy via comparefn (or default string compare when undefined), and returns
+// the sorted array. Holes are materialized as undefined (SortIndexedProperties
+// skips holes-as-undefined and pushes them to the end of the sorted list).
+// Spec §23.1.3.34 requires every index of the returned array to be
+// CreateDataPropertyOrThrow'd (holes-not-preserved.js).
 // ============================================================================
 fn void builtin_array_proto_toSorted(BuiltinContext* ctx) {
     HObject* obj = array_proto_get_this(ctx);
@@ -1993,11 +2010,20 @@ fn void builtin_array_proto_toSorted(BuiltinContext* ctx) {
         return;
     }
 
+    // Spec §23.1.3.34 step 3: if comparefn is provided and not callable,
+    // TypeError. comparefn=undefined means default string compare.
+    TVal comparefn; comparefn.set_undefined();
+    if (ctx.argc >= 1) comparefn = ctx.regs[ctx.base_reg];
+    if (!comparefn.is_undefined() && !is_callable_tval(comparefn)) {
+        builtin_throw(ctx, ctx.heap.type_err_proto,
+            "Array.prototype.toSorted: comparefn is not a function or undefined");
+        return;
+    }
+
     ulong raw_len;
     if (!array_to_length(obj, ctx.heap, ctx, &raw_len)) { ctx.result.set_undefined(); return; }
     uint len = raw_len > 0x7FFFFFFF ? 0x7FFFFFFF : (uint)raw_len;
 
-    // Create a copy
     HObject*? new_arr = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
     if (catch err = new_arr) {
         ctx.result.set_undefined(); return;
@@ -2005,48 +2031,106 @@ fn void builtin_array_proto_toSorted(BuiltinContext* ctx) {
     HObject* result = new_arr;
     result.prototype = ctx.heap.array_proto;
 
+    if (len == 0) {
+        array_set_length(result, 0, ctx.heap);
+        ctx.result.set_object(result);
+        return;
+    }
+
+    // Gather all defined values (skipping holes). We use a C3 buffer + heap
+    // fallback (same pattern as builtin_array_proto_splice).
+    TVal[4096] stack_items;
+    TVal[] items;
+    if (len > 4096) {
+        items = mem::temp_array(TVal, len);
+    } else {
+        items = stack_items[0:len];
+    }
+    uint present_count = 0;
     for (uint i = 0; i < len; i++) {
-        TVal elem;
-        if (arr_get_elem_vm(obj, (ulong)i, ctx.heap, ctx, &elem)) {
-            if (ctx.should_throw) { ctx.result.set_undefined(); return; }
-            array_set_elem(result, i, elem, ctx.heap);
+        if (arr_has_prop(obj, (ulong)i, ctx.heap)) {
+            TVal v;
+            if (arr_get_elem_vm(obj, (ulong)i, ctx.heap, ctx, &v)) {
+                if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+                items[present_count] = v;
+                present_count++;
+            }
         }
+    }
+    // present_count = number of holes + defined? No — holes skipped. The
+    // number of holes is len - present_count.
+
+    // Sort `items[0..present_count]` using comparefn (or default). Insertion
+    // sort is O(n²) but stable and simple — test262 arrays for these methods
+    // are small (≤ ~100 elements).
+    bool has_comparefn = !comparefn.is_undefined();
+    for (uint i = 1; i < present_count; i++) {
+        TVal cur = items[i];
+        uint j = i;
+        while (j > 0) {
+            int cmp;
+            if (has_comparefn) {
+                TVal[2] cb_args;
+                cb_args[0] = items[j - 1];
+                cb_args[1] = cur;
+                TVal undef_this; undef_this.set_undefined();
+                TVal r = ctx.heap.call_fn(ctx.vm, comparefn, &cb_args[0], 2, undef_this);
+                if (ctx.heap.has_error) {
+                    ctx.should_throw = true;
+                    ctx.throw_value = ctx.heap.error_value;
+                    ctx.heap.has_error = false;
+                    ctx.result.set_undefined();
+                    return;
+                }
+                if (!r.is_number() && !r.is_fastint()) {
+                    builtin_throw(ctx, ctx.heap.type_err_proto,
+                        "Array.prototype.toSorted: comparefn must return a number");
+                    return;
+                }
+                double rd = r.is_fastint() ? (double)r.get_fastint() : r.get_number();
+                if (rd != rd) {
+                    cmp = 0;
+                } else if (rd < 0) {
+                    cmp = -1;
+                } else if (rd > 0) {
+                    cmp = 1;
+                } else {
+                    cmp = 0;
+                }
+            } else {
+                HString* a_str = builtin_to_string(ctx.heap, &items[j - 1]);
+                HString* b_str = builtin_to_string(ctx.heap, &cur);
+                cmp = 0;
+                if (a_str != null && b_str != null) {
+                    cmp = hstring::hstring_compare(a_str, b_str);
+                } else if (a_str == null && b_str == null) {
+                    cmp = 0;
+                } else if (a_str == null) {
+                    cmp = 1;
+                } else {
+                    cmp = -1;
+                }
+            }
+            // Stable insertion sort: shift while prev > cur (cmp > 0).
+            if (cmp <= 0) break;
+            items[j] = items[j - 1];
+            j--;
+        }
+        items[j] = cur;
+    }
+
+    // Write the sorted defined values into result, then CreateDataProperty
+    // each trailing slot (for the original holes) as `undefined` so
+    // hasOwnProperty sees every index.
+    for (uint i = 0; i < present_count; i++) {
+        array_set_elem(result, i, items[i], ctx.heap);
+    }
+    for (uint i = present_count; i < len; i++) {
+        TVal undef; undef.set_undefined();
+        HString* key = ctx.heap.int_to_hstring((long)i);
+        if (key != null) result.put_prop(key, undef, hobject::PROP_FLAGS_WEC);
     }
     array_set_length(result, len, ctx.heap);
-
-    // Compact defined elements to the front
-    uint def_count = 0;
-    for (uint i = 0; i < len; i++) {
-        TVal elem = array_get_elem(result, i, ctx.heap);
-        if (!elem.is_undefined()) {
-            array_set_elem(result, def_count, elem, ctx.heap);
-            def_count++;
-        }
-    }
-
-    // Bubble-sort defined elements by string comparison
-    for (uint i = 0; i < def_count; i++) {
-        for (uint j = 0; j < def_count - 1 - i; j++) {
-            TVal a = array_get_elem(result, j, ctx.heap);
-            TVal b = array_get_elem(result, j + 1, ctx.heap);
-            HString* a_str = builtin_to_string(ctx.heap, &a);
-            HString* b_str = builtin_to_string(ctx.heap, &b);
-            int cmp = 0;
-            if (a_str != null && b_str != null) {
-                cmp = hstring::hstring_compare(a_str, b_str);
-            } else if (a_str == null && b_str == null) {
-                cmp = 0;
-            } else if (a_str == null) {
-                cmp = 1;
-            } else {
-                cmp = -1;
-            }
-            if (cmp > 0) {
-                array_set_elem(result, j, b, ctx.heap);
-                array_set_elem(result, j + 1, a, ctx.heap);
-            }
-        }
-    }
 
     ctx.result.set_object(result);
 }
@@ -2097,7 +2181,13 @@ fn void builtin_array_proto_toSpliced(BuiltinContext* ctx) {
 
     // Get actualDeleteCount
     ulong actual_delete_count;
-    if (ctx.argc <= 1) {
+    if (ctx.argc == 0) {
+        // No `start` argument: spec §23.1.3.25 step 8 — actualDeleteCount = 0.
+        // `toSpliced()` with no args returns a copy of the original array.
+        actual_delete_count = 0;
+    } else if (ctx.argc == 1) {
+        // `start` given but no `deleteCount`: spec step 9 — actualDeleteCount
+        // defaults to "delete everything from actualStart to end".
         actual_delete_count = len - actual_start;
     } else {
         TVal* arg = &ctx.regs[ctx.base_reg + 1];
@@ -2130,29 +2220,46 @@ fn void builtin_array_proto_toSpliced(BuiltinContext* ctx) {
     result.prototype = ctx.heap.array_proto;
 
     ulong n = 0;
-    // Copy prefix [0, actual_start)
+    // Copy prefix [0, actual_start). Per spec step 14, Get() turns holes into
+    // `undefined` and CreateDataPropertyOrThrow owns every index — never skip.
+    // For holes use put_prop so hasOwnProperty sees the slot (the dense-array
+    // fast path treats undefined as "not own").
     for (ulong i = 0; i < actual_start; i++) {
         TVal elem;
         if (arr_get_elem_vm(obj, i, ctx.heap, ctx, &elem)) {
             if (ctx.should_throw) { ctx.result.set_undefined(); return; }
-            array_set_elem_ulong(result, n, elem, ctx.heap);
-            n++;
+        } else {
+            elem.set_undefined();
         }
+        if (elem.is_undefined()) {
+            HString* key = ctx.heap.int_to_hstring((long)n);
+            if (key != null) result.put_prop(key, elem, hobject::PROP_FLAGS_WEC);
+        } else {
+            array_set_elem_ulong(result, n, elem, ctx.heap);
+        }
+        n++;
     }
-    // Insert new items
+    // Insert new items (always from arg regs — never holes; use dense path).
     for (ushort i = 0; i < item_count; i++) {
         TVal item = ctx.regs[ctx.base_reg + 2 + i];
         array_set_elem_ulong(result, n, item, ctx.heap);
         n++;
     }
-    // Copy suffix [actual_start + actual_delete_count, len)
+    // Copy suffix [actual_start + actual_delete_count, len). Same hole handling.
     for (ulong i = actual_start + actual_delete_count; i < len; i++) {
         TVal elem;
         if (arr_get_elem_vm(obj, i, ctx.heap, ctx, &elem)) {
             if (ctx.should_throw) { ctx.result.set_undefined(); return; }
-            array_set_elem_ulong(result, n, elem, ctx.heap);
-            n++;
+        } else {
+            elem.set_undefined();
         }
+        if (elem.is_undefined()) {
+            HString* key = ctx.heap.int_to_hstring((long)n);
+            if (key != null) result.put_prop(key, elem, hobject::PROP_FLAGS_WEC);
+        } else {
+            array_set_elem_ulong(result, n, elem, ctx.heap);
+        }
+        n++;
     }
     array_set_length_ulong(result, n, ctx.heap, ctx.vm);
 
@@ -2237,13 +2344,24 @@ fn void builtin_array_proto_with(BuiltinContext* ctx) {
     result.prototype = ctx.heap.array_proto;
 
     for (ulong i = 0; i < len; i++) {
+        TVal new_val_unused;
         if (i == actual_index) {
             array_set_elem_ulong(result, i, new_val, ctx.heap);
         } else {
+            // Spec §23.1.3.37 step 5c uses Get(O, Pk); holes materialize as
+            // `undefined` and the result must have own properties at every
+            // index (holes-not-preserved.js). arr_get_elem_vm returns false
+            // for holes — write undefined explicitly via put_prop (rather
+            // than the dense-array fast path, which hasOwnProperty treats as
+            // "not own" for undefined values) so the result owns every index.
             TVal elem;
             if (arr_get_elem_vm(obj, i, ctx.heap, ctx, &elem)) {
-                if (ctx.should_throw) { ctx.result.set_undefined(); return; }
                 array_set_elem_ulong(result, i, elem, ctx.heap);
+            } else {
+                TVal undef;
+                undef.set_undefined();
+                HString* key = ctx.heap.int_to_hstring((long)i);
+                if (key != null) result.put_prop(key, undef, hobject::PROP_FLAGS_WEC);
             }
         }
     }

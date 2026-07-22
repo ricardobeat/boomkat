@@ -290,6 +290,8 @@ enum Builtin : uint {
     TA_PROTO_FIND_LAST_INDEX,
     TA_PROTO_REVERSE,
     TA_PROTO_TO_REVERSED,
+    TA_PROTO_WITH,
+    TA_PROTO_TO_SPLICED,
     TA_PROTO_AT,
     TA_PROTO_SORT,
     TA_PROTO_TO_SORTED,
@@ -2648,6 +2650,8 @@ fn BuiltinMeta builtin_get_metadata(uint idx) {
         case Builtin.TA_PROTO_FIND_LAST_INDEX.ordinal: return { "findLastIndex", 1 };
         case Builtin.TA_PROTO_REVERSE.ordinal: return { "reverse", 0 };
         case Builtin.TA_PROTO_TO_REVERSED.ordinal: return { "toReversed", 0 };
+        case Builtin.TA_PROTO_WITH.ordinal: return { "with", 2 };
+        case Builtin.TA_PROTO_TO_SPLICED.ordinal: return { "toSpliced", 2 };
         case Builtin.TA_PROTO_AT.ordinal: return { "at", 1 };
         case Builtin.TA_PROTO_SORT.ordinal: return { "sort", 1 };
         case Builtin.TA_PROTO_TO_SORTED.ordinal: return { "toSorted", 1 };
@@ -3569,6 +3573,8 @@ BuiltinFunc[Builtin.LAST.ordinal] builtin_dispatch_table = {
     [Builtin.TA_PROTO_FIND_LAST_INDEX.ordinal] = &builtin_ta_proto_findLastIndex,
     [Builtin.TA_PROTO_REVERSE.ordinal]         = &builtin_ta_proto_reverse,
     [Builtin.TA_PROTO_TO_REVERSED.ordinal]     = &builtin_ta_proto_toReversed,
+    [Builtin.TA_PROTO_WITH.ordinal]            = &builtin_ta_proto_with,
+    [Builtin.TA_PROTO_TO_SPLICED.ordinal]      = &builtin_ta_proto_toSpliced,
     [Builtin.TA_PROTO_AT.ordinal]              = &builtin_ta_proto_at,
     [Builtin.TA_PROTO_SORT.ordinal]            = &builtin_ta_proto_sort,
     [Builtin.TA_PROTO_TO_SORTED.ordinal]       = &builtin_ta_proto_toSorted,

@@ -27,7 +27,7 @@ Target: feature parity with vendored QuickJS 2025-09-13 (`out/qjs`), measured by
 
 ### Todo — small (batch 2, one agent each)
 
-- [ ] **`change-array-by-copy` un-skip** — toSorted/with already work; un-skip and fix residuals (toReversed/toSpliced, TypedArray variants).
+- [x] **`change-array-by-copy` un-skip** — TypedArray `with`/`toSpliced` landed (new opcode-free builtins: TA validates+coerces value before range-checking per QuickJS; huge ±index saturation handled); Array `with`/`toSpliced`/`toReversed` fix the latent "holes-not-preserved" bugs (`arr_get_elem_vm` returns false for holes; the spec requires CreateDataPropertyOrThrow to materialize every index as `undefined`, so we now `put_prop` instead of skipping); `toSorted` rewritten with proper comparefn support + C3-buffer insertion sort that skips holes before sorting. `change-array-by-copy` removed from `UNSUPPORTED_PATTERN` + `test262_skip.cfg`.
 - [ ] **`Uint8Array.fromBase64`/`toBase64`/hex** (`uint8array-base64`).
 - [ ] **`JSON.parse` source access** (`json-parse-with-source`).
 - [ ] **`Array.fromAsync`**.

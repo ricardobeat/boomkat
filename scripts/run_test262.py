@@ -153,7 +153,7 @@ UNSUPPORTED_PATTERN = re.compile(
     r"joint-iteration|iterator-helpers|"
     # ES2024+ features (implement later)
     r"Array\.fromAsync|"
-    r"change-array-by-copy|Atomics\.waitAsync|"
+    r"Atomics\.waitAsync|"
     # Complex features deferred.  (BigInt is implemented — plan 056 — so it is
     # no longer filtered here; BigInt64Array/BigUint64Array + DataView BigInt64
     # tests still fail until Phase 3/4 land, but they run rather than skip.)
