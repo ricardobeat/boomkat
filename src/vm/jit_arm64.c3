@@ -177,6 +177,10 @@ fn uint enc_lsr_imm(uint d, uint n, uint sh) {
 fn uint enc_cmp(uint n, uint m) {
     return 0xEB00001Fu | (m << 16) | (n << 5);
 }
+// CMP Xn, #imm12  (alias of SUBS XZR, Xn, #imm — sets NZCV flags)
+fn uint enc_cmp_imm(uint n, uint imm12) {
+    return 0xF100001Fu | ((imm12 & 0xFFF) << 10) | (n << 5);
+}
 // B.cond <offset>  (offset in instructions, signed 19-bit, relative to this insn)
 fn uint enc_bcond(uint cond, int off_insns) {
     uint imm19 = ((uint)off_insns) & 0x7FFFF;
@@ -457,7 +461,12 @@ fn JitCode jit_compile(CompiledFunction* target) {
     // JMP_NLE only skips the base-case RET, never merges divergent states into a
     // value use.)
     bool[64] known_fi;
-    for (uint i = 0; i < 64; i++) known_fi[i] = false;
+    // Compile-time constant tracking: reg_is_const[r] ⇒ the register currently
+    // holds the literal fastint reg_const[r] (set by LDINT, cleared on any other
+    // write). Lets a following compare/arith use an immediate form.
+    bool[64] reg_is_const;
+    long[64] reg_const;
+    for (uint i = 0; i < 64; i++) { known_fi[i] = false; reg_is_const[i] = false; }
     // Guard + mark the parameters once at entry.
     uint nparams = target.num_args;
     for (uint i = 0; i < nparams && i < 64; i++) {
@@ -481,7 +490,11 @@ fn JitCode jit_compile(CompiledFunction* target) {
                 b.mov_imm64(0, (ulong)imm);           // x0 = imm (sign in bits)
                 b.retag_fastint(1, 0);                // x1 = fastint(imm)
                 b.st_reg(1, a);
-                if (a < 64) known_fi[a] = true;       // a literal int is fastint
+                if (a < 64) {
+                    known_fi[a] = true;               // a literal int is fastint
+                    reg_is_const[a] = true;
+                    reg_const[a] = imm;               // remember the literal value
+                }
             }
             case Opcode.SUBI: {
                 // A = B - (signed8)C  (fastint fast path; deopt otherwise).
@@ -489,12 +502,14 @@ fn JitCode jit_compile(CompiledFunction* target) {
                 b.ld_reg(0, bb);
                 b.sext_fastint(0, 0);                 // x0 = sext(regs[B])
                 long imm = (long)(ichar)c;
-                b.mov_imm64(1, (ulong)imm);
-                b.emit(enc_sub(0, 0, 1));             // x0 = B - imm
+                // C is a signed 8-bit immediate (-128..127): fold into a single
+                // SUB/ADD-immediate instead of materializing it in a register.
+                if (imm >= 0) { b.emit(enc_sub_imm(0, 0, (uint)imm)); }
+                else { b.emit(enc_add_imm(0, 0, (uint)(-imm))); }
                 b.guard_fits_fastint(0, fixups[..], &nfix); // overflow → deopt
                 b.retag_fastint(2, 0);
                 b.st_reg(2, a);
-                if (a < 64) known_fi[a] = true;       // proven in-range fastint
+                if (a < 64) { known_fi[a] = true; reg_is_const[a] = false; } // proven in-range fastint
             }
             case Opcode.ADD: {
                 // A = B + C  (fastint fast path; deopt otherwise).
@@ -506,7 +521,7 @@ fn JitCode jit_compile(CompiledFunction* target) {
                 b.guard_fits_fastint(0, fixups[..], &nfix);
                 b.retag_fastint(2, 0);
                 b.st_reg(2, a);
-                if (a < 64) known_fi[a] = true;
+                if (a < 64) { known_fi[a] = true; reg_is_const[a] = false; }
             }
             case Opcode.SUB: {
                 if (bb < 64 && !known_fi[bb]) b.guard_fastint(bb, fixups[..], &nfix);
@@ -517,17 +532,23 @@ fn JitCode jit_compile(CompiledFunction* target) {
                 b.guard_fits_fastint(0, fixups[..], &nfix);
                 b.retag_fastint(2, 0);
                 b.st_reg(2, a);
-                if (a < 64) known_fi[a] = true;
+                if (a < 64) { known_fi[a] = true; reg_is_const[a] = false; }
             }
             case Opcode.JMP_NLE: {
                 // if !(regs[B] <= regs[C]) goto pc+1+offset ; offset = (int8)A.
                 // Both operands must be fastint or we deopt (interpreter handles
                 // the general <= including NaN/coercion).
                 if (bb < 64 && !known_fi[bb]) b.guard_fastint(bb, fixups[..], &nfix);
-                if (c < 64 && !known_fi[c]) b.guard_fastint(c, fixups[..], &nfix);
                 b.ld_reg(0, bb); b.sext_fastint(0, 0);
-                b.ld_reg(1, c);  b.sext_fastint(1, 1);
-                b.emit(enc_cmp(0, 1));                // flags = B - C
+                // If C is a compile-time small non-negative constant, compare
+                // against an immediate — no load/sext of the constant operand.
+                if (c < 64 && reg_is_const[c] && reg_const[c] >= 0 && reg_const[c] <= 4095) {
+                    b.emit(enc_cmp_imm(0, (uint)reg_const[c]));
+                } else {
+                    if (c < 64 && !known_fi[c]) b.guard_fastint(c, fixups[..], &nfix);
+                    b.ld_reg(1, c); b.sext_fastint(1, 1);
+                    b.emit(enc_cmp(0, 1));            // flags = B - C
+                }
                 // Branch when NOT (B <= C), i.e. B > C  => COND_GT.
                 int off = (int)(ichar)a;
                 uint tgt = pc + 1 + (uint)off;
