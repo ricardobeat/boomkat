@@ -7,6 +7,7 @@ import std::io;
 import duktape::heap;
 import duktape::hstring;
 import duktape::hobject;
+import duktape::hbigint;
 import duktape::env;
 import duktape::vm;
 
@@ -1043,11 +1044,19 @@ fn bool array_strict_equals(TVal a, TVal b) {
                 return a.get_number() == b.get_number();
             case FASTINT:   return a.get_fastint() == b.get_fastint();
             case STRING:    return a.get_heapptr() == b.get_heapptr();
+            case BIGINT: {
+                // BigInts are boxed: distinct boxes can hold equal values, so
+                // strict equality (and indexOf/includes SameValueZero) must
+                // compare the stored int128, not the heap pointer.
+                hbigint::HBigInt* ba = (hbigint::HBigInt*)a.get_heapptr();
+                hbigint::HBigInt* bb = (hbigint::HBigInt*)b.get_heapptr();
+                if (ba == null || bb == null) return ba == bb;
+                return ba.value == bb.value;
+            }
             case OBJECT:
             case BUFFER:
             case POINTER:
             case LIGHTFUNC:
-            case BIGINT:
                 // Identity comparison: same heap pointer (or same lightfunc slot).
                 return a.get_heapptr() == b.get_heapptr();
             default: return false;
@@ -1149,6 +1158,13 @@ fn void builtin_array_proto_join(BuiltinContext* ctx) {
     HObject* obj = array_proto_get_this(ctx);
     if (obj == null) { ctx.result.set_undefined(); return; }
 
+    // §23.1.3.16 step 1: LengthOfArrayLike is read BEFORE ToString(separator).
+    // For a TypedArray whose separator's toString resizes the backing buffer,
+    // the iteration count must reflect the ORIGINAL length; out-of-bounds
+    // indices then read as absent (empty string) below.
+    ulong raw_len;
+    if (!array_to_length(obj, ctx.heap, ctx, &raw_len)) { ctx.result.set_undefined(); return; }
+
     // Get separator — §23.1.3.16 step 3: if undefined (or absent), use ",".
     HString* sep_str = null;
     char[] sep = ",";
@@ -1162,9 +1178,6 @@ fn void builtin_array_proto_join(BuiltinContext* ctx) {
             sep = sep_str.get_data();
         }
     }
-
-    ulong raw_len;
-    if (!array_to_length(obj, ctx.heap, ctx, &raw_len)) { ctx.result.set_undefined(); return; }
 
     // Empty array-like returns ""
     if (raw_len == 0) {
@@ -1406,14 +1419,14 @@ fn void builtin_array_proto_reverse(BuiltinContext* ctx) {
         }
 
         if (has_lower && has_upper) {
-            array_set_elem_ulong(obj, lower, upper_val, ctx.heap, ctx.vm);
-            array_set_elem_ulong(obj, upper, lower_val, ctx.heap, ctx.vm);
+            if (!array_set_elem_ulong_set(ctx, obj, lower, upper_val)) return;
+            if (!array_set_elem_ulong_set(ctx, obj, upper, lower_val)) return;
         } else if (has_upper) {
-            array_set_elem_ulong(obj, lower, upper_val, ctx.heap, ctx.vm);
+            if (!array_set_elem_ulong_set(ctx, obj, lower, upper_val)) return;
             arr_delete_elem_or_throw(ctx, obj, upper);
         } else if (has_lower) {
             arr_delete_elem_or_throw(ctx, obj, lower);
-            array_set_elem_ulong(obj, upper, lower_val, ctx.heap, ctx.vm);
+            if (!array_set_elem_ulong_set(ctx, obj, upper, lower_val)) return;
         }
         if (ctx.should_throw) { ctx.result.set_undefined(); return; }
     }
@@ -3830,6 +3843,28 @@ fn bool array_delete_elem_ulong_checked(BuiltinContext* ctx, HObject* obj, ulong
 /// ARRAY/ARGUMENTS class when creating new data properties. For ARRAY class,
 /// writing at or beyond the current length grows the length.
 fn bool array_set_elem_ulong_set(BuiltinContext* ctx, HObject* obj, ulong idx, TVal val) {
+    // TypedArray receiver (e.g. a generic Array.prototype.fill/sort/reverse/
+    // copyWithin invoked with a TA `this`): integer-indexed writes go through
+    // IntegerIndexedElementSet (§10.4.5.16), NOT the named-property table.
+    // ToNumber coercion is always performed (observable), but the store is a
+    // no-op when the index is out of the current (resizable) bounds.
+    if (is_typed_array_class(obj.get_class())) {
+        hobject::ObjClass ta_cls = obj.get_class();
+        // Coerce first (observable ToNumber/ToBigInt, may run user code and
+        // resize the buffer); re-read the length afterwards so the bounds
+        // check reflects any resize the coercion caused.
+        TAScalar sc = ta_coerce_element(ta_cls, &val, ctx);
+        if (ctx.should_throw) return false;
+        ulong ta_len = (ulong)ta_element_count(obj);
+        if (idx < ta_len) {
+            uint ta_shift = ta_elem_shift(ta_cls);
+            HObject* ta_buf = (*obj.extra_ptr()).view.buffer;
+            char* ta_ptr = (*ta_buf.extra_ptr()).ab.data + (*obj.extra_ptr()).view.byte_offset + ((uint)idx << ta_shift);
+            ta_store_scalar(ta_ptr, ta_cls, &sc);
+        }
+        return true;
+    }
+
     HString* key = ctx.heap.int_to_hstring((long)idx);
     if (key == null) return true;
 
@@ -4719,7 +4754,7 @@ fn bool register_array_constructor(EnvRecord* global_env, Heap* heap) {
     // Array.prototype.toLocaleString — ES5 §15.4.4.3
     // Delegates to Object.prototype.toLocaleString for each element, then joins with ", ".
     if (!register_compiled_proto_method(proto, heap, global_env, "toLocaleString",
-        "(){if(this==null)throw new TypeError('toLocaleString called on null or undefined');var O=Object(this);var len=O.length>>>0;if(len>>>0!==len)len=0;var separator=\",\";var elements=[];for(var k=0;k<len;k++){if(k in O){var nextElement=O[k];var s=(nextElement===null||nextElement===void 0)?\"\":nextElement.toLocaleString();elements.push(s)}}return elements.join(separator)}", 0)) return false;
+        "(){if(this==null)throw new TypeError('toLocaleString called on null or undefined');var O=Object(this);var len=O.length>>>0;if(len>>>0!==len)len=0;var separator=\",\";var elements=[];for(var k=0;k<len;k++){var nextElement=O[k];var s=(nextElement===null||nextElement===void 0)?\"\":nextElement.toLocaleString();elements.push(s)}return elements.join(separator)}", 0)) return false;
 
     // Register Array.prototype[@@iterator] (ES6 §22.1.3.30)
     // Per spec, @@iterator must be the *same function object* as .values.

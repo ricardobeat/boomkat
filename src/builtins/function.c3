@@ -483,8 +483,26 @@ fn void apply_call(BuiltinContext* ctx, TVal target, TVal this_arg, TVal arg_arr
                           && arr_obj.array_part() != null
                           && arr_obj.prop_count <= 1;  // ≤1 own named prop (just "length")
 
+    // TypedArray arg-array: indexed elements live in the backing buffer, not
+    // the named-property table. Read them via the TA-aware element getter so
+    // apply(fn, typedArray) spreads the real values (and honours a resizable
+    // buffer's current bounds) instead of undefined.
+    bool is_typed_array_src = is_typed_array_class(arr_obj.get_class());
+
     for (uint i = 0; i < max_extract; i++) {
         TVal elem;
+
+        if (is_typed_array_src) {
+            if (!arr_get_elem_vm(arr_obj, (ulong)i, ctx.heap, ctx, &elem)) {
+                if (ctx.should_throw) {
+                    if (extracted_args != null) ctx.heap.free_func(ctx.heap.heap_udata, extracted_args);
+                    return;
+                }
+                elem.set_undefined();
+            }
+            if (actual_count < max_extract) extracted_args[actual_count++] = elem;
+            continue;
+        }
 
         // Fast path: dense ARRAY with no accessor overrides (most common case).
         if (is_plain_array && i < arr_obj.array_size) {
