@@ -43,7 +43,8 @@ DEBUG_BIN = os.path.join(REPO_ROOT, "out", "duktape_c3_debug")
 # --check-noop to confirm --no-optimize output is free of every one of them
 # (the disable_optimize invariant: fusion is a pure no-op when disabled).
 FUSED_OPCODES = ("ADDI", "SUBI", "INC_VAR", "DEC_VAR", "GETPROPC",
-                  "JMP_NLT", "JMP_NLE", "JMP_NGT", "JMP_NGE", "JMP_NEQ", "JMP_NNE")
+                  "JMP_NLT", "JMP_NLE", "JMP_NGT", "JMP_NGE", "JMP_NEQ", "JMP_NNE",
+                  "MOVE_GG")
 
 
 def discover_goldens(names=None):

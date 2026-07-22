@@ -270,6 +270,16 @@ fn void dump_function(bytecode::CompiledFunction f) {
 $if $feature(TRACE_VM):
     char[200] line_buf;
     for (uint i = 0; i < f.code_count; i++) {
+        // MOVE_GG is a two-word instruction: word 1's BC is the destination
+        // name index, the trailing word (a kept NOP) holds the source name
+        // index in its BC. Render both halves on one line for clarity.
+        if (f.code[i].op == bytecode::Opcode.MOVE_GG && i + 1 < f.code_count) {
+            io::printfn("[%3d] MOVE_GG         g[%d] <- g[%d]",
+                        i, f.code[i].get_bc(), f.code[i + 1].get_bc());
+            io::printfn("[%3d]   (src-word)", i + 1);
+            i++;
+            continue;
+        }
         usz written = f.code[i].disassemble(line_buf[..]);
         uint end = written < (usz)line_buf.len ? (uint)written : line_buf.len;
         String instr = (String)line_buf[0:end];

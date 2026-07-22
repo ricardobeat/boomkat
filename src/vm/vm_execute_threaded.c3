@@ -74,6 +74,7 @@ fn void init_threaded_handlers() {
     g_threaded_handlers[Opcode.PUTGLOBAL.ordinal]  = &th_putglobal;
     g_threaded_handlers[Opcode.GETGLOBAL_PRIM.ordinal] = &th_getglobal_prim;
     g_threaded_handlers[Opcode.PUTGLOBAL_PRIM.ordinal] = &th_putglobal_prim;
+    g_threaded_handlers[Opcode.MOVE_GG.ordinal] = &th_move_gg;
     g_threaded_handlers[Opcode.INC_GLOBAL.ordinal] = &th_inc_global;
     g_threaded_handlers[Opcode.DEC_GLOBAL.ordinal] = &th_dec_global;
 
@@ -320,6 +321,32 @@ fn Instruction* th_putglobal_prim(Instruction* pc, Instruction* code_end, TVal* 
     *pv = *ra;
     ra.set_undefined();
     pc++;
+    return th_next(pc, code_end, regs, cold);
+}
+
+// Fused primitive-only global-to-global copy (`a = b`). Two-word instruction:
+// pc holds the destination name (BC); pc+1 (a NOP) holds the source name (BC).
+// Dual IC: dst write IC at pc_off, src read IC at pc_off+1. Hot path only —
+// any miss bails to the switch VM, which resolves the cold path AND advances
+// pc past both words. On hit, advance pc by 2.
+fn Instruction* th_move_gg(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    Vm* vm = cold.vm;
+    hobject::VarICEntry* vic_base = (hobject::VarICEntry*)vm.current_func.var_ic_entries;
+    if (vic_base == null) return pc;
+    uint dst_off = (uint)(pc - cold.code_base);
+    hobject::VarICEntry* dic = vic_base + dst_off;
+    hobject::VarICEntry* sic = vic_base + dst_off + 1;
+    HObject* dgb = (HObject*)dic.bindings;
+    HObject* sgb = (HObject*)sic.bindings;
+    if (dgb == null || !dic.varref_store_ok || dic.varref_alloc == null
+        || dgb.prop_alloc != dic.varref_alloc) return pc;
+    if (sgb == null || sic.varref_alloc == null
+        || sgb.prop_alloc != sic.varref_alloc) return pc;
+    TVal* spv = sic.varref_ptr;
+    if (env::is_tdz_sentinel(spv)) return pc;
+    // Both slots provably primitive: raw copy, no refcount.
+    *dic.varref_ptr = *spv;
+    pc += 2;
     return th_next(pc, code_end, regs, cold);
 }
 

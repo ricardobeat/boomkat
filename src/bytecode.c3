@@ -305,6 +305,17 @@ enum Opcode : char {
     /// (see GETGLOBAL_PRIM). A raw `*slot = A` with no decref of the overwritten
     /// value (provably primitive) and no incref/track of the stored value.
     PUTGLOBAL_PRIM,
+    /// `global[dst] = global[src]` — fused copy between two proven
+    /// primitive-only globals (the GETGLOBAL_PRIM + PUTGLOBAL_PRIM pair for a
+    /// plain `a = b` assignment). A two-word instruction: this word (A-BC) holds
+    /// the destination name index in BC; the immediately-following word (a NOP,
+    /// preserved through compaction like TRY's finally slot) holds the source
+    /// name index in its BC. The VM reads both words, advances PC by 2, and does
+    /// a raw `*dst_slot = *src_slot` — both slots provably primitive, so no
+    /// is_heap check, no refcount, no track_heap_store. Uses two adjacent
+    /// per-PC VarICEntry slots: pc_off (dst, write IC) and pc_off+1 (src, read
+    /// IC); the trailing word's IC slot is otherwise unused.
+    MOVE_GG,
     /// `A = typeof identifier`  — typeof on a variable name (A-BC format).
     /// Returns "undefined" for unresolvable references per ES5 §11.4.3.
     TYPEOFIDENT,
@@ -842,6 +853,7 @@ fn OpFormat get_op_format(Opcode op) {
         case PUTGLOBAL: return A_BC;
         case GETGLOBAL_PRIM: return A_BC;
         case PUTGLOBAL_PRIM: return A_BC;
+        case MOVE_GG: return A_BC;
         case DELVAR:    return A_BC;
         case CLOSURE:   return A_BC;
         case GETBOUND:  return A_BC;
