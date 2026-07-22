@@ -3782,6 +3782,150 @@ fn TVal? Vm.run(Vm* vm) {
             continue;
         }
 
+        case Opcode.GETGLOBAL_PRIM: {
+            // Read a proven primitive-only global (whole-program compile-time
+            // proof: this binding can only ever hold a primitive, and there is
+            // no eval/globalThis/Function/with observability). The slot value is
+            // therefore never heap, so the read is a raw copy: no is_heap check,
+            // no refcount, no track_heap_store. Shares GETGLOBAL's varref IC.
+            uint bc = insn.get_bc();
+            if (bc < vm.current_func.const_count) {
+                TVal name_val = ds.constants[bc];
+                if (name_val.is_string()) {
+                    void* key = name_val.get_heapptr();
+                    if (ds.var_ic_base != null) {
+                        uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
+                        hobject::VarICEntry* gic = ds.var_ic_base + pc_off;
+                        HObject* gb = (HObject*)gic.bindings;
+                        if (gb != null && gic.varref_alloc != null && gb.prop_alloc == gic.varref_alloc) {
+                            TVal* pv = gic.varref_ptr;
+                            if (!env::is_tdz_sentinel(pv)) {
+                                // Source is provably primitive: no incref of the
+                                // source, no track_heap_store. The destination
+                                // register may still hold a stale heap ref from a
+                                // prior use, so decref it before the raw write to
+                                // avoid a missed-decref leak.
+                                if (ra.is_heap_allocated()) vm.heap.decref_tval(ra);
+                                *ra = *pv;
+                                break;
+                            }
+                        }
+                    }
+                    // IC-cold / miss: resolve the plain data slot, populate the
+                    // IC, raw-copy. A primitive-only global is a writable data
+                    // binding (never accessor/TDZ once initialized), so the plain
+                    // find path suffices.
+                    EnvRecord* ic_env = null;
+                    int ic_prop_idx = -1;
+                    EnvRecord* cur = ds.act.lex_env;
+                    while (cur != null) {
+                        int idx = cur.bindings.find_prop_idx(key);
+                        if (idx >= 0) { ic_env = cur; ic_prop_idx = idx; break; }
+                        cur = cur.parent;
+                    }
+                    if (ic_env == null && ds.act.lex_env != ds.act.var_env) {
+                        EnvRecord* vcur = ds.act.var_env;
+                        while (vcur != null) {
+                            int vidx = vcur.bindings.find_prop_idx(key);
+                            if (vidx >= 0) { ic_env = vcur; ic_prop_idx = vidx; break; }
+                            vcur = vcur.parent;
+                        }
+                    }
+                    if (ic_env != null) {
+                        TVal* slot = &ic_env.bindings.prop_values()[ic_prop_idx];
+                        if (ra.is_heap_allocated()) vm.heap.decref_tval(ra);
+                        if (!env::is_tdz_sentinel(slot)) {
+                            *ra = *slot;
+                        } else {
+                            ra.set_undefined();
+                        }
+                        if (ds.var_ic_base != null) {
+                            uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
+                            hobject::VarICEntry* gic = ds.var_ic_base + pc_off;
+                            gic.env = (void*)ic_env;
+                            gic.bindings = (void*)ic_env.bindings;
+                            gic.shape_id = ic_env.bindings.shape_id;
+                            gic.prop_idx = (ushort)ic_prop_idx;
+                            gic.varref_ptr = slot;
+                            gic.varref_alloc = ic_env.bindings.prop_alloc;
+                        }
+                    } else {
+                        ra.set_undefined();
+                    }
+                } else {
+                    ra.set_undefined();
+                }
+            } else {
+                ra.set_undefined();
+            }
+            continue;
+        }
+
+        case Opcode.PUTGLOBAL_PRIM: {
+            // Write to a proven primitive-only global (see GETGLOBAL_PRIM). The
+            // overwritten value is provably primitive, so no decref; the stored
+            // value is provably primitive, so no incref/track. Raw slot write.
+            uint bc = insn.get_bc();
+            if (bc < vm.current_func.const_count) {
+                TVal name_val = ds.constants[bc];
+                if (name_val.is_string()) {
+                    void* key = name_val.get_heapptr();
+                    if (ds.var_ic_base != null) {
+                        uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
+                        hobject::VarICEntry* gic = ds.var_ic_base + pc_off;
+                        HObject* gb = (HObject*)gic.bindings;
+                        if (gb != null && gic.varref_store_ok && gic.varref_alloc != null
+                            && gb.prop_alloc == gic.varref_alloc) {
+                            TVal* pv = gic.varref_ptr;
+                            *pv = *ra;
+                            ra.set_undefined();
+                            break;
+                        }
+                    }
+                    // IC-cold / miss: locate the writable data slot, raw-store,
+                    // populate the store IC.
+                    EnvRecord* owner = null;
+                    int owner_idx = -1;
+                    EnvRecord* pcur = ds.act.lex_env;
+                    while (pcur != null) {
+                        int idx = pcur.bindings.find_prop_idx(key);
+                        if (idx >= 0) { owner = pcur; owner_idx = idx; break; }
+                        pcur = pcur.parent;
+                    }
+                    if (owner == null) {
+                        EnvRecord* vcur = ds.act.var_env;
+                        while (vcur != null) {
+                            int vidx = vcur.bindings.find_prop_idx(key);
+                            if (vidx >= 0) { owner = vcur; owner_idx = vidx; break; }
+                            vcur = vcur.parent;
+                        }
+                    }
+                    if (owner != null && owner_idx >= 0) {
+                        TVal* slot = &owner.bindings.prop_values()[owner_idx];
+                        *slot = *ra;
+                        ra.set_undefined();
+                        if (ds.var_ic_base != null) {
+                            hobject::PropFlags fl = owner.bindings.get_prop_flags((uint)owner_idx);
+                            if (fl.writable && !fl.is_accessor) {
+                                uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
+                                hobject::VarICEntry* gic = ds.var_ic_base + pc_off;
+                                gic.env = (void*)owner;
+                                gic.bindings = (void*)owner.bindings;
+                                gic.shape_id = owner.bindings.shape_id;
+                                gic.prop_idx = (ushort)owner_idx;
+                                gic.varref_ptr = slot;
+                                gic.varref_alloc = owner.bindings.prop_alloc;
+                                gic.varref_store_ok = !fl.configurable;
+                            }
+                        }
+                    } else {
+                        ra.set_undefined();
+                    }
+                }
+            }
+            continue;
+        }
+
         case Opcode.GETGLOBAL: {
             // Read a top-level global binding. Emitted only where lex_env ==
             // global_lex_env and var_env == global_env, both permanent objects.

@@ -72,6 +72,13 @@ fn CompiledFunction*? compile(Lexer* lex, void* heap) {
     lex.has_pushed_back = saved_haspb;
     lex.seen_line_term  = saved_slt;
 
+    // Whole-program primitive-only global proof: classify each top-level global
+    // as primitive-only (all assignments store provably-primitive values, no
+    // eval/globalThis/window/Function/with observability) so its reads/writes
+    // emit the guard-free GETGLOBAL_PRIM/PUTGLOBAL_PRIM opcodes. Runs on a
+    // saved-and-restored lexer, so statement parsing below is unaffected.
+    ctx.pre_scan_prim_globals();
+
     // Parse statements until EOF
     ctx.hoist_lexical_tdz();
     ctx.reserved_regs = ctx.next_reg;
