@@ -6,7 +6,7 @@ One entry per unique issue. Status: `[ ]` TODO · `[>]` IN PROGRESS (agent runni
 
 Target: feature parity with vendored QuickJS 2025-09-13 (`out/qjs`), measured by feature probe + `UNSUPPORTED_PATTERN`-vs-`test262/features.txt` cross-reference. Agent sizing: strictly one feature per agent; each removes only its own flag token from `UNSUPPORTED_PATTERN`; verification = one relevant phase + golden bytecode (coordinator runs full sweeps at merge).
 
-### Landed (session 292)
+### Landed (session 292+)
 
 - [x] **Class static blocks** (`class-static-block`) — also fixed the `(class { static { } })` parser hang.
 - [x] **`Promise.withResolvers`**.
