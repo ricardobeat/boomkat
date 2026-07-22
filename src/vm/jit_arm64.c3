@@ -354,6 +354,7 @@ fn void JitBuf.retag_fastint(&self, uint d, uint n) {
 const uint DEOPT_PC = 0xFFFFFFFFu;
 // Special fixup targets/conditions for non-conditional branches.
 const uint BODY_ENTRY_PC = 0xFFFFFFFEu;   // target = native pc 0 (body prologue)
+const uint CORE_ENTRY_PC = 0xFFFFFFFDu;   // target = the re-entrant body core
 const uint COND_BL = 0xFEu;               // fixup emits BL, not B.cond
 fn void JitBuf.guard_fastint(&self, uint r, JitFixup[] fixups, uint* nfix) {
     self.ld_reg(8, r);
@@ -390,21 +391,42 @@ fn JitCode jit_compile(CompiledFunction* target) {
 
     jit_begin_write();
 
-    // --- Prologue ---
-    // Save fp/lr and the four callee-saved regs we use (x19..x22), in a 48-byte
-    // frame. Slots at SP offsets 0,8 hold fp/lr; 16,24,32,40 hold x19..x22.
-    // (The payload mask is now an AND immediate — no register needed.)
-    b.emit(enc_stp_pre(29, 30, -48));
+    // --- Outer prologue (runs once per top-level entry) ---
+    // vm, self-func-bits, and the fastint tag are INVARIANT across every
+    // recursion level (only the register-file pointer changes), so they live in
+    // callee-saved registers set up once here and never reloaded on a recursive
+    // self-call. Save fp/lr + x19..x23 in a 64-byte frame.
+    b.emit(enc_stp_pre(29, 30, -64));
     b.emit(enc_str_sp(19, 16));
     b.emit(enc_str_sp(20, 24));
     b.emit(enc_str_sp(21, 32));
     b.emit(enc_str_sp(22, 40));
-    // Move incoming args into callee-saved homes: x0=vm, x1=regs, x2=self bits.
-    b.emit(enc_mov(19, 0));                          // x19 = vm
-    b.emit(enc_mov(20, 1));                          // x20 = regs
-    b.emit(enc_mov(21, 2));                          // x21 = self func bits
-    // x22 = TAG_FASTINT << 48 — a single MOVZ (only the top 16 bits are set).
-    b.emit(enc_movz(22, (uint)types::TAG_FASTINT, 3));
+    b.emit(enc_str_sp(23, 48));
+    b.emit(enc_mov(19, 0));                          // x19 = vm (invariant)
+    b.emit(enc_mov(21, 2));                          // x21 = self func bits (invariant)
+    b.emit(enc_movz(22, (uint)types::TAG_FASTINT, 3)); // x22 = TAG_FASTINT<<48 (invariant)
+    b.emit(enc_mov(20, 1));                          // x20 = regs (per-frame)
+    // Call the re-entrant core (patched to core_pos), then tear down and return.
+    uint outer_call_pos = b.pos;
+    b.emit(enc_bl(0));                               // BL core (patched below)
+    // Outer epilogue: result already in x0; restore invariants + frame, return.
+    b.emit(enc_ldr_sp(19, 16));
+    b.emit(enc_ldr_sp(20, 24));
+    b.emit(enc_ldr_sp(21, 32));
+    b.emit(enc_ldr_sp(22, 40));
+    b.emit(enc_ldr_sp(23, 48));
+    b.emit(enc_ldp_post(29, 30, 64));
+    b.emit(enc_ret());
+
+    // --- Re-entrant core ---
+    // Entered with x19=vm, x21=self bits, x22=tag already set (invariant across
+    // recursion), x20=regs for THIS frame, x30=return address. The core stashes
+    // its return address in x23 (callee-saved, so it survives the BLR to the
+    // deopt slow path) and returns via it. A recursive self-call saves x23+x20,
+    // points x20 at a fresh window, BLs back here, then restores — no invariant
+    // reload, no big frame per level.
+    uint core_pos = b.pos;
+    b.emit(enc_mov(23, 30));                         // x23 = return address
     // The lean self-recursion entry, plus this function's own CompiledFunction*
     // (a compile-time constant) that jit_recurse needs to re-enter the body.
     ulong recurse_addr = (ulong)(uptr)(void*)&jit_recurse;
@@ -477,13 +499,12 @@ fn JitCode jit_compile(CompiledFunction* target) {
             }
             case Opcode.RET: {
                 // return regs[A].bits
+                // Core returns the result in x0 to its caller (outer prologue or
+                // a recursive call site) via its stashed return address in x23.
+                // No frame teardown here — invariants stay live in callee-saved
+                // registers.
                 b.ld_reg(0, a);
-                // Epilogue.
-                b.emit(enc_ldr_sp(19, 16));
-                b.emit(enc_ldr_sp(20, 24));
-                b.emit(enc_ldr_sp(21, 32));
-                b.emit(enc_ldr_sp(22, 40));
-                b.emit(enc_ldp_post(29, 30, 48));
+                b.emit(enc_mov(30, 23));              // x30 = saved return addr
                 b.emit(enc_ret());
             }
             case Opcode.CALL_VAR: {
@@ -499,34 +520,40 @@ fn JitCode jit_compile(CompiledFunction* target) {
                 // Args live at regs[A+2 .. A+1+nargs] (frame_start = A+2);
                 // the callee reads them from window[0..nargs-1].
                 uint nargs = bb;
-                // Window: num_regs TVal slots, rounded up to a 16-byte multiple.
+                // Frame for this call site: save x23 (our core-return address) +
+                // our x20 (this frame's regs pointer), plus a window of num_regs
+                // TVal slots for the callee. Layout in one SP block, 16-aligned:
+                //   [0]=x23 saved, [8]=x20 saved, [16..]=callee window.
                 uint win_slots = target.num_regs;
-                uint win_bytes = ((win_slots * 8) + 15) & ~15u;
-                b.emit(enc_sub_imm(31, 31, win_bytes));   // SUB sp, sp, #win_bytes
-                // Copy args from caller regs[A+2+i] to window[i].
+                uint frame_bytes = ((16 + win_slots * 8) + 15) & ~15u;
+                b.emit(enc_sub_imm(31, 31, frame_bytes)); // SUB sp, sp, #frame_bytes
+                b.emit(enc_str_sp(23, 0));                // save our core-return addr
+                b.emit(enc_str_sp(20, 8));                // save this frame's regs ptr
+                // Copy args from caller regs[A+2+i] to window[i] (at SP+16+i*8).
                 for (uint i = 0; i < nargs; i++) {
-                    b.ld_reg(0, a + 2 + i);               // x0 = regs[A+2+i]
-                    b.emit(enc_str_sp(0, i * 8));         // window[i] = x0
+                    b.ld_reg(0, a + 2 + i);               // x0 = regs[A+2+i] (via x20)
+                    b.emit(enc_str_sp(0, 16 + i * 8));    // window[i]
                 }
-                // x0=vm, x1=window(sp), x2=self bits, then BL body_entry.
-                b.emit(enc_mov(0, 19));
-                b.emit(enc_mov(2, 21));
-                b.emit(enc_add_imm(1, 31, 0));            // MOV x1, sp (ADD x1, sp, #0)
-                // BL to body_entry (patched: it's a forward/back ref to a known
-                // native pc). Record as an unconditional-call fixup.
+                // Point x20 at the callee window and re-enter the core. Invariant
+                // regs (x19/x21/x22) stay live — no reload. The nested core will
+                // overwrite x23 with its own return addr; we restore ours after.
+                b.emit(enc_add_imm(20, 31, 16));          // x20 = sp + 16 (window)
                 if (nfix < 512) {
-                    fixups[nfix] = { .native_pos = b.pos, .target_pc = BODY_ENTRY_PC, .cond = COND_BL };
+                    fixups[nfix] = { .native_pos = b.pos, .target_pc = CORE_ENTRY_PC, .cond = COND_BL };
                     nfix++;
                 }
-                b.emit(enc_bl(0));                        // placeholder
-                b.emit(enc_add_imm(31, 31, win_bytes));   // release window
+                b.emit(enc_bl(0));                        // BL core (patched)
+                // Restore our core-return addr + this frame's regs ptr, release.
+                b.emit(enc_ldr_sp(23, 0));                // restore x23
+                b.emit(enc_ldr_sp(20, 8));                // restore x20 = our regs
+                b.emit(enc_add_imm(31, 31, frame_bytes)); // release frame
                 // Deopt check: if result == JIT_DEOPT, take the slow path.
                 b.mov_imm64(1, JIT_DEOPT);
                 b.emit(enc_cmp(0, 1));
-                // B.NE past the slow path.
                 uint skip_pos = b.pos;
-                b.emit(enc_bcond(COND_NE, 0));            // patched below
+                b.emit(enc_bcond(COND_NE, 0));            // B.NE skip-slow (patched)
                 // Slow path: jit_recurse(vm, target, self_bits, &regs[A+2], nargs).
+                // x19/x21 still hold vm/self; x20 restored to our regs.
                 b.emit(enc_mov(0, 19));
                 b.mov_imm64(1, target_ptr);
                 b.emit(enc_mov(2, 21));
@@ -534,7 +561,6 @@ fn JitCode jit_compile(CompiledFunction* target) {
                 b.emit(enc_movz(4, nargs, 0));
                 b.mov_imm64(9, recurse_addr);
                 b.emit(enc_blr(9));                       // result in x0
-                // Patch the B.NE to skip to here (the store below).
                 {
                     int rel = (int)b.pos - (int)skip_pos;
                     b.code[skip_pos] = enc_bcond(COND_NE, rel);
@@ -549,17 +575,21 @@ fn JitCode jit_compile(CompiledFunction* target) {
         if (b.failed) { munmap((void*)page, (usz)JIT_MAX_CODE * 4); return none; }
     }
 
-    // --- Shared deopt epilogue: restore callee-saved regs, return JIT_DEOPT ---
+    // --- Shared deopt epilogue: return JIT_DEOPT from the core via x23 ---
+    // Reached from a guard_fastint inside the core. Like a normal core RET, it
+    // returns to the core's caller (a recursive call site — which then routes to
+    // jit_recurse — or the outer prologue). Frame teardown for the outer entry
+    // happens in the outer epilogue; a recursive site restores its own saved
+    // x23/x20 after the call returns.
     uint deopt_pos = b.pos;
     b.mov_imm64(0, JIT_DEOPT);
-    b.emit(enc_ldr_sp(19, 16));
-    b.emit(enc_ldr_sp(20, 24));
-    b.emit(enc_ldr_sp(21, 32));
-    b.emit(enc_ldr_sp(22, 40));
-    b.emit(enc_ldp_post(29, 30, 48));
+    b.emit(enc_mov(30, 23));                         // x30 = saved return addr
     b.emit(enc_ret());
 
     if (b.failed) { munmap((void*)page, (usz)JIT_MAX_CODE * 4); return none; }
+
+    // Patch the outer prologue's BL into the core.
+    page[outer_call_pos] = enc_bl((int)core_pos - (int)outer_call_pos);
 
     // --- Patch branch fixups ---
     for (uint i = 0; i < nfix; i++) {
@@ -567,6 +597,7 @@ fn JitCode jit_compile(CompiledFunction* target) {
         uint dst;
         if (fx.target_pc == DEOPT_PC) { dst = deopt_pos; }
         else if (fx.target_pc == BODY_ENTRY_PC) { dst = 0; }   // body prologue
+        else if (fx.target_pc == CORE_ENTRY_PC) { dst = core_pos; }
         else { dst = native_pc[fx.target_pc]; }
         int rel = (int)dst - (int)fx.native_pos;   // in instructions
         if (fx.cond == COND_BL) { page[fx.native_pos] = enc_bl(rel); }
