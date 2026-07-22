@@ -415,13 +415,20 @@ fn JitCode jit_compile(CompiledFunction* target) {
     // vm, self-func-bits, and the fastint tag are INVARIANT across every
     // recursion level (only the register-file pointer changes), so they live in
     // callee-saved registers set up once here and never reloaded on a recursive
-    // self-call. Save fp/lr + x19..x23 in a 64-byte frame.
-    b.emit(enc_stp_pre(29, 30, -64));
+    // self-call. Save fp/lr + x19..x27 in a 96-byte frame.
+    b.emit(enc_stp_pre(29, 30, -96));
     b.emit(enc_str_sp(19, 16));
     b.emit(enc_str_sp(20, 24));
     b.emit(enc_str_sp(21, 32));
     b.emit(enc_str_sp(22, 40));
     b.emit(enc_str_sp(23, 48));
+    // Also preserve x24..x27 — used to cache sign-extended parameters (below).
+    // They are callee-saved per AAPCS64, so the outer entry must restore them
+    // for the C caller regardless of how many we actually use.
+    b.emit(enc_str_sp(24, 56));
+    b.emit(enc_str_sp(25, 64));
+    b.emit(enc_str_sp(26, 72));
+    b.emit(enc_str_sp(27, 80));
     b.emit(enc_mov(19, 0));                          // x19 = vm (invariant)
     b.emit(enc_mov(21, 2));                          // x21 = self func bits (invariant)
     b.emit(enc_movz(22, (uint)types::TAG_FASTINT, 3)); // x22 = TAG_FASTINT<<48 (invariant)
@@ -435,7 +442,11 @@ fn JitCode jit_compile(CompiledFunction* target) {
     b.emit(enc_ldr_sp(21, 32));
     b.emit(enc_ldr_sp(22, 40));
     b.emit(enc_ldr_sp(23, 48));
-    b.emit(enc_ldp_post(29, 30, 64));
+    b.emit(enc_ldr_sp(24, 56));
+    b.emit(enc_ldr_sp(25, 64));
+    b.emit(enc_ldr_sp(26, 72));
+    b.emit(enc_ldr_sp(27, 80));
+    b.emit(enc_ldp_post(29, 30, 96));
     b.emit(enc_ret());
 
     // --- Re-entrant core ---
@@ -491,6 +502,24 @@ fn JitCode jit_compile(CompiledFunction* target) {
         known_fi[i] = true;
     }
 
+    // Register-cache the sign-extended parameters in callee-saved regs x24+.
+    // fib re-reads `n` from memory and re-sign-extends it on every op; caching
+    // the sext once removes that per-op load+lsl+asr. `param_sext_reg[r]` names
+    // the arm64 register holding sext(regs[r]), or 0 if not cached. Only valid
+    // while the parameter register is never overwritten (invalidated on any
+    // write below). x24..x27 give up to 4 cached params; the outer prologue and
+    // every recursive call site save/restore exactly the ones used.
+    uint[64] param_sext_reg;
+    for (uint i = 0; i < 64; i++) param_sext_reg[i] = 0;
+    uint ncached = 0;
+    for (uint i = 0; i < nparams && i < 64 && ncached < 4; i++) {
+        uint pr = 24 + ncached;                     // x24, x25, x26, x27
+        b.ld_reg(0, i);
+        b.sext_fastint(pr, 0);                      // x(pr) = sext(regs[i])
+        param_sext_reg[i] = pr;
+        ncached++;
+    }
+
     // --- Body ---
     for (uint pc = 0; pc < n; pc++) {
         // At a branch target, materialize any pending LDINT stores so a jump
@@ -527,10 +556,16 @@ fn JitCode jit_compile(CompiledFunction* target) {
             }
             case Opcode.SUBI: {
                 // A = B - (signed8)C  (fastint fast path; deopt otherwise).
-                if (bb < 64 && pending_const[bb]) { b.mov_imm64(0, (ulong)reg_const[bb]); b.retag_fastint(1, 0); b.st_reg(1, bb); pending_const[bb] = false; }
-                if (bb < 64 && !known_fi[bb]) b.guard_fastint(bb, fixups[..], &nfix);
-                b.ld_reg(0, bb);
-                b.sext_fastint(0, 0);                 // x0 = sext(regs[B])
+                if (bb < 64 && param_sext_reg[bb] != 0) {
+                    // B is a cached, already-sign-extended parameter — no load,
+                    // no guard (guarded once at entry), no re-sext.
+                    b.emit(enc_mov(0, param_sext_reg[bb]));
+                } else {
+                    if (bb < 64 && pending_const[bb]) { b.mov_imm64(0, (ulong)reg_const[bb]); b.retag_fastint(1, 0); b.st_reg(1, bb); pending_const[bb] = false; }
+                    if (bb < 64 && !known_fi[bb]) b.guard_fastint(bb, fixups[..], &nfix);
+                    b.ld_reg(0, bb);
+                    b.sext_fastint(0, 0);             // x0 = sext(regs[B])
+                }
                 long imm = (long)(ichar)c;
                 // C is a signed 8-bit immediate (-128..127): fold into a single
                 // SUB/ADD-immediate instead of materializing it in a register.
@@ -539,7 +574,7 @@ fn JitCode jit_compile(CompiledFunction* target) {
                 b.guard_fits_fastint(0, fixups[..], &nfix); // overflow → deopt
                 b.retag_fastint(2, 0);
                 b.st_reg(2, a);
-                if (a < 64) { known_fi[a] = true; reg_is_const[a] = false; pending_const[a] = false; } // proven in-range fastint
+                if (a < 64) { known_fi[a] = true; reg_is_const[a] = false; pending_const[a] = false; param_sext_reg[a] = 0; } // proven in-range fastint
             }
             case Opcode.ADD: {
                 // A = B + C  (fastint fast path; deopt otherwise).
@@ -554,7 +589,7 @@ fn JitCode jit_compile(CompiledFunction* target) {
                 b.guard_fits_fastint(0, fixups[..], &nfix);
                 b.retag_fastint(2, 0);
                 b.st_reg(2, a);
-                if (a < 64) { known_fi[a] = true; reg_is_const[a] = false; pending_const[a] = false; }
+                if (a < 64) { known_fi[a] = true; reg_is_const[a] = false; pending_const[a] = false; param_sext_reg[a] = 0; }
             }
             case Opcode.SUB: {
                 if (bb < 64 && pending_const[bb]) { b.mov_imm64(0, (ulong)reg_const[bb]); b.retag_fastint(1, 0); b.st_reg(1, bb); pending_const[bb] = false; }
@@ -567,22 +602,31 @@ fn JitCode jit_compile(CompiledFunction* target) {
                 b.guard_fits_fastint(0, fixups[..], &nfix);
                 b.retag_fastint(2, 0);
                 b.st_reg(2, a);
-                if (a < 64) { known_fi[a] = true; reg_is_const[a] = false; pending_const[a] = false; }
+                if (a < 64) { known_fi[a] = true; reg_is_const[a] = false; pending_const[a] = false; param_sext_reg[a] = 0; }
             }
             case Opcode.JMP_NLE: {
                 // if !(regs[B] <= regs[C]) goto pc+1+offset ; offset = (int8)A.
                 // Both operands must be fastint or we deopt (interpreter handles
                 // the general <= including NaN/coercion).
-                if (bb < 64 && !known_fi[bb]) b.guard_fastint(bb, fixups[..], &nfix);
-                b.ld_reg(0, bb); b.sext_fastint(0, 0);
+                uint lhs_reg = 0;
+                if (bb < 64 && param_sext_reg[bb] != 0) {
+                    lhs_reg = param_sext_reg[bb];     // cached sext param — use directly
+                } else {
+                    if (bb < 64 && !known_fi[bb]) b.guard_fastint(bb, fixups[..], &nfix);
+                    b.ld_reg(0, bb); b.sext_fastint(0, 0);
+                }
                 // If C is a compile-time small non-negative constant, compare
                 // against an immediate — no load/sext of the constant operand.
                 if (c < 64 && reg_is_const[c] && reg_const[c] >= 0 && reg_const[c] <= 4095) {
-                    b.emit(enc_cmp_imm(0, (uint)reg_const[c]));
+                    b.emit(enc_cmp_imm(lhs_reg, (uint)reg_const[c]));
                 } else {
-                    if (c < 64 && !known_fi[c]) b.guard_fastint(c, fixups[..], &nfix);
-                    b.ld_reg(1, c); b.sext_fastint(1, 1);
-                    b.emit(enc_cmp(0, 1));            // flags = B - C
+                    if (c < 64 && param_sext_reg[c] != 0) {
+                        b.emit(enc_cmp(lhs_reg, param_sext_reg[c]));
+                    } else {
+                        if (c < 64 && !known_fi[c]) b.guard_fastint(c, fixups[..], &nfix);
+                        b.ld_reg(1, c); b.sext_fastint(1, 1);
+                        b.emit(enc_cmp(lhs_reg, 1));  // flags = B - C
+                    }
                 }
                 // Branch when NOT (B <= C), i.e. B > C  => COND_GT.
                 int off = (int)(ichar)a;
@@ -621,15 +665,20 @@ fn JitCode jit_compile(CompiledFunction* target) {
                 // Args live at regs[A+2 .. A+1+nargs] (frame_start = A+2);
                 // the callee reads them from window[0..nargs-1].
                 uint nargs = bb;
-                // Frame for this call site: save x23 (our core-return address) +
-                // our x20 (this frame's regs pointer), plus a window of num_regs
-                // TVal slots for the callee. Layout in one SP block, 16-aligned:
-                //   [0]=x23 saved, [8]=x20 saved, [16..]=callee window.
+                // Frame for this call site: save x23 (core-return), our x20
+                // (regs ptr), and the ncached cached-param regs (x24..), plus a
+                // window of num_regs TVal slots for the callee. Layout, 16-aligned:
+                //   [0]=x23, [8]=x20, [16..16+ncached*8)=x24.., then the window.
                 uint win_slots = target.num_regs;
-                uint frame_bytes = ((16 + win_slots * 8) + 15) & ~15u;
+                uint save_bytes = 16 + ncached * 8;
+                uint frame_bytes = ((save_bytes + win_slots * 8) + 15) & ~15u;
+                uint win_off = save_bytes;
                 b.emit(enc_sub_imm(31, 31, frame_bytes)); // SUB sp, sp, #frame_bytes
                 b.emit(enc_str_sp(23, 0));                // save our core-return addr
                 b.emit(enc_str_sp(20, 8));                // save this frame's regs ptr
+                for (uint k = 0; k < ncached; k++) {
+                    b.emit(enc_str_sp(24 + k, 16 + k * 8)); // save cached param regs
+                }
                 // Copy args from caller regs[A+2+i] to window[i] (at SP+16+i*8).
                 // A pending-const arg is materialized straight into x0.
                 for (uint i = 0; i < nargs; i++) {
@@ -640,20 +689,23 @@ fn JitCode jit_compile(CompiledFunction* target) {
                     } else {
                         b.ld_reg(0, ar);                  // x0 = regs[A+2+i] (via x20)
                     }
-                    b.emit(enc_str_sp(0, 16 + i * 8));    // window[i]
+                    b.emit(enc_str_sp(0, win_off + i * 8)); // window[i]
                 }
                 // Point x20 at the callee window and re-enter the core. Invariant
                 // regs (x19/x21/x22) stay live — no reload. The nested core will
-                // overwrite x23 with its own return addr; we restore ours after.
-                b.emit(enc_add_imm(20, 31, 16));          // x20 = sp + 16 (window)
+                // overwrite x23 and the cached-param regs; we restore them after.
+                b.emit(enc_add_imm(20, 31, win_off));     // x20 = sp + win_off (window)
                 if (nfix < 512) {
                     fixups[nfix] = { .native_pos = b.pos, .target_pc = CORE_ENTRY_PC, .cond = COND_BL };
                     nfix++;
                 }
                 b.emit(enc_bl(0));                        // BL core (patched)
-                // Restore our core-return addr + this frame's regs ptr, release.
+                // Restore core-return addr, our regs ptr, and cached-param regs.
                 b.emit(enc_ldr_sp(23, 0));                // restore x23
                 b.emit(enc_ldr_sp(20, 8));                // restore x20 = our regs
+                for (uint k = 0; k < ncached; k++) {
+                    b.emit(enc_ldr_sp(24 + k, 16 + k * 8)); // restore cached params
+                }
                 b.emit(enc_add_imm(31, 31, frame_bytes)); // release frame
                 // Deopt check via the sentinel's unique top-16-bit tag (0xFFFE,
                 // which the VM never produces): (result >> 48) == 0xFFFE ⇒ deopt.
