@@ -611,3 +611,118 @@ fn void run_cmp_branch_fusion(Instruction* code, uint code_count, bool* jump_tar
         code[i + 1] = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
     }
 }
+
+/// Fuse the `GETGLOBAL_PRIM rX, S` + `PUTGLOBAL_PRIM rX, D` pair emitted for a
+/// plain `a = b` assignment between two proven primitive-only globals into a
+/// single two-word `MOVE_GG` superinstruction (word 1: A-BC, BC = dst name D;
+/// word 2: a kept NOP whose BC = src name S). This halves the op count for
+/// global-to-global copies: no scratch round-trip, one dispatch.
+///
+/// `jump_targets` is a caller-provided scratch buffer of at least `code_count`
+/// bools (kept out of this module so fusion.c3 stays heap-free).
+///
+/// Two-word layout invariant: MOVE_GG's VM handler reads the IMMEDIATELY-next
+/// word as the source name, so the pair must be strictly adjacent (j == i+1).
+/// Jump-target safety: the MOVE_GG word (i) may itself be a jump target — a
+/// loop back-edge landing on it re-executes the full copy, which is correct.
+/// But the trailing word (i+1) must NOT be a jump target: a jump landing there
+/// would skip the read half. We also require the source register to be a dead
+/// scratch temp after the pair (PUTGLOBAL_PRIM consumes it), so nothing
+/// downstream reads the value the fused op no longer materializes in a register.
+fn void run_move_gg_fusion(Instruction* code, uint code_count, bool* jump_targets) {
+    if (code_count < 2) { return; }
+
+    // --- Build the jump-target bitset (all branch/handler forms). ---
+    for (uint i = 0; i < code_count; i++) { jump_targets[i] = false; }
+    for (uint i = 0; i < code_count; i++) {
+        Instruction ins = code[i];
+        switch (ins.op) {
+            case Opcode.JUMP:
+            case Opcode.BREAK:
+            case Opcode.CONTINUE: {
+                int off = ins.get_sabc();
+                int tgt = (int)i + 1 + off;
+                if (tgt >= 0 && (uint)tgt < code_count) { jump_targets[tgt] = true; }
+            }
+            case Opcode.IF_TRUE:
+            case Opcode.IF_FALSE: {
+                int off = ins.get_sbc();
+                int tgt = (int)i + 1 + off;
+                if (tgt >= 0 && (uint)tgt < code_count) { jump_targets[tgt] = true; }
+            }
+            case Opcode.JMP_NLT:
+            case Opcode.JMP_NLE:
+            case Opcode.JMP_NGT:
+            case Opcode.JMP_NGE:
+            case Opcode.JMP_LT:
+            case Opcode.JMP_LE:
+            case Opcode.JMP_GT:
+            case Opcode.JMP_GE:
+            case Opcode.JMP_SEQ:
+            case Opcode.JMP_SNEQ: {
+                // ABC form: signed 8-bit offset in field A.
+                int off = (int)(ichar)ins.a;
+                int tgt = (int)i + 1 + off;
+                if (tgt >= 0 && (uint)tgt < code_count) { jump_targets[tgt] = true; }
+            }
+            case Opcode.TRY: {
+                uint catch_off = ins.get_bc();
+                uint catch_tgt = i + catch_off;
+                if (catch_tgt < code_count) { jump_targets[catch_tgt] = true; }
+                if (i + 1 < code_count) {
+                    uint finally_off = code[i + 1].get_bc();
+                    if (finally_off != 0) {
+                        uint finally_tgt = i + finally_off;
+                        if (finally_tgt < code_count) { jump_targets[finally_tgt] = true; }
+                    }
+                }
+            }
+            default: {}
+        }
+    }
+
+    // --- Fuse each strictly-adjacent GETGLOBAL_PRIM + PUTGLOBAL_PRIM pair. ---
+    for (uint i = 0; i + 1 < code_count; i++) {
+        if (code[i].op != Opcode.GETGLOBAL_PRIM) { continue; }
+        if (code[i + 1].op != Opcode.PUTGLOBAL_PRIM) { continue; }
+
+        // Same scratch register: GETGLOBAL_PRIM writes rX (field A),
+        // PUTGLOBAL_PRIM reads rX (field A).
+        uint rX = (uint)code[i].a;
+        if ((uint)code[i + 1].a != rX) { continue; }
+
+        // The trailing word (i+1) must not be a jump target — landing there
+        // would skip the MOVE_GG read half.
+        if (jump_targets[i + 1]) { continue; }
+
+        // rX must be dead after the pair: PUTGLOBAL_PRIM sets it undefined and
+        // the fused op writes no register, so any later read would see garbage.
+        // Scan forward from i+2 until rX is written (dead) or read (live).
+        bool rX_live = false;
+        for (uint j = i + 2; j < code_count; j++) {
+            Instruction jns = code[j];
+            Opcode jop = jns.op;
+            if (jop == Opcode.IF_TRUE || jop == Opcode.IF_FALSE) {
+                if ((uint)jns.a == rX) { rX_live = true; break; }
+                continue;
+            }
+            OpFormat jfmt = bytecode::get_op_format(jop);
+            if (jfmt == OpFormat.ABC) {
+                if ((uint)jns.b == rX || (uint)jns.c == rX) { rX_live = true; break; }
+            }
+            // A write to rX in field A (non-wide forms use A as destination)
+            // ends the scan: rX is redefined before any read, hence dead.
+            if (jfmt != OpFormat.WIDE_SABC && jfmt != OpFormat.WIDE_ABC) {
+                if ((uint)jns.a == rX) { break; }
+            }
+        }
+        if (rX_live) { continue; }
+
+        uint dst_name = code[i + 1].get_bc();   // D — destination global
+        uint src_name = code[i].get_bc();        // S — source global
+
+        // Word 1: MOVE_GG, BC = dst name. Word 2: kept NOP, BC = src name.
+        code[i]     = bytecode::make_a_bc(Opcode.MOVE_GG, 0, dst_name);
+        code[i + 1] = bytecode::make_a_bc(Opcode.NOP, 0, src_name);
+    }
+}

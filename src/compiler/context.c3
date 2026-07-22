@@ -1047,6 +1047,22 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         }
     }
 
+    // --- Peephole: fuse GETGLOBAL_PRIM + PUTGLOBAL_PRIM -> MOVE_GG ---
+    // A plain `a = b` between two proven primitive-only globals compiles to a
+    // GETGLOBAL_PRIM rX,S / PUTGLOBAL_PRIM rX,D pair (scratch round-trip, two
+    // dispatches). Fuse the adjacent pair into one two-word MOVE_GG (dst name in
+    // word 1's BC, src name in a kept trailing NOP's BC), halving the op count.
+    // Runs after every register-elision pass so the pair is in its final form,
+    // and before the NOP compaction pass so the trailing word is protected by
+    // nop_keep[] (see below) exactly like TRY's finally slot. Needs a
+    // code_count-sized bool scratch for the jump-target bitset.
+    if (!self.disable_optimize && self.code_count >= 2) {
+        bool* mgg_jump_targets = (bool*)h.alloc_func(h.heap_udata, (usz)self.code_cap);
+        if (mgg_jump_targets == null) { self.cleanup(); return COMPILE_ERROR~; }
+        run_move_gg_fusion(self.code, self.code_count, mgg_jump_targets);
+        h.free_func(h.heap_udata, mgg_jump_targets);
+    }
+
     // --- NOP Compaction Pass ---
     // Physically remove NOP instructions and remap all pc-relative offsets.
     // Must run last, after all other peepholes have introduced NOPs.
@@ -1062,6 +1078,12 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         mem::clear(nop_keep, (sz)((usz)self.code_count));
         for (uint i = 0; i < self.code_count; i++) {
             if (self.code[i].op == Opcode.TRY && i + 1 < self.code_count) {
+                nop_keep[i + 1] = true;
+            }
+            // MOVE_GG's trailing word (a NOP holding the source name index in
+            // its BC) is read by the VM as the second half of the two-word
+            // instruction; keep it through compaction like TRY's finally slot.
+            if (self.code[i].op == Opcode.MOVE_GG && i + 1 < self.code_count) {
                 nop_keep[i + 1] = true;
             }
         }

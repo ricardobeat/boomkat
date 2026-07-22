@@ -3884,6 +3884,116 @@ fn TVal? Vm.run(Vm* vm) {
             continue;
         }
 
+        case Opcode.MOVE_GG: {
+            // Fused copy between two proven primitive-only globals: the
+            // GETGLOBAL_PRIM + PUTGLOBAL_PRIM pair for a plain `a = b`.
+            // Two-word instruction: this word (already consumed) holds the
+            // destination name index in BC; the trailing word (at curr_pc)
+            // holds the source name index in BC. Both slots are provably
+            // primitive, so a raw `*dst = *src` — no is_heap, no refcount,
+            // no track_heap_store, no scratch register.
+            Instruction src_word = *ds.curr_pc;
+            ds.curr_pc++;
+            uint dst_bc = insn.get_bc();
+            uint src_bc = src_word.get_bc();
+
+            if (dst_bc < vm.current_func.const_count && src_bc < vm.current_func.const_count) {
+                TVal dst_name = ds.constants[dst_bc];
+                TVal src_name = ds.constants[src_bc];
+                if (dst_name.is_string() && src_name.is_string() && ds.var_ic_base != null) {
+                    // pc_off(dst) = index of the MOVE_GG word; pc_off(src) =
+                    // index of the trailing word (curr_pc already advanced by 2).
+                    uint dst_off = (uint)(ds.curr_pc - 2 - ds.code_base);
+                    hobject::VarICEntry* dic = ds.var_ic_base + dst_off;
+                    hobject::VarICEntry* sic = ds.var_ic_base + dst_off + 1;
+
+                    HObject* dgb = (HObject*)dic.bindings;
+                    HObject* sgb = (HObject*)sic.bindings;
+                    if (dgb != null && dic.varref_store_ok && dic.varref_alloc != null
+                        && dgb.prop_alloc == dic.varref_alloc
+                        && sgb != null && sic.varref_alloc != null
+                        && sgb.prop_alloc == sic.varref_alloc) {
+                        TVal* spv = sic.varref_ptr;
+                        if (!env::is_tdz_sentinel(spv)) {
+                            // Both provably primitive: raw copy, no refcount.
+                            *dic.varref_ptr = *spv;
+                            continue;
+                        }
+                    }
+
+                    // IC-cold / miss: resolve BOTH slots via the env walk (same
+                    // cold path as the PRIM handlers) and populate both ICs.
+                    void* dst_key = dst_name.get_heapptr();
+                    void* src_key = src_name.get_heapptr();
+
+                    EnvRecord* denv = null;
+                    int didx = -1;
+                    EnvRecord* dcur = ds.act.lex_env;
+                    while (dcur != null) {
+                        int idx = dcur.bindings.find_prop_idx(dst_key);
+                        if (idx >= 0) { denv = dcur; didx = idx; break; }
+                        dcur = dcur.parent;
+                    }
+                    if (denv == null) {
+                        EnvRecord* vcur = ds.act.var_env;
+                        while (vcur != null) {
+                            int vidx = vcur.bindings.find_prop_idx(dst_key);
+                            if (vidx >= 0) { denv = vcur; didx = vidx; break; }
+                            vcur = vcur.parent;
+                        }
+                    }
+
+                    EnvRecord* senv = null;
+                    int sidx = -1;
+                    EnvRecord* scur = ds.act.lex_env;
+                    while (scur != null) {
+                        int idx = scur.bindings.find_prop_idx(src_key);
+                        if (idx >= 0) { senv = scur; sidx = idx; break; }
+                        scur = scur.parent;
+                    }
+                    if (senv == null && ds.act.lex_env != ds.act.var_env) {
+                        EnvRecord* vcur = ds.act.var_env;
+                        while (vcur != null) {
+                            int vidx = vcur.bindings.find_prop_idx(src_key);
+                            if (vidx >= 0) { senv = vcur; sidx = vidx; break; }
+                            vcur = vcur.parent;
+                        }
+                    }
+
+                    if (denv != null && didx >= 0 && senv != null && sidx >= 0) {
+                        TVal* dslot = &denv.bindings.prop_values()[didx];
+                        TVal* sslot = &senv.bindings.prop_values()[sidx];
+                        if (!env::is_tdz_sentinel(sslot)) {
+                            *dslot = *sslot;
+                        } else {
+                            dslot.set_undefined();
+                        }
+                        // Populate the source read IC.
+                        sic.env = (void*)senv;
+                        sic.bindings = (void*)senv.bindings;
+                        sic.shape_id = senv.bindings.shape_id;
+                        sic.prop_idx = (ushort)sidx;
+                        sic.varref_ptr = sslot;
+                        sic.varref_alloc = senv.bindings.prop_alloc;
+                        // Populate the destination write IC (only when the slot
+                        // is a writable, non-configurable data binding — same
+                        // gate as PUTGLOBAL_PRIM's varref_store_ok).
+                        hobject::PropFlags dfl = denv.bindings.get_prop_flags((uint)didx);
+                        if (dfl.writable && !dfl.is_accessor) {
+                            dic.env = (void*)denv;
+                            dic.bindings = (void*)denv.bindings;
+                            dic.shape_id = denv.bindings.shape_id;
+                            dic.prop_idx = (ushort)didx;
+                            dic.varref_ptr = dslot;
+                            dic.varref_alloc = denv.bindings.prop_alloc;
+                            dic.varref_store_ok = !dfl.configurable;
+                        }
+                    }
+                }
+            }
+            continue;
+        }
+
         case Opcode.GETGLOBAL: {
             // Read a top-level global binding. Emitted only where lex_env ==
             // global_lex_env and var_env == global_env, both permanent objects.

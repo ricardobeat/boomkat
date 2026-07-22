@@ -191,6 +191,7 @@ const char*[Opcode.LAST_OP.ordinal + 1] OPCODE_NAMES = {
     [Opcode.PUTGLOBAL.ordinal]   = "PUTGLOBAL",
     [Opcode.GETGLOBAL_PRIM.ordinal] = "GETGLOBAL_PRIM",
     [Opcode.PUTGLOBAL_PRIM.ordinal] = "PUTGLOBAL_PRIM",
+    [Opcode.MOVE_GG.ordinal]     = "MOVE_GG",
     [Opcode.DELVAR.ordinal]      = "DELVAR",
     [Opcode.CLOSURE.ordinal]     = "CLOSURE",
     [Opcode.GETBOUND.ordinal]    = "GETBOUND",
