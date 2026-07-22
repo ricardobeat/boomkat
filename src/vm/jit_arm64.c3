@@ -587,9 +587,13 @@ fn JitCode jit_compile(CompiledFunction* target) {
                 b.emit(enc_ldr_sp(23, 0));                // restore x23
                 b.emit(enc_ldr_sp(20, 8));                // restore x20 = our regs
                 b.emit(enc_add_imm(31, 31, frame_bytes)); // release frame
-                // Deopt check: if result == JIT_DEOPT, take the slow path.
-                b.mov_imm64(1, JIT_DEOPT);
-                b.emit(enc_cmp(0, 1));
+                // Deopt check via the sentinel's unique top-16-bit tag (0xFFFE,
+                // which the VM never produces): (result >> 48) == 0xFFFE ⇒ deopt.
+                // Two instructions instead of materializing the full 64-bit
+                // sentinel. x1 is scratch (result is in x0).
+                b.emit(enc_lsr_imm(1, 0, 48));            // x1 = result tag
+                b.emit(enc_movz(9, (uint)(JIT_DEOPT >> 48), 0)); // x9 = 0xFFFE
+                b.emit(enc_cmp(1, 9));
                 uint skip_pos = b.pos;
                 b.emit(enc_bcond(COND_NE, 0));            // B.NE skip-slow (patched)
                 // Slow path: jit_recurse(vm, target, self_bits, &regs[A+2], nargs).
