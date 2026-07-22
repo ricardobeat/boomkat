@@ -180,6 +180,11 @@ fn uint enc_b(int off_insns) {
     uint imm26 = ((uint)off_insns) & 0x3FFFFFF;
     return 0x14000000u | imm26;
 }
+// BL <offset>  (branch with link, signed 26-bit, relative to this insn)
+fn uint enc_bl(int off_insns) {
+    uint imm26 = ((uint)off_insns) & 0x3FFFFFF;
+    return 0x94000000u | imm26;
+}
 // ADD Xd, Xn, #imm12  (immediate, unsigned)
 fn uint enc_add_imm(uint d, uint n, uint imm12) {
     return 0x91000000u | ((imm12 & 0xFFF) << 10) | (n << 5) | d;
@@ -339,6 +344,9 @@ fn void JitBuf.retag_fastint(&self, uint d, uint n) {
 /// Uses x8/x9 as scratch. The branch is recorded as a fixup with target_pc =
 /// DEOPT_PC and patched to the shared deopt epilogue at the end.
 const uint DEOPT_PC = 0xFFFFFFFFu;
+// Special fixup targets/conditions for non-conditional branches.
+const uint BODY_ENTRY_PC = 0xFFFFFFFEu;   // target = native pc 0 (body prologue)
+const uint COND_BL = 0xFEu;               // fixup emits BL, not B.cond
 fn void JitBuf.guard_fastint(&self, uint r, JitFixup[] fixups, uint* nfix) {
     self.ld_reg(8, r);
     self.emit(enc_lsr_imm(8, 8, 48));           // x8 = tag
@@ -472,25 +480,59 @@ fn JitCode jit_compile(CompiledFunction* target) {
                 b.emit(enc_ret());
             }
             case Opcode.CALL_VAR: {
-                // A = result reg = callee reg ; B = nargs ; C = name const idx.
-                // Only self-recursion is supported: the callee must be THIS
-                // function. We verify at runtime by comparing the resolved
-                // callee to self_func_bits — but resolving by name is the
-                // interpreter's job. Shortcut: the compiler only reaches here
-                // for a function that we KNOW is self-recursive (checked by the
-                // caller via jit_is_self_recursive); pass self as the callee.
-                // Args live at regs[A+2 .. A+1+nargs] (frame_start = A+2).
+                // Self-recursive call, kept fully native: instead of a C
+                // round-trip, allocate the callee's register window on the
+                // native stack, copy the (already fastint) args into it, and
+                // BL directly to this body's own entry (body_entry). The callee
+                // may DEOPT — its return is checked against JIT_DEOPT and, on
+                // deopt, we fall back to jit_recurse (which re-runs the callee
+                // on the interpreter and returns the correct result), so
+                // correctness is preserved.
+                //
+                // Args live at regs[A+2 .. A+1+nargs] (frame_start = A+2);
+                // the callee reads them from window[0..nargs-1].
                 uint nargs = bb;
-                // Marshal for jit_recurse(vm, target, self_bits, &regs[A+2],
-                // nargs): x0=vm, x1=target, x2=self bits, x3=&regs[A+2], w4=nargs.
-                b.emit(enc_mov(0, 19));               // x0 = vm
-                b.mov_imm64(1, target_ptr);           // x1 = target CompiledFunction*
-                b.emit(enc_mov(2, 21));               // x2 = self func bits
-                b.emit(enc_add_imm(3, 20, (a + 2) * 8)); // x3 = &regs[A+2]
-                b.emit(enc_movz(4, nargs, 0));        // w4 = nargs
+                // Window: num_regs TVal slots, rounded up to a 16-byte multiple.
+                uint win_slots = target.num_regs;
+                uint win_bytes = ((win_slots * 8) + 15) & ~15u;
+                b.emit(enc_sub_imm(31, 31, win_bytes));   // SUB sp, sp, #win_bytes
+                // Copy args from caller regs[A+2+i] to window[i].
+                for (uint i = 0; i < nargs; i++) {
+                    b.ld_reg(0, a + 2 + i);               // x0 = regs[A+2+i]
+                    b.emit(enc_str_sp(0, i * 8));         // window[i] = x0
+                }
+                // x0=vm, x1=window(sp), x2=self bits, then BL body_entry.
+                b.emit(enc_mov(0, 19));
+                b.emit(enc_mov(2, 21));
+                b.emit(enc_add_imm(1, 31, 0));            // MOV x1, sp (ADD x1, sp, #0)
+                // BL to body_entry (patched: it's a forward/back ref to a known
+                // native pc). Record as an unconditional-call fixup.
+                if (nfix < 512) {
+                    fixups[nfix] = { .native_pos = b.pos, .target_pc = BODY_ENTRY_PC, .cond = COND_BL };
+                    nfix++;
+                }
+                b.emit(enc_bl(0));                        // placeholder
+                b.emit(enc_add_imm(31, 31, win_bytes));   // release window
+                // Deopt check: if result == JIT_DEOPT, take the slow path.
+                b.mov_imm64(1, JIT_DEOPT);
+                b.emit(enc_cmp(0, 1));
+                // B.NE past the slow path.
+                uint skip_pos = b.pos;
+                b.emit(enc_bcond(COND_NE, 0));            // patched below
+                // Slow path: jit_recurse(vm, target, self_bits, &regs[A+2], nargs).
+                b.emit(enc_mov(0, 19));
+                b.mov_imm64(1, target_ptr);
+                b.emit(enc_mov(2, 21));
+                b.emit(enc_add_imm(3, 20, (a + 2) * 8));
+                b.emit(enc_movz(4, nargs, 0));
                 b.mov_imm64(9, recurse_addr);
-                b.emit(enc_blr(9));                   // result TVal bits in x0
-                b.st_reg(0, a);                       // regs[A] = result
+                b.emit(enc_blr(9));                       // result in x0
+                // Patch the B.NE to skip to here (the store below).
+                {
+                    int rel = (int)b.pos - (int)skip_pos;
+                    b.code[skip_pos] = enc_bcond(COND_NE, rel);
+                }
+                b.st_reg(0, a);                           // regs[A] = result
             }
             default: {
                 // Unsupported opcode — bail out, free page, stay on interpreter.
@@ -516,9 +558,13 @@ fn JitCode jit_compile(CompiledFunction* target) {
     // --- Patch branch fixups ---
     for (uint i = 0; i < nfix; i++) {
         JitFixup fx = fixups[i];
-        uint dst = fx.target_pc == DEOPT_PC ? deopt_pos : native_pc[fx.target_pc];
+        uint dst;
+        if (fx.target_pc == DEOPT_PC) { dst = deopt_pos; }
+        else if (fx.target_pc == BODY_ENTRY_PC) { dst = 0; }   // body prologue
+        else { dst = native_pc[fx.target_pc]; }
         int rel = (int)dst - (int)fx.native_pos;   // in instructions
-        page[fx.native_pos] = enc_bcond(fx.cond, rel);
+        if (fx.cond == COND_BL) { page[fx.native_pos] = enc_bl(rel); }
+        else { page[fx.native_pos] = enc_bcond(fx.cond, rel); }
     }
 
     jit_finalize(&b);
