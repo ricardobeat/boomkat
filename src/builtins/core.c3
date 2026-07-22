@@ -103,6 +103,7 @@ enum Builtin : uint {
     MATH_COS,
     MATH_TAN,
     MATH_RANDOM,
+    MATH_SUM_PRECISE,
     STRING_PROTO_CHARAT,
     STRING_PROTO_CHARCODEAT,
     STRING_PROTO_INDEXOF,
@@ -2333,6 +2334,7 @@ fn BuiltinMeta builtin_get_metadata(uint idx) {
         case Builtin.MATH_COS.ordinal: return { "cos", 1 };
         case Builtin.MATH_TAN.ordinal: return { "tan", 1 };
         case Builtin.MATH_RANDOM.ordinal: return { "random", 0 };
+        case Builtin.MATH_SUM_PRECISE.ordinal: return { "sumPrecise", 1 };
         case Builtin.STRING_PROTO_CHARAT.ordinal: return { "charAt", 1 };
         case Builtin.STRING_PROTO_CHARCODEAT.ordinal: return { "charCodeAt", 1 };
         case Builtin.STRING_PROTO_INDEXOF.ordinal: return { "indexOf", 1 };
@@ -3322,6 +3324,7 @@ BuiltinFunc[Builtin.LAST.ordinal] builtin_dispatch_table = {
     [Builtin.MATH_SIN.ordinal] = &builtin_math_sin,
     [Builtin.MATH_SINH.ordinal] = &builtin_math_sinh,
     [Builtin.MATH_SQRT.ordinal] = &builtin_math_sqrt,
+    [Builtin.MATH_SUM_PRECISE.ordinal] = &builtin_math_sum_precise,
     [Builtin.MATH_TAN.ordinal] = &builtin_math_tan,
     [Builtin.MATH_TANH.ordinal] = &builtin_math_tanh,
     [Builtin.MATH_TRUNC.ordinal] = &builtin_math_trunc,

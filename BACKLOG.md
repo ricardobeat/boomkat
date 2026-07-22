@@ -31,7 +31,7 @@ Target: feature parity with vendored QuickJS 2025-09-13 (`out/qjs`), measured by
 - [ ] **`Uint8Array.fromBase64`/`toBase64`/hex** (`uint8array-base64`).
 - [ ] **`JSON.parse` source access** (`json-parse-with-source`).
 - [ ] **`Array.fromAsync`**.
-- [ ] **`Math.sumPrecise`**.
+- [ ] **`Math.sumPrecise`** — implemented basic Neumaier compensated summation (handles `sumPrecise([0.1, 0.1]) === 0.2` etc.). The 5 spec tests requiring xsum-style exact summation (intermediate overflow + cancellation like `[1e308, 1e308, 0.1, 0.1, 1e30, 0.1, -1e30, -1e308, -1e308] === 0.30000000000000004`) still fail — would need Radford Neal's xsum 67-chunk accumulator (V8's `src/builtins/builtins-math-xsum.{h,cc}`) or Shewchuk grow-expansion. The basic 5 tests (length, name, prop-desc, not-a-ctor, NaN) pass.
 - [ ] **`Iterator.concat`** (`iterator-sequencing`).
 - [x] **`#x in obj`** (`class-fields-private-in`, plan 054 P6) — parser + existing brand-check reuse. Fix: `binary_expr` peeks for `HASH_IDENT in` and emits a new `HAS_BRAND` opcode (ABC: A=dst, B=obj, C=brand-reg) that sets a boolean from the existing own-property brand check (no throw on miss). Throws TypeError if RHS is not an object per spec. `class-fields-private-in` removed from `UNSUPPORTED_PATTERN`.
 - [ ] **Reflect un-skip** — surface implemented (A9); un-skip and fix what fails.
