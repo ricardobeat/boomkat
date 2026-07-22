@@ -302,9 +302,16 @@ fn void builtin_function_proto_call(BuiltinContext* ctx) {
         inner_ctx.should_throw = false;
         // Update the this slot so builtins that read ctx.regs[ctx.base_reg - 1] get the correct receiver
         inner_ctx.regs[ctx.base_reg - 1] = new_this;
-        // Shift remaining args to start at base_reg
+        // Shift remaining args left by one (dropping thisArg), then clear the
+        // now-duplicated tail slots. These registers all lie within the call
+        // frame's decref window; a raw copy that left the tail intact would
+        // leave a refcounted arg in two slots and decref_callee_regs at RET
+        // would over-release it (double free of e.g. the callback function).
         for (ushort i = 0; i < remaining; i++) {
             ctx.regs[ctx.base_reg + i] = builtin_arg(ctx, i + 1);
+        }
+        for (ushort i = remaining; i < ctx.argc; i++) {
+            ctx.regs[ctx.base_reg + i].set_undefined();
         }
         builtins::dispatch_builtin(fn_idx, &inner_ctx);
         if (inner_ctx.should_throw) {
@@ -318,9 +325,14 @@ fn void builtin_function_proto_call(BuiltinContext* ctx) {
     if (downstream.is_object()) {
         HObject* hobj = (HObject*)downstream.get_heapptr();
         if (hobj != null && hobj.is_callable() && hobj.callable_kind() == hobject::CallableKind.BUILTIN_FN && (*hobj.extra_ptr()).func.builtin_fn_index >= 0) {
-            // Direct dispatch for BUILTIN_FN objects (e.g. Array.prototype.forEach.call(...))
+            // Direct dispatch for BUILTIN_FN objects (e.g. Array.prototype.forEach.call(...)).
+            // Shift args left by one and clear the duplicated tail slots so the
+            // frame's RET decref sees each refcounted arg exactly once.
             for (ushort i = 0; i < remaining; i++) {
                 ctx.regs[ctx.base_reg + i] = builtin_arg(ctx, i + 1);
+            }
+            for (ushort i = remaining; i < ctx.argc; i++) {
+                ctx.regs[ctx.base_reg + i].set_undefined();
             }
             builtins::BuiltinContext inner_ctx;
             inner_ctx.vm = ctx.vm;
