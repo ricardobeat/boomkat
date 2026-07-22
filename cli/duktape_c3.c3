@@ -21,6 +21,16 @@ import std::io;
 
 fn int main(String[] args) {
     vm::test262_host_enabled = true;
+    // Hidden: exercise the JIT core (emit -> MAP_JIT execute -> fastint add).
+    if (args.len > 1 && args[1] == "--jit-selftest") {
+        types::TVal[4] regs;
+        regs[1].set_fastint(1000);
+        regs[2].set_fastint(337);
+        ulong r = vm::jit_selftest_add(&regs[0], 1, 2);
+        types::TVal rv; rv.bits = r;
+        io::printfn("jit add = %d (expect 1337), is_fastint=%s", rv.get_fastint(), rv.is_fastint());
+        return 0;
+    }
     // `--module <path>` drives the full ESM resolve->link->evaluate pipeline.
     if (args.len > 2 && args[1] == "--module") {
         String mpath = args[2];
