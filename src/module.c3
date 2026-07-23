@@ -321,6 +321,7 @@ fn ModuleDef*? resolve_module(Heap* heap, char[] specifier, char[] base_name) {
 
     // 5. Compile
     Lexer lex = lexer::lexer_init(source, heap);
+    defer lex.free_arena();
     lex.skip_hashbang();
     bytecode::CompiledFunction*? func_opt = compiler::compile_module(&lex, heap, normalized, mod);
     if (catch err = func_opt) {

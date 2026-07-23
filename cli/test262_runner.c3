@@ -115,6 +115,7 @@ fn int run_manifest_loop(char[] mpath) {
 
 fn int exec_js(Vm* v, Heap* hp, char[] src) {
     Lexer lx = lexer::lexer_init(src, hp);
+    defer lx.free_arena();
     lx.skip_hashbang();
     CompiledFunction*? f = compiler::compile(&lx, hp);
     if (catch err = f) {

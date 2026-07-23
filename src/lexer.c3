@@ -10,6 +10,7 @@ module duktape::lexer;
 import duktape::types;
 import duktape::dtoa_bindings;
 import duktape::unicode_bindings;
+import duktape::heap;
 import std::math;
 import std::io;
 
@@ -29,6 +30,43 @@ faultdef NOT_A_KEYWORD;
 
 /// Maximum size for the string escape-processing buffer.
 const uint STRING_BUF_SIZE = 65536;
+
+/// Default payload size of a token-string arena block. Escape-decoded string
+/// and template bodies are copied here so their `char[]` slices point at
+/// stable heap memory that outlives the lexer's stack frames (a token's
+/// `str_value`/`raw_value` must stay valid while `current`, `lookahead`, and
+/// `pushed_back` are simultaneously alive, and while pre-scan helpers re-lex a
+/// region). Requests larger than this get a dedicated right-sized block.
+const usz LEX_ARENA_BLOCK_SIZE = 8192;
+
+// ============================================================================
+// Token-string arena
+// ============================================================================
+
+/// A single heap-allocated block in the lexer's decoded-string arena. Blocks
+/// form a singly-linked chain owned (indirectly) by the Lexer; they only ever
+/// grow during a compilation and are all freed together by `free_arena()`.
+struct LexArenaBlock {
+    LexArenaBlock* next;
+    usz used;
+    usz cap;
+    // Payload bytes follow immediately after this header in the same
+    // allocation; `data()` returns a pointer to them.
+}
+
+fn char* LexArenaBlock.data(&self) {
+    return (char*)((char*)self + LexArenaBlock::size);
+}
+
+/// Heap-allocated holder for the arena's block chain. The Lexer references this
+/// through a pointer (`Lexer.arena`), NOT by value, so that speculative lexer
+/// copies made during parsing (destructuring.c3's `Lexer scan = *self.lexer`,
+/// deferred-target snapshots, etc.) all share ONE arena: a block allocated by
+/// any copy is visible to, and freed by, the original. A by-value `arena_head`
+/// field would be reverted on `*self.lexer = saved`, orphaning blocks.
+struct LexArena {
+    LexArenaBlock* head;
+}
 
 // ============================================================================
 // Token types
@@ -93,7 +131,6 @@ struct Token {
     double num_value;
     char[] str_value;
     char[] raw_value;
-    bool str_owns_memory;
     bool has_octal_escape;
     bool is_template;
     bool has_invalid_escape;
@@ -108,7 +145,6 @@ fn Token make_token(TokenType tt, uint line, uint col) {
     t.num_value = 0.0;
     t.str_value = {};
     t.raw_value = {};
-    t.str_owns_memory = false;
     t.has_octal_escape = false;
     t.is_template = false;
     t.has_invalid_escape = false;
@@ -431,6 +467,11 @@ struct Lexer {
     bool at_line_start;
     void* heap;
 
+    /// Shared decoded-string arena holder (see LexArena). Allocated lazily on
+    /// the first escape-bearing string/template literal, shared across lexer
+    /// copies, freed by `free_arena()` at the end of the owning compilation.
+    LexArena* arena;
+
     char[4096] ident_buf;
 }
 
@@ -455,7 +496,90 @@ fn Lexer lexer_init(char[] source, void* heap) {
     lex.seen_line_term = false;
     lex.at_line_start = true;
     lex.heap = heap;
+    // Allocate the shared arena holder eagerly (tiny — one pointer) so that
+    // every speculative lexer copy made during parsing shares the SAME non-null
+    // holder from the start. A lazily-created holder would be invisible to (and
+    // unfreed by) the original if a copy created it first. No blocks are
+    // allocated until the first escape-bearing literal is decoded.
+    lex.arena = null;
+    Heap* h = (Heap*)heap;
+    if (h != null && h.alloc_func != null) {
+        void* hraw = h.alloc_func(h.heap_udata, LexArena::size);
+        if (hraw != null) {
+            lex.arena = (LexArena*)hraw;
+            lex.arena.head = null;
+        }
+    }
     return lex;
+}
+
+/// Allocate `n` bytes of stable storage from the token-string arena and copy
+/// `src[0..n-1]` into it, returning a slice over the copy. The slice outlives
+/// the lexer's stack frames and stays valid until `free_arena()` is called at
+/// the end of the owning compilation. `n` must be > 0.
+///
+/// Falls back to returning the source slice directly only if the heap or its
+/// allocator is unavailable (should not happen in practice); this keeps the
+/// lexer usable in degenerate init paths without crashing.
+fn char[] Lexer.arena_dup(&self, char* src, usz n) {
+    Heap* h = (Heap*)self.heap;
+    if (h == null || h.alloc_func == null || self.arena == null) {
+        // No heap / holder alloc failed: last-resort borrow of the source
+        // pointer. Only reachable in degenerate init paths; a decoded slice
+        // here would already be transient, so this is no worse.
+        return src[:n];
+    }
+
+    // Try to bump-allocate from an existing block with room.
+    LexArenaBlock* blk = self.arena.head;
+    while (blk != null) {
+        if (blk.cap - blk.used >= n) {
+            char* dst = blk.data() + blk.used;
+            mem::copy(dst, src, (sz)n);
+            blk.used += n;
+            return dst[:n];
+        }
+        blk = blk.next;
+    }
+
+    // No block with room: allocate a new one. Size it to hold at least `n`,
+    // but at least LEX_ARENA_BLOCK_SIZE so small strings share a block.
+    usz payload = n > LEX_ARENA_BLOCK_SIZE ? n : LEX_ARENA_BLOCK_SIZE;
+    usz total = LexArenaBlock::size + payload;
+    void* raw = h.alloc_func(h.heap_udata, total);
+    if (raw == null) {
+        // Allocation failure: borrow the source slice (transient, but avoids a
+        // crash; a genuinely OOM compile will fail elsewhere).
+        return src[:n];
+    }
+    LexArenaBlock* nb = (LexArenaBlock*)raw;
+    nb.cap = payload;
+    nb.used = n;
+    nb.next = self.arena.head;
+    self.arena.head = nb;
+    char* dst = nb.data();
+    mem::copy(dst, src, (sz)n);
+    return dst[:n];
+}
+
+/// Free the token-string arena (all blocks plus the holder). Call once at the
+/// end of the compilation that owns this lexer, after all tokens (and thus all
+/// decoded `str_value`/`raw_value` slices) have been consumed/interned.
+/// Idempotent. Safe to call on any lexer copy that shares the arena, but must
+/// be called exactly once per compilation — call it on the owning lexer.
+fn void Lexer.free_arena(&self) {
+    Heap* h = (Heap*)self.heap;
+    LexArena* arena = self.arena;
+    self.arena = null;
+    if (arena == null) return;
+    if (h == null || h.free_func == null) return;
+    LexArenaBlock* blk = arena.head;
+    while (blk != null) {
+        LexArenaBlock* nxt = blk.next;
+        h.free_func(h.heap_udata, (void*)blk);
+        blk = nxt;
+    }
+    h.free_func(h.heap_udata, (void*)arena);
 }
 
 /// Skip a leading HashbangComment (`#!` up to but not including the first
@@ -1132,11 +1256,13 @@ fn Token? Lexer.scan_string(&self) {
         } else {
             tok.str_value = {};
         }
-        tok.str_owns_memory = false;
         return tok;
     }
 
-    // Slow path: build decoded string in stack buffer.
+    // Slow path: build the decoded string in a transient stack buffer, then
+    // copy it into the lexer's arena so the returned slice outlives this frame.
+    // (A raw slice into `buf` would be a use-after-return: the token's
+    // `str_value` stays live while later tokens are lexed.)
     char[STRING_BUF_SIZE] buf;
     uint buf_len = 0;
     bool found_octal = false;
@@ -1148,11 +1274,10 @@ fn Token? Lexer.scan_string(&self) {
             self.advance_char(); // consume closing quote
             Token tok = make_token(TokenType.STRING, start_line, start_col);
             if (buf_len > 0) {
-                tok.str_value = buf[0..buf_len-1];
+                tok.str_value = self.arena_dup(&buf[0], (usz)buf_len);
             } else {
                 tok.str_value = {};
             }
-            tok.str_owns_memory = false;
             tok.has_octal_escape = found_octal;
             return tok;
         }
@@ -1984,7 +2109,7 @@ fn char[]? Lexer.scan_template_content(&self, char* end_char, bool* has_escapes,
             }
             char[] slice = self.source[start_pos..raw_end - 1];
             if (out_len > 0) {
-                *raw_out = raw_buf[0..out_len - 1];
+                *raw_out = self.arena_dup(&raw_buf[0], (usz)out_len);
             } else {
                 *raw_out = {};
             }
@@ -1995,11 +2120,14 @@ fn char[]? Lexer.scan_template_content(&self, char* end_char, bool* has_escapes,
 
     *has_escapes = true;
     *end_char = (self.at_end()) ? 0 : self.peek_char();
+    // Copy cooked and raw bodies out of the transient stack buffers into the
+    // arena so the returned/`raw_out` slices survive past this frame (a token's
+    // str_value/raw_value stays live while later template parts are lexed).
     if (raw_len > 0) {
-        *raw_out = raw_buf[0..raw_len - 1];
+        *raw_out = self.arena_dup(&raw_buf[0], (usz)raw_len);
     }
     if (buf_len > 0) {
-        return buf[0..buf_len - 1];
+        return self.arena_dup(&buf[0], (usz)buf_len);
     }
     return {};
 }
@@ -2029,7 +2157,6 @@ fn Token? Lexer.scan_template_head(&self) {
         Token tok = make_token(TokenType.STRING, start_line, start_col);
         tok.str_value = content;
         tok.raw_value = raw_text;
-        tok.str_owns_memory = false;
         tok.is_template = true;
         tok.has_invalid_escape = has_invalid_escape;
         return tok;
@@ -2042,7 +2169,6 @@ fn Token? Lexer.scan_template_head(&self) {
         Token tok = make_token(TokenType.TEMPLATE_HEAD, start_line, start_col);
         tok.str_value = content;
         tok.raw_value = raw_text;
-        tok.str_owns_memory = false;
         tok.is_template = true;
         tok.has_invalid_escape = has_invalid_escape;
         return tok;
@@ -2074,7 +2200,6 @@ fn Token? Lexer.scan_template_after_expr(&self) {
         Token tok = make_token(TokenType.TEMPLATE_TAIL, start_line, start_col);
         tok.str_value = content;
         tok.raw_value = raw_text;
-        tok.str_owns_memory = false;
         tok.is_template = true;
         tok.has_invalid_escape = has_invalid_escape;
         return tok;
@@ -2087,7 +2212,6 @@ fn Token? Lexer.scan_template_after_expr(&self) {
         Token tok = make_token(TokenType.TEMPLATE_MIDDLE, start_line, start_col);
         tok.str_value = content;
         tok.raw_value = raw_text;
-        tok.str_owns_memory = false;
         tok.is_template = true;
         tok.has_invalid_escape = has_invalid_escape;
         return tok;

@@ -2877,6 +2877,7 @@ fn bool register_array_proto_method(HObject* proto, Heap* heap, char[] name, uin
 /// length_override: if >= 0, overrides the .length property (for optional params like reduce's initialValue).
 fn bool register_compiled_proto_method(HObject* proto, Heap* heap, EnvRecord* global_env, char[] name, char[] src, int length_override = -1) {
     Lexer lex = lexer::lexer_init(src, heap);
+    defer lex.free_arena();
     CompiledFunction*? cf = compiler::compile_function(&lex, heap, true);
     CompiledFunction* func;
     if (try f = cf) {

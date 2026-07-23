@@ -47,6 +47,7 @@ fn int main(String[] args) {
     defer vm::vm_destroy(v);
 
     Lexer lex = lexer::lexer_init(source, hp);
+    defer lex.free_arena();
     lex.skip_hashbang();
     CompiledFunction*? func = compiler::compile(&lex, hp);
     CompiledFunction* f;

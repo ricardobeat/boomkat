@@ -161,6 +161,7 @@ fn int main(String[] args) {
     }
 
     Lexer lx = lexer::lexer_init(source, hp);
+    defer lx.free_arena();
     bytecode::CompiledFunction*? func = compiler::compile(&lx, hp);
     if (catch err = func) {
         char* msg  = compiler::last_error_msg();

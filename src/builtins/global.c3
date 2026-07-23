@@ -553,6 +553,7 @@ fn void builtin_eval(BuiltinContext* ctx) {
 
     // Compile the source string as eval code
     Lexer lex = lexer::lexer_init(src_cstr[:src_len], ctx.heap);
+    defer lex.free_arena();
     lex.skip_hashbang();
     CompiledFunction*? cf = compiler::compile_eval(&lex, ctx.heap, caller_eval_allows_super,
                                                     caller_direct_eval_in_function,
@@ -716,6 +717,7 @@ fn void builtin_eval_script(BuiltinContext* ctx) {
     usz src_len = source.blen;
 
     Lexer lex = lexer::lexer_init(src_cstr[:src_len], ctx.heap);
+    defer lex.free_arena();
     lex.skip_hashbang();
     CompiledFunction*? cf = compiler::compile(&lex, ctx.heap);
     CompiledFunction* func;
