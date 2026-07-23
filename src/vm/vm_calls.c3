@@ -448,8 +448,9 @@ fn void? resolve_call_global(Dispatch* ds, uint name_const_idx, uint callee_reg,
         uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
         hobject::VarICEntry* gic = ds.var_ic_base + pc_off;
         HObject* gb = (HObject*)gic.bindings;
-        if (gb != null && gic.varref_alloc != null && gb.prop_alloc == gic.varref_alloc) {
-            TVal* pv = gic.varref_ptr;
+        if (gb != null && gic.search_head == (void*)ds.act.lex_env
+            && gb.shape_id == gic.shape_id) {
+            TVal* pv = &gb.prop_values()[gic.prop_idx];
             if (!env::is_tdz_sentinel(pv)) {
                 // The cached binding is a permanent global env record: borrow.
                 *ra = *pv;
@@ -576,8 +577,7 @@ fn void? resolve_call_global(Dispatch* ds, uint name_const_idx, uint callee_reg,
             gic.bindings = (void*)ic_env.bindings;
             gic.shape_id = ic_env.bindings.shape_id;
             gic.prop_idx = (ushort)ic_prop_idx;
-            gic.varref_ptr = &ic_env.bindings.prop_values()[ic_prop_idx];
-            gic.varref_alloc = ic_env.bindings.prop_alloc;
+            gic.search_head = (void*)ds.act.lex_env;
         }
     } else {
         HString* name_hstr = (HString*)key;
@@ -891,11 +891,16 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, Instruction insn, bool*
                     // to mutate it — a stale TDZ snapshot would never observe
                     // that later mutation.
                     // Undefined-this calls (CALL_UNDEF_THIS / CALL_VAR /
-                    // CALL_GLOBAL) into a NON-arrow function: the receiver is
-                    // undefined by construction, so skip the arrow/coercion/
+                    // CALL_GLOBAL) into a NON-arrow, STRICT function: the
+                    // receiver is undefined by construction and strict mode
+                    // performs no this-coercion, so skip the arrow/coercion/
                     // this-src resolution below and set it directly. Arrows use
-                    // lexical captured_this and MUST take the full path.
-                    if ((op == Opcode.CALL_UNDEF_THIS || is_fused_var) && !target_fast.is_arrow()) {
+                    // lexical captured_this and MUST take the full path. Sloppy
+                    // (non-strict) functions — e.g. bodies created via the
+                    // Function constructor — must take the coercion path so an
+                    // undefined receiver becomes the global object (ES5 §10.4.3),
+                    // observable as `Function('return this;')()`.
+                    if ((op == Opcode.CALL_UNDEF_THIS || is_fused_var) && !target_fast.is_arrow() && target_fast.is_strict()) {
                         new_act.this_binding.set_undefined();
                     } else {
                     TVal arrow_live_this;

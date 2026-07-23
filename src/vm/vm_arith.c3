@@ -392,13 +392,13 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                 uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                 hobject::VarICEntry* gic = ds.var_ic_base + pc_off;
                 HObject* gb = (HObject*)gic.bindings;
-                // VarRef fast path: one pointer compare (prop_alloc unchanged)
-                // then a direct slot read-modify-write. Gated on varref_store_ok
-                // (writable non-configurable data global — descriptor immutable),
-                // so no writability re-check is needed.
-                if (gb != null && gic.varref_store_ok && gic.varref_alloc != null
-                    && gb.prop_alloc == gic.varref_alloc) {
-                    TVal* slot = gic.varref_ptr;
+                // Slot IC fast path: shape-id compare then a direct slot
+                // read-modify-write. Gated on varref_store_ok (writable
+                // non-configurable data global — descriptor immutable), so no
+                // writability re-check is needed.
+                if (gb != null && gic.search_head == (void*)ds.act.lex_env
+                    && gb.shape_id == gic.shape_id && gic.varref_store_ok) {
+                    TVal* slot = &gb.prop_values()[gic.prop_idx];
                     TVal old_val = *slot;
                     if (old_val.is_fastint()) {
                         long v = old_val.get_fastint() + (is_inc ? 1L : -1L);
@@ -539,9 +539,8 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                 gic.bindings = (void*)ic_env.bindings;
                 gic.shape_id = ic_env.bindings.shape_id;
                 gic.prop_idx = (ushort)ic_prop_idx;
-                gic.varref_ptr = &ic_env.bindings.prop_values()[ic_prop_idx];
-                gic.varref_alloc = ic_env.bindings.prop_alloc;
                 gic.varref_store_ok = ic_store_ok;
+                gic.search_head = (void*)ds.act.lex_env;
             }
             return (TVal){};
         }

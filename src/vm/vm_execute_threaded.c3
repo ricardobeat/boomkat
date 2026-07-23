@@ -266,8 +266,8 @@ fn Instruction* th_getglobal(Instruction* pc, Instruction* code_end, TVal* regs,
     uint pc_off = (uint)(pc - cold.code_base);
     hobject::VarICEntry* gic = vic_base + pc_off;
     HObject* gb = (HObject*)gic.bindings;
-    if (gb == null || gic.varref_alloc == null || gb.prop_alloc != gic.varref_alloc) return pc;
-    TVal* pv = gic.varref_ptr;
+    if (gb == null || gic.search_head != (void*)cold.act.lex_env || gb.shape_id != gic.shape_id) return pc;
+    TVal* pv = &gb.prop_values()[gic.prop_idx];
     if (env::is_tdz_sentinel(pv)) return pc; // TDZ -> switch throws
     TVal* ra = regs + insn.a;
     if (!pv.is_heap_allocated() && !ra.is_heap_allocated()) {
@@ -293,8 +293,8 @@ fn Instruction* th_getglobal_prim(Instruction* pc, Instruction* code_end, TVal* 
     uint pc_off = (uint)(pc - cold.code_base);
     hobject::VarICEntry* gic = vic_base + pc_off;
     HObject* gb = (HObject*)gic.bindings;
-    if (gb == null || gic.varref_alloc == null || gb.prop_alloc != gic.varref_alloc) return pc;
-    TVal* pv = gic.varref_ptr;
+    if (gb == null || gic.search_head != (void*)cold.act.lex_env || gb.shape_id != gic.shape_id) return pc;
+    TVal* pv = &gb.prop_values()[gic.prop_idx];
     if (env::is_tdz_sentinel(pv)) return pc;
     TVal* ra = regs + insn.a;
     if (ra.is_heap_allocated()) vm.heap.decref_tval(ra);
@@ -314,10 +314,9 @@ fn Instruction* th_putglobal_prim(Instruction* pc, Instruction* code_end, TVal* 
     uint pc_off = (uint)(pc - cold.code_base);
     hobject::VarICEntry* gic = vic_base + pc_off;
     HObject* gb = (HObject*)gic.bindings;
-    if (gb == null || !gic.varref_store_ok || gic.varref_alloc == null
-        || gb.prop_alloc != gic.varref_alloc) return pc;
+    if (gb == null || gic.search_head != (void*)cold.act.lex_env || gb.shape_id != gic.shape_id || !gic.varref_store_ok) return pc;
     TVal* ra = regs + insn.a;
-    TVal* pv = gic.varref_ptr;
+    TVal* pv = &gb.prop_values()[gic.prop_idx];
     *pv = *ra;
     ra.set_undefined();
     pc++;
@@ -338,14 +337,12 @@ fn Instruction* th_move_gg(Instruction* pc, Instruction* code_end, TVal* regs, C
     hobject::VarICEntry* sic = vic_base + dst_off + 1;
     HObject* dgb = (HObject*)dic.bindings;
     HObject* sgb = (HObject*)sic.bindings;
-    if (dgb == null || !dic.varref_store_ok || dic.varref_alloc == null
-        || dgb.prop_alloc != dic.varref_alloc) return pc;
-    if (sgb == null || sic.varref_alloc == null
-        || sgb.prop_alloc != sic.varref_alloc) return pc;
-    TVal* spv = sic.varref_ptr;
+    if (dgb == null || dic.search_head != (void*)cold.act.lex_env || dgb.shape_id != dic.shape_id || !dic.varref_store_ok) return pc;
+    if (sgb == null || sic.search_head != (void*)cold.act.lex_env || sgb.shape_id != sic.shape_id) return pc;
+    TVal* spv = &sgb.prop_values()[sic.prop_idx];
     if (env::is_tdz_sentinel(spv)) return pc;
     // Both slots provably primitive: raw copy, no refcount.
-    *dic.varref_ptr = *spv;
+    dgb.prop_values()[dic.prop_idx] = *spv;
     pc += 2;
     return th_next(pc, code_end, regs, cold);
 }
@@ -360,10 +357,9 @@ fn Instruction* th_putglobal(Instruction* pc, Instruction* code_end, TVal* regs,
     HObject* gb = (HObject*)gic.bindings;
     // Only writable non-configurable data globals (varref_store_ok) may take
     // the re-check-free store path -- exactly the switch's fast-path gate.
-    if (gb == null || !gic.varref_store_ok || gic.varref_alloc == null
-        || gb.prop_alloc != gic.varref_alloc) return pc;
+    if (gb == null || gic.search_head != (void*)cold.act.lex_env || gb.shape_id != gic.shape_id || !gic.varref_store_ok) return pc;
     TVal* ra = regs + insn.a;
-    TVal* pv = gic.varref_ptr;
+    TVal* pv = &gb.prop_values()[gic.prop_idx];
     vm.heap.tval_move_slot_fast(pv, ra);
     ra.set_undefined();
     pc++;
@@ -378,9 +374,8 @@ fn Instruction* th_inc_global_impl(Instruction* pc, Instruction* code_end, TVal*
     uint pc_off = (uint)(pc - cold.code_base);
     hobject::VarICEntry* gic = vic_base + pc_off;
     HObject* gb = (HObject*)gic.bindings;
-    if (gb == null || !gic.varref_store_ok || gic.varref_alloc == null
-        || gb.prop_alloc != gic.varref_alloc) return pc;
-    TVal* slot = gic.varref_ptr;
+    if (gb == null || gic.search_head != (void*)cold.act.lex_env || gb.shape_id != gic.shape_id || !gic.varref_store_ok) return pc;
+    TVal* slot = &gb.prop_values()[gic.prop_idx];
     TVal old_val = *slot;
     // Threaded fast path: fastint only. number/bigint/TDZ -> switch.
     if (!old_val.is_fastint()) return pc;
