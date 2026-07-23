@@ -3776,8 +3776,8 @@ fn TVal? Vm.run(Vm* vm) {
                         uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                         hobject::VarICEntry* gic = ds.var_ic_base + pc_off;
                         HObject* gb = (HObject*)gic.bindings;
-                        if (gb != null && gic.varref_alloc != null && gb.prop_alloc == gic.varref_alloc) {
-                            TVal* pv = gic.varref_ptr;
+                        if (gb != null && gb.shape_id == gic.shape_id) {
+                            TVal* pv = &gb.prop_values()[gic.prop_idx];
                             if (!env::is_tdz_sentinel(pv)) {
                                 // Source is provably primitive: no incref of the
                                 // source, no track_heap_store. The destination
@@ -3825,8 +3825,6 @@ fn TVal? Vm.run(Vm* vm) {
                             gic.bindings = (void*)ic_env.bindings;
                             gic.shape_id = ic_env.bindings.shape_id;
                             gic.prop_idx = (ushort)ic_prop_idx;
-                            gic.varref_ptr = slot;
-                            gic.varref_alloc = ic_env.bindings.prop_alloc;
                         }
                     } else {
                         ra.set_undefined();
@@ -3853,9 +3851,8 @@ fn TVal? Vm.run(Vm* vm) {
                         uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                         hobject::VarICEntry* gic = ds.var_ic_base + pc_off;
                         HObject* gb = (HObject*)gic.bindings;
-                        if (gb != null && gic.varref_store_ok && gic.varref_alloc != null
-                            && gb.prop_alloc == gic.varref_alloc) {
-                            TVal* pv = gic.varref_ptr;
+                        if (gb != null && gb.shape_id == gic.shape_id && gic.varref_store_ok) {
+                            TVal* pv = &gb.prop_values()[gic.prop_idx];
                             *pv = *ra;
                             ra.set_undefined();
                             break;
@@ -3892,8 +3889,6 @@ fn TVal? Vm.run(Vm* vm) {
                                 gic.bindings = (void*)owner.bindings;
                                 gic.shape_id = owner.bindings.shape_id;
                                 gic.prop_idx = (ushort)owner_idx;
-                                gic.varref_ptr = slot;
-                                gic.varref_alloc = owner.bindings.prop_alloc;
                                 gic.varref_store_ok = !fl.configurable;
                             }
                         }
@@ -3930,14 +3925,12 @@ fn TVal? Vm.run(Vm* vm) {
 
                     HObject* dgb = (HObject*)dic.bindings;
                     HObject* sgb = (HObject*)sic.bindings;
-                    if (dgb != null && dic.varref_store_ok && dic.varref_alloc != null
-                        && dgb.prop_alloc == dic.varref_alloc
-                        && sgb != null && sic.varref_alloc != null
-                        && sgb.prop_alloc == sic.varref_alloc) {
-                        TVal* spv = sic.varref_ptr;
+                    if (dgb != null && dgb.shape_id == dic.shape_id && dic.varref_store_ok
+                        && sgb != null && sgb.shape_id == sic.shape_id) {
+                        TVal* spv = &sgb.prop_values()[sic.prop_idx];
                         if (!env::is_tdz_sentinel(spv)) {
                             // Both provably primitive: raw copy, no refcount.
-                            *dic.varref_ptr = *spv;
+                            dgb.prop_values()[dic.prop_idx] = *spv;
                             continue;
                         }
                     }
@@ -3994,8 +3987,6 @@ fn TVal? Vm.run(Vm* vm) {
                         sic.bindings = (void*)senv.bindings;
                         sic.shape_id = senv.bindings.shape_id;
                         sic.prop_idx = (ushort)sidx;
-                        sic.varref_ptr = sslot;
-                        sic.varref_alloc = senv.bindings.prop_alloc;
                         // Populate the destination write IC (only when the slot
                         // is a writable, non-configurable data binding — same
                         // gate as PUTGLOBAL_PRIM's varref_store_ok).
@@ -4005,8 +3996,6 @@ fn TVal? Vm.run(Vm* vm) {
                             dic.bindings = (void*)denv.bindings;
                             dic.shape_id = denv.bindings.shape_id;
                             dic.prop_idx = (ushort)didx;
-                            dic.varref_ptr = dslot;
-                            dic.varref_alloc = denv.bindings.prop_alloc;
                             dic.varref_store_ok = !dfl.configurable;
                         }
                     }
@@ -4018,31 +4007,30 @@ fn TVal? Vm.run(Vm* vm) {
         case Opcode.GETGLOBAL: {
             // Read a top-level global binding. Emitted only where lex_env ==
             // global_lex_env and var_env == global_env, both permanent objects.
-            // The per-PC IC caches a stable pointer to the binding's slot; a hit
-            // is one pointer compare (prop_alloc unchanged) plus a single
-            // dereference — no name compare (the name-constant is fixed per PC),
-            // no env-chain walk, no shape-id load, no accessor-flag check. Only
-            // data slots are cached; an accessor global takes the slow path.
+            // The per-PC IC caches the resolved (bindings, shape_id, prop_idx);
+            // a hit is a single shape_id compare + a direct indexed load. No name
+            // compare (the name-constant is fixed per PC), no env-chain walk, no
+            // find_prop, no accessor-flag check (only data slots are cached — a
+            // data→accessor conversion changes the object's shape_id and thus
+            // misses). The shape_id compare is load-bearing: it guarantees the
+            // property layout (and hence prop_idx → binding mapping and the
+            // prop_values() base) is unchanged, so the recomputed slot pointer
+            // is always live. A bare prop_alloc/stable-pointer guard is NOT
+            // sufficient — a shape transition that reuses the same property-table
+            // allocation would leave a stale prop_idx binding readable.
             uint bc = insn.get_bc();
             if (bc < vm.current_func.const_count) {
                 TVal name_val = ds.constants[bc];
                 if (name_val.is_string()) {
                     void* key = name_val.get_heapptr();
 
-                    // --- VarRef fast path: stable-pointer dereference ---
-                    // A hit is one pointer compare (bindings.prop_alloc still
-                    // equals the captured varref_alloc) followed by a single
-                    // dereference of the cached slot pointer — no shape-id load,
-                    // no find_prop, no prop-index recompute. This mirrors
-                    // QuickJS OP_get_var_ref (`*var_refs[i]->pvalue`); the only
-                    // per-access guard is the prop_alloc compare, which fails
-                    // solely when the object's property table was reallocated.
+                    // --- Slot IC fast path: shape compare + indexed load ---
                     if (ds.var_ic_base != null) {
                         uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                         hobject::VarICEntry* gic = ds.var_ic_base + pc_off;
                         HObject* gb = (HObject*)gic.bindings;
-                        if (gb != null && gic.varref_alloc != null && gb.prop_alloc == gic.varref_alloc) {
-                            TVal* pv = gic.varref_ptr;
+                        if (gb != null && gb.shape_id == gic.shape_id) {
+                            TVal* pv = &gb.prop_values()[gic.prop_idx];
                             if (!env::is_tdz_sentinel(pv)) {
                                 if (!pv.is_heap_allocated() && !ra.is_heap_allocated()) {
                                     // prim -> prim: no refcount, and no heap ref
@@ -4164,8 +4152,6 @@ fn TVal? Vm.run(Vm* vm) {
                             gic.bindings = (void*)ic_env.bindings;
                             gic.shape_id = ic_env.bindings.shape_id;
                             gic.prop_idx = (ushort)ic_prop_idx;
-                            gic.varref_ptr = &ic_env.bindings.prop_values()[ic_prop_idx];
-                            gic.varref_alloc = ic_env.bindings.prop_alloc;
                         }
                     } else {
                         HString* name_hstr = (HString*)key;
@@ -4192,19 +4178,19 @@ fn TVal? Vm.run(Vm* vm) {
                 if (name_val.is_string()) {
                     void* key = name_val.get_heapptr();
 
-                    // --- VarRef fast path: stable-pointer store ---
+                    // --- Slot IC fast path: shape compare + indexed store ---
                     // Enabled only for writable non-configurable data globals
                     // (varref_store_ok), whose descriptor is immutable, so the
                     // writability/accessor re-check is unnecessary. A hit is one
-                    // pointer compare + a decref + a raw slot write — no shape
-                    // load, no flags-chain walk.
+                    // shape_id compare + a decref + a raw slot write — no
+                    // flags-chain walk. The shape_id compare (not a bare
+                    // prop_alloc guard) ensures prop_idx still names this binding.
                     if (ds.var_ic_base != null) {
                         uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                         hobject::VarICEntry* gic = ds.var_ic_base + pc_off;
                         HObject* gb = (HObject*)gic.bindings;
-                        if (gb != null && gic.varref_store_ok && gic.varref_alloc != null
-                            && gb.prop_alloc == gic.varref_alloc) {
-                            TVal* pv = gic.varref_ptr;
+                        if (gb != null && gb.shape_id == gic.shape_id && gic.varref_store_ok) {
+                            TVal* pv = &gb.prop_values()[gic.prop_idx];
                             vm.heap.tval_move_slot_fast(pv, ra);
                             ra.set_undefined();
                             break;
@@ -4263,8 +4249,6 @@ fn TVal? Vm.run(Vm* vm) {
                                 gic.bindings = (void*)owner.bindings;
                                 gic.shape_id = owner.bindings.shape_id;
                                 gic.prop_idx = (ushort)owner_idx;
-                                gic.varref_ptr = &owner.bindings.prop_values()[owner_idx];
-                                gic.varref_alloc = owner.bindings.prop_alloc;
                                 // Only a writable, non-configurable data global
                                 // has an immutable descriptor safe for the
                                 // re-check-free store path.

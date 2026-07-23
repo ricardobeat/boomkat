@@ -2495,8 +2495,18 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
         self.emit_simple(Opcode.POP_LEX);
     }
 
-    // Emit implicit return undefined if no explicit return
-    // Check if last instruction is a return
+    // Emit implicit return undefined if control can reach the end of the
+    // function body. The VM's dispatch loop has no per-instruction
+    // fall-off-end guard (dropped for perf), so it relies on the compiler
+    // guaranteeing that no execution path can advance curr_pc to code_end;
+    // every reachable path must terminate at a RET-family opcode.
+    //
+    // It is NOT sufficient to check that the LAST emitted opcode is a return:
+    // a syntactically-final conditional return (e.g. `if (x) return v;`)
+    // leaves the last opcode a RET while a forward branch (the failed `if`
+    // predicate) targets code_count, falling off the end. Emit the trailing
+    // RETUNDEF whenever either the last opcode is not a return OR any forward
+    // branch targets the fall-off-end position.
     bool has_return = false;
     if (self.code_count > 0) {
         Opcode last_op = self.code[self.code_count - 1].op;
@@ -2505,9 +2515,49 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
             has_return = true;
         }
     }
+    if (has_return && self.branch_targets_fall_off_end()) {
+        has_return = false;
+    }
     if (!has_return) {
         self.emit_simple((self.is_generator && !self.is_async) ? Opcode.RETUNDEF_GEN : Opcode.RETUNDEF);
     }
+}
+
+/// Whether any branch instruction in the freshly compiled body targets the
+/// fall-off-end position (code_count). Such a branch would advance curr_pc to
+/// code_end, which the VM no longer guards against per-instruction — so the
+/// caller must append a terminating RETUNDEF to catch that path. Offset
+/// decoding mirrors moveelim's jump-target scan (the authoritative branch set).
+fn bool CompilerContext.branch_targets_fall_off_end(&self) {
+    uint n = self.code_count;
+    for (uint i = 0; i < n; i++) {
+        Instruction ins = self.code[i];
+        int tgt = -1;
+        switch (ins.op) {
+            case Opcode.JUMP:
+            case Opcode.BREAK:
+            case Opcode.CONTINUE:
+                tgt = (int)i + 1 + ins.get_sabc();
+            case Opcode.IF_TRUE:
+            case Opcode.IF_FALSE:
+                tgt = (int)i + 1 + ins.get_sbc();
+            case Opcode.JMP_NLT:
+            case Opcode.JMP_NLE:
+            case Opcode.JMP_NGT:
+            case Opcode.JMP_NGE:
+            case Opcode.JMP_LT:
+            case Opcode.JMP_LE:
+            case Opcode.JMP_GT:
+            case Opcode.JMP_GE:
+            case Opcode.JMP_SEQ:
+            case Opcode.JMP_SNEQ:
+                tgt = (int)i + 1 + (int)(ichar)ins.a;
+            default:
+                tgt = -1;
+        }
+        if (tgt == (int)n) return true;
+    }
+    return false;
 }
 
 /// Compile a default parameter expression as a zero-argument inner function.
@@ -2691,6 +2741,9 @@ fn CompiledFunction*? CompilerContext.compile_static_block(&self) {
         if (last_op == Opcode.RET || last_op == Opcode.RETUNDEF) {
             has_return = true;
         }
+    }
+    if (has_return && block_ctx.branch_targets_fall_off_end()) {
+        has_return = false;
     }
     if (!has_return) {
         block_ctx.emit_simple(Opcode.RETUNDEF);
@@ -3102,6 +3155,9 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
             last_op == Opcode.RET_GEN || last_op == Opcode.RETUNDEF_GEN) {
             has_return = true;
         }
+    }
+    if (has_return && inner_ctx.branch_targets_fall_off_end()) {
+        has_return = false;
     }
     if (!has_return) {
         inner_ctx.emit_simple((inner_ctx.is_generator && !inner_ctx.is_async) ? Opcode.RETUNDEF_GEN : Opcode.RETUNDEF);
@@ -3727,6 +3783,9 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
                 has_explicit_return = true;
             }
         }
+        if (has_explicit_return && arrow_ctx.branch_targets_fall_off_end()) {
+            has_explicit_return = false;
+        }
         if (!has_explicit_return) {
             arrow_ctx.emit_simple(Opcode.RETUNDEF);
         }
@@ -3989,6 +4048,9 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner(&self, char[]* params,
                 last_op == Opcode.RET_GEN || last_op == Opcode.RETUNDEF_GEN) {
                 has_explicit_return = true;
             }
+        }
+        if (has_explicit_return && arrow_ctx.branch_targets_fall_off_end()) {
+            has_explicit_return = false;
         }
         if (!has_explicit_return) {
             arrow_ctx.emit_simple(Opcode.RETUNDEF);
