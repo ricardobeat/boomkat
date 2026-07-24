@@ -91,7 +91,7 @@ fn void CompilerContext.declare_priv_slot(&self, char[] name) {
 /// Push a fresh private-name scope for a class body about to be parsed.
 fn void CompilerContext.push_private_scope(&self) {
     if (self.private_scope_depth < MAX_CLASS_NESTING) {
-        self.private_scope_start[self.private_scope_depth] = self.private_name_count;
+        self.private_scope_start[self.private_scope_depth] = self.private_name_table.count;
         self.private_class_id[self.private_scope_depth] = g_private_class_id++;
         self.private_scope_depth++;
     }
@@ -101,7 +101,7 @@ fn void CompilerContext.push_private_scope(&self) {
 fn void CompilerContext.pop_private_scope(&self) {
     if (self.private_scope_depth > 0) {
         self.private_scope_depth--;
-        self.private_name_count = self.private_scope_start[self.private_scope_depth];
+        self.private_name_table.count = self.private_scope_start[self.private_scope_depth];
     }
 }
 
@@ -125,18 +125,19 @@ fn PrivateNameEntry*? CompilerContext.declare_private_name(&self, char[] name) {
     // either accepts a duplicate or, after the first successful insert,
     // makes a follow-up `resolve_private_name` miss the entry).
     char[] stable_name = self.intern_slot_name(name);
+    PrivateNameTable* t = self.private_name_table;
     uint scope_begin = self.private_scope_depth > 0
         ? self.private_scope_start[self.private_scope_depth - 1] : 0;
-    for (uint i = scope_begin; i < self.private_name_count; i++) {
-        if (str_eq(self.private_names[i].name, stable_name)) {
+    for (uint i = scope_begin; i < t.count; i++) {
+        if (str_eq(t.entries[i].name, stable_name)) {
             return COMPILE_ERROR~;  // duplicate declaration
         }
     }
     self.ensure_private_name_cap();
-    if (self.private_name_count >= self.private_name_cap) {
+    if (t.count >= t.cap) {
         return COMPILE_ERROR~;
     }
-    uint idx = self.private_name_count;
+    uint idx = t.count;
     // NOTE: `stable_name` points at interned HString data — the source
     // `name` may itself point into the lexer's per-call ident_buf scratch
     // (for the slow HASH_IDENT path via scan_ident_body_decoded), which
@@ -144,10 +145,10 @@ fn PrivateNameEntry*? CompilerContext.declare_private_name(&self, char[] name) {
     // the lifetime AND the form problem above. For raw UTF-8 names from
     // the fast path (source.slice), the slice was already stable, so
     // str_intern is essentially a no-op for them but harmless.
-    self.private_names[idx].name = stable_name;
-    self.private_names[idx].is_method = false;
-    self.private_names[idx].has_getter = false;
-    self.private_names[idx].has_setter = false;
+    t.entries[idx].name = stable_name;
+    t.entries[idx].is_method = false;
+    t.entries[idx].has_getter = false;
+    t.entries[idx].has_setter = false;
 
     // Lexical binding name for the runtime symbol slot, e.g. "#priv:3:foo".
     // The '#' prefix is source-illegal as an identifier start (HASH_IDENT
@@ -174,10 +175,10 @@ fn PrivateNameEntry*? CompilerContext.declare_private_name(&self, char[] name) {
         format_private_slot_name(slot_name_buf[..], class_id, stable_name));
 
     self.declare_priv_slot(slot_name);
-    self.private_names[idx].slot_name = slot_name;
+    t.entries[idx].slot_name = slot_name;
 
-    self.private_name_count++;
-    return &self.private_names[idx];
+    t.count++;
+    return &t.entries[idx];
 }
 
 /// Declare the class brand (one per class body that has any private member).
@@ -240,11 +241,12 @@ fn void* CompilerContext.intern_private_binding_name(&self, char[] name) {
 /// if both sides go through the same canonicalisation.
 fn PrivateNameEntry*? CompilerContext.resolve_private_name(&self, char[] name) {
     char[] canonical_name = self.intern_slot_name(name);
-    uint i = self.private_name_count;
+    PrivateNameTable* t = self.private_name_table;
+    uint i = t.count;
     while (i > 0) {
         i--;
-        if (str_eq(self.private_names[i].name, canonical_name)) {
-            return &self.private_names[i];
+        if (str_eq(t.entries[i].name, canonical_name)) {
+            return &t.entries[i];
         }
     }
     return COMPILE_ERROR~;
@@ -418,11 +420,12 @@ fn void? CompilerContext.prescan_private_names(&self) {
 /// #x`). Any other re-use of the name (field, method, or a second getter/
 /// setter of the same kind) is a duplicate-declaration error.
 fn void? CompilerContext.declare_or_merge_private_accessor(&self, char[] name, bool is_getter, bool is_setter, bool is_static_decl) {
+    PrivateNameTable* t = self.private_name_table;
     uint scope_begin = self.private_scope_depth > 0
         ? self.private_scope_start[self.private_scope_depth - 1] : 0;
-    for (uint i = scope_begin; i < self.private_name_count; i++) {
-        if (str_eq(self.private_names[i].name, name)) {
-            PrivateNameEntry* e = &self.private_names[i];
+    for (uint i = scope_begin; i < t.count; i++) {
+        if (str_eq(t.entries[i].name, name)) {
+            PrivateNameEntry* e = &t.entries[i];
             bool mergeable = e.is_method
                 && ((is_getter && e.has_getter == false && e.has_setter)
                     || (is_setter && e.has_setter == false && e.has_getter));

@@ -407,13 +407,15 @@ struct CompilerContext {
     // where each class body's names begin so pop_private_scope can trim
     // back to the enclosing class's names on exit. Growable (a class body
     // may declare arbitrarily many distinct private names).
-    PrivateNameEntry* private_names;
-    uint private_name_count;
-    uint private_name_cap;
-    /// False when private_names was adopted (borrowed) from an enclosing
-    /// context via adopt_private_names — such a context only resolves
-    /// private names, never declares into the table, so cleanup() must not
-    /// free a buffer it doesn't own.
+    /// Shared private-name stack (see PrivateNameTable). Every context in one
+    /// class compile points at the SAME table, so an in-place realloc during
+    /// growth is visible to all borrowers — no stale `entries` pointer. The
+    /// table struct itself is heap-allocated and reference-counted-by-ownership:
+    /// exactly one context (`owns_private_names == true`) frees it.
+    PrivateNameTable* private_name_table;
+    /// False when private_name_table was adopted (borrowed) from an enclosing
+    /// context via adopt_private_names — such a context must not free the
+    /// shared table in cleanup().
     bool owns_private_names;
     uint[MAX_CLASS_NESTING] private_scope_start;
     /// Compile-time class id per open class body (parallel to
@@ -682,8 +684,11 @@ fn void CompilerContext.init(&self, Lexer* lex, void* heap) {
     }
     self.inner_func_cap = INITIAL_INNER_FUNCS;
     self.inner_funcs = (CompiledFunction**)h.alloc_func(h.heap_udata, (usz)(INITIAL_INNER_FUNCS * CompiledFunction*::size));
-    self.private_name_cap = INITIAL_PRIVATE_NAMES;
-    self.private_names = (PrivateNameEntry*)h.alloc_func(h.heap_udata, (usz)(INITIAL_PRIVATE_NAMES * PrivateNameEntry::size));
+    PrivateNameTable* pnt = (PrivateNameTable*)h.alloc_func(h.heap_udata, (usz)PrivateNameTable::size);
+    pnt.entries = (PrivateNameEntry*)h.alloc_func(h.heap_udata, (usz)(INITIAL_PRIVATE_NAMES * PrivateNameEntry::size));
+    pnt.count = 0;
+    pnt.cap = INITIAL_PRIVATE_NAMES;
+    self.private_name_table = pnt;
     self.owns_private_names = true;
 
     // Persistent (non-temp) allocator for the declared-global name-index set so
@@ -703,10 +708,13 @@ fn void CompilerContext.cleanup(&self) {
     if (self.constants != null) { h.free_func(h.heap_udata, self.constants); self.constants = null; }
     if (self.const_hash != null) { h.free_func(h.heap_udata, self.const_hash); self.const_hash = null; }
     if (self.inner_funcs != null) { h.free_func(h.heap_udata, self.inner_funcs); self.inner_funcs = null; }
-    if (self.owns_private_names && self.private_names != null) {
-        h.free_func(h.heap_udata, self.private_names);
-        self.private_names = null;
+    if (self.owns_private_names && self.private_name_table != null) {
+        if (self.private_name_table.entries != null) {
+            h.free_func(h.heap_udata, self.private_name_table.entries);
+        }
+        h.free_func(h.heap_udata, self.private_name_table);
     }
+    self.private_name_table = null;
     self.declared_global_name_idxs.free();
     self.prim_only_name_idxs.free();
 }
@@ -718,13 +726,18 @@ fn void CompilerContext.cleanup(&self) {
 /// class.c3's own `self`, never a propagated child context). Frees this
 /// context's own (still-empty) buffer first so it isn't leaked.
 fn void CompilerContext.adopt_private_names(&self, CompilerContext* parent) {
-    if (self.owns_private_names && self.private_names != null) {
+    if (self.owns_private_names && self.private_name_table != null) {
         Heap* h = (Heap*)self.heap;
-        h.free_func(h.heap_udata, self.private_names);
+        if (self.private_name_table.entries != null) {
+            h.free_func(h.heap_udata, self.private_name_table.entries);
+        }
+        h.free_func(h.heap_udata, self.private_name_table);
     }
-    self.private_names = parent.private_names;
-    self.private_name_count = parent.private_name_count;
-    self.private_name_cap = parent.private_name_cap;
+    // Borrow the parent's shared table by pointer. A nested class in a field
+    // initializer that DECLARES private names grows this same table in place,
+    // so the growth (and any realloc of entries) is visible to `parent` too —
+    // no stale-pointer desync between borrower and owner.
+    self.private_name_table = parent.private_name_table;
     self.owns_private_names = false;
 }
 
@@ -782,14 +795,17 @@ fn void CompilerContext.ensure_inner_func_cap(&self) {
 
 /// Grow the private-names table.
 fn void CompilerContext.ensure_private_name_cap(&self) {
-    if (self.private_name_count < self.private_name_cap) return;
-    uint new_cap = self.private_name_cap * 2;
+    PrivateNameTable* t = self.private_name_table;
+    if (t.count < t.cap) return;
+    uint new_cap = t.cap * 2;
     if (new_cap > MAX_PRIVATE_NAMES_HARD) return;
     Heap* h = (Heap*)self.heap;
-    void* p = h.realloc_func(h.heap_udata, self.private_names, (usz)(new_cap * PrivateNameEntry::size));
+    void* p = h.realloc_func(h.heap_udata, t.entries, (usz)(new_cap * PrivateNameEntry::size));
     if (p == null) return;
-    self.private_names = (PrivateNameEntry*)p;
-    self.private_name_cap = new_cap;
+    // Mutate the SHARED table in place: every borrower reads t.entries/t.cap
+    // through the same PrivateNameTable*, so this relocation is seen by all.
+    t.entries = (PrivateNameEntry*)p;
+    t.cap = new_cap;
 }
 
 /// Register an inner function and return its index.
@@ -1428,18 +1444,20 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     // see them via the lex env chain (no class scope to inherit), and a
     // snapshot would just duplicate what GETVAR already finds at runtime.
     if (self.has_direct_eval
-        && self.private_name_count > 0
         && !self.owns_private_names
-        && self.private_names != null) {
-        usz snap_bytes = (usz)self.private_name_count * PrivateNameEntry::size;
+        && self.private_name_table != null
+        && self.private_name_table.count > 0
+        && self.private_name_table.entries != null) {
+        uint snap_count = self.private_name_table.count;
+        usz snap_bytes = (usz)snap_count * PrivateNameEntry::size;
         PrivateNameEntry* snap = (PrivateNameEntry*)h.alloc_func(h.heap_udata, snap_bytes);
         if (snap != null) {
             // memcpy the entire entry table — every entry's name/slot_name/
             // brand_slot_name slices point at interned HString data (stable),
             // so the byte-level copy is safe.
-            mem::copy(snap, self.private_names, (sz)(snap_bytes));
+            mem::copy(snap, self.private_name_table.entries, (sz)(snap_bytes));
             func.eval_private_names = (void*)snap;
-            func.eval_private_name_count = self.private_name_count;
+            func.eval_private_name_count = snap_count;
         }
         // If alloc fails, leave the snapshot null — eval will just not see
         // inherited private names (matches the pre-fix behaviour). Failing
@@ -1518,6 +1536,21 @@ const uint MAX_PRIVATE_NAMES_HARD = 1 << 20;
 
 /// Maximum nesting depth of class bodies (for private-name scoping).
 const uint MAX_CLASS_NESTING = 16;
+
+/// Shared, heap-allocated backing store for the private-names stack. A single
+/// class compile involves many CompilerContexts (the class-enclosing `self`
+/// plus per-element field/method/arrow/block bodies), all of which resolve —
+/// and some of which DECLARE (a nested class inside a field initializer) —
+/// against the SAME logical private-name stack. They share one PrivateNameTable
+/// through a pointer so that a growth (realloc of `entries`) done by any one of
+/// them is immediately visible to all the others: growing in place mutates this
+/// struct, never a per-context copy, so no borrower is left holding a stale
+/// `entries` pointer into a freed buffer.
+struct PrivateNameTable {
+    PrivateNameEntry* entries;
+    uint count;
+    uint cap;
+}
 
 /// One declared private name (`#foo`) within a class body. `slot` is the
 /// compiler-managed lexical variable (declared like `__super__`) that holds

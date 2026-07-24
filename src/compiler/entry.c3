@@ -185,11 +185,6 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
         // Copy + own avoids that and matches the per-eval PrivateEnvironment
         // of the spec (the eval body's PrivateEnvironment is logically a
         // fresh env chained to the caller's, not literally the same array).
-        if (ctx.owns_private_names && ctx.private_names != null) {
-            // init() allocated an empty table; free it before allocating.
-            heap::Heap* h = (heap::Heap*)ctx.heap;
-            h.free_func(h.heap_udata, ctx.private_names);
-        }
         usz inherited_bytes = (usz)parent_private_name_count * PrivateNameEntry::size;
         // Size for growable: start at INITIAL_PRIVATE_NAMES to leave room for
         // any new private names the eval body might declare (e.g. `class D {
@@ -208,9 +203,14 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
                 mem::clear((char*)new_table + inherited_bytes,
                               (sz)((usz)new_cap * PrivateNameEntry::size - inherited_bytes));
             }
-            ctx.private_names = new_table;
-            ctx.private_name_count = parent_private_name_count;
-            ctx.private_name_cap = new_cap;
+            // Reuse ctx's own (init-allocated) PrivateNameTable, swapping in the
+            // inherited entries. The table is already owned by ctx, so only the
+            // inner entries buffer changes.
+            PrivateNameTable* t = ctx.private_name_table;
+            if (t.entries != null) h2.free_func(h2.heap_udata, t.entries);
+            t.entries = new_table;
+            t.count = parent_private_name_count;
+            t.cap = new_cap;
             ctx.owns_private_names = true;
         }
         // If alloc fails, leave private_names null — eval will treat every

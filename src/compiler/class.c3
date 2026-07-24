@@ -412,19 +412,19 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
     {
         uint priv_scope_begin0 = self.private_scope_depth > 0
             ? self.private_scope_start[self.private_scope_depth - 1] : 0;
-        for (uint pbi = priv_scope_begin0; pbi < self.private_name_count; pbi++) {
-            if (self.private_names[pbi].is_static) {
+        for (uint pbi = priv_scope_begin0; pbi < self.private_name_table.count; pbi++) {
+            if (self.private_name_table.entries[pbi].is_static) {
                 if (!has_static_brand) {
                     has_static_brand = true;
                     static_brand_slot_name = self.declare_class_static_brand();
                 }
-                self.private_names[pbi].brand_slot_name = static_brand_slot_name;
+                self.private_name_table.entries[pbi].brand_slot_name = static_brand_slot_name;
             } else {
                 if (!has_brand) {
                     has_brand = true;
                     brand_slot_name = self.declare_class_brand();
                 }
-                self.private_names[pbi].brand_slot_name = brand_slot_name;
+                self.private_name_table.entries[pbi].brand_slot_name = brand_slot_name;
             }
         }
     }
@@ -527,6 +527,14 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
             Token priv_tok = self.advance()!;
             char[] priv_name = priv_tok.str_value;
             PrivateNameEntry* entry = self.resolve_private_name(priv_name)!;
+            // Capture the slot name NOW, before compiling the initializer.
+            // `entry` points into the shared private-name table's `entries`
+            // buffer; a nested class inside `assignment_expr()` below can
+            // declare private names and grow (realloc) that buffer, dangling
+            // `entry`. The slot_name slice itself is interned (stable), so
+            // copying the slice is enough — we never touch `entry` again after
+            // the initializer compiles.
+            char[] entry_slot_name = entry.slot_name;
 
             CompilerContext* target_ctx = is_static ? &static_init_ctx : &field_init_ctx;
             bool* target_has_init = is_static ? &has_static_init : &has_field_init;
@@ -571,7 +579,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
             target_ctx.emit(bytecode::make_a_bc(Opcode.LDTHIS, (uint)this_reg, 0));
             ushort key_reg = target_ctx.alloc_reg();
             target_ctx.emit(bytecode::make_a_bc(Opcode.GETVAR, (uint)key_reg,
-                target_ctx.add_string_constant(entry.slot_name)));
+                target_ctx.add_string_constant(entry_slot_name)));
             target_ctx.emit_abc(Opcode.INITPROP_PRIV, (uint)this_reg, (uint)key_reg, (uint)init_reg);
             target_ctx.free_reg(key_reg);
             target_ctx.free_reg(this_reg);
@@ -1350,12 +1358,12 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
     {
         uint priv_scope_begin = self.private_scope_depth > 0
             ? self.private_scope_start[self.private_scope_depth - 1] : 0;
-        for (uint pi = priv_scope_begin; pi < self.private_name_count; pi++) {
-            uint desc_idx = self.add_string_constant(self.private_names[pi].name);
+        for (uint pi = priv_scope_begin; pi < self.private_name_table.count; pi++) {
+            uint desc_idx = self.add_string_constant(self.private_name_table.entries[pi].name);
             ushort sym_reg = self.alloc_reg();
             self.emit_a_bc(Opcode.NEW_PRIV_SYM, (uint)sym_reg, desc_idx);
             self.emit_a_bc(Opcode.PUTLEX, (uint)sym_reg,
-                self.add_string_constant(self.private_names[pi].slot_name));
+                self.add_string_constant(self.private_name_table.entries[pi].slot_name));
             self.free_reg(sym_reg);
         }
         if (has_brand) {
