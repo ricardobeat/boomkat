@@ -77,22 +77,6 @@ fn void civil_from_seconds(long secs, long* year, long* month, long* day,
     *day   = d;
 }
 
-/// Helper: get the time value from a Date object, or NaN if not a Date.
-/// Kept for internal use (e.g. JSON serialization paths that don't need throw).
-fn double date_get_time_value(TVal* val) {
-    if (val.is_object() && val.get_heapptr() != null) {
-        HObject* obj = (HObject*)val.get_heapptr();
-        // Date.prototype is a DATE object but lacks the [[DateValue]] slot;
-        // IS_DATE_PROTO flag distinguishes it. For non-Date-prototype DATE
-        // objects, return the stored time value (NaN is a valid Date value).
-        if (obj.get_class() == hobject::ObjClass.DATE && !obj.flags.is_date_proto &&
-            ((*obj.extra_ptr()).prim.primitive_value.is_number() || (*obj.extra_ptr()).prim.primitive_value.is_fastint())) {
-            return (*obj.extra_ptr()).prim.primitive_value.get_number_or_fastint();
-        }
-    }
-    return double::nan;
-}
-
 /// ES5 §15.9.1.1 thisTimeValue(value): throw TypeError if not a Date object.
 /// A Date instance always has a [[DateValue]] internal slot; Date.prototype
 /// is a DATE object but does NOT have the slot, so the engine flags it via
@@ -237,63 +221,6 @@ fn usz date_format_to_string(double time_val, char* buf, usz buf_size) {
         (int)day, (ZString)&year_str[0],
         (int)hour, (int)minute, (int)second,
         tz_sign, offs_hours, offs_mins) ?? buf[:0]).len;
-}
-
-/// Format a Date as ISO 8601 string (used by toJSON).
-/// Uses UTC components. Large years (>=10000 or <=-9999) use expanded format.
-fn usz date_format_iso(double time_val, char* buf, usz buf_size) {
-    if (math::is_nan(time_val)) {
-        return (usz)(io::bprintf(buf[:buf_size], "null") ?? buf[:0]).len;
-    }
-    long year, month, day, wday, hour, min, sec;
-    date_break_time_utc(time_val, &year, &month, &day, &wday, &hour, &min, &sec);
-    int ms = (int)((long)time_val % 1000);
-    if (ms < 0) ms += 1000;
-
-    usz pos = 0;
-
-    // Expanded format for large years: +YYYYYY or -YYYYYY
-    if (year >= 10000 || year <= -9999) {
-        long abs_year = (year < 0) ? -year : year;
-        buf[pos++] = (year < 0) ? '-' : '+';
-        // 6+ digit year
-        buf[pos++] = (char)(abs_year / 100000 % 10 + '0');
-        buf[pos++] = (char)(abs_year / 10000 % 10 + '0');
-        buf[pos++] = (char)(abs_year / 1000 % 10 + '0');
-        buf[pos++] = (char)(abs_year / 100 % 10 + '0');
-        buf[pos++] = (char)(abs_year / 10 % 10 + '0');
-        buf[pos++] = (char)(abs_year % 10 + '0');
-    } else {
-        // Standard 4-digit year
-        buf[pos++] = (char)((long)year / 1000 + '0');
-        buf[pos++] = (char)((long)year / 100 % 10 + '0');
-        buf[pos++] = (char)((long)year / 10 % 10 + '0');
-        buf[pos++] = (char)((long)year % 10 + '0');
-    }
-
-    // -MM-DDTHH:mm:ss.sssZ
-    buf[pos++] = '-';
-    buf[pos++] = (char)((month + 1) / 10 + '0');
-    buf[pos++] = (char)((month + 1) % 10 + '0');
-    buf[pos++] = '-';
-    buf[pos++] = (char)(day / 10 + '0');
-    buf[pos++] = (char)(day % 10 + '0');
-    buf[pos++] = 'T';
-    buf[pos++] = (char)(hour / 10 + '0');
-    buf[pos++] = (char)(hour % 10 + '0');
-    buf[pos++] = ':';
-    buf[pos++] = (char)(min / 10 + '0');
-    buf[pos++] = (char)(min % 10 + '0');
-    buf[pos++] = ':';
-    buf[pos++] = (char)(sec / 10 + '0');
-    buf[pos++] = (char)(sec % 10 + '0');
-    buf[pos++] = '.';
-    buf[pos++] = (char)(ms / 100 + '0');
-    buf[pos++] = (char)(ms / 10 % 10 + '0');
-    buf[pos++] = (char)(ms % 10 + '0');
-    buf[pos++] = 'Z';
-
-    return pos;
 }
 
 /// Parse an ISO 8601 date string into milliseconds since epoch.

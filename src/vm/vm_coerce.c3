@@ -235,11 +235,6 @@ fn Activation* curr_act(Vm* vm) @inline {
     return &vm.activations[vm.activation_count - 1];
 }
 
-/// Get valstack_bottom as TVal*
-fn TVal* valstack_bottom_ptr(Vm* vm) @inline {
-    return curr_act(vm).bottom;
-}
-
 /// Convert a TVal to an interned string key for property access.
 /// Uses a single tag extraction via switch to avoid redundant checks.
 /// ES5 §11.8.7 / ES7 §12.2.1: ToPropertyKey — unwraps wrapper objects.

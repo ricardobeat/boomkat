@@ -361,59 +361,6 @@ fn HString*? hstring_alloc(void* heap_ptr, char[] data, uint hash) {
     return s;
 }
 
-/// Concatenate two HStrings into a new HString.
-///
-/// Allocates a single block containing both strings' bytes.
-/// Does not insert into the string table — caller must intern.
-fn HString*? hstring_concat(void* heap_ptr, HString* a, HString* b) {
-    usz a_len = (usz)a.blen;
-    usz b_len = (usz)b.blen;
-    usz total = HSTRING_HDR_SIZE + a_len + b_len + 1;
-
-    void* raw = ((heap::Heap*)heap_ptr).alloc_no_gc(total) ?? null;
-    if (raw == null) {
-        return duktape::types::ALLOC_ERROR~;
-    }
-
-    mem::clear(raw, (sz)(HSTRING_HDR_SIZE));
-
-    HString* s = (HString*)raw;
-    s.flags.htype = HType.STRING;
-
-    s.blen = (uint)(a_len + b_len);
-
-    bool ascii = a.flags.is_ascii && b.flags.is_ascii;
-    s.flags.is_ascii = ascii;
-
-    s.hash = 0;  // caller must compute hash before interning
-
-    char* dest = (char*)((usz)raw + HSTRING_HDR_SIZE);
-    if (a_len > 0) {
-        char* src_a = (char*)((usz)a + HSTRING_HDR_SIZE);
-        mem::copy(dest, src_a, (sz)a_len);
-    }
-    if (b_len > 0) {
-        char* src_b = (char*)((usz)b + HSTRING_HDR_SIZE);
-        mem::copy(dest + a_len, src_b, (sz)b_len);
-    }
-    dest[a_len + b_len] = 0;
-
-    // Reference count starts at 0 — intern table is a weak reference.
-    s.refcount = 0;
-
-    return s;
-}
-
-/// Free an HString previously created by `hstring_alloc`.
-///
-/// The caller must have already removed the string from the string table
-/// and any other data structures.
-fn void hstring_free(HString* s) {
-    if (s == null) { return; }
-    // The entire string (header + data + NUL) is one allocation.
-    mem::free(s);
-}
-
 // ============================================================================
 // Standalone hash function
 // ============================================================================
@@ -424,19 +371,6 @@ fn void hstring_free(HString* s) {
 /// context (e.g., during bootstrap before the PRNG is initialised).
 fn uint hash_string(char[] data) {
     uint h = FNV1A_OFFSET_BASIS;
-    foreach (b : data) {
-        h ^= (uint)b;
-        h *= FNV1A_PRIME;
-    }
-    return h;
-}
-
-/// Compute a seeded 32-bit FNV-1a hash (HashDoS mitigation).
-///
-/// Mixes `seed` into the initial state so that hash values are
-/// unpredictable without knowledge of the seed.
-fn uint hash_string_seeded(char[] data, uint seed) {
-    uint h = FNV1A_OFFSET_BASIS ^ seed;
     foreach (b : data) {
         h ^= (uint)b;
         h *= FNV1A_PRIME;

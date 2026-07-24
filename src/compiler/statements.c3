@@ -1139,25 +1139,6 @@ fn void CompilerContext.emit_var_store(&self, ushort reg, uint name_idx, bool is
     }
 }
 
-/// Emit a lazy default-value call for destructuring.
-/// When the binding value is undefined, evaluates the default thunk and stores
-/// the result in bind_reg. Called inside the for-of loop body so the default
-/// expression is only ever evaluated at runtime when the value is undefined
-/// (per ES2015 §13.3.3.6 IteratorBindingInitialization step 6.b).
-fn void CompilerContext.emit_lazy_default(&self, ushort bind_reg, uint func_idx) {
-    ushort closure_reg = self.alloc_reg();
-    self.emit_a_bc(Opcode.CLOSURE, (uint)closure_reg, func_idx);
-    ushort call_base = self.alloc_reg();
-    ushort this_reg  = self.alloc_reg();
-    self.emit_abc(Opcode.LDREG,  (uint)call_base,     (uint)closure_reg, 0);
-    self.emit_abc(Opcode.LDTHIS, (uint)(call_base + 1), 0, 0);
-    self.emit_abc(Opcode.CALL,   (uint)call_base, (uint)call_base, 0);
-    self.emit_abc(Opcode.LDREG,  (uint)bind_reg,  (uint)call_base, 0);
-    self.free_reg(this_reg);
-    self.free_reg(call_base);
-    self.free_reg(closure_reg);
-}
-
 /// Parse var/let/const declaration.
 fn void? CompilerContext.var_declaration(&self) {
     Token decl_tok = self.advance()!;
@@ -1310,8 +1291,6 @@ fn void? CompilerContext.var_declaration(&self) {
 
     self.expect_semicolon_or_asi()!;
 }
-
-
 
 /// Parse if/else statement.
 fn void? CompilerContext.if_statement(&self) {
@@ -3349,7 +3328,6 @@ fn void? CompilerContext.emit_forof_loop_member(&self, ForLhsSnapshot lhs_snap, 
     head.lhs_snap = lhs_snap;
     self.emit_forof(head, iter_reg, saved_scope, saved_reg, is_await)!;
 }
-
 
 /// Emit a for-in loop whose head LHS is a member expression, e.g.
 /// `for (obj.prop in x) { ... }`. Same re-parse-per-iteration strategy

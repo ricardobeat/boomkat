@@ -15,23 +15,6 @@ import duktape::vm;
 // String constructor builtins
 // ============================================================================
 
-/// Populate indexed character properties on a String wrapper object (ES5 §15.5.5.1).
-/// Each character position becomes a non-writable, enumerable, non-configurable own property.
-fn void populate_string_indexed_props(HObject* obj, HString* s, Heap* heap) {
-    for (uint i = 0; i < s.char_length(); i++) {
-        HString* key = heap.int_to_hstring((long)i);
-        if (key == null) continue;
-        uint cp = s.char_at(i);
-        char[4] cbuf;
-        uint cblen = hstring::encode_codepoint(cp, cbuf[:4]);
-        HString* char_str = heap.str_intern(cbuf[:cblen]);
-        if (char_str == null) continue;
-        TVal char_tv;
-        char_tv.set_string(char_str);
-        obj.put_prop(key, char_tv, hobject::PROP_FLAGS_NEC);
-    }
-}
-
 /// ToString then return string primitive (function call) or
 /// a String wrapper object (constructor call).
 fn void builtin_string(BuiltinContext* ctx) {
@@ -2964,137 +2947,6 @@ fn void builtin_string_proto_match(BuiltinContext* ctx) {
     }
 }
 
-/// (Unused internal helper — RegExp@@match dispatch now handles direct exec.)
-fn void builtin_string_proto_match_regexp(BuiltinContext* ctx, HString* s_hstr, HObject* rx) {
-    char* input = s_hstr.get_cstr();
-    int input_len = (int)s_hstr.blen;
-
-    // Get global flag
-    bool global_flag = ((*rx.extra_ptr()).regexp.flags & 1) != 0;
-
-    if (!global_flag) {
-            // Non-global: single exec call
-            int out_start = 0;
-            int out_end = 0;
-            int out_num_captures = 0;
-            int[re_bindings::RE_MAX_CAPTURES] caps_start;
-            int[re_bindings::RE_MAX_CAPTURES] caps_end;
-            mem::clear(&caps_start, (sz)(re_bindings::RE_MAX_CAPTURES * int::size));
-            mem::clear(&caps_end, (sz)(re_bindings::RE_MAX_CAPTURES * int::size));
-
-            // Get lastIndex
-            HString* li_key = builtin_intern_string(ctx.heap, "lastIndex");
-            int start_pos = 0;
-            if (try liv = rx.get_prop(li_key)) {
-                if (liv.is_fastint()) { start_pos = (int)liv.get_fastint(); }
-                else if (liv.is_number()) { start_pos = (int)liv.get_number(); }
-            }
-
-            int result = re_bindings::re_exec(
-                (*rx.extra_ptr()).regexp.regexp_data, input, input_len, start_pos,
-                (int)s_hstr.is_ascii(),
-                &out_start, &out_end, &out_num_captures,
-                &caps_start, &caps_end, re_bindings::RE_MAX_CAPTURES
-            );
-
-            if (result != re_bindings::RE_MATCH) {
-                ctx.result.set_null();
-                return;
-            }
-
-            // Build result array with .groups and .indices (when d flag is set)
-            int num_caps = out_num_captures;
-            if (num_caps > re_bindings::RE_MAX_CAPTURES) num_caps = re_bindings::RE_MAX_CAPTURES;
-            void* re_data = (*rx.extra_ptr()).regexp.regexp_data;
-            bool has_indices = ((*rx.extra_ptr()).regexp.flags & 64) != 0;
-            HObject* arr = regexp_build_match_result(ctx, re_data, s_hstr, input, input_len,
-                                                     out_start, out_end,
-                                                     &caps_start, &caps_end, num_caps, has_indices);
-            if (arr == null) { ctx.result.set_null(); return; }
-            ctx.result.set_object(arr);
-            return;
-        } else {
-            // Global: collect all matches
-            HString* li_key = builtin_intern_string(ctx.heap, "lastIndex");
-
-            // Reset lastIndex to 0
-            TVal zero_tv;
-            zero_tv.set_fastint(0);
-            rx.put_prop(li_key, zero_tv, hobject::PROP_FLAGS_WEC);
-
-            HObject*? arr_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
-            if (catch err = arr_raw) { ctx.result.set_null(); return; }
-            HObject* arr = arr_raw;
-            arr.prototype = ctx.heap.array_proto;
-
-            uint arr_idx = 0;
-            int search_pos = 0;
-
-            while (search_pos <= input_len) {
-                int out_start = 0;
-                int out_end = 0;
-                int out_num_captures = 0;
-                int[re_bindings::RE_MAX_CAPTURES] caps_start;
-                int[re_bindings::RE_MAX_CAPTURES] caps_end;
-                mem::clear(&caps_start, (sz)(re_bindings::RE_MAX_CAPTURES * int::size));
-                mem::clear(&caps_end, (sz)(re_bindings::RE_MAX_CAPTURES * int::size));
-
-                int result = re_bindings::re_exec(
-                    (*rx.extra_ptr()).regexp.regexp_data, input, input_len, search_pos,
-                    (int)s_hstr.is_ascii(),
-                    &out_start, &out_end, &out_num_captures,
-                    &caps_start, &caps_end, re_bindings::RE_MAX_CAPTURES
-                );
-
-                if (result != re_bindings::RE_MATCH) break;
-
-                // Add match string to array
-                usz match_len = (usz)(out_end - out_start);
-                HString* match_str;
-                if (match_len == 0) {
-                    match_str = builtin_intern_string(ctx.heap, "");
-                } else {
-                    match_str = builtin_intern_string(ctx.heap, input[out_start : match_len]);
-                }
-                TVal elem;
-                elem.set_string(match_str);
-                arr.put_prop(ctx.heap.int_to_hstring((long)arr_idx), elem, hobject::PROP_FLAGS_WEC);
-                arr_idx++;
-
-                // Advance: if empty match, move by one code unit (or surrogate
-                // pair under the u/v flag); else go to end of match
-                if (out_end == search_pos) {
-                    bool unicode_flag = ((*rx.extra_ptr()).regexp.flags & (16 | 128)) != 0;
-                    search_pos = out_end + (int)hstring::advance_string_index_byte_len(
-                        input[:input_len], (uint)out_end, unicode_flag);
-                    if (search_pos > input_len) break;
-                } else {
-                    search_pos = out_end;
-                }
-            }
-
-            if (arr_idx == 0) {
-                // Reset lastIndex
-                rx.put_prop(li_key, zero_tv, hobject::PROP_FLAGS_WEC);
-                ctx.result.set_null();
-                return;
-            }
-
-            // Update lastIndex on the regexp
-            TVal li_tv;
-            li_tv.set_fastint(0);
-            rx.put_prop(li_key, li_tv, hobject::PROP_FLAGS_WEC);
-
-            TVal len_tv;
-            len_tv.set_fastint((long)arr_idx);
-            HString* len_key = builtin_intern_string(ctx.heap, "length");
-            arr.put_prop(len_key, len_tv, hobject::PROP_FLAGS_WEC);
-
-            ctx.result.set_object(arr);
-            return;
-        }
-}
-
 /// Helper: create a RegExp HObject from a pattern string with JS flags.
 /// Used by matchAll for the non-RegExp arg path.
 /// Returns null on failure (allocation or compile error).
@@ -3142,38 +2994,6 @@ fn HObject* create_regexp_from_string(Heap* heap, char[] pattern, int js_flags) 
     obj.put_prop(li_key, zero_tv, hobject::PROP_FLAGS_WEC);
 
     return obj;
-}
-
-/// Helper: create a RegExpStringIterator object with .next() method.
-fn HObject* create_regexp_string_iterator(Heap* heap, HObject* rx, HString* s_hstr, bool global_flag) {
-    HObject*? iter_raw = heap.alloc_object(hobject::ObjClass.REGEXP_STRING_ITERATOR);
-    if (catch err = iter_raw) return null;
-    HObject* iter = iter_raw;
-
-    // Store string (for GC tracing) and regexp
-    TVal str_tv;
-    str_tv.set_string(s_hstr);
-    (*iter.extra_ptr()).regexp_iter.string_val = str_tv;
-    (*iter.extra_ptr()).regexp_iter.regexp = rx;
-    (*iter.extra_ptr()).regexp_iter.flags = global_flag ? 1u : 0u; // bit 0 = global
-
-    iter.prototype = heap.iterator_proto;
-
-    // Add .next method as an own property
-    HString* next_key = builtin_intern_string(heap, "next");
-    if (next_key != null) {
-        HObject*? fn_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
-        if (try fn_obj = fn_raw) {
-            (*fn_obj.extra_ptr()).func.builtin_fn_index = (int)Builtin.REGEXP_STRING_ITERATOR_NEXT.ordinal;
-            fn_obj.flags.callable = true;
-            fn_obj.prototype = heap.function_proto;
-            TVal fn_tv;
-            fn_tv.set_object(fn_obj);
-            iter.put_prop(next_key, fn_tv, hobject::PROP_FLAGS_NWC);
-        }
-    }
-
-    return iter;
 }
 
 /// Helper: invoke @@matchAll on `rx` with string `s_hstr` as argument.

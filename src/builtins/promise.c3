@@ -40,14 +40,6 @@ fn uint promise_get_state(HObject* promise, uint default_state) {
     return (*promise.extra_ptr()).promise.state;
 }
 
-/// Set the promise state.  Idempotent: only writes if currently pending
-/// (a Promise can only be settled once).
-fn void promise_set_state(HObject* promise, uint state) {
-    if (promise == null) return;
-    if ((*promise.extra_ptr()).promise.state != PROMISE_PENDING) return;
-    (*promise.extra_ptr()).promise.state = state;
-}
-
 /// Settle a Promise in one shot: state + result + refcounting.
 /// No-op if the promise is already settled.
 fn void promise_settle(HObject* promise, uint state, TVal* val, Heap* heap) {
@@ -55,12 +47,6 @@ fn void promise_settle(HObject* promise, uint state, TVal* val, Heap* heap) {
     if ((*promise.extra_ptr()).promise.state != PROMISE_PENDING) return;
     heap.tval_copy_ref(&(*promise.extra_ptr()).promise.result, val);
     (*promise.extra_ptr()).promise.state = state;
-}
-
-/// Set the promise result.  Refcount-aware.
-fn void promise_set_result(HObject* promise, TVal* val, Heap* heap) {
-    if (promise == null) return;
-    heap.tval_copy_ref(&(*promise.extra_ptr()).promise.result, val);
 }
 
 /// Get the promise's resolved value / rejection reason.
@@ -269,16 +255,6 @@ fn void builtin_promise_thrower(BuiltinContext* ctx) {
     ctx.throw_value = arg;
 }
 
-/// Call a handler function with one argument.
-fn TVal call_handler(TVal handler, TVal* arg, Heap* heap, void* vm) {
-    if (heap.call_handler_fn != null && vm != null) {
-        return heap.call_handler_fn(vm, handler, arg);
-    }
-    TVal result;
-    result.set_undefined();
-    return result;
-}
-
 /// Microtask completion callback — resolves the downstream promise with the
 /// Make `downstream` adopt the state of native Promise `source` (Promise
 /// Resolution Procedure for a native promise). If `source` is already settled,
@@ -375,33 +351,6 @@ fn void promise_microtask_after(void* heap_raw, void* vm, TVal result, TVal down
     // self-resolution check, native-Promise/thenable adoption, and plain
     // fulfillment are all handled uniformly by promise_resolve_with_value.
     promise_resolve_with_value(ds, result, heap, vm);
-}
-
-/// Resolve or reject a capability's downstream promise.
-fn void call_capability(TVal resolve, TVal reject, TVal* val, Heap* heap, bool is_resolve, void* vm) {
-    TVal callee = is_resolve ? resolve : reject;
-    if (callee.is_undefined()) return;
-
-    if (callee.is_object() && callee.get_heapptr() != null) {
-        HObject* obj = (HObject*)callee.get_heapptr();
-        // If it's a PROMISE directly, resolve/reject it
-        if (obj.flags.obj_class == hobject::ObjClass.PROMISE) {
-            promise_settle(obj, is_resolve ? PROMISE_FULFILLED : PROMISE_REJECTED, val, heap);
-            promise_trigger_reactions(obj, heap, vm);
-            return;
-        }
-        // If it's a capability object, look up the "promise" property
-        HString* promise_key = builtin_intern_string(heap, "promise");
-        if (try pv = obj.get_prop(promise_key)) {
-            if (pv.is_object() && pv.get_heapptr() != null) {
-                HObject* prom = (HObject*)pv.get_heapptr();
-                if (prom.flags.obj_class == hobject::ObjClass.PROMISE) {
-                    promise_settle(prom, is_resolve ? PROMISE_FULFILLED : PROMISE_REJECTED, val, heap);
-                    promise_trigger_reactions(prom, heap, vm);
-                }
-            }
-        }
-    }
 }
 
 /// Resolve `promise` with `value` per the Promise Resolve Function's
@@ -892,20 +841,6 @@ fn bool promise_throw_capability_failure(BuiltinContext* ctx, HObject* hole) {
     return true;
 }
 
-/// Create a resolve/reject capability object (internal).
-fn HObject*? promise_create_capability(Heap* heap, HObject* promise) {
-    HObject*? cap_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
-    if (catch err = cap_raw) return null;
-    HObject* cap = cap_raw;
-
-    HString* promise_key = builtin_intern_string(heap, "promise");
-    TVal promise_val;
-    promise_val.set_object(promise);
-    cap.put_prop(promise_key, promise_val, hobject::PROP_FLAGS_WEC);
-
-    return cap;
-}
-
 /// Append a reaction HObject to the promise's reaction linked list.
 fn void promise_add_reaction(HObject* promise, HObject* reaction, Heap* heap) {
     if (promise == null || reaction == null) return;
@@ -916,15 +851,6 @@ fn void promise_add_reaction(HObject* promise, HObject* reaction, Heap* heap) {
         reaction_set_next((HObject*)(*promise.extra_ptr()).promise.reactions_tail, reaction, heap);
     }
     (*promise.extra_ptr()).promise.reactions_tail = reaction;
-}
-
-/// Get the resolved value of a Promise-like object (Promise, thenable, etc).
-/// Reads from the HObjectPromise extra slot.  Only valid for ObjClass.PROMISE.
-fn TVal promise_try_get_value(HObject* obj) {
-    if (obj == null || obj.flags.obj_class != hobject::ObjClass.PROMISE) {
-        TVal undef; undef.set_undefined(); return undef;
-    }
-    return promise_get_result(obj);
 }
 
 // ============================================================================
@@ -2600,71 +2526,6 @@ fn void promise_attach_element_callbacks(HObject* promise, HObject* fulfill_fn, 
     if (state != PROMISE_PENDING) {
         promise_trigger_reactions(promise, heap, vm);
     }
-}
-
-// ============================================================================
-// Helper: handle a resolved-thenable synchronously for the combinator loop.
-//
-// When `C.resolve(elem)` returns a thenable (not a Promise), the spec requires
-// us to call `.then` on it. If the thenable's `then` is synchronous, the
-// wrapper Promise is settled before we can attach reactions — so the
-// attached reactions are queued as microtasks. That breaks tests that
-// assert synchronous behavior after the combinator call returns.
-//
-// This helper handles BOTH paths:
-//   - Synchronous: extract result/reason from the wrapper, call the
-//     element callback directly. This matches reference engines that
-//     drain microtasks inline.
-//   - Asynchronous (still pending): attach reactions for later draining.
-//
-// Returns true if the wrapper is already settled and the callback was
-// invoked synchronously. The caller should `continue` to the next element
-// in that case.
-// ============================================================================
-fn bool promise_attach_thenable_element_callbacks(
-    Heap* heap, void* vm, TVal resolved, HObject* fulfill_fn, HObject* reject_fn
-) {
-    if (!resolved.is_object() || resolved.get_heapptr() == null) return false;
-    HObject* wrapper = (HObject*)resolved.get_heapptr();
-
-    // If the wrapper is already settled, run the callback directly via a
-    // synthetic call. This handles synchronously-settled thenables.
-    uint state = promise_get_state(wrapper, PROMISE_PENDING);
-    if (state != PROMISE_PENDING) {
-        TVal result = promise_get_result(wrapper);
-        HObject* cb = (state == PROMISE_FULFILLED) ? fulfill_fn : reject_fn;
-
-        // Build a synthetic context so we can dispatch_builtin directly.
-        // Layout: [callee, this, arg0, padding]
-        TVal[4] temp;
-        temp[0].set_object((void*)cb);
-        temp[1].set_undefined();
-        temp[2] = result;
-        temp[3].set_undefined();
-        BuiltinContext cb_ctx;
-        cb_ctx.vm = vm;
-        cb_ctx.heap = heap;
-        cb_ctx.regs = &temp;
-        cb_ctx.base_reg = 2;
-        cb_ctx.argc = 1;
-        cb_ctx.result = &temp[0];
-        cb_ctx.this_val.set_undefined();
-        cb_ctx.is_constructor = false;
-        cb_ctx.needs_re_dispatch = false;
-        cb_ctx.re_nargs = 0;
-        cb_ctx.global_env = null;
-        cb_ctx.should_throw = false;
-        cb_ctx.callee_obj = cb;
-        dispatch_builtin(
-            (uint)(*cb.extra_ptr()).func.builtin_fn_index,
-            &cb_ctx
-        );
-        return true;
-    }
-
-    // Pending: attach reactions for async settling.
-    promise_attach_element_callbacks(wrapper, fulfill_fn, reject_fn, heap, vm);
-    return true;
 }
 
 // ============================================================================

@@ -2044,7 +2044,6 @@ fn void builtin_ta_proto_join(BuiltinContext* ctx) {
         }
     }
 
-
     if (len == 0) {
         if (sep_hs != null) heap.decref((types::HeapHeader*)sep_hs);
         HString* empty = (HString*)heap.strs[heap::BuiltinStr.EMPTY];
@@ -3166,36 +3165,6 @@ fn void builtin_ta_species_get(BuiltinContext* ctx) {
 
 // ---- Static: %TypedArray%.of / %TypedArray%.from ----
 // Installed on the %TypedArray% intrinsic; inherited by all 9 per-class ctors.
-
-/// Resolve the ObjClass from a TypedArray per-class constructor (this_val).
-/// Returns INT8ARRAY as default if this_val is not a recognisable TA ctor.
-fn hobject::ObjClass ta_ctor_class(BuiltinContext* ctx) {
-    if (!ctx.this_val.is_object() || ctx.this_val.get_heapptr() == null) {
-        return hobject::ObjClass.INT8ARRAY;
-    }
-    HObject* ctor_obj = (HObject*)ctx.this_val.get_heapptr();
-    // Look up the constructor's .prototype and infer class from its first TA instance.
-    // Simpler: map via .name property on the constructor.
-    HString* name_key = builtin_intern_string(ctx.heap, "name");
-    if (name_key == null) return hobject::ObjClass.INT8ARRAY;
-    TVal? name_tv = ctor_obj.get_prop(name_key);
-    if (catch e = name_tv) return hobject::ObjClass.INT8ARRAY;
-    TVal nv = name_tv;
-    if (!nv.is_string() || nv.get_heapptr() == null) return hobject::ObjClass.INT8ARRAY;
-    HString* name_hs = (HString*)nv.get_heapptr();
-    char[] nm = name_hs.get_data();
-    if (nm.len >= 5 && nm[0] == 'I' && nm[1] == 'n' && nm[2] == 't' && nm[3] == '8') return hobject::ObjClass.INT8ARRAY;
-    if (nm.len >= 6 && nm[0] == 'U' && nm[1] == 'i' && nm[2] == 'n' && nm[3] == 't' && nm[4] == '8' && nm.len > 5 && nm[5] == 'C') return hobject::ObjClass.UINT8CLAMPEDARRAY;
-    if (nm.len >= 6 && nm[0] == 'U' && nm[1] == 'i' && nm[2] == 'n' && nm[3] == 't' && nm[4] == '8') return hobject::ObjClass.UINT8ARRAY;
-    if (nm.len >= 6 && nm[0] == 'I' && nm[1] == 'n' && nm[2] == 't' && nm[3] == '1' && nm[4] == '6') return hobject::ObjClass.INT16ARRAY;
-    if (nm.len >= 7 && nm[0] == 'U' && nm[1] == 'i' && nm[2] == 'n' && nm[3] == 't' && nm[4] == '1' && nm[5] == '6') return hobject::ObjClass.UINT16ARRAY;
-    if (nm.len >= 6 && nm[0] == 'I' && nm[1] == 'n' && nm[2] == 't' && nm[3] == '3' && nm[4] == '2') return hobject::ObjClass.INT32ARRAY;
-    if (nm.len >= 7 && nm[0] == 'U' && nm[1] == 'i' && nm[2] == 'n' && nm[3] == 't' && nm[4] == '3' && nm[5] == '2') return hobject::ObjClass.UINT32ARRAY;
-    if (nm.len >= 7 && nm[0] == 'F' && nm[1] == 'l' && nm[2] == 'o' && nm[3] == 'a' && nm[4] == 't' && nm[5] == '1' && nm[6] == '6') return hobject::ObjClass.FLOAT16ARRAY;
-    if (nm.len >= 7 && nm[0] == 'F' && nm[1] == 'l' && nm[2] == 'o' && nm[3] == 'a' && nm[4] == 't' && nm[5] == '3' && nm[6] == '2') return hobject::ObjClass.FLOAT32ARRAY;
-    if (nm.len >= 7 && nm[0] == 'F' && nm[1] == 'l' && nm[2] == 'o' && nm[3] == 'a' && nm[4] == 't' && nm[5] == '6' && nm[6] == '4') return hobject::ObjClass.FLOAT64ARRAY;
-    return hobject::ObjClass.INT8ARRAY;
-}
 
 /// Helper: call `construct_fn(C, args, nargs)` and validate result is a TypedArray.
 /// Sets ctx.should_throw on failure and returns null. On success returns the HObject*.

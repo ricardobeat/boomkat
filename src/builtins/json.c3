@@ -1416,12 +1416,6 @@ fn TVal json_check_property(JsonSerializeCtx* jctx, HString* key, TVal val, TVal
     return val;
 }
 
-/// Check if a value is an array-like object per ES5 spec (HasProperty with "length")
-fn bool json_is_array(HObject* obj) {
-    return obj.get_class() == ObjClass.ARRAY ||
-           obj.get_class() == ObjClass.ARGUMENTS;
-}
-
 /// Serialize an object's properties
 fn int json_serialize_object(JsonSerializeCtx* jctx, HObject* obj) {
     if (jctx.error) return -1;
@@ -1446,7 +1440,6 @@ fn int json_serialize_object(JsonSerializeCtx* jctx, HObject* obj) {
     // Build the key list: use property_list if replacer array, else own properties
     bool has_replacer = jctx.has_replacer_array;
     bool has_props = false;
-
 
     if (!has_replacer) {
         if (obj.flags.exotic_proxyobj) {

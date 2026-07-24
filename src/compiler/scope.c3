@@ -140,21 +140,6 @@ fn ushort? CompilerContext.find_local_reg(&self, char[] name) {
     return SCOPE_ERROR~;
 }
 
-/// Check if a variable is const.
-fn bool CompilerContext.is_var_const(&self, char[] name) {
-    if (self.scope_depth == 0) {
-        return false;
-    }
-    uint i = self.scope_depth;
-    while (i > 0) {
-        i--;
-        if (str_eq(self.scope_stack[i].name, name)) {
-            return self.scope_stack[i].kind == CONST;
-        }
-    }
-    return false;
-}
-
 /// Check if a register is the slot of a declared local variable/let/const/param.
 /// Returns true if the register holds a live local binding that must NOT be
 /// freed by expression_statement (the binding outlives the expression).

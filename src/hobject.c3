@@ -2575,14 +2575,3 @@ fn bool HObject.es_delete_prop(&self, void* key) {
 // Utility: next power of two
 // ============================================================================
 
-/// Returns the smallest power of two ≥ `v`.  If `v` is 0 returns 1.
-fn uint next_power_of_two(uint v) @inline {
-    if (v == 0) { return 1; }
-    uint n = v - 1;
-    n |= n >> 1;
-    n |= n >> 2;
-    n |= n >> 4;
-    n |= n >> 8;
-    n |= n >> 16;
-    return n + 1;
-}

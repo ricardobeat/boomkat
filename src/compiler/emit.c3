@@ -75,11 +75,6 @@ fn uint CompilerContext.emit_ident_read(&self, uint reg, uint name_idx) {
     return self.emit(bytecode::make_a_bc(Opcode.GETVAR, reg, name_idx));
 }
 
-/// Emit an instruction in A-sBx format.
-fn uint CompilerContext.emit_a_sbx(&self, Opcode op, uint a, int sbx) {
-    return self.emit(bytecode::make_a_sbx(op, a, sbx));
-}
-
 /// Emit a JUMP instruction with a placeholder offset; return the index to patch.
 fn uint CompilerContext.emit_jump(&self, Opcode op) {
     return self.emit(bytecode::make_sabc(op, 0));

@@ -259,21 +259,8 @@ fn bool vm_throw_error_fmt(Vm* vm, HObject* proto, char* fmt, char* arg,
     return vm_throw_error(vm, proto, buf[:len], act, curr_pc, needs_restart);
 }
 
-/// Create and throw an error with two %s formatted arguments.
-fn bool vm_throw_error_fmt2(Vm* vm, HObject* proto, char* fmt, char* arg1, char* arg2,
-                            Activation* act, Instruction** curr_pc, bool* needs_restart) {
-    char[types::ERROR_MSG_BUF] buf;
-    char*[2] args = { arg1, arg2 };
-    int len = splice_fmt(&buf, fmt, args[..]);
-    return vm_throw_error(vm, proto, buf[:len], act, curr_pc, needs_restart);
-}
-
 /// Helper to get index from valstack base to a pointer
 fn uint byte_offset(TVal* base, TVal* ptr) @inline {
     return (uint)(ptr - base);
 }
 
-/// Helper to get TVal* from valstack base and index.
-fn TVal* ptr_from_byteoff(TVal* base, uint idx) @inline {
-    return base + idx;
-}

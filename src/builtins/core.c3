@@ -3054,25 +3054,6 @@ fn bool set_num_static_prop(HObject* obj, Heap* heap, char[] name, double val) {
     return true;
 }
 
-fn bool set_num_prop(HObject* obj, Heap* heap, char[] name, double val) {
-    uint hash = heap.hash_string(name);
-    // Use lookup-first to avoid duplicate HString pointers
-    HString* existing = heap.str_table_lookup(name, hash);
-    void* key;
-    if (existing != null) {
-        key = existing;
-    } else {
-        HString*? new_key = hstring::hstring_alloc(heap, name, hash);
-        if (catch err = new_key) return false;
-        heap.str_table_insert(new_key);
-        key = new_key;
-    }
-    TVal tv;
-    tv.set_number(val);
-    obj.put_prop(key, tv, hobject::PROP_FLAGS_WC);
-    return true;
-}
-
 fn bool register_named_value(EnvRecord* global_env, Heap* heap, char[] name, TVal val) {
     uint hash = heap.hash_string(name);
     HString* existing = heap.str_table_lookup(name, hash);
@@ -3086,33 +3067,6 @@ fn bool register_named_value(EnvRecord* global_env, Heap* heap, char[] name, TVa
         key = new_key;
     }
     return env::env_declare_nonenum(global_env, key, val);
-}
-
-fn bool register_global_constant(EnvRecord* global_env, Heap* heap, char[] name,
-                                   TValTag tag, double number_val, long fastint_val) {
-    uint hash = heap.hash_string(name);
-    HString* existing = heap.str_table_lookup(name, hash);
-    HString* key;
-    if (existing != null) {
-        key = existing;
-    } else {
-        HString*? new_key = hstring::hstring_alloc(heap, name, hash);
-        if (catch err = new_key) {
-            return false;
-        }
-        heap.str_table_insert(new_key);
-        key = new_key;
-    }
-    TVal val;
-    if (tag == FASTINT) {
-        val.set_fastint(fastint_val);
-    } else if (tag == STRING || tag == OBJECT) {
-        val.set_string(null);  // caller must set pointer
-    } else {
-        val.set_number(number_val);
-    }
-    env::env_declare_nonenum(global_env, key, val);
-    return true;
 }
 
 /// Register a global constant with ES5 §15.1 flags:

@@ -646,16 +646,6 @@ fn ulong arr_relative_index(double rel, ulong len) {
     return rel > (double)len ? len : (ulong)(long)rel;
 }
 
-/// Check if a raw double length value is a valid array length per ES5 §15.4.4.x.
-/// Returns false for NaN, ±Infinity, negative, non-integer, > 2^32-1, or -0.
-fn bool is_valid_array_length(double raw) {
-    if (raw != raw) return false;                                      // NaN
-    if (raw < 0.0) return false;                                       // negative
-    if (raw == 0.0 && 1.0 / raw < 0.0) return false;                  // -0
-    if (raw > 4294967295.0) return false;                              // > 2^32-1 or Infinity
-    return raw == math::floor(raw);                                     // must be integer
-}
-
 /// Throw a RangeError with the given message.
 fn void arr_throw_range_error(BuiltinContext* ctx, char[] msg) {
     HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
@@ -974,12 +964,6 @@ fn void array_set_elem(HObject* obj, uint idx, TVal val, Heap* heap, void* vm = 
     if (key != null) {
         obj.put_prop(key, val, hobject::PROP_FLAGS_WEC);
     }
-}
-
-/// Delete array element at numeric index (set to undefined in dense part).
-fn void array_delete_elem(HObject* obj, uint idx, Heap* heap) {
-    TVal undef; undef.set_undefined();
-    obj.set_array_idx(idx, undef);
 }
 
 /// Set array element at a 53-bit numeric index (array-likes may address up

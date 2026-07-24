@@ -321,21 +321,6 @@ $endif
 // Lexical environment helpers (for let/const)
 // ============================================================================
 
-/// Look up a binding in the lexical environment chain only.
-/// Returns PROP_NOT_FOUND if not found.
-/// Optimized: single find_prop_idx per scope level (not has_prop + get_prop).
-fn TVal? env_get_lex(EnvRecord* lex_env, void* key) {
-    EnvRecord* cur = lex_env;
-    while (cur != null) {
-        int idx = cur.bindings.find_prop_idx(key);
-        if (idx >= 0) {
-            return cur.bindings.prop_values()[idx];
-        }
-        cur = cur.parent;
-    }
-    return hobject::PROP_NOT_FOUND~;
-}
-
 /// Store a binding in the topmost lexical environment record only.
 /// Used for let/const declarations via PUTLEX — creates the binding
 /// in the current block's scope without walking the parent chain.
@@ -369,30 +354,6 @@ fn TVal? env_get_at_depth(EnvRecord* env, uint depth, void* key) {
         return cur.bindings.prop_values()[idx];
     }
     return hobject::PROP_NOT_FOUND~;
-}
-
-/// Store a binding at a specific depth in the scope chain.
-fn bool env_put_at_depth(EnvRecord* env, uint depth, void* key, TVal val) {
-    EnvRecord* cur = env;
-    for (uint i = 0; i < depth && cur != null; i++) {
-        cur = cur.parent;
-    }
-    if (cur == null) return false;
-    int idx = cur.bindings.find_prop_idx(key);
-    if (idx >= 0) {
-        if (!cur.bindings.get_prop_flags((uint)idx).writable) return false;
-        TVal* pv = &cur.bindings.prop_values()[idx];
-        if (hobject::_active_heap != null) {
-            heap::Heap* h = (heap::Heap*)hobject::_active_heap;
-            if (pv.is_string() || pv.is_bigint()) { h.decref_tval(pv); }
-            *pv = val;
-            if (val.is_string() || val.is_bigint()) { void* p = val.get_heapptr(); if (p != null) ((types::HeapHeader*)p).incref(); }
-        } else {
-            *pv = val;
-        }
-        return true;
-    }
-    return cur.bindings.put_prop(key, val, hobject::PROP_FLAGS_WEC);
 }
 
 /// Check if a binding in the lexical environment chain is writable.

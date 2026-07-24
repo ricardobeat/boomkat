@@ -13,7 +13,6 @@ import std::io;
 // Destructuring patterns (array and object)
 // ============================================================================
 
-
 /// Parse a property key in a destructuring binding pattern.
 /// Per ES2015 §13.3.3.7 the property key can be an IdentifierName, a string
 /// literal, a numeric literal, or a computed key. Reserved words are
@@ -63,24 +62,6 @@ fn char[]? CompilerContext.destructuring_property_key(&self) {
     if (kw_str.len > 0) {
         self.advance()!;
         return kw_str;
-    }
-    return COMPILE_ERROR~;
-}
-
-/// Parse an identifier or computed/multi-type key as a destructuring binding
-/// target — the *value* side of `{key: target}`. Per ES2015 §13.3.3.7 this
-/// can be a BindingIdentifier with an optional default value, a nested object
-/// pattern, or a nested array pattern. Computed keys are handled by the caller
-/// before this is invoked.
-fn Token? CompilerContext.destructuring_binding_target(&self) {
-    // Expect either a binding identifier (any IdentifierName — keywords are
-    // not allowed as bindings) or a nested pattern.
-    TokenType tt = self.peek_type();
-    if (tt == TokenType.IDENTIFIER) {
-        return self.advance();
-    }
-    if (lexer::keyword_to_string(tt).len > 0) {
-        return COMPILE_ERROR~;  // keywords may not be binding identifiers
     }
     return COMPILE_ERROR~;
 }
@@ -170,7 +151,6 @@ fn void? CompilerContext.array_destructure(&self, ScopeKind kind, bool is_lexica
     }
     return;
 }
-
 
 /// Parse object destructuring pattern: {a, b: c, x = default} = rhs
 /// The '{' has already been consumed.
