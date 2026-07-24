@@ -113,56 +113,10 @@ fn bool moveelim_a_is_read(Opcode op) {
 /// (rDst wrongly appears live-in at a producer site), never PERMIT an
 /// unsafe one.
 fn bool moveelim_a_is_write(Opcode op) {
-    switch (op) {
-        case Opcode.LDREG:
-        case Opcode.LDCONST:
-        case Opcode.LDINT:
-        case Opcode.LDINTX:
-        case Opcode.LDUNDEF:
-        case Opcode.LDNULL:
-        case Opcode.LDTRUE:
-        case Opcode.LDFALSE:
-        case Opcode.LDTHIS:
-        case Opcode.ADD:
-        case Opcode.SUB:
-        case Opcode.MUL:
-        case Opcode.DIV:
-        case Opcode.MOD:
-        case Opcode.EXP:
-        case Opcode.ADDI:
-        case Opcode.SUBI:
-        case Opcode.UNP:
-        case Opcode.UNM:
-        case Opcode.BNOT:
-        case Opcode.LNOT:
-        case Opcode.TYPEOF:
-        case Opcode.VOID:
-        case Opcode.BAND:
-        case Opcode.BOR:
-        case Opcode.BXOR:
-        case Opcode.SHL:
-        case Opcode.SHR:
-        case Opcode.USHR:
-        case Opcode.EQ:
-        case Opcode.NEQ:
-        case Opcode.SEQ:
-        case Opcode.SNEQ:
-        case Opcode.LT:
-        case Opcode.LE:
-        case Opcode.GT:
-        case Opcode.GE:
-        case Opcode.INSTANCEOF:
-        case Opcode.IN:
-        case Opcode.GETPROP:
-        case Opcode.GETPROTO:
-        case Opcode.GETVAR:
-        case Opcode.GETBOUND:
-        case Opcode.TYPEOFIDENT:
-            return true;
-
-        default:
-            return false;
-    }
+    // Identical to the producer allow-list, plus LDINTX: it writes A as a
+    // plain destination, but is excluded from producer retargeting because
+    // it spans two instruction words.
+    return op == Opcode.LDINTX || moveelim_producer_allowed(op);
 }
 
 /// Whether `op`'s producer semantics are safe to retarget: writing directly
