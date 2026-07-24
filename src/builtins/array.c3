@@ -634,6 +634,18 @@ fn uint to_uint32(double val) {
     return (uint)n;
 }
 
+/// Resolve a spec "relative index" against a length — the clamping half of
+/// ES2022 §23.1.3.x steps like "if relativeStart < 0, let k be max(len +
+/// relativeStart, 0); else let k be min(relativeStart, len)". `rel` must
+/// already have gone through ToIntegerOrInfinity.
+fn ulong arr_relative_index(double rel, ulong len) {
+    if (rel < 0) {
+        double from_end = (double)len + rel;
+        return from_end < 0 ? 0 : (ulong)(long)from_end;
+    }
+    return rel > (double)len ? len : (ulong)(long)rel;
+}
+
 /// Check if a raw double length value is a valid array length per ES5 §15.4.4.x.
 /// Returns false for NaN, ±Infinity, negative, non-integer, > 2^32-1, or -0.
 fn bool is_valid_array_length(double raw) {
@@ -1512,12 +1524,7 @@ fn void builtin_array_proto_slice(BuiltinContext* ctx) {
     }
 
     ulong k;
-    if (relative_start < 0) {
-        double tmp = (double)len + relative_start;
-        k = tmp < 0 ? 0 : (ulong)(long)tmp;
-    } else {
-        k = relative_start > (double)len ? len : (ulong)(long)relative_start;
-    }
+    k = arr_relative_index(relative_start, len);
 
     // Determine end — ES2022 §23.1.3.25 step 6: if end is undefined, use len.
     double relative_end = (double)len;
@@ -1527,12 +1534,7 @@ fn void builtin_array_proto_slice(BuiltinContext* ctx) {
     }
 
     ulong final_val;
-    if (relative_end < 0) {
-        double tmp = (double)len + relative_end;
-        final_val = tmp < 0 ? 0 : (ulong)(long)tmp;
-    } else {
-        final_val = relative_end > (double)len ? len : (ulong)(long)relative_end;
-    }
+    final_val = arr_relative_index(relative_end, len);
 
     // ES2022 §23.1.3.24 step 8: ArraySpeciesCreate(O, count).
     // §9.4.2.2 ArrayCreate: if length > 2^32-1, throw RangeError.
@@ -1788,12 +1790,7 @@ fn void builtin_array_proto_splice(BuiltinContext* ctx) {
     }
 
     ulong actual_start;
-    if (relative_start < 0) {
-        double tmp = (double)len + relative_start;
-        actual_start = tmp < 0 ? 0 : (ulong)(long)tmp;
-    } else {
-        actual_start = relative_start >= (double)len ? len : (ulong)(long)relative_start;
-    }
+    actual_start = arr_relative_index(relative_start, len);
 
     // Get actualDeleteCount
     ulong actual_delete_count;
@@ -2207,12 +2204,7 @@ fn void builtin_array_proto_toSpliced(BuiltinContext* ctx) {
     }
 
     ulong actual_start;
-    if (relative_start < 0) {
-        double tmp = (double)len + relative_start;
-        actual_start = tmp < 0 ? 0 : (ulong)(long)tmp;
-    } else {
-        actual_start = relative_start > (double)len ? len : (ulong)(long)relative_start;
-    }
+    actual_start = arr_relative_index(relative_start, len);
 
     // Get actualDeleteCount using ToIntegerOrInfinity
     // Per spec: if start is not present, actualDeleteCount is 0. Otherwise it defaults to len - actualStart.
