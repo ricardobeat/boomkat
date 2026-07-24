@@ -129,6 +129,19 @@ fn bool is_any_arraybuffer_obj(HObject* obj) {
     return obj != null && obj.flags.obj_class == hobject::ObjClass.ARRAYBUFFER;
 }
 
+/// DetachArrayBuffer (ES2024 §25.1.3.5): free the backing store and mark the
+/// buffer detached (engine convention: data==null, byte_length==0xFFFFFFFF).
+/// A detached buffer reports byteLength 0 and every view sees it as detached.
+/// The single detach primitive — ArrayBuffer.prototype.transfer and the
+/// $262.detachArrayBuffer host hook both route through here.
+fn void arraybuffer_detach(Heap* heap, HObject* obj) {
+    if ((*obj.extra_ptr()).ab.data != null) {
+        heap.free_func(heap.heap_udata, (*obj.extra_ptr()).ab.data);
+        (*obj.extra_ptr()).ab.data = null;
+    }
+    (*obj.extra_ptr()).ab.byte_length = 0xFFFFFFFFu;
+}
+
 /// True iff cls is one of the buffer-view classes (TypedArray or DataView).
 fn bool is_bufferview_class(hobject::ObjClass cls) {
     return cls == hobject::ObjClass.DATAVIEW
@@ -500,13 +513,8 @@ fn void arraybuffer_transfer_impl(BuiltinContext* ctx, bool preserve_resizable) 
     (*new_buf.extra_ptr()).ab.resizable = dest_resizable;
     (*new_buf.extra_ptr()).ab.max_byte_length = dest_max;
 
-    // Step 14: DetachArrayBuffer(O) — free the source's backing store and mark
-    // it detached (engine convention: byte_length = 0xFFFFFFFF).
-    if ((*obj.extra_ptr()).ab.data != null) {
-        ctx.heap.free_func(ctx.heap.heap_udata, (*obj.extra_ptr()).ab.data);
-        (*obj.extra_ptr()).ab.data = null;
-    }
-    (*obj.extra_ptr()).ab.byte_length = 0xFFFFFFFFu;
+    // Step 14: DetachArrayBuffer(O) — free the source's backing store.
+    arraybuffer_detach(ctx.heap, obj);
 
     ctx.result.set_object(new_buf);
 }
@@ -718,15 +726,13 @@ fn void builtin_detach_arraybuffer(BuiltinContext* ctx) {
         return;
     }
     HObject* obj = (HObject*)arg.get_heapptr();
+    // Only an ordinary (non-shared) ArrayBuffer can be detached; is_arraybuffer_obj
+    // already rejects SharedArrayBuffers, which are never detachable.
     if (!is_arraybuffer_obj(obj)) {
-        arraybuffer_throw_type_error(ctx, "__detachArrayBuffer requires an ArrayBuffer argument");
+        arraybuffer_throw_type_error(ctx, "detachArrayBuffer requires an ArrayBuffer argument");
         return;
     }
-    if ((*obj.extra_ptr()).ab.data != null) {
-        ctx.heap.free_func(ctx.heap.heap_udata, (*obj.extra_ptr()).ab.data);
-        (*obj.extra_ptr()).ab.data = null;
-    }
-    (*obj.extra_ptr()).ab.byte_length = 0xFFFFFFFFu;
+    arraybuffer_detach(ctx.heap, obj);
     ctx.result.set_undefined();
 }
 

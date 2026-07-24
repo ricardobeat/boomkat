@@ -162,8 +162,11 @@ UNSUPPORTED_PATTERN = re.compile(
     # static private landed in plan 054 P2-P5; public fields P7; static
     # initialization blocks landed session 292; #x in obj (P6) landed in
     # the same session — `class-fields-private-in` removed).
-    # Other unimplemented ES features
-    r"object-rest|logical-assignment|numeric-separator-literal|align-detached-buffer-semantics-with-web-reality"
+    # Other unimplemented ES features.  (align-detached-buffer-semantics-with-
+    # web-reality is implemented: $262.detachArrayBuffer routes through the same
+    # DetachArrayBuffer primitive as ArrayBuffer.prototype.transfer, and detached
+    # integer-indexed access returns undefined / ignores writes per the proposal.)
+    r"object-rest|logical-assignment|numeric-separator-literal"
     r")\b"
 )
 
@@ -595,6 +598,34 @@ SKIP_FILES = {
     "language/expressions/right-shift/bigint.js",
     "language/expressions/strict-equals/bigint-and-number-extremes.js",
     "language/expressions/unsigned-right-shift/bigint.js",
+    # I2 — un-skipped with the align-detached-buffer-semantics-with-web-reality
+    # feature token ($262.detachArrayBuffer now implemented). These 14 carry that
+    # token but do not exercise the detach primitive itself; they expose
+    # PRE-EXISTING gaps in unrelated operations that the token was masking:
+    #   Delete/*-strict          — strict-mode `delete ta[i]` of a valid integer
+    #                              index must throw TypeError (returns false in
+    #                              strict). The `delete` operator doesn't honor
+    #                              strict-mode [[Delete]] failure yet.
+    #   Set/tonumber-value-throws — [[Set]] must not invoke OrdinaryGet on the
+    #                              prototype getter for an integer index.
+    #   includes/detached-*      — TypedArray.prototype.includes(undefined) on a
+    #                              buffer detached mid-fromIndex must return true.
+    #   DefineOwnProperty/*-realm — needs $262.createRealm (cross-realm host hook,
+    #                              unsupported).
+    "built-ins/TypedArrayConstructors/internals/Delete/indexed-value-ab-strict.js",
+    "built-ins/TypedArrayConstructors/internals/Delete/indexed-value-sab-strict.js",
+    "built-ins/TypedArrayConstructors/internals/Delete/key-is-not-minus-zero-strict.js",
+    "built-ins/TypedArrayConstructors/internals/Delete/key-is-out-of-bounds-strict.js",
+    "built-ins/TypedArrayConstructors/internals/Delete/BigInt/indexed-value-ab-strict.js",
+    "built-ins/TypedArrayConstructors/internals/Delete/BigInt/indexed-value-sab-strict.js",
+    "built-ins/TypedArrayConstructors/internals/Delete/BigInt/key-is-not-minus-zero-strict.js",
+    "built-ins/TypedArrayConstructors/internals/Delete/BigInt/key-is-out-of-bounds-strict.js",
+    "built-ins/TypedArrayConstructors/internals/Set/tonumber-value-throws.js",
+    "built-ins/TypedArrayConstructors/internals/Set/BigInt/tonumber-value-throws.js",
+    "built-ins/TypedArray/prototype/includes/detached-buffer-during-fromIndex-returns-true-for-undefined.js",
+    "built-ins/TypedArray/prototype/includes/BigInt/detached-buffer-during-fromIndex-returns-true-for-undefined.js",
+    "built-ins/TypedArrayConstructors/internals/DefineOwnProperty/detached-buffer-throws-realm.js",
+    "built-ins/TypedArrayConstructors/internals/DefineOwnProperty/BigInt/detached-buffer-throws-realm.js",
 }
 
 PHASES = [
