@@ -26,6 +26,31 @@ macro fault CompilerContext.fail(&self, char[] msg) {
     return COMPILE_ERROR;
 }
 
+/// Record a lexer error at the current position (first-writer-wins), naming
+/// the offending character when it can be identified. Shared by advance()
+/// and peek_type() on a failed next_token()/peek(): after a single-char lex
+/// error the lexer has already advanced pos/col by one, so back up by one to
+/// point at the offending character.
+fn void CompilerContext.record_lex_error(&self) {
+    if (g_last_err_msg[0] != 0) return;
+    g_last_err_line = self.lexer.line;
+    g_last_err_col  = self.lexer.col > 0 ? self.lexer.col - 1 : 0;
+    uint bad_pos = self.lexer.pos > 0 ? self.lexer.pos - 1 : 0;
+    if (bad_pos < (uint)self.lexer.source.len) {
+        char c = self.lexer.source[bad_pos];
+        char[128] buf;
+        usz n = (usz)(io::bprintf(&buf, "unexpected character '%c' (not supported)", c) ?? buf[:0]).len;
+        usz copy_len = n < (g_last_err_msg.len - 1) ? n : (g_last_err_msg.len - 1);
+        mem::copy(&g_last_err_msg[0], &buf[0], (sz)(copy_len));
+        g_last_err_msg[copy_len] = 0;
+    } else {
+        char[] msg = "unexpected end of input";
+        usz copy_len = msg.len < (g_last_err_msg.len - 1) ? msg.len : (g_last_err_msg.len - 1);
+        mem::copy(&g_last_err_msg[0], msg.ptr, (sz)(copy_len));
+        g_last_err_msg[copy_len] = 0;
+    }
+}
+
 // ============================================================================
 // Token consumption helpers
 // ============================================================================
@@ -39,28 +64,7 @@ fn Token? CompilerContext.advance(&self) {
     }
     Token? tok_opt = self.lexer.next_token();
     if (catch _err = tok_opt) {
-        // Lex error — record position and a descriptive message (only if no prior error).
-        if (g_last_err_msg[0] == 0) {
-            g_last_err_line = self.lexer.line;
-            // After a single-char lex error the lexer has already advanced pos/col by 1;
-            // back up by one to report the column of the offending character.
-            g_last_err_col  = self.lexer.col > 0 ? self.lexer.col - 1 : 0;
-            // Identify the offending character if we can.
-            uint bad_pos = self.lexer.pos > 0 ? self.lexer.pos - 1 : 0;
-            if (bad_pos < (uint)self.lexer.source.len) {
-                char c = self.lexer.source[bad_pos];
-                char[128] buf;
-                usz n = (usz)(io::bprintf(&buf, "unexpected character '%c' (not supported)", c) ?? buf[:0]).len;
-                usz copy_len = n < (g_last_err_msg.len - 1) ? n : (g_last_err_msg.len - 1);
-                mem::copy(&g_last_err_msg[0], &buf[0], (sz)(copy_len));
-                g_last_err_msg[copy_len] = 0;
-            } else {
-                char[] msg = "unexpected end of input";
-                usz copy_len = msg.len < (g_last_err_msg.len - 1) ? msg.len : (g_last_err_msg.len - 1);
-                mem::copy(&g_last_err_msg[0], msg.ptr, (sz)(copy_len));
-                g_last_err_msg[copy_len] = 0;
-            }
-        }
+        self.record_lex_error();
         return COMPILE_ERROR~;
     }
     return tok_opt;
@@ -149,25 +153,7 @@ fn TokenType CompilerContext.peek_type(&self) {
     }
     Token? peek_opt = self.lexer.peek();
     if (catch _peek_err = peek_opt) {
-        // Lex error during peek — record it now (only if no prior error captured).
-        if (g_last_err_msg[0] == 0) {
-            g_last_err_line = self.lexer.line;
-            g_last_err_col  = self.lexer.col > 0 ? self.lexer.col - 1 : 0;
-            uint bad_pos = self.lexer.pos > 0 ? self.lexer.pos - 1 : 0;
-            if (bad_pos < (uint)self.lexer.source.len) {
-                char c = self.lexer.source[bad_pos];
-                char[128] buf;
-                usz n = (usz)(io::bprintf(&buf, "unexpected character '%c' (not supported)", c) ?? buf[:0]).len;
-                usz copy_len = n < (g_last_err_msg.len - 1) ? n : (g_last_err_msg.len - 1);
-                mem::copy(&g_last_err_msg[0], &buf[0], (sz)(copy_len));
-                g_last_err_msg[copy_len] = 0;
-            } else {
-                char[] msg = "unexpected end of input";
-                usz copy_len = msg.len < (g_last_err_msg.len - 1) ? msg.len : (g_last_err_msg.len - 1);
-                mem::copy(&g_last_err_msg[0], msg.ptr, (sz)(copy_len));
-                g_last_err_msg[copy_len] = 0;
-            }
-        }
+        self.record_lex_error();
         return TokenType.EOF_TOKEN;
     }
     return peek_opt.type;
