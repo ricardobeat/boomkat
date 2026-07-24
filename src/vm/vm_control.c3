@@ -406,6 +406,11 @@ fn TVal? dispatch_closures(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
     Vm* vm = ds.vm;
     switch (op) {
         case Opcode.CLOSURE: {
+            // Release ra's old OWNED value up front: the set_object result
+            // write below does not release the old register contents, and a
+            // GC during closure creation must not scan a stale pointer.
+            vm.heap.decref_tval(ra);
+            ra.set_undefined();
             uint bc = insn.get_bc();
             if (bc < vm.current_func.inner_count) {
                 CompiledFunction* template = vm.current_func.inner_funcs[bc];

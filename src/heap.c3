@@ -1476,6 +1476,22 @@ fn void*? Heap.alloc(&self, usz size) {
 /// Allocate without triggering GC.  Use for RC-managed objects (strings)
 /// that are not in the mark-and-sweep heap_allocated list.
 fn void*? Heap.alloc_no_gc(&self, usz size) {
+    // Large (non-interned-class) strings still contribute to GC pressure: a
+    // program building many multi-KB concat results referenced by short-lived
+    // objects would otherwise never burn down the trigger counter, so the
+    // arrays and objects holding those strings pile up unswept and memory
+    // grows without bound. Only the DEFERRED flag is set here — the collection
+    // itself runs at the next safepoint (see the note below about why a
+    // synchronous GC from inside this allocator is unsafe). Small strings are
+    // deliberately NOT counted: they are interned (string-table backstop) and
+    // counting them measurably shifts GC cadence for every property-key
+    // allocation without reclaiming anything extra.
+    if (size > 1024) {
+        self.gc_trigger_counter -= (long)(size >> 10);
+        if (self.gc_trigger_counter <= 0) {
+            self.gc_pending = true;
+        }
+    }
     void* ptr = self.alloc_func(self.heap_udata, size);
     if (ptr == null && size > 0) {
         // OOM — try a GC pass to reclaim M&S objects, then retry once

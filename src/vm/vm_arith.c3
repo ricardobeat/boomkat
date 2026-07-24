@@ -152,9 +152,13 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                     if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
                 }
             } else {
-                // Slow path: convert to number, increment, store back
+                // Slow path: convert to number, increment, store back.
+                // ra may hold an owned heap reference (e.g. a large
+                // non-interned string being ++'d) — release it before the
+                // raw numeric overwrite or that reference leaks.
                 double d = vm_to_number(vm,ra);
                 if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                vm.heap.decref_tval(ra);
                 ra.set_number(d + 1.0);
             }
             return (TVal){};
@@ -166,8 +170,11 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                     if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
                 }
             } else {
+                // See INC: release ra's owned heap reference before the
+                // raw numeric overwrite.
                 double d = vm_to_number(vm,ra);
                 if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                vm.heap.decref_tval(ra);
                 ra.set_number(d - 1.0);
             }
             return (TVal){};
@@ -387,6 +394,17 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
             if (!name_val.is_string()) return (TVal){};
             void* key = name_val.get_heapptr();
             bool is_inc = (op == Opcode.INC_GLOBAL);
+
+            // Every exit below writes the statement-value into ra, and the
+            // numeric fast paths write raw. Release ra's old OWNED reference
+            // up front (a large non-interned string parked here — e.g. a
+            // prior call result in a scratch register — would otherwise leak)
+            // and clear the slot so a GC triggered by a slow-path coercion
+            // cannot scan the stale pointer. Registers never hold borrows
+            // outside a fused CALL_VAR/CALL_GLOBAL in flight, so this decref
+            // cannot over-release.
+            vm.heap.decref_tval(ra);
+            ra.set_undefined();
 
             if (ds.var_ic_base != null) {
                 uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);

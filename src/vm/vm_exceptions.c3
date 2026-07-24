@@ -254,6 +254,7 @@ fn TVal? dispatch_exceptions(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                         val_pinned = true;
                     }
 
+                    free_catcher_chain(vm, callee_act);
                     decref_callee_regs(vm, callee_act);
 
                     vm.activation_count--;

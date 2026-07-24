@@ -1701,28 +1701,39 @@ fn TVal? Vm.run(Vm* vm) {
         }
 
         case Opcode.LDINT:
+            // Constant loads overwrite ra; like LDREG's dst handling, the old
+            // contents may be an owned heap reference (a register-resident
+            // local reassigned from e.g. a large non-interned string to a
+            // number: `t = 1`) — release it or that reference leaks.
+            vm.heap.decref_tval(ra);
             ra.set_fastint((long)insn.get_sbc());
             continue;
 
         case Opcode.LDINTX: {
+            // Always immediately preceded by the LDINT writing ra's high
+            // bits, so ra is a fastint here — no old heap ref to release.
             long ix_high = ra.get_fastint();
             ra.set_fastint((ix_high << 16) | (long)insn.get_bc());
             continue;
         }
 
         case Opcode.LDUNDEF:
+            vm.heap.decref_tval(ra);
             ra.set_undefined();
             continue;
 
         case Opcode.LDNULL:
+            vm.heap.decref_tval(ra);
             ra.set_null();
             continue;
 
         case Opcode.LDTRUE:
+            vm.heap.decref_tval(ra);
             ra.set_boolean(true);
             continue;
 
         case Opcode.LDFALSE:
+            vm.heap.decref_tval(ra);
             ra.set_boolean(false);
             continue;
 
@@ -1806,6 +1817,12 @@ fn TVal? Vm.run(Vm* vm) {
                         HString* interned = intern_string(vm, buf[:total]);
                         if (heap_allocated) vm.heap.free_func(vm.heap.heap_udata, buf);
                         vm.heap.set_reg_string(ra, interned);
+                        // A concat result can be a large NON-interned string
+                        // (len > MAX_INTERN_BYTES): a pure refcounted leaf with
+                        // no string-table/GC backstop. Raise max_heap_reg so
+                        // decref_callee_regs releases the register's reference
+                        // at frame teardown instead of leaking it.
+                        track_heap_store(ds.act, ra, (uint)insn.a);
                         continue;
                     }
                 }
@@ -1864,6 +1881,9 @@ fn TVal? Vm.run(Vm* vm) {
                     HString* interned = intern_string(vm, buf[:total]);
                     if (heap_allocated) vm.heap.free_func(vm.heap.heap_udata, buf);
                     vm.heap.set_reg_string(ra, interned);
+                    // Large concat results are non-interned; see the tracking
+                    // note on the STRING+FASTINT fast path above.
+                    track_heap_store(ds.act, ra, (uint)insn.a);
                 } else {
                     ra.set_undefined();
                 }
@@ -1957,6 +1977,12 @@ fn TVal? Vm.run(Vm* vm) {
                         HString* interned = intern_string(vm, buf[:total]);
                         if (heap_allocated) vm.heap.free_func(vm.heap.heap_udata, buf);
                         vm.heap.set_reg_string(ra, interned);
+                        // A concat result can be a large NON-interned string
+                        // (len > MAX_INTERN_BYTES): a pure refcounted leaf with
+                        // no string-table/GC backstop. Raise max_heap_reg so
+                        // decref_callee_regs releases the register's reference
+                        // at frame teardown instead of leaking it.
+                        track_heap_store(ds.act, ra, (uint)insn.a);
                         continue;
                     }
                 }
@@ -1999,6 +2025,8 @@ fn TVal? Vm.run(Vm* vm) {
                             HString* interned = intern_string(vm, buf[:total]);
                             if (heap_allocated) vm.heap.free_func(vm.heap.heap_udata, buf);
                             vm.heap.set_reg_string(ra, interned);
+                            // Large concat results are non-interned; see ADD.
+                            track_heap_store(ds.act, ra, (uint)insn.a);
                             continue;
                         }
                     }
@@ -3300,6 +3328,10 @@ fn TVal? Vm.run(Vm* vm) {
                 val_pinned = true;
             }
 
+            // Free catchers a return-from-try left on the chain: an early
+            // return never reaches CATCH/ENDTRY's pop paths, and this frame
+            // is now popping for good.
+            free_catcher_chain(vm, callee_act);
             // Decref callee registers before popping
             decref_callee_regs(vm, callee_act);
 
@@ -3367,6 +3399,19 @@ fn TVal? Vm.run(Vm* vm) {
             ds.act = &vm.activations[vm.activation_count - 1];
             vm.valstack_bottom = ds.act.bottom;
             vm.valstack_top = callee_act.caller_valstack_top;
+            // The write-back above may have parked a heap reference (e.g. a
+            // large non-interned string transferred via the pin) in a caller
+            // register the caller itself never tracked. Raise the caller's
+            // max_heap_reg so its eventual decref_callee_regs sweep releases
+            // the reference instead of leaking it. Gated on val/construct so
+            // the dominant primitive-return path (deep numeric recursion)
+            // skips the slot reload: a heap value can only have landed in the
+            // slot from `val` itself or from a construct call's this_binding.
+            if ((val.is_heap_allocated() || (callee_act.flags & ACT_FLAG_CONSTRUCT) != 0)
+                && callee_result != null && callee_result >= ds.act.bottom
+                && callee_result.is_heap_allocated()) {
+                track_heap_store(ds.act, callee_result, (uint)(callee_result - ds.act.bottom));
+            }
             CompiledFunction* caller_func = (CompiledFunction*)ds.act.func;
             if (caller_func != vm.current_func) {
                 vm.current_func = caller_func;
@@ -3500,6 +3545,10 @@ fn TVal? Vm.run(Vm* vm) {
                 continue;
             }
 
+            // Free catchers a return-from-try left on the chain: an early
+            // return never reaches CATCH/ENDTRY's pop paths, and this frame
+            // is now popping for good.
+            free_catcher_chain(vm, callee_act);
             // Decref callee registers before popping
             decref_callee_regs(vm, callee_act);
 

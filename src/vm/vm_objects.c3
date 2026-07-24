@@ -58,6 +58,12 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
     Vm* vm = ds.vm;
     switch (op) {
         case Opcode.NEWOBJ: {
+            // Release ra's old OWNED value before the allocation: set_object
+            // below writes without releasing the old contents (leaking e.g. a
+            // large non-interned string parked here), and an alloc-triggered
+            // GC must not scan a stale pointer through the cleared slot.
+            vm.heap.decref_tval(ra);
+            ra.set_undefined();
             HObject*? new_obj = vm.heap.alloc_object(hobject::ObjClass.OBJECT);
             if (try o = new_obj) {
                 o.prototype = vm.heap.object_proto;
@@ -70,13 +76,14 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
         }
 
         case Opcode.NEWARR: {
+            // See NEWOBJ: release + clear ra before the allocation.
+            vm.heap.decref_tval(ra);
+            ra.set_undefined();
             HObject*? new_arr = vm.heap.alloc_object(hobject::ObjClass.ARRAY);
             if (try a = new_arr) {
                 a.prototype = vm.heap.array_proto;
                 ra.set_object(a);
                 track_heap_store(ds.act, ra, (uint)insn.a);
-                if (insn.a == 251) {
-                }
             } else {
                 ra.set_undefined();
             }
@@ -84,6 +91,9 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
         }
 
         case Opcode.NEWREGEXP: {
+            // See NEWOBJ: release + clear ra before any allocation below.
+            vm.heap.decref_tval(ra);
+            ra.set_undefined();
             // A = dest register, BC = constant pool index of "/pattern/flags" string
             uint bc = insn.get_bc();
             if (bc < vm.current_func.const_count) {

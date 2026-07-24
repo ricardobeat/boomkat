@@ -371,6 +371,25 @@ fn void clear_borrowed_callee_slot(Activation* act) @inline {
     }
 }
 
+/// Free every Catcher still chained on an activation that is being popped.
+/// A `return` from inside a try block (or an unwind past the frame) leaves
+/// the TRY-allocated catcher(s) on act.cat: CATCH/ENDTRY/ENDFINALLY only pop
+/// them on their own control paths, which an early return never reaches —
+/// without this, each such frame permanently leaks its Catcher allocation(s).
+/// thrown_val is the one owned reference a parked catcher can hold (written
+/// via tval_copy_ref while routing a throw to a finally); release it too.
+fn void free_catcher_chain(Vm* vm, Activation* act) @inline {
+    Catcher* c = (Catcher*)act.cat;
+    if (c == null) return;
+    do {
+        Catcher* parent = c.parent;
+        vm.heap.decref_tval(&c.thrown_val);
+        vm.heap.free_func(vm.heap.heap_udata, c);
+        c = parent;
+    } while (c != null);
+    act.cat = null;
+}
+
 /// Decrement the reference count of every register in the given activation.
 /// Must be called BEFORE the activation is popped, while the register range
 /// is still valid.  Safe to call on activations with null func (no registers).
@@ -423,6 +442,8 @@ fn TVal handle_return(Vm* vm, TVal val) @inline {
     Activation* callee_act = curr_act(vm);
     TVal* callee_result = callee_act.retval;
 
+    // Free catchers a return-from-try left on the chain (frame is popping).
+    free_catcher_chain(vm, callee_act);
     // Decrement references for all callee registers before popping
     decref_callee_regs(vm, callee_act);
 
@@ -472,6 +493,13 @@ fn TVal handle_return(Vm* vm, TVal val) @inline {
             *result_slot = final_val;
         } else {
             vm.heap.tval_copy_ref(result_slot, &final_val);
+        }
+        // A heap result (e.g. a large non-interned string) now lives in a
+        // caller register the caller may never have tracked. Raise the
+        // caller's max_heap_reg so its decref_callee_regs sweep releases the
+        // reference instead of leaking it.
+        if (result_slot >= caller_act.bottom && result_slot.is_heap_allocated()) {
+            track_heap_store(caller_act, result_slot, (uint)(result_slot - caller_act.bottom));
         }
     }
 

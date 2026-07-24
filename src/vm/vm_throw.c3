@@ -75,6 +75,7 @@ fn bool vm_throw_value(Vm* vm, TVal thrown_val, Activation* act,
                         Activation* popping = &vm.activations[vm.activation_count - 1];
                         vm_complete_gen_on_unwind(vm, popping);
                         clear_borrowed_callee_slot(popping);
+                        free_catcher_chain(vm, popping);
                         vm.activation_count--;
                     }
                     // Restore the valstack_bottom for the target activation
@@ -105,6 +106,7 @@ fn bool vm_throw_value(Vm* vm, TVal thrown_val, Activation* act,
                         Activation* popping = &vm.activations[vm.activation_count - 1];
                         vm_complete_gen_on_unwind(vm, popping);
                         clear_borrowed_callee_slot(popping);
+                        free_catcher_chain(vm, popping);
                         vm.activation_count--;
                     }
                     vm.valstack_bottom = search_act.bottom;
@@ -141,6 +143,7 @@ fn bool vm_throw_value(Vm* vm, TVal thrown_val, Activation* act,
                 Activation* popping = &vm.activations[vm.activation_count - 1];
                 vm_complete_gen_on_unwind(vm, popping);
                 clear_borrowed_callee_slot(popping);
+                free_catcher_chain(vm, popping);
                 vm.activation_count--;
             }
             if (search_act.async_gen_state != null
