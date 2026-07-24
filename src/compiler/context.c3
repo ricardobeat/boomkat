@@ -32,7 +32,6 @@ const uint INITIAL_CODE        = 512;
 const uint INITIAL_CONSTANTS   = 128;
 const uint INITIAL_CONST_HASH  = 256;
 const uint INITIAL_INNER_FUNCS = 16;
-const uint INITIAL_HOISTED_FNS = 16;
 
 // Hard limits (sanity caps to catch runaway compilation).
 const uint MAX_CODE_HARD        = 1 << 22;  // 4M instructions
@@ -44,8 +43,6 @@ const uint MAX_LOOP_DEPTH  = 16;
 const uint MAX_TRY_DEPTH   = 8;
 const uint MAX_LABELS       = 16;
 const uint MAX_CONST_HASH   = 1024;  // Open-addressing hash table for constant dedup
-/// Insertion cap keeping at least 25% of slots empty so probes terminate early.
-const uint MAX_CONST_HASH_FILL = MAX_CONST_HASH - MAX_CONST_HASH / 4;
 
 /// Sentinel for "no patch" in break/continue patch lists.
 const uint NO_PATCH = 0xFFFF_FFFF;
@@ -62,9 +59,6 @@ struct ConstHashEntry {
 // ============================================================================
 
 const int PREC_NONE          = 0;
-const int PREC_COMMA         = 1;
-const int PREC_ASSIGNMENT    = 2;
-const int PREC_CONDITIONAL   = 3;
 const int PREC_NULLISH       = 4;
 const int PREC_LOGICAL_OR    = 5;
 const int PREC_LOGICAL_AND   = 6;
@@ -77,9 +71,6 @@ const int PREC_SHIFT         = 12;
 const int PREC_ADDITIVE      = 13;
 const int PREC_MULTIPLICATIVE = 14;
 const int PREC_EXPONENTIATION = 15;
-const int PREC_UNARY          = 16;
-const int PREC_POSTFIX        = 17;
-const int PREC_CALL           = 18;
 
 // ============================================================================
 // Supporting structures

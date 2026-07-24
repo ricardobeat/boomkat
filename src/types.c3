@@ -32,12 +32,6 @@ alias DukCodepoint = uint;
 // Common constants
 // ============================================================================
 
-/// IEEE 754 Not-a-Number.
-const double DUK_DOUBLE_NAN      = double::nan;
-/// IEEE 754 positive infinity.
-const double DUK_DOUBLE_INFINITY = double::inf;
-/// Sentinel returned when a stack index is invalid.
-const int    DUK_INVALID_INDEX   = int::min;
 /// Maximum safe integer representable in a double (2^53 - 1).
 const long   DUK_MAX_SAFE_INT    = 9007199254740991;
 /// Minimum safe integer representable in a double -(2^53 - 1).

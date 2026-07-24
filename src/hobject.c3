@@ -92,10 +92,6 @@ const uint HASH_UNUSED   = 0xFFFF_FFFF;
 /// Sentinel value in the hash table: slot was deleted (tombstone).
 const uint HASH_DELETED  = 0xFFFF_FFFE;
 
-/// FNV-1a constants (used to hash pointer values for the property hash).
-const uint FNV1A_OFFSET_BASIS = 0x811C_9DC5;
-const uint FNV1A_PRIME        = 0x0100_0193;
-
 // ============================================================================
 // ObjClass — ECMAScript internal [[Class]]
 // ============================================================================

@@ -169,7 +169,6 @@ struct GeneratorState {
     TVal return_value;        // value to return (when resume_kind == RETURN)
     // yield* delegation state
     void* delegated_iter;     // HObject* — iterator being delegated to
-    uint delegated_index;     // current index in delegation loop
     // async yield* delegation sub-state (ES2018 §14.4.14 / §27.6.3.8). The
     // YIELD_STAR_ASYNC opcode is a resumable state machine: each spec Await is a
     // real suspension that re-enters the same opcode, so the "program counter"
@@ -242,9 +241,6 @@ struct Heap {
     uint  bwd_gc_budget;            /// Countdown for backward-jump GC safepoint
     uint  live_obj_count;
     uint  peak_live_obj_count;   /// High-water mark for live objects
-
-    // Periodic GC trigger for alloc_no_gc (sweeps dead refcount-1 strings)
-    uint  string_alloc_count;
 
     // String-table sweeping is only safe when no raw HString* pointers are
     // held in C3 locals (see mark_and_sweep phase 3b).  Off by default;

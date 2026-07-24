@@ -32,9 +32,6 @@ const uint MAX_ARRIDX = 0xFFFF_FFFE;
 /// Sentinel value indicating "not a valid array index".
 const uint ARRIDX_NONE = 0xFFFF_FFFF;
 
-/// Maximum bytes for a single UTF-8 encoded codepoint.
-const uint MAX_UTF8_BYTES = 4;
-
 /// Unicode replacement character (U+FFFD).
 const uint UNICODE_REPLACEMENT = 0xFFFD;
 

@@ -27,9 +27,6 @@ extern fn double duktape_date_make_date(double day, double time_within_day);
 // Date constructor and methods (ES5 §15.9)
 // ============================================================================
 
-/// ECMAScript epoch: 1970-01-01 00:00:00 UTC.
-const long EPOCH_YEAR = 1970;
-
 /// Helper: get current time in milliseconds since epoch.
 fn double date_now_ms() {
     // time::now() is microseconds since the Unix epoch.

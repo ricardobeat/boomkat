@@ -48,21 +48,10 @@ const uint MAX_A  = 0xFF;
 const uint MAX_B  = 0xFF;
 const uint MAX_C  = 0xFF;
 
-/// Maximum unsigned value for the 16-bit BC combined field.
-const uint MAX_BC  = 0xFFFF;
-
-/// Maximum unsigned value for the 24-bit ABC combined field.
-const uint MAX_ABC = 0xFF_FFFF;
-
 /// Maximum positive signed BC value (after removing bias).
 const int  MAX_SBC  = 0x7FFF;
 /// Minimum (most-negative) signed BC value.
 const int  MIN_SBC  = -0x8000;
-
-/// Maximum positive signed ABC value.
-const int  MAX_SABC = 0x7F_FFFF;
-/// Minimum (most-negative) signed ABC value.
-const int  MIN_SABC = -0x80_0000;
 
 // ============================================================================
 // Opcode — all virtual-machine operations
@@ -1277,11 +1266,6 @@ struct CompiledFunction {
     ushort          num_formals;
 
     // ---- Source-level debug info ----------------------------------------
-
-    /// First source line covered by this function.
-    uint            source_line_start;
-    /// Last source line covered by this function.
-    uint            source_line_end;
 
     /// Function name (empty slice for anonymous functions).
     char*           name_ptr;

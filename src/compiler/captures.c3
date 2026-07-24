@@ -110,7 +110,6 @@ fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false) {
     // must be captured even though they appear outside any callable body.
     // Buffered when entering a non-control `(`, flushed on `) {`, discarded
     // on any other token after `)`.
-    uint[16] param_buf_paren_depth;   // paren_depth when each buffered name was seen
     char[][16] param_buf_names;       // buffered identifier names
     ushort[16] param_buf_lens;
     uint param_buf_count = 0;

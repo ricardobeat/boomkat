@@ -38,7 +38,6 @@ const char[] AFA_K_SLOT         = "\xFFafa_k";         // current index k
 const char[] AFA_LEN_SLOT       = "\xFFafa_len";       // length (array-like path)
 const char[] AFA_OUTER_SLOT     = "\xFFafa_outer";     // outer result promise
 const char[] AFA_ISASYNC_SLOT   = "\xFFafa_isAsync";   // true=iterator path, false=array-like
-const char[] AFA_MAPVAL_SLOT    = "\xFFafa_mapVal";    // pending value awaiting map (array-like)
 const char[] AFA_SOURCE_SLOT    = "\xFFafa_source";    // pins asyncItems for the driver's lifetime
 
 // ---------------------------------------------------------------------------

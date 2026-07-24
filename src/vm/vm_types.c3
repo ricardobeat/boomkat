@@ -106,7 +106,6 @@ struct Activation {
     TVal* caller_valstack_top;
 }
 
-const uint ACT_FLAG_TAILCALLED     = 1u << 0;
 const uint ACT_FLAG_CONSTRUCT      = 1u << 1;
 const uint ACT_FLAG_PREVENT_YIELD  = 1u << 2;
 const uint ACT_FLAG_DIRECT_EVAL    = 1u << 3;

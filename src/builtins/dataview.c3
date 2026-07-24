@@ -12,11 +12,6 @@ import duktape::hobject;
 import duktape::hbigint;
 import duktape::env;
 
-// All supported hosts (aarch64/x86_64) are little-endian; kept as a named
-// constant rather than inlined `false` so the byte-swap path stays reachable
-// if a big-endian target is ever added.
-const bool IS_BIG_ENDIAN = false;
-
 fn bool is_dataview_obj(HObject* obj) {
     return obj != null && obj.flags.obj_class == hobject::ObjClass.DATAVIEW;
 }
