@@ -17,6 +17,10 @@
 - **Large-string leak plugged** (bb6c01e): owned-register discipline at every raw register write, `free_catcher_chain` at frame-pop (return-from-try leaked a Catcher per frame), large-alloc GC-trigger burn. leak1.js: 2015 leaks/12.3MB → 15/880B. Phases 0+5 zero-fail; golden/rosetta clean; recursion/function_call/loop pay 3-7% (registry-backstop follow-up queued).
 - **GC roots hardened** (752b609): error_value/yield_value/resume_gen/gen_initial_gs marked defensively.
 - **Backlog closures from agent audits**: `&slice[0]` audit (190 hits, zero fixable), `[...arguments]` re-entrant path (stale — unified by cfb713e on 07-18), L2 direct-eval hoisting (invalid for a strict-only engine; phase 7 598/0), F2 builtin-accessor toString (already conformant, 8-probe matrix matches qjs). New split-off items: indirect-eval global definability (6 skip-listed tests), user-function toString `\uXXXX` escapes, latent GC-cadence bug in Array.prototype.map.
+- **I2 landed** (e3f324e): $262.detachArrayBuffer consolidated onto shared `arraybuffer_detach()`; skip token removed → phase 22: 3170→3290/0. Three latent TypedArray gaps split out (strict delete, includes-after-detach, [[Set]] OrdinaryGet).
+- **E1 landed** (009ffe3): `eval("super()")` in derived ctors + nested-eval `new.target`; phase 15 5794/0 (+2).
+- **C7a landed** (ff90372): private-name table shared across borrowing contexts (by-value adoption dangled the buffer on growth; field-init entry-pointer UAF); 120-field and nested-70-field repros verified.
+- All landings coordinator-verified: phases 0/5/7/15/22 zero-fail, golden 10/10, rosetta 100/100.
 
 ## Current Session
 

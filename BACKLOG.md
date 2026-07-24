@@ -121,16 +121,20 @@ Method: read-only Explore survey per subsystem → ranked plan → small fix age
 
 ## Compiler / language
 
-- [>] **C7a-residual** — `MAX_PRIVATE_NAMES = 64` cap (context.c3); grow-on-demand (65+ private fields overflow slot 0).
+- [x] **C7a-residual** — landed 2026-07-24 (ff90372): the fixed array was already growable on main, but adoption copied the (ptr,count,cap) triple BY VALUE — a nested class in a field initializer growing its copy dangled the owner/sibling contexts; plus a held `PrivateNameEntry*` UAF at class.c3 field-init. Now a shared heap `PrivateNameTable` struct. Coordinator-verified: 120-field class and 70-field nested-in-initializer both correct; phase 15 5794/0.
 - [x] **L2** — CLOSED INVALID (2026-07-24): engine is strict-only, and strict direct eval gets its own var environment (§19.2.1.3) — no hoisting into the caller is correct. 5-probe matrix matches qjs in strict mode; phase 7 (language/eval-code) 598/0 incl. all 11 var-env strict tests; the 437 skips are `noStrict` tests.
 - [ ] **Indirect-eval global-property definability** (split from L2 investigation) — 6 tests skip-listed in run_test262.py (~lines 294-299: var-env-var-init-global-exstng, var-env-func-init-multi, non-definable-global-function, etc.) fail on CanDeclareGlobalFunction/CanDeclareGlobalVar TypeErrors and preserving `configurable:false` on existing global props — descriptor semantics, not hoisting.
-- [>] **E1** — Eval-super residuals (plan 059 §2-3): object-literal-method eval-super (`__super__` in uncaptured PUSH_LEX scope); `eval("super()")` in derived ctors (`is_constructable` hardcoded false); nested-eval `new.target` (eval CFs are `is_global`); `super` in plain fn-expr should be an early SyntaxError.
+- [x] **E1** — landed 2026-07-24 (009ffe3): `eval("super()")` in derived ctors (allow_super_call threaded from caller's is_derived_ctor) and nested-eval `new.target` (new FuncFlags.eval_allows_new_target bit 29) fixed; object-literal-method eval-super and plain-fn `super` SyntaxError were already correct (stale premises; 2 stale skips removed). Phase 15 +2 (5794/0), phase 7 identical. Coordinator-verified both fixes by probe.
+- [ ] **`new.target` via super-property fails** (spotted by E1 agent, pre-existing, eval-unrelated) — `language/expressions/new.target/value-via-super-property.js` fails on main.
 - [x] **F2** — CLOSED STALE (2026-07-24): builtin accessors are ordinary FUNCTION-class objects with `.name` = "get size" style and route through the `.name` branch of builtin_function_proto_toString; 8-accessor probe matrix matches qjs (whitespace aside), `built-in-function-object.js` passes, toString subdir 79/80. Coordinator re-verified the probe on main.
 - [ ] **User-function `toString` drops `\uXXXX` escapes** (split from F2 audit) — `Function/prototype/toString/unicode.js` fails: source-text slicing doesn't preserve escaped identifiers.
 
 ## Infrastructure
 
-- [>] **I2** — `$262.detachArrayBuffer` host hook (unblocks TypedArray callback tests).
+- [x] **I2** — landed 2026-07-24 (e3f324e): hook already existed; consolidated onto a single `arraybuffer_detach()` primitive shared with ArrayBuffer.prototype.transfer, removed the `align-detached-buffer-semantics-with-web-reality` skip token. Phase 22: 3170→3290 pass, 0 fails. 14 token-carrying tests skip-listed for unrelated pre-existing gaps (items below).
+- [ ] **Strict-mode `delete ta[i]` returns false instead of throwing** (split from I2) — the delete operator doesn't honor strict [[Delete]] failure on TypedArray indices (8 tests).
+- [ ] **`TypedArray.includes(undefined, evilIdx)` after detach-in-coercion** (split from I2) — must return true once the buffer detaches during fromIndex coercion; returns false (2 tests).
+- [ ] **TypedArray `[[Set]]` ToNumber path invokes prototype OrdinaryGet** (split from I2) — 2 tests.
 - [ ] **I4** — Two-consecutive-run zero-fail gate; enforce in CI.
 - [ ] **Runner skip-list re-tier** — regroup `UNSUPPORTED_PATTERN` comments by `features.txt` sections (ratified vs proposal); labels have drifted.
 
