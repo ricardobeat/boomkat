@@ -1365,6 +1365,10 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     func.flags.is_global = self.is_global;
     func.flags.is_eval = self.eval_mode;
     func.flags.eval_src_strict = self.saw_use_strict;
+    // Record whether this eval body may itself reference new.target, so a
+    // nested direct eval inside it can inherit the permission (see
+    // FuncFlags.eval_allows_new_target).
+    func.flags.eval_allows_new_target = self.eval_mode && self.eval_direct_in_function;
     func.num_args = self.num_args;
     if (self.has_rest) {
         func.num_formals = self.rest_formal_count;

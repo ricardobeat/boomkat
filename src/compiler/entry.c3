@@ -142,7 +142,8 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
                                     void* parent_private_names = null,
                                     uint  parent_private_name_count = 0,
                                     bool  is_direct_eval = false,
-                                    bool  parent_super_is_home_object = false) {
+                                    bool  parent_super_is_home_object = false,
+                                    bool  allow_super_call = false) {
     g_last_err_msg[0] = 0;
     g_last_err_line = 0;
     g_last_err_col  = 0;
@@ -152,6 +153,14 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
     ctx.eval_mode = true;
     ctx.has_super_binding = allow_super;
     ctx.super_is_home_object = parent_super_is_home_object;
+    // A direct eval inside a derived-class constructor may contain a `super()`
+    // call (ES2022 §15.7.3 PerformEval: the eval inherits the caller's
+    // GetThisEnvironment, whose FunctionEnvironmentRecord has [[ThisBinding
+    // status]] "uninitialized" and a non-null [[FunctionObject]] with a
+    // [[ConstructorKind]] of "derived").  is_constructable gates the `super()`
+    // production in expressions.c3; without it `eval("super()")` is a spurious
+    // SyntaxError even though the runtime env carries __super__ and new.target.
+    ctx.is_constructable = allow_super_call;
     ctx.eval_direct_in_function = direct_in_function;
     ctx.eval_acc_reg = ctx.alloc_reg();
 

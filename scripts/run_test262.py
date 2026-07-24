@@ -276,15 +276,6 @@ SKIP_FILES = {
     "language/statements/class/elements/private-setter-is-not-a-own-property.js",
     "language/expressions/class/elements/private-getter-is-not-a-own-property.js",
     "language/expressions/class/elements/private-setter-is-not-a-own-property.js",
-    # B54 — super-from-eval tests (object-method eval referencing super).
-    # The eval compile path correctly propagates has_super_binding from a
-    # method with [[HomeObject]] into the eval'd source, but the resulting
-    # super-base resolution fails with "non-object super base" because the
-    # super-access path in vm_control/vm_property doesn't mirror the
-    # caller activation's [[HomeObject]] for the indirect-eval frame.
-    # Defer until we revisit super-in-eval plumbing.
-    "language/expressions/super/prop-dot-obj-val-from-eval.js",
-    "language/expressions/super/prop-expr-obj-val-from-eval.js",
     # B54 — private-fieldset-evaluation-order-3 + private-class-field-on-
     # nonextensible-return-override. These rely on the constructor's
     # field-init/brand stamp propagating to the override object when

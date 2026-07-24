@@ -1216,6 +1216,13 @@ bitstruct FuncFlags : uint {
     ///   async generator    :  is_generator,  is_async,  is_user_generator
     /// See `is_async_gen()`.
     bool  is_user_generator    : 28;
+    /// Compiled eval code (is_eval) whose source may legally reference
+    /// `new.target` — i.e. it was direct eval processed inside a non-arrow
+    /// FunctionBody (ES2015 §13.3.5.1 / Annex B). Recorded so a NESTED direct
+    /// eval inside this eval body can inherit the permission: without it the
+    /// inner eval's caller CF reports is_global_fn()==true (all eval CFs set
+    /// is_global) and would spuriously reject `new.target`.
+    bool  eval_allows_new_target : 29;
 }
 
 /// A compiled function template — the immutable bytecode representation of
@@ -1456,6 +1463,12 @@ macro bool CompiledFunction.is_global_fn(&self) {
 /// module top-level code) — see FuncFlags.is_eval.
 macro bool CompiledFunction.is_eval_fn(&self) {
     return self.flags.is_eval;
+}
+/// Returns `true` when this eval CF's own source may reference new.target
+/// (direct eval in a non-arrow function body) — used so a nested eval can
+/// inherit new.target legality. See FuncFlags.eval_allows_new_target.
+macro bool CompiledFunction.eval_allows_new_target(&self) {
+    return self.flags.eval_allows_new_target;
 }
 /// Returns `true` when the eval source had its own "use strict" directive
 /// (see FuncFlags.eval_src_strict). Only meaningful on is_eval functions.

@@ -515,6 +515,7 @@ fn void builtin_eval(BuiltinContext* ctx) {
     // requires. See compile_eval's `direct_in_function` doc comment.
     bool caller_direct_eval_in_function = false;
     bool caller_eval_allows_super = false;
+    bool caller_allows_super_call = false;
     void* parent_priv_names = null;
     uint parent_priv_count = 0;
     bool caller_super_is_home_object = false;
@@ -532,7 +533,14 @@ fn void builtin_eval(BuiltinContext* ctx) {
             // flag that's only ever set on compiled function bodies.
             CompiledFunction* caller_cf = (CompiledFunction*)precheck_caller.func;
             if (caller_cf != null) {
-                if (!caller_cf.is_arrow() && !caller_cf.is_global_fn()) {
+                if (caller_cf.is_eval_fn()) {
+                    // Nested direct eval: the immediate caller is itself an
+                    // eval body (which always sets is_global). new.target is
+                    // legal in the inner eval exactly when it was legal in the
+                    // enclosing eval — inherit that recorded permission rather
+                    // than mis-classifying the eval CF as global code.
+                    caller_direct_eval_in_function = caller_cf.eval_allows_new_target();
+                } else if (!caller_cf.is_arrow() && !caller_cf.is_global_fn()) {
                     caller_direct_eval_in_function = true;
                 }
                 // super.x/super[x] in eval is only allowed when the calling
@@ -543,6 +551,14 @@ fn void builtin_eval(BuiltinContext* ctx) {
                 // method or accessor in an object literal or class body).
                 if (caller_cf.has_home_object()) {
                     caller_eval_allows_super = true;
+                }
+                // super() (not super.x) is additionally permitted only when the
+                // enclosing function is a derived-class constructor — its
+                // FunctionEnvironmentRecord carries __super__ (the superclass
+                // constructor) and an uninitialised this-binding. See
+                // compile_eval's allow_super_call parameter.
+                if (caller_cf.is_derived_ctor()) {
+                    caller_allows_super_call = true;
                 }
                 caller_super_is_home_object = caller_cf.super_is_home_object();
                 parent_priv_names = caller_cf.eval_private_names;
@@ -559,7 +575,8 @@ fn void builtin_eval(BuiltinContext* ctx) {
                                                     caller_direct_eval_in_function,
                                                     parent_priv_names, parent_priv_count,
                                                     caller_has_direct_eval,
-                                                    caller_super_is_home_object);
+                                                    caller_super_is_home_object,
+                                                    caller_allows_super_call);
     CompiledFunction* func;
     if (try f = cf) {
         func = f;
