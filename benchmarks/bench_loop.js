@@ -1,5 +1,5 @@
 // Loop overhead benchmark
-var N = 500000;
+var N = 5000000;
 var sum = 0;
 var i = 0;
 

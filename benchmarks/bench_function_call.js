@@ -1,5 +1,5 @@
 // Function call overhead benchmark
-var N = 250000;
+var N = 2500000;
 
 function empty() { return; }
 function identity(x) { return x; }
