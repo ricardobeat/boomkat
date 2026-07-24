@@ -1282,93 +1282,64 @@ fn void date_break_time(double time_val, long* year, long* month, long* day,
     date_break_time_local_fields(time_val, year, month, day, wday, hour, minute, second);
 }
 
-/// Date.prototype.getFullYear() — ES5 §15.9.5.10
-fn void builtin_date_proto_getFullYear(BuiltinContext* ctx) {
+// Which broken-down component a Date getter returns. Values 0-6 index into
+// date_break_time's [year, month, day, wday, hour, min, sec] outputs; MS is a
+// special case computed directly from the time value.
+const int DATE_FIELD_YEAR  = 0;
+const int DATE_FIELD_MONTH = 1;
+const int DATE_FIELD_DAY   = 2;
+const int DATE_FIELD_WDAY  = 3;
+const int DATE_FIELD_HOUR  = 4;
+const int DATE_FIELD_MIN   = 5;
+const int DATE_FIELD_SEC   = 6;
+const int DATE_FIELD_MS    = 7;
+
+/// Shared body for Date.prototype.get{,UTC}{FullYear,Month,Date,Day,Hours,
+/// Minutes,Seconds,Milliseconds}: coerce this to a time value, propagate a
+/// NaN clock as NaN, then return the requested field (local or UTC).
+fn void date_get_field(BuiltinContext* ctx, int field, bool utc) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     double tv = date_this_time_value(ctx, &this_val);
     if (ctx.should_throw) return;
     if (math::is_nan(tv)) { ctx.result.set_number(double::nan); return; }
-    long year, month, day, wday, hour, min, sec;
-    date_break_time(tv, &year, &month, &day, &wday, &hour, &min, &sec);
-    ctx.result.set_fastint(year);
+    if (field == DATE_FIELD_MS) {
+        long ms = (long)tv % 1000;
+        if (ms < 0) ms += 1000;
+        ctx.result.set_fastint(ms);
+        return;
+    }
+    long[7] parts;
+    if (utc) {
+        date_break_time_utc(tv, &parts[0], &parts[1], &parts[2], &parts[3], &parts[4], &parts[5], &parts[6]);
+    } else {
+        date_break_time(tv, &parts[0], &parts[1], &parts[2], &parts[3], &parts[4], &parts[5], &parts[6]);
+    }
+    ctx.result.set_fastint(parts[field]);
 }
+
+/// Date.prototype.getFullYear() — ES5 §15.9.5.10
+fn void builtin_date_proto_getFullYear(BuiltinContext* ctx) => date_get_field(ctx, DATE_FIELD_YEAR, false);
 
 /// Date.prototype.getMonth() — ES5 §15.9.5.12
-fn void builtin_date_proto_getMonth(BuiltinContext* ctx) {
-    TVal this_val = ctx.regs[ctx.base_reg - 1];
-    double tv = date_this_time_value(ctx, &this_val);
-    if (ctx.should_throw) return;
-    if (math::is_nan(tv)) { ctx.result.set_number(double::nan); return; }
-    long year, month, day, wday, hour, min, sec;
-    date_break_time(tv, &year, &month, &day, &wday, &hour, &min, &sec);
-    ctx.result.set_fastint(month);
-}
+fn void builtin_date_proto_getMonth(BuiltinContext* ctx) => date_get_field(ctx, DATE_FIELD_MONTH, false);
 
 /// Date.prototype.getDate() — ES5 §15.9.5.14
-fn void builtin_date_proto_getDate(BuiltinContext* ctx) {
-    TVal this_val = ctx.regs[ctx.base_reg - 1];
-    double tv = date_this_time_value(ctx, &this_val);
-    if (ctx.should_throw) return;
-    if (math::is_nan(tv)) { ctx.result.set_number(double::nan); return; }
-    long year, month, day, wday, hour, min, sec;
-    date_break_time(tv, &year, &month, &day, &wday, &hour, &min, &sec);
-    ctx.result.set_fastint(day);
-}
+fn void builtin_date_proto_getDate(BuiltinContext* ctx) => date_get_field(ctx, DATE_FIELD_DAY, false);
 
 /// Date.prototype.getDay() — ES5 §15.9.5.16
-fn void builtin_date_proto_getDay(BuiltinContext* ctx) {
-    TVal this_val = ctx.regs[ctx.base_reg - 1];
-    double tv = date_this_time_value(ctx, &this_val);
-    if (ctx.should_throw) return;
-    if (math::is_nan(tv)) { ctx.result.set_number(double::nan); return; }
-    long year, month, day, wday, hour, min, sec;
-    date_break_time(tv, &year, &month, &day, &wday, &hour, &min, &sec);
-    ctx.result.set_fastint(wday);
-}
+fn void builtin_date_proto_getDay(BuiltinContext* ctx) => date_get_field(ctx, DATE_FIELD_WDAY, false);
 
 /// Date.prototype.getHours() — ES5 §15.9.5.18
-fn void builtin_date_proto_getHours(BuiltinContext* ctx) {
-    TVal this_val = ctx.regs[ctx.base_reg - 1];
-    double tv = date_this_time_value(ctx, &this_val);
-    if (ctx.should_throw) return;
-    if (math::is_nan(tv)) { ctx.result.set_number(double::nan); return; }
-    long year, month, day, wday, hour, min, sec;
-    date_break_time(tv, &year, &month, &day, &wday, &hour, &min, &sec);
-    ctx.result.set_fastint(hour);
-}
+fn void builtin_date_proto_getHours(BuiltinContext* ctx) => date_get_field(ctx, DATE_FIELD_HOUR, false);
 
 /// Date.prototype.getMinutes() — ES5 §15.9.5.20
-fn void builtin_date_proto_getMinutes(BuiltinContext* ctx) {
-    TVal this_val = ctx.regs[ctx.base_reg - 1];
-    double tv = date_this_time_value(ctx, &this_val);
-    if (ctx.should_throw) return;
-    if (math::is_nan(tv)) { ctx.result.set_number(double::nan); return; }
-    long year, month, day, wday, hour, min, sec;
-    date_break_time(tv, &year, &month, &day, &wday, &hour, &min, &sec);
-    ctx.result.set_fastint(min);
-}
+fn void builtin_date_proto_getMinutes(BuiltinContext* ctx) => date_get_field(ctx, DATE_FIELD_MIN, false);
 
 /// Date.prototype.getSeconds() — ES5 §15.9.5.22
-fn void builtin_date_proto_getSeconds(BuiltinContext* ctx) {
-    TVal this_val = ctx.regs[ctx.base_reg - 1];
-    double tv = date_this_time_value(ctx, &this_val);
-    if (ctx.should_throw) return;
-    if (math::is_nan(tv)) { ctx.result.set_number(double::nan); return; }
-    long year, month, day, wday, hour, min, sec;
-    date_break_time(tv, &year, &month, &day, &wday, &hour, &min, &sec);
-    ctx.result.set_fastint(sec);
-}
+fn void builtin_date_proto_getSeconds(BuiltinContext* ctx) => date_get_field(ctx, DATE_FIELD_SEC, false);
 
 /// Date.prototype.getMilliseconds() — ES5 §15.9.5.24
-fn void builtin_date_proto_getMilliseconds(BuiltinContext* ctx) {
-    TVal this_val = ctx.regs[ctx.base_reg - 1];
-    double tv = date_this_time_value(ctx, &this_val);
-    if (ctx.should_throw) return;
-    if (math::is_nan(tv)) { ctx.result.set_number(double::nan); return; }
-    long ms = (long)tv % 1000;
-    if (ms < 0) ms += 1000;
-    ctx.result.set_fastint(ms);
-}
+fn void builtin_date_proto_getMilliseconds(BuiltinContext* ctx) => date_get_field(ctx, DATE_FIELD_MS, false);
 
 /// Helper: break a time value into UTC time components via gmtime_r.
 fn void date_break_time_utc(double time_val, long* year, long* month, long* day,
@@ -1429,92 +1400,28 @@ fn void builtin_date_proto_getTimezoneOffset(BuiltinContext* ctx) {
 }
 
 /// Date.prototype.getUTCFullYear() — ES5 §15.9.5.41
-fn void builtin_date_proto_getUTCFullYear(BuiltinContext* ctx) {
-    TVal this_val = ctx.regs[ctx.base_reg - 1];
-    double tv = date_this_time_value(ctx, &this_val);
-    if (ctx.should_throw) return;
-    if (math::is_nan(tv)) { ctx.result.set_number(double::nan); return; }
-    long year, month, day, wday, hour, min, sec;
-    date_break_time_utc(tv, &year, &month, &day, &wday, &hour, &min, &sec);
-    ctx.result.set_fastint(year);
-}
+fn void builtin_date_proto_getUTCFullYear(BuiltinContext* ctx) => date_get_field(ctx, DATE_FIELD_YEAR, true);
 
 /// Date.prototype.getUTCMonth() — ES5 §15.9.5.42
-fn void builtin_date_proto_getUTCMonth(BuiltinContext* ctx) {
-    TVal this_val = ctx.regs[ctx.base_reg - 1];
-    double tv = date_this_time_value(ctx, &this_val);
-    if (ctx.should_throw) return;
-    if (math::is_nan(tv)) { ctx.result.set_number(double::nan); return; }
-    long year, month, day, wday, hour, min, sec;
-    date_break_time_utc(tv, &year, &month, &day, &wday, &hour, &min, &sec);
-    ctx.result.set_fastint(month);
-}
+fn void builtin_date_proto_getUTCMonth(BuiltinContext* ctx) => date_get_field(ctx, DATE_FIELD_MONTH, true);
 
 /// Date.prototype.getUTCDate() — ES5 §15.9.5.43
-fn void builtin_date_proto_getUTCDate(BuiltinContext* ctx) {
-    TVal this_val = ctx.regs[ctx.base_reg - 1];
-    double tv = date_this_time_value(ctx, &this_val);
-    if (ctx.should_throw) return;
-    if (math::is_nan(tv)) { ctx.result.set_number(double::nan); return; }
-    long year, month, day, wday, hour, min, sec;
-    date_break_time_utc(tv, &year, &month, &day, &wday, &hour, &min, &sec);
-    ctx.result.set_fastint(day);
-}
+fn void builtin_date_proto_getUTCDate(BuiltinContext* ctx) => date_get_field(ctx, DATE_FIELD_DAY, true);
 
 /// Date.prototype.getUTCDay() — ES5 §15.9.5.44
-fn void builtin_date_proto_getUTCDay(BuiltinContext* ctx) {
-    TVal this_val = ctx.regs[ctx.base_reg - 1];
-    double tv = date_this_time_value(ctx, &this_val);
-    if (ctx.should_throw) return;
-    if (math::is_nan(tv)) { ctx.result.set_number(double::nan); return; }
-    long year, month, day, wday, hour, min, sec;
-    date_break_time_utc(tv, &year, &month, &day, &wday, &hour, &min, &sec);
-    ctx.result.set_fastint(wday);
-}
+fn void builtin_date_proto_getUTCDay(BuiltinContext* ctx) => date_get_field(ctx, DATE_FIELD_WDAY, true);
 
 /// Date.prototype.getUTCHours() — ES5 §15.9.5.45
-fn void builtin_date_proto_getUTCHours(BuiltinContext* ctx) {
-    TVal this_val = ctx.regs[ctx.base_reg - 1];
-    double tv = date_this_time_value(ctx, &this_val);
-    if (ctx.should_throw) return;
-    if (math::is_nan(tv)) { ctx.result.set_number(double::nan); return; }
-    long year, month, day, wday, hour, min, sec;
-    date_break_time_utc(tv, &year, &month, &day, &wday, &hour, &min, &sec);
-    ctx.result.set_fastint(hour);
-}
+fn void builtin_date_proto_getUTCHours(BuiltinContext* ctx) => date_get_field(ctx, DATE_FIELD_HOUR, true);
 
 /// Date.prototype.getUTCMinutes() — ES5 §15.9.5.46
-fn void builtin_date_proto_getUTCMinutes(BuiltinContext* ctx) {
-    TVal this_val = ctx.regs[ctx.base_reg - 1];
-    double tv = date_this_time_value(ctx, &this_val);
-    if (ctx.should_throw) return;
-    if (math::is_nan(tv)) { ctx.result.set_number(double::nan); return; }
-    long year, month, day, wday, hour, min, sec;
-    date_break_time_utc(tv, &year, &month, &day, &wday, &hour, &min, &sec);
-    ctx.result.set_fastint(min);
-}
+fn void builtin_date_proto_getUTCMinutes(BuiltinContext* ctx) => date_get_field(ctx, DATE_FIELD_MIN, true);
 
 /// Date.prototype.getUTCSeconds() — ES5 §15.9.5.47
-fn void builtin_date_proto_getUTCSeconds(BuiltinContext* ctx) {
-    TVal this_val = ctx.regs[ctx.base_reg - 1];
-    double tv = date_this_time_value(ctx, &this_val);
-    if (ctx.should_throw) return;
-    if (math::is_nan(tv)) { ctx.result.set_number(double::nan); return; }
-    long year, month, day, wday, hour, min, sec;
-    date_break_time_utc(tv, &year, &month, &day, &wday, &hour, &min, &sec);
-    ctx.result.set_fastint(sec);
-}
+fn void builtin_date_proto_getUTCSeconds(BuiltinContext* ctx) => date_get_field(ctx, DATE_FIELD_SEC, true);
 
 /// Date.prototype.getUTCMilliseconds() — ES5 §15.9.5.48
-fn void builtin_date_proto_getUTCMilliseconds(BuiltinContext* ctx) {
-    TVal this_val = ctx.regs[ctx.base_reg - 1];
-    double tv = date_this_time_value(ctx, &this_val);
-    if (ctx.should_throw) return;
-    if (math::is_nan(tv)) { ctx.result.set_number(double::nan); return; }
-    long ms = (long)tv % 1000;
-    if (ms < 0) ms += 1000;
-    ctx.result.set_fastint(ms);
-}
+fn void builtin_date_proto_getUTCMilliseconds(BuiltinContext* ctx) => date_get_field(ctx, DATE_FIELD_MS, true);
 
 /// Date.prototype.setTime(time) — ES5 §15.9.5.27
 fn void builtin_date_proto_setTime(BuiltinContext* ctx) {
