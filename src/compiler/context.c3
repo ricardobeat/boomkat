@@ -6,7 +6,7 @@ import duktape::bytecode;
 import duktape::hstring;
 import duktape::hobject;
 import duktape::heap;
-import duktape::jit;
+import duktape::peephole;
 import std::io;
 import std::collections::list;
 
@@ -1443,8 +1443,8 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         // break every class-body eval test.
     }
 
-    // Run JIT optimizations (GETPROPC2 chain fusion, etc.)
-    jit::jit_scan(func, hp);
+    // Run bytecode peephole optimizations (GETPROPC2 chain fusion, etc.)
+    peephole::peephole_scan(func, hp);
 
     // Free compiler scratch buffers — the CompiledFunction owns its own copies.
     self.cleanup();
