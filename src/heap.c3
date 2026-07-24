@@ -2252,6 +2252,12 @@ fn void Heap.mark_roots(&self) {
         self.mark_activations_fn(self.curr_thread, self);
     }
 
+    // Conservative roots pending single-error-channel consolidation
+    self.mark_tval(&self.error_value);
+    self.mark_tval(&self.yield_value);
+    self.mark_generator_state(self.resume_gen);
+    self.mark_generator_state(self.gen_initial_gs);
+
     // Mark the generator object being initialized during an initial generator call.
     // gen_initial_obj is not yet reachable from any register or stack slot during
     // param-init execution, so it must be marked explicitly to prevent GC collection.
