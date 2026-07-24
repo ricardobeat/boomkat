@@ -12,6 +12,12 @@
 - **Phase counts**: `bash scripts/count_test262_by_phase.sh` · **Delta**: `bash scripts/test262_delta.sh`.
 - **Build**: `c3c build test262_runner` or `c3c build duktape_c3` (plain runner; `duktape_c3_debug` for `-c`/`-t` inspection).
 
+## Session 298 (2026-07-24)
+
+- **Large-string leak plugged** (bb6c01e): owned-register discipline at every raw register write, `free_catcher_chain` at frame-pop (return-from-try leaked a Catcher per frame), large-alloc GC-trigger burn. leak1.js: 2015 leaks/12.3MB → 15/880B. Phases 0+5 zero-fail; golden/rosetta clean; recursion/function_call/loop pay 3-7% (registry-backstop follow-up queued).
+- **GC roots hardened** (752b609): error_value/yield_value/resume_gen/gen_initial_gs marked defensively.
+- **Backlog closures from agent audits**: `&slice[0]` audit (190 hits, zero fixable), `[...arguments]` re-entrant path (stale — unified by cfb713e on 07-18), L2 direct-eval hoisting (invalid for a strict-only engine; phase 7 598/0), F2 builtin-accessor toString (already conformant, 8-probe matrix matches qjs). New split-off items: indirect-eval global definability (6 skip-listed tests), user-function toString `\uXXXX` escapes, latent GC-cadence bug in Array.prototype.map.
+
 ## Current Session
 
 - ASI over-acceptance fixed in `src/compiler/class.c3` and `src/compiler/statements.c3`.

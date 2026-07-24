@@ -1,4 +1,4 @@
-module duktape::jit;
+module duktape::peephole;
 
 import duktape::bytecode;
 import duktape::types;
@@ -12,7 +12,7 @@ import duktape::hobject;
 /// Fuse consecutive GETPROPC pairs where output of first is input of second.
 /// Pattern: GETPROPC r_tmp, r_src, key1  /  GETPROPC r_dst, r_tmp, key2
 /// → GETPROPC2 r_tmp, r_src, key1  /  (data: r_dst, key2) in next slot
-fn void jit_fuse_getpropc_chains(CompiledFunction* f) {
+fn void fuse_getpropc_chains(CompiledFunction* f) {
     if (f == null || f.code_count < 2) return;
 
     for (uint i = 0; i + 1 < f.code_count; i++) {
@@ -32,14 +32,14 @@ fn void jit_fuse_getpropc_chains(CompiledFunction* f) {
 }
 
 // ============================================================================
-// Main JIT scan entry point
+// Main peephole scan entry point
 // ============================================================================
 
-/// Run JIT optimizations on a compiled function's bytecode.
+/// Run bytecode peephole optimizations on a compiled function.
 /// Called after compilation and before first execution.
-fn void jit_scan(CompiledFunction* f, Heap* h) {
+fn void peephole_scan(CompiledFunction* f, Heap* h) {
     if (f == null) return;
 
     // Fuse consecutive GETPROPC chains
-    jit_fuse_getpropc_chains(f);
+    fuse_getpropc_chains(f);
 }
