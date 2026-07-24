@@ -10,7 +10,10 @@ import duktape::hobject;
 
 // Differs from === only in that NaN equals NaN.
 // ============================================================================
-fn bool same_value_zero(TVal a, TVal b) {
+// SameValueZero (ES6 §7.2.10) and SameValue (§7.2.9) differ only in ±0:
+// SameValue treats +0 and -0 as distinct, SameValueZero treats them equal.
+// `zero_signs_distinct` selects between them.
+fn bool same_value_impl(TVal a, TVal b, bool zero_signs_distinct) {
     if (a.get_tag() == b.get_tag()) {
         switch (a.get_tag()) {
             case UNDEFINED: return true;
@@ -18,37 +21,7 @@ fn bool same_value_zero(TVal a, TVal b) {
             case BOOLEAN:   return a.get_boolean() == b.get_boolean();
             case NUMBER:
                 if (math::is_nan(a.get_number()) && math::is_nan(b.get_number())) return true;
-                return a.get_number() == b.get_number();
-            case FASTINT:   return a.get_fastint() == b.get_fastint();
-            case STRING:    return a.get_heapptr() == b.get_heapptr();
-            case OBJECT:    return a.get_heapptr() == b.get_heapptr();
-            case BIGINT:    return a.get_bigint() == b.get_bigint();
-            default: return false;
-        }
-    }
-    if ((a.is_number() && b.is_fastint()) || (a.is_fastint() && b.is_number())) {
-        double av = a.is_fastint() ? (double)a.get_fastint() : a.get_number();
-        double bv = b.is_fastint() ? (double)b.get_fastint() : b.get_number();
-        return av == bv;
-    }
-    return false;
-}
-
-// ============================================================================
-// SameValue comparison (ES6 §7.2.9)
-// Used by Object.is.
-// Differs from SameValueZero in that +0 !== -0.
-// ============================================================================
-fn bool same_value(TVal a, TVal b) {
-    if (a.get_tag() == b.get_tag()) {
-        switch (a.get_tag()) {
-            case UNDEFINED: return true;
-            case NULL_VAL:  return true;
-            case BOOLEAN:   return a.get_boolean() == b.get_boolean();
-            case NUMBER:
-                if (math::is_nan(a.get_number()) && math::is_nan(b.get_number())) return true;
-                // +0 !== -0: check if both are zero with different signs
-                if (a.get_number() == 0.0 && b.get_number() == 0.0) {
+                if (zero_signs_distinct && a.get_number() == 0.0 && b.get_number() == 0.0) {
                     return 1.0 / a.get_number() == 1.0 / b.get_number();
                 }
                 return a.get_number() == b.get_number();
@@ -63,12 +36,16 @@ fn bool same_value(TVal a, TVal b) {
         double av = a.is_fastint() ? (double)a.get_fastint() : a.get_number();
         double bv = b.is_fastint() ? (double)b.get_fastint() : b.get_number();
         if (math::is_nan(av) && math::is_nan(bv)) return true;
-        // +0 !== -0: check if both are zero with different signs
-        if (av == 0.0 && bv == 0.0) return 1.0 / av == 1.0 / bv;
+        if (zero_signs_distinct && av == 0.0 && bv == 0.0) return 1.0 / av == 1.0 / bv;
         return av == bv;
     }
     return false;
 }
+
+fn bool same_value_zero(TVal a, TVal b) => same_value_impl(a, b, false);
+
+// SameValue comparison (ES6 §7.2.9) — used by Object.is; +0 !== -0.
+fn bool same_value(TVal a, TVal b) => same_value_impl(a, b, true);
 
 // ============================================================================
 // Map helpers
