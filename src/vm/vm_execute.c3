@@ -12,6 +12,29 @@ import duktape::re_bindings;
 import std::io;
 import std::math;
 
+/// Relocate a saved frame snapshot after a nested Vm.run() may have
+/// reallocated the valstack. The snapshot holds absolute pointers taken
+/// before the nested run and is not covered by ensure_valstack_grow's own
+/// relocation pass, so it has to be shifted by the same delta here.
+/// No-op when the valstack did not move.
+fn void relocate_saved_frames(Vm* vm, TVal* saved_valstack, TVal** saved_bottom,
+                              TVal** saved_top, Activation* saved_acts,
+                              uint saved_act_count) {
+    long reloc = (char*)vm.valstack - (char*)saved_valstack;
+    if (reloc == 0) return;
+    *saved_bottom = (TVal*)((char*)*saved_bottom + reloc);
+    *saved_top = (TVal*)((char*)*saved_top + reloc);
+    for (uint i = 0; i < saved_act_count; i++) {
+        saved_acts[i].bottom = (TVal*)((char*)saved_acts[i].bottom + reloc);
+        if (saved_acts[i].retval != null) {
+            saved_acts[i].retval = (TVal*)((char*)saved_acts[i].retval + reloc);
+        }
+        if (saved_acts[i].caller_valstack_top != null) {
+            saved_acts[i].caller_valstack_top = (TVal*)((char*)saved_acts[i].caller_valstack_top + reloc);
+        }
+    }
+}
+
 /// Set up a named-function-expression's name binding environment.
 /// Returns a fresh declarative env with `name_hstr` bound immutably to
 /// `func_obj`, chained above `parent`. Per ES2015 §14.1.20/§9.2.13, the
@@ -643,23 +666,8 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
 
             // Deregister the shadow frame now that the inner Vm.run() has returned.
             vm.shadow_act_list = shadow_frame.prev;
-            // If the nested run reallocated the valstack, relocate the saved
-            // absolute pointers by the same delta (the saved snapshot was not
-            // covered by ensure_valstack_grow's relocation pass).
-            long reloc = (char*)vm.valstack - (char*)saved_valstack;
-            if (reloc != 0) {
-                saved_valstack_bottom = (TVal*)((char*)saved_valstack_bottom + reloc);
-                saved_valstack_top = (TVal*)((char*)saved_valstack_top + reloc);
-                for (uint i = 0; i < saved_act_count; i++) {
-                    saved_acts[i].bottom = (TVal*)((char*)saved_acts[i].bottom + reloc);
-                    if (saved_acts[i].retval != null) {
-                        saved_acts[i].retval = (TVal*)((char*)saved_acts[i].retval + reloc);
-                    }
-                    if (saved_acts[i].caller_valstack_top != null) {
-                        saved_acts[i].caller_valstack_top = (TVal*)((char*)saved_acts[i].caller_valstack_top + reloc);
-                    }
-                }
-            }
+            relocate_saved_frames(vm, saved_valstack, &saved_valstack_bottom,
+                                  &saved_valstack_top, &saved_acts[0], saved_act_count);
 
             // Restore VM state (caller registers were never touched)
             vm.activation_count = saved_act_count;
@@ -1121,20 +1129,8 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
     }
 
     // Relocate saved pointers if valstack moved during the constructor run.
-    long reloc = (char*)vm.valstack - (char*)saved_valstack;
-    if (reloc != 0) {
-        saved_valstack_bottom = (TVal*)((char*)saved_valstack_bottom + reloc);
-        saved_valstack_top = (TVal*)((char*)saved_valstack_top + reloc);
-        for (uint i = 0; i < saved_act_count; i++) {
-            saved_acts[i].bottom = (TVal*)((char*)saved_acts[i].bottom + reloc);
-            if (saved_acts[i].retval != null) {
-                saved_acts[i].retval = (TVal*)((char*)saved_acts[i].retval + reloc);
-            }
-            if (saved_acts[i].caller_valstack_top != null) {
-                saved_acts[i].caller_valstack_top = (TVal*)((char*)saved_acts[i].caller_valstack_top + reloc);
-            }
-        }
-    }
+    relocate_saved_frames(vm, saved_valstack, &saved_valstack_bottom,
+                          &saved_valstack_top, &saved_acts[0], saved_act_count);
 
     // Restore VM state.
     vm.activation_count = saved_act_count;
@@ -1540,23 +1536,8 @@ fn bool? Vm.execute_module_nested(Vm* vm, CompiledFunction* func, EnvRecord* env
     // have finished.
     vm.shadow_act_list = shadow_frame.prev;
 
-    // If the nested run reallocated the valstack, relocate the saved
-    // absolute pointers by the same delta (the saved snapshot was not
-    // covered by ensure_valstack_grow's relocation pass).
-    long reloc = (char*)vm.valstack - (char*)saved_valstack;
-    if (reloc != 0) {
-        saved_valstack_bottom = (TVal*)((char*)saved_valstack_bottom + reloc);
-        saved_valstack_top = (TVal*)((char*)saved_valstack_top + reloc);
-        for (uint i = 0; i < saved_act_count; i++) {
-            saved_acts[i].bottom = (TVal*)((char*)saved_acts[i].bottom + reloc);
-            if (saved_acts[i].retval != null) {
-                saved_acts[i].retval = (TVal*)((char*)saved_acts[i].retval + reloc);
-            }
-            if (saved_acts[i].caller_valstack_top != null) {
-                saved_acts[i].caller_valstack_top = (TVal*)((char*)saved_acts[i].caller_valstack_top + reloc);
-            }
-        }
-    }
+    relocate_saved_frames(vm, saved_valstack, &saved_valstack_bottom,
+                          &saved_valstack_top, &saved_acts[0], saved_act_count);
 
     // Restore VM state (caller registers were never touched).
     vm.activation_count = saved_act_count;
