@@ -948,6 +948,36 @@ fn hobject::Shape* Heap.get_shape(&self, ushort shape_id) {
 }
 
 /**
+ * Free every tracked CompiledFunction and its sub-arrays, leaving the
+ * `compiled_funcs` array itself alone. Teardown-only: no decref is needed
+ * because the caller is tearing the heap down and the interned strings are
+ * released by the str_table sweep. Shared by destroy() and reset().
+ */
+fn void Heap.free_compiled_funcs(&self) {
+    for (uint i = 0; i < self.compiled_func_count; i++) {
+        bytecode::CompiledFunction* cf = (bytecode::CompiledFunction*)self.compiled_funcs[i];
+        if (cf == null) continue;
+        if (cf.code != null) { self.free_func(self.heap_udata, cf.code); }
+        if (cf.constants != null) { self.free_func(self.heap_udata, cf.constants); }
+        if (cf.inner_funcs != null) { self.free_func(self.heap_udata, cf.inner_funcs); }
+        if (cf.line_table != null) { self.free_func(self.heap_udata, cf.line_table); }
+        if (cf.ic_entries != null) { self.free_func(self.heap_udata, cf.ic_entries); }
+        if (cf.var_ic_entries != null) { self.free_func(self.heap_udata, cf.var_ic_entries); }
+        if (cf.regexp_cache != null) {
+            for (uint ri = 0; ri < cf.regexp_cache_count; ri++) {
+                if (cf.regexp_cache[ri] != null) { re_bindings::re_free(cf.regexp_cache[ri]); }
+            }
+            self.free_func(self.heap_udata, cf.regexp_cache);
+        }
+        // Direct-eval private-name snapshot (compiler/context.c3 finish() —
+        // heap-tracked when a function had direct eval AND inherited names
+        // from a parent class body).
+        if (cf.eval_private_names != null) { self.free_func(self.heap_udata, cf.eval_private_names); }
+        self.free_func(self.heap_udata, cf);
+    }
+}
+
+/**
  * Destroy the heap: walk every managed object and release it, then free
  * the heap struct itself.
  */
@@ -987,28 +1017,7 @@ fn void Heap.destroy(&self) {
     // No decref needed — everything is being torn down and strings will be
     // freed from the str_table sweep below.
     if (self.compiled_funcs != null) {
-        for (uint i = 0; i < self.compiled_func_count; i++) {
-            bytecode::CompiledFunction* cf = (bytecode::CompiledFunction*)self.compiled_funcs[i];
-            if (cf != null) {
-                if (cf.code != null) { self.free_func(self.heap_udata, cf.code); }
-                if (cf.constants != null) { self.free_func(self.heap_udata, cf.constants); }
-                if (cf.inner_funcs != null) { self.free_func(self.heap_udata, cf.inner_funcs); }
-                if (cf.line_table != null) { self.free_func(self.heap_udata, cf.line_table); }
-                if (cf.ic_entries != null) { self.free_func(self.heap_udata, cf.ic_entries); }
-                if (cf.var_ic_entries != null) { self.free_func(self.heap_udata, cf.var_ic_entries); }
-                if (cf.regexp_cache != null) {
-                    for (uint ri = 0; ri < cf.regexp_cache_count; ri++) {
-                        if (cf.regexp_cache[ri] != null) { re_bindings::re_free(cf.regexp_cache[ri]); }
-                    }
-                    self.free_func(self.heap_udata, cf.regexp_cache);
-                }
-                // Direct-eval private-name snapshot (compiler/context.c3
-                // finish() — heap-tracked when a function had direct eval AND
-                // inherited names from a parent class body).
-                if (cf.eval_private_names != null) { self.free_func(self.heap_udata, cf.eval_private_names); }
-                self.free_func(self.heap_udata, cf);
-            }
-        }
+        self.free_compiled_funcs();
         self.free_func(self.heap_udata, self.compiled_funcs);
         self.compiled_funcs = null;
     }
@@ -1138,26 +1147,7 @@ fn void Heap.reset(&self) {
     self.heap_allocated = null;
 
     // Free all tracked CompiledFunctions — no decref needed, teardown mode.
-    for (uint i = 0; i < self.compiled_func_count; i++) {
-        bytecode::CompiledFunction* cf = (bytecode::CompiledFunction*)self.compiled_funcs[i];
-        if (cf != null) {
-            if (cf.code != null) { self.free_func(self.heap_udata, cf.code); }
-            if (cf.constants != null) { self.free_func(self.heap_udata, cf.constants); }
-            if (cf.inner_funcs != null) { self.free_func(self.heap_udata, cf.inner_funcs); }
-            if (cf.line_table != null) { self.free_func(self.heap_udata, cf.line_table); }
-            if (cf.ic_entries != null) { self.free_func(self.heap_udata, cf.ic_entries); }
-            if (cf.var_ic_entries != null) { self.free_func(self.heap_udata, cf.var_ic_entries); }
-            if (cf.regexp_cache != null) {
-                for (uint ri = 0; ri < cf.regexp_cache_count; ri++) {
-                    if (cf.regexp_cache[ri] != null) { re_bindings::re_free(cf.regexp_cache[ri]); }
-                }
-                self.free_func(self.heap_udata, cf.regexp_cache);
-            }
-            // Direct-eval private-name snapshot (see destroy() above).
-            if (cf.eval_private_names != null) { self.free_func(self.heap_udata, cf.eval_private_names); }
-            self.free_func(self.heap_udata, cf);
-        }
-    }
+    self.free_compiled_funcs();
     self.compiled_func_count = 0;
     // Keep compiled_funcs array allocated — just reset the count
 
