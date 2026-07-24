@@ -83,35 +83,11 @@ fn bool arraybuffer_to_index_wide(BuiltinContext* ctx, TVal* val, double* out_le
 }
 
 fn void arraybuffer_throw_type_error(BuiltinContext* ctx, char[] msg) {
-    HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
-    if (try err = err_raw) {
-        err.prototype = ctx.heap.type_err_proto;
-        HString* msg_str = builtin_intern_string(ctx.heap, msg);
-        if (msg_str != null) {
-            TVal msg_val;
-            msg_val.set_string(msg_str);
-            HString* msg_key = builtin_intern_string(ctx.heap, "message");
-            err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WC);
-        }
-        ctx.should_throw = true;
-        ctx.throw_value.set_object(err);
-    }
+    builtin_throw_no_result_change(ctx, ctx.heap.type_err_proto, msg);
 }
 
 fn void arraybuffer_throw_range_error(BuiltinContext* ctx, char[] msg) {
-    HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
-    if (try err = err_raw) {
-        err.prototype = ctx.heap.range_err_proto;
-        HString* msg_str = builtin_intern_string(ctx.heap, msg);
-        if (msg_str != null) {
-            TVal msg_val;
-            msg_val.set_string(msg_str);
-            HString* msg_key = builtin_intern_string(ctx.heap, "message");
-            err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WC);
-        }
-        ctx.should_throw = true;
-        ctx.throw_value.set_object(err);
-    }
+    builtin_throw_no_result_change(ctx, ctx.heap.range_err_proto, msg);
 }
 
 /// True iff obj is a non-shared ArrayBuffer instance. ArrayBuffer.prototype
