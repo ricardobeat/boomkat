@@ -4818,17 +4818,8 @@ fn bool register_array_constructor(EnvRecord* global_env, Heap* heap) {
     }
 
     // Register Array constructor globally as an OBJECT (not LIGHTFUNC)
-    uint hash = heap.hash_string("Array");
-    HString* existing = heap.str_table_lookup("Array", hash);
-    HString* arr_key;
-    if (existing != null) {
-        arr_key = existing;
-    } else {
-        HString*? new_key = hstring::hstring_alloc(heap, "Array", hash);
-        if (catch err = new_key) return false;
-        heap.str_table_insert(new_key);
-        arr_key = new_key;
-    }
+    HString* arr_key = heap.str_intern("Array");
+    if (arr_key == null) return false;
     TVal arr_val;
     arr_val.set_object(arr);
     set_func_ctor_name_length(arr, heap, "Array", 1);

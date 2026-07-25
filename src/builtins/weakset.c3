@@ -117,17 +117,8 @@ fn bool register_weakset_constructor(EnvRecord* global_env, Heap* heap) {
     length_tv.set_fastint(0);
     ctor.put_prop(length_key, length_tv, hobject::PROP_FLAGS_NWC);
 
-    uint hash = heap.hash_string("WeakSet");
-    HString* existing = heap.str_table_lookup("WeakSet", hash);
-    HString* ws_key;
-    if (existing != null) {
-        ws_key = existing;
-    } else {
-        HString*? new_key = hstring::hstring_alloc(heap, "WeakSet", hash);
-        if (catch err = new_key) return false;
-        heap.str_table_insert(new_key);
-        ws_key = new_key;
-    }
+    HString* ws_key = heap.str_intern("WeakSet");
+    if (ws_key == null) return false;
     TVal ws_val;
     ws_val.set_object(ctor);
     set_func_ctor_name(ctor, heap, "WeakSet");

@@ -1080,17 +1080,8 @@ fn bool register_set_constructor(EnvRecord* global_env, Heap* heap) {
     }
 
     // Register Set constructor globally
-    uint hash = heap.hash_string("Set");
-    HString* existing = heap.str_table_lookup("Set", hash);
-    HString* set_key;
-    if (existing != null) {
-        set_key = existing;
-    } else {
-        HString*? new_key = hstring::hstring_alloc(heap, "Set", hash);
-        if (catch err = new_key) return false;
-        heap.str_table_insert(new_key);
-        set_key = new_key;
-    }
+    HString* set_key = heap.str_intern("Set");
+    if (set_key == null) return false;
     TVal set_val;
     set_val.set_object(ctor);
     set_func_ctor_name(ctor, heap, "Set");

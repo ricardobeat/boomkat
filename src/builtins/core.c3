@@ -2885,17 +2885,8 @@ fn BuiltinMeta builtin_get_metadata(uint idx) {
 /// Creates a proper HObject function with .name and .length properties
 /// (ES6 §17: built-in function objects have non-enumerable .name/.length).
 fn bool register_array_proto_method(HObject* proto, Heap* heap, char[] name, uint fn_index) {
-    uint hash = heap.hash_string(name);
-    HString* existing = heap.str_table_lookup(name, hash);
-    void* key;
-    if (existing != null) {
-        key = existing;
-    } else {
-        HString*? new_key = hstring::hstring_alloc(heap, name, hash);
-        if (catch err = new_key) return false;
-        heap.str_table_insert(new_key);
-        key = new_key;
-    }
+    HString* key = heap.str_intern(name);
+    if (key == null) return false;
     // Create HObject function with builtin_fn_index for proper .name/.length
     HObject*? func_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
     if (catch err = func_raw) return false;
@@ -2969,17 +2960,8 @@ fn bool register_compiled_proto_method(HObject* proto, Heap* heap, EnvRecord* gl
         len_tv.set_fastint(len_val);
         func_obj.put_prop(length_str, len_tv, hobject::PROP_FLAGS_NWC);
     }
-    uint hash = heap.hash_string(name);
-    HString* existing = heap.str_table_lookup(name, hash);
-    void* key;
-    if (existing != null) {
-        key = existing;
-    } else {
-        HString*? new_key = hstring::hstring_alloc(heap, name, hash);
-        if (catch err = new_key) return false;
-        heap.str_table_insert(new_key);
-        key = new_key;
-    }
+    HString* key = heap.str_intern(name);
+    if (key == null) return false;
     TVal tv;
     tv.set_object(func_obj);
     proto.put_prop(key, tv, hobject::PROP_FLAGS_WC);
@@ -2987,17 +2969,8 @@ fn bool register_compiled_proto_method(HObject* proto, Heap* heap, EnvRecord* gl
 }
 
 fn bool register_string_proto_method(HObject* proto, Heap* heap, char[] name, uint fn_index) {
-    uint hash = heap.hash_string(name);
-    HString* existing = heap.str_table_lookup(name, hash);
-    void* key;
-    if (existing != null) {
-        key = existing;
-    } else {
-        HString*? new_key = hstring::hstring_alloc(heap, name, hash);
-        if (catch err = new_key) return false;
-        heap.str_table_insert(new_key);
-        key = new_key;
-    }
+    HString* key = heap.str_intern(name);
+    if (key == null) return false;
     // Create HObject function with builtin_fn_index
     HObject*? func_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
     if (catch err = func_raw) return false;
@@ -3032,17 +3005,8 @@ fn bool register_string_proto_method(HObject* proto, Heap* heap, char[] name, ui
 }
 
 fn bool set_num_static_prop(HObject* obj, Heap* heap, char[] name, double val) {
-    uint hash = heap.hash_string(name);
-    HString* existing = heap.str_table_lookup(name, hash);
-    void* key;
-    if (existing != null) {
-        key = existing;
-    } else {
-        HString*? new_key = hstring::hstring_alloc(heap, name, hash);
-        if (catch err = new_key) return false;
-        heap.str_table_insert(new_key);
-        key = new_key;
-    }
+    HString* key = heap.str_intern(name);
+    if (key == null) return false;
     TVal tv;
     tv.set_number(val);
     PropFlags pflags;
@@ -3055,17 +3019,8 @@ fn bool set_num_static_prop(HObject* obj, Heap* heap, char[] name, double val) {
 }
 
 fn bool register_named_value(EnvRecord* global_env, Heap* heap, char[] name, TVal val) {
-    uint hash = heap.hash_string(name);
-    HString* existing = heap.str_table_lookup(name, hash);
-    HString* key;
-    if (existing != null) {
-        key = existing;
-    } else {
-        HString*? new_key = hstring::hstring_alloc(heap, name, hash);
-        if (catch err = new_key) return false;
-        heap.str_table_insert(new_key);
-        key = new_key;
-    }
+    HString* key = heap.str_intern(name);
+    if (key == null) return false;
     return env::env_declare_nonenum(global_env, key, val);
 }
 
@@ -3074,19 +3029,8 @@ fn bool register_named_value(EnvRecord* global_env, Heap* heap, char[] name, TVa
 /// Used for `undefined`, `NaN`, `Infinity`.
 fn bool register_global_immutable(EnvRecord* global_env, Heap* heap, char[] name,
                                    TValTag tag, double number_val, long fastint_val) {
-    uint hash = heap.hash_string(name);
-    HString* existing = heap.str_table_lookup(name, hash);
-    HString* key;
-    if (existing != null) {
-        key = existing;
-    } else {
-        HString*? new_key = hstring::hstring_alloc(heap, name, hash);
-        if (catch err = new_key) {
-            return false;
-        }
-        heap.str_table_insert(new_key);
-        key = new_key;
-    }
+    HString* key = heap.str_intern(name);
+    if (key == null) return false;
     TVal val;
     if (tag == FASTINT) {
         val.set_fastint(fastint_val);
@@ -3100,19 +3044,8 @@ fn bool register_global_immutable(EnvRecord* global_env, Heap* heap, char[] name
 }
 
 fn bool register_simple_builtin(EnvRecord* global_env, Heap* heap, char[] name, uint fn_index) {
-    uint hash = heap.hash_string(name);
-    HString* existing = heap.str_table_lookup(name, hash);
-    HString* key;
-    if (existing != null) {
-        key = existing;
-    } else {
-        HString*? new_key = hstring::hstring_alloc(heap, name, hash);
-        if (catch err = new_key) {
-            return false;
-        }
-        heap.str_table_insert(new_key);
-        key = new_key;
-    }
+    HString* key = heap.str_intern(name);
+    if (key == null) return false;
 
     TVal val;
     val.set_lightfunc((void*)(usz)fn_index);
@@ -4025,17 +3958,8 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
     if (!register_global_immutable(global_env, heap, "Infinity", NUMBER, double::inf, 0)) return false;
     {
         // Register `undefined` — ES5 §15.1.1 value is the undefined value
-        uint u_hash = heap.hash_string("undefined");
-        HString* u_existing = heap.str_table_lookup("undefined", u_hash);
-        HString* u_key;
-        if (u_existing != null) {
-            u_key = u_existing;
-        } else {
-            HString*? u_new = hstring::hstring_alloc(heap, "undefined", u_hash);
-            if (catch err = u_new) return false;
-            heap.str_table_insert(u_new);
-            u_key = u_new;
-        }
+        HString* u_key = heap.str_intern("undefined");
+        if (u_key == null) return false;
         TVal u_val;
         u_val.set_undefined();
         env::env_declare_immutable(global_env, u_key, u_val);
@@ -4303,17 +4227,8 @@ fn bool register_console_methods(HObject* console, Heap* heap) {
 }
 
 fn bool register_console_method(HObject* console, Heap* heap, char[] name, uint fn_index) {
-    uint hash = heap.hash_string(name);
-    HString* existing = heap.str_table_lookup(name, hash);
-    void* key;
-    if (existing != null) {
-        key = existing;
-    } else {
-        HString*? new_key = hstring::hstring_alloc(heap, name, hash);
-        if (catch err = new_key) return false;
-        heap.str_table_insert(new_key);
-        key = new_key;
-    }
+    HString* key = heap.str_intern(name);
+    if (key == null) return false;
     TVal tv;
     tv.set_lightfunc((void*)(usz)fn_index);
     console.put_prop(key, tv, hobject::PROP_FLAGS_WC);

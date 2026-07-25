@@ -457,17 +457,8 @@ fn void builtin_dataview_set_biguint64(BuiltinContext* ctx) { dv_set(ctx, hobjec
 
 /// Register a DataView.prototype accessor getter (buffer/byteLength/byteOffset).
 fn bool register_dataview_accessor(HObject* proto, Heap* heap, char[] name, uint getter_index) {
-    uint hash = heap.hash_string(name);
-    HString* existing = heap.str_table_lookup(name, hash);
-    HString* key;
-    if (existing != null) {
-        key = existing;
-    } else {
-        HString*? new_key = hstring::hstring_alloc(heap, name, hash);
-        if (catch err = new_key) return false;
-        heap.str_table_insert(new_key);
-        key = new_key;
-    }
+    HString* key = heap.str_intern(name);
+    if (key == null) return false;
 
     HObject*? func_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
     if (catch err = func_raw) return false;
@@ -578,17 +569,8 @@ fn bool register_dataview(EnvRecord* global_env, Heap* heap) {
 
     set_func_ctor_name_length(ctor, heap, "DataView", 1);
 
-    uint hash = heap.hash_string("DataView");
-    HString* existing = heap.str_table_lookup("DataView", hash);
-    HString* ctor_key;
-    if (existing != null) {
-        ctor_key = existing;
-    } else {
-        HString*? new_key = hstring::hstring_alloc(heap, "DataView", hash);
-        if (catch err = new_key) return false;
-        heap.str_table_insert(new_key);
-        ctor_key = new_key;
-    }
+    HString* ctor_key = heap.str_intern("DataView");
+    if (ctor_key == null) return false;
     TVal ctor_val;
     ctor_val.set_object(ctor);
     env::env_declare_nonenum(global_env, ctor_key, ctor_val);

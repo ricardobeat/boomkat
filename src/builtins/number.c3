@@ -659,17 +659,8 @@ fn bool register_number_constructor(EnvRecord* global_env, Heap* heap) {
     }
 
     // Register Number constructor globally as an OBJECT (not LIGHTFUNC)
-    uint hash = heap.hash_string("Number");
-    HString* existing = heap.str_table_lookup("Number", hash);
-    HString* num_key;
-    if (existing != null) {
-        num_key = existing;
-    } else {
-        HString*? new_key = hstring::hstring_alloc(heap, "Number", hash);
-        if (catch err = new_key) return false;
-        heap.str_table_insert(new_key);
-        num_key = new_key;
-    }
+    HString* num_key = heap.str_intern("Number");
+    if (num_key == null) return false;
     TVal num_val;
     num_val.set_object(num);
     set_func_ctor_name_length(num, heap, "Number", 1);

@@ -2426,17 +2426,8 @@ fn bool register_date_constructor(EnvRecord* global_env, Heap* heap) {
     if (!register_string_proto_method(date_obj, heap, "parse", Builtin.DATE_PARSE.ordinal)) return false;
 
     // Register Date constructor globally as an OBJECT
-    uint hash = heap.hash_string("Date");
-    HString* existing = heap.str_table_lookup("Date", hash);
-    HString* date_key;
-    if (existing != null) {
-        date_key = existing;
-    } else {
-        HString*? new_key = hstring::hstring_alloc(heap, "Date", hash);
-        if (catch err = new_key) return false;
-        heap.str_table_insert(new_key);
-        date_key = new_key;
-    }
+    HString* date_key = heap.str_intern("Date");
+    if (date_key == null) return false;
     TVal date_val;
     date_val.set_object(date_obj);
     set_func_ctor_name_length(date_obj, heap, "Date", 7);

@@ -1042,17 +1042,8 @@ fn void builtin_sharedarraybuffer_species_get(BuiltinContext* ctx) {
 
 /// Register an ArrayBuffer.prototype accessor getter (byteLength/detached).
 fn bool register_arraybuffer_accessor(HObject* proto, Heap* heap, char[] name, uint getter_index) {
-    uint hash = heap.hash_string(name);
-    HString* existing = heap.str_table_lookup(name, hash);
-    HString* key;
-    if (existing != null) {
-        key = existing;
-    } else {
-        HString*? new_key = hstring::hstring_alloc(heap, name, hash);
-        if (catch err = new_key) return false;
-        heap.str_table_insert(new_key);
-        key = new_key;
-    }
+    HString* key = heap.str_intern(name);
+    if (key == null) return false;
 
     HObject*? func_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
     if (catch err = func_raw) return false;
@@ -1179,17 +1170,8 @@ fn bool register_arraybuffer(EnvRecord* global_env, Heap* heap) {
 
     set_func_ctor_name_length(ctor, heap, "ArrayBuffer", 1);
 
-    uint hash = heap.hash_string("ArrayBuffer");
-    HString* existing = heap.str_table_lookup("ArrayBuffer", hash);
-    HString* ctor_key;
-    if (existing != null) {
-        ctor_key = existing;
-    } else {
-        HString*? new_key = hstring::hstring_alloc(heap, "ArrayBuffer", hash);
-        if (catch err = new_key) return false;
-        heap.str_table_insert(new_key);
-        ctor_key = new_key;
-    }
+    HString* ctor_key = heap.str_intern("ArrayBuffer");
+    if (ctor_key == null) return false;
     TVal ctor_val;
     ctor_val.set_object(ctor);
     env::env_declare_nonenum(global_env, ctor_key, ctor_val);
@@ -1279,17 +1261,8 @@ fn bool register_sharedarraybuffer(EnvRecord* global_env, Heap* heap) {
 
     set_func_ctor_name_length(ctor, heap, "SharedArrayBuffer", 1);
 
-    uint hash = heap.hash_string("SharedArrayBuffer");
-    HString* existing = heap.str_table_lookup("SharedArrayBuffer", hash);
-    HString* ctor_key;
-    if (existing != null) {
-        ctor_key = existing;
-    } else {
-        HString*? new_key = hstring::hstring_alloc(heap, "SharedArrayBuffer", hash);
-        if (catch err = new_key) return false;
-        heap.str_table_insert(new_key);
-        ctor_key = new_key;
-    }
+    HString* ctor_key = heap.str_intern("SharedArrayBuffer");
+    if (ctor_key == null) return false;
     TVal ctor_val;
     ctor_val.set_object(ctor);
     env::env_declare_nonenum(global_env, ctor_key, ctor_val);

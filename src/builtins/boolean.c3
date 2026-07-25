@@ -131,17 +131,8 @@ fn bool register_boolean_constructor(EnvRecord* global_env, Heap* heap) {
     set_func_ctor_name_length(ctor, heap, "Boolean", 1);
 
     // Register in global environment
-    uint hash = heap.hash_string("Boolean");
-    HString* existing = heap.str_table_lookup("Boolean", hash);
-    HString* key;
-    if (existing != null) {
-        key = existing;
-    } else {
-        HString*? new_key = hstring::hstring_alloc(heap, "Boolean", hash);
-        if (catch e3 = new_key) return false;
-        heap.str_table_insert(new_key);
-        key = new_key;
-    }
+    HString* key = heap.str_intern("Boolean");
+    if (key == null) return false;
     TVal val;
     val.set_object(ctor);
     env::env_declare_nonenum(global_env, key, val);

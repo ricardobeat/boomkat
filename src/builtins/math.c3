@@ -893,17 +893,8 @@ fn bool register_math_object(EnvRecord* global_env, Heap* heap) {
 
 /// Helper: register a Math method as a lightfunc property on the Math object.
 fn bool register_math_method(HObject* math, Heap* heap, char[] name, uint fn_index) {
-    uint hash = heap.hash_string(name);
-    HString* existing = heap.str_table_lookup(name, hash);
-    void* key;
-    if (existing != null) {
-        key = existing;
-    } else {
-        HString*? new_key = hstring::hstring_alloc(heap, name, hash);
-        if (catch err = new_key) return false;
-        heap.str_table_insert(new_key);
-        key = new_key;
-    }
+    HString* key = heap.str_intern(name);
+    if (key == null) return false;
     TVal tv;
     tv.set_lightfunc((void*)(usz)fn_index);
     math.put_prop(key, tv, hobject::PROP_FLAGS_WC);
@@ -911,15 +902,8 @@ fn bool register_math_method(HObject* math, Heap* heap, char[] name, uint fn_ind
 }
 
 fn bool set_num_prop_lookup(HObject* obj, Heap* heap, char[] name, double val) {
-    uint hash = heap.hash_string(name);
-    HString* existing = heap.str_table_lookup(name, hash);
-    void* key = existing;
-    if (key == null) {
-        HString*? new_key = hstring::hstring_alloc(heap, name, hash);
-        if (catch err = new_key) return false;
-        heap.str_table_insert(new_key);
-        key = new_key;
-    }
+    HString* key = heap.str_intern(name);
+    if (key == null) return false;
     TVal tv;
     tv.set_number(val);
     obj.put_prop(key, tv, hobject::PROP_FLAGS_NNC);

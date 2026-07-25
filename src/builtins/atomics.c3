@@ -826,17 +826,8 @@ fn void atomics_make_wait_result_val(BuiltinContext* ctx, bool is_async, TVal va
 /// Register an Atomics method as a lightfunc property with .name/.length set on
 /// a proper HObject function (Atomics methods have observable name/length).
 fn bool register_atomics_method(HObject* atomics, Heap* heap, char[] name, uint fn_index, int length) {
-    uint hash = heap.hash_string(name);
-    HString* existing = heap.str_table_lookup(name, hash);
-    void* key;
-    if (existing != null) {
-        key = existing;
-    } else {
-        HString*? new_key = hstring::hstring_alloc(heap, name, hash);
-        if (catch err = new_key) return false;
-        heap.str_table_insert(new_key);
-        key = new_key;
-    }
+    HString* key = heap.str_intern(name);
+    if (key == null) return false;
 
     HObject*? func_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
     if (catch err = func_raw) return false;

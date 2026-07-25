@@ -157,17 +157,8 @@ fn bool register_weakmap_constructor(EnvRecord* global_env, Heap* heap) {
     length_tv.set_fastint(0);
     ctor.put_prop(length_key, length_tv, hobject::PROP_FLAGS_NWC);
 
-    uint hash = heap.hash_string("WeakMap");
-    HString* existing = heap.str_table_lookup("WeakMap", hash);
-    HString* wm_key;
-    if (existing != null) {
-        wm_key = existing;
-    } else {
-        HString*? new_key = hstring::hstring_alloc(heap, "WeakMap", hash);
-        if (catch err = new_key) return false;
-        heap.str_table_insert(new_key);
-        wm_key = new_key;
-    }
+    HString* wm_key = heap.str_intern("WeakMap");
+    if (wm_key == null) return false;
     TVal wm_val;
     wm_val.set_object(ctor);
     set_func_ctor_name(ctor, heap, "WeakMap");

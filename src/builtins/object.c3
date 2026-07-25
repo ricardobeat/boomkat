@@ -5733,17 +5733,8 @@ fn bool register_object_constructor(EnvRecord* global_env, Heap* heap) {
     obj.put_prop(groupby_key, groupby_tv, hobject::PROP_FLAGS_WC);
 
     // Register Object constructor globally as an OBJECT (not LIGHTFUNC)
-    uint hash = heap.hash_string("Object");
-    HString* existing = heap.str_table_lookup("Object", hash);
-    HString* obj_key;
-    if (existing != null) {
-        obj_key = existing;
-    } else {
-        HString*? new_key = hstring::hstring_alloc(heap, "Object", hash);
-        if (catch err = new_key) return false;
-        heap.str_table_insert(new_key);
-        obj_key = new_key;
-    }
+    HString* obj_key = heap.str_intern("Object");
+    if (obj_key == null) return false;
     TVal obj_val;
     obj_val.set_object(obj);
     env::env_declare_nonenum(global_env, obj_key, obj_val);

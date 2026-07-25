@@ -588,17 +588,8 @@ fn bool register_generator_constructor(EnvRecord* global_env, Heap* heap) {
 
     // Register GeneratorFunction as a global constructor
     {
-        uint hash = heap.hash_string("GeneratorFunction");
-        HString* existing = heap.str_table_lookup("GeneratorFunction", hash);
-        HString* gf_key;
-        if (existing != null) {
-            gf_key = existing;
-        } else {
-            HString*? new_key = hstring::hstring_alloc(heap, "GeneratorFunction", hash);
-            if (catch err = new_key) return false;
-            heap.str_table_insert(new_key);
-            gf_key = new_key;
-        }
+        HString* gf_key = heap.str_intern("GeneratorFunction");
+        if (gf_key == null) return false;
         TVal gf_tv;
         gf_tv.set_object(ctor);
         env::env_declare_nonenum(global_env, gf_key, gf_tv);

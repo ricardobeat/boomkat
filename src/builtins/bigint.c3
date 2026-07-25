@@ -354,17 +354,8 @@ fn bool register_bigint_constructor(EnvRecord* global_env, Heap* heap) {
     set_func_ctor_name_length(ctor, heap, "BigInt", 1);
 
     // Register BigInt globally as a non-enumerable binding.
-    uint hash = heap.hash_string("BigInt");
-    HString* existing = heap.str_table_lookup("BigInt", hash);
-    HString* key;
-    if (existing != null) {
-        key = existing;
-    } else {
-        HString*? new_key = hstring::hstring_alloc(heap, "BigInt", hash);
-        if (catch new_key) return false;
-        heap.str_table_insert(new_key);
-        key = new_key;
-    }
+    HString* key = heap.str_intern("BigInt");
+    if (key == null) return false;
     TVal ctor_val; ctor_val.set_object(ctor);
     env::env_declare_nonenum(global_env, key, ctor_val);
 

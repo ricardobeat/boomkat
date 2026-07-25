@@ -2912,17 +2912,8 @@ fn bool register_regexp_constructor(EnvRecord* global_env, Heap* heap) {
     if (!register_string_proto_method(regexp_obj, heap, "escape", Builtin.REGEXP_ESCAPE.ordinal)) return false;
 
     // Register RegExp constructor globally as an OBJECT
-    uint hash = heap.hash_string("RegExp");
-    HString* existing = heap.str_table_lookup("RegExp", hash);
-    HString* regexp_key;
-    if (existing != null) {
-        regexp_key = existing;
-    } else {
-        HString*? new_key = hstring::hstring_alloc(heap, "RegExp", hash);
-        if (catch err = new_key) return false;
-        heap.str_table_insert(new_key);
-        regexp_key = new_key;
-    }
+    HString* regexp_key = heap.str_intern("RegExp");
+    if (regexp_key == null) return false;
     TVal regexp_val;
     regexp_val.set_object(regexp_obj);
     set_func_ctor_name(regexp_obj, heap, "RegExp");

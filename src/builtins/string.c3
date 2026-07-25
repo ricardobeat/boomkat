@@ -3665,17 +3665,8 @@ fn bool register_string_constructor(EnvRecord* global_env, Heap* heap) {
     if (!register_string_proto_method(str_obj, heap, "raw", Builtin.STRING_RAW.ordinal)) return false;
 
     // Register String constructor globally as an OBJECT (not LIGHTFUNC)
-    uint hash = heap.hash_string("String");
-    HString* existing = heap.str_table_lookup("String", hash);
-    HString* str_key;
-    if (existing != null) {
-        str_key = existing;
-    } else {
-        HString*? new_key = hstring::hstring_alloc(heap, "String", hash);
-        if (catch err2 = new_key) return false;
-        heap.str_table_insert(new_key);
-        str_key = new_key;
-    }
+    HString* str_key = heap.str_intern("String");
+    if (str_key == null) return false;
     TVal str_val;
     str_val.set_object(str_obj);
     set_func_ctor_name_length(str_obj, heap, "String", 1);

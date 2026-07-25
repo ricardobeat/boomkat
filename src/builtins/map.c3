@@ -569,17 +569,8 @@ fn bool register_map_constructor(EnvRecord* global_env, Heap* heap) {
     // Map.prototype's [[Prototype]] is set later (to Object.prototype)
 
     // Register Map constructor globally
-    uint hash = heap.hash_string("Map");
-    HString* existing = heap.str_table_lookup("Map", hash);
-    HString* map_key;
-    if (existing != null) {
-        map_key = existing;
-    } else {
-        HString*? new_key = hstring::hstring_alloc(heap, "Map", hash);
-        if (catch err = new_key) return false;
-        heap.str_table_insert(new_key);
-        map_key = new_key;
-    }
+    HString* map_key = heap.str_intern("Map");
+    if (map_key == null) return false;
     TVal map_val;
     map_val.set_object(ctor);
     set_func_ctor_name(ctor, heap, "Map");

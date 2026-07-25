@@ -4236,17 +4236,8 @@ fn bool register_promise_constructor(EnvRecord* global_env, Heap* heap) {
     try_tv.set_lightfunc((void*)(usz)Builtin.PROMISE_TRY.ordinal);
     ctor.put_prop(try_key, try_tv, hobject::PROP_FLAGS_WC);
 
-    uint hash = heap.hash_string("Promise");
-    HString* existing = heap.str_table_lookup("Promise", hash);
-    HString* promise_key;
-    if (existing != null) {
-        promise_key = existing;
-    } else {
-        HString*? new_key = hstring::hstring_alloc(heap, "Promise", hash);
-        if (catch err = new_key) return false;
-        heap.str_table_insert(new_key);
-        promise_key = new_key;
-    }
+    HString* promise_key = heap.str_intern("Promise");
+    if (promise_key == null) return false;
     TVal promise_val;
     promise_val.set_object(ctor);
     env::env_declare_nonenum(global_env, promise_key, promise_val);

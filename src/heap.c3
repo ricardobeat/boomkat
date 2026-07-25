@@ -739,18 +739,7 @@ fn void Heap.init_builtin_strs(&self) {
     uint[29] lengths = { 9, 6, 7, 6, 6, 8, 4, 5, 4, 7, 9, 11, 6, 5, 4, 9, 6, 4, 0, 3, 8, 9, 8, 7, 15, 10, 5, 6, 6 };
     for (uint i = 0; i < 29; i++) {
         char* ptr = (char*)literals[i];
-        char[] data = ptr[:lengths[i]];
-        uint h = self.hash_string(data);
-        HString* existing = self.str_table_lookup(data, h);
-        if (existing != null) {
-            self.strs[i] = existing;
-        } else {
-            HString*? ns = hstring::hstring_alloc(self, data, h);
-            if (try s = ns) {
-                self.str_table_insert(s);
-                self.strs[i] = s;
-            }
-        }
+        self.strs[i] = self.str_intern(ptr[:lengths[i]]);
     }
     // Pin: builtin strings must never be freed by refcounting.
     for (uint i = 0; i < 29; i++) {
@@ -3031,8 +3020,14 @@ fn HString* Heap.str_table_lookup(&self, char[] data, uint hash) {
 /**
  * Insert a fully initialised HString (with .hash set) into the string
  * table.  Grows the table first if the load factor is too high.
+ *
+ * Taking a slot makes the table an owner: the string is marked interned and
+ * increfed for the table's reference, which is what `str_table_remove` and
+ * the reset/destroy sweeps release.  A string that fails to get a slot stays
+ * un-interned and is left to plain refcounting, so it must be registered as
+ * a large string by the caller to remain reachable for teardown.
  */
-fn void Heap.str_table_insert(&self, HString* hstr) {
+fn bool Heap.str_table_insert(&self, HString* hstr) {
     // Grow if necessary
     float load = (float)(self.str_table_used + 1) / (float)self.str_table_size;
     if (load > STR_TABLE_LOAD_FACTOR) {
@@ -3054,7 +3049,8 @@ fn void Heap.str_table_insert(&self, HString* hstr) {
                 uint use = (first_tombstone < self.str_table_size) ? first_tombstone : idx;
                 self.str_table[use] = hstr;
                 self.str_table_used++;
-                return;
+                self.str_table_adopt(hstr);
+                return true;
             }
         }
         idx = (idx + 1) & (self.str_table_size - 1);
@@ -3063,7 +3059,20 @@ fn void Heap.str_table_insert(&self, HString* hstr) {
     if (first_tombstone < self.str_table_size) {
         self.str_table[first_tombstone] = hstr;
         self.str_table_used++;
+        self.str_table_adopt(hstr);
+        return true;
     }
+    return false;
+}
+
+/**
+ * Take the string table's ownership reference on a freshly inserted string:
+ * mark it interned so `decref` unhooks it from the table (not the large-string
+ * registry) and incref for the slot the table now holds.
+ */
+fn void Heap.str_table_adopt(&self, HString* hstr) @local {
+    hstr.flags.is_interned = true;
+    ((HeapHeader*)hstr).incref();
 }
 
 /**
@@ -3133,11 +3142,10 @@ fn HString* Heap.ensure_interned(&self, hstring::HString* s) {
     if (existing != null) return existing;
     // Promotion into the table: the string table tracks it from here on, so
     // it must leave the registry or the sweep would free it behind the
-    // table's back.
+    // table's back.  If the table cannot take it, put it back on the registry
+    // so it still has an owner.
     self.large_string_unregister(s);
-    self.str_table_insert(s);
-    ((HeapHeader*)s).incref();
-    s.flags.is_interned = true;
+    if (!self.str_table_insert(s)) { self.large_string_register(s); }
     return s;
 }
 
@@ -3217,13 +3225,10 @@ fn HString* Heap.str_intern_normalized(&self, char[] data) {
     }
     HString*? new_s = hstring::hstring_alloc(self, data, hash);
     if (try s = new_s) {
-        self.str_table_insert(s);
-        // The string table holds a reference to each interned string.
-        // This keeps the string alive in the table even after all external
-        // references (registers, properties) are released.  sweep_strings()
-        // reclaims strings that have only the table reference left.
-        ((HeapHeader*)s).incref();
-        s.flags.is_interned = true;
+        // str_table_insert takes the table's owning reference (incref +
+        // is_interned).  If the table could not take the string, fall back to
+        // the large-string registry so reset/destroy can still free it.
+        if (!self.str_table_insert(s)) { self.large_string_register(s); }
         return s;
     }
     return null;

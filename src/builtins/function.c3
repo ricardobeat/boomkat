@@ -1544,17 +1544,8 @@ fn bool register_function_constructor(EnvRecord* global_env, Heap* heap) {
     func_obj.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NWC);
 
     // Register Function constructor globally as an OBJECT
-    uint hash = heap.hash_string("Function");
-    HString* existing = heap.str_table_lookup("Function", hash);
-    HString* func_key;
-    if (existing != null) {
-        func_key = existing;
-    } else {
-        HString*? new_key = hstring::hstring_alloc(heap, "Function", hash);
-        if (catch err = new_key) return false;
-        heap.str_table_insert(new_key);
-        func_key = new_key;
-    }
+    HString* func_key = heap.str_intern("Function");
+    if (func_key == null) return false;
     TVal func_val;
     func_val.set_object(func_obj);
     set_func_ctor_name(func_obj, heap, "Function");

@@ -4053,17 +4053,8 @@ fn void builtin_uint8array_proto_set_from_hex(BuiltinContext* ctx) {
 /// Register a %TypedArray%.prototype accessor getter (shared implementation
 /// pattern with register_arraybuffer_accessor in arraybuffer.c3).
 fn bool register_typedarray_accessor(HObject* proto, Heap* heap, char[] name, uint getter_index) {
-    uint hash = heap.hash_string(name);
-    HString* existing = heap.str_table_lookup(name, hash);
-    HString* key;
-    if (existing != null) {
-        key = existing;
-    } else {
-        HString*? new_key = hstring::hstring_alloc(heap, name, hash);
-        if (catch err = new_key) return false;
-        heap.str_table_insert(new_key);
-        key = new_key;
-    }
+    HString* key = heap.str_intern(name);
+    if (key == null) return false;
 
     HObject*? func_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
     if (catch err = func_raw) return false;
@@ -4208,17 +4199,8 @@ fn bool register_ta_ctor(EnvRecord* global_env, Heap* heap, char[] name, uint fn
     }
 
     // Register globally
-    uint hash = heap.hash_string(name);
-    HString* existing = heap.str_table_lookup(name, hash);
-    HString* key;
-    if (existing != null) {
-        key = existing;
-    } else {
-        HString*? new_key = hstring::hstring_alloc(heap, name, hash);
-        if (catch err = new_key) return false;
-        heap.str_table_insert(new_key);
-        key = new_key;
-    }
+    HString* key = heap.str_intern(name);
+    if (key == null) return false;
     TVal val;
     val.set_object(ctor);
     env::env_declare_nonenum(global_env, key, val);

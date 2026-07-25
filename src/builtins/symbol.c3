@@ -48,7 +48,11 @@ fn HString* create_symbol_string(Heap* heap, char[] desc, bool has_desc = true) 
 
     HString*? sym = hstring::hstring_alloc(heap, buf[:(uint)pos], hash);
     if (try s = sym) {
-        // Don't intern in string table — symbols are unique
+        // Not interned — a Symbol is unique, so the content-keyed table would
+        // conflate distinct Symbols sharing a description.  It still needs an
+        // owner, so it goes on the large-string registry: that is the list
+        // reset()/destroy() walk to release non-interned strings.
+        heap.large_string_register(s);
         return s;
     }
     return null;
@@ -76,7 +80,9 @@ fn HString* create_hidden_symbol(Heap* heap, char[] desc) {
 
     HString*? sym = hstring::hstring_alloc(heap, buf[:(uint)pos], hash);
     if (try s = sym) {
-        // Don't intern in string table — hidden symbols are unique
+        // Not interned (hidden symbols are unique); registered so
+        // reset()/destroy() can release it — see create_symbol.
+        heap.large_string_register(s);
         return s;
     }
     return null;
@@ -164,17 +170,8 @@ fn bool symbol_registry_put(Heap* heap, char[] key, HString* sym) {
     }
 
     // Allocate a key HString (interned)
-    uint hash = heap.hash_string(key);
-    HString* existing = heap.str_table_lookup(key, hash);
-    HString* key_str;
-    if (existing != null) {
-        key_str = existing;
-    } else {
-        HString*? new_key = hstring::hstring_alloc(heap, key, hash);
-        if (catch err = new_key) return false;
-        heap.str_table_insert(new_key);
-        key_str = new_key;
-    }
+    HString* key_str = heap.str_intern(key);
+    if (key_str == null) return false;
 
     heap.symbol_registry_keys[count] = key_str;
     heap.symbol_registry_syms[count] = sym;
@@ -929,17 +926,8 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
     }
 
     // Register "Symbol" in global environment
-    uint hash = heap.hash_string("Symbol");
-    HString* existing = heap.str_table_lookup("Symbol", hash);
-    HString* sym_key;
-    if (existing != null) {
-        sym_key = existing;
-    } else {
-        HString*? new_key = hstring::hstring_alloc(heap, "Symbol", hash);
-        if (catch err = new_key) return false;
-        heap.str_table_insert(new_key);
-        sym_key = new_key;
-    }
+    HString* sym_key = heap.str_intern("Symbol");
+    if (sym_key == null) return false;
     TVal sym_val;
     sym_val.set_object(ctor);
     set_func_ctor_name(ctor, heap, "Symbol");

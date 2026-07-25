@@ -477,17 +477,8 @@ fn bool register_error_builtins(EnvRecord* global_env, Heap* heap) {
 
     // Register Error in global environment
     {
-        uint hash = heap.hash_string("Error");
-        HString* existing = heap.str_table_lookup("Error", hash);
-        HString* err_key;
-        if (existing != null) {
-            err_key = existing;
-        } else {
-            HString*? new_key = hstring::hstring_alloc(heap, "Error", hash);
-            if (catch e3 = new_key) return false;
-            heap.str_table_insert(new_key);
-            err_key = new_key;
-        }
+        HString* err_key = heap.str_intern("Error");
+        if (err_key == null) return false;
         TVal err_val;
         err_val.set_object(err_ctor);
         set_func_ctor_name_length(err_ctor, heap, "Error", 1);
@@ -550,17 +541,8 @@ fn bool register_native_error_ctor(EnvRecord* global_env, Heap* heap, char[] nam
     set_func_ctor_name_length(ctor, heap, name, 1);
 
     // Register in global environment
-    uint hash = heap.hash_string(name);
-    HString* existing = heap.str_table_lookup(name, hash);
-    HString* key;
-    if (existing != null) {
-        key = existing;
-    } else {
-        HString*? new_key = hstring::hstring_alloc(heap, name, hash);
-        if (catch e2 = new_key) return false;
-        heap.str_table_insert(new_key);
-        key = new_key;
-    }
+    HString* key = heap.str_intern(name);
+    if (key == null) return false;
     TVal val;
     val.set_object(ctor);
     env::env_declare_nonenum(global_env, key, val);

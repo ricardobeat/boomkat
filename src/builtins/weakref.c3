@@ -248,17 +248,8 @@ fn HObject* register_weak_wrapper(EnvRecord* global_env, Heap* heap,
     length_tv.set_fastint(length);
     ctor.put_prop(length_key, length_tv, hobject::PROP_FLAGS_NWC);
 
-    uint hash = heap.hash_string(name);
-    HString* existing = heap.str_table_lookup(name, hash);
-    HString* name_key;
-    if (existing != null) {
-        name_key = existing;
-    } else {
-        HString*? new_key = hstring::hstring_alloc(heap, name, hash);
-        if (catch err = new_key) return null;
-        heap.str_table_insert(new_key);
-        name_key = new_key;
-    }
+    HString* name_key = heap.str_intern(name);
+    if (name_key == null) return null;
     TVal ctor_val;
     ctor_val.set_object(ctor);
     set_func_ctor_name(ctor, heap, name);
