@@ -85,6 +85,36 @@ struct FusionRule {
     FusionConsumerFn consumer;
 }
 
+/// Does ABC-format instruction `ins` READ `reg` in one of its operand fields?
+///
+/// Not every ABC field is a register. CALL_VAR/CALL_GLOBAL encode B as an
+/// argument count and C as a name-constant index; GETPROPC encodes C as a
+/// constant index. Comparing those raw values against a register number is a
+/// false positive that silently pins the register live and blocks fusion —
+/// which is a correctness-safe direction, but costs real optimizations
+/// whenever a scratch register happens to equal an argc or constant index.
+fn bool fusion_abc_reads_reg(Instruction ins, uint reg) {
+    switch (ins.op) {
+        case Opcode.CALL_VAR:
+        case Opcode.CALL_GLOBAL:
+            // A = result/callee register, B = argc, C = name-constant index
+            // (vm_calls.c3: `nargs = insn.b` and the callee resolves by name for
+            // these two forms). Neither B nor C is a register, so neither can
+            // make `reg` live. The arguments themselves sit in the contiguous
+            // block ABOVE A and are written by the preceding argument-setup
+            // instructions, which the scan sees in their own right; a scratch
+            // register still live into that block is caught there. NOTE: CALL_S
+            // is deliberately NOT in this carve-out — it decodes C as a
+            // register (`ds.regs_base + insn.c`).
+            return false;
+        case Opcode.GETPROPC:
+            // A = dst, B = src register, C = key-constant index.
+            return (uint)ins.b == reg;
+        default:
+            return (uint)ins.b == reg || (uint)ins.c == reg;
+    }
+}
+
 /// Scan forward from `start` (inclusive) and report whether `reg` is read
 /// before it is next overwritten — the shared "is this scratch register
 /// dead after the consumer" check every hand-written pass re-implements.
@@ -93,7 +123,8 @@ struct FusionRule {
 /// write, so they're checked explicitly before the generic write-then-stop
 /// rule. Only ABC-format opcodes have plain register operands in b/c;
 /// A_BC/A_SBX/WIDE_* operands are indices or branch offsets, never register
-/// references, and must not be misread as one.
+/// references, and must not be misread as one — see fusion_abc_reads_reg for
+/// the ABC forms whose b/c are likewise not registers.
 fn bool fusion_reg_live_from(Instruction* code, uint code_count, uint start, uint reg) {
     for (uint j = start; j < code_count; j++) {
         Instruction jns = code[j];
@@ -103,7 +134,7 @@ fn bool fusion_reg_live_from(Instruction* code, uint code_count, uint start, uin
             continue;
         }
         if (bytecode::get_op_format(jop) == OpFormat.ABC) {
-            if ((uint)jns.b == reg || (uint)jns.c == reg) { return true; }
+            if (fusion_abc_reads_reg(jns, reg)) { return true; }
         }
         if ((uint)jns.a == reg) { return false; }   // overwritten -> dead from here
     }
@@ -455,11 +486,7 @@ fn bool cmp_result_live_from(Instruction* code, uint code_count, bool* jump_targ
             if (top == Opcode.IF_TRUE || top == Opcode.IF_FALSE) {
                 if ((uint)tj.a == reg) { return true; }
             } else if (bytecode::get_op_format(top) == OpFormat.ABC) {
-                if (top == Opcode.GETPROPC) {
-                    if ((uint)tj.b == reg) { return true; }
-                } else if ((uint)tj.b == reg || (uint)tj.c == reg) {
-                    return true;
-                }
+                if (fusion_abc_reads_reg(tj, reg)) { return true; }
             }
             continue;
         }
@@ -476,11 +503,7 @@ fn bool cmp_result_live_from(Instruction* code, uint code_count, bool* jump_targ
         }
         OpFormat jfmt = bytecode::get_op_format(jop);
         if (jfmt == OpFormat.ABC) {
-            if (jop == Opcode.GETPROPC) {
-                if ((uint)jns.b == reg) { return true; }
-            } else if ((uint)jns.b == reg || (uint)jns.c == reg) {
-                return true;
-            }
+            if (fusion_abc_reads_reg(jns, reg)) { return true; }
         }
         if (jfmt != OpFormat.WIDE_SABC && jfmt != OpFormat.WIDE_ABC) {
             if ((uint)jns.a == reg) { return false; }   // overwritten → dead
@@ -708,7 +731,7 @@ fn void run_move_gg_fusion(Instruction* code, uint code_count, bool* jump_target
             }
             OpFormat jfmt = bytecode::get_op_format(jop);
             if (jfmt == OpFormat.ABC) {
-                if ((uint)jns.b == rX || (uint)jns.c == rX) { rX_live = true; break; }
+                if (fusion_abc_reads_reg(jns, rX)) { rX_live = true; break; }
             }
             // A write to rX in field A (non-wide forms use A as destination)
             // ends the scan: rX is redefined before any read, hence dead.
