@@ -152,3 +152,49 @@ for (var u1 = 0; u1 < 5; u1++) {
 ck("switch_body", t1);
 
 print(out.join("\n"));
+
+// ── name_in_reg hazards ─────────────────────────────────────────────────────
+// Caching the loop counter in a register is only valid if nothing can change
+// the binding between the cached load and the read. Each case below mutates
+// the counter (or the bound) through a path with NO visible write in the loop
+// body, so a register cache that ignores it would loop forever or miscount.
+var h = [];
+function hck(n, v) { h.push(n + "=" + v); }
+
+// a called function assigns the counter
+var hi, hN = 5, hr1 = [];
+function hbump() { hi = 100; }
+for (hi = 0; hi < hN; hi++) { hr1.push(hi); if (hi === 1) hbump(); }
+hck("call_mutates_counter", hr1.join(","));
+
+// a called function assigns the BOUND
+var hj, hM = 5, hr2 = [];
+function hshrink() { hM = 2; }
+for (hj = 0; hj < hM; hj++) { hr2.push(hj); if (hj === 0) hshrink(); }
+hck("call_mutates_bound", hr2.join(","));
+
+// a property getter with a side effect on the counter
+var hk, hr3 = [];
+var htrap = { get t() { hk = 100; return 1; } };
+for (hk = 0; hk < hN; hk++) { hr3.push(hk); if (hk === 1) htrap.t; }
+hck("getter_mutates_counter", hr3.join(","));
+
+// valueOf on the bound runs user code that moves the counter
+var hl, hr4 = [];
+var hbound = { valueOf: function () { if (hl === 2) hl = 100; return 5; } };
+for (hl = 0; hl < hbound; hl++) { hr4.push(hl); }
+hck("valueof_mutates_counter", hr4.join(","));
+
+// nested function closes over and increments the counter
+var hm, hr5 = [];
+function hskip() { hm += 2; }
+for (hm = 0; hm < 8; hm++) { hr5.push(hm); hskip(); }
+hck("closure_increments", hr5.join(","));
+
+// counter reassigned from inside a try/catch in the body
+var hn, hr6 = [];
+for (hn = 0; hn < 6; hn++) { hr6.push(hn); try { if (hn === 1) { hn = 3; throw 0; } } catch (e) {} }
+hck("catch_mutates_counter", hr6.join(","));
+
+print(h.join("\n"));
+
