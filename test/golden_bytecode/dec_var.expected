@@ -1,7 +1,7 @@
 --- Bytecode ---
 [  0] CHKGLOBALFUNC   r0, 0
 [  1] CLOSURE         r0, 0
-[  2] DECLVAR         r0, 0
+[  2] DECLGLOBALFUNC  r0, 0
 [  3] CALL_GLOBAL     r0, argc=0, K[0]
 [  4] RETUNDEF        
 
@@ -14,7 +14,7 @@
 [  5] LDREG           r0 = r2, r0
 [  6] DECLVAR         r0, 0
 [  7] CLOSURE         r2, 1
-[  8] DECLVAR         r2, 1
+[  8] DECLGLOBALFUNC  r2, 1
 [  9] LDINT           r3, 0
 [ 10] JUMP            +1
 [ 11] DEC_VAR         r4, 0
