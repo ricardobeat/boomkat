@@ -197,12 +197,11 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
                             HObject*? obj_raw = vm.heap.alloc_object(hobject::ObjClass.REGEXP);
                             if (try obj = obj_raw) {
                                 obj.prototype = vm.heap.regexp_proto;
+                                // Holds one ref — re_compile's initial ref, or
+                                // the fresh re_ref taken when `from_cache` gave
+                                // us the literal cache's shared bytecode.
                                 (*obj.extra_ptr()).regexp.regexp_data = compiled;
                                 (*obj.extra_ptr()).regexp.flags = js_flags;
-                                // Shared bytecode: this object holds one ref
-                                // (re_compile's initial ref or a fresh re_ref)
-                                // and drops it via re_free on finalize.
-                                (*obj.extra_ptr()).regexp.owns_data = !from_cache;
                                 // Store pattern string as primitive_value
                                 HString* pattern_hs = intern_string(vm, pattern_data);
                                 (*obj.extra_ptr()).prim.primitive_value.set_string(pattern_hs);

@@ -229,7 +229,6 @@ fn void builtin_regexp(BuiltinContext* ctx) {
     // Pooled memory is not zeroed — clear the regexp fields before
     // regexp_initialize reads them (it re_frees any previous compiled data).
     (*obj.extra_ptr()).regexp.regexp_data = null;
-    (*obj.extra_ptr()).regexp.owns_data = false;
     (*obj.extra_ptr()).regexp.flags = 0;
     (*obj.extra_ptr()).prim.primitive_value.set_undefined();
 
@@ -305,10 +304,8 @@ fn bool regexp_initialize(BuiltinContext* ctx, HObject* obj,
     // re_free only frees at refcount zero).
     void* old_data = (*obj.extra_ptr()).regexp.regexp_data;
     if (old_data != null) re_bindings::re_free(old_data);
+    // Takes over re_compile's initial ref, released by re_free on finalize.
     (*obj.extra_ptr()).regexp.regexp_data = compiled;
-    // Exclusive owner of re_compile's initial ref (pooled memory is not zeroed,
-    // so this MUST be set explicitly — see HObjectRegExp.owns_data).
-    (*obj.extra_ptr()).regexp.owns_data = true;
     (*obj.extra_ptr()).regexp.flags = js_flags;
 
     // Store pattern string as primitive_value

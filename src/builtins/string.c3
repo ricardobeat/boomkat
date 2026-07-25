@@ -2976,10 +2976,8 @@ fn HObject* create_regexp_from_string(Heap* heap, char[] pattern, int js_flags) 
     }
     HObject* obj = obj_raw;
     obj.prototype = heap.regexp_proto;
+    // Takes over re_compile's initial ref, released by re_free on finalize.
     (*obj.extra_ptr()).regexp.regexp_data = compiled;
-    // Exclusive owner of re_compile's initial ref (pooled memory is not zeroed,
-    // so this MUST be set explicitly — see HObjectRegExp.owns_data).
-    (*obj.extra_ptr()).regexp.owns_data = true;
     (*obj.extra_ptr()).regexp.flags = js_flags;
 
     // Store pattern string as primitive_value
