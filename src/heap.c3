@@ -239,6 +239,11 @@ struct Heap {
     long  gc_trigger_counter;
     bool  gc_pending;              /// Deferred GC requested by alloc/realloc
     uint  bwd_gc_budget;            /// Countdown for backward-jump GC safepoint
+    /// Nesting depth of native builtin frames currently on the C3 stack.
+    /// Non-zero means a builtin may be holding a freshly allocated object in a
+    /// raw C3 local that no GC root can see, so temproot flags must survive
+    /// even a safepoint collection (see Heap.mark_and_sweep).
+    uint  native_frame_depth;
     uint  live_obj_count;
     uint  peak_live_obj_count;   /// High-water mark for live objects
 
@@ -638,6 +643,7 @@ fn Heap*? create(
     h.gc_trigger_counter    = GC_INITIAL_TRIGGER;
     h.gc_pending            = false;
     h.bwd_gc_budget         = BWD_GC_INTERVAL;
+    h.native_frame_depth    = 0;
 
     // Allocate gray object stack
     void* gray_raw = afn(udata, void*::size * GRAY_STACK_INITIAL_CAP);
@@ -1233,6 +1239,7 @@ fn void Heap.reset(&self) {
     self.gc_trigger_counter = GC_INITIAL_TRIGGER;
     self.gc_pending       = false;
     self.bwd_gc_budget    = BWD_GC_INTERVAL;
+    self.native_frame_depth = 0;
     self.gray_count       = 0;
 
     // Clear the megamorphic property cache — it holds stale HObject*/HString*
@@ -2733,20 +2740,29 @@ fn void Heap.sweep_strings(&self) {
  * Re-entrancy is prevented by the gc_running guard.
  *
  * When `safepoint` is true, Phase 1 also clears all temproot flags so that
- * newly allocated objects become eligible for collection (at a safe point
- * nothing is in flight).  Emergency (non-safepoint) GC preserves temproots
- * so in-flight allocations survive it.
+ * newly allocated objects become eligible for collection.  Emergency
+ * (non-safepoint) GC preserves temproots so in-flight allocations survive it.
+ *
+ * Temproots are only genuinely safe to clear when no native builtin frame is
+ * on the C3 stack.  A builtin that allocates a result object and then re-enters
+ * the VM (calling a user callback, a getter, a species constructor, ...) holds
+ * that object solely in a raw C3 local: the nested execution reaches VM
+ * safepoints, but the mark phase cannot see the local.  Clearing its temproot
+ * there would sweep an object the builtin is still about to write to, so
+ * native_frame_depth vetoes the clear.
  */
 fn void Heap.mark_and_sweep(&self, bool safepoint) {
     if (self.gc_running) { return; }
     self.gc_running = true;
+
+    bool clear_temproots = safepoint && self.native_frame_depth == 0;
 
     // --- Phase 1: Clear all reachable (and optionally temproot) flags ---
     {
         HeapHeader* cur = self.heap_allocated;
         while (cur != null) {
             cur.clear_reachable();
-            if (safepoint) {
+            if (clear_temproots) {
                 cur.clear_temproot();
             }
             cur = cur.next;
@@ -2796,12 +2812,19 @@ fn void Heap.trigger_gc(&self) {
 }
 
 /**
- * Run a GC at a VM safe point.  Every live value is anchored in registers,
- * environments, or object graphs — no raw C3 locals in flight.  Clears
- * temproot flags and enables string-table sweeping.
+ * Run a GC at a VM safe point.  With no native builtin frame active, every
+ * live value is anchored in registers, environments, or object graphs, so
+ * temproot flags can be cleared and the string table swept.
+ *
+ * A safepoint reached from inside a builtin's nested VM execution is not that
+ * quiet: the builtin's own C3 locals may hold a freshly allocated object or an
+ * interned string that nothing roots.  Both reclamation passes are therefore
+ * suppressed while native_frame_depth is non-zero; the collection still runs
+ * and still reclaims everything the mark phase can prove dead.
  */
 fn void Heap.safepoint_gc(&self) {
-    self.string_sweep_safe = true;
+    bool quiescent = self.native_frame_depth == 0;
+    self.string_sweep_safe = quiescent;
     self.mark_and_sweep(true);
     self.string_sweep_safe = false;
     self.gc_pending = false;

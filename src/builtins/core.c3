@@ -3885,7 +3885,13 @@ fn void dispatch_builtin(uint fn_index, BuiltinContext* ctx) {
         ctx.result.set_undefined();
         return;
     }
+    // Builtins routinely allocate a result object and then re-enter the VM
+    // (user callbacks, getters, species constructors), leaving that object
+    // reachable only from a raw C3 local. Marking the frame keeps GC from
+    // clearing its temproot at a safepoint inside that nested execution.
+    ctx.heap.native_frame_depth++;
     handler(ctx);
+    ctx.heap.native_frame_depth--;
 }
 
 // ============================================================================
