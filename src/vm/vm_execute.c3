@@ -4770,6 +4770,27 @@ fn TVal? Vm.run(Vm* vm) {
             continue;
         }
 
+        case Opcode.DECLGLOBALFUNC: {
+            // Instantiate a top-level FunctionDeclaration binding in the
+            // immediate var_env (no chain walk). Unlike DECLVAR this never
+            // uses the VarIC: it runs once per declaration, and an IC hit
+            // would write the value while leaving stale attributes in place
+            // where CreateGlobalFunctionBinding wants a full redefinition.
+            uint fdecl_bc = insn.get_bc();
+            if (fdecl_bc < vm.current_func.const_count) {
+                TVal fdecl_name = ds.constants[fdecl_bc];
+                if (fdecl_name.is_string()) {
+                    $if types::ENV_STRICT:
+                    if (vm.current_func.needs_env() == false) { unreachable("ENV_STRICT: needs_env=false fn touched own env: DECLGLOBALFUNC"); }
+                    $endif
+                    env::env_declare_global_func(ds.act.var_env, fdecl_name.get_heapptr(), *ra,
+                        ds.act.var_env == vm.global_env,
+                        ((CompiledFunction*)ds.act.func).is_eval_fn());
+                }
+            }
+            break;
+        }
+
         case Opcode.DECLVAR: {
             // Declare a `var` binding in the immediate var_env only (no chain walk).
             uint bc = insn.get_bc();

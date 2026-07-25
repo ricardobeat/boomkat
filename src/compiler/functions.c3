@@ -2182,10 +2182,10 @@ fn void? CompilerContext.hoist_global_fn_decls(&self, bool checks_only = false) 
                 continue;
             }
 
-            // Emit CLOSURE + DECLVAR
+            // Emit CLOSURE + DECLGLOBALFUNC (CreateGlobalFunctionBinding)
             self.emit_a_bc(Opcode.CLOSURE, (uint)func_reg, inner_idx);
             uint name_idx = self.add_string_constant(fn_name2);
-            self.emit_a_bc(Opcode.DECLVAR, (uint)func_reg, name_idx);
+            self.emit_a_bc(Opcode.DECLGLOBALFUNC, (uint)func_reg, name_idx);
             // Global function declarations: func_reg is env-resident; free the
             // temporary register so repeated hoisting doesn't exhaust the file.
             self.free_reg(func_reg);

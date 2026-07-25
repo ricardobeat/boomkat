@@ -4334,8 +4334,11 @@ fn void? CompilerContext.function_declaration(&self, bool is_async_decl = false,
         // POP_LEX runs — matching BlockDeclarationInstantiation (§14.12).
         self.emit_a_bc(Opcode.PUTLEX, (uint)func_reg, name_idx);
     } else {
-        // Declare the binding in the immediate var_env so inner functions can find it via GETVAR
-        self.emit_a_bc(Opcode.DECLVAR, (uint)func_reg, name_idx);
+        // Declare the binding in the immediate var_env so inner functions can
+        // find it via GETVAR. DECLGLOBALFUNC matches DECLVAR for a declarative
+        // var_env and applies CreateGlobalFunctionBinding's descriptor rules
+        // when the var_env is the global Environment Record.
+        self.emit_a_bc(Opcode.DECLGLOBALFUNC, (uint)func_reg, name_idx);
     }
 
     // At global scope, free the register — the function object lives in the

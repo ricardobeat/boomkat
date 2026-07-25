@@ -269,6 +269,17 @@ enum Opcode : char {
     /// `declare variable[constants[BC]] = A`  — declare+initialize a `var` in
     /// the immediate var_env only (does not walk the scope chain).
     DECLVAR,
+    /// `declare function[constants[BC]] = A` — instantiate a top-level
+    /// FunctionDeclaration's binding (A-BC). Identical to DECLVAR outside a
+    /// global Environment Record, but when var_env IS the global env it
+    /// follows CreateGlobalFunctionBinding (ES2024 §9.1.1.4.18): an existing
+    /// non-configurable own global property keeps its current attributes and
+    /// only its value is replaced, while a missing or configurable one is
+    /// (re)defined as { writable: true, enumerable: true, configurable: D }
+    /// (D = true for eval code, false for Script code). DECLVAR cannot do
+    /// this: CreateGlobalVarBinding must leave an existing property entirely
+    /// untouched, so the two declaration kinds need distinct opcodes.
+    DECLGLOBALFUNC,
     /// `A = global[constants[BC]]` — read a top-level global binding by name
     /// (A-BC). Emitted only at true global scope (no nested lexical env), where
     /// lex_env == global_lex_env and var_env == global_env are both permanent
@@ -873,6 +884,7 @@ fn OpFormat get_op_format(Opcode op) {
         case TYPEOFIDENT: return A_BC;
         case PUTVAR:    return A_BC;
         case DECLVAR:   return A_BC;
+        case DECLGLOBALFUNC: return A_BC;
         case GETGLOBAL: return A_BC;
         case PUTGLOBAL: return A_BC;
         case GETGLOBAL_PRIM: return A_BC;

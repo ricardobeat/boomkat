@@ -241,25 +241,45 @@ fn bool env_declare(EnvRecord* env, void* key, TVal val) @inline {
 /// pure declaration with no value to assign, so it's skipped entirely when
 /// the property already exists (CanDeclareGlobalVar step 4-5).
 ///
-/// DECLVAR is shared by plain `var`/assignment-initializer declarations and
-/// FunctionDeclaration hoisting, which the runtime opcode can't tell apart
-/// (no dedicated opcode encodes it), and their existing-property rules
-/// differ: `var x = <value>` against an existing global property only
-/// performs a value-only `Set` (attributes untouched), while
-/// CreateGlobalFunctionBinding resets the whole descriptor whenever the
-/// existing property is configurable, or does a value-only update only when
-/// it's a non-configurable-but-writable-and-enumerable data property (else
-/// CanDeclareGlobalFunction should throw TypeError — not yet implemented).
-/// Resetting the descriptor unconditionally here (as done below) is correct
-/// for functions in the common case and merely too eager for a `var`
-/// re-declaration's value write, which is the narrower, less surprising
-/// side to be wrong on.
+/// FunctionDeclaration hoisting goes through `env_declare_global_func`
+/// instead — CreateGlobalFunctionBinding's existing-property rules differ
+/// from CreateGlobalVarBinding's, so the compiler emits DECLGLOBALFUNC for
+/// those and DECLVAR only for genuine `var` declarations.
 fn bool env_declare_var(EnvRecord* env, void* key, TVal val, bool is_global, bool is_eval_code) @inline {
     if (is_global && val.is_undefined() && env.bindings.has_prop(key)) {
         return true;
     }
     hobject::PropFlags flags = !is_global ? hobject::PROP_FLAGS_WEC
         : (is_eval_code ? hobject::PROP_FLAGS_WEC : hobject::PROP_FLAGS_WE);
+    return env.bindings.put_prop(key, val, flags);
+}
+
+/// Instantiate a top-level FunctionDeclaration binding
+/// (CreateGlobalFunctionBinding, ES2024 §9.1.1.4.18).
+///
+/// Outside a global Environment Record this is an ordinary declarative
+/// binding, identical to `env_declare_var`. On the global object the
+/// existing own property decides the descriptor:
+///
+///   - absent, or present and configurable → define the full descriptor
+///     { value, writable: true, enumerable: true, configurable: D }, where
+///     D is true for eval code (§19.2.1.3) and false for Script code
+///     (§16.1.7), matching `env_declare_var`'s `is_eval_code` argument.
+///   - present and non-configurable → replace only the value and leave the
+///     current attributes alone (step 6's `PropertyDescriptor{[[Value]]: V}`).
+///     CanDeclareGlobalFunction (CHKGLOBALFUNC) has already rejected the
+///     cases where that would be an illegal redefinition, so any property
+///     reaching here is writable and enumerable.
+fn bool env_declare_global_func(EnvRecord* env, void* key, TVal val, bool is_global, bool is_eval_code) @inline {
+    if (!is_global) {
+        return env.bindings.put_prop(key, val, hobject::PROP_FLAGS_WEC);
+    }
+    int idx = env.bindings.find_prop_idx(key);
+    hobject::PropFlags flags = is_eval_code ? hobject::PROP_FLAGS_WEC : hobject::PROP_FLAGS_WE;
+    if (idx >= 0) {
+        hobject::PropFlags existing = env.bindings.get_prop_flags((uint)idx);
+        if (!existing.configurable) { flags = existing; }
+    }
     return env.bindings.put_prop(key, val, flags);
 }
 

@@ -271,12 +271,6 @@ SKIP_FILES = {
     # return-override plumbing in vm_calls.c3 / vm_execute.c3.
     "language/statements/class/elements/privatefieldset-evaluation-order-3.js",
     "language/comments/hashbang/use-strict.js",  # hashbang is not a directive prologue, so the body `with ({}) {}` stays sloppy; strict-only engine rejects `with` (AGENTS.md)
-    "language/eval-code/indirect/var-env-var-init-global-exstng.js",  # needs value-write to preserve an EXISTING global prop's configurable=false while a sibling case (function redecl over a configurable prop) needs a full descriptor reset — same opcode, no way to distinguish yet
-    "language/eval-code/indirect/var-env-func-init-multi.js",
-    "language/eval-code/indirect/var-env-func-init-global-update-non-configurable.js",
-    "language/eval-code/indirect/non-definable-global-function.js",
-    "language/eval-code/indirect/non-definable-function-with-function.js",
-    "language/eval-code/indirect/non-definable-function-with-variable.js",
     # P7 — class field initializers + eval/arguments interaction. The spec
     # requires ContainsArguments static analysis on direct eval body inside
     # a field initializer (§15.7.10 step 14 + §PerformEval); the
