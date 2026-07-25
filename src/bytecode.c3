@@ -269,6 +269,15 @@ enum Opcode : char {
     /// `declare variable[constants[BC]] = A`  — declare+initialize a `var` in
     /// the immediate var_env only (does not walk the scope chain).
     DECLVAR,
+    /// `declare variable[constants[BC]]` — the hoisting pass's stub for a `var`
+    /// with no initializer (A-BC; A holds undefined). At global scope such a
+    /// declaration carries no value, so an existing global property must be left
+    /// entirely untouched (CanDeclareGlobalVar steps 4-5) — including its value,
+    /// which a plain DECLVAR would overwrite with undefined. The distinction is
+    /// static (does the declarator have an initializer?), not a runtime test on
+    /// the operand: `for (var v of [1, , 3])` legitimately declares undefined on
+    /// a hole and must assign it.
+    DECLVAR_HOIST,
     /// `declare function[constants[BC]] = A` — instantiate a top-level
     /// FunctionDeclaration's binding (A-BC). Identical to DECLVAR outside a
     /// global Environment Record, but when var_env IS the global env it
@@ -901,6 +910,7 @@ fn OpFormat get_op_format(Opcode op) {
         case TYPEOFIDENT: return A_BC;
         case PUTVAR:    return A_BC;
         case DECLVAR:   return A_BC;
+        case DECLVAR_HOIST: return A_BC;
         case DECLGLOBALFUNC: return A_BC;
         case GETGLOBAL: return A_BC;
         case PUTGLOBAL: return A_BC;

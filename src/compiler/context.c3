@@ -1111,7 +1111,8 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
             for (uint i = 0; i < self.code_count; i++) {
                 Opcode dop = self.code[i].op;
                 // Declarations always target the function's own immediate scope.
-                if (dop == Opcode.DECLVAR || dop == Opcode.PUTLEX
+                if (dop == Opcode.DECLVAR || dop == Opcode.DECLVAR_HOIST
+                    || dop == Opcode.PUTLEX
                     || dop == Opcode.PUTLEX_C || dop == Opcode.INITTZ) {
                     if (dop == Opcode.INITTZ) {
                         bool keep_tdz = false;

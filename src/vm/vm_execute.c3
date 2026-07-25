@@ -4876,6 +4876,26 @@ fn TVal? Vm.run(Vm* vm) {
             break;
         }
 
+        case Opcode.DECLVAR_HOIST: {
+            // Initializer-less `var` stub. Deliberately skips the VarIC: the
+            // fast path writes unconditionally, which would overwrite a live
+            // global with undefined when the stub sits in a loop body and
+            // re-executes with a warm cache. env_declare_var applies the
+            // CanDeclareGlobalVar skip, and a hoist stub is cold enough that
+            // the cache buys nothing.
+            uint bc = insn.get_bc();
+            if (bc < vm.current_func.const_count) {
+                TVal name_val = ds.constants[bc];
+                if (name_val.is_string()) {
+                    void* key = name_val.get_heapptr();
+                    env::env_declare_var(ds.act.var_env, key, *ra,
+                        ds.act.var_env == vm.global_env,
+                        ((CompiledFunction*)ds.act.func).is_eval_fn(), true);
+                }
+            }
+            break;
+        }
+
         case Opcode.DECLVAR: {
             // Declare a `var` binding in the immediate var_env only (no chain walk).
             uint bc = insn.get_bc();
@@ -4889,17 +4909,7 @@ fn TVal? Vm.run(Vm* vm) {
                     $endif
 
                     // --- VarIC fast path: skip find_prop_idx on repeat calls ---
-                    //
-                    // The fast path must repeat env_declare_var's global-scope
-                    // guard: a bare `var x;` carries no value, so once the global
-                    // property exists the declaration is a no-op and must not
-                    // overwrite it with undefined (CanDeclareGlobalVar steps 4-5).
-                    // A hoist stub inside a loop body re-executes every iteration,
-                    // so a warm IC reaches this path with the property already
-                    // live. Function-scope declarations are exempt — reassignment
-                    // there must always take effect.
-                    if (ds.var_ic_base != null
-                        && !(ra.is_undefined() && ds.act.var_env == vm.global_env)) {
+                    if (ds.var_ic_base != null) {
                         uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                         hobject::VarICEntry* vic = ds.var_ic_base + pc_off;
                         if (vic.env == (void*)ds.act.var_env && vic.key == key) {

@@ -1262,14 +1262,14 @@ fn void? CompilerContext.var_declaration(&self) {
                 if (self.is_global && !is_lexical && has_init) {
                     // `var x = <expr>` at global scope is a declaration (already
                     // instantiated by the hoist pass) followed by a plain
-                    // assignment. Emit the assignment as PUTVAR — a value-only
-                    // update of the existing global binding — rather than
-                    // DECLVAR: a global DECLVAR treats an undefined-valued
-                    // initializer as a bare re-declaration hoist and (per
-                    // CanDeclareGlobalVar) leaves the existing binding untouched,
-                    // silently dropping the assigned value when the initializer
-                    // happens to evaluate to undefined.
+                    // assignment, so emit the assignment as a value-only update
+                    // of the existing global binding.
                     self.emit_a_bc(Opcode.PUTVAR, (uint)reg, name_idx);
+                } else if (!is_lexical && !has_init) {
+                    // Initializer-less `var x;` carries no value: an existing
+                    // global binding must keep its current one, which plain
+                    // DECLVAR would overwrite with undefined on re-execution.
+                    self.emit_a_bc(Opcode.DECLVAR_HOIST, (uint)reg, name_idx);
                 } else {
                     self.emit_var_store(reg, name_idx, is_lexical, is_const);
                 }

@@ -235,18 +235,20 @@ fn bool env_declare(EnvRecord* env, void* key, TVal val) @inline {
 /// bindings stay configurable; script-level ones do not.
 ///
 /// CreateGlobalVarBinding only installs a binding (with a fresh descriptor)
-/// when the global object doesn't already have an own property of that
-/// name; a bare `var x;` hoist stub (`val` is `undefined` — a real
-/// initializer or FunctionDeclaration closure is never `undefined`) is a
-/// pure declaration with no value to assign, so it's skipped entirely when
-/// the property already exists (CanDeclareGlobalVar step 4-5).
+/// when the global object doesn't already have an own property of that name.
+/// `is_bare` marks an initializer-less `var x;` — a pure declaration with no
+/// value to assign — which is skipped entirely once the property exists
+/// (CanDeclareGlobalVar steps 4-5). The caller passes it from the opcode
+/// (DECLVAR_HOIST vs DECLVAR) rather than testing `val`: a declaration can
+/// legitimately assign `undefined`, as `for (var v of [1, , 3])` does on a
+/// hole, and such a store must take effect.
 ///
 /// FunctionDeclaration hoisting goes through `env_declare_global_func`
 /// instead — CreateGlobalFunctionBinding's existing-property rules differ
 /// from CreateGlobalVarBinding's, so the compiler emits DECLGLOBALFUNC for
 /// those and DECLVAR only for genuine `var` declarations.
-fn bool env_declare_var(EnvRecord* env, void* key, TVal val, bool is_global, bool is_eval_code) @inline {
-    if (is_global && val.is_undefined() && env.bindings.has_prop(key)) {
+fn bool env_declare_var(EnvRecord* env, void* key, TVal val, bool is_global, bool is_eval_code, bool is_bare = false) @inline {
+    if (is_global && is_bare && env.bindings.has_prop(key)) {
         return true;
     }
     hobject::PropFlags flags = !is_global ? hobject::PROP_FLAGS_WEC
