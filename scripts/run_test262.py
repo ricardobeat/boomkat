@@ -3,16 +3,18 @@
 Worker-mode test262 runner.
 
 Spawns N parallel test262_runner --worker processes, feeds tests via stdin,
-collects PASS/FAIL results, enforces per-test timeouts via SIGKILL+restart,
-and kills any worker whose RSS exceeds MEM_LIMIT_KB (2 GB) — runaway-
-allocation tests otherwise drive the machine to tens of GB of memory
-pressure (each worker can balloon at ~300 MB/s until the 10s timeout).
+collects PASS/FAIL results, and enforces per-test timeouts via SIGKILL +
+respawn. Each worker is held to MEM_LIMIT_BYTES (3 GB) — via RLIMIT_AS at spawn
+on Linux, or by the parent sampling RSS on macOS, which refuses to lower that
+rlimit — so a runaway-allocation test cannot drive the machine to tens of GB of
+memory pressure.
 
-Default: 3 workers (max 4) to avoid OOM from multiple VM heaps.
+Default worker count scales with the CPU count (cpus - 2, capped at 12). The
+per-worker ceiling keeps total memory bounded at workers × 3 GB, so on a machine
+with less RAM than that product, lower --workers.
 
 IMPORTANT: Always prefer running a single --phase relevant to your change
-instead of the full suite. The full suite takes ~6-8 minutes with 4 workers;
-a single phase is usually under a minute.
+instead of the full suite. A single phase is usually well under a minute.
 
 This is the single canonical test262 runner. For per-test results (needed
 for failure clustering), pass --log FILE — each line is RESULT<TAB>relpath
@@ -31,11 +33,13 @@ Usage:
 """
 
 import argparse
+import collections
 import fnmatch
 import glob
 import os
 import random
 import re
+import resource
 import select
 import signal
 import subprocess
@@ -55,6 +59,14 @@ if not os.path.isabs(VM_BINARY):
 
 # Default timeout per test (seconds)
 TEST_TIMEOUT = 10
+
+# Worker parallelism. Each worker is a full VM process, but its address space is
+# hard-capped by RLIMIT_AS (see MEM_LIMIT_BYTES), so the old "max 4" memory
+# guard is no longer what bounds the pool — the CPU count is. Two cores are left
+# for the scheduler and the OS.
+_CPUS = os.cpu_count() or 4
+MAX_WORKERS = max(1, _CPUS)
+DEFAULT_WORKERS = max(1, min(_CPUS - 2, 12))
 
 # Optional per-test result log (set from --log in main); list so run_phase can
 # see assignment from main without a global statement.
@@ -79,12 +91,24 @@ SHUFFLE = [False]
 # confirmation runs before merging.
 FRESH_PROCESS = [False]
 
-# Per-worker RSS cap in KB. Tests that loop allocating (e.g. huge-length
-# array-like iteration bugs) can balloon a worker to multiple GB within the
-# 10s timeout window; with 4 workers hitting such tests concurrently the
-# machine hits tens of GB of memory pressure. Workers over the cap are
-# killed and the test is recorded as MEMKILL (counted as a failure).
-MEM_LIMIT_KB = 3 * 1024 * 1024  # 3 GB
+# Per-worker address-space cap. Tests that loop allocating (e.g. huge-length
+# array-like iteration bugs) would otherwise balloon a worker to multiple GB
+# within the timeout window; with several workers hitting such tests
+# concurrently the machine hits tens of GB of memory pressure.
+#
+# Where the platform permits it (Linux), the cap is applied to each worker as
+# RLIMIT_AS at spawn, so the kernel enforces it at the moment of the offending
+# allocation. macOS refuses to lower RLIMIT_AS, so there the parent samples RSS
+# and kills offenders itself — late by up to MEM_CHECK_INTERVAL, but bounded.
+# Either way the test is recorded as MEMKILL (counted as a failure), and total
+# memory stays bounded by workers × MEM_LIMIT_BYTES.
+MEM_LIMIT_BYTES = 3 * 1024 * 1024 * 1024  # 3 GB
+MEM_LIMIT_KB = MEM_LIMIT_BYTES // 1024
+
+# How often the parent samples worker RSS, when it has to (see above). Each
+# sample is one `ps` call for the whole pool.
+MEM_CHECK_INTERVAL = 0.5
+
 
 def sample_worker_rss(workers):
     """Return {pid: rss_kb} for all live busy workers via one ps call."""
@@ -921,18 +945,82 @@ def categorize_ce(path):
 # ---------------------------------------------------------------------------
 # Worker management
 # ---------------------------------------------------------------------------
+def _rlimit_as_supported():
+    """True if this platform lets us lower RLIMIT_AS.
+
+    Darwin refuses to lower RLIMIT_AS/RLIMIT_DATA at all (`ulimit -v` fails the
+    same way), so the self-enforcing memory cap is Linux-only. Probed once here
+    rather than per spawn: a failure inside preexec_fn surfaces as an opaque
+    SubprocessError that kills the whole run, not as a skipped memory cap.
+    """
+    try:
+        soft, hard = resource.getrlimit(resource.RLIMIT_AS)
+    except (AttributeError, OSError, ValueError):
+        return False
+    # Probe with the value actually used, then restore. Re-setting the current
+    # limit succeeds even on Darwin, so it proves nothing — only an attempt to
+    # *lower* the limit distinguishes the platforms.
+    try:
+        resource.setrlimit(resource.RLIMIT_AS, (MEM_LIMIT_BYTES, hard))
+    except (OSError, ValueError):
+        return False
+    try:
+        resource.setrlimit(resource.RLIMIT_AS, (soft, hard))
+    except (OSError, ValueError):
+        # Could not restore the parent's own limit; don't cap children either.
+        return False
+    return True
+
+
+RLIMIT_AS_OK = _rlimit_as_supported()
+
+
+def _spawn_worker_proc(binary):
+    """Spawn a `--worker` subprocess, memory-capped where the platform allows.
+
+    Where RLIMIT_AS can be lowered (Linux), the cap is self-enforcing: a
+    runaway-allocation test fails its own malloc and the worker dies at the
+    exact moment it crosses the line. Where it cannot (macOS), the parent's RSS
+    sampling in run_phase is the only backstop.
+    """
+    preexec = None
+    if RLIMIT_AS_OK:
+        def preexec():
+            resource.setrlimit(resource.RLIMIT_AS, (MEM_LIMIT_BYTES, MEM_LIMIT_BYTES))
+
+    return subprocess.Popen(
+        [binary, "--worker"],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        bufsize=0,
+        preexec_fn=preexec,
+    )
+
+
+def _died_of_memory(w):
+    """True if this dead worker looks like it hit the RLIMIT_AS cap.
+
+    Under the cap an over-allocating worker either aborts on a failed
+    allocation (SIGABRT), is killed for the address-space violation
+    (SIGSEGV/SIGBUS on some platforms), or exits non-zero from its own
+    out-of-memory path. None of these are distinguishable with certainty from a
+    genuine crash, so this is a heuristic used only to label the verdict —
+    MEMKILL and FAIL both count as failures either way.
+    """
+    rc = w._proc.poll()
+    if rc is None:
+        return False
+    return rc in (-signal.SIGABRT, -signal.SIGSEGV, -signal.SIGBUS)
+
+
 class Worker:
     """Manages a single test262_runner --worker subprocess."""
 
     def __init__(self, binary, worker_id):
         self.worker_id = worker_id
-        self._proc = subprocess.Popen(
-            [binary, "--worker"],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            bufsize=0,
-        )
+        self._binary = binary
+        self._proc = _spawn_worker_proc(binary)
         self._pending = None  # (test_path, start_time)
         self._buf = b""
 
@@ -954,16 +1042,38 @@ class Worker:
             raise RuntimeError("Worker already has a pending test")
         self._pending = (test_path, time.monotonic())
         line = (test_path + "\n").encode()
-        self._proc.stdin.write(line)
-        self._proc.stdin.flush()
+        try:
+            self._proc.stdin.write(line)
+            self._proc.stdin.flush()
+        except (BrokenPipeError, OSError):
+            # Worker died before it could take the test. Leave `_pending` set so
+            # the scheduler's dead-worker sweep records the verdict and respawns.
+            pass
 
     def try_read_result(self):
-        """Try to read a PASS/FAIL line from stdout. Returns (test_path, result) or None."""
-        while True:
-            chunk = self._proc.stdout.readline()
-            if not chunk:
-                return None
-            line = chunk.decode().strip()
+        """Read whatever is available on stdout; return (path, result) or None.
+
+        Never blocks. `select` only promises *some* bytes are readable, not a
+        whole line, so a plain readline() here can block the entire scheduler
+        on a partial write (or on a worker SIGKILLed mid-line). Bytes are
+        accumulated in `self._buf` and a verdict is returned only once a
+        complete newline-terminated line has arrived.
+        """
+        try:
+            chunk = os.read(self.stdout_fileno, 65536)
+        except (BlockingIOError, InterruptedError):
+            return None
+        except OSError:
+            return None
+        if not chunk:
+            # EOF: the worker exited. The caller leaves `_pending` alone; the
+            # scheduler's dead-worker sweep records the verdict and respawns.
+            return None
+        self._buf += chunk
+
+        while b"\n" in self._buf:
+            raw, self._buf = self._buf.split(b"\n", 1)
+            line = raw.decode(errors="replace").strip()
             if not line:
                 continue
 
@@ -983,11 +1093,18 @@ class Worker:
             test_path = line[len(result) + 1:]
             if self._pending is not None:
                 pending_path, _ = self._pending
-                # Sanity check: should match what we sent
+                # A worker must answer the test it was handed. A mismatch means
+                # the stdin/stdout streams have desynced — exactly the class of
+                # bug this corpus exists to catch — so fail loudly rather than
+                # silently reattributing one test's verdict to another path.
                 if pending_path != test_path:
-                    test_path = pending_path
+                    raise RuntimeError(
+                        f"worker {self.worker_id} desync: sent {pending_path!r}, "
+                        f"got verdict for {test_path!r}"
+                    )
             self._pending = None
             return (test_path, result)
+        return None
 
     def elapsed(self):
         """Seconds since current test was sent, or 0 if idle."""
@@ -996,23 +1113,26 @@ class Worker:
         return time.monotonic() - self._pending[1]
 
     def kill(self):
-        """Kill this worker process."""
-        if self._proc.poll() is None:
-            os.kill(self._proc.pid, signal.SIGKILL)
-            self._proc.wait()
+        """SIGKILL the worker without waiting for it to be reaped.
 
-    def restart(self, binary):
-        """Kill and restart the worker."""
+        Reaping happens via the scheduler's `alive` poll. Blocking on wait()
+        here would stall every other worker in the pool for the duration of a
+        process teardown, which is why timeouts used to cost the whole pool
+        rather than one worker.
+        """
+        if self._proc.poll() is None:
+            try:
+                os.kill(self._proc.pid, signal.SIGKILL)
+            except (ProcessLookupError, OSError):
+                pass
+
+    def close(self):
+        """Kill and reap. Only for end-of-phase teardown, where blocking is fine."""
         self.kill()
-        self._proc = subprocess.Popen(
-            [binary, "--worker"],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            bufsize=0,
-        )
-        self._pending = None
-        self._buf = b""
+        try:
+            self._proc.wait(timeout=5)
+        except (subprocess.TimeoutExpired, OSError):
+            pass
 # ---------------------------------------------------------------------------
 # Test262 runner
 # ---------------------------------------------------------------------------
@@ -1051,11 +1171,11 @@ def rerun_serial(tests, test_timeout):
     """
     results = []
     w = Worker(VM_BINARY, 99)
-    pending = list(tests)
+    pending = collections.deque(tests)
     while pending or not w.is_idle:
         # Feed the worker one test at a time.
         if w.alive and w.is_idle and pending:
-            w.send_test(pending.pop(0))
+            w.send_test(pending.popleft())
 
         # Wait for a result.
         if w.alive and not w.is_idle:
@@ -1074,17 +1194,18 @@ def rerun_serial(tests, test_timeout):
             if w._pending is not None:
                 results.append((w._pending[0], "TIMEOUT"))
                 w._pending = None
-            w.kill()
-            w.restart(VM_BINARY)
+            w.close()
+            w = Worker(VM_BINARY, 99)
 
         # Dead worker with a pending test.
         if not w.alive:
             if w._pending is not None:
                 results.append((w._pending[0], "FAIL"))
                 w._pending = None
+            w.close()
             w = Worker(VM_BINARY, 99)
 
-    w.kill()
+    w.close()
     return results
 
 
@@ -1100,13 +1221,7 @@ def run_fresh_process(tests, test_timeout):
     results = []
     for i, path in enumerate(tests):
         try:
-            proc = subprocess.Popen(
-                [VM_BINARY, "--worker"],
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
-                bufsize=0,
-            )
+            proc = _spawn_worker_proc(VM_BINARY)
             proc.stdin.write((path + "\n").encode())
             proc.stdin.flush()
 
@@ -1157,6 +1272,10 @@ def run_phase(phase_idx, num_workers, test_timeout, es5_only=False):
     pending_count = [0]  # mutable counter for tracking timed-out tests
     last_mem_check = [time.monotonic()]
 
+    # fd -> worker, so a readable fd maps to its worker without scanning the
+    # pool on every wakeup. Rebuilt whenever a worker is replaced.
+    fd_map = {w.stdout_fileno: w for w in workers}
+
     def finish_worker(w, timed_out=False, result=None):
         """Record pending test as completed. Returns (path, result)."""
         if w._pending is not None:
@@ -1169,21 +1288,18 @@ def run_phase(phase_idx, num_workers, test_timeout, es5_only=False):
             return (path, result)
         return None
 
-    # Feed all tests round-robin
-    test_queue = list(tests)
-    next_worker = 0
+    # popleft() is O(1); list.pop(0) reshuffles a queue of thousands per test.
+    test_queue = collections.deque(tests)
 
     while test_queue or pending_count[0] > 0:
         # Assign idle workers
         for w in workers:
             if w.alive and w.is_idle and test_queue:
-                t = test_queue.pop(0)
-                w.send_test(t)
+                w.send_test(test_queue.popleft())
                 pending_count[0] += 1
 
         # Collect results with timeout
         if pending_count[0] > 0:
-            # Build fd list for select
             fds = [w.stdout_fileno for w in workers if w.alive and not w.is_idle]
             if fds:
                 try:
@@ -1195,20 +1311,18 @@ def run_phase(phase_idx, num_workers, test_timeout, es5_only=False):
                 readable = []
 
             for fd in readable:
-                # Find worker with this fd
-                for w in workers:
-                    if w.alive and w.stdout_fileno == fd:
-                        r = w.try_read_result()
-                        if r:
-                            results.append(r)
-                            pending_count[0] -= 1
-                        break
+                w = fd_map.get(fd)
+                if w is None or not w.alive:
+                    continue
+                r = w.try_read_result()
+                if r:
+                    results.append(r)
+                    pending_count[0] -= 1
 
-        # Check worker memory (~2x/second): kill workers over the RSS cap.
-        # See MEM_LIMIT_KB — runaway-allocation tests otherwise balloon each
-        # worker to several GB before the 10s timeout fires.
+        # Where RLIMIT_AS is unavailable the kernel will not stop a runaway
+        # allocation for us, so sample RSS and kill offenders here instead.
         now = time.monotonic()
-        if now - last_mem_check[0] >= 0.5:
+        if not RLIMIT_AS_OK and now - last_mem_check[0] >= MEM_CHECK_INTERVAL:
             last_mem_check[0] = now
             rss_map = sample_worker_rss(workers)
             for w in workers:
@@ -1220,9 +1334,9 @@ def run_phase(phase_idx, num_workers, test_timeout, es5_only=False):
                     )
                     w.kill()
                     finish_worker(w, result="MEMKILL")
-                    w.restart(VM_BINARY)
 
-        # Check for timeouts
+        # Check for timeouts. kill() does not block on reaping — the dead-worker
+        # sweep below respawns — so one slow test costs one worker, not the pool.
         for w in workers:
             if w.alive and not w.is_idle and w.elapsed() > test_timeout:
                 print(
@@ -1231,23 +1345,34 @@ def run_phase(phase_idx, num_workers, test_timeout, es5_only=False):
                 )
                 w.kill()
                 finish_worker(w, timed_out=True)
-                w.restart(VM_BINARY)
 
-        # Replace dead workers
+        # Replace dead workers. This is the single respawn path: timeouts, RLIMIT_AS
+        # memory kills, and genuine crashes all converge here.
         for i, w in enumerate(workers):
-            if not w.alive:
-                if w._pending is not None:
-                    finish_worker(w)
-                workers[i] = Worker(VM_BINARY, i)
-                # Re-assign a pending test if any left
-                if test_queue:
-                    t = test_queue.pop(0)
-                    workers[i].send_test(t)
-                    pending_count[0] += 1
+            if w.alive:
+                continue
+            if w._pending is not None:
+                # Distinguish an allocation failure under the RLIMIT_AS cap from
+                # an ordinary crash, so runaway-memory tests stay visible as
+                # MEMKILL rather than being folded into generic FAILs.
+                verdict = "MEMKILL" if _died_of_memory(w) else "FAIL"
+                if verdict == "MEMKILL":
+                    print(
+                        f"  [memkill] {w._pending[0]} (worker {w.worker_id})",
+                        file=sys.stderr,
+                    )
+                finish_worker(w, result=verdict)
+            del fd_map[w.stdout_fileno]
+            w.close()  # reap the zombie; already dead, so this does not block
+            workers[i] = Worker(VM_BINARY, i)
+            fd_map[workers[i].stdout_fileno] = workers[i]
+            if test_queue:
+                workers[i].send_test(test_queue.popleft())
+                pending_count[0] += 1
 
     # Cleanup
     for w in workers:
-        w.kill()
+        w.close()
 
     # Optional serial retry of non-pass tests to separate real failures from
     # load-order / GC timing flakiness.
@@ -1404,8 +1529,8 @@ def main():
     parser.add_argument(
         "--workers",
         type=int,
-        default=3,
-        help="Number of parallel workers (default: 3, max: 4)",
+        default=DEFAULT_WORKERS,
+        help=f"Number of parallel workers (default: {DEFAULT_WORKERS}, max: {MAX_WORKERS})",
     )
     parser.add_argument(
         "--timeout",
@@ -1483,10 +1608,19 @@ def main():
     if args.fresh_process:
         FRESH_PROCESS[0] = True
 
-    # Cap workers to avoid OOM — each worker is a full VM process with its own heap
-    if args.workers > 4:
-        print(f"Warning: capping --workers from {args.workers} to 4 (memory limit)", file=sys.stderr)
-        args.workers = 4
+    # Each worker's address space is capped by RLIMIT_AS (see MEM_LIMIT_BYTES),
+    # so total memory is bounded by workers × 3 GB rather than being open-ended.
+    # That makes the CPU count, not memory, the limit on useful parallelism.
+    if args.workers > MAX_WORKERS:
+        print(
+            f"Warning: capping --workers from {args.workers} to {MAX_WORKERS} "
+            f"({os.cpu_count()} CPUs detected)",
+            file=sys.stderr,
+        )
+        args.workers = MAX_WORKERS
+    if args.workers < 1:
+        print(f"Warning: raising --workers from {args.workers} to 1", file=sys.stderr)
+        args.workers = 1
 
     # Always rebuild — a missing-only check silently runs a stale binary
     # Ensure the binary exists
