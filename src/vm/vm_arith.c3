@@ -396,14 +396,10 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
             bool is_inc = (op == Opcode.INC_GLOBAL);
 
             // Every exit below writes the statement-value into ra, and the
-            // numeric fast paths write raw. Release ra's old OWNED reference
-            // up front (a large non-interned string parked here — e.g. a
-            // prior call result in a scratch register — would otherwise leak)
-            // and clear the slot so a GC triggered by a slow-path coercion
-            // cannot scan the stale pointer. Registers never hold borrows
-            // outside a fused CALL_VAR/CALL_GLOBAL in flight, so this decref
-            // cannot over-release.
-            vm.heap.decref_tval(ra);
+            // numeric fast paths write raw. Clear the slot up front so a GC
+            // triggered by a slow-path coercion cannot scan a stale pointer;
+            // whatever reference ra held is left to mark-and-sweep rather
+            // than paying a decref on every global increment.
             ra.set_undefined();
 
             if (ds.var_ic_base != null) {

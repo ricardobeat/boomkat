@@ -58,11 +58,10 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
     Vm* vm = ds.vm;
     switch (op) {
         case Opcode.NEWOBJ: {
-            // Release ra's old OWNED value before the allocation: set_object
-            // below writes without releasing the old contents (leaking e.g. a
-            // large non-interned string parked here), and an alloc-triggered
-            // GC must not scan a stale pointer through the cleared slot.
-            vm.heap.decref_tval(ra);
+            // Clear ra before the allocation so an alloc-triggered GC cannot
+            // scan a stale pointer.  The old contents are not decref'd: the
+            // heap list, string table, and large-string registry all keep
+            // their entries findable, so the sweep reclaims them.
             ra.set_undefined();
             HObject*? new_obj = vm.heap.alloc_object(hobject::ObjClass.OBJECT);
             if (try o = new_obj) {
@@ -76,8 +75,7 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
         }
 
         case Opcode.NEWARR: {
-            // See NEWOBJ: release + clear ra before the allocation.
-            vm.heap.decref_tval(ra);
+            // See NEWOBJ: clear ra before the allocation.
             ra.set_undefined();
             HObject*? new_arr = vm.heap.alloc_object(hobject::ObjClass.ARRAY);
             if (try a = new_arr) {
@@ -91,8 +89,7 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
         }
 
         case Opcode.NEWREGEXP: {
-            // See NEWOBJ: release + clear ra before any allocation below.
-            vm.heap.decref_tval(ra);
+            // See NEWOBJ: clear ra before any allocation below.
             ra.set_undefined();
             // A = dest register, BC = constant pool index of "/pattern/flags" string
             uint bc = insn.get_bc();

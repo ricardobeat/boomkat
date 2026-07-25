@@ -244,21 +244,14 @@ fn void? resolve_call_var(Dispatch* ds, uint name_const_idx, uint callee_reg, bo
     TVal* ra = ds.regs_base + callee_reg;
     *borrowed = false;
 
-    // Release the register's old OWNED value up front. Every exit path below
-    // overwrites ra, and the borrowed fast paths write raw (*ra = v, no decref
-    // of the old contents) — without this, whatever the previous instruction
-    // left in the callee register (e.g. the prior iteration's call result, a
-    // large non-interned string with no GC backstop) leaks its reference.
-    // Registers are owned (decref_callee_regs sweeps them all); the one
-    // borrowed slot a frame can hold is its retval slot, raw-overwritten at
-    // RET and neutralized by clear_borrowed_callee_slot on unwind, so the
-    // old value here is never a borrow. Clear the slot after the release so
-    // the tval_copy_ref paths (which decref dst themselves) see undefined,
+    // Every exit path below overwrites ra, and the borrowed fast paths write
+    // raw (*ra = v, no decref of the old contents). Clear a heap-valued slot
+    // so the tval_copy_ref paths (which decref dst themselves) see undefined,
     // and so a GC triggered by a getter below cannot scan a stale pointer.
-    // Guarded so the dominant case (a primitive parked in the slot, e.g. the
-    // prior iteration's numeric result) costs one tag check and no stores.
+    // The reference itself is left to mark-and-sweep, which can find every
+    // class of heap value dropped here. Guarded so the dominant case (a
+    // primitive parked in the slot) costs one tag check and no stores.
     if (ra.is_heap_allocated()) {
-        vm.heap.decref_tval(ra);
         ra.set_undefined();
     }
 
@@ -450,13 +443,9 @@ fn void? resolve_call_global(Dispatch* ds, uint name_const_idx, uint callee_reg,
     TVal* ra = ds.regs_base + callee_reg;
     *borrowed = false;
 
-    // Release the register's old OWNED value up front — same reasoning as
-    // resolve_call_var: the borrowed write paths below are raw and would
-    // otherwise leak the previous contents (e.g. the prior iteration's call
-    // result string, landed here by RET's raw pin-transfer write-back).
-    // Guarded: see resolve_call_var.
+    // Same reasoning as resolve_call_var: the borrowed write paths below are
+    // raw, so clear a heap-valued slot and leave the reference to the sweep.
     if (ra.is_heap_allocated()) {
-        vm.heap.decref_tval(ra);
         ra.set_undefined();
     }
 

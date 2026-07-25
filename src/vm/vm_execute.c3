@@ -1681,12 +1681,14 @@ fn TVal? Vm.run(Vm* vm) {
             continue;
         }
 
+        // The constant loads below overwrite ra raw.  When the old contents
+        // were an owned heap reference the count is not dropped here: objects
+        // and interned strings are reachable from the heap list or string
+        // table, and large non-interned strings from the large-string
+        // registry, so mark-and-sweep reclaims whatever this drops on the
+        // floor.  Paying decref_tval on every constant load costs more on
+        // these hot opcodes than the delayed collection saves.
         case Opcode.LDINT:
-            // Constant loads overwrite ra; like LDREG's dst handling, the old
-            // contents may be an owned heap reference (a register-resident
-            // local reassigned from e.g. a large non-interned string to a
-            // number: `t = 1`) — release it or that reference leaks.
-            vm.heap.decref_tval(ra);
             ra.set_fastint((long)insn.get_sbc());
             continue;
 
@@ -1699,22 +1701,18 @@ fn TVal? Vm.run(Vm* vm) {
         }
 
         case Opcode.LDUNDEF:
-            vm.heap.decref_tval(ra);
             ra.set_undefined();
             continue;
 
         case Opcode.LDNULL:
-            vm.heap.decref_tval(ra);
             ra.set_null();
             continue;
 
         case Opcode.LDTRUE:
-            vm.heap.decref_tval(ra);
             ra.set_boolean(true);
             continue;
 
         case Opcode.LDFALSE:
-            vm.heap.decref_tval(ra);
             ra.set_boolean(false);
             continue;
 
