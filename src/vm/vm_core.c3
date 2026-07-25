@@ -296,6 +296,10 @@ fn bool invoke_getter(Vm* vm, hobject::AccessorResult* acc,
     new_act.bottom = new_bottom;
     new_act.retval = act.bottom + result_reg;
     new_act.flags = 0;
+    // Getter invocation is never a construct call — new.target must read as
+    // undefined inside the getter body, regardless of how the property
+    // access was reached (including via super.prop from a constructor).
+    new_act.new_target = null;
     if (target.has_direct_eval()) {
         new_act.flags |= ACT_FLAG_DIRECT_EVAL;
     }

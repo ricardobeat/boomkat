@@ -2417,6 +2417,8 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                         if (target.has_direct_eval()) {
                                             new_act.flags |= ACT_FLAG_DIRECT_EVAL;
                                         }
+                                        // Setter invocation is never a construct call.
+                                        new_act.new_target = null;
                                         vm.heap.tval_copy_ref(&new_act.this_binding, &obj_tv);
 
                                         TVal* new_regs = new_act.bottom;
@@ -2621,6 +2623,8 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                     if (target.has_direct_eval()) {
                                         new_act.flags |= ACT_FLAG_DIRECT_EVAL;
                                     }
+                                    // Setter invocation is never a construct call.
+                                    new_act.new_target = null;
                                     vm.heap.tval_copy_ref(&new_act.this_binding, &obj_tv);
 
                                     TVal* new_regs = new_act.bottom;
