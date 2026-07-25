@@ -49,7 +49,7 @@ enum TemplateBrace : char {
     LEX_ERROR,
 }
 
-macro uint TemplateScan.level_idx(&self) @private {
+macro uint TemplateScan.level_idx(&self) {
     return (self.depth < TEMPLATE_SCAN_MAX_DEPTH ? self.depth : TEMPLATE_SCAN_MAX_DEPTH) - 1;
 }
 

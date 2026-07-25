@@ -3100,6 +3100,5 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
         default:
             return (TVal){};
     }
-    return (TVal){};
 }
 
