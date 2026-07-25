@@ -2543,6 +2543,10 @@ fn void? CompilerContext.for_statement(&self) {
     double simple_cond_rhs = 0.0;
     Opcode simple_cond_op = Opcode.LT;
     ushort pinned_rhs_reg = 0;
+    // LHS name, interned at detection time (see below) so it survives the body
+    // compile; 0/false when the loop-counter preheader does not apply.
+    uint simple_cond_name_idx = 0;
+    bool has_simple_cond_name = false;
 
     // Use the captured state (_cond_haslk / _cond_haspb) rather than the current lexer
     // state: self.check() above calls lexer.peek() which sets has_lookahead as a side
@@ -2564,6 +2568,13 @@ fn void? CompilerContext.for_statement(&self) {
                         if (is_ident && is_relop && is_num && is_semi) {
                             has_simple_cond = true;
                             simple_cond_rhs = t3.num_value;
+                            // Intern the LHS name NOW: t1.str_value can be a
+                            // borrow over the lexer's shared ident_buf (escaped
+                            // identifiers decode through it), and the whole loop
+                            // body — arbitrarily many further identifier scans —
+                            // is compiled before the preheader name is used.
+                            simple_cond_name_idx = self.add_string_constant(t1.str_value);
+                            has_simple_cond_name = true;
                             switch (t2.type) {
                                 case TokenType.LT: simple_cond_op = Opcode.LT;
                                 case TokenType.LE: simple_cond_op = Opcode.LE;
@@ -2605,6 +2616,39 @@ fn void? CompilerContext.for_statement(&self) {
     if (needs_periterenv) {
         self.emit_create_per_iteration_env(
             periterenv_name_idxs[..], periterenv_is_const[..], periterenv_count);
+    }
+
+    // ----------------------------------------------------------------
+    // Step 1b: Loop-counter preheader (rotated-loop redundant-load removal).
+    // ----------------------------------------------------------------
+    // The rotated layout routes BOTH the entry edge (via the initial JUMP) and
+    // the back edge through cond_label, so the counter load there cannot simply
+    // be dropped — even though on the back edge the increment (INC_VAR /
+    // INC_GLOBAL) has already left the new value in a register.
+    //
+    // Give the entry edge its own load here, in the preheader, into a register
+    // pinned for the whole loop. Step 7 then reuses that register as the
+    // condition's LHS instead of reloading, and Step 6 makes the increment
+    // write into it, so the back edge no longer re-reads the binding:
+    //   INC_GLOBAL rP,S ; GETGLOBAL_PRIM rP,S ; LT ; IF_TRUE
+    // collapses to
+    //   INC_GLOBAL rP,S ; LT ; IF_TRUE
+    //
+    // Restricted to the `IDENT <relop> NUMBER` shape, where Step 7 fully owns
+    // how the LHS is materialized. Emitted AFTER CreatePerIterationEnvironment
+    // so the load observes the per-iteration bindings, not the head's.
+    // Restricted to global scope: a function-local counter is register-resident
+    // (the body mutates its home register directly, and INC targets that
+    // register), so there is no env load to hoist and pinning a second copy
+    // would go stale. At global scope the counter lives in the environment and
+    // every iteration genuinely re-reads it.
+    ushort pinned_lhs_reg = 0;
+    bool has_pinned_lhs = false;
+    if (has_simple_cond && has_simple_cond_name && !needs_periterenv
+        && self.is_global && self.at_global_slot_scope()) {
+        pinned_lhs_reg = self.alloc_reg();
+        has_pinned_lhs = true;
+        self.emit_ident_read((uint)pinned_lhs_reg, simple_cond_name_idx);
     }
 
     // ----------------------------------------------------------------
@@ -2724,8 +2768,39 @@ fn void? CompilerContext.for_statement(&self) {
         // moves.
         self.void_ctx = true;
         self.postfix_void = true;
+        uint incr_start = self.code_count;
         ushort incr_reg = self.expression()!;
         self.free_reg(incr_reg);
+
+        // Preheader hand-off: retarget the increment's result register to the
+        // pinned condition register so the back edge needs no reload. Only when
+        // the update clause compiled to exactly one self-contained increment of
+        // the counter itself (INC_VAR / INC_GLOBAL over the same name), whose
+        // destination is a dead temp — the value is discarded here (void_ctx),
+        // so nothing downstream reads the original register. Anything else
+        // (compound updates, `i += 2`, a second clause) leaves the pinned
+        // register stale, so the preheader is disarmed and Step 7 reloads.
+        if (has_pinned_lhs) {
+            bool handed_off = false;
+            if (self.code_count == incr_start + 1) {
+                Instruction ins = self.code[incr_start];
+                if ((ins.op == Opcode.INC_VAR || ins.op == Opcode.INC_GLOBAL
+                     || ins.op == Opcode.DEC_VAR || ins.op == Opcode.DEC_GLOBAL)
+                    && ins.get_bc() == simple_cond_name_idx) {
+                    self.code[incr_start].a = (uint)pinned_lhs_reg;
+                    handed_off = true;
+                }
+            }
+            if (!handed_off) {
+                self.free_reg(pinned_lhs_reg);
+                has_pinned_lhs = false;
+            }
+        }
+    } else if (has_pinned_lhs) {
+        // No update clause: nothing refreshes the pinned register on the back
+        // edge (the body may still assign the counter), so disarm it.
+        self.free_reg(pinned_lhs_reg);
+        has_pinned_lhs = false;
     }
 
     // Sync register-cached for-init var back to the environment when necessary.
@@ -2758,30 +2833,40 @@ fn void? CompilerContext.for_statement(&self) {
             Token _num_tok  = self.advance()!;  // consume NUMBER (value already in pinned_rhs_reg)
             self.expect(TokenType.SEMICOLON)!;  // consume `;`
 
-            ushort lhs_reg = self.alloc_reg();
-            // Mirror primary_expr: at global scope, all identifiers go through GETVAR
-            // (registers are not kept in sync with the env by the body). resolve_var is
-            // only safe when the body also uses the register directly (non-global scope).
-            if (!self.is_global) {
-                if (try reg = self.resolve_var(ident_tok.str_value)) {
-                    if (reg != lhs_reg) {
-                        self.emit_abc(Opcode.LDREG, (uint)lhs_reg, (uint)reg, 0);
+            // With a preheader (Step 1b) the counter already lives in
+            // pinned_lhs_reg: the entry edge loaded it there, and the increment
+            // (Step 6) writes its result there, so the back edge needs no
+            // reload. Without one, materialize the LHS here as before.
+            ushort lhs_reg;
+            if (has_pinned_lhs) {
+                lhs_reg = pinned_lhs_reg;
+            } else {
+                lhs_reg = self.alloc_reg();
+                // Mirror primary_expr: at global scope, all identifiers go through GETVAR
+                // (registers are not kept in sync with the env by the body). resolve_var is
+                // only safe when the body also uses the register directly (non-global scope).
+                if (!self.is_global) {
+                    if (try reg = self.resolve_var(ident_tok.str_value)) {
+                        if (reg != lhs_reg) {
+                            self.emit_abc(Opcode.LDREG, (uint)lhs_reg, (uint)reg, 0);
+                        }
+                    } else {
+                        uint name_idx2 = self.add_string_constant(ident_tok.str_value);
+                        self.emit_a_bc(Opcode.GETVAR, (uint)lhs_reg, name_idx2);
                     }
                 } else {
                     uint name_idx2 = self.add_string_constant(ident_tok.str_value);
                     self.emit_a_bc(Opcode.GETVAR, (uint)lhs_reg, name_idx2);
                 }
-            } else {
-                uint name_idx2 = self.add_string_constant(ident_tok.str_value);
-                self.emit_a_bc(Opcode.GETVAR, (uint)lhs_reg, name_idx2);
             }
             ushort cmp_res = self.alloc_reg();
             self.emit_abc(simple_cond_op, (uint)cmp_res, (uint)lhs_reg, (uint)pinned_rhs_reg);
-            self.free_reg(lhs_reg);
+            if (!has_pinned_lhs) { self.free_reg(lhs_reg); }
             int back = (int)body_label - (int)self.code_count - 1;
             self.emit(bytecode::make_a_sbx(Opcode.IF_TRUE, (uint)cmp_res, back));
             self.free_reg(cmp_res);
             self.free_reg(pinned_rhs_reg);
+            if (has_pinned_lhs) { self.free_reg(pinned_lhs_reg); }
         } else {
             // General condition: restore and re-compile normally.
             self.lexer.pos = _cond_pos; self.lexer.line = _cond_line; self.lexer.col = _cond_col;
