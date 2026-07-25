@@ -2909,22 +2909,54 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     return (TVal){};
                 }
 
-                // TypedArray: in-range indices are non-configurable (delete
-                // returns false without deleting); out-of-range/detached
-                // indices return true per spec (nothing to delete).
-                if (builtins::is_typed_array_class(hobj.get_class())
-                    && (rc.is_fastint() || rc.is_number())) {
-                    long idx_long = rc.is_fastint() ? rc.get_fastint() : (long)rc.get_number();
-                    bool is_int_idx = rc.is_fastint() || rc.get_number() == (double)idx_long;
-                    if (is_int_idx) {
-                        HObject* buf = (*hobj.extra_ptr()).view.buffer;
-                        uint shift = builtins::ta_elem_shift(hobj.get_class());
-                        uint elem_count = (buf != null && (*buf.extra_ptr()).ab.resizable)
-                            ? builtins::ta_element_count(hobj)
-                            : (*hobj.extra_ptr()).view.byte_length >> shift;
-                        bool in_range = idx_long >= 0 && buf != null && (*buf.extra_ptr()).ab.data != null
-                            && (ulong)idx_long < (ulong)elem_count;
+                // TypedArray (§10.4.5.4 [[Delete]]): a CanonicalNumericIndexString
+                // (or numeric) key that is a valid integer index is
+                // non-configurable — delete returns false without deleting.
+                // Any other numeric-ish key (out-of-range, negative, "-0",
+                // non-canonical) has nothing to delete — returns true.
+                if (builtins::is_typed_array_class(hobj.get_class())) {
+                    bool is_numeric_key = false;
+                    bool is_valid_int_idx = false;
+                    long idx_long = 0;
+                    if (rc.is_fastint() || rc.is_number()) {
+                        is_numeric_key = true;
+                        idx_long = rc.is_fastint() ? rc.get_fastint() : (long)rc.get_number();
+                        is_valid_int_idx = rc.is_fastint() || rc.get_number() == (double)idx_long;
+                    } else if (rc.is_string()) {
+                        HString* key_hstr = (HString*)rc.get_heapptr();
+                        if (key_hstr.is_arridx()) {
+                            is_numeric_key = true;
+                            is_valid_int_idx = true;
+                            idx_long = (long)key_hstr.array_index();
+                        } else {
+                            double cni_d;
+                            if (builtins::is_canonical_numeric_index(vm.heap, key_hstr, &cni_d)) {
+                                // Canonical but not a plain array-index string
+                                // (e.g. "-0", "1.5", "NaN") — never a valid
+                                // integer index, so nothing to delete.
+                                is_numeric_key = true;
+                                is_valid_int_idx = false;
+                            }
+                        }
+                    }
+                    if (is_numeric_key) {
+                        bool in_range = false;
+                        if (is_valid_int_idx) {
+                            HObject* buf = (*hobj.extra_ptr()).view.buffer;
+                            uint shift = builtins::ta_elem_shift(hobj.get_class());
+                            uint elem_count = (buf != null && (*buf.extra_ptr()).ab.resizable)
+                                ? builtins::ta_element_count(hobj)
+                                : (*hobj.extra_ptr()).view.byte_length >> shift;
+                            in_range = idx_long >= 0 && buf != null && (*buf.extra_ptr()).ab.data != null
+                                && (ulong)idx_long < (ulong)elem_count;
+                        }
                         ra.set_boolean(!in_range);
+                        if (in_range) {
+                            // Strict-only engine: failed delete throws (§13.5.1.2 step 5).
+                            if (!vm_throw_error(vm, vm.heap.type_err_proto, "Cannot delete property of TypedArray index", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                return VM_ERROR~;
+                            }
+                        }
                         return (TVal){};
                     }
                 }
