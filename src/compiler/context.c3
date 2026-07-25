@@ -1152,6 +1152,10 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         bool* mgg_jump_targets = (bool*)h.alloc_func(h.heap_udata, (usz)self.code_cap);
         if (mgg_jump_targets == null) { self.cleanup(); return COMPILE_ERROR~; }
         run_move_gg_fusion(self.code, self.code_count, mgg_jump_targets);
+        // Fuse GETGLOBAL_PRIM + JMP_LT -> JMP_LT_G (loop-bound compare). Runs
+        // after compare-branch fusion has already installed the JMP_LT, and
+        // before NOP compaction so the trailing name word is kept.
+        run_jmp_lt_g_fusion(self.code, self.code_count, mgg_jump_targets);
         h.free_func(h.heap_udata, mgg_jump_targets);
     }
 
@@ -1176,6 +1180,11 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
             // its BC) is read by the VM as the second half of the two-word
             // instruction; keep it through compaction like TRY's finally slot.
             if (self.code[i].op == Opcode.MOVE_GG && i + 1 < self.code_count) {
+                nop_keep[i + 1] = true;
+            }
+            // JMP_LT_G's trailing word (a NOP holding the global's name index
+            // in its BC) is the second half of the two-word instruction.
+            if (self.code[i].op == Opcode.JMP_LT_G && i + 1 < self.code_count) {
                 nop_keep[i + 1] = true;
             }
         }
@@ -1234,6 +1243,18 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
                     int tgt_new = (int)pc_map[(uint)tgt_old];
                     int new_off = tgt_new - ((int)pc_map[i] + 1);
                     // Offset must still fit in signed 8 bits (removal only shrinks gaps).
+                    $assert $defined(new_off);
+                    self.code[i].a = (uint)(char)new_off;
+                }
+                case Opcode.JMP_LT_G: {
+                    // Two-word ABC: signed 8-bit offset in field A, applied by
+                    // the VM after BOTH words are consumed, so the target is
+                    // (pc + 2) + off — and the new base is likewise the slot
+                    // after the kept trailing word.
+                    int off = (int)(ichar)self.code[i].a;
+                    int tgt_old = (int)i + 2 + off;
+                    int tgt_new = (int)pc_map[(uint)tgt_old];
+                    int new_off = tgt_new - ((int)pc_map[i] + 2);
                     $assert $defined(new_off);
                     self.code[i].a = (uint)(char)new_off;
                 }

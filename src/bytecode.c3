@@ -731,6 +731,23 @@ enum Opcode : char {
     /// Fused strict-inequality branch: branch if (rB !== rC).
     JMP_SNEQ,
 
+    /// Fused `GETGLOBAL_PRIM rC, S` + `JMP_LT off, rB, rC`: branch if
+    /// (rB < global[S]), loading the primitive-only global operand inline
+    /// instead of round-tripping it through a scratch register.
+    /// A two-word instruction mirroring MOVE_GG: this word is ABC (A = signed
+    /// 8-bit jump offset, B = the register operand, C unused); the
+    /// immediately-following word is a NOP whose BC holds the global's name
+    /// index. The VM reads both words and advances PC by 2, so the trailing
+    /// word is preserved through NOP compaction via `nop_keep`.
+    /// The loaded value is never materialized in a register — fusion requires
+    /// the original scratch register to be dead after the branch on both the
+    /// fall-through and taken paths.
+    /// Offset convention matches JMP_LT: relative to the instruction after the
+    /// *pair* (pc has already advanced by 2).
+    /// Reuses the per-PC VarICEntry slot at pc_off+1 (the trailing word) as the
+    /// global's read IC, exactly like MOVE_GG's source-slot IC.
+    JMP_LT_G,
+
     /// Fused two-hop property access: A=dst_temp, B=src, C=key1_const_idx.
     /// The second key and final register are stored in the NEXT instruction slot (which becomes NOP).
     /// Format: insn[i]  = GETPROPC2 A=dst_temp, B=src, C=key1

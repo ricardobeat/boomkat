@@ -4171,6 +4171,93 @@ fn TVal? Vm.run(Vm* vm) {
             continue;
         }
 
+        case Opcode.JMP_LT_G: {
+            // Fused `GETGLOBAL_PRIM rC, S` + `JMP_LT off, rB, rC`. Two-word:
+            // this word (already consumed) holds the jump offset in A and the
+            // register operand in B; the trailing word (at curr_pc) holds the
+            // global's name index in BC. The global is proven primitive-only,
+            // so the read is a raw slot load with no refcount and no scratch
+            // register. Comparison semantics must match JMP_LT exactly.
+            Instruction name_word = *ds.curr_pc;
+            ds.curr_pc++;
+            uint name_bc = name_word.get_bc();
+
+            // Resolve the global into a local value. On any IC miss or cold
+            // path, fall back to the same env walk the PRIM handlers use.
+            TVal gval;
+            gval.set_undefined();
+            bool resolved = false;
+
+            if (name_bc < vm.current_func.const_count && ds.var_ic_base != null) {
+                TVal name_val = ds.constants[name_bc];
+                if (name_val.is_string()) {
+                    // IC slot lives at the trailing word's pc_off (curr_pc has
+                    // already advanced past both words), mirroring MOVE_GG.
+                    uint name_off = (uint)(ds.curr_pc - 1 - ds.code_base);
+                    hobject::VarICEntry* gic = ds.var_ic_base + name_off;
+                    HObject* gb = (HObject*)gic.bindings;
+                    if (gb != null && gic.search_head == (void*)ds.act.lex_env
+                        && gb.shape_id == gic.shape_id) {
+                        TVal* slot = &gb.prop_values()[gic.prop_idx];
+                        if (!env::is_tdz_sentinel(slot)) {
+                            gval = *slot;
+                            resolved = true;
+                        }
+                    }
+
+                    if (!resolved) {
+                        void* key = name_val.get_heapptr();
+                        EnvRecord* genv = null;
+                        int gidx = -1;
+                        EnvRecord* cur = ds.act.lex_env;
+                        while (cur != null) {
+                            int idx = cur.bindings.find_prop_idx(key);
+                            if (idx >= 0) { genv = cur; gidx = idx; break; }
+                            cur = cur.parent;
+                        }
+                        if (genv == null && ds.act.lex_env != ds.act.var_env) {
+                            EnvRecord* vcur = ds.act.var_env;
+                            while (vcur != null) {
+                                int vidx = vcur.bindings.find_prop_idx(key);
+                                if (vidx >= 0) { genv = vcur; gidx = vidx; break; }
+                                vcur = vcur.parent;
+                            }
+                        }
+                        if (genv != null && gidx >= 0) {
+                            TVal* slot = &genv.bindings.prop_values()[gidx];
+                            if (!env::is_tdz_sentinel(slot)) {
+                                gval = *slot;
+                                resolved = true;
+                            }
+                            gic.env = (void*)genv;
+                            gic.bindings = (void*)genv.bindings;
+                            gic.shape_id = genv.bindings.shape_id;
+                            gic.prop_idx = (ushort)gidx;
+                            gic.search_head = (void*)ds.act.lex_env;
+                        }
+                    }
+                }
+            }
+
+            TVal* gb_val = &gval;
+            bool cmp_lt;
+            bool cmp_undef = false;
+            if (types::both_fastint(rb, gb_val)) {
+                cmp_lt = rb.get_fastint() < gb_val.get_fastint();
+            } else if ((rb.is_fastint() || rb.is_number())
+                       && (gb_val.is_fastint() || gb_val.is_number())) {
+                cmp_lt = tval_numeric_to_double(rb) < tval_numeric_to_double(gb_val);
+            } else {
+                int cmp = vm_relational_compare(vm, rb, gb_val, &cmp_undef);
+                if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                if (ds.needs_restart) break;
+                cmp_lt = cmp < 0;
+            }
+            if (cmp_undef) cmp_lt = false;
+            if (cmp_lt) { if ((ichar)insn.a < 0) { if (--vm.heap.bwd_gc_budget == 0) { if (vm.heap.gc_pending) { vm.heap.safepoint_gc(); } vm.heap.bwd_gc_budget = heap::BWD_GC_INTERVAL; } } ds.curr_pc += (int)(ichar)insn.a; }
+            continue;
+        }
+
         case Opcode.GETGLOBAL: {
             // Read a top-level global binding. Emitted only where lex_env ==
             // global_lex_env and var_env == global_env. The per-PC IC caches the
