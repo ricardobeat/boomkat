@@ -687,9 +687,17 @@ fn int run_worker_loop() {
     if (catch err = v_opt) { return 1; }
     Vm* v = v_opt;
 
-    while (try line = io::treadline(io::stdin())) {
+    // The line read has to happen inside the @pool() scope: treadline allocates
+    // the line from the temp allocator, and only allocations made inside the
+    // scope are reclaimed when it closes. Reading in the `while` header leaks
+    // one line buffer per test for the lifetime of the worker.
+    bool eof = false;
+    while (!eof) {
         @pool() {
-            if (line.len == 0) { continue; }
+            String line = (String)"";
+            String? line_opt = io::treadline(io::stdin());
+            if (catch line_opt) { eof = true; } else { line = line_opt; }
+            if (eof || line.len == 0) { continue; }
 
             // Reset heap+VM — destroy+recreate VM to avoid stale-reference bugs.
             // Null out `v` between destroy and a successful recreate so that a
