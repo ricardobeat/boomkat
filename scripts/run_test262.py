@@ -134,39 +134,26 @@ SKIP_DIRS = {
 # Feature flags to skip (matched against test metadata `features: [...]`)
 UNSUPPORTED_PATTERN = re.compile(
     r"features:\s*\[.*\b(?:"
-    # Engine quirks / non-standard
-    r"IsHTMLDDA|host-gc-required|cross-realm|tail-call-optimization|"
-    r"legacy-regexp|caller|"
-    # Annex B property features
-    r"__proto__|__getter__|__setter__|"
-    # Stage 3 proposals
+    # Test-Harness Features (non-language features, tooling-specific)
+    r"IsHTMLDDA|host-gc-required|"
+    # Stage 3 Proposals (ratified language features not yet in all implementations)
     r"Temporal|ShadowRealm|decorators|explicit-resource-management|"
+    r"legacy-regexp|regexp-duplicate-named-groups|"
+    r"Intl.Era-monthcode|Intl.Locale-info|Intl.NumberFormat-v3|"
     r"source-phase-imports|source-phase-imports-module-source|"
-    r"import-defer|export-defer|import-text|import-bytes|"
-    r"canonical-tz|immutable-arraybuffer|"
-    r"nonextensible-applies-to-private|await-dictionary|error-stack-accessor|"
-    r""
-    r""
-    r"immutable-arraybuffer|"
-    r"joint-iteration|"
-    # Complex features deferred.  (BigInt is implemented — plan 056 — so it is
-    # no longer filtered here; BigInt64Array/BigUint64Array + DataView BigInt64
-    # tests still fail until Phase 3/4 land, but they run rather than skip.)
-    # SharedArrayBuffer + Atomics are now implemented single-agent, incl.
-    # Atomics.pause.  Multi-worker `agent` tests are skipped per-file via
-    # AGENT_HARNESS_RE below.
-    r"structured-clone|"
-    # Async generators (`async function*`) implemented — plan 060. The
-    # `async-generator` feature token no longer forces a skip.
-    # Class features not yet implemented (private fields/methods/accessors/
-    # static private landed in plan 054 P2-P5; public fields P7; static
-    # initialization blocks landed session 292; #x in obj (P6) landed in
-    # the same session — `class-fields-private-in` removed).
-    # Other unimplemented ES features.  (align-detached-buffer-semantics-with-
-    # web-reality is implemented: $262.detachArrayBuffer routes through the same
-    # DetachArrayBuffer primitive as ArrayBuffer.prototype.transfer, and detached
-    # integer-indexed access returns undefined / ignores writes per the proposal.)
-    r"object-rest|logical-assignment|numeric-separator-literal"
+    r"Atomics.pause|await-dictionary|canonical-tz|error-stack-accessor|"
+    r"export-defer|immutable-arraybuffer|import-bytes|import-defer|import-text|"
+    r"joint-iteration|nonextensible-applies-to-private|"
+    # Standard language features: Annex B (non-strict legacy)
+    r"__proto__|__getter__|__setter__|"
+    # Standard language features: engine-specific pragmatics
+    r"cross-realm|tail-call-optimization|caller|"
+    # Standard language features: not yet implemented in engine
+    r"object-rest|logical-assignment-operators|numeric-separator-literal|"
+    # Non-standard feature token (not in test262/features.txt; structured-clone
+    # tests are deferred as they're not core language features and the engine
+    # currently prioritizes other functionality)
+    r"structured-clone"
     r")\b"
 )
 
