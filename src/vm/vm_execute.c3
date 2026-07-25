@@ -4803,23 +4803,16 @@ fn TVal? Vm.run(Vm* vm) {
 
                     // --- VarIC fast path: skip find_prop_idx on repeat calls ---
                     //
-                    // Safety note: env_declare_var's global-scope guard (skip the
-                    // write when the value is undefined and the property already
-                    // exists, per CreateGlobalVarBinding/CanDeclareGlobalVar) is
-                    // NOT re-checked here. That's sound because the only DECLVAR
-                    // sites where that guard can matter are global-scope bare
-                    // `var x;` hoist stubs, and the hoisting pass emits exactly one
-                    // such DECLVAR per declared name per compilation unit — never
-                    // inside a loop, and a compilation unit (script/eval/module)
-                    // is compiled fresh and runs at most once (modules are gated
-                    // on ModuleStatus.EVALUATED; eval/Function always recompile).
-                    // So this PC cannot re-execute with a warm IC. Function-scope
-                    // DECLVAR sites (e.g. `var x = i` in a loop) do re-execute
-                    // against the same var_env within one activation, but the
-                    // undefined-skip guard doesn't apply there — reassignment must
-                    // always take effect — so an IC hit there is just a plain
-                    // write, matching env_declare_var's non-global path exactly.
-                    if (ds.var_ic_base != null) {
+                    // The fast path must repeat env_declare_var's global-scope
+                    // guard: a bare `var x;` carries no value, so once the global
+                    // property exists the declaration is a no-op and must not
+                    // overwrite it with undefined (CanDeclareGlobalVar steps 4-5).
+                    // A hoist stub inside a loop body re-executes every iteration,
+                    // so a warm IC reaches this path with the property already
+                    // live. Function-scope declarations are exempt — reassignment
+                    // there must always take effect.
+                    if (ds.var_ic_base != null
+                        && !(ra.is_undefined() && ds.act.var_env == vm.global_env)) {
                         uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                         hobject::VarICEntry* vic = ds.var_ic_base + pc_off;
                         if (vic.env == (void*)ds.act.var_env && vic.key == key) {
