@@ -1734,8 +1734,17 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
             }
 
             Token name_tok2 = self.expect(TokenType.IDENTIFIER)!;
+            // Intern the name now: name_tok2.str_value may be a borrow into
+            // the lexer's shared ident_buf scratch (escaped identifiers like
+            // `a` decode through the slow path — see scan_identifier),
+            // which compile_inner_function below will overwrite while
+            // scanning the parameter list and body. Every subsequent use
+            // must go through this stable, interned slice instead of the
+            // raw token.
+            HString* fn_name_hstr = ((Heap*)self.heap).str_intern(name_tok2.str_value);
+            char[] fn_name2 = fn_name_hstr.get_data();
 
-            ushort func_reg = self.declare_var(name_tok2.str_value, VAR);
+            ushort func_reg = self.declare_var(fn_name2, VAR);
             self.has_local_bindings = true;
 
             // Regular function declarations are constructable per ES2015 §14.1.2.
@@ -1745,7 +1754,7 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
 
             self.is_async = hoist_is_async;
             // Use the byte offset of `function` captured right after expect().
-            CompiledFunction* inner = self.compile_inner_function(name_tok2.str_value, false, hoist_fn1_src_start)!;
+            CompiledFunction* inner = self.compile_inner_function(fn_name2, false, hoist_fn1_src_start)!;
             self.is_async = false;
 
             self.is_generator = saved_gen;
@@ -1755,7 +1764,7 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
 
             // Emit CLOSURE + DECLVAR
             self.emit_a_bc(Opcode.CLOSURE, (uint)func_reg, inner_idx);
-            uint name_idx = self.add_string_constant(name_tok2.str_value);
+            uint name_idx = self.add_string_constant(fn_name2);
             self.emit_a_bc(Opcode.DECLVAR, (uint)func_reg, name_idx);
 
             // Lexer is now past the function body. Continue scanning.
@@ -2128,8 +2137,17 @@ fn void? CompilerContext.hoist_global_fn_decls(&self, bool checks_only = false) 
             }
 
             Token name_tok2 = self.expect(TokenType.IDENTIFIER)!;
+            // Intern the name now: name_tok2.str_value may be a borrow into
+            // the lexer's shared ident_buf scratch (escaped identifiers like
+            // `a` decode through the slow path — see scan_identifier),
+            // which compile_inner_function below will overwrite while
+            // scanning the parameter list and body. Every subsequent use
+            // must go through this stable, interned slice instead of the
+            // raw token.
+            HString* fn_name_hstr = ((Heap*)self.heap).str_intern(name_tok2.str_value);
+            char[] fn_name2 = fn_name_hstr.get_data();
 
-            ushort func_reg = self.declare_var(name_tok2.str_value, VAR);
+            ushort func_reg = self.declare_var(fn_name2, VAR);
             self.has_local_bindings = true;
 
             // Regular function declarations are constructable per ES2015 §14.1.2.
@@ -2139,7 +2157,7 @@ fn void? CompilerContext.hoist_global_fn_decls(&self, bool checks_only = false) 
 
             self.is_async = hoist_is_async;
             // Use the byte offset of `function` captured right after expect().
-            CompiledFunction* inner = self.compile_inner_function(name_tok2.str_value, false, hoist_fn1_src_start)!;
+            CompiledFunction* inner = self.compile_inner_function(fn_name2, false, hoist_fn1_src_start)!;
             self.is_async = false;
 
             self.is_generator = saved_gen;
@@ -2157,7 +2175,7 @@ fn void? CompilerContext.hoist_global_fn_decls(&self, bool checks_only = false) 
             // change the export's identity. Scripts (non-module) keep the
             // in-body instantiation below.
             if (self.is_module && self.current_module != null) {
-                mod_register_func_decl(self.get_module_def(), name_tok2.str_value, inner_idx);
+                mod_register_func_decl(self.get_module_def(), fn_name2, inner_idx);
                 self.free_reg(func_reg);
                 prev_toplevel = TokenType.RBRACE;
                 has_prev = true;
@@ -2166,7 +2184,7 @@ fn void? CompilerContext.hoist_global_fn_decls(&self, bool checks_only = false) 
 
             // Emit CLOSURE + DECLVAR
             self.emit_a_bc(Opcode.CLOSURE, (uint)func_reg, inner_idx);
-            uint name_idx = self.add_string_constant(name_tok2.str_value);
+            uint name_idx = self.add_string_constant(fn_name2);
             self.emit_a_bc(Opcode.DECLVAR, (uint)func_reg, name_idx);
             // Global function declarations: func_reg is env-resident; free the
             // temporary register so repeated hoisting doesn't exhaust the file.

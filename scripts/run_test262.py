@@ -544,13 +544,6 @@ SKIP_FILES = {
     "built-ins/Date/S15.9.3.1_A5_T4.js",  # Date(year, month, date, hours, minutes)
     "built-ins/Date/S15.9.3.1_A5_T5.js",  # Date(year, month, date, hours, minutes, seconds)
     "built-ins/Date/S15.9.3.1_A5_T6.js",  # Date(year, month, date, hours, minutes, seconds, ms)
-    # C7a — Function.prototype.toString raw-source preservation. The test
-    # requires toString to return the original source with `\uXXXX` escape
-    # sequences intact, but the lexer/compiler normalises those into cooked
-    # identifier names. Deferred: would require storing raw text alongside
-    # cooked names throughout the compiler (large change spanning lexer +
-    # parser + every place that creates a CompiledFunction).
-    "built-ins/Function/prototype/toString/unicode.js",
     # Fixed-width BigInt (plan 056: int128, ~±1.7e38). These tests contain
     # decimal/hex/binary BigInt literals whose magnitude exceeds 2**127,
     # which this engine correctly rejects as a SyntaxError at parse time —
