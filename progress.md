@@ -1,6 +1,6 @@
 # Progress: Duktape C3 — test262 Conformance Tracker
 
-**Last Updated:** Session 297 — **41,655 pass / 0 fail / 0 CE** (7,581 skipped). Fixed ASI over-acceptance, for-await destructuring `yield <operand>`, and iterator target lifetime across deferred consumers. Focused regressions and Rosetta pass.
+**Last Updated:** Session 299 — **41,830 pass / 0 fail / 0 CE** (7,406 skipped). Cleared the remaining backlog: large-string registry backstop (recovering the leak-fix perf cost and exposing a call-callee use-after-free), a GC temproot invariant break affecting every builtin that re-enters the VM, and six spec fixes.
 
 **Target:** 100% test262 pass rate on the targeted subset (see plan 040).
 
@@ -11,6 +11,18 @@
 - **Single-test repro**: `python3 scripts/run_test262.py --single <path>` (warns if the suite skips the test; `--debug`/`--keep` concat harness for `just lldb` / `--trace-vm`).
 - **Phase counts**: `bash scripts/count_test262_by_phase.sh` · **Delta**: `bash scripts/test262_delta.sh`.
 - **Build**: `c3c build test262_runner` or `c3c build duktape_c3` (plain runner; `duktape_c3_debug` for `-c`/`-t` inspection).
+
+## Session 299 (2026-07-24)
+
+Nine-agent fleet over the remaining backlog. **41,781 → 41,830 pass, 2 → 0 fail.** Three agents' framings turned out to be wrong in instructive ways.
+
+- **Large-string registry backstop** (faa59dd2 + 37252db2) — `HString.registry_slot` reuses the dead `next` field (header stays 24B); Heap holds a swap-with-last array of >256B strings, swept in phase 3b under `string_sweep_safe`, drained in reset()/destroy(). With a collector that can find these strings, the bb6c01e hot-path decrefs came back out: function_call 335→318ms, loop 278→233, recursion 284→239, arithmetic 641→517. Leaks hold at 15/880B; 100k abandoned large strings peak at 13.7MB RSS. The agent's own near-miss is worth recording: it first stored the slot in `hash`, which `equals_hstring` uses as a fast-reject *specifically* for non-interned strings — silently breaking `===` on large strings until phase 0 caught it.
+- **The decref revert fixed a real crash** (37252db2) — the last full-suite failure, `FinalizationRegistry/.../unregister-symbol-token.js`, segfaulted deterministically on main and *predated* the whole session (reproduced on e53cb15). Bisecting the day's commits put the fix squarely on the decref revert: `resolve_call_var`/`resolve_call_global` had been releasing the callee register while it was still the borrowed callee slot in flight for the fused CALL path. So bb6c01e's "owned-register discipline" was too strong a claim — that slot is a borrow — and what read as a 3-7% perf tax was also a latent use-after-free.
+- **GC temproots vs. native frames** (e87df06f) — `mark_and_sweep(safepoint)` cleared every temproot because "at a safepoint nothing is in flight." False whenever a builtin allocates a result and re-enters the VM holding it only in a raw C3 local: `Array.prototype.map`'s result array was swept mid-loop and the next write hit a recycled header. Fixed with a `native_frame_depth` counter at the `dispatch_builtin` chokepoint. Verified by bisection under an aggressive all-sizes GC trigger — both target tests fail without it, pass 3/3 with it. Not map-specific and not batch-only, contrary to the original repro recipe.
+- **Spec fixes** — accessor frames never assigned `new_target`, so a getter reached via `super.x` inherited the enclosing constructor's (107fe880). Strict `delete ta[i]` computed the failure but never threw, and missed string keys entirely (82546d30, +8). `includes()` short-circuited on detach instead of matching undefined, and `[[Set]]` skipped ToNumber on non-arridx canonical indices (0d5c8697, +4). Global function declarations shared DECLVAR with `var`, so redeclaring over a non-configurable global flipped `configurable` back to true — new DECLGLOBALFUNC opcode, kept off the VarIC (06aee563, phase 7 +6).
+- **The toString "escape" bug was a stale borrow** (ee740c2d) — `hoist_decls` captured the decl name as a borrow into the lexer's shared `ident_buf`, which `compile_inner_function` then overwrote by re-lexing the body. A top-level `function a(bcd){...}` created a global named after the last identifier scanned *inside* the body. Interning the name at capture fixes it. The escaped name is still decoded in toString output; the test only passes because its harness accepts either form, so verbatim-name preservation is still unimplemented and untested.
+- **Skip-list re-tier needed correction** (1784700b + 57ccfad7) — the agent reported an empty token diff while actually adding five tokens, two of them (`Atomics.pause`, `regexp-duplicate-named-groups`) for features we implemented and ship passing. Its `logical-assignment` → `logical-assignment-operators` "typo fix" would have started skipping 8 passing tests; logical assignment is implemented, so the dead misspelling was load-bearing and the token is now gone. Verified by a machine-checked token-set diff against pre-re-tier main.
+- Gates: full suite 41,830/0/0, golden 10/10, rosetta 100/100, benches at or better than baseline.
 
 ## Session 298 (2026-07-24)
 
