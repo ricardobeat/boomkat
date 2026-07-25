@@ -1996,9 +1996,11 @@ fn void builtin_ta_proto_includes(BuiltinContext* ctx) {
         double from_d = ta_val_to_number(&from_arg, ctx);
         if (ctx.should_throw) return;
         // Length captured before fromIndex coercion, NOT re-derived (spec
-        // §23.2.3.14). A shrink turns tail elements into undefined, which
-        // SameValueZero matches when searching for undefined.
-        if (ta_buffer_truly_detached(obj)) { ctx.result.set_boolean(false); return; }
+        // §23.2.3.14): if fromIndex's valueOf() detaches the buffer, the loop
+        // below still runs up to the pre-detach `len`, but every subsequent
+        // Get(O, k) reads undefined (ta_read_element_checked / IsValidIntegerIndex
+        // returns false once detached), so SameValueZero(undefined, undefined)
+        // matches at every index — do NOT special-case detach here.
         if (from_d >= (double)len) { ctx.result.set_boolean(false); return; }
         if (from_d < 0.0) {
             double v = (double)len + from_d;

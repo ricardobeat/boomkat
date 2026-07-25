@@ -579,16 +579,8 @@ SKIP_FILES = {
     # feature token ($262.detachArrayBuffer now implemented). These carry that
     # token but do not exercise the detach primitive itself; they expose
     # PRE-EXISTING gaps in unrelated operations that the token was masking:
-    #   Set/tonumber-value-throws — [[Set]] must not invoke OrdinaryGet on the
-    #                              prototype getter for an integer index.
-    #   includes/detached-*      — TypedArray.prototype.includes(undefined) on a
-    #                              buffer detached mid-fromIndex must return true.
     #   DefineOwnProperty/*-realm — needs $262.createRealm (cross-realm host hook,
     #                              unsupported).
-    "built-ins/TypedArrayConstructors/internals/Set/tonumber-value-throws.js",
-    "built-ins/TypedArrayConstructors/internals/Set/BigInt/tonumber-value-throws.js",
-    "built-ins/TypedArray/prototype/includes/detached-buffer-during-fromIndex-returns-true-for-undefined.js",
-    "built-ins/TypedArray/prototype/includes/BigInt/detached-buffer-during-fromIndex-returns-true-for-undefined.js",
     "built-ins/TypedArrayConstructors/internals/DefineOwnProperty/detached-buffer-throws-realm.js",
     "built-ins/TypedArrayConstructors/internals/DefineOwnProperty/BigInt/detached-buffer-throws-realm.js",
 }

@@ -2210,6 +2210,29 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         } else {
                             double cni_d;
                             if (builtins::is_canonical_numeric_index(vm.heap, key_hstr, &cni_d)) {
+                                // IntegerIndexedElementSet (§10.4.5.10) coerces the
+                                // value (ToNumber/ToBigInt) BEFORE checking that the
+                                // canonical numeric index is a valid integer index —
+                                // a non-arridx canonical index ("1.1", "-0", ...) is
+                                // always out of bounds, so the write itself is a
+                                // no-op, but the coercion must still run (and its
+                                // exceptions must still propagate) rather than
+                                // falling through to OrdinarySet, which would invoke
+                                // the prototype's [[Get]]/[[Set]] instead.
+                                hobject::ObjClass ta_cls = hobj.get_class();
+                                BuiltinContext conv_ctx;
+                                conv_ctx.vm = vm;
+                                conv_ctx.heap = vm.heap;
+                                conv_ctx.should_throw = false;
+                                TVal conv_scratch; conv_scratch.set_undefined();
+                                conv_ctx.result = &conv_scratch;
+                                TVal converted = *rc;
+                                builtins::ta_coerce_element(ta_cls, &converted, &conv_ctx);
+                                if (conv_ctx.should_throw) {
+                                    if (!vm_throw_value(vm, conv_ctx.throw_value, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                        return vm_uncaught_error(vm, &conv_ctx.throw_value);
+                                    }
+                                }
                                 return (TVal){};
                             }
                         }
