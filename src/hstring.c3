@@ -32,6 +32,10 @@ const uint MAX_ARRIDX = 0xFFFF_FFFE;
 /// Sentinel value indicating "not a valid array index".
 const uint ARRIDX_NONE = 0xFFFF_FFFF;
 
+/// Sentinel for `HString.registry_slot`: the string holds no slot in the
+/// heap's large-string registry.
+const usz REGISTRY_SLOT_NONE = (usz)-1;
+
 /// Unicode replacement character (U+FFFD).
 const uint UNICODE_REPLACEMENT = 0xFFFD;
 
@@ -100,12 +104,18 @@ struct HString {
     /// Combined HeapHeader-compatible + string-specific flags.
     HStringFlags flags;
     uint         refcount;
-    /// Next pointer in the string table chain (singly-linked).
-    HString* next;
+    /// Slot held by a non-interned string in the heap's large-string
+    /// registry, or `REGISTRY_SLOT_NONE` when the string is interned (the
+    /// string table tracks those instead) or registration was declined.
+    /// Sized as a pointer purely to keep the header 8-byte aligned.
+    usz registry_slot;
 
     // --- String-specific fields ---
 
-    /// Pre-computed hash (FNV-1a over the raw bytes).
+    /// Pre-computed hash (FNV-1a over the raw bytes).  Interned strings use
+    /// it to index the string table; non-interned strings still need it as
+    /// the fast-reject in `equals_hstring`, so it always holds the real
+    /// content hash.
     uint hash;
     /// Byte length of the UTF-8 data (excluding the NUL terminator).
     uint blen;
@@ -325,6 +335,9 @@ fn HString*? hstring_alloc(void* heap_ptr, char[] data, uint hash) {
     // --- Hash & lengths ---
     s.hash = hash;
     s.blen = (uint)data.len;
+
+    // Unregistered until the caller decides the string needs a registry slot.
+    s.registry_slot = REGISTRY_SLOT_NONE;
 
     bool ascii = check_is_ascii(data);
     s.flags.is_ascii = ascii;

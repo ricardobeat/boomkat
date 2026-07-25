@@ -232,6 +232,17 @@ struct Heap {
     uint         str_table_size;
     uint         str_table_used;
 
+    // Registry of large (non-interned) strings.  Strings over
+    // MAX_INTERN_BYTES are not in str_table, so the table sweep and the
+    // reset teardown cannot see them.  Every such string is appended here at
+    // allocation and removed at free, giving mark-and-sweep a backstop for
+    // unreachable ones and reset() a complete list to release.  Each entry
+    // stores its own slot in HString.hash (dead for non-interned strings),
+    // so removal is an O(1) swap with the last element.
+    HString**    large_strings;
+    uint         large_string_count;
+    uint         large_string_capacity;
+
     // Built-in strings cache (indexed by string constant IDs)
     void*[STRS_CACHE_SIZE]  strs;
 
@@ -1037,6 +1048,17 @@ fn void Heap.destroy(&self) {
         self.str_table = null;
     }
 
+    // Free all large (non-interned) HStrings and the registry backing array.
+    for (uint i = 0; i < self.large_string_count; i++) {
+        self.free_string(self.large_strings[i]);
+    }
+    self.large_string_count = 0;
+    if (self.large_strings != null) {
+        self.free_func(self.heap_udata, self.large_strings);
+        self.large_strings = null;
+        self.large_string_capacity = 0;
+    }
+
     // Free microtask queue
     if (self.microtask_queue != null) {
         self.free_func(self.heap_udata, self.microtask_queue);
@@ -1095,11 +1117,11 @@ fn void Heap.destroy(&self) {
  * causes allocator fragmentation and RSS bloat.
  */
 fn void Heap.reset(&self) {
-    // Decref all string TVals held by live objects BEFORE entering teardown mode.
-    // This frees non-interned strings (not in str_table, not in heap_allocated)
-    // that were referenced only by object properties — e.g. a global variable
-    // holding a large string built with String.fromCodePoint.  Without this pass,
-    // non-interned strings leak across heap.reset() calls in the batch runner.
+    // Decref all string and bigint TVals held by live objects BEFORE entering
+    // teardown mode.  BigInt boxes have no list of their own to drain later,
+    // so this pass is what releases them; strings it drives to zero also
+    // unregister themselves, leaving the registry drain below only the ones
+    // still holding references.
     {
         HeapHeader* cur = self.heap_allocated;
         while (cur != null) {
@@ -1152,6 +1174,15 @@ fn void Heap.reset(&self) {
     self.free_compiled_funcs();
     self.compiled_func_count = 0;
     // Keep compiled_funcs array allocated — just reset the count
+
+    // Free every large (non-interned) string via the registry.  These are in
+    // neither str_table nor heap_allocated, so the registry is the only list
+    // that can find them; without this pass they would survive the reset with
+    // no owner and accumulate across batch runs.
+    for (uint i = 0; i < self.large_string_count; i++) {
+        self.free_string(self.large_strings[i]);
+    }
+    self.large_string_count = 0;
 
     // Free all interned HStrings via str_table and reset (strings are RC-managed).
     if (self.str_table != null) {
@@ -1600,7 +1631,11 @@ fn void Heap.decref(&self, HeapHeader* hdr) {
     if (--hdr.refcount == 0) {
         if (hdr.is_string()) {
             hstring::HString* s = (hstring::HString*)hdr;
-            if (s.flags.is_interned) self.str_table_remove(s);
+            if (s.flags.is_interned) {
+                self.str_table_remove(s);
+            } else {
+                self.large_string_unregister(s);
+            }
             self.free_string(s);
         } else {
             hdr.unlink(&self.heap_allocated);
@@ -2729,6 +2764,36 @@ fn void Heap.sweep_strings(&self) {
 }
 
 /**
+ * Sweep the large-string registry: free every registered string the mark
+ * phase did not reach.
+ *
+ * The registry is a weak list — it holds no reference of its own — so unlike
+ * the string table there is no refcount level that means "only the registry
+ * is left".  Reachability is the whole test: a large string referenced by any
+ * marked register, property, or stack slot was marked by mark_tval, and
+ * anything unmarked is unreferenced no matter what its refcount claims.  That
+ * makes this pass a true backstop for a refcount that was never decremented.
+ *
+ * Runs under the same safety condition as sweep_strings (see mark_and_sweep
+ * phase 3b): only at a safe point where no raw HString* is live in a C3 local.
+ */
+fn void Heap.sweep_large_strings(&self) {
+    uint kept = 0;
+    for (uint i = 0; i < self.large_string_count; i++) {
+        HString* s = self.large_strings[i];
+        if (((HeapHeader*)s).is_reachable()) {
+            // Compact survivors down; their recorded slot moves with them.
+            self.large_strings[kept] = s;
+            s.registry_slot = (usz)kept;
+            kept++;
+        } else {
+            self.free_string(s);
+        }
+    }
+    self.large_string_count = kept;
+}
+
+/**
  * Run a full mark-and-sweep garbage collection.
  *
  * 1. Clear all reachable flags.
@@ -2775,6 +2840,11 @@ fn void Heap.mark_and_sweep(&self, bool safepoint) {
                 ((HeapHeader*)s).clear_reachable();
             }
         }
+        // Large strings are in neither list; clear their marks via the
+        // registry so sweep_large_strings sees fresh bits.
+        for (uint i = 0; i < self.large_string_count; i++) {
+            ((HeapHeader*)self.large_strings[i]).clear_reachable();
+        }
     }
 
     // --- Phase 2: Mark from roots ---
@@ -2792,6 +2862,7 @@ fn void Heap.mark_and_sweep(&self, bool safepoint) {
     // interned-string pointers are live (heap reset between scripts).
     if (self.string_sweep_safe) {
         self.sweep_strings();
+        self.sweep_large_strings();
     }
 
     // --- Phase 4: Reset trigger counter (scales with live heap) ---
@@ -3014,6 +3085,44 @@ fn void Heap.str_table_remove(&self, hstring::HString* hstr) {
     }
 }
 
+/**
+ * Append a non-interned string to the large-string registry.
+ *
+ * The string records its own slot so `large_string_unregister` can drop it
+ * in O(1).  A failed grow leaves the string unregistered: it stays a pure
+ * refcounted leaf, so the caller need not fail.
+ */
+fn void Heap.large_string_register(&self, HString* s) {
+    if (self.large_string_count == self.large_string_capacity) {
+        uint new_cap = self.large_string_capacity == 0 ? 64 : self.large_string_capacity * 2;
+        void* grown = self.realloc_func(self.heap_udata, self.large_strings,
+                                        HString*::size * (usz)new_cap);
+        if (grown == null) { return; }
+        self.large_strings         = (HString**)grown;
+        self.large_string_capacity = new_cap;
+    }
+    s.registry_slot = (usz)self.large_string_count;
+    self.large_strings[self.large_string_count] = s;
+    self.large_string_count++;
+}
+
+/**
+ * Remove a non-interned string from the registry by its recorded slot,
+ * moving the last entry into the vacated slot and fixing up its index.
+ */
+fn void Heap.large_string_unregister(&self, HString* s) {
+    usz slot = s.registry_slot;
+    if (slot >= (usz)self.large_string_count) { return; }
+    uint last = self.large_string_count - 1;
+    if ((uint)slot != last) {
+        HString* moved = self.large_strings[last];
+        self.large_strings[slot] = moved;
+        moved.registry_slot = slot;
+    }
+    self.large_string_count = last;
+    s.registry_slot = hstring::REGISTRY_SLOT_NONE;
+}
+
 /// Lazy-intern: ensure an HString is in the string table.  If already
 /// interned, returns it unchanged.  Otherwise looks up by content (may
 /// find an existing copy), or inserts this string.  Used by property
@@ -3022,6 +3131,10 @@ fn HString* Heap.ensure_interned(&self, hstring::HString* s) {
     if (s.flags.is_interned) return s;
     HString* existing = self.str_table_lookup(s.get_data(), s.hash);
     if (existing != null) return existing;
+    // Promotion into the table: the string table tracks it from here on, so
+    // it must leave the registry or the sweep would free it behind the
+    // table's back.
+    self.large_string_unregister(s);
     self.str_table_insert(s);
     ((HeapHeader*)s).incref();
     s.flags.is_interned = true;
@@ -3090,7 +3203,12 @@ fn HString* Heap.str_intern_normalized(&self, char[] data) {
     // non-interned string instead; it will be freed promptly by refcounting.
     if (data.len > MAX_INTERN_BYTES) {
         HString*? new_s = hstring::hstring_alloc(self, data, hash);
-        if (try s = new_s) { return s; }
+        if (try s = new_s) {
+            // Not in the string table, so register it for the mark-sweep
+            // backstop and for release at heap reset.
+            self.large_string_register(s);
+            return s;
+        }
         return null;
     }
     HString* existing = self.str_table_lookup(data, hash);
