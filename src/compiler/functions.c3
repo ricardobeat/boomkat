@@ -1824,10 +1824,18 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
                     continue;
                 }
 
-                ushort var_reg = self.declare_var(name_tok2.str_value, VAR);
+                // Intern now: name_tok2.str_value may borrow the lexer's
+                // shared ident_buf scratch (escaped identifier), which the
+                // next declarator in this loop (or a later var statement in
+                // the same hoisting pass) will overwrite. declare_var stores
+                // this slice into scope_stack, which outlives the current
+                // token.
+                HString* var_hstr = ((Heap*)self.heap).str_intern(name_tok2.str_value);
+                char[] var_name2 = var_hstr.get_data();
+                ushort var_reg = self.declare_var(var_name2, VAR);
                 self.has_local_bindings = true;
                 self.emit_abc(Opcode.LDUNDEF, (uint)var_reg, 0, 0);
-                uint var_name_idx = self.add_string_constant(name_tok2.str_value);
+                uint var_name_idx = self.add_string_constant(var_name2);
                 self.emit_a_bc(Opcode.DECLVAR, (uint)var_reg, var_name_idx);
                 // At global scope, var bindings are env-resident (accessed via
                 // GETVAR/PUTVAR); the register is only a temporary DECLVAR source.
@@ -2280,8 +2288,14 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
                         seen_param_lens[seen_param_count] = (ushort)rest_param.str_value.len;
                         seen_param_count++;
                     }
-                    ushort rest_reg = self.declare_var(rest_param.str_value, VAR);
-                    uint rest_name_idx = self.add_string_constant(rest_param.str_value);
+                    // Intern now: rest_param.str_value may borrow the lexer's
+                    // shared ident_buf scratch (escaped identifier), which the
+                    // body parsed below will overwrite. declare_var stores this
+                    // slice into scope_stack, which outlives the current token.
+                    HString* rest_hstr = ((Heap*)self.heap).str_intern(rest_param.str_value);
+                    char[] rest_name2 = rest_hstr.get_data();
+                    ushort rest_reg = self.declare_var(rest_name2, VAR);
+                    uint rest_name_idx = self.add_string_constant(rest_name2);
                     self.emit_a_bc(Opcode.DECLVAR, (uint)rest_reg, rest_name_idx);
                 }
                 arg_count++;
@@ -2335,8 +2349,14 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
                 seen_param_lens[seen_param_count] = (ushort)param.str_value.len;
                 seen_param_count++;
             }
-            ushort param_reg = self.declare_var(param.str_value, VAR);
-            uint param_name_idx = self.add_string_constant(param.str_value);
+            // Intern now: param.str_value may borrow the lexer's shared
+            // ident_buf scratch (escaped identifier), which later params, the
+            // default expression, or the body will overwrite. declare_var
+            // stores this slice into scope_stack, which outlives this token.
+            HString* param_hstr = ((Heap*)self.heap).str_intern(param.str_value);
+            char[] param_name2 = param_hstr.get_data();
+            ushort param_reg = self.declare_var(param_name2, VAR);
+            uint param_name_idx = self.add_string_constant(param_name2);
             arg_count++;
 
             // Check for default value
@@ -2349,7 +2369,7 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
                 // (ES2015 §14.1.20 SetFunctionName.)
                 bool saved_ifp = self.in_formal_params;
                 self.in_formal_params = true;
-                CompiledFunction* default_func = self.compile_default_expr(param.str_value)!;
+                CompiledFunction* default_func = self.compile_default_expr(param_name2)!;
                 self.in_formal_params = saved_ifp;
 
                 // Add to inner functions table
@@ -2934,8 +2954,14 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
                         inner_seen_lens[inner_seen_count] = (ushort)rest_param.str_value.len;
                         inner_seen_count++;
                     }
-                    ushort rest_reg = inner_ctx.declare_var(rest_param.str_value, VAR);
-                    uint rest_name_idx = inner_ctx.add_string_constant(rest_param.str_value);
+                    // Intern now: rest_param.str_value may borrow the lexer's
+                    // shared ident_buf scratch (escaped identifier), which the
+                    // body parsed below will overwrite. declare_var stores this
+                    // slice into scope_stack, which outlives the current token.
+                    HString* rest_hstr = ((Heap*)inner_ctx.heap).str_intern(rest_param.str_value);
+                    char[] rest_name2 = rest_hstr.get_data();
+                    ushort rest_reg = inner_ctx.declare_var(rest_name2, VAR);
+                    uint rest_name_idx = inner_ctx.add_string_constant(rest_name2);
                     inner_ctx.emit_a_bc(Opcode.DECLVAR, (uint)rest_reg, rest_name_idx);
                 }
                 arg_count++;
@@ -3012,8 +3038,14 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
                 inner_seen_lens[inner_seen_count] = (ushort)param.str_value.len;
                 inner_seen_count++;
             }
-            ushort param_reg = inner_ctx.declare_var(param.str_value, VAR);
-            uint param_name_idx = inner_ctx.add_string_constant(param.str_value);
+            // Intern now: param.str_value may borrow the lexer's shared
+            // ident_buf scratch (escaped identifier), which later params, the
+            // default expression, or the body will overwrite. declare_var
+            // stores this slice into scope_stack, which outlives this token.
+            HString* param_hstr = ((Heap*)inner_ctx.heap).str_intern(param.str_value);
+            char[] param_name2 = param_hstr.get_data();
+            ushort param_reg = inner_ctx.declare_var(param_name2, VAR);
+            uint param_name_idx = inner_ctx.add_string_constant(param_name2);
             arg_count++;
             // DECLVAR creates binding in var_env.
             inner_ctx.emit_a_bc(Opcode.DECLVAR, (uint)param_reg, param_name_idx);
@@ -3025,7 +3057,7 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
                 // Pass param name for NamedEvaluation tagging.
                 bool saved_ifp_i = inner_ctx.in_formal_params;
                 inner_ctx.in_formal_params = true;
-                CompiledFunction* default_func = inner_ctx.compile_default_expr(param.str_value)!;
+                CompiledFunction* default_func = inner_ctx.compile_default_expr(param_name2)!;
                 inner_ctx.in_formal_params = saved_ifp_i;
 
                 // Add to inner functions table
@@ -3401,7 +3433,12 @@ fn ushort? CompilerContext.function_expr(&self, bool is_async_expr = false) {
         (self.check(TokenType.AWAIT) && !self.is_module && !self.is_async) ||
         (self.check(TokenType.YIELD) && !self.is_generator)) {
         Token name_tok = self.advance()!;
-        name = name_tok.str_value;
+        // Intern now: an escaped function-expression name borrows the
+        // lexer's shared ident_buf scratch. compile_inner_function below
+        // copies `name` into the CompiledFunction only AFTER compiling the
+        // whole body (params, locals, nested escaped identifiers), by which
+        // point an un-interned borrow would already be overwritten.
+        name = ((Heap*)self.heap).str_intern(name_tok.str_value).get_data();
         has_name = true;
         name_is_explicit = true;
         self.has_inferred_name = false;
@@ -3617,8 +3654,14 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
                 }
 
                 if (rest_param.str_value.len > 0) {
-                    ushort rest_reg = arrow_ctx.declare_var(rest_param.str_value, VAR);
-                    uint rest_name_idx = arrow_ctx.add_string_constant(rest_param.str_value);
+                    // Intern now: rest_param.str_value may borrow the lexer's
+                    // shared ident_buf scratch (escaped identifier), which the
+                    // body parsed below will overwrite. declare_var stores this
+                    // slice into scope_stack, which outlives the current token.
+                    HString* rest_hstr = ((Heap*)arrow_ctx.heap).str_intern(rest_param.str_value);
+                    char[] rest_name2 = rest_hstr.get_data();
+                    ushort rest_reg = arrow_ctx.declare_var(rest_name2, VAR);
+                    uint rest_name_idx = arrow_ctx.add_string_constant(rest_name2);
                     arrow_ctx.emit_a_bc(Opcode.DECLVAR, (uint)rest_reg, rest_name_idx);
                 }
                 arg_count++;
@@ -3665,8 +3708,14 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
             }
 
             Token param = arrow_ctx.expect(TokenType.IDENTIFIER)!;
-            ushort param_reg = arrow_ctx.declare_var(param.str_value, VAR);
-            uint param_name_idx = arrow_ctx.add_string_constant(param.str_value);
+            // Intern now: param.str_value may borrow the lexer's shared
+            // ident_buf scratch (escaped identifier), which later params, the
+            // default expression, or the body will overwrite. declare_var
+            // stores this slice into scope_stack, which outlives this token.
+            HString* param_hstr = ((Heap*)arrow_ctx.heap).str_intern(param.str_value);
+            char[] param_name2 = param_hstr.get_data();
+            ushort param_reg = arrow_ctx.declare_var(param_name2, VAR);
+            uint param_name_idx = arrow_ctx.add_string_constant(param_name2);
             arg_count++;
             // DECLVAR creates binding in var_env.
             arrow_ctx.emit_a_bc(Opcode.DECLVAR, (uint)param_reg, param_name_idx);
@@ -3678,7 +3727,7 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
                 // Pass param name for NamedEvaluation tagging.
                 bool saved_ifp_a = arrow_ctx.in_formal_params;
                 arrow_ctx.in_formal_params = true;
-                CompiledFunction* default_func = arrow_ctx.compile_default_expr(param.str_value)!;
+                CompiledFunction* default_func = arrow_ctx.compile_default_expr(param_name2)!;
                 arrow_ctx.in_formal_params = saved_ifp_a;
 
                 // Add to inner functions table
@@ -4105,7 +4154,13 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner(&self, char[]* params,
     // instead of polluting the parent's bindings.
     arrow_ctx.emit_simple(Opcode.PUSH_VAR);
     for (ushort i = 0; i < param_count; i++) {
-        char[] name = params[i];
+        // Intern now: params[i] may borrow the lexer's shared ident_buf
+        // scratch (escaped identifier, e.g. bare-identifier arrow params
+        // `\u{62} => ...`), which the body parsed below will overwrite.
+        // declare_var stores this slice into scope_stack, which outlives
+        // the current token.
+        HString* param_hstr = ((Heap*)arrow_ctx.heap).str_intern(params[i]);
+        char[] name = param_hstr.get_data();
         if (is_restricted_name(name)) {
             return COMPILE_ERROR~;
         }

@@ -1185,6 +1185,11 @@ fn void? CompilerContext.var_declaration(&self) {
             if (!ctx_keyword_ident && is_restricted_name(name_tok.str_value)) {
                 return self.fail("reserved word cannot be used as a binding identifier")~;
             }
+            // Intern now: an escaped identifier borrows the lexer's shared
+            // ident_buf scratch, which the initializer or a later declarator
+            // in this same statement will overwrite. declare_var stores this
+            // slice into scope_stack, which outlives the current token.
+            name_tok.str_value = ((Heap*)self.heap).str_intern(name_tok.str_value).get_data();
             ushort reg;
             bool already_declared = false;
             if (!is_lexical) {
@@ -2203,7 +2208,12 @@ fn void? CompilerContext.for_statement(&self) {
                         self.object_destructure(decl_kind, is_lexical, is_const)!;
                     } else {
                         Token extra_name = self.expect(TokenType.IDENTIFIER)!;
-                        ushort extra_reg = self.declare_var(extra_name.str_value, decl_kind);
+                        // Intern now: escaped identifier borrows the lexer's
+                        // shared ident_buf scratch, which the initializer
+                        // expression will overwrite. declare_var stores this
+                        // slice into scope_stack, which outlives this token.
+                        char[] extra_name2 = ((Heap*)self.heap).str_intern(extra_name.str_value).get_data();
+                        ushort extra_reg = self.declare_var(extra_name2, decl_kind);
                         if (self.match(TokenType.ASSIGN)) {
                             ushort extra_val = self.assignment_expr()!;
                             if (extra_val != extra_reg) {
@@ -2213,7 +2223,7 @@ fn void? CompilerContext.for_statement(&self) {
                         } else {
                             self.emit_abc(Opcode.LDUNDEF, (uint)extra_reg, 0, 0);
                         }
-                        uint extra_name_idx = self.add_string_constant(extra_name.str_value);
+                        uint extra_name_idx = self.add_string_constant(extra_name2);
                         self.emit_var_store(extra_reg, extra_name_idx, is_lexical, is_const);
                     }
                 }
@@ -2222,6 +2232,12 @@ fn void? CompilerContext.for_statement(&self) {
             }
         } else {
             Token name_tok = self.expect(TokenType.IDENTIFIER)!;
+            // Intern now: an escaped for-head binding name borrows the
+            // lexer's shared ident_buf scratch, which the head's RHS
+            // expression and the loop body parsed below will overwrite.
+            // declare_var stores this slice into scope_stack, which
+            // outlives the current token.
+            name_tok.str_value = ((Heap*)self.heap).str_intern(name_tok.str_value).get_data();
 
             // Check for "in" (for-in) or "of" (for-of)
             if (self.peek_type() == TokenType.IN) {
@@ -2405,16 +2421,22 @@ fn void? CompilerContext.for_statement(&self) {
                     self.object_destructure(decl_kind, is_lexical, is_const)!;
                 } else {
                     Token extra_name = self.expect(TokenType.IDENTIFIER)!;
+                    // Intern now: escaped identifier borrows the lexer's
+                    // shared ident_buf scratch, which the initializer
+                    // expression and later declarators/body will overwrite.
+                    // declare_var stores this slice into scope_stack, which
+                    // outlives this token.
+                    char[] extra_name2 = ((Heap*)self.heap).str_intern(extra_name.str_value).get_data();
                     ushort extra_reg;
                     if (!is_lexical) {
-                        ushort? existing2 = self.resolve_var(extra_name.str_value);
+                        ushort? existing2 = self.resolve_var(extra_name2);
                         if (try er2 = existing2) {
                             extra_reg = er2;
                         } else {
-                            extra_reg = self.declare_var(extra_name.str_value, decl_kind);
+                            extra_reg = self.declare_var(extra_name2, decl_kind);
                         }
                     } else {
-                        extra_reg = self.declare_var(extra_name.str_value, decl_kind);
+                        extra_reg = self.declare_var(extra_name2, decl_kind);
                     }
                     if (self.match(TokenType.ASSIGN)) {
                         ushort extra_val = self.assignment_expr()!;
@@ -2425,14 +2447,14 @@ fn void? CompilerContext.for_statement(&self) {
                     } else {
                         self.emit_abc(Opcode.LDUNDEF, (uint)extra_reg, 0, 0);
                     }
-                    uint extra_name_idx = self.add_string_constant(extra_name.str_value);
+                    uint extra_name_idx = self.add_string_constant(extra_name2);
                     self.emit_var_store(extra_reg, extra_name_idx, is_lexical, is_const);
                     // Track extra let/const bindings for per-iter env prologue.
-                    if (is_lexical && (self.is_global || self.is_captured_name(extra_name.str_value))) {
+                    if (is_lexical && (self.is_global || self.is_captured_name(extra_name2))) {
                         needs_periterenv = true;
                     }
                     if (is_lexical && periterenv_count < 8) {
-                        periterenv_names[periterenv_count] = extra_name.str_value;
+                        periterenv_names[periterenv_count] = extra_name2;
                         periterenv_name_idxs[periterenv_count] = extra_name_idx;
                         periterenv_is_const[periterenv_count] = is_const;
                         periterenv_count++;
@@ -4306,12 +4328,18 @@ fn void? CompilerContext.function_declaration(&self, bool is_async_decl = false,
     }
 
     Token name_tok = self.expect_binding_identifier()!;
-    ushort func_reg = self.declare_var(name_tok.str_value, VAR);
+    // Intern now: an escaped function name borrows the lexer's shared
+    // ident_buf scratch, which compile_inner_function below will overwrite
+    // while scanning the parameter list and body. declare_var stores this
+    // slice into scope_stack, which outlives the current token.
+    HString* fn_name_hstr = ((Heap*)self.heap).str_intern(name_tok.str_value);
+    char[] fn_name2 = fn_name_hstr.get_data();
+    ushort func_reg = self.declare_var(fn_name2, VAR);
 
     // Compile the function into a nested CompiledFunction with the
     // declaration's own async flag, then restore the enclosing one.
     self.is_async = is_async_decl;
-    CompiledFunction* inner = self.compile_inner_function(name_tok.str_value, false, fn_kw_start)!;
+    CompiledFunction* inner = self.compile_inner_function(fn_name2, false, fn_kw_start)!;
     self.is_async = saved_is_async;
 
     // Restore generator flag
@@ -4326,7 +4354,7 @@ fn void? CompilerContext.function_declaration(&self, bool is_async_decl = false,
     // Emit CLOSURE to create the function object
     self.emit_a_bc(Opcode.CLOSURE, (uint)func_reg, inner_idx);
 
-    uint name_idx = self.add_string_constant(name_tok.str_value);
+    uint name_idx = self.add_string_constant(fn_name2);
     if (self.force_lexical_fn_decl) {
         // Inside a switch CaseBlock: scope this declaration to the switch's
         // own lex_env (installed by switch_statement's PUSH_LEX) instead of
@@ -4505,7 +4533,11 @@ fn void? CompilerContext.import_declaration(&self) {
     char[] default_local = {};
     if (tt == TokenType.IDENTIFIER) {
         Token name_tok = self.advance()!;
-        default_local = name_tok.str_value;
+        // Intern now: default_local is stored in the module's import table
+        // and read back at link time, long after the rest of the module
+        // (and any later escaped identifiers) has been lexed. An escaped
+        // identifier's str_value borrows the lexer's transient ident_buf.
+        default_local = self.intern_slot_name(name_tok.str_value);
         has_default = true;
 
         if (self.peek_type() == TokenType.COMMA) {
@@ -4529,11 +4561,14 @@ fn void? CompilerContext.import_declaration(&self) {
         self.advance()!; // consume '*'
         self.expect_as()!;
         Token ns_tok = self.expect(TokenType.IDENTIFIER)!;
+        // Intern now: stored in the module's import table and read back at
+        // link time, long after the rest of the module has been lexed.
+        char[] ns_local = self.intern_slot_name(ns_tok.str_value);
         self.expect_from()!;
         Token spec_tok = self.expect(TokenType.STRING)!;
         bool wants_json = self.parse_with_clause()!;
         uint req_idx = mod_register_req_module(mod, spec_tok.str_value, wants_json);
-        mod_register_import(mod, ns_tok.str_value, "*", req_idx, true, false);
+        mod_register_import(mod, ns_local, "*", req_idx, true, false);
         if (has_default) {
             mod_register_import(mod, default_local, "default", req_idx, false, true);
         }
@@ -4563,9 +4598,14 @@ fn void? CompilerContext.import_declaration(&self) {
                 import_name_str = lexer::keyword_to_string(name_tok.type);
             }
             if (import_name_str.len == 0) return COMPILE_ERROR~;
+            // Intern now: local_names/import_names are stored in the module's
+            // import table and read back at link time, long after the rest
+            // of the module has been lexed. An escaped identifier's
+            // str_value borrows the lexer's transient ident_buf.
+            import_name_str = self.intern_slot_name(import_name_str);
             if (self.match_as()) {
                 Token alias_tok = self.expect(TokenType.IDENTIFIER)!;
-                local_names[binding_count] = alias_tok.str_value;
+                local_names[binding_count] = self.intern_slot_name(alias_tok.str_value);
                 import_names[binding_count] = import_name_str;
             } else {
                 local_names[binding_count] = import_name_str;
@@ -4642,7 +4682,12 @@ fn void? CompilerContext.export_declaration(&self) {
             bool is_named = false;
             if (self.peek_type() == TokenType.IDENTIFIER) {
                 Token name_tok = self.advance()!;
-                fn_name = name_tok.str_value;
+                // Intern now: an escaped function name borrows the lexer's
+                // shared ident_buf scratch, which compile_inner_function
+                // below will overwrite while scanning the parameter list and
+                // body. declare_var stores this slice into scope_stack,
+                // which outlives this token.
+                fn_name = ((Heap*)self.heap).str_intern(name_tok.str_value).get_data();
                 is_named = true;
             } else {
                 fn_name = "*default*";
@@ -4824,13 +4869,19 @@ fn void? CompilerContext.export_declaration(&self) {
         self.is_async = false;
 
         Token name_tok = self.expect(TokenType.IDENTIFIER)!;
-        ushort func_reg = self.declare_var(name_tok.str_value, VAR);
+        // Intern now: an escaped function name borrows the lexer's shared
+        // ident_buf scratch, which compile_inner_function below will
+        // overwrite while scanning the parameter list and body. declare_var
+        // stores this slice into scope_stack, which outlives this token.
+        HString* fn_name_hstr = ((Heap*)self.heap).str_intern(name_tok.str_value);
+        char[] fn_name2 = fn_name_hstr.get_data();
+        ushort func_reg = self.declare_var(fn_name2, VAR);
 
         // Regular functions are constructable (ES2015 §14.1.2); generators
         // never are (§14.4) — mirrors function_declaration's handling.
         bool saved_is_constructable = self.is_constructable;
         self.is_constructable = !self.is_generator;
-        CompiledFunction* inner = self.compile_inner_function(name_tok.str_value, false, named_export_src_start)!;
+        CompiledFunction* inner = self.compile_inner_function(fn_name2, false, named_export_src_start)!;
         self.is_constructable = saved_is_constructable;
         self.is_async = saved_is_async;
         self.is_generator = false;
@@ -4842,10 +4893,10 @@ fn void? CompilerContext.export_declaration(&self) {
         // time (ECMA-262 16.2.1.5.5 step 17), not by the body — record it for
         // the linker and suppress body CLOSURE+DECLVAR so a cyclic early
         // import sees the hoisted function and its identity stays stable.
-        mod_register_func_decl(mod, name_tok.str_value, inner_idx);
+        mod_register_func_decl(mod, fn_name2, inner_idx);
         self.free_reg(func_reg);
 
-        mod_register_export(mod, name_tok.str_value, name_tok.str_value, false, 0);
+        mod_register_export(mod, fn_name2, fn_name2, false, 0);
         self.match(TokenType.SEMICOLON);
         return;
     }
@@ -4899,6 +4950,11 @@ fn void? CompilerContext.export_declaration(&self) {
             if (is_restricted_name(name_tok.str_value)) {
                 return self.fail("reserved word cannot be used as a binding identifier")~;
             }
+            // Intern now: an escaped identifier borrows the lexer's shared
+            // ident_buf scratch, which the initializer or a later declarator
+            // in this same statement will overwrite. declare_var stores this
+            // slice into scope_stack, which outlives the current token.
+            name_tok.str_value = ((Heap*)self.heap).str_intern(name_tok.str_value).get_data();
 
             ushort reg;
             if (!is_lexical) {

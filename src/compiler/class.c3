@@ -174,13 +174,19 @@ fn void? CompilerContext.class_declaration(&self, char[]* out_name = null, bool 
     // or `yield` (in non-generator). Accept these contextual keywords.
     // When allow_anonymous is set (`export default class ... {}`), a missing
     // name is legal — the class binds to `*default*` (§16.2.3.7).
+    // Intern the name immediately: an escaped class name (`class \u{43} {}`)
+    // borrows the lexer's shared ident_buf scratch, which the extends clause
+    // and class body parsed below will overwrite. declare_var stores this
+    // slice into scope_stack, which outlives the current token.
     char[] class_name;
     TokenType name_tt = self.peek_type();
     if (name_tt == TokenType.IDENTIFIER) {
         class_name = self.advance()!.str_value;
+        class_name = ((Heap*)self.heap).str_intern(class_name).get_data();
     } else if ((name_tt == TokenType.AWAIT && !self.is_module && !self.forbid_await) ||
                (name_tt == TokenType.YIELD && !self.is_generator)) {
         class_name = self.advance()!.str_value;
+        class_name = ((Heap*)self.heap).str_intern(class_name).get_data();
     } else if (allow_anonymous && (name_tt == TokenType.EXTENDS || name_tt == TokenType.LBRACE)) {
         // ES2024 §16.2.3.7: `export default class { ... }` — the class's
         // [[FunctionName]] is the literal string "default" (visible via
@@ -266,7 +272,11 @@ fn ushort? CompilerContext.class_expression(&self) {
         (class_name_tt == TokenType.YIELD && !self.is_generator);
     if (is_valid_class_name) {
         Token name_tok = self.advance()!;
-        name = name_tok.str_value;
+        // Intern now: an escaped class name borrows the lexer's shared
+        // ident_buf scratch, which the extends clause and class body parsed
+        // below will overwrite. declare_var stores this slice into
+        // scope_stack, which outlives the current token.
+        name = ((Heap*)self.heap).str_intern(name_tok.str_value).get_data();
         // For named class expressions, track the name on the scope stack so
         // inner function expressions can resolve it (name inference).
         name_reg = self.declare_var(name, LET);
@@ -1179,6 +1189,14 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
             }
         }
 
+        // Capture the plain (undecorated) method name NOW, before compiling
+        // the body below: an escaped identifier's str_value borrows the
+        // lexer's shared ident_buf scratch, which the method's own params
+        // and nested escaped identifiers will overwrite. `methods[]` outlives
+        // this element (read again once every sibling has been parsed), so
+        // it must not hold a raw token borrow.
+        char[] method_key_name = self.intern_slot_name(method_name.str_value);
+
         // Static methods' `super.x` resolves HomeObject = the constructor
         // (__static_super__), not the prototype.
         bool saved_super_is_static_method = self.super_is_static_method;
@@ -1197,7 +1215,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
         if (is_constructor) {
             ctor_inner_idx = inner_idx;
         } else if (method_count < MAX_CLASS_METHODS) {
-            methods[method_count].name = method_name.str_value;
+            methods[method_count].name = method_key_name;
             methods[method_count].inner_idx = inner_idx;
             methods[method_count].is_static = is_static;
             methods[method_count].is_getter = is_getter;
@@ -1213,7 +1231,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
                 PrivateNameEntry* pe = self.resolve_private_name(priv_member_name)!;
                 methods[method_count].priv_slot_name = pe.slot_name;
             }
-            if (is_static && !is_private_member && method_name.str_value == "name") {
+            if (is_static && !is_private_member && method_key_name == "name") {
                 class_has_static_name = true;
             }
             method_count++;
