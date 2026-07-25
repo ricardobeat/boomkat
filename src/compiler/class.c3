@@ -83,7 +83,9 @@ fn CompiledFunction*? make_default_constructor(Heap* hp, bool has_super, char[] 
     // Heap-allocate so the name lives as long as the function (was session 219's
     // B09 fix for compile_inner_function; apply same here).
     if (class_name.len > 0) {
-        char* name_heap = (char*)hp.alloc_func(hp.heap_udata, (usz)class_name.len + 1);
+        // `mem`, matching every other name_ptr/src_ptr site: free_compiled_funcs
+        // releases these with mem::free and cannot tell the allocators apart.
+        char* name_heap = (char*)alloc::malloc_try(mem, (sz)((usz)class_name.len + 1)) ?? null;
         if (name_heap == null) {
             hp.free_func(hp.heap_udata, raw);
             return COMPILE_ERROR~;
