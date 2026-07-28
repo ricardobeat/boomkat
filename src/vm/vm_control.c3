@@ -257,6 +257,13 @@ fn void class_initaccessor_set_name(Vm* vm, HObject* fn_obj, TVal* key_tval, cha
     }
 }
 
+/// Return status of initprop_define: distinguishes the two failure shapes
+/// so the opcode handler knows whether to synthesize a generic TypeError or
+/// propagate an abrupt completion a Proxy trap already raised.
+const int INITPROP_OK = 0;
+const int INITPROP_TYPE_ERROR = 1;   // caller throws its own generic TypeError
+const int INITPROP_ABRUPT = 2;       // heap.has_error / heap.error_value already set
+
 /// Shared INITPROP/INITPROPN body: define a data property with WEC flags
 /// using CreateDataPropertyOrThrow semantics (ES2022 §7.3.4 step 4, also
 /// reached via §15.7.10 step 8.b for class fields) — if the property already
@@ -264,15 +271,42 @@ fn void class_initaccessor_set_name(Vm* vm, HObject* fn_obj, TVal* key_tval, cha
 /// property (e.g. `class { static [x] = 42 }` where x="prototype" hits the
 /// class's non-configurable .prototype) or a non-extensible receiver (e.g.
 /// `Object.freeze(this)` inside a sibling field initializer) must throw a
-/// TypeError: we return `false` so the opcode handler can do the
+/// TypeError: we return INITPROP_TYPE_ERROR so the opcode handler can do the
 /// vm_throw_error_fmt call (which needs its `ds` state). Object/array
 /// literals also route through here; their receivers are freshly allocated
-/// (always extensible, all props configurable), so the `false` paths are
-/// unreachable for them. Callers have already coerced the key on
-/// computed-key paths via TOPROPKEY, so `get_prop_key` here is idempotent.
-fn bool initprop_define(Vm* vm, HObject* hobj, TVal* key_val, TVal* val) {
+/// (always extensible, all props configurable), so the ordinary fast path
+/// below is unconditionally correct for them.
+///
+/// A Proxy receiver (e.g. a class extending a base whose constructor returns
+/// `new Proxy(this, {...})`) must instead go through the full
+/// [[DefineOwnProperty]] MOP (ES2022 §15.7.10 step 8.b — class field install
+/// — and §7.3.4 CreateDataPropertyOrThrow generally) so its `defineProperty`
+/// trap observably fires. That path is routed to object_define_own, which
+/// recurses through nested proxies and falls back to ordinary semantics once
+/// it reaches a non-exotic target. Ordinary (non-proxy) receivers never pay
+/// for this — the exotic_proxyobj flag check is the only added cost.
+///
+/// Callers have already coerced the key on computed-key paths via TOPROPKEY,
+/// so `get_prop_key` here is idempotent.
+fn int initprop_define(Vm* vm, HObject* hobj, TVal* key_val, TVal* val) {
     void* key = get_prop_key(vm, key_val);
-    if (key == null) return true;
+    if (key == null) return INITPROP_OK;
+
+    if (hobj.flags.exotic_proxyobj) {
+        builtins::ProxyDesc desc = {};
+        desc.found = true;
+        desc.has_value = true; desc.value = *val;
+        desc.has_writable = true; desc.writable = true;
+        desc.has_enumerable = true; desc.enumerable = true;
+        desc.has_configurable = true; desc.configurable = true;
+        bool res = false;
+        if (!builtins::object_define_own((void*)vm, vm.heap, hobj, (HString*)key, &desc, &res)) {
+            return INITPROP_ABRUPT;
+        }
+        if (!res) return INITPROP_TYPE_ERROR;
+        return INITPROP_OK;
+    }
+
     int idx = hobj.find_prop_idx(key);
     if (idx >= 0) {
         hobject::PropFlags ef = hobj.get_prop_flags((uint)idx);
@@ -287,17 +321,17 @@ fn bool initprop_define(Vm* vm, HObject* hobj, TVal* key_val, TVal* val) {
             hobj.set_prop_flags((uint)idx, nf);
         } else {
             // Existing non-configurable property — caller throws TypeError.
-            return false;
+            return INITPROP_TYPE_ERROR;
         }
     } else {
         // CreateDataPropertyOrThrow (ES2022 §7.3.4): non-extensible
         // receiver — caller throws TypeError.
         if (!hobj.is_extensible()) {
-            return false;
+            return INITPROP_TYPE_ERROR;
         }
         hobj.put_prop(key, *val, hobject::PROP_FLAGS_WEC);
     }
-    return true;
+    return INITPROP_OK;
 }
 
 /// Instantiate a function closure from a CompiledFunction template, capturing
@@ -801,7 +835,19 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, In
                     }
                 }
 
-                if (!initprop_define(vm, hobj, rb, rc)) {
+                int initprop_status = initprop_define(vm, hobj, rb, rc);
+                if (initprop_status == INITPROP_ABRUPT) {
+                    // A Proxy `defineProperty` trap (or getOwnPropertyDescriptor,
+                    // consulted while validating the trap's result) threw —
+                    // propagate that value rather than synthesizing our own.
+                    TVal perr = vm.heap.error_value;
+                    vm.heap.has_error = false;
+                    if (!vm_throw_value(vm, perr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                        return vm_uncaught_error(vm, &perr);
+                    }
+                    return (TVal){};
+                }
+                if (initprop_status == INITPROP_TYPE_ERROR) {
                     HString* key_hs = (HString*)rb.get_heapptr();
                     char* key_str = key_hs != null ? key_hs.get_cstr() : (char*)"";
                     if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto,
@@ -829,7 +875,16 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, In
             // cases directly, so this only fires for computed keys.
             if (ra.is_object()) {
                 HObject* hobj = (HObject*)ra.get_heapptr();
-                if (!initprop_define(vm, hobj, rb, rc)) {
+                int initpropn_status = initprop_define(vm, hobj, rb, rc);
+                if (initpropn_status == INITPROP_ABRUPT) {
+                    TVal perr = vm.heap.error_value;
+                    vm.heap.has_error = false;
+                    if (!vm_throw_value(vm, perr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                        return vm_uncaught_error(vm, &perr);
+                    }
+                    return (TVal){};
+                }
+                if (initpropn_status == INITPROP_TYPE_ERROR) {
                     HString* key_hs = (HString*)rb.get_heapptr();
                     char* key_str = key_hs != null ? key_hs.get_cstr() : (char*)"";
                     if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto,

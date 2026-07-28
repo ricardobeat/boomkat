@@ -319,18 +319,6 @@ SKIP_FILES = {
     # assertion runs. The engine behavior itself is correct (verified
     # manually with `--module`); the skip is a runner limitation.
     "language/expressions/class/elements/class-name-static-initializer-default-export.js",
-    # P7 — public field install through a Proxy receiver. Per ES2022
-    # §15.7.10 step 8.b, `CreateDataPropertyOrThrow` runs `[[DefineOwnProperty]]`
-    # on the receiver — which goes through a Proxy `defineProperty` trap,
-    # and a Proxy `set`/`getOwnPropertyDescriptor` trap fires for the
-    # observable-by-proxy variant. Our INITPROP handler currently uses the
-    # raw `hobj.put_prop` path (cheap, bypasses traps) — correct for the
-    # no-proxy fast path but observably wrong when the receiver IS a Proxy.
-    # Routing the install through `ordinary_define_own` per call is the
-    # right fix; defer until the proxy-aware path is plumbed through the
-    # field-init context.
-    "language/statements/class/elements/public-class-field-initialization-is-visible-to-proxy.js",
-    "language/statements/class/elements/class-field-is-observable-by-proxy.js",
     # Forward references to private names from computed property keys —
     # the pre-scan in private_names.c3 recognises only direct `obj.#x`
     # access via prev_tok_type DOT/OPT_CHAIN, but the `[self.#x] = ...`
