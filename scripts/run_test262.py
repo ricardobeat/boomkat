@@ -172,7 +172,7 @@ UNSUPPORTED_PATTERN = re.compile(
     # Standard language features: engine-specific pragmatics
     r"cross-realm|tail-call-optimization|caller|"
     # Standard language features: not yet implemented in engine
-    r"object-rest|numeric-separator-literal|"
+    r"object-rest|"
     # Non-standard feature token (not in test262/features.txt; structured-clone
     # tests are deferred as they're not core language features and the engine
     # currently prioritizes other functionality)

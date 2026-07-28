@@ -1103,10 +1103,17 @@ fn Token? Lexer.scan_number(&self) {
     if (c == '.') {
         dec_prev_was_digit = true;  // implicit "0" before decimal point
     } else {
+        // A leading '0' followed by another digit (or a separator, which can
+        // only ever be followed by a digit) is either a legacy octal literal
+        // or a NonOctalDecimalIntegerLiteral (e.g. 08, 09) — neither
+        // production admits NumericLiteralSeparator, so separators are
+        // rejected outright rather than just checked for placement.
+        bool is_legacy_octal_like = c == '0' && self.remaining() >= 2 &&
+            (is_digit(self.peek_char_at(1)) || self.peek_char_at(1) == '_');
         while (!self.at_end()) {
             c = self.peek_char();
             if (c == '_') {
-                if (!dec_prev_was_digit) return LEX_ERROR~;
+                if (is_legacy_octal_like || !dec_prev_was_digit) return LEX_ERROR~;
                 self.pos++;
                 self.col++;
                 dec_prev_was_digit = false;
@@ -1131,6 +1138,7 @@ fn Token? Lexer.scan_number(&self) {
             self.pos++;
             self.col++;
             bool frac_prev_was_digit = false;
+            bool frac_saw_separator = false;
             while (!self.at_end()) {
                 c = self.peek_char();
                 if (c == '_') {
@@ -1138,6 +1146,7 @@ fn Token? Lexer.scan_number(&self) {
                     self.pos++;
                     self.col++;
                     frac_prev_was_digit = false;
+                    frac_saw_separator = true;
                     continue;
                 }
                 if (!is_digit(c)) break;
@@ -1145,7 +1154,11 @@ fn Token? Lexer.scan_number(&self) {
                 self.col++;
                 frac_prev_was_digit = true;
             }
-            // Fraction digits optional: "0." is a valid numeric literal (ES5 §7.8.3)
+            // Fraction digits optional: "0." is a valid numeric literal (ES5
+            // §7.8.3) — but a separator must still sit between two digits, so
+            // a trailing "_" right before the loop exits (e.g. "1.5_") is an
+            // error even though a bare "1." is fine.
+            if (frac_saw_separator && !frac_prev_was_digit) return LEX_ERROR~;
         }
     }
 
