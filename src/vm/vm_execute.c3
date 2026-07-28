@@ -2585,7 +2585,7 @@ fn TVal? Vm.run(Vm* vm) {
             // when cmp_undef is set (both cmp_lt/cmp_le are false above), so
             // JMP_NGT / JMP_NGE would wrongly branch. Force to false here.
             if (cmp_undef) cmp_result = false;
-            if (cmp_result == branch_on) { if ((ichar)insn.a < 0) { if (--vm.heap.bwd_gc_budget == 0) { if (vm.heap.gc_pending) { vm.heap.safepoint_gc(); } vm.heap.bwd_gc_budget = heap::BWD_GC_INTERVAL; } } ds.curr_pc += (int)(ichar)insn.a; }
+            if (cmp_result == branch_on) { if ((ichar)insn.a < 0) { if (--vm.heap.bwd_gc_budget == 0) { vm.heap.safepoint(); vm.heap.bwd_gc_budget = heap::BWD_GC_INTERVAL; } } ds.curr_pc += (int)(ichar)insn.a; }
             continue;
         }
 
@@ -2631,7 +2631,7 @@ fn TVal? Vm.run(Vm* vm) {
                 // Cross-type is always unequal for === (seq stays false).
             }
             bool take = (op == Opcode.JMP_SEQ) ? seq : !seq;
-            if (take) { if ((ichar)insn.a < 0) { if (--vm.heap.bwd_gc_budget == 0) { if (vm.heap.gc_pending) { vm.heap.safepoint_gc(); } vm.heap.bwd_gc_budget = heap::BWD_GC_INTERVAL; } } ds.curr_pc += (int)(ichar)insn.a; }
+            if (take) { if ((ichar)insn.a < 0) { if (--vm.heap.bwd_gc_budget == 0) { vm.heap.safepoint(); vm.heap.bwd_gc_budget = heap::BWD_GC_INTERVAL; } } ds.curr_pc += (int)(ichar)insn.a; }
             continue;
         }
 
@@ -2920,7 +2920,7 @@ fn TVal? Vm.run(Vm* vm) {
         case Opcode.JUMP: {
             int sabc = insn.get_sabc();
             int target = (int)((long)(ds.curr_pc - ds.code_base) + (long)sabc);
-            if (target < (ds.curr_pc - ds.code_base)) { if (--vm.heap.bwd_gc_budget == 0) { if (vm.heap.gc_pending) { vm.heap.safepoint_gc(); } vm.heap.bwd_gc_budget = heap::BWD_GC_INTERVAL; } }
+            if (target < (ds.curr_pc - ds.code_base)) { if (--vm.heap.bwd_gc_budget == 0) { vm.heap.safepoint(); vm.heap.bwd_gc_budget = heap::BWD_GC_INTERVAL; } }
             ds.curr_pc = ds.code_base + target;
             continue;
         }
@@ -2929,7 +2929,7 @@ fn TVal? Vm.run(Vm* vm) {
             if (is_truthy(ra)) {
                 int sbx = insn.get_sbc();
                 int target = (int)((long)(ds.curr_pc - ds.code_base) + (long)sbx);
-                if (target < (ds.curr_pc - ds.code_base)) { if (--vm.heap.bwd_gc_budget == 0) { if (vm.heap.gc_pending) { vm.heap.safepoint_gc(); } vm.heap.bwd_gc_budget = heap::BWD_GC_INTERVAL; } }
+                if (target < (ds.curr_pc - ds.code_base)) { if (--vm.heap.bwd_gc_budget == 0) { vm.heap.safepoint(); vm.heap.bwd_gc_budget = heap::BWD_GC_INTERVAL; } }
                 ds.curr_pc = ds.code_base + target;
             }
             continue;
@@ -2938,7 +2938,7 @@ fn TVal? Vm.run(Vm* vm) {
             if (!is_truthy(ra)) {
                 int sbx = insn.get_sbc();
                 int target = (int)((long)(ds.curr_pc - ds.code_base) + (long)sbx);
-                if (target < (ds.curr_pc - ds.code_base)) { if (--vm.heap.bwd_gc_budget == 0) { if (vm.heap.gc_pending) { vm.heap.safepoint_gc(); } vm.heap.bwd_gc_budget = heap::BWD_GC_INTERVAL; } }
+                if (target < (ds.curr_pc - ds.code_base)) { if (--vm.heap.bwd_gc_budget == 0) { vm.heap.safepoint(); vm.heap.bwd_gc_budget = heap::BWD_GC_INTERVAL; } }
                 ds.curr_pc = ds.code_base + target;
             }
             continue;
@@ -3235,7 +3235,7 @@ fn TVal? Vm.run(Vm* vm) {
         // RET_GEN / RETUNDEF_GEN are generator-only and stay out-of-line.
         case Opcode.RET: {
             // Safe point: run deferred GC before returning to caller
-            if (vm.heap.gc_pending) { vm.heap.safepoint_gc(); }
+            vm.heap.safepoint();
             // Check for active finally catchers: if we're returning through
             // a try-finally, save the return value and jump to the finally
             // handler.  After ENDFINALLY, the saved value will be used.
@@ -3499,7 +3499,7 @@ fn TVal? Vm.run(Vm* vm) {
 
         case Opcode.RETUNDEF: {
             // Safe point: run deferred GC before returning to caller
-            if (vm.heap.gc_pending) { vm.heap.safepoint_gc(); }
+            vm.heap.safepoint();
             // Check for active finally catchers (same as RET)
             Catcher* ret2_cat = (Catcher*)ds.act.cat;
             if (ret2_cat != null && ret2_cat.finally_pc != null) {
@@ -4274,7 +4274,7 @@ fn TVal? Vm.run(Vm* vm) {
                 cmp_lt = cmp < 0;
             }
             if (cmp_undef) cmp_lt = false;
-            if (cmp_lt) { if ((ichar)insn.a < 0) { if (--vm.heap.bwd_gc_budget == 0) { if (vm.heap.gc_pending) { vm.heap.safepoint_gc(); } vm.heap.bwd_gc_budget = heap::BWD_GC_INTERVAL; } } ds.curr_pc += (int)(ichar)insn.a; }
+            if (cmp_lt) { if ((ichar)insn.a < 0) { if (--vm.heap.bwd_gc_budget == 0) { vm.heap.safepoint(); vm.heap.bwd_gc_budget = heap::BWD_GC_INTERVAL; } } ds.curr_pc += (int)(ichar)insn.a; }
             continue;
         }
 

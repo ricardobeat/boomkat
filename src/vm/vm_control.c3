@@ -659,7 +659,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, In
             // No active finally handler — jump directly to target
             if (target < (ds.curr_pc - ds.code_base)) {
                 if (--vm.heap.bwd_gc_budget == 0) {
-                    if (vm.heap.gc_pending) { vm.heap.safepoint_gc(); }
+                    vm.heap.safepoint();
                     vm.heap.bwd_gc_budget = heap::BWD_GC_INTERVAL;
                 }
             }

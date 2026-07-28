@@ -622,7 +622,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, Instruction insn, bool*
     *handled = false;
 
     // Safe point: run deferred GC before entering callee
-    if (vm.heap.gc_pending) { vm.heap.safepoint_gc(); }
+    vm.heap.safepoint();
     // Compiler convention: A=result_reg, B=callee_reg, C=nargs (or nargs_reg
     // for CALL_S). CALL_VAR is the odd one out — it has no separate callee
     // register operand (the callee is loaded BY this instruction, not read

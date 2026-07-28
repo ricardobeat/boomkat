@@ -255,6 +255,11 @@ bitstruct ObjFlags : uint {
     /// reflective builtins interpose on this flag; plain [[Get]] flows through
     /// the accessors unchanged (which already throw ReferenceError on TDZ).
     bool exotic_module_ns : 28;
+
+    /// Mirrors HeapFlags.pending_free (same bit): the object is dead and
+    /// sitting on the heap's deferred-free queue. Declared here so the
+    /// object-side view of the flags word cannot reuse the bit.
+    bool pending_free     : 31;
 }
 
 // ============================================================================

@@ -142,7 +142,7 @@ fn Instruction* th_jmp_lt(Instruction* pc, Instruction* code_end, TVal* regs, Co
     if (cmp_lt) {
         if ((ichar)insn.a < 0) {
             if (--cold.vm.heap.bwd_gc_budget == 0) {
-                if (cold.vm.heap.gc_pending) { cold.vm.heap.safepoint_gc(); }
+                cold.vm.heap.safepoint();
                 cold.vm.heap.bwd_gc_budget = heap::BWD_GC_INTERVAL;
             }
         }
@@ -202,7 +202,7 @@ fn Instruction* th_jump(Instruction* pc, Instruction* code_end, TVal* regs, Cold
     pc++;
     if (off < 0) {
         if (--cold.vm.heap.bwd_gc_budget == 0) {
-            if (cold.vm.heap.gc_pending) { cold.vm.heap.safepoint_gc(); }
+            cold.vm.heap.safepoint();
             cold.vm.heap.bwd_gc_budget = heap::BWD_GC_INTERVAL;
         }
     }
@@ -248,7 +248,7 @@ fn Instruction* th_cmp_branch(Instruction* pc, Instruction* code_end, TVal* regs
     if (cmp_result == branch_on) {
         if ((ichar)insn.a < 0) {
             if (--cold.vm.heap.bwd_gc_budget == 0) {
-                if (cold.vm.heap.gc_pending) { cold.vm.heap.safepoint_gc(); }
+                cold.vm.heap.safepoint();
                 cold.vm.heap.bwd_gc_budget = heap::BWD_GC_INTERVAL;
             }
         }

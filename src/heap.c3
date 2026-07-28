@@ -122,6 +122,20 @@ struct GcProfile {
     ulong cascade_max;
     uint  cascade_max_objs;
 
+    // --- Deferred-free drain latency ---
+    // One sample per drain_pending_frees() call that actually freed something.
+    // This is where cascade cost now lands: decref only enqueues, so the drain
+    // is the operation whose worst case has to stay inside a frame budget.
+    ulong[GC_PROF_MAX_SAMPLES] drains;
+    uint[GC_PROF_MAX_SAMPLES]  drain_sizes;
+    usz   drain_count;
+    usz   drain_overflow;
+    ulong drain_max;
+    uint  drain_max_objs;
+    ulong drain_total_ticks;
+    ulong drain_total_objs;
+    uint  pending_peak;          /// High-water mark of the queue depth
+
     // --- Refcount traffic ---
     ulong increfs;
     ulong decrefs;
@@ -1844,12 +1858,24 @@ $if $feature(GC_PROFILE):
 $endif
 }
 
-/// Default number of dead nodes released per drain. Chosen from the pause
-/// measurements in the cascade benchmark: teardown costs roughly 70ns per
-/// object, so 512 nodes is about 35us of work — two orders of magnitude
-/// under the 16.7ms frame budget, while still large enough that the
-/// per-drain overhead is amortised and a steady allocation rate keeps up
-/// with a steady death rate.
+/// Number of dead nodes released per drain.
+///
+/// Teardown measures at roughly 30ns per object, and drain latency scales
+/// linearly with the budget. Dropping a 100k-node structure and then spinning
+/// on arithmetic (so drains ride only on the safepoint) gives:
+///
+///     budget      median      p99         max
+///     unbounded   3021us      3021us      3021us   (one drain, 100k objects)
+///     128            3.5us       5.8us      13.8us
+///     512           14.0us      68.4us     192.4us
+///     2048          53.7us      83.7us      83.7us
+///
+/// Every finite budget is far inside a 16.7ms frame; the choice is about
+/// reclamation throughput, not safety. 512 sits where the per-drain fixed cost
+/// is well amortised while the worst case stays two orders of magnitude under
+/// the frame budget. Smaller budgets are smoother but let the queue outlive its
+/// usefulness when death outpaces allocation; larger ones reclaim in fewer,
+/// longer steps.
 const uint PENDING_FREE_BUDGET = 512;
 
 /**
@@ -1875,6 +1901,11 @@ fn void Heap.enqueue_pending_free(&self, HeapHeader* hdr) {
     }
     self.pending_free_tail = hdr;
     self.pending_free_count++;
+$if $feature(GC_PROFILE):
+    if (self.pending_free_count > self.gc_prof.pending_peak) {
+        self.gc_prof.pending_peak = self.pending_free_count;
+    }
+$endif
 }
 
 /**
@@ -1895,6 +1926,9 @@ fn void Heap.drain_pending_frees(&self, uint budget) {
     if (self.draining) { return; }
     if (self.pending_free_head == null) { return; }
     self.draining = true;
+$if $feature(GC_PROFILE):
+    ulong prof_drain_start = gc_prof_now();
+$endif
 
     uint done = 0;
     while (self.pending_free_head != null && (budget == 0 || done < budget)) {
@@ -1919,6 +1953,24 @@ fn void Heap.drain_pending_frees(&self, uint budget) {
     }
 
     self.draining = false;
+$if $feature(GC_PROFILE):
+    if (done > 0) {
+        ulong span = gc_prof_now() - prof_drain_start;
+        self.gc_prof.drain_total_ticks += span;
+        self.gc_prof.drain_total_objs  += (ulong)done;
+        if (span > self.gc_prof.drain_max) {
+            self.gc_prof.drain_max = span;
+            self.gc_prof.drain_max_objs = done;
+        }
+        if (self.gc_prof.drain_count < GC_PROF_MAX_SAMPLES) {
+            self.gc_prof.drains[self.gc_prof.drain_count] = span;
+            self.gc_prof.drain_sizes[self.gc_prof.drain_count] = done;
+            self.gc_prof.drain_count++;
+        } else {
+            self.gc_prof.drain_overflow++;
+        }
+    }
+$endif
 }
 
 /**
@@ -3232,6 +3284,25 @@ fn void Heap.trigger_gc(&self) {
  * suppressed while native_frame_depth is non-zero; the collection still runs
  * and still reclaims everything the mark phase can prove dead.
  */
+/**
+ * Work to do at a backward-jump safepoint: retire queued dead nodes, and
+ * collect if a collection is pending.
+ *
+ * The drain is unconditional because it is the only thing that finishes a
+ * cascade for a program that has stopped allocating. The allocation-path drain
+ * covers the common case (a loop that discards and rebuilds), but a script that
+ * drops a large structure and then spins on arithmetic would otherwise leave
+ * the queue sitting full until the next collection or teardown.
+ */
+fn void Heap.safepoint(&self) {
+    if (self.pending_free_head != null) {
+        self.drain_pending_frees(PENDING_FREE_BUDGET);
+    }
+    if (self.gc_pending) {
+        self.safepoint_gc();
+    }
+}
+
 fn void Heap.safepoint_gc(&self) {
     // Retire queued dead nodes before marking. Anything still on the queue is
     // already unreachable and already unlinked from heap_allocated, so this is
@@ -3335,6 +3406,23 @@ fn void Heap.gc_prof_report(&self) {
         io::eprintfn("p99     %10.3f", gc_prof_pct(&p.cascades[0], p.cascade_count, 0.99) / 1e3);
         io::eprintfn("max     %10.3f  (%d objects freed)",
             gc_prof_ticks_to_ns(p.cascade_max) / 1e3, p.cascade_max_objs);
+    }
+
+    if (p.drain_count > 0 || p.drain_overflow > 0) {
+        gc_prof_sort(&p.drains[0], p.drain_count);
+        io::eprintn("");
+        io::eprintn("-- deferred-free drain latency (us) --");
+        io::eprintfn("drains  %d (overflow %d)", p.drain_count, p.drain_overflow);
+        io::eprintfn("min     %10.3f", gc_prof_pct(&p.drains[0], p.drain_count, 0.0) / 1e3);
+        io::eprintfn("median  %10.3f", gc_prof_pct(&p.drains[0], p.drain_count, 0.50) / 1e3);
+        io::eprintfn("p90     %10.3f", gc_prof_pct(&p.drains[0], p.drain_count, 0.90) / 1e3);
+        io::eprintfn("p99     %10.3f", gc_prof_pct(&p.drains[0], p.drain_count, 0.99) / 1e3);
+        io::eprintfn("max     %10.3f  (%d objects freed)",
+            gc_prof_ticks_to_ns(p.drain_max) / 1e3, p.drain_max_objs);
+        io::eprintfn("objects drained        %d", p.drain_total_objs);
+        io::eprintfn("total drain time       %.3f ms",
+            gc_prof_ticks_to_ns(p.drain_total_ticks) / 1e6);
+        io::eprintfn("peak queue depth       %d", p.pending_peak);
     }
 
     io::eprintn("");

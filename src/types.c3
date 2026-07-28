@@ -692,8 +692,12 @@ enum HType : char {
 /// Bit  4:    has a C finalizer attached
 /// Bit  5:    the finalizer has already run
 /// Bit  6:    the object is read-only
-/// Bit  7:    dead and sitting on the heap's deferred-free queue
-/// Bits 8-31: available for subtype-specific flags
+/// Bits 7-30: available for subtype-specific flags (see ObjFlags in hobject,
+///            which extends this layout and currently reaches bit 28)
+/// Bit  31:   dead and sitting on the heap's deferred-free queue. Deliberately
+///            the top bit: it has to mean the same thing for every header
+///            subtype, so it is placed above the subtype-specific range
+///            rather than inside it.
 bitstruct HeapFlags : uint {
     HType htype        : 0..1;
     bool  reachable    : 2;
@@ -701,7 +705,7 @@ bitstruct HeapFlags : uint {
     bool  finalizable  : 4;
     bool  finalized    : 5;
     bool  readonly     : 6;
-    bool  pending_free : 7;
+    bool  pending_free : 31;
 }
 
 /// Every GC-managed object begins with this header.  The doubly-linked
