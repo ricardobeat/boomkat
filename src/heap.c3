@@ -328,6 +328,11 @@ struct Heap {
     HObject* promise_proto;
     /// Promise constructor function (lazily cached, rooted via this field)
     HObject* promise_ctor;
+    /// Function constructor object — %Function% (ES2015 §19.2.2). Stashed so
+    /// later registration passes (GeneratorFunction, AsyncFunction,
+    /// AsyncGeneratorFunction) can wire their [[Prototype]] to it, per the
+    /// spec requirement that those constructors are subclasses of Function.
+    HObject* function_ctor;
     HObject* generator_proto;
     HObject* generator_func_proto; // GeneratorFunction.prototype (ES6 §25.2.3)
     HObject* async_func_proto;     // AsyncFunction.prototype (ES2017 §25.7.3)
@@ -1307,6 +1312,7 @@ fn void Heap.reset(&self) {
     self.bigint_proto     = null;
     self.promise_proto    = null;
     self.promise_ctor     = null;
+    self.function_ctor    = null;
     self.generator_proto      = null;
     self.generator_func_proto = null;
     self.async_func_proto     = null;
@@ -2152,6 +2158,7 @@ fn void Heap.mark_roots(&self) {
     if (self.bigint_proto != null) { self.mark_hobject(self.bigint_proto); }
     if (self.promise_proto != null) { self.mark_hobject(self.promise_proto); }
     if (self.promise_ctor != null)  { self.mark_hobject(self.promise_ctor); }
+    if (self.function_ctor != null) { self.mark_hobject(self.function_ctor); }
     if (self.generator_proto != null) { self.mark_hobject(self.generator_proto); }
     if (self.generator_func_proto != null) { self.mark_hobject(self.generator_func_proto); }
     if (self.async_func_proto != null) { self.mark_hobject(self.async_func_proto); }

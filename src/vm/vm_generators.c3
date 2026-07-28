@@ -448,12 +448,30 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     TVal ret_val_raw = gs_lr.return_value;
                     gs_lr.resume_kind = NEXT;
 
-                    Catcher* ret_cat3 = (Catcher*)ds.act.cat;
+                    // Walk up the catcher chain to the nearest one with a
+                    // finally — the innermost catcher may be a plain
+                    // catch-only try (no finally_pc), in which case the
+                    // return must still route through an enclosing finally.
+                    Catcher* ret_cat3 = find_and_unlink_finally_catcher(vm, ds.act);
                     if (ret_cat3 != null && ret_cat3.finally_pc != null) {
                         ret_cat3.return_val = ret_val_raw;
+                        // If the suspended yield point is already inside this
+                        // catcher's finally body (e.g. `try {} finally { yield;
+                        // }`), don't re-enter finally_pc — jump to
+                        // endfinally_pc instead so the finally doesn't run
+                        // twice (mirrors RET_GEN/RETUNDEF_GEN).
                         if (!(ret_cat3.flags & CATCHER_FLAG_PENDING_RETURN)) {
                             ret_cat3.flags |= CATCHER_FLAG_PENDING_RETURN | CATCHER_FLAG_PENDING_RETURN_GEN;
-                            ds.curr_pc = ret_cat3.finally_pc;
+                            if ((ret_cat3.flags & CATCHER_FLAG_IN_FINALLY) == 0) {
+                                ds.curr_pc = ret_cat3.finally_pc;
+                            } else if (ret_cat3.endfinally_pc != null) {
+                                ds.curr_pc = ret_cat3.endfinally_pc;
+                            }
+                            ds.act.curr_pc = ds.curr_pc;
+                        } else if ((ret_cat3.flags & CATCHER_FLAG_IN_FINALLY) != 0
+                                   && ret_cat3.endfinally_pc != null) {
+                            ret_cat3.flags |= CATCHER_FLAG_PENDING_RETURN_GEN;
+                            ds.curr_pc = ret_cat3.endfinally_pc;
                             ds.act.curr_pc = ds.curr_pc;
                         }
                         ds.needs_restart = true;
@@ -896,6 +914,38 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 }
 
                 if (rkind == RETURN) {
+                    // .return() — inject return at yield point. If this yield
+                    // is itself inside a try/finally (e.g. the resumed body
+                    // yielded again from within a `finally` block), that
+                    // finally must run before the generator completes —
+                    // mirrors RET_GEN/LOAD_RESUME's RETURN handling instead
+                    // of completing unconditionally.
+                    Catcher* yield_ret_cat = find_and_unlink_finally_catcher(vm, gen_act);
+                    if (yield_ret_cat != null && yield_ret_cat.finally_pc != null) {
+                        yield_ret_cat.return_val = gs.return_value;
+                        if (!(yield_ret_cat.flags & CATCHER_FLAG_PENDING_RETURN)) {
+                            yield_ret_cat.flags |= CATCHER_FLAG_PENDING_RETURN | CATCHER_FLAG_PENDING_RETURN_GEN;
+                            if ((yield_ret_cat.flags & CATCHER_FLAG_IN_FINALLY) == 0) {
+                                ds.curr_pc = yield_ret_cat.finally_pc;
+                            } else if (yield_ret_cat.endfinally_pc != null) {
+                                ds.curr_pc = yield_ret_cat.endfinally_pc;
+                            }
+                            gen_act.curr_pc = ds.curr_pc;
+                        } else if ((yield_ret_cat.flags & CATCHER_FLAG_IN_FINALLY) != 0
+                                   && yield_ret_cat.endfinally_pc != null) {
+                            yield_ret_cat.flags |= CATCHER_FLAG_PENDING_RETURN_GEN;
+                            ds.curr_pc = yield_ret_cat.endfinally_pc;
+                            gen_act.curr_pc = ds.curr_pc;
+                        }
+                        gs.resume_kind = NEXT;
+                        gs.resume_value.set_undefined();
+                        gs.state = GEN_EXECUTING;
+                        vm.heap.resume_gen = null;
+                        vm.heap.did_yield = false;
+                        ds.needs_restart = true;
+                        return (TVal){};
+                    }
+
                     // .return() — inject return at yield point
                     // Mark generator as completed, return {value: rv, done: true}
                     gs.state = GEN_COMPLETED;

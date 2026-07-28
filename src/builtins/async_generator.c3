@@ -126,7 +126,9 @@ fn bool register_async_generator(EnvRecord* global_env, Heap* heap) {
     HObject* ctor = ctor_raw;
     (*ctor.extra_ptr()).func.builtin_fn_index = (int)Builtin.ASYNC_GENERATOR_FUNCTION.ordinal;
     ctor.flags.callable = true;
-    ctor.prototype = heap.function_proto;
+    // AsyncGeneratorFunction is a subclass of Function (ES2018 §27.4.2): its
+    // [[Prototype]] is %Function%, not Function.prototype.
+    ctor.prototype = heap.function_ctor != null ? heap.function_ctor : heap.function_proto;
 
     // %AsyncGenerator%.constructor → %AsyncGeneratorFunction%
     {

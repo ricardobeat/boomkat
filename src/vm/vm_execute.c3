@@ -3230,7 +3230,10 @@ fn TVal? Vm.run(Vm* vm) {
             // Check for active finally catchers: if we're returning through
             // a try-finally, save the return value and jump to the finally
             // handler.  After ENDFINALLY, the saved value will be used.
-            Catcher* ret_cat = (Catcher*)ds.act.cat;
+            // Walk up to the nearest catcher with a finally — the innermost
+            // catcher may be a catch-only try (no finally_pc), in which case
+            // the return must still route through an enclosing finally.
+            Catcher* ret_cat = find_and_unlink_finally_catcher(vm, ds.act);
             if (ret_cat != null && ret_cat.finally_pc != null) {
                 // Save return value
                 ret_cat.return_val = *ra;
@@ -3491,8 +3494,10 @@ fn TVal? Vm.run(Vm* vm) {
         case Opcode.RETUNDEF: {
             // Safe point: run deferred GC before returning to caller
             if (vm.heap.gc_pending) { vm.heap.safepoint_gc(); }
-            // Check for active finally catchers (same as RET)
-            Catcher* ret2_cat = (Catcher*)ds.act.cat;
+            // Check for active finally catchers (same as RET). Walk up to the
+            // nearest catcher with a finally — the innermost catcher may be a
+            // catch-only try (no finally_pc).
+            Catcher* ret2_cat = find_and_unlink_finally_catcher(vm, ds.act);
             if (ret2_cat != null && ret2_cat.finally_pc != null) {
                 ret2_cat.return_val.set_undefined();
                 if (!(ret2_cat.flags & CATCHER_FLAG_PENDING_RETURN)) {
@@ -3502,7 +3507,16 @@ fn TVal? Vm.run(Vm* vm) {
                     if ((ret2_cat.flags & CATCHER_FLAG_IN_FINALLY) == 0) {
                         ds.curr_pc = ret2_cat.finally_pc;
                         ds.act.curr_pc = ds.curr_pc;
+                    } else if (ret2_cat.endfinally_pc != null) {
+                        // A `return;` executed inside the finally body itself
+                        // — abort the rest and jump to ENDFINALLY (mirrors RET).
+                        ds.curr_pc = ret2_cat.endfinally_pc;
+                        ds.act.curr_pc = ds.curr_pc;
                     }
+                } else if ((ret2_cat.flags & CATCHER_FLAG_IN_FINALLY) != 0
+                           && ret2_cat.endfinally_pc != null) {
+                    ds.curr_pc = ret2_cat.endfinally_pc;
+                    ds.act.curr_pc = ds.curr_pc;
                 }
                 continue;
             }

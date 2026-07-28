@@ -157,12 +157,12 @@ fn void builtin_async_function(BuiltinContext* ctx) {
 
 fn void builtin_generator_proto_next(BuiltinContext* ctx) {
     if (!ctx.this_val.is_object()) {
-        ctx.result.set_undefined();
+        builtin_throw(ctx, ctx.heap.type_err_proto, "GeneratorPrototype.next called on non-object");
         return;
     }
     HObject* gen_obj = (HObject*)ctx.this_val.get_heapptr();
     if (gen_obj == null || gen_obj.flags.obj_class != hobject::ObjClass.GENERATOR) {
-        ctx.result.set_undefined();
+        builtin_throw(ctx, ctx.heap.type_err_proto, "GeneratorPrototype.next called on incompatible receiver");
         return;
     }
 
@@ -253,12 +253,12 @@ fn void builtin_generator_proto_next(BuiltinContext* ctx) {
 
 fn void builtin_generator_proto_throw(BuiltinContext* ctx) {
     if (!ctx.this_val.is_object()) {
-        ctx.result.set_undefined();
+        builtin_throw(ctx, ctx.heap.type_err_proto, "GeneratorPrototype.throw called on non-object");
         return;
     }
     HObject* gen_obj = (HObject*)ctx.this_val.get_heapptr();
     if (gen_obj == null || gen_obj.flags.obj_class != hobject::ObjClass.GENERATOR) {
-        ctx.result.set_undefined();
+        builtin_throw(ctx, ctx.heap.type_err_proto, "GeneratorPrototype.throw called on incompatible receiver");
         return;
     }
 
@@ -341,12 +341,12 @@ fn void builtin_generator_proto_throw(BuiltinContext* ctx) {
 
 fn void builtin_generator_proto_return(BuiltinContext* ctx) {
     if (!ctx.this_val.is_object()) {
-        ctx.result.set_undefined();
+        builtin_throw(ctx, ctx.heap.type_err_proto, "GeneratorPrototype.return called on non-object");
         return;
     }
     HObject* gen_obj = (HObject*)ctx.this_val.get_heapptr();
     if (gen_obj == null || gen_obj.flags.obj_class != hobject::ObjClass.GENERATOR) {
-        ctx.result.set_undefined();
+        builtin_throw(ctx, ctx.heap.type_err_proto, "GeneratorPrototype.return called on incompatible receiver");
         return;
     }
 
@@ -543,22 +543,29 @@ fn bool register_generator_constructor(EnvRecord* global_env, Heap* heap) {
     HObject* ctor = ctor_raw;
     (*ctor.extra_ptr()).func.builtin_fn_index = (int)Builtin.GENERATOR_FUNCTION.ordinal;
     ctor.flags.callable = true;
-    ctor.prototype = heap.function_proto;
+    // GeneratorFunction is a subclass of Function (ES6 §25.2.2): its
+    // [[Prototype]] is %Function%, not Function.prototype.
+    ctor.prototype = heap.function_ctor != null ? heap.function_ctor : heap.function_proto;
 
-    // Wire Generator.prototype.constructor → GeneratorFunction
+    // Wire %GeneratorPrototype%.constructor → %GeneratorFunction.prototype%
+    // (ES6 §25.3.1: writable:false, enumerable:false, configurable:true).
+    // Note this is gf_proto, not the GeneratorFunction constructor itself —
+    // Object.getPrototypeOf(function* () {}) is gf_proto, and its `.prototype`
+    // (proto here) points back to gf_proto via .constructor.
     {
         HString* constructor_key = (HString*)heap.strs[heap::BuiltinStr.CONSTRUCTOR];
         TVal constructor_tv;
-        constructor_tv.set_object(ctor);
-        proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_WC);
+        constructor_tv.set_object(gf_proto);
+        proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_NWC);
     }
 
     // Wire GeneratorFunction.prototype.constructor → GeneratorFunction
+    // (ES6 §25.2.3.1: writable:false, enumerable:false, configurable:true)
     {
         HString* constructor_key = (HString*)heap.strs[heap::BuiltinStr.CONSTRUCTOR];
         TVal constructor_tv;
         constructor_tv.set_object(ctor);
-        gf_proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_WC);
+        gf_proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_NWC);
     }
 
     // Wire GeneratorFunction.prototype → GeneratorFunction.prototype object
@@ -619,7 +626,9 @@ fn bool register_generator_constructor(EnvRecord* global_env, Heap* heap) {
     HObject* af_ctor = af_ctor_raw;
     (*af_ctor.extra_ptr()).func.builtin_fn_index = (int)Builtin.ASYNC_FUNCTION.ordinal;
     af_ctor.flags.callable = true;
-    af_ctor.prototype = heap.function_proto;
+    // AsyncFunction is a subclass of Function (ES2017 §25.7.2): its
+    // [[Prototype]] is %Function%, not Function.prototype.
+    af_ctor.prototype = heap.function_ctor != null ? heap.function_ctor : heap.function_proto;
 
     // AsyncFunction.prototype.constructor → AsyncFunction
     {

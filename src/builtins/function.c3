@@ -1551,5 +1551,9 @@ fn bool register_function_constructor(EnvRecord* global_env, Heap* heap) {
     set_func_ctor_name(func_obj, heap, "Function");
     env::env_declare_nonenum(global_env, func_key, func_val);
 
+    // Stash so later registration passes (GeneratorFunction, AsyncFunction,
+    // AsyncGeneratorFunction) can wire their [[Prototype]] to %Function%.
+    heap.function_ctor = func_obj;
+
     return true;
 }

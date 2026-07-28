@@ -15,6 +15,27 @@ import std::math;
 // vm_control — return / variable access / closure / iterator / exceptions / misc
 // ============================================================================
 
+/// Find the nearest catcher (starting at `act.cat`) that owns a finally
+/// block, freeing every catch-only catcher (no finally_pc) walked past along
+/// the way and re-pointing `act.cat` at the finally-owning catcher found (or
+/// null). A `return` reaching an intervening catch-only try (e.g. `try {
+/// try { return x; } catch (e) {} } finally { ... }`) must still route
+/// through the enclosing finally, but the catch-only catcher's own ENDTRY
+/// never runs (the return short-circuits it) — this mirrors what ENDTRY does
+/// on the normal fall-through path so the chain doesn't end up with a stale
+/// catch-only catcher still attached above the finally one.
+fn Catcher* find_and_unlink_finally_catcher(Vm* vm, Activation* act) {
+    Catcher* c = (Catcher*)act.cat;
+    while (c != null && c.finally_pc == null) {
+        Catcher* parent = (Catcher*)c.parent;
+        vm.heap.decref_tval(&c.thrown_val);
+        vm.heap.free_func(vm.heap.heap_udata, c);
+        act.cat = (void*)parent;
+        c = parent;
+    }
+    return c;
+}
+
 /// Complete a generator's return: mark GEN_COMPLETED, wrap `val` in an
 /// IteratorResult {value, done:true}, write it to the caller, and pop the
 /// activation. Shared by RET_GEN/RETUNDEF_GEN and by ENDFINALLY's
@@ -122,7 +143,9 @@ fn TVal? dispatch_returns(Dispatch* ds, Opcode op, TVal* ra) {
             // a try-finally inside the generator body, save the return value,
             // mark it as a generator-return, and jump to the finally handler
             // instead of completing immediately (mirrors plain RET).
-            Catcher* ret_cat = (Catcher*)ds.act.cat;
+            // Walk up to the nearest catcher with a finally — the innermost
+            // catcher may be a catch-only try (no finally_pc).
+            Catcher* ret_cat = find_and_unlink_finally_catcher(vm, ds.act);
             if (ret_cat != null && ret_cat.finally_pc != null) {
                 ret_cat.return_val = ra[0];
                 if (!(ret_cat.flags & CATCHER_FLAG_PENDING_RETURN)) {
@@ -153,7 +176,9 @@ fn TVal? dispatch_returns(Dispatch* ds, Opcode op, TVal* ra) {
         case Opcode.RETUNDEF_GEN: {
             TVal undef_val;
             undef_val.set_undefined();
-            Catcher* ret_cat2 = (Catcher*)ds.act.cat;
+            // Walk up to the nearest catcher with a finally — the innermost
+            // catcher may be a catch-only try (no finally_pc).
+            Catcher* ret_cat2 = find_and_unlink_finally_catcher(vm, ds.act);
             if (ret_cat2 != null && ret_cat2.finally_pc != null) {
                 ret_cat2.return_val = undef_val;
                 if (!(ret_cat2.flags & CATCHER_FLAG_PENDING_RETURN)) {
