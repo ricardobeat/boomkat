@@ -11,7 +11,7 @@ All 18 test262 phases at 0 failures. Coverage: 32,078 of 53,319 tests attempted 
 ## test262
 
 - [ ] Modules — ~726 tests (`language/module-code`, `language/import`); runner cannot drive `flags: [module]`
-- [ ] RegExp property-escapes tests time out under load, making `just test262-gate` flaky
+- [ ] RegExp property-escapes tests time out under load (~1.1s each, 10s limit) — makes phase 8 and `just test262-gate` report false failures; re-run on an idle machine before believing any phase-8 failure
 - [ ] Decide where `just test262-gate` runs (Actions / pre-push hook / manual) — blocked on the item above
 - [ ] Single source of truth for `UNSUPPORTED_PATTERN` vs `scripts/test262_skip.cfg`
 
@@ -43,7 +43,6 @@ All 18 test262 phases at 0 failures. Coverage: 32,078 of 53,319 tests attempted 
 - [ ] Three super mechanisms — plan 059's `GETPROTO(homeObject)` unification
 - [ ] Builtin error-throw boilerplate — ~55 raw sites left in object.c3, promise.c3, generator.c3, vm_coerce.c3, core.c3
 - [ ] Lexer scan buffers — string/template/ident decode arena+normalize logic
-- [ ] Enum/metadata/dispatch triple registration in core.c3
 
 ## Out of scope
 
