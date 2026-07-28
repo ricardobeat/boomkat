@@ -816,6 +816,7 @@ fn void builtin_regexp_proto_toString(BuiltinContext* ctx) {
     }
 
     // Build "/pattern/flags" string — apply EscapeRegExpPattern to the source
+    // via the shared helper (same algorithm the `source` getter uses).
     char* pattern = "";
     usz plen = 0;
     if ((*obj.extra_ptr()).prim.primitive_value.is_string() && (*obj.extra_ptr()).prim.primitive_value.get_heapptr() != null) {
@@ -828,32 +829,11 @@ fn void builtin_regexp_proto_toString(BuiltinContext* ctx) {
     char[1024] buf;
     int pos = 0;
     buf[pos++] = '/';
-    // Apply EscapeRegExpPattern: escape '/' and line terminators
-    for (usz i = 0; i < plen && pos < 1020; i++) {
-        char c = pattern[i];
-        if (c == '/') {
-            buf[pos++] = '\\';
-            buf[pos++] = '/';
-        } else if (c == '\n') {
-            buf[pos++] = '\\';
-            buf[pos++] = 'n';
-        } else if (c == '\r') {
-            buf[pos++] = '\\';
-            buf[pos++] = 'r';
-        } else if (c == '\u2028') {
-            if (pos + 6 > 1020) break;
-            buf[pos++] = '\\'; buf[pos++] = 'u';
-            buf[pos++] = '2'; buf[pos++] = '0';
-            buf[pos++] = '2'; buf[pos++] = '8';
-        } else if (c == '\u2029') {
-            if (pos + 6 > 1020) break;
-            buf[pos++] = '\\'; buf[pos++] = 'u';
-            buf[pos++] = '2'; buf[pos++] = '0';
-            buf[pos++] = '2'; buf[pos++] = '9';
-        } else {
-            buf[pos++] = c;
-        }
-    }
+    char[1024] esc_buf;
+    usz esc_len = escape_regexp_pattern(pattern, plen, &esc_buf, 1020);
+    if (esc_len > 1020) esc_len = 1020;
+    mem::copy(&buf[pos], &esc_buf, (sz)esc_len);
+    pos += (int)esc_len;
     buf[pos++] = '/';
     if ((jsf & 1) != 0 && pos < 1023) buf[pos++] = 'g';
     if ((jsf & 2) != 0 && pos < 1023) buf[pos++] = 'i';
@@ -2439,9 +2419,29 @@ fn usz escape_regexp_pattern(char* src, usz slen, char* dst, usz dmax) {
         return 4;
     }
     usz di = 0;
+    bool in_class = false;
     for (usz si = 0; si < slen && di + 1 < dmax; si++) {
         char c = src[si];
-        if (c == '/') {
+        if (c == '\\' && si + 1 < slen) {
+            // Copy the escape pair verbatim: keeps an existing `\/` written
+            // as `\/`, and prevents an escaped `[`/`]` from being mistaken
+            // for a character-class delimiter.
+            if (di + 2 > dmax) break;
+            dst[di++] = c;
+            si++;
+            dst[di++] = src[si];
+            continue;
+        }
+        if (c == '[') {
+            in_class = true;
+            dst[di++] = c;
+        } else if (c == ']') {
+            in_class = false;
+            dst[di++] = c;
+        } else if (c == '/' && !in_class) {
+            // A `/` outside a character class must be escaped so the result
+            // can be re-embedded as a RegularExpressionLiteral. Inside a
+            // class it has no special meaning and is left as-is.
             if (di + 2 > dmax) break;
             dst[di++] = '\\';
             dst[di++] = '/';
