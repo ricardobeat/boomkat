@@ -620,7 +620,13 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 gs.lex_env = ds.act.lex_env;
                 gs.cat = ds.act.cat;
                 vm.heap.tval_copy_ref(&gs.this_binding, &ds.act.this_binding);
+                // The saved state outlives this activation, so it owns the
+                // async promise: the frame's registers are swept on suspend and
+                // may hold the only other reference.
                 gs.async_promise = (void*)ds.act.async_promise;
+                if (gs.async_promise != null) {
+                    ((types::HeapHeader*)gs.async_promise).incref();
+                }
                 usz regs_bytes = (usz)gs.num_regs * TVal::size;
                 void* regs_mem = vm.heap.alloc_func(vm.heap.heap_udata, regs_bytes);
                 if (regs_mem == null) {

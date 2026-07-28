@@ -431,6 +431,10 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                     // Propagate async context so RET can settle the async Promise
                     if (gs_r.async_promise != null) {
                         act.flags |= ACT_FLAG_ASYNC;
+                        // The activation takes its own reference; RET releases
+                        // it. The saved state keeps its reference until the
+                        // generator state itself is torn down.
+                        ((types::HeapHeader*)gs_r.async_promise).incref();
                         act.async_promise = (hobject::HObject*)gs_r.async_promise;
                     }
                     // Note: this_binding is set below (after this block).
@@ -3524,6 +3528,11 @@ fn TVal? Vm.run(Vm* vm) {
                 continue;
             }
 
+            // The activation owns a reference to its async promise (taken where
+            // the frame was set up or resumed). Hold it in a local across the
+            // teardowns below, which may drop every other reference, and
+            // release it once the promise has been settled.
+            hobject::HObject* ret_async_prom = callee_act.async_promise;
             // Free catchers a return-from-try left on the chain: an early
             // return never reaches CATCH/ENDTRY's pop paths, and this frame
             // is now popping for good.
@@ -3535,12 +3544,17 @@ fn TVal? Vm.run(Vm* vm) {
 
             // Async function: settle promise with undefined, return promise
             bool async_ret = false;
-            if ((callee_act.flags & ACT_FLAG_ASYNC) != 0 && callee_act.async_promise != null) {
-                builtins::promise_settle(callee_act.async_promise, 1, &undef_val, vm.heap);
-                builtins::promise_trigger_reactions(callee_act.async_promise, vm.heap, (void*)vm);
-                undef_val.set_object(callee_act.async_promise);
+            if ((callee_act.flags & ACT_FLAG_ASYNC) != 0 && ret_async_prom != null) {
+                builtins::promise_settle(ret_async_prom, 1, &undef_val, vm.heap);
+                builtins::promise_trigger_reactions(ret_async_prom, vm.heap, (void*)vm);
+                undef_val.set_object(ret_async_prom);
                 async_ret = true;
             }
+            // Clear the field so a later reuse of this activation slot cannot
+            // read a dangling pointer, then drop the activation's reference —
+            // undef_val holds its own by now for the async case.
+            callee_act.async_promise = null;
+            if (ret_async_prom != null) { vm.heap.decref((types::HeapHeader*)ret_async_prom); }
 
             if (vm.activation_count == 0) {
                 vm.heap.tval_copy_ref(&vm.return_val, &undef_val);

@@ -881,6 +881,8 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, Instruction insn, bool*
                     new_act.async_promise = null;
                     if (async_prom != null) {
                         new_act.flags |= ACT_FLAG_ASYNC;
+                        // The activation owns this reference; RET releases it.
+                        ((types::HeapHeader*)async_prom).incref();
                         new_act.async_promise = async_prom;
                     }
                     // A regular (non-construct) call has no [[NewTarget]]. The
@@ -1962,6 +1964,8 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
             if (async_prom != null) {
                 // Async function entered from the generator block above
                 new_act.flags |= ACT_FLAG_ASYNC;
+                // The activation owns this reference; RET releases it.
+                ((types::HeapHeader*)async_prom).incref();
                 new_act.async_promise = async_prom;
                 // Write Promise to result register now so the caller gets it
                 // if the function suspends at an AWAIT before returning.
@@ -1971,6 +1975,8 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                 HObject*? prom_raw = builtins::promise_create(vm.heap);
                 if (try p = prom_raw) {
                     new_act.flags |= ACT_FLAG_ASYNC;
+                    // The activation owns this reference; RET releases it.
+                    ((types::HeapHeader*)p).incref();
                     new_act.async_promise = p;
                 }
             }

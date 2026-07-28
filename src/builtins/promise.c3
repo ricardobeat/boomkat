@@ -141,10 +141,10 @@ fn void promise_trigger_reactions(HObject* promise, Heap* heap, void* vm) {
     TVal result = promise_get_result(promise);
 
     while (reaction != null) {
+        // Hand the walk's reference from this node to the next one. `next` is
+        // increfed before the unlink below drops the "next" property's
+        // reference, which is otherwise the only thing keeping it alive.
         HObject* next = reaction_get_next(reaction, heap);
-        // Take ownership of `next` for the duration of this iteration: clearing
-        // the current reaction's "next" property below drops the link that was
-        // keeping it alive, which would otherwise free it before we walk to it.
         if (next != null) { ((types::HeapHeader*)next).incref(); }
         // Unlink before invoking so reactions added during invocation are
         // attached to whatever new promise the handler returns to.
