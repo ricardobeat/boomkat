@@ -757,6 +757,7 @@ PHASES = [
             "built-ins/AsyncFunction",
             "built-ins/ArrayIteratorPrototype",
             "built-ins/RegExpStringIteratorPrototype",
+            "built-ins/Iterator",
         ],
     },
     {
