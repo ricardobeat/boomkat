@@ -2272,6 +2272,7 @@ fn bool Lexer.prev_was_operand(&self) {
         case TokenType.RBRACKET:
         case TokenType.RBRACE:
         case TokenType.IDENTIFIER:
+        case TokenType.HASH_IDENT:
         case TokenType.NUMBER:
         case TokenType.BIGINT:
         case TokenType.STRING:
@@ -2361,10 +2362,12 @@ fn Token? Lexer.next_token(&self) {
         return tok;
     }
 
-    // Check for regexp literal vs division operator
+    // Check for regexp literal vs division operator. A `/=` prefix does NOT
+    // automatically mean division-assign: `/=/` is a valid regexp literal
+    // whose body is "=". Only treat `/=` as the division-assign punctuator
+    // when a regexp is not syntactically expected at this position.
     if (c == '/') {
-        // /= is always division-assign, handle normally via scan_punctuator
-        if (self.peek_char_at(1) != '=' && (force_regex || !self.prev_was_operand())) {
+        if (force_regex || !self.prev_was_operand()) {
             Token tok = self.scan_regexp()!;
             self.current = tok;
             return tok;
