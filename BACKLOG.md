@@ -16,9 +16,10 @@ Before scheduling work on an entry, re-probe it against `main`. Several entries 
 
 Coverage is **60%** of the suite. The rest is not failing — it is not running.
 
-**The suite has 7 known failures**, all one root cause (matchAll bypasses RegExpExec —
-see below). Down from the 66 that `916ffaed` surfaced by adding 14 orphaned directories.
-All 18 phases otherwise report 0 fails. Do not re-hide anything by skip-listing.
+**All 18 phases report 0 failures** as of 2026-07-28, over a surface 718 tests wider than
+before `916ffaed` added 14 orphaned directories (which surfaced 66 real failures, all now
+fixed). Nothing was skip-listed to get here. Note this is 0 fails on 60% of the suite, not
+100% pass — see the table above.
 
 Reproduce with a walk over `PHASES` dirs + `skip_reason()` from `scripts/run_test262.py`.
 
@@ -27,36 +28,23 @@ Reproduce with a walk over `PHASES` dirs + `skip_reason()` from `scripts/run_tes
 - [ ] **`built-ins/Iterator` — 514 tests**, in no phase.
 - [ ] **Modules — ~726 tests** (`language/module-code` 599 + `language/import` 127), plus unblocks class tests. Biggest block, biggest effort. The runner cannot drive `flags: [module]` tests at all; several class skips exist *only* for that reason and note the engine is correct when verified manually with `--module`.
 
-### Open failures and adjacent bugs
+### Bugs with no test coverage
 
-One entry (matchAll/RegExpExec) accounts for all 7 remaining suite failures. The rest are
-real bugs found alongside them that no running test currently covers — they will not show
-up in a phase run. Every one verified against `main`.
+Real bugs found while fixing the 66, which no running test exercises — they will not show
+up in a phase run, so a green suite is not evidence against them. Each verified against
+`main` by probe and qjs comparison.
 
-- [ ] **`RegExp.prototype.source` over-escapes — no test currently covers it.**
-  `/a\/b/.source` gives `"a\\/b"` and `/[/]/.source` gives `"[\/]"`; qjs gives `"a\/b"`
-  and `"[/]"`. Per §22.2.6.10 the escaping applies only to `/` outside a class and to
-  line terminators. Pre-existing on main, found while fixing LS/PS terminators
-  (`a7640192`).
-- [ ] **`x++ / 2` raises a SyntaxError.** Pre-existing bug in postfix-operand handling —
-  `prev_was_operand()` does not treat a postfix `++`/`--` as ending an operand, so the
-  following `/` starts a regexp. Found while fixing `/=`, confirmed on main, out of that
-  task's scope. Not currently covered by a running test.
-- [ ] **`RegExp.prototype[Symbol.matchAll]` ignores a custom `exec` — 7 fails.** Surfaced
-  once `%RegExpStringIteratorPrototype%` landed (`07bf4e8a`) and confirmed pre-existing on
-  main: `custom-regexpexec*.js` (7) and `regexp-tolength-lastindex-throws.js`. The iterator
-  calls the internal matcher directly instead of going through `RegExpExec`, so a
-  user-supplied `exec` / a throwing `lastIndex` ToLength never runs.
+- [ ] **Sweep regexp.c3 for char-index/byte-offset conversion truncation.** `d0b706c1`
+  fixed an `AdvanceStringIndex` that silently truncated when `thisIndex >= S.char_length()`
+  in `String.prototype[@@match]`'s global loop (a custom `exec` returning empty matches
+  against `""` produced lastIndex `0,1,1,1,1,1` instead of `0,1,2,3,4,5`). The same guard
+  already existed at the `@@split` site, so this is a copy that drifted. `@@split`'s own
+  advance works on raw byte offsets and is not susceptible. No one has audited the
+  remaining char-unit/byte-offset round-trips in that file for the same class of bug.
 - [ ] **`ays_return_from_body` misses the catcher parent-walk** (`vm_generators.c3`, async
   `yield*` delegation). Same root cause as the finally-skipping bug fixed in `79ca7134`;
   left alone there because no failing test exercises it. Likely means an async `yield*`
   return skips an enclosing finally behind a catch-only try.
-- [ ] **Iterator `next` methods throw a bare `undefined` instead of a TypeError.**
-  `builtin_map_iterator_next` (map.c3), `builtin_set_iterator_next` (set.c3) and
-  `builtin_string_iterator_next` (iterator.c3) still use `should_throw=true` +
-  `set_undefined()` rather than `builtin_throw`. The array and regexp-string variants were
-  fixed in `07bf4e8a`; these three were out of that task's scope and are not currently
-  covered by a running test.
 - [ ] **`builtin_to_string` skips ToPrimitive on objects — audit its ~25 call sites.**
   `src/builtins/core.c3:2096-2097` hardcodes `"[object Object]"` instead of running
   `[Symbol.toPrimitive]`/`toString`/`valueOf`, so abrupt completions never propagate.
