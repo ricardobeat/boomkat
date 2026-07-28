@@ -1795,6 +1795,10 @@ fn HObject* proxy_create(BuiltinContext* ctx, TVal target_tv, TVal handler_tv) {
     HObject* p = raw;
     HObject* target = (HObject*)target_tv.get_heapptr();
     HObject* handler = (HObject*)handler_tv.get_heapptr();
+    // The proxy owns both: they are reachable only through these two fields
+    // once the caller's temporaries are released.
+    ((types::HeapHeader*)target).incref();
+    ((types::HeapHeader*)handler).incref();
     (*p.extra_ptr()).proxy.target = target;
     (*p.extra_ptr()).proxy.handler = handler;
     p.prototype = null;   // a proxy has no own [[Prototype]]; all MOP ops are intercepted
@@ -1872,8 +1876,13 @@ fn void builtin_proxy_revoke(BuiltinContext* ctx) {
     if (!p_tv.is_object()) return;
     HObject* p = (HObject*)p_tv.get_heapptr();
     if (!p.flags.exotic_proxyobj) return;
+    // Revocation drops the proxy's ownership of both slots.
+    HObject* old_target = (*p.extra_ptr()).proxy.target;
+    HObject* old_handler = (*p.extra_ptr()).proxy.handler;
     (*p.extra_ptr()).proxy.target = null;
     (*p.extra_ptr()).proxy.handler = null;
+    if (old_target != null) { ctx.heap.decref((types::HeapHeader*)old_target); }
+    if (old_handler != null) { ctx.heap.decref((types::HeapHeader*)old_handler); }
     // Mark the revoker as spent so a second call is a no-op.
     TVal undef; undef.set_undefined();
     ctx.callee_obj.put_prop((void*)slot_key, undef, hobject::PROP_FLAGS_NWC);

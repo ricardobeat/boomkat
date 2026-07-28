@@ -1933,14 +1933,16 @@ fn void hobject_free(HObject* obj, void* heap_ptr, bool free_header = true) {
         (*obj.extra_ptr()).regexp.regexp_data = null;
     }
 
-    // Decref string held in Promise's resolved value / rejection reason.
-    // Reactions are HObjects and managed by the GC mark-sweep cycle, so we
-    // do not free them here.
+    // Release the Promise's resolved value / rejection reason, and the head of
+    // any reaction list that was never drained. The tail is a borrowed pointer
+    // into that same list, so it is only cleared.
     if (obj.flags.obj_class == ObjClass.PROMISE && _active_heap != null) {
         heap::Heap* h = (heap::Heap*)_active_heap;
         h.decref_tval(&(*obj.extra_ptr()).promise.result);
+        HObject* rhead = (*obj.extra_ptr()).promise.reactions_head;
         (*obj.extra_ptr()).promise.reactions_head = null;
         (*obj.extra_ptr()).promise.reactions_tail = null;
+        if (rhead != null) { h.decref((types::HeapHeader*)rhead); }
     }
 
     // Free the ArrayBuffer's backing store (unless already detached).
@@ -1975,6 +1977,17 @@ fn void hobject_free(HObject* obj, void* heap_ptr, bool free_header = true) {
     if (obj.flags.obj_class == ObjClass.FUNCTION && _active_heap != null) {
         heap::Heap* h = (heap::Heap*)_active_heap;
         h.decref_tval(&(*obj.extra_ptr()).func.captured_this);
+    }
+
+    // Release the target and handler a proxy owns.
+    if (obj.flags.obj_class == ObjClass.PROXY && _active_heap != null) {
+        heap::Heap* h = (heap::Heap*)_active_heap;
+        HObject* ptarget = (*obj.extra_ptr()).proxy.target;
+        HObject* phandler = (*obj.extra_ptr()).proxy.handler;
+        (*obj.extra_ptr()).proxy.target = null;
+        (*obj.extra_ptr()).proxy.handler = null;
+        if (ptarget != null) { h.decref((types::HeapHeader*)ptarget); }
+        if (phandler != null) { h.decref((types::HeapHeader*)phandler); }
     }
 
     // Release the owned collection target held by array/map/set iterators.

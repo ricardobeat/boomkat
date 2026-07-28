@@ -142,6 +142,10 @@ fn void promise_trigger_reactions(HObject* promise, Heap* heap, void* vm) {
 
     while (reaction != null) {
         HObject* next = reaction_get_next(reaction, heap);
+        // Take ownership of `next` for the duration of this iteration: clearing
+        // the current reaction's "next" property below drops the link that was
+        // keeping it alive, which would otherwise free it before we walk to it.
+        if (next != null) { ((types::HeapHeader*)next).incref(); }
         // Unlink before invoking so reactions added during invocation are
         // attached to whatever new promise the handler returns to.
         reaction_set_next(reaction, null, heap);
@@ -231,6 +235,9 @@ fn void promise_trigger_reactions(HObject* promise, Heap* heap, void* vm) {
         }
         heap.enqueue_microtask(handler, result, microtask_downstream);
 
+        // Release the reference this walk held on the current node (the head
+        // reference for the first, the incref above for every later one).
+        heap.decref((types::HeapHeader*)reaction);
         reaction = next;
     }
 }
@@ -846,6 +853,9 @@ fn void promise_add_reaction(HObject* promise, HObject* reaction, Heap* heap) {
     if (promise == null || reaction == null) return;
     reaction_set_next(reaction, null, heap);
     if ((*promise.extra_ptr()).promise.reactions_tail == null) {
+        // The head pointer owns the first reaction; every later link is owned
+        // by the preceding reaction's "next" property (a refcounted put_prop).
+        ((types::HeapHeader*)reaction).incref();
         (*promise.extra_ptr()).promise.reactions_head = reaction;
     } else {
         reaction_set_next((HObject*)(*promise.extra_ptr()).promise.reactions_tail, reaction, heap);
