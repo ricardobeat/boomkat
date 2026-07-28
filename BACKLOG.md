@@ -11,19 +11,55 @@ Before scheduling work on an entry, re-probe it against `main`. Several entries 
 | | tests |
 |---|---|
 | Full suite | 53,319 |
-| Reachable by any `PHASES` entry | 38,328 (**14,991 in no phase at all**) |
-| Actually attempted | 31,260 (7,068 skipped in-phase) |
+| Reachable by any `PHASES` entry | 39,046 (**14,273 in no phase at all**) |
+| Actually attempted | 32,078 (6,968 skipped in-phase) |
 
-The zero-fail claim covers **59%** of the suite. The rest is not failing — it is not running.
+Coverage is **60%** of the suite. The rest is not failing — it is not running.
+
+**The suite is currently RED: 66 known failures**, surfaced deliberately by `916ffaed`
+adding 14 orphaned directories. Root causes are itemised below; each is real engine
+work. Do not re-hide them by skip-listing.
 
 Reproduce with a walk over `PHASES` dirs + `skip_reason()` from `scripts/run_test262.py`.
 
 ### Un-skip candidates (ranked by tests-per-effort)
 
 - [>] **`object-rest` — 342 tests. NOT a stale token: two real engine bugs.** Rest collection copies properties structurally instead of running CopyDataProperties (§7.3.24), so getters never fire and non-enumerable own properties leak in *carrying their non-enumerable attribute*. Affects every form — var, assignment, param, for-of, for-await-of — so one shared routine is at fault. Probe with `hasOwnProperty`, **never `JSON.stringify`**: the leaked property is invisible to stringify, which makes the bug look absent. Fix in flight (batch1).
-- [ ] **Add orphaned directories to `PHASES`.** Cheap, and surfaces real failures rather than creating them. Expect `language/literals/regexp` to fail immediately: the engine never parse-time-validates regexp literals (semantic errors are only caught if the literal is evaluated), acknowledged in the `regexp-modifiers` comment in run_test262.py. Also `built-ins/decodeURI*`/`encodeURI*` (~170), `built-ins/global` (29), `AggregateError` (25).
 - [ ] **`built-ins/Iterator` — 514 tests**, in no phase.
 - [ ] **Modules — ~726 tests** (`language/module-code` 599 + `language/import` 127), plus unblocks class tests. Biggest block, biggest effort. The runner cannot drive `flags: [module]` tests at all; several class skips exist *only* for that reason and note the engine is correct when verified manually with `--module`.
+
+### Open failures from the PHASES expansion (916ffaed) — 66 fails, 12 root causes
+
+Ordered by tests-fixed-per-effort. Every one verified against `main`.
+
+- [ ] **Regexp literal starting with `=` fails to parse — 12 fails.** `/=/ ` is a
+  SyntaxError; `src/lexer.c3:2367` routes `/` + `=` to division-assign
+  unconditionally, ignoring whether a regexp is syntactically expected
+  (`!prev_was_operand()`). Affects real code, not just tests. Smallest fix, high value.
+- [ ] **Lone surrogates not rejected by `encodeURI*`/`decodeURI*` — 17 fails.**
+  `encodeURI(String.fromCharCode(0xDC00))` yields `"%ED%B0%80"`; must throw `URIError`.
+  Both encode and decode sides.
+- [ ] **`%RegExpStringIteratorPrototype%` does not exist — 13 fails.**
+  `src/builtins/regexp.c3:2057-2115` puts `.next` as an *own* property on each
+  iterator instance and points `[[Prototype]]` straight at `%IteratorPrototype%`,
+  with no intermediate layer carrying `[Symbol.toStringTag]`.
+- [ ] **`AggregateError` constructor incomplete — 7 fails.** `errors` stored verbatim
+  instead of `IterableToList`-spread (`src/builtins/error.c3:159-246`);
+  `register_native_error_ctor` (`:688`) hardcodes `length=1` but AggregateError needs 2.
+- [ ] **`GeneratorPrototype.next/return/throw` don't validate `this` — 6 fails.**
+  `this` = undefined or a plain object must TypeError.
+- [ ] **`builtin_to_string` skips ToPrimitive on objects — 2 fails + feeds AggregateError.**
+  `src/builtins/core.c3:2096-2097` hardcodes `"[object Object]"` instead of running
+  `[Symbol.toPrimitive]`/`toString`/`valueOf`, so abrupt completions never propagate.
+- [ ] **Generator `.return()` inside nested try/finally — 3 fails.** Finally blocks not
+  running / final value not surfacing. May share a cause with the finally-return abort path.
+- [ ] **`ArrayIteratorPrototype.next` missing own `.length`/`.name` — 3 fails.**
+  Hand-built native function that skipped `set_func_ctor_name_length`; same pattern as
+  the RegExpStringIterator gap.
+- [ ] **`undefined = 12` rejected at parse time — 1 CE:unexpected.** Must parse and throw
+  `TypeError` at runtime, not `SyntaxError` at parse time.
+- [ ] **`GeneratorFunction.prototype.constructor` is writable — 1 fail.** Should be non-writable.
+- [ ] **`AsyncFunction` `[[Prototype]]` chain wrong — 1 fail.** Expected `Function`.
 
 ### Engine gaps behind the class skip-list
 
