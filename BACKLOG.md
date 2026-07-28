@@ -110,7 +110,7 @@ Full-engine pass for duplication/elegance/compactness at constant perf+correctne
   `throw_type_error_at` (VM, different signature — needs act/curr_pc/needs_restart) are the
   established convention and most files already use them. The highest-density outliers
   (function.c3 9 sites, vm_control.c3 4, vm_calls.c3 1, vm_core.c3 1) were migrated in
-  `bd8bfb50`/`f0a1c2d3` for -183 lines. The tail is object.c3 (12 raw vs 89 already-helper),
+  `47e4e1ec`/`b978b49e` for -183 lines. The tail is object.c3 (12 raw vs 89 already-helper),
   promise.c3 (10), generator.c3 (3), vm_coerce.c3 (3), core.c3 (4), and singles elsewhere.
   Same method applies. **Any further pass must mechanically diff every message literal** —
   test262 does not assert on message text, so a changed message passes the suite while being
