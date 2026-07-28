@@ -32,10 +32,14 @@ Reproduce with a walk over `PHASES` dirs + `skip_reason()` from `scripts/run_tes
 
 Ordered by tests-fixed-per-effort. Every one verified against `main`.
 
-- [ ] **Regexp literal starting with `=` fails to parse — 12 fails.** `/=/ ` is a
-  SyntaxError; `src/lexer.c3:2367` routes `/` + `=` to division-assign
-  unconditionally, ignoring whether a regexp is syntactically expected
-  (`!prev_was_operand()`). Affects real code, not just tests. Smallest fix, high value.
+- [ ] **Line terminators inside regexp literals — ~10 fails.** `7.8.5-1.js`,
+  `S7.8.5_A1.3/1.5/2.3/2.5_*` in `language/literals/regexp`. Distinct from the `/=` bug
+  fixed in `9c7ce68b`; the original entry wrongly attributed all ~11 of that directory's
+  failures to `/=`, when only `S7.8.5_A1.1_T2.js` was actually caused by it.
+- [ ] **`x++ / 2` raises a SyntaxError.** Pre-existing bug in postfix-operand handling —
+  `prev_was_operand()` does not treat a postfix `++`/`--` as ending an operand, so the
+  following `/` starts a regexp. Found while fixing `/=`, confirmed on main, out of that
+  task's scope. Not currently covered by a running test.
 - [ ] **Lone surrogates not rejected by `encodeURI*`/`decodeURI*` — 17 fails.**
   `encodeURI(String.fromCharCode(0xDC00))` yields `"%ED%B0%80"`; must throw `URIError`.
   Both encode and decode sides.
