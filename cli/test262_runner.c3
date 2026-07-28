@@ -238,7 +238,25 @@ fn bool is_async_test(char[] src) {
 /// so `flags: [module]` tests must be compiled via compile_module — not the
 /// plain script path — or negative-parse module tests silently "pass" as
 /// scripts.
-fn bool is_module_test(char[] src) {
+fn bool contains_substr(char[] haystack, char[] needle) {
+    if (needle.len > haystack.len) return false;
+    usz max_i = haystack.len - needle.len;
+    for (usz i = 0; i <= max_i; i++) {
+        bool match = true;
+        for (usz j = 0; j < needle.len; j++) {
+            if (haystack[i + j] != needle[j]) { match = false; break; }
+        }
+        if (match) return true;
+    }
+    return false;
+}
+
+fn bool is_module_test(char[] path, char[] src) {
+    if (contains_substr(path, "language/module-code/") ||
+        contains_substr(path, "language/import/") ||
+        contains_substr(path, "language/export/")) {
+        return true;
+    }
     usz scan_end = src.len < 4096 ? src.len : (usz)4096;
     usz i = 0;
     // Find "flags:" within the frontmatter
@@ -529,7 +547,7 @@ fn int run_one_test(Vm* v, Heap* hp, char[] test_path, char[] assert_src, char[]
     // a negative-parse module test would compile fine as a script and never
     // surface its expected SyntaxError. The python runner's categorize_ce()
     // maps a COMPILE_ERROR on a `negative: phase: parse` test to a pass.
-    bool module_test = is_module_test(src);
+    bool module_test = is_module_test(test_path, src);
     NegPhase neg = negative_phase(src);
     // Module tests go through the ESM pipeline by PATH (so relative imports
     // resolve against the test file's dir); script tests run the augmented

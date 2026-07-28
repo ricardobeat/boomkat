@@ -3573,10 +3573,10 @@ fn B64DecodeResult from_base64(HString* src, uint src_len, char* dst, uint max_l
         if (seen == 0) {
             // Fast path: decode complete groups of 4 valid characters.
             while (index + 4 <= src_len && written + 3 <= max_len) {
-                char v0 = b64_decode_char(src.char_at(index), alphabet);
-                char v1 = b64_decode_char(src.char_at(index + 1), alphabet);
-                char v2 = b64_decode_char(src.char_at(index + 2), alphabet);
-                char v3 = b64_decode_char(src.char_at(index + 3), alphabet);
+                char v0 = b64_decode_char(src.char_at_unchecked(index), alphabet);
+                char v1 = b64_decode_char(src.char_at_unchecked(index + 1), alphabet);
+                char v2 = b64_decode_char(src.char_at_unchecked(index + 2), alphabet);
+                char v3 = b64_decode_char(src.char_at_unchecked(index + 3), alphabet);
                 if ((v0 | v1 | v2 | v3) >= 64) break;
                 uint v = ((uint)v0 << 18) | ((uint)v1 << 12) | ((uint)v2 << 6) | (uint)v3;
                 dst[written]     = (char)(v >> 16);
@@ -3590,7 +3590,7 @@ fn B64DecodeResult from_base64(HString* src, uint src_len, char* dst, uint max_l
         }
 
         // Slow path: whitespace, padding, partial groups, capacity.
-        while (index < src_len && b64_decode_char(src.char_at(index), alphabet) == B64_K_WS) index++;
+        while (index < src_len && b64_decode_char(src.char_at_unchecked(index), alphabet) == B64_K_WS) index++;
 
         if (index == src_len) {
             if (seen > 0) {
@@ -3603,19 +3603,19 @@ fn B64DecodeResult from_base64(HString* src, uint src_len, char* dst, uint max_l
             r.read = src_len; r.written = written; return r;
         }
 
-        uint ch = src.char_at(index++);
+        uint ch = src.char_at_unchecked(index++);
 
         if (ch == '=') {
             if (seen < 2) { r.err = true; return r; }
-            while (index < src_len && b64_decode_char(src.char_at(index), alphabet) == B64_K_WS) index++;
+            while (index < src_len && b64_decode_char(src.char_at_unchecked(index), alphabet) == B64_K_WS) index++;
             if (seen == 2) {
                 if (index == src_len) {
                     if (last_chunk == B64_LAST_STOP_BEFORE_PARTIAL) { r.read = read; r.written = written; return r; }
                     r.err = true; return r;
                 }
-                if (src.char_at(index) == '=') {
+                if (src.char_at_unchecked(index) == '=') {
                     index++;
-                    while (index < src_len && b64_decode_char(src.char_at(index), alphabet) == B64_K_WS) index++;
+                    while (index < src_len && b64_decode_char(src.char_at_unchecked(index), alphabet) == B64_K_WS) index++;
                 } else {
                     r.err = true; return r;
                 }
@@ -3675,8 +3675,8 @@ fn B64DecodeResult from_hex(HString* src, uint src_len, char* dst, uint max_len)
     uint written = 0;
     uint i = 0;
     while (i < src_len && written < max_len) {
-        int hi = hex_decode_char(src.char_at(i));
-        int lo = hex_decode_char(src.char_at(i + 1));
+        int hi = hex_decode_char(src.char_at_unchecked(i));
+        int lo = hex_decode_char(src.char_at_unchecked(i + 1));
         if (hi < 0 || lo < 0) { r.err = true; return r; }
         dst[written++] = (char)((hi << 4) | lo);
         i += 2;

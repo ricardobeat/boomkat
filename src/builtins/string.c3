@@ -590,15 +590,22 @@ fn void builtin_string_proto_indexOf(BuiltinContext* ctx) {
         }
     }
     if (result >= 0) {
-        // Convert the matched byte offset back to a code-unit index by
-        // counting units in the (already-scanned, CESU-8-canonical) prefix.
-        uint unit_idx = 0;
-        uint byte_off = 0;
-        while (byte_off < (uint)result) {
-            byte_off += hstring::utf16_unit_byte_len(s_hstr.get_data(), byte_off);
-            unit_idx++;
+        if (s_hstr.flags.is_ascii) {
+            ctx.result.set_fastint((long)result);
+        } else {
+            uint unit_idx = 0;
+            uint byte_off = 0;
+            if ((uint)result >= pos) {
+                unit_idx = pos_units;
+                byte_off = pos;
+            }
+            char[] data_slice = s_hstr.get_data();
+            while (byte_off < (uint)result) {
+                byte_off += hstring::utf16_unit_byte_len(data_slice, byte_off);
+                unit_idx++;
+            }
+            ctx.result.set_fastint((long)unit_idx);
         }
-        ctx.result.set_fastint((long)unit_idx);
     } else {
         ctx.result.set_fastint(-1);
     }
@@ -2828,13 +2835,18 @@ fn void builtin_string_proto_lastIndexOf(BuiltinContext* ctx) {
         if (found) { result = i; break; }
     }
     if (result >= 0) {
-        uint unit_idx = 0;
-        uint byte_off = 0;
-        while (byte_off < (uint)result) {
-            byte_off += hstring::utf16_unit_byte_len(s_hstr.get_data(), byte_off);
-            unit_idx++;
+        if (s_hstr.flags.is_ascii) {
+            ctx.result.set_fastint((long)result);
+        } else {
+            uint unit_idx = 0;
+            uint byte_off = 0;
+            char[] data_slice = s_hstr.get_data();
+            while (byte_off < (uint)result) {
+                byte_off += hstring::utf16_unit_byte_len(data_slice, byte_off);
+                unit_idx++;
+            }
+            ctx.result.set_fastint((long)unit_idx);
         }
-        ctx.result.set_fastint((long)unit_idx);
     } else {
         ctx.result.set_fastint(-1);
     }

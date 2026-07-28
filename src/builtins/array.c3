@@ -3218,7 +3218,7 @@ fn void builtin_array_from(BuiltinContext* ctx) {
             // @@iterator protocol (codepoint-by-codepoint) per ES6
             // §23.1.1.1 step 3, landing here only means that path wasn't
             // triggered; tracked separately from the CESU-8 migration.
-            uint cp = str_val.char_at((uint)k);
+            uint cp = str_val.char_at_unchecked((uint)k);
             char[4] cbuf;
             uint cblen = hstring::encode_codepoint(cp, cbuf[:4]);
             HString* ch_str = builtin_intern_string(heap, cbuf[:cblen]);
@@ -4212,10 +4212,13 @@ fn void builtin_array_proto_map(BuiltinContext* ctx) {
     TVal thisArg;
     if (ctx.argc >= 2) { thisArg = ctx.regs[ctx.base_reg + 1]; } else { thisArg.set_undefined(); }
     // Step 5: ArraySpeciesCreate(O, len) — use species constructor if available.
+    // A null result means the species lookup or construction completed
+    // abruptly; the pending exception must propagate rather than be walked
+    // into the mapping loop.
     HObject* arr = array_species_create_result(ctx, o, len);
     if (arr == null) { ctx.result.set_undefined(); return; }
-    arr.set_temproot();
-    o.set_temproot();
+    ((HeapHeader*)arr).set_temproot();
+    if (o != null) ((HeapHeader*)o).set_temproot();
     callback.set_temproot();
     thisArg.set_temproot();
     // Ensure result length is set to source length (ArrayCreate sets it, but
@@ -4260,8 +4263,8 @@ fn void builtin_array_proto_filter(BuiltinContext* ctx) {
     // Step 7: ArraySpeciesCreate(O, 0) — result length is not known in advance.
     HObject* arr = array_species_create_result(ctx, o, 0);
     if (arr == null) { ctx.result.set_undefined(); return; }
-    arr.set_temproot();
-    o.set_temproot();
+    if (arr != null) ((HeapHeader*)arr).set_temproot();
+    if (o != null) ((HeapHeader*)o).set_temproot();
     callback.set_temproot();
     thisArg.set_temproot();
     ulong aj = 0;

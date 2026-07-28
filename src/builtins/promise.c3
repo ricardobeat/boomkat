@@ -3330,10 +3330,10 @@ fn void builtin_promise_all(BuiltinContext* ctx) {
 
     HString* remaining_key = builtin_intern_string(heap, "\xFFremaining");
 
-    if (arr != null) arr.set_temproot();
-    if (state != null) state.set_temproot();
-    if (hole != null) hole.set_temproot();
-    if (promise != null) promise.set_temproot();
+    if (arr != null) ((HeapHeader*)arr).set_temproot();
+    if (state != null) ((HeapHeader*)state).set_temproot();
+    if (hole != null) ((HeapHeader*)hole).set_temproot();
+    if (promise != null) ((HeapHeader*)promise).set_temproot();
     iterator.set_temproot();
     resolve_fn.set_temproot();
     cap_resolve_tv.set_temproot();
@@ -4300,7 +4300,9 @@ fn void builtin_async_resume(BuiltinContext* ctx) {
     // resume_gen and restore the saved PC + registers.
     TVal resume_arg;
     resume_arg = gs.resume_value;
+    ctx.heap.native_frame_depth--;
     TVal result = ctx.heap.call_fn(ctx.vm, func_tv, &resume_arg, 1, gs.this_binding);
+    ctx.heap.native_frame_depth++;
 
     ctx.heap.resume_gen = null;
 
@@ -4348,7 +4350,9 @@ fn void builtin_async_reject(BuiltinContext* ctx) {
     // resume_gen and restore the saved PC + registers.
     TVal throw_arg;
     throw_arg = gs.throw_value;
+    ctx.heap.native_frame_depth--;
     TVal result = ctx.heap.call_fn(ctx.vm, func_tv, &throw_arg, 1, gs.this_binding);
+    ctx.heap.native_frame_depth++;
 
     ctx.heap.resume_gen = null;
 

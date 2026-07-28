@@ -198,6 +198,7 @@ struct GeneratorState {
     // placed into a specific register in the generator's frame on resume.
     // 0xFFFF means unused.
     uint pending_resume_reg;
+    uint ref_count;
 }
 
 /// One parked Atomics.waitAsync waiter (single-agent). `buffer` is the backing
@@ -1349,6 +1350,7 @@ fn void Heap.reset(&self) {
         self.small_int_strs[i] = null;
     }
 
+
     // Clear lightfunc virtual property deletion tracking
     mem::clear(&self.lf_deleted_props[0], (sz)(LF_DELETED_WORDS * 8));
 
@@ -1610,6 +1612,8 @@ fn void Heap.free_string(&self, hstring::HString* s) {
     if (s == null) { return; }
     self.free_func(self.heap_udata, s);
 }
+
+
 
 // ============================================================================
 // Reference counting — decref + free when count reaches zero
@@ -3336,6 +3340,7 @@ fn void Heap.drain_microtasks(&self, void* vm) {
     {
         uint i = 0;
         while (i < self.microtask_count) {
+            if (self.gc_pending) { self.safepoint_gc(); }
             uint base = i * 3;
             i++;
             TVal handler    = self.microtask_queue[base];

@@ -712,8 +712,8 @@ fn TVal? builtins_generic_get(HObject* obj, HString* key, BuiltinContext* ctx) {
         TVal undef; undef.set_undefined();
         return undef;
     }
-    obj.set_temproot();
-    key.set_temproot();
+    if (obj != null) ((HeapHeader*)obj).set_temproot();
+    if (key != null) ((HeapHeader*)key).set_temproot();
     hobject::PropLookupResult res = obj.get_prop_or_accessor_proto((void*)key, true);
     switch (res.kind) {
         case hobject::PropLookupKind.PROP_DATA:
@@ -1443,8 +1443,8 @@ fn void coll_construct(BuiltinContext* ctx, hobject::ObjClass obj_class, HObject
                 HString* next_key = builtin_intern_string(ctx.heap, "next");
                 if (next_key == null) { ctx.result.set_undefined(); return; }
 
-                if (coll != null) coll.set_temproot();
-                if (iter_obj != null) iter_obj.set_temproot();
+                if (coll != null) ((HeapHeader*)coll).set_temproot();
+                if (iter_obj != null) ((HeapHeader*)iter_obj).set_temproot();
                 iterator.set_temproot();
                 adder.set_temproot();
 

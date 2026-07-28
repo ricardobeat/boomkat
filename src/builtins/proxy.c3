@@ -150,7 +150,7 @@ fn void ordinary_own_desc(Heap* heap, HObject* obj, HString* key, ProxyDesc* out
         HString* prim = (HString*)(*obj.extra_ptr()).prim.primitive_value.get_heapptr();
         uint ci = key.array_index();
         if (prim != null && ci < prim.char_length()) {
-            uint cp = prim.char_at(ci);
+            uint cp = prim.char_at_unchecked(ci);
             char[4] cbuf;
             uint cblen = hstring::encode_codepoint(cp, cbuf[:4]);
             HString* ch = heap.str_intern(cbuf[:cblen]);

@@ -79,6 +79,18 @@ fn void? CompilerContext.array_destructure(&self, ScopeKind kind, bool is_lexica
     DestructBind[MAX_DESTRUCT_BINDS] binds;
     uint count = 0;
 
+    // We're parsing a destructuring STATEMENT/LHS (`let`/`const`/`var`/`for-in`/
+    // `for-of`/`export var`), not a function-parameter list. `collect_*_param_binds`
+    // is shared with the parameter-list path and toggles `in_formal_params` on
+    // entry — which would gate `await`/`yield` out of default-value expressions
+    // incorrectly here (per ES2018 §13.3.3, destructuring default values are
+    // AssignmentExpressions, which DO permit await in async contexts and yield
+    // in generator contexts). Force the flag off for the duration of the collect
+    // so the gate in `compile_default_expr` does not mis-apply.
+    bool saved_in_fp = self.in_formal_params;
+    self.in_formal_params = false;
+    defer self.in_formal_params = saved_in_fp;
+
     // Parse the pattern into the recursive DestructBind model. The source
     // register (arg_idx) for top-level binds is patched to the RHS register
     // once it is known (RHS is parsed after the pattern). Nested binds carry a
@@ -156,6 +168,18 @@ fn void? CompilerContext.array_destructure(&self, ScopeKind kind, bool is_lexica
 /// The '{' has already been consumed.
 fn void? CompilerContext.object_destructure(&self, ScopeKind kind, bool is_lexical, bool is_const,
                                              char[]* out_names = null, uint* out_count = null) {
+    // We're parsing a destructuring STATEMENT/LHS (`let`/`const`/`var`/`for-in`/
+    // `for-of`/`export var`), not a function-parameter list. `collect_*_param_binds`
+    // is shared with the parameter-list path and toggles `in_formal_params` on
+    // entry — which would gate `await`/`yield` out of default-value expressions
+    // incorrectly here (per ES2018 §13.3.3, destructuring default values are
+    // AssignmentExpressions, which DO permit await in async contexts and yield
+    // in generator contexts). Force the flag off for the duration of the collect
+    // so the gate in `compile_default_expr` does not mis-apply.
+    bool saved_in_fp = self.in_formal_params;
+    self.in_formal_params = false;
+    defer self.in_formal_params = saved_in_fp;
+
     // Collect the pattern into the shared DestructBind model, then declare each
     // leaf and emit via the single emit_destruct_bindings — the same machinery
     // used by array_destructure, function parameters, and for-of. The '{' has

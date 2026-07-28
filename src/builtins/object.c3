@@ -1898,7 +1898,7 @@ fn void builtin_object_getOwnPropertyDescriptor(BuiltinContext* ctx) {
             is_numeric && kd.len > 0 && kd.len <= 10) {
             HString* prim_str = (HString*)(*obj.extra_ptr()).prim.primitive_value.get_heapptr();
             if (arr_idx < (ulong)prim_str.char_length()) {
-                uint cp = prim_str.char_at((uint)arr_idx);
+                uint cp = prim_str.char_at_unchecked((uint)arr_idx);
                 char[4] cbuf;
                 uint cblen = hstring::encode_codepoint(cp, cbuf[:4]);
                 HString* char_str = ctx.heap.str_intern(cbuf[:cblen]);
@@ -4263,7 +4263,7 @@ fn void builtin_object_assign(BuiltinContext* ctx) {
                     HString* ik = ctx.heap.int_to_hstring((long)ci);
                     if (ik == null) continue;
                     // Character properties are always writable, enumerable, configurable
-                    uint cp = prim.char_at(ci);
+                    uint cp = prim.char_at_unchecked(ci);
                     char[4] cbuf;
                     uint cblen = hstring::encode_codepoint(cp, cbuf[:4]);
                     HString* ch_str = ctx.heap.str_intern(cbuf[:cblen]);
@@ -4490,7 +4490,7 @@ fn TVal from_entries_get_index(BuiltinContext* ctx, HObject* pair, uint idx) {
     if (pair.flags.exotic_stringobj && (*pair.extra_ptr()).prim.primitive_value.is_string()) {
         HString* prim = (HString*)(*pair.extra_ptr()).prim.primitive_value.get_heapptr();
         if (prim != null && idx < prim.char_length()) {
-            uint cp = prim.char_at(idx);
+            uint cp = prim.char_at_unchecked(idx);
             char[4] cbuf;
             uint clen = hstring::encode_codepoint(cp, cbuf[:4]);
             HString* ch = builtin_intern_string(ctx.heap, cbuf[:clen]);

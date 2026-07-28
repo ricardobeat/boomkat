@@ -778,7 +778,15 @@ PHASES = [
             "built-ins/Proxy",
         ],
     },
-]
+    {
+        "label": "Phase 25: ESM Modules",
+        "dirs": [
+            "language/module-code",
+            "language/import",
+            "language/export",
+        ],
+    },
+]   
 
 # ---------------------------------------------------------------------------
 # Phase number → array index mapping

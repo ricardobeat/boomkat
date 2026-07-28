@@ -180,7 +180,7 @@ fn void? copy_data_properties_into(Vm* vm, Dispatch* ds, HObject* target, TVal s
             for (uint ci = 0; ci < prim.char_length(); ci++) {
                 HString* ik = vm.heap.int_to_hstring((long)ci);
                 if (ik == null || key_is_excluded((void*)ik, excluded)) continue;
-                uint cp = prim.char_at(ci);
+                uint cp = prim.char_at_unchecked(ci);
                 char[4] cbuf;
                 uint cblen = hstring::encode_codepoint(cp, cbuf[:4]);
                 HString* ch_str = intern_string(vm, cbuf[:cblen]);

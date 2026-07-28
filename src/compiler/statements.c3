@@ -4497,6 +4497,18 @@ fn bool? CompilerContext.parse_with_clause(&self) {
     return wants_json;
 }
 
+fn char[]? CompilerContext.parse_module_export_name(&self) {
+    Token tok = self.lexer.next_token()!;
+    if (tok.type == TokenType.IDENTIFIER || tok.type == TokenType.STRING) {
+        return self.intern_slot_name(tok.str_value);
+    }
+    char[] kw = lexer::keyword_to_string(tok.type);
+    if (kw.len > 0) {
+        return self.intern_slot_name(kw);
+    }
+    return COMPILE_ERROR~;
+}
+
 /// Parse an ESM import declaration (ES6 §15.2.2).
 ///
 /// Forms:
@@ -4590,19 +4602,8 @@ fn void? CompilerContext.import_declaration(&self) {
         while (!self.check(TokenType.RBRACE) && !self.is_at_end()) {
             if (binding_count >= 32) return COMPILE_ERROR~;
 
-            // The import name (before 'as') is an IdentifierName and may be a
-            // reserved word (e.g. 'default' in: import { default as d } from '…').
-            Token name_tok = self.lexer.next_token()!;
-            char[] import_name_str = name_tok.str_value;
-            if (import_name_str.len == 0) {
-                import_name_str = lexer::keyword_to_string(name_tok.type);
-            }
-            if (import_name_str.len == 0) return COMPILE_ERROR~;
-            // Intern now: local_names/import_names are stored in the module's
-            // import table and read back at link time, long after the rest
-            // of the module has been lexed. An escaped identifier's
-            // str_value borrows the lexer's transient ident_buf.
-            import_name_str = self.intern_slot_name(import_name_str);
+            // The import name (before 'as') is a ModuleExportName (IdentifierName or StringLiteral).
+            char[] import_name_str = self.parse_module_export_name()!;
             if (self.match_as()) {
                 Token alias_tok = self.expect(TokenType.IDENTIFIER)!;
                 local_names[binding_count] = self.intern_slot_name(alias_tok.str_value);
@@ -4770,10 +4771,7 @@ fn void? CompilerContext.export_declaration(&self) {
 
         // export * as ns from './other'
         if (self.match_as()) {
-            Token ns_tok = self.expect(TokenType.IDENTIFIER)!;
-            // Intern the alias: an escaped identifier borrows transient ident_buf,
-            // which the following `from`/specifier token scans clobber.
-            char[] ns_name = self.intern_slot_name(ns_tok.str_value);
+            char[] ns_name = self.parse_module_export_name()!;
             self.expect_from()!;
             Token spec_tok = self.expect(TokenType.STRING)!;
             bool wants_json = self.parse_with_clause()!;
@@ -4802,24 +4800,11 @@ fn void? CompilerContext.export_declaration(&self) {
 
         while (!self.check(TokenType.RBRACE) && !self.is_at_end()) {
             if (count >= 32) return COMPILE_ERROR~;
-            Token name_tok = self.expect(TokenType.IDENTIFIER)!;
-            // Intern each name immediately: an escaped identifier's str_value
-            // borrows the lexer's transient ident_buf, which the very next token
-            // scan (the `as` alias, the next iteration, or RBRACE) clobbers.
-            // Interning copies into the stable heap string table so the export
-            // metadata (and any namespace object built from it) stays valid.
-            char[] local_str = self.intern_slot_name(name_tok.str_value);
+            char[] local_str = self.parse_module_export_name()!;
             if (self.match_as()) {
-                // The exported name (after 'as') is a ModuleExportName / IdentifierName:
-                // reserved words like 'default' are valid here.
-                Token alias_tok = self.lexer.next_token()!;
-                char[] alias_str = alias_tok.str_value;
-                if (alias_str.len == 0) {
-                    alias_str = lexer::keyword_to_string(alias_tok.type);
-                }
-                if (alias_str.len == 0) return COMPILE_ERROR~;
+                char[] alias_str = self.parse_module_export_name()!;
                 local_names[count] = local_str;
-                export_names[count] = self.intern_slot_name(alias_str);
+                export_names[count] = alias_str;
             } else {
                 local_names[count] = local_str;
                 export_names[count] = local_str;

@@ -40,6 +40,11 @@ const uint REGISTRY_SLOT_NONE = (uint)-1;
 /// been computed for this string.
 const uint CHARLEN_NONE = (uint)-1;
 
+/// Sentinel used by `scan_backwards_n` to signal a back-walk that ran past
+/// the start of the string (malformed UTF-8 input with a "wasted" character
+/// length that outruns the byte sequence).
+const uint SCAN_UNDERFLOW = (uint)-1;
+
 /// Unicode replacement character (U+FFFD).
 const uint UNICODE_REPLACEMENT = 0xFFFD;
 
@@ -126,7 +131,15 @@ struct HString {
     /// not yet computed.  ASCII strings never populate this — `blen` is
     /// already the char length for them.  Write-once: strings are
     /// immutable, so the cache never needs invalidating.
+    /// Cached character (UTF-16 code unit) length, or `CHARLEN_NONE` when
+    /// not yet computed.  ASCII strings never populate this — `blen` is
+    /// already the char length for them.  Write-once: strings are
+    /// immutable, so the cache never needs invalidating.
     uint cached_charlen;
+    /// Cached character offset for non-ASCII sequential scanning.
+    uint cached_char_offset;
+    /// Cached byte offset corresponding to `cached_char_offset`.
+    uint cached_byte_offset;
 }
 
 /// Sets the temproot flag on this string.
@@ -238,6 +251,8 @@ fn uint HString.char_length(&self) {
     if (self.cached_charlen != CHARLEN_NONE) return self.cached_charlen;
     uint clen = compute_charlen(self.get_data());
     self.cached_charlen = clen;
+    self.cached_char_offset = clen;
+    self.cached_byte_offset = self.blen;
     return clen;
 }
 
@@ -282,14 +297,7 @@ fn uint HString.char_at_unchecked(&self, uint char_idx) {
         return (uint)data[char_idx];
     }
 
-    // Slow path: walk UTF-8 sequences.
-    uint byte_off = 0;
-    uint ci = 0;
-    while (ci < char_idx && byte_off < self.blen) {
-        byte_off += utf8_seq_len(data[byte_off]);
-        ci++;
-    }
-
+    uint byte_off = self.char_offset_to_byte_offset(char_idx);
     if (byte_off >= self.blen) {
         return UNICODE_REPLACEMENT;
     }
@@ -297,30 +305,130 @@ fn uint HString.char_at_unchecked(&self, uint char_idx) {
     return decode_codepoint(data, byte_off);
 }
 
-/// Converts a character (codepoint) offset to a byte offset within the
+/// Converts a character (UTF-16 code-unit) offset to a byte offset within the
 /// string's UTF-8 data.
 ///
-/// For ASCII strings the two are identical.  Returns `self.blen` when
-/// `char_offset` is past the end.
+/// Strategy, in order:
+///   1. ASCII fast path — 1 byte per character.
+///   2. Exact cursor-cache hit — single field load.
+///   3. Pick the nearest scan origin among:
+///      * string start (forward scan)
+///      * string end   (backward scan — Duktape's scan-from-nearest-end trick)
+///      * cache entry  (forward *or* backward depending on direction)
+///      and walk the shortest distance. Each step skips continuation bytes
+///      (0x80..0xBF), matching `compute_charlen` and `utf8_seq_len`.
+///
+/// Returns `self.blen` for `char_offset >= char_length()`. Strings are
+/// immutable so the cache is never invalidated — only updated.
 fn uint HString.char_offset_to_byte_offset(&self, uint char_offset) {
     if (self.flags.is_ascii) {
-        // 1 byte per character — trivial mapping.
+        // ASCII: 1 byte per character — trivial mapping.
         if (char_offset >= self.blen) {
             return self.blen;
         }
         return char_offset;
     }
 
-    char[] data = self.get_data();
-    uint byte_off = 0;
-    uint ci = 0;
-
-    while (ci < char_offset && byte_off < self.blen) {
-        byte_off += utf8_seq_len(data[byte_off]);
-        ci++;
+    // Exact cache hit.
+    if (char_offset == self.cached_char_offset) {
+        return self.cached_byte_offset;
     }
 
+    char[] data = self.get_data();
+    uint blen = self.blen;
+
+    // Find a scan origin. The cache's initial state is (0, 0), so a fresh
+    // string (cache never warmed) behaves like "scan from start". Until
+    // char_length() is called, cached_char_offset is still 0.
+    uint char_length = self.char_length();
+
+    // Out-of-range: clamp to end.
+    if (char_offset >= char_length) {
+        // Update cache so a follow-up char_length()/end lookup is O(1).
+        self.cached_char_offset = char_length;
+        self.cached_byte_offset = blen;
+        return blen;
+    }
+
+    // Compute distances from {start, end, cache} to the target. Use uint
+    // saturating subtraction; clen>char_offset and bidirectional compares
+    // make this well-defined.
+    uint dist_start = char_offset;
+    uint dist_end = char_length - char_offset;
+    uint dist_cache = char_offset > self.cached_char_offset
+        ? char_offset - self.cached_char_offset
+        : self.cached_char_offset - char_offset;
+
+    uint byte_off;
+    bool cache_usable = self.cached_byte_offset <= blen
+                     && dist_cache <= dist_start
+                     && dist_cache <= dist_end;
+    if (cache_usable) {
+        if (char_offset > self.cached_char_offset) {
+            byte_off = scan_forwards_n(data, self.cached_byte_offset, blen, dist_cache);
+        } else {
+            byte_off = scan_backwards_n(data, self.cached_byte_offset, dist_cache);
+        }
+    } else if (dist_start <= dist_end) {
+        byte_off = scan_forwards_n(data, 0, blen, dist_start);
+    } else {
+        byte_off = scan_backwards_n(data, blen, dist_end);
+    }
+
+    // Defensive fallback: malformed UTF-8 may diverge (a lone continuation
+    // byte is treated as a 1-char unit by utf8_seq_len/compute_charlen but
+    // missed by the backward-scanner's "non-continuation byte" test). In
+    // practice this is rare — internal strings are normalized to CESU-8 at
+    // intern time — but if a scan runs past one end, fall back to a fresh
+    // forward walk that matches compute_charlen.
+    if (byte_off == SCAN_UNDERFLOW || byte_off > blen) {
+        byte_off = 0;
+        for (uint ci = 0; ci < char_offset && byte_off < blen; ci++) {
+            byte_off += utf8_seq_len(data[byte_off]);
+        }
+    }
+
+    // Cache the result.
+    self.cached_char_offset = char_offset;
+    self.cached_byte_offset = byte_off;
     return byte_off;
+}
+
+/// Advance the cursor forward by exactly `n` non-continuation bytes
+/// (UTF-16 code units under CESU-8), starting at `start`.
+///
+/// `start` must be a character-start byte offset (i.e. on a valid start byte
+/// or `0` / `blen`). Returns the byte offset of the (n+1)-th character, or
+/// `blen + 1` as an out-of-bounds sentinel when the scan ran past `blen`.
+/// Sentinel value chosen so a single `> blen` check distinguishes "scan
+/// overshoot" from "scanned to the very end" without aliasing either.
+fn uint scan_forwards_n(char[] data, uint start, uint blen, uint n) @local {
+    uint p = start;
+    while (n > 0) {
+        // 1 step forward, then skip continuation bytes.
+        if (p >= blen) { return blen + 1; }
+        p++;
+        while (p < blen && ((uint)data[p] & 0xC0) == 0x80) { p++; }
+        n--;
+    }
+    return p;
+}
+
+/// Step the cursor backward by exactly `n` non-continuation bytes (UTF-16
+/// code units), starting at `start`. `start` must be a character-start byte
+/// offset. Returns the byte offset of the n-th previous character start, or
+/// `SCAN_UNDERFLOW` (UINT_MAX) if the walk ran past offset 0. The sentinel
+/// lies outside any plausible cache value (always <= blen) so the caller can
+/// detect it without a separate flag.
+fn uint scan_backwards_n(char[] data, uint start, uint n) @local {
+    uint p = start;
+    while (n > 0) {
+        if (p == 0) { return SCAN_UNDERFLOW; }
+        p--;
+        while (p > 0 && ((uint)data[p] & 0xC0) == 0x80) { p--; }
+        n--;
+    }
+    return p;
 }
 
 // ============================================================================

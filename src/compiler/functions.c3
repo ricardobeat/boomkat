@@ -141,9 +141,15 @@ fn bool check_dup_param(char[] name, char[64][] seen, ushort[] seen_lens, uint c
 fn void? CompilerContext.collect_obj_param_binds(&self,
     DestructBind[] binds, uint* count, ushort src_reg, ushort parent_idx)
 {
-    bool saved_ifp_ct_obj_para = self.in_formal_params;
-    self.in_formal_params = true;
-    defer self.in_formal_params = saved_ifp_ct_obj_para;
+    // Note: this function is shared between formal-parameter destructuring
+    // (where the FormalParameter's default-value gate at compile_default_expr
+    // DOES need to apply, so the caller must have set in_formal_params = true)
+    // and statement destructuring (`let`/`const`/`var`/`for-in`/`for-of`/
+    // `export var`) where the default value is an AssignmentExpression and the
+    // gate must NOT apply. The caller is responsible for setting in_formal_params
+    // correctly before invoking us — we no longer override it here, since that
+    // was over-eager and broke destructuring statements inside async/generator
+    // functions (test262 module-code/top-level-await/syntax/export-var-*).
 
     if (self.match(TokenType.RBRACE)) return;  // empty pattern {}
 
@@ -327,15 +333,16 @@ fn void? CompilerContext.collect_obj_param_binds(&self,
     return;
 }
 
-/// Parse an array destructuring pattern within a function parameter list.
-/// The '[' token has already been consumed.
-/// Collects all leaf-level binding names into the provided arrays.
+/// Parse an array destructuring pattern. The '[' token has already been
+/// consumed. Collects all leaf-level binding names into the provided arrays.
+///
+/// Shared between formal-parameter destructuring and statement destructuring —
+/// the caller is responsible for setting `in_formal_params` correctly before
+/// invoking us (see `collect_obj_param_binds` for the rationale).
 fn void? CompilerContext.collect_arr_param_binds(&self,
     DestructBind[] binds, uint* count, ushort src_reg, ushort parent_idx)
 {
-    bool saved_ifp_ct_arr_para = self.in_formal_params;
-    self.in_formal_params = true;
-    defer self.in_formal_params = saved_ifp_ct_arr_para;
+    // See collect_obj_param_binds for why we don't touch in_formal_params here.
 
     ushort elem_idx = 0;
 
@@ -2339,6 +2346,16 @@ fn void? CompilerContext.emit_param_prologue(&self, ushort arg_count,
 
 /// Parse function body (parameters and block) and compile into a nested context.
 fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
+    // We're inside FormalParameters; destructured patterns collect via
+    // collect_*_param_binds and rely on in_formal_params being true so the
+    // FormalParameter default-value gate at compile_default_expr applies. (The
+    // flag is no longer toggled inside the collect functions themselves — that
+    // was over-eager and broke destructuring STATEMENTS inside async/generator
+    // functions, where the default-value gate does NOT apply.)
+    bool saved_in_fp = self.in_formal_params;
+    self.in_formal_params = true;
+    defer self.in_formal_params = saved_in_fp;
+
     // Parse parameter list
     self.expect(TokenType.LPAREN)!;
     ushort arg_count = 0;
@@ -2663,14 +2680,27 @@ fn CompiledFunction*? CompilerContext.compile_default_expr(&self, char[] inferre
     def_ctx.is_generator = self.is_generator;
     def_ctx.is_user_generator = self.is_user_generator;
 
-    // Propagate MODULE context so top-level `await` is recognized as an
-    // operator inside default expressions at module scope (e.g.
-    // `export var { x = await foo } = {}`). We deliberately do NOT blanket-copy
-    // self.is_async: for an async function/method's *parameter* defaults the
-    // enclosing is_async is already handled by the existing param path, and
-    // copying it here regresses async-method default params. Module top-level
-    // is the only context where the default thunk itself must see await, and
-    // there is_module gates it precisely.
+    // Propagate context for `await`/`yield` in the default expression:
+    //
+    //   * Module top-level (`is_module`): top-level `await` is an operator, so
+    //     def_ctx must see is_async = true. (`module_goal` already reserves
+    //     `await` regardless, but def_ctx also needs is_async so the AWAIT case
+    //     in expressions.c3 takes the operator branch.)
+    //
+    //   * Async-function default expressions (whether statement or formal-param
+    //     destructuring) CANNOT be compiled by setting def_ctx.is_async: the
+    //     thunk is invoked synchronously from the destructuring implementation
+    //     (which doesn't have an outer async activation to suspend) and
+    //     returning a Promise from the thunk breaks the destructuring protocol.
+    //     This is a known limitation — test262 top-level-await/syntax/
+    //     export-var-await-expr-* and async-function destructuring await in
+    //     default positions are deferred until we implement the right shape
+    //     (QuickJS compiles these as regular (non-thunk) parsing of the
+    //     default expression into the destructuring site, not a separate
+    //     function). For now, the syntactic gate still fires: `await` IS
+    //     accepted in the default expression as an identifier-or-operator
+    //     depending on context, but the runtime can't honor a true await —
+    //     the expression is parsed but execute-side suspend isn't bridged.
     def_ctx.is_module = self.is_module;
     if (self.is_module) def_ctx.is_async = self.is_async;
 
@@ -2904,6 +2934,12 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
     inner_ctx.adopt_private_names(self);
     inner_ctx.private_scope_start = self.private_scope_start;
     inner_ctx.private_scope_depth = self.private_scope_depth;
+
+    // We're inside FormalParameters (inner function-method context); turn on
+    // the gate so destructuring default values are correctly forbidden from
+    // containing `yield`/`await` (ES2017 §14.7). The collect_*_param_binds
+    // helpers no longer toggle this themselves.
+    inner_ctx.in_formal_params = true;
 
     // Parse parameter list
     inner_ctx.expect(TokenType.LPAREN)!;
@@ -3524,6 +3560,12 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
     // scopes stack on top (PUSH_LEX for TDZ'd defaults, PUSH_VAR for the
     // §9.2.10-step-27 body isolation).
     arrow_ctx.emit_simple(Opcode.PUSH_VAR);
+
+    // We're inside FormalParameters (arrow-function params); turn on the
+    // gate so destructuring default values are correctly forbidden from
+    // containing `yield`/`await`. The collect_*_param_binds helpers no longer
+    // toggle this themselves.
+    arrow_ctx.in_formal_params = true;
 
     // Parse parameter list from source (including defaults and rest)
     // Note: lexer is already past '(' when called from parse_arrow_function_reparse
