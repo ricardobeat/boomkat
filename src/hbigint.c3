@@ -53,6 +53,10 @@ fn HBigInt*? hbigint_alloc(Heap* hp, int128 value) {
     // of the heap_allocated list.
     b.header.init(HType.BIGINT, &hp.heap_allocated);
     b.header.set_temproot();
+    // init() zeroed the mark bit, which reads as "marked" whenever the heap's
+    // parity is false, so stamp the colour explicitly on the same rule as every
+    // other heap node — see Heap.alloc_object.
+    b.header.set_mark(hp.gc_running ? !hp.mark_parity : hp.mark_parity);
     b.value = value;
     hp.live_obj_count++;
     if (hp.live_obj_count > hp.peak_live_obj_count) {

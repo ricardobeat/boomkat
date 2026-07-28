@@ -756,12 +756,17 @@ $endif
 // HeapHeader — flag accessors
 // ---------------------------------------------------------------------------
 
-/// Marks the object as reachable (used by the mark phase).
-fn void HeapHeader.set_reachable(&self)     { self.flags.reachable = true; }
-/// Clears the reachable flag (used before a new mark pass).
-fn void HeapHeader.clear_reachable(&self)   { self.flags.reachable = false; }
-/// Returns true when the object has been marked reachable.
-fn bool HeapHeader.is_reachable(&self)      { return self.flags.reachable; }
+/// Stores `parity` as this node's mark colour.
+///
+/// The GC treats a node as marked when its stored colour equals the heap's
+/// current mark parity, so "mark reachable" means writing the current parity
+/// and "unmark the whole heap" means flipping the heap's parity — no per-node
+/// reset walk. Callers pass Heap.mark_parity.
+fn void HeapHeader.set_mark(&self, bool parity)   { self.flags.reachable = parity; }
+
+/// Returns true when this node's mark colour matches `parity`, i.e. the node
+/// was marked during the epoch that `parity` identifies.
+fn bool HeapHeader.is_marked(&self, bool parity)  { return self.flags.reachable == parity; }
 
 /// Marks the object as a temporary root for incremental GC.
 fn void HeapHeader.set_temproot(&self)      { self.flags.temproot = true; }

@@ -331,6 +331,13 @@ fn HString*? hstring_alloc(void* heap_ptr, char[] data, uint hash) {
 
     // --- Header flags ---
     s.flags.htype = HType.STRING;
+    // The zero-fill above left the mark bit clear, which reads as "marked"
+    // whenever the heap's parity is false, so stamp the colour explicitly on
+    // the same rule as every other heap node — see Heap.alloc_object. Strings
+    // never appear on the heap_allocated list, so this birth stamp and the mark
+    // phase are the only things that ever set their colour.
+    heap::Heap* hp = (heap::Heap*)heap_ptr;
+    ((HeapHeader*)s).set_mark(hp.gc_running ? !hp.mark_parity : hp.mark_parity);
 
     // --- Hash & lengths ---
     s.hash = hash;

@@ -346,6 +346,12 @@ struct Heap {
     uint  live_obj_count;
     uint  peak_live_obj_count;   /// High-water mark for live objects
 
+    /// Mark colour for the collection in progress (or the one that just ran).
+    /// A heap node counts as marked only while its `reachable` bit equals this
+    /// parity, so advancing the parity at the start of a collection unmarks the
+    /// whole heap in O(1) rather than walking every node to reset a bit.
+    bool  mark_parity;
+
     // String-table sweeping is only safe when no raw HString* pointers are
     // held in C3 locals (see mark_and_sweep phase 3b).  Off by default;
     // callers at a true safe point may set it around a GC.
@@ -1703,6 +1709,16 @@ fn HObject*? Heap.alloc_object(&self, hobject::ObjClass cls) {
         // Mark as temporary root so emergency (non-safepoint) GC never frees
         // an in-flight object whose only reference is a C3 local.
         ((HeapHeader*)obj).set_temproot();
+        // Stamp the mark colour explicitly: hobject_alloc zeroes the flags word,
+        // and a zero mark bit reads as "marked" whenever the parity happens to
+        // be false. The object must end up in the same state as a survivor of
+        // the last sweep, which carries mark_parity, so that the next
+        // collection's parity flip leaves both reading unmarked and collectable
+        // on reachability alone. While a collection is actually running the
+        // answer inverts: mark_hobject short-circuits on nodes that already read
+        // as marked, so an object born mid-mark with the live colour would never
+        // be pushed onto the gray stack and its children would never be traced.
+        ((HeapHeader*)obj).set_mark(self.gc_running ? !self.mark_parity : self.mark_parity);
         self.live_obj_count++;
         if (self.live_obj_count > self.peak_live_obj_count) {
             self.peak_live_obj_count = self.live_obj_count;
@@ -1789,7 +1805,7 @@ fn void Heap.decref(&self, HeapHeader* hdr) {
     // Strings are never on the swept heap_allocated list (they are pure RC), so
     // they are always safe to decref. Everything else that is unmarked belongs
     // to the sweep and must not be touched here.
-    if (self.sweeping && !hdr.is_string() && !hdr.is_reachable() && !hdr.is_temproot()) {
+    if (self.sweeping && !hdr.is_string() && !hdr.is_marked(self.mark_parity) && !hdr.is_temproot()) {
         return;
     }
     // Queue guard: the node is already dead and waiting to be drained. Its
@@ -2189,21 +2205,21 @@ fn void Heap.mark_tval(&self, TVal* v) {
         HObject* obj = (HObject*)v.get_heapptr();
         if (obj != null) {
             HeapHeader* hdr = (HeapHeader*)obj;
-            if (!hdr.is_reachable()) {
-                hdr.set_reachable();
+            if (!hdr.is_marked(self.mark_parity)) {
+                hdr.set_mark(self.mark_parity);
                 self.gray_push(obj);
             }
         }
     } else if (v.is_string()) {
         HString* s = (HString*)v.get_heapptr();
         if (s != null) {
-            ((HeapHeader*)s).set_reachable();
+            ((HeapHeader*)s).set_mark(self.mark_parity);
         }
     } else if (v.is_bigint()) {
         // BigInt box is a GC leaf on the heap_allocated list — mark only.
         HeapHeader* b = (HeapHeader*)v.get_heapptr();
         if (b != null) {
-            b.set_reachable();
+            b.set_mark(self.mark_parity);
         }
     }
 }
@@ -2253,8 +2269,8 @@ fn void Heap.mark_generator_state(&self, GeneratorState* gs) {
 fn void Heap.mark_hobject(&self, HObject* obj) {
     if (obj == null) { return; }
     HeapHeader* hdr = (HeapHeader*)obj;
-    if (!hdr.is_reachable()) {
-        hdr.set_reachable();
+    if (!hdr.is_marked(self.mark_parity)) {
+        hdr.set_mark(self.mark_parity);
         self.gray_push(obj);
     }
 }
@@ -2284,7 +2300,7 @@ fn void Heap.drain_gray(&self) {
         for (uint i = 0; i < obj.prop_count; i++) {
             HString* key = (HString*)obj.prop_key_at(i);
             if (key != null) {
-                ((HeapHeader*)key).set_reachable();
+                ((HeapHeader*)key).set_mark(self.mark_parity);
             }
             self.mark_tval(&pv[i]);
         }
@@ -2441,7 +2457,7 @@ fn void Heap.mark_roots(&self) {
             if (hdr.is_object()) {
                 self.mark_hobject((HObject*)hdr);
             } else {
-                hdr.set_reachable();
+                hdr.set_mark(self.mark_parity);
             }
         }
     }
@@ -2530,15 +2546,15 @@ fn void Heap.mark_roots(&self) {
     for (uint i = 0; i < self.symbol_registry_count; i++) {
         HString* key = self.symbol_registry_keys[i];
         HString* sym = self.symbol_registry_syms[i];
-        if (key != null) { ((HeapHeader*)key).set_reachable(); }
-        if (sym != null) { ((HeapHeader*)sym).set_reachable(); }
+        if (key != null) { ((HeapHeader*)key).set_mark(self.mark_parity); }
+        if (sym != null) { ((HeapHeader*)sym).set_mark(self.mark_parity); }
     }
 
     // Mark built-in cached strings
     for (uint i = 0; i < STRS_CACHE_SIZE; i++) {
         HString* s = (HString*)self.strs[i];
         if (s != null) {
-            ((HeapHeader*)s).set_reachable();
+            ((HeapHeader*)s).set_mark(self.mark_parity);
         }
     }
 
@@ -2557,7 +2573,7 @@ fn void Heap.mark_roots(&self) {
             hobject::ICEntry* ics = (hobject::ICEntry*)cf.ic_entries;
             for (uint ii = 0; ii < cf.ic_count; ii++) {
                 hobject::ICEntry* ie = &ics[ii];
-                if (ie.key != null) { ((HeapHeader*)ie.key).set_reachable(); }
+                if (ie.key != null) { ((HeapHeader*)ie.key).set_mark(self.mark_parity); }
                 if (ie.proto != null) { self.mark_hobject((HObject*)ie.proto); }
             }
         }
@@ -2566,7 +2582,7 @@ fn void Heap.mark_roots(&self) {
             hobject::VarICEntry* vics = (hobject::VarICEntry*)cf.var_ic_entries;
             for (uint vi = 0; vi < cf.var_ic_count; vi++) {
                 hobject::VarICEntry* vie = &vics[vi];
-                if (vie.key != null) { ((HeapHeader*)vie.key).set_reachable(); }
+                if (vie.key != null) { ((HeapHeader*)vie.key).set_mark(self.mark_parity); }
                 if (vie.bindings != null) { self.mark_hobject((HObject*)vie.bindings); }
             }
         }
@@ -2574,45 +2590,45 @@ fn void Heap.mark_roots(&self) {
 
     // Mark the cached iterator symbol (may not be in strs[] or symbol registry)
     if (self.iterator_symbol != null) {
-        ((HeapHeader*)self.iterator_symbol).set_reachable();
+        ((HeapHeader*)self.iterator_symbol).set_mark(self.mark_parity);
     }
 
     // Mark the cached Symbol.toStringTag (may not be in strs[] or symbol registry)
     if (self.tostringtag_symbol != null) {
-        ((HeapHeader*)self.tostringtag_symbol).set_reachable();
+        ((HeapHeader*)self.tostringtag_symbol).set_mark(self.mark_parity);
     }
 
     // Mark the cached Symbol.toPrimitive (may not be in strs[] or symbol registry)
     if (self.toprimitive_symbol != null) {
-        ((HeapHeader*)self.toprimitive_symbol).set_reachable();
+        ((HeapHeader*)self.toprimitive_symbol).set_mark(self.mark_parity);
     }
 
     // Mark the cached Symbol.isConcatSpreadable (may not be in strs[] or symbol registry)
     if (self.concatspreadable_symbol != null) {
-        ((HeapHeader*)self.concatspreadable_symbol).set_reachable();
+        ((HeapHeader*)self.concatspreadable_symbol).set_mark(self.mark_parity);
     }
 
     // Mark the cached Symbol.hasInstance (may not be in strs[] or symbol registry)
     if (self.hasinstance_symbol != null) {
-        ((HeapHeader*)self.hasinstance_symbol).set_reachable();
+        ((HeapHeader*)self.hasinstance_symbol).set_mark(self.mark_parity);
     }
 
     // Mark cached @@match, @@search, @@replace, @@split symbols
-    if (self.match_symbol != null)   { ((HeapHeader*)self.match_symbol).set_reachable(); }
-    if (self.search_symbol != null)  { ((HeapHeader*)self.search_symbol).set_reachable(); }
-    if (self.replace_symbol != null) { ((HeapHeader*)self.replace_symbol).set_reachable(); }
-    if (self.split_symbol != null)   { ((HeapHeader*)self.split_symbol).set_reachable(); }
+    if (self.match_symbol != null)   { ((HeapHeader*)self.match_symbol).set_mark(self.mark_parity); }
+    if (self.search_symbol != null)  { ((HeapHeader*)self.search_symbol).set_mark(self.mark_parity); }
+    if (self.replace_symbol != null) { ((HeapHeader*)self.replace_symbol).set_mark(self.mark_parity); }
+    if (self.split_symbol != null)   { ((HeapHeader*)self.split_symbol).set_mark(self.mark_parity); }
 
     // Mark cached Symbol.species, Symbol.unscopables, Symbol.matchAll, Symbol.asyncIterator
-    if (self.species_symbol != null)       { ((HeapHeader*)self.species_symbol).set_reachable(); }
-    if (self.unscopables_symbol != null)   { ((HeapHeader*)self.unscopables_symbol).set_reachable(); }
-    if (self.matchall_symbol != null)      { ((HeapHeader*)self.matchall_symbol).set_reachable(); }
-    if (self.asynciterator_symbol != null) { ((HeapHeader*)self.asynciterator_symbol).set_reachable(); }
+    if (self.species_symbol != null)       { ((HeapHeader*)self.species_symbol).set_mark(self.mark_parity); }
+    if (self.unscopables_symbol != null)   { ((HeapHeader*)self.unscopables_symbol).set_mark(self.mark_parity); }
+    if (self.matchall_symbol != null)      { ((HeapHeader*)self.matchall_symbol).set_mark(self.mark_parity); }
+    if (self.asynciterator_symbol != null) { ((HeapHeader*)self.asynciterator_symbol).set_mark(self.mark_parity); }
 
     // Mark global checkpoint keys
     for (uint i = 0; i < self.checkpoint_count; i++) {
         HString* key = (HString*)self.checkpoint_keys[i];
-        if (key != null) { ((HeapHeader*)key).set_reachable(); }
+        if (key != null) { ((HeapHeader*)key).set_mark(self.mark_parity); }
     }
 
     // Mark activation-record env bindings (fresh per-call envs not otherwise rooted)
@@ -2992,7 +3008,7 @@ $endif
 
     while (cur != null) {
         HeapHeader* next = cur.next;
-        if (!cur.is_reachable() && !cur.is_temproot()) {
+        if (!cur.is_marked(self.mark_parity) && !cur.is_temproot()) {
             // Unlink from the live list.
             if (prev != null) {
                 prev.next = next;
@@ -3060,20 +3076,33 @@ $if $feature(GC_PROFILE):
     self.gc_prof.free_ticks += prof_free_end - prof_walk_end;
 $endif
 
-    // Free pass complete — no more dying nodes will be touched. Now clear the
-    // mark/temproot bits on the survivors for the next cycle. Reachable
-    // survivors clear both bits; temproot-kept nodes (unmarked but retained)
-    // keep their temproot flag so they stay protected until anchored.
+    // Free pass complete — no more dying nodes will be touched. Survivors need
+    // no mark-bit reset: they carry this collection's colour, and the next
+    // collection retires it by flipping the parity. What still has to happen
+    // per node is retiring the temproot flag on survivors the mark phase
+    // reached, which is what makes an object allocated since the last
+    // collection eligible for the next one. Temproot-kept nodes (unmarked but
+    // retained) keep the flag so they stay protected until a root refers to
+    // them.
+    //
+    // This runs after the free pass rather than inside it because decref's
+    // sweep guard reads both bits while phases B and C are dismantling the
+    // dying nodes, and a survivor whose flags changed mid-pass could be decrefed
+    // to zero and freed while still live.
     for (HeapHeader* s = self.heap_allocated; s != null; s = s.next) {
-        if (s.is_reachable()) {
-            s.clear_reachable();
+        if (s.is_marked(self.mark_parity)) {
             s.clear_temproot();
+        } else {
+            // Kept only by its temproot flag. Give it this collection's colour
+            // so the next parity flip leaves it unmarked; left alone it would
+            // read as marked after the flip and survive a cycle unearned.
+            s.set_mark(self.mark_parity);
         }
     }
 
 $if $feature(GC_PROFILE):
-    // The survivor mark-bit reset is a second full walk of the live list, so
-    // it belongs to the sweep-walk bucket too.
+    // Retiring temproots is a second walk of the live list, so it belongs to
+    // the sweep-walk bucket too.
     self.gc_prof.sweep_walk_ticks += gc_prof_now() - prof_free_end;
 $endif
 
@@ -3099,7 +3128,7 @@ fn void Heap.sweep_strings(&self) {
         // tables and IC entries hold keys without a reference, relying on
         // the string table to keep them alive.  Only free strings the mark
         // phase did not reach (keys of live objects are marked by drain_gray).
-        if (entry.refcount == 1 && !((HeapHeader*)entry).is_reachable()) {
+        if (entry.refcount == 1 && !((HeapHeader*)entry).is_marked(self.mark_parity)) {
             self.str_table[i] = STR_TABLE_TOMBSTONE;
             if (self.str_table_used > 0) { self.str_table_used--; }
             self.free_string(entry);
@@ -3130,7 +3159,7 @@ fn void Heap.sweep_large_strings(&self) {
     uint kept = 0;
     for (uint i = 0; i < self.large_string_count; i++) {
         HString* s = self.large_strings[i];
-        if (((HeapHeader*)s).is_reachable()) {
+        if (((HeapHeader*)s).is_marked(self.mark_parity)) {
             // Compact survivors down; their recorded slot moves with them.
             self.large_strings[kept] = s;
             s.registry_slot = (usz)kept;
@@ -3176,28 +3205,18 @@ $if $feature(GC_PROFILE):
     ulong prof_t0 = prof_gc_start;
 $endif
 
-    // --- Phase 1: Clear all reachable (and optionally temproot) flags ---
+    // --- Phase 1: Advance the mark epoch, retiring every previous mark ---
+    // Nodes still carrying the old colour now read as unmarked, so no walk is
+    // needed to reset mark bits — including for interned and large strings,
+    // which are not on the heap_allocated list at all.
+    self.mark_parity = !self.mark_parity;
     {
-        HeapHeader* cur = self.heap_allocated;
-        while (cur != null) {
-            cur.clear_reachable();
-            if (clear_temproots) {
+        if (clear_temproots) {
+            HeapHeader* cur = self.heap_allocated;
+            while (cur != null) {
                 cur.clear_temproot();
+                cur = cur.next;
             }
-            cur = cur.next;
-        }
-        // Interned strings are not on the heap_allocated list; clear their
-        // marks via the string table so sweep_strings sees fresh bits.
-        for (uint i = 0; i < self.str_table_size; i++) {
-            HString* s = self.str_table[i];
-            if (s != null && s != STR_TABLE_TOMBSTONE) {
-                ((HeapHeader*)s).clear_reachable();
-            }
-        }
-        // Large strings are in neither list; clear their marks via the
-        // registry so sweep_large_strings sees fresh bits.
-        for (uint i = 0; i < self.large_string_count; i++) {
-            ((HeapHeader*)self.large_strings[i]).clear_reachable();
         }
     }
 
