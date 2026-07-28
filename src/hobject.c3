@@ -2006,7 +2006,12 @@ fn void hobject_free(HObject* obj, void* heap_ptr, bool free_header = true) {
     // this teardown runs from Heap.sweep, decref's sweep guard skips any target
     // that the same sweep is already dismantling, so a dying neighbour is never
     // read or freed twice.
-    if (obj.prop_alloc != null && _active_heap != null) {
+    //
+    // Property slots are walked whether they live in the heap block or in the
+    // object's inline storage (prop_alloc == null for small objects);
+    // prop_values() resolves both. array_part() is null unless a heap block
+    // exists, so the dense loop is naturally skipped for inline objects.
+    if (_active_heap != null) {
         heap::Heap* h = (heap::Heap*)_active_heap;
         PropValue* pvs = obj.prop_values();
         for (uint i = 0; i < obj.prop_count; i++) {
