@@ -258,18 +258,7 @@ fn void builtin_function_proto_call(BuiltinContext* ctx) {
 
     if (!callable) {
         // Throw TypeError (ES5 §15.3.4.4 step 2)
-        HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
-        if (catch err_call = err_raw) { ctx.result.set_undefined(); return; }
-        HObject* err = err_raw;
-        err.prototype = ctx.heap.type_err_proto;
-        HString* msg_key = builtin_intern_string(ctx.heap, "message");
-        HString* msg_str = builtin_intern_string(ctx.heap, "Function.prototype.call called on non-callable");
-        if (msg_key == null || msg_str == null) { ctx.result.set_undefined(); return; }
-        TVal msg_tv;
-        msg_tv.set_string(msg_str);
-        err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
-        ctx.should_throw = true;
-        ctx.throw_value.set_object(err);
+        builtin_throw(ctx, ctx.heap.type_err_proto, "Function.prototype.call called on non-callable");
         return;
     }
 
@@ -421,18 +410,7 @@ fn void apply_call(BuiltinContext* ctx, TVal target, TVal this_arg, TVal arg_arr
     // argArray must be an object (array-like). Per ES5 §15.3.4.3 step 4
     // (CreateListFromArrayLike step 2): throw TypeError if Type(argArray) is not Object.
     if (!arg_array.is_object() || arg_array.get_heapptr() == null) {
-        HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
-        if (catch err_arg = err_raw) { ctx.result.set_undefined(); return; }
-        HObject* err = err_raw;
-        err.prototype = ctx.heap.type_err_proto;
-        HString* msg_key = builtin_intern_string(ctx.heap, "message");
-        HString* msg_str = builtin_intern_string(ctx.heap, "CreateListFromArrayLike called on non-object");
-        if (msg_key == null || msg_str == null) { ctx.result.set_undefined(); return; }
-        TVal msg_tv;
-        msg_tv.set_string(msg_str);
-        err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
-        ctx.should_throw = true;
-        ctx.throw_value.set_object(err);
+        builtin_throw(ctx, ctx.heap.type_err_proto, "CreateListFromArrayLike called on non-object");
         return;
     }
 
@@ -451,18 +429,7 @@ fn void apply_call(BuiltinContext* ctx, TVal target, TVal this_arg, TVal arg_arr
     // The dispatch plumbing carries argc as ushort, so that is the hard limit
     // on how many arguments a single call can receive.
     if (len > 65535) {
-        HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
-        if (catch err_len = err_raw) { ctx.result.set_undefined(); return; }
-        HObject* err = err_raw;
-        err.prototype = ctx.heap.range_err_proto;
-        HString* msg_key = builtin_intern_string(ctx.heap, "message");
-        HString* msg_str = builtin_intern_string(ctx.heap, "Function.prototype.apply: too many arguments");
-        if (msg_key == null || msg_str == null) { ctx.result.set_undefined(); return; }
-        TVal msg_tv;
-        msg_tv.set_string(msg_str);
-        err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
-        ctx.should_throw = true;
-        ctx.throw_value.set_object(err);
+        builtin_throw(ctx, ctx.heap.range_err_proto, "Function.prototype.apply: too many arguments");
         return;
     }
 
@@ -642,18 +609,7 @@ fn void builtin_function_proto_apply(BuiltinContext* ctx) {
     }
 
     if (!callable) {
-        HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
-        if (catch err_call = err_raw) { ctx.result.set_undefined(); return; }
-        HObject* err = err_raw;
-        err.prototype = ctx.heap.type_err_proto;
-        HString* msg_key = builtin_intern_string(ctx.heap, "message");
-        HString* msg_str = builtin_intern_string(ctx.heap, "Function.prototype.apply called on non-callable");
-        if (msg_key == null || msg_str == null) { ctx.result.set_undefined(); return; }
-        TVal msg_tv;
-        msg_tv.set_string(msg_str);
-        err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
-        ctx.should_throw = true;
-        ctx.throw_value.set_object(err);
+        builtin_throw(ctx, ctx.heap.type_err_proto, "Function.prototype.apply called on non-callable");
         return;
     }
 
@@ -700,18 +656,7 @@ fn void builtin_function_proto_bind(BuiltinContext* ctx) {
     }
 
     if (!callable) {
-        HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
-        if (catch err_bind = err_raw) { ctx.result.set_undefined(); return; }
-        HObject* err = err_raw;
-        err.prototype = ctx.heap.type_err_proto;
-        HString* msg_key = builtin_intern_string(ctx.heap, "message");
-        HString* msg_str = builtin_intern_string(ctx.heap, "Function.prototype.bind called on non-callable");
-        if (msg_key == null || msg_str == null) { ctx.result.set_undefined(); return; }
-        TVal msg_tv;
-        msg_tv.set_string(msg_str);
-        err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
-        ctx.should_throw = true;
-        ctx.throw_value.set_object(err);
+        builtin_throw(ctx, ctx.heap.type_err_proto, "Function.prototype.bind called on non-callable");
         return;
     }
 
@@ -1014,34 +959,10 @@ fn void builtin_function_proto_toString(BuiltinContext* ctx) {
             HString* result = builtin_intern_string(ctx.heap, buf[:pos]);
             ctx.result.set_string(result);
         } else {
-            // TypeError
-            HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
-            if (catch err_tostr = err_raw) { ctx.result.set_undefined(); return; }
-            HObject* err = err_raw;
-            err.prototype = ctx.heap.type_err_proto;
-            HString* msg_key = builtin_intern_string(ctx.heap, "message");
-            HString* msg_str = builtin_intern_string(ctx.heap, "Function.prototype.toString called on non-callable");
-            if (msg_key == null || msg_str == null) { ctx.result.set_undefined(); return; }
-            TVal msg_tv;
-            msg_tv.set_string(msg_str);
-            err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
-            ctx.should_throw = true;
-            ctx.throw_value.set_object(err);
+            builtin_throw(ctx, ctx.heap.type_err_proto, "Function.prototype.toString called on non-callable");
         }
     } else {
-        // TypeError
-        HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
-        if (catch err_tostr = err_raw) { ctx.result.set_undefined(); return; }
-        HObject* err = err_raw;
-        err.prototype = ctx.heap.type_err_proto;
-        HString* msg_key = builtin_intern_string(ctx.heap, "message");
-        HString* msg_str = builtin_intern_string(ctx.heap, "Function.prototype.toString called on non-function");
-        if (msg_key == null || msg_str == null) { ctx.result.set_undefined(); return; }
-        TVal msg_tv;
-        msg_tv.set_string(msg_str);
-        err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
-        ctx.should_throw = true;
-        ctx.throw_value.set_object(err);
+        builtin_throw(ctx, ctx.heap.type_err_proto, "Function.prototype.toString called on non-function");
     }
 }
 
@@ -1139,40 +1060,16 @@ fn void builtin_function_proto_hasInstance(BuiltinContext* ctx) {
 /// the [[Get]] accessor for `Function.prototype.caller` and
 /// `Function.prototype.arguments` (ES2017 §9.2.7 AddRestrictedFunctionProperties).
 fn void builtin_function_proto_restricted_getter(BuiltinContext* ctx) {
-    ctx.should_throw = true;
-    HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
-    if (catch err = err_raw) { ctx.result.set_undefined(); return; }
-    HObject* err = err_raw;
-    err.prototype = ctx.heap.type_err_proto;
-    HString* msg_key = builtin_intern_string(ctx.heap, "message");
-    HString* msg_str = builtin_intern_string(ctx.heap,
+    builtin_throw(ctx, ctx.heap.type_err_proto,
         "'caller', 'callee', and 'arguments' properties may not be accessed on strict mode functions or the arguments objects for calls to them");
-    if (msg_key != null && msg_str != null) {
-        TVal msg_tv; msg_tv.set_string(msg_str);
-        err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
-    }
-    ctx.throw_value.set_object(err);
-    ctx.result.set_undefined();
 }
 
 /// Restricted function property setter — throws TypeError on assignment. Used as
 /// the [[Set]] accessor for `Function.prototype.caller` and
 /// `Function.prototype.arguments` (ES2017 §9.2.7 AddRestrictedFunctionProperties).
 fn void builtin_function_proto_restricted_setter(BuiltinContext* ctx) {
-    ctx.should_throw = true;
-    HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
-    if (catch err = err_raw) { ctx.result.set_undefined(); return; }
-    HObject* err = err_raw;
-    err.prototype = ctx.heap.type_err_proto;
-    HString* msg_key = builtin_intern_string(ctx.heap, "message");
-    HString* msg_str = builtin_intern_string(ctx.heap,
+    builtin_throw(ctx, ctx.heap.type_err_proto,
         "'caller', 'callee', and 'arguments' properties may not be accessed on strict mode functions or the arguments objects for calls to them");
-    if (msg_key != null && msg_str != null) {
-        TVal msg_tv; msg_tv.set_string(msg_str);
-        err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
-    }
-    ctx.throw_value.set_object(err);
-    ctx.result.set_undefined();
 }
 
 /// Bound function [[Call]] handler.
