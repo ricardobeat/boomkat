@@ -4760,8 +4760,14 @@ fn HString* builtin_to_property_key(BuiltinContext* ctx, TVal key_val) {
     }
     if (key_val.is_object()) {
         HObject* key_obj = (HObject*)key_val.get_heapptr();
-        // Symbol objects: ToString produces "Symbol(description)"
+        // Symbol wrapper objects: ToPrimitive unwraps to the Symbol itself,
+        // and Symbols pass through ToPropertyKey unchanged (never stringified).
         if (key_obj.get_class() == hobject::ObjClass.SYMBOL) {
+            TVal prim = (*key_obj.extra_ptr()).prim.primitive_value;
+            if (prim.is_string()) {
+                HString* s = (HString*)prim.get_heapptr();
+                if (s != null && s.is_symbol()) return s;
+            }
             return builtin_to_string(ctx.heap, &key_val);
         }
         // For other objects, call ToString (invokes toString/valueOf via ToPrimitive).

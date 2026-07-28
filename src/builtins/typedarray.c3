@@ -2981,7 +2981,6 @@ fn void builtin_ta_proto_toLocaleString(BuiltinContext* ctx) {
     }
 
     HString* toloc_key = builtin_intern_string(heap, "toLocaleString");
-    HString* tostr_key = builtin_intern_string(heap, "toString");
     HString* sep_hs = null;
     char[] sep = ",";
 
@@ -3048,68 +3047,19 @@ fn void builtin_ta_proto_toLocaleString(BuiltinContext* ctx) {
             }
         }
 
-        // ToString(invoked) — may call invoked.toString() if invoked is an object.
-        HString* es = null;
+        // ToString(invoked) — routes objects through the full ToPrimitive
+        // (toString-then-valueOf, throwing TypeError if neither yields a
+        // primitive) rather than falling back to a hardcoded "[object
+        // Object]" when toString/valueOf are absent or object-returning.
+        HString* es;
         if (invoked.is_object() && invoked.get_heapptr() != null) {
-            HObject* inv_obj = (HObject*)invoked.get_heapptr();
-            // Try toString first, then valueOf per ToStrng -> ToPrimitive -> hint String.
-            if (heap.call_fn != null && ctx.vm != null && tostr_key != null) {
-                TVal? ts_opt = builtins_generic_get(inv_obj, tostr_key, ctx);
-                if (ctx.should_throw) {
-                    for (uint j = 0; j < done; j++) heap.decref((types::HeapHeader*)elem_strs[j]);
-                    if (heap_strs != null) heap.free_func(heap.heap_udata, heap_strs);
-                    ctx.result.set_undefined();
-                    return;
-                }
-                if (try ts_meth = ts_opt) {
-                    if (ts_meth.is_object() && ts_meth.get_heapptr() != null &&
-                        ((HObject*)ts_meth.get_heapptr()).is_callable()) {
-                        TVal ts_result = heap.call_fn(ctx.vm, ts_meth, null, 0, invoked);
-                        if (heap.has_error) {
-                            ctx.should_throw = true;
-                            ctx.throw_value = heap.error_value;
-                            heap.has_error = false;
-                            for (uint j = 0; j < done; j++) heap.decref((types::HeapHeader*)elem_strs[j]);
-                            if (heap_strs != null) heap.free_func(heap.heap_udata, heap_strs);
-                            ctx.result.set_undefined();
-                            return;
-                        }
-                        if (!ts_result.is_object()) {
-                            es = builtin_to_string(heap, &ts_result);
-                        }
-                    }
-                }
-                // If toString not found or returned object, try valueOf.
-                if (es == null) {
-                    HString* valueof_key = builtin_intern_string(heap, "valueOf");
-                    if (valueof_key != null) {
-                        TVal? vo_opt = builtins_generic_get(inv_obj, valueof_key, ctx);
-                        if (ctx.should_throw) {
-                            for (uint j = 0; j < done; j++) heap.decref((types::HeapHeader*)elem_strs[j]);
-                            if (heap_strs != null) heap.free_func(heap.heap_udata, heap_strs);
-                            ctx.result.set_undefined();
-                            return;
-                        }
-                        if (try vo_meth = vo_opt) {
-                            if (vo_meth.is_object() && vo_meth.get_heapptr() != null &&
-                                ((HObject*)vo_meth.get_heapptr()).is_callable()) {
-                                TVal vo_result = heap.call_fn(ctx.vm, vo_meth, null, 0, invoked);
-                                if (heap.has_error) {
-                                    ctx.should_throw = true;
-                                    ctx.throw_value = heap.error_value;
-                                    heap.has_error = false;
-                                    for (uint j = 0; j < done; j++) heap.decref((types::HeapHeader*)elem_strs[j]);
-                                    if (heap_strs != null) heap.free_func(heap.heap_udata, heap_strs);
-                                    ctx.result.set_undefined();
-                                    return;
-                                }
-                                es = builtin_to_string(heap, &vo_result);
-                            }
-                        }
-                    }
-                }
+            es = builtin_to_string_vm(ctx, &invoked);
+            if (ctx.should_throw) {
+                for (uint j = 0; j < done; j++) heap.decref((types::HeapHeader*)elem_strs[j]);
+                if (heap_strs != null) heap.free_func(heap.heap_udata, heap_strs);
+                ctx.result.set_undefined();
+                return;
             }
-            if (es == null) es = builtin_to_string(heap, &invoked);
         } else {
             es = builtin_to_string(heap, &invoked);
         }

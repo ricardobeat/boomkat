@@ -1582,9 +1582,22 @@ fn int array_sort_compare(BuiltinContext* ctx, TVal comparefn, bool has_comparef
             cmp = v < 0 ? -1 : (v > 0 ? 1 : 0);
         }
     } else {
+        Vm* vm_ptr = (Vm*)ctx.vm;
         HString*? a_str_raw = vm::vm_to_string(ctx.vm, &a);
+        if (vm_ptr != null && vm_ptr.throw_pending) {
+            ctx.should_throw = true;
+            ctx.throw_value = vm_ptr.throw_value;
+            vm_ptr.throw_pending = false;
+            return 0;
+        }
         HString* a_str = a_str_raw ?? builtin_to_string(ctx.heap, &a);
         HString*? b_str_raw = vm::vm_to_string(ctx.vm, &b);
+        if (vm_ptr != null && vm_ptr.throw_pending) {
+            ctx.should_throw = true;
+            ctx.throw_value = vm_ptr.throw_value;
+            vm_ptr.throw_pending = false;
+            return 0;
+        }
         HString* b_str = b_str_raw ?? builtin_to_string(ctx.heap, &b);
         cmp = hstring::hstring_compare(a_str, b_str);
     }

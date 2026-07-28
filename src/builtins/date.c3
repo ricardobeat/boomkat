@@ -842,7 +842,8 @@ fn void builtin_date_parse(BuiltinContext* ctx) {
     if (arg.is_string()) {
         s = (HString*)arg.get_heapptr();
     } else {
-        s = builtin_to_string(ctx.heap, arg);
+        s = builtin_to_string_vm(ctx, arg);
+        if (ctx.should_throw) { ctx.result.set_undefined(); return; }
     }
     if (s == null || s.blen == 0) {
         ctx.result.set_number(double::nan);
