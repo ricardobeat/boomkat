@@ -16,9 +16,10 @@ Before scheduling work on an entry, re-probe it against `main`. Several entries 
 
 Coverage is **60%** of the suite. The rest is not failing — it is not running.
 
-**The suite is currently RED: 66 known failures**, surfaced deliberately by `916ffaed`
-adding 14 orphaned directories. Root causes are itemised below; each is real engine
-work. Do not re-hide them by skip-listing.
+**The suite is currently RED: 31 known failures** (phase 8: 11 + 1 CE, phase 21: 19),
+surfaced deliberately by `916ffaed` adding 14 orphaned directories. Down from 66. Root
+causes are itemised below; each is real engine work. Do not re-hide them by skip-listing.
+All other phases are 0 fails.
 
 Reproduce with a walk over `PHASES` dirs + `skip_reason()` from `scripts/run_test262.py`.
 
@@ -40,9 +41,6 @@ Ordered by tests-fixed-per-effort. Every one verified against `main`.
   `prev_was_operand()` does not treat a postfix `++`/`--` as ending an operand, so the
   following `/` starts a regexp. Found while fixing `/=`, confirmed on main, out of that
   task's scope. Not currently covered by a running test.
-- [ ] **Lone surrogates not rejected by `encodeURI*`/`decodeURI*` — 17 fails.**
-  `encodeURI(String.fromCharCode(0xDC00))` yields `"%ED%B0%80"`; must throw `URIError`.
-  Both encode and decode sides.
 - [ ] **`RegExp.prototype[Symbol.matchAll]` ignores a custom `exec` — 7 fails.** Surfaced
   once `%RegExpStringIteratorPrototype%` landed (`07bf4e8a`) and confirmed pre-existing on
   main: `custom-regexpexec*.js` (7) and `regexp-tolength-lastindex-throws.js`. The iterator
@@ -59,9 +57,14 @@ Ordered by tests-fixed-per-effort. Every one verified against `main`.
   `register_native_error_ctor` (`:688`) hardcodes `length=1` but AggregateError needs 2.
 - [ ] **`GeneratorPrototype.next/return/throw` don't validate `this` — 6 fails.**
   `this` = undefined or a plain object must TypeError.
-- [ ] **`builtin_to_string` skips ToPrimitive on objects — 2 fails + feeds AggregateError.**
+- [ ] **`builtin_to_string` skips ToPrimitive on objects — audit its ~25 call sites.**
   `src/builtins/core.c3:2096-2097` hardcodes `"[object Object]"` instead of running
   `[Symbol.toPrimitive]`/`toString`/`valueOf`, so abrupt completions never propagate.
+  The correct helper `builtin_to_string_vm` already exists; the URI builtins were routed
+  through it in `eea15205` rather than changing the shared function. 9 other files still
+  call the broken one (array.c3, date.c3, json.c3, error.c3, string.c3, object.c3,
+  regexp.c3, typedarray.c3). Each site needs deciding: genuine ToPrimitive, or a
+  deliberate raw fallback. Feeds the AggregateError `message` bug below.
 - [ ] **Generator `.return()` inside nested try/finally — 3 fails.** Finally blocks not
   running / final value not surfacing. May share a cause with the finally-return abort path.
 - [ ] **`undefined = 12` rejected at parse time — 1 CE:unexpected.** Must parse and throw
