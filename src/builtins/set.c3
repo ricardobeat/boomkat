@@ -439,15 +439,13 @@ fn void builtin_set_iterator_next(BuiltinContext* ctx) {
     Heap* heap = ctx.heap;
 
     if (!this_val.is_object()) {
-        ctx.should_throw = true;
-        ctx.result.set_undefined();
+        builtin_throw(ctx, heap.type_err_proto, "this is not an object");
         return;
     }
 
     HObject* iter = (HObject*)this_val.get_heapptr();
     if (iter.get_class() != hobject::ObjClass.SET_ITERATOR) {
-        ctx.should_throw = true;
-        ctx.result.set_undefined();
+        builtin_throw(ctx, heap.type_err_proto, "this is not a Set Iterator");
         return;
     }
 
