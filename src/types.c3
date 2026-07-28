@@ -418,6 +418,18 @@ $else
 $endif
 }
 
+/// Single-branch combined "is either value heap-allocated" check for two
+/// TVal pointers. Used to skip both the incref and decref side of a
+/// property/array-slot overwrite in one test when neither the incoming nor
+/// the outgoing value needs refcounting (the overwhelmingly common case:
+/// numeric/boolean writes). Computes each value's own is_heap_allocated()
+/// result and ORs them — still two tag extractions, but one combined branch
+/// instead of two independent ones, and it lets callers skip the
+/// `_active_heap != null` load entirely when both sides are non-heap.
+macro bool either_heap_allocated(TVal* b, TVal* c) {
+    return b.is_heap_allocated() || c.is_heap_allocated();
+}
+
 // ---------------------------------------------------------------------------
 // TVal — mutating setters
 // ---------------------------------------------------------------------------

@@ -1356,15 +1356,19 @@ fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags) {
         // Strings, objects, buffers, and BigInts are reference-counted heap
         // values held by properties — incref the incoming value BEFORE
         // decref'ing the old one so a self-assignment (val aliases *pv)
-        // isn't prematurely freed (mirrors Heap.tval_copy_ref).
-        if (_active_heap != null && val.is_heap_allocated()) {
-            void* ptr = val.get_heapptr();
-            if (ptr != null) {
-                ((types::HeapHeader*)ptr).incref();
+        // isn't prematurely freed (mirrors Heap.tval_copy_ref). Skip both
+        // sides in one combined test when neither value is heap-allocated
+        // (the common case for numeric/boolean overwrites).
+        if (_active_heap != null && types::either_heap_allocated(&val, pv)) {
+            if (val.is_heap_allocated()) {
+                void* ptr = val.get_heapptr();
+                if (ptr != null) {
+                    ((types::HeapHeader*)ptr).incref();
+                }
             }
-        }
-        if (_active_heap != null && pv.is_heap_allocated()) {
-            ((heap::Heap*)_active_heap).decref_tval(pv);
+            if (pv.is_heap_allocated()) {
+                ((heap::Heap*)_active_heap).decref_tval(pv);
+            }
         }
         *pv = val;
         self.set_prop_flags((uint)idx, pflags);
@@ -1710,16 +1714,21 @@ fn bool HObject.set_array_idx(&self, uint idx, TVal val) {
     // Strings, objects, buffers, and BigInts are reference-counted heap
     // values held by array elements — incref the incoming value BEFORE
     // decref'ing the old one so a self-assignment isn't prematurely freed.
-    if (_active_heap != null && val.is_heap_allocated()) {
-        void* ptr = val.get_heapptr();
-        if (ptr != null) {
-            ((types::HeapHeader*)ptr).incref();
+    // Skip both sides in one combined test when neither value is
+    // heap-allocated (the common case for numeric/boolean overwrites).
+    TVal* slot = &self.array_part()[idx];
+    if (_active_heap != null && types::either_heap_allocated(&val, slot)) {
+        if (val.is_heap_allocated()) {
+            void* ptr = val.get_heapptr();
+            if (ptr != null) {
+                ((types::HeapHeader*)ptr).incref();
+            }
+        }
+        if (slot.is_heap_allocated()) {
+            ((heap::Heap*)_active_heap).decref_tval(slot);
         }
     }
-    if (_active_heap != null && self.array_part()[idx].is_heap_allocated()) {
-        ((heap::Heap*)_active_heap).decref_tval(&self.array_part()[idx]);
-    }
-    self.array_part()[idx] = val;
+    *slot = val;
     return true;
 }
 
