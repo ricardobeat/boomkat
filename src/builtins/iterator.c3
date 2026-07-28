@@ -141,15 +141,13 @@ fn void builtin_array_iterator_next(BuiltinContext* ctx) {
     Heap* heap = ctx.heap;
 
     if (!this_val.is_object()) {
-        ctx.should_throw = true;
-        ctx.result.set_undefined();
+        builtin_throw(ctx, heap.type_err_proto, "this is not an object");
         return;
     }
 
     HObject* iter = (HObject*)this_val.get_heapptr();
     if (iter.get_class() != hobject::ObjClass.ARRAY_ITERATOR) {
-        ctx.should_throw = true;
-        ctx.result.set_undefined();
+        builtin_throw(ctx, heap.type_err_proto, "this is not an Array Iterator");
         return;
     }
 
@@ -387,15 +385,13 @@ fn void builtin_regexp_string_iterator_next(BuiltinContext* ctx) {
 
     // Validate this
     if (!this_val.is_object()) {
-        ctx.should_throw = true;
-        ctx.result.set_undefined();
+        builtin_throw(ctx, heap.type_err_proto, "this is not an object");
         return;
     }
 
     HObject* iter = (HObject*)this_val.get_heapptr();
     if (iter.get_class() != hobject::ObjClass.REGEXP_STRING_ITERATOR) {
-        ctx.should_throw = true;
-        ctx.result.set_undefined();
+        builtin_throw(ctx, heap.type_err_proto, "this is not a RegExp String Iterator");
         return;
     }
 
@@ -657,17 +653,7 @@ fn bool register_iterator_prototype(Heap* heap) {
     // ArrayIteratorPrototype.next is shared by all ArrayIterator instances.
     // Keeping it on the prototype is required so replacing that property is
     // observed by GetIterator consumers such as TypedArray constructors.
-    HString* next_key = builtin_intern_string(heap, "next");
-    if (next_key == null) return true;
-    HObject*? next_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
-    if (catch err = next_raw) return false;
-    HObject* next_fn = next_raw;
-    (*next_fn.extra_ptr()).func.builtin_fn_index = (int)Builtin.ARRAY_ITERATOR_NEXT.ordinal;
-    next_fn.flags.callable = true;
-    next_fn.prototype = heap.function_proto;
-    TVal next_tv;
-    next_tv.set_object(next_fn);
-    array_proto.put_prop(next_key, next_tv, hobject::PROP_FLAGS_WC);
+    if (!register_string_proto_method(array_proto, heap, "next", Builtin.ARRAY_ITERATOR_NEXT.ordinal)) return false;
 
     HString* tag_sym = ensure_tostringtag_symbol(heap);
     if (tag_sym != null) {
@@ -709,6 +695,19 @@ fn bool register_iterator_prototype(Heap* heap) {
     if (tag_sym != null) {
         TVal tag_tv; tag_tv.set_string(builtin_intern_string(heap, "String Iterator"));
         str_iter_proto.put_prop(tag_sym, tag_tv, hobject::PROP_FLAGS_NWC);
+    }
+
+    // %RegExpStringIteratorPrototype% (ES2020 §22.2.9.2) — shared by every
+    // matchAll iterator instance, mirroring %ArrayIteratorPrototype% above.
+    HObject*? regexp_str_proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
+    if (catch err = regexp_str_proto_raw) return false;
+    HObject* regexp_str_iter_proto = regexp_str_proto_raw;
+    regexp_str_iter_proto.prototype = proto;
+    heap.regexp_string_iterator_proto = regexp_str_iter_proto;
+    if (!register_string_proto_method(regexp_str_iter_proto, heap, "next", Builtin.REGEXP_STRING_ITERATOR_NEXT.ordinal)) return false;
+    if (tag_sym != null) {
+        TVal tag_tv; tag_tv.set_string(builtin_intern_string(heap, "RegExp String Iterator"));
+        regexp_str_iter_proto.put_prop(tag_sym, tag_tv, hobject::PROP_FLAGS_NWC);
     }
 
     return true;

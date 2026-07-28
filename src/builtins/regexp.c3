@@ -2099,21 +2099,7 @@ fn void builtin_regexp_proto_symbol_matchAll(BuiltinContext* ctx) {
     if (global_flag) iter_flags |= 1;
     if (unicode_flag) iter_flags |= 4;
     (*iter.extra_ptr()).regexp_iter.flags = iter_flags;
-    iter.prototype = heap.iterator_proto;
-
-    // Add .next method as an own property on the iterator object.
-    HString* next_key = builtin_intern_string(heap, "next");
-    if (next_key != null) {
-        HObject*? fn_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
-        if (try fn_obj = fn_raw) {
-            (*fn_obj.extra_ptr()).func.builtin_fn_index = (int)Builtin.REGEXP_STRING_ITERATOR_NEXT.ordinal;
-            fn_obj.flags.callable = true;
-            fn_obj.prototype = heap.function_proto;
-            TVal fn_tv;
-            fn_tv.set_object(fn_obj);
-            iter.put_prop((void*)next_key, fn_tv, hobject::PROP_FLAGS_NWC);
-        }
-    }
+    iter.prototype = heap.regexp_string_iterator_proto;
 
     ctx.result.set_object(iter);
 }

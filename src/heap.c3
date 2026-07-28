@@ -343,6 +343,7 @@ struct Heap {
     HObject* map_iterator_proto;   // %MapIteratorPrototype% (ES6 §23.1.5)
     HObject* set_iterator_proto;   // %SetIteratorPrototype% (ES6 §23.2.5)
     HObject* string_iterator_proto; // %StringIteratorPrototype% (ES6 §22.1.5 for strings)
+    HObject* regexp_string_iterator_proto; // %RegExpStringIteratorPrototype% (ES2020 §22.2.9.2)
     HObject* typedarray_proto; // Shared %TypedArray%.prototype
     HObject* typedarray_intrinsic; // %TypedArray% abstract constructor
     HObject* uint8array_proto; // %Uint8Array%.prototype (for fromBase64/fromHex result protos)
@@ -1318,6 +1319,7 @@ fn void Heap.reset(&self) {
     self.map_iterator_proto = null;
     self.set_iterator_proto = null;
     self.string_iterator_proto = null;
+    self.regexp_string_iterator_proto = null;
     self.typedarray_proto = null;
     self.typedarray_intrinsic = null;
     self.uint8array_proto = null;
@@ -2165,6 +2167,7 @@ fn void Heap.mark_roots(&self) {
     if (self.map_iterator_proto != null) { self.mark_hobject(self.map_iterator_proto); }
     if (self.set_iterator_proto != null) { self.mark_hobject(self.set_iterator_proto); }
     if (self.string_iterator_proto != null) { self.mark_hobject(self.string_iterator_proto); }
+    if (self.regexp_string_iterator_proto != null) { self.mark_hobject(self.regexp_string_iterator_proto); }
     if (self.typedarray_proto != null) { self.mark_hobject(self.typedarray_proto); }
     if (self.typedarray_intrinsic != null) { self.mark_hobject(self.typedarray_intrinsic); }
     if (self.uint8array_proto != null) { self.mark_hobject(self.uint8array_proto); }
@@ -2458,7 +2461,7 @@ $if $feature(HEAP_VERIFY):
     }
 
     // Check built-in constructor prototypes
-    ZString[31] ctor_names = {
+    ZString[32] ctor_names = {
         "object_proto", "bool_proto", "string_proto", "number_proto",
         "array_proto", "function_proto", "date_proto", "regexp_proto",
         "map_proto", "set_proto", "weakmap_proto", "weakset_proto",
@@ -2466,9 +2469,9 @@ $if $feature(HEAP_VERIFY):
         "async_func_proto",
         "iterator_proto", "array_iterator_proto", "typedarray_proto", "typedarray_intrinsic", "arraybuffer_proto", "dataview_proto",
         "async_from_sync_iter_proto", "iterator_ctor", "iterator_helper_proto", "wrap_for_valid_iterator_proto",
-        "map_iterator_proto", "set_iterator_proto", "string_iterator_proto"
+        "map_iterator_proto", "set_iterator_proto", "string_iterator_proto", "regexp_string_iterator_proto"
     };
-    HObject*[31] ctor_protos = {
+    HObject*[32] ctor_protos = {
         self.object_proto, self.bool_proto, self.string_proto, self.number_proto,
         self.array_proto, self.function_proto, self.date_proto, self.regexp_proto,
         self.map_proto, self.set_proto, self.weakmap_proto, self.weakset_proto,
@@ -2476,9 +2479,9 @@ $if $feature(HEAP_VERIFY):
         self.async_func_proto,
         self.iterator_proto, self.array_iterator_proto, self.typedarray_proto, self.typedarray_intrinsic, self.arraybuffer_proto, self.dataview_proto,
         self.async_from_sync_iter_proto, self.iterator_ctor, self.iterator_helper_proto, self.wrap_for_valid_iterator_proto,
-        self.map_iterator_proto, self.set_iterator_proto, self.string_iterator_proto
+        self.map_iterator_proto, self.set_iterator_proto, self.string_iterator_proto, self.regexp_string_iterator_proto
     };
-    for (uint i = 0; i < 31; i++) {
+    for (uint i = 0; i < 32; i++) {
         if (ctor_protos[i] != null) {
             if (!self.validate_hobject((HeapHeader*)ctor_protos[i], ctor_names[i])) errors++;
             checked++;
