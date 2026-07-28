@@ -2643,9 +2643,12 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
                     // Clear the dense slot: the named-prop table is now authoritative.
                     // This prevents the VM GETPROP fast path from returning the stale
                     // dense value instead of the (soon-to-be-updated) named value.
+                    // set_array_idx decrefs the dense slot's own reference to arr_val
+                    // (a separate owning copy from the one put_prop just anchored above)
+                    // and already decrements array_used on the non-undefined→undefined
+                    // transition, so no separate decrement is needed here.
                     TVal hole; hole.set_undefined();
-                    ap[arr_idx] = hole;
-                    if (obj.array_used > 0) obj.array_used--;
+                    obj.set_array_idx(arr_idx, hole);
                 }
             }
         }
@@ -2689,6 +2692,10 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
             obj.put_prop(key, desc_vals[0], desc_flags);
             int idx = obj.find_prop_idx(key);
             if (idx >= 0) {
+                // put_prop above anchored desc_vals[0] as the (placeholder) slot value;
+                // the GS cell holds its own incref'd copy, so release the placeholder's
+                // reference before replacing the slot.
+                ctx.heap.decref_tval(&obj.prop_values()[idx]);
                 obj.prop_values()[idx] = hobject::hobject_create_accessors(ctx.heap, desc_vals[0], desc_vals[1]);
             }
             // Clear the dense array slot so arr_get_elem_vm falls through to the
@@ -2967,6 +2974,10 @@ fn void builtin_object_defineProperties(BuiltinContext* ctx) {
                     obj.put_prop((void*)k, desc_vals[0], desc_flags);
                     int pidx = obj.find_prop_idx(k);
                     if (pidx >= 0) {
+                        // put_prop above anchored desc_vals[0] as the (placeholder) slot
+                        // value; the GS cell holds its own incref'd copy, so release the
+                        // placeholder's reference before replacing the slot.
+                        ctx.heap.decref_tval(&obj.prop_values()[pidx]);
                         obj.prop_values()[pidx] = hobject::hobject_create_accessors(ctx.heap, desc_vals[0], desc_vals[1]);
                     }
                 } else {
@@ -3112,9 +3123,12 @@ fn void builtin_object_defineProperties(BuiltinContext* ctx) {
                         int promo_idx = obj.find_prop_idx(p_key);
                         if (promo_idx >= 0) {
                             obj.set_prop_flags((uint)promo_idx, hobject::PROP_FLAGS_WEC);
+                            // set_array_idx decrefs the dense slot's own reference to
+                            // dense_elem (a separate owning copy from the one put_prop
+                            // just anchored above) and already decrements array_used on
+                            // the non-undefined→undefined transition.
                             TVal hole; hole.set_undefined();
-                            obj.array_part()[p_ai] = hole;
-                            if (obj.array_used > 0) obj.array_used--;
+                            obj.set_array_idx(p_ai, hole);
                         }
                     }
                 }
@@ -3159,6 +3173,10 @@ fn void builtin_object_defineProperties(BuiltinContext* ctx) {
                     obj.put_prop(p_key, desc_vals[0], desc_flags);
                     int idx = obj.find_prop_idx(p_key);
                     if (idx >= 0) {
+                        // put_prop above anchored desc_vals[0] as the (placeholder) slot
+                        // value; the GS cell holds its own incref'd copy, so release the
+                        // placeholder's reference before replacing the slot.
+                        ctx.heap.decref_tval(&obj.prop_values()[idx]);
                         obj.prop_values()[idx] = hobject::hobject_create_accessors(ctx.heap, desc_vals[0], desc_vals[1]);
                     }
                 } else {
@@ -3277,12 +3295,19 @@ fn void builtin_object_defineProperties(BuiltinContext* ctx) {
                                 return;
                             }
                         }
+                        // The prop-table slot and (if synced) the dense array slot are two
+                        // independent owning references to the same value — incref once per
+                        // slot, in each case before decref'ing the slot's previous occupant.
+                        if (desc_vals[0].is_heap_allocated() && desc_vals[0].get_heapptr() != null) {
+                            ((types::HeapHeader*)desc_vals[0].get_heapptr()).incref();
+                        }
+                        ctx.heap.decref_tval(current);
                         *current = desc_vals[0];
                         // Sync value change back to dense array slot for ARRAY exotic.
                         if (obj.get_class() == hobject::ObjClass.ARRAY && p_key.is_arridx()) {
                             uint sync_ai = ((HString*)p_key).array_index();
                             if (sync_ai < obj.array_size) {
-                                obj.array_part()[sync_ai] = desc_vals[0];
+                                obj.set_array_idx(sync_ai, desc_vals[0]);
                             }
                         }
                     }
@@ -3654,6 +3679,10 @@ fn void builtin_object_create(BuiltinContext* ctx) {
                     obj.put_prop(pk_key, desc_acc_get[k], df);
                     int eidx = obj.find_prop_idx(pk_key);
                     if (eidx >= 0) {
+                        // put_prop above anchored desc_acc_get[k] as the (placeholder) slot
+                        // value; the GS cell holds its own incref'd copy, so release the
+                        // placeholder's reference before replacing the slot.
+                        ctx.heap.decref_tval(&obj.prop_values()[eidx]);
                         obj.prop_values()[eidx] = hobject::hobject_create_accessors(
                             ctx.heap, desc_acc_get[k], desc_acc_set[k]);
                     }

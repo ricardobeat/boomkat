@@ -933,7 +933,14 @@ fn void HObject.seal(&self) {
                     HString* key = h.str_intern(digit_buf[:(uint)dlen]);
                     if (key != null) {
                         // writable=true, enumerable=true, configurable=false
+                        // (non-configurable => put_prop's own dense-write fast path is
+                        // skipped, so this creates exactly one new named-table reference;
+                        // the dense slot's own reference is released below before the
+                        // array part is abandoned.)
                         self.put_prop((void*)key, v, PROP_FLAGS_NEC);
+                        if (v.is_heap_allocated()) {
+                            h.decref_tval(&self.array_part()[i]);
+                        }
                     }
                 }
             }
@@ -1346,17 +1353,20 @@ fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags) {
     int idx = self.find_prop_idx(key);
     if (idx >= 0) {
         PropValue* pv = &self.prop_values()[idx];
-        // Strings and BigInts are reference-counted leaves held by properties.
-        if (_active_heap != null && (pv.is_string() || pv.is_bigint())) {
-            ((heap::Heap*)_active_heap).decref_tval(pv);
-        }
-        *pv = val;
-        if (_active_heap != null && (val.is_string() || val.is_bigint())) {
+        // Strings, objects, buffers, and BigInts are reference-counted heap
+        // values held by properties — incref the incoming value BEFORE
+        // decref'ing the old one so a self-assignment (val aliases *pv)
+        // isn't prematurely freed (mirrors Heap.tval_copy_ref).
+        if (_active_heap != null && val.is_heap_allocated()) {
             void* ptr = val.get_heapptr();
             if (ptr != null) {
                 ((types::HeapHeader*)ptr).incref();
             }
         }
+        if (_active_heap != null && pv.is_heap_allocated()) {
+            ((heap::Heap*)_active_heap).decref_tval(pv);
+        }
+        *pv = val;
         self.set_prop_flags((uint)idx, pflags);
         // Sync array_length shadow cache on LENGTH writes to ARRAY exotic
         if (self.flags.exotic_array && key == builtin_length_key) {
@@ -1427,7 +1437,10 @@ fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags) {
     uint new_idx = self.prop_count;
     mem::clear(&self.prop_values()[new_idx], (sz)(PropValue::size));
     self.prop_values()[new_idx] = val;
-    if (_active_heap != null && (val.is_string() || val.is_bigint())) {
+    // Strings, objects, buffers, and BigInts are reference-counted heap
+    // values held by properties — anchor a strong reference for the newly
+    // stored value.
+    if (_active_heap != null && val.is_heap_allocated()) {
         void* ptr = val.get_heapptr();
         if (ptr != null) {
             ((types::HeapHeader*)ptr).incref();
@@ -1546,6 +1559,13 @@ fn bool HObject.delete_prop(&self, void* key) {
 
     uint ui = (uint)idx;
     ushort new_count = (ushort)(self.prop_count - 1);
+
+    // Release the deleted slot's own reference before it is overwritten by
+    // the compaction shift below.
+    if (_active_heap != null) {
+        heap::Heap* h = (heap::Heap*)_active_heap;
+        h.decref_tval(&self.prop_values()[ui]);
+    }
 
     // Compact prop_values: shift [ui+1..prop_count-1] → [ui..prop_count-2]
     for (uint i = ui; i < new_count; i++) {
@@ -1687,16 +1707,19 @@ fn bool HObject.set_array_idx(&self, uint idx, TVal val) {
         }
     }
 
-    if (_active_heap != null && (self.array_part()[idx].is_string() || self.array_part()[idx].is_bigint())) {
-        ((heap::Heap*)_active_heap).decref_tval(&self.array_part()[idx]);
-    }
-    self.array_part()[idx] = val;
-    if (_active_heap != null && (val.is_string() || val.is_bigint())) {
+    // Strings, objects, buffers, and BigInts are reference-counted heap
+    // values held by array elements — incref the incoming value BEFORE
+    // decref'ing the old one so a self-assignment isn't prematurely freed.
+    if (_active_heap != null && val.is_heap_allocated()) {
         void* ptr = val.get_heapptr();
         if (ptr != null) {
             ((types::HeapHeader*)ptr).incref();
         }
     }
+    if (_active_heap != null && self.array_part()[idx].is_heap_allocated()) {
+        ((heap::Heap*)_active_heap).decref_tval(&self.array_part()[idx]);
+    }
+    self.array_part()[idx] = val;
     return true;
 }
 
@@ -2015,24 +2038,26 @@ fn void hobject_free(HObject* obj, void* heap_ptr, bool free_header = true) {
         }
     }
 
-    // Decref string and BigInt values held in property slots and array
-    // elements.  Only these RC leaves are freed here — objects still use M&S
-    // and can form cycles; decref-freeing objects from within another object's
-    // teardown would corrupt the heap_allocated list and cause use-after-free
-    // on generator/closure env chains.  BigInt boxes are leaves, so freeing
-    // them here is safe.
+    // Decref string, object, buffer, and BigInt values held in property slots
+    // and array elements. An object neighbour referenced this way may itself
+    // be dying in the same mark-and-sweep pass (e.g. a cycle) — decref_tval
+    // routes through Heap.decref, whose sweep guard skips any neighbour that
+    // is itself unmarked and non-temproot, exactly as it already does for
+    // getter/setter cells, captured `this`, promise results, and iterator
+    // targets above. Cycles are still reclaimed by mark-and-sweep, never by
+    // this decref pass.
     if (obj.prop_alloc != null && _active_heap != null) {
         heap::Heap* h = (heap::Heap*)_active_heap;
         PropValue* pvs = obj.prop_values();
         for (uint i = 0; i < obj.prop_count; i++) {
-            if (pvs[i].is_string() || pvs[i].is_bigint()) {
+            if (pvs[i].is_heap_allocated()) {
                 h.decref_tval(&pvs[i]);
             }
         }
         TVal* arr = obj.array_part();
         if (arr != null) {
             for (uint i = 0; i < obj.array_size; i++) {
-                if (arr[i].is_string() || arr[i].is_bigint()) {
+                if (arr[i].is_heap_allocated()) {
                     h.decref_tval(&arr[i]);
                 }
             }

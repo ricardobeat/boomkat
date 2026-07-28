@@ -722,7 +722,10 @@ fn void builtin_set_proto_difference(BuiltinContext* ctx) {
             if (!e.is_deleted()) {
                 bool has = set_record_has(ctx, &rec, e);
                 if (ctx.should_throw) { ctx.result.set_undefined(); return; }
-                if (has) result_arr[index].set_deleted();
+                if (has) {
+                    ctx.heap.decref_tval(&result_arr[index]);
+                    result_arr[index].set_deleted();
+                }
             }
             index++;
         }
@@ -739,7 +742,10 @@ fn void builtin_set_proto_difference(BuiltinContext* ctx) {
             if (done) break;
             next_value = set_normalize_neg_zero(next_value);
             int found = set_find_value(result, next_value);
-            if (found >= 0) result.array_part()[(uint)found].set_deleted();
+            if (found >= 0) {
+                ctx.heap.decref_tval(&result.array_part()[(uint)found]);
+                result.array_part()[(uint)found].set_deleted();
+            }
         }
         ctx.result.set_object(result);
     }
@@ -780,7 +786,10 @@ fn void builtin_set_proto_symmetricDifference(BuiltinContext* ctx) {
         next_value = set_normalize_neg_zero(next_value);
         int found = set_find_value(result, next_value);
         if (set_find_value(set, next_value) >= 0) {
-            if (found >= 0) result.array_part()[(uint)found].set_deleted();
+            if (found >= 0) {
+                ctx.heap.decref_tval(&result.array_part()[(uint)found]);
+                result.array_part()[(uint)found].set_deleted();
+            }
         } else {
             if (found < 0) set_result_append(result, next_value);
         }

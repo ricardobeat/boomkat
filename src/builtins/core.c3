@@ -1574,8 +1574,15 @@ fn void coll_set_entry(BuiltinContext* ctx, HObject* coll, uint stride, bool req
     TVal value = ctx.regs[ctx.base_reg + 1];  // undefined if not provided
     int found = find_in_array_part(coll, key, stride);
     if (found >= 0) {
+        // Overwrite the existing value slot directly (not via set_array_idx):
+        // this slot is already counted in array_used, and a value of undefined
+        // is a legitimate Map/WeakMap value, not a hole — set_array_idx's
+        // undefined-transition bookkeeping would corrupt array_used here.
         TVal* v_slot = &coll.array_part()[(uint)found + 1];
-        if (grow_hwm && v_slot.is_string()) ctx.heap.decref_tval(v_slot);
+        if (value.is_heap_allocated() && value.get_heapptr() != null) {
+            ((types::HeapHeader*)value.get_heapptr()).incref();
+        }
+        ctx.heap.decref_tval(v_slot);
         *v_slot = value;
     } else {
         uint cnt = coll.array_used;
@@ -1681,8 +1688,14 @@ fn void coll_get_or_insert_computed(BuiltinContext* ctx, HObject* coll, bool req
     // mutation may have added it.
     int found2 = find_in_array_part(coll, key, 2);
     if (found2 >= 0) {
+        // Overwrite directly (see coll_set_entry): set_array_idx's
+        // undefined-transition bookkeeping would corrupt array_used here,
+        // since this slot is already counted and undefined is a valid value.
         TVal* v_slot = &coll.array_part()[(uint)found2 + 1];
-        if (grow_hwm && v_slot.is_string()) ctx.heap.decref_tval(v_slot);
+        if (value.is_heap_allocated() && value.get_heapptr() != null) {
+            ((types::HeapHeader*)value.get_heapptr()).incref();
+        }
+        ctx.heap.decref_tval(v_slot);
         *v_slot = value;
     } else {
         uint cnt = coll.array_used;
@@ -1732,7 +1745,7 @@ fn void coll_delete(BuiltinContext* ctx, HObject* coll, TVal key, uint stride, b
     if (tombstone) {
         for (uint i = 0; i < stride; i++) {
             TVal* slot = &coll.array_part()[(uint)found + i];
-            if (slot.is_string()) ctx.heap.decref_tval(slot);
+            ctx.heap.decref_tval(slot);
             slot.set_deleted();
         }
     } else {
