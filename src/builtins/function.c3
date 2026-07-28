@@ -694,7 +694,6 @@ fn void builtin_function_proto_bind(BuiltinContext* ctx) {
 
     // Set up bound function properties
     bound_obj.flags.callable = true;
-    bound_obj.flags.is_bound = true;
     bound_obj.prototype = ctx.heap.function_proto;
     (*bound_obj.extra_ptr()).func.builtin_fn_index = (int)Builtin.BOUND_CALL.ordinal;
 
@@ -710,20 +709,14 @@ fn void builtin_function_proto_bind(BuiltinContext* ctx) {
     // had bound functions as non-constructable; ES6 changed this in 2015.)
     bound_obj.flags.constructable = downstream_constructable;
 
-    // Store bound data as internal properties (non-enumerable, non-writable, non-configurable)
-    // Key: use special strings "\x00bound_downstream", "\x00bound_this", "\x00bound_args"
-    HString* key_downstream = builtin_intern_string(ctx.heap, { '\x00', 'b', 'o', 'u', 'n', 'd', '_', 't', 'a', 'r', 'g', 'e', 't' });
-    HString* key_this   = builtin_intern_string(ctx.heap, { '\x00', 'b', 'o', 'u', 'n', 'd', '_', 't', 'h', 'i', 's' });
-    HString* key_args   = builtin_intern_string(ctx.heap, { '\x00', 'b', 'o', 'u', 'n', 'd', '_', 'a', 'r', 'g', 's' });
-
-    PropFlags internal_flags;
-    internal_flags.writable = false;
-    internal_flags.enumerable = false;
-    internal_flags.configurable = false;
-    internal_flags.is_accessor = false;
-
-    bound_obj.put_prop(key_downstream, downstream, internal_flags);
-    bound_obj.put_prop(key_this, bound_this, internal_flags);
+    // Store [[BoundTargetFunction]]/[[BoundThis]] directly on the object
+    // (not as property-table entries — see HObjectFunction.bound_target in
+    // hobject.c3) and only THEN flip is_bound, so a GC triggered by the
+    // args-array allocation below never observes a bound object with an
+    // unpopulated bound_target/bound_this (zero bits, not a valid TVal).
+    ctx.heap.tval_copy_ref(&(*bound_obj.extra_ptr()).func.bound_target, &downstream);
+    ctx.heap.tval_copy_ref(&(*bound_obj.extra_ptr()).func.bound_this, &bound_this);
+    bound_obj.flags.is_bound = true;
 
     // Store bound args as a JS array
     HObject*? args_arr_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
@@ -749,13 +742,12 @@ fn void builtin_function_proto_bind(BuiltinContext* ctx) {
 
     if (bound_args_arr != null) ctx.heap.free_func(ctx.heap.heap_udata, bound_args_arr);
 
-    TVal args_tv;
     if (args_arr != null) {
-        args_tv.set_object(args_arr);
+        ((types::HeapHeader*)args_arr).incref();
+        (*bound_obj.extra_ptr()).func.bound_args = args_arr;
     } else {
-        args_tv.set_undefined();
+        (*bound_obj.extra_ptr()).func.bound_args = null;
     }
-    bound_obj.put_prop(key_args, args_tv, internal_flags);
 
     // ── Set .name: "bound " + targetName (ES6 §19.2.3.3) ──────────────
     // Per spec: Get(target, "name") — must invoke accessor getters and
@@ -987,12 +979,7 @@ fn void builtin_function_proto_hasInstance(BuiltinContext* ctx) {
     if (c_val.is_object() && c_val.get_heapptr() != null) {
         HObject* c_obj = (HObject*)c_val.get_heapptr();
         if (c_obj.flags.is_bound) {
-            HString* key_target = builtin_intern_string(ctx.heap,
-                { '\x00', 'b', 'o', 'u', 'n', 'd', '_', 't', 'a', 'r', 'g', 'e', 't' });
-            if (key_target != null) {
-                int ti = c_obj.find_prop_idx(key_target);
-                if (ti >= 0) c_val = c_obj.prop_values()[ti];
-            }
+            c_val = (*c_obj.extra_ptr()).func.bound_target;
         }
     }
 
@@ -1087,37 +1074,22 @@ fn void builtin_bound_call(BuiltinContext* ctx) {
         return;
     }
 
-    // Extract bound data from internal properties
-    HString* key_downstream = builtin_intern_string(ctx.heap, { '\x00', 'b', 'o', 'u', 'n', 'd', '_', 't', 'a', 'r', 'g', 'e', 't' });
-    HString* key_this   = builtin_intern_string(ctx.heap, { '\x00', 'b', 'o', 'u', 'n', 'd', '_', 't', 'h', 'i', 's' });
-    HString* key_args   = builtin_intern_string(ctx.heap, { '\x00', 'b', 'o', 'u', 'n', 'd', '_', 'a', 'r', 'g', 's' });
-
-    TVal? downstream_val = bound_obj.get_prop_proto(key_downstream);
-    TVal? this_val   = bound_obj.get_prop_proto(key_this);
-    TVal? args_val   = bound_obj.get_prop_proto(key_args);
-
-    TVal downstream;
-    TVal bound_this;
-    if (try tv = downstream_val) { downstream = tv; }
-    else { ctx.result.set_undefined(); return; }
-    if (try tv = this_val) { bound_this = tv; }
-    else { bound_this.set_undefined(); }
+    // Extract bound data — stored directly on the object (not property-table
+    // entries; see HObjectFunction.bound_target in hobject.c3).
+    TVal downstream = (*bound_obj.extra_ptr()).func.bound_target;
+    TVal bound_this = (*bound_obj.extra_ptr()).func.bound_this;
+    HObject* args_arr = (*bound_obj.extra_ptr()).func.bound_args;
 
     // Extract bound args array
     uint bound_argc = 0;
-    if (try av = args_val) {
-        if (av.is_object()) {
-            HObject* arr = (HObject*)av.get_heapptr();
-            if (arr != null && arr.get_class() == hobject::ObjClass.ARRAY) {
-                HString* len_key = builtin_intern_string(ctx.heap, "length");
-                TVal? lv = arr.get_prop_proto(len_key);
-                if (try l = lv) {
-                    if (l.is_fastint()) {
-                        bound_argc = (uint)l.get_fastint();
-                    } else if (l.is_number()) {
-                        bound_argc = (uint)l.get_number();
-                    }
-                }
+    if (args_arr != null) {
+        HString* len_key = builtin_intern_string(ctx.heap, "length");
+        TVal? lv = args_arr.get_prop_proto(len_key);
+        if (try l = lv) {
+            if (l.is_fastint()) {
+                bound_argc = (uint)l.get_fastint();
+            } else if (l.is_number()) {
+                bound_argc = (uint)l.get_number();
             }
         }
     }
@@ -1132,19 +1104,14 @@ fn void builtin_bound_call(BuiltinContext* ctx) {
     uint actual_total = 0;
 
     // Copy bound args from stored array
-    if (try av = args_val) {
-        if (av.is_object()) {
-            HObject* arr = (HObject*)av.get_heapptr();
-            if (arr != null && arr.get_class() == hobject::ObjClass.ARRAY) {
-                for (uint i = 0; i < bound_argc && actual_total < max_total; i++) {
-                    char[20] buf;
-                    int n = (int)(io::bprintf(&buf, "%d", i) ?? buf[:0]).len;
-                    if (n > 0 && n < 20) {
-                        HString* ek = builtin_intern_string(ctx.heap, buf[:n]);
-                        TVal? e = arr.get_prop_proto(ek);
-                        if (try ev = e) all_args[actual_total++] = ev;
-                    }
-                }
+    if (args_arr != null) {
+        for (uint i = 0; i < bound_argc && actual_total < max_total; i++) {
+            char[20] buf;
+            int n = (int)(io::bprintf(&buf, "%d", i) ?? buf[:0]).len;
+            if (n > 0 && n < 20) {
+                HString* ek = builtin_intern_string(ctx.heap, buf[:n]);
+                TVal? e = args_arr.get_prop_proto(ek);
+                if (try ev = e) all_args[actual_total++] = ev;
             }
         }
     }

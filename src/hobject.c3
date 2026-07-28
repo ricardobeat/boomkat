@@ -512,6 +512,27 @@ struct HObjectFunction {
     /// enclosing invocation had no new.target (plain/method call) or for
     /// non-arrow functions.
     HObject*          captured_new_target;
+    /// Bound function exotic object internals ([[BoundTargetFunction]],
+    /// [[BoundThis]], [[BoundArguments]] — ES2015+ §10.4.1). Active only
+    /// when flags.is_bound is set; unused (zeroed) for every other
+    /// FUNCTION object. Plain extra fields rather than a separate union
+    /// variant, since bound functions are ObjClass.FUNCTION and every
+    /// generic call-dispatch site reads builtin_fn_index through this
+    /// same struct without checking is_bound first — a union variant
+    /// would need painful offset-matching tricks to keep that field
+    /// aligned. Not property-table entries: an earlier revision stored
+    /// these under NUL-prefixed internal property keys
+    /// ("\x00bound_target" etc.), which leaked through
+    /// Object.getOwnPropertyNames/Reflect.ownKeys (neither filters on
+    /// enumerability) — the same trap error-stack hit before it moved to
+    /// HObjectError.captured_stack. bound_target is a full TVal (not
+    /// HObject*) since the target may be a lightfunc. bound_args is null
+    /// when the function was bound with no extra arguments; otherwise it
+    /// points to a real JS Array so `arguments` spreading and .length
+    /// reads keep working unchanged.
+    TVal              bound_target;
+    TVal              bound_this;
+    HObject*          bound_args;
 }
 
 /// Primitive wrapper (Boolean, Number, String objects).
@@ -1994,8 +2015,18 @@ fn void hobject_free(HObject* obj, void* heap_ptr, bool free_header = true) {
         h.decref_tval(&(*obj.extra_ptr()).gs.setter);
     }
 
-    // Decref an arrow function's captured lexical `this`.
-    if (obj.flags.obj_class == ObjClass.FUNCTION && _active_heap != null) {
+    // Decref a bound function's [[BoundTargetFunction]]/[[BoundThis]]/
+    // [[BoundArguments]] (bound functions never populate captured_this, so
+    // there is no aliasing concern with the arrow-capture decref below).
+    if (obj.flags.obj_class == ObjClass.FUNCTION && obj.flags.is_bound && _active_heap != null) {
+        heap::Heap* h = (heap::Heap*)_active_heap;
+        h.decref_tval(&(*obj.extra_ptr()).func.bound_target);
+        h.decref_tval(&(*obj.extra_ptr()).func.bound_this);
+        if ((*obj.extra_ptr()).func.bound_args != null) {
+            h.decref((types::HeapHeader*)(*obj.extra_ptr()).func.bound_args);
+        }
+    } else if (obj.flags.obj_class == ObjClass.FUNCTION && _active_heap != null) {
+        // Decref an arrow function's captured lexical `this`.
         heap::Heap* h = (heap::Heap*)_active_heap;
         h.decref_tval(&(*obj.extra_ptr()).func.captured_this);
     }

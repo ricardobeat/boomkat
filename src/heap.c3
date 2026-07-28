@@ -1981,6 +1981,16 @@ fn void Heap.drain_gray(&self) {
         switch (obj.flags.obj_class) {
             case ObjClass.FUNCTION:
             case ObjClass.THREAD:
+                // Bound functions never set var_env/lex_env/captured_this/
+                // captured_new_target — mark only the bound_* fields.
+                if (obj.flags.is_bound) {
+                    self.mark_tval(&(*obj.extra_ptr()).func.bound_target);
+                    self.mark_tval(&(*obj.extra_ptr()).func.bound_this);
+                    if ((*obj.extra_ptr()).func.bound_args != null) {
+                        self.mark_hobject((*obj.extra_ptr()).func.bound_args);
+                    }
+                    break;
+                }
                 if ((*obj.extra_ptr()).func.var_env != null && (*obj.extra_ptr()).func.var_env.bindings != null) {
                     self.mark_hobject((*obj.extra_ptr()).func.var_env.bindings);
                 }

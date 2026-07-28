@@ -779,41 +779,23 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
     // itself as new.target and ordinary `Reflect.construct(bound, [], X)` would
     // not retarget to the underlying target when X === bound.
     if (ctor.flags.is_bound) {
-        // Intern the bound-target key on demand. Using builtin_intern_string
-        // (not Heap.strs[]) keeps this self-contained — strs[] entries are
-        // pinned at vm_create, so a new BuiltinStr slot would need
-        // init_builtin_strs() changes too. The string is short and shared
-        // across all bound functions, so intern churn is negligible.
-        HString* key_downstream = builtins::builtin_intern_string(heap,
-            { '\x00', 'b', 'o', 'u', 'n', 'd', '_', 't', 'a', 'r', 'g', 'e', 't' });
-        if (key_downstream == null) return undef;
-        int di = ctor.find_prop_idx(key_downstream);
-        if (di < 0) return undef;  // malformed bound fn
-        TVal target_tv = ctor.prop_values()[di];
+        // [[BoundTargetFunction]]/[[BoundArguments]] live directly on the
+        // object (not property-table entries; see HObjectFunction.bound_target
+        // in hobject.c3).
+        TVal target_tv = (*ctor.extra_ptr()).func.bound_target;
+        HObject* args_arr = (*ctor.extra_ptr()).func.bound_args;
 
         // ES2015 §9.4.1.2: Extract bound arguments and prepend them.
-        HString* key_args = builtins::builtin_intern_string(heap,
-            { '\x00', 'b', 'o', 'u', 'n', 'd', '_', 'a', 'r', 'g', 's' });
-        if (key_args == null) return undef;
-        int ai = ctor.find_prop_idx(key_args);
-
         uint bound_argc = 0;
-        TVal* bound_args = null;
-        if (ai >= 0) {
-            TVal args_val = ctor.prop_values()[ai];
-            if (args_val.is_object()) {
-                HObject* arr = (HObject*)args_val.get_heapptr();
-                if (arr != null && arr.get_class() == hobject::ObjClass.ARRAY) {
-                    HString* len_key = builtins::builtin_intern_string(heap, "length");
-                    if (len_key != null) {
-                        TVal? lv = arr.get_prop_proto(len_key);
-                        if (try l = lv) {
-                            if (l.is_fastint()) {
-                                bound_argc = (uint)l.get_fastint();
-                            } else if (l.is_number()) {
-                                bound_argc = (uint)l.get_number();
-                            }
-                        }
+        if (args_arr != null) {
+            HString* len_key = builtins::builtin_intern_string(heap, "length");
+            if (len_key != null) {
+                TVal? lv = args_arr.get_prop_proto(len_key);
+                if (try l = lv) {
+                    if (l.is_fastint()) {
+                        bound_argc = (uint)l.get_fastint();
+                    } else if (l.is_number()) {
+                        bound_argc = (uint)l.get_number();
                     }
                 }
             }
@@ -829,28 +811,22 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
 
         // Copy bound args
         uint combined_idx = 0;
-        if (ai >= 0) {
-            TVal args_val = ctor.prop_values()[ai];
-            if (args_val.is_object()) {
-                HObject* arr = (HObject*)args_val.get_heapptr();
-                if (arr != null && arr.get_class() == hobject::ObjClass.ARRAY) {
-                    for (uint i = 0; i < bound_argc && combined_idx < total_argc; i++) {
-                        // A miss (hole / failed key intern) still consumes a
-                        // slot as undefined so the call args don't shift left.
-                        TVal ev;
-                        ev.set_undefined();
-                        char[20] buf;
-                        int n = (int)(io::bprintf(&buf, "%d", i) ?? buf[:0]).len;
-                        if (n > 0 && n < 20) {
-                            HString* ek = builtins::builtin_intern_string(heap, buf[:n]);
-                            if (ek != null) {
-                                TVal? e = arr.get_prop_proto(ek);
-                                if (try got = e) ev = got;
-                            }
-                        }
-                        combined_args[combined_idx++] = ev;
+        if (args_arr != null) {
+            for (uint i = 0; i < bound_argc && combined_idx < total_argc; i++) {
+                // A miss (hole / failed key intern) still consumes a
+                // slot as undefined so the call args don't shift left.
+                TVal ev;
+                ev.set_undefined();
+                char[20] buf;
+                int n = (int)(io::bprintf(&buf, "%d", i) ?? buf[:0]).len;
+                if (n > 0 && n < 20) {
+                    HString* ek = builtins::builtin_intern_string(heap, buf[:n]);
+                    if (ek != null) {
+                        TVal? e = args_arr.get_prop_proto(ek);
+                        if (try got = e) ev = got;
                     }
                 }
+                combined_args[combined_idx++] = ev;
             }
         }
 
