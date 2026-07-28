@@ -1990,13 +1990,7 @@ fn HObject* group_by_shared(BuiltinContext* ctx, bool into_map) {
         }
 
         if (into_map) {
-            // CanonicalizeKeyedCollectionKey: -0 -> +0.
-            TVal norm_key = key_result;
-            if (norm_key.is_number() && norm_key.get_number() == 0.0) {
-                norm_key.set_fastint(0);
-            } else if (norm_key.is_fastint() && norm_key.get_fastint() == 0) {
-                norm_key.set_fastint(0);
-            }
+            TVal norm_key = canonicalize_keyed_collection_key(key_result);
             if (!group_by_append_map(ctx, groups, norm_key, next_value)) {
                 arr_iterator_close_after_throw(ctx, iterator);
                 return null;
