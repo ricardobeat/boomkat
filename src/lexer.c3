@@ -2274,6 +2274,13 @@ fn void Lexer.note_block_close(&self) {
 /// Follows the ECMAScript lexical grammar: after identifiers, literals,
 /// closing brackets, `this`, `true`, `false`, `null`, the `/` is
 /// division; otherwise it starts a regexp.
+/// Postfix `++`/`--` end an operand (unlike prefix `++`/`--`, which is an
+/// operator applied to a following operand) — `x++ / 2` must lex `/` as
+/// division, not the start of a regexp literal. The lexer has no syntactic
+/// distinction between prefix and postfix INC/DEC at this point, but a
+/// `++`/`--` immediately after an operand can only be the postfix form
+/// (prefix would have been consumed before the operand), so treating
+/// INC/DEC as operand-ending here is always correct.
 fn bool Lexer.prev_was_operand(&self) {
     switch (self.current.type) {
         case TokenType.RPAREN:
@@ -2290,6 +2297,8 @@ fn bool Lexer.prev_was_operand(&self) {
         case TokenType.TEMPLATE_MIDDLE:
         case TokenType.TEMPLATE_TAIL:
         case TokenType.THIS:
+        case TokenType.INC:
+        case TokenType.DEC:
             return true;
         default:
             return false;
