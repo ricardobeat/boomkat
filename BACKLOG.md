@@ -39,10 +39,17 @@ Ordered by tests-fixed-per-effort. Every one verified against `main`.
 - [ ] **Lone surrogates not rejected by `encodeURI*`/`decodeURI*` — 17 fails.**
   `encodeURI(String.fromCharCode(0xDC00))` yields `"%ED%B0%80"`; must throw `URIError`.
   Both encode and decode sides.
-- [ ] **`%RegExpStringIteratorPrototype%` does not exist — 13 fails.**
-  `src/builtins/regexp.c3:2057-2115` puts `.next` as an *own* property on each
-  iterator instance and points `[[Prototype]]` straight at `%IteratorPrototype%`,
-  with no intermediate layer carrying `[Symbol.toStringTag]`.
+- [ ] **`RegExp.prototype[Symbol.matchAll]` ignores a custom `exec` — 7 fails.** Surfaced
+  once `%RegExpStringIteratorPrototype%` landed (`07bf4e8a`) and confirmed pre-existing on
+  main: `custom-regexpexec*.js` (7) and `regexp-tolength-lastindex-throws.js`. The iterator
+  calls the internal matcher directly instead of going through `RegExpExec`, so a
+  user-supplied `exec` / a throwing `lastIndex` ToLength never runs.
+- [ ] **Iterator `next` methods throw a bare `undefined` instead of a TypeError.**
+  `builtin_map_iterator_next` (map.c3), `builtin_set_iterator_next` (set.c3) and
+  `builtin_string_iterator_next` (iterator.c3) still use `should_throw=true` +
+  `set_undefined()` rather than `builtin_throw`. The array and regexp-string variants were
+  fixed in `07bf4e8a`; these three were out of that task's scope and are not currently
+  covered by a running test.
 - [ ] **`AggregateError` constructor incomplete — 7 fails.** `errors` stored verbatim
   instead of `IterableToList`-spread (`src/builtins/error.c3:159-246`);
   `register_native_error_ctor` (`:688`) hardcodes `length=1` but AggregateError needs 2.
@@ -53,9 +60,6 @@ Ordered by tests-fixed-per-effort. Every one verified against `main`.
   `[Symbol.toPrimitive]`/`toString`/`valueOf`, so abrupt completions never propagate.
 - [ ] **Generator `.return()` inside nested try/finally — 3 fails.** Finally blocks not
   running / final value not surfacing. May share a cause with the finally-return abort path.
-- [ ] **`ArrayIteratorPrototype.next` missing own `.length`/`.name` — 3 fails.**
-  Hand-built native function that skipped `set_func_ctor_name_length`; same pattern as
-  the RegExpStringIterator gap.
 - [ ] **`undefined = 12` rejected at parse time — 1 CE:unexpected.** Must parse and throw
   `TypeError` at runtime, not `SyntaxError` at parse time.
 - [ ] **`GeneratorFunction.prototype.constructor` is writable — 1 fail.** Should be non-writable.
