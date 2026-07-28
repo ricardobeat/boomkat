@@ -1827,6 +1827,7 @@ fn void HObject.grow_array(&self, uint new_size) {
 ///   - flags.extensible     = true
 ///   - flags.obj_class      = cls
 ///   - (padding)            = 0
+///   - refcount             = 0 (the first owner increfs)
 ///   - Empty property table and no array part
 ///
 /// Returns `null` on allocation failure.
@@ -1866,7 +1867,12 @@ fn HObject*? hobject_alloc(void* heap_ptr, ObjClass cls) {
     obj.flags.extensible   = true;
     obj.flags.obj_class    = cls;
     obj.flags.pool_fallback = !from_pool;
-    obj.refcount           = 1;
+    // Reference count starts at 0, mirroring strings: the heap_allocated list
+    // is a weak reference, not an owning one. The first real user (a TVal
+    // assignment, a property slot, a prototype link, ...) increfs. Until then
+    // the temproot flag set by Heap.alloc_object is what keeps the object
+    // alive against a collection triggered mid-construction.
+    obj.refcount           = 0;
 
 $if $feature(GC_PROFILE):
     {

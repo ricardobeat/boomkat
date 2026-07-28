@@ -1641,6 +1641,17 @@ fn HObject*? Heap.alloc_object(&self, hobject::ObjClass cls) {
         if (self.live_obj_count > self.peak_live_obj_count) {
             self.peak_live_obj_count = self.live_obj_count;
         }
+        // GC accounting lives here rather than in the underlying allocator:
+        // objects are served from a FixedBlockPool whose alloc() never fails
+        // over to Heap.alloc, so counting in Heap.alloc would never see them.
+        // This is the one chokepoint every mark-and-sweep-tracked object passes
+        // through. Only the deferred flag is set — collecting synchronously
+        // from inside an allocator can free an in-flight object reachable only
+        // from a C3 local (see the note in alloc_no_gc).
+        self.gc_trigger_counter--;
+        if (self.gc_trigger_counter <= 0) {
+            self.gc_pending = true;
+        }
     }
     return result;
 }

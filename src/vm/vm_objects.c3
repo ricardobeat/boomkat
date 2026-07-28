@@ -58,10 +58,11 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
     Vm* vm = ds.vm;
     switch (op) {
         case Opcode.NEWOBJ: {
-            // Clear ra before the allocation so an alloc-triggered GC cannot
-            // scan a stale pointer.  The old contents are not decref'd: the
-            // heap list, string table, and large-string registry all keep
-            // their entries findable, so the sweep reclaims them.
+            // Release the previous occupant, then clear ra before the
+            // allocation so an alloc-triggered GC cannot scan a stale pointer.
+            // The decref is what lets a per-iteration temporary reach zero and
+            // be recycled instead of surviving until the next sweep.
+            vm.heap.decref_tval(ra);
             ra.set_undefined();
             HObject*? new_obj = vm.heap.alloc_object(hobject::ObjClass.OBJECT);
             if (try o = new_obj) {
@@ -75,7 +76,8 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
         }
 
         case Opcode.NEWARR: {
-            // See NEWOBJ: clear ra before the allocation.
+            // See NEWOBJ: release the old occupant, then clear ra.
+            vm.heap.decref_tval(ra);
             ra.set_undefined();
             HObject*? new_arr = vm.heap.alloc_object(hobject::ObjClass.ARRAY);
             if (try a = new_arr) {
