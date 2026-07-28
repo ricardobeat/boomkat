@@ -34,7 +34,11 @@ const uint ARRIDX_NONE = 0xFFFF_FFFF;
 
 /// Sentinel for `HString.registry_slot`: the string holds no slot in the
 /// heap's large-string registry.
-const usz REGISTRY_SLOT_NONE = (usz)-1;
+const uint REGISTRY_SLOT_NONE = (uint)-1;
+
+/// Sentinel for `HString.cached_charlen`: the character length has not yet
+/// been computed for this string.
+const uint CHARLEN_NONE = (uint)-1;
 
 /// Unicode replacement character (U+FFFD).
 const uint UNICODE_REPLACEMENT = 0xFFFD;
@@ -107,8 +111,7 @@ struct HString {
     /// Slot held by a non-interned string in the heap's large-string
     /// registry, or `REGISTRY_SLOT_NONE` when the string is interned (the
     /// string table tracks those instead) or registration was declined.
-    /// Sized as a pointer purely to keep the header 8-byte aligned.
-    usz registry_slot;
+    uint registry_slot;
 
     // --- String-specific fields ---
 
@@ -119,6 +122,11 @@ struct HString {
     uint hash;
     /// Byte length of the UTF-8 data (excluding the NUL terminator).
     uint blen;
+    /// Cached character (UTF-16 code unit) length, or `CHARLEN_NONE` when
+    /// not yet computed.  ASCII strings never populate this — `blen` is
+    /// already the char length for them.  Write-once: strings are
+    /// immutable, so the cache never needs invalidating.
+    uint cached_charlen;
 }
 
 // ============================================================================
@@ -222,10 +230,14 @@ fn bool HString.is_interned(&self)           { return self.flags.is_interned; }
 /// Compute the character (codepoint) length on demand.
 ///
 /// For ASCII strings this equals `blen`.  For multi-byte UTF-8 the bytes
-/// are walked once to count codepoints.
+/// are walked once to count codepoints and the result is cached — strings
+/// are immutable, so the cache never needs invalidating.
 fn uint HString.char_length(&self) {
     if (self.flags.is_ascii) return self.blen;
-    return compute_charlen(self.get_data());
+    if (self.cached_charlen != CHARLEN_NONE) return self.cached_charlen;
+    uint clen = compute_charlen(self.get_data());
+    self.cached_charlen = clen;
+    return clen;
 }
 
 /// Returns the numeric array-index value if this string is a valid array
@@ -252,7 +264,16 @@ fn uint HString.char_at(&self, uint char_idx) {
     if (char_idx >= self.char_length()) {
         return UNICODE_REPLACEMENT;
     }
+    return self.char_at_unchecked(char_idx);
+}
 
+/// Same as `char_at`, but skips the bounds check against `char_length()`.
+///
+/// Only call this when the caller has already established
+/// `char_idx < char_length()` (or an equivalent bound) — otherwise the walk
+/// may run past the end of the string. Saves a redundant (possibly O(n))
+/// `char_length()` call when the caller already has the length in hand.
+fn uint HString.char_at_unchecked(&self, uint char_idx) {
     char[] data = self.get_data();
 
     // Fast path for ASCII strings.
@@ -338,6 +359,8 @@ fn HString*? hstring_alloc(void* heap_ptr, char[] data, uint hash) {
 
     // Unregistered until the caller decides the string needs a registry slot.
     s.registry_slot = REGISTRY_SLOT_NONE;
+    // Charlen is computed lazily on first char_length() call.
+    s.cached_charlen = CHARLEN_NONE;
 
     bool ascii = check_is_ascii(data);
     s.flags.is_ascii = ascii;

@@ -2803,7 +2803,7 @@ fn void Heap.sweep_large_strings(&self) {
         if (((HeapHeader*)s).is_reachable()) {
             // Compact survivors down; their recorded slot moves with them.
             self.large_strings[kept] = s;
-            s.registry_slot = (usz)kept;
+            s.registry_slot = kept;
             kept++;
         } else {
             self.free_string(s);
@@ -3140,7 +3140,7 @@ fn void Heap.large_string_register(&self, HString* s) {
         self.large_strings         = (HString**)grown;
         self.large_string_capacity = new_cap;
     }
-    s.registry_slot = (usz)self.large_string_count;
+    s.registry_slot = self.large_string_count;
     self.large_strings[self.large_string_count] = s;
     self.large_string_count++;
 }
@@ -3150,10 +3150,10 @@ fn void Heap.large_string_register(&self, HString* s) {
  * moving the last entry into the vacated slot and fixing up its index.
  */
 fn void Heap.large_string_unregister(&self, HString* s) {
-    usz slot = s.registry_slot;
-    if (slot >= (usz)self.large_string_count) { return; }
+    uint slot = s.registry_slot;
+    if (slot >= self.large_string_count) { return; }
     uint last = self.large_string_count - 1;
-    if ((uint)slot != last) {
+    if (slot != last) {
         HString* moved = self.large_strings[last];
         self.large_strings[slot] = moved;
         moved.registry_slot = slot;
