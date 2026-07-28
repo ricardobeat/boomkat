@@ -139,6 +139,12 @@ test262-contamination phase="0": build-batch
 check-heap-drift:
     python3 scripts/check_heap_reset_drift.py
 
+# Two-consecutive-run zero-fail gate: runs the full suite twice and requires
+# both runs to report 0 fails. Not part of any default path — opt in when you
+# need stronger confidence than a single green run (~15 min).
+test262-gate: build-batch
+    bash scripts/test262_gate.sh
+
 # ── Benchmarks ───────────────────────────────────────────────────────────────
 
 # Run all benchmarks without rebuilding (default: 3 iterations)

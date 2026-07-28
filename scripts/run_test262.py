@@ -1019,10 +1019,20 @@ class Worker:
         self._proc = _spawn_worker_proc(binary)
         self._pending = None  # (test_path, start_time)
         self._buf = b""
+        self._killed = False  # set by kill(); see `alive` below
 
     @property
     def alive(self):
-        return self._proc.poll() is None
+        # `poll()` only reflects a SIGKILL once the kernel has reaped the
+        # process, which is not synchronous with kill(). Without `_killed`
+        # here, a just-killed-but-not-yet-reaped worker still reads as alive
+        # and idle (its `_pending` was already cleared by the scheduler), so
+        # the "assign idle workers" step can hand it a new test on the same
+        # pipe the old test's verdict is still in flight on — the write goes
+        # to a dead process and the eventual read comes back paired with the
+        # wrong path. Treating a killed worker as dead immediately, before
+        # the OS confirms it, closes that window.
+        return not self._killed and self._proc.poll() is None
 
     @property
     def is_idle(self):
@@ -1114,8 +1124,11 @@ class Worker:
         Reaping happens via the scheduler's `alive` poll. Blocking on wait()
         here would stall every other worker in the pool for the duration of a
         process teardown, which is why timeouts used to cost the whole pool
-        rather than one worker.
+        rather than one worker. Sets `_killed` so `alive` reports False right
+        away, before the kernel has actually reaped the process — see the
+        comment on `alive`.
         """
+        self._killed = True
         if self._proc.poll() is None:
             try:
                 os.kill(self._proc.pid, signal.SIGKILL)
