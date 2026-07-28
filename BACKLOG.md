@@ -17,7 +17,7 @@ All 18 test262 phases at 0 failures. Coverage: 32,078 of 53,319 tests attempted 
 
 ## Refcounting
 
-- [>] Recover the property-write regression from `6d7e71ca` (~5% `bench_object`, ~4% isolated write loop)
+- [ ] Re-measure the `6d7e71ca` property-write cost on an idle machine — run-to-run spread currently exceeds the effect
 - [ ] Audit builtins for `tval_copy_ref(ctx.result, &ctx.this_val)` — `ctx.result` already aliases `ctx.this_val` on entry
 
 ## Known bugs
