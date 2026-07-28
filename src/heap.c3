@@ -91,9 +91,9 @@ macro ulong gc_prof_now() => mach_absolute_time();
 struct GcProfile {
     // --- Collection phase totals (mach ticks) ---
     ulong mark_ticks;
-    ulong sweep_walk_ticks;      /// Phase A unlink walk + phase D mark-bit reset
+    ulong sweep_walk_ticks;      /// Phase A unlink walk + the survivor pass
     ulong free_ticks;            /// Phase B teardown + phase C header release
-    ulong clear_ticks;           /// Phase 1 flag-clearing walk
+    ulong clear_ticks;           /// Phase 1 temproot-retiring walk
     ulong strsweep_ticks;
     ulong total_ticks;
     uint  cycles;
@@ -3174,7 +3174,8 @@ fn void Heap.sweep_large_strings(&self) {
 /**
  * Run a full mark-and-sweep garbage collection.
  *
- * 1. Clear all reachable flags.
+ * 1. Advance the mark parity, which retires every mark from the previous
+ *    collection at once — no walk resets mark bits.
  * 2. Mark all reachable objects starting from roots (built-in prototypes,
  *    registered GC roots, and the string table).
  * 3. Sweep unmarked (unreachable) objects, freeing their memory.
@@ -3210,13 +3211,20 @@ $endif
     // needed to reset mark bits — including for interned and large strings,
     // which are not on the heap_allocated list at all.
     self.mark_parity = !self.mark_parity;
-    {
-        if (clear_temproots) {
-            HeapHeader* cur = self.heap_allocated;
-            while (cur != null) {
-                cur.clear_temproot();
-                cur = cur.next;
-            }
+
+    // Retiring temproots is still per node, and it has to happen before the
+    // mark phase: the sweep keeps every node that is still a temproot, so a
+    // flag retired afterwards would protect each generation of newly allocated
+    // objects for one collection longer than intended, and the live set would
+    // grow without bound instead of settling. This walk is therefore all that
+    // is left of phase 1 — it touches one bit and only on a quiescent
+    // collection, where the previous code also had to reset every mark bit,
+    // every interned string and every large string.
+    if (clear_temproots) {
+        HeapHeader* cur = self.heap_allocated;
+        while (cur != null) {
+            cur.clear_temproot();
+            cur = cur.next;
         }
     }
 
@@ -3389,7 +3397,7 @@ fn void Heap.gc_prof_report(&self) {
         double tot = (double)p.total_ticks;
         io::eprintn("");
         io::eprintn("-- phase split --");
-        io::eprintfn("clear-flags walk       %8.3f ms  %5.1f%%",
+        io::eprintfn("temproot-retire walk   %8.3f ms  %5.1f%%",
             gc_prof_ticks_to_ns(p.clear_ticks) / 1e6, 100.0 * (double)p.clear_ticks / tot);
         io::eprintfn("MARK                   %8.3f ms  %5.1f%%",
             gc_prof_ticks_to_ns(p.mark_ticks) / 1e6, 100.0 * (double)p.mark_ticks / tot);
