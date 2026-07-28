@@ -120,19 +120,31 @@ fn void builtin_string_proto_symbol_iter(BuiltinContext* ctx) {
     ctx.result.set_object(iter);
 }
 
-/// %IteratorPrototype%[@@iterator] (ES6 section 25.1.2.1) — returns `this`.
-/// The spec says iterators are their own iterator (calling `@@iterator` on an
-/// iterator returns the iterator itself). `set_object` is required here — a
-/// raw `*ctx.result = ctx.this_val` would copy the NaN-boxed bits and skip
-/// the `incref`, which crashes as soon as GC reclaims the iterator (the
-/// canonical trigger is `for (var v of generator)`, since the loop holds
-/// the iterator through the result of this builtin).
+/// %IteratorPrototype%[@@iterator] (ES6 section 25.1.2.1) — unconditionally
+/// returns the `this` value, whatever it is (object, primitive, or even
+/// null/undefined) — there is no ReturnIfAbrupt or type check in the spec
+/// algorithm.
+///
+/// `*ctx.result` starts out ALIASING `ctx.this_val` already — every call
+/// convention that reaches a builtin (lightfunc or HObject dispatch in
+/// vm_call_fn_impl, and the VM's own CALL_PROP handling) seeds the result
+/// register with a raw, non-incref'd copy of `this` before the builtin
+/// runs, since the result slot doubles as the `this`/callee slot. So
+/// `Heap.tval_copy_ref(ctx.result, &ctx.this_val)` is wrong here: it
+/// increfs the incoming value but then decrefs `*ctx.result`'s *existing*
+/// bits — the same heap object, reached through a different TVal location
+/// than `&ctx.this_val`, so the `dst == src` same-pointer guard can't catch
+/// the aliasing — silently cancelling the incref and returning an
+/// under-refcounted reference (the caller frees it one decref too early).
+/// A bare incref (mirroring `set_object`'s convention, extended to every
+/// heap-allocated tag) is correct: the stale bits in `*ctx.result` were
+/// never independently owned, so nothing needs decrementing.
 fn void builtin_iterator_proto_symbol_iter(BuiltinContext* ctx) {
-    if (ctx.this_val.is_object()) {
-        ctx.result.set_object(ctx.this_val.get_heapptr());
-    } else {
-        ctx.result.set_undefined();
+    if (ctx.this_val.is_heap_allocated()) {
+        void* ptr = ctx.this_val.get_heapptr();
+        if (ptr != null) { ((types::HeapHeader*)ptr).incref(); }
     }
+    *ctx.result = ctx.this_val;
 }
 
 /// Array iterator .next() — returns {value, done}.
