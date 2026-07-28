@@ -400,100 +400,40 @@ fn void builtin_regexp_proto_compile(BuiltinContext* ctx) {
     ctx.result.set_object(obj);
 }
 
-/// RegExp.prototype.test(string) — ES5 §15.10.6.3
+/// RegExp.prototype.test(string) — ES2022 §22.2.6.15
+///
+/// Delegates to RegExpExec (`regexp_exec_call`, ES2022 §22.2.7.1) so that a
+/// custom `exec` override is honored and lastIndex is handled in UTF-16
+/// code-unit terms throughout, matching `RegExp.prototype.exec`.
 fn void builtin_regexp_proto_test(BuiltinContext* ctx) {
     HObject* obj = regexp_get_this(ctx);
-    if (obj == null || (*obj.extra_ptr()).regexp.regexp_data == null) {
-        // ES5 §15.10.6.3 step 2: throw TypeError if this is not a RegExp
+    if (obj == null) {
         builtin_throw_no_result_change(ctx, ctx.heap.type_err_proto, "RegExp.prototype.test called on incompatible receiver");
         return;
     }
 
-    // Get input string — ES5 §15.10.6.3 step 3: ToString(string).
-    // If no argument, ToString(undefined) = "undefined".
-    char* input = "undefined";
-    int input_len = 9;  // "undefined".length
-    bool input_ascii = true;  // the literal "undefined" is ASCII
+    // Step 3: Let S be ? ToString(string). If no argument, ToString(undefined).
+    HString* s_hstr;
     if (ctx.argc > 0) {
         TVal* arg = &ctx.regs[ctx.base_reg];
-        if (!arg.is_undefined()) {
-            HString* hs;
-            if (arg.is_string()) {
-                hs = (HString*)arg.get_heapptr();
-            } else {
-                hs = builtin_to_string_vm(ctx, arg);
-            }
-            if (hs != null) {
-                input = hs.get_cstr();
-                input_len = (int)hs.blen;
-                input_ascii = hs.is_ascii();
-            }
-        }
-    }
-
-    // Get the global and sticky flags
-    // Read directly from internal flags: 1=g, 2=i, 4=m, 8=s, 16=u, 32=y
-    int jsf_test = (*obj.extra_ptr()).regexp.flags;
-    bool global_flag = (jsf_test & 1) != 0;
-    bool sticky_flag = (jsf_test & 32) != 0;
-
-    // ES2022 §22.2.5.2.2 RegExpBuiltinExec steps 4-8:
-    // Step 4: Let lastIndex be ToLength(Get(R, "lastIndex")).
-    // ToLength always runs (so valueOf on an object lastIndex is called).
-    // Step 8: If global and sticky are both false, let lastIndex be 0.
-    HString* li_key = builtin_intern_string(ctx.heap, "lastIndex");
-    int start_pos = 0;
-    if (global_flag || sticky_flag) {
-        if (try liv = obj.get_prop_proto(li_key)) {
-            double li_d = builtin_to_integer_vm(ctx, &liv);
+        if (arg.is_string() && arg.get_heapptr() != null) {
+            s_hstr = (HString*)arg.get_heapptr();
+        } else {
+            s_hstr = builtin_to_string_vm(ctx, arg);
             if (ctx.should_throw) return;
-            // ToLength: clamp to [0, 2^53-1]
-            if (li_d < 0.0) li_d = 0.0;
-            double max53 = 9007199254740991.0;
-            if (li_d > max53) li_d = max53;
-            // If ToLength(lastIndex) > length, reset to 0 and return false.
-            if (li_d > (double)input_len) {
-                TVal zero_tv;
-                zero_tv.set_fastint(0);
-                obj.put_prop(li_key, zero_tv, hobject::PROP_FLAGS_WEC);
-                ctx.result.set_boolean(false);
-                return;
-            }
-            start_pos = (int)li_d;
+            if (s_hstr == null) s_hstr = builtin_intern_string(ctx.heap, "undefined");
         }
+    } else {
+        s_hstr = builtin_intern_string(ctx.heap, "undefined");
     }
 
-    // Execute
-    int out_start = 0;
-    int out_end = 0;
-    int out_num_captures = 0;
-    int result = re_bindings::re_exec(
-        (*obj.extra_ptr()).regexp.regexp_data, input, input_len, start_pos,
-        (int)input_ascii,
-        &out_start, &out_end, &out_num_captures,
-        null, null, 0
-    );
+    // Step 4: Let match be ? RegExpExec(R, S).
+    TVal s_tv; s_tv.set_string(s_hstr);
+    if (!regexp_exec_call(ctx, obj, &s_tv)) return;
 
-    if (result != re_bindings::RE_MATCH) {
-        // Step 9: no match — reset lastIndex to 0 if global or sticky.
-        if (global_flag || sticky_flag) {
-            TVal zero_tv;
-            zero_tv.set_fastint(0);
-            if (!regexp_set_prop(ctx, obj, li_key, &zero_tv)) return;
-        }
-        ctx.result.set_boolean(false);
-        return;
-    }
-
-    // Step 10: if global OR sticky, update lastIndex to end of match (= e).
-    if (global_flag || sticky_flag) {
-        long new_li = (long)hstring::compute_charlen(input[:out_end]);
-        TVal end_tv;
-        end_tv.set_fastint(new_li);
-        obj.put_prop(li_key, end_tv, hobject::PROP_FLAGS_WEC);
-    }
-
-    ctx.result.set_boolean(true);
+    // Step 5: If match is not null, return true; else return false.
+    bool matched = !ctx.result.is_null();
+    ctx.result.set_boolean(matched);
 }
 
 /// Build a RegExp exec/match result array with .groups and optional .indices.
