@@ -2986,12 +2986,12 @@ fn ushort? CompilerContext.primary_expr(&self) {
                     self.emit_abc(Opcode.LDNULL, (uint)reg, 0, 0);
                     return reg;
                 }
-                if (str_eq(id_tok.str_value, "undefined")) {
-                    self.last_was_getvar = false;
-                    ushort reg = self.alloc_reg();
-                    self.emit_abc(Opcode.LDUNDEF, (uint)reg, 0, 0);
-                    return reg;
-                }
+                // `undefined` is an ordinary identifier bound to a non-writable
+                // global property (ES2015 §18.1.3), not a syntactic keyword like
+                // true/false/null — it must fall through to normal identifier
+                // resolution below so `undefined = 12` parses (AssignmentTargetType
+                // simple) and throws TypeError at runtime rather than being
+                // rejected as an early SyntaxError.
 
                 // Arrow function: IDENTIFIER => ...
                 if (self.check(TokenType.ARROW)) {

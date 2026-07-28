@@ -156,6 +156,137 @@ fn void builtin_uri_error(BuiltinContext* ctx) {
 // AggregateError constructor — ES2021 §28.1.1.1
 // ============================================================================
 
+/// IterableToList(items) — ES2022 §7.4.11 (used by AggregateError's
+/// `errors` argument per §20.5.7.1.1 step 3). GetIterator(items, sync),
+/// then IteratorStep/IteratorValue in a loop, appending each value to a
+/// fresh Array. Any abrupt completion propagates directly (there is no
+/// partial result to close over since the caller hasn't seen `values` yet).
+/// Returns the array HObject, or null with ctx.should_throw set on failure.
+fn HObject* aggregate_error_iterable_to_list(BuiltinContext* ctx, TVal items) {
+    Heap* heap = ctx.heap;
+
+    // GetMethod(items, @@iterator)
+    HString* iter_sym = ensure_iterator_symbol(heap);
+    if (iter_sym == null) { ctx.result.set_undefined(); return null; }
+
+    HObject* items_obj = null;
+    if (items.is_object() && items.get_heapptr() != null) {
+        items_obj = (HObject*)items.get_heapptr();
+    } else if (!items.is_undefined() && !items.is_null()) {
+        HObject*? wrapped = heap.alloc_object(hobject::ObjClass.OBJECT);
+        if (try w = wrapped) {
+            items_obj = w;
+            HObject* wrap_proto = heap.string_proto;
+            if (items.is_string()) {
+                (*items_obj.extra_ptr()).prim.primitive_value = items;
+            } else if (items.is_fastint() || items.is_number()) {
+                wrap_proto = heap.number_proto;
+            } else if (items.is_boolean()) {
+                wrap_proto = heap.bool_proto;
+            } else if (items.is_bigint()) {
+                wrap_proto = heap.bigint_proto;
+            }
+            items_obj.prototype = wrap_proto;
+        }
+    }
+
+    if (items_obj == null) {
+        arr_throw_type_error(ctx, "errors argument is not iterable");
+        return null;
+    }
+
+    TVal? iter_method_opt = builtins_generic_get(items_obj, iter_sym, ctx);
+    if (ctx.should_throw) return null;
+    TVal iter_method;
+    iter_method.set_undefined();
+    if (try im = iter_method_opt) iter_method = im;
+    if (iter_method.is_undefined() || iter_method.is_null()) {
+        arr_throw_type_error(ctx, "errors argument is not iterable");
+        return null;
+    }
+    if (!arr_from_is_callable(iter_method)) {
+        arr_throw_type_error(ctx, "Result of the Symbol.iterator method is not callable");
+        return null;
+    }
+    if (heap.call_fn == null || ctx.vm == null) { ctx.result.set_undefined(); return null; }
+
+    HObject*? arr_raw = heap.alloc_object(hobject::ObjClass.ARRAY);
+    if (catch e = arr_raw) { ctx.result.set_undefined(); return null; }
+    HObject* arr = arr_raw;
+    arr.prototype = heap.array_proto;
+
+    TVal iterator = heap.call_fn(ctx.vm, iter_method, null, 0, items);
+    if (ctx.heap.has_error) {
+        ctx.should_throw = true;
+        ctx.throw_value = ctx.heap.error_value;
+        ctx.heap.has_error = false;
+        return null;
+    }
+    if (!iterator.is_object() || iterator.get_heapptr() == null) {
+        arr_throw_type_error(ctx, "Result of the Symbol.iterator method is not an object");
+        return null;
+    }
+    HObject* iter_obj = (HObject*)iterator.get_heapptr();
+
+    HString* next_key = builtin_intern_string(heap, "next");
+    HString* done_key = builtin_intern_string(heap, "done");
+    HString* value_key = builtin_intern_string(heap, "value");
+    HString* len_key = builtin_intern_string(heap, "length");
+
+    uint k = 0;
+    while (true) {
+        TVal? next_method_opt = builtins_generic_get(iter_obj, next_key, ctx);
+        if (ctx.should_throw) return null;
+        TVal next_method;
+        if (try nm = next_method_opt) { next_method = nm; } else { break; }
+        if (!arr_from_is_callable(next_method)) {
+            arr_throw_type_error(ctx, "iterator.next is not callable");
+            return null;
+        }
+
+        TVal step_result = heap.call_fn(ctx.vm, next_method, null, 0, iterator);
+        if (ctx.heap.has_error) {
+            ctx.should_throw = true;
+            ctx.throw_value = ctx.heap.error_value;
+            ctx.heap.has_error = false;
+            return null;
+        }
+        if (!step_result.is_object() || step_result.get_heapptr() == null) {
+            arr_throw_type_error(ctx, "Iterator result is not an object");
+            return null;
+        }
+        HObject* result_obj = (HObject*)step_result.get_heapptr();
+
+        TVal? done_opt = builtins_generic_get(result_obj, done_key, ctx);
+        if (ctx.should_throw) return null;
+        bool done = false;
+        if (try dv = done_opt) done = builtin_to_boolean(&dv);
+        if (done) {
+            if (len_key != null) arr_set_length_or_throw(ctx, arr, len_key, (ulong)k);
+            return arr;
+        }
+
+        TVal? value_opt = builtins_generic_get(result_obj, value_key, ctx);
+        if (ctx.should_throw) {
+            arr_iterator_close_after_throw(ctx, iterator);
+            return null;
+        }
+        TVal next_value;
+        if (try vv = value_opt) { next_value = vv; } else { next_value.set_undefined(); }
+
+        HString* pk = heap.int_to_hstring((long)k);
+        if (pk != null) {
+            if (!arr_create_data_property_or_throw(ctx, arr, pk, next_value)) {
+                arr_iterator_close_after_throw(ctx, iterator);
+                return null;
+            }
+        }
+        k++;
+    }
+
+    return arr;
+}
+
 fn void builtin_aggregate_error(BuiltinContext* ctx) {
     // Get errors argument
     TVal errors_val;
@@ -175,10 +306,14 @@ fn void builtin_aggregate_error(BuiltinContext* ctx) {
     HObject* err = err_raw;
     err.prototype = builtin_proto_from_new_target(ctx, ctx.heap.aggregate_err_proto);
 
-    // Set .message if provided and not undefined
+    // §20.5.7.1.1 step 5: message uses ToString via ToPrimitive (hint
+    // "string") so a throwing toString()/valueOf() propagates — builtin_to_string
+    // (used elsewhere) does not run ToPrimitive and would swallow the abrupt
+    // completion (see commit eea15205 for the same fix on the URI builtins).
     HString* msg_str = null;
     if (!msg_val.is_undefined()) {
-        msg_str = builtin_to_string(ctx.heap, &msg_val);
+        msg_str = builtin_to_string_vm(ctx, &msg_val);
+        if (ctx.should_throw) { ctx.result.set_undefined(); return; }
         if (msg_str != null) {
             TVal msg_prop;
             msg_prop.set_string(msg_str);
@@ -214,18 +349,17 @@ fn void builtin_aggregate_error(BuiltinContext* ctx) {
         error_set_captured_stack(err, ctx.heap, stack_str);
     }
 
-    // Set .errors array
-    HString* errors_key = builtin_intern_string(ctx.heap, "errors");
-    if (!errors_val.is_undefined()) {
-        err.put_prop(errors_key, errors_val, hobject::PROP_FLAGS_WC);
-    } else {
-        HObject*? empty_arr = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
-        if (try arr = empty_arr) {
-            arr.prototype = ctx.heap.array_proto;
-            TVal arr_tv;
-            arr_tv.set_object(arr);
-            err.put_prop(errors_key, arr_tv, hobject::PROP_FLAGS_WC);
-        }
+    // §20.5.7.1.1 step 3: errorsList = ? IterableToList(errors) — `errors` is
+    // an ITERABLE, not a pre-built array; must throw if it isn't iterable
+    // (including when omitted, since GetMethod(undefined, @@iterator) fails).
+    // step 4: set the own "errors" property to a fresh Array from that list.
+    HObject* errors_arr = aggregate_error_iterable_to_list(ctx, errors_val);
+    if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+    if (errors_arr != null) {
+        HString* errors_key = builtin_intern_string(ctx.heap, "errors");
+        TVal errors_tv;
+        errors_tv.set_object(errors_arr);
+        err.put_prop(errors_key, errors_tv, hobject::PROP_FLAGS_WC);
     }
 
     // ES2022 §20.5.8.1 InstallErrorCause — AggregateError's 3rd arg is options.
@@ -648,7 +782,7 @@ fn bool register_error_builtins(EnvRecord* global_env, Heap* heap) {
     if (aggregate_err_proto == null) return false;
     heap.aggregate_err_proto = aggregate_err_proto;
 
-    if (!register_native_error_ctor(global_env, heap, "AggregateError", Builtin.AGGREGATE_ERROR.ordinal, aggregate_err_proto, err_ctor)) return false;
+    if (!register_native_error_ctor(global_env, heap, "AggregateError", Builtin.AGGREGATE_ERROR.ordinal, aggregate_err_proto, err_ctor, 2)) return false;
 
     return true;
 }
@@ -658,7 +792,8 @@ fn bool register_error_builtins(EnvRecord* global_env, Heap* heap) {
 /// wires own "prototype" property (NWC) to native_proto, and updates
 /// native_proto.constructor to point at the new ctor HObject.
 fn bool register_native_error_ctor(EnvRecord* global_env, Heap* heap, char[] name,
-                                   uint fn_index, HObject* native_proto, HObject* err_ctor) {
+                                   uint fn_index, HObject* native_proto, HObject* err_ctor,
+                                   int ctor_length = 1) {
     HObject*? ctor_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
     if (catch e = ctor_raw) return false;
     HObject* ctor = ctor_raw;
@@ -685,7 +820,7 @@ fn bool register_native_error_ctor(EnvRecord* global_env, Heap* heap, char[] nam
     native_proto.put_prop(constructor_key, ctor_tv, hobject::PROP_FLAGS_WC);
 
     // Set .name and .length on the constructor
-    set_func_ctor_name_length(ctor, heap, name, 1);
+    set_func_ctor_name_length(ctor, heap, name, ctor_length);
 
     // Register in global environment
     HString* key = heap.str_intern(name);
