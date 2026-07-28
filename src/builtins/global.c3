@@ -802,301 +802,238 @@ fn int hex_digit_val(char c) {
     return -1;
 }
 
-/// encodeURI (ES5 §15.1.3.1)
+alias UriExtraUnreservedFn = fn bool(char);
+
+/// Shared Encode (ES §19.2.6.5) body driving both encodeURI and
+/// encodeURIComponent — they differ only in which ASCII punctuation passes
+/// through unescaped (`extra_unreserved`). Walks `str` by UTF-16 code unit
+/// (internal storage is CESU-8: every surrogate half is its own 3-byte
+/// sequence — see hstring's CESU-8 utilities), pairs surrogates back into
+/// astral codepoints, UTF-8-encodes each codepoint's bytes as %XX triplets,
+/// and throws URIError on any lone (unpaired) surrogate — Encode is defined
+/// over Unicode code points, and a lone surrogate is not one.
+fn void uri_encode(BuiltinContext* ctx, HString* str, UriExtraUnreservedFn extra_unreserved) {
+    char[] data = str.get_data();
+    uint len = str.blen;
+    char[65536] out;
+    usz offset = 0;
+    uint i = 0;
+    while (i < len && offset < 65500) {
+        char c = data[i];
+        if (c < 0x80 && (uri_is_unreserved(c) || extra_unreserved(c))) {
+            out[offset++] = c;
+            i++;
+            continue;
+        }
+        uint seq_len = hstring::utf16_unit_byte_len(data, i);
+        uint cp = hstring::decode_codepoint(data, i);
+        if (hstring::is_high_surrogate(cp)) {
+            if (i + seq_len < len) {
+                uint next_len = hstring::utf16_unit_byte_len(data, i + seq_len);
+                uint low = hstring::decode_codepoint(data, i + seq_len);
+                if (hstring::is_low_surrogate(low)) {
+                    uint astral = hstring::surrogates_to_codepoint(cp, low);
+                    char[4] obuf;
+                    uint n = hstring::encode_codepoint(astral, obuf[:4]);
+                    for (uint k = 0; k < n; k++) uri_encode_byte(&out, &offset, obuf[k]);
+                    i += seq_len + next_len;
+                    continue;
+                }
+            }
+            builtin_throw_no_result_change(ctx, ctx.heap.uri_err_proto, "URI malformed");
+            return;
+        }
+        if (hstring::is_low_surrogate(cp)) {
+            builtin_throw_no_result_change(ctx, ctx.heap.uri_err_proto, "URI malformed");
+            return;
+        }
+        char[4] obuf;
+        uint n = hstring::encode_codepoint(cp, obuf[:4]);
+        for (uint k = 0; k < n; k++) uri_encode_byte(&out, &offset, obuf[k]);
+        i += seq_len;
+    }
+    HString* result = builtin_intern_string(ctx.heap, out[:offset]);
+    ctx.result.set_string(result);
+}
+
+fn bool uri_extra_reserved(char c) {
+    return c == ';' || c == ',' || c == '/' || c == '?' || c == ':' ||
+           c == '@' || c == '&' || c == '=' || c == '+' || c == '$' || c == '#';
+}
+
+fn bool uri_extra_none(char c) {
+    return false;
+}
+
+/// encodeURI (ES §19.2.6.5)
 fn void builtin_encode_uri(BuiltinContext* ctx) {
     if (ctx.argc < 1) {
         ctx.result.set_string(builtin_intern_string(ctx.heap, "undefined"));
         return;
     }
-    HString* str = builtin_to_string(ctx.heap, &ctx.regs[ctx.base_reg]);
+    HString* str = builtin_to_string_vm(ctx, &ctx.regs[ctx.base_reg]);
+    if (ctx.should_throw) return;
     if (str == null) {
         ctx.result.set_string(builtin_intern_string(ctx.heap, ""));
         return;
     }
-    char[] data = str.get_data();
-    uint len = str.blen;
-    char[65536] out;
-    usz offset = 0;
-    uint i = 0;
-    while (i < len && offset < 65530) {
-        char c = data[i];
-        // URI unreserved + reserved + '#' characters (not encoded)
-        if (uri_is_unreserved(c)) {
-            out[offset++] = c;
-            i++;
-        } else if (c == ';' || c == ',' || c == '/' || c == '?' || c == ':' ||
-                   c == '@' || c == '&' || c == '=' || c == '+' || c == '$' ||
-                   c == '-' || c == '_' || c == '.' || c == '!' || c == '~' ||
-                   c == '*' || c == '\'' || c == '(' || c == ')' || c == '#') {
-            out[offset++] = c;
-            i++;
-        } else {
-            uint b = (uint)c;
-            if (b < 0x80) {
-                uri_encode_byte(&out, &offset, (char)b);
-                i++;
-            } else if (b >= 0xC2 && b <= 0xF4) {
-                uint seq_len;
-                if (b < 0xE0) { seq_len = 2; }
-                else if (b < 0xF0) { seq_len = 3; }
-                else { seq_len = 4; }
-                if (i + seq_len > len) {
-                    // Incomplete sequence - encode byte
-                    uri_encode_byte(&out, &offset, (char)b);
-                    i++;
-                } else {
-                    // Validate continuation bytes
-                    bool valid = true;
-                    for (uint j = 1; j < seq_len; j++) {
-                        uint cb = (uint)data[i + j];
-                        if (cb < 0x80 || cb > 0xBF) { valid = false; break; }
-                    }
-                    if (!valid) {
-                        uri_encode_byte(&out, &offset, (char)b);
-                        i++;
-                    } else {
-                        for (uint j = 0; j < seq_len; j++) {
-                            uri_encode_byte(&out, &offset, (char)data[i + j]);
-                        }
-                        i += seq_len;
-                    }
-                }
-            } else {
-                // Invalid leading byte (0x80-0xBF, 0xC0-0xC1, 0xF5-0xFF)
-                uri_encode_byte(&out, &offset, (char)b);
-                i++;
-            }
-        }
-    }
-    HString* result = builtin_intern_string(ctx.heap, out[:offset]);
-    ctx.result.set_string(result);
+    uri_encode(ctx, str, &uri_extra_reserved);
 }
 
-/// encodeURIComponent (ES5 §15.1.3.2)
+/// encodeURIComponent (ES §19.2.6.5)
 fn void builtin_encode_uri_component(BuiltinContext* ctx) {
     if (ctx.argc < 1) {
         ctx.result.set_string(builtin_intern_string(ctx.heap, "undefined"));
         return;
     }
-    HString* str = builtin_to_string(ctx.heap, &ctx.regs[ctx.base_reg]);
+    HString* str = builtin_to_string_vm(ctx, &ctx.regs[ctx.base_reg]);
+    if (ctx.should_throw) return;
     if (str == null) {
         ctx.result.set_string(builtin_intern_string(ctx.heap, ""));
         return;
     }
-    char[] data = str.get_data();
-    uint len = str.blen;
-    char[65536] out;
-    usz offset = 0;
-    uint i = 0;
-    while (i < len && offset < 65530) {
-        char c = data[i];
-        if (uri_is_unreserved(c)) {
-            out[offset++] = c;
-            i++;
-        } else {
-            uint b = (uint)c;
-            if (b < 0x80) {
-                uri_encode_byte(&out, &offset, (char)b);
-                i++;
-            } else if (b >= 0xC2 && b <= 0xF4) {
-                uint seq_len;
-                if (b < 0xE0) { seq_len = 2; }
-                else if (b < 0xF0) { seq_len = 3; }
-                else { seq_len = 4; }
-                if (i + seq_len > len) {
-                    uri_encode_byte(&out, &offset, (char)b);
-                    i++;
-                } else {
-                    bool valid = true;
-                    for (uint j = 1; j < seq_len; j++) {
-                        uint cb = (uint)data[i + j];
-                        if (cb < 0x80 || cb > 0xBF) { valid = false; break; }
-                    }
-                    if (!valid) {
-                        uri_encode_byte(&out, &offset, (char)b);
-                        i++;
-                    } else {
-                        for (uint j = 0; j < seq_len; j++) {
-                            uri_encode_byte(&out, &offset, (char)data[i + j]);
-                        }
-                        i += seq_len;
-                    }
-                }
-            } else {
-                uri_encode_byte(&out, &offset, (char)b);
-                i++;
-            }
-        }
-    }
-    HString* result = builtin_intern_string(ctx.heap, out[:offset]);
-    ctx.result.set_string(result);
+    uri_encode(ctx, str, &uri_extra_none);
 }
 
-/// decodeURI (ES5 §15.1.3.3)
-fn void builtin_decode_uri(BuiltinContext* ctx) {
-    if (ctx.argc < 1) {
-        ctx.result.set_string(builtin_intern_string(ctx.heap, "undefined"));
-        return;
+/// Decode a single %XX-escaped UTF-8 sequence starting at `data[i]` (which
+/// must be '%') into a Unicode code point. Validates continuation bytes,
+/// rejects overlong encodings, out-of-range code points (> U+10FFFF), and
+/// lone surrogates (a valid code point can never be a surrogate half — RFC
+/// 3629 / ES §19.2.6.6 Decode step 7.f-g). On success, sets `*cp` and
+/// `*consumed` (number of source bytes eaten, i.e. 3 * byte-sequence-length)
+/// and returns true. On any malformed input returns false and leaves the
+/// outputs unspecified — the caller throws URIError.
+fn bool uri_decode_sequence(char[] data, uint i, uint len, uint* cp, uint* consumed) {
+    if (i + 2 >= len) return false;
+    int d1 = hex_digit_val(data[i + 1]);
+    int d2 = hex_digit_val(data[i + 2]);
+    if (d1 < 0 || d2 < 0) return false;
+    uint first = (uint)((d1 << 4) | d2);
+    if (first < 0x80) {
+        *cp = first;
+        *consumed = 3;
+        return true;
     }
-    HString* str = builtin_to_string(ctx.heap, &ctx.regs[ctx.base_reg]);
-    if (str == null) {
-        ctx.result.set_string(builtin_intern_string(ctx.heap, ""));
-        return;
+    if (first < 0xC2 || first > 0xF4) return false;  // continuation byte or invalid lead
+    uint seq_len;
+    if (first < 0xE0) { seq_len = 2; }
+    else if (first < 0xF0) { seq_len = 3; }
+    else { seq_len = 4; }
+    if (i + 3 * seq_len > len) return false;
+    char[4] bytes;
+    bytes[0] = (char)first;
+    for (uint j = 1; j < seq_len; j++) {
+        if (data[i + 3 * j] != '%') return false;
+        int h1 = hex_digit_val(data[i + 3 * j + 1]);
+        int h2 = hex_digit_val(data[i + 3 * j + 2]);
+        if (h1 < 0 || h2 < 0) return false;
+        char b = (char)((h1 << 4) | h2);
+        if (b < 0x80 || b > 0xBF) return false;
+        bytes[j] = b;
     }
+    // Continuation bytes are already structurally valid at this point, so
+    // decode_codepoint can only differ from a genuine decode by rejecting an
+    // overlong encoding (which it also reports as UNICODE_REPLACEMENT — the
+    // same sentinel a *legitimately* decoded U+FFFD would produce). Detect
+    // overlong directly instead of relying on that sentinel, so decoding an
+    // actual "%EF%BF%BD" (U+FFFD) is not mistaken for malformed input.
+    uint decoded = ((first & (0xFF >> seq_len)) << (6 * (seq_len - 1)));
+    for (uint j = 1; j < seq_len; j++) {
+        decoded |= ((uint)bytes[j] & 0x3F) << (6 * (seq_len - 1 - j));
+    }
+    uint min_cp = (seq_len == 2) ? 0x80u : (seq_len == 3) ? 0x800u : 0x1_0000u;
+    if (decoded < min_cp || decoded > 0x10_FFFF) return false;  // overlong / out-of-range
+    if (hstring::is_surrogate(decoded)) return false;  // not a valid code point
+    *cp = decoded;
+    *consumed = 3 * seq_len;
+    return true;
+}
+
+/// Write `cp` into `out` at `*offset` as a CESU-8-canonical UTF-16 code-unit
+/// sequence: astral code points split into a surrogate pair (each half its
+/// own 3-byte sequence), everything else via plain UTF-8 — matching the
+/// storage format every interned HString must be in.
+fn void uri_decode_emit(char* out, usz* offset, uint cp) {
+    char[6] buf;
+    uint n = hstring::encode_codepoint_cesu8(cp, buf[:6]);
+    for (uint k = 0; k < n; k++) out[(*offset)++] = buf[k];
+}
+
+/// Shared Decode (ES §19.2.6.6) body for decodeURI/decodeURIComponent. They
+/// differ only in which percent-triplets are left un-decoded (reserved URI
+/// characters, decodeURI only).
+fn void uri_decode(BuiltinContext* ctx, HString* str, bool preserve_reserved) {
     char[] data = str.get_data();
     uint len = str.blen;
     char[65536] out;
     usz offset = 0;
     uint i = 0;
-    while (i < len && offset < 65530) {
-        if (data[i] == '%') {
-            // Check if this is a reserved character that should NOT be decoded
+    while (i < len && offset < 65500) {
+        if (data[i] != '%') {
+            out[offset++] = data[i];
+            i++;
+            continue;
+        }
+        if (preserve_reserved) {
+            // Peek the raw byte value without full sequence validation, to
+            // decide whether this triplet is a reserved URI character that
+            // decodeURI must leave un-decoded (as literal "%XX" text).
             if (i + 2 < len) {
                 int d1 = hex_digit_val(data[i + 1]);
                 int d2 = hex_digit_val(data[i + 2]);
                 if (d1 >= 0 && d2 >= 0) {
-                    uint cp = (uint)((d1 << 4) | d2);
-                    // decodeURI does NOT decode reserved URI characters
-                    if (cp == 0x23 || cp == 0x24 || cp == 0x26 || cp == 0x2B ||
-                        cp == 0x2C || cp == 0x2F || cp == 0x3A || cp == 0x3B ||
-                        cp == 0x3D || cp == 0x3F || cp == 0x40) {
+                    uint raw = (uint)((d1 << 4) | d2);
+                    if (raw == 0x23 || raw == 0x24 || raw == 0x26 || raw == 0x2B ||
+                        raw == 0x2C || raw == 0x2F || raw == 0x3A || raw == 0x3B ||
+                        raw == 0x3D || raw == 0x3F || raw == 0x40) {
                         out[offset++] = '%';
                         out[offset++] = data[i + 1];
                         out[offset++] = data[i + 2];
                         i += 3;
                         continue;
                     }
-                    // Decode the byte
-                    char first = (char)cp;
-                    if (first < 0x80) {
-                        out[offset++] = (char)first;
-                        i += 3;
-                    } else if (first >= 0xC0 && first <= 0xF4) {
-                        // Multi-byte UTF-8 sequence
-                        uint seq_len;
-                        if (first < 0xE0) { seq_len = 2; }
-                        else if (first < 0xF0) { seq_len = 3; }
-                        else { seq_len = 4; }
-                        if (i + 3 * seq_len > len) {
-                            // Incomplete - throw URIError
-                            builtin_throw_no_result_change(ctx, ctx.heap.uri_err_proto, "URI malformed");
-                            return;
-                        }
-                        char[4] bytes;
-                        bytes[0] = (char)first;
-                        bool valid = true;
-                        for (uint j = 1; j < seq_len; j++) {
-                            if (data[i + 3 * j] != '%') { valid = false; break; }
-                            int h1 = hex_digit_val(data[i + 3 * j + 1]);
-                            int h2 = hex_digit_val(data[i + 3 * j + 2]);
-                            if (h1 < 0 || h2 < 0) { valid = false; break; }
-                            char b = (char)((h1 << 4) | h2);
-                            if (b < 0x80 || b > 0xBF) { valid = false; break; }
-                            bytes[j] = (char)b;
-                        }
-                        if (!valid) {
-                            builtin_throw_no_result_change(ctx, ctx.heap.uri_err_proto, "URI malformed");
-                            return;
-                        }
-                        for (uint j = 0; j < seq_len; j++) {
-                            out[offset++] = bytes[j];
-                        }
-                        i += 3 * seq_len;
-                    } else {
-                        // Invalid leading byte for multi-byte sequence
-                        builtin_throw_no_result_change(ctx, ctx.heap.uri_err_proto, "URI malformed");
-                        return;
-                    }
-                } else {
-                    // Invalid hex digits
-                    builtin_throw_no_result_change(ctx, ctx.heap.uri_err_proto, "URI malformed");
-                    return;
                 }
-            } else {
-                // '%' not followed by two hex digits
-                builtin_throw_no_result_change(ctx, ctx.heap.uri_err_proto, "URI malformed");
-                return;
             }
-        } else {
-            out[offset++] = data[i];
-            i++;
         }
+        uint cp;
+        uint consumed;
+        if (!uri_decode_sequence(data, i, len, &cp, &consumed)) {
+            builtin_throw_no_result_change(ctx, ctx.heap.uri_err_proto, "URI malformed");
+            return;
+        }
+        uri_decode_emit(&out, &offset, cp);
+        i += consumed;
     }
     HString* result = builtin_intern_string(ctx.heap, out[:offset]);
     ctx.result.set_string(result);
 }
 
-/// decodeURIComponent (ES5 §15.1.3.4)
+/// decodeURI (ES §19.2.6.6)
+fn void builtin_decode_uri(BuiltinContext* ctx) {
+    if (ctx.argc < 1) {
+        ctx.result.set_string(builtin_intern_string(ctx.heap, "undefined"));
+        return;
+    }
+    HString* str = builtin_to_string_vm(ctx, &ctx.regs[ctx.base_reg]);
+    if (ctx.should_throw) return;
+    if (str == null) {
+        ctx.result.set_string(builtin_intern_string(ctx.heap, ""));
+        return;
+    }
+    uri_decode(ctx, str, true);
+}
+
+/// decodeURIComponent (ES §19.2.6.6)
 fn void builtin_decode_uri_component(BuiltinContext* ctx) {
     if (ctx.argc < 1) {
         ctx.result.set_string(builtin_intern_string(ctx.heap, "undefined"));
         return;
     }
-    HString* str = builtin_to_string(ctx.heap, &ctx.regs[ctx.base_reg]);
+    HString* str = builtin_to_string_vm(ctx, &ctx.regs[ctx.base_reg]);
+    if (ctx.should_throw) return;
     if (str == null) {
         ctx.result.set_string(builtin_intern_string(ctx.heap, ""));
         return;
     }
-    char[] data = str.get_data();
-    uint len = str.blen;
-    char[65536] out;
-    usz offset = 0;
-    uint i = 0;
-    while (i < len && offset < 65530) {
-        if (data[i] == '%') {
-            if (i + 2 < len) {
-                int d1 = hex_digit_val(data[i + 1]);
-                int d2 = hex_digit_val(data[i + 2]);
-                if (d1 < 0 || d2 < 0) {
-                    builtin_throw_no_result_change(ctx, ctx.heap.uri_err_proto, "URI malformed");
-                    return;
-                }
-                char first = (char)((d1 << 4) | d2);
-                if (first < 0x80) {
-                    out[offset++] = (char)first;
-                    i += 3;
-                } else if (first >= 0xC0 && first <= 0xF4) {
-                    uint seq_len;
-                    if (first < 0xE0) { seq_len = 2; }
-                    else if (first < 0xF0) { seq_len = 3; }
-                    else { seq_len = 4; }
-                    if (i + 3 * seq_len > len) {
-                        builtin_throw_no_result_change(ctx, ctx.heap.uri_err_proto, "URI malformed");
-                        return;
-                    }
-                    char[4] bytes;
-                    bytes[0] = (char)first;
-                    bool valid = true;
-                    for (uint j = 1; j < seq_len; j++) {
-                        if (data[i + 3 * j] != '%') { valid = false; break; }
-                        int h1 = hex_digit_val(data[i + 3 * j + 1]);
-                        int h2 = hex_digit_val(data[i + 3 * j + 2]);
-                        if (h1 < 0 || h2 < 0) { valid = false; break; }
-                        char b = (char)((h1 << 4) | h2);
-                        if (b < 0x80 || b > 0xBF) { valid = false; break; }
-                        bytes[j] = (char)b;
-                    }
-                    if (!valid) {
-                        builtin_throw_no_result_change(ctx, ctx.heap.uri_err_proto, "URI malformed");
-                        return;
-                    }
-                    for (uint j = 0; j < seq_len; j++) {
-                        out[offset++] = bytes[j];
-                    }
-                    i += 3 * seq_len;
-                } else {
-                    builtin_throw_no_result_change(ctx, ctx.heap.uri_err_proto, "URI malformed");
-                    return;
-                }
-            } else {
-                builtin_throw_no_result_change(ctx, ctx.heap.uri_err_proto, "URI malformed");
-                return;
-            }
-        } else {
-            out[offset++] = data[i];
-            i++;
-        }
-    }
-    HString* result = builtin_intern_string(ctx.heap, out[:offset]);
-    ctx.result.set_string(result);
+    uri_decode(ctx, str, false);
 }
