@@ -36,9 +36,11 @@ All 18 test262 phases at 0 failures. Coverage: 32,078 of 53,319 tests attempted 
 - [ ] `async function`'s own `GeneratorState` leaks — shared between `resume_fn`/`reject_fn`, needs shared ownership
 - [ ] Re-measure baseline leak count after `dc2945cb`
 - [ ] `error.c3:92` `.stack` name fallback skips ToPrimitive; naive `builtin_to_string_vm` swap was rejected (fires during construction)
-- [ ] Bound-function internals (`\x00bound_target` etc.) leak through `Object.getOwnPropertyNames`
-- [ ] `new Date(-1).getUTCFullYear()` → 1970, should be 1969 (`date_break_time*`)
-- [ ] Generator-resume path never assigns `new_target`
+- [ ] Generator *initial-call* activation may also not assign `new_target` (`vm_calls.c3:1772`) — structurally identical to the resume gap fixed in `e57c58a8`; a first probe did not reproduce, needs one shaped like the resume repro
+- [ ] Bound functions list own properties as `name, length`; qjs gives `length, name` — pre-existing, unrelated to `49e0847e`
+- [x] Bound-function internals (`\x00bound_target` etc.) leaked through `Object.getOwnPropertyNames` — `49e0847e`
+- [x] `new Date(-1).getUTCFullYear()` → 1970 instead of 1969 — `bfe1215a`
+- [x] Generator-resume path leaked a stale `new_target` — `e57c58a8`
 - [x] `finally` skipped when `return` passes through a catch-only `try` — `79ca7134`, `40076777` (yield* delegation)
 - [x] `Array.prototype.sort` segfaulted on a throwing `toString` — `a93ff1a9`
 - [x] `Map.set(-0)` / `Set.add(-0)` stored `-0` instead of `+0` — `4bc5bbdf`
