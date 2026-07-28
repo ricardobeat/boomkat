@@ -1573,6 +1573,20 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                     vm.valstack_top = new_regs_r + new_nregs_r;
                     vm.valstack_bottom = new_act_r.bottom;
 
+                    if (!target.is_user_generator()) {
+                        new_act_r.async_gen_state = null;
+                        if (gs.saved_regs != null) {
+                            for (uint i = 0; i < gs.num_regs; i++) {
+                                vm.heap.decref_tval(&gs.saved_regs[i]);
+                            }
+                            vm.heap.free_func(vm.heap.heap_udata, gs.saved_regs);
+                            gs.saved_regs = null;
+                            gs.num_regs = 0;
+                        }
+                        vm.heap.decref_tval(&gs.this_binding);
+                        gs.this_binding.set_undefined();
+                    }
+
                     // Save caller resume point before switching activation
                     ds.act.curr_pc = ds.curr_pc;
 
