@@ -421,33 +421,23 @@ fn void builtin_regexp_string_iterator_next(BuiltinContext* ctx) {
         return;
     }
 
-    char* input = s_hstr.get_cstr();
-    int input_len = (int)s_hstr.blen;
     bool global_flag = (flags & 1) != 0;
     bool unicode_flag = (flags & 4) != 0;
 
-    // Get lastIndex from the regexp — a UTF-16 code-unit index; convert to a
-    // CESU-8 byte offset for re_exec (which takes byte offsets).
-    HString* li_key = builtin_intern_string(heap, "lastIndex");
-    long search_charunit = 0;
-    if (try liv = rx.get_prop_proto(li_key)) {
-        if (liv.is_fastint()) {
-            search_charunit = liv.get_fastint();
-        } else if (liv.is_number()) {
-            search_charunit = (long)liv.get_number();
-        }
-    }
-    if (search_charunit < 0) search_charunit = 0;
-    uint str_charlen = s_hstr.char_length();
-    int search_pos = (int)s_hstr.char_offset_to_byte_offset((uint)search_charunit);
-    if ((ulong)search_charunit > (ulong)str_charlen) {
-        // lastIndex beyond end — no match per ES2020 §21.2.5.2.2 step 6
-        // Also handles empty-match-at-end-of-string advance.
+    // 9. Let match be ? RegExpExec(R, S). Per RegExpExec (§22.2.7.1), this
+    // dispatches to a user-supplied `exec` method when callable (checked
+    // first, ahead of the built-in matcher), and propagates any throw
+    // (e.g. from a `lastIndex` valueOf/ToLength coercion inside a custom
+    // `exec`, or from Get(R, "exec") itself).
+    TVal s_tv; s_tv.set_string(s_hstr);
+    if (!regexp_exec_call(ctx, rx, &s_tv)) return;
+    TVal match_tv = *ctx.result;
+
+    // 10. If match is null, then
+    if (match_tv.is_null()) {
+        // a. Set O.[[Done]] to true.
         (*iter.extra_ptr()).regexp_iter.flags |= 2;
-        if (global_flag) {
-            TVal zero_tv; zero_tv.set_fastint(0);
-            rx.put_prop(li_key, zero_tv, hobject::PROP_FLAGS_WEC);
-        }
+        // b. Return CreateIterResultObject(undefined, true).
         HObject*? result_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
         if (catch err = result_raw) { ctx.result.set_undefined(); return; }
         HObject* result = result_raw;
@@ -464,137 +454,69 @@ fn void builtin_regexp_string_iterator_next(BuiltinContext* ctx) {
         return;
     }
 
-    // Execute regexp
-    int out_start = 0;
-    int out_end = 0;
-    int out_num_captures = 0;
-    int[re_bindings::RE_MAX_CAPTURES] caps_start;
-    int[re_bindings::RE_MAX_CAPTURES] caps_end;
-    mem::clear(&caps_start, (sz)(re_bindings::RE_MAX_CAPTURES * int::size));
-    mem::clear(&caps_end, (sz)(re_bindings::RE_MAX_CAPTURES * int::size));
-
-    int exec_result = re_bindings::re_exec(
-        (*rx.extra_ptr()).regexp.regexp_data, input, input_len, search_pos,
-        (int)s_hstr.is_ascii(),
-        &out_start, &out_end, &out_num_captures,
-        &caps_start, &caps_end, re_bindings::RE_MAX_CAPTURES
-    );
-
-    if (exec_result != re_bindings::RE_MATCH) {
-        // No match — mark done and reset lastIndex to 0 if global
-        (*iter.extra_ptr()).regexp_iter.flags |= 2;
-        if (global_flag) {
-            TVal zero_tv; zero_tv.set_fastint(0);
-            rx.put_prop(li_key, zero_tv, hobject::PROP_FLAGS_WEC);
-        }
-        HObject*? result_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
-        if (catch err = result_raw) { ctx.result.set_undefined(); return; }
-        HObject* result = result_raw;
-        result.prototype = null;
-        HString* done_key = (HString*)heap.strs[heap::BuiltinStr.DONE];
-        TVal done_tv;
-        done_tv.set_boolean(true);
-        result.put_prop(done_key, done_tv, hobject::PROP_FLAGS_WEC);
-        HString* value_key = (HString*)heap.strs[heap::BuiltinStr.VALUE];
-        TVal undef;
-        undef.set_undefined();
-        result.put_prop(value_key, undef, hobject::PROP_FLAGS_WEC);
-        ctx.result.set_object(result);
-        return;
-    }
-
-    // Match found — for non-global iterators, mark done so subsequent
-    // calls return {value:undefined, done:true} per ES2022 §22.2.7.2.1.
-    if (!global_flag) {
-        (*iter.extra_ptr()).regexp_iter.flags |= 2;
-    }
-
-    // Update lastIndex for global iterators only. lastIndex is a UTF-16
-    // code-unit index; convert the byte-offset match end back to units.
+    // 11. Else,
+    HObject* match_obj = (match_tv.is_object() && match_tv.get_heapptr() != null)
+        ? (HObject*)match_tv.get_heapptr() : null;
     if (global_flag) {
-        int next_pos = out_end;
-        if (out_end == search_pos) {
-            // Empty match: AdvanceStringIndex(S, lastIndex, unicode) — per
-            // ES2022 §22.2.7.2.2, advances by one code unit, or by a full
-            // surrogate pair when the `u`/`v` flag is set.
-            next_pos = out_end + (int)hstring::advance_string_index_byte_len(
-                input[:input_len], (uint)out_end, unicode_flag);
+        // a.i. Let matchStr be ? ToString(? Get(match, "0")).
+        HString* zero_key = builtin_intern_string(heap, "0");
+        TVal ms_tv; ms_tv.set_undefined();
+        if (match_obj != null) {
+            TVal? ms_opt = builtins_generic_get(match_obj, zero_key, ctx);
+            if (ctx.should_throw) return;
+            if (try mv = ms_opt) { ms_tv = mv; }
         }
-        long next_charunit = (long)hstring::compute_charlen(input[:next_pos]);
-        TVal next_tv; next_tv.set_fastint(next_charunit);
-        rx.put_prop(li_key, next_tv, hobject::PROP_FLAGS_WEC);
-    }
+        HString* match_str = builtin_to_string_vm(ctx, &ms_tv);
+        if (ctx.should_throw) return;
+        if (match_str == null) match_str = builtin_intern_string(heap, "undefined");
 
-    // Create match result array (same layout as RegExp.prototype.exec)
-    HObject*? match_arr_raw = heap.alloc_object(hobject::ObjClass.ARRAY);
-    if (catch err = match_arr_raw) { ctx.result.set_undefined(); return; }
-    HObject* match_arr = match_arr_raw;
-    match_arr.prototype = heap.array_proto;
+        // a.ii. If matchStr is the empty String, then
+        if (match_str.blen == 0) {
+            // 1. Let thisIndex be ? ToLength(? Get(R, "lastIndex")).
+            HString* li_key = builtin_intern_string(heap, "lastIndex");
+            TVal? li_opt = builtins_generic_get(rx, li_key, ctx);
+            if (ctx.should_throw) return;
+            TVal li_raw; li_raw.set_fastint(0);
+            if (try lv = li_opt) { li_raw = lv; }
+            double this_d = builtin_to_integer_vm(ctx, &li_raw);
+            if (ctx.should_throw) return;
+            if (this_d < 0.0) this_d = 0.0;
+            long this_index = (long)this_d;
 
-    // Element 0: full match string
-    usz match_len = (usz)(out_end - out_start);
-    HString* match_str;
-    if (match_len == 0) {
-        match_str = builtin_intern_string(heap, "");
+            // 2. Let nextIndex be ! AdvanceStringIndex(S, thisIndex, fullUnicode).
+            // thisIndex may be >= the string's char length (e.g. a custom
+            // `exec` set a `lastIndex` beyond S) — AdvanceStringIndex is
+            // still well-defined there (it just adds 1), so guard against
+            // clamped byte-offset round-tripping past the string's end.
+            long next_index;
+            if ((ulong)this_index >= (ulong)s_hstr.char_length()) {
+                next_index = this_index + 1;
+            } else {
+                char* input = s_hstr.get_cstr();
+                int input_len = (int)s_hstr.blen;
+                uint byte_off = s_hstr.char_offset_to_byte_offset((uint)this_index);
+                int adv_bytes = (int)hstring::advance_string_index_byte_len(
+                    input[:input_len], byte_off, unicode_flag);
+                uint new_byte_off = byte_off + (uint)adv_bytes;
+                next_index = (long)hstring::compute_charlen(input[:new_byte_off]);
+            }
+            TVal next_tv; next_tv.set_fastint(next_index);
+
+            // 3. Perform ? Set(R, "lastIndex", nextIndex, true).
+            if (!regexp_set_with_setter(ctx, rx, li_key, next_tv)) return;
+        }
     } else {
-        match_str = builtin_intern_string(heap, input[out_start : match_len]);
-    }
-    TVal elem;
-    elem.set_string(match_str);
-    HString* zero_key = builtin_intern_string(heap, "0");
-    match_arr.put_prop(zero_key, elem, hobject::PROP_FLAGS_WEC);
-
-    // Capture groups
-    uint match_arr_len = 1;
-    int num_caps = out_num_captures;
-    if (num_caps > re_bindings::RE_MAX_CAPTURES) num_caps = re_bindings::RE_MAX_CAPTURES;
-    for (int i = 0; i < num_caps; i++) {
-        HString* cap_str;
-        if (caps_start[i] >= 0 && caps_end[i] >= 0) {
-            usz cap_len = (usz)(caps_end[i] - caps_start[i]);
-            cap_str = cap_len == 0
-                ? builtin_intern_string(heap, "")
-                : builtin_intern_string(heap, input[caps_start[i] : cap_len]);
-        } else {
-            cap_str = null;
-        }
-        TVal cap_elem;
-        if (cap_str != null) {
-            cap_elem.set_string(cap_str);
-        } else {
-            cap_elem.set_undefined();
-        }
-        match_arr.put_prop(heap.int_to_hstring((long)(i + 1)), cap_elem, hobject::PROP_FLAGS_WEC);
-        match_arr_len++;
+        // Non-global: yield exactly one match, then done on subsequent calls.
+        (*iter.extra_ptr()).regexp_iter.flags |= 2;
     }
 
-    // Set index property — convert byte offset to UTF-16 code-unit index.
-    TVal idx_tv;
-    idx_tv.set_fastint((long)hstring::compute_charlen(input[:out_start]));
-    HString* idx_key = builtin_intern_string(heap, "index");
-    match_arr.put_prop(idx_key, idx_tv, hobject::PROP_FLAGS_WEC);
-
-    // Set input property
-    TVal input_tv;
-    input_tv.set_string(s_hstr);
-    HString* input_key = builtin_intern_string(heap, "input");
-    match_arr.put_prop(input_key, input_tv, hobject::PROP_FLAGS_WEC);
-
-    // Set length
-    TVal mlen_tv;
-    mlen_tv.set_fastint((long)match_arr_len);
-    HString* mlen_key = builtin_intern_string(heap, "length");
-    match_arr.put_prop(mlen_key, mlen_tv, hobject::PROP_FLAGS_WEC);
-
-    // Create result iterator result: {value: matchArr, done: false}
+    // a.iii / 12. Return ! CreateIterResultObject(match, false).
     HObject*? iter_result_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = iter_result_raw) { ctx.result.set_undefined(); return; }
     HObject* iter_result = iter_result_raw;
     iter_result.prototype = null;
 
     HString* value_key = (HString*)heap.strs[heap::BuiltinStr.VALUE];
-    TVal match_tv;
-    match_tv.set_object(match_arr);
     iter_result.put_prop(value_key, match_tv, hobject::PROP_FLAGS_WEC);
 
     HString* done_key = (HString*)heap.strs[heap::BuiltinStr.DONE];

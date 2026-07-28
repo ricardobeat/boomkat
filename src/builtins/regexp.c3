@@ -982,15 +982,24 @@ fn void builtin_regexp_proto_symbol_match(BuiltinContext* ctx) {
             if (ctx.should_throw) return;
             if (this_d < 0.0) this_d = 0.0;
             long this_index = (long)this_d;
-            char* input = s_hstr.get_cstr();
-            int input_len = (int)s_hstr.blen;
-            // Convert char-unit index → byte offset, compute the byte advance,
-            // then convert the resulting byte offset back to char-unit count.
-            uint byte_off = s_hstr.char_offset_to_byte_offset((uint)this_index);
-            int adv_bytes = (int)hstring::advance_string_index_byte_len(
-                input[:input_len], byte_off, full_unicode);
-            uint new_byte_off = byte_off + (uint)adv_bytes;
-            long next_index = (long)hstring::compute_charlen(input[:new_byte_off]);
+            // AdvanceStringIndex(S, thisIndex, fullUnicode): when thisIndex is
+            // at or beyond S's char length, it's just thisIndex + 1 — guard
+            // this first, since char_offset_to_byte_offset clamps to blen and
+            // would otherwise silently lose indices past the string's end.
+            long next_index;
+            if ((ulong)this_index >= (ulong)s_hstr.char_length()) {
+                next_index = this_index + 1;
+            } else {
+                char* input = s_hstr.get_cstr();
+                int input_len = (int)s_hstr.blen;
+                // Convert char-unit index → byte offset, compute the byte advance,
+                // then convert the resulting byte offset back to char-unit count.
+                uint byte_off = s_hstr.char_offset_to_byte_offset((uint)this_index);
+                int adv_bytes = (int)hstring::advance_string_index_byte_len(
+                    input[:input_len], byte_off, full_unicode);
+                uint new_byte_off = byte_off + (uint)adv_bytes;
+                next_index = (long)hstring::compute_charlen(input[:new_byte_off]);
+            }
             TVal next_tv; next_tv.set_fastint(next_index);
             // 8.g.iii. Perform ? Set(rx, "lastIndex", nextIndex, true).
             if (!regexp_set_with_setter(ctx, rx, li_key, next_tv)) return;
