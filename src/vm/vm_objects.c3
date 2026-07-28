@@ -16,41 +16,285 @@ import std::math;
 // ============================================================================
 
 /// Result of copy_data_property: whether the caller's enumeration loop
-/// should keep going, and (independently) whether a hard VM_ERROR occurred.
+/// should keep going, and (independently) whether a hard VM_ERROR occurred
+/// or the getter threw a catchable value the caller must propagate.
 struct CopyPropResult {
-    bool cont;       // false: getter threw (already cleared) — stop enumerating, return success
-    bool vm_error;   // true: put_prop failed — caller must propagate VM_ERROR~
+    bool cont;        // false: stop enumerating (getter_threw or vm_error — check which)
+    bool vm_error;     // true: put_prop failed — caller must propagate VM_ERROR~
+    bool getter_threw; // true: getter raised — thrown_val holds the value to rethrow
+    TVal thrown_val;
 }
 
 /// Copy one enumerable own property (by prop-table index `i`, key `key`)
 /// from `source` to `target`, invoking the getter for accessor properties
-/// ([[Get]] semantics). Mirrors the original single-pass OBJSPRD loop's
-/// getter-throw handling: on throw, has_error is cleared and enumeration
-/// stops (matching a pre-existing, out-of-scope gap where the throw isn't
-/// re-propagated — this refactor preserves that behavior rather than fixing
-/// or worsening it). Shared by OBJSPRD's three key-ordering passes.
+/// ([[Get]] semantics). On a getter throw, enumeration stops and the thrown
+/// value is handed back to the caller to re-raise via vm_throw_value — later
+/// getters in the same CopyDataProperties call must not run (§7.3.25 step 5.c
+/// / Get's abrupt completion propagates through the ReturnIfAbrupt chain).
+/// Shared by OBJSPRD's and OBJREST's three key-ordering passes.
 fn CopyPropResult copy_data_property(Vm* vm, HObject* source, HObject* target, uint i, void* key) {
     hobject::PropFlags flags = source.get_prop_flags(i);
     TVal val;
     if (flags.is_accessor) {
         TVal gs_slot = source.prop_values()[i];
         TVal getter = hobject::hobject_access_getter(gs_slot);
-        if (getter.is_undefined() || getter.is_null()) return { true, false };
-        if (vm.heap.call_fn == null) return { true, false };
+        if (getter.is_undefined() || getter.is_null()) return { true, false, false, {} };
+        if (vm.heap.call_fn == null) return { true, false, false, {} };
         TVal this_tv;
         this_tv.set_object(source);
         val = vm.heap.call_fn(vm, getter, null, 0, this_tv);
-        if (vm.heap.has_error) {
-            vm.heap.has_error = false;
-            return { false, false };
+        if (vm.has_error) {
+            TVal thrown = vm.return_val;
+            vm.has_error = false;
+            return { false, false, true, thrown };
         }
     } else {
         val = source.prop_values()[i];
     }
     if (!target.put_prop(key, val, hobject::PROP_FLAGS_WEC)) {
-        return { false, true };
+        return { false, true, false, {} };
     }
-    return { true, false };
+    return { true, false, false, {} };
+}
+
+/// Test whether `key` (a property-table key: interned HString, possibly a
+/// symbol) is present in `excluded`, an array whose elements are ToPropertyKey-
+/// coerced into interned strings/symbols by key_is_excluded's caller before
+/// the first comparison (see OBJREST). Pointer equality suffices since all
+/// such keys are interned.
+fn bool key_is_excluded(void* key, HObject* excluded) {
+    if (excluded == null) return false;
+    TVal* arr = excluded.array_part();
+    if (arr == null) return false;
+    for (uint i = 0; i < excluded.array_used; i++) {
+        TVal el = arr[i];
+        if (el.is_heap_allocated() && el.get_heapptr() == key) return true;
+    }
+    return false;
+}
+
+/// CopyDataProperties (ES2018 §7.3.24 / ES2022 §7.3.25): copy every own
+/// enumerable property of `source` into `target`, skipping any key present in
+/// `excluded` (may be null for "no exclusions", as in Object.assign/OBJSPRD).
+/// Shared by OBJSPRD (object spread `{...src}`) and OBJREST (object-rest
+/// destructuring `{...rest} = src`) — the two opcodes differ only in whether
+/// an exclusion list is supplied. A getter throw stops enumeration and is
+/// re-raised via vm_throw_value so later getters never run and the throw is
+/// catchable by the caller (§7.3.25 step 5.c).
+fn void? copy_data_properties_into(Vm* vm, Dispatch* ds, HObject* target, TVal src_tv, HObject* excluded) {
+    // null/undefined → no-op (Object.assign step 2 / CopyDataProperties
+    // §7.3.25 step 2: only null/undefined skip the ToObject(source) step).
+    if (src_tv.is_null() || src_tv.is_undefined()) return;
+
+    HObject* source;
+    if (src_tv.is_object() && src_tv.get_heapptr() != null) {
+        source = (HObject*)src_tv.get_heapptr();
+    } else if (src_tv.is_string()) {
+        // ToObject(source) for a primitive string: box it so its character
+        // indices (own enumerable properties per the String exotic
+        // [[OwnPropertyKeys]]) become visible to the copy loop below.
+        HObject*? wrapper_raw = vm.heap.alloc_object(hobject::ObjClass.STRING);
+        if (catch wrapper_raw) return VM_ERROR~;
+        HObject* wrapper = wrapper_raw;
+        wrapper.flags.exotic_stringobj = true;
+        wrapper.prototype = vm.heap.string_proto;
+        (*wrapper.extra_ptr()).prim.primitive_value = src_tv;
+        source = wrapper;
+    } else {
+        // Numbers, booleans, symbols, and bigints box to a wrapper with no
+        // own enumerable properties — CopyDataProperties would visit zero
+        // keys, so this is a no-op without allocating a throwaway wrapper.
+        return;
+    }
+
+    // Proxy source: CopyDataProperties via MOP (ES2022 §19.1.2.1, §10.5).
+    // [[OwnPropertyKeys]] → [[GetOwnProperty]] → [[Get]] for enumerable keys.
+    if (source.flags.exotic_proxyobj) {
+        HObject* karr;
+        if (!builtins::proxy_mop_own_keys(vm, vm.heap, source, &karr)) {
+            TVal proxy_err = vm.heap.error_value;
+            vm.heap.has_error = false;
+            if (!vm_throw_value(vm, proxy_err, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                (void)vm_uncaught_error(vm, &proxy_err);
+                return VM_ERROR~;
+            }
+            return;
+        }
+        for (uint pi = 0; pi < karr.array_used; pi++) {
+            TVal pel = karr.array_part()[pi];
+            if (!pel.is_string()) continue;
+            HString* pk = (HString*)pel.get_heapptr();
+            if (key_is_excluded((void*)pk, excluded)) continue;
+            builtins::ProxyDesc pd;
+            if (!builtins::proxy_mop_get_own(vm, vm.heap, source, pk, &pd)) {
+                TVal e2 = vm.heap.error_value;
+                vm.heap.has_error = false;
+                if (!vm_throw_value(vm, e2, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                    (void)vm_uncaught_error(vm, &e2);
+                    return VM_ERROR~;
+                }
+                return;
+            }
+            if (!pd.found || !pd.enumerable) continue;
+            TVal recv; recv.set_object(source);
+            TVal pval;
+            if (!builtins::proxy_mop_get(vm, vm.heap, source, pk, recv, &pval)) {
+                TVal e3 = vm.heap.error_value;
+                vm.heap.has_error = false;
+                if (!vm_throw_value(vm, e3, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                    (void)vm_uncaught_error(vm, &e3);
+                    return VM_ERROR~;
+                }
+                return;
+            }
+            if (!target.put_prop((void*)pk, pval, hobject::PROP_FLAGS_WEC)) {
+                return VM_ERROR~;
+            }
+        }
+        return;
+    }
+
+    // Copy enumerable own dense array indices (integer-keyed properties)
+    if (source.array_part() != null) {
+        char[12] digit_buf;
+        for (uint i = 0; i < source.array_size; i++) {
+            if (!source.array_part()[i].is_undefined()) {
+                int dlen = (int)(io::bprintf(&digit_buf, "%d", i) ?? digit_buf[:0]).len;
+                if (dlen > 0) {
+                    HString* key = intern_string(vm, digit_buf[:(uint)dlen]);
+                    if (key != null && !key_is_excluded((void*)key, excluded)) {
+                        TVal val = source.array_part()[i];
+                        if (!target.put_prop((void*)key, val, hobject::PROP_FLAGS_WEC)) {
+                            return VM_ERROR~;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // STRING exotic: enumerate character indices via lazy access
+    if (source.flags.exotic_stringobj) {
+        HString* prim = (HString*)(*source.extra_ptr()).prim.primitive_value.get_heapptr();
+        if (prim != null) {
+            for (uint ci = 0; ci < prim.char_length(); ci++) {
+                HString* ik = vm.heap.int_to_hstring((long)ci);
+                if (ik == null || key_is_excluded((void*)ik, excluded)) continue;
+                uint cp = prim.char_at(ci);
+                char[4] cbuf;
+                uint cblen = hstring::encode_codepoint(cp, cbuf[:4]);
+                HString* ch_str = intern_string(vm, cbuf[:cblen]);
+                if (ch_str != null) {
+                    TVal ch_tv; ch_tv.set_string(ch_str);
+                    if (!target.put_prop((void*)ik, ch_tv, hobject::PROP_FLAGS_WEC)) {
+                        return VM_ERROR~;
+                    }
+                }
+            }
+        }
+    }
+
+    // Copy own named properties (enumerable only), in spec order
+    // (ES2015 §9.1.11.1 OrdinaryOwnPropertyKeys / §7.3.23
+    // CopyDataProperties): named-table array-index keys ascending,
+    // then other String keys in insertion order, then Symbol keys
+    // in insertion order. A single raw insertion-order pass would
+    // put a `defineProperty`-added index key wherever it happened
+    // to be declared, rather than sorted before the string keys.
+
+    // Pass 1: named-table arridx keys, ascending numeric order (not
+    // table-storage order) — sort a small (index-value, table-index)
+    // list first.
+    {
+        uint arridx_count = 0;
+        for (uint i = 0; i < source.prop_count; i++) {
+            void* key = source.prop_key_at(i);
+            if (key != null && ((HString*)key).is_arridx() && source.get_prop_flags(i).enumerable
+                && !key_is_excluded(key, excluded)) {
+                arridx_count++;
+            }
+        }
+        if (arridx_count > 0) {
+            usz buf_size = (usz)arridx_count * 2 * 4;
+            uint* sort_buf = (uint*)vm.heap.alloc_func(vm.heap.heap_udata, buf_size);
+            if (sort_buf != null) {
+                uint p = 0;
+                for (uint i = 0; i < source.prop_count; i++) {
+                    void* key = source.prop_key_at(i);
+                    if (key != null && ((HString*)key).is_arridx() && source.get_prop_flags(i).enumerable
+                        && !key_is_excluded(key, excluded)) {
+                        sort_buf[p * 2]     = ((HString*)key).array_index();
+                        sort_buf[p * 2 + 1] = i;
+                        p++;
+                    }
+                }
+                // Insertion sort by index value (arridx_count is typically small).
+                for (uint a = 1; a < arridx_count; a++) {
+                    uint kv = sort_buf[a * 2];
+                    uint iv = sort_buf[a * 2 + 1];
+                    uint b = a;
+                    while (b > 0 && sort_buf[(b - 1) * 2] > kv) {
+                        sort_buf[b * 2]     = sort_buf[(b - 1) * 2];
+                        sort_buf[b * 2 + 1] = sort_buf[(b - 1) * 2 + 1];
+                        b--;
+                    }
+                    sort_buf[b * 2]     = kv;
+                    sort_buf[b * 2 + 1] = iv;
+                }
+                for (uint a = 0; a < arridx_count; a++) {
+                    uint i = sort_buf[a * 2 + 1];
+                    CopyPropResult r = copy_data_property(vm, source, target, i, source.prop_key_at(i));
+                    if (r.vm_error) { vm.heap.free_func(vm.heap.heap_udata, sort_buf); return VM_ERROR~; }
+                    if (r.getter_threw) {
+                        vm.heap.free_func(vm.heap.heap_udata, sort_buf);
+                        if (!vm_throw_value(vm, r.thrown_val, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                            (void)vm_uncaught_error(vm, &r.thrown_val);
+                            return VM_ERROR~;
+                        }
+                        return;
+                    }
+                    if (!r.cont) { vm.heap.free_func(vm.heap.heap_udata, sort_buf); return; }
+                }
+                vm.heap.free_func(vm.heap.heap_udata, sort_buf);
+            }
+        }
+    }
+    // Pass 2: other String keys, insertion (table) order.
+    for (uint i = 0; i < source.prop_count; i++) {
+        void* key = source.prop_key_at(i);
+        if (key == null || !source.get_prop_flags(i).enumerable) continue;
+        HString* khs = (HString*)key;
+        if (khs.is_arridx() || khs.is_symbol()) continue;
+        if (key_is_excluded(key, excluded)) continue;
+        CopyPropResult r = copy_data_property(vm, source, target, i, key);
+        if (r.vm_error) return VM_ERROR~;
+        if (r.getter_threw) {
+            if (!vm_throw_value(vm, r.thrown_val, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                (void)vm_uncaught_error(vm, &r.thrown_val);
+                return VM_ERROR~;
+            }
+            return;
+        }
+        if (!r.cont) return;
+    }
+    // Pass 3: Symbol keys, insertion (table) order.
+    for (uint i = 0; i < source.prop_count; i++) {
+        void* key = source.prop_key_at(i);
+        if (key == null || !source.get_prop_flags(i).enumerable) continue;
+        if (!((HString*)key).is_symbol()) continue;
+        if (key_is_excluded(key, excluded)) continue;
+        CopyPropResult r = copy_data_property(vm, source, target, i, key);
+        if (r.vm_error) return VM_ERROR~;
+        if (r.getter_threw) {
+            if (!vm_throw_value(vm, r.thrown_val, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                (void)vm_uncaught_error(vm, &r.thrown_val);
+                return VM_ERROR~;
+            }
+            return;
+        }
+        if (!r.cont) return;
+    }
+    return;
 }
 
 /// Sub-dispatch for NEWOBJ, NEWARR, NEWREGEXP, SETALEN, ARRSPRD, OBJSPRD, SPREAD_ARG opcodes.
@@ -465,172 +709,20 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
             // matching Object.assign semantics (§19.1.2.2).
             if (!ra.is_object() || ra.get_heapptr() == null) break;
             HObject* target = (HObject*)ra.get_heapptr();
-            TVal src_tv = *rc;
+            if (catch err = copy_data_properties_into(vm, ds, target, *rc, null)) { return err~; }
+            return (TVal){};
+        }
 
-            // null/undefined → no-op (Object.assign step 2)
-            if (src_tv.is_null() || src_tv.is_undefined()) break;
-
-            // Only objects have own enumerable properties; primitives are no-ops
-            if (!src_tv.is_object() || src_tv.get_heapptr() == null) break;
-            HObject* source = (HObject*)src_tv.get_heapptr();
-
-            // Proxy source: CopyDataProperties via MOP (ES2022 §19.1.2.1, §10.5).
-            // [[OwnPropertyKeys]] → [[GetOwnProperty]] → [[Get]] for enumerable keys.
-            if (source.flags.exotic_proxyobj) {
-                HObject* karr;
-                if (!builtins::proxy_mop_own_keys(vm, vm.heap, source, &karr)) {
-                    TVal proxy_err = vm.heap.error_value;
-                    vm.heap.has_error = false;
-                    if (!vm_throw_value(vm, proxy_err, ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                        return vm_uncaught_error(vm, &proxy_err);
-                    }
-                    return (TVal){};
-                }
-                for (uint pi = 0; pi < karr.array_used; pi++) {
-                    TVal pel = karr.array_part()[pi];
-                    if (!pel.is_string()) continue;
-                    HString* pk = (HString*)pel.get_heapptr();
-                    builtins::ProxyDesc pd;
-                    if (!builtins::proxy_mop_get_own(vm, vm.heap, source, pk, &pd)) {
-                        TVal e2 = vm.heap.error_value;
-                        vm.heap.has_error = false;
-                        if (!vm_throw_value(vm, e2, ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                            return vm_uncaught_error(vm, &e2);
-                        }
-                        return (TVal){};
-                    }
-                    if (!pd.found || !pd.enumerable) continue;
-                    TVal recv; recv.set_object(source);
-                    TVal pval;
-                    if (!builtins::proxy_mop_get(vm, vm.heap, source, pk, recv, &pval)) {
-                        TVal e3 = vm.heap.error_value;
-                        vm.heap.has_error = false;
-                        if (!vm_throw_value(vm, e3, ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                            return vm_uncaught_error(vm, &e3);
-                        }
-                        return (TVal){};
-                    }
-                    if (!target.put_prop((void*)pk, pval, hobject::PROP_FLAGS_WEC)) {
-                        return VM_ERROR~;
-                    }
-                }
-                break;
-            }
-
-            // Copy enumerable own dense array indices (integer-keyed properties)
-            if (source.array_part() != null) {
-                char[12] digit_buf;
-                for (uint i = 0; i < source.array_size; i++) {
-                    if (!source.array_part()[i].is_undefined()) {
-                        int dlen = (int)(io::bprintf(&digit_buf, "%d", i) ?? digit_buf[:0]).len;
-                        if (dlen > 0) {
-                            HString* key = intern_string(vm, digit_buf[:(uint)dlen]);
-                            if (key != null) {
-                                TVal val = source.array_part()[i];
-                                if (!target.put_prop((void*)key, val, hobject::PROP_FLAGS_WEC)) {
-                                    return VM_ERROR~;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // STRING exotic: enumerate character indices via lazy access
-            if (source.flags.exotic_stringobj) {
-                HString* prim = (HString*)(*source.extra_ptr()).prim.primitive_value.get_heapptr();
-                if (prim != null) {
-                    for (uint ci = 0; ci < prim.char_length(); ci++) {
-                        HString* ik = vm.heap.int_to_hstring((long)ci);
-                        if (ik == null) continue;
-                        uint cp = prim.char_at(ci);
-                        char[4] cbuf;
-                        uint cblen = hstring::encode_codepoint(cp, cbuf[:4]);
-                        HString* ch_str = intern_string(vm, cbuf[:cblen]);
-                        if (ch_str != null) {
-                            TVal ch_tv; ch_tv.set_string(ch_str);
-                            if (!target.put_prop((void*)ik, ch_tv, hobject::PROP_FLAGS_WEC)) {
-                                return VM_ERROR~;
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Copy own named properties (enumerable only), in spec order
-            // (ES2015 §9.1.11.1 OrdinaryOwnPropertyKeys / §7.3.23
-            // CopyDataProperties): named-table array-index keys ascending,
-            // then other String keys in insertion order, then Symbol keys
-            // in insertion order. A single raw insertion-order pass would
-            // put a `defineProperty`-added index key wherever it happened
-            // to be declared, rather than sorted before the string keys.
-
-            // Pass 1: named-table arridx keys, ascending numeric order (not
-            // table-storage order) — sort a small (index-value, table-index)
-            // list first.
-            {
-                uint arridx_count = 0;
-                for (uint i = 0; i < source.prop_count; i++) {
-                    void* key = source.prop_key_at(i);
-                    if (key != null && ((HString*)key).is_arridx() && source.get_prop_flags(i).enumerable) {
-                        arridx_count++;
-                    }
-                }
-                if (arridx_count > 0) {
-                    usz buf_size = (usz)arridx_count * 2 * 4;
-                    uint* sort_buf = (uint*)vm.heap.alloc_func(vm.heap.heap_udata, buf_size);
-                    if (sort_buf != null) {
-                        uint p = 0;
-                        for (uint i = 0; i < source.prop_count; i++) {
-                            void* key = source.prop_key_at(i);
-                            if (key != null && ((HString*)key).is_arridx() && source.get_prop_flags(i).enumerable) {
-                                sort_buf[p * 2]     = ((HString*)key).array_index();
-                                sort_buf[p * 2 + 1] = i;
-                                p++;
-                            }
-                        }
-                        // Insertion sort by index value (arridx_count is typically small).
-                        for (uint a = 1; a < arridx_count; a++) {
-                            uint kv = sort_buf[a * 2];
-                            uint iv = sort_buf[a * 2 + 1];
-                            uint b = a;
-                            while (b > 0 && sort_buf[(b - 1) * 2] > kv) {
-                                sort_buf[b * 2]     = sort_buf[(b - 1) * 2];
-                                sort_buf[b * 2 + 1] = sort_buf[(b - 1) * 2 + 1];
-                                b--;
-                            }
-                            sort_buf[b * 2]     = kv;
-                            sort_buf[b * 2 + 1] = iv;
-                        }
-                        for (uint a = 0; a < arridx_count; a++) {
-                            uint i = sort_buf[a * 2 + 1];
-                            CopyPropResult r = copy_data_property(vm, source, target, i, source.prop_key_at(i));
-                            if (r.vm_error) { vm.heap.free_func(vm.heap.heap_udata, sort_buf); return VM_ERROR~; }
-                            if (!r.cont) { vm.heap.free_func(vm.heap.heap_udata, sort_buf); return (TVal){}; }
-                        }
-                        vm.heap.free_func(vm.heap.heap_udata, sort_buf);
-                    }
-                }
-            }
-            // Pass 2: other String keys, insertion (table) order.
-            for (uint i = 0; i < source.prop_count; i++) {
-                void* key = source.prop_key_at(i);
-                if (key == null || !source.get_prop_flags(i).enumerable) continue;
-                HString* khs = (HString*)key;
-                if (khs.is_arridx() || khs.is_symbol()) continue;
-                CopyPropResult r = copy_data_property(vm, source, target, i, key);
-                if (r.vm_error) return VM_ERROR~;
-                if (!r.cont) return (TVal){};
-            }
-            // Pass 3: Symbol keys, insertion (table) order.
-            for (uint i = 0; i < source.prop_count; i++) {
-                void* key = source.prop_key_at(i);
-                if (key == null || !source.get_prop_flags(i).enumerable) continue;
-                if (!((HString*)key).is_symbol()) continue;
-                CopyPropResult r = copy_data_property(vm, source, target, i, key);
-                if (r.vm_error) return VM_ERROR~;
-                if (!r.cont) return (TVal){};
-            }
+        case Opcode.OBJREST: {
+            // A = target_obj_reg, B = excluded_names_array_reg, C = source_reg
+            // Object-rest destructuring collection: CopyDataProperties(source,
+            // excludedNames) where excludedNames is the array built by the
+            // compiler from the pattern's sibling keys.
+            if (!ra.is_object() || ra.get_heapptr() == null) break;
+            HObject* target = (HObject*)ra.get_heapptr();
+            HObject* excluded = null;
+            if (rb.is_object() && rb.get_heapptr() != null) excluded = (HObject*)rb.get_heapptr();
+            if (catch err = copy_data_properties_into(vm, ds, target, *rc, excluded)) { return err~; }
             return (TVal){};
         }
 

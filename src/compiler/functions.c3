@@ -610,71 +610,56 @@ fn ushort find_destruct_iter(ushort src_reg, DestructIterState[] states, uint* c
 }
 
 /// Shared emission helper for function-parameter destructuring bindings.
-/// Emit object-rest collection into dest_reg: `dest = Object.assign({}, src)`
-/// then delete every sibling explicit key (own key list minus the rest target),
-/// per ES2018 §13.3.3 RestBindingInitialization / DestructuringAssignment.
-/// `binds`/`count` describe the full pattern; `rest_di` is the rest bind whose
-/// siblings (same parent_idx) name the properties to exclude. `__proto__` is
-/// excluded even if not explicitly listed.
+/// Emit object-rest collection into dest_reg: `dest = CopyDataProperties(src,
+/// excludedNames)` where excludedNames names every sibling explicit key (own
+/// key list minus the rest target), per ES2018 §13.3.3 RestBindingInitialization
+/// / DestructuringAssignment §7.3.24 CopyDataProperties. `binds`/`count`
+/// describe the full pattern; `rest_di` is the rest bind whose siblings (same
+/// parent_idx) name the properties to exclude.
 fn void CompilerContext.emit_object_rest(&self,
     ushort dest_reg, ushort src_reg,
     DestructBind[] binds, uint count, uint rest_di)
 {
     ushort parent = binds[rest_di].parent_idx;
 
-    // dest = Object.assign({}, src). Call convention: callee, this (=target),
-    // then args. This engine's Object.assign uses `this` as the target object,
-    // so we pass the fresh {} as `this` and `src` as the single source arg.
-    // reserve_call_frame reserves callee+1 (this) and callee+2 (arg0) so no
-    // live register leaks into an argument slot (a stale iterator result in an
-    // unreserved arg slot would otherwise be merged into the rest object).
-    ushort empty_obj_reg = self.alloc_reg();
-    self.emit_abc(Opcode.NEWOBJ, (uint)empty_obj_reg, 0, 0);
-
-    ushort obj_var_reg = self.alloc_reg();
-    self.emit_a_bc(Opcode.GETVAR, (uint)obj_var_reg, self.add_string_constant("Object"));
-    ushort assign_key_reg = self.alloc_reg();
-    self.emit_a_bc(Opcode.LDCONST, (uint)assign_key_reg, self.add_string_constant("assign"));
-    ushort assign_method_reg = self.alloc_reg();
-    self.emit_abc(Opcode.GETPROP, (uint)assign_method_reg, (uint)obj_var_reg, (uint)assign_key_reg);
-    self.free_reg(assign_key_reg);
-    self.free_reg(obj_var_reg);
-
-    ushort callee_reg = self.alloc_reg();
-    self.reserve_call_frame(callee_reg, 1);
-    ushort this_reg = callee_reg + 1;
-    ushort src_arg_reg = callee_reg + 2;
-    self.emit_abc(Opcode.LDREG, (uint)callee_reg, (uint)assign_method_reg, 0);
-    self.free_reg(assign_method_reg);
-    self.emit_abc(Opcode.LDREG, (uint)this_reg, (uint)empty_obj_reg, 0);
-    self.emit_abc(Opcode.LDREG, (uint)src_arg_reg, (uint)src_reg, 0);
-    self.emit_abc(Opcode.CALL, (uint)callee_reg, (uint)callee_reg, 1);
-    self.emit_abc(Opcode.LDREG, (uint)dest_reg, (uint)callee_reg, 0);
-    self.free_reg(callee_reg);
-    self.free_reg(empty_obj_reg);
-
-    // Delete each sibling explicit key from dest.
-    uint proto_idx = self.add_string_constant("__proto__");
+    // Build the excludedNames array: one element per explicit sibling key,
+    // evaluated/coerced to a property key (string or symbol) up front —
+    // CopyDataProperties compares against these values, not raw expressions.
+    ushort excl_reg = self.alloc_reg();
+    self.emit_abc(Opcode.NEWARR, (uint)excl_reg, 0, 0);
+    uint excl_count = 0;
     for (uint j = 0; j < count; j++) {
         if (j == rest_di) continue;
         if (binds[j].parent_idx != parent) continue;
         if (binds[j].is_object == false) continue;   // array siblings can't share an object parent
         if (binds[j].key_idx == 0xFFFF) continue;     // another rest (shouldn't happen)
+
+        ushort elem_reg;
         if (binds[j].is_computed_key) {
-            // Delete by the runtime computed key value.
-            ushort dr = self.alloc_reg();
-            self.emit_abc(Opcode.DELPROP, (uint)dr, (uint)dest_reg, (uint)binds[j].computed_key_reg);
-            self.free_reg(dr);
-            continue;
+            if (binds[j].deferred_computed_key != null) {
+                self.emit_deferred_computed_key(&binds[j]);
+            }
+            // TOPROPKEY is idempotent on an already-coerced register (see its
+            // doc comment), so this is safe whether or not the assignment-
+            // pattern path already coerced it via emit_deferred_computed_key.
+            self.emit_abc(Opcode.TOPROPKEY, (uint)binds[j].computed_key_reg, 0, 0);
+            elem_reg = binds[j].computed_key_reg;
+        } else {
+            elem_reg = self.alloc_reg();
+            self.emit_a_bc(Opcode.LDCONST, (uint)elem_reg, binds[j].key_idx);
         }
-        if (binds[j].key_idx == proto_idx) continue;  // __proto__ already excluded
-        ushort del_key_reg = self.alloc_reg();
-        self.emit_a_bc(Opcode.LDCONST, (uint)del_key_reg, binds[j].key_idx);
-        ushort del_result_reg = self.alloc_reg();
-        self.emit_abc(Opcode.DELPROP, (uint)del_result_reg, (uint)dest_reg, (uint)del_key_reg);
-        self.free_reg(del_key_reg);
-        self.free_reg(del_result_reg);
+        ushort idx_reg = self.alloc_reg();
+        self.emit(bytecode::make_a_sbx(Opcode.LDINT, (uint)idx_reg, (int)excl_count));
+        self.emit_abc(Opcode.PUTPROP, (uint)excl_reg, (uint)idx_reg, (uint)elem_reg);
+        self.free_reg(idx_reg);
+        if (!binds[j].is_computed_key) self.free_reg(elem_reg);
+        excl_count++;
     }
+    self.emit(bytecode::make_a_bc(Opcode.SETALEN, (uint)excl_reg, excl_count));
+
+    self.emit_abc(Opcode.NEWOBJ, (uint)dest_reg, 0, 0);
+    self.emit_abc(Opcode.OBJREST, (uint)dest_reg, (uint)excl_reg, (uint)src_reg);
+    self.free_reg(excl_reg);
 }
 
 /// Force GetIterator(src) + immediate IteratorClose. Used for an empty array
@@ -958,7 +943,7 @@ fn void CompilerContext.emit_destruct_bindings(&self,
             // Extract value from source into bind_reg
             if (binds[di].is_object) {
                 if (binds[di].key_idx == 0xFFFF) {
-                    // Object rest: `{...rest}` → Object.assign({}, src) minus siblings.
+                    // Object rest: `{...rest}` → CopyDataProperties(src, siblings).
                     self.emit_object_rest(bind_reg, src_reg, binds, count, di);
                 } else if (binds[di].is_computed_key) {
                     if (binds[di].deferred_computed_key != null) {

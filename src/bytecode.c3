@@ -550,6 +550,12 @@ enum Opcode : char {
     /// silently skipped (as in Object.assign).  ABC format:
     /// A=target_obj_reg, B=0 (unused), C=source_reg.
     OBJSPRD,
+    /// `A = CopyDataProperties(C, excludedNames=array B)` — object-rest
+    /// collection (`{...rest}` in a destructuring pattern), per ES2018
+    /// §7.3.24 CopyDataProperties / §13.15.5.6. Like OBJSPRD but skips own
+    /// keys present (by ToPropertyKey-coerced value) in the array at B.
+    /// ABC format: A=target_obj_reg, B=excluded_names_array_reg, C=source_reg.
+    OBJREST,
 
     // ---- ES6 Classes -----------------------------------------------------
 
@@ -935,6 +941,7 @@ case PUTLEX:     return A_BC;
         case FWD_ARGS:   return ABC;
         case CALL_S:     return ABC;
         case OBJSPRD:    return ABC;
+        case OBJREST:    return ABC;
         case SETPROTO:   return ABC;
         case GETPROTO:   return ABC;
         case PUTPROP_SUPER: return ABC;

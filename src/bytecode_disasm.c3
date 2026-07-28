@@ -247,6 +247,7 @@ const char*[Opcode.LAST_OP.ordinal + 1] OPCODE_NAMES = {
     [Opcode.CALL_VAR.ordinal]    = "CALL_VAR",
     [Opcode.CALL_GLOBAL.ordinal] = "CALL_GLOBAL",
     [Opcode.OBJSPRD.ordinal]     = "OBJSPRD",
+    [Opcode.OBJREST.ordinal]     = "OBJREST",
     [Opcode.SETPROTO.ordinal]    = "SETPROTO",
     [Opcode.GETPROTO.ordinal]    = "GETPROTO",
     [Opcode.PUTPROP_SUPER.ordinal] = "PUTPROP_SUPER",

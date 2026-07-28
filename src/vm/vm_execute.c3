@@ -3042,6 +3042,7 @@ fn TVal? Vm.run(Vm* vm) {
         case Opcode.FREEZEOBJ:
         case Opcode.ARRSPRD:
         case Opcode.OBJSPRD:
+        case Opcode.OBJREST:
         case Opcode.SPREAD_ARG:
         case Opcode.FWD_ARGS:
             if (catch err = dispatch_objects(&ds, op, ra, rb, rc, insn)) { return err~; }
