@@ -1984,6 +1984,37 @@ fn void hobject_free(HObject* obj, void* heap_ptr, bool free_header = true) {
         (*obj.extra_ptr()).iter.target = null;
     }
 
+    // Free the GeneratorState owned by a suspended-or-completed generator:
+    // the saved-registers array and the state struct itself are malloc'd
+    // once at the initial call (GEN_START) and never freed elsewhere — the
+    // generator HObject is their sole owner. `saved_regs` and `this_binding`
+    // are the only GS fields that hold an owned (incref'd) reference; every
+    // other field is a transient/borrowed value cleared or superseded before
+    // this point, so only those two need a decref pass. The decref itself
+    // still needs a live heap (skipped during full-heap teardown, mirroring
+    // the prop_hash/array_part rule above), but the backing allocations must
+    // be freed unconditionally or Heap.destroy()'s teardown pass leaks them.
+    if (obj.flags.obj_class == ObjClass.GENERATOR) {
+        heap::GeneratorState* gs = (heap::GeneratorState*)(*obj.extra_ptr()).gen.generator_data;
+        if (gs != null) {
+            if (_active_heap != null) {
+                heap::Heap* h = (heap::Heap*)_active_heap;
+                if (gs.saved_regs != null) {
+                    for (uint i = 0; i < gs.num_regs; i++) {
+                        h.decref_tval(&gs.saved_regs[i]);
+                    }
+                }
+                h.decref_tval(&gs.this_binding);
+                if (gs.saved_regs != null) { h.free_func(h.heap_udata, gs.saved_regs); }
+                h.free_func(h.heap_udata, gs);
+            } else {
+                if (gs.saved_regs != null) { mem::free(gs.saved_regs); }
+                mem::free(gs);
+            }
+            (*obj.extra_ptr()).gen.generator_data = null;
+        }
+    }
+
     // Decref string and BigInt values held in property slots and array
     // elements.  Only these RC leaves are freed here — objects still use M&S
     // and can form cycles; decref-freeing objects from within another object's
