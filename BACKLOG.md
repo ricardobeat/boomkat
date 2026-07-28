@@ -31,8 +31,11 @@ All 18 test262 phases at 0 failures. 32,078 of 53,319 tests attempted.
 
 ## Strings
 
-- [ ] Non-ASCII string indexing is O(n) per access — add a cursor cache to `HString`
+- [ ] Cursor cache for sequential non-ASCII string scanning
+- [ ] Audit remaining ~45 `char_at` / `char_offset_to_byte_offset` call sites for redundant bounds checks
 - [ ] Native UTF-16/Latin1 string storage
+- [x] Cache `char_length` on `HString` — `b09359d9`
+- [x] Skip redundant `char_length` bounds recheck in `char_at` — `688dd30d`
 
 ## Known bugs
 
