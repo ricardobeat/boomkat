@@ -42,7 +42,6 @@ All 18 test262 phases at 0 failures. Coverage: 32,078 of 53,319 tests attempted 
 - [ ] Generator driver family — sync `YIELD_STAR` vs async yield* vs `async_generator.c3` drain
 - [ ] Three super mechanisms — plan 059's `GETPROTO(homeObject)` unification
 - [ ] Builtin error-throw boilerplate — ~55 raw sites left in object.c3, promise.c3, generator.c3, vm_coerce.c3, core.c3
-- [ ] Keyed-collection internals — `coll_*` / `group_by_*` / `getOrInsert` key canonicalization
 - [ ] Lexer scan buffers — string/template/ident decode arena+normalize logic
 - [ ] Enum/metadata/dispatch triple registration in core.c3
 
