@@ -650,6 +650,14 @@ fn char Lexer.peek_char_at(&self, uint n) {
     return self.source[idx];
 }
 
+/// Check whether the current position starts the 3-byte UTF-8 encoding of
+/// LINE SEPARATOR (U+2028) or PARAGRAPH SEPARATOR (U+2029) — the two
+/// LineTerminator code points not representable as a single `char`.
+fn bool Lexer.peek_is_ls_ps(&self) {
+    return self.peek_char() == 0xE2 && self.peek_char_at(1) == 0x80
+        && (self.peek_char_at(2) == 0xA8 || self.peek_char_at(2) == 0xA9);
+}
+
 /// Advance one byte and return the consumed character.
 fn char Lexer.advance_char(&self) {
     if (self.pos >= (uint)self.source.len) return 0;
@@ -1805,14 +1813,14 @@ fn Token? Lexer.scan_regexp(&self) {
     while (!self.at_end()) {
         char c = self.peek_char();
 
-        if (c == '\n' || c == '\r') {
+        if (c == '\n' || c == '\r' || self.peek_is_ls_ps()) {
             return LEX_ERROR~;
         }
 
         if (c == '\\') {
             // Escape sequence — consume backslash and next char
             self.advance_char();
-            if (self.at_end() || self.peek_char() == '\n') {
+            if (self.at_end() || self.peek_char() == '\n' || self.peek_char() == '\r' || self.peek_is_ls_ps()) {
                 return LEX_ERROR~;
             }
             self.advance_char();
