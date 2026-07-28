@@ -1572,6 +1572,9 @@ fn void coll_set_entry(BuiltinContext* ctx, HObject* coll, uint stride, bool req
         return;
     }
     TVal value = ctx.regs[ctx.base_reg + 1];  // undefined if not provided
+    // CanonicalizeKeyedCollectionKey (§24.5.1): -0 is stored as +0, so an
+    // iterated key never surfaces as -0 even when set() was handed one.
+    key = canonicalize_keyed_collection_key(key);
     int found = find_in_array_part(coll, key, stride);
     if (found >= 0) {
         // Overwrite the existing value slot directly (not via set_array_idx):
@@ -1723,6 +1726,9 @@ fn void coll_add_value(BuiltinContext* ctx, HObject* coll, bool require_object_v
         ctx.result.set_undefined();
         return;
     }
+    // CanonicalizeKeyedCollectionKey (§24.5.1): a Set element is its own key,
+    // so -0 is stored as +0 and iteration never surfaces -0.
+    value = canonicalize_keyed_collection_key(value);
     int found = find_in_array_part(coll, value, 1);
     if (found < 0) {
         uint idx = coll.array_used;
