@@ -498,7 +498,7 @@ fn void builtin_string_proto_charAt(BuiltinContext* ctx) {
         return;
     }
     uint idx = (uint)(long)pos;
-    uint cp = s_hstr.char_at(idx);
+    uint cp = s_hstr.char_at_unchecked(idx);
     char[4] buf;
     uint blen = hstring::encode_codepoint(cp, buf[:4]);
     HString* result = builtin_intern_string(ctx.heap, buf[:blen]);
@@ -523,7 +523,7 @@ fn void builtin_string_proto_charCodeAt(BuiltinContext* ctx) {
         return;
     }
     uint idx = (uint)(long)pos;
-    ctx.result.set_fastint((long)s_hstr.char_at(idx));
+    ctx.result.set_fastint((long)s_hstr.char_at_unchecked(idx));
 }
 
 /// String.prototype.indexOf(searchString, position) — ES5 §15.5.4.7
@@ -2629,9 +2629,9 @@ fn void builtin_string_proto_codePointAt(BuiltinContext* ctx) {
     uint pos = (uint)(long)pos_d;
     if (pos >= clen) { ctx.result.set_undefined(); return; }
 
-    uint first = s_hstr.char_at(pos);
+    uint first = s_hstr.char_at_unchecked(pos);
     if (hstring::is_high_surrogate(first) && pos + 1 < clen) {
-        uint second = s_hstr.char_at(pos + 1);
+        uint second = s_hstr.char_at_unchecked(pos + 1);
         if (hstring::is_low_surrogate(second)) {
             ctx.result.set_fastint((long)hstring::surrogates_to_codepoint(first, second));
             return;
@@ -2657,7 +2657,7 @@ fn void builtin_string_proto_at(BuiltinContext* ctx) {
     if (idx < 0) { idx = (long)clen + idx; }
     if (idx < 0 || idx >= (long)clen) { ctx.result.set_undefined(); return; }
 
-    uint cp = s_hstr.char_at((uint)idx);
+    uint cp = s_hstr.char_at_unchecked((uint)idx);
     char[4] cbuf;
     uint cblen = hstring::encode_codepoint(cp, cbuf[:4]);
     HString* result = builtin_intern_string(ctx.heap, cbuf[:cblen]);

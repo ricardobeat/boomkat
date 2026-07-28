@@ -268,7 +268,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         if (sidx >= 0) {
                             HString* prim_str = (HString*)(*hobj.extra_ptr()).prim.primitive_value.get_heapptr();
                             if (sidx < (long)prim_str.char_length()) {
-                                uint cp = prim_str.char_at((uint)sidx);
+                                uint cp = prim_str.char_at_unchecked((uint)sidx);
                                 char[4] sbuf;
                                 uint sblen = hstring::encode_codepoint(cp, sbuf[:4]);
                                 HString* interned = intern_string(vm, sbuf[:sblen]);
@@ -443,7 +443,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         }
                     }
                     if (str_idx >= 0 && str_idx < (long)str_prim.char_length()) {
-                        uint cp = str_prim.char_at((uint)str_idx);
+                        uint cp = str_prim.char_at_unchecked((uint)str_idx);
                         char[4] cbuf;
                         uint cblen = hstring::encode_codepoint(cp, cbuf[:4]);
                         HString* interned = intern_string(vm, cbuf[:cblen]);
@@ -671,7 +671,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                 long sidx = (long)key_hstr.array_index();
                                 HString* prim_str = (HString*)(*hobj.extra_ptr()).prim.primitive_value.get_heapptr();
                                 if (sidx < (long)prim_str.char_length()) {
-                                    uint cp = prim_str.char_at((uint)sidx);
+                                    uint cp = prim_str.char_at_unchecked((uint)sidx);
                                     char[4] sbuf;
                                     uint sblen = hstring::encode_codepoint(cp, sbuf[:4]);
                                     HString* interned = intern_string(vm, sbuf[:sblen]);
