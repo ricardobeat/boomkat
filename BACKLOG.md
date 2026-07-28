@@ -41,18 +41,14 @@ up in a phase run, so a green suite is not evidence against them. Each verified 
   already existed at the `@@split` site, so this is a copy that drifted. `@@split`'s own
   advance works on raw byte offsets and is not susceptible. No one has audited the
   remaining char-unit/byte-offset round-trips in that file for the same class of bug.
-- [ ] **`ays_return_from_body` misses the catcher parent-walk** (`vm_generators.c3`, async
-  `yield*` delegation). Same root cause as the finally-skipping bug fixed in `79ca7134`;
-  left alone there because no failing test exercises it. Likely means an async `yield*`
-  return skips an enclosing finally behind a catch-only try.
-- [ ] **`builtin_to_string` skips ToPrimitive on objects — audit its ~25 call sites.**
-  `src/builtins/core.c3:2096-2097` hardcodes `"[object Object]"` instead of running
-  `[Symbol.toPrimitive]`/`toString`/`valueOf`, so abrupt completions never propagate.
-  The correct helper `builtin_to_string_vm` already exists; the URI builtins were routed
-  through it in `eea15205` rather than changing the shared function. 9 other files still
-  call the broken one (array.c3, date.c3, json.c3, error.c3, string.c3, object.c3,
-  regexp.c3, typedarray.c3). Each site needs deciding: genuine ToPrimitive, or a
-  deliberate raw fallback.
+- [ ] **Non-zero baseline leak count in the engine.** A 2000-iteration async-generator
+  stress script reports ~27,000 leaks / 4 MB on an unmodified build; `Array.from(array)`
+  and `Array.from(Set)` report exactly 0, so 0 is achievable and this is real, not harness
+  noise. Never investigated. Any leak work must measure a same-session delta against a
+  baseline binary rather than reading the absolute number.
+- [ ] **`error.c3:92` internal `.stack` stub still uses raw `builtin_to_string`.** The only
+  site the audit (`a93ff1a9`) deferred: currently unobservable and matches qjs, but it is
+  the one remaining known-wrong caller.
 
 ### Engine gaps behind the class skip-list
 
