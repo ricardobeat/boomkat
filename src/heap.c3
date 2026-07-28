@@ -126,6 +126,7 @@ struct GcProfile {
     ulong increfs;
     ulong decrefs;
     ulong decrefs_to_zero;
+    ulong obj_decrefs_to_zero;   /// Of those, non-string (object/buffer/bigint)
 
     // --- Allocation / live set ---
     ulong objs_allocated;
@@ -1729,6 +1730,7 @@ $endif
     if (--hdr.refcount == 0) {
 $if $feature(GC_PROFILE):
         self.gc_prof.decrefs_to_zero++;
+        if (!hdr.is_string()) { self.gc_prof.obj_decrefs_to_zero++; }
         self.gc_prof.cascade_objs++;
 $endif
         if (hdr.is_string()) {
@@ -3183,6 +3185,7 @@ fn void Heap.gc_prof_report(&self) {
     io::eprintfn("increfs                %d", types::get_incref_count());
     io::eprintfn("decrefs                %d", p.decrefs);
     io::eprintfn("decrefs reaching zero  %d", p.decrefs_to_zero);
+    io::eprintfn("  ... of those, objects %d", p.obj_decrefs_to_zero);
 
     io::eprintn("");
     io::eprintn("-- objects --");
