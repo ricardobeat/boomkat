@@ -16,10 +16,9 @@ Before scheduling work on an entry, re-probe it against `main`. Several entries 
 
 Coverage is **60%** of the suite. The rest is not failing — it is not running.
 
-**The suite is currently RED: 19 known failures** (all in phase 21, generators),
-surfaced deliberately by `916ffaed` adding 14 orphaned directories. Down from 66. Root
-causes are itemised below; each is real engine work. Do not re-hide them by skip-listing.
-All other phases are 0 fails.
+**The suite has 7 known failures**, all one root cause (matchAll bypasses RegExpExec —
+see below). Down from the 66 that `916ffaed` surfaced by adding 14 orphaned directories.
+All 18 phases otherwise report 0 fails. Do not re-hide anything by skip-listing.
 
 Reproduce with a walk over `PHASES` dirs + `skip_reason()` from `scripts/run_test262.py`.
 
@@ -30,9 +29,9 @@ Reproduce with a walk over `PHASES` dirs + `skip_reason()` from `scripts/run_tes
 
 ### Open failures and adjacent bugs
 
-The 19 remaining suite failures are all in phase 21 (generators). The rest of this list is
-real bugs found alongside them that no running test currently covers. Every one verified
-against `main`.
+One entry (matchAll/RegExpExec) accounts for all 7 remaining suite failures. The rest are
+real bugs found alongside them that no running test currently covers — they will not show
+up in a phase run. Every one verified against `main`.
 
 - [ ] **`RegExp.prototype.source` over-escapes — no test currently covers it.**
   `/a\/b/.source` gives `"a\\/b"` and `/[/]/.source` gives `"[\/]"`; qjs gives `"a\/b"`
@@ -48,14 +47,16 @@ against `main`.
   main: `custom-regexpexec*.js` (7) and `regexp-tolength-lastindex-throws.js`. The iterator
   calls the internal matcher directly instead of going through `RegExpExec`, so a
   user-supplied `exec` / a throwing `lastIndex` ToLength never runs.
+- [ ] **`ays_return_from_body` misses the catcher parent-walk** (`vm_generators.c3`, async
+  `yield*` delegation). Same root cause as the finally-skipping bug fixed in `79ca7134`;
+  left alone there because no failing test exercises it. Likely means an async `yield*`
+  return skips an enclosing finally behind a catch-only try.
 - [ ] **Iterator `next` methods throw a bare `undefined` instead of a TypeError.**
   `builtin_map_iterator_next` (map.c3), `builtin_set_iterator_next` (set.c3) and
   `builtin_string_iterator_next` (iterator.c3) still use `should_throw=true` +
   `set_undefined()` rather than `builtin_throw`. The array and regexp-string variants were
   fixed in `07bf4e8a`; these three were out of that task's scope and are not currently
   covered by a running test.
-- [ ] **`GeneratorPrototype.next/return/throw` don't validate `this` — 6 fails.**
-  `this` = undefined or a plain object must TypeError.
 - [ ] **`builtin_to_string` skips ToPrimitive on objects — audit its ~25 call sites.**
   `src/builtins/core.c3:2096-2097` hardcodes `"[object Object]"` instead of running
   `[Symbol.toPrimitive]`/`toString`/`valueOf`, so abrupt completions never propagate.
@@ -63,11 +64,7 @@ against `main`.
   through it in `eea15205` rather than changing the shared function. 9 other files still
   call the broken one (array.c3, date.c3, json.c3, error.c3, string.c3, object.c3,
   regexp.c3, typedarray.c3). Each site needs deciding: genuine ToPrimitive, or a
-  deliberate raw fallback. Feeds the AggregateError `message` bug below.
-- [ ] **Generator `.return()` inside nested try/finally — 3 fails.** Finally blocks not
-  running / final value not surfacing. May share a cause with the finally-return abort path.
-- [ ] **`GeneratorFunction.prototype.constructor` is writable — 1 fail.** Should be non-writable.
-- [ ] **`AsyncFunction` `[[Prototype]]` chain wrong — 1 fail.** Expected `Function`.
+  deliberate raw fallback.
 
 ### Engine gaps behind the class skip-list
 
