@@ -134,6 +134,15 @@
         "benchmarks/test_closure_put.c3"
       ],
       "opt": "O0"
+    },
+    "leak_tester": {
+      "type": "executable",
+      "sources": [
+        "src",
+        "scratch/leak_tester.c3"
+      ],
+      "opt": "O2",
+      "single-module": true
     }
   }
 }

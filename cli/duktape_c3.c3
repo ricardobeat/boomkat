@@ -60,6 +60,7 @@ fn int main(String[] args) {
     }
 
     TVal? result = v.execute(f);
+    hp.drain_microtasks((void*)v);
     if (catch err = result) {
         io::eprintfn("VM error: %s (at execute)", err);
         if (v.heap.has_error) {

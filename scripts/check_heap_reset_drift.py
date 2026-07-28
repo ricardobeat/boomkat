@@ -84,6 +84,10 @@ ALLOWED_NOT_RESET = {
 
     # ── Compiled function tracking — count reset; cap kept ──
     "compiled_func_cap",   # Allocation capacity kept, count zeroed
+    "compiled_funcs",      # Backing array kept, count zeroed via compiled_func_count=0
+
+    # ── Large string registry — count reset; cap kept ──
+    "large_string_capacity", # Allocation capacity kept, count zeroed
 }
 
 

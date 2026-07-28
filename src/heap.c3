@@ -57,8 +57,8 @@ faultdef HEAP_ALLOC_FAULT;
 
 const uint  INITIAL_STR_TABLE_SIZE  = 256;
 const float STR_TABLE_LOAD_FACTOR   = 0.70;
-const long  GC_INITIAL_TRIGGER      = 1024;
-const long  GC_TRIGGER_GROW_FACTOR  = 2;
+const long  GC_INITIAL_TRIGGER      = 1;
+const long  GC_TRIGGER_GROW_FACTOR  = 1;
 const uint  MEGA_CACHE_SIZE         = 512;
 /// Sentinel refcount for strings that must never be freed (builtins, symbols).
 const uint  STRING_PINNED_REFCOUNT  = 0x7FFF_FFFF;
@@ -1256,6 +1256,8 @@ fn void Heap.reset(&self) {
     self.microtask_count    = 0;
     self.microtask_draining = false;
     self.async_waiter_count = 0;
+    self.sweeping           = false;
+    mem::clear(&self.async_waiters, (sz)(AtomicsWaiter::size * 64));
 
     // Clear all other heap state (prototypes, GC roots, execution state)
     self.heap_allocated   = null;
@@ -1316,6 +1318,9 @@ fn void Heap.reset(&self) {
     self.generator_proto      = null;
     self.generator_func_proto = null;
     self.async_func_proto     = null;
+    self.async_iterator_proto = null;
+    self.async_generator_proto = null;
+    self.async_generator_func_proto = null;
     self.iterator_proto       = null;
     self.iterator_ctor        = null;
     self.iterator_helper_proto = null;
