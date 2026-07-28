@@ -656,6 +656,7 @@ PHASES = [
             "language/expressions/object", "language/expressions/array",
             "language/expressions/member-expression",
             "language/expressions/property-accessors",
+            "language/computed-property-names",
             "built-ins/Object", "built-ins/Array", "built-ins/Array/length",
             "built-ins/Reflect",
         ],
@@ -672,7 +673,7 @@ PHASES = [
         "dirs": [
             "built-ins/Boolean", "built-ins/String", "built-ins/Number",
             "built-ins/Object", "built-ins/Array", "built-ins/Function",
-            "built-ins/BigInt",
+            "built-ins/BigInt", "language/literals/bigint",
         ],
     },
     {
@@ -697,7 +698,11 @@ PHASES = [
         "label": "Phase 8: ES5 Built-in Objects",
         "dirs": [
             "built-ins/JSON", "built-ins/Date", "built-ins/RegExp",
+            "language/literals/regexp",
             "built-ins/parseInt", "built-ins/parseFloat",
+            "built-ins/decodeURI", "built-ins/decodeURIComponent",
+            "built-ins/encodeURI", "built-ins/encodeURIComponent",
+            "built-ins/global",
         ],
     },
     {
@@ -744,6 +749,7 @@ PHASES = [
             "built-ins/Promise",
             "built-ins/WeakMap", "built-ins/WeakSet",
             "built-ins/WeakRef", "built-ins/FinalizationRegistry",
+            "built-ins/AggregateError",
         ],
     },
     {
@@ -759,6 +765,10 @@ PHASES = [
             "built-ins/AsyncGeneratorPrototype",
             "built-ins/AsyncFromSyncIteratorPrototype",
             "built-ins/AsyncIteratorPrototype",
+            "built-ins/GeneratorPrototype", "built-ins/GeneratorFunction",
+            "built-ins/AsyncFunction",
+            "built-ins/ArrayIteratorPrototype",
+            "built-ins/RegExpStringIteratorPrototype",
         ],
     },
     {
