@@ -66,8 +66,15 @@ Temporal (4,603), `intl402` (~3,300), `staging` (1,493), annexB, `harness`, othe
 
 ## Infrastructure
 
-- [ ] **test262 runner cannot complete a full suite in one shot.** Worker desync crash at `run_test262.py:1101` immediately after two `[timeout]`s on RegExp property-escape generated tests. Harness protocol bug in timeout handling, not an engine failure — `7a1a8804` touched exactly this path. Workaround: run phases individually. **Blocks I4.**
-- [ ] **I4 — two-consecutive-run zero-fail gate in CI.** Needs a user decision on where CI runs (GitHub Actions / git hook / just recipe). Full suite is 6-8 min, so a two-run gate is ~15 min. Blocked on the desync above: a gate needing two clean full runs can't sit on a harness that dies partway through the first.
+- [ ] **RegExp property-escapes tests are load-sensitive.** Under background load the
+  generated `Script_Extensions_*` / `General_Category_*` tests hit the 10s per-test timeout
+  (7 timeouts in one full run, 1 in another on an idle machine). A timeout counts as a
+  failure, so `just test262-gate` can legitimately go red purely from machine load. Either
+  raise the timeout for that family or make them faster; a flaky gate gets ignored.
+- [ ] **Decide where `just test262-gate` runs.** The recipe exists and works standalone
+  (`b0338a09`). Still a user decision whether to wire it into GitHub Actions, a pre-push
+  hook, or leave it manual. Blocked on the load-sensitivity item above — wiring a flaky
+  gate into CI trains people to ignore it.
 - [ ] **Runner config single source of truth.** `UNSUPPORTED_PATTERN` vs `scripts/test262_skip.cfg` doc mirror has drifted twice. Any "pure reorganization" of the skip list needs a machine-checked token-set diff, not a prose claim — a re-tier agent once asserted an empty diff while adding five tokens, two of which would have hidden working features.
 
 ## Engine design review
