@@ -48,584 +48,6 @@ extern fn double math_cbrt(double x)          @MathLibc("cbrt");
 // Date/time library externals (link-time resolved via libc)
 // The Tm struct mirrors C's struct tm layout exactly.
 
-/// Stable identifiers for every native builtin function, indexed into
-/// builtin_dispatch_table via `.ordinal`. Never serialized to bytecode or
-/// disk — builtin_fn_index is a runtime-only field on the function object
-/// (HObjectFunction / HObjectProxy), so members may be appended freely
-/// without a stable numbering scheme.
-enum Builtin : uint {
-    PRINT,
-    CONSOLE_LOG,
-    CONSOLE_INFO,
-    CONSOLE_DEBUG,
-    CONSOLE_TRACE,
-    CONSOLE_WARN,
-    CONSOLE_ERROR,
-    CONSOLE_DIR,
-    CONSOLE_ASSERT,
-    PARSE_INT,
-    PARSE_FLOAT,
-    IS_NAN,
-    IS_FINITE,
-    ERROR,
-    TYPE_ERROR,
-    RANGE_ERROR,
-    REFERENCE_ERROR,
-    SYNTAX_ERROR,
-    EVAL_ERROR,
-    ERROR_PROTO_TOSTRING,
-    BOOLEAN,
-    BOOLEAN_PROTO_TOSTRING,
-    BOOLEAN_PROTO_VALUEOF,
-    STRING,
-    STRING_PROTO_TOSTRING,
-    STRING_PROTO_VALUEOF,
-    NUMBER,
-    NUMBER_PROTO_TOSTRING,
-    NUMBER_PROTO_VALUEOF,
-    OBJECT,
-    OBJECT_PROTO_TOSTRING,
-    OBJECT_PROTO_VALUEOF,
-    OBJECT_PROTO___PROTO___GETTER,
-    OBJECT_PROTO___PROTO___SETTER,
-    ARRAY,
-    MATH_ABS,
-    MATH_FLOOR,
-    MATH_CEIL,
-    MATH_ROUND,
-    MATH_MAX,
-    MATH_MIN,
-    MATH_POW,
-    MATH_SQRT,
-    MATH_EXP,
-    MATH_LOG,
-    MATH_SIN,
-    MATH_COS,
-    MATH_TAN,
-    MATH_RANDOM,
-    STRING_PROTO_CHARAT,
-    STRING_PROTO_CHARCODEAT,
-    STRING_PROTO_INDEXOF,
-    STRING_PROTO_SLICE,
-    STRING_PROTO_SUBSTRING,
-    STRING_PROTO_SUBSTR,
-    STRING_PROTO_TOUPPERCASE,
-    STRING_PROTO_TOLOWERCASE,
-    STRING_PROTO_TRIM,
-    STRING_PROTO_SPLIT,
-    STRING_PROTO_CONCAT,
-    STRING_PROTO_REPLACE,
-    ARRAY_PROTO_TOSTRING,
-    ARRAY_PROTO_JOIN,
-    ARRAY_PROTO_POP,
-    ARRAY_PROTO_PUSH,
-    ARRAY_PROTO_REVERSE,
-    ARRAY_PROTO_SHIFT,
-    ARRAY_PROTO_SLICE,
-    ARRAY_PROTO_SORT,
-    ARRAY_PROTO_SPLICE,
-    ARRAY_PROTO_UNSHIFT,
-    ARRAY_PROTO_INDEXOF,
-    ARRAY_PROTO_LASTINDEXOF,
-    ARRAY_PROTO_CONCAT,
-    NUMBER_PROTO_TOFIXED,
-    NUMBER_PROTO_TOEXPONENTIAL,
-    NUMBER_PROTO_TOPRECISION,
-    FUNCTION_PROTO_CALL,
-    FUNCTION_PROTO_APPLY,
-    FUNCTION_PROTO_BIND,
-    BOUND_CALL,
-    EVAL,
-    JSON_PARSE,
-    JSON_STRINGIFY,
-    DATE,
-    DATE_NOW,
-    DATE_UTC,
-    DATE_PARSE,
-    DATE_PROTO_TOSTRING,
-    DATE_PROTO_TOJSON,
-    DATE_PROTO_VALUEOF,
-    DATE_PROTO_GETTIME,
-    DATE_PROTO_GETFULLYEAR,
-    DATE_PROTO_GETMONTH,
-    DATE_PROTO_GETDATE,
-    DATE_PROTO_GETDAY,
-    DATE_PROTO_GETHOURS,
-    DATE_PROTO_GETMINUTES,
-    DATE_PROTO_GETSECONDS,
-    DATE_PROTO_GETMILLISECONDS,
-    DATE_PROTO_GETTIMEZONEOFFSET,
-    FUNCTION,
-    RESET_GLOBALS,
-    REGEXP,
-    REGEXP_PROTO_TEST,
-    REGEXP_PROTO_EXEC,
-    REGEXP_PROTO_TOSTRING,
-    OBJECT_PROTO_HASOWNPROPERTY,
-    OBJECT_PROTO_PROPERTYISENUMERABLE,
-    OBJECT_PROTO_ISPROTOTYPEOF,
-    OBJECT_PROTO_TOLOCALESTRING,
-    DATE_PROTO_TOLOCALESTRING,
-    DATE_PROTO_TOLOCALEDATESTRING,
-    DATE_PROTO_TOLOCALETIMESTRING,
-    PROMISE_RESOLVE_CALLBACK,
-    PROMISE_REJECT_CALLBACK,
-    PROMISE_ALL_RESOLVE_ELEMENT,
-    PROMISE_ALL_REJECT_ELEMENT,
-    PROMISE_ALLSETTLED_RESOLVE_ELEMENT,
-    PROMISE_ALLSETTLED_REJECT_ELEMENT,
-    PROMISE_ANY_RESOLVE_ELEMENT,
-    PROMISE_ANY_REJECT_ELEMENT,
-    ARRAY_ITERATOR_NEXT,
-    STRING_ITERATOR_NEXT,
-    STRING_PROTO_SYMBOL_ITER,
-    ARRAY_PROTO_KEYS,
-    ARRAY_PROTO_VALUES,
-    ARRAY_PROTO_ENTRIES,
-    OBJECT_FROMENTRIES,
-    OBJECT_GROUPBY,
-    MAP_GROUPBY,
-    REGEXP_PROTO_GET_FLAGS,
-    REGEXP_PROTO_GET_SOURCE,
-    REGEXP_PROTO_GET_GLOBAL,
-    REGEXP_PROTO_GET_IGNORECASE,
-    REGEXP_PROTO_GET_MULTILINE,
-    REGEXP_PROTO_GET_DOTALL,
-    REGEXP_PROTO_GET_STICKY,
-    REGEXP_PROTO_GET_UNICODE,
-    ARRAY_FROM,
-    ITERATOR_PROTO_SYMBOL_ITER,
-    MAP_ITERATOR_NEXT,
-    SET_ITERATOR_NEXT,
-    ARRAY_PROTO_FOREACH,
-    ARRAY_PROTO_MAP,
-    ARRAY_PROTO_FILTER,
-    ARRAY_PROTO_EVERY,
-    ARRAY_PROTO_SOME,
-    ARRAY_PROTO_REDUCE,
-    ARRAY_PROTO_REDUCERIGHT,
-    STRING_PROTO_TOLOCALELOWERCASE,
-    STRING_PROTO_TOLOCALEUPPERCASE,
-    STRING_PROTO_LOCALECOMPARE,
-    ARRAY_PROTO_FINDLAST,
-    ARRAY_PROTO_FINDLASTINDEX,
-    FUNCTION_PROTO_TOSTRING,
-    INT8ARRAY,
-    UINT8ARRAY,
-    UINT8CLAMPEDARRAY,
-    INT16ARRAY,
-    UINT16ARRAY,
-    INT32ARRAY,
-    UINT32ARRAY,
-    FLOAT16ARRAY,
-    FLOAT32ARRAY,
-    FLOAT64ARRAY,
-    BIGINT64ARRAY,
-    BIGUINT64ARRAY,
-    REGEXP_PROTO_SYMBOL_MATCH,
-    REGEXP_PROTO_SYMBOL_SEARCH,
-    REGEXP_PROTO_SYMBOL_REPLACE,
-    REGEXP_PROTO_SYMBOL_SPLIT,
-    REGEXP_PROTO_SYMBOL_MATCHALL,
-    REGEXP_STRING_ITERATOR_NEXT,
-    ASYNC_RESUME,
-    ASYNC_REJECT,
-    PROMISE_SYNTHETIC_EXECUTOR,
-    REGEXP_PROTO_GET_HASINDICES,
-    REGEXP_PROTO_GET_UNICODESETS,
-    ARRAYBUFFER,
-    ARRAYBUFFER_ISVIEW,
-    ARRAYBUFFER_PROTO_BYTELENGTH_GET,
-    ARRAYBUFFER_PROTO_SLICE,
-    ARRAYBUFFER_PROTO_DETACHED_GET,
-    ARRAYBUFFER_SPECIES_GET,
-    DETACH_ARRAYBUFFER,
-    TYPEDARRAY_PROTO_LENGTH_GET,
-    TYPEDARRAY_PROTO_BYTELENGTH_GET,
-    TYPEDARRAY_PROTO_BYTEOFFSET_GET,
-    TYPEDARRAY_PROTO_BUFFER_GET,
-    TYPEDARRAY_PROTO_TOSTRINGTAG_GET,
-    DATAVIEW,
-    DATAVIEW_PROTO_BUFFER_GET,
-    DATAVIEW_PROTO_BYTELENGTH_GET,
-    DATAVIEW_PROTO_BYTEOFFSET_GET,
-    DATAVIEW_GET_INT8,
-    DATAVIEW_GET_UINT8,
-    DATAVIEW_GET_INT16,
-    DATAVIEW_GET_UINT16,
-    DATAVIEW_GET_INT32,
-    DATAVIEW_GET_UINT32,
-    DATAVIEW_GET_FLOAT16,
-    DATAVIEW_GET_FLOAT32,
-    DATAVIEW_GET_FLOAT64,
-    DATAVIEW_SET_INT8,
-    DATAVIEW_SET_UINT8,
-    DATAVIEW_SET_INT16,
-    DATAVIEW_SET_UINT16,
-    DATAVIEW_SET_INT32,
-    DATAVIEW_SET_UINT32,
-    DATAVIEW_SET_FLOAT16,
-    DATAVIEW_SET_FLOAT32,
-    DATAVIEW_SET_FLOAT64,
-    TA_PROTO_VALUES,
-    TA_PROTO_KEYS,
-    TA_PROTO_ENTRIES,
-    TA_PROTO_SET,
-    TA_PROTO_SUBARRAY,
-    TA_PROTO_FILL,
-    TA_PROTO_COPYWITHIN,
-    TA_PROTO_SLICE,
-    TA_PROTO_INDEX_OF,
-    TA_PROTO_LAST_INDEX_OF,
-    TA_PROTO_INCLUDES,
-    TA_PROTO_JOIN,
-    TA_PROTO_FOR_EACH,
-    TA_PROTO_EVERY,
-    TA_PROTO_SOME,
-    TA_PROTO_REDUCE,
-    TA_PROTO_REDUCE_RIGHT,
-    TA_PROTO_MAP,
-    TA_PROTO_FILTER,
-    TA_PROTO_FIND,
-    TA_PROTO_FIND_INDEX,
-    TA_PROTO_FIND_LAST,
-    TA_PROTO_FIND_LAST_INDEX,
-    TA_PROTO_REVERSE,
-    TA_PROTO_TO_REVERSED,
-    TA_PROTO_AT,
-    TA_PROTO_SORT,
-    TA_PROTO_TO_SORTED,
-    TA_PROTO_WITH,
-    TA_PROTO_TO_STRING,
-    TA_PROTO_TO_LOCALE_STRING,
-    TA_OF,
-    TA_FROM,
-    // Uint8Array base64/hex (tc39 proposal-arraybuffer-base64)
-    UINT8ARRAY_FROM_BASE64,
-    UINT8ARRAY_FROM_HEX,
-    UINT8ARRAY_PROTO_TO_BASE64,
-    UINT8ARRAY_PROTO_TO_HEX,
-    UINT8ARRAY_PROTO_SET_FROM_BASE64,
-    UINT8ARRAY_PROTO_SET_FROM_HEX,
-    TYPEDARRAY_INTRINSIC,
-    FUNCTION_PROTO_HASINSTANCE,
-    DATE_PROTO_TOPRIMITIVE,
-    OBJECT_GETOWNPROPERTYDESCRIPTORS,
-    PROMISE_SPECIES_GETTER,
-    ASYNC_FUNCTION,
-    PROXY,
-    PROXY_REVOCABLE,
-    PROXY_REVOKE,
-    PROXY_CALL,
-    TA_SPECIES_GET,
-    EVAL_SCRIPT,
-    REGEXP_SPECIES_GETTER,
-    MODULE_BINDING_GETTER,
-    PROMISE_RESOLVE_THENABLE_JOB,
-    PROMISE_THEN_FINALLY,
-    PROMISE_CATCH_FINALLY,
-    ARRAY_SPECIES_GETTER,
-    PROMISE_IDENTITY,
-    REFLECT_GET,
-    REFLECT_SET,
-    REFLECT_HAS,
-    REFLECT_DELETE_PROPERTY,
-    REFLECT_GET_OWN_PROPERTY_DESCRIPTOR,
-    REFLECT_DEFINE_PROPERTY,
-    REFLECT_GET_PROTOTYPE_OF,
-    REFLECT_SET_PROTOTYPE_OF,
-    REFLECT_IS_EXTENSIBLE,
-    REFLECT_PREVENT_EXTENSIONS,
-    REFLECT_APPLY,
-    REFLECT_CONSTRUCT,
-    PROMISE_THROWER,
-    MAP_SPECIES_GETTER,
-    SET_SPECIES_GETTER,
-    DATAVIEW_GET_BIGINT64,
-    DATAVIEW_GET_BIGUINT64,
-    DATAVIEW_SET_BIGINT64,
-    DATAVIEW_SET_BIGUINT64,
-    FUNCTION_PROTO_RESTRICTED_GETTER,
-    FUNCTION_PROTO_RESTRICTED_SETTER,
-    MAP,
-    MAP_PROTO_SET,
-    MAP_PROTO_GET,
-    MAP_PROTO_HAS,
-    MAP_PROTO_DELETE,
-    MAP_PROTO_CLEAR,
-    MAP_PROTO_KEYS,
-    MAP_PROTO_VALUES,
-    MAP_PROTO_ENTRIES,
-    MAP_PROTO_FOREACH,
-    MAP_PROTO_GETORINSERT,
-    MAP_PROTO_GETORINSERTCOMPUTED,
-    SET,
-    SET_PROTO_ADD,
-    SET_PROTO_HAS,
-    SET_PROTO_DELETE,
-    SET_PROTO_CLEAR,
-    SET_PROTO_VALUES,
-    SET_PROTO_ENTRIES,
-    SET_PROTO_FOREACH,
-    WEAKMAP,
-    WEAKMAP_PROTO_SET,
-    WEAKMAP_PROTO_GET,
-    WEAKMAP_PROTO_HAS,
-    WEAKMAP_PROTO_DELETE,
-    WEAKMAP_PROTO_GETORINSERT,
-    WEAKMAP_PROTO_GETORINSERTCOMPUTED,
-    WEAKSET,
-    WEAKSET_PROTO_ADD,
-    WEAKSET_PROTO_HAS,
-    WEAKSET_PROTO_DELETE,
-    WEAKREF,
-    WEAKREF_PROTO_DEREF,
-    FINALIZATION_REGISTRY,
-    FINALIZATION_REGISTRY_PROTO_REGISTER,
-    FINALIZATION_REGISTRY_PROTO_UNREGISTER,
-    SYMBOL,
-    SYMBOL_FOR,
-    SYMBOL_KEYFOR,
-    SYMBOL_PROTO_TOSTRING,
-    SYMBOL_PROTO_VALUEOF,
-    SYMBOL_PROTO_TOPRIMITIVE,
-    SYMBOL_PROTO_DESCRIPTION_GET,
-    MAP_PROTO_SIZE_GET,
-    SET_PROTO_SIZE_GET,
-    PROMISE,
-    PROMISE_PROTO_THEN,
-    PROMISE_PROTO_CATCH,
-    PROMISE_PROTO_FINALLY,
-    PROMISE_RESOLVE,
-    PROMISE_REJECT,
-    PROMISE_ALL,
-    PROMISE_RACE,
-    PROMISE_ALLSETTLED,
-    PROMISE_ANY,
-    AGGREGATE_ERROR,
-    GENERATOR_FUNCTION,
-    GENERATOR_PROTO_NEXT,
-    GENERATOR_PROTO_THROW,
-    GENERATOR_PROTO_RETURN,
-    OBJECT_KEYS,
-    OBJECT_GETPROTOTYPEOF,
-    OBJECT_ISEXTENSIBLE,
-    OBJECT_PREVENTEXTENSIONS,
-    OBJECT_GETOWNPROPERTYDESCRIPTOR,
-    OBJECT_DEFINEPROPERTY,
-    OBJECT_GETOWNPROPERTYNAMES,
-    OBJECT_GETOWNPROPERTYSYMBOLS,
-    OBJECT_DEFINEPROPERTIES,
-    OBJECT_CREATE,
-    OBJECT_SEAL,
-    OBJECT_FREEZE,
-    OBJECT_ISSEALED,
-    OBJECT_ISFROZEN,
-    OBJECT_ENTRIES,
-    OBJECT_VALUES,
-    OBJECT_ASSIGN,
-    NUMBER_ISNAN,
-    NUMBER_ISFINITE,
-    NUMBER_ISINTEGER,
-    NUMBER_ISSAFEINTEGER,
-    MATH_ACOS,
-    MATH_ASIN,
-    MATH_ATAN,
-    MATH_ATAN2,
-    MATH_COSH,
-    MATH_SINH,
-    MATH_TANH,
-    MATH_ACOSH,
-    MATH_ASINH,
-    MATH_ATANH,
-    MATH_LOG2,
-    MATH_LOG10,
-    MATH_LOG1P,
-    MATH_EXPM1,
-    MATH_CBRT,
-    MATH_HYPOT,
-    MATH_TRUNC,
-    MATH_SIGN,
-    MATH_FROUND,
-    MATH_F16ROUND,
-    MATH_CLZ32,
-    MATH_IMUL,
-    MATH_SUMPRECISE,
-    ARRAY_ISARRAY,
-    STRING_FROMCHARCODE,
-    OBJECT_IS,
-    OBJECT_HASOWN,
-    OBJECT_SETPROTOTYPEOF,
-    ARRAY_PROTO_FLAT,
-    ARRAY_PROTO_FLATMAP,
-    STRING_FROMCODEPOINT,
-    ENCODE_URI,
-    ENCODE_URI_COMPONENT,
-    DECODE_URI,
-    DECODE_URI_COMPONENT,
-    URI_ERROR,
-    ARRAY_PROTO_TOREVERSED,
-    ARRAY_PROTO_TOSORTED,
-    ARRAY_PROTO_TOSPLICED,
-    ARRAY_PROTO_WITH,
-    STRING_PROTO_MATCH,
-    STRING_PROTO_SEARCH,
-    STRING_PROTO_INCLUDES,
-    STRING_PROTO_STARTSWITH,
-    STRING_PROTO_ENDSWITH,
-    STRING_PROTO_REPEAT,
-    STRING_PROTO_TRIMSTART,
-    STRING_PROTO_TRIMEND,
-    STRING_PROTO_CODEPOINTAT,
-    STRING_PROTO_AT,
-    STRING_PROTO_PADSTART,
-    STRING_PROTO_PADEND,
-    STRING_PROTO_LASTINDEXOF,
-    ARRAY_OF,
-    ARRAY_PROTO_FILL,
-    ARRAY_PROTO_FIND,
-    ARRAY_PROTO_FINDINDEX,
-    ARRAY_PROTO_INCLUDES,
-    ARRAY_PROTO_AT,
-    ARRAY_PROTO_COPYWITHIN,
-    DATE_PROTO_GETUTCFULLYEAR,
-    DATE_PROTO_GETUTCMONTH,
-    DATE_PROTO_GETUTCDATE,
-    DATE_PROTO_GETUTCDAY,
-    DATE_PROTO_GETUTCHOURS,
-    DATE_PROTO_GETUTCMINUTES,
-    DATE_PROTO_GETUTCSECONDS,
-    DATE_PROTO_GETUTCMILLISECONDS,
-    DATE_PROTO_SETTIME,
-    DATE_PROTO_SETMILLISECONDS,
-    DATE_PROTO_SETSECONDS,
-    DATE_PROTO_SETMINUTES,
-    DATE_PROTO_SETHOURS,
-    DATE_PROTO_SETDATE,
-    DATE_PROTO_SETMONTH,
-    DATE_PROTO_SETFULLYEAR,
-    DATE_PROTO_SETUTCMILLISECONDS,
-    DATE_PROTO_SETUTCSECONDS,
-    DATE_PROTO_SETUTCMINUTES,
-    DATE_PROTO_SETUTCHOURS,
-    DATE_PROTO_SETUTCDATE,
-    DATE_PROTO_SETUTCMONTH,
-    DATE_PROTO_SETUTCFULLYEAR,
-    DATE_PROTO_TOISOSTRING,
-    DATE_PROTO_TOUTCSTRING,
-    DATE_PROTO_TODATESTRING,
-    DATE_PROTO_TOTIMESTRING,
-    STRING_PROTO_REPLACEALL,
-    STRING_PROTO_MATCHALL,
-    STRING_PROTO_NORMALIZE,
-    STRING_PROTO_ISWELLFORMED,
-    STRING_PROTO_TOWELLFORMED,
-    REFLECT_OWNKEYS,
-    ERROR_CAPTURE_STACK_TRACE,
-    STRING_RAW,
-    // --- BigInt (plan 056) ---
-    BIGINT,                       // BigInt(x)
-    BIGINT_AS_INTN,               // BigInt.asIntN(bits, x)
-    BIGINT_AS_UINTN,              // BigInt.asUintN(bits, x)
-    BIGINT_PROTO_TOSTRING,        // BigInt.prototype.toString([radix])
-    BIGINT_PROTO_VALUEOF,         // BigInt.prototype.valueOf()
-    BIGINT_PROTO_TOLOCALESTRING,  // BigInt.prototype.toLocaleString()
-    // --- %AsyncFromSyncIteratorPrototype% (plan 057, ES2018 §27.1.4) ---
-    ASYNC_FROM_SYNC_NEXT,           // %AsyncFromSyncIteratorPrototype%.next(value)
-    ASYNC_FROM_SYNC_RETURN,         // %AsyncFromSyncIteratorPrototype%.return(value)
-    ASYNC_FROM_SYNC_THROW,          // %AsyncFromSyncIteratorPrototype%.throw(value)
-    ASYNC_FROM_SYNC_VALUE_UNWRAP,   // native fulfill reaction: builds {value, done}
-    ASYNC_FROM_SYNC_REJECT_FORWARD, // native reject reaction: forwards rejection
-    PROMISE_WITH_RESOLVERS,         // Promise.withResolvers() (ES2024)
-    PROMISE_TRY,                    // Promise.try(callbackfn, ...args) (ES2026)
-    ERROR_ISERROR,                  // Error.isError(arg) (ES2026)
-    // --- Set methods proposal (ES2025 §24.2.4) ---
-    SET_PROTO_UNION,                // Set.prototype.union(other)
-    SET_PROTO_INTERSECTION,         // Set.prototype.intersection(other)
-    SET_PROTO_DIFFERENCE,           // Set.prototype.difference(other)
-    SET_PROTO_SYMMETRICDIFFERENCE,  // Set.prototype.symmetricDifference(other)
-    SET_PROTO_ISSUBSETOF,           // Set.prototype.isSubsetOf(other)
-    SET_PROTO_ISSUPERSETOF,         // Set.prototype.isSupersetOf(other)
-    SET_PROTO_ISDISJOINTFROM,       // Set.prototype.isDisjointFrom(other)
-    REGEXP_ESCAPE, // RegExp.escape(string) (ES2026 proposal-regex-escaping)
-    // --- Iterator Helpers (ES2025 §27.1) ---
-    ITERATOR_CTOR,                  // Iterator() — throws (abstract, subclassable)
-    ITERATOR_FROM,                  // Iterator.from(obj)
-    ITERATOR_PROTO_CONSTRUCTOR_GET, // get Iterator.prototype.constructor
-    ITERATOR_PROTO_CONSTRUCTOR_SET, // set Iterator.prototype.constructor
-    ITERATOR_PROTO_TOSTRINGTAG_GET, // get Iterator.prototype[Symbol.toStringTag]
-    ITERATOR_PROTO_TOSTRINGTAG_SET, // set Iterator.prototype[Symbol.toStringTag]
-    ITERATOR_PROTO_MAP,
-    ITERATOR_PROTO_FILTER,
-    ITERATOR_PROTO_TAKE,
-    ITERATOR_PROTO_DROP,
-    ITERATOR_PROTO_FLATMAP,
-    ITERATOR_PROTO_REDUCE,
-    ITERATOR_PROTO_TOARRAY,
-    ITERATOR_PROTO_FOREACH,
-    ITERATOR_PROTO_SOME,
-    ITERATOR_PROTO_EVERY,
-    ITERATOR_PROTO_FIND,
-    ITERATOR_CONCAT,
-    WRAP_FOR_VALID_ITERATOR_NEXT,
-    WRAP_FOR_VALID_ITERATOR_RETURN,
-    ITERATOR_HELPER_NEXT,
-    ITERATOR_HELPER_RETURN,
-    JSON_RAW_JSON,
-    JSON_IS_RAW_JSON,
-    // --- Array.fromAsync (proposal-array-from-async, ES2026) ---
-    ARRAY_FROM_ASYNC,               // Array.fromAsync(asyncItems, mapfn, thisArg)
-    ARRAY_FROM_ASYNC_STEP_FULFILL,  // native reaction: awaited next()/element ready
-    ARRAY_FROM_ASYNC_MAP_FULFILL,   // native reaction: awaited mapped value ready
-    ARRAY_FROM_ASYNC_REJECT,        // native reaction: reject → close iterator, reject outer
-    // --- Resizable ArrayBuffer (ES2024) ---
-    ARRAYBUFFER_PROTO_RESIZE,
-    ARRAYBUFFER_PROTO_RESIZABLE_GET,
-    ARRAYBUFFER_PROTO_MAXBYTELENGTH_GET,
-    ARRAYBUFFER_PROTO_TRANSFER,
-    ARRAYBUFFER_PROTO_TRANSFER_TO_FIXED_LENGTH,
-    // --- SharedArrayBuffer (single-agent) ---
-    SHAREDARRAYBUFFER,
-    SHAREDARRAYBUFFER_PROTO_BYTELENGTH_GET,
-    SHAREDARRAYBUFFER_PROTO_GROWABLE_GET,
-    SHAREDARRAYBUFFER_PROTO_MAXBYTELENGTH_GET,
-    SHAREDARRAYBUFFER_PROTO_GROW,
-    SHAREDARRAYBUFFER_PROTO_SLICE,
-    SHAREDARRAYBUFFER_SPECIES_GET,
-    // --- Atomics ---
-    ATOMICS_ADD,
-    ATOMICS_AND,
-    ATOMICS_COMPAREEXCHANGE,
-    ATOMICS_EXCHANGE,
-    ATOMICS_LOAD,
-    ATOMICS_OR,
-    ATOMICS_STORE,
-    ATOMICS_SUB,
-    ATOMICS_XOR,
-    ATOMICS_ISLOCKFREE,
-    ATOMICS_WAIT,
-    ATOMICS_NOTIFY,
-    ATOMICS_WAITASYNC,
-    // --- Async generators (plan 060, ES2018 §27.6) ---
-    ASYNC_ITERATOR_PROTO_SYMBOL_ASYNCITER, // %AsyncIteratorPrototype%[@@asyncIterator]() → this
-    ASYNC_GENERATOR_PROTO_NEXT,            // %AsyncGeneratorPrototype%.next(value)
-    ASYNC_GENERATOR_PROTO_RETURN,          // %AsyncGeneratorPrototype%.return(value)
-    ASYNC_GENERATOR_PROTO_THROW,           // %AsyncGeneratorPrototype%.throw(value)
-    ASYNC_GENERATOR_FUNCTION,              // %AsyncGeneratorFunction% constructor
-    ASYNC_GEN_AWAIT_RESUME,                // native reaction: internal await fulfilled → re-drive body
-    ASYNC_GEN_AWAIT_REJECT,                // native reaction: internal await rejected → inject throw
-    ASYNC_GEN_RETURN_FULFILL,              // native reaction: AwaitReturn value fulfilled → settle {value,done:true}
-    ASYNC_GEN_RETURN_REJECT,               // native reaction: AwaitReturn value rejected → reject request
-    ASYNC_GEN_YRET_FULFILL,                // native reaction: yield-resumption return value fulfilled → resume body w/ return
-    ASYNC_GEN_YRET_REJECT,                 // native reaction: yield-resumption return value rejected → resume body w/ throw
-    REGEXP_PROTO_COMPILE,                  // RegExp.prototype.compile(pattern, flags) (Annex B §B.2.4.1)
-    ATOMICS_PAUSE,                         // Atomics.pause([iterationNumber]) — microwait hint (ES2025 §25.4.6)
-    // --- error-stack-accessor proposal ---
-    ERROR_PROTO_STACK_GET,                 // get Error.prototype.stack
-    ERROR_PROTO_STACK_SET,                 // set Error.prototype.stack
-    LAST, // sentinel — one past the highest valid builtin; not a real builtin
-}
-
 // ============================================================================
 // BuiltinContext — passed to every builtin handler
 // ============================================================================
@@ -660,6 +82,593 @@ struct BuiltinContext {
 }
 
 alias BuiltinFunc = fn void(BuiltinContext*);
+
+/// Stable identifiers for every native builtin function, indexed into
+/// builtin_dispatch_table via `.ordinal`. Never serialized to bytecode or
+/// disk — builtin_fn_index is a runtime-only field on the function object
+/// (HObjectFunction / HObjectProxy), so members may be appended freely
+/// without a stable numbering scheme.
+///
+/// Each member carries its own metadata as associated enum values:
+///  - js_name/js_arity: `.name`/`.length` for LIGHTFUNC values (empty name/-1
+///    arity for internal-only builtins with no JS-visible identity).
+///  - handler: the native implementation, or null for internal-only ordinals
+///    that are never dispatched through builtin_dispatch_table.
+/// builtin_get_metadata() and builtin_dispatch_table are both generated from
+/// this single declaration at compile time (see below) — adding a builtin
+/// requires exactly one new line here.
+enum Builtin : uint (String js_name, int js_arity, BuiltinFunc handler) {
+    PRINT {"print", 1, &builtin_print},
+    CONSOLE_LOG {"log", 1, &builtin_console_log},
+    CONSOLE_INFO {"info", 1, &builtin_console_info},
+    CONSOLE_DEBUG {"debug", 1, &builtin_console_debug},
+    CONSOLE_TRACE {"trace", 1, &builtin_console_trace},
+    CONSOLE_WARN {"warn", 1, &builtin_console_warn},
+    CONSOLE_ERROR {"error", 1, &builtin_console_error},
+    CONSOLE_DIR {"dir", 1, &builtin_console_dir},
+    CONSOLE_ASSERT {"assert", 1, &builtin_console_assert},
+    PARSE_INT {"parseInt", 2, &builtin_parse_int},
+    PARSE_FLOAT {"parseFloat", 1, &builtin_parse_float},
+    IS_NAN {"isNaN", 1, &builtin_is_nan},
+    IS_FINITE {"isFinite", 1, &builtin_is_finite},
+    ERROR {"Error", 1, &builtin_error},
+    TYPE_ERROR {"TypeError", 1, &builtin_type_error},
+    RANGE_ERROR {"RangeError", 1, &builtin_range_error},
+    REFERENCE_ERROR {"ReferenceError", 1, &builtin_reference_error},
+    SYNTAX_ERROR {"SyntaxError", 1, &builtin_syntax_error},
+    EVAL_ERROR {"EvalError", 1, &builtin_eval_error},
+    ERROR_PROTO_TOSTRING {"toString", 0, &builtin_error_prototype_to_string},
+    BOOLEAN {"Boolean", 1, &builtin_boolean},
+    BOOLEAN_PROTO_TOSTRING {"toString", 0, &builtin_boolean_proto_toString},
+    BOOLEAN_PROTO_VALUEOF {"valueOf", 0, &builtin_boolean_proto_valueOf},
+    STRING {"String", 1, &builtin_string},
+    STRING_PROTO_TOSTRING {"toString", 0, &builtin_string_proto_toString},
+    STRING_PROTO_VALUEOF {"valueOf", 0, &builtin_string_proto_valueOf},
+    NUMBER {"Number", 1, &builtin_number},
+    NUMBER_PROTO_TOSTRING {"toString", 0, &builtin_number_proto_toString},
+    NUMBER_PROTO_VALUEOF {"valueOf", 0, &builtin_number_proto_valueOf},
+    OBJECT {"Object", 1, &builtin_object},
+    OBJECT_PROTO_TOSTRING {"toString", 0, &builtin_object_proto_toString},
+    OBJECT_PROTO_VALUEOF {"valueOf", 0, &builtin_object_proto_valueOf},
+    OBJECT_PROTO___PROTO___GETTER {"get __proto__", 0, &builtin_object_proto___proto___getter},
+    OBJECT_PROTO___PROTO___SETTER {"set __proto__", 1, &builtin_object_proto___proto___setter},
+    ARRAY {"Array", 0, &builtin_array},
+    MATH_ABS {"abs", 1, &builtin_math_abs},
+    MATH_FLOOR {"floor", 1, &builtin_math_floor},
+    MATH_CEIL {"ceil", 1, &builtin_math_ceil},
+    MATH_ROUND {"round", 1, &builtin_math_round},
+    MATH_MAX {"max", 2, &builtin_math_max},
+    MATH_MIN {"min", 2, &builtin_math_min},
+    MATH_POW {"pow", 2, &builtin_math_pow},
+    MATH_SQRT {"sqrt", 1, &builtin_math_sqrt},
+    MATH_EXP {"exp", 1, &builtin_math_exp},
+    MATH_LOG {"log", 1, &builtin_math_log},
+    MATH_SIN {"sin", 1, &builtin_math_sin},
+    MATH_COS {"cos", 1, &builtin_math_cos},
+    MATH_TAN {"tan", 1, &builtin_math_tan},
+    MATH_RANDOM {"random", 0, &builtin_math_random},
+    STRING_PROTO_CHARAT {"charAt", 1, &builtin_string_proto_charAt},
+    STRING_PROTO_CHARCODEAT {"charCodeAt", 1, &builtin_string_proto_charCodeAt},
+    STRING_PROTO_INDEXOF {"indexOf", 1, &builtin_string_proto_indexOf},
+    STRING_PROTO_SLICE {"slice", 2, &builtin_string_proto_slice},
+    STRING_PROTO_SUBSTRING {"substring", 2, &builtin_string_proto_substring},
+    STRING_PROTO_SUBSTR {"substr", 2, &builtin_string_proto_substr},
+    STRING_PROTO_TOUPPERCASE {"toUpperCase", 0, &builtin_string_proto_toUpperCase},
+    STRING_PROTO_TOLOWERCASE {"toLowerCase", 0, &builtin_string_proto_toLowerCase},
+    STRING_PROTO_TRIM {"trim", 0, &builtin_string_proto_trim},
+    STRING_PROTO_SPLIT {"split", 2, &builtin_string_proto_split},
+    STRING_PROTO_CONCAT {"concat", 1, &builtin_string_proto_concat},
+    STRING_PROTO_REPLACE {"replace", 2, &builtin_string_proto_replace},
+    ARRAY_PROTO_TOSTRING {"toString", 0, &builtin_array_proto_toString},
+    ARRAY_PROTO_JOIN {"join", 1, &builtin_array_proto_join},
+    ARRAY_PROTO_POP {"pop", 0, &builtin_array_proto_pop},
+    ARRAY_PROTO_PUSH {"push", 1, &builtin_array_proto_push},
+    ARRAY_PROTO_REVERSE {"reverse", 0, &builtin_array_proto_reverse},
+    ARRAY_PROTO_SHIFT {"shift", 0, &builtin_array_proto_shift},
+    ARRAY_PROTO_SLICE {"slice", 2, &builtin_array_proto_slice},
+    ARRAY_PROTO_SORT {"sort", 1, &builtin_array_proto_sort},
+    ARRAY_PROTO_SPLICE {"splice", 2, &builtin_array_proto_splice},
+    ARRAY_PROTO_UNSHIFT {"unshift", 1, &builtin_array_proto_unshift},
+    ARRAY_PROTO_INDEXOF {"indexOf", 1, &builtin_array_proto_indexOf},
+    ARRAY_PROTO_LASTINDEXOF {"lastIndexOf", 1, &builtin_array_proto_lastIndexOf},
+    ARRAY_PROTO_CONCAT {"concat", 1, &builtin_array_proto_concat},
+    NUMBER_PROTO_TOFIXED {"toFixed", 1, &builtin_number_proto_toFixed},
+    NUMBER_PROTO_TOEXPONENTIAL {"toExponential", 1, &builtin_number_proto_toExponential},
+    NUMBER_PROTO_TOPRECISION {"toPrecision", 1, &builtin_number_proto_toPrecision},
+    FUNCTION_PROTO_CALL {"call", 1, &builtin_function_proto_call},
+    FUNCTION_PROTO_APPLY {"apply", 2, &builtin_function_proto_apply},
+    FUNCTION_PROTO_BIND {"bind", 1, &builtin_function_proto_bind},
+    BOUND_CALL {"bind", 1, &builtin_bound_call},
+    EVAL {"eval", 1, &builtin_eval},
+    JSON_PARSE {"parse", 2, &builtin_json_parse},
+    JSON_STRINGIFY {"stringify", 3, &builtin_json_stringify},
+    DATE {"Date", 7, &builtin_date},
+    DATE_NOW {"now", 0, &builtin_date_now},
+    DATE_UTC {"UTC", 7, &builtin_date_utc},
+    DATE_PARSE {"parse", 1, &builtin_date_parse},
+    DATE_PROTO_TOSTRING {"toString", 0, &builtin_date_proto_toString},
+    DATE_PROTO_TOJSON {"toJSON", 1, &builtin_date_proto_toJSON},
+    DATE_PROTO_VALUEOF {"valueOf", 0, &builtin_date_proto_valueOf},
+    DATE_PROTO_GETTIME {"getTime", 0, &builtin_date_proto_getTime},
+    DATE_PROTO_GETFULLYEAR {"getFullYear", 0, &builtin_date_proto_getFullYear},
+    DATE_PROTO_GETMONTH {"getMonth", 0, &builtin_date_proto_getMonth},
+    DATE_PROTO_GETDATE {"getDate", 0, &builtin_date_proto_getDate},
+    DATE_PROTO_GETDAY {"getDay", 0, &builtin_date_proto_getDay},
+    DATE_PROTO_GETHOURS {"getHours", 0, &builtin_date_proto_getHours},
+    DATE_PROTO_GETMINUTES {"getMinutes", 0, &builtin_date_proto_getMinutes},
+    DATE_PROTO_GETSECONDS {"getSeconds", 0, &builtin_date_proto_getSeconds},
+    DATE_PROTO_GETMILLISECONDS {"getMilliseconds", 0, &builtin_date_proto_getMilliseconds},
+    DATE_PROTO_GETTIMEZONEOFFSET {"", -1, &builtin_date_proto_getTimezoneOffset},
+    FUNCTION {"Function", 1, &builtin_function},
+    RESET_GLOBALS {"", -1, &builtin_reset_globals},
+    REGEXP {"RegExp", 2, &builtin_regexp},
+    REGEXP_PROTO_TEST {"test", 1, &builtin_regexp_proto_test},
+    REGEXP_PROTO_EXEC {"exec", 1, &builtin_regexp_proto_exec},
+    REGEXP_PROTO_TOSTRING {"toString", 0, &builtin_regexp_proto_toString},
+    OBJECT_PROTO_HASOWNPROPERTY {"hasOwnProperty", 1, &builtin_object_proto_hasOwnProperty},
+    OBJECT_PROTO_PROPERTYISENUMERABLE {"propertyIsEnumerable", 1, &builtin_object_proto_propertyIsEnumerable},
+    OBJECT_PROTO_ISPROTOTYPEOF {"isPrototypeOf", 1, &builtin_object_proto_isPrototypeOf},
+    OBJECT_PROTO_TOLOCALESTRING {"toLocaleString", 0, &builtin_object_proto_toLocaleString},
+    DATE_PROTO_TOLOCALESTRING {"toLocaleString", 0, &builtin_date_proto_toLocaleString},
+    DATE_PROTO_TOLOCALEDATESTRING {"toLocaleDateString", 0, &builtin_date_proto_toLocaleDateString},
+    DATE_PROTO_TOLOCALETIMESTRING {"toLocaleTimeString", 0, &builtin_date_proto_toLocaleTimeString},
+    PROMISE_RESOLVE_CALLBACK {"", 1, &builtin_promise_resolve_callback},
+    PROMISE_REJECT_CALLBACK {"", 1, &builtin_promise_reject_callback},
+    PROMISE_ALL_RESOLVE_ELEMENT {"", -1, &builtin_promise_all_resolve_element},
+    PROMISE_ALL_REJECT_ELEMENT {"", -1, &builtin_promise_all_reject_element},
+    PROMISE_ALLSETTLED_RESOLVE_ELEMENT {"", -1, &builtin_promise_allsettled_resolve_element},
+    PROMISE_ALLSETTLED_REJECT_ELEMENT {"", -1, &builtin_promise_allsettled_reject_element},
+    PROMISE_ANY_RESOLVE_ELEMENT {"", -1, &builtin_promise_any_resolve_element},
+    PROMISE_ANY_REJECT_ELEMENT {"", -1, &builtin_promise_any_reject_element},
+    ARRAY_ITERATOR_NEXT {"next", 0, &builtin_array_iterator_next},
+    STRING_ITERATOR_NEXT {"next", 0, &builtin_string_iterator_next},
+    STRING_PROTO_SYMBOL_ITER {"[Symbol.iterator]", 0, &builtin_string_proto_symbol_iter},
+    ARRAY_PROTO_KEYS {"keys", 0, &builtin_array_proto_keys},
+    ARRAY_PROTO_VALUES {"values", 0, &builtin_array_proto_values},
+    ARRAY_PROTO_ENTRIES {"entries", 0, &builtin_array_proto_entries},
+    OBJECT_FROMENTRIES {"fromEntries", 1, &builtin_object_fromEntries},
+    OBJECT_GROUPBY {"groupBy", 2, &builtin_object_groupBy},
+    MAP_GROUPBY {"groupBy", 2, &builtin_map_groupBy},
+    REGEXP_PROTO_GET_FLAGS {"", -1, &builtin_regexp_proto_get_flags},
+    REGEXP_PROTO_GET_SOURCE {"", -1, &builtin_regexp_proto_get_source},
+    REGEXP_PROTO_GET_GLOBAL {"", -1, &builtin_regexp_proto_get_global},
+    REGEXP_PROTO_GET_IGNORECASE {"", -1, &builtin_regexp_proto_get_ignoreCase},
+    REGEXP_PROTO_GET_MULTILINE {"", -1, &builtin_regexp_proto_get_multiline},
+    REGEXP_PROTO_GET_DOTALL {"", -1, &builtin_regexp_proto_get_dotAll},
+    REGEXP_PROTO_GET_STICKY {"", -1, &builtin_regexp_proto_get_sticky},
+    REGEXP_PROTO_GET_UNICODE {"", -1, &builtin_regexp_proto_get_unicode},
+    ARRAY_FROM {"from", 1, &builtin_array_from},
+    ITERATOR_PROTO_SYMBOL_ITER {"", -1, &builtin_iterator_proto_symbol_iter},
+    MAP_ITERATOR_NEXT {"", -1, &builtin_map_iterator_next},
+    SET_ITERATOR_NEXT {"", -1, &builtin_set_iterator_next},
+    ARRAY_PROTO_FOREACH {"forEach", 1, &builtin_array_proto_forEach},
+    ARRAY_PROTO_MAP {"map", 1, &builtin_array_proto_map},
+    ARRAY_PROTO_FILTER {"filter", 1, &builtin_array_proto_filter},
+    ARRAY_PROTO_EVERY {"every", 1, &builtin_array_proto_every},
+    ARRAY_PROTO_SOME {"some", 1, &builtin_array_proto_some},
+    ARRAY_PROTO_REDUCE {"reduce", 1, &builtin_array_proto_reduce},
+    ARRAY_PROTO_REDUCERIGHT {"reduceRight", 1, &builtin_array_proto_reduceRight},
+    STRING_PROTO_TOLOCALELOWERCASE {"toLocaleLowerCase", 0, &builtin_string_proto_toLocaleLowerCase},
+    STRING_PROTO_TOLOCALEUPPERCASE {"toLocaleUpperCase", 0, &builtin_string_proto_toLocaleUpperCase},
+    STRING_PROTO_LOCALECOMPARE {"localeCompare", 1, &builtin_string_proto_localeCompare},
+    ARRAY_PROTO_FINDLAST {"findLast", 1, &builtin_array_proto_findLast},
+    ARRAY_PROTO_FINDLASTINDEX {"findLastIndex", 1, &builtin_array_proto_findLastIndex},
+    FUNCTION_PROTO_TOSTRING {"toString", 0, &builtin_function_proto_toString},
+    INT8ARRAY {"", -1, &builtin_int8array},
+    UINT8ARRAY {"", -1, &builtin_uint8array},
+    UINT8CLAMPEDARRAY {"", -1, &builtin_uint8clampedarray},
+    INT16ARRAY {"", -1, &builtin_int16array},
+    UINT16ARRAY {"", -1, &builtin_uint16array},
+    INT32ARRAY {"", -1, &builtin_int32array},
+    UINT32ARRAY {"", -1, &builtin_uint32array},
+    FLOAT16ARRAY {"", -1, &builtin_float16array},
+    FLOAT32ARRAY {"", -1, &builtin_float32array},
+    FLOAT64ARRAY {"", -1, &builtin_float64array},
+    BIGINT64ARRAY {"", -1, &builtin_bigint64array},
+    BIGUINT64ARRAY {"", -1, &builtin_biguint64array},
+    REGEXP_PROTO_SYMBOL_MATCH {"[Symbol.match]", 1, &builtin_regexp_proto_symbol_match},
+    REGEXP_PROTO_SYMBOL_SEARCH {"[Symbol.search]", 1, &builtin_regexp_proto_symbol_search},
+    REGEXP_PROTO_SYMBOL_REPLACE {"[Symbol.replace]", 2, &builtin_regexp_proto_symbol_replace},
+    REGEXP_PROTO_SYMBOL_SPLIT {"[Symbol.split]", 2, &builtin_regexp_proto_symbol_split},
+    REGEXP_PROTO_SYMBOL_MATCHALL {"[Symbol.matchAll]", 1, &builtin_regexp_proto_symbol_matchAll},
+    REGEXP_STRING_ITERATOR_NEXT {"next", 0, &builtin_regexp_string_iterator_next},
+    ASYNC_RESUME {"", -1, &builtin_async_resume},
+    ASYNC_REJECT {"", -1, &builtin_async_reject},
+    PROMISE_SYNTHETIC_EXECUTOR {"", -1, &builtin_promise_synthetic_executor},
+    REGEXP_PROTO_GET_HASINDICES {"", -1, &builtin_regexp_proto_get_hasIndices},
+    REGEXP_PROTO_GET_UNICODESETS {"", -1, &builtin_regexp_proto_get_unicodeSets},
+    ARRAYBUFFER {"ArrayBuffer", 1, &builtin_arraybuffer},
+    ARRAYBUFFER_ISVIEW {"isView", 1, &builtin_arraybuffer_isview},
+    ARRAYBUFFER_PROTO_BYTELENGTH_GET {"", -1, &builtin_arraybuffer_proto_bytelength_get},
+    ARRAYBUFFER_PROTO_SLICE {"slice", 2, &builtin_arraybuffer_proto_slice},
+    ARRAYBUFFER_PROTO_DETACHED_GET {"", -1, &builtin_arraybuffer_proto_detached_get},
+    ARRAYBUFFER_SPECIES_GET {"", -1, &builtin_arraybuffer_species_get},
+    DETACH_ARRAYBUFFER {"", -1, &builtin_detach_arraybuffer},
+    TYPEDARRAY_PROTO_LENGTH_GET {"", -1, &builtin_typedarray_proto_length_get},
+    TYPEDARRAY_PROTO_BYTELENGTH_GET {"", -1, &builtin_typedarray_proto_bytelength_get},
+    TYPEDARRAY_PROTO_BYTEOFFSET_GET {"", -1, &builtin_typedarray_proto_byteoffset_get},
+    TYPEDARRAY_PROTO_BUFFER_GET {"", -1, &builtin_typedarray_proto_buffer_get},
+    TYPEDARRAY_PROTO_TOSTRINGTAG_GET {"", -1, &builtin_typedarray_proto_tostringtag_get},
+    DATAVIEW {"DataView", 1, &builtin_dataview},
+    DATAVIEW_PROTO_BUFFER_GET {"", -1, &builtin_dataview_proto_buffer_get},
+    DATAVIEW_PROTO_BYTELENGTH_GET {"", -1, &builtin_dataview_proto_bytelength_get},
+    DATAVIEW_PROTO_BYTEOFFSET_GET {"", -1, &builtin_dataview_proto_byteoffset_get},
+    DATAVIEW_GET_INT8 {"getInt8", 1, &builtin_dataview_get_int8},
+    DATAVIEW_GET_UINT8 {"getUint8", 1, &builtin_dataview_get_uint8},
+    DATAVIEW_GET_INT16 {"getInt16", 1, &builtin_dataview_get_int16},
+    DATAVIEW_GET_UINT16 {"getUint16", 1, &builtin_dataview_get_uint16},
+    DATAVIEW_GET_INT32 {"getInt32", 1, &builtin_dataview_get_int32},
+    DATAVIEW_GET_UINT32 {"getUint32", 1, &builtin_dataview_get_uint32},
+    DATAVIEW_GET_FLOAT16 {"getFloat16", 1, &builtin_dataview_get_float16},
+    DATAVIEW_GET_FLOAT32 {"getFloat32", 1, &builtin_dataview_get_float32},
+    DATAVIEW_GET_FLOAT64 {"getFloat64", 1, &builtin_dataview_get_float64},
+    DATAVIEW_SET_INT8 {"setInt8", 2, &builtin_dataview_set_int8},
+    DATAVIEW_SET_UINT8 {"setUint8", 2, &builtin_dataview_set_uint8},
+    DATAVIEW_SET_INT16 {"setInt16", 2, &builtin_dataview_set_int16},
+    DATAVIEW_SET_UINT16 {"setUint16", 2, &builtin_dataview_set_uint16},
+    DATAVIEW_SET_INT32 {"setInt32", 2, &builtin_dataview_set_int32},
+    DATAVIEW_SET_UINT32 {"setUint32", 2, &builtin_dataview_set_uint32},
+    DATAVIEW_SET_FLOAT16 {"setFloat16", 2, &builtin_dataview_set_float16},
+    DATAVIEW_SET_FLOAT32 {"setFloat32", 2, &builtin_dataview_set_float32},
+    DATAVIEW_SET_FLOAT64 {"setFloat64", 2, &builtin_dataview_set_float64},
+    TA_PROTO_VALUES {"values", 0, &builtin_ta_proto_values},
+    TA_PROTO_KEYS {"keys", 0, &builtin_ta_proto_keys},
+    TA_PROTO_ENTRIES {"entries", 0, &builtin_ta_proto_entries},
+    TA_PROTO_SET {"set", 1, &builtin_ta_proto_set},
+    TA_PROTO_SUBARRAY {"subarray", 2, &builtin_ta_proto_subarray},
+    TA_PROTO_FILL {"fill", 1, &builtin_ta_proto_fill},
+    TA_PROTO_COPYWITHIN {"copyWithin", 2, &builtin_ta_proto_copyWithin},
+    TA_PROTO_SLICE {"slice", 2, &builtin_ta_proto_slice},
+    TA_PROTO_INDEX_OF {"indexOf", 1, &builtin_ta_proto_indexOf},
+    TA_PROTO_LAST_INDEX_OF {"lastIndexOf", 1, &builtin_ta_proto_lastIndexOf},
+    TA_PROTO_INCLUDES {"includes", 1, &builtin_ta_proto_includes},
+    TA_PROTO_JOIN {"join", 1, &builtin_ta_proto_join},
+    TA_PROTO_FOR_EACH {"forEach", 1, &builtin_ta_proto_forEach},
+    TA_PROTO_EVERY {"every", 1, &builtin_ta_proto_every},
+    TA_PROTO_SOME {"some", 1, &builtin_ta_proto_some},
+    TA_PROTO_REDUCE {"reduce", 1, &builtin_ta_proto_reduce},
+    TA_PROTO_REDUCE_RIGHT {"reduceRight", 1, &builtin_ta_proto_reduceRight},
+    TA_PROTO_MAP {"map", 1, &builtin_ta_proto_map},
+    TA_PROTO_FILTER {"filter", 1, &builtin_ta_proto_filter},
+    TA_PROTO_FIND {"find", 1, &builtin_ta_proto_find},
+    TA_PROTO_FIND_INDEX {"findIndex", 1, &builtin_ta_proto_findIndex},
+    TA_PROTO_FIND_LAST {"findLast", 1, &builtin_ta_proto_findLast},
+    TA_PROTO_FIND_LAST_INDEX {"findLastIndex", 1, &builtin_ta_proto_findLastIndex},
+    TA_PROTO_REVERSE {"reverse", 0, &builtin_ta_proto_reverse},
+    TA_PROTO_TO_REVERSED {"toReversed", 0, &builtin_ta_proto_toReversed},
+    TA_PROTO_AT {"at", 1, &builtin_ta_proto_at},
+    TA_PROTO_SORT {"sort", 1, &builtin_ta_proto_sort},
+    TA_PROTO_TO_SORTED {"toSorted", 1, &builtin_ta_proto_toSorted},
+    TA_PROTO_WITH {"with", 2, &builtin_ta_proto_with},
+    TA_PROTO_TO_STRING {"toString", 0, &builtin_ta_proto_toString},
+    TA_PROTO_TO_LOCALE_STRING {"toLocaleString", 0, &builtin_ta_proto_toLocaleString},
+    TA_OF {"of", 0, &builtin_ta_of},
+    TA_FROM {"from", 1, &builtin_ta_from},
+    // Uint8Array base64/hex (tc39 proposal-arraybuffer-base64)
+    UINT8ARRAY_FROM_BASE64 {"fromBase64", 1, &builtin_uint8array_from_base64},
+    UINT8ARRAY_FROM_HEX {"fromHex", 1, &builtin_uint8array_from_hex},
+    UINT8ARRAY_PROTO_TO_BASE64 {"toBase64", 0, &builtin_uint8array_proto_to_base64},
+    UINT8ARRAY_PROTO_TO_HEX {"toHex", 0, &builtin_uint8array_proto_to_hex},
+    UINT8ARRAY_PROTO_SET_FROM_BASE64 {"setFromBase64", 1, &builtin_uint8array_proto_set_from_base64},
+    UINT8ARRAY_PROTO_SET_FROM_HEX {"setFromHex", 1, &builtin_uint8array_proto_set_from_hex},
+    TYPEDARRAY_INTRINSIC {"TypedArray", 0, &builtin_typedarray_intrinsic},
+    FUNCTION_PROTO_HASINSTANCE {"[Symbol.hasInstance]", 1, &builtin_function_proto_hasInstance},
+    DATE_PROTO_TOPRIMITIVE {"[Symbol.toPrimitive]", 1, &builtin_date_proto_toPrimitive},
+    OBJECT_GETOWNPROPERTYDESCRIPTORS {"getOwnPropertyDescriptors", 1, &builtin_object_getOwnPropertyDescriptors},
+    PROMISE_SPECIES_GETTER {"", -1, &builtin_promise_species_getter},
+    ASYNC_FUNCTION {"", -1, &builtin_async_function},
+    PROXY {"Proxy", 2, &builtin_proxy},
+    PROXY_REVOCABLE {"revocable", 2, &builtin_proxy_revocable},
+    PROXY_REVOKE {"", 0, &builtin_proxy_revoke},
+    PROXY_CALL {"", -1, &builtin_proxy_call},
+    TA_SPECIES_GET {"", -1, &builtin_ta_species_get},
+    EVAL_SCRIPT {"", -1, &builtin_eval_script},
+    REGEXP_SPECIES_GETTER {"", -1, &builtin_regexp_species_getter},
+    MODULE_BINDING_GETTER {"", -1, &builtin_module_binding_getter},
+    PROMISE_RESOLVE_THENABLE_JOB {"", -1, &builtin_promise_resolve_thenable_job},
+    PROMISE_THEN_FINALLY {"", -1, &builtin_promise_then_finally},
+    PROMISE_CATCH_FINALLY {"", -1, &builtin_promise_catch_finally},
+    ARRAY_SPECIES_GETTER {"", -1, &builtin_array_species_getter},
+    PROMISE_IDENTITY {"", -1, &builtin_promise_identity},
+    REFLECT_GET {"get", 2, &builtin_reflect_get},
+    REFLECT_SET {"set", 3, &builtin_reflect_set},
+    REFLECT_HAS {"has", 2, &builtin_reflect_has},
+    REFLECT_DELETE_PROPERTY {"deleteProperty", 2, &builtin_reflect_deleteProperty},
+    REFLECT_GET_OWN_PROPERTY_DESCRIPTOR {"getOwnPropertyDescriptor", 2, &builtin_reflect_getOwnPropertyDescriptor},
+    REFLECT_DEFINE_PROPERTY {"defineProperty", 3, &builtin_reflect_defineProperty},
+    REFLECT_GET_PROTOTYPE_OF {"getPrototypeOf", 1, &builtin_reflect_getPrototypeOf},
+    REFLECT_SET_PROTOTYPE_OF {"setPrototypeOf", 2, &builtin_reflect_setPrototypeOf},
+    REFLECT_IS_EXTENSIBLE {"isExtensible", 1, &builtin_reflect_isExtensible},
+    REFLECT_PREVENT_EXTENSIONS {"preventExtensions", 1, &builtin_reflect_preventExtensions},
+    REFLECT_APPLY {"apply", 3, &builtin_reflect_apply},
+    REFLECT_CONSTRUCT {"construct", 2, &builtin_reflect_construct},
+    PROMISE_THROWER {"", -1, &builtin_promise_thrower},
+    MAP_SPECIES_GETTER {"[Symbol.species]", 0, &builtin_map_species_getter},
+    SET_SPECIES_GETTER {"[Symbol.species]", 0, &builtin_set_species_getter},
+    DATAVIEW_GET_BIGINT64 {"getBigInt64", 1, &builtin_dataview_get_bigint64},
+    DATAVIEW_GET_BIGUINT64 {"getBigUint64", 1, &builtin_dataview_get_biguint64},
+    DATAVIEW_SET_BIGINT64 {"setBigInt64", 2, &builtin_dataview_set_bigint64},
+    DATAVIEW_SET_BIGUINT64 {"setBigUint64", 2, &builtin_dataview_set_biguint64},
+    FUNCTION_PROTO_RESTRICTED_GETTER {"", -1, &builtin_function_proto_restricted_getter},
+    FUNCTION_PROTO_RESTRICTED_SETTER {"", -1, &builtin_function_proto_restricted_setter},
+    MAP {"Map", 0, &builtin_map},
+    MAP_PROTO_SET {"set", 2, &builtin_map_proto_set},
+    MAP_PROTO_GET {"get", 1, &builtin_map_proto_get},
+    MAP_PROTO_HAS {"has", 1, &builtin_map_proto_has},
+    MAP_PROTO_DELETE {"delete", 1, &builtin_map_proto_delete},
+    MAP_PROTO_CLEAR {"clear", 0, &builtin_map_proto_clear},
+    MAP_PROTO_KEYS {"keys", 0, &builtin_map_proto_keys},
+    MAP_PROTO_VALUES {"values", 0, &builtin_map_proto_values},
+    MAP_PROTO_ENTRIES {"entries", 0, &builtin_map_proto_entries},
+    MAP_PROTO_FOREACH {"forEach", 1, &builtin_map_proto_forEach},
+    MAP_PROTO_GETORINSERT {"getOrInsert", 2, &builtin_map_proto_getOrInsert},
+    MAP_PROTO_GETORINSERTCOMPUTED {"getOrInsertComputed", 2, &builtin_map_proto_getOrInsertComputed},
+    SET {"Set", 0, &builtin_set},
+    SET_PROTO_ADD {"add", 1, &builtin_set_proto_add},
+    SET_PROTO_HAS {"has", 1, &builtin_set_proto_has},
+    SET_PROTO_DELETE {"delete", 1, &builtin_set_proto_delete},
+    SET_PROTO_CLEAR {"clear", 0, &builtin_set_proto_clear},
+    SET_PROTO_VALUES {"values", 0, &builtin_set_proto_values},
+    SET_PROTO_ENTRIES {"entries", 0, &builtin_set_proto_entries},
+    SET_PROTO_FOREACH {"forEach", 1, &builtin_set_proto_forEach},
+    WEAKMAP {"WeakMap", 0, &builtin_weakmap},
+    WEAKMAP_PROTO_SET {"set", 2, &builtin_weakmap_proto_set},
+    WEAKMAP_PROTO_GET {"get", 1, &builtin_weakmap_proto_get},
+    WEAKMAP_PROTO_HAS {"has", 1, &builtin_weakmap_proto_has},
+    WEAKMAP_PROTO_DELETE {"delete", 1, &builtin_weakmap_proto_delete},
+    WEAKMAP_PROTO_GETORINSERT {"getOrInsert", 2, &builtin_weakmap_proto_getOrInsert},
+    WEAKMAP_PROTO_GETORINSERTCOMPUTED {"getOrInsertComputed", 2, &builtin_weakmap_proto_getOrInsertComputed},
+    WEAKSET {"WeakSet", 0, &builtin_weakset},
+    WEAKSET_PROTO_ADD {"add", 1, &builtin_weakset_proto_add},
+    WEAKSET_PROTO_HAS {"has", 1, &builtin_weakset_proto_has},
+    WEAKSET_PROTO_DELETE {"delete", 1, &builtin_weakset_proto_delete},
+    WEAKREF {"WeakRef", 1, &builtin_weakref},
+    WEAKREF_PROTO_DEREF {"deref", 0, &builtin_weakref_proto_deref},
+    FINALIZATION_REGISTRY {"FinalizationRegistry", 1, &builtin_finalization_registry},
+    FINALIZATION_REGISTRY_PROTO_REGISTER {"register", 2, &builtin_finalization_registry_proto_register},
+    FINALIZATION_REGISTRY_PROTO_UNREGISTER {"unregister", 1, &builtin_finalization_registry_proto_unregister},
+    SYMBOL {"Symbol", 1, &builtin_symbol},
+    SYMBOL_FOR {"for", 1, &builtin_symbol_for},
+    SYMBOL_KEYFOR {"keyFor", 1, &builtin_symbol_keyfor},
+    SYMBOL_PROTO_TOSTRING {"toString", 0, &builtin_symbol_proto_toString},
+    SYMBOL_PROTO_VALUEOF {"valueOf", 0, &builtin_symbol_proto_valueOf},
+    SYMBOL_PROTO_TOPRIMITIVE {"", -1, &builtin_symbol_proto_toprimitive},
+    SYMBOL_PROTO_DESCRIPTION_GET {"", -1, &builtin_symbol_proto_description_get},
+    MAP_PROTO_SIZE_GET {"", -1, &builtin_map_proto_size_get},
+    SET_PROTO_SIZE_GET {"", -1, &builtin_set_proto_size_get},
+    PROMISE {"Promise", 1, &builtin_promise},
+    PROMISE_PROTO_THEN {"then", 2, &builtin_promise_proto_then},
+    PROMISE_PROTO_CATCH {"catch", 1, &builtin_promise_proto_catch},
+    PROMISE_PROTO_FINALLY {"finally", 1, &builtin_promise_proto_finally},
+    PROMISE_RESOLVE {"resolve", 1, &builtin_promise_resolve},
+    PROMISE_REJECT {"reject", 1, &builtin_promise_reject},
+    PROMISE_ALL {"all", 1, &builtin_promise_all},
+    PROMISE_RACE {"race", 1, &builtin_promise_race},
+    PROMISE_ALLSETTLED {"allSettled", 1, &builtin_promise_allsettled},
+    PROMISE_ANY {"any", 1, &builtin_promise_any},
+    AGGREGATE_ERROR {"AggregateError", 2, &builtin_aggregate_error},
+    GENERATOR_FUNCTION {"Function", 1, &builtin_generator_function},
+    GENERATOR_PROTO_NEXT {"next", 1, &builtin_generator_proto_next},
+    GENERATOR_PROTO_THROW {"throw", 1, &builtin_generator_proto_throw},
+    GENERATOR_PROTO_RETURN {"return", 1, &builtin_generator_proto_return},
+    OBJECT_KEYS {"keys", 1, &builtin_object_keys},
+    OBJECT_GETPROTOTYPEOF {"getPrototypeOf", 1, &builtin_object_getPrototypeOf},
+    OBJECT_ISEXTENSIBLE {"isExtensible", 1, &builtin_object_isExtensible},
+    OBJECT_PREVENTEXTENSIONS {"preventExtensions", 1, &builtin_object_preventExtensions},
+    OBJECT_GETOWNPROPERTYDESCRIPTOR {"getOwnPropertyDescriptor", 2, &builtin_object_getOwnPropertyDescriptor},
+    OBJECT_DEFINEPROPERTY {"defineProperty", 3, &builtin_object_defineProperty},
+    OBJECT_GETOWNPROPERTYNAMES {"getOwnPropertyNames", 1, &builtin_object_getOwnPropertyNames},
+    OBJECT_GETOWNPROPERTYSYMBOLS {"getOwnPropertySymbols", 1, &builtin_object_getOwnPropertySymbols},
+    OBJECT_DEFINEPROPERTIES {"defineProperties", 2, &builtin_object_defineProperties},
+    OBJECT_CREATE {"create", 2, &builtin_object_create},
+    OBJECT_SEAL {"seal", 1, &builtin_object_seal},
+    OBJECT_FREEZE {"freeze", 1, &builtin_object_freeze},
+    OBJECT_ISSEALED {"isSealed", 1, &builtin_object_isSealed},
+    OBJECT_ISFROZEN {"isFrozen", 1, &builtin_object_isFrozen},
+    OBJECT_ENTRIES {"entries", 1, &builtin_object_entries},
+    OBJECT_VALUES {"values", 1, &builtin_object_values},
+    OBJECT_ASSIGN {"assign", 2, &builtin_object_assign},
+    NUMBER_ISNAN {"isNaN", 1, &builtin_number_isNaN},
+    NUMBER_ISFINITE {"isFinite", 1, &builtin_number_isFinite},
+    NUMBER_ISINTEGER {"isInteger", 1, &builtin_number_isInteger},
+    NUMBER_ISSAFEINTEGER {"isSafeInteger", 1, &builtin_number_isSafeInteger},
+    MATH_ACOS {"acos", 1, &builtin_math_acos},
+    MATH_ASIN {"asin", 1, &builtin_math_asin},
+    MATH_ATAN {"atan", 1, &builtin_math_atan},
+    MATH_ATAN2 {"atan2", 2, &builtin_math_atan2},
+    MATH_COSH {"cosh", 1, &builtin_math_cosh},
+    MATH_SINH {"sinh", 1, &builtin_math_sinh},
+    MATH_TANH {"tanh", 1, &builtin_math_tanh},
+    MATH_ACOSH {"acosh", 1, &builtin_math_acosh},
+    MATH_ASINH {"asinh", 1, &builtin_math_asinh},
+    MATH_ATANH {"atanh", 1, &builtin_math_atanh},
+    MATH_LOG2 {"log2", 1, &builtin_math_log2},
+    MATH_LOG10 {"log10", 1, &builtin_math_log10},
+    MATH_LOG1P {"log1p", 1, &builtin_math_log1p},
+    MATH_EXPM1 {"expm1", 1, &builtin_math_expm1},
+    MATH_CBRT {"cbrt", 1, &builtin_math_cbrt},
+    MATH_HYPOT {"hypot", 2, &builtin_math_hypot},
+    MATH_TRUNC {"trunc", 1, &builtin_math_trunc},
+    MATH_SIGN {"sign", 1, &builtin_math_sign},
+    MATH_FROUND {"fround", 1, &builtin_math_fround},
+    MATH_F16ROUND {"f16round", 1, &builtin_math_f16round},
+    MATH_CLZ32 {"clz32", 1, &builtin_math_clz32},
+    MATH_IMUL {"imul", 2, &builtin_math_imul},
+    MATH_SUMPRECISE {"sumPrecise", 1, &builtin_math_sumPrecise},
+    ARRAY_ISARRAY {"isArray", 1, &builtin_array_isArray},
+    STRING_FROMCHARCODE {"fromCharCode", 1, &builtin_string_fromcharcode},
+    OBJECT_IS {"is", 2, &builtin_object_is},
+    OBJECT_HASOWN {"hasOwn", 2, &builtin_object_hasOwn},
+    OBJECT_SETPROTOTYPEOF {"setPrototypeOf", 2, &builtin_object_setPrototypeOf},
+    ARRAY_PROTO_FLAT {"flat", 0, &builtin_array_proto_flat},
+    ARRAY_PROTO_FLATMAP {"flatMap", 1, &builtin_array_proto_flatMap},
+    STRING_FROMCODEPOINT {"fromCodePoint", 1, &builtin_string_fromcodepoint},
+    ENCODE_URI {"encodeURI", 1, &builtin_encode_uri},
+    ENCODE_URI_COMPONENT {"encodeURIComponent", 1, &builtin_encode_uri_component},
+    DECODE_URI {"decodeURI", 1, &builtin_decode_uri},
+    DECODE_URI_COMPONENT {"decodeURIComponent", 1, &builtin_decode_uri_component},
+    URI_ERROR {"URIError", 1, &builtin_uri_error},
+    ARRAY_PROTO_TOREVERSED {"toReversed", 0, &builtin_array_proto_toReversed},
+    ARRAY_PROTO_TOSORTED {"toSorted", 1, &builtin_array_proto_toSorted},
+    ARRAY_PROTO_TOSPLICED {"toSpliced", 2, &builtin_array_proto_toSpliced},
+    ARRAY_PROTO_WITH {"with", 2, &builtin_array_proto_with},
+    STRING_PROTO_MATCH {"match", 1, &builtin_string_proto_match},
+    STRING_PROTO_SEARCH {"search", 1, &builtin_string_proto_search},
+    STRING_PROTO_INCLUDES {"includes", 1, &builtin_string_proto_includes},
+    STRING_PROTO_STARTSWITH {"startsWith", 1, &builtin_string_proto_startsWith},
+    STRING_PROTO_ENDSWITH {"endsWith", 1, &builtin_string_proto_endsWith},
+    STRING_PROTO_REPEAT {"repeat", 1, &builtin_string_proto_repeat},
+    STRING_PROTO_TRIMSTART {"trimStart", 0, &builtin_string_proto_trimStart},
+    STRING_PROTO_TRIMEND {"trimEnd", 0, &builtin_string_proto_trimEnd},
+    STRING_PROTO_CODEPOINTAT {"codePointAt", 1, &builtin_string_proto_codePointAt},
+    STRING_PROTO_AT {"at", 1, &builtin_string_proto_at},
+    STRING_PROTO_PADSTART {"padStart", 1, &builtin_string_proto_padStart},
+    STRING_PROTO_PADEND {"padEnd", 1, &builtin_string_proto_padEnd},
+    STRING_PROTO_LASTINDEXOF {"lastIndexOf", 1, &builtin_string_proto_lastIndexOf},
+    ARRAY_OF {"of", 0, &builtin_array_of},
+    ARRAY_PROTO_FILL {"fill", 1, &builtin_array_proto_fill},
+    ARRAY_PROTO_FIND {"find", 1, &builtin_array_proto_find},
+    ARRAY_PROTO_FINDINDEX {"findIndex", 1, &builtin_array_proto_findIndex},
+    ARRAY_PROTO_INCLUDES {"includes", 1, &builtin_array_proto_includes},
+    ARRAY_PROTO_AT {"at", 1, &builtin_array_proto_at},
+    ARRAY_PROTO_COPYWITHIN {"copyWithin", 2, &builtin_array_proto_copyWithin},
+    DATE_PROTO_GETUTCFULLYEAR {"getUTCFullYear", 0, &builtin_date_proto_getUTCFullYear},
+    DATE_PROTO_GETUTCMONTH {"getUTCMonth", 0, &builtin_date_proto_getUTCMonth},
+    DATE_PROTO_GETUTCDATE {"getUTCDate", 0, &builtin_date_proto_getUTCDate},
+    DATE_PROTO_GETUTCDAY {"getUTCDay", 0, &builtin_date_proto_getUTCDay},
+    DATE_PROTO_GETUTCHOURS {"getUTCHours", 0, &builtin_date_proto_getUTCHours},
+    DATE_PROTO_GETUTCMINUTES {"getUTCMinutes", 0, &builtin_date_proto_getUTCMinutes},
+    DATE_PROTO_GETUTCSECONDS {"getUTCSeconds", 0, &builtin_date_proto_getUTCSeconds},
+    DATE_PROTO_GETUTCMILLISECONDS {"getUTCMilliseconds", 0, &builtin_date_proto_getUTCMilliseconds},
+    DATE_PROTO_SETTIME {"setTime", 1, &builtin_date_proto_setTime},
+    DATE_PROTO_SETMILLISECONDS {"setMilliseconds", 1, &builtin_date_proto_setMilliseconds},
+    DATE_PROTO_SETSECONDS {"setSeconds", 2, &builtin_date_proto_setSeconds},
+    DATE_PROTO_SETMINUTES {"setMinutes", 3, &builtin_date_proto_setMinutes},
+    DATE_PROTO_SETHOURS {"setHours", 4, &builtin_date_proto_setHours},
+    DATE_PROTO_SETDATE {"setDate", 1, &builtin_date_proto_setDate},
+    DATE_PROTO_SETMONTH {"setMonth", 2, &builtin_date_proto_setMonth},
+    DATE_PROTO_SETFULLYEAR {"setFullYear", 3, &builtin_date_proto_setFullYear},
+    DATE_PROTO_SETUTCMILLISECONDS {"setUTCMilliseconds", 1, &builtin_date_proto_setUTCMilliseconds},
+    DATE_PROTO_SETUTCSECONDS {"setUTCSeconds", 2, &builtin_date_proto_setUTCSeconds},
+    DATE_PROTO_SETUTCMINUTES {"setUTCMinutes", 3, &builtin_date_proto_setUTCMinutes},
+    DATE_PROTO_SETUTCHOURS {"setUTCHours", 4, &builtin_date_proto_setUTCHours},
+    DATE_PROTO_SETUTCDATE {"setUTCDate", 1, &builtin_date_proto_setUTCDate},
+    DATE_PROTO_SETUTCMONTH {"setUTCMonth", 2, &builtin_date_proto_setUTCMonth},
+    DATE_PROTO_SETUTCFULLYEAR {"setUTCFullYear", 3, &builtin_date_proto_setUTCFullYear},
+    DATE_PROTO_TOISOSTRING {"toISOString", 0, &builtin_date_proto_toISOString},
+    DATE_PROTO_TOUTCSTRING {"toUTCString", 0, &builtin_date_proto_toUTCString},
+    DATE_PROTO_TODATESTRING {"toDateString", 0, &builtin_date_proto_toDateString},
+    DATE_PROTO_TOTIMESTRING {"toTimeString", 0, &builtin_date_proto_toTimeString},
+    STRING_PROTO_REPLACEALL {"replaceAll", 2, &builtin_string_proto_replaceAll},
+    STRING_PROTO_MATCHALL {"matchAll", 1, &builtin_string_proto_matchAll},
+    STRING_PROTO_NORMALIZE {"normalize", 0, &builtin_string_proto_normalize},
+    STRING_PROTO_ISWELLFORMED {"isWellFormed", 0, &builtin_string_proto_isWellFormed},
+    STRING_PROTO_TOWELLFORMED {"toWellFormed", 0, &builtin_string_proto_toWellFormed},
+    REFLECT_OWNKEYS {"ownKeys", 1, &builtin_reflect_ownKeys},
+    ERROR_CAPTURE_STACK_TRACE {"captureStackTrace", 2, &builtin_error_captureStackTrace},
+    STRING_RAW {"raw", 1, &builtin_string_raw},
+    // --- BigInt (plan 056) ---
+    BIGINT {"BigInt", 1, &builtin_bigint},                                             // BigInt(x)
+    BIGINT_AS_INTN {"asIntN", 2, &builtin_bigint_as_intn},                             // BigInt.asIntN(bits, x)
+    BIGINT_AS_UINTN {"asUintN", 2, &builtin_bigint_as_uintn},                          // BigInt.asUintN(bits, x)
+    BIGINT_PROTO_TOSTRING {"toString", 0, &builtin_bigint_proto_toString},             // BigInt.prototype.toString([radix])
+    BIGINT_PROTO_VALUEOF {"valueOf", 0, &builtin_bigint_proto_valueOf},                // BigInt.prototype.valueOf()
+    BIGINT_PROTO_TOLOCALESTRING {"", -1, null},                                        // BigInt.prototype.toLocaleString()
+    // --- %AsyncFromSyncIteratorPrototype% (plan 057, ES2018 §27.1.4) ---
+    ASYNC_FROM_SYNC_NEXT {"next", 1, &builtin_async_from_sync_next},                   // %AsyncFromSyncIteratorPrototype%.next(value)
+    ASYNC_FROM_SYNC_RETURN {"return", 1, &builtin_async_from_sync_return},             // %AsyncFromSyncIteratorPrototype%.return(value)
+    ASYNC_FROM_SYNC_THROW {"throw", 1, &builtin_async_from_sync_throw},                // %AsyncFromSyncIteratorPrototype%.throw(value)
+    ASYNC_FROM_SYNC_VALUE_UNWRAP {"", 1, &builtin_async_from_sync_value_unwrap},       // native fulfill reaction: builds {value, done}
+    ASYNC_FROM_SYNC_REJECT_FORWARD {"", 1, &builtin_async_from_sync_reject_forward},   // native reject reaction: forwards rejection
+    PROMISE_WITH_RESOLVERS {"withResolvers", 0, &builtin_promise_with_resolvers},      // Promise.withResolvers() (ES2024)
+    PROMISE_TRY {"try", 1, &builtin_promise_try},                                      // Promise.try(callbackfn, ...args) (ES2026)
+    ERROR_ISERROR {"isError", 1, &builtin_error_isError},                              // Error.isError(arg) (ES2026)
+    // --- Set methods proposal (ES2025 §24.2.4) ---
+    SET_PROTO_UNION {"union", 1, &builtin_set_proto_union},                            // Set.prototype.union(other)
+    SET_PROTO_INTERSECTION {"intersection", 1, &builtin_set_proto_intersection},       // Set.prototype.intersection(other)
+    SET_PROTO_DIFFERENCE {"difference", 1, &builtin_set_proto_difference},             // Set.prototype.difference(other)
+    SET_PROTO_SYMMETRICDIFFERENCE {"symmetricDifference", 1, &builtin_set_proto_symmetricDifference}, // Set.prototype.symmetricDifference(other)
+    SET_PROTO_ISSUBSETOF {"isSubsetOf", 1, &builtin_set_proto_isSubsetOf},             // Set.prototype.isSubsetOf(other)
+    SET_PROTO_ISSUPERSETOF {"isSupersetOf", 1, &builtin_set_proto_isSupersetOf},       // Set.prototype.isSupersetOf(other)
+    SET_PROTO_ISDISJOINTFROM {"isDisjointFrom", 1, &builtin_set_proto_isDisjointFrom}, // Set.prototype.isDisjointFrom(other)
+    REGEXP_ESCAPE {"escape", 1, &builtin_regexp_escape},                               // RegExp.escape(string) (ES2026 proposal-regex-escaping)
+    // --- Iterator Helpers (ES2025 §27.1) ---
+    ITERATOR_CTOR {"Iterator", 0, &builtin_iterator_ctor},                             // Iterator() — throws (abstract, subclassable)
+    ITERATOR_FROM {"from", 1, &builtin_iterator_from},                                 // Iterator.from(obj)
+    ITERATOR_PROTO_CONSTRUCTOR_GET {"get constructor", 0, &builtin_iterator_proto_constructor_get}, // get Iterator.prototype.constructor
+    ITERATOR_PROTO_CONSTRUCTOR_SET {"set constructor", 1, &builtin_iterator_proto_constructor_set}, // set Iterator.prototype.constructor
+    ITERATOR_PROTO_TOSTRINGTAG_GET {"get [Symbol.toStringTag]", 0, &builtin_iterator_proto_tostringtag_get}, // get Iterator.prototype[Symbol.toStringTag]
+    ITERATOR_PROTO_TOSTRINGTAG_SET {"set [Symbol.toStringTag]", 1, &builtin_iterator_proto_tostringtag_set}, // set Iterator.prototype[Symbol.toStringTag]
+    ITERATOR_PROTO_MAP {"map", 1, &builtin_iterator_proto_map},
+    ITERATOR_PROTO_FILTER {"filter", 1, &builtin_iterator_proto_filter},
+    ITERATOR_PROTO_TAKE {"take", 1, &builtin_iterator_proto_take},
+    ITERATOR_PROTO_DROP {"drop", 1, &builtin_iterator_proto_drop},
+    ITERATOR_PROTO_FLATMAP {"flatMap", 1, &builtin_iterator_proto_flatmap},
+    ITERATOR_PROTO_REDUCE {"reduce", 1, &builtin_iterator_proto_reduce},
+    ITERATOR_PROTO_TOARRAY {"toArray", 0, &builtin_iterator_proto_toarray},
+    ITERATOR_PROTO_FOREACH {"forEach", 1, &builtin_iterator_proto_foreach},
+    ITERATOR_PROTO_SOME {"some", 1, &builtin_iterator_proto_some},
+    ITERATOR_PROTO_EVERY {"every", 1, &builtin_iterator_proto_every},
+    ITERATOR_PROTO_FIND {"find", 1, &builtin_iterator_proto_find},
+    ITERATOR_CONCAT {"concat", -1, &builtin_iterator_concat},
+    WRAP_FOR_VALID_ITERATOR_NEXT {"next", 0, &builtin_wrap_for_valid_iterator_next},
+    WRAP_FOR_VALID_ITERATOR_RETURN {"return", 0, &builtin_wrap_for_valid_iterator_return},
+    ITERATOR_HELPER_NEXT {"next", 0, &builtin_iterator_helper_next},
+    ITERATOR_HELPER_RETURN {"return", 0, &builtin_iterator_helper_return},
+    JSON_RAW_JSON {"rawJSON", 1, &builtin_json_raw_json},
+    JSON_IS_RAW_JSON {"isRawJSON", 1, &builtin_json_is_raw_json},
+    // --- Array.fromAsync (proposal-array-from-async, ES2026) ---
+    ARRAY_FROM_ASYNC {"fromAsync", 1, &builtin_array_from_async},                      // Array.fromAsync(asyncItems, mapfn, thisArg)
+    ARRAY_FROM_ASYNC_STEP_FULFILL {"", 1, &builtin_array_from_async_step_fulfill},     // native reaction: awaited next()/element ready
+    ARRAY_FROM_ASYNC_MAP_FULFILL {"", 1, &builtin_array_from_async_map_fulfill},       // native reaction: awaited mapped value ready
+    ARRAY_FROM_ASYNC_REJECT {"", 1, &builtin_array_from_async_reject},                 // native reaction: reject → close iterator, reject outer
+    // --- Resizable ArrayBuffer (ES2024) ---
+    ARRAYBUFFER_PROTO_RESIZE {"resize", 1, &builtin_arraybuffer_proto_resize},
+    ARRAYBUFFER_PROTO_RESIZABLE_GET {"", -1, &builtin_arraybuffer_proto_resizable_get},
+    ARRAYBUFFER_PROTO_MAXBYTELENGTH_GET {"", -1, &builtin_arraybuffer_proto_maxbytelength_get},
+    ARRAYBUFFER_PROTO_TRANSFER {"transfer", 0, &builtin_arraybuffer_proto_transfer},
+    ARRAYBUFFER_PROTO_TRANSFER_TO_FIXED_LENGTH {"transferToFixedLength", 0, &builtin_arraybuffer_proto_transfer_to_fixed_length},
+    // --- SharedArrayBuffer (single-agent) ---
+    SHAREDARRAYBUFFER {"SharedArrayBuffer", 1, &builtin_sharedarraybuffer},
+    SHAREDARRAYBUFFER_PROTO_BYTELENGTH_GET {"", -1, &builtin_sharedarraybuffer_proto_bytelength_get},
+    SHAREDARRAYBUFFER_PROTO_GROWABLE_GET {"", -1, &builtin_sharedarraybuffer_proto_growable_get},
+    SHAREDARRAYBUFFER_PROTO_MAXBYTELENGTH_GET {"", -1, &builtin_sharedarraybuffer_proto_maxbytelength_get},
+    SHAREDARRAYBUFFER_PROTO_GROW {"grow", 1, &builtin_sharedarraybuffer_proto_grow},
+    SHAREDARRAYBUFFER_PROTO_SLICE {"slice", 2, &builtin_sharedarraybuffer_proto_slice},
+    SHAREDARRAYBUFFER_SPECIES_GET {"", -1, &builtin_sharedarraybuffer_species_get},
+    // --- Atomics ---
+    ATOMICS_ADD {"", -1, &builtin_atomics_add},
+    ATOMICS_AND {"", -1, &builtin_atomics_and},
+    ATOMICS_COMPAREEXCHANGE {"", -1, &builtin_atomics_compareexchange},
+    ATOMICS_EXCHANGE {"", -1, &builtin_atomics_exchange},
+    ATOMICS_LOAD {"", -1, &builtin_atomics_load},
+    ATOMICS_OR {"", -1, &builtin_atomics_or},
+    ATOMICS_STORE {"", -1, &builtin_atomics_store},
+    ATOMICS_SUB {"", -1, &builtin_atomics_sub},
+    ATOMICS_XOR {"", -1, &builtin_atomics_xor},
+    ATOMICS_ISLOCKFREE {"", -1, &builtin_atomics_islockfree},
+    ATOMICS_WAIT {"", -1, &builtin_atomics_wait},
+    ATOMICS_NOTIFY {"", -1, &builtin_atomics_notify},
+    ATOMICS_WAITASYNC {"", -1, &builtin_atomics_waitasync},
+    // --- Async generators (plan 060, ES2018 §27.6) ---
+    ASYNC_ITERATOR_PROTO_SYMBOL_ASYNCITER {"[Symbol.asyncIterator]", 0, &builtin_async_iterator_proto_symbol_asynciter}, // %AsyncIteratorPrototype%[@@asyncIterator]() → this
+    ASYNC_GENERATOR_PROTO_NEXT {"next", 1, &builtin_async_generator_proto_next},       // %AsyncGeneratorPrototype%.next(value)
+    ASYNC_GENERATOR_PROTO_RETURN {"return", 1, &builtin_async_generator_proto_return}, // %AsyncGeneratorPrototype%.return(value)
+    ASYNC_GENERATOR_PROTO_THROW {"throw", 1, &builtin_async_generator_proto_throw},    // %AsyncGeneratorPrototype%.throw(value)
+    ASYNC_GENERATOR_FUNCTION {"AsyncGeneratorFunction", 1, &builtin_async_generator_function}, // %AsyncGeneratorFunction% constructor
+    ASYNC_GEN_AWAIT_RESUME {"", -1, &builtin_async_gen_await_resume},                  // native reaction: internal await fulfilled → re-drive body
+    ASYNC_GEN_AWAIT_REJECT {"", -1, &builtin_async_gen_await_reject},                  // native reaction: internal await rejected → inject throw
+    ASYNC_GEN_RETURN_FULFILL {"", -1, &builtin_async_gen_return_fulfill},              // native reaction: AwaitReturn value fulfilled → settle {value,done:true}
+    ASYNC_GEN_RETURN_REJECT {"", -1, &builtin_async_gen_return_reject},                // native reaction: AwaitReturn value rejected → reject request
+    ASYNC_GEN_YRET_FULFILL {"", -1, &builtin_async_gen_yret_fulfill},                  // native reaction: yield-resumption return value fulfilled → resume body w/ return
+    ASYNC_GEN_YRET_REJECT {"", -1, &builtin_async_gen_yret_reject},                    // native reaction: yield-resumption return value rejected → resume body w/ throw
+    REGEXP_PROTO_COMPILE {"compile", 2, &builtin_regexp_proto_compile},                // RegExp.prototype.compile(pattern, flags) (Annex B §B.2.4.1)
+    ATOMICS_PAUSE {"", -1, &builtin_atomics_pause},                                    // Atomics.pause([iterationNumber]) — microwait hint (ES2025 §25.4.6)
+    // --- error-stack-accessor proposal ---
+    ERROR_PROTO_STACK_GET {"get stack", 0, &builtin_error_proto_stack_get},            // get Error.prototype.stack
+    ERROR_PROTO_STACK_SET {"set stack", 1, &builtin_error_proto_stack_set},            // set Error.prototype.stack
+    LAST {"", -1, null}, // sentinel — one past the highest valid builtin; not a real builtin
+}
 
 /// ES2015 §9.1.14 OrdinaryCreateFromConstructor / §9.1.15 GetPrototypeFromConstructor.
 ///
@@ -2405,494 +2414,17 @@ fn HString* builtin_to_property_key_vm(BuiltinContext* ctx, TVal* val) {
 
 /// Metadata for LIGHTFUNC builtins: name and expected arity.
 /// Used by GETPROP to resolve `.name` and `.length` on LIGHTFUNC values.
+/// Derived directly from the Builtin enum's associated values — see the
+/// enum declaration for the single per-builtin source of truth.
 struct BuiltinMeta {
     char[] name;
     int arity;
 }
 
 fn BuiltinMeta builtin_get_metadata(uint idx) {
-    switch (idx) {
-        case Builtin.PRINT.ordinal:  return { "print", 1 };
-        case Builtin.CONSOLE_LOG.ordinal:  return { "log", 1 };
-        case Builtin.CONSOLE_INFO.ordinal:  return { "info", 1 };
-        case Builtin.CONSOLE_DEBUG.ordinal: return { "debug", 1 };
-        case Builtin.CONSOLE_TRACE.ordinal: return { "trace", 1 };
-        case Builtin.CONSOLE_WARN.ordinal:  return { "warn", 1 };
-        case Builtin.CONSOLE_ERROR.ordinal: return { "error", 1 };
-        case Builtin.CONSOLE_DIR.ordinal:   return { "dir", 1 };
-        case Builtin.CONSOLE_ASSERT.ordinal: return { "assert", 1 };
-        case Builtin.PARSE_INT.ordinal:  return { "parseInt", 2 };
-        case Builtin.PARSE_FLOAT.ordinal:  return { "parseFloat", 1 };
-        case Builtin.IS_NAN.ordinal:  return { "isNaN", 1 };
-        case Builtin.IS_FINITE.ordinal:  return { "isFinite", 1 };
-        case Builtin.ERROR.ordinal:  return { "Error", 1 };
-        case Builtin.TYPE_ERROR.ordinal:  return { "TypeError", 1 };
-        case Builtin.RANGE_ERROR.ordinal:  return { "RangeError", 1 };
-        case Builtin.REFERENCE_ERROR.ordinal:  return { "ReferenceError", 1 };
-        case Builtin.SYNTAX_ERROR.ordinal: return { "SyntaxError", 1 };
-        case Builtin.EVAL_ERROR.ordinal: return { "EvalError", 1 };
-        case Builtin.ERROR_PROTO_TOSTRING.ordinal: return { "toString", 0 };
-        case Builtin.BOOLEAN.ordinal: return { "Boolean", 1 };
-        case Builtin.BOOLEAN_PROTO_TOSTRING.ordinal: return { "toString", 0 };
-        case Builtin.BOOLEAN_PROTO_VALUEOF.ordinal: return { "valueOf", 0 };
-        case Builtin.STRING.ordinal: return { "String", 1 };
-        case Builtin.STRING_PROTO_TOSTRING.ordinal: return { "toString", 0 };
-        case Builtin.STRING_PROTO_VALUEOF.ordinal: return { "valueOf", 0 };
-        case Builtin.NUMBER.ordinal: return { "Number", 1 };
-        case Builtin.NUMBER_PROTO_TOSTRING.ordinal: return { "toString", 0 };
-        case Builtin.NUMBER_PROTO_VALUEOF.ordinal: return { "valueOf", 0 };
-        case Builtin.OBJECT.ordinal: return { "Object", 1 };
-        case Builtin.OBJECT_PROTO_TOSTRING.ordinal: return { "toString", 0 };
-        case Builtin.OBJECT_PROTO_VALUEOF.ordinal: return { "valueOf", 0 };
-        case Builtin.OBJECT_PROTO___PROTO___GETTER.ordinal: return { "get __proto__", 0 };
-        case Builtin.OBJECT_PROTO___PROTO___SETTER.ordinal: return { "set __proto__", 1 };
-        case Builtin.ARRAY.ordinal: return { "Array", 0 };
-        case Builtin.MATH_ABS.ordinal: return { "abs", 1 };
-        case Builtin.MATH_FLOOR.ordinal: return { "floor", 1 };
-        case Builtin.MATH_CEIL.ordinal: return { "ceil", 1 };
-        case Builtin.MATH_ROUND.ordinal: return { "round", 1 };
-        case Builtin.MATH_MAX.ordinal: return { "max", 2 };
-        case Builtin.MATH_MIN.ordinal: return { "min", 2 };
-        case Builtin.MATH_POW.ordinal: return { "pow", 2 };
-        case Builtin.MATH_SQRT.ordinal: return { "sqrt", 1 };
-        case Builtin.MATH_EXP.ordinal: return { "exp", 1 };
-        case Builtin.MATH_LOG.ordinal: return { "log", 1 };
-        case Builtin.MATH_SIN.ordinal: return { "sin", 1 };
-        case Builtin.MATH_COS.ordinal: return { "cos", 1 };
-        case Builtin.MATH_TAN.ordinal: return { "tan", 1 };
-        case Builtin.MATH_RANDOM.ordinal: return { "random", 0 };
-        case Builtin.STRING_PROTO_CHARAT.ordinal: return { "charAt", 1 };
-        case Builtin.STRING_PROTO_CHARCODEAT.ordinal: return { "charCodeAt", 1 };
-        case Builtin.STRING_PROTO_INDEXOF.ordinal: return { "indexOf", 1 };
-        case Builtin.STRING_PROTO_SLICE.ordinal: return { "slice", 2 };
-        case Builtin.STRING_PROTO_SUBSTRING.ordinal: return { "substring", 2 };
-        case Builtin.STRING_PROTO_SUBSTR.ordinal: return { "substr", 2 };
-        case Builtin.STRING_PROTO_TOUPPERCASE.ordinal: return { "toUpperCase", 0 };
-        case Builtin.STRING_PROTO_TOLOWERCASE.ordinal: return { "toLowerCase", 0 };
-        case Builtin.STRING_PROTO_TRIM.ordinal: return { "trim", 0 };
-        case Builtin.STRING_PROTO_SPLIT.ordinal: return { "split", 2 };
-        case Builtin.STRING_PROTO_CONCAT.ordinal: return { "concat", 1 };
-        case Builtin.STRING_PROTO_REPLACE.ordinal: return { "replace", 2 };
-        case Builtin.ARRAY_PROTO_TOSTRING.ordinal: return { "toString", 0 };
-        case Builtin.ARRAY_PROTO_JOIN.ordinal: return { "join", 1 };
-        case Builtin.ARRAY_PROTO_POP.ordinal: return { "pop", 0 };
-        case Builtin.ARRAY_PROTO_PUSH.ordinal: return { "push", 1 };
-        case Builtin.ARRAY_PROTO_REVERSE.ordinal: return { "reverse", 0 };
-        case Builtin.ARRAY_PROTO_SHIFT.ordinal: return { "shift", 0 };
-        case Builtin.ARRAY_PROTO_SLICE.ordinal: return { "slice", 2 };
-        case Builtin.ARRAY_PROTO_SORT.ordinal: return { "sort", 1 };
-        case Builtin.ARRAY_PROTO_SPLICE.ordinal: return { "splice", 2 };
-        case Builtin.ARRAY_PROTO_UNSHIFT.ordinal: return { "unshift", 1 };
-        case Builtin.ARRAY_PROTO_INDEXOF.ordinal: return { "indexOf", 1 };
-        case Builtin.ARRAY_PROTO_LASTINDEXOF.ordinal: return { "lastIndexOf", 1 };
-        case Builtin.ARRAY_PROTO_CONCAT.ordinal: return { "concat", 1 };
-        case Builtin.NUMBER_PROTO_TOFIXED.ordinal: return { "toFixed", 1 };
-        case Builtin.NUMBER_PROTO_TOEXPONENTIAL.ordinal: return { "toExponential", 1 };
-        case Builtin.NUMBER_PROTO_TOPRECISION.ordinal: return { "toPrecision", 1 };
-        case Builtin.FUNCTION_PROTO_CALL.ordinal: return { "call", 1 };
-        case Builtin.FUNCTION_PROTO_APPLY.ordinal: return { "apply", 2 };
-        case Builtin.FUNCTION_PROTO_BIND.ordinal: return { "bind", 1 };
-        case Builtin.BOUND_CALL.ordinal: return { "bind", 1 };
-        case Builtin.EVAL.ordinal: return { "eval", 1 };
-        case Builtin.JSON_PARSE.ordinal: return { "parse", 2 };
-        case Builtin.JSON_STRINGIFY.ordinal: return { "stringify", 3 };
-        case Builtin.JSON_RAW_JSON.ordinal: return { "rawJSON", 1 };
-        case Builtin.JSON_IS_RAW_JSON.ordinal: return { "isRawJSON", 1 };
-        case Builtin.DATE.ordinal: return { "Date", 7 };
-        case Builtin.DATE_NOW.ordinal: return { "now", 0 };
-        case Builtin.DATE_UTC.ordinal: return { "UTC", 7 };
-        case Builtin.DATE_PARSE.ordinal: return { "parse", 1 };
-        case Builtin.DATE_PROTO_TOSTRING.ordinal: return { "toString", 0 };
-        case Builtin.DATE_PROTO_TOJSON.ordinal: return { "toJSON", 1 };
-        case Builtin.DATE_PROTO_VALUEOF.ordinal: return { "valueOf", 0 };
-        case Builtin.DATE_PROTO_GETTIME.ordinal: return { "getTime", 0 };
-        case Builtin.DATE_PROTO_GETFULLYEAR.ordinal: return { "getFullYear", 0 };
-        case Builtin.DATE_PROTO_GETMONTH.ordinal: return { "getMonth", 0 };
-        case Builtin.DATE_PROTO_GETDATE.ordinal: return { "getDate", 0 };
-        case Builtin.DATE_PROTO_GETDAY.ordinal: return { "getDay", 0 };
-        case Builtin.DATE_PROTO_GETHOURS.ordinal: return { "getHours", 0 };
-        case Builtin.DATE_PROTO_GETMINUTES.ordinal: return { "getMinutes", 0 };
-        case Builtin.DATE_PROTO_GETSECONDS.ordinal: return { "getSeconds", 0 };
-        case Builtin.DATE_PROTO_GETMILLISECONDS.ordinal: return { "getMilliseconds", 0 };
-        case Builtin.FUNCTION.ordinal: return { "Function", 1 };
-        case Builtin.REGEXP.ordinal: return { "RegExp", 2 };
-        case Builtin.REGEXP_PROTO_TEST.ordinal: return { "test", 1 };
-        case Builtin.REGEXP_PROTO_EXEC.ordinal: return { "exec", 1 };
-        case Builtin.REGEXP_PROTO_TOSTRING.ordinal: return { "toString", 0 };
-        case Builtin.REGEXP_PROTO_COMPILE.ordinal: return { "compile", 2 };
-        case Builtin.OBJECT_PROTO_ISPROTOTYPEOF.ordinal: return { "isPrototypeOf", 1 };
-        case Builtin.OBJECT_PROTO_HASOWNPROPERTY.ordinal: return { "hasOwnProperty", 1 };
-        case Builtin.OBJECT_PROTO_PROPERTYISENUMERABLE.ordinal: return { "propertyIsEnumerable", 1 };
-        case Builtin.OBJECT_PROTO_TOLOCALESTRING.ordinal: return { "toLocaleString", 0 };
-        case Builtin.MAP.ordinal: return { "Map", 0 };
-        case Builtin.MAP_PROTO_SET.ordinal: return { "set", 2 };
-        case Builtin.MAP_PROTO_GET.ordinal: return { "get", 1 };
-        case Builtin.MAP_PROTO_HAS.ordinal: return { "has", 1 };
-        case Builtin.MAP_PROTO_DELETE.ordinal: return { "delete", 1 };
-        case Builtin.MAP_PROTO_CLEAR.ordinal: return { "clear", 0 };
-        case Builtin.MAP_PROTO_KEYS.ordinal: return { "keys", 0 };
-        case Builtin.MAP_PROTO_VALUES.ordinal: return { "values", 0 };
-        case Builtin.MAP_PROTO_ENTRIES.ordinal: return { "entries", 0 };
-        case Builtin.MAP_PROTO_FOREACH.ordinal: return { "forEach", 1 };
-        case Builtin.MAP_PROTO_GETORINSERT.ordinal: return { "getOrInsert", 2 };
-        case Builtin.MAP_PROTO_GETORINSERTCOMPUTED.ordinal: return { "getOrInsertComputed", 2 };
-        case Builtin.SET.ordinal: return { "Set", 0 };
-        case Builtin.SET_PROTO_ADD.ordinal: return { "add", 1 };
-        case Builtin.SET_PROTO_HAS.ordinal: return { "has", 1 };
-        case Builtin.SET_PROTO_DELETE.ordinal: return { "delete", 1 };
-        case Builtin.SET_PROTO_CLEAR.ordinal: return { "clear", 0 };
-        case Builtin.SET_PROTO_VALUES.ordinal: return { "values", 0 };
-        case Builtin.SET_PROTO_ENTRIES.ordinal: return { "entries", 0 };
-        case Builtin.SET_PROTO_FOREACH.ordinal: return { "forEach", 1 };
-        case Builtin.WEAKMAP.ordinal: return { "WeakMap", 0 };
-        case Builtin.WEAKMAP_PROTO_SET.ordinal: return { "set", 2 };
-        case Builtin.WEAKMAP_PROTO_GET.ordinal: return { "get", 1 };
-        case Builtin.WEAKMAP_PROTO_HAS.ordinal: return { "has", 1 };
-        case Builtin.WEAKMAP_PROTO_DELETE.ordinal: return { "delete", 1 };
-        case Builtin.WEAKMAP_PROTO_GETORINSERT.ordinal: return { "getOrInsert", 2 };
-        case Builtin.WEAKMAP_PROTO_GETORINSERTCOMPUTED.ordinal: return { "getOrInsertComputed", 2 };
-        case Builtin.WEAKSET.ordinal: return { "WeakSet", 0 };
-        case Builtin.WEAKSET_PROTO_ADD.ordinal: return { "add", 1 };
-        case Builtin.WEAKSET_PROTO_HAS.ordinal: return { "has", 1 };
-        case Builtin.WEAKSET_PROTO_DELETE.ordinal: return { "delete", 1 };
-        case Builtin.WEAKREF.ordinal: return { "WeakRef", 1 };
-        case Builtin.WEAKREF_PROTO_DEREF.ordinal: return { "deref", 0 };
-        case Builtin.FINALIZATION_REGISTRY.ordinal: return { "FinalizationRegistry", 1 };
-        case Builtin.FINALIZATION_REGISTRY_PROTO_REGISTER.ordinal: return { "register", 2 };
-        case Builtin.FINALIZATION_REGISTRY_PROTO_UNREGISTER.ordinal: return { "unregister", 1 };
-        case Builtin.SYMBOL.ordinal: return { "Symbol", 1 };
-        case Builtin.SYMBOL_FOR.ordinal: return { "for", 1 };
-        case Builtin.SYMBOL_KEYFOR.ordinal: return { "keyFor", 1 };
-        case Builtin.SYMBOL_PROTO_TOSTRING.ordinal: return { "toString", 0 };
-        case Builtin.SYMBOL_PROTO_VALUEOF.ordinal: return { "valueOf", 0 };
-        case Builtin.PROMISE.ordinal: return { "Promise", 1 };
-        case Builtin.PROMISE_PROTO_THEN.ordinal: return { "then", 2 };
-        case Builtin.PROMISE_PROTO_CATCH.ordinal: return { "catch", 1 };
-        case Builtin.PROMISE_PROTO_FINALLY.ordinal: return { "finally", 1 };
-        case Builtin.PROMISE_RESOLVE.ordinal: return { "resolve", 1 };
-        case Builtin.PROMISE_REJECT.ordinal: return { "reject", 1 };
-        case Builtin.PROMISE_ALL.ordinal: return { "all", 1 };
-        case Builtin.PROMISE_RACE.ordinal: return { "race", 1 };
-        case Builtin.GENERATOR_FUNCTION.ordinal: return { "Function", 1 };
-        case Builtin.GENERATOR_PROTO_NEXT.ordinal: return { "next", 1 };
-        case Builtin.GENERATOR_PROTO_THROW.ordinal: return { "throw", 1 };
-        case Builtin.GENERATOR_PROTO_RETURN.ordinal: return { "return", 1 };
-        case Builtin.OBJECT_KEYS.ordinal: return { "keys", 1 };
-        case Builtin.OBJECT_GETPROTOTYPEOF.ordinal: return { "getPrototypeOf", 1 };
-        case Builtin.OBJECT_ISEXTENSIBLE.ordinal: return { "isExtensible", 1 };
-        case Builtin.OBJECT_PREVENTEXTENSIONS.ordinal: return { "preventExtensions", 1 };
-        case Builtin.OBJECT_GETOWNPROPERTYDESCRIPTOR.ordinal: return { "getOwnPropertyDescriptor", 2 };
-        case Builtin.OBJECT_GETOWNPROPERTYDESCRIPTORS.ordinal: return { "getOwnPropertyDescriptors", 1 };
-        case Builtin.OBJECT_DEFINEPROPERTY.ordinal: return { "defineProperty", 3 };
-        case Builtin.OBJECT_GETOWNPROPERTYNAMES.ordinal: return { "getOwnPropertyNames", 1 };
-        case Builtin.OBJECT_DEFINEPROPERTIES.ordinal: return { "defineProperties", 2 };
-        case Builtin.OBJECT_CREATE.ordinal: return { "create", 2 };
-        case Builtin.OBJECT_SEAL.ordinal: return { "seal", 1 };
-        case Builtin.OBJECT_FREEZE.ordinal: return { "freeze", 1 };
-        case Builtin.OBJECT_ISSEALED.ordinal: return { "isSealed", 1 };
-        case Builtin.OBJECT_ISFROZEN.ordinal: return { "isFrozen", 1 };
-        case Builtin.STRING_PROTO_INCLUDES.ordinal: return { "includes", 1 };
-        case Builtin.STRING_PROTO_STARTSWITH.ordinal: return { "startsWith", 1 };
-        case Builtin.STRING_PROTO_ENDSWITH.ordinal: return { "endsWith", 1 };
-        case Builtin.STRING_PROTO_REPEAT.ordinal: return { "repeat", 1 };
-        case Builtin.STRING_PROTO_TRIMSTART.ordinal: return { "trimStart", 0 };
-        case Builtin.STRING_PROTO_TRIMEND.ordinal: return { "trimEnd", 0 };
-        case Builtin.STRING_PROTO_CODEPOINTAT.ordinal: return { "codePointAt", 1 };
-        case Builtin.STRING_PROTO_AT.ordinal: return { "at", 1 };
-        case Builtin.STRING_PROTO_PADSTART.ordinal: return { "padStart", 1 };
-        case Builtin.STRING_PROTO_PADEND.ordinal: return { "padEnd", 1 };
-        case Builtin.STRING_PROTO_LASTINDEXOF.ordinal: return { "lastIndexOf", 1 };
-        case Builtin.ARRAY_OF.ordinal: return { "of", 0 };
-        case Builtin.ARRAY_PROTO_FILL.ordinal: return { "fill", 1 };
-        case Builtin.ARRAY_PROTO_FIND.ordinal: return { "find", 1 };
-        case Builtin.ARRAY_PROTO_FINDINDEX.ordinal: return { "findIndex", 1 };
-        case Builtin.ARRAY_PROTO_INCLUDES.ordinal: return { "includes", 1 };
-        case Builtin.ARRAY_PROTO_AT.ordinal: return { "at", 1 };
-        case Builtin.ARRAY_PROTO_COPYWITHIN.ordinal: return { "copyWithin", 2 };
-        case Builtin.OBJECT_ENTRIES.ordinal: return { "entries", 1 };
-        case Builtin.OBJECT_VALUES.ordinal: return { "values", 1 };
-        case Builtin.OBJECT_ASSIGN.ordinal: return { "assign", 2 };
-        case Builtin.NUMBER_ISNAN.ordinal: return { "isNaN", 1 };
-        case Builtin.NUMBER_ISFINITE.ordinal: return { "isFinite", 1 };
-        case Builtin.NUMBER_ISINTEGER.ordinal: return { "isInteger", 1 };
-        case Builtin.NUMBER_ISSAFEINTEGER.ordinal: return { "isSafeInteger", 1 };
-        case Builtin.MATH_ACOS.ordinal: return { "acos", 1 };
-        case Builtin.MATH_ASIN.ordinal: return { "asin", 1 };
-        case Builtin.MATH_ATAN.ordinal: return { "atan", 1 };
-        case Builtin.MATH_ATAN2.ordinal: return { "atan2", 2 };
-        case Builtin.MATH_COSH.ordinal: return { "cosh", 1 };
-        case Builtin.MATH_SINH.ordinal: return { "sinh", 1 };
-        case Builtin.MATH_TANH.ordinal: return { "tanh", 1 };
-        case Builtin.MATH_ACOSH.ordinal: return { "acosh", 1 };
-        case Builtin.MATH_ASINH.ordinal: return { "asinh", 1 };
-        case Builtin.MATH_ATANH.ordinal: return { "atanh", 1 };
-        case Builtin.MATH_LOG2.ordinal: return { "log2", 1 };
-        case Builtin.MATH_LOG10.ordinal: return { "log10", 1 };
-        case Builtin.MATH_LOG1P.ordinal: return { "log1p", 1 };
-        case Builtin.MATH_EXPM1.ordinal: return { "expm1", 1 };
-        case Builtin.MATH_CBRT.ordinal: return { "cbrt", 1 };
-        case Builtin.MATH_HYPOT.ordinal: return { "hypot", 2 };
-        case Builtin.MATH_TRUNC.ordinal: return { "trunc", 1 };
-        case Builtin.MATH_SIGN.ordinal: return { "sign", 1 };
-        case Builtin.MATH_FROUND.ordinal: return { "fround", 1 };
-        case Builtin.MATH_F16ROUND.ordinal: return { "f16round", 1 };
-        case Builtin.MATH_CLZ32.ordinal: return { "clz32", 1 };
-        case Builtin.MATH_IMUL.ordinal: return { "imul", 2 };
-        case Builtin.MATH_SUMPRECISE.ordinal: return { "sumPrecise", 1 };
-        case Builtin.ARRAY_ISARRAY.ordinal: return { "isArray", 1 };
-        case Builtin.STRING_FROMCHARCODE.ordinal: return { "fromCharCode", 1 };
-        case Builtin.OBJECT_IS.ordinal: return { "is", 2 };
-        case Builtin.OBJECT_HASOWN.ordinal: return { "hasOwn", 2 };
-        case Builtin.OBJECT_SETPROTOTYPEOF.ordinal: return { "setPrototypeOf", 2 };
-        case Builtin.ARRAY_PROTO_FLAT.ordinal: return { "flat", 0 };
-        case Builtin.ARRAY_PROTO_FLATMAP.ordinal: return { "flatMap", 1 };
-        case Builtin.STRING_FROMCODEPOINT.ordinal: return { "fromCodePoint", 1 };
-        case Builtin.ENCODE_URI.ordinal: return { "encodeURI", 1 };
-        case Builtin.ENCODE_URI_COMPONENT.ordinal: return { "encodeURIComponent", 1 };
-        case Builtin.DECODE_URI.ordinal: return { "decodeURI", 1 };
-        case Builtin.DECODE_URI_COMPONENT.ordinal: return { "decodeURIComponent", 1 };
-        case Builtin.URI_ERROR.ordinal: return { "URIError", 1 };
-        case Builtin.ARRAY_PROTO_TOREVERSED.ordinal: return { "toReversed", 0 };
-        case Builtin.ARRAY_PROTO_TOSORTED.ordinal: return { "toSorted", 1 };
-        case Builtin.ARRAY_PROTO_TOSPLICED.ordinal: return { "toSpliced", 2 };
-        case Builtin.ARRAY_PROTO_WITH.ordinal: return { "with", 2 };
-        case Builtin.STRING_PROTO_MATCH.ordinal: return { "match", 1 };
-        case Builtin.STRING_PROTO_SEARCH.ordinal: return { "search", 1 };
-        case Builtin.DATE_PROTO_GETUTCFULLYEAR.ordinal: return { "getUTCFullYear", 0 };
-        case Builtin.DATE_PROTO_GETUTCMONTH.ordinal: return { "getUTCMonth", 0 };
-        case Builtin.DATE_PROTO_GETUTCDATE.ordinal: return { "getUTCDate", 0 };
-        case Builtin.DATE_PROTO_GETUTCDAY.ordinal: return { "getUTCDay", 0 };
-        case Builtin.DATE_PROTO_GETUTCHOURS.ordinal: return { "getUTCHours", 0 };
-        case Builtin.DATE_PROTO_GETUTCMINUTES.ordinal: return { "getUTCMinutes", 0 };
-        case Builtin.DATE_PROTO_GETUTCSECONDS.ordinal: return { "getUTCSeconds", 0 };
-        case Builtin.DATE_PROTO_GETUTCMILLISECONDS.ordinal: return { "getUTCMilliseconds", 0 };
-        case Builtin.DATE_PROTO_SETTIME.ordinal: return { "setTime", 1 };
-        case Builtin.DATE_PROTO_SETMILLISECONDS.ordinal: return { "setMilliseconds", 1 };
-        case Builtin.DATE_PROTO_SETSECONDS.ordinal: return { "setSeconds", 2 };
-        case Builtin.DATE_PROTO_SETMINUTES.ordinal: return { "setMinutes", 3 };
-        case Builtin.DATE_PROTO_SETHOURS.ordinal: return { "setHours", 4 };
-        case Builtin.DATE_PROTO_SETDATE.ordinal: return { "setDate", 1 };
-        case Builtin.DATE_PROTO_SETMONTH.ordinal: return { "setMonth", 2 };
-        case Builtin.DATE_PROTO_SETFULLYEAR.ordinal: return { "setFullYear", 3 };
-        case Builtin.DATE_PROTO_SETUTCMILLISECONDS.ordinal: return { "setUTCMilliseconds", 1 };
-        case Builtin.DATE_PROTO_SETUTCSECONDS.ordinal: return { "setUTCSeconds", 2 };
-        case Builtin.DATE_PROTO_SETUTCMINUTES.ordinal: return { "setUTCMinutes", 3 };
-        case Builtin.DATE_PROTO_SETUTCHOURS.ordinal: return { "setUTCHours", 4 };
-        case Builtin.DATE_PROTO_SETUTCDATE.ordinal: return { "setUTCDate", 1 };
-        case Builtin.DATE_PROTO_SETUTCMONTH.ordinal: return { "setUTCMonth", 2 };
-        case Builtin.DATE_PROTO_SETUTCFULLYEAR.ordinal: return { "setUTCFullYear", 3 };
-        case Builtin.DATE_PROTO_TOISOSTRING.ordinal: return { "toISOString", 0 };
-        case Builtin.DATE_PROTO_TOUTCSTRING.ordinal: return { "toUTCString", 0 };
-        case Builtin.DATE_PROTO_TOLOCALESTRING.ordinal: return { "toLocaleString", 0 };
-        case Builtin.DATE_PROTO_TOLOCALEDATESTRING.ordinal: return { "toLocaleDateString", 0 };
-        case Builtin.DATE_PROTO_TOLOCALETIMESTRING.ordinal: return { "toLocaleTimeString", 0 };
-        case Builtin.PROMISE_RESOLVE_CALLBACK.ordinal: return { "", 1 };  // Promise resolve callback (no name)
-        case Builtin.PROMISE_REJECT_CALLBACK.ordinal: return { "", 1 };  // Promise reject callback (no name)
-        case Builtin.DATE_PROTO_TODATESTRING.ordinal: return { "toDateString", 0 };
-        case Builtin.DATE_PROTO_TOTIMESTRING.ordinal: return { "toTimeString", 0 };
-        case Builtin.STRING_PROTO_REPLACEALL.ordinal: return { "replaceAll", 2 };
-        case Builtin.STRING_PROTO_MATCHALL.ordinal: return { "matchAll", 1 };
-        case Builtin.STRING_PROTO_NORMALIZE.ordinal: return { "normalize", 0 };
-        case Builtin.STRING_PROTO_ISWELLFORMED.ordinal: return { "isWellFormed", 0 };
-        case Builtin.STRING_PROTO_TOWELLFORMED.ordinal: return { "toWellFormed", 0 };
-        case Builtin.OBJECT_GETOWNPROPERTYSYMBOLS.ordinal: return { "getOwnPropertySymbols", 1 };
-        case Builtin.ARRAY_PROTO_FINDLAST.ordinal: return { "findLast", 1 };
-        case Builtin.ARRAY_PROTO_FINDLASTINDEX.ordinal: return { "findLastIndex", 1 };
-        case Builtin.REFLECT_OWNKEYS.ordinal: return { "ownKeys", 1 };
-        case Builtin.PROMISE_ALLSETTLED.ordinal: return { "allSettled", 1 };
-        case Builtin.PROMISE_ANY.ordinal: return { "any", 1 };
-        case Builtin.AGGREGATE_ERROR.ordinal: return { "AggregateError", 2 };
-        case Builtin.ERROR_CAPTURE_STACK_TRACE.ordinal: return { "captureStackTrace", 2 };
-        case Builtin.STRING_RAW.ordinal: return { "raw", 1 };
-        case Builtin.ARRAY_ITERATOR_NEXT.ordinal: return { "next", 0 };
-        case Builtin.STRING_ITERATOR_NEXT.ordinal: return { "next", 0 };
-        case Builtin.STRING_PROTO_SYMBOL_ITER.ordinal: return { "[Symbol.iterator]", 0 };
-        case Builtin.ARRAY_PROTO_KEYS.ordinal: return { "keys", 0 };
-        case Builtin.ARRAY_PROTO_VALUES.ordinal: return { "values", 0 };
-        case Builtin.ARRAY_PROTO_ENTRIES.ordinal: return { "entries", 0 };
-        case Builtin.ARRAY_FROM.ordinal: return { "from", 1 };
-        case Builtin.ARRAY_PROTO_FOREACH.ordinal: return { "forEach", 1 };
-        case Builtin.ARRAY_PROTO_MAP.ordinal: return { "map", 1 };
-        case Builtin.ARRAY_PROTO_FILTER.ordinal: return { "filter", 1 };
-        case Builtin.ARRAY_PROTO_EVERY.ordinal: return { "every", 1 };
-        case Builtin.ARRAY_PROTO_SOME.ordinal: return { "some", 1 };
-        case Builtin.ARRAY_PROTO_REDUCE.ordinal: return { "reduce", 1 };
-        case Builtin.ARRAY_PROTO_REDUCERIGHT.ordinal: return { "reduceRight", 1 };
-        case Builtin.STRING_PROTO_TOLOCALELOWERCASE.ordinal: return { "toLocaleLowerCase", 0 };
-        case Builtin.STRING_PROTO_TOLOCALEUPPERCASE.ordinal: return { "toLocaleUpperCase", 0 };
-        case Builtin.STRING_PROTO_LOCALECOMPARE.ordinal: return { "localeCompare", 1 };
-        case Builtin.FUNCTION_PROTO_TOSTRING.ordinal: return { "toString", 0 };
-        case Builtin.REGEXP_PROTO_SYMBOL_MATCH.ordinal: return { "[Symbol.match]", 1 };
-        case Builtin.REGEXP_PROTO_SYMBOL_SEARCH.ordinal: return { "[Symbol.search]", 1 };
-        case Builtin.REGEXP_PROTO_SYMBOL_REPLACE.ordinal: return { "[Symbol.replace]", 2 };
-        case Builtin.REGEXP_PROTO_SYMBOL_SPLIT.ordinal: return { "[Symbol.split]", 2 };
-        case Builtin.REGEXP_PROTO_SYMBOL_MATCHALL.ordinal: return { "[Symbol.matchAll]", 1 };
-        // RegExp string iterator .next()
-        case Builtin.REGEXP_STRING_ITERATOR_NEXT.ordinal: return { "next", 0 };
-        // ArrayBuffer constructor / statics / prototype
-        case Builtin.ARRAYBUFFER.ordinal: return { "ArrayBuffer", 1 };
-        case Builtin.ARRAYBUFFER_ISVIEW.ordinal: return { "isView", 1 };
-        case Builtin.ARRAYBUFFER_PROTO_SLICE.ordinal: return { "slice", 2 };
-        case Builtin.ARRAYBUFFER_PROTO_RESIZE.ordinal: return { "resize", 1 };
-        case Builtin.ARRAYBUFFER_PROTO_TRANSFER.ordinal: return { "transfer", 0 };
-        case Builtin.ARRAYBUFFER_PROTO_TRANSFER_TO_FIXED_LENGTH.ordinal: return { "transferToFixedLength", 0 };
-        // SharedArrayBuffer constructor / prototype
-        case Builtin.SHAREDARRAYBUFFER.ordinal: return { "SharedArrayBuffer", 1 };
-        case Builtin.SHAREDARRAYBUFFER_PROTO_SLICE.ordinal: return { "slice", 2 };
-        case Builtin.SHAREDARRAYBUFFER_PROTO_GROW.ordinal: return { "grow", 1 };
-        // DataView constructor / prototype
-        case Builtin.DATAVIEW.ordinal: return { "DataView", 1 };
-        case Builtin.DATAVIEW_GET_INT8.ordinal: return { "getInt8", 1 };
-        case Builtin.DATAVIEW_GET_UINT8.ordinal: return { "getUint8", 1 };
-        case Builtin.DATAVIEW_GET_INT16.ordinal: return { "getInt16", 1 };
-        case Builtin.DATAVIEW_GET_UINT16.ordinal: return { "getUint16", 1 };
-        case Builtin.DATAVIEW_GET_INT32.ordinal: return { "getInt32", 1 };
-        case Builtin.DATAVIEW_GET_UINT32.ordinal: return { "getUint32", 1 };
-        case Builtin.DATAVIEW_GET_FLOAT16.ordinal: return { "getFloat16", 1 };
-        case Builtin.DATAVIEW_GET_FLOAT32.ordinal: return { "getFloat32", 1 };
-        case Builtin.DATAVIEW_GET_FLOAT64.ordinal: return { "getFloat64", 1 };
-        case Builtin.DATAVIEW_SET_INT8.ordinal: return { "setInt8", 2 };
-        case Builtin.DATAVIEW_SET_UINT8.ordinal: return { "setUint8", 2 };
-        case Builtin.DATAVIEW_SET_INT16.ordinal: return { "setInt16", 2 };
-        case Builtin.DATAVIEW_SET_UINT16.ordinal: return { "setUint16", 2 };
-        case Builtin.DATAVIEW_SET_INT32.ordinal: return { "setInt32", 2 };
-        case Builtin.DATAVIEW_SET_UINT32.ordinal: return { "setUint32", 2 };
-        case Builtin.DATAVIEW_SET_FLOAT16.ordinal: return { "setFloat16", 2 };
-        case Builtin.DATAVIEW_SET_FLOAT32.ordinal: return { "setFloat32", 2 };
-        case Builtin.DATAVIEW_SET_FLOAT64.ordinal: return { "setFloat64", 2 };
-        case Builtin.MAP_SPECIES_GETTER.ordinal: return { "[Symbol.species]", 0 };
-        case Builtin.SET_SPECIES_GETTER.ordinal: return { "[Symbol.species]", 0 };
-        case Builtin.DATAVIEW_GET_BIGINT64.ordinal: return { "getBigInt64", 1 };
-        case Builtin.DATAVIEW_GET_BIGUINT64.ordinal: return { "getBigUint64", 1 };
-        case Builtin.DATAVIEW_SET_BIGINT64.ordinal: return { "setBigInt64", 2 };
-        case Builtin.DATAVIEW_SET_BIGUINT64.ordinal: return { "setBigUint64", 2 };
-        // %TypedArray%.prototype wave A (plan 049 stage 4)
-        case Builtin.TA_PROTO_VALUES.ordinal: return { "values", 0 };
-        case Builtin.TA_PROTO_KEYS.ordinal: return { "keys", 0 };
-        case Builtin.TA_PROTO_ENTRIES.ordinal: return { "entries", 0 };
-        case Builtin.TA_PROTO_SET.ordinal: return { "set", 1 };
-        case Builtin.TA_PROTO_SUBARRAY.ordinal: return { "subarray", 2 };
-        case Builtin.TA_PROTO_FILL.ordinal: return { "fill", 1 };
-        case Builtin.TA_PROTO_COPYWITHIN.ordinal: return { "copyWithin", 2 };
-        case Builtin.TA_PROTO_SLICE.ordinal: return { "slice", 2 };
-        // %TypedArray%.prototype wave B (plan 049 stage 5)
-        case Builtin.TA_PROTO_INDEX_OF.ordinal: return { "indexOf", 1 };
-        case Builtin.TA_PROTO_LAST_INDEX_OF.ordinal: return { "lastIndexOf", 1 };
-        case Builtin.TA_PROTO_INCLUDES.ordinal: return { "includes", 1 };
-        case Builtin.TA_PROTO_JOIN.ordinal: return { "join", 1 };
-        case Builtin.TA_PROTO_FOR_EACH.ordinal: return { "forEach", 1 };
-        case Builtin.TA_PROTO_EVERY.ordinal: return { "every", 1 };
-        case Builtin.TA_PROTO_SOME.ordinal: return { "some", 1 };
-        case Builtin.TA_PROTO_REDUCE.ordinal: return { "reduce", 1 };
-        case Builtin.TA_PROTO_REDUCE_RIGHT.ordinal: return { "reduceRight", 1 };
-        case Builtin.TA_PROTO_MAP.ordinal: return { "map", 1 };
-        case Builtin.TA_PROTO_FILTER.ordinal: return { "filter", 1 };
-        case Builtin.TA_PROTO_FIND.ordinal: return { "find", 1 };
-        case Builtin.TA_PROTO_FIND_INDEX.ordinal: return { "findIndex", 1 };
-        case Builtin.TA_PROTO_FIND_LAST.ordinal: return { "findLast", 1 };
-        case Builtin.TA_PROTO_FIND_LAST_INDEX.ordinal: return { "findLastIndex", 1 };
-        case Builtin.TA_PROTO_REVERSE.ordinal: return { "reverse", 0 };
-        case Builtin.TA_PROTO_TO_REVERSED.ordinal: return { "toReversed", 0 };
-        case Builtin.TA_PROTO_AT.ordinal: return { "at", 1 };
-        case Builtin.TA_PROTO_SORT.ordinal: return { "sort", 1 };
-        case Builtin.TA_PROTO_TO_SORTED.ordinal: return { "toSorted", 1 };
-        case Builtin.TA_PROTO_WITH.ordinal: return { "with", 2 };
-        case Builtin.TA_PROTO_TO_STRING.ordinal: return { "toString", 0 };
-        case Builtin.TA_PROTO_TO_LOCALE_STRING.ordinal: return { "toLocaleString", 0 };
-        case Builtin.OBJECT_FROMENTRIES.ordinal: return { "fromEntries", 1 };
-        case Builtin.OBJECT_GROUPBY.ordinal: return { "groupBy", 2 };
-        case Builtin.MAP_GROUPBY.ordinal: return { "groupBy", 2 };
-        // %TypedArray% intrinsic statics
-        case Builtin.TA_OF.ordinal: return { "of", 0 };
-        case Builtin.TA_FROM.ordinal: return { "from", 1 };
-        case Builtin.UINT8ARRAY_FROM_BASE64.ordinal: return { "fromBase64", 1 };
-        case Builtin.UINT8ARRAY_FROM_HEX.ordinal: return { "fromHex", 1 };
-        case Builtin.UINT8ARRAY_PROTO_TO_BASE64.ordinal: return { "toBase64", 0 };
-        case Builtin.UINT8ARRAY_PROTO_TO_HEX.ordinal: return { "toHex", 0 };
-        case Builtin.UINT8ARRAY_PROTO_SET_FROM_BASE64.ordinal: return { "setFromBase64", 1 };
-        case Builtin.UINT8ARRAY_PROTO_SET_FROM_HEX.ordinal: return { "setFromHex", 1 };
-        case Builtin.TYPEDARRAY_INTRINSIC.ordinal: return { "TypedArray", 0 };
-        case Builtin.FUNCTION_PROTO_HASINSTANCE.ordinal: return { "[Symbol.hasInstance]", 1 };
-        case Builtin.DATE_PROTO_TOPRIMITIVE.ordinal: return { "[Symbol.toPrimitive]", 1 };
-        // Proxy
-        case Builtin.PROXY.ordinal: return { "Proxy", 2 };
-        case Builtin.PROXY_REVOCABLE.ordinal: return { "revocable", 2 };
-        case Builtin.PROXY_REVOKE.ordinal: return { "", 0 };     // revoker function
-        // Reflect
-        case Builtin.REFLECT_GET.ordinal: return { "get", 2 };
-        case Builtin.REFLECT_SET.ordinal: return { "set", 3 };
-        case Builtin.REFLECT_HAS.ordinal: return { "has", 2 };
-        case Builtin.REFLECT_DELETE_PROPERTY.ordinal: return { "deleteProperty", 2 };
-        case Builtin.REFLECT_GET_OWN_PROPERTY_DESCRIPTOR.ordinal: return { "getOwnPropertyDescriptor", 2 };
-        case Builtin.REFLECT_DEFINE_PROPERTY.ordinal: return { "defineProperty", 3 };
-        case Builtin.REFLECT_GET_PROTOTYPE_OF.ordinal: return { "getPrototypeOf", 1 };
-        case Builtin.REFLECT_SET_PROTOTYPE_OF.ordinal: return { "setPrototypeOf", 2 };
-        case Builtin.REFLECT_IS_EXTENSIBLE.ordinal: return { "isExtensible", 1 };
-        case Builtin.REFLECT_PREVENT_EXTENSIONS.ordinal: return { "preventExtensions", 1 };
-        case Builtin.REFLECT_APPLY.ordinal: return { "apply", 3 };
-        case Builtin.REFLECT_CONSTRUCT.ordinal: return { "construct", 2 };
-        // BigInt
-        case Builtin.BIGINT.ordinal: return { "BigInt", 1 };
-        case Builtin.BIGINT_AS_INTN.ordinal: return { "asIntN", 2 };
-        case Builtin.BIGINT_AS_UINTN.ordinal: return { "asUintN", 2 };
-        case Builtin.BIGINT_PROTO_TOSTRING.ordinal: return { "toString", 0 };
-        case Builtin.BIGINT_PROTO_VALUEOF.ordinal: return { "valueOf", 0 };
-        // %AsyncFromSyncIteratorPrototype%
-        case Builtin.ASYNC_FROM_SYNC_NEXT.ordinal: return { "next", 1 };
-        case Builtin.ASYNC_FROM_SYNC_RETURN.ordinal: return { "return", 1 };
-        case Builtin.ASYNC_FROM_SYNC_THROW.ordinal: return { "throw", 1 };
-        case Builtin.ASYNC_FROM_SYNC_VALUE_UNWRAP.ordinal: return { "", 1 };
-        case Builtin.ASYNC_FROM_SYNC_REJECT_FORWARD.ordinal: return { "", 1 };
-        // Async generators (plan 060, ES2018 §27.6)
-        case Builtin.ASYNC_ITERATOR_PROTO_SYMBOL_ASYNCITER.ordinal: return { "[Symbol.asyncIterator]", 0 };
-        case Builtin.ASYNC_GENERATOR_PROTO_NEXT.ordinal: return { "next", 1 };
-        case Builtin.ASYNC_GENERATOR_PROTO_RETURN.ordinal: return { "return", 1 };
-        case Builtin.ASYNC_GENERATOR_PROTO_THROW.ordinal: return { "throw", 1 };
-        case Builtin.ASYNC_GENERATOR_FUNCTION.ordinal: return { "AsyncGeneratorFunction", 1 };
-        // Array.fromAsync + its internal reaction closures
-        case Builtin.ARRAY_FROM_ASYNC.ordinal: return { "fromAsync", 1 };
-        case Builtin.ARRAY_FROM_ASYNC_STEP_FULFILL.ordinal: return { "", 1 };
-        case Builtin.ARRAY_FROM_ASYNC_MAP_FULFILL.ordinal: return { "", 1 };
-        case Builtin.ARRAY_FROM_ASYNC_REJECT.ordinal: return { "", 1 };
-        case Builtin.PROMISE_WITH_RESOLVERS.ordinal: return { "withResolvers", 0 };
-        case Builtin.PROMISE_TRY.ordinal: return { "try", 1 };
-        case Builtin.ERROR_ISERROR.ordinal: return { "isError", 1 };
-        // Set methods proposal
-        case Builtin.SET_PROTO_UNION.ordinal: return { "union", 1 };
-        case Builtin.SET_PROTO_INTERSECTION.ordinal: return { "intersection", 1 };
-        case Builtin.SET_PROTO_DIFFERENCE.ordinal: return { "difference", 1 };
-        case Builtin.SET_PROTO_SYMMETRICDIFFERENCE.ordinal: return { "symmetricDifference", 1 };
-        case Builtin.SET_PROTO_ISSUBSETOF.ordinal: return { "isSubsetOf", 1 };
-        case Builtin.SET_PROTO_ISSUPERSETOF.ordinal: return { "isSupersetOf", 1 };
-        case Builtin.SET_PROTO_ISDISJOINTFROM.ordinal: return { "isDisjointFrom", 1 };
-        case Builtin.REGEXP_ESCAPE.ordinal: return { "escape", 1 };
-        // Iterator Helpers (ES2025 §27.1)
-        case Builtin.ITERATOR_CTOR.ordinal: return { "Iterator", 0 };
-        case Builtin.ITERATOR_FROM.ordinal: return { "from", 1 };
-        case Builtin.ITERATOR_PROTO_CONSTRUCTOR_GET.ordinal: return { "get constructor", 0 };
-        case Builtin.ITERATOR_PROTO_CONSTRUCTOR_SET.ordinal: return { "set constructor", 1 };
-        case Builtin.ITERATOR_PROTO_TOSTRINGTAG_GET.ordinal: return { "get [Symbol.toStringTag]", 0 };
-        case Builtin.ITERATOR_PROTO_TOSTRINGTAG_SET.ordinal: return { "set [Symbol.toStringTag]", 1 };
-        case Builtin.ITERATOR_PROTO_MAP.ordinal: return { "map", 1 };
-        case Builtin.ITERATOR_PROTO_FILTER.ordinal: return { "filter", 1 };
-        case Builtin.ITERATOR_PROTO_TAKE.ordinal: return { "take", 1 };
-        case Builtin.ITERATOR_PROTO_DROP.ordinal: return { "drop", 1 };
-        case Builtin.ITERATOR_PROTO_FLATMAP.ordinal: return { "flatMap", 1 };
-        case Builtin.ITERATOR_PROTO_REDUCE.ordinal: return { "reduce", 1 };
-        case Builtin.ITERATOR_PROTO_TOARRAY.ordinal: return { "toArray", 0 };
-        case Builtin.ITERATOR_PROTO_FOREACH.ordinal: return { "forEach", 1 };
-        case Builtin.ITERATOR_PROTO_SOME.ordinal: return { "some", 1 };
-        case Builtin.ITERATOR_PROTO_EVERY.ordinal: return { "every", 1 };
-        case Builtin.ITERATOR_PROTO_FIND.ordinal: return { "find", 1 };
-        case Builtin.ITERATOR_CONCAT.ordinal: return { "concat", -1 };
-        case Builtin.WRAP_FOR_VALID_ITERATOR_NEXT.ordinal: return { "next", 0 };
-        case Builtin.WRAP_FOR_VALID_ITERATOR_RETURN.ordinal: return { "return", 0 };
-        case Builtin.ITERATOR_HELPER_NEXT.ordinal: return { "next", 0 };
-        case Builtin.ITERATOR_HELPER_RETURN.ordinal: return { "return", 0 };
-        case Builtin.ERROR_PROTO_STACK_GET.ordinal: return { "get stack", 0 };
-        case Builtin.ERROR_PROTO_STACK_SET.ordinal: return { "set stack", 1 };
-        default: return { "", -1 };
-    }
+    if (idx >= Builtin.LAST.ordinal) return { "", -1 };
+    Builtin b = (Builtin)idx;
+    return { b.js_name, b.js_arity };
 }
 
 // ============================================================================
@@ -3254,579 +2786,23 @@ fn bool module_ns_get_binding_value(void* vm, Heap* heap, HObject* ns, HString* 
 // Dispatch table
 // ============================================================================
 
-// Function-pointer dispatch table — replaces the 278-arm switch with a single
-// indirect call. Builtin.LAST.ordinal is one past the highest valid index; the bounds
-// check below mirrors the old `default:` arm (set_undefined on the result).
-BuiltinFunc[Builtin.LAST.ordinal] builtin_dispatch_table = {
-    [Builtin.AGGREGATE_ERROR.ordinal] = &builtin_aggregate_error,
-    [Builtin.ARRAY.ordinal] = &builtin_array,
-    [Builtin.ARRAY_FROM.ordinal] = &builtin_array_from,
-    [Builtin.ARRAY_ISARRAY.ordinal] = &builtin_array_isArray,
-    [Builtin.ARRAY_ITERATOR_NEXT.ordinal] = &builtin_array_iterator_next,
-    [Builtin.ARRAY_OF.ordinal] = &builtin_array_of,
-    [Builtin.ARRAY_PROTO_AT.ordinal] = &builtin_array_proto_at,
-    [Builtin.ARRAY_PROTO_CONCAT.ordinal] = &builtin_array_proto_concat,
-    [Builtin.ARRAY_PROTO_COPYWITHIN.ordinal] = &builtin_array_proto_copyWithin,
-    [Builtin.ARRAY_PROTO_EVERY.ordinal] = &builtin_array_proto_every,
-    [Builtin.ARRAY_PROTO_ENTRIES.ordinal] = &builtin_array_proto_entries,
-    [Builtin.ARRAY_PROTO_FILL.ordinal] = &builtin_array_proto_fill,
-    [Builtin.ARRAY_PROTO_FILTER.ordinal] = &builtin_array_proto_filter,
-    [Builtin.ARRAY_PROTO_FIND.ordinal] = &builtin_array_proto_find,
-    [Builtin.ARRAY_PROTO_FINDINDEX.ordinal] = &builtin_array_proto_findIndex,
-    [Builtin.ARRAY_PROTO_FINDLAST.ordinal] = &builtin_array_proto_findLast,
-    [Builtin.ARRAY_PROTO_FINDLASTINDEX.ordinal] = &builtin_array_proto_findLastIndex,
-    [Builtin.ARRAY_PROTO_FLAT.ordinal] = &builtin_array_proto_flat,
-    [Builtin.ARRAY_PROTO_FLATMAP.ordinal] = &builtin_array_proto_flatMap,
-    [Builtin.ARRAY_PROTO_FOREACH.ordinal] = &builtin_array_proto_forEach,
-    [Builtin.ARRAY_PROTO_INCLUDES.ordinal] = &builtin_array_proto_includes,
-    [Builtin.ARRAY_PROTO_INDEXOF.ordinal] = &builtin_array_proto_indexOf,
-    [Builtin.ARRAY_PROTO_JOIN.ordinal] = &builtin_array_proto_join,
-    [Builtin.ARRAY_PROTO_KEYS.ordinal] = &builtin_array_proto_keys,
-    [Builtin.ARRAY_PROTO_LASTINDEXOF.ordinal] = &builtin_array_proto_lastIndexOf,
-    [Builtin.ARRAY_PROTO_MAP.ordinal] = &builtin_array_proto_map,
-    [Builtin.ARRAY_PROTO_POP.ordinal] = &builtin_array_proto_pop,
-    [Builtin.ARRAY_PROTO_PUSH.ordinal] = &builtin_array_proto_push,
-    [Builtin.ARRAY_PROTO_REDUCE.ordinal] = &builtin_array_proto_reduce,
-    [Builtin.ARRAY_PROTO_REDUCERIGHT.ordinal] = &builtin_array_proto_reduceRight,
-    [Builtin.ARRAY_PROTO_REVERSE.ordinal] = &builtin_array_proto_reverse,
-    [Builtin.ARRAY_PROTO_SHIFT.ordinal] = &builtin_array_proto_shift,
-    [Builtin.ARRAY_PROTO_SLICE.ordinal] = &builtin_array_proto_slice,
-    [Builtin.ARRAY_PROTO_SOME.ordinal] = &builtin_array_proto_some,
-    [Builtin.ARRAY_PROTO_SORT.ordinal] = &builtin_array_proto_sort,
-    [Builtin.ARRAY_PROTO_SPLICE.ordinal] = &builtin_array_proto_splice,
-    [Builtin.ARRAY_PROTO_TOREVERSED.ordinal] = &builtin_array_proto_toReversed,
-    [Builtin.ARRAY_PROTO_TOSORTED.ordinal] = &builtin_array_proto_toSorted,
-    [Builtin.ARRAY_PROTO_TOSPLICED.ordinal] = &builtin_array_proto_toSpliced,
-    [Builtin.ARRAY_PROTO_TOSTRING.ordinal] = &builtin_array_proto_toString,
-    [Builtin.ARRAY_PROTO_UNSHIFT.ordinal] = &builtin_array_proto_unshift,
-    [Builtin.ARRAY_PROTO_VALUES.ordinal] = &builtin_array_proto_values,
-    [Builtin.ARRAY_PROTO_WITH.ordinal] = &builtin_array_proto_with,
-    [Builtin.BOOLEAN.ordinal] = &builtin_boolean,
-    [Builtin.BOOLEAN_PROTO_TOSTRING.ordinal] = &builtin_boolean_proto_toString,
-    [Builtin.BOOLEAN_PROTO_VALUEOF.ordinal] = &builtin_boolean_proto_valueOf,
-    [Builtin.BOUND_CALL.ordinal] = &builtin_bound_call,
-    [Builtin.CONSOLE_LOG.ordinal] = &builtin_console_log,
-    [Builtin.CONSOLE_INFO.ordinal] = &builtin_console_info,
-    [Builtin.CONSOLE_DEBUG.ordinal] = &builtin_console_debug,
-    [Builtin.CONSOLE_TRACE.ordinal] = &builtin_console_trace,
-    [Builtin.CONSOLE_WARN.ordinal] = &builtin_console_warn,
-    [Builtin.CONSOLE_ERROR.ordinal] = &builtin_console_error,
-    [Builtin.CONSOLE_DIR.ordinal] = &builtin_console_dir,
-    [Builtin.CONSOLE_ASSERT.ordinal] = &builtin_console_assert,
-    [Builtin.DATE.ordinal] = &builtin_date,
-    [Builtin.DATE_NOW.ordinal] = &builtin_date_now,
-    [Builtin.DATE_PARSE.ordinal] = &builtin_date_parse,
-    [Builtin.DATE_PROTO_GETDATE.ordinal] = &builtin_date_proto_getDate,
-    [Builtin.DATE_PROTO_GETDAY.ordinal] = &builtin_date_proto_getDay,
-    [Builtin.DATE_PROTO_GETFULLYEAR.ordinal] = &builtin_date_proto_getFullYear,
-    [Builtin.DATE_PROTO_GETHOURS.ordinal] = &builtin_date_proto_getHours,
-    [Builtin.DATE_PROTO_GETMILLISECONDS.ordinal] = &builtin_date_proto_getMilliseconds,
-    [Builtin.DATE_PROTO_GETMINUTES.ordinal] = &builtin_date_proto_getMinutes,
-    [Builtin.DATE_PROTO_GETMONTH.ordinal] = &builtin_date_proto_getMonth,
-    [Builtin.DATE_PROTO_GETSECONDS.ordinal] = &builtin_date_proto_getSeconds,
-    [Builtin.DATE_PROTO_GETTIME.ordinal] = &builtin_date_proto_getTime,
-    [Builtin.DATE_PROTO_GETTIMEZONEOFFSET.ordinal] = &builtin_date_proto_getTimezoneOffset,
-    [Builtin.DATE_PROTO_GETUTCDATE.ordinal] = &builtin_date_proto_getUTCDate,
-    [Builtin.DATE_PROTO_GETUTCDAY.ordinal] = &builtin_date_proto_getUTCDay,
-    [Builtin.DATE_PROTO_GETUTCFULLYEAR.ordinal] = &builtin_date_proto_getUTCFullYear,
-    [Builtin.DATE_PROTO_GETUTCHOURS.ordinal] = &builtin_date_proto_getUTCHours,
-    [Builtin.DATE_PROTO_GETUTCMILLISECONDS.ordinal] = &builtin_date_proto_getUTCMilliseconds,
-    [Builtin.DATE_PROTO_GETUTCMINUTES.ordinal] = &builtin_date_proto_getUTCMinutes,
-    [Builtin.DATE_PROTO_GETUTCMONTH.ordinal] = &builtin_date_proto_getUTCMonth,
-    [Builtin.DATE_PROTO_GETUTCSECONDS.ordinal] = &builtin_date_proto_getUTCSeconds,
-    [Builtin.DATE_PROTO_SETDATE.ordinal] = &builtin_date_proto_setDate,
-    [Builtin.DATE_PROTO_SETFULLYEAR.ordinal] = &builtin_date_proto_setFullYear,
-    [Builtin.DATE_PROTO_SETHOURS.ordinal] = &builtin_date_proto_setHours,
-    [Builtin.DATE_PROTO_SETMILLISECONDS.ordinal] = &builtin_date_proto_setMilliseconds,
-    [Builtin.DATE_PROTO_SETMINUTES.ordinal] = &builtin_date_proto_setMinutes,
-    [Builtin.DATE_PROTO_SETMONTH.ordinal] = &builtin_date_proto_setMonth,
-    [Builtin.DATE_PROTO_SETSECONDS.ordinal] = &builtin_date_proto_setSeconds,
-    [Builtin.DATE_PROTO_SETTIME.ordinal] = &builtin_date_proto_setTime,
-    [Builtin.DATE_PROTO_SETUTCDATE.ordinal] = &builtin_date_proto_setUTCDate,
-    [Builtin.DATE_PROTO_SETUTCFULLYEAR.ordinal] = &builtin_date_proto_setUTCFullYear,
-    [Builtin.DATE_PROTO_SETUTCHOURS.ordinal] = &builtin_date_proto_setUTCHours,
-    [Builtin.DATE_PROTO_SETUTCMILLISECONDS.ordinal] = &builtin_date_proto_setUTCMilliseconds,
-    [Builtin.DATE_PROTO_SETUTCMINUTES.ordinal] = &builtin_date_proto_setUTCMinutes,
-    [Builtin.DATE_PROTO_SETUTCMONTH.ordinal] = &builtin_date_proto_setUTCMonth,
-    [Builtin.DATE_PROTO_SETUTCSECONDS.ordinal] = &builtin_date_proto_setUTCSeconds,
-    [Builtin.DATE_PROTO_TOISOSTRING.ordinal] = &builtin_date_proto_toISOString,
-    [Builtin.DATE_PROTO_TOJSON.ordinal] = &builtin_date_proto_toJSON,
-    [Builtin.DATE_PROTO_TOLOCALEDATESTRING.ordinal] = &builtin_date_proto_toLocaleDateString,
-    [Builtin.DATE_PROTO_TOLOCALESTRING.ordinal] = &builtin_date_proto_toLocaleString,
-    [Builtin.DATE_PROTO_TOLOCALETIMESTRING.ordinal] = &builtin_date_proto_toLocaleTimeString,
-    [Builtin.DATE_PROTO_TODATESTRING.ordinal] = &builtin_date_proto_toDateString,
-    [Builtin.DATE_PROTO_TOTIMESTRING.ordinal] = &builtin_date_proto_toTimeString,
-    [Builtin.DATE_PROTO_TOSTRING.ordinal] = &builtin_date_proto_toString,
-    [Builtin.DATE_PROTO_TOUTCSTRING.ordinal] = &builtin_date_proto_toUTCString,
-    [Builtin.DATE_PROTO_VALUEOF.ordinal] = &builtin_date_proto_valueOf,
-    [Builtin.DATE_UTC.ordinal] = &builtin_date_utc,
-    [Builtin.DECODE_URI.ordinal] = &builtin_decode_uri,
-    [Builtin.DECODE_URI_COMPONENT.ordinal] = &builtin_decode_uri_component,
-    [Builtin.ENCODE_URI.ordinal] = &builtin_encode_uri,
-    [Builtin.ENCODE_URI_COMPONENT.ordinal] = &builtin_encode_uri_component,
-    [Builtin.ERROR.ordinal] = &builtin_error,
-    [Builtin.ERROR_CAPTURE_STACK_TRACE.ordinal] = &builtin_error_captureStackTrace,
-    [Builtin.ERROR_PROTO_TOSTRING.ordinal] = &builtin_error_prototype_to_string,
-    [Builtin.EVAL.ordinal] = &builtin_eval,
-    [Builtin.EVAL_ERROR.ordinal] = &builtin_eval_error,
-    [Builtin.FUNCTION.ordinal] = &builtin_function,
-    [Builtin.FUNCTION_PROTO_APPLY.ordinal] = &builtin_function_proto_apply,
-    [Builtin.FUNCTION_PROTO_BIND.ordinal] = &builtin_function_proto_bind,
-    [Builtin.FUNCTION_PROTO_CALL.ordinal] = &builtin_function_proto_call,
-    [Builtin.FUNCTION_PROTO_TOSTRING.ordinal] = &builtin_function_proto_toString,
-    [Builtin.GENERATOR_FUNCTION.ordinal] = &builtin_generator_function,
-    [Builtin.GENERATOR_PROTO_NEXT.ordinal] = &builtin_generator_proto_next,
-    [Builtin.GENERATOR_PROTO_RETURN.ordinal] = &builtin_generator_proto_return,
-    [Builtin.GENERATOR_PROTO_THROW.ordinal] = &builtin_generator_proto_throw,
-    [Builtin.IS_FINITE.ordinal] = &builtin_is_finite,
-    [Builtin.IS_NAN.ordinal] = &builtin_is_nan,
-    [Builtin.ITERATOR_PROTO_SYMBOL_ITER.ordinal] = &builtin_iterator_proto_symbol_iter,
-    [Builtin.JSON_PARSE.ordinal] = &builtin_json_parse,
-    [Builtin.JSON_STRINGIFY.ordinal] = &builtin_json_stringify,
-    [Builtin.JSON_RAW_JSON.ordinal] = &builtin_json_raw_json,
-    [Builtin.JSON_IS_RAW_JSON.ordinal] = &builtin_json_is_raw_json,
-    [Builtin.MAP.ordinal] = &builtin_map,
-    [Builtin.MAP_GROUPBY.ordinal] = &builtin_map_groupBy,
-    [Builtin.MAP_ITERATOR_NEXT.ordinal] = &builtin_map_iterator_next,
-    [Builtin.MAP_PROTO_CLEAR.ordinal] = &builtin_map_proto_clear,
-    [Builtin.MAP_PROTO_DELETE.ordinal] = &builtin_map_proto_delete,
-    [Builtin.MAP_PROTO_ENTRIES.ordinal] = &builtin_map_proto_entries,
-    [Builtin.MAP_PROTO_FOREACH.ordinal] = &builtin_map_proto_forEach,
-    [Builtin.MAP_PROTO_GET.ordinal] = &builtin_map_proto_get,
-    [Builtin.MAP_PROTO_GETORINSERT.ordinal] = &builtin_map_proto_getOrInsert,
-    [Builtin.MAP_PROTO_GETORINSERTCOMPUTED.ordinal] = &builtin_map_proto_getOrInsertComputed,
-    [Builtin.MAP_PROTO_HAS.ordinal] = &builtin_map_proto_has,
-    [Builtin.MAP_PROTO_KEYS.ordinal] = &builtin_map_proto_keys,
-    [Builtin.MAP_PROTO_SET.ordinal] = &builtin_map_proto_set,
-    [Builtin.MAP_PROTO_SIZE_GET.ordinal] = &builtin_map_proto_size_get,
-    [Builtin.MAP_PROTO_VALUES.ordinal] = &builtin_map_proto_values,
-    [Builtin.MATH_ABS.ordinal] = &builtin_math_abs,
-    [Builtin.MATH_ACOS.ordinal] = &builtin_math_acos,
-    [Builtin.MATH_ACOSH.ordinal] = &builtin_math_acosh,
-    [Builtin.MATH_ASIN.ordinal] = &builtin_math_asin,
-    [Builtin.MATH_ASINH.ordinal] = &builtin_math_asinh,
-    [Builtin.MATH_ATAN.ordinal] = &builtin_math_atan,
-    [Builtin.MATH_ATAN2.ordinal] = &builtin_math_atan2,
-    [Builtin.MATH_ATANH.ordinal] = &builtin_math_atanh,
-    [Builtin.MATH_CBRT.ordinal] = &builtin_math_cbrt,
-    [Builtin.MATH_CEIL.ordinal] = &builtin_math_ceil,
-    [Builtin.MATH_CLZ32.ordinal] = &builtin_math_clz32,
-    [Builtin.MATH_COS.ordinal] = &builtin_math_cos,
-    [Builtin.MATH_COSH.ordinal] = &builtin_math_cosh,
-    [Builtin.MATH_EXP.ordinal] = &builtin_math_exp,
-    [Builtin.MATH_EXPM1.ordinal] = &builtin_math_expm1,
-    [Builtin.MATH_FLOOR.ordinal] = &builtin_math_floor,
-    [Builtin.MATH_FROUND.ordinal] = &builtin_math_fround,
-    [Builtin.MATH_F16ROUND.ordinal] = &builtin_math_f16round,
-    [Builtin.MATH_HYPOT.ordinal] = &builtin_math_hypot,
-    [Builtin.MATH_IMUL.ordinal] = &builtin_math_imul,
-    [Builtin.MATH_SUMPRECISE.ordinal] = &builtin_math_sumPrecise,
-    [Builtin.MATH_LOG.ordinal] = &builtin_math_log,
-    [Builtin.MATH_LOG10.ordinal] = &builtin_math_log10,
-    [Builtin.MATH_LOG1P.ordinal] = &builtin_math_log1p,
-    [Builtin.MATH_LOG2.ordinal] = &builtin_math_log2,
-    [Builtin.MATH_MAX.ordinal] = &builtin_math_max,
-    [Builtin.MATH_MIN.ordinal] = &builtin_math_min,
-    [Builtin.MATH_POW.ordinal] = &builtin_math_pow,
-    [Builtin.MATH_RANDOM.ordinal] = &builtin_math_random,
-    [Builtin.MATH_ROUND.ordinal] = &builtin_math_round,
-    [Builtin.MATH_SIGN.ordinal] = &builtin_math_sign,
-    [Builtin.MATH_SIN.ordinal] = &builtin_math_sin,
-    [Builtin.MATH_SINH.ordinal] = &builtin_math_sinh,
-    [Builtin.MATH_SQRT.ordinal] = &builtin_math_sqrt,
-    [Builtin.MATH_TAN.ordinal] = &builtin_math_tan,
-    [Builtin.MATH_TANH.ordinal] = &builtin_math_tanh,
-    [Builtin.MATH_TRUNC.ordinal] = &builtin_math_trunc,
-    [Builtin.NUMBER.ordinal] = &builtin_number,
-    [Builtin.NUMBER_ISFINITE.ordinal] = &builtin_number_isFinite,
-    [Builtin.NUMBER_ISINTEGER.ordinal] = &builtin_number_isInteger,
-    [Builtin.NUMBER_ISNAN.ordinal] = &builtin_number_isNaN,
-    [Builtin.NUMBER_ISSAFEINTEGER.ordinal] = &builtin_number_isSafeInteger,
-    [Builtin.NUMBER_PROTO_TOEXPONENTIAL.ordinal] = &builtin_number_proto_toExponential,
-    [Builtin.NUMBER_PROTO_TOFIXED.ordinal] = &builtin_number_proto_toFixed,
-    [Builtin.NUMBER_PROTO_TOPRECISION.ordinal] = &builtin_number_proto_toPrecision,
-    [Builtin.NUMBER_PROTO_TOSTRING.ordinal] = &builtin_number_proto_toString,
-    [Builtin.NUMBER_PROTO_VALUEOF.ordinal] = &builtin_number_proto_valueOf,
-    [Builtin.OBJECT.ordinal] = &builtin_object,
-    [Builtin.OBJECT_ASSIGN.ordinal] = &builtin_object_assign,
-    [Builtin.OBJECT_CREATE.ordinal] = &builtin_object_create,
-    [Builtin.OBJECT_DEFINEPROPERTIES.ordinal] = &builtin_object_defineProperties,
-    [Builtin.OBJECT_DEFINEPROPERTY.ordinal] = &builtin_object_defineProperty,
-    [Builtin.OBJECT_ENTRIES.ordinal] = &builtin_object_entries,
-    [Builtin.OBJECT_FREEZE.ordinal] = &builtin_object_freeze,
-    [Builtin.OBJECT_FROMENTRIES.ordinal] = &builtin_object_fromEntries,
-    [Builtin.OBJECT_GETOWNPROPERTYDESCRIPTOR.ordinal] = &builtin_object_getOwnPropertyDescriptor,
-    [Builtin.OBJECT_GETOWNPROPERTYNAMES.ordinal] = &builtin_object_getOwnPropertyNames,
-    [Builtin.OBJECT_GETOWNPROPERTYSYMBOLS.ordinal] = &builtin_object_getOwnPropertySymbols,
-    [Builtin.OBJECT_GETPROTOTYPEOF.ordinal] = &builtin_object_getPrototypeOf,
-    [Builtin.OBJECT_GROUPBY.ordinal] = &builtin_object_groupBy,
-    [Builtin.OBJECT_HASOWN.ordinal] = &builtin_object_hasOwn,
-    [Builtin.OBJECT_IS.ordinal] = &builtin_object_is,
-    [Builtin.OBJECT_ISEXTENSIBLE.ordinal] = &builtin_object_isExtensible,
-    [Builtin.OBJECT_ISFROZEN.ordinal] = &builtin_object_isFrozen,
-    [Builtin.OBJECT_ISSEALED.ordinal] = &builtin_object_isSealed,
-    [Builtin.OBJECT_KEYS.ordinal] = &builtin_object_keys,
-    [Builtin.OBJECT_PREVENTEXTENSIONS.ordinal] = &builtin_object_preventExtensions,
-    [Builtin.OBJECT_PROTO_HASOWNPROPERTY.ordinal] = &builtin_object_proto_hasOwnProperty,
-    [Builtin.OBJECT_PROTO_ISPROTOTYPEOF.ordinal] = &builtin_object_proto_isPrototypeOf,
-    [Builtin.OBJECT_PROTO_PROPERTYISENUMERABLE.ordinal] = &builtin_object_proto_propertyIsEnumerable,
-    [Builtin.OBJECT_PROTO_TOLOCALESTRING.ordinal] = &builtin_object_proto_toLocaleString,
-    [Builtin.OBJECT_PROTO_TOSTRING.ordinal] = &builtin_object_proto_toString,
-    [Builtin.OBJECT_PROTO_VALUEOF.ordinal] = &builtin_object_proto_valueOf,
-    [Builtin.OBJECT_PROTO___PROTO___GETTER.ordinal] = &builtin_object_proto___proto___getter,
-    [Builtin.OBJECT_PROTO___PROTO___SETTER.ordinal] = &builtin_object_proto___proto___setter,
-    [Builtin.OBJECT_SEAL.ordinal] = &builtin_object_seal,
-    [Builtin.OBJECT_SETPROTOTYPEOF.ordinal] = &builtin_object_setPrototypeOf,
-    [Builtin.OBJECT_VALUES.ordinal] = &builtin_object_values,
-    [Builtin.OBJECT_GETOWNPROPERTYDESCRIPTORS.ordinal] = &builtin_object_getOwnPropertyDescriptors,
-    [Builtin.PARSE_FLOAT.ordinal] = &builtin_parse_float,
-    [Builtin.PARSE_INT.ordinal] = &builtin_parse_int,
-    [Builtin.PRINT.ordinal] = &builtin_print,
-    [Builtin.PROMISE.ordinal] = &builtin_promise,
-    [Builtin.PROMISE_ALL.ordinal] = &builtin_promise_all,
-    [Builtin.PROMISE_ALL_RESOLVE_ELEMENT.ordinal] = &builtin_promise_all_resolve_element,
-    [Builtin.PROMISE_ALL_REJECT_ELEMENT.ordinal] = &builtin_promise_all_reject_element,
-    [Builtin.PROMISE_ALLSETTLED.ordinal] = &builtin_promise_allsettled,
-    [Builtin.PROMISE_ALLSETTLED_RESOLVE_ELEMENT.ordinal] = &builtin_promise_allsettled_resolve_element,
-    [Builtin.PROMISE_ALLSETTLED_REJECT_ELEMENT.ordinal] = &builtin_promise_allsettled_reject_element,
-    [Builtin.PROMISE_ANY.ordinal] = &builtin_promise_any,
-    [Builtin.PROMISE_ANY_RESOLVE_ELEMENT.ordinal] = &builtin_promise_any_resolve_element,
-    [Builtin.PROMISE_ANY_REJECT_ELEMENT.ordinal] = &builtin_promise_any_reject_element,
-    [Builtin.PROMISE_SYNTHETIC_EXECUTOR.ordinal] = &builtin_promise_synthetic_executor,
-    [Builtin.PROMISE_RESOLVE_THENABLE_JOB.ordinal] = &builtin_promise_resolve_thenable_job,
-    [Builtin.PROMISE_THEN_FINALLY.ordinal] = &builtin_promise_then_finally,
-    [Builtin.PROMISE_CATCH_FINALLY.ordinal] = &builtin_promise_catch_finally,
-    [Builtin.ARRAY_SPECIES_GETTER.ordinal] = &builtin_array_species_getter,
-    [Builtin.PROMISE_PROTO_CATCH.ordinal] = &builtin_promise_proto_catch,
-    [Builtin.PROMISE_PROTO_FINALLY.ordinal] = &builtin_promise_proto_finally,
-    [Builtin.PROMISE_PROTO_THEN.ordinal] = &builtin_promise_proto_then,
-    [Builtin.PROMISE_RACE.ordinal] = &builtin_promise_race,
-    [Builtin.PROMISE_REJECT.ordinal] = &builtin_promise_reject,
-    [Builtin.PROMISE_REJECT_CALLBACK.ordinal] = &builtin_promise_reject_callback,
-    [Builtin.PROMISE_RESOLVE.ordinal] = &builtin_promise_resolve,
-    [Builtin.PROMISE_RESOLVE_CALLBACK.ordinal] = &builtin_promise_resolve_callback,
-    [Builtin.RANGE_ERROR.ordinal] = &builtin_range_error,
-    [Builtin.REFERENCE_ERROR.ordinal] = &builtin_reference_error,
-    [Builtin.REGEXP.ordinal] = &builtin_regexp,
-    [Builtin.REGEXP_PROTO_COMPILE.ordinal] = &builtin_regexp_proto_compile,
-    [Builtin.REGEXP_PROTO_EXEC.ordinal] = &builtin_regexp_proto_exec,
-    [Builtin.REGEXP_PROTO_GET_DOTALL.ordinal] = &builtin_regexp_proto_get_dotAll,
-    [Builtin.REGEXP_PROTO_GET_FLAGS.ordinal] = &builtin_regexp_proto_get_flags,
-    [Builtin.REGEXP_PROTO_GET_GLOBAL.ordinal] = &builtin_regexp_proto_get_global,
-    [Builtin.REGEXP_PROTO_GET_HASINDICES.ordinal] = &builtin_regexp_proto_get_hasIndices,
-    [Builtin.REGEXP_PROTO_GET_IGNORECASE.ordinal] = &builtin_regexp_proto_get_ignoreCase,
-    [Builtin.REGEXP_PROTO_GET_MULTILINE.ordinal] = &builtin_regexp_proto_get_multiline,
-    [Builtin.REGEXP_PROTO_GET_SOURCE.ordinal] = &builtin_regexp_proto_get_source,
-    [Builtin.REGEXP_PROTO_GET_STICKY.ordinal] = &builtin_regexp_proto_get_sticky,
-    [Builtin.REGEXP_PROTO_GET_UNICODE.ordinal] = &builtin_regexp_proto_get_unicode,
-    [Builtin.REGEXP_PROTO_GET_UNICODESETS.ordinal] = &builtin_regexp_proto_get_unicodeSets,
-    [Builtin.REGEXP_PROTO_SYMBOL_MATCH.ordinal] = &builtin_regexp_proto_symbol_match,
-    [Builtin.REGEXP_PROTO_SYMBOL_SEARCH.ordinal] = &builtin_regexp_proto_symbol_search,
-    [Builtin.REGEXP_PROTO_SYMBOL_REPLACE.ordinal] = &builtin_regexp_proto_symbol_replace,
-    [Builtin.REGEXP_PROTO_SYMBOL_SPLIT.ordinal] = &builtin_regexp_proto_symbol_split,
-    [Builtin.REGEXP_PROTO_SYMBOL_MATCHALL.ordinal] = &builtin_regexp_proto_symbol_matchAll,
-    [Builtin.REGEXP_PROTO_TEST.ordinal] = &builtin_regexp_proto_test,
-    [Builtin.REGEXP_PROTO_TOSTRING.ordinal] = &builtin_regexp_proto_toString,
-    [Builtin.REGEXP_STRING_ITERATOR_NEXT.ordinal] = &builtin_regexp_string_iterator_next,
-    [Builtin.ASYNC_RESUME.ordinal] = &builtin_async_resume,
-    [Builtin.ASYNC_REJECT.ordinal] = &builtin_async_reject,
-    [Builtin.REFLECT_OWNKEYS.ordinal] = &builtin_reflect_ownKeys,
-    [Builtin.RESET_GLOBALS.ordinal] = &builtin_reset_globals,
-    [Builtin.SET.ordinal] = &builtin_set,
-    [Builtin.SET_ITERATOR_NEXT.ordinal] = &builtin_set_iterator_next,
-    [Builtin.SET_PROTO_ADD.ordinal] = &builtin_set_proto_add,
-    [Builtin.SET_PROTO_SIZE_GET.ordinal] = &builtin_set_proto_size_get,
-    [Builtin.SET_PROTO_CLEAR.ordinal] = &builtin_set_proto_clear,
-    [Builtin.SET_PROTO_DELETE.ordinal] = &builtin_set_proto_delete,
-    [Builtin.SET_PROTO_ENTRIES.ordinal] = &builtin_set_proto_entries,
-    [Builtin.SET_PROTO_FOREACH.ordinal] = &builtin_set_proto_forEach,
-    [Builtin.SET_PROTO_HAS.ordinal] = &builtin_set_proto_has,
-    [Builtin.SET_PROTO_VALUES.ordinal] = &builtin_set_proto_values,
-    [Builtin.STRING.ordinal] = &builtin_string,
-    [Builtin.STRING_FROMCHARCODE.ordinal] = &builtin_string_fromcharcode,
-    [Builtin.STRING_FROMCODEPOINT.ordinal] = &builtin_string_fromcodepoint,
-    [Builtin.STRING_RAW.ordinal] = &builtin_string_raw,
-    [Builtin.STRING_ITERATOR_NEXT.ordinal] = &builtin_string_iterator_next,
-    [Builtin.STRING_PROTO_AT.ordinal] = &builtin_string_proto_at,
-    [Builtin.STRING_PROTO_CHARAT.ordinal] = &builtin_string_proto_charAt,
-    [Builtin.STRING_PROTO_CHARCODEAT.ordinal] = &builtin_string_proto_charCodeAt,
-    [Builtin.STRING_PROTO_CODEPOINTAT.ordinal] = &builtin_string_proto_codePointAt,
-    [Builtin.STRING_PROTO_CONCAT.ordinal] = &builtin_string_proto_concat,
-    [Builtin.STRING_PROTO_ENDSWITH.ordinal] = &builtin_string_proto_endsWith,
-    [Builtin.STRING_PROTO_INCLUDES.ordinal] = &builtin_string_proto_includes,
-    [Builtin.STRING_PROTO_INDEXOF.ordinal] = &builtin_string_proto_indexOf,
-    [Builtin.STRING_PROTO_LASTINDEXOF.ordinal] = &builtin_string_proto_lastIndexOf,
-    [Builtin.STRING_PROTO_MATCH.ordinal] = &builtin_string_proto_match,
-    [Builtin.STRING_PROTO_MATCHALL.ordinal] = &builtin_string_proto_matchAll,
-    [Builtin.STRING_PROTO_NORMALIZE.ordinal]    = &builtin_string_proto_normalize,
-    [Builtin.STRING_PROTO_ISWELLFORMED.ordinal] = &builtin_string_proto_isWellFormed,
-    [Builtin.STRING_PROTO_TOWELLFORMED.ordinal] = &builtin_string_proto_toWellFormed,
-    [Builtin.STRING_PROTO_PADEND.ordinal] = &builtin_string_proto_padEnd,
-    [Builtin.STRING_PROTO_PADSTART.ordinal] = &builtin_string_proto_padStart,
-    [Builtin.STRING_PROTO_REPEAT.ordinal] = &builtin_string_proto_repeat,
-    [Builtin.STRING_PROTO_REPLACE.ordinal] = &builtin_string_proto_replace,
-    [Builtin.STRING_PROTO_REPLACEALL.ordinal] = &builtin_string_proto_replaceAll,
-    [Builtin.STRING_PROTO_SEARCH.ordinal] = &builtin_string_proto_search,
-    [Builtin.STRING_PROTO_SLICE.ordinal] = &builtin_string_proto_slice,
-    [Builtin.STRING_PROTO_SPLIT.ordinal] = &builtin_string_proto_split,
-    [Builtin.STRING_PROTO_STARTSWITH.ordinal] = &builtin_string_proto_startsWith,
-    [Builtin.STRING_PROTO_SUBSTR.ordinal] = &builtin_string_proto_substr,
-    [Builtin.STRING_PROTO_SUBSTRING.ordinal] = &builtin_string_proto_substring,
-    [Builtin.STRING_PROTO_SYMBOL_ITER.ordinal] = &builtin_string_proto_symbol_iter,
-    [Builtin.STRING_PROTO_TOLOWERCASE.ordinal] = &builtin_string_proto_toLowerCase,
-    [Builtin.STRING_PROTO_TOSTRING.ordinal] = &builtin_string_proto_toString,
-    [Builtin.STRING_PROTO_TOUPPERCASE.ordinal] = &builtin_string_proto_toUpperCase,
-    [Builtin.STRING_PROTO_TRIM.ordinal] = &builtin_string_proto_trim,
-    [Builtin.STRING_PROTO_TOLOCALELOWERCASE.ordinal] = &builtin_string_proto_toLocaleLowerCase,
-    [Builtin.STRING_PROTO_TOLOCALEUPPERCASE.ordinal] = &builtin_string_proto_toLocaleUpperCase,
-    [Builtin.STRING_PROTO_LOCALECOMPARE.ordinal] = &builtin_string_proto_localeCompare,
-    [Builtin.STRING_PROTO_TRIMEND.ordinal] = &builtin_string_proto_trimEnd,
-    [Builtin.STRING_PROTO_TRIMSTART.ordinal] = &builtin_string_proto_trimStart,
-    [Builtin.STRING_PROTO_VALUEOF.ordinal] = &builtin_string_proto_valueOf,
-    [Builtin.SYMBOL.ordinal] = &builtin_symbol,
-    [Builtin.SYMBOL_FOR.ordinal] = &builtin_symbol_for,
-    [Builtin.SYMBOL_KEYFOR.ordinal] = &builtin_symbol_keyfor,
-    [Builtin.SYMBOL_PROTO_TOSTRING.ordinal] = &builtin_symbol_proto_toString,
-    [Builtin.SYMBOL_PROTO_VALUEOF.ordinal] = &builtin_symbol_proto_valueOf,
-    [Builtin.SYMBOL_PROTO_TOPRIMITIVE.ordinal] = &builtin_symbol_proto_toprimitive,
-    [Builtin.SYMBOL_PROTO_DESCRIPTION_GET.ordinal] = &builtin_symbol_proto_description_get,
-    [Builtin.SYNTAX_ERROR.ordinal] = &builtin_syntax_error,
-    [Builtin.TYPE_ERROR.ordinal] = &builtin_type_error,
-    [Builtin.URI_ERROR.ordinal] = &builtin_uri_error,
-    [Builtin.WEAKMAP.ordinal] = &builtin_weakmap,
-    [Builtin.WEAKMAP_PROTO_DELETE.ordinal] = &builtin_weakmap_proto_delete,
-    [Builtin.WEAKMAP_PROTO_GET.ordinal] = &builtin_weakmap_proto_get,
-    [Builtin.WEAKMAP_PROTO_GETORINSERT.ordinal] = &builtin_weakmap_proto_getOrInsert,
-    [Builtin.WEAKMAP_PROTO_GETORINSERTCOMPUTED.ordinal] = &builtin_weakmap_proto_getOrInsertComputed,
-    [Builtin.WEAKMAP_PROTO_HAS.ordinal] = &builtin_weakmap_proto_has,
-    [Builtin.WEAKMAP_PROTO_SET.ordinal] = &builtin_weakmap_proto_set,
-    [Builtin.WEAKSET.ordinal] = &builtin_weakset,
-    [Builtin.WEAKSET_PROTO_ADD.ordinal] = &builtin_weakset_proto_add,
-    [Builtin.WEAKSET_PROTO_DELETE.ordinal] = &builtin_weakset_proto_delete,
-    [Builtin.WEAKSET_PROTO_HAS.ordinal] = &builtin_weakset_proto_has,
-    [Builtin.WEAKREF.ordinal] = &builtin_weakref,
-    [Builtin.WEAKREF_PROTO_DEREF.ordinal] = &builtin_weakref_proto_deref,
-    [Builtin.FINALIZATION_REGISTRY.ordinal] = &builtin_finalization_registry,
-    [Builtin.FINALIZATION_REGISTRY_PROTO_REGISTER.ordinal] = &builtin_finalization_registry_proto_register,
-    [Builtin.FINALIZATION_REGISTRY_PROTO_UNREGISTER.ordinal] = &builtin_finalization_registry_proto_unregister,
-    // TypedArray constructors
-    [Builtin.INT8ARRAY.ordinal] = &builtin_int8array,
-    [Builtin.UINT8ARRAY.ordinal] = &builtin_uint8array,
-    [Builtin.UINT8CLAMPEDARRAY.ordinal] = &builtin_uint8clampedarray,
-    [Builtin.INT16ARRAY.ordinal] = &builtin_int16array,
-    [Builtin.UINT16ARRAY.ordinal] = &builtin_uint16array,
-    [Builtin.INT32ARRAY.ordinal] = &builtin_int32array,
-    [Builtin.UINT32ARRAY.ordinal] = &builtin_uint32array,
-    [Builtin.FLOAT16ARRAY.ordinal] = &builtin_float16array,
-    [Builtin.FLOAT32ARRAY.ordinal] = &builtin_float32array,
-    [Builtin.FLOAT64ARRAY.ordinal] = &builtin_float64array,
-    [Builtin.BIGINT64ARRAY.ordinal] = &builtin_bigint64array,
-    [Builtin.BIGUINT64ARRAY.ordinal] = &builtin_biguint64array,
-    // ArrayBuffer core (plan 049 stage 1)
-    [Builtin.ARRAYBUFFER.ordinal] = &builtin_arraybuffer,
-    [Builtin.ARRAYBUFFER_ISVIEW.ordinal] = &builtin_arraybuffer_isview,
-    [Builtin.ARRAYBUFFER_PROTO_BYTELENGTH_GET.ordinal] = &builtin_arraybuffer_proto_bytelength_get,
-    [Builtin.ARRAYBUFFER_PROTO_SLICE.ordinal] = &builtin_arraybuffer_proto_slice,
-    [Builtin.ARRAYBUFFER_PROTO_DETACHED_GET.ordinal] = &builtin_arraybuffer_proto_detached_get,
-    [Builtin.ARRAYBUFFER_SPECIES_GET.ordinal] = &builtin_arraybuffer_species_get,
-    [Builtin.ARRAYBUFFER_PROTO_RESIZE.ordinal] = &builtin_arraybuffer_proto_resize,
-    [Builtin.ARRAYBUFFER_PROTO_RESIZABLE_GET.ordinal] = &builtin_arraybuffer_proto_resizable_get,
-    [Builtin.ARRAYBUFFER_PROTO_MAXBYTELENGTH_GET.ordinal] = &builtin_arraybuffer_proto_maxbytelength_get,
-    [Builtin.ARRAYBUFFER_PROTO_TRANSFER.ordinal] = &builtin_arraybuffer_proto_transfer,
-    [Builtin.ARRAYBUFFER_PROTO_TRANSFER_TO_FIXED_LENGTH.ordinal] = &builtin_arraybuffer_proto_transfer_to_fixed_length,
-    [Builtin.DETACH_ARRAYBUFFER.ordinal] = &builtin_detach_arraybuffer,
-    // SharedArrayBuffer (single-agent)
-    [Builtin.SHAREDARRAYBUFFER.ordinal] = &builtin_sharedarraybuffer,
-    [Builtin.SHAREDARRAYBUFFER_PROTO_BYTELENGTH_GET.ordinal] = &builtin_sharedarraybuffer_proto_bytelength_get,
-    [Builtin.SHAREDARRAYBUFFER_PROTO_GROWABLE_GET.ordinal] = &builtin_sharedarraybuffer_proto_growable_get,
-    [Builtin.SHAREDARRAYBUFFER_PROTO_MAXBYTELENGTH_GET.ordinal] = &builtin_sharedarraybuffer_proto_maxbytelength_get,
-    [Builtin.SHAREDARRAYBUFFER_PROTO_GROW.ordinal] = &builtin_sharedarraybuffer_proto_grow,
-    [Builtin.SHAREDARRAYBUFFER_PROTO_SLICE.ordinal] = &builtin_sharedarraybuffer_proto_slice,
-    [Builtin.SHAREDARRAYBUFFER_SPECIES_GET.ordinal] = &builtin_sharedarraybuffer_species_get,
-    // Atomics
-    [Builtin.ATOMICS_ADD.ordinal] = &builtin_atomics_add,
-    [Builtin.ATOMICS_AND.ordinal] = &builtin_atomics_and,
-    [Builtin.ATOMICS_COMPAREEXCHANGE.ordinal] = &builtin_atomics_compareexchange,
-    [Builtin.ATOMICS_EXCHANGE.ordinal] = &builtin_atomics_exchange,
-    [Builtin.ATOMICS_LOAD.ordinal] = &builtin_atomics_load,
-    [Builtin.ATOMICS_OR.ordinal] = &builtin_atomics_or,
-    [Builtin.ATOMICS_STORE.ordinal] = &builtin_atomics_store,
-    [Builtin.ATOMICS_SUB.ordinal] = &builtin_atomics_sub,
-    [Builtin.ATOMICS_XOR.ordinal] = &builtin_atomics_xor,
-    [Builtin.ATOMICS_ISLOCKFREE.ordinal] = &builtin_atomics_islockfree,
-    [Builtin.ATOMICS_WAIT.ordinal] = &builtin_atomics_wait,
-    [Builtin.ATOMICS_NOTIFY.ordinal] = &builtin_atomics_notify,
-    [Builtin.ATOMICS_WAITASYNC.ordinal] = &builtin_atomics_waitasync,
-    [Builtin.ATOMICS_PAUSE.ordinal] = &builtin_atomics_pause,
-    // TypedArray.prototype accessors (plan 049 stage 2)
-    [Builtin.TYPEDARRAY_PROTO_LENGTH_GET.ordinal] = &builtin_typedarray_proto_length_get,
-    [Builtin.TYPEDARRAY_PROTO_BYTELENGTH_GET.ordinal] = &builtin_typedarray_proto_bytelength_get,
-    [Builtin.TYPEDARRAY_PROTO_BYTEOFFSET_GET.ordinal] = &builtin_typedarray_proto_byteoffset_get,
-    [Builtin.TYPEDARRAY_PROTO_BUFFER_GET.ordinal] = &builtin_typedarray_proto_buffer_get,
-    [Builtin.TYPEDARRAY_PROTO_TOSTRINGTAG_GET.ordinal] = &builtin_typedarray_proto_tostringtag_get,
+// Function-pointer dispatch table, populated once at startup from each
+// enum member's `handler` associated value — the single per-builtin source
+// of truth declared on Builtin above. Builtin.LAST.ordinal is one past the
+// highest valid index; the bounds check in dispatch_builtin mirrors the old
+// `default:` arm (set_undefined on the result). Ordinals with no JS-visible
+// dispatch path (e.g. reserved/unused builtins) carry a null handler and are
+// rejected the same way a missing switch arm used to be.
+BuiltinFunc[Builtin.LAST.ordinal] builtin_dispatch_table;
 
-    // DataView constructor/prototype (plan 049 stage 3)
-    [Builtin.DATAVIEW.ordinal] = &builtin_dataview,
-    [Builtin.DATAVIEW_PROTO_BUFFER_GET.ordinal] = &builtin_dataview_proto_buffer_get,
-    [Builtin.DATAVIEW_PROTO_BYTELENGTH_GET.ordinal] = &builtin_dataview_proto_bytelength_get,
-    [Builtin.DATAVIEW_PROTO_BYTEOFFSET_GET.ordinal] = &builtin_dataview_proto_byteoffset_get,
-    [Builtin.DATAVIEW_GET_INT8.ordinal] = &builtin_dataview_get_int8,
-    [Builtin.DATAVIEW_GET_UINT8.ordinal] = &builtin_dataview_get_uint8,
-    [Builtin.DATAVIEW_GET_INT16.ordinal] = &builtin_dataview_get_int16,
-    [Builtin.DATAVIEW_GET_UINT16.ordinal] = &builtin_dataview_get_uint16,
-    [Builtin.DATAVIEW_GET_INT32.ordinal] = &builtin_dataview_get_int32,
-    [Builtin.DATAVIEW_GET_UINT32.ordinal] = &builtin_dataview_get_uint32,
-    [Builtin.DATAVIEW_GET_FLOAT16.ordinal] = &builtin_dataview_get_float16,
-    [Builtin.DATAVIEW_GET_FLOAT32.ordinal] = &builtin_dataview_get_float32,
-    [Builtin.DATAVIEW_GET_FLOAT64.ordinal] = &builtin_dataview_get_float64,
-    [Builtin.DATAVIEW_SET_INT8.ordinal] = &builtin_dataview_set_int8,
-    [Builtin.DATAVIEW_SET_UINT8.ordinal] = &builtin_dataview_set_uint8,
-    [Builtin.DATAVIEW_SET_INT16.ordinal] = &builtin_dataview_set_int16,
-    [Builtin.DATAVIEW_SET_UINT16.ordinal] = &builtin_dataview_set_uint16,
-    [Builtin.DATAVIEW_SET_INT32.ordinal] = &builtin_dataview_set_int32,
-    [Builtin.DATAVIEW_SET_UINT32.ordinal] = &builtin_dataview_set_uint32,
-    [Builtin.DATAVIEW_SET_FLOAT16.ordinal] = &builtin_dataview_set_float16,
-    [Builtin.DATAVIEW_SET_FLOAT32.ordinal] = &builtin_dataview_set_float32,
-    [Builtin.DATAVIEW_SET_FLOAT64.ordinal] = &builtin_dataview_set_float64,
-    // %TypedArray%.prototype wave A (plan 049 stage 4)
-    [Builtin.TA_PROTO_VALUES.ordinal]          = &builtin_ta_proto_values,
-    [Builtin.TA_PROTO_KEYS.ordinal]            = &builtin_ta_proto_keys,
-    [Builtin.TA_PROTO_ENTRIES.ordinal]         = &builtin_ta_proto_entries,
-    [Builtin.TA_PROTO_SET.ordinal]             = &builtin_ta_proto_set,
-    [Builtin.TA_PROTO_SUBARRAY.ordinal]        = &builtin_ta_proto_subarray,
-    [Builtin.TA_PROTO_FILL.ordinal]            = &builtin_ta_proto_fill,
-    [Builtin.TA_PROTO_COPYWITHIN.ordinal]      = &builtin_ta_proto_copyWithin,
-    [Builtin.TA_PROTO_SLICE.ordinal]           = &builtin_ta_proto_slice,
-    // %TypedArray%.prototype wave B (plan 049 stage 5)
-    [Builtin.TA_PROTO_INDEX_OF.ordinal]        = &builtin_ta_proto_indexOf,
-    [Builtin.TA_PROTO_LAST_INDEX_OF.ordinal]   = &builtin_ta_proto_lastIndexOf,
-    [Builtin.TA_PROTO_INCLUDES.ordinal]        = &builtin_ta_proto_includes,
-    [Builtin.TA_PROTO_JOIN.ordinal]            = &builtin_ta_proto_join,
-    [Builtin.TA_PROTO_FOR_EACH.ordinal]        = &builtin_ta_proto_forEach,
-    [Builtin.TA_PROTO_EVERY.ordinal]           = &builtin_ta_proto_every,
-    [Builtin.TA_PROTO_SOME.ordinal]            = &builtin_ta_proto_some,
-    [Builtin.TA_PROTO_REDUCE.ordinal]          = &builtin_ta_proto_reduce,
-    [Builtin.TA_PROTO_REDUCE_RIGHT.ordinal]    = &builtin_ta_proto_reduceRight,
-    [Builtin.TA_PROTO_MAP.ordinal]             = &builtin_ta_proto_map,
-    [Builtin.TA_PROTO_FILTER.ordinal]          = &builtin_ta_proto_filter,
-    [Builtin.TA_PROTO_FIND.ordinal]            = &builtin_ta_proto_find,
-    [Builtin.TA_PROTO_FIND_INDEX.ordinal]      = &builtin_ta_proto_findIndex,
-    [Builtin.TA_PROTO_FIND_LAST.ordinal]       = &builtin_ta_proto_findLast,
-    [Builtin.TA_PROTO_FIND_LAST_INDEX.ordinal] = &builtin_ta_proto_findLastIndex,
-    [Builtin.TA_PROTO_REVERSE.ordinal]         = &builtin_ta_proto_reverse,
-    [Builtin.TA_PROTO_TO_REVERSED.ordinal]     = &builtin_ta_proto_toReversed,
-    [Builtin.TA_PROTO_AT.ordinal]              = &builtin_ta_proto_at,
-    [Builtin.TA_PROTO_SORT.ordinal]            = &builtin_ta_proto_sort,
-    [Builtin.TA_PROTO_TO_SORTED.ordinal]       = &builtin_ta_proto_toSorted,
-    [Builtin.TA_PROTO_WITH.ordinal]            = &builtin_ta_proto_with,
-    [Builtin.TA_PROTO_TO_STRING.ordinal]       = &builtin_ta_proto_toString,
-    [Builtin.TA_PROTO_TO_LOCALE_STRING.ordinal] = &builtin_ta_proto_toLocaleString,
-    [Builtin.TA_OF.ordinal]                    = &builtin_ta_of,
-    [Builtin.TA_FROM.ordinal]                  = &builtin_ta_from,
-    [Builtin.UINT8ARRAY_FROM_BASE64.ordinal]       = &builtin_uint8array_from_base64,
-    [Builtin.UINT8ARRAY_FROM_HEX.ordinal]          = &builtin_uint8array_from_hex,
-    [Builtin.UINT8ARRAY_PROTO_TO_BASE64.ordinal]   = &builtin_uint8array_proto_to_base64,
-    [Builtin.UINT8ARRAY_PROTO_TO_HEX.ordinal]      = &builtin_uint8array_proto_to_hex,
-    [Builtin.UINT8ARRAY_PROTO_SET_FROM_BASE64.ordinal] = &builtin_uint8array_proto_set_from_base64,
-    [Builtin.UINT8ARRAY_PROTO_SET_FROM_HEX.ordinal]    = &builtin_uint8array_proto_set_from_hex,
-    [Builtin.TYPEDARRAY_INTRINSIC.ordinal]     = &builtin_typedarray_intrinsic,
-    [Builtin.FUNCTION_PROTO_HASINSTANCE.ordinal] = &builtin_function_proto_hasInstance,
-    [Builtin.DATE_PROTO_TOPRIMITIVE.ordinal]     = &builtin_date_proto_toPrimitive,
-    [Builtin.PROMISE_SPECIES_GETTER.ordinal]     = &builtin_promise_species_getter,
-    [Builtin.ASYNC_FUNCTION.ordinal]             = &builtin_async_function,
-    [Builtin.PROXY.ordinal]                      = &builtin_proxy,
-    [Builtin.PROXY_REVOCABLE.ordinal]            = &builtin_proxy_revocable,
-    [Builtin.PROXY_REVOKE.ordinal]               = &builtin_proxy_revoke,
-    [Builtin.PROXY_CALL.ordinal]                 = &builtin_proxy_call,
-    [Builtin.TA_SPECIES_GET.ordinal]             = &builtin_ta_species_get,
-    // evalScript runs its argument as an independent global Script
-    // (ES2015 §18.2.1 ScriptEvaluation), not as an eval call.
-    [Builtin.EVAL_SCRIPT.ordinal]                = &builtin_eval_script,
-    [Builtin.REGEXP_SPECIES_GETTER.ordinal]       = &builtin_regexp_species_getter,
-    [Builtin.MODULE_BINDING_GETTER.ordinal]       = &builtin_module_binding_getter,
-    [Builtin.REFLECT_GET.ordinal]                 = &builtin_reflect_get,
-    [Builtin.REFLECT_SET.ordinal]                 = &builtin_reflect_set,
-    [Builtin.REFLECT_HAS.ordinal]                 = &builtin_reflect_has,
-    [Builtin.REFLECT_DELETE_PROPERTY.ordinal]     = &builtin_reflect_deleteProperty,
-    [Builtin.REFLECT_GET_OWN_PROPERTY_DESCRIPTOR.ordinal] = &builtin_reflect_getOwnPropertyDescriptor,
-    [Builtin.REFLECT_DEFINE_PROPERTY.ordinal]     = &builtin_reflect_defineProperty,
-    [Builtin.REFLECT_GET_PROTOTYPE_OF.ordinal]    = &builtin_reflect_getPrototypeOf,
-    [Builtin.REFLECT_SET_PROTOTYPE_OF.ordinal]    = &builtin_reflect_setPrototypeOf,
-    [Builtin.REFLECT_IS_EXTENSIBLE.ordinal]       = &builtin_reflect_isExtensible,
-    [Builtin.REFLECT_PREVENT_EXTENSIONS.ordinal]  = &builtin_reflect_preventExtensions,
-    [Builtin.REFLECT_APPLY.ordinal]               = &builtin_reflect_apply,
-    [Builtin.REFLECT_CONSTRUCT.ordinal]           = &builtin_reflect_construct,
-    [Builtin.PROMISE_IDENTITY.ordinal]            = &builtin_promise_identity,
-    [Builtin.PROMISE_THROWER.ordinal]             = &builtin_promise_thrower,
-    [Builtin.MAP_SPECIES_GETTER.ordinal]          = &builtin_map_species_getter,
-    [Builtin.SET_SPECIES_GETTER.ordinal]          = &builtin_set_species_getter,
-    [Builtin.DATAVIEW_GET_BIGINT64.ordinal]       = &builtin_dataview_get_bigint64,
-    [Builtin.DATAVIEW_GET_BIGUINT64.ordinal]      = &builtin_dataview_get_biguint64,
-    [Builtin.DATAVIEW_SET_BIGINT64.ordinal]       = &builtin_dataview_set_bigint64,
-    [Builtin.DATAVIEW_SET_BIGUINT64.ordinal]      = &builtin_dataview_set_biguint64,
-    [Builtin.FUNCTION_PROTO_RESTRICTED_GETTER.ordinal] = &builtin_function_proto_restricted_getter,
-    [Builtin.FUNCTION_PROTO_RESTRICTED_SETTER.ordinal] = &builtin_function_proto_restricted_setter,
-    [Builtin.BIGINT.ordinal]                      = &builtin_bigint,
-    [Builtin.BIGINT_AS_INTN.ordinal]              = &builtin_bigint_as_intn,
-    [Builtin.BIGINT_AS_UINTN.ordinal]             = &builtin_bigint_as_uintn,
-    [Builtin.BIGINT_PROTO_TOSTRING.ordinal]       = &builtin_bigint_proto_toString,
-    [Builtin.BIGINT_PROTO_VALUEOF.ordinal]        = &builtin_bigint_proto_valueOf,
-    [Builtin.ASYNC_FROM_SYNC_NEXT.ordinal]           = &builtin_async_from_sync_next,
-    [Builtin.ASYNC_FROM_SYNC_RETURN.ordinal]         = &builtin_async_from_sync_return,
-    [Builtin.ASYNC_FROM_SYNC_THROW.ordinal]          = &builtin_async_from_sync_throw,
-    [Builtin.ASYNC_FROM_SYNC_VALUE_UNWRAP.ordinal]   = &builtin_async_from_sync_value_unwrap,
-    [Builtin.ASYNC_FROM_SYNC_REJECT_FORWARD.ordinal] = &builtin_async_from_sync_reject_forward,
-    [Builtin.ASYNC_ITERATOR_PROTO_SYMBOL_ASYNCITER.ordinal] = &builtin_async_iterator_proto_symbol_asynciter,
-    [Builtin.ASYNC_GENERATOR_PROTO_NEXT.ordinal]     = &builtin_async_generator_proto_next,
-    [Builtin.ASYNC_GENERATOR_PROTO_RETURN.ordinal]   = &builtin_async_generator_proto_return,
-    [Builtin.ASYNC_GENERATOR_PROTO_THROW.ordinal]    = &builtin_async_generator_proto_throw,
-    [Builtin.ASYNC_GENERATOR_FUNCTION.ordinal]       = &builtin_async_generator_function,
-    [Builtin.ASYNC_GEN_AWAIT_RESUME.ordinal]         = &builtin_async_gen_await_resume,
-    [Builtin.ASYNC_GEN_AWAIT_REJECT.ordinal]         = &builtin_async_gen_await_reject,
-    [Builtin.ASYNC_GEN_RETURN_FULFILL.ordinal]       = &builtin_async_gen_return_fulfill,
-    [Builtin.ASYNC_GEN_RETURN_REJECT.ordinal]        = &builtin_async_gen_return_reject,
-    [Builtin.ASYNC_GEN_YRET_FULFILL.ordinal]         = &builtin_async_gen_yret_fulfill,
-    [Builtin.ASYNC_GEN_YRET_REJECT.ordinal]          = &builtin_async_gen_yret_reject,
-    [Builtin.ARRAY_FROM_ASYNC.ordinal]               = &builtin_array_from_async,
-    [Builtin.ARRAY_FROM_ASYNC_STEP_FULFILL.ordinal]  = &builtin_array_from_async_step_fulfill,
-    [Builtin.ARRAY_FROM_ASYNC_MAP_FULFILL.ordinal]   = &builtin_array_from_async_map_fulfill,
-    [Builtin.ARRAY_FROM_ASYNC_REJECT.ordinal]        = &builtin_array_from_async_reject,
-    [Builtin.PROMISE_WITH_RESOLVERS.ordinal]         = &builtin_promise_with_resolvers,
-    [Builtin.PROMISE_TRY.ordinal]                    = &builtin_promise_try,
-    [Builtin.ERROR_ISERROR.ordinal]                  = &builtin_error_isError,
-    [Builtin.SET_PROTO_UNION.ordinal]               = &builtin_set_proto_union,
-    [Builtin.SET_PROTO_INTERSECTION.ordinal]        = &builtin_set_proto_intersection,
-    [Builtin.SET_PROTO_DIFFERENCE.ordinal]          = &builtin_set_proto_difference,
-    [Builtin.SET_PROTO_SYMMETRICDIFFERENCE.ordinal] = &builtin_set_proto_symmetricDifference,
-    [Builtin.SET_PROTO_ISSUBSETOF.ordinal]          = &builtin_set_proto_isSubsetOf,
-    [Builtin.SET_PROTO_ISSUPERSETOF.ordinal]        = &builtin_set_proto_isSupersetOf,
-    [Builtin.SET_PROTO_ISDISJOINTFROM.ordinal]      = &builtin_set_proto_isDisjointFrom,
-    [Builtin.REGEXP_ESCAPE.ordinal]                  = &builtin_regexp_escape,
-    [Builtin.ITERATOR_CTOR.ordinal]                 = &builtin_iterator_ctor,
-    [Builtin.ITERATOR_FROM.ordinal]                 = &builtin_iterator_from,
-    [Builtin.ITERATOR_PROTO_CONSTRUCTOR_GET.ordinal] = &builtin_iterator_proto_constructor_get,
-    [Builtin.ITERATOR_PROTO_CONSTRUCTOR_SET.ordinal] = &builtin_iterator_proto_constructor_set,
-    [Builtin.ITERATOR_PROTO_TOSTRINGTAG_GET.ordinal] = &builtin_iterator_proto_tostringtag_get,
-    [Builtin.ITERATOR_PROTO_TOSTRINGTAG_SET.ordinal] = &builtin_iterator_proto_tostringtag_set,
-    [Builtin.ITERATOR_PROTO_MAP.ordinal]             = &builtin_iterator_proto_map,
-    [Builtin.ITERATOR_PROTO_FILTER.ordinal]          = &builtin_iterator_proto_filter,
-    [Builtin.ITERATOR_PROTO_TAKE.ordinal]            = &builtin_iterator_proto_take,
-    [Builtin.ITERATOR_PROTO_DROP.ordinal]            = &builtin_iterator_proto_drop,
-    [Builtin.ITERATOR_PROTO_FLATMAP.ordinal]         = &builtin_iterator_proto_flatmap,
-    [Builtin.ITERATOR_PROTO_REDUCE.ordinal]          = &builtin_iterator_proto_reduce,
-    [Builtin.ITERATOR_PROTO_TOARRAY.ordinal]         = &builtin_iterator_proto_toarray,
-    [Builtin.ITERATOR_PROTO_FOREACH.ordinal]         = &builtin_iterator_proto_foreach,
-    [Builtin.ITERATOR_PROTO_SOME.ordinal]            = &builtin_iterator_proto_some,
-    [Builtin.ITERATOR_PROTO_EVERY.ordinal]           = &builtin_iterator_proto_every,
-    [Builtin.ITERATOR_PROTO_FIND.ordinal]            = &builtin_iterator_proto_find,
-    [Builtin.ITERATOR_CONCAT.ordinal]                = &builtin_iterator_concat,
-    [Builtin.WRAP_FOR_VALID_ITERATOR_NEXT.ordinal]   = &builtin_wrap_for_valid_iterator_next,
-    [Builtin.WRAP_FOR_VALID_ITERATOR_RETURN.ordinal] = &builtin_wrap_for_valid_iterator_return,
-    [Builtin.ITERATOR_HELPER_NEXT.ordinal]           = &builtin_iterator_helper_next,
-    [Builtin.ITERATOR_HELPER_RETURN.ordinal]         = &builtin_iterator_helper_return,
-    [Builtin.ERROR_PROTO_STACK_GET.ordinal]          = &builtin_error_proto_stack_get,
-    [Builtin.ERROR_PROTO_STACK_SET.ordinal]          = &builtin_error_proto_stack_set,
-};
+fn void init_builtin_dispatch_table() @init
+{
+    $foreach $b : Builtin::values:
+        $if $b != Builtin.LAST:
+            builtin_dispatch_table[$b.ordinal] = $b.handler;
+        $endif
+    $endforeach
+}
 
 fn void dispatch_builtin(uint fn_index, BuiltinContext* ctx) {
     if (fn_index >= Builtin.LAST.ordinal) {
