@@ -16,11 +16,10 @@ Before scheduling work on an entry, re-probe it against `main`. Several entries 
 
 Coverage is **60%** of the suite. The rest is not failing — it is not running.
 
-**1 known failure** (phase 21, `Iterator/from/return-method-calls-base-return-method.js`)
-— see the refcount item below; every other phase is at 0. The measured surface has grown
-1,232 tests this session (14 orphaned directories in `916ffaed`, `built-ins/Iterator` in
-`0a46d74c`), and the 66 failures that surfaced are all fixed. Nothing was skip-listed.
-Note this is ~0 fails on 60% of the suite, not 100% pass — see the table above.
+**All 18 phases at 0 failures.** The measured surface grew 1,232 tests this session (14
+orphaned directories in `916ffaed`, `built-ins/Iterator` in `0a46d74c`) and every failure
+that surfaced is fixed. Nothing was skip-listed. Note this is 0 fails on 60% of the suite,
+not 100% pass — see the table above.
 
 Reproduce with a walk over `PHASES` dirs + `skip_reason()` from `scripts/run_test262.py`.
 
@@ -30,19 +29,13 @@ Reproduce with a walk over `PHASES` dirs + `skip_reason()` from `scripts/run_tes
 
 ### Refcounting
 
-- [ ] **Object values stored in properties or array slots are never refcounted.**
-  `HObject.put_prop` and `HObject.set_array_idx` incref/decref only `is_string()` /
-  `is_bigint()` values; object values rely entirely on mark-and-sweep for reachability, and
-  `hobject_free`'s teardown matches (with a comment saying objects "still use M&S"). The
-  gap: a value reachable ONLY through such an edge is refcount-freed the moment its
-  producing register is decref'd at frame teardown — no reachability check — before M&S can
-  discover it is still live via a sibling closure's `lex_env` chain. This is the single
-  known suite failure (`Iterator/from/return-method-calls-base-return-method.js`).
-  A prototype extending both writers and the teardown loop to all `is_heap_allocated()`
-  values fixed it and the hand-reduced repro, and is preserved at
-  `stash@{0}: On batch/slot2: batch2-investigate-putprop-refcount` in `.worktrees/batch2`.
-  It was NOT landed: it changes ownership policy for the whole heap and needs its own task
-  with full-sweep + leak + bench verification.
+- [>] **Recover the property-write regression from `6d7e71ca`.** Refcounting object edges
+  costs ~5% on `bench_object` (405→426 ms) and ~4% on an isolated `o.x = i` loop
+  (246→255 ms), coordinator-verified over repeated runs. Read paths are at parity. The
+  headroom: that isolated loop is pure fastints — neither the incoming nor the existing
+  value is heap-allocated — yet it still pays both branches. A combined early-out when
+  neither side is heap-allocated should make the common case free. **Agent in flight
+  (batch1).** User approved landing the correctness fix first and optimising after.
 - [ ] **`ctx.result` aliases `ctx.this_val` on entry to every builtin.** Every call
   convention seeds the result register with a raw, non-incref'd copy of `this` before the
   builtin runs, because the result slot doubles as the this/callee slot. So
