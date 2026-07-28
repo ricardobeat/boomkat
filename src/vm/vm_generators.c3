@@ -299,7 +299,10 @@ fn bool ays_await(Dispatch* ds, GeneratorState* gs, TVal value, uint next_step) 
 /// any enclosing try/finally in the body (like an injected `return`), else
 /// completes the generator now so the drain settles {value, done:true}.
 fn void ays_return_from_body(Dispatch* ds, GeneratorState* gs, TVal value) {
-    Catcher* cat = (Catcher*)ds.act.cat;
+    // Walk up to the nearest catcher with a finally — the innermost catcher
+    // may be a catch-only try (no finally_pc), in which case the return must
+    // still route through an enclosing finally.
+    Catcher* cat = find_and_unlink_finally_catcher(ds.vm, ds.act);
     if (cat != null && cat.finally_pc != null) {
         cat.return_val = value;
         if (!(cat.flags & CATCHER_FLAG_PENDING_RETURN)) {
@@ -1318,7 +1321,11 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                         // finally block runs before the generator actually completes.
                         gs.delegated_iter = null;
                         TVal no_ret_val = gs.return_value;
-                        Catcher* no_ret_cat = (Catcher*)ds.act.cat;
+                        // Walk up to the nearest catcher with a finally — the
+                        // innermost catcher may be a catch-only try (no
+                        // finally_pc), in which case the return must still
+                        // route through an enclosing finally.
+                        Catcher* no_ret_cat = find_and_unlink_finally_catcher(vm, ds.act);
                         if (no_ret_cat != null && no_ret_cat.finally_pc != null) {
                             no_ret_cat.return_val = no_ret_val;
                             if (!(no_ret_cat.flags & CATCHER_FLAG_PENDING_RETURN)) {
@@ -1412,7 +1419,11 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                         // ES2020 §14.4.14 step 5.c.ii.6: delegate's .return() completed (done:true)
                         // — outer generator returns rv2, routing through any enclosing finally.
                         gs.delegated_iter = null;
-                        Catcher* ys_ret_cat = (Catcher*)ds.act.cat;
+                        // Walk up to the nearest catcher with a finally — the
+                        // innermost catcher may be a catch-only try (no
+                        // finally_pc), in which case the return must still
+                        // route through an enclosing finally.
+                        Catcher* ys_ret_cat = find_and_unlink_finally_catcher(vm, ds.act);
                         if (ys_ret_cat != null && ys_ret_cat.finally_pc != null) {
                             ys_ret_cat.return_val = rv2;
                             if (!(ys_ret_cat.flags & CATCHER_FLAG_PENDING_RETURN)) {
