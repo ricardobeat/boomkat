@@ -630,7 +630,6 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 GeneratorState* gs = (GeneratorState*)gs_raw;
                 mem::clear(gs_raw, (sz)(GeneratorState::size));
                 gs.pending_resume_reg = 0xFFFF;
-                gs.ref_count = 2;
 
                 CompiledFunction* cur_func = (CompiledFunction*)ds.act.func;
 

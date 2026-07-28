@@ -923,6 +923,16 @@ fn bool HObject.is_constructable(&self) @inline { return self.flags.constructabl
 /// Returns true when the object is a bound function.
 fn bool HObject.is_bound(&self)         @inline { return self.flags.is_bound; }
 
+/// Marks the object as a temporary GC root, so an emergency (non-safepoint)
+/// collection cannot reclaim an in-flight object whose only reference lives in
+/// a C3 local. `ObjFlags.temproot` shares bit 3 with `HeapFlags.temproot`, so
+/// this sets exactly the flag the collector reads.
+fn void HObject.set_temproot(&self)     @inline { self.flags.temproot = true; }
+/// Clears the temporary-root flag.
+fn void HObject.clear_temproot(&self)   @inline { self.flags.temproot = false; }
+/// Returns true when the object is a temporary root.
+fn bool HObject.is_temproot(&self)      @inline { return self.flags.temproot; }
+
 /// Infer the callable kind from existing fields — no stored field needed.
 fn CallableKind HObject.callable_kind(&self) @inline {
     if (self.flags.is_bound) return CallableKind.BOUND_FN;
