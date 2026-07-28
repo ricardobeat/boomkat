@@ -33,6 +33,26 @@ fn double date_now_ms() {
     return (double)((long)time::now()) / 1000.0;
 }
 
+/// Convert an epoch time value in milliseconds to whole seconds, flooring
+/// toward -infinity (not truncating toward zero) so negative time values
+/// land on the correct second — e.g. -1ms is second -1, not second 0.
+fn long date_ms_to_sec(double time_val) {
+    return (long)math::floor(time_val / 1000.0);
+}
+
+/// Floor-divide an epoch ms time value by `unit_ms` and reduce modulo
+/// `modulus`, both flooring toward -infinity — e.g. extracting the
+/// seconds-of-minute or minutes-of-hour field from a (possibly negative)
+/// time value. Plain C `/` and `%` truncate toward zero, which silently
+/// skips the "was this negative" fixup for values like -1ms (truncates to
+/// 0 instead of flooring to -1).
+fn long date_floor_mod_field(double time_val, long unit_ms, long modulus) {
+    long q = (long)math::floor(time_val / (double)unit_ms);
+    long r = q % modulus;
+    if (r < 0) r += modulus;
+    return r;
+}
+
 /// Convert a Unix time (seconds since 1970-01-01 UTC, may be negative) into
 /// proleptic-Gregorian UTC broken-down fields. Pure integer calendar math
 /// (Howard Hinnant's days-from-civil), so it is reliable across the full
@@ -105,11 +125,14 @@ fn double date_this_time_value(BuiltinContext* ctx, TVal* val) {
 /// Helper: convert local time components to epoch ms.
 /// Treats the fields as a UTC civil date/time first (which is reliable for
 /// any year via the days-from-civil algorithm), then subtracts the local
-/// timezone offset sampled at that instant. This keeps every local<->UTC
-/// conversion in the module consistent with getTimezoneOffset(), instead of
-/// relying on mktime — whose -1 error sentinel is ambiguous with a
-/// legitimate result and whose historical-tzdata handling is unreliable far
-/// from the present.
+/// timezone offset sampled at that instant. The offset lookup uses a
+/// truncating (not floored) ms->sec conversion to match the reference
+/// engine's getTimezoneOffset input exactly: this value is only a lookup
+/// key into localtime_r, and truncation vs. floor can select opposite
+/// sides of a sub-minute historical Local-Mean-Time transition boundary
+/// for ancient dates. The spec leaves pre-Unix-epoch timezone behavior
+/// implementation-defined, so matching the reference engine's choice here
+/// (rather than "more correct" flooring) is what parity requires.
 fn double date_local_to_ms(long year, long month, long day,
                            long hour, long minute, long second, long ms) {
     double utc_ms = date_utc_to_ms(year, month, day, hour, minute, second, ms);
@@ -119,24 +142,19 @@ fn double date_local_to_ms(long year, long month, long day,
 }
 
 /// Compute the local timezone offset (in seconds, UTC minus local) for the
-/// given epoch time, i.e. how far local time is ahead of UTC. Reinterprets
-/// the localtime_r broken-down fields as a proleptic-Gregorian civil date
-/// (via the same days-from-civil algorithm as date_utc_to_ms) rather than
-/// timegm, since timegm's -1 error sentinel is ambiguous with a legitimate
-/// result and its own historical-tzdata handling is unreliable far from the
-/// present. This is correct across month/year boundaries (unlike a raw
-/// tm_mday subtraction, which breaks whenever local and UTC dates fall in
-/// different months).
+/// given epoch time, i.e. how far local time is ahead of UTC. Reads
+/// tm_gmtoff (exposed as TzDateTime.gmt_offset) directly off a single
+/// localtime_r lookup at the UTC instant — the same single-call approach
+/// as the reference engine's getTimezoneOffset. Earlier revisions
+/// reinterpreted the local broken-down fields through the engine's own
+/// civil-day math to get a second offset estimate; that round trip is
+/// unstable for historical Local-Mean-Time offsets that aren't a whole
+/// number of seconds; whichever side of the LMT transition boundary the
+/// re-encoded instant happened to land on, gave a different answer for
+/// the same input.
 fn long date_tz_offset_seconds(long t_sec) {
-    // Source the local broken-down time from std::time (which performs the
-    // platform localtime_r lookup), then reinterpret those wall-clock fields
-    // through the engine's own proleptic-Gregorian date_utc_to_ms — same
-    // arithmetic as before, without a direct libc call.
     TzDateTime local = datetime::from_time((Time)(t_sec * 1_000_000)).to_local();
-    double local_ms = date_utc_to_ms((long)local.year, (long)local.month.ordinal,
-        (long)local.day, (long)local.hour, (long)local.min,
-        (long)local.sec, 0);
-    return (long)(local_ms / 1000.0) - t_sec;
+    return local.gmt_offset;
 }
 
 /// Break a time value into local wall-clock components, applying the
@@ -146,9 +164,14 @@ fn long date_tz_offset_seconds(long t_sec) {
 /// historical DST database.
 fn void date_break_time_local_fields(double time_val, long* year, long* month, long* day,
                                      long* wday, long* hour, long* minute, long* second) {
-    long t_sec = (long)(time_val / 1000.0);
-    long offset = date_tz_offset_seconds(t_sec);
-    long local_sec = t_sec + offset;
+    // The offset lookup key is truncated (not floored) to match the
+    // reference engine's getTimezoneOffset input exactly — see
+    // date_local_to_ms for why. The calendar break-down itself still
+    // needs a floored whole-seconds value so negative times land on the
+    // correct civil day.
+    long lookup_sec = (long)(time_val / 1000.0);
+    long offset = date_tz_offset_seconds(lookup_sec);
+    long local_sec = date_ms_to_sec(time_val) + offset;
     civil_from_seconds(local_sec, year, month, day, wday, hour, minute, second);
 }
 
@@ -1349,7 +1372,7 @@ fn void date_break_time_utc(double time_val, long* year, long* month, long* day,
         *year = *month = *day = *wday = *hour = *minute = *second = 0;
         return;
     }
-    long t_sec = (long)(time_val / 1000.0);
+    long t_sec = date_ms_to_sec(time_val);
     civil_from_seconds(t_sec, year, month, day, wday, hour, minute, second);
 }
 
@@ -1557,7 +1580,7 @@ fn void builtin_date_proto_setMinutes(BuiltinContext* ctx) {
     }
     if (math::is_nan(tv)) { ctx.result.set_number(double::nan); return; }
     // Use current values if not provided (check argc, not NaN — NaN from ToNumber must be used)
-    long sec_cur = (long)tv / 1000 % 60; if (sec_cur < 0) sec_cur += 60;
+    long sec_cur = date_floor_mod_field(tv, 1000, 60);
     long ms_cur  = (long)tv % 1000; if (ms_cur < 0) ms_cur += 1000;
     if (ctx.argc <= 1) { sec_arg = (double)sec_cur; }
     if (ctx.argc <= 2) { ms_arg = (double)ms_cur; }
@@ -1623,8 +1646,8 @@ fn void builtin_date_proto_setHours(BuiltinContext* ctx) {
     }
     if (math::is_nan(tv)) { ctx.result.set_number(double::nan); return; }
     // Use current values if not provided (check argc, not NaN — NaN from ToNumber must be used)
-    long min_cur = (long)tv / 60000 % 60; if (min_cur < 0) min_cur += 60;
-    long sec_cur = (long)tv / 1000 % 60; if (sec_cur < 0) sec_cur += 60;
+    long min_cur = date_floor_mod_field(tv, 60000, 60);
+    long sec_cur = date_floor_mod_field(tv, 1000, 60);
     long ms_cur  = (long)tv % 1000; if (ms_cur < 0) ms_cur += 1000;
     if (ctx.argc <= 1) { min_arg = (double)min_cur; }
     if (ctx.argc <= 2) { sec_arg = (double)sec_cur; }
@@ -1664,7 +1687,7 @@ fn void builtin_date_proto_setDate(BuiltinContext* ctx) {
     if (math::is_nan(date_arg)) { date_set_ms(obj, double::nan); ctx.result.set_number(double::nan); return; }
     long year, month, day, wday, hour, min, sec;
     date_break_time(tv, &year, &month, &day, &wday, &hour, &min, &sec);
-    double new_ms = date_local_to_ms(year, month, (long)date_arg, hour, min, sec, (long)tv % 1000);
+    double new_ms = date_local_to_ms(year, month, (long)date_arg, hour, min, sec, date_floor_mod_field(tv, 1, 1000));
     double clipped = date_time_clip(new_ms);
     date_set_ms(obj, clipped);
     ctx.result.set_number(clipped);
@@ -1707,7 +1730,7 @@ fn void builtin_date_proto_setMonth(BuiltinContext* ctx) {
     // If a provided arg is NaN from ToNumber, result is NaN
     if (math::is_nan(date_arg)) { date_set_ms(obj, double::nan); ctx.result.set_number(double::nan); return; }
     if (math::is_nan(month_arg)) { date_set_ms(obj, double::nan); ctx.result.set_number(double::nan); return; }
-    double new_ms = date_local_to_ms(year, (long)month_arg, (long)date_arg, hour, min, sec, (long)tv % 1000);
+    double new_ms = date_local_to_ms(year, (long)month_arg, (long)date_arg, hour, min, sec, date_floor_mod_field(tv, 1, 1000));
     double clipped = date_time_clip(new_ms);
     date_set_ms(obj, clipped);
     ctx.result.set_number(clipped);
@@ -1761,7 +1784,7 @@ fn void builtin_date_proto_setFullYear(BuiltinContext* ctx) {
     // If a provided arg is NaN from ToNumber, result is NaN
     if (math::is_nan(date_arg)) { date_set_ms(obj, double::nan); ctx.result.set_number(double::nan); return; }
     if (math::is_nan(month_arg)) { date_set_ms(obj, double::nan); ctx.result.set_number(double::nan); return; }
-    double new_ms = date_local_to_ms((long)year_arg, (long)month_arg, (long)date_arg, h, min, s, math::is_nan(tv) ? 0 : (long)tv % 1000);
+    double new_ms = date_local_to_ms((long)year_arg, (long)month_arg, (long)date_arg, h, min, s, math::is_nan(tv) ? 0 : date_floor_mod_field(tv, 1, 1000));
     double clipped = date_time_clip(new_ms);
     date_set_ms(obj, clipped);
     ctx.result.set_number(clipped);
@@ -1877,7 +1900,7 @@ fn void builtin_date_proto_setUTCMinutes(BuiltinContext* ctx) {
     }
     if (math::is_nan(tv)) { ctx.result.set_number(double::nan); return; }
     // Use current values if not provided (check argc, not NaN — NaN from ToNumber must be used)
-    long sec_cur = (long)tv / 1000 % 60; if (sec_cur < 0) sec_cur += 60;
+    long sec_cur = date_floor_mod_field(tv, 1000, 60);
     long ms_cur  = (long)tv % 1000; if (ms_cur < 0) ms_cur += 1000;
     if (ctx.argc <= 1) { sec_arg = (double)sec_cur; }
     if (ctx.argc <= 2) { ms_arg = (double)ms_cur; }
@@ -1943,8 +1966,8 @@ fn void builtin_date_proto_setUTCHours(BuiltinContext* ctx) {
     }
     if (math::is_nan(tv)) { ctx.result.set_number(double::nan); return; }
     // Use current values if not provided (check argc, not NaN — NaN from ToNumber must be used)
-    long min_cur = (long)tv / 60000 % 60; if (min_cur < 0) min_cur += 60;
-    long sec_cur = (long)tv / 1000 % 60; if (sec_cur < 0) sec_cur += 60;
+    long min_cur = date_floor_mod_field(tv, 60000, 60);
+    long sec_cur = date_floor_mod_field(tv, 1000, 60);
     long ms_cur  = (long)tv % 1000; if (ms_cur < 0) ms_cur += 1000;
     if (ctx.argc <= 1) { min_arg = (double)min_cur; }
     if (ctx.argc <= 2) { sec_arg = (double)sec_cur; }
@@ -1984,7 +2007,7 @@ fn void builtin_date_proto_setUTCDate(BuiltinContext* ctx) {
     if (math::is_nan(date_arg)) { date_set_ms(obj, double::nan); ctx.result.set_number(double::nan); return; }
     long year, month, day, wday, hour, min, sec;
     date_break_time_utc(tv, &year, &month, &day, &wday, &hour, &min, &sec);
-    double new_ms = date_utc_to_ms(year, month, (long)date_arg, hour, min, sec, (long)tv % 1000);
+    double new_ms = date_utc_to_ms(year, month, (long)date_arg, hour, min, sec, date_floor_mod_field(tv, 1, 1000));
     double clipped = date_time_clip(new_ms);
     date_set_ms(obj, clipped);
     ctx.result.set_number(clipped);
@@ -2027,7 +2050,7 @@ fn void builtin_date_proto_setUTCMonth(BuiltinContext* ctx) {
     // If a provided arg is NaN from ToNumber, result is NaN
     if (math::is_nan(date_arg)) { date_set_ms(obj, double::nan); ctx.result.set_number(double::nan); return; }
     if (math::is_nan(month_arg)) { date_set_ms(obj, double::nan); ctx.result.set_number(double::nan); return; }
-    double new_ms = date_utc_to_ms(year, (long)month_arg, (long)date_arg, hour, min, sec, (long)tv % 1000);
+    double new_ms = date_utc_to_ms(year, (long)month_arg, (long)date_arg, hour, min, sec, date_floor_mod_field(tv, 1, 1000));
     double clipped = date_time_clip(new_ms);
     date_set_ms(obj, clipped);
     ctx.result.set_number(clipped);
@@ -2081,7 +2104,7 @@ fn void builtin_date_proto_setUTCFullYear(BuiltinContext* ctx) {
     // If a provided arg is NaN from ToNumber, result is NaN
     if (math::is_nan(date_arg)) { date_set_ms(obj, double::nan); ctx.result.set_number(double::nan); return; }
     if (math::is_nan(month_arg)) { date_set_ms(obj, double::nan); ctx.result.set_number(double::nan); return; }
-    double new_ms = date_utc_to_ms((long)year_arg, (long)month_arg, (long)date_arg, h, min, s, math::is_nan(tv) ? 0 : (long)tv % 1000);
+    double new_ms = date_utc_to_ms((long)year_arg, (long)month_arg, (long)date_arg, h, min, s, math::is_nan(tv) ? 0 : date_floor_mod_field(tv, 1, 1000));
     double clipped = date_time_clip(new_ms);
     date_set_ms(obj, clipped);
     ctx.result.set_number(clipped);
