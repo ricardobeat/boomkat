@@ -31,6 +31,21 @@ All 18 test262 phases at 0 failures. Coverage: 32,078 of 53,319 tests attempted 
 - [x] Fix under-refcount in `%IteratorPrototype%[@@iterator]` — `104e61ae`
 - [x] Free `GeneratorState` on generator finalize (2 allocs/call leak) — `dc2945cb`
 
+## Strings
+
+Non-ASCII `s[i]` is O(n) per access: `char_at`/`char_offset_to_byte_offset` walk CESU-8
+from byte 0 every time. 8k non-ASCII string, 2000 ops — `charAt` 16.8 ms, `charCodeAt`
+16.8, `slice` 10.1, `substring` 10.0, `indexOf` 26.1; qjs is 0-8 ms. ASCII is O(1) (0.1 ms).
+83 call sites across 9 files funnel through the two helpers. Cause of the RegExp
+property-escape timeouts.
+
+- [ ] Cursor cache on `HString` (last char_idx → byte_off), duktape's `duk_strcache`
+  approach — makes sequential access O(1) amortised without changing storage
+- [ ] Native UTF-16/Latin1 storage (was B55, filed 2026-07-08 as a follow-up to the CESU-8
+  migration, never a non-goal) — qjs's flat `str8`/`str16` makes all access O(1) and drops
+  the per-regex-exec CESU-8→UTF-16 conversion. Second migration on the scale of B51:
+  reopens `hstring.c3` representation, GC, interning, every string builtin
+
 ## Known bugs
 
 - [ ] `async function`'s own `GeneratorState` leaks — shared between `resume_fn`/`reject_fn`, needs shared ownership
@@ -87,6 +102,5 @@ All 18 test262 phases at 0 failures. Coverage: 32,078 of 53,319 tests attempted 
 - Feature tokens: `cross-realm`, `tail-call-optimization`, `caller`, `__proto__`/`__getter__`/`__setter__`
 - In-phase `$DONOTEVALUATE` and `noStrict` skips (strict-only engine)
 - Sloppy mode
-- Native UTF-16/Latin1 string storage
 - qjs CLI/std/os modules
 - `(o?.m)()` undefined-this "fix" — was a misdiagnosis, don't re-introduce
