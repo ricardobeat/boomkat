@@ -41,20 +41,19 @@ up in a phase run, so a green suite is not evidence against them. Each verified 
   already existed at the `@@split` site, so this is a copy that drifted. `@@split`'s own
   advance works on raw byte offsets and is not susceptible. No one has audited the
   remaining char-unit/byte-offset round-trips in that file for the same class of bug.
-- [ ] **Non-zero baseline leak count in the engine.** A 2000-iteration async-generator
-  stress script reports ~27,000 leaks / 4 MB on an unmodified build; `Array.from(array)`
-  and `Array.from(Set)` report exactly 0, so 0 is achievable and this is real, not harness
-  noise. Never investigated. Any leak work must measure a same-session delta against a
-  baseline binary rather than reading the absolute number.
+- [ ] **Re-measure the engine's baseline leak count.** A 2000-iteration async-generator
+  stress script reported ~27,000 leaks / 4 MB before `dc2945cb`; most of that was the
+  generator `GeneratorState` leak, now fixed. Re-run to find what remains beyond the async
+  residual above. Leak work must always compare a same-session delta against a baseline
+  binary, never read the absolute number.
 - [ ] **`error.c3:92` internal `.stack` stub still uses raw `builtin_to_string`.** The only
   site the audit (`a93ff1a9`) deferred: currently unobservable and matches qjs, but it is
   the one remaining known-wrong caller.
 
 ### Engine gaps behind the class skip-list
 
-1,152 of the 1,275 `SKIP_FILES` entries are class tests, each documenting a real gap:
+The class skip-list entries each document a real gap:
 
-- [ ] **Public field install through a Proxy receiver.** Per ES2022 §15.7.10 step 8.b, `CreateDataPropertyOrThrow` runs `[[DefineOwnProperty]]` on the receiver, so a Proxy `defineProperty` trap must fire. `INITPROP` uses the raw `hobj.put_prop` path — correct for the no-proxy fast path, observably wrong when the receiver IS a Proxy. Fix named in-source: route through `ordinary_define_own`. **A correctness bug, not just a test gap.**
 - [ ] **Private-field return-override.** Spec puts private methods on the class prototype, but a subclass return-override makes `super()` return an object whose [[Prototype]] is not the subclass prototype — the brand isn't stamped and the method chain is broken. Needs private methods copied per-instance: deep architectural change.
 - [ ] **Brand propagation across Base→Derived when the superclass returns an object** — field-init/brand stamp doesn't reach the substituted `this`. `vm_calls.c3` / `vm_execute.c3`.
 - [ ] **`ContainsArguments` static analysis** (§15.7.10 step 14) for direct eval in a field initializer. `forbid_arguments` rejects at parse time, so the required eval-time SyntaxError never fires.
@@ -85,12 +84,13 @@ Full-engine pass for duplication/elegance/compactness at constant perf+correctne
 
 ## Known bugs
 
-- [ ] **`Array.from(generator)` leaks 2 allocations per call.** Verified on main:
-  500 iterations of `Array.from(g())` leaks exactly 1000 blocks / 128 KB. Array-sourced
-  and Set-sourced calls are clean, so it is specific to consuming a *generator* iterator —
-  the generator object or its activation is never released. Shared by any builtin using
-  the same GetIterator/IteratorStep loop, including `aggregate_error_iterable_to_list`
-  (`d76ca80b`). Found while leak-checking AggregateError.
+- [ ] **`async function`'s own `GeneratorState` leaks.** The residual after `dc2945cb`
+  fixed the generator case: an async function's GS is shared between its `resume_fn` and
+  `reject_fn` reaction closures via `var_env`, so freeing it from either one's
+  `hobject_free` risks double-freeing the sibling's reference. Needs a shared-ownership
+  scheme (refcount, or a single-owner flag) before it is safe to free. Reproduces with a
+  plain array argument — `Promise.all([...])` under async/await — so it is not
+  generator-specific.
 
 - [ ] **Bound-function internals leak through `Object.getOwnPropertyNames`.** `function.c3` stores `\x00bound_target` / `\x00bound_this` / `\x00bound_args` as NUL-prefixed own properties; `getOwnPropertyNames`/`Reflect.ownKeys` don't filter on enumerability, so `Object.getOwnPropertyNames(fn.bind())` exposes all three. Found while implementing error-stack-accessor, which hit the same trap using that idiom and broke two Object/create tests before switching to real extra-union storage (`643ecbd5`). Same fix applies: give BOUND_FUNCTION union storage instead of internal properties.
 - [ ] **Date pre-1970 year off-by-one** — `new Date(-1).getUTCFullYear()` → 1970, should be 1969. In `date_break_time*`.
