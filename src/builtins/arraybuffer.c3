@@ -90,6 +90,39 @@ fn void arraybuffer_throw_range_error(BuiltinContext* ctx, char[] msg) {
     builtin_throw_no_result_change(ctx, ctx.heap.range_err_proto, msg);
 }
 
+/// Formats "<label>: <suffix>" (optionally with one %s substitution in
+/// suffix) and throws a TypeError with the result. Used by code paths shared
+/// between ArrayBuffer and SharedArrayBuffer, where only the leading label
+/// differs between the two call sites.
+fn void arraybuffer_throw_type_error_label(BuiltinContext* ctx, char[] label, char[] suffix) {
+    char[192] buf;
+    usz len = (usz)(io::bprintf(&buf, "%s: %s", (String)label, (String)suffix) ?? buf[:0]).len;
+    arraybuffer_throw_type_error(ctx, buf[:len]);
+}
+
+fn void arraybuffer_throw_type_error_label2(BuiltinContext* ctx, char[] label, char[] suffix, char[] arg) {
+    char[192] buf;
+    usz len = (usz)(io::bprintf(&buf, "%s: %s %s", (String)label, (String)suffix, (String)arg) ?? buf[:0]).len;
+    arraybuffer_throw_type_error(ctx, buf[:len]);
+}
+
+/// Formats a message with one %s substitution and throws a RangeError. Used
+/// by the shared ArrayBuffer/SharedArrayBuffer constructor body, where the
+/// buffer-kind name is the only piece that varies between call sites.
+fn void arraybuffer_throw_range_error_pct(BuiltinContext* ctx, char[] fmt, char[] arg) {
+    char[96] buf;
+    usz len = (usz)(io::bprintf(&buf, (String)fmt, (String)arg) ?? buf[:0]).len;
+    arraybuffer_throw_range_error(ctx, buf[:len]);
+}
+
+/// Formats a message with one %s substitution and throws a TypeError. Sibling
+/// of arraybuffer_throw_range_error_pct.
+fn void arraybuffer_throw_type_error_pct(BuiltinContext* ctx, char[] fmt, char[] arg) {
+    char[96] buf;
+    usz len = (usz)(io::bprintf(&buf, (String)fmt, (String)arg) ?? buf[:0]).len;
+    arraybuffer_throw_type_error(ctx, buf[:len]);
+}
+
 /// True iff obj is a non-shared ArrayBuffer instance. ArrayBuffer.prototype
 /// methods (byteLength/slice/resize/detach/…) require this — a SharedArrayBuffer
 /// receiver must throw (it shares ObjClass.ARRAYBUFFER but has is_shared set).
@@ -103,6 +136,23 @@ fn bool is_arraybuffer_obj(HObject* obj) {
 /// and DataView backing-store validation, which accept both.
 fn bool is_any_arraybuffer_obj(HObject* obj) {
     return obj != null && obj.flags.obj_class == hobject::ObjClass.ARRAYBUFFER;
+}
+
+/// Receiver validation for ArrayBuffer.prototype methods/getters, mirroring
+/// sab_this's shape for SharedArrayBuffer.prototype. Returns null (having
+/// already thrown) if `ctx.this_val` is not a non-shared ArrayBuffer.
+fn HObject* ab_this(BuiltinContext* ctx, char[] method) {
+    TVal this_val = ctx.this_val;
+    if (!this_val.is_object() || this_val.get_heapptr() == null) {
+        arraybuffer_throw_type_error_label(ctx, "ArrayBuffer.prototype", "method called on non-object");
+        return null;
+    }
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    if (!is_arraybuffer_obj(obj)) {
+        arraybuffer_throw_type_error_label(ctx, "ArrayBuffer.prototype", "method called on incompatible receiver");
+        return null;
+    }
+    return obj;
 }
 
 /// DetachArrayBuffer (ES2024 §25.1.3.5): free the backing store and mark the
@@ -149,9 +199,19 @@ fn HObject* arraybuffer_instance_proto(BuiltinContext* ctx, HObject* fallback_pr
 // ArrayBuffer(length) constructor — ES2015 §24.1.2.1
 // ============================================================================
 
-fn void builtin_arraybuffer(BuiltinContext* ctx) {
+/// Shared body for the ArrayBuffer(length[, options]) and
+/// SharedArrayBuffer(length[, options]) constructors (ES2024 §25.1.3.1 /
+/// §25.2.2.1 AllocateSharedArrayBuffer): ToIndex the length, read the
+/// {maxByteLength} option (resizable/growable), resolve new.target.prototype,
+/// and allocate the backing store. `is_shared` selects the fallback
+/// prototype, the ObjClass.ARRAYBUFFER `is_shared` flag, and — because
+/// growable SABs grow in place while resizable ABs realloc on resize() —
+/// whether the initial allocation is sized to maxByteLength up front.
+fn void arraybuffer_construct_impl(BuiltinContext* ctx, bool is_shared) {
+    char[] ctor_name = is_shared ? "SharedArrayBuffer" : "ArrayBuffer";
+    char[] kind = is_shared ? "shared array buffer" : "array buffer";
     if (!ctx.is_constructor) {
-        arraybuffer_throw_type_error(ctx, "Constructor ArrayBuffer requires 'new'");
+        arraybuffer_throw_type_error_pct(ctx, "Constructor %s requires 'new'", ctor_name);
         return;
     }
 
@@ -164,9 +224,10 @@ fn void builtin_arraybuffer(BuiltinContext* ctx) {
         return;
     }
 
-    // ES2024 §25.1.3.1: GetArrayBufferMaxByteLengthOption — read the
-    // {maxByteLength} option from the second argument if it is an object.
-    // A present, non-undefined maxByteLength makes the buffer resizable.
+    // ES2024 §25.1.3.1 / §25.2.2.1: GetArrayBufferMaxByteLengthOption — read
+    // the {maxByteLength} option from the second argument if it is an
+    // object. A present, non-undefined maxByteLength makes the buffer
+    // resizable (AB) / growable (SAB).
     bool has_max = false;
     double max_wide = 0.0;
     if (ctx.argc >= 2) {
@@ -186,26 +247,28 @@ fn void builtin_arraybuffer(BuiltinContext* ctx) {
         }
     }
 
-    // AllocateArrayBuffer (§25.1.3.1) step 1: byteLength must not exceed
-    // maxByteLength. This RangeError is raised BEFORE OrdinaryCreateFrom
-    // Constructor (step 3) resolves new.target.prototype, so a throwing
-    // "prototype" getter must not preempt it. Compare in wide (double) space:
-    // the engine's INT32 allocation cap is a separate, LATER failure (see
-    // data-allocation-after-object-creation.js) that must lose to the getter.
+    // AllocateArrayBuffer/AllocateSharedArrayBuffer step 1: byteLength must
+    // not exceed maxByteLength. This RangeError is raised BEFORE
+    // OrdinaryCreateFromConstructor resolves new.target.prototype, so a
+    // throwing "prototype" getter must not preempt it. Compare in wide
+    // (double) space: the engine's INT32 allocation cap is a separate, LATER
+    // failure (see data-allocation-after-object-creation.js) that must lose
+    // to the getter.
     uint max_byte_length = 0;
+    if (has_max && max_wide > 2147483647.0) {
+        arraybuffer_throw_range_error_pct(ctx, "Invalid %s maxByteLength", kind);
+        return;
+    }
     if (has_max) {
-        if (max_wide > 2147483647.0) {
-            arraybuffer_throw_range_error(ctx, "Invalid array buffer maxByteLength");
-            return;
-        }
         max_byte_length = (uint)max_wide;
         if (byte_length_wide > max_wide) {
-            arraybuffer_throw_range_error(ctx, "ArrayBuffer length exceeds maxByteLength");
+            arraybuffer_throw_range_error_pct(ctx, "%s length exceeds maxByteLength", ctor_name);
             return;
         }
     }
 
-    HObject* instance_proto = arraybuffer_instance_proto(ctx, ctx.heap.arraybuffer_proto);
+    HObject* fallback_proto = is_shared ? ctx.heap.sharedarraybuffer_proto : ctx.heap.arraybuffer_proto;
+    HObject* instance_proto = arraybuffer_instance_proto(ctx, fallback_proto);
     if (ctx.should_throw) return;
 
     HObject*? raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAYBUFFER);
@@ -223,26 +286,35 @@ fn void builtin_arraybuffer(BuiltinContext* ctx) {
     // allocation failure — checked only after the instance prototype resolved.
     uint byte_length = 0;
     if (byte_length_wide > 2147483647.0) {
-        arraybuffer_throw_range_error(ctx, "Invalid array buffer length");
+        arraybuffer_throw_range_error_pct(ctx, "Invalid %s length", kind);
         return;
     }
     byte_length = (uint)byte_length_wide;
 
+    // For growable SABs, allocate the full maxByteLength up front so the backing
+    // pointer is stable across grow() (grow-in-place, views never see a realloc).
+    // Resizable ABs allocate only byte_length and realloc on resize() instead.
+    uint alloc_len = (is_shared && has_max) ? max_byte_length : byte_length;
     char* data = null;
-    if (byte_length > 0) {
-        data = (char*)ctx.heap.alloc_func(ctx.heap.heap_udata, (usz)byte_length);
+    if (alloc_len > 0) {
+        data = (char*)ctx.heap.alloc_func(ctx.heap.heap_udata, (usz)alloc_len);
         if (data == null) {
-            arraybuffer_throw_range_error(ctx, "Out of memory allocating ArrayBuffer");
+            arraybuffer_throw_range_error_pct(ctx, "Out of memory allocating %s", ctor_name);
             return;
         }
-        mem::clear(data, (sz)((usz)byte_length));
+        mem::clear(data, (sz)((usz)alloc_len));
     }
     (*obj.extra_ptr()).ab.data = data;
     (*obj.extra_ptr()).ab.byte_length = byte_length;
     (*obj.extra_ptr()).ab.resizable = has_max;
     (*obj.extra_ptr()).ab.max_byte_length = max_byte_length;
+    (*obj.extra_ptr()).ab.is_shared = is_shared;
 
     ctx.result.set_object(obj);
+}
+
+fn void builtin_arraybuffer(BuiltinContext* ctx) {
+    arraybuffer_construct_impl(ctx, false);
 }
 
 // ============================================================================
@@ -250,16 +322,8 @@ fn void builtin_arraybuffer(BuiltinContext* ctx) {
 // ============================================================================
 
 fn void builtin_arraybuffer_proto_bytelength_get(BuiltinContext* ctx) {
-    TVal this_val = ctx.this_val;
-    if (!this_val.is_object() || this_val.get_heapptr() == null) {
-        arraybuffer_throw_type_error(ctx, "ArrayBuffer.prototype.byteLength called on non-object");
-        return;
-    }
-    HObject* obj = (HObject*)this_val.get_heapptr();
-    if (!is_arraybuffer_obj(obj)) {
-        arraybuffer_throw_type_error(ctx, "ArrayBuffer.prototype.byteLength called on incompatible receiver");
-        return;
-    }
+    HObject* obj = ab_this(ctx, "byteLength");
+    if (obj == null) return;
     if (((*obj.extra_ptr()).ab.byte_length == 0xFFFFFFFFu)) {
         ctx.result.set_fastint(0);
         return;
@@ -273,16 +337,8 @@ fn void builtin_arraybuffer_proto_bytelength_get(BuiltinContext* ctx) {
 // ============================================================================
 
 fn void builtin_arraybuffer_proto_detached_get(BuiltinContext* ctx) {
-    TVal this_val = ctx.this_val;
-    if (!this_val.is_object() || this_val.get_heapptr() == null) {
-        arraybuffer_throw_type_error(ctx, "ArrayBuffer.prototype.detached called on non-object");
-        return;
-    }
-    HObject* obj = (HObject*)this_val.get_heapptr();
-    if (!is_arraybuffer_obj(obj)) {
-        arraybuffer_throw_type_error(ctx, "ArrayBuffer.prototype.detached called on incompatible receiver");
-        return;
-    }
+    HObject* obj = ab_this(ctx, "detached");
+    if (obj == null) return;
     ctx.result.set_boolean(((*obj.extra_ptr()).ab.byte_length == 0xFFFFFFFFu));
 }
 
@@ -291,16 +347,8 @@ fn void builtin_arraybuffer_proto_detached_get(BuiltinContext* ctx) {
 // ============================================================================
 
 fn void builtin_arraybuffer_proto_resizable_get(BuiltinContext* ctx) {
-    TVal this_val = ctx.this_val;
-    if (!this_val.is_object() || this_val.get_heapptr() == null) {
-        arraybuffer_throw_type_error(ctx, "ArrayBuffer.prototype.resizable called on non-object");
-        return;
-    }
-    HObject* obj = (HObject*)this_val.get_heapptr();
-    if (!is_arraybuffer_obj(obj)) {
-        arraybuffer_throw_type_error(ctx, "ArrayBuffer.prototype.resizable called on incompatible receiver");
-        return;
-    }
+    HObject* obj = ab_this(ctx, "resizable");
+    if (obj == null) return;
     ctx.result.set_boolean((*obj.extra_ptr()).ab.resizable);
 }
 
@@ -308,22 +356,12 @@ fn void builtin_arraybuffer_proto_resizable_get(BuiltinContext* ctx) {
 // ArrayBuffer.prototype.maxByteLength getter — ES2024 §25.1.6.3
 // ============================================================================
 
-fn void builtin_arraybuffer_proto_maxbytelength_get(BuiltinContext* ctx) {
-    TVal this_val = ctx.this_val;
-    if (!this_val.is_object() || this_val.get_heapptr() == null) {
-        arraybuffer_throw_type_error(ctx, "ArrayBuffer.prototype.maxByteLength called on non-object");
-        return;
-    }
-    HObject* obj = (HObject*)this_val.get_heapptr();
-    if (!is_arraybuffer_obj(obj)) {
-        arraybuffer_throw_type_error(ctx, "ArrayBuffer.prototype.maxByteLength called on incompatible receiver");
-        return;
-    }
-    // Detached buffer: 0. Non-resizable: byteLength (spec §25.1.6.3).
-    if (((*obj.extra_ptr()).ab.byte_length == 0xFFFFFFFFu)) {
-        ctx.result.set_fastint(0);
-        return;
-    }
+/// Shared body for ArrayBuffer.prototype.maxByteLength (ES2024 §25.1.6.3) and
+/// SharedArrayBuffer.prototype.maxByteLength (§25.2.4.4): non-resizable/
+/// non-growable buffers report their fixed byteLength; resizable/growable
+/// buffers report max_byte_length. AB additionally reports 0 once detached —
+/// a state SAB can never be in, so callers there skip straight to this body.
+fn void arraybuffer_maxbytelength_body(BuiltinContext* ctx, HObject* obj) {
     if ((*obj.extra_ptr()).ab.resizable) {
         ctx.result.set_fastint((long)(*obj.extra_ptr()).ab.max_byte_length);
     } else {
@@ -331,21 +369,25 @@ fn void builtin_arraybuffer_proto_maxbytelength_get(BuiltinContext* ctx) {
     }
 }
 
+fn void builtin_arraybuffer_proto_maxbytelength_get(BuiltinContext* ctx) {
+    HObject* obj = ab_this(ctx, "maxByteLength");
+    if (obj == null) return;
+    // Detached buffer: 0 (spec §25.1.6.3 step 3). Checked before the shared
+    // body since SAB — which reuses that body — can never be detached.
+    if (((*obj.extra_ptr()).ab.byte_length == 0xFFFFFFFFu)) {
+        ctx.result.set_fastint(0);
+        return;
+    }
+    arraybuffer_maxbytelength_body(ctx, obj);
+}
+
 // ============================================================================
 // ArrayBuffer.prototype.resize(newLength) — ES2024 §25.1.6.9
 // ============================================================================
 
 fn void builtin_arraybuffer_proto_resize(BuiltinContext* ctx) {
-    TVal this_val = ctx.this_val;
-    if (!this_val.is_object() || this_val.get_heapptr() == null) {
-        arraybuffer_throw_type_error(ctx, "ArrayBuffer.prototype.resize called on non-object");
-        return;
-    }
-    HObject* obj = (HObject*)this_val.get_heapptr();
-    if (!is_arraybuffer_obj(obj)) {
-        arraybuffer_throw_type_error(ctx, "ArrayBuffer.prototype.resize called on incompatible receiver");
-        return;
-    }
+    HObject* obj = ab_this(ctx, "resize");
+    if (obj == null) return;
     if (!(*obj.extra_ptr()).ab.resizable) {
         arraybuffer_throw_type_error(ctx, "ArrayBuffer.prototype.resize: buffer is not resizable");
         return;
@@ -403,16 +445,8 @@ fn void builtin_arraybuffer_proto_resize(BuiltinContext* ctx) {
 // ============================================================================
 
 fn void arraybuffer_transfer_impl(BuiltinContext* ctx, bool preserve_resizable) {
-    TVal this_val = ctx.this_val;
-    if (!this_val.is_object() || this_val.get_heapptr() == null) {
-        arraybuffer_throw_type_error(ctx, "ArrayBuffer.prototype.transfer called on non-object");
-        return;
-    }
-    HObject* obj = (HObject*)this_val.get_heapptr();
-    if (!is_arraybuffer_obj(obj)) {
-        arraybuffer_throw_type_error(ctx, "ArrayBuffer.prototype.transfer called on incompatible receiver");
-        return;
-    }
+    HObject* obj = ab_this(ctx, "transfer");
+    if (obj == null) return;
     // Step 4: IsDetachedBuffer(O) — throw TypeError.
     if (((*obj.extra_ptr()).ab.byte_length == 0xFFFFFFFFu)) {
         arraybuffer_throw_type_error(ctx, "ArrayBuffer.prototype.transfer: buffer is detached");
@@ -504,22 +538,19 @@ fn void builtin_arraybuffer_proto_transfer_to_fixed_length(BuiltinContext* ctx) 
 }
 
 // ============================================================================
-// ArrayBuffer.prototype.slice(start, end) — ES2015 §24.1.4.3
+// ArrayBuffer.prototype.slice / SharedArrayBuffer.prototype.slice
+// ES2015 §24.1.4.3 / ES2024 §25.2.4.5 — identical species-lookup and index
+// clamping; only the receiver validation, fallback prototype, and result
+// ObjClass/is_shared bookkeeping differ between the two.
 // ============================================================================
 
-fn void builtin_arraybuffer_proto_slice(BuiltinContext* ctx) {
-    TVal this_val = ctx.this_val;
-    if (!this_val.is_object() || this_val.get_heapptr() == null) {
-        arraybuffer_throw_type_error(ctx, "ArrayBuffer.prototype.slice called on non-object");
-        return;
-    }
-    HObject* obj = (HObject*)this_val.get_heapptr();
-    if (!is_arraybuffer_obj(obj)) {
-        arraybuffer_throw_type_error(ctx, "ArrayBuffer.prototype.slice called on incompatible receiver");
-        return;
-    }
-    if (((*obj.extra_ptr()).ab.byte_length == 0xFFFFFFFFu)) {
-        arraybuffer_throw_type_error(ctx, "ArrayBuffer.prototype.slice: buffer is detached");
+fn void arraybuffer_slice_impl(BuiltinContext* ctx, bool is_shared) {
+    char[] label = is_shared ? "SharedArrayBuffer.prototype.slice" : "ArrayBuffer.prototype.slice";
+    HObject* obj = is_shared ? sab_this(ctx, "slice") : ab_this(ctx, "slice");
+    if (obj == null) return;
+    // A SharedArrayBuffer can never be detached, so this check only applies to AB.
+    if (!is_shared && ((*obj.extra_ptr()).ab.byte_length == 0xFFFFFFFFu)) {
+        arraybuffer_throw_type_error_label(ctx, label, "buffer is detached");
         return;
     }
 
@@ -563,7 +594,8 @@ fn void builtin_arraybuffer_proto_slice(BuiltinContext* ctx) {
     long new_len = end_idx - start_idx;
     if (new_len < 0) new_len = 0;
 
-    // SpeciesConstructor(O, ArrayBuffer) — ES2015 §24.1.4.3 step 12.
+    // SpeciesConstructor(O, %ArrayBuffer%/%SharedArrayBuffer%) — ES2015 §24.1.4.3
+    // step 12 / ES2024 §25.2.4.5.
     HString* ctor_key = (HString*)ctx.heap.strs[heap::BuiltinStr.CONSTRUCTOR];
     TVal ctor_val;
     if (try c = builtins_generic_get(obj, ctor_key, ctx)) {
@@ -577,7 +609,7 @@ fn void builtin_arraybuffer_proto_slice(BuiltinContext* ctx) {
     HObject* species_ctor = null;
     if (!ctor_val.is_undefined()) {
         if (!ctor_val.is_object() || ctor_val.get_heapptr() == null) {
-            arraybuffer_throw_type_error(ctx, "ArrayBuffer.prototype.slice: constructor is not an object");
+            arraybuffer_throw_type_error_label(ctx, label, "constructor is not an object");
             return;
         }
         HObject* c_obj = (HObject*)ctor_val.get_heapptr();
@@ -599,7 +631,7 @@ fn void builtin_arraybuffer_proto_slice(BuiltinContext* ctx) {
                     }
                 }
                 if (!use_species) {
-                    arraybuffer_throw_type_error(ctx, "ArrayBuffer.prototype.slice: species result is not a constructor");
+                    arraybuffer_throw_type_error_label(ctx, label, "species result is not a constructor");
                     return;
                 }
             }
@@ -618,20 +650,22 @@ fn void builtin_arraybuffer_proto_slice(BuiltinContext* ctx) {
             return;
         }
         if (!result_tv.is_object() || result_tv.get_heapptr() == null) {
-            arraybuffer_throw_type_error(ctx, "ArrayBuffer.prototype.slice: species constructor did not return an object");
+            arraybuffer_throw_type_error_label(ctx, label, "species constructor did not return an object");
             return;
         }
         new_buf = (HObject*)result_tv.get_heapptr();
-        if (!is_arraybuffer_obj(new_buf)) {
-            arraybuffer_throw_type_error(ctx, "ArrayBuffer.prototype.slice: species constructor did not return an ArrayBuffer");
+        bool result_ok = is_shared ? is_shared_arraybuffer_obj(new_buf) : is_arraybuffer_obj(new_buf);
+        if (!result_ok) {
+            char[] kind = is_shared ? "a SharedArrayBuffer" : "an ArrayBuffer";
+            arraybuffer_throw_type_error_label2(ctx, label, "species constructor did not return", kind);
             return;
         }
         if (new_buf == obj) {
-            arraybuffer_throw_type_error(ctx, "ArrayBuffer.prototype.slice: species constructor returned the same buffer");
+            arraybuffer_throw_type_error_label(ctx, label, "species constructor returned the same buffer");
             return;
         }
         if ((long)(*new_buf.extra_ptr()).ab.byte_length < new_len) {
-            arraybuffer_throw_type_error(ctx, "ArrayBuffer.prototype.slice: new buffer too small");
+            arraybuffer_throw_type_error_label(ctx, label, "new buffer too small");
             return;
         }
     } else {
@@ -641,7 +675,7 @@ fn void builtin_arraybuffer_proto_slice(BuiltinContext* ctx) {
             return;
         }
         new_buf = new_raw;
-        new_buf.prototype = ctx.heap.arraybuffer_proto;
+        new_buf.prototype = is_shared ? ctx.heap.sharedarraybuffer_proto : ctx.heap.arraybuffer_proto;
         char* new_data = null;
         if (new_len > 0) {
             new_data = (char*)ctx.heap.alloc_func(ctx.heap.heap_udata, (usz)new_len);
@@ -649,14 +683,15 @@ fn void builtin_arraybuffer_proto_slice(BuiltinContext* ctx) {
         }
         (*new_buf.extra_ptr()).ab.data = new_data;
         (*new_buf.extra_ptr()).ab.byte_length = (uint)new_len;
-        
         (*new_buf.extra_ptr()).ab.views_head = null;
+        (*new_buf.extra_ptr()).ab.is_shared = is_shared;
     }
 
     // Re-check detach AFTER any user-observable species construction (the
     // species constructor is arbitrary user code that may detach `obj`).
-    if (((*obj.extra_ptr()).ab.byte_length == 0xFFFFFFFFu)) {
-        arraybuffer_throw_type_error(ctx, "ArrayBuffer.prototype.slice: source buffer detached during species construction");
+    // A SharedArrayBuffer can never be detached, so this only fires for AB.
+    if (!is_shared && ((*obj.extra_ptr()).ab.byte_length == 0xFFFFFFFFu)) {
+        arraybuffer_throw_type_error_label(ctx, label, "source buffer detached during species construction");
         return;
     }
 
@@ -665,6 +700,14 @@ fn void builtin_arraybuffer_proto_slice(BuiltinContext* ctx) {
     }
 
     ctx.result.set_object(new_buf);
+}
+
+fn void builtin_arraybuffer_proto_slice(BuiltinContext* ctx) {
+    arraybuffer_slice_impl(ctx, false);
+}
+
+fn void builtin_sharedarraybuffer_proto_slice(BuiltinContext* ctx) {
+    arraybuffer_slice_impl(ctx, true);
 }
 
 // ============================================================================
@@ -727,94 +770,7 @@ fn bool is_shared_arraybuffer_obj(HObject* obj) {
 
 /// SharedArrayBuffer(length [, options]) constructor — ES2024 §25.2.2.1.
 fn void builtin_sharedarraybuffer(BuiltinContext* ctx) {
-    if (!ctx.is_constructor) {
-        arraybuffer_throw_type_error(ctx, "Constructor SharedArrayBuffer requires 'new'");
-        return;
-    }
-
-    TVal len_arg;
-    len_arg.set_undefined();
-    if (ctx.argc >= 1) len_arg = ctx.regs[ctx.base_reg];
-
-    double byte_length_wide = 0.0;
-    if (!arraybuffer_to_index_wide(ctx, &len_arg, &byte_length_wide)) {
-        return;
-    }
-
-    // GetArrayBufferMaxByteLengthOption — a present, non-undefined maxByteLength
-    // makes the shared buffer growable.
-    bool has_max = false;
-    double max_wide = 0.0;
-    if (ctx.argc >= 2) {
-        TVal opt = ctx.regs[ctx.base_reg + 1];
-        if (opt.is_object() && opt.get_heapptr() != null) {
-            HObject* opt_obj = (HObject*)opt.get_heapptr();
-            HString* mbl_key = builtin_intern_string(ctx.heap, "maxByteLength");
-            if (try mv = builtins_generic_get(opt_obj, mbl_key, ctx)) {
-                if (ctx.should_throw) return;
-                if (!mv.is_undefined()) {
-                    if (!arraybuffer_to_index_wide(ctx, &mv, &max_wide)) return;
-                    has_max = true;
-                }
-            } else {
-                return;
-            }
-        }
-    }
-
-    uint max_byte_length = 0;
-    if (has_max) {
-        if (max_wide > 2147483647.0) {
-            arraybuffer_throw_range_error(ctx, "Invalid shared array buffer maxByteLength");
-            return;
-        }
-        max_byte_length = (uint)max_wide;
-        if (byte_length_wide > max_wide) {
-            arraybuffer_throw_range_error(ctx, "SharedArrayBuffer length exceeds maxByteLength");
-            return;
-        }
-    }
-
-    HObject* instance_proto = arraybuffer_instance_proto(ctx, ctx.heap.sharedarraybuffer_proto);
-    if (ctx.should_throw) return;
-
-    HObject*? raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAYBUFFER);
-    if (catch err = raw) {
-        ctx.result.set_undefined();
-        return;
-    }
-    HObject* obj = raw;
-    obj.prototype = instance_proto;
-    (*obj.extra_ptr()).ab.data = null;
-    (*obj.extra_ptr()).ab.byte_length = 0;
-    (*obj.extra_ptr()).ab.views_head = null;
-
-    uint byte_length = 0;
-    if (byte_length_wide > 2147483647.0) {
-        arraybuffer_throw_range_error(ctx, "Invalid shared array buffer length");
-        return;
-    }
-    byte_length = (uint)byte_length_wide;
-
-    // For growable SABs, allocate the full maxByteLength up front so the backing
-    // pointer is stable across grow() (grow-in-place, views never see a realloc).
-    uint alloc_len = has_max ? max_byte_length : byte_length;
-    char* data = null;
-    if (alloc_len > 0) {
-        data = (char*)ctx.heap.alloc_func(ctx.heap.heap_udata, (usz)alloc_len);
-        if (data == null) {
-            arraybuffer_throw_range_error(ctx, "Out of memory allocating SharedArrayBuffer");
-            return;
-        }
-        mem::clear(data, (sz)((usz)alloc_len));
-    }
-    (*obj.extra_ptr()).ab.data = data;
-    (*obj.extra_ptr()).ab.byte_length = byte_length;
-    (*obj.extra_ptr()).ab.resizable = has_max;
-    (*obj.extra_ptr()).ab.max_byte_length = max_byte_length;
-    (*obj.extra_ptr()).ab.is_shared = true;
-
-    ctx.result.set_object(obj);
+    arraybuffer_construct_impl(ctx, true);
 }
 
 /// Shared receiver validation for SharedArrayBuffer.prototype methods.
@@ -850,11 +806,7 @@ fn void builtin_sharedarraybuffer_proto_growable_get(BuiltinContext* ctx) {
 fn void builtin_sharedarraybuffer_proto_maxbytelength_get(BuiltinContext* ctx) {
     HObject* obj = sab_this(ctx, "maxByteLength");
     if (obj == null) return;
-    if ((*obj.extra_ptr()).ab.resizable) {
-        ctx.result.set_fastint((long)(*obj.extra_ptr()).ab.max_byte_length);
-    } else {
-        ctx.result.set_fastint((long)(*obj.extra_ptr()).ab.byte_length);
-    }
+    arraybuffer_maxbytelength_body(ctx, obj);
 }
 
 /// SharedArrayBuffer.prototype.grow(newLength) — ES2024 §25.2.4.3.
@@ -886,149 +838,6 @@ fn void builtin_sharedarraybuffer_proto_grow(BuiltinContext* ctx) {
     // Grow in place: the store is already maxByteLength bytes, zero-filled.
     (*obj.extra_ptr()).ab.byte_length = new_len;
     ctx.result.set_undefined();
-}
-
-/// SharedArrayBuffer.prototype.slice(start, end) — ES2024 §25.2.4.5.
-/// Always produces a (non-shared? no — shared) SharedArrayBuffer via species.
-fn void builtin_sharedarraybuffer_proto_slice(BuiltinContext* ctx) {
-    HObject* obj = sab_this(ctx, "slice");
-    if (obj == null) return;
-
-    long len = (long)(*obj.extra_ptr()).ab.byte_length;
-
-    TVal start_arg; start_arg.set_undefined();
-    TVal end_arg;   end_arg.set_undefined();
-    if (ctx.argc >= 1) start_arg = ctx.regs[ctx.base_reg];
-    if (ctx.argc >= 2) end_arg   = ctx.regs[ctx.base_reg + 1];
-
-    long rel_start = 0;
-    if (!start_arg.is_undefined()) {
-        double d = builtin_to_integer_vm(ctx, &start_arg);
-        if (ctx.should_throw) return;
-        rel_start = (long)d;
-    }
-    long start_idx;
-    if (rel_start < 0) {
-        start_idx = len + rel_start;
-        if (start_idx < 0) start_idx = 0;
-    } else {
-        start_idx = rel_start;
-        if (start_idx > len) start_idx = len;
-    }
-
-    long rel_end = len;
-    if (!end_arg.is_undefined()) {
-        double d = builtin_to_integer_vm(ctx, &end_arg);
-        if (ctx.should_throw) return;
-        rel_end = (long)d;
-    }
-    long end_idx;
-    if (rel_end < 0) {
-        end_idx = len + rel_end;
-        if (end_idx < 0) end_idx = 0;
-    } else {
-        end_idx = rel_end;
-        if (end_idx > len) end_idx = len;
-    }
-
-    long new_len = end_idx - start_idx;
-    if (new_len < 0) new_len = 0;
-
-    // SpeciesConstructor(O, %SharedArrayBuffer%).
-    HString* ctor_key = (HString*)ctx.heap.strs[heap::BuiltinStr.CONSTRUCTOR];
-    TVal ctor_val;
-    if (try c = builtins_generic_get(obj, ctor_key, ctx)) {
-        ctor_val = c;
-        if (ctx.should_throw) return;
-    } else {
-        return;
-    }
-
-    bool use_species = false;
-    HObject* species_ctor = null;
-    if (!ctor_val.is_undefined()) {
-        if (!ctor_val.is_object() || ctor_val.get_heapptr() == null) {
-            arraybuffer_throw_type_error(ctx, "SharedArrayBuffer.prototype.slice: constructor is not an object");
-            return;
-        }
-        HObject* c_obj = (HObject*)ctor_val.get_heapptr();
-        HString* species_sym = ensure_species_symbol(ctx.heap);
-        if (species_sym != null) {
-            TVal species_val;
-            if (try s = builtins_generic_get(c_obj, species_sym, ctx)) {
-                species_val = s;
-                if (ctx.should_throw) return;
-            } else {
-                return;
-            }
-            if (!species_val.is_undefined() && !species_val.is_null()) {
-                if (species_val.is_object() && species_val.get_heapptr() != null) {
-                    HObject* s_obj = (HObject*)species_val.get_heapptr();
-                    if (s_obj.is_callable()) {
-                        species_ctor = s_obj;
-                        use_species = true;
-                    }
-                }
-                if (!use_species) {
-                    arraybuffer_throw_type_error(ctx, "SharedArrayBuffer.prototype.slice: species result is not a constructor");
-                    return;
-                }
-            }
-        }
-    }
-
-    HObject* new_buf = null;
-    if (use_species && species_ctor != null) {
-        TVal ctor_tv; ctor_tv.set_object(species_ctor);
-        TVal len_arg; len_arg.set_fastint(new_len);
-        TVal result_tv = ctx.heap.construct_fn(ctx.vm, ctor_tv, &len_arg, 1, ctor_tv);
-        if (ctx.heap.has_error) {
-            ctx.should_throw = true;
-            ctx.throw_value = ctx.heap.error_value;
-            ctx.heap.has_error = false;
-            return;
-        }
-        if (!result_tv.is_object() || result_tv.get_heapptr() == null) {
-            arraybuffer_throw_type_error(ctx, "SharedArrayBuffer.prototype.slice: species constructor did not return an object");
-            return;
-        }
-        new_buf = (HObject*)result_tv.get_heapptr();
-        if (!is_shared_arraybuffer_obj(new_buf)) {
-            arraybuffer_throw_type_error(ctx, "SharedArrayBuffer.prototype.slice: species constructor did not return a SharedArrayBuffer");
-            return;
-        }
-        if (new_buf == obj) {
-            arraybuffer_throw_type_error(ctx, "SharedArrayBuffer.prototype.slice: species constructor returned the same buffer");
-            return;
-        }
-        if ((long)(*new_buf.extra_ptr()).ab.byte_length < new_len) {
-            arraybuffer_throw_type_error(ctx, "SharedArrayBuffer.prototype.slice: new buffer too small");
-            return;
-        }
-    } else {
-        HObject*? new_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAYBUFFER);
-        if (catch err = new_raw) {
-            ctx.result.set_undefined();
-            return;
-        }
-        new_buf = new_raw;
-        new_buf.prototype = ctx.heap.sharedarraybuffer_proto;
-        char* new_data = null;
-        if (new_len > 0) {
-            new_data = (char*)ctx.heap.alloc_func(ctx.heap.heap_udata, (usz)new_len);
-            if (new_data != null) mem::clear(new_data, (sz)((usz)new_len));
-        }
-        (*new_buf.extra_ptr()).ab.data = new_data;
-        (*new_buf.extra_ptr()).ab.byte_length = (uint)new_len;
-        (*new_buf.extra_ptr()).ab.views_head = null;
-        (*new_buf.extra_ptr()).ab.is_shared = true;
-    }
-
-    if (new_len > 0 && (*new_buf.extra_ptr()).ab.data != null) {
-        mem::copy((*new_buf.extra_ptr()).ab.data, (*obj.extra_ptr()).ab.data + start_idx, (sz)((usz)new_len));
-    }
-
-    ctx.result.set_object(new_buf);
 }
 
 /// SharedArrayBuffer[Symbol.species] getter — returns `this`.
