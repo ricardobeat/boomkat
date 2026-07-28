@@ -104,7 +104,17 @@ Full-engine pass for duplication/elegance/compactness at constant perf+correctne
 
 - [ ] **Generator driver family** — sync YIELD_STAR opcode vs async yield* machinery vs async_generator.c3 drain; unify the delegation/completion surface. Also duplicated activation-teardown in vm_generators.c3 (AWAIT reject/OOM paths repeat ~40 lines).
 - [ ] **Three super mechanisms** — plan 059's unification (GETPROTO(homeObject) everywhere).
-- [ ] **Builtin error-throw boilerplate** — dozens of hand-rolled alloc ERROR + intern message + put_prop blocks. Helper families exist per-file (arr_throw_*, arraybuffer_throw_*) but aren't shared engine-wide.
+- [ ] **Builtin error-throw boilerplate — ~55 raw sites left.** The inventory found 75 raw
+  `alloc_object(ObjClass.ERROR)` blocks against ~40 existing throw helpers, so this was
+  never a missing-abstraction problem: `builtin_throw` (builtins) and `vm_throw_error` /
+  `throw_type_error_at` (VM, different signature — needs act/curr_pc/needs_restart) are the
+  established convention and most files already use them. The highest-density outliers
+  (function.c3 9 sites, vm_control.c3 4, vm_calls.c3 1, vm_core.c3 1) were migrated in
+  `bd8bfb50`/`f0a1c2d3` for -183 lines. The tail is object.c3 (12 raw vs 89 already-helper),
+  promise.c3 (10), generator.c3 (3), vm_coerce.c3 (3), core.c3 (4), and singles elsewhere.
+  Same method applies. **Any further pass must mechanically diff every message literal** —
+  test262 does not assert on message text, so a changed message passes the suite while being
+  a real user-visible regression.
 - [ ] **Keyed-collection internals** — coll_* helpers + group_by_* + getOrInsert grew adjacent copies of key canonicalization.
 - [ ] **Lexer scan buffers** — string/template/ident decode paths share arena+normalize logic candidates.
 - [ ] **Enum/metadata/dispatch triple registration** in core.c3 for every builtin (persistent merge-conflict magnet) — consider a table macro.
