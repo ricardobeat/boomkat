@@ -692,7 +692,8 @@ enum HType : char {
 /// Bit  4:    has a C finalizer attached
 /// Bit  5:    the finalizer has already run
 /// Bit  6:    the object is read-only
-/// Bits 7-31: available for subtype-specific flags
+/// Bit  7:    dead and sitting on the heap's deferred-free queue
+/// Bits 8-31: available for subtype-specific flags
 bitstruct HeapFlags : uint {
     HType htype        : 0..1;
     bool  reachable    : 2;
@@ -700,6 +701,7 @@ bitstruct HeapFlags : uint {
     bool  finalizable  : 4;
     bool  finalized    : 5;
     bool  readonly     : 6;
+    bool  pending_free : 7;
 }
 
 /// Every GC-managed object begins with this header.  The doubly-linked
@@ -777,6 +779,13 @@ fn void HeapHeader.set_finalized(&self)     { self.flags.finalized = true; }
 fn void HeapHeader.clear_finalized(&self)   { self.flags.finalized = false; }
 /// Returns true when the finalizer has already executed.
 fn bool HeapHeader.is_finalized(&self)      { return self.flags.finalized; }
+
+/// Marks the object as dead and queued on the deferred-free list. A queued
+/// object is already unlinked from heap_allocated and must never be handed
+/// back out, marked, swept, or decref'd again — only drained.
+fn void HeapHeader.set_pending_free(&self)   { self.flags.pending_free = true; }
+/// Returns true when the object is waiting on the deferred-free queue.
+fn bool HeapHeader.is_pending_free(&self)    { return self.flags.pending_free; }
 
 /// Marks the object as read-only.
 fn void HeapHeader.set_readonly(&self)      { self.flags.readonly = true; }

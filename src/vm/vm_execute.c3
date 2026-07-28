@@ -1685,14 +1685,16 @@ fn TVal? Vm.run(Vm* vm) {
             continue;
         }
 
-        // The constant loads below overwrite ra raw.  When the old contents
-        // were an owned heap reference the count is not dropped here: objects
-        // and interned strings are reachable from the heap list or string
-        // table, and large non-interned strings from the large-string
-        // registry, so mark-and-sweep reclaims whatever this drops on the
-        // floor.  Paying decref_tval on every constant load costs more on
-        // these hot opcodes than the delayed collection saves.
+        // The constant loads below release whatever ra held before overwriting
+        // it.  The register is the owner of that reference, so dropping it
+        // without a decref strands the object until a mark-and-sweep cycle —
+        // and a register reused as a loop temporary strands one object per
+        // iteration, which is enough to keep an entire linked structure alive.
+        // The is_heap_allocated() test is a single tag compare and is false for
+        // the overwhelmingly common fastint/boolean case, so the fast path
+        // stays a predictable not-taken branch.
         case Opcode.LDINT:
+            if (ra.is_heap_allocated()) { vm.heap.decref_tval(ra); }
             ra.set_fastint((long)insn.get_sbc());
             continue;
 
@@ -1705,18 +1707,22 @@ fn TVal? Vm.run(Vm* vm) {
         }
 
         case Opcode.LDUNDEF:
+            if (ra.is_heap_allocated()) { vm.heap.decref_tval(ra); }
             ra.set_undefined();
             continue;
 
         case Opcode.LDNULL:
+            if (ra.is_heap_allocated()) { vm.heap.decref_tval(ra); }
             ra.set_null();
             continue;
 
         case Opcode.LDTRUE:
+            if (ra.is_heap_allocated()) { vm.heap.decref_tval(ra); }
             ra.set_boolean(true);
             continue;
 
         case Opcode.LDFALSE:
+            if (ra.is_heap_allocated()) { vm.heap.decref_tval(ra); }
             ra.set_boolean(false);
             continue;
 

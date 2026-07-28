@@ -396,10 +396,16 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
             bool is_inc = (op == Opcode.INC_GLOBAL);
 
             // Every exit below writes the statement-value into ra, and the
-            // numeric fast paths write raw. Clear the slot up front so a GC
-            // triggered by a slow-path coercion cannot scan a stale pointer;
-            // whatever reference ra held is left to mark-and-sweep rather
-            // than paying a decref on every global increment.
+            // numeric fast paths write raw. Release whatever reference ra held
+            // and clear the slot up front, so a GC triggered by a slow-path
+            // coercion cannot scan a stale pointer. The decref is what lets a
+            // register that last held an object drop to zero here: a global
+            // loop counter is typically incremented in the same frame that a
+            // GETGLOBAL parked an object in this register, and skipping the
+            // release would strand that object until a mark-and-sweep cycle.
+            if (ra.is_heap_allocated()) {
+                vm.heap.decref_tval(ra);
+            }
             ra.set_undefined();
 
             if (ds.var_ic_base != null) {

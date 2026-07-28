@@ -497,6 +497,29 @@ struct Heap {
     // memory is reclaimed by the sweep, not by refcounting.
     bool                sweeping;
 
+    // ---- Deferred-free queue -------------------------------------------
+    // A decref that reaches zero does not free the object inline. It unlinks
+    // it from heap_allocated, flags it dead, and pushes it here; the queue is
+    // then drained under a budget. Two reasons, in order of importance:
+    //
+    //  1. Correctness. Freeing inline recurses (hobject_free -> decref ->
+    //     hobject_free) once per level of the structure being dropped, so a
+    //     100k-deep list overflows the C stack. Draining iteratively makes the
+    //     recursion depth O(1) regardless of structure depth.
+    //  2. Latency. Releasing a large structure is one unbounded burst of work
+    //     inside a single VM instruction. The budget spreads it over many
+    //     drains so no single operation can stall for the whole cascade.
+    //
+    // The queue is intrusive: dead objects are threaded through their own
+    // HeapHeader.next, so enqueuing allocates nothing and cannot fail. The
+    // header stays readable until the node is actually torn down.
+    HeapHeader*         pending_free_head;
+    HeapHeader*         pending_free_tail;
+    uint                pending_free_count;
+    /// Set while drain_pending_frees() is running, so a decref reaching zero
+    /// during a teardown enqueues instead of re-entering the drain loop.
+    bool                draining;
+
     // VM callback for calling JS functions from builtins (set by vm_create)
     VmCallHandlerFn     call_handler_fn;
     VmCallFn            call_fn;
@@ -737,6 +760,10 @@ fn Heap*? create(
     h.gc_pending            = false;
     h.bwd_gc_budget         = BWD_GC_INTERVAL;
     h.native_frame_depth    = 0;
+    h.pending_free_head     = null;
+    h.pending_free_tail     = null;
+    h.pending_free_count    = 0;
+    h.draining              = false;
 
     // Allocate gray object stack
     void* gray_raw = afn(udata, void*::size * GRAY_STACK_INITIAL_CAP);
@@ -1082,6 +1109,12 @@ fn void Heap.free_compiled_funcs(&self) {
  * the heap struct itself.
  */
 fn void Heap.destroy(&self) {
+    // Retire the deferred-free queue while the heap is still active, so queued
+    // nodes release their children through the normal refcount path. Budget 0
+    // means "drain to empty"; each teardown may enqueue more, and the loop
+    // keeps going until nothing is left.
+    self.drain_pending_frees(0);
+
     // Deactivate the active heap so hobject_free skips its RC decref loop —
     // teardown frees everything directly, mixing decref with str_table
     // backshift-delete corrupts the table for the subsequent str_table sweep.
@@ -1239,6 +1272,11 @@ fn void Heap.reset(&self) {
         }
     }
 
+    // Retire the deferred-free queue while the heap is still active, for the
+    // same reason as in destroy(): queued nodes must release their children
+    // through the refcount path before teardown mode disables it.
+    self.drain_pending_frees(0);
+
     // Deactivate the active heap so hobject_free skips the RC decref loop —
     // same teardown-mode guard as in destroy().
     hobject::hobject_clear_active_heap();
@@ -1359,6 +1397,12 @@ fn void Heap.reset(&self) {
     self.bwd_gc_budget    = BWD_GC_INTERVAL;
     self.native_frame_depth = 0;
     self.gray_count       = 0;
+    // The queue was drained to empty above; clear the bookkeeping so the next
+    // run starts from a known state.
+    self.pending_free_head  = null;
+    self.pending_free_tail  = null;
+    self.pending_free_count = 0;
+    self.draining           = false;
 
     // Clear the megamorphic property cache — it holds stale HObject*/HString*
     // pointers from the previous run.  Since pool allocators are reset to the
@@ -1629,6 +1673,14 @@ fn void*? Heap.alloc_no_gc(&self, usz size) {
  * Returns the new HObject or a fault on allocation failure.
  */
 fn HObject*? Heap.alloc_object(&self, hobject::ObjClass cls) {
+    // Pay down the deferred-free queue before allocating, not after: this is
+    // the point where the program is asking for memory, so returning dead
+    // blocks to the pool here is what keeps a steady allocate/discard loop
+    // from growing the heap. Draining first also guarantees the object about
+    // to be allocated is never itself a drain target.
+    if (self.pending_free_head != null) {
+        self.drain_pending_frees(PENDING_FREE_BUDGET);
+    }
     HObject*? result = hobject::hobject_alloc((void*)self, cls);
     if (try obj = result) {
         // Insert into the heap_allocated linked list (preserving flags
@@ -1726,6 +1778,14 @@ fn void Heap.decref(&self, HeapHeader* hdr) {
     if (self.sweeping && !hdr.is_string() && !hdr.is_reachable() && !hdr.is_temproot()) {
         return;
     }
+    // Queue guard: the node is already dead and waiting to be drained. Its
+    // refcount is zero and its remaining references are exactly the ones the
+    // drain will release, so decrementing again would underflow and enqueue it
+    // a second time. This fires when a dying object's teardown decrefs a
+    // sibling that an earlier teardown in the same cascade already killed.
+    if (hdr.is_pending_free()) {
+        return;
+    }
 $if $feature(GC_PROFILE):
     self.gc_prof.decrefs++;
     // Only the OUTERMOST decref opens a cascade window. Recursive decrefs
@@ -1745,6 +1805,10 @@ $if $feature(GC_PROFILE):
         self.gc_prof.cascade_objs++;
 $endif
         if (hdr.is_string()) {
+            // Strings are leaves: freeing one cannot cascade, so there is no
+            // depth or burst to bound. They are also weakly held by the intern
+            // table and the large-string registry, which must not keep a dead
+            // entry visible, so the release stays immediate.
             hstring::HString* s = (hstring::HString*)hdr;
             if (s.flags.is_interned) {
                 self.str_table_remove(s);
@@ -1753,13 +1817,12 @@ $endif
             }
             self.free_string(s);
         } else {
+            // Objects, buffers and BigInt boxes go on the deferred-free queue.
+            // Unlink from the live list and flag the node dead right away, so
+            // from this instant it is invisible to the mark phase, the sweep,
+            // and any further decref — only the drain may touch it.
             hdr.unlink(&self.heap_allocated);
-            if (hdr.is_object()) {
-                hobject::hobject_free((HObject*)hdr, (void*)self);
-            } else {
-                // Buffer or BigInt box — leaf, free directly.
-                self.free_func(self.heap_udata, hdr);
-            }
+            self.enqueue_pending_free(hdr);
         }
     }
 $if $feature(GC_PROFILE):
@@ -1779,6 +1842,83 @@ $if $feature(GC_PROFILE):
         }
     }
 $endif
+}
+
+/// Default number of dead nodes released per drain. Chosen from the pause
+/// measurements in the cascade benchmark: teardown costs roughly 70ns per
+/// object, so 512 nodes is about 35us of work — two orders of magnitude
+/// under the 16.7ms frame budget, while still large enough that the
+/// per-drain overhead is amortised and a steady allocation rate keeps up
+/// with a steady death rate.
+const uint PENDING_FREE_BUDGET = 512;
+
+/**
+ * Push a dead node onto the deferred-free queue.
+ *
+ * The caller has already unlinked `hdr` from heap_allocated and is giving up
+ * the last reference to it. The node is flagged pending_free and threaded onto
+ * the queue through its own `next` pointer, so this allocates nothing and
+ * cannot fail. `prev` is cleared because the queue is singly linked.
+ *
+ * From here the node is dead but its memory is still valid: the header remains
+ * readable (the drain needs its type and class), while the pending_free flag
+ * keeps it out of the mark phase, the sweep, and any further decref.
+ */
+fn void Heap.enqueue_pending_free(&self, HeapHeader* hdr) {
+    hdr.set_pending_free();
+    hdr.next = null;
+    hdr.prev = null;
+    if (self.pending_free_tail != null) {
+        self.pending_free_tail.next = hdr;
+    } else {
+        self.pending_free_head = hdr;
+    }
+    self.pending_free_tail = hdr;
+    self.pending_free_count++;
+}
+
+/**
+ * Release up to `budget` nodes from the deferred-free queue (0 == drain the
+ * whole queue, used at reset/destroy).
+ *
+ * Each node's teardown decrefs the children it owned, which typically pushes
+ * more nodes onto the tail of this same queue. That is what turns the
+ * recursive free cascade into an iterative one: the recursion depth stays
+ * O(1) no matter how deep the structure being dropped, and the work is
+ * naturally spread across later drains instead of running to completion inside
+ * one VM instruction.
+ *
+ * `draining` keeps the loop non-reentrant — a decref reaching zero underneath
+ * hobject_free enqueues and returns rather than starting a nested drain.
+ */
+fn void Heap.drain_pending_frees(&self, uint budget) {
+    if (self.draining) { return; }
+    if (self.pending_free_head == null) { return; }
+    self.draining = true;
+
+    uint done = 0;
+    while (self.pending_free_head != null && (budget == 0 || done < budget)) {
+        HeapHeader* node = self.pending_free_head;
+        self.pending_free_head = node.next;
+        if (self.pending_free_head == null) {
+            self.pending_free_tail = null;
+        }
+        self.pending_free_count--;
+
+        if (node.is_object()) {
+            // Teardown and header release are one step here: unlike the sweep,
+            // a queued node's neighbours are either live (safe to decref) or
+            // already queued (skipped by the pending_free guard in decref), so
+            // nothing can read this header after it goes away.
+            hobject::hobject_free((HObject*)node, (void*)self);
+        } else {
+            // Buffer or BigInt box — leaf, free directly.
+            self.free_func(self.heap_udata, node);
+        }
+        done++;
+    }
+
+    self.draining = false;
 }
 
 /**
@@ -3093,6 +3233,12 @@ fn void Heap.trigger_gc(&self) {
  * and still reclaims everything the mark phase can prove dead.
  */
 fn void Heap.safepoint_gc(&self) {
+    // Retire queued dead nodes before marking. Anything still on the queue is
+    // already unreachable and already unlinked from heap_allocated, so this is
+    // pure work the mark phase would otherwise have no reason to look at — and
+    // it keeps the queue from being the thing that holds memory at the exact
+    // moment the collector is deciding the heap is too big.
+    self.drain_pending_frees(PENDING_FREE_BUDGET);
     bool quiescent = self.native_frame_depth == 0;
     self.string_sweep_safe = quiescent;
     self.mark_and_sweep(true);

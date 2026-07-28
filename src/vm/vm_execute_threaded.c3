@@ -154,6 +154,12 @@ fn Instruction* th_jmp_lt(Instruction* pc, Instruction* code_end, TVal* regs, Co
 fn Instruction* th_ldint(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     TVal* ra = regs + insn.a;
+    // Release the register's previous occupant, mirroring the switch VM: the
+    // register owns that reference, and dropping it strands the object until a
+    // mark-and-sweep cycle.
+    if (ra.is_heap_allocated()) {
+        cold.vm.heap.decref_tval(ra);
+    }
     ra.set_fastint((long)insn.get_sbc());
     pc++;
     return th_next(pc, code_end, regs, cold);
