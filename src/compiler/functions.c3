@@ -2230,6 +2230,128 @@ fn void? CompilerContext.hoist_global_fn_decls(&self, bool checks_only = false) 
     self.lexer.seen_line_term  = saved_slt;
 }
 
+/// Emit the parameter prologue: the function-level lexical scope, the TDZ
+/// sentinels, the default-value checks, and the PUTLEXes that make each param
+/// visible. Runs after the parameter list is parsed and every param has a
+/// register, and before the body — including before `emit_destruct_bindings`,
+/// since destructuring patterns may reference earlier params.
+///
+/// Shared by all four compilation entry points (`parse_function_body`,
+/// `compile_inner_function`, `compile_arrow_inner_reparse`, and the arrow
+/// bodies) because they must emit byte-identical prologues: each one that
+/// hand-rolled its own copy is a place the next parameter-scope fix has to be
+/// applied again, and historically was not.
+///
+/// `param_name_indices` holds each param's string-constant index in
+/// declaration order; `first_default_idx` is the 0-based arg index of the
+/// first defaulted param, or 0xFFFF when none has a default.
+fn void? CompilerContext.emit_param_prologue(&self, ushort arg_count,
+                                             ushort first_default_idx,
+                                             uint[] param_name_indices) {
+    // Push a function-level lexical scope for let/const at function top level.
+    // This sits above the block-level PUSH_LEX emitted by block() so that
+    // function-level let/const go into a scope that outlives inner blocks.
+    // Skip when there are no default parameters (the only case that needs
+    // a function-level scope distinct from the block scope).
+    bool has_func_lex = self.default_count > 0;
+    if (has_func_lex) {
+        self.emit_simple(Opcode.PUSH_LEX);
+
+        // TDZ: initialize ALL params with sentinels in the parameter scope.
+        // When defaults exist, every param is in TDZ until its default check
+        // completes (for default params) or until it becomes visible (non-default).
+        for (ushort ai = 0; ai < arg_count; ai++) {
+            uint ni = param_name_indices[ai];
+            self.emit_a_bc(Opcode.INITTZ, 0, ni);
+        }
+
+        // Emit PUTLEX for pre-default params only.
+        // Pre-default params are not in TDZ — they're already initialized by arguments.
+        ushort ai = 0;
+        while (ai < first_default_idx) {
+            uint ni = param_name_indices[ai];
+            // Source register is the param's own slot (params occupy r0..rN in
+            // declaration order); using r0 unconditionally would copy the first
+            // param's value into every lex binding.
+            self.emit_a_bc(Opcode.PUTLEX, (uint)ai, ni);
+            ai++;
+        }
+    }
+
+    // Emit default parameter checks (must run before body, after PUSH_LEX)
+    for (ushort di = 0; di < self.default_count; di++) {
+        ushort pr = self.defaults[di].param_reg;
+        uint name_idx = self.defaults[di].param_name_idx;
+        uint func_idx = self.defaults[di].default_func_idx;
+
+        // Check if param != undefined; if so, skip default evaluation
+        ushort undef_reg = self.alloc_reg();
+        self.emit_abc(Opcode.LDUNDEF, (uint)undef_reg, 0, 0);
+        ushort cmp_reg = self.alloc_reg();
+        self.emit_abc(Opcode.SNEQ, (uint)cmp_reg, (uint)pr, (uint)undef_reg);
+        self.free_reg(undef_reg);
+
+        // IF_TRUE: skip past default evaluation (will be patched)
+        uint skip_addr = self.code_count;
+        self.emit(bytecode::make_a_sbx(Opcode.IF_TRUE, (uint)cmp_reg, 0));
+        self.free_reg(cmp_reg);
+
+        // CLOSURE for default function
+        ushort closure_reg = self.alloc_reg();
+        self.emit_a_bc(Opcode.CLOSURE, (uint)closure_reg, func_idx);
+
+        // Set up call: consecutive registers for callee + this
+        ushort call_base = self.alloc_reg();
+        if (self.next_reg <= call_base + 1) {
+            self.next_reg = call_base + 2;
+        }
+        ushort this_reg = self.alloc_reg();
+        self.emit_abc(Opcode.LDREG, (uint)call_base, (uint)closure_reg, 0);
+        self.emit_abc(Opcode.LDTHIS, (uint)(call_base + 1), 0, 0);
+
+        self.emit_abc(Opcode.CALL, (uint)call_base, (uint)call_base, 0);
+
+        // Copy default result to parameter register.
+        self.emit_abc(Opcode.LDREG, (uint)pr, (uint)call_base, 0);
+
+        self.free_regs_to(call_base);
+
+        // Patch the skip jump to land AFTER free_regs_to but BEFORE PUTVAR.
+        // This ensures PUTVAR runs for BOTH branches (argument passed or default used).
+        int skip_off = (int)self.code_count - (int)skip_addr - 1;
+        self.code[skip_addr] = bytecode::make_a_sbx(Opcode.IF_TRUE, (uint)cmp_reg, skip_off);
+
+        // Write to lex scope first (clears TDZ sentinel), then var_env.
+        // GETVAR reloads from env in case PUTVAR cleared it.
+        self.emit_a_bc(Opcode.PUTLEX, (uint)pr, name_idx);
+        self.emit_a_bc(Opcode.PUTVAR, (uint)pr, name_idx);
+        self.emit_a_bc(Opcode.GETVAR, (uint)pr, name_idx);
+    }
+
+    // Emit PUTLEX for non-default params that appear after the first default.
+    // These were in TDZ but should now be visible once all defaults are evaluated.
+    if (has_func_lex && first_default_idx != 0xFFFF) {
+        ushort ai = first_default_idx;
+        while (ai < arg_count) {
+            uint ni = param_name_indices[ai];
+            // Check if this param has a default (was already handled above).
+            bool is_default_param = false;
+            for (ushort di = 0; di < self.default_count; di++) {
+                if (self.defaults[di].param_name_idx == ni) {
+                    is_default_param = true;
+                    break;
+                }
+            }
+            if (!is_default_param) {
+                // Source register is the param's own slot (see note above);
+                // r0 unconditionally would alias the first param's value.
+                self.emit_a_bc(Opcode.PUTLEX, (uint)ai, ni);
+            }
+            ai++;
+        }
+    }
+}
+
 /// Parse function body (parameters and block) and compile into a nested context.
 fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
     // Parse parameter list
@@ -2429,111 +2551,10 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
     }
 
 
-    // Push a function-level lexical scope for let/const at function top level.
-    // This sits above the block-level PUSH_LEX emitted by block() so that
-    // function-level let/const go into a scope that outlives inner blocks.
-    // Skip when there are no default parameters (the only case that needs
-    // a function-level scope distinct from the block scope).
+    // Mirrors the prologue's own condition: the matching POP_LEX (and the
+    // body's PUSH_VAR/POP_VAR) are emitted downstream by each caller.
     bool has_func_lex = self.default_count > 0;
-    if (has_func_lex) {
-        self.emit_simple(Opcode.PUSH_LEX);
-
-        // TDZ: initialize ALL params with sentinels in the parameter scope.
-        // When defaults exist, every param is in TDZ until its default check
-        // completes (for default params) or until it becomes visible (non-default).
-        for (ushort ai = 0; ai < arg_count; ai++) {
-            uint ni = param_name_indices[ai];
-            self.emit_a_bc(Opcode.INITTZ, 0, ni);
-        }
-
-        // Emit PUTLEX for pre-default params only.
-        // Pre-default params are not in TDZ — they're already initialized by arguments.
-        ushort ai = 0;
-        while (ai < first_default_idx) {
-            uint ni = param_name_indices[ai];
-            // Source register is the param's own slot (params occupy r0..rN in
-            // declaration order); using r0 unconditionally would copy the first
-            // param's value into every lex binding.
-            self.emit_a_bc(Opcode.PUTLEX, (uint)ai, ni);
-            ai++;
-        }
-
-        // After all default checks complete, emit PUTLEX for non-default params
-        // that appear after the first default (they were in TDZ but should now be visible).
-    }
-
-    // Emit default parameter checks (must run before body, after PUSH_LEX)
-    for (ushort di = 0; di < self.default_count; di++) {
-        ushort pr = self.defaults[di].param_reg;
-        uint name_idx = self.defaults[di].param_name_idx;
-        uint func_idx = self.defaults[di].default_func_idx;
-
-        // Check if param != undefined; if so, skip default evaluation
-        ushort undef_reg = self.alloc_reg();
-        self.emit_abc(Opcode.LDUNDEF, (uint)undef_reg, 0, 0);
-        ushort cmp_reg = self.alloc_reg();
-        self.emit_abc(Opcode.SNEQ, (uint)cmp_reg, (uint)pr, (uint)undef_reg);
-        self.free_reg(undef_reg);
-
-        // IF_TRUE: skip past default evaluation (will be patched)
-        uint skip_addr = self.code_count;
-        self.emit(bytecode::make_a_sbx(Opcode.IF_TRUE, (uint)cmp_reg, 0));
-        self.free_reg(cmp_reg);
-
-        // CLOSURE for default function
-        ushort closure_reg = self.alloc_reg();
-        self.emit_a_bc(Opcode.CLOSURE, (uint)closure_reg, func_idx);
-
-        // Set up call: consecutive registers for callee + this
-        ushort call_base = self.alloc_reg();
-        if (self.next_reg <= call_base + 1) {
-            self.next_reg = call_base + 2;
-        }
-        ushort this_reg = self.alloc_reg();
-        self.emit_abc(Opcode.LDREG, (uint)call_base, (uint)closure_reg, 0);
-        self.emit_abc(Opcode.LDTHIS, (uint)(call_base + 1), 0, 0);
-
-        self.emit_abc(Opcode.CALL, (uint)call_base, (uint)call_base, 0);
-
-        // Copy default result to parameter register.
-        self.emit_abc(Opcode.LDREG, (uint)pr, (uint)call_base, 0);
-
-        self.free_regs_to(call_base);
-
-        // Patch the skip jump to land AFTER free_regs_to but BEFORE PUTVAR.
-        // This ensures PUTVAR runs for BOTH branches (argument passed or default used).
-        int skip_off = (int)self.code_count - (int)skip_addr - 1;
-        self.code[skip_addr] = bytecode::make_a_sbx(Opcode.IF_TRUE, (uint)cmp_reg, skip_off);
-
-        // Write to lex scope first (clears TDZ sentinel), then var_env.
-        // GETVAR reloads from env in case PUTVAR cleared it.
-        self.emit_a_bc(Opcode.PUTLEX, (uint)pr, name_idx);
-        self.emit_a_bc(Opcode.PUTVAR, (uint)pr, name_idx);
-        self.emit_a_bc(Opcode.GETVAR, (uint)pr, name_idx);
-    }
-
-    // Emit PUTLEX for non-default params that appear after the first default.
-    // These were in TDZ but should now be visible once all defaults are evaluated.
-    if (has_func_lex && first_default_idx != 0xFFFF) {
-        ushort ai = first_default_idx;
-        while (ai < arg_count) {
-            uint ni = param_name_indices[ai];
-            // Check if this param has a default (was already handled above).
-            bool is_default_param = false;
-            for (ushort di = 0; di < self.default_count; di++) {
-                if (self.defaults[di].param_name_idx == ni) {
-                    is_default_param = true;
-                    break;
-                }
-            }
-            if (!is_default_param) {
-                // Source register is the param's own slot (see note above);
-                // r0 unconditionally would alias the first param's value.
-                self.emit_a_bc(Opcode.PUTLEX, (uint)ai, ni);
-            }
-            ai++;
-        }
-    }
+    self.emit_param_prologue(arg_count, first_default_idx, param_name_indices[..])!;
 
     // Emit destructuring code for destructured function parameters.
     self.emit_destruct_bindings(destruct_binds[..], destruct_count,
@@ -3111,106 +3132,8 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
         inner_ctx.emit_a_bc(Opcode.DECLVAR, (uint)dreg, ni);
     }
 
-    // Push a function-level lexical scope for let/const at function top level.
-    // Skip when there are no default parameters.
     bool inner_has_func_lex = inner_ctx.default_count > 0;
-    if (inner_has_func_lex) {
-        inner_ctx.emit_simple(Opcode.PUSH_LEX);
-
-        // TDZ: initialize ALL params with sentinels in the parameter scope.
-        // When defaults exist, every param is in TDZ until its default check
-        // completes (for default params) or until it becomes visible (non-default).
-        for (ushort ai = 0; ai < arg_count; ai++) {
-            uint ni = param_name_indices[ai];
-            inner_ctx.emit_a_bc(Opcode.INITTZ, 0, ni);
-        }
-
-        // Emit PUTLEX for pre-default params only.
-        // Pre-default params are not in TDZ — they're already initialized by arguments.
-        ushort ai = 0;
-        while (ai < first_default_idx) {
-            uint ni = param_name_indices[ai];
-            // Source register is the param's own slot (params occupy r0..rN in
-            // declaration order); using r0 unconditionally would copy the first
-            // param's value into every lex binding.
-            inner_ctx.emit_a_bc(Opcode.PUTLEX, (uint)ai, ni);
-            ai++;
-        }
-
-        // After all default checks complete, emit PUTLEX for non-default params
-        // that appear after the first default (they were in TDZ but should now be visible).
-    }
-
-    // Emit default parameter checks (must run before body, after PUSH_LEX)
-    for (ushort di = 0; di < inner_ctx.default_count; di++) {
-        ushort pr = inner_ctx.defaults[di].param_reg;
-        uint name_idx = inner_ctx.defaults[di].param_name_idx;
-        uint func_idx = inner_ctx.defaults[di].default_func_idx;
-
-        // Check if param != undefined; if so, skip default evaluation
-        ushort undef_reg = inner_ctx.alloc_reg();
-        inner_ctx.emit_abc(Opcode.LDUNDEF, (uint)undef_reg, 0, 0);
-        ushort cmp_reg = inner_ctx.alloc_reg();
-        inner_ctx.emit_abc(Opcode.SNEQ, (uint)cmp_reg, (uint)pr, (uint)undef_reg);
-        inner_ctx.free_reg(undef_reg);
-
-        // IF_TRUE: skip past default evaluation (will be patched)
-        uint skip_addr = inner_ctx.code_count;
-        inner_ctx.emit(bytecode::make_a_sbx(Opcode.IF_TRUE, (uint)cmp_reg, 0));
-        inner_ctx.free_reg(cmp_reg);
-
-        // CLOSURE for default function
-        ushort closure_reg = inner_ctx.alloc_reg();
-        inner_ctx.emit_a_bc(Opcode.CLOSURE, (uint)closure_reg, func_idx);
-
-        // Set up call: consecutive registers for callee + this
-        ushort call_base = inner_ctx.alloc_reg();
-        if (inner_ctx.next_reg <= call_base + 1) {
-            inner_ctx.next_reg = call_base + 2;
-        }
-        ushort this_reg = inner_ctx.alloc_reg();
-        inner_ctx.emit_abc(Opcode.LDREG, (uint)call_base, (uint)closure_reg, 0);
-        inner_ctx.emit_abc(Opcode.LDTHIS, (uint)(call_base + 1), 0, 0);
-
-        inner_ctx.emit_abc(Opcode.CALL, (uint)call_base, (uint)call_base, 0);
-
-        // Assign result to parameter register and sync to environment.
-        // GETVAR reloads from env to pr because PUTVAR clears its source register.
-        inner_ctx.emit_abc(Opcode.LDREG, (uint)pr, (uint)call_base, 0);
-
-        inner_ctx.free_regs_to(call_base);
-
-        // Patch the skip jump to land AFTER free_regs_to but BEFORE PUTVAR.
-        int skip_off = (int)inner_ctx.code_count - (int)skip_addr - 1;
-        inner_ctx.code[skip_addr] = bytecode::make_a_sbx(Opcode.IF_TRUE, (uint)cmp_reg, skip_off);
-
-        // Write to var_env — always executed (creates binding if deferred).
-        inner_ctx.emit_a_bc(Opcode.PUTVAR, (uint)pr, name_idx);
-        inner_ctx.emit_a_bc(Opcode.GETVAR, (uint)pr, name_idx);
-    }
-
-    // Emit PUTLEX for non-default params that appear after the first default.
-    // These were in TDZ but should now be visible once all defaults are evaluated.
-    if (inner_has_func_lex && first_default_idx != 0xFFFF) {
-        ushort ai = first_default_idx;
-        while (ai < arg_count) {
-            uint ni = param_name_indices[ai];
-            // Check if this param has a default (was already handled above).
-            bool is_default_param = false;
-            for (ushort di = 0; di < inner_ctx.default_count; di++) {
-                if (inner_ctx.defaults[di].param_name_idx == ni) {
-                    is_default_param = true;
-                    break;
-                }
-            }
-            if (!is_default_param) {
-                // Source register is the param's own slot (see note above);
-                // r0 unconditionally would alias the first param's value.
-                inner_ctx.emit_a_bc(Opcode.PUTLEX, (uint)ai, ni);
-            }
-            ai++;
-        }
-    }
+    inner_ctx.emit_param_prologue(arg_count, first_default_idx, param_name_indices[..])!;
 
     // Emit deferred outer-default checks for destructured parameters, now
     // that every parameter's arg slot is finalised (see
@@ -3791,103 +3714,8 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
     arrow_ctx.forbid_await = false;
     arrow_ctx.forbid_yield = false;
 
-    // Push a function-level lexical scope
     bool has_func_lex = arrow_ctx.default_count > 0;
-    if (has_func_lex) {
-        arrow_ctx.emit_simple(Opcode.PUSH_LEX);
-
-        // TDZ: initialize ALL params with sentinels in the parameter scope.
-        // When defaults exist, every param is in TDZ until its default check
-        // completes (for default params) or until it becomes visible (non-default).
-        for (ushort ai = 0; ai < arg_count; ai++) {
-            uint ni = param_name_indices[ai];
-            arrow_ctx.emit_a_bc(Opcode.INITTZ, 0, ni);
-        }
-
-        // Emit PUTLEX for pre-default params only.
-        // Pre-default params are not in TDZ — they're already initialized by arguments.
-        ushort ai = 0;
-        while (ai < first_default_idx) {
-            uint ni = param_name_indices[ai];
-            // Source register is the param's own slot (params occupy r0..rN in
-            // declaration order); using r0 unconditionally would copy the first
-            // param's value into every lex binding.
-            arrow_ctx.emit_a_bc(Opcode.PUTLEX, (uint)ai, ni);
-            ai++;
-        }
-
-        // After all default checks complete, emit PUTLEX for non-default params
-        // that appear after the first default (they were in TDZ but should now be visible).
-    }
-
-    // Emit default parameter checks (must run before body, after PUSH_LEX)
-    for (ushort di = 0; di < arrow_ctx.default_count; di++) {
-        ushort pr = arrow_ctx.defaults[di].param_reg;
-        uint name_idx = arrow_ctx.defaults[di].param_name_idx;
-        uint func_idx = arrow_ctx.defaults[di].default_func_idx;
-
-        // Check if param != undefined; if so, skip default evaluation
-        ushort undef_reg = arrow_ctx.alloc_reg();
-        arrow_ctx.emit_abc(Opcode.LDUNDEF, (uint)undef_reg, 0, 0);
-        ushort cmp_reg = arrow_ctx.alloc_reg();
-        arrow_ctx.emit_abc(Opcode.SNEQ, (uint)cmp_reg, (uint)pr, (uint)undef_reg);
-        arrow_ctx.free_reg(undef_reg);
-
-        // IF_TRUE: skip past default evaluation (will be patched)
-        uint skip_addr = arrow_ctx.code_count;
-        arrow_ctx.emit(bytecode::make_a_sbx(Opcode.IF_TRUE, (uint)cmp_reg, 0));
-        arrow_ctx.free_reg(cmp_reg);
-
-        // CLOSURE for default function
-        ushort closure_reg = arrow_ctx.alloc_reg();
-        arrow_ctx.emit_a_bc(Opcode.CLOSURE, (uint)closure_reg, func_idx);
-
-        // Set up call: consecutive registers for callee + this
-        ushort call_base = arrow_ctx.alloc_reg();
-        if (arrow_ctx.next_reg <= call_base + 1) {
-            arrow_ctx.next_reg = call_base + 2;
-        }
-        arrow_ctx.emit_abc(Opcode.LDREG, (uint)call_base, (uint)closure_reg, 0);
-        arrow_ctx.emit_abc(Opcode.LDTHIS, (uint)(call_base + 1), 0, 0);
-
-        arrow_ctx.emit_abc(Opcode.CALL, (uint)call_base, (uint)call_base, 0);
-
-        // Copy result directly to the parameter register.
-        arrow_ctx.emit_abc(Opcode.LDREG, (uint)pr, (uint)call_base, 0);
-
-        arrow_ctx.free_regs_to(call_base);
-
-        // Patch the skip jump to land AFTER free_regs_to but BEFORE PUTVAR.
-        int skip_off = (int)arrow_ctx.code_count - (int)skip_addr - 1;
-        arrow_ctx.code[skip_addr] = bytecode::make_a_sbx(Opcode.IF_TRUE, (uint)cmp_reg, skip_off);
-
-        // Write to var_env — always executed (creates binding if deferred).
-        arrow_ctx.emit_a_bc(Opcode.PUTVAR, (uint)pr, name_idx);
-        arrow_ctx.emit_a_bc(Opcode.GETVAR, (uint)pr, name_idx);
-    }
-
-    // Emit PUTLEX for non-default params that appear after the first default.
-    // These were in TDZ but should now be visible once all defaults are evaluated.
-    if (has_func_lex && first_default_idx != 0xFFFF) {
-        ushort ai = first_default_idx;
-        while (ai < arg_count) {
-            uint ni = param_name_indices[ai];
-            // Check if this param has a default (was already handled above).
-            bool is_default_param = false;
-            for (ushort di = 0; di < arrow_ctx.default_count; di++) {
-                if (arrow_ctx.defaults[di].param_name_idx == ni) {
-                    is_default_param = true;
-                    break;
-                }
-            }
-            if (!is_default_param) {
-                // Source register is the param's own slot (see note above);
-                // r0 unconditionally would alias the first param's value.
-                arrow_ctx.emit_a_bc(Opcode.PUTLEX, (uint)ai, ni);
-            }
-            ai++;
-        }
-    }
+    arrow_ctx.emit_param_prologue(arg_count, first_default_idx, param_name_indices[..])!;
 
     // Emit deferred outer-default checks for destructured parameters, now
     // that every parameter's arg slot is finalised (see
