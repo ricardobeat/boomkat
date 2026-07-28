@@ -105,7 +105,6 @@ Full-engine pass for duplication/elegance/compactness at constant perf+correctne
 - [ ] **Generator driver family** — sync YIELD_STAR opcode vs async yield* machinery vs async_generator.c3 drain; unify the delegation/completion surface. Also duplicated activation-teardown in vm_generators.c3 (AWAIT reject/OOM paths repeat ~40 lines).
 - [ ] **Three super mechanisms** — plan 059's unification (GETPROTO(homeObject) everywhere).
 - [ ] **Builtin error-throw boilerplate** — dozens of hand-rolled alloc ERROR + intern message + put_prop blocks. Helper families exist per-file (arr_throw_*, arraybuffer_throw_*) but aren't shared engine-wide.
-- [ ] **ArrayBuffer vs SharedArrayBuffer** — SAB duplicates ctor/getter/slice shapes; growable-SAB vs resizable-AB grow paths.
 - [ ] **Keyed-collection internals** — coll_* helpers + group_by_* + getOrInsert grew adjacent copies of key canonicalization.
 - [ ] **Lexer scan buffers** — string/template/ident decode paths share arena+normalize logic candidates.
 - [ ] **Enum/metadata/dispatch triple registration** in core.c3 for every builtin (persistent merge-conflict magnet) — consider a table macro.
