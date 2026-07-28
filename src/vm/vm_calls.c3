@@ -1668,21 +1668,8 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                 new_bottom = ds.regs_base + frame_start;
 
                 if (vm.activation_count >= MAX_CALLS) {
-                    {
-                        HObject*? err_raw = vm.heap.alloc_object(hobject::ObjClass.ERROR);
-                        if (try err = err_raw) {
-                            err.prototype = vm.heap.range_err_proto;
-                            HString* msg_key = (HString*)vm.heap.strs[heap::BuiltinStr.MESSAGE];
-                            HString* msg_val = intern_string(vm, "Maximum call stack size exceeded");
-                            TVal msg_tv; msg_tv.set_string(msg_val);
-                            err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WEC);
-                            TVal err_val; err_val.set_object(err);
-                            if (!vm_throw_value(vm, err_val, ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                                return vm_uncaught_error(vm, &err_val);
-                            }
-                        } else {
-                            return VM_ERROR~;
-                        }
+                    if (!vm_throw_error(vm, vm.heap.range_err_proto, "Maximum call stack size exceeded", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                        return VM_ERROR~;
                     }
                     return (TVal){};
                 }

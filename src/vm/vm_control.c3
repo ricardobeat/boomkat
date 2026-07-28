@@ -1266,36 +1266,12 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, In
             if (!ret_method.is_object() || ret_method.get_heapptr() == null) {
                 if (is_throw_completion) return (TVal){};
                 // Non-throw: throw TypeError for non-callable .return.
-                HObject*? te_raw = vm.heap.alloc_object(hobject::ObjClass.ERROR);
-                if (try te = te_raw) {
-                    te.prototype = vm.heap.type_err_proto;
-                    HString* mk = (HString*)vm.heap.strs[heap::BuiltinStr.MESSAGE];
-                    HString* ms = intern_string(vm, "Iterator .return is not a function");
-                    TVal mv; mv.set_string(ms);
-                    te.put_prop(mk, mv, hobject::PROP_FLAGS_WEC);
-                    TVal tv; tv.set_object(te);
-                    if (!vm_throw_value(vm, tv, ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                        return vm_uncaught_error(vm, &tv);
-                    }
-                }
-                return (TVal){};
+                return throw_type_error_at(vm, ds, "Iterator .return is not a function");
             }
             HObject* rm_obj = (HObject*)ret_method.get_heapptr();
             if (rm_obj == null || !rm_obj.is_callable()) {
                 if (is_throw_completion) return (TVal){};
-                HObject*? te_raw = vm.heap.alloc_object(hobject::ObjClass.ERROR);
-                if (try te = te_raw) {
-                    te.prototype = vm.heap.type_err_proto;
-                    HString* mk = (HString*)vm.heap.strs[heap::BuiltinStr.MESSAGE];
-                    HString* ms = intern_string(vm, "Iterator .return is not a function");
-                    TVal mv; mv.set_string(ms);
-                    te.put_prop(mk, mv, hobject::PROP_FLAGS_WEC);
-                    TVal tv; tv.set_object(te);
-                    if (!vm_throw_value(vm, tv, ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                        return vm_uncaught_error(vm, &tv);
-                    }
-                }
-                return (TVal){};
+                return throw_type_error_at(vm, ds, "Iterator .return is not a function");
             }
 
             // Call .return() (§7.4.6 step 7).
@@ -1318,19 +1294,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, In
             // ES2022 §7.4.6 step 8: result must be an Object.
             if (!ret_result.is_object() || ret_result.get_heapptr() == null) {
                 if (is_throw_completion) return (TVal){};
-                HObject*? te_raw = vm.heap.alloc_object(hobject::ObjClass.ERROR);
-                if (try te = te_raw) {
-                    te.prototype = vm.heap.type_err_proto;
-                    HString* mk = (HString*)vm.heap.strs[heap::BuiltinStr.MESSAGE];
-                    HString* ms = intern_string(vm, "Iterator .return() must return an object");
-                    TVal mv; mv.set_string(ms);
-                    te.put_prop(mk, mv, hobject::PROP_FLAGS_WEC);
-                    TVal tv; tv.set_object(te);
-                    if (!vm_throw_value(vm, tv, ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                        return vm_uncaught_error(vm, &tv);
-                    }
-                }
-                return (TVal){};
+                return throw_type_error_at(vm, ds, "Iterator .return() must return an object");
             }
             return (TVal){};
         }
@@ -1342,18 +1306,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, In
             // `for await`.
             TVal src = *rb;
             if (src.is_null() || src.is_undefined()) {
-                HObject*? te_raw = vm.heap.alloc_object(hobject::ObjClass.ERROR);
-                if (try te = te_raw) {
-                    te.prototype = vm.heap.type_err_proto;
-                    HString* mk = (HString*)vm.heap.strs[heap::BuiltinStr.MESSAGE];
-                    TVal mv; mv.set_string(intern_string(vm, "is not async iterable"));
-                    te.put_prop(mk, mv, hobject::PROP_FLAGS_WEC);
-                    TVal tv; tv.set_object(te);
-                    if (!vm_throw_value(vm, tv, ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                        return vm_uncaught_error(vm, &tv);
-                    }
-                }
-                return (TVal){};
+                return throw_type_error_at(vm, ds, "is not async iterable");
             }
 
             HObject* src_obj = to_object_for_method(vm, src);

@@ -261,21 +261,8 @@ fn bool invoke_getter(Vm* vm, hobject::AccessorResult* acc,
     vm.heap.tval_copy_ref(&caller_regs[callee_reg + 1], this_val);
 
     if (vm.activation_count >= MAX_CALLS) {
-        HObject*? err_raw = vm.heap.alloc_object(hobject::ObjClass.ERROR);
-        if (try err = err_raw) {
-            err.prototype = vm.heap.range_err_proto;
-            HString* msg_key = (HString*)vm.heap.strs[heap::BuiltinStr.MESSAGE];
-            HString* msg_val = intern_string(vm, "Maximum call stack size exceeded");
-            TVal msg_tv; msg_tv.set_string(msg_val);
-            err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WEC);
-            TVal err_val; err_val.set_object(err);
-            if (!vm_throw_value(vm, err_val, act, curr_pc, needs_restart)) {
-                caller_regs[result_reg].set_undefined();
-                return false;
-            }
-        } else {
+        if (!vm_throw_error(vm, vm.heap.range_err_proto, "Maximum call stack size exceeded", act, curr_pc, needs_restart)) {
             caller_regs[result_reg].set_undefined();
-            return false;
         }
         return false;
     }
