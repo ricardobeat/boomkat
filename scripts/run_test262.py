@@ -164,7 +164,7 @@ UNSUPPORTED_PATTERN = re.compile(
     r"Temporal|ShadowRealm|decorators|explicit-resource-management|"
     r"legacy-regexp|"
     r"source-phase-imports|source-phase-imports-module-source|"
-    r"await-dictionary|canonical-tz|error-stack-accessor|"
+    r"await-dictionary|canonical-tz|"
     r"export-defer|immutable-arraybuffer|import-bytes|import-defer|import-text|"
     r"joint-iteration|nonextensible-applies-to-private|"
     # Standard language features: Annex B (non-strict legacy)

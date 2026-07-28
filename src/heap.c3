@@ -2092,6 +2092,9 @@ fn void Heap.drain_gray(&self) {
                 self.mark_tval(&(*obj.extra_ptr()).gs.getter);
                 self.mark_tval(&(*obj.extra_ptr()).gs.setter);
                 break;
+            case ObjClass.ERROR:
+                self.mark_tval(&(*obj.extra_ptr()).err.captured_stack);
+                break;
             default:
                 break;
         }

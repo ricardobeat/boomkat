@@ -12,6 +12,18 @@ import duktape::heap;
 // Error constructor builtins
 // ============================================================================
 
+/// Capture `stack_str` on `err` (an ERROR-class instance) in the object's
+/// HObjectError.captured_stack field — NOT a property-table entry, so it is
+/// invisible to hasOwnProperty/getOwnPropertyNames/Reflect.ownKeys/for-in.
+/// The error-stack-accessor proposal exposes "stack" only via the inherited
+/// get/set accessor pair on Error.prototype, never as an own property (see
+/// instance-no-own-stack.js). Read back by builtin_error_proto_stack_get.
+fn void error_set_captured_stack(HObject* err, Heap* heap, HString* stack_str) {
+    TVal tv;
+    tv.set_string(stack_str);
+    heap.tval_copy_ref(&(*err.extra_ptr()).err.captured_stack, &tv);
+}
+
 /// Shared constructor: create an error object with ObjClass.ERROR,
 /// set prototype to `proto`, and set .message from args[0] if provided.
 /// Also handles the ES2022 `options.cause` install (step 4 of the spec).
@@ -66,10 +78,10 @@ fn void builtin_error_constructor_shared(BuiltinContext* ctx, HObject* proto) {
         }
     }
 
-    // Set .stack property (stub — "name: message" format for now)
+    // Capture .stack (stub — "name: message" format for now) as an internal
+    // property; it is exposed to JS only via the get/set accessor pair on
+    // Error.prototype (error-stack-accessor proposal), not as an own property.
     {
-        HString* stack_key = (HString*)ctx.heap.strs[heap::BuiltinStr.STACK];
-
         // Get the error name from the prototype's .name property
         HString* name_str = builtin_intern_string(ctx.heap, "Error");
         if (proto != null) {
@@ -104,9 +116,7 @@ fn void builtin_error_constructor_shared(BuiltinContext* ctx, HObject* proto) {
         }
 
         HString* stack_str = builtin_intern_string(ctx.heap, stack_buf[:pos]);
-        TVal stack_tv;
-        stack_tv.set_string(stack_str);
-        err.put_prop(stack_key, stack_tv, hobject::PROP_FLAGS_WC);
+        error_set_captured_stack(err, ctx.heap, stack_str);
     }
 
     ctx.result.set_object(null);
@@ -177,9 +187,9 @@ fn void builtin_aggregate_error(BuiltinContext* ctx) {
         }
     }
 
-    // Set .stack property (stub — "AggregateError: message" format for now)
+    // Capture .stack (stub — "AggregateError: message" format for now) as an
+    // internal property; exposed to JS only via Error.prototype's accessor.
     {
-        HString* stack_key = (HString*)ctx.heap.strs[heap::BuiltinStr.STACK];
         char[512] stack_buf;
         int pos = 0;
 
@@ -201,9 +211,7 @@ fn void builtin_aggregate_error(BuiltinContext* ctx) {
         }
 
         HString* stack_str = builtin_intern_string(ctx.heap, stack_buf[:pos]);
-        TVal stack_tv;
-        stack_tv.set_string(stack_str);
-        err.put_prop(stack_key, stack_tv, hobject::PROP_FLAGS_WC);
+        error_set_captured_stack(err, ctx.heap, stack_str);
     }
 
     // Set .errors array
@@ -338,6 +346,136 @@ fn void builtin_error_captureStackTrace(BuiltinContext* ctx) {
 }
 
 // ============================================================================
+// Error.prototype.stack accessor — error-stack-accessor proposal
+// ============================================================================
+//
+// stack is an accessor pair on Error.prototype (not an own data property of
+// each instance): { [[Enumerable]]: false, [[Configurable]]: true }.
+//
+//   get Error.prototype.stack:
+//     1. Let E be the this value.
+//     2. If E is not an Object, throw a TypeError exception.
+//     3. If E does not have an [[ErrorData]] internal slot, return undefined.
+//     4. Return an implementation-defined string that represents the stack
+//        trace of E.
+//   [[ErrorData]] presence is keyed on ObjClass.ERROR — the tag every
+//   Error/NativeError constructor allocates its instances with (mirrors
+//   Error.isError). The captured text itself lives in HObjectError.
+//   captured_stack (see error_set_captured_stack), never in a JS-visible
+//   "stack" own property — a fake "stack" own data property on a non-Error
+//   object is ignored, since the getter only reads the internal slot.
+fn void builtin_error_proto_stack_get(BuiltinContext* ctx) {
+    TVal this_val = ctx.this_val;
+    if (!this_val.is_object() || this_val.get_heapptr() == null) {
+        builtin_throw_no_result_change(ctx, ctx.heap.type_err_proto, "Error.prototype.stack getter called on non-object");
+        return;
+    }
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    if (obj.get_class() != hobject::ObjClass.ERROR) {
+        ctx.result.set_undefined();
+        return;
+    }
+    TVal* captured = &(*obj.extra_ptr()).err.captured_stack;
+    if (captured.is_string()) {
+        ctx.heap.tval_copy_ref(ctx.result, captured);
+        return;
+    }
+    // Foreign new.target (Reflect.construct(Ctor, args, NotAnError)) still
+    // acquires [[ErrorData]] via Ctor's [[Construct]], but if the capture
+    // above somehow found nothing, produce an empty string rather than
+    // undefined — E has [[ErrorData]], so step 4 always returns a String.
+    HString* empty = (HString*)ctx.heap.strs[heap::BuiltinStr.EMPTY];
+    ctx.result.set_string(empty);
+}
+
+/// set Error.prototype.stack — error-stack-accessor proposal:
+///   1. Let E be the this value.
+///   2. If E is not an Object, throw a TypeError exception.
+///   3. If v is not a String, throw a TypeError exception.
+///   4. Perform ? SetterThatIgnoresPrototypeProperties(this value,
+///      %Error.prototype%, "stack", v).
+///   5. Return undefined.
+fn void builtin_error_proto_stack_set(BuiltinContext* ctx) {
+    TVal this_val = ctx.this_val;
+    if (!this_val.is_object() || this_val.get_heapptr() == null) {
+        builtin_throw_no_result_change(ctx, ctx.heap.type_err_proto, "Error.prototype.stack setter called on non-object");
+        return;
+    }
+    TVal value = builtin_arg(ctx, 0);
+    // Symbols share TVal's TAG_STRING representation (an HString with
+    // is_symbol set), so is_string() alone would wrongly accept them — a
+    // Symbol is not a String value per step 3.
+    bool is_real_string = value.is_string() && value.get_heapptr() != null
+        && !((HString*)value.get_heapptr()).is_symbol();
+    if (!is_real_string) {
+        builtin_throw_no_result_change(ctx, ctx.heap.type_err_proto, "Error.prototype.stack setter requires a String value");
+        return;
+    }
+    HString* key = (HString*)ctx.heap.strs[heap::BuiltinStr.STACK];
+    error_setter_ignores_prototype_properties(ctx, ctx.heap.err_proto, key, value);
+    ctx.result.set_undefined();
+}
+
+/// SetterThatIgnoresPrototypeProperties(thisValue, home, propertyKey, value)
+/// — ES2025 §7.3.37, specialised for "stack" on Error.prototype.
+///   1. If thisValue is not an Object, throw a TypeError exception.
+///   2. If SameValue(thisValue, home) is true, throw a TypeError exception
+///      (emulates assignment to a non-writable data property on home).
+///   3. Let desc be ? thisValue.[[GetOwnProperty]](propertyKey).
+///   4. If desc is undefined, perform ? CreateDataPropertyOrThrow(thisValue,
+///      propertyKey, value) — a plain WEC data property.
+///   5. Else, perform ? Set(thisValue, propertyKey, value, true) — routes
+///      through the own accessor's setter, or overwrites the own data
+///      property (throwing if non-writable).
+/// thisValue was already confirmed to be an Object by the caller.
+fn void error_setter_ignores_prototype_properties(BuiltinContext* ctx, HObject* home, HString* key, TVal value) {
+    Heap* heap = ctx.heap;
+    HObject* this_obj = (HObject*)ctx.this_val.get_heapptr();
+
+    if (this_obj == home) {
+        builtin_throw_no_result_change(ctx, heap.type_err_proto, "Cannot assign to read only property 'stack'");
+        return;
+    }
+
+    ProxyDesc desc;
+    if (!own_property_desc(ctx.vm, heap, this_obj, key, &desc)) {
+        proxy_ctx_ok(ctx);
+        return;
+    }
+
+    if (!desc.found) {
+        // CreateDataPropertyOrThrow: full {writable:true, enumerable:true,
+        // configurable:true} data property.
+        ProxyDesc nd = {};
+        nd.found = true;
+        nd.has_value = true; nd.value = value;
+        nd.has_writable = true; nd.writable = true;
+        nd.has_enumerable = true; nd.enumerable = true;
+        nd.has_configurable = true; nd.configurable = true;
+        bool res;
+        if (!object_define_own(ctx.vm, heap, this_obj, key, &nd, &res)) {
+            proxy_ctx_ok(ctx);
+            return;
+        }
+        if (!res) {
+            builtin_throw_no_result_change(ctx, heap.type_err_proto, "Cannot add property 'stack', object is not extensible");
+        }
+        return;
+    }
+
+    // Set(thisValue, propertyKey, value, Throw=true) — receiver is thisValue
+    // itself (no separate Receiver argument in the proposal's algorithm).
+    bool sres;
+    if (!js_set_with_receiver(ctx.vm, heap, this_obj, key, value, ctx.this_val, &sres)) {
+        proxy_ctx_ok(ctx);
+        return;
+    }
+    if (!sres) {
+        builtin_throw_no_result_change(ctx, heap.type_err_proto, "Cannot assign to read only property 'stack'");
+    }
+}
+
+// ============================================================================
 // Error.isError — ES2026 §20.5.2.2
 // ============================================================================
 
@@ -399,6 +537,15 @@ fn bool register_error_builtins(EnvRecord* global_env, Heap* heap) {
     TVal tostring_tv;
     tostring_tv.set_lightfunc((void*)(usz)Builtin.ERROR_PROTO_TOSTRING.ordinal);
     err_proto.put_prop(tostring_key, tostring_tv, hobject::PROP_FLAGS_WC);
+
+    // Error.prototype.stack — accessor pair (error-stack-accessor proposal).
+    // { [[Enumerable]]: false, [[Configurable]]: true }.
+    {
+        HString* stack_key = (HString*)heap.strs[heap::BuiltinStr.STACK];
+        if (!iterhelper_register_accessor(err_proto, heap, stack_key,
+                Builtin.ERROR_PROTO_STACK_GET.ordinal, Builtin.ERROR_PROTO_STACK_SET.ordinal,
+                "get stack", "set stack")) return false;
+    }
 
     // constructor_key used throughout — HObject ctors are wired by register_native_error_ctor below.
     HString* constructor_key = (HString*)heap.strs[heap::BuiltinStr.CONSTRUCTOR];

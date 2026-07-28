@@ -620,6 +620,9 @@ enum Builtin : uint {
     ASYNC_GEN_YRET_REJECT,                 // native reaction: yield-resumption return value rejected → resume body w/ throw
     REGEXP_PROTO_COMPILE,                  // RegExp.prototype.compile(pattern, flags) (Annex B §B.2.4.1)
     ATOMICS_PAUSE,                         // Atomics.pause([iterationNumber]) — microwait hint (ES2025 §25.4.6)
+    // --- error-stack-accessor proposal ---
+    ERROR_PROTO_STACK_GET,                 // get Error.prototype.stack
+    ERROR_PROTO_STACK_SET,                 // set Error.prototype.stack
     LAST, // sentinel — one past the highest valid builtin; not a real builtin
 }
 
@@ -2873,6 +2876,8 @@ fn BuiltinMeta builtin_get_metadata(uint idx) {
         case Builtin.WRAP_FOR_VALID_ITERATOR_RETURN.ordinal: return { "return", 0 };
         case Builtin.ITERATOR_HELPER_NEXT.ordinal: return { "next", 0 };
         case Builtin.ITERATOR_HELPER_RETURN.ordinal: return { "return", 0 };
+        case Builtin.ERROR_PROTO_STACK_GET.ordinal: return { "get stack", 0 };
+        case Builtin.ERROR_PROTO_STACK_SET.ordinal: return { "set stack", 1 };
         default: return { "", -1 };
     }
 }
@@ -3806,6 +3811,8 @@ BuiltinFunc[Builtin.LAST.ordinal] builtin_dispatch_table = {
     [Builtin.WRAP_FOR_VALID_ITERATOR_RETURN.ordinal] = &builtin_wrap_for_valid_iterator_return,
     [Builtin.ITERATOR_HELPER_NEXT.ordinal]           = &builtin_iterator_helper_next,
     [Builtin.ITERATOR_HELPER_RETURN.ordinal]         = &builtin_iterator_helper_return,
+    [Builtin.ERROR_PROTO_STACK_GET.ordinal]          = &builtin_error_proto_stack_get,
+    [Builtin.ERROR_PROTO_STACK_SET.ordinal]          = &builtin_error_proto_stack_set,
 };
 
 fn void dispatch_builtin(uint fn_index, BuiltinContext* ctx) {

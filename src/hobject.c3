@@ -519,6 +519,15 @@ struct HObjectPrimitive {
     TVal              primitive_value;
 }
 
+/// Error object ([[ErrorData]] instances, ObjClass.ERROR): holds the stack
+/// string captured at construction time. Not a property-table entry — the
+/// error-stack-accessor proposal exposes it to JS only via the get/set
+/// accessor pair on Error.prototype, never as an own property, so it must
+/// live somewhere invisible to getOwnPropertyNames/Reflect.ownKeys/for-in.
+struct HObjectError {
+    TVal              captured_stack;
+}
+
 /// RegExp object: pattern + compiled bytecode.
 struct HObjectRegExp {
     TVal              pattern_str;
@@ -659,6 +668,7 @@ struct HObjectBufferView {
 union HObjectExtra {
     HObjectFunction              func;
     HObjectPrimitive             prim;
+    HObjectError                 err;
     HObjectRegExp                regexp;
     HObjectGenerator             gen;
     HObjectPromise               promise;
@@ -745,9 +755,12 @@ const usz OBJ_SIZE_GS    = HObjectBase::size + HObjectGetterSetter::size;       
 fn usz alloc_size_for_class(ObjClass cls) @inline {
     switch (cls) {
         case ObjClass.OBJECT:
-        case ObjClass.ERROR:
         case ObjClass.ARGUMENTS:
             return OBJ_SIZE_PLAIN;
+        // ERROR carries HObjectError (captured_stack) in the union — needs
+        // the same trailing extra-data space as FUNCTION/PROXY/etc, unlike
+        // plain OBJECT/ARGUMENTS.
+        case ObjClass.ERROR:
         case ObjClass.PROXY:
             return OBJ_SIZE_FUNC;
         case ObjClass.ARRAY:
@@ -784,11 +797,11 @@ fn void* pool_for_class(void* heap_ptr, ObjClass cls) @inline {
     heap::Heap* h = (heap::Heap*)heap_ptr;
     switch (cls) {
         case ObjClass.OBJECT:
-        case ObjClass.ERROR:
         case ObjClass.ARGUMENTS:
             return &h.obj_pool_plain;
         case ObjClass.ARRAY:
             return &h.obj_pool_array;
+        case ObjClass.ERROR:
         case ObjClass.GETTER_SETTER:
             return &h.obj_pool_func;
         default:
@@ -1883,6 +1896,10 @@ fn HObject*? hobject_alloc(void* heap_ptr, ObjClass cls) {
         (*obj.extra_ptr()).proxy.builtin_fn_index = -1;
     } else if (cls == ObjClass.GETTER_SETTER) {
         obj.prop_capacity = 0;  // no inline props for GS cells
+    } else if (cls == ObjClass.ERROR) {
+        // Zero bits are not a valid TVal (undefined has a specific nanbox
+        // tag) — set explicitly so a getter can never observe garbage.
+        (*obj.extra_ptr()).err.captured_stack = types::make_undefined();
     }
 
     obj.shape_id = 0;
@@ -1949,6 +1966,12 @@ fn void hobject_free(HObject* obj, void* heap_ptr, bool free_header = true) {
     if (obj.flags.obj_class == ObjClass.FUNCTION && _active_heap != null) {
         heap::Heap* h = (heap::Heap*)_active_heap;
         h.decref_tval(&(*obj.extra_ptr()).func.captured_this);
+    }
+
+    // Decref the stack string captured at Error construction time.
+    if (obj.flags.obj_class == ObjClass.ERROR && _active_heap != null) {
+        heap::Heap* h = (heap::Heap*)_active_heap;
+        h.decref_tval(&(*obj.extra_ptr()).err.captured_stack);
     }
 
     // Release the owned collection target held by array/map/set iterators.
