@@ -2005,6 +2005,68 @@ fn void hobject_free(HObject* obj, void* heap_ptr, bool free_header = true) {
         (*obj.extra_ptr()).iter.target = null;
     }
 
+    // Release a generator's saved execution state.
+    //
+    // Only fields written through tval_copy_ref or an explicit incref are owned
+    // by the GeneratorState: the saved register file, this_binding, and (for an
+    // async function) the outer promise. Every other TVal and pointer field —
+    // resume/throw/return values, the async yield* sub-state, delegated_iter,
+    // the environments and the catcher chain — is assigned raw and is borrowed
+    // from something that outlives the state, so releasing them here would
+    // over-decref.
+    //
+    // The two backing allocations (the state struct and the register array) are
+    // freed unconditionally, while the decrefs are skipped when the heap is in
+    // teardown mode. Heap.destroy and Heap.reset clear the active heap before
+    // walking the object list, so guarding the whole block on _active_heap
+    // would turn it into a no-op during exactly the teardown that has to
+    // reclaim this memory. Same split as the prop_hash free below.
+    if (obj.flags.obj_class == ObjClass.GENERATOR) {
+        GeneratorState* gs = (GeneratorState*)(*obj.extra_ptr()).gen.generator_data;
+        if (gs != null) {
+            if (_active_heap != null) {
+                heap::Heap* h = (heap::Heap*)_active_heap;
+                if (gs.saved_regs != null) {
+                    for (uint i = 0; i < gs.num_regs; i++) {
+                        h.decref_tval(&gs.saved_regs[i]);
+                    }
+                }
+                h.decref_tval(&gs.this_binding);
+                if (gs.async_promise != null) {
+                    h.decref((types::HeapHeader*)gs.async_promise);
+                }
+            }
+            gs.async_promise = null;
+            // Undrained async-generator requests: the queue nodes are owned by
+            // the state (async_gen_dequeue frees them one at a time), so an
+            // abandoned generator has to release whatever is still queued. The
+            // value and capability inside each node are borrowed, matching
+            // async_gen_enqueue, so only the node itself is freed.
+            AsyncGenRequest* req = gs.agr_head;
+            while (req != null) {
+                AsyncGenRequest* rnext = req.next;
+                if (_active_heap != null) {
+                    heap::Heap* h = (heap::Heap*)_active_heap;
+                    h.free_func(h.heap_udata, req);
+                } else {
+                    mem::free(req);
+                }
+                req = rnext;
+            }
+            gs.agr_head = null;
+            gs.agr_tail = null;
+            if (_active_heap != null) {
+                heap::Heap* h = (heap::Heap*)_active_heap;
+                if (gs.saved_regs != null) { h.free_func(h.heap_udata, gs.saved_regs); }
+                h.free_func(h.heap_udata, gs);
+            } else {
+                if (gs.saved_regs != null) { mem::free(gs.saved_regs); }
+                mem::free(gs);
+            }
+            (*obj.extra_ptr()).gen.generator_data = null;
+        }
+    }
+
     // Release every heap value held in property slots and array elements.
     // Dropping a reference here can transitively free a child object whose
     // last owner was this one — that cascade is the point of refcounting. When
