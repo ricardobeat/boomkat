@@ -3330,6 +3330,16 @@ fn void builtin_promise_all(BuiltinContext* ctx) {
 
     HString* remaining_key = builtin_intern_string(heap, "\xFFremaining");
 
+    if (arr != null) arr.set_temproot();
+    if (state != null) state.set_temproot();
+    if (hole != null) hole.set_temproot();
+    if (promise != null) promise.set_temproot();
+    iterator.set_temproot();
+    resolve_fn.set_temproot();
+    cap_resolve_tv.set_temproot();
+    cap_reject_tv.set_temproot();
+    cap_promise_tv.set_temproot();
+
     bool iter_done = false;
     while (!iter_done) {
         // IteratorStep

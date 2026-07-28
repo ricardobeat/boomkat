@@ -3030,6 +3030,12 @@ fn void builtin_array_from(BuiltinContext* ctx) {
         HString* len_key = builtin_intern_string(heap, "length");
         HObject* iter_obj = (HObject*)iterator.get_heapptr();
 
+        if (arr != null) arr.set_temproot();
+        if (iter_obj != null) iter_obj.set_temproot();
+        iterator.set_temproot();
+        mapfn.set_temproot();
+        this_arg.set_temproot();
+
         uint k = 0;
         while (true) {
             // g.i: Pk = ToString(k) (implicit via int_to_hstring below).
@@ -4208,6 +4214,10 @@ fn void builtin_array_proto_map(BuiltinContext* ctx) {
     // Step 5: ArraySpeciesCreate(O, len) — use species constructor if available.
     HObject* arr = array_species_create_result(ctx, o, len);
     if (arr == null) { ctx.result.set_undefined(); return; }
+    arr.set_temproot();
+    o.set_temproot();
+    callback.set_temproot();
+    thisArg.set_temproot();
     // Ensure result length is set to source length (ArrayCreate sets it, but
     // array_species_create_result fallback doesn't for plain arrays).
     array_set_length_ulong(arr, len, ctx.heap);
@@ -4250,6 +4260,10 @@ fn void builtin_array_proto_filter(BuiltinContext* ctx) {
     // Step 7: ArraySpeciesCreate(O, 0) — result length is not known in advance.
     HObject* arr = array_species_create_result(ctx, o, 0);
     if (arr == null) { ctx.result.set_undefined(); return; }
+    arr.set_temproot();
+    o.set_temproot();
+    callback.set_temproot();
+    thisArg.set_temproot();
     ulong aj = 0;
     for (ulong k = 0; k < len; k++) {
         if (ctx.should_throw) { ctx.result.set_undefined(); return; }

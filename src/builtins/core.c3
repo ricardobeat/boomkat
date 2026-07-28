@@ -712,6 +712,8 @@ fn TVal? builtins_generic_get(HObject* obj, HString* key, BuiltinContext* ctx) {
         TVal undef; undef.set_undefined();
         return undef;
     }
+    obj.set_temproot();
+    key.set_temproot();
     hobject::PropLookupResult res = obj.get_prop_or_accessor_proto((void*)key, true);
     switch (res.kind) {
         case hobject::PropLookupKind.PROP_DATA:
@@ -1440,6 +1442,12 @@ fn void coll_construct(BuiltinContext* ctx, hobject::ObjClass obj_class, HObject
                 HObject* iter_obj = (HObject*)iterator.get_heapptr();
                 HString* next_key = builtin_intern_string(ctx.heap, "next");
                 if (next_key == null) { ctx.result.set_undefined(); return; }
+
+                if (coll != null) coll.set_temproot();
+                if (iter_obj != null) iter_obj.set_temproot();
+                iterator.set_temproot();
+                adder.set_temproot();
+
                 while (true) {
                     TVal next_fn;
                     next_fn.set_undefined();
@@ -2340,6 +2348,8 @@ fn double builtin_to_number_vm(BuiltinContext* ctx, TVal* val) {
 /// This properly handles objects by calling toString() first, then valueOf().
 /// Throws TypeError if the value is a Symbol (ToString(symbol) must throw per spec).
 fn HString* builtin_to_string_vm(BuiltinContext* ctx, TVal* val) {
+    if (val != null) val.set_temproot();
+    HString* res = null;
     if (val.is_string()) {
         // Symbols cannot be converted to string — ToString(symbol) must throw TypeError.
         HString* s = (HString*)val.get_heapptr();
@@ -2347,9 +2357,8 @@ fn HString* builtin_to_string_vm(BuiltinContext* ctx, TVal* val) {
             arr_throw_type_error(ctx, "Cannot convert a Symbol value to a string");
             return null;
         }
-        return s;
-    }
-    if (val.is_object() && ctx.vm != null) {
+        res = s;
+    } else if (val.is_object() && ctx.vm != null) {
         Vm* vm_ptr = (Vm*)ctx.vm;
         TVal prim = vm::to_primitive_value(vm_ptr, val, 1);  // hint "string"
         if (vm_ptr.throw_pending) {
@@ -2369,12 +2378,15 @@ fn HString* builtin_to_string_vm(BuiltinContext* ctx, TVal* val) {
                 arr_throw_type_error(ctx, "Cannot convert a Symbol value to a string");
                 return null;
             }
-            return ps;
+            res = ps;
+        } else if (!prim.is_object()) {
+            res = builtin_to_string(ctx.heap, &prim);
         }
-        if (prim.is_object()) return null;  // ToPrimitive returned object
-        return builtin_to_string(ctx.heap, &prim);
+    } else {
+        res = builtin_to_string(ctx.heap, val);
     }
-    return builtin_to_string(ctx.heap, val);
+    if (res != null) res.set_temproot();
+    return res;
 }
 
 /// ToPropertyKey (ES §7.1.19): like ToString but a Symbol is a valid property
@@ -2383,13 +2395,12 @@ fn HString* builtin_to_string_vm(BuiltinContext* ctx, TVal* val) {
 /// property key (defineProperty, hasOwn, getOwnPropertyDescriptor, in, etc.),
 /// since ToString(Symbol) throws TypeError but a Symbol key must not.
 fn HString* builtin_to_property_key_vm(BuiltinContext* ctx, TVal* val) {
+    if (val != null) val.set_temproot();
+    HString* res = null;
     if (val.is_string()) {
         // Covers both plain strings and Symbols (is_symbol HStrings).
-        return (HString*)val.get_heapptr();
-    }
-    // Object key: ToPrimitive(key, "string"); if that yields a Symbol, the
-    // Symbol IS the property key (ToPropertyKey, §7.1.19) — do not ToString it.
-    if (val.is_object() && ctx.vm != null) {
+        res = (HString*)val.get_heapptr();
+    } else if (val.is_object() && ctx.vm != null) {
         Vm* vm_ptr = (Vm*)ctx.vm;
         TVal prim = vm::to_primitive_value(vm_ptr, val, 1);  // hint "string"
         if (vm_ptr.throw_pending) {
@@ -2400,12 +2411,15 @@ fn HString* builtin_to_property_key_vm(BuiltinContext* ctx, TVal* val) {
         }
         if (prim.is_string()) {
             // Plain string or Symbol — both are valid keys, pass through.
-            return (HString*)prim.get_heapptr();
+            res = (HString*)prim.get_heapptr();
+        } else if (!prim.is_object()) {
+            res = builtin_to_string(ctx.heap, &prim);
         }
-        if (prim.is_object()) return null;
-        return builtin_to_string(ctx.heap, &prim);
+    } else {
+        res = builtin_to_string_vm(ctx, val);
     }
-    return builtin_to_string_vm(ctx, val);
+    if (res != null) res.set_temproot();
+    return res;
 }
 
 // ============================================================================

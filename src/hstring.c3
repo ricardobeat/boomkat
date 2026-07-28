@@ -129,9 +129,10 @@ struct HString {
     uint cached_charlen;
 }
 
-// ============================================================================
-// HString — data access
-// ============================================================================
+/// Sets the temproot flag on this string.
+fn void HString.set_temproot(&self) @inline {
+    ((types::HeapHeader*)self).set_temproot();
+}
 
 /// Returns a slice over the raw UTF-8 bytes stored inline after the header.
 ///

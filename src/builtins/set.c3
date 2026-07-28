@@ -121,6 +121,11 @@ fn SetRecord? get_set_record(BuiltinContext* ctx, TVal obj) {
 /// the ToBoolean of the call result; on error, ctx.should_throw is set and
 /// the return value should be discarded.
 fn bool set_record_has(BuiltinContext* ctx, SetRecord* rec, TVal value) {
+    if (rec != null) {
+        rec.set_like.set_temproot();
+        rec.has_fn.set_temproot();
+    }
+    value.set_temproot();
     TVal[1] args = { value };
     TVal result = ctx.heap.call_fn(ctx.vm, rec.has_fn, &args[0], 1, rec.set_like);
     if (ctx.heap.has_error) {
@@ -137,6 +142,10 @@ fn bool set_record_has(BuiltinContext* ctx, SetRecord* rec, TVal value) {
 /// callers must check before use, matching how other iterator-consuming
 /// callers in this file behave).
 fn TVal set_record_get_keys_iterator(BuiltinContext* ctx, SetRecord* rec) {
+    if (rec != null) {
+        rec.set_like.set_temproot();
+        rec.keys_fn.set_temproot();
+    }
     TVal result = ctx.heap.call_fn(ctx.vm, rec.keys_fn, null, 0, rec.set_like);
     if (ctx.heap.has_error) {
         ctx.should_throw = true;
@@ -183,6 +192,8 @@ fn TVal set_iter_get_next_fn(BuiltinContext* ctx, TVal iterator) {
 /// set); callers should still check *out_done on a true return.
 fn bool set_iter_step(BuiltinContext* ctx, TVal iterator, TVal next_fn, TVal* out_value, bool* out_done) {
     *out_done = true;
+    iterator.set_temproot();
+    next_fn.set_temproot();
     if (!iterator.is_object() || iterator.get_heapptr() == null) return true;
     if (!tval_is_callable(next_fn)) {
         coll_throw(ctx, "iterator.next is not callable");

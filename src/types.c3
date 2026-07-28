@@ -352,6 +352,15 @@ $else
 $endif
 }
 
+macro void TVal.set_temproot(&self) {
+    if (self.is_heap_allocated()) {
+        HeapHeader* hdr = (HeapHeader*)self.get_heapptr();
+        if (hdr != null) {
+            hdr.set_temproot();
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // TVal — getters
 // ---------------------------------------------------------------------------
