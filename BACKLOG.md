@@ -16,7 +16,7 @@ Before scheduling work on an entry, re-probe it against `main`. Several entries 
 
 Coverage is **60%** of the suite. The rest is not failing — it is not running.
 
-**The suite is currently RED: 31 known failures** (phase 8: 11 + 1 CE, phase 21: 19),
+**The suite is currently RED: 20 known failures** (phase 8: 1 CE, phase 21: 19),
 surfaced deliberately by `916ffaed` adding 14 orphaned directories. Down from 66. Root
 causes are itemised below; each is real engine work. Do not re-hide them by skip-listing.
 All other phases are 0 fails.
@@ -33,10 +33,11 @@ Reproduce with a walk over `PHASES` dirs + `skip_reason()` from `scripts/run_tes
 
 Ordered by tests-fixed-per-effort. Every one verified against `main`.
 
-- [ ] **Line terminators inside regexp literals — ~10 fails.** `7.8.5-1.js`,
-  `S7.8.5_A1.3/1.5/2.3/2.5_*` in `language/literals/regexp`. Distinct from the `/=` bug
-  fixed in `9c7ce68b`; the original entry wrongly attributed all ~11 of that directory's
-  failures to `/=`, when only `S7.8.5_A1.1_T2.js` was actually caused by it.
+- [ ] **`RegExp.prototype.source` over-escapes — no test currently covers it.**
+  `/a\/b/.source` gives `"a\\/b"` and `/[/]/.source` gives `"[\/]"`; qjs gives `"a\/b"`
+  and `"[/]"`. Per §22.2.6.10 the escaping applies only to `/` outside a class and to
+  line terminators. Pre-existing on main, found while fixing LS/PS terminators
+  (`a7640192`).
 - [ ] **`x++ / 2` raises a SyntaxError.** Pre-existing bug in postfix-operand handling —
   `prev_was_operand()` does not treat a postfix `++`/`--` as ending an operand, so the
   following `/` starts a regexp. Found while fixing `/=`, confirmed on main, out of that
