@@ -1540,6 +1540,13 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                                     | (target.has_direct_eval() ? ACT_FLAG_DIRECT_EVAL : 0);
                     vm.heap.tval_copy_ref(&new_act_r.this_binding, &gs.this_binding);
                     new_act_r.flags |= ACT_FLAG_THIS_OWNED;
+                    // vm.activations[] slots are not zeroed between pushes — a
+                    // generator/async function can never itself be a `new`
+                    // target (ES2015 §14.4: generator/async function objects
+                    // have no [[Construct]]), so new.target must always read
+                    // undefined on resume, not whatever a previous activation
+                    // at this same array index left behind.
+                    new_act_r.new_target = null;
 
                     // Copy saved registers to valstack
                     $if $feature(HEAP_VERIFY):
