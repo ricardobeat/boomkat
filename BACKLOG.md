@@ -4,7 +4,7 @@ One entry per unique issue. Status: `[ ]` TODO · `[>]` IN PROGRESS (agent runni
 
 Before scheduling work on an entry, re-probe it against `main`. Several entries in the previous backlog were filed from mid-flight worktree state and were already fixed, or were never bugs, by the time they were read.
 
-## test262 coverage (measured 2026-07-27)
+## test262 coverage (measured 2026-07-28)
 
 "0 fails" is not "100% pass". Three filters sit between the suite and that number:
 
@@ -12,17 +12,15 @@ Before scheduling work on an entry, re-probe it against `main`. Several entries 
 |---|---|
 | Full suite | 53,319 |
 | Reachable by any `PHASES` entry | 38,328 (**14,991 in no phase at all**) |
-| Actually attempted | 31,154 (7,174 skipped in-phase, 18.7%) |
+| Actually attempted | 31,260 (7,068 skipped in-phase) |
 
-The zero-fail claim covers **58%** of the suite. The rest is not failing — it is not running.
+The zero-fail claim covers **59%** of the suite. The rest is not failing — it is not running.
 
 Reproduce with a walk over `PHASES` dirs + `skip_reason()` from `scripts/run_test262.py`.
 
 ### Un-skip candidates (ranked by tests-per-effort)
 
-- [ ] **`object-rest` — 339 tests.** `{...rest}` in destructuring. Plain ES2018, skipped by feature token with no stated blocker. Probe first: the token may be stale, or may hide real work.
-- [ ] **`numeric-separator-literal` — 75 tests.** `1_000_000`. Lexer-local, ES2021.
-- [ ] **`error-stack-accessor` — 35 tests.**
+- [>] **`object-rest` — 342 tests. NOT a stale token: two real engine bugs.** Rest collection copies properties structurally instead of running CopyDataProperties (§7.3.24), so getters never fire and non-enumerable own properties leak in *carrying their non-enumerable attribute*. Affects every form — var, assignment, param, for-of, for-await-of — so one shared routine is at fault. Probe with `hasOwnProperty`, **never `JSON.stringify`**: the leaked property is invisible to stringify, which makes the bug look absent. Fix in flight (batch1).
 - [ ] **Add orphaned directories to `PHASES`.** Cheap, and surfaces real failures rather than creating them. Expect `language/literals/regexp` to fail immediately: the engine never parse-time-validates regexp literals (semantic errors are only caught if the literal is evaluated), acknowledged in the `regexp-modifiers` comment in run_test262.py. Also `built-ins/decodeURI*`/`encodeURI*` (~170), `built-ins/global` (29), `AggregateError` (25).
 - [ ] **`built-ins/Iterator` — 514 tests**, in no phase.
 - [ ] **Modules — ~726 tests** (`language/module-code` 599 + `language/import` 127), plus unblocks class tests. Biggest block, biggest effort. The runner cannot drive `flags: [module]` tests at all; several class skips exist *only* for that reason and note the engine is correct when verified manually with `--module`.
@@ -62,6 +60,7 @@ Full-engine pass for duplication/elegance/compactness at constant perf+correctne
 
 ## Known bugs
 
+- [ ] **Bound-function internals leak through `Object.getOwnPropertyNames`.** `function.c3` stores `\x00bound_target` / `\x00bound_this` / `\x00bound_args` as NUL-prefixed own properties; `getOwnPropertyNames`/`Reflect.ownKeys` don't filter on enumerability, so `Object.getOwnPropertyNames(fn.bind())` exposes all three. Found while implementing error-stack-accessor, which hit the same trap using that idiom and broke two Object/create tests before switching to real extra-union storage (`643ecbd5`). Same fix applies: give BOUND_FUNCTION union storage instead of internal properties.
 - [ ] **Date pre-1970 year off-by-one** — `new Date(-1).getUTCFullYear()` → 1970, should be 1969. In `date_break_time*`.
 - [ ] **Generator-resume path never assigns `new_target`.** Different mechanism from the frames fixed in 107fe880 (it restores saved state), so it was left unexamined. Worth a look if async/generator × super ever misbehaves.
 
