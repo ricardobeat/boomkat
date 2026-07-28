@@ -196,9 +196,11 @@ fn bool env_put(EnvRecord* env, void* key, TVal val) {
             TVal* pv = &cur.bindings.prop_values()[idx];
             if (hobject::_active_heap != null) {
                 heap::Heap* h = (heap::Heap*)hobject::_active_heap;
-                if (pv.is_string() || pv.is_bigint()) { h.decref_tval(pv); }
+                // A binding owns whatever heap value it holds, objects
+                // included. Incref first so `x = x` cannot free in between.
+                if (val.is_heap_allocated()) { void* p = val.get_heapptr(); if (p != null) ((types::HeapHeader*)p).incref(); }
+                if (pv.is_heap_allocated()) { h.decref_tval(pv); }
                 *pv = val;
-                if (val.is_string() || val.is_bigint()) { void* p = val.get_heapptr(); if (p != null) ((types::HeapHeader*)p).incref(); }
             } else {
                 *pv = val;
             }
@@ -421,11 +423,11 @@ fn int env_try_put_lex(EnvRecord* lex_env, void* key, TVal val, bool check_tdz =
             TVal* pv = &cur.bindings.prop_values()[idx];
             if (hobject::_active_heap != null) {
                 heap::Heap* h = (heap::Heap*)hobject::_active_heap;
-                // Strings and BigInts are reference-counted primitives held by
-                // bindings; release the old value and incref the new one.
-                if (pv.is_string() || pv.is_bigint()) { h.decref_tval(pv); }
+                // A binding owns whatever heap value it holds, objects
+                // included. Incref first so `x = x` cannot free in between.
+                if (val.is_heap_allocated()) { void* p = val.get_heapptr(); if (p != null) ((types::HeapHeader*)p).incref(); }
+                if (pv.is_heap_allocated()) { h.decref_tval(pv); }
                 *pv = val;
-                if (val.is_string() || val.is_bigint()) { void* p = val.get_heapptr(); if (p != null) ((types::HeapHeader*)p).incref(); }
             } else {
                 *pv = val;
             }
