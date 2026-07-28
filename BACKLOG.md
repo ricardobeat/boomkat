@@ -34,21 +34,19 @@ Real bugs found while fixing the 66, which no running test exercises — they wi
 up in a phase run, so a green suite is not evidence against them. Each verified against
 `main` by probe and qjs comparison.
 
-- [ ] **Sweep regexp.c3 for char-index/byte-offset conversion truncation.** `d0b706c1`
-  fixed an `AdvanceStringIndex` that silently truncated when `thisIndex >= S.char_length()`
-  in `String.prototype[@@match]`'s global loop (a custom `exec` returning empty matches
-  against `""` produced lastIndex `0,1,1,1,1,1` instead of `0,1,2,3,4,5`). The same guard
-  already existed at the `@@split` site, so this is a copy that drifted. `@@split`'s own
-  advance works on raw byte offsets and is not susceptible. No one has audited the
-  remaining char-unit/byte-offset round-trips in that file for the same class of bug.
 - [ ] **Re-measure the engine's baseline leak count.** A 2000-iteration async-generator
   stress script reported ~27,000 leaks / 4 MB before `dc2945cb`; most of that was the
   generator `GeneratorState` leak, now fixed. Re-run to find what remains beyond the async
   residual above. Leak work must always compare a same-session delta against a baseline
   binary, never read the absolute number.
-- [ ] **`error.c3:92` internal `.stack` stub still uses raw `builtin_to_string`.** The only
-  site the audit (`a93ff1a9`) deferred: currently unobservable and matches qjs, but it is
-  the one remaining known-wrong caller.
+- [ ] **`error.c3:92` `.stack` name fallback uses raw `builtin_to_string`.** Reachable and
+  observable: `Error.prototype.name` is writable, so `Error.prototype.name = {toString(){…}}`
+  should invoke that `toString`. The naive fix (swap in `builtin_to_string_vm`) was tried
+  and **rejected** — it makes `new Error()` call `toString` during *construction*, so the
+  count goes 1 → 2 and diverges from qjs, which never reads `.name` at construction. The
+  real fix must make the `.stack` capture not eagerly read `.name` at all, or read it
+  without user-visible coercion. Verify with a call-counter probe across construction and
+  `.name` access separately, not just the final string.
 
 ### Engine gaps behind the class skip-list
 
