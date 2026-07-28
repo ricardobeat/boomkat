@@ -16,7 +16,7 @@ Before scheduling work on an entry, re-probe it against `main`. Several entries 
 
 Coverage is **60%** of the suite. The rest is not failing — it is not running.
 
-**The suite is currently RED: 20 known failures** (phase 8: 1 CE, phase 21: 19),
+**The suite is currently RED: 19 known failures** (all in phase 21, generators),
 surfaced deliberately by `916ffaed` adding 14 orphaned directories. Down from 66. Root
 causes are itemised below; each is real engine work. Do not re-hide them by skip-listing.
 All other phases are 0 fails.
@@ -25,13 +25,14 @@ Reproduce with a walk over `PHASES` dirs + `skip_reason()` from `scripts/run_tes
 
 ### Un-skip candidates (ranked by tests-per-effort)
 
-- [>] **`object-rest` — 342 tests. NOT a stale token: two real engine bugs.** Rest collection copies properties structurally instead of running CopyDataProperties (§7.3.24), so getters never fire and non-enumerable own properties leak in *carrying their non-enumerable attribute*. Affects every form — var, assignment, param, for-of, for-await-of — so one shared routine is at fault. Probe with `hasOwnProperty`, **never `JSON.stringify`**: the leaked property is invisible to stringify, which makes the bug look absent. Fix in flight (batch1).
 - [ ] **`built-ins/Iterator` — 514 tests**, in no phase.
 - [ ] **Modules — ~726 tests** (`language/module-code` 599 + `language/import` 127), plus unblocks class tests. Biggest block, biggest effort. The runner cannot drive `flags: [module]` tests at all; several class skips exist *only* for that reason and note the engine is correct when verified manually with `--module`.
 
-### Open failures from the PHASES expansion (916ffaed) — 66 fails, 12 root causes
+### Open failures and adjacent bugs
 
-Ordered by tests-fixed-per-effort. Every one verified against `main`.
+The 19 remaining suite failures are all in phase 21 (generators). The rest of this list is
+real bugs found alongside them that no running test currently covers. Every one verified
+against `main`.
 
 - [ ] **`RegExp.prototype.source` over-escapes — no test currently covers it.**
   `/a\/b/.source` gives `"a\\/b"` and `/[/]/.source` gives `"[\/]"`; qjs gives `"a\/b"`
@@ -53,9 +54,6 @@ Ordered by tests-fixed-per-effort. Every one verified against `main`.
   `set_undefined()` rather than `builtin_throw`. The array and regexp-string variants were
   fixed in `07bf4e8a`; these three were out of that task's scope and are not currently
   covered by a running test.
-- [ ] **`AggregateError` constructor incomplete — 7 fails.** `errors` stored verbatim
-  instead of `IterableToList`-spread (`src/builtins/error.c3:159-246`);
-  `register_native_error_ctor` (`:688`) hardcodes `length=1` but AggregateError needs 2.
 - [ ] **`GeneratorPrototype.next/return/throw` don't validate `this` — 6 fails.**
   `this` = undefined or a plain object must TypeError.
 - [ ] **`builtin_to_string` skips ToPrimitive on objects — audit its ~25 call sites.**
@@ -68,8 +66,6 @@ Ordered by tests-fixed-per-effort. Every one verified against `main`.
   deliberate raw fallback. Feeds the AggregateError `message` bug below.
 - [ ] **Generator `.return()` inside nested try/finally — 3 fails.** Finally blocks not
   running / final value not surfacing. May share a cause with the finally-return abort path.
-- [ ] **`undefined = 12` rejected at parse time — 1 CE:unexpected.** Must parse and throw
-  `TypeError` at runtime, not `SyntaxError` at parse time.
 - [ ] **`GeneratorFunction.prototype.constructor` is writable — 1 fail.** Should be non-writable.
 - [ ] **`AsyncFunction` `[[Prototype]]` chain wrong — 1 fail.** Expected `Function`.
 
@@ -107,6 +103,13 @@ Full-engine pass for duplication/elegance/compactness at constant perf+correctne
 - [ ] **Enum/metadata/dispatch triple registration** in core.c3 for every builtin (persistent merge-conflict magnet) — consider a table macro.
 
 ## Known bugs
+
+- [ ] **`Array.from(generator)` leaks 2 allocations per call.** Verified on main:
+  500 iterations of `Array.from(g())` leaks exactly 1000 blocks / 128 KB. Array-sourced
+  and Set-sourced calls are clean, so it is specific to consuming a *generator* iterator —
+  the generator object or its activation is never released. Shared by any builtin using
+  the same GetIterator/IteratorStep loop, including `aggregate_error_iterable_to_list`
+  (`d76ca80b`). Found while leak-checking AggregateError.
 
 - [ ] **Bound-function internals leak through `Object.getOwnPropertyNames`.** `function.c3` stores `\x00bound_target` / `\x00bound_this` / `\x00bound_args` as NUL-prefixed own properties; `getOwnPropertyNames`/`Reflect.ownKeys` don't filter on enumerability, so `Object.getOwnPropertyNames(fn.bind())` exposes all three. Found while implementing error-stack-accessor, which hit the same trap using that idiom and broke two Object/create tests before switching to real extra-union storage (`643ecbd5`). Same fix applies: give BOUND_FUNCTION union storage instead of internal properties.
 - [ ] **Date pre-1970 year off-by-one** — `new Date(-1).getUTCFullYear()` → 1970, should be 1969. In `date_break_time*`.
