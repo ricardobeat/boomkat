@@ -1868,6 +1868,20 @@ fn HObject*? hobject_alloc(void* heap_ptr, ObjClass cls) {
     obj.flags.pool_fallback = !from_pool;
     obj.refcount           = 1;
 
+$if $feature(GC_PROFILE):
+    {
+        heap::Heap* prof_h = (heap::Heap*)heap_ptr;
+        prof_h.gc_prof.objs_allocated++;
+        if (!from_pool) { prof_h.gc_prof.pool_fallbacks++; }
+        switch (alloc_sz) {
+            case OBJ_SIZE_GS:    prof_h.gc_prof.alloc_gs++;
+            case OBJ_SIZE_PLAIN: prof_h.gc_prof.alloc_plain++;
+            case OBJ_SIZE_ARRAY: prof_h.gc_prof.alloc_array++;
+            default:             prof_h.gc_prof.alloc_func++;
+        }
+    }
+$endif
+
     if (cls == ObjClass.FUNCTION) {
         obj.flags.callable      = true;
         obj.flags.constructable = true;

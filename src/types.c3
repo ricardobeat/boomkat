@@ -727,9 +727,22 @@ fn bool  HeapHeader.is_buffer(&self) { return self.flags.htype == HType.BUFFER; 
 /// Returns true when this header belongs to a BigInt box.
 fn bool  HeapHeader.is_bigint(&self) { return self.flags.htype == HType.BIGINT; }
 
+/// Global incref tally, only ever incremented in GC_PROFILE builds. incref()
+/// has no heap handle, so the count lives here and the reporter reads it
+/// directly. The engine is single-threaded per heap, so a plain global is
+/// exact. Declared unconditionally (8 bytes, never written when the feature is
+/// off) because C3 only accepts $feature blocks inside function bodies.
+ulong incref_count @private = 0;
+
+/// Reads the running incref tally. Always zero outside GC_PROFILE builds.
+fn ulong get_incref_count() => incref_count;
+
 /// Increments the reference count of this heap object.
 /// Safe to call on null pointers (no-op).
 fn void HeapHeader.incref(&self) @inline {
+$if $feature(GC_PROFILE):
+    incref_count++;
+$endif
     self.refcount++;
 }
 

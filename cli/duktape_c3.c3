@@ -41,6 +41,11 @@ fn int main(String[] args) {
     Heap*? hp = heap::create(null, null, null, null, null);
     if (catch h = hp) { io::eprintfn("Failed heap"); return 1; }
     defer hp.destroy();
+$if $feature(GC_PROFILE):
+    // Registered after destroy so it runs BEFORE it (defers unwind in reverse),
+    // and on every exit path including the error returns below.
+    defer hp.gc_prof_report();
+$endif
 
     Vm*? v = vm::vm_create(hp);
     if (catch err = v) { io::eprintfn("VM failed"); return 1; }

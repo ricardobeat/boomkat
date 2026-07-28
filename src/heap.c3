@@ -67,6 +67,79 @@ const uint  GRAY_STACK_INITIAL_CAP  = 64;
 const usz   STRS_CACHE_SIZE         = 256;
 const uint  GC_MAX_ROOTS            = 64;
 const uint  BWD_GC_INTERVAL        = 1024;  /// Backward-jump GC check interval (prevents thrashing)
+
+// --- GC instrumentation (GC_PROFILE builds only) ---------------------------
+
+/// Maximum individual pause samples retained for percentile reporting. Pauses
+/// beyond this cap still contribute to totals and to the running max, so the
+/// mean and worst-case stay exact; only the percentile estimate degrades.
+const usz GC_PROF_MAX_SAMPLES = 65536;
+
+extern fn ulong mach_absolute_time();
+
+/// Read the monotonic cycle-ish clock used by every profile timer.
+macro ulong gc_prof_now() => mach_absolute_time();
+
+/// Per-heap GC cost counters, split by the phase that spends the time.
+///
+/// The three collection phases are timed separately because they have very
+/// different scaling: `mark` is O(live edges), `sweep_walk` is O(total heap
+/// nodes) — it is the linked-list traversal plus header reads — and `free`
+/// is O(dead objects) and is the only part that calls into the allocator.
+/// Splitting them is what tells us whether a page allocator with side mark
+/// bitmaps (which only removes sweep_walk and header touching) could pay off.
+struct GcProfile {
+    // --- Collection phase totals (mach ticks) ---
+    ulong mark_ticks;
+    ulong sweep_walk_ticks;      /// Phase A unlink walk + phase D mark-bit reset
+    ulong free_ticks;            /// Phase B teardown + phase C header release
+    ulong clear_ticks;           /// Phase 1 flag-clearing walk
+    ulong strsweep_ticks;
+    ulong total_ticks;
+    uint  cycles;
+
+    // --- Pause distribution ---
+    /// Every GC pause in ticks, for min/median/p90/p99/max. Capped at
+    /// GC_PROF_MAX_SAMPLES; `pause_overflow` counts pauses past the cap.
+    ulong[GC_PROF_MAX_SAMPLES] pauses;
+    usz   pause_count;
+    usz   pause_overflow;
+    ulong pause_max;
+
+    // --- Cascading-free spikes ---
+    /// A cascade is one top-level decref that dropped a refcount to zero, and
+    /// everything it transitively freed. `decref_depth` distinguishes the
+    /// outermost decref from the recursive ones so the whole storm is timed
+    /// as a single latency event, which is what the VM instruction actually
+    /// stalls for.
+    uint  decref_depth;
+    ulong cascade_start;
+    uint  cascade_objs;          /// Objects freed by the in-flight cascade
+    ulong[GC_PROF_MAX_SAMPLES] cascades;
+    uint[GC_PROF_MAX_SAMPLES]  cascade_sizes;
+    usz   cascade_count;
+    usz   cascade_overflow;
+    ulong cascade_max;
+    uint  cascade_max_objs;
+
+    // --- Refcount traffic ---
+    ulong increfs;
+    ulong decrefs;
+    ulong decrefs_to_zero;
+
+    // --- Allocation / live set ---
+    ulong objs_allocated;
+    /// Object allocations by size class, mirroring alloc_size_for_class().
+    ulong alloc_plain;
+    ulong alloc_array;
+    ulong alloc_func;
+    ulong alloc_gs;
+    ulong pool_fallbacks;        /// Allocations that missed the pool and hit malloc
+    /// Live-object count sampled at the end of every collection.
+    uint  live_min;
+    uint  live_max;
+    ulong live_sum;
+}
 /// Strings longer than this are never interned — they can't be property keys
 /// in practice, and interning them wastes memory (they accumulate in the table
 /// until the next GC, causing O(n²) memory growth in loops like `s += chunk`).
@@ -521,6 +594,14 @@ struct Heap {
     mempool::FixedBlockPool obj_pool_array;
     mempool::FixedBlockPool obj_pool_func;
 
+    /// GC cost instrumentation. Only allocated and written in GC_PROFILE
+    /// builds; a null pointer everywhere else, so the shipping binary pays one
+    /// pointer of Heap footprint and nothing on any hot path. Times stored in
+    /// it are raw mach_absolute_time ticks; gc_prof_report() converts to
+    /// nanoseconds via the machine timebase. The sample arrays make the struct
+    /// multi-megabyte, which is why it is out-of-line rather than embedded.
+    GcProfile*  gc_prof;
+
     // Module system — module cache and host hooks.
     void*       module_cache;       // ModuleDef** — growable array of ModuleDef pointers
     uint        module_cache_count;
@@ -684,6 +765,15 @@ fn Heap*? create(
     h.str_table      = (HString**)tbl_raw;
     h.str_table_size = INITIAL_STR_TABLE_SIZE;
     h.str_table_used = 0;
+
+$if $feature(GC_PROFILE):
+    // Multi-megabyte sample buffers, so allocated once here rather than
+    // embedded in Heap. Zeroed: every counter starts at 0.
+    h.gc_prof = (GcProfile*)afn(udata, GcProfile::size);
+    if (h.gc_prof != null) {
+        mem::clear(h.gc_prof, (sz)GcProfile::size);
+    }
+$endif
 
     // Pre-intern well-known strings
     h.init_builtin_strs();
@@ -1624,7 +1714,23 @@ fn void Heap.decref(&self, HeapHeader* hdr) {
     if (self.sweeping && !hdr.is_string() && !hdr.is_reachable() && !hdr.is_temproot()) {
         return;
     }
+$if $feature(GC_PROFILE):
+    self.gc_prof.decrefs++;
+    // Only the OUTERMOST decref opens a cascade window. Recursive decrefs
+    // reached through hobject_free are part of the same latency event — the
+    // single VM instruction stalls for the whole storm, not for each step.
+    bool prof_outer = self.gc_prof.decref_depth == 0 && !self.sweeping;
+    if (prof_outer) {
+        self.gc_prof.cascade_objs = 0;
+        self.gc_prof.cascade_start = gc_prof_now();
+    }
+    self.gc_prof.decref_depth++;
+$endif
     if (--hdr.refcount == 0) {
+$if $feature(GC_PROFILE):
+        self.gc_prof.decrefs_to_zero++;
+        self.gc_prof.cascade_objs++;
+$endif
         if (hdr.is_string()) {
             hstring::HString* s = (hstring::HString*)hdr;
             if (s.flags.is_interned) {
@@ -1643,6 +1749,23 @@ fn void Heap.decref(&self, HeapHeader* hdr) {
             }
         }
     }
+$if $feature(GC_PROFILE):
+    self.gc_prof.decref_depth--;
+    if (prof_outer && self.gc_prof.cascade_objs > 0) {
+        ulong span = gc_prof_now() - self.gc_prof.cascade_start;
+        if (span > self.gc_prof.cascade_max) {
+            self.gc_prof.cascade_max = span;
+            self.gc_prof.cascade_max_objs = self.gc_prof.cascade_objs;
+        }
+        if (self.gc_prof.cascade_count < GC_PROF_MAX_SAMPLES) {
+            self.gc_prof.cascades[self.gc_prof.cascade_count] = span;
+            self.gc_prof.cascade_sizes[self.gc_prof.cascade_count] = self.gc_prof.cascade_objs;
+            self.gc_prof.cascade_count++;
+        } else {
+            self.gc_prof.cascade_overflow++;
+        }
+    }
+$endif
 }
 
 /**
@@ -2649,6 +2772,10 @@ fn void Heap.sweep(&self) {
     // "unmarked == dying" test stays reliable; a second pass below clears them.
     self.sweeping = true;
 
+$if $feature(GC_PROFILE):
+    ulong prof_sweep_start = gc_prof_now();
+$endif
+
     // Phase A: unlink every dying (unmarked, non-temproot) node from the
     // heap_allocated list and thread it onto a local "dying" list via its
     // now-unused .next pointer. Nothing is freed yet, so every dying node's
@@ -2689,6 +2816,14 @@ fn void Heap.sweep(&self) {
         cur = next;
     }
 
+$if $feature(GC_PROFILE):
+    // Phase A above is the pure sweep-WALK cost: one pointer chase and one
+    // header read per heap node, live or dead. This is the cost a side mark
+    // bitmap would replace with a word scan.
+    ulong prof_walk_end = gc_prof_now();
+    self.gc_prof.sweep_walk_ticks += prof_walk_end - prof_sweep_start;
+$endif
+
     // Phase B: run every dying node's teardown (hobject_free) with all dying
     // memory still valid. hobject_free may decref neighbours it references; the
     // decref sweep guard skips any neighbour that is itself dying (unmarked,
@@ -2713,6 +2848,13 @@ fn void Heap.sweep(&self) {
         d = dnext;
     }
 
+$if $feature(GC_PROFILE):
+    // Phases B and C are the actual FREE cost: per-object teardown plus the
+    // allocator/pool release calls.
+    ulong prof_free_end = gc_prof_now();
+    self.gc_prof.free_ticks += prof_free_end - prof_walk_end;
+$endif
+
     // Free pass complete — no more dying nodes will be touched. Now clear the
     // mark/temproot bits on the survivors for the next cycle. Reachable
     // survivors clear both bits; temproot-kept nodes (unmarked but retained)
@@ -2723,6 +2865,12 @@ fn void Heap.sweep(&self) {
             s.clear_temproot();
         }
     }
+
+$if $feature(GC_PROFILE):
+    // The survivor mark-bit reset is a second full walk of the live list, so
+    // it belongs to the sweep-walk bucket too.
+    self.gc_prof.sweep_walk_ticks += gc_prof_now() - prof_free_end;
+$endif
 
     self.sweeping = false;
     self.live_obj_count = kept;
@@ -2818,6 +2966,11 @@ fn void Heap.mark_and_sweep(&self, bool safepoint) {
 
     bool clear_temproots = safepoint && self.native_frame_depth == 0;
 
+$if $feature(GC_PROFILE):
+    ulong prof_gc_start = gc_prof_now();
+    ulong prof_t0 = prof_gc_start;
+$endif
+
     // --- Phase 1: Clear all reachable (and optionally temproot) flags ---
     {
         HeapHeader* cur = self.heap_allocated;
@@ -2843,11 +2996,25 @@ fn void Heap.mark_and_sweep(&self, bool safepoint) {
         }
     }
 
+$if $feature(GC_PROFILE):
+    ulong prof_t1 = gc_prof_now();
+    self.gc_prof.clear_ticks += prof_t1 - prof_t0;
+$endif
+
     // --- Phase 2: Mark from roots ---
     self.mark_roots();
 
+$if $feature(GC_PROFILE):
+    ulong prof_t2 = gc_prof_now();
+    self.gc_prof.mark_ticks += prof_t2 - prof_t1;
+$endif
+
     // --- Phase 3: Sweep objects ---
     self.sweep();
+
+$if $feature(GC_PROFILE):
+    ulong prof_t3 = gc_prof_now();
+$endif
 
     // --- Phase 3b: Sweep unreachable strings (safe points only) ---
     // GC can trigger from any allocation, including while builtin init or
@@ -2867,6 +3034,29 @@ fn void Heap.mark_and_sweep(&self, bool safepoint) {
         new_trigger = GC_INITIAL_TRIGGER;
     }
     self.gc_trigger_counter = new_trigger;
+
+$if $feature(GC_PROFILE):
+    ulong prof_end = gc_prof_now();
+    self.gc_prof.strsweep_ticks += prof_end - prof_t3;
+    ulong pause = prof_end - prof_gc_start;
+    self.gc_prof.total_ticks += pause;
+    self.gc_prof.cycles++;
+    if (pause > self.gc_prof.pause_max) { self.gc_prof.pause_max = pause; }
+    if (self.gc_prof.pause_count < GC_PROF_MAX_SAMPLES) {
+        self.gc_prof.pauses[self.gc_prof.pause_count++] = pause;
+    } else {
+        self.gc_prof.pause_overflow++;
+    }
+    // Live set, sampled once per cycle right after the sweep settled it.
+    if (self.gc_prof.cycles == 1 || self.live_obj_count < self.gc_prof.live_min) {
+        self.gc_prof.live_min = self.live_obj_count;
+    }
+    if (self.live_obj_count > self.gc_prof.live_max) {
+        self.gc_prof.live_max = self.live_obj_count;
+    }
+    self.gc_prof.live_sum += (ulong)self.live_obj_count;
+$endif
+
     self.gc_running = false;
 }
 
@@ -2895,6 +3085,122 @@ fn void Heap.safepoint_gc(&self) {
     self.mark_and_sweep(true);
     self.string_sweep_safe = false;
     self.gc_pending = false;
+}
+
+/// Convert mach ticks to nanoseconds using the machine timebase. Queried once
+/// and cached; on Apple arm64 the ratio is 125/3 (24 MHz counter).
+fn double gc_prof_ticks_to_ns(ulong ticks) {
+    static double scale = 0.0;
+    if (scale == 0.0) {
+        MachTimebase tb;
+        mach_timebase_info(&tb);
+        scale = (double)tb.numer / (double)tb.denom;
+    }
+    return (double)ticks * scale;
+}
+
+struct MachTimebase { uint numer; uint denom; }
+extern fn int mach_timebase_info(MachTimebase* info);
+
+/// In-place ascending insertion sort. Sample arrays are small (a few thousand
+/// entries) and only sorted once at exit, so the O(n^2) worst case never runs
+/// hot; using it avoids pulling a generic sort over a fixed-size array.
+fn void gc_prof_sort(ulong* a, usz n) @local {
+    for (usz i = 1; i < n; i++) {
+        ulong v = a[i];
+        usz j = i;
+        while (j > 0 && a[j - 1] > v) {
+            a[j] = a[j - 1];
+            j--;
+        }
+        a[j] = v;
+    }
+}
+
+/// Percentile from a sorted sample array, using nearest-rank indexing.
+fn double gc_prof_pct(ulong* sorted, usz n, double p) @local {
+    if (n == 0) { return 0.0; }
+    usz idx = (usz)(p * (double)(n - 1) + 0.5);
+    if (idx >= n) { idx = n - 1; }
+    return gc_prof_ticks_to_ns(sorted[idx]);
+}
+
+/// Print the collected GC cost profile to stderr. Called once at teardown by
+/// the CLI so the numbers cover the whole script run.
+fn void Heap.gc_prof_report(&self) {
+    GcProfile* p = self.gc_prof;
+    if (p == null) { return; }
+
+    io::eprintn("");
+    io::eprintn("=== GC PROFILE ===");
+    io::eprintfn("collections            %d", p.cycles);
+    io::eprintfn("total GC time          %.3f ms", gc_prof_ticks_to_ns(p.total_ticks) / 1e6);
+
+    if (p.total_ticks > 0) {
+        double tot = (double)p.total_ticks;
+        io::eprintn("");
+        io::eprintn("-- phase split --");
+        io::eprintfn("clear-flags walk       %8.3f ms  %5.1f%%",
+            gc_prof_ticks_to_ns(p.clear_ticks) / 1e6, 100.0 * (double)p.clear_ticks / tot);
+        io::eprintfn("MARK                   %8.3f ms  %5.1f%%",
+            gc_prof_ticks_to_ns(p.mark_ticks) / 1e6, 100.0 * (double)p.mark_ticks / tot);
+        io::eprintfn("SWEEP-WALK             %8.3f ms  %5.1f%%",
+            gc_prof_ticks_to_ns(p.sweep_walk_ticks) / 1e6, 100.0 * (double)p.sweep_walk_ticks / tot);
+        io::eprintfn("FREE                   %8.3f ms  %5.1f%%",
+            gc_prof_ticks_to_ns(p.free_ticks) / 1e6, 100.0 * (double)p.free_ticks / tot);
+        io::eprintfn("string sweep           %8.3f ms  %5.1f%%",
+            gc_prof_ticks_to_ns(p.strsweep_ticks) / 1e6, 100.0 * (double)p.strsweep_ticks / tot);
+    }
+
+    if (p.pause_count > 0) {
+        gc_prof_sort(&p.pauses[0], p.pause_count);
+        io::eprintn("");
+        io::eprintn("-- GC pause distribution (us) --");
+        io::eprintfn("samples %d (overflow %d)", p.pause_count, p.pause_overflow);
+        io::eprintfn("min     %10.3f", gc_prof_pct(&p.pauses[0], p.pause_count, 0.0) / 1e3);
+        io::eprintfn("median  %10.3f", gc_prof_pct(&p.pauses[0], p.pause_count, 0.50) / 1e3);
+        io::eprintfn("p90     %10.3f", gc_prof_pct(&p.pauses[0], p.pause_count, 0.90) / 1e3);
+        io::eprintfn("p99     %10.3f", gc_prof_pct(&p.pauses[0], p.pause_count, 0.99) / 1e3);
+        io::eprintfn("max     %10.3f", gc_prof_ticks_to_ns(p.pause_max) / 1e3);
+    }
+
+    if (p.cascade_count > 0) {
+        // Sorted separately from cascade_sizes, so after this the size array no
+        // longer lines up with the time array; only the max pair is reported.
+        gc_prof_sort(&p.cascades[0], p.cascade_count);
+        io::eprintn("");
+        io::eprintn("-- cascading-free spikes (us), one top-level decref each --");
+        io::eprintfn("cascades %d (overflow %d)", p.cascade_count, p.cascade_overflow);
+        io::eprintfn("median  %10.3f", gc_prof_pct(&p.cascades[0], p.cascade_count, 0.50) / 1e3);
+        io::eprintfn("p90     %10.3f", gc_prof_pct(&p.cascades[0], p.cascade_count, 0.90) / 1e3);
+        io::eprintfn("p99     %10.3f", gc_prof_pct(&p.cascades[0], p.cascade_count, 0.99) / 1e3);
+        io::eprintfn("max     %10.3f  (%d objects freed)",
+            gc_prof_ticks_to_ns(p.cascade_max) / 1e3, p.cascade_max_objs);
+    }
+
+    io::eprintn("");
+    io::eprintn("-- refcount traffic --");
+    io::eprintfn("increfs                %d", types::get_incref_count());
+    io::eprintfn("decrefs                %d", p.decrefs);
+    io::eprintfn("decrefs reaching zero  %d", p.decrefs_to_zero);
+
+    io::eprintn("");
+    io::eprintn("-- objects --");
+    io::eprintfn("allocated              %d", p.objs_allocated);
+    io::eprintfn("pool misses (malloc)   %d", p.pool_fallbacks);
+    io::eprintfn("peak live              %d", self.peak_live_obj_count);
+    io::eprintfn("live now               %d", self.live_obj_count);
+    if (p.cycles > 0) {
+        io::eprintfn("live at GC min/mean/max  %d / %d / %d",
+            p.live_min, (uint)(p.live_sum / (ulong)p.cycles), p.live_max);
+    }
+    io::eprintn("");
+    io::eprintn("-- size classes (bytes/class : allocations) --");
+    io::eprintfn("plain  %3d B  %d", hobject::OBJ_SIZE_PLAIN, p.alloc_plain);
+    io::eprintfn("array  %3d B  %d", hobject::OBJ_SIZE_ARRAY, p.alloc_array);
+    io::eprintfn("func   %3d B  %d", hobject::OBJ_SIZE_FUNC,  p.alloc_func);
+    io::eprintfn("gs     %3d B  %d", hobject::OBJ_SIZE_GS,    p.alloc_gs);
+    io::eprintn("==================");
 }
 
 // ============================================================================
