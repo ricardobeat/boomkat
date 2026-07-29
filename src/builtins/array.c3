@@ -1952,6 +1952,12 @@ fn void builtin_array_proto_toReversed(BuiltinContext* ctx) {
     ulong len;
     if (!array_to_length(obj, ctx.heap, ctx, &len)) { ctx.result.set_undefined(); return; }
 
+    // Check length limit before processing
+    if (len > (ulong)0xFFFFFFFFUL) {
+        arr_throw_range_error(ctx, "Array length exceeds maximum");
+        return;
+    }
+
     HObject*? new_arr = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
     if (catch err = new_arr) {
         ctx.result.set_undefined(); return;
@@ -1981,7 +1987,7 @@ fn void builtin_array_proto_toReversed(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Array.prototype.toSorted (ES2023 §23.1.3.34) — default compare (no comparefn)
+// Array.prototype.toSorted (ES2023 §23.1.3.34)
 // ============================================================================
 fn void builtin_array_proto_toSorted(BuiltinContext* ctx) {
     HObject* obj = array_proto_get_this(ctx);
@@ -2002,59 +2008,155 @@ fn void builtin_array_proto_toSorted(BuiltinContext* ctx) {
         return;
     }
 
-    ulong raw_len;
-    if (!array_to_length(obj, ctx.heap, ctx, &raw_len)) { ctx.result.set_undefined(); return; }
-    uint len = raw_len > 0x7FFFFFFF ? 0x7FFFFFFF : (uint)raw_len;
+    // Step 1: Check if compareFn is callable BEFORE reading length
+    TVal comparefn;
+    if (ctx.argc > 0) {
+        comparefn = ctx.regs[ctx.base_reg];
+    } else {
+        comparefn.set_undefined();
+    }
 
-    // Create a copy
+    // Validate compareFn: must be undefined or callable
+    if (!comparefn.is_undefined()) {
+        if (!arr_check_callback(comparefn, ctx)) {
+            return;
+        }
+    }
+
+    // Step 2: Read length after validating compareFn
+    ulong len;
+    if (!array_to_length(obj, ctx.heap, ctx, &len)) { ctx.result.set_undefined(); return; }
+
+    // Check length limit
+    if (len > (ulong)0xFFFFFFFFUL) {
+        arr_throw_range_error(ctx, "Array length exceeds maximum");
+        return;
+    }
+
+    // Step 3: Read ALL elements from source into a list
+    TVal*[] elements;
+    TVal** elements_heap = null;
+    const usz STACK_THRESHOLD = 128;
+
+    TVal*[128] elements_stack;
+    if (len <= STACK_THRESHOLD) {
+        elements = elements_stack[:len];
+    } else {
+        elements_heap = (TVal**)ctx.heap.alloc_func(ctx.heap.heap_udata, TVal*::size * len);
+        if (elements_heap == null) {
+            ctx.result.set_undefined();
+            return;
+        }
+        elements = elements_heap[:len];
+    }
+
+    for (ulong i = 0; i < len; i++) {
+        TVal elem; elem.set_undefined();
+        arr_get_elem_vm(obj, i, ctx.heap, ctx, &elem);
+        if (ctx.should_throw) {
+            if (elements_heap != null) {
+                ctx.heap.free_func(ctx.heap.heap_udata, elements_heap);
+            }
+            ctx.result.set_undefined();
+            return;
+        }
+        // Allocate space for this element
+        TVal* elem_ptr = (TVal*)ctx.heap.alloc_func(ctx.heap.heap_udata, TVal::size);
+        if (elem_ptr == null) {
+            if (elements_heap != null) {
+                ctx.heap.free_func(ctx.heap.heap_udata, elements_heap);
+            }
+            ctx.result.set_undefined();
+            return;
+        }
+        *elem_ptr = elem;
+        elements[i] = elem_ptr;
+    }
+
+    // Step 4: Sort the elements using compareFn (or string comparison if undefined)
+    // Simple bubble sort for compatibility
+    for (ulong i = 0; i < len; i++) {
+        for (ulong j = 0; j < len - 1 - i; j++) {
+            TVal a = *elements[j];
+            TVal b = *elements[j + 1];
+
+            int cmp = 0;
+            if (!comparefn.is_undefined()) {
+                // Call compareFn(a, b)
+                TVal cmp_result = arr_call_callback(ctx, comparefn, ctx.regs[ctx.base_reg - 1], a, (ulong)j, obj);
+                if (ctx.should_throw) {
+                    // Comparefn threw — clean up and propagate
+                    for (ulong k = 0; k < len; k++) {
+                        ctx.heap.free_func(ctx.heap.heap_udata, elements[k]);
+                    }
+                    if (elements_heap != null) {
+                        ctx.heap.free_func(ctx.heap.heap_udata, elements_heap);
+                    }
+                    ctx.result.set_undefined();
+                    return;
+                }
+                // Convert result to int
+                if (cmp_result.is_fastint()) {
+                    long cmp_int = cmp_result.get_fastint();
+                    cmp = cmp_int < 0 ? -1 : (cmp_int > 0 ? 1 : 0);
+                } else if (cmp_result.is_number()) {
+                    double cmp_d = cmp_result.get_number();
+                    cmp = cmp_d < 0 ? -1 : (cmp_d > 0 ? 1 : 0);
+                } else {
+                    cmp = 0;
+                }
+            } else {
+                // Default: string comparison
+                HString* a_str = builtin_to_string(ctx.heap, &a);
+                HString* b_str = builtin_to_string(ctx.heap, &b);
+                if (a_str != null && b_str != null) {
+                    cmp = hstring::hstring_compare(a_str, b_str);
+                } else if (a_str == null && b_str == null) {
+                    cmp = 0;
+                } else if (a_str == null) {
+                    cmp = 1;
+                } else {
+                    cmp = -1;
+                }
+            }
+
+            if (cmp > 0) {
+                // Swap
+                TVal* tmp = elements[j];
+                elements[j] = elements[j + 1];
+                elements[j + 1] = tmp;
+            }
+        }
+    }
+
+    // Step 5: Create result array and populate with sorted elements
     HObject*? new_arr = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
     if (catch err = new_arr) {
-        ctx.result.set_undefined(); return;
+        for (ulong k = 0; k < len; k++) {
+            ctx.heap.free_func(ctx.heap.heap_udata, elements[k]);
+        }
+        if (elements_heap != null) {
+            ctx.heap.free_func(ctx.heap.heap_udata, elements_heap);
+        }
+        ctx.result.set_undefined();
+        return;
     }
     HObject* result = new_arr;
     result.prototype = ctx.heap.array_proto;
 
-    for (uint i = 0; i < len; i++) {
-        TVal elem;
-        if (arr_get_elem_vm(obj, (ulong)i, ctx.heap, ctx, &elem)) {
-            if (ctx.should_throw) { ctx.result.set_undefined(); return; }
-            array_set_elem(result, i, elem, ctx.heap);
-        }
+    for (ulong i = 0; i < len; i++) {
+        TVal elem = *elements[i];
+        // Always set property (all elements present in result, holes filled with undefined)
+        array_set_elem_ulong(result, i, elem, ctx.heap);
     }
-    array_set_length(result, len, ctx.heap);
+    array_set_length_ulong(result, len, ctx.heap, ctx.vm);
 
-    // Compact defined elements to the front
-    uint def_count = 0;
-    for (uint i = 0; i < len; i++) {
-        TVal elem = array_get_elem(result, i, ctx.heap);
-        if (!elem.is_undefined()) {
-            array_set_elem(result, def_count, elem, ctx.heap);
-            def_count++;
-        }
+    // Clean up
+    for (ulong k = 0; k < len; k++) {
+        ctx.heap.free_func(ctx.heap.heap_udata, elements[k]);
     }
-
-    // Bubble-sort defined elements by string comparison
-    for (uint i = 0; i < def_count; i++) {
-        for (uint j = 0; j < def_count - 1 - i; j++) {
-            TVal a = array_get_elem(result, j, ctx.heap);
-            TVal b = array_get_elem(result, j + 1, ctx.heap);
-            HString* a_str = builtin_to_string(ctx.heap, &a);
-            HString* b_str = builtin_to_string(ctx.heap, &b);
-            int cmp = 0;
-            if (a_str != null && b_str != null) {
-                cmp = hstring::hstring_compare(a_str, b_str);
-            } else if (a_str == null && b_str == null) {
-                cmp = 0;
-            } else if (a_str == null) {
-                cmp = 1;
-            } else {
-                cmp = -1;
-            }
-            if (cmp > 0) {
-                array_set_elem(result, j, b, ctx.heap);
-                array_set_elem(result, j + 1, a, ctx.heap);
-            }
-        }
+    if (elements_heap != null) {
+        ctx.heap.free_func(ctx.heap.heap_udata, elements_heap);
     }
 
     ctx.result.set_object(result);
@@ -2064,36 +2166,51 @@ fn void builtin_array_proto_toSorted(BuiltinContext* ctx) {
 // Array.prototype.toSpliced (ES2023 §23.1.3.35)
 // ============================================================================
 fn void builtin_array_proto_toSpliced(BuiltinContext* ctx) {
-    HObject* obj = array_proto_get_this(ctx);
-    if (obj == null) {
-        TVal this_val = ctx.regs[ctx.base_reg - 1];
-        if (this_val.is_undefined() || this_val.is_null()) {
-            HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
-            if (try err = err_raw) {
-                err.prototype = ctx.heap.type_err_proto;
-                HString* msg = builtin_intern_string(ctx.heap, "Array.prototype.toSpliced called on null or undefined");
-                TVal msg_tv; msg_tv.set_string(msg);
-                HString* msg_key = builtin_intern_string(ctx.heap, "message");
-                err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
-                ctx.should_throw = true;
-                ctx.throw_value.set_object(err);
-            }
+    TVal this_val = ctx.regs[ctx.base_reg - 1];
+
+    // Step 1: ToObject(this value) — supports primitives, frozen arrays, etc.
+    HObject* obj = null;
+    if (this_val.is_object() && this_val.get_heapptr() != null) {
+        obj = (HObject*)this_val.get_heapptr();
+    } else if (this_val.is_null() || this_val.is_undefined()) {
+        HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
+        if (try err = err_raw) {
+            err.prototype = ctx.heap.type_err_proto;
+            HString* msg = builtin_intern_string(ctx.heap, "Array.prototype.toSpliced called on null or undefined");
+            TVal msg_tv; msg_tv.set_string(msg);
+            HString* msg_key = builtin_intern_string(ctx.heap, "message");
+            err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
+            ctx.should_throw = true;
+            ctx.throw_value.set_object(err);
         }
         return;
+    } else {
+        // Primitive: ToObject wrapping (Boolean, Number, String)
+        HObject*? boxed = arr_to_object(this_val, ctx.heap);
+        if (try b = boxed) {
+            obj = b;
+        } else {
+            ctx.result.set_undefined();
+            return;
+        }
     }
 
+    // Step 2: LengthOfArrayLike(O)
     ulong len;
     if (!array_to_length(obj, ctx.heap, ctx, &len)) { ctx.result.set_undefined(); return; }
 
-    // Get relativeStart (argument 0)
+    // Check length limit
+    if (len > (ulong)0xFFFFFFFFUL) {
+        arr_throw_range_error(ctx, "Array length exceeds maximum");
+        return;
+    }
+
+    // Get relativeStart using ToIntegerOrInfinity
     double relative_start = 0.0;
     if (ctx.argc > 0) {
         TVal* arg = &ctx.regs[ctx.base_reg];
-        if (arg.is_fastint()) {
-            relative_start = (double)arg.get_fastint();
-        } else if (arg.is_number()) {
-            relative_start = arg.get_number();
-        }
+        relative_start = builtin_to_integer_vm(ctx, arg);
+        if (ctx.should_throw) { ctx.result.set_undefined(); return; }
     }
 
     ulong actual_start;
@@ -2104,20 +2221,21 @@ fn void builtin_array_proto_toSpliced(BuiltinContext* ctx) {
         actual_start = relative_start > (double)len ? len : (ulong)(long)relative_start;
     }
 
-    // Get actualDeleteCount
+    // Get actualDeleteCount using ToIntegerOrInfinity
+    // Per spec: if start is not present, actualDeleteCount is 0. Otherwise it defaults to len - actualStart.
     ulong actual_delete_count;
-    if (ctx.argc <= 1) {
+    if (ctx.argc == 0) {
+        // No arguments: both start and deleteCount are missing
+        actual_delete_count = 0;
+        actual_start = 0;
+    } else if (ctx.argc == 1) {
+        // Only start provided: deleteCount defaults to len - actualStart
         actual_delete_count = len - actual_start;
     } else {
+        // deleteCount explicitly provided
         TVal* arg = &ctx.regs[ctx.base_reg + 1];
-        double delete_count;
-        if (arg.is_fastint()) {
-            delete_count = (double)arg.get_fastint();
-        } else if (arg.is_number()) {
-            delete_count = arg.get_number();
-        } else {
-            delete_count = 0;
-        }
+        double delete_count = builtin_to_integer_vm(ctx, arg);
+        if (ctx.should_throw) { ctx.result.set_undefined(); return; }
 
         if (delete_count < 0) delete_count = 0;
         ulong dc = (ulong)(long)delete_count;
@@ -2130,7 +2248,14 @@ fn void builtin_array_proto_toSpliced(BuiltinContext* ctx) {
         item_count = ctx.argc - 2;
     }
 
-    // Create new array: prefix + items + suffix
+    // Calculate new length
+    ulong new_len = len + (ulong)item_count - actual_delete_count;
+    if (new_len > (ulong)0xFFFFFFFFUL) {
+        arr_throw_range_error(ctx, "Array length exceeds maximum");
+        return;
+    }
+
+    // Create result array
     HObject*? new_arr = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
     if (catch err = new_arr) {
         ctx.result.set_undefined(); return;
@@ -2138,32 +2263,52 @@ fn void builtin_array_proto_toSpliced(BuiltinContext* ctx) {
     HObject* result = new_arr;
     result.prototype = ctx.heap.array_proto;
 
-    ulong n = 0;
-    // Copy prefix [0, actual_start)
+    ulong k = 0;
+
+    // Step 14: Copy prefix [0, actual_start)
     for (ulong i = 0; i < actual_start; i++) {
-        TVal elem;
-        if (arr_get_elem_vm(obj, i, ctx.heap, ctx, &elem)) {
-            if (ctx.should_throw) { ctx.result.set_undefined(); return; }
-            array_set_elem_ulong(result, n, elem, ctx.heap);
-            n++;
+        TVal elem; elem.set_undefined();
+        bool found = arr_get_elem_vm(obj, i, ctx.heap, ctx, &elem);
+        if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+        // Always create own property (holes become undefined)
+        if (i <= 0xFFFFFFFFUL && elem.is_undefined() && !found) {
+            HString* key = ctx.heap.int_to_hstring((long)i);
+            if (key != null) {
+                result.put_prop(key, elem, hobject::PROP_FLAGS_WEC);
+            }
+        } else {
+            array_set_elem_ulong(result, i, elem, ctx.heap);
         }
+        k++;
     }
-    // Insert new items
+
+    // Step 15: Insert new items
     for (ushort i = 0; i < item_count; i++) {
         TVal item = ctx.regs[ctx.base_reg + 2 + i];
-        array_set_elem_ulong(result, n, item, ctx.heap);
-        n++;
+        array_set_elem_ulong(result, k, item, ctx.heap);
+        k++;
     }
-    // Copy suffix [actual_start + actual_delete_count, len)
+
+    // Step 16: Copy suffix [actual_start + actual_delete_count, len)
+    // The spec says: from = k + actualDeleteCount - insertCount
+    // which simplifies to accessing obj[i] for i in [actual_start + actual_delete_count, len)
     for (ulong i = actual_start + actual_delete_count; i < len; i++) {
-        TVal elem;
-        if (arr_get_elem_vm(obj, i, ctx.heap, ctx, &elem)) {
-            if (ctx.should_throw) { ctx.result.set_undefined(); return; }
-            array_set_elem_ulong(result, n, elem, ctx.heap);
-            n++;
+        TVal elem; elem.set_undefined();
+        bool found = arr_get_elem_vm(obj, i, ctx.heap, ctx, &elem);
+        if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+        // Always create own property (holes become undefined)
+        if (i <= 0xFFFFFFFFUL && elem.is_undefined() && !found) {
+            HString* key = ctx.heap.int_to_hstring((long)(k));
+            if (key != null) {
+                result.put_prop(key, elem, hobject::PROP_FLAGS_WEC);
+            }
+        } else {
+            array_set_elem_ulong(result, k, elem, ctx.heap);
         }
+        k++;
     }
-    array_set_length_ulong(result, n, ctx.heap, ctx.vm);
+
+    array_set_length_ulong(result, new_len, ctx.heap, ctx.vm);
 
     ctx.result.set_object(result);
 }
@@ -2192,6 +2337,12 @@ fn void builtin_array_proto_with(BuiltinContext* ctx) {
 
     ulong len;
     if (!array_to_length(obj, ctx.heap, ctx, &len)) { ctx.result.set_undefined(); return; }
+
+    // Check length limit before processing
+    if (len > (ulong)0xFFFFFFFFUL) {
+        arr_throw_range_error(ctx, "Array length exceeds maximum");
+        return;
+    }
 
     // Get index using ToIntegerOrInfinity
     double index_d = 0.0;
@@ -2249,9 +2400,17 @@ fn void builtin_array_proto_with(BuiltinContext* ctx) {
         if (i == actual_index) {
             array_set_elem_ulong(result, i, new_val, ctx.heap);
         } else {
-            TVal elem;
-            if (arr_get_elem_vm(obj, i, ctx.heap, ctx, &elem)) {
-                if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+            TVal elem; elem.set_undefined();
+            bool found = arr_get_elem_vm(obj, i, ctx.heap, ctx, &elem);
+            if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+            // Always create an own property, filling holes with undefined
+            if (i <= 0xFFFFFFFFUL && elem.is_undefined() && !found) {
+                // Hole: explicitly create an own property with undefined
+                HString* key = ctx.heap.int_to_hstring((long)i);
+                if (key != null) {
+                    result.put_prop(key, elem, hobject::PROP_FLAGS_WEC);
+                }
+            } else {
                 array_set_elem_ulong(result, i, elem, ctx.heap);
             }
         }
