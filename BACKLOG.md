@@ -18,7 +18,6 @@ Phase 15 (Classes) 5964 -> 7107 pass after un-skipping 1138 tests.
 - [x] Flagless module-code tests must not default to module mode — `d7f6ccf6`
 - [x] `scripts/test262_skip.cfg` was dead — deleted; live skip mechanism is embedded in run_test262.py
 - [x] RegExp property-escapes timeouts under load — `85bb0cdc`
-- [ ] Decide where `just test262-gate` runs (Actions / pre-push hook / manual)
 - [x] Add 14 orphaned directories to `PHASES` — `916ffaed`
 - [x] Add `built-ins/Iterator` to phase 21 — `1a29b357`
 - [x] Un-skip `numeric-separator-literal` — `a54af668`
@@ -40,7 +39,7 @@ Phase 15 (Classes) 5964 -> 7107 pass after un-skipping 1138 tests.
 
 - [x] Cursor cache for non-ASCII string indexing — `85f372ed`
 - [x] `char_at` call-site audit — already complete at `85f372ed`
-- [ ] Native UTF-16/Latin1 string storage
+- [x] Native UTF-16/Latin1 string storage — not needed; Tier 1-2 closed the gap (random access 0.22ms, was the survey's stated reason to migrate)
 - [x] Cache `char_length` on `HString` — `b09359d9`
 - [x] Skip redundant `char_length` bounds recheck in `char_at` — `688dd30d`
 
