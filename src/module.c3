@@ -854,13 +854,42 @@ fn bool execute_module(Heap* heap, Vm* vm, ModuleDef* mod) {
             continue;
         }
 
-        // Resolve the export name to the actual local binding name in the source module.
-        // For example, `export default 42` stores the value under "*default*" but
-        // exports it under the name "default".
-        char[] src_local_name = resolve_export_local_name(source_mod, ie.import_name);
+        // Resolve the export name to its OWNING module and local binding
+        // name via the full ResolveExport algorithm (ECMA-262 16.2.1.6.3):
+        // a plain `resolve_export_local_name` only checks direct exports, so
+        // a name reachable only through `export * from` (star re-export,
+        // possibly through a cyclic chain that ResolveExport must skip) was
+        // never found and silently installed as an undefined accessor onto
+        // `source_mod` itself. ResolveExport also follows one-hop indirect
+        // (`export { x } from`) re-exports, so this subsumes the old
+        // identity-fallback behavior for direct exports too.
         HString* local_key = heap.str_intern(ie.local_name);
         if (local_key == null) continue;
-        install_live_binding(heap, mod.env, local_key, source_mod, src_local_name);
+        ResolveSetEntry[RESOLVE_SET_MAX] rset;
+        ResolveExportResult rr = resolve_export(source_mod, ie.import_name, &rset[0], 0);
+        if (rr.kind == ResolveExportKind.RESOLVED && rr.owner != null) {
+            if (char_slice_eq(rr.binding_name, "*")) {
+                // `export * as ns from` resolved through a re-export chain:
+                // the import observes the target module's namespace object.
+                HObject*? ns_opt = build_namespace_object(heap, rr.owner);
+                if (try ns = ns_opt) {
+                    TVal ns_val; ns_val.set_object(ns);
+                    env::env_declare(mod.env, local_key, ns_val);
+                } else {
+                    TVal undef; undef.set_undefined();
+                    env::env_declare(mod.env, local_key, undef);
+                }
+            } else {
+                install_live_binding(heap, mod.env, local_key, rr.owner, rr.binding_name);
+            }
+        } else {
+            // Unresolvable (null/ambiguous) — fall back to the old identity
+            // resolution against the direct source module so a same-module
+            // self-import or an already-flagged link error still gets a
+            // (possibly undefined) binding instead of none at all.
+            char[] src_local_name = resolve_export_local_name(source_mod, ie.import_name);
+            install_live_binding(heap, mod.env, local_key, source_mod, src_local_name);
+        }
     }
 
     // Resolve indirect exports (`export { x } from './other'`) as live
@@ -1453,6 +1482,16 @@ fn void ns_add_export_item(NsExportItem[MAX_NS_EXPORTS]* items, uint* count,
 /// added as plain bindings in the target. `depth` guards against import cycles.
 fn void collect_star_export_items(ModuleDef* mod, NsExportItem[MAX_NS_EXPORTS]* items,
                                   uint* count, uint depth) {
+    collect_star_export_items_from(mod, mod, items, count, depth);
+}
+
+/// Implementation of collect_star_export_items: `root` is the module whose
+/// namespace is being built (fixed across the whole recursion — GetModuleNamespace
+/// always resolves ambiguity relative to it, ECMA-262 §16.2.1.6.3), `mod` is
+/// the current module being scanned for `export *` targets.
+fn void collect_star_export_items_from(ModuleDef* root, ModuleDef* mod,
+                                       NsExportItem[MAX_NS_EXPORTS]* items,
+                                       uint* count, uint depth) {
     if (depth > MAX_STAR_EXPORTS) return;
     for (uint si = 0; si < mod.star_export_count; si++) {
         StarExportEntry* se = &mod.star_exports[si];
@@ -1464,10 +1503,18 @@ fn void collect_star_export_items(ModuleDef* mod, NsExportItem[MAX_NS_EXPORTS]* 
             ExportEntry* ee = &target.exports[ei];
             // `export *` never re-exports the default binding (§16.2.3.7 step 4).
             if (char_slice_eq(ee.export_name, "default")) continue;
+            // A name reached through TWO OR MORE distinct star paths with
+            // different owning bindings is ambiguous (§16.2.1.6.3 steps
+            // 9-10) and must be OMITTED from the namespace object entirely
+            // — not resolved to whichever star export happened to be
+            // visited first.
+            ResolveSetEntry[RESOLVE_SET_MAX] amb_rset;
+            ResolveExportResult amb_rr = resolve_export(root, ee.export_name, &amb_rset[0], 0);
+            if (amb_rr.kind == ResolveExportKind.AMBIGUOUS) continue;
             ns_add_export_item(items, count, ee.export_name, target, ee);
         }
         // Transitively include the target's own star re-exports.
-        collect_star_export_items(target, items, count, depth + 1);
+        collect_star_export_items_from(root, target, items, count, depth + 1);
     }
 }
 
@@ -1612,11 +1659,20 @@ fn HObject*? build_namespace_object(Heap* heap, ModuleDef* source_mod) {
             continue;
         }
 
-        // Resolve to the module/local-name that actually owns the value —
-        // follows one level of indirection for `export { x } from './other'`
-        // so the accessor never points at a same-module self-reference.
-        ExportBindingSource src;
-        if (it.entry != null) {
+        // Resolve to the module/local-name that actually owns the value via
+        // the full ResolveExport algorithm (ECMA-262 16.2.1.6.3): an item
+        // reached through `export { x } from` may itself point at an
+        // indirect or star-only export in the target module (a re-export
+        // chain, possibly cyclic back through this very module), and a
+        // single level of indirection is not enough to reach the true owner
+        // — see the analogous named-import fix above.
+        ExportBindingSource src = { null, {} };
+        ResolveSetEntry[RESOLVE_SET_MAX] ns_rset;
+        ResolveExportResult ns_rr = resolve_export(it.owner_mod, it.export_name, &ns_rset[0], 0);
+        if (ns_rr.kind == ResolveExportKind.RESOLVED && ns_rr.owner != null
+            && !char_slice_eq(ns_rr.binding_name, "*")) {
+            src = { ns_rr.owner, ns_rr.binding_name };
+        } else if (it.entry != null) {
             src = resolve_export_binding_source(it.owner_mod, it.entry);
         } else {
             // Star-reached name with no ExportEntry: it names a binding in the
