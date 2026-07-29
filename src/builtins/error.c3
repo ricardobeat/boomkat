@@ -88,7 +88,16 @@ fn void builtin_error_constructor_shared(BuiltinContext* ctx, HObject* proto) {
             HString* name_key = (HString*)ctx.heap.strs[heap::BuiltinStr.NAME];
             TVal? name_prop = proto.get_prop_proto(name_key);
             if (try nv = name_prop) {
-                if (!nv.is_undefined()) {
+                // Must not invoke user code here: .stack is captured during
+                // construction, and a user-supplied .name accessor/toString
+                // must NOT run at construction time (only when .name or
+                // .stack is actually read) — see instance-name-tostring
+                // probe. builtin_to_string on an OBJECT would otherwise
+                // fabricate "[object Object]" without ever calling the
+                // user's toString, which is worse than just keeping the
+                // "Error" default; only coerce values ToString can stringify
+                // without invoking user code.
+                if (!nv.is_undefined() && !nv.is_object()) {
                     HString* tmp = builtin_to_string(ctx.heap, &nv);
                     if (tmp != null) name_str = tmp;
                 }
