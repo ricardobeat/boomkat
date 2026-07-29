@@ -38,6 +38,7 @@ enum ModuleStatus : char {
     LINKED,        // ready for evaluation
     EVALUATING,    // being executed
     EVALUATED,     // fully executed
+    ERRORED,       // evaluation threw; eval_error holds the cached rejection reason
 }
 
 // ============================================================================
@@ -150,6 +151,14 @@ struct ModuleDef {
     // module so link/execute can install the synthetic default binding.
     bool                          is_json;
     TVal                          json_value;
+
+    // Cached evaluation error (ECMA-262 §16.2.1.5 [[EvaluationError]]). When a
+    // module body (or a dependency's) throws, the module transitions to ERRORED
+    // and the thrown value is stored here with a ModuleDef-owned reference
+    // (rooting it for the module's lifetime). Every later Evaluate() of the same
+    // module must re-reject with this same value rather than re-running the body.
+    bool                          has_eval_error;
+    TVal                          eval_error;
 }
 
 // ============================================================================
@@ -414,6 +423,121 @@ fn ModuleDef*? resolve_module(Heap* heap, char[] specifier, char[] base_name, bo
     return mod;
 }
 
+// ResolveExport (ECMA-262 §16.2.1.6.3) outcome. NULL means the name is not
+// resolvable (either genuinely absent or a circular self-reference detected via
+// the resolveSet); AMBIGUOUS means two or more `export *` stars provide the name
+// from distinct bindings. Both are static-semantics (SyntaxError) failures when
+// they occur for an indirect export or a namespace request.
+enum ResolveExportKind : char {
+    RESOLVED,
+    NULL,
+    AMBIGUOUS,
+}
+struct ResolveExportResult {
+    ResolveExportKind kind;
+    ModuleDef*        owner;       // owning module (RESOLVED only)
+    char[]            binding_name;// local binding name in `module` (RESOLVED only)
+}
+
+const uint RESOLVE_SET_MAX = 64;
+struct ResolveSetEntry {
+    ModuleDef* owner_mod;
+    char[]     export_name;
+}
+
+/// ResolveExport(exportName, resolveSet) — ECMA-262 §16.2.1.6.3 for a
+/// SourceTextModuleRecord. Returns a resolution binding, or NULL/AMBIGUOUS.
+/// `set`/`set_len` carry the resolveSet across the recursion to break circular
+/// import requests (step 2: if the same {module, exportName} is already in the
+/// set, this is a circular request → NULL).
+fn ResolveExportResult resolve_export(ModuleDef* mod, char[] export_name,
+                                      ResolveSetEntry* set, uint set_len) {
+    // Step 2: circular-request guard.
+    for (uint i = 0; i < set_len; i++) {
+        if (set[i].owner_mod == mod && char_slice_eq(set[i].export_name, export_name)) {
+            return { ResolveExportKind.NULL, null, {} };
+        }
+    }
+    if (set_len < RESOLVE_SET_MAX) {
+        set[set_len] = { mod, export_name };
+        set_len++;
+    }
+
+    // Step 4: local exports (direct, non-indirect). A local export owns the
+    // binding in `mod` itself.
+    for (uint i = 0; i < mod.export_count; i++) {
+        ExportEntry* ee = &mod.exports[i];
+        if (ee.is_indirect) continue;
+        if (char_slice_eq(ee.export_name, export_name)) {
+            return { ResolveExportKind.RESOLVED, mod, ee.local_name };
+        }
+    }
+
+    // Step 5: indirect exports (`export { x } from './other'`). Delegate to the
+    // imported module's ResolveExport for the re-exported name.
+    for (uint i = 0; i < mod.export_count; i++) {
+        ExportEntry* ee = &mod.exports[i];
+        if (!ee.is_indirect) continue;
+        if (!char_slice_eq(ee.export_name, export_name)) continue;
+        if (ee.req_module_idx >= mod.req_module_count) return { ResolveExportKind.NULL, null, {} };
+        ReqModuleEntry* rme = &mod.req_modules[ee.req_module_idx];
+        if (rme.resolved == null) return { ResolveExportKind.NULL, null, {} };
+        ModuleDef* imported = (ModuleDef*)rme.resolved;
+        // `export { x } from` re-exports the name `ee.local_name` from `imported`.
+        return resolve_export(imported, ee.local_name, set, set_len);
+    }
+
+    // Step 6: `default` is never provided by `export *` (§16.2.1.6.3 step 6).
+    if (char_slice_eq(export_name, "default")) {
+        return { ResolveExportKind.NULL, null, {} };
+    }
+
+    // Step 7-8: star exports (`export * from './z'`). Gather resolutions from
+    // every star target; multiple distinct bindings for the same name are
+    // AMBIGUOUS.
+    ResolveExportResult star_resolution = { ResolveExportKind.NULL, null, {} };
+    for (uint i = 0; i < mod.star_export_count; i++) {
+        StarExportEntry* se = &mod.star_exports[i];
+        if (se.req_module_idx >= mod.req_module_count) continue;
+        ReqModuleEntry* rme = &mod.req_modules[se.req_module_idx];
+        if (rme.resolved == null) continue;
+        ModuleDef* imported = (ModuleDef*)rme.resolved;
+        ResolveExportResult r = resolve_export(imported, export_name, set, set_len);
+        if (r.kind == ResolveExportKind.AMBIGUOUS) return r;
+        if (r.kind == ResolveExportKind.RESOLVED) {
+            if (star_resolution.kind == ResolveExportKind.NULL) {
+                star_resolution = r;
+            } else if (star_resolution.owner != r.owner ||
+                       !char_slice_eq(star_resolution.binding_name, r.binding_name)) {
+                return { ResolveExportKind.AMBIGUOUS, null, {} };
+            }
+        }
+    }
+    return star_resolution;
+}
+
+/// Validate a module's indirect exports (ECMA-262 §16.2.1.6.2
+/// InitializeEnvironment step 4): each `export { x } from './y'` must resolve to
+/// exactly one binding. A NULL or AMBIGUOUS resolution is a SyntaxError. On
+/// failure parks a SyntaxError on the heap error channel and returns false.
+fn bool validate_indirect_exports(Heap* heap, ModuleDef* mod) {
+    for (uint i = 0; i < mod.export_count; i++) {
+        ExportEntry* ee = &mod.exports[i];
+        if (!ee.is_indirect) continue;
+        ResolveSetEntry[RESOLVE_SET_MAX] set;
+        ResolveExportResult r = resolve_export(mod, ee.export_name, &set[0], 0);
+        if (r.kind != ResolveExportKind.RESOLVED) {
+            TVal se = module_syntax_error(heap,
+                "indirect export does not resolve to a single binding");
+            heap.error_value.set_undefined();
+            heap.tval_copy_ref(&heap.error_value, &se);
+            heap.has_error = true;
+            return false;
+        }
+    }
+    return true;
+}
+
 /// Link a module: resolve import bindings from source modules' envs.
 /// Phase 1 (initial): import bindings are copied at link time.
 fn bool link_module(Heap* heap, vm::Vm* vm, ModuleDef* mod, EnvRecord* global_env) {
@@ -467,6 +591,11 @@ fn bool link_module(Heap* heap, vm::Vm* vm, ModuleDef* mod, EnvRecord* global_en
             if (!link_module(heap, vm, dep, global_env)) return false;
         }
     }
+
+    // Static-semantics validation of indirect exports (§16.2.1.6.2 step 4):
+    // every `export { x } from './y'` must resolve to exactly one binding.
+    // A NULL (circular / absent) or AMBIGUOUS resolution is a SyntaxError.
+    if (!validate_indirect_exports(heap, mod)) return false;
 
     // Resolve import bindings: copy values from source module's env
     for (uint i = 0; i < mod.import_count; i++) {
@@ -606,8 +735,34 @@ fn bool link_module(Heap* heap, vm::Vm* vm, ModuleDef* mod, EnvRecord* global_en
 }
 
 /// Execute a module: run dependencies first, then resolve imports, then run body.
+/// Record a module's evaluation error and mark it ERRORED. The thrown value is
+/// captured out of the heap error channel with a ModuleDef-owned reference so it
+/// survives GC and can re-reject every later Evaluate() of the same module.
+/// Leaves the error channel populated (the caller still surfaces the throw for
+/// the current evaluation). Always returns false for use in `return`.
+fn bool module_record_eval_error(Heap* heap, ModuleDef* mod) {
+    mod.status = ModuleStatus.ERRORED;
+    if (!mod.has_eval_error) {
+        mod.eval_error.set_undefined();
+        if (heap.has_error || heap.error_value.is_object() || heap.error_value.is_string()) {
+            heap.tval_copy_ref(&mod.eval_error, &heap.error_value);
+        }
+        mod.has_eval_error = true;
+    }
+    return false;
+}
+
 fn bool execute_module(Heap* heap, Vm* vm, ModuleDef* mod) {
     if (mod.status == ModuleStatus.EVALUATED) return true;
+    // A module whose evaluation previously threw must re-reject with the SAME
+    // cached error (ECMA-262 §16.2.1.5.1 step 5). Restore it into the error
+    // channel and report failure without re-running the body.
+    if (mod.status == ModuleStatus.ERRORED) {
+        heap.error_value.set_undefined();
+        heap.tval_copy_ref(&heap.error_value, &mod.eval_error);
+        heap.has_error = true;
+        return false;
+    }
     if (mod.status == ModuleStatus.EVALUATING) return true; // cycle guard
 
     // A JSON module has no body to run; its `default` binding was installed at
@@ -641,7 +796,7 @@ fn bool execute_module(Heap* heap, Vm* vm, ModuleDef* mod) {
         if (rme.resolved == null) continue;
         ModuleDef* dep = (ModuleDef*)rme.resolved;
         if (dep.status != ModuleStatus.EVALUATED) {
-            if (!execute_module(heap, vm, dep)) return false;
+            if (!execute_module(heap, vm, dep)) return module_record_eval_error(heap, mod);
         }
     }
 
@@ -716,16 +871,16 @@ fn bool execute_module(Heap* heap, Vm* vm, ModuleDef* mod) {
             // and execute_in_env take over activations[0]/valstack[0] and are
             // unsafe to call here; execute_module_nested is re-entrant.
             bool? ok = vm.execute_module_nested(mod.func, mod.env);
-            if (catch err = ok) return false;
-            if (!ok) return false;  // rejected — reason is in heap.error_value
+            if (catch err = ok) return module_record_eval_error(heap, mod);
+            if (!ok) return module_record_eval_error(heap, mod);  // rejected — reason is in heap.error_value
         } else if (mod.func.is_async()) {
             bool? ok = vm.execute_module_async(mod.func, mod.env);
-            if (catch err = ok) return false;
-            if (!ok) return false;  // rejected — reason is in heap.error_value
+            if (catch err = ok) return module_record_eval_error(heap, mod);
+            if (!ok) return module_record_eval_error(heap, mod);  // rejected — reason is in heap.error_value
         } else {
             TVal? res = vm.execute_in_env(mod.func, mod.env);
             if (catch err = res) {
-                return false;
+                return module_record_eval_error(heap, mod);
             }
         }
     }
@@ -981,17 +1136,43 @@ fn TVal? dynamic_import(Heap* heap, Vm* vm, char[] specifier, bool wants_json = 
     bool clear_reason_ref = false;
 
     ModuleDef* mod = null;
+    // A compile/resolution failure may have parked a static-semantics error
+    // (SyntaxError) on the heap error channel — a module-only parse rule or an
+    // ambiguous/circular indirect export. Prefer that specific value over the
+    // generic reject reason, and always clear the channel so the pending fault
+    // is turned into a promise rejection rather than leaking to the enclosing
+    // frame.
+    heap.has_error = false;
+    heap.error_value.set_undefined();
     ModuleDef*? mod_opt = resolve_module(heap, dup_spec, base_name, wants_json);
     if (catch err = mod_opt) {
-        reason = module_type_error(heap, "cannot resolve module");
+        if (heap.has_error || heap.error_value.is_object() || heap.error_value.is_string()) {
+            reason.set_undefined();
+            heap.tval_copy_ref(&reason, &heap.error_value);
+            clear_reason_ref = true;
+        } else {
+            reason = module_type_error(heap, "cannot resolve module");
+        }
+        heap.error_value.set_undefined();
+        heap.has_error = false;
         rejected = true;
     } else {
         mod = mod_opt;
     }
 
     if (!rejected) {
+        heap.has_error = false;
+        heap.error_value.set_undefined();
         if (!link_module(heap, vm, mod, vm.global_env)) {
-            reason = module_type_error(heap, "cannot link module");
+            if (heap.has_error || heap.error_value.is_object() || heap.error_value.is_string()) {
+                reason.set_undefined();
+                heap.tval_copy_ref(&reason, &heap.error_value);
+                clear_reason_ref = true;
+            } else {
+                reason = module_type_error(heap, "cannot link module");
+            }
+            heap.error_value.set_undefined();
+            heap.has_error = false;
             rejected = true;
         }
     }
@@ -1055,6 +1236,17 @@ fn TVal? dynamic_import(Heap* heap, Vm* vm, char[] specifier, bool wants_json = 
 /// degraded rejection reason is acceptable since the promise is still
 /// rejected.
 fn TVal module_type_error(Heap* heap, char[] msg) {
+    return module_error_with_proto(heap, heap.type_err_proto, msg);
+}
+
+/// Build a SyntaxError value for a module static-semantics failure (a
+/// resolution/link-phase early error such as an ambiguous or circular indirect
+/// export, or a module-only parse rule). ECMA-262 surfaces these as SyntaxError.
+fn TVal module_syntax_error(Heap* heap, char[] msg) {
+    return module_error_with_proto(heap, heap.syntax_err_proto, msg);
+}
+
+fn TVal module_error_with_proto(Heap* heap, HObject* proto, char[] msg) {
     TVal result;
     HObject*? err_raw = heap.alloc_object(hobject::ObjClass.ERROR);
     if (catch err = err_raw) {
@@ -1062,7 +1254,7 @@ fn TVal module_type_error(Heap* heap, char[] msg) {
         return result;
     }
     HObject* err = err_raw;
-    err.prototype = heap.type_err_proto;
+    err.prototype = proto;
     HString* msg_str = heap.str_intern(msg);
     if (msg_str != null) {
         TVal msg_val;
