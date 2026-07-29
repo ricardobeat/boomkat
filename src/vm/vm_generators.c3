@@ -166,6 +166,39 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
             return (TVal){};
         }
 
+        case Opcode.LOAD_RESUME_KIND: {
+            // LOAD_RESUME_KIND A — A ← current resume kind as an int
+            // (NEXT=0, THROW=1, RETURN=2), without injecting throw/return.
+            // Used by the async yield* desugaring to branch on how the
+            // consumer resumed the outer generator at the yield point.
+            int kind = 0;
+            if (vm.heap.resume_gen != null) {
+                kind = (int)vm.heap.resume_gen.resume_kind;
+            }
+            ra[0].set_number((double)kind);
+            return (TVal){};
+        }
+
+        case Opcode.LOAD_RESUME_VAL: {
+            // LOAD_RESUME_VAL A — A ← the completion value the consumer passed
+            // to .next(v)/.throw(v)/.return(v), matching the current resume
+            // kind. Resets resume_kind to NEXT so a following YIELD suspends
+            // normally, and consumes resume_gen (same as LOAD_RESUME's NEXT
+            // path) so an unrelated CALL cannot spuriously re-match this gs.
+            if (vm.heap.resume_gen != null) {
+                GeneratorState* gs_rv = vm.heap.resume_gen;
+                switch (gs_rv.resume_kind) {
+                    case THROW:  vm.heap.tval_copy_ref(&ra[0], &gs_rv.throw_value);
+                    case RETURN: vm.heap.tval_copy_ref(&ra[0], &gs_rv.return_value);
+                    default:     vm.heap.tval_copy_ref(&ra[0], &gs_rv.resume_value);
+                }
+                gs_rv.resume_kind = NEXT;
+                gs_rv.resume_value.set_undefined();
+                if (vm.heap.resume_gen == gs_rv) { vm.heap.resume_gen = null; }
+            }
+            return (TVal){};
+        }
+
         case Opcode.AWAIT: {
             // AWAIT A — await the value in register A.
             // Per ES2017 §25.5.5.3 / §27.7.5.3 Await, every awaited value —

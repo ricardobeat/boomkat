@@ -3089,6 +3089,8 @@ fn TVal? Vm.run(Vm* vm) {
 
         // === GENERATORS ===
         case Opcode.LOAD_RESUME:
+        case Opcode.LOAD_RESUME_KIND:
+        case Opcode.LOAD_RESUME_VAL:
         case Opcode.AWAIT:
         case Opcode.YIELD:
         case Opcode.YIELD_STAR:

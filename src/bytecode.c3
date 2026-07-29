@@ -541,6 +541,21 @@ enum Opcode : char {
     /// ABC format: A=value_reg, B=0, C=0.
     AWAIT,
 
+    /// `A = load_resume_kind` — load the current resume kind (0=next, 1=throw,
+    /// 2=return) of the generator being resumed into A as an integer, without
+    /// injecting a throw/return into the body. Used by the async `yield*`
+    /// desugaring to branch to the inner iterator's next/throw/return method.
+    /// ABC format: A=result_reg, B=0, C=0.
+    LOAD_RESUME_KIND,
+
+    /// `A = load_resume_val` — load the completion value the consumer passed to
+    /// .next(v)/.throw(v)/.return(v) into A (the value that matches the current
+    /// resume kind), then reset the resume kind to NEXT so a subsequent YIELD
+    /// suspends normally. No throw/return injection. Used with LOAD_RESUME_KIND
+    /// by the async `yield*` desugaring.
+    /// ABC format: A=result_reg, B=0, C=0.
+    LOAD_RESUME_VAL,
+
     /// `import(specifier)` — dynamic import expression (ES2020).
     /// Resolves, links and evaluates the requested module (re-entrantly when a
     /// module body is already running) and stores a Promise in A that fulfills
@@ -822,6 +837,8 @@ case PUTLEX:     return A_BC;
         case GETPROP_PRIVATE: return ABC;
 
         case LOAD_RESUME:  return ABC;
+        case LOAD_RESUME_KIND: return ABC;
+        case LOAD_RESUME_VAL:  return ABC;
         case YIELD:      return ABC;
         case YIELD_STAR: return ABC;
         case GETPROPC_CACHED: return ABC;
