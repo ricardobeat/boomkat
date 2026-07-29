@@ -60,8 +60,6 @@ const float STR_TABLE_LOAD_FACTOR   = 0.70;
 const long  GC_INITIAL_TRIGGER      = 1;
 const long  GC_TRIGGER_GROW_FACTOR  = 1;
 const uint  MEGA_CACHE_SIZE         = 512;
-/// Sentinel refcount for strings that must never be freed (builtins, symbols).
-const uint  STRING_PINNED_REFCOUNT  = 0x7FFF_FFFF;
 /// Initial capacity for the gray object stack (grows as needed).
 const uint  GRAY_STACK_INITIAL_CAP  = 64;
 const usz   STRS_CACHE_SIZE         = 256;
@@ -510,8 +508,9 @@ struct Heap {
     hobject::MegamorphicEntry* mega_cache;
 
     // Small-integer string cache: pinned HString* for integer keys 0–255.
-    // Populated lazily on first use; entries are pinned (STRING_PINNED_REFCOUNT)
-    // so they are never freed by RC or GC sweep.
+    // Populated lazily on first use; entries are pinned (HeapHeader.set_pinned)
+    // so they are never freed by RC or GC sweep, and incref/decref against
+    // them are no-ops.
     HString*[256] small_int_strs;
 
     // Lightfunc virtual property deletion tracking.
@@ -748,10 +747,12 @@ fn void Heap.init_builtin_strs(&self) {
         char* ptr = (char*)literals[i];
         self.strs[i] = self.str_intern(ptr[:lengths[i]]);
     }
-    // Pin: builtin strings must never be freed by refcounting.
+    // Pin: builtin strings must never be freed by refcounting, and every
+    // incref/decref against them (from transient register/TVal borrows) is
+    // a no-op — see HeapHeader.set_pinned.
     for (uint i = 0; i < 29; i++) {
         if (self.strs[i] != null) {
-            ((HeapHeader*)self.strs[i]).refcount = STRING_PINNED_REFCOUNT;
+            ((HeapHeader*)self.strs[i]).set_pinned();
         }
     }
     // Cache the "length" pointer for HObject.put_prop array_length sync.
@@ -761,9 +762,13 @@ fn void Heap.init_builtin_strs(&self) {
 /// Convert an integer to an interned HString*, using the small-integer cache
 /// for values 0–255 and formatting + interning for all other values.
 ///
-/// Values 0–255 are cached on first use with STRING_PINNED_REFCOUNT so they
-/// are never reclaimed by RC or GC sweep, matching the treatment of builtin
-/// strings in init_builtin_strs().
+/// Ownership: like Heap.str_intern, the returned HString* is a BORROWED
+/// reference — callers use it directly as a property key or incref it
+/// themselves if they need to anchor it in a TVal/register. Values 0–255
+/// are cached on first use and pinned (HeapHeader.set_pinned), so every
+/// incref/decref a caller performs on the cached entry is a no-op: no
+/// release is ever required, matching the treatment of builtin strings in
+/// init_builtin_strs().
 fn HString* Heap.int_to_hstring(&self, long val) {
     if (val >= 0 && val <= 255) {
         usz idx = (usz)val;
@@ -775,8 +780,9 @@ fn HString* Heap.int_to_hstring(&self, long val) {
         if (len <= 0) return null;
         HString* s = self.str_intern(buf[:len]);
         if (s == null) return null;
-        // Pin so RC/sweep never frees this cached entry.
-        ((HeapHeader*)s).refcount = STRING_PINNED_REFCOUNT;
+        // Pin so RC/sweep never frees this cached entry, and so incref/decref
+        // against it are no-ops (see HeapHeader.set_pinned).
+        ((HeapHeader*)s).set_pinned();
         self.small_int_strs[idx] = s;
         return s;
     }
@@ -1643,6 +1649,11 @@ fn void Heap.decref(&self, HeapHeader* hdr) {
     // they are always safe to decref. Everything else that is unmarked belongs
     // to the sweep and must not be touched here.
     if (self.sweeping && !hdr.is_string() && !hdr.is_reachable() && !hdr.is_temproot()) {
+        return;
+    }
+    // Pinned strings (builtin strings, well-known symbols, small-int cache)
+    // never mutate their refcount — see HeapHeader.set_pinned.
+    if (hdr.is_pinned()) {
         return;
     }
     if (--hdr.refcount == 0) {

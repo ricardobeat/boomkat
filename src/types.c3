@@ -713,7 +713,8 @@ enum HType : char {
 /// Bit  4:    has a C finalizer attached
 /// Bit  5:    the finalizer has already run
 /// Bit  6:    the object is read-only
-/// Bits 7-31: available for subtype-specific flags
+/// Bits 7-31: available for subtype-specific flags (see HObject's ObjFlags
+///            and HString's HStringFlags, which reinterpret this same word)
 bitstruct HeapFlags : uint {
     HType htype        : 0..1;
     bool  reachable    : 2;
@@ -722,6 +723,17 @@ bitstruct HeapFlags : uint {
     bool  finalized    : 5;
     bool  readonly     : 6;
 }
+
+/// Sentinel refcount marking a string whose reference count must never
+/// change: incref/decref on such a string are no-ops (see
+/// HeapHeader.incref / Heap.decref). Used for interned strings that live
+/// for the lifetime of the heap — builtin strings, well-known symbols, and
+/// the small-integer string cache — so that transient borrows from
+/// registers/TVals need no matching release. Only ever tested together
+/// with HeapHeader.is_string(): this bit pattern has no special meaning
+/// for objects/buffers/bigints, whose refcount can legitimately reach any
+/// value.
+const uint STRING_PINNED_REFCOUNT = 0x7FFF_FFFF;
 
 /// Every GC-managed object begins with this header.  The doubly-linked
 /// list (next / prev) threads all live heap objects together so the
@@ -750,7 +762,14 @@ fn bool  HeapHeader.is_bigint(&self) { return self.flags.htype == HType.BIGINT; 
 
 /// Increments the reference count of this heap object.
 /// Safe to call on null pointers (no-op).
+/// No-op on a pinned string (refcount == STRING_PINNED_REFCOUNT): its
+/// refcount is a fixed sentinel that must never be mutated by ordinary
+/// incref/decref traffic — callers that transiently borrow a pinned string
+/// (e.g. into a register or TVal) need no matching decref. Objects/buffers/
+/// bigints never use this sentinel, so is_string() is required to keep the
+/// check from colliding with a legitimately huge object refcount.
 fn void HeapHeader.incref(&self) @inline {
+    if (self.is_string() && self.refcount == STRING_PINNED_REFCOUNT) return;
     self.refcount++;
 }
 
@@ -790,6 +809,16 @@ fn bool HeapHeader.is_finalized(&self)      { return self.flags.finalized; }
 fn void HeapHeader.set_readonly(&self)      { self.flags.readonly = true; }
 /// Clears the read-only flag.
 fn void HeapHeader.clear_readonly(&self)    { self.flags.readonly = false; }
+
+/// Pins a string's refcount at STRING_PINNED_REFCOUNT: incref/decref become
+/// no-ops and the sweep backstop never frees it. Used for interned strings
+/// that live for the lifetime of the heap (builtin strings, well-known
+/// symbols, the small-integer string cache) so that transient borrows from
+/// registers/TVals need no matching release. String-only — see
+/// STRING_PINNED_REFCOUNT.
+fn void HeapHeader.set_pinned(&self)        { self.refcount = STRING_PINNED_REFCOUNT; }
+/// Returns true when this is a string with a pinned refcount.
+fn bool HeapHeader.is_pinned(&self)         { return self.is_string() && self.refcount == STRING_PINNED_REFCOUNT; }
 /// Returns true when the object is read-only.
 fn bool HeapHeader.is_readonly(&self)       { return self.flags.readonly; }
 

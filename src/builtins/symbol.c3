@@ -203,7 +203,7 @@ fn HString* ensure_tostringtag_symbol(Heap* heap) {
     HString* sym = create_symbol_string(heap, desc);
     if (sym == null) return null;
     heap.tostringtag_symbol = sym;
-    ((types::HeapHeader*)sym).refcount = heap::STRING_PINNED_REFCOUNT;
+    ((types::HeapHeader*)sym).set_pinned();
     return sym;
 }
 
@@ -219,7 +219,7 @@ fn HString* ensure_iterator_symbol(Heap* heap) {
     HString* sym = create_symbol_string(heap, desc);
     if (sym == null) return null;
     heap.iterator_symbol = sym;
-    ((types::HeapHeader*)sym).refcount = heap::STRING_PINNED_REFCOUNT;
+    ((types::HeapHeader*)sym).set_pinned();
     return sym;
 }
 
@@ -231,7 +231,7 @@ fn HString* ensure_toprimitive_symbol(Heap* heap) {
     HString* sym = create_symbol_string(heap, desc);
     if (sym == null) return null;
     heap.toprimitive_symbol = sym;
-    ((types::HeapHeader*)sym).refcount = heap::STRING_PINNED_REFCOUNT;
+    ((types::HeapHeader*)sym).set_pinned();
     return sym;
 }
 
@@ -243,7 +243,7 @@ fn HString* ensure_concatspreadable_symbol(Heap* heap) {
     HString* sym = create_symbol_string(heap, desc);
     if (sym == null) return null;
     heap.concatspreadable_symbol = sym;
-    ((types::HeapHeader*)sym).refcount = heap::STRING_PINNED_REFCOUNT;
+    ((types::HeapHeader*)sym).set_pinned();
     return sym;
 }
 
@@ -255,7 +255,7 @@ fn HString* ensure_hasinstance_symbol(Heap* heap) {
     HString* sym = create_symbol_string(heap, desc);
     if (sym == null) return null;
     heap.hasinstance_symbol = sym;
-    ((types::HeapHeader*)sym).refcount = heap::STRING_PINNED_REFCOUNT;
+    ((types::HeapHeader*)sym).set_pinned();
     return sym;
 }
 
@@ -267,7 +267,7 @@ fn HString* ensure_match_symbol(Heap* heap) {
     HString* sym = create_symbol_string(heap, desc);
     if (sym == null) return null;
     heap.match_symbol = sym;
-    ((types::HeapHeader*)sym).refcount = heap::STRING_PINNED_REFCOUNT;
+    ((types::HeapHeader*)sym).set_pinned();
     return sym;
 }
 
@@ -278,7 +278,7 @@ fn HString* ensure_search_symbol(Heap* heap) {
     HString* sym = create_symbol_string(heap, desc);
     if (sym == null) return null;
     heap.search_symbol = sym;
-    ((types::HeapHeader*)sym).refcount = heap::STRING_PINNED_REFCOUNT;
+    ((types::HeapHeader*)sym).set_pinned();
     return sym;
 }
 
@@ -289,7 +289,7 @@ fn HString* ensure_replace_symbol(Heap* heap) {
     HString* sym = create_symbol_string(heap, desc);
     if (sym == null) return null;
     heap.replace_symbol = sym;
-    ((types::HeapHeader*)sym).refcount = heap::STRING_PINNED_REFCOUNT;
+    ((types::HeapHeader*)sym).set_pinned();
     return sym;
 }
 
@@ -300,7 +300,7 @@ fn HString* ensure_split_symbol(Heap* heap) {
     HString* sym = create_symbol_string(heap, desc);
     if (sym == null) return null;
     heap.split_symbol = sym;
-    ((types::HeapHeader*)sym).refcount = heap::STRING_PINNED_REFCOUNT;
+    ((types::HeapHeader*)sym).set_pinned();
     return sym;
 }
 
@@ -312,7 +312,7 @@ fn HString* ensure_species_symbol(Heap* heap) {
     HString* sym = create_symbol_string(heap, desc);
     if (sym == null) return null;
     heap.species_symbol = sym;
-    ((types::HeapHeader*)sym).refcount = heap::STRING_PINNED_REFCOUNT;
+    ((types::HeapHeader*)sym).set_pinned();
     return sym;
 }
 
@@ -324,7 +324,7 @@ fn HString* ensure_unscopables_symbol(Heap* heap) {
     HString* sym = create_symbol_string(heap, desc);
     if (sym == null) return null;
     heap.unscopables_symbol = sym;
-    ((types::HeapHeader*)sym).refcount = heap::STRING_PINNED_REFCOUNT;
+    ((types::HeapHeader*)sym).set_pinned();
     return sym;
 }
 
@@ -336,7 +336,7 @@ fn HString* ensure_matchall_symbol(Heap* heap) {
     HString* sym = create_symbol_string(heap, desc);
     if (sym == null) return null;
     heap.matchall_symbol = sym;
-    ((types::HeapHeader*)sym).refcount = heap::STRING_PINNED_REFCOUNT;
+    ((types::HeapHeader*)sym).set_pinned();
     return sym;
 }
 
@@ -348,7 +348,7 @@ fn HString* ensure_asynciterator_symbol(Heap* heap) {
     HString* sym = create_symbol_string(heap, desc);
     if (sym == null) return null;
     heap.asynciterator_symbol = sym;
-    ((types::HeapHeader*)sym).refcount = heap::STRING_PINNED_REFCOUNT;
+    ((types::HeapHeader*)sym).set_pinned();
     return sym;
 }
 
