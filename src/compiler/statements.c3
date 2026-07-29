@@ -199,6 +199,19 @@ fn void mod_register_export(CompModuleDef* mod, char[] local_name, char[] export
     mod.export_count++;
 }
 
+/// Find the ImportEntry (if any) whose local binding name is `local_name`.
+/// Used by `export { x }` (no `from` clause) to implement ECMA-262
+/// §16.2.1.7.1 ParseModule step 10.1: an export whose LocalName matches an
+/// already-imported binding is NOT a local export — it becomes an indirect
+/// re-export sourced from the ImportEntry's own module/import name, per
+/// Table 59. Returns null when `local_name` names an ordinary local binding.
+fn CompImportEntry* mod_find_import_by_local(CompModuleDef* mod, char[] local_name) {
+    for (uint i = 0; i < mod.import_count; i++) {
+        if (str_eq(mod.imports[i].local_name, local_name)) return &mod.imports[i];
+    }
+    return null;
+}
+
 /// Register a star export entry in the module.
 fn void mod_register_star_export(CompModuleDef* mod, uint req_idx) {
     if (mod.star_export_count >= COMP_MAX_STAR_EXPORTS) return;
@@ -4881,16 +4894,30 @@ fn void? CompilerContext.export_declaration(&self) {
                 mod_register_export(mod, local_names[i], export_names[i], true, req_idx);
             }
         } else {
-            // Local export: the names are local bindings. Look up each
-            // name's declared kind so a re-export of an already-declared
-            // `let`/`const`/`class` binding is TDZ-eligible too (e.g.
-            // `let a = 1; export { a };`).
+            // `export { a, b as c };` — a, b are local bindings UNLESS one
+            // already names an imported binding, in which case ECMA-262
+            // §16.2.1.7.1 ParseModule step 10.1 reclassifies it as an
+            // INDIRECT export sourced from that ImportEntry's own module/
+            // import name (Table 59), never a local one. This is what makes
+            // `import { foo } from './x'; export { foo };` re-export the
+            // live binding from './x' — including its own TDZ state —
+            // rather than exporting a same-module local accessor that
+            // never observes './x' at all.
             for (uint i = 0; i < count; i++) {
-                bool lex = self.is_name_lexical(local_names[i]);
+                CompImportEntry* ie = mod_find_import_by_local(mod, local_names[i]);
+                if (ie != null) {
+                    char[] indirect_local = ie.is_star ? "*" : ie.import_name;
+                    mod_register_export(mod, indirect_local, export_names[i], true, ie.req_module_idx);
+                    continue;
+                }
+                // Local export: look up the name's declared kind so a
+                // re-export of an already-declared `let`/`const`/`class`
+                // binding is TDZ-eligible too (e.g. `let a = 1; export { a };`).
                 // A re-export of a top-level `function` declaration needs no
                 // special handling here: the function is already recorded in
-                // func_decls (by hoist_global_fn_decls) and bound at link time,
-                // and this export simply aliases that local binding.
+                // func_decls (by hoist_global_fn_decls) and bound at link
+                // time, and this export simply aliases that local binding.
+                bool lex = self.is_name_lexical(local_names[i]);
                 mod_register_export(mod, local_names[i], export_names[i], false, 0, lex);
             }
         }
