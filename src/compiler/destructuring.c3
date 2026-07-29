@@ -763,6 +763,19 @@ fn ushort? CompilerContext.array_destructure_assign(&self) {
     DestructBind[MAX_DESTRUCT_BINDS] binds;
     uint count = 0;
 
+    // We're parsing a destructuring ASSIGNMENT pattern (`[x = yield] = []`),
+    // not a function-parameter list. `collect_arr_assign_binds`/nested
+    // `collect_*_param_binds` calls default-value compilation through
+    // `compile_default_expr`, which gates `await`/`yield` on
+    // `in_formal_params`. Per ES2022 §13.15.5.2/§13.15.5.3, an assignment
+    // pattern's default value is an AssignmentExpression, which DOES permit
+    // await in async contexts and yield in generator contexts — the gate
+    // must not apply here. Force it off for the duration of the collect (see
+    // array_destructure/object_destructure for the declaration-path analog).
+    bool saved_in_fp = self.in_formal_params;
+    self.in_formal_params = false;
+    defer self.in_formal_params = saved_in_fp;
+
     // Parse the array assignment pattern. Each element may be:
     //   - a plain identifier (`a`)
     //   - a member-expression target (`obj.x`, `arr[i]`, `{}[f()]`)
@@ -1070,6 +1083,14 @@ fn void? CompilerContext.collect_obj_assign_binds(&self,
 fn ushort? CompilerContext.object_destructure_assign(&self) {
     DestructBind[MAX_DESTRUCT_BINDS] binds;
     uint count = 0;
+
+    // See array_destructure_assign: this is an assignment-pattern default
+    // value (an AssignmentExpression), not a FormalParameter default, so the
+    // in_formal_params gate on await/yield must not apply while collecting.
+    bool saved_in_fp = self.in_formal_params;
+    self.in_formal_params = false;
+    defer self.in_formal_params = saved_in_fp;
+
     self.collect_obj_assign_binds(binds[..], &count)!;
 
     ushort[MAX_DESTRUCT_BINDS] group_regs;

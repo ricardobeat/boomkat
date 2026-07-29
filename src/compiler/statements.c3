@@ -3217,6 +3217,15 @@ fn void? CompilerContext.emit_bare_forof_destruct_loop(&self, bool is_array_patt
     // lvalues, so this uses the assignment collectors (full LHS grammar) and
     // emits via emit_destruct_bindings(ASSIGN_TARGET) — one algorithm shared
     // with array/object destructuring assignment.
+    //
+    // The pattern's default values are AssignmentExpressions (ES2022
+    // §13.15.5.2/§13.15.5.3), so the in_formal_params gate on await/yield in
+    // compile_default_expr must not apply while collecting (see
+    // array_destructure_assign).
+    bool saved_in_fp = self.in_formal_params;
+    self.in_formal_params = false;
+    defer self.in_formal_params = saved_in_fp;
+
     DestructBind[MAX_DESTRUCT_BINDS] dbinds;
     uint dcount = 0;
     self.advance()!; // consume '[' or '{'
@@ -3275,6 +3284,14 @@ fn void? CompilerContext.emit_bare_forof_destruct_loop(&self, bool is_array_patt
 fn void? CompilerContext.emit_bare_forin_destruct_loop(&self, bool is_array_pattern, uint saved_scope, ushort saved_reg) {
     // Collect the pattern via the shared param collectors (VAR-declared leaves),
     // then extract each enumerated key through emit_destruct_bindings below.
+    //
+    // The pattern's default values are AssignmentExpressions, not
+    // FormalParameter defaults, so the in_formal_params await/yield gate must
+    // not apply while collecting (see array_destructure_assign).
+    bool saved_in_fp = self.in_formal_params;
+    self.in_formal_params = false;
+    defer self.in_formal_params = saved_in_fp;
+
     DestructBind[MAX_DESTRUCT_BINDS] dbinds;
     uint dcount = 0;
     self.advance()!; // consume '[' or '{'
