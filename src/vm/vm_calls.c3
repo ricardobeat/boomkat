@@ -2934,7 +2934,9 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                 }
                 HObject* new_obj = new_obj_raw;
 
-                // Set prototype from constructor.prototype (OrdinaryCreateFromConstructor).
+                // OrdinaryCreateFromConstructor starts from the intrinsic default;
+                // constructor.prototype only replaces it when it is an object.
+                new_obj.prototype = vm.heap.object_proto;
                 HString* proto_key = (HString*)vm.heap.strs[heap::BuiltinStr.PROTOTYPE];
                 TVal? proto_val = hobj.get_prop_proto(proto_key);
                 if (try pv = proto_val) {
