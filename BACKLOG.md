@@ -47,7 +47,7 @@ Phase 15 (Classes) 5964 -> 7107 pass after un-skipping 1138 tests.
 
 ## Known bugs
 
-- [ ] Shape-ID space exhausts after ~66k instances of any class with private fields or methods — `put_prop` with non-WEC flags clones an uncached shape per object
+- [x] Shape-ID exhaustion from non-WEC property flags — `3bdff3db`
 
 - [x] `Map`/`Set` `forEach` with no callback silently returned instead of throwing — `19b2ee6b`
 
