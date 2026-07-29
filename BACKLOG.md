@@ -4,16 +4,18 @@
 
 ## Status
 
-18 of 19 test262 phases at 0 failures; phase 25 (ESM) at 405 pass / 4 fail.
+18 of 19 test262 phases at 0 failures; phase 25 (ESM) at 408 pass / 1 fail.
 Phase 15 (Classes) 5964 -> 7107 pass after un-skipping 1138 tests.
 
 ## test262
 
+- [ ] `pending-async-dep-from-cycle.js` — cycle-root vs importer ordering in async dependency settlement (1 test)
+
 - [x] Modules — phase 25 wired; 393/729 pass, 15 fail — `13912b8d`..`ed040486`
 - [x] Indirect re-exports leaked as local identifiers; relative-path module identity — `ab7d4fc3`
 - [x] Direct self-import of a `class` binding must see TDZ — `df0e57b9`
-- [ ] Dynamic import runs its resolve/link/evaluate pipeline inline instead of as a queued job (4 tests)
-- [ ] `drain_microtasks`' boolean reentrancy guard silently no-ops when called from inside a draining job
+- [x] Dynamic import deferred to a job — `c2174f14`
+- [x] `drain_microtasks` reentrancy — landed with the dynamic-import deferral — `c2174f14`
 - [x] `export {x}` of an imported name is an indirect re-export — `d740ddd6`
 - [x] Flagless module-code tests must not default to module mode — `d7f6ccf6`
 - [x] `scripts/test262_skip.cfg` was dead — deleted; live skip mechanism is embedded in run_test262.py
