@@ -322,15 +322,6 @@ SKIP_FILES = {
          + glob.glob("test262/test/language/statements/class/elements/*regular-definitions*private*.js")
          + glob.glob("test262/test/language/expressions/class/elements/*regular-definitions*private*.js")]
     ))(),
-    # P7 — fields-asi-1 chained assignment in field initializer. The test
-    # exercises `class C { x = obj\n  ['lol'] = 42 }` which must be parsed as
-    # a chained assignment `c.x = obj['lol'] = 42` (no ASI between
-    # initializer and `[` per §11.9.1). Our field-init context's
-    # assignment_expr terminates the initializer at the first line
-    # terminator; extending the chained-assignment case through ASI-less
-    # member access needs a wider parser fix in expressions.c3.
-    "language/statements/class/elements/fields-asi-1.js",
-    "language/expressions/class/elements/fields-asi-1.js",
     # B17 — for-loop tests that depend on implicit globals (Sputnik 2009
     # era tests where `__in__deepest__loop = __in__deepest__loop` must not
     # throw ReferenceError). Our strict engine rejects implicit globals.
