@@ -623,7 +623,33 @@ fn int run_one_test(Vm* v, Heap* hp, char[] test_path, char[] assert_src, char[]
     }
 
     if (src_rc == 2) { io::eprintfn("  FAIL: compile error in test source %d bytes", src.len); return 2; }
-    if (src_rc != 0) { io::eprintfn("  FAIL: test source %d bytes", src.len); return 1; }
+    if (src_rc != 0) {
+        io::eprintfn("  FAIL: test source %d bytes", src.len);
+        if (hp.error_value.is_object()) {
+            HObject* eo = (HObject*)hp.error_value.get_heapptr();
+            if (eo != null) {
+                HString* msg_key = (HString*)hp.strs[heap::BuiltinStr.MESSAGE];
+                hobject::Shape* sh = eo.get_shape();
+                TVal* vals = eo.prop_values();
+                uint val_idx = 0;
+                while (sh != null) {
+                    hobject::ShapeProperty* sp = sh.props();
+                    for (uint i = 0; i < sh.own_count; i++) {
+                        if (val_idx >= eo.prop_count) break;
+                        TVal* mv = &vals[val_idx];
+                        if (sp[i].key == (void*)msg_key && mv.is_string()) {
+                            HString* s = (HString*)mv.get_heapptr();
+                            char[] d = s.get_data();
+                            io::eprintfn("  DEBUG_ERR: %s", (String)d);
+                        }
+                        val_idx++;
+                    }
+                    sh = sh.parent_shape;
+                }
+            }
+        }
+        return 1;
+    }
 
     // Drain pending microtasks in a loop so async tests (those relying on
     // Promise / .then / for-await suspensions) get a chance to fully run
