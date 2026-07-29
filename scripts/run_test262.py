@@ -59,6 +59,24 @@ if not os.path.isabs(VM_BINARY):
 # Default timeout per test (seconds)
 TEST_TIMEOUT = 10
 
+# Per-directory timeout overrides, applied to any test whose path contains the
+# key. The RegExp property-escapes tests are generated: each builds a string
+# spanning every code point in a Unicode property and matches it, taking ~1.1s
+# alone and considerably longer under parallelism. At the flat default they
+# report spurious TIMEOUTs purely from machine load, which counts as a failure
+# and makes `just test262-gate` unreliable.
+TIMEOUT_OVERRIDES = {
+    "built-ins/RegExp/property-escapes/generated/": 60,
+}
+
+
+def timeout_for(path):
+    """Per-test timeout: an override when the path matches, else the default."""
+    for fragment, seconds in TIMEOUT_OVERRIDES.items():
+        if fragment in path:
+            return seconds
+    return TEST_TIMEOUT
+
 # Worker parallelism. Each worker is a full VM process, but its address space is
 # hard-capped by RLIMIT_AS (see MEM_LIMIT_BYTES), so the old "max 4" memory
 # guard is no longer what bounds the pool — the CPU count is. Two cores are left
@@ -1132,11 +1150,12 @@ def rerun_serial(tests, test_timeout):
                 if r:
                     results.append(r)
 
-        # Timeout guard.
-        if w.alive and not w.is_idle and w.elapsed() > test_timeout:
-            if w._pending is not None:
-                results.append((w._pending[0], "TIMEOUT"))
-                w._pending = None
+        # Timeout guard. Slow-by-design families get a longer budget so load
+        # spikes don't turn them into spurious failures.
+        if (w.alive and not w.is_idle and w._pending is not None
+                and w.elapsed() > max(test_timeout, timeout_for(w._pending[0]))):
+            results.append((w._pending[0], "TIMEOUT"))
+            w._pending = None
             w.close()
             w = Worker(VM_BINARY, 99)
 
@@ -1281,7 +1300,8 @@ def run_phase(phase_idx, num_workers, test_timeout, es5_only=False):
         # Check for timeouts. kill() does not block on reaping — the dead-worker
         # sweep below respawns — so one slow test costs one worker, not the pool.
         for w in workers:
-            if w.alive and not w.is_idle and w.elapsed() > test_timeout:
+            if (w.alive and not w.is_idle and w._pending is not None
+                    and w.elapsed() > max(test_timeout, timeout_for(w._pending[0]))):
                 print(
                     f"  [timeout] {w._pending[0]} (worker {w.worker_id})",
                     file=sys.stderr,
