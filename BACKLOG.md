@@ -4,10 +4,13 @@
 
 ## Status
 
-All 19 test262 phases at 0 failures.
+All 19 test262 phases at 0 failures (44,734 pass, two-run gate). That covers 64% of the suite; 13,030 tests are in no phase, including ~1,700 core-language ones with 110 known failures.
 Phase 15 (Classes) 5964 -> 7107 pass after un-skipping 1138 tests.
 
 ## test262
+
+- [ ] Add the orphaned core-language dirs to `PHASES` — `statements/function` (451), `assignmenttargettype` (324), `let` (145), `const` (136), `for-in` (115), `async-function` (167), `logical-assignment` (78), `coalesce` (24), `new.target` (14) and others; 1056 sampled, 110 fail
+- [ ] `for-in`: a non-enumerable own property must shadow an enumerable prototype property
 
 - [x] Pending async dependency must resolve through its cycle root — `4fc1e305`
 
