@@ -318,6 +318,51 @@ fn void ays_return_from_body(Dispatch* ds, GeneratorState* gs, TVal value) {
     vm_complete_generator_return(ds, &value);
 }
 
+/// Reject the current async function's Promise with `reason` and pop its
+/// activation, restoring the caller's dispatch state in `ds` (valstack,
+/// current function/bytecode pointers, curr_pc). Used when an AWAIT cannot
+/// proceed (constructor-lookup error or allocation failure) but the frame
+/// still owns an async Promise to settle per the "next tick" contract. On
+/// draining the last activation, halts the VM with `reason` as the return
+/// value instead (no caller frame to resume). Returns false without doing
+/// anything if the current activation isn't an async function with a
+/// Promise attached — the caller must fall back to a plain uncaught error.
+fn bool async_reject_and_pop(Dispatch* ds, TVal reason) {
+    Vm* vm = ds.vm;
+    if ((ds.act.flags & ACT_FLAG_ASYNC) == 0 || ds.act.async_promise == null) {
+        return false;
+    }
+    builtins::promise_settle(ds.act.async_promise, builtins::PROMISE_REJECTED, &reason, vm.heap);
+    builtins::promise_trigger_reactions(ds.act.async_promise, vm.heap, (void*)vm);
+    decref_callee_regs(vm, ds.act);
+    vm.activation_count--;
+    if (vm.activation_count == 0) {
+        TVal undef_val;
+        undef_val.set_undefined();
+        vm.heap.tval_copy_ref(&vm.return_val, &undef_val);
+        ds.halt = true;
+        ds.halt_value = vm.return_val;
+        return true;
+    }
+    ds.act = &vm.activations[vm.activation_count - 1];
+    vm.valstack_bottom = ds.act.bottom;
+    vm.valstack_top = ds.act.caller_valstack_top;
+    CompiledFunction* caller_f = (CompiledFunction*)ds.act.func;
+    if (caller_f != vm.current_func) {
+        vm.current_func = caller_f;
+        ds.code_base = caller_f.code;
+        ds.code_count = caller_f.code_count;
+        ds.code_end = ds.code_base + ds.code_count;
+        ds.constants = caller_f.constants;
+        ds.ic_base = (hobject::ICEntry*)caller_f.ic_entries;
+        ds.var_ic_base = (hobject::VarICEntry*)caller_f.var_ic_entries;
+        ds.nregs = caller_f.num_regs;
+    }
+    ds.curr_pc = ds.act.curr_pc;
+    ds.regs_base = ds.act.bottom;
+    return true;
+}
+
 /// Sub-dispatch for LOAD_RESUME, AWAIT, YIELD, YIELD_STAR opcodes.
 fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, Instruction insn) {
     Vm* vm = ds.vm;
@@ -520,36 +565,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     TVal ctor_err = vm.heap.error_value;
                     vm.heap.has_error = false;
                     if (!vm_throw_value(vm, ctor_err, ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                        if ((ds.act.flags & ACT_FLAG_ASYNC) != 0 && ds.act.async_promise != null) {
-                            builtins::promise_settle(ds.act.async_promise, builtins::PROMISE_REJECTED, &ctor_err, vm.heap);
-                            builtins::promise_trigger_reactions(ds.act.async_promise, vm.heap, (void*)vm);
-                            decref_callee_regs(vm, ds.act);
-                            vm.activation_count--;
-                            if (vm.activation_count == 0) {
-                                TVal undef_val3;
-                                undef_val3.set_undefined();
-                                vm.heap.tval_copy_ref(&vm.return_val, &undef_val3);
-                                ds.halt = true;
-                                ds.halt_value = vm.return_val;
-                                return (TVal){};
-                            }
-                            ds.act = &vm.activations[vm.activation_count - 1];
-                            vm.valstack_bottom = ds.act.bottom;
-                            vm.valstack_top = ds.act.caller_valstack_top;
-                            CompiledFunction* caller_f3 = (CompiledFunction*)ds.act.func;
-                            if (caller_f3 != vm.current_func) {
-                                vm.current_func = caller_f3;
-                                ds.code_base = caller_f3.code;
-                                ds.code_count = caller_f3.code_count;
-                                ds.code_end = ds.code_base + ds.code_count;
-                                ds.constants = caller_f3.constants;
-                                ds.ic_base = (hobject::ICEntry*)caller_f3.ic_entries;
-                                ds.var_ic_base = (hobject::VarICEntry*)caller_f3.var_ic_entries;
-                                ds.nregs = caller_f3.num_regs;
-                            }
-                            ds.curr_pc = ds.act.curr_pc;
-                            ds.regs_base = ds.act.bottom;
-                        } else {
+                        if (!async_reject_and_pop(ds, ctor_err)) {
                             return vm_uncaught_error(vm, &ctor_err);
                         }
                     }
@@ -595,35 +611,8 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     // applicable, otherwise propagate as an uncaught error.
                     TVal oom_reason;
                     oom_reason.set_undefined();
-                    if ((ds.act.flags & ACT_FLAG_ASYNC) != 0 && ds.act.async_promise != null) {
-                        builtins::promise_settle(ds.act.async_promise, builtins::PROMISE_REJECTED, &oom_reason, vm.heap);
-                        builtins::promise_trigger_reactions(ds.act.async_promise, vm.heap, (void*)vm);
-                        decref_callee_regs(vm, ds.act);
-                        vm.activation_count--;
-                        if (vm.activation_count == 0) {
-                            TVal undef_val;
-                            undef_val.set_undefined();
-                            vm.heap.tval_copy_ref(&vm.return_val, &undef_val);
-                            ds.halt = true;
-                            ds.halt_value = vm.return_val;
-                            return (TVal){};
-                        }
-                        ds.act = &vm.activations[vm.activation_count - 1];
-                        vm.valstack_bottom = ds.act.bottom;
-                        vm.valstack_top = ds.act.caller_valstack_top;
-                        CompiledFunction* caller_f = (CompiledFunction*)ds.act.func;
-                        if (caller_f != vm.current_func) {
-                            vm.current_func = caller_f;
-                            ds.code_base = caller_f.code;
-                            ds.code_count = caller_f.code_count;
-                            ds.code_end = ds.code_base + ds.code_count;
-                            ds.constants = caller_f.constants;
-                            ds.ic_base = (hobject::ICEntry*)caller_f.ic_entries;
-                            ds.var_ic_base = (hobject::VarICEntry*)caller_f.var_ic_entries;
-                            ds.nregs = caller_f.num_regs;
-                        }
-                        ds.curr_pc = ds.act.curr_pc;
-                        ds.regs_base = ds.act.bottom;
+                    if (async_reject_and_pop(ds, oom_reason)) {
+                        if (ds.halt) { return (TVal){}; }
                     }
                     return vm_uncaught_error(vm, &oom_reason);
                 }
