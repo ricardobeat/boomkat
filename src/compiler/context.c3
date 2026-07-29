@@ -1371,7 +1371,21 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     func.flags.is_async = self.is_async;
     func.flags.is_arrow = self.is_arrow;
     func.flags.is_strict = self.is_strict;
-    func.flags.uses_arguments = self.uses_arguments;
+    // A direct eval's source is opaque at compile time — it may reference
+    // `arguments` even though the enclosing function's own parsed text never
+    // does (ES2022 §15.7.10 PerformEval materializes the caller's arguments
+    // binding regardless). Force uses_arguments here for any ordinary
+    // function containing a direct eval so the VM creates the arguments
+    // object the eval body's runtime GETVAR lookup depends on. Arrows and
+    // eval bodies themselves have no `arguments` binding of their own, so
+    // this is skipped for them — a direct eval nested in an arrow or in
+    // another eval body resolves `arguments` through the nearest enclosing
+    // ordinary function's binding instead (arrows propagate has_direct_eval
+    // to that enclosing context explicitly; eval re-dispatch always runs
+    // with 0 args, so setting this here for eval_mode would create a bogus
+    // EMPTY arguments object that shadows the real one).
+    func.flags.uses_arguments = self.uses_arguments
+                             || (self.has_direct_eval && !self.is_arrow && !self.eval_mode);
     // Direct eval must run in the caller's lexical environment: the CALL
     // paths only set ACT_FLAG_DIRECT_EVAL (which builtin_eval checks) when
     // this flag is present on the compiled function.

@@ -3898,6 +3898,15 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
         func.flags.uses_arguments = false;
         self.uses_arguments = true;
     }
+    // A direct eval inside the arrow body may reference `arguments` even
+    // though the arrow's own parsed text never does (see finish()'s
+    // has_direct_eval handling). Since `arguments` inside an arrow always
+    // resolves to the enclosing ordinary function's binding, propagate the
+    // arrow's has_direct_eval up so the enclosing function still creates
+    // that binding.
+    if (arrow_ctx.has_direct_eval) {
+        self.has_direct_eval = true;
+    }
 
     // Retain source text for Function.prototype.toString (ES2019 §19.2.3.5).
     // See compile_inner_function for rationale. We use `body_end_pos` (captured
@@ -4166,6 +4175,15 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner(&self, char[]* params,
     if (arrow_ctx.uses_arguments) {
         func.flags.uses_arguments = false;
         self.uses_arguments = true;
+    }
+    // A direct eval inside the arrow body may reference `arguments` even
+    // though the arrow's own parsed text never does (see finish()'s
+    // has_direct_eval handling). Since `arguments` inside an arrow always
+    // resolves to the enclosing ordinary function's binding, propagate the
+    // arrow's has_direct_eval up so the enclosing function still creates
+    // that binding.
+    if (arrow_ctx.has_direct_eval) {
+        self.has_direct_eval = true;
     }
 
     // Retain source text for Function.prototype.toString (ES2019 §19.2.3.5).
