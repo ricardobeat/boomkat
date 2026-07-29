@@ -1206,12 +1206,12 @@ fn TVal? Vm.execute_in_env(Vm* vm, CompiledFunction* func, EnvRecord* env) {
         entry_act.flags |= ACT_FLAG_DIRECT_EVAL;
     }
 
+    // A Module Environment Record's HasThisBinding() is true but
+    // GetThisBinding() always returns undefined (ECMA-262 §8.1.1.5.4) — this
+    // entry point is module-execution only, so `this` at module top level is
+    // unconditionally undefined, never globalThis.
     TVal this_val;
-    if (vm.global_env != null && vm.global_env.bindings != null) {
-        this_val.set_object(vm.global_env.bindings);
-    } else {
-        this_val.set_undefined();
-    }
+    this_val.set_undefined();
     vm.heap.tval_copy_ref(&entry_act.this_binding, &this_val);
 
     uint nregs = func.num_regs;
@@ -1279,12 +1279,12 @@ fn bool? Vm.execute_module_async(Vm* vm, CompiledFunction* func, EnvRecord* env)
     entry_act.async_promise = mod_promise;
     entry_act.async_gen_state = null;
 
+    // A Module Environment Record's HasThisBinding() is true but
+    // GetThisBinding() always returns undefined (ECMA-262 §8.1.1.5.4) — this
+    // entry point is module-execution only, so `this` at module top level is
+    // unconditionally undefined, never globalThis.
     TVal this_val;
-    if (vm.global_env != null && vm.global_env.bindings != null) {
-        this_val.set_object(vm.global_env.bindings);
-    } else {
-        this_val.set_undefined();
-    }
+    this_val.set_undefined();
     vm.heap.tval_copy_ref(&entry_act.this_binding, &this_val);
 
     uint nregs = func.num_regs;
@@ -1453,12 +1453,12 @@ fn bool? Vm.execute_module_nested(Vm* vm, CompiledFunction* func, EnvRecord* env
         act.async_promise = null;
     }
 
+    // A Module Environment Record's HasThisBinding() is true but
+    // GetThisBinding() always returns undefined (ECMA-262 §8.1.1.5.4) — this
+    // entry point is module-execution only, so `this` at module top level is
+    // unconditionally undefined, never globalThis.
     TVal this_val;
-    if (vm.global_env != null && vm.global_env.bindings != null) {
-        this_val.set_object(vm.global_env.bindings);
-    } else {
-        this_val.set_undefined();
-    }
+    this_val.set_undefined();
     // Raw assign: the slot still holds stale bits from the memcpy'd-out
     // outer activation (see the zeroing comment above), so a tval_copy_ref
     // here would incorrectly decref garbage.
