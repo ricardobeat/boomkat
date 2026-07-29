@@ -4713,11 +4713,13 @@ fn void? CompilerContext.export_declaration(&self) {
         // export * as ns from './other'
         if (self.match_as()) {
             Token ns_tok = self.expect(TokenType.IDENTIFIER)!;
+            // Intern the alias: an escaped identifier borrows transient ident_buf.
+            char[] ns_name = self.intern_slot_name(ns_tok.str_value);
             self.expect_from()!;
             Token spec_tok = self.expect(TokenType.STRING)!;
             bool wants_json = self.parse_with_clause()!;
             uint req_idx = mod_register_req_module(mod, spec_tok.str_value, wants_json);
-            mod_register_export(mod, "*", ns_tok.str_value, true, req_idx);
+            mod_register_export(mod, "*", ns_name, true, req_idx);
             self.match(TokenType.SEMICOLON);
             return;
         }
@@ -4742,6 +4744,11 @@ fn void? CompilerContext.export_declaration(&self) {
         while (!self.check(TokenType.RBRACE) && !self.is_at_end()) {
             if (count >= 32) return COMPILE_ERROR~;
             Token name_tok = self.expect(TokenType.IDENTIFIER)!;
+            // Intern each name immediately: an escaped identifier's str_value
+            // borrows the lexer's transient ident_buf, which the very next
+            // token scan (the next iteration, the `as` alias, or RBRACE)
+            // clobbers. Interning copies into the stable heap string table.
+            char[] local_str = self.intern_slot_name(name_tok.str_value);
             if (self.match_as()) {
                 // The exported name (after 'as') is a ModuleExportName / IdentifierName:
                 // reserved words like 'default' are valid here.
@@ -4751,11 +4758,11 @@ fn void? CompilerContext.export_declaration(&self) {
                     alias_str = lexer::keyword_to_string(alias_tok.type);
                 }
                 if (alias_str.len == 0) return COMPILE_ERROR~;
-                local_names[count] = name_tok.str_value;
-                export_names[count] = alias_str;
+                local_names[count] = local_str;
+                export_names[count] = self.intern_slot_name(alias_str);
             } else {
-                local_names[count] = name_tok.str_value;
-                export_names[count] = name_tok.str_value;
+                local_names[count] = local_str;
+                export_names[count] = local_str;
             }
             count++;
             if (!self.match(TokenType.COMMA)) break;

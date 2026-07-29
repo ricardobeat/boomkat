@@ -1205,6 +1205,9 @@ fn HObject*? build_namespace_object(Heap* heap, ModuleDef* source_mod) {
     HObject* ns = ns_opt;
     // Module Namespace Exotic Object: [[Prototype]] is always null (ECMA-262 §10.4.6).
     ns.prototype = null;
+    // Mark as a Module Namespace Exotic Object so the reflective MOP builtins
+    // present exports as DATA descriptors (see ObjFlags.exotic_module_ns).
+    ns.flags.exotic_module_ns = true;
 
     // Sort a local index array by export_name (insertion-sort — export
     // counts are small, MAX_EXPORTS=64) rather than mutating source_mod's
@@ -1232,6 +1235,23 @@ fn HObject*? build_namespace_object(Heap* heap, ModuleDef* source_mod) {
         // follows one level of indirection for `export { x } from './other'`
         // so the accessor never points at a same-module self-reference.
         ExportBindingSource src = resolve_export_binding_source(source_mod, ee);
+
+        // Namespace re-export (`export * as ns from './other'`): the local name
+        // resolves to "*", meaning the exported value is the TARGET module's
+        // namespace object itself (built recursively), not a live env binding.
+        // Install it as a data property carrying the same export attributes
+        // {enumerable:true, configurable:false}.
+        if (src.owner != null && char_slice_eq(src.local_name, "*")) {
+            HObject*? nested_opt = build_namespace_object(heap, src.owner);
+            if (catch nerr = nested_opt) {
+                TVal undef; undef.set_undefined();
+                ns.put_prop(export_key, undef, hobject::PROP_FLAGS_NEC);
+                continue;
+            }
+            TVal nested_tv; nested_tv.set_object(nested_opt);
+            ns.put_prop(export_key, nested_tv, hobject::PROP_FLAGS_NEC);
+            continue;
+        }
 
         TVal accessor;
         accessor.set_undefined();

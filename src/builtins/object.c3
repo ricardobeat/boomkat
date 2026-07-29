@@ -1127,6 +1127,12 @@ fn void builtin_reflect_deleteProperty(BuiltinContext* ctx) {
         ctx.result.set_boolean(res);
         return;
     }
+    // Module Namespace Exotic [[Delete]] (ES2022 §10.4.6.10): existing own keys
+    // are non-configurable (false); absent keys succeed (true).
+    if (obj.flags.exotic_module_ns) {
+        ctx.result.set_boolean(obj.find_prop_idx((void*)key) < 0);
+        return;
+    }
     ctx.result.set_boolean(obj.es_delete_prop((void*)key));
 }
 
@@ -1720,6 +1726,21 @@ fn void builtin_object_getOwnPropertyDescriptor(BuiltinContext* ctx) {
         HObject* desc_out = proxy_desc_to_object(ctx.heap, &pd);
         if (desc_out == null) { ctx.result.set_undefined(); return; }
         ctx.result.set_object(desc_out);
+        return;
+    }
+
+    // Module Namespace Exotic [[GetOwnProperty]] — ES2022 §10.4.6.5. Exports
+    // are presented as DATA descriptors {value, writable:true, enumerable:true,
+    // configurable:false}; Symbol.toStringTag keeps its own data flags. Routed
+    // through own_property_desc (module_ns_own_desc) like the Proxy branch above.
+    if (obj.flags.exotic_module_ns) {
+        ProxyDesc nd;
+        if (!own_property_desc(ctx.vm, ctx.heap, obj, key_hstr, &nd)) { proxy_ctx_ok(ctx); return; }
+        if (!nd.found) { ctx.result.set_undefined(); return; }
+        nd.complete();
+        HObject* nd_out = proxy_desc_to_object(ctx.heap, &nd);
+        if (nd_out == null) { ctx.result.set_undefined(); return; }
+        ctx.result.set_object(nd_out);
         return;
     }
 
@@ -2509,6 +2530,19 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
     bool has_any_field = desc_fields.has_enumerable || desc_fields.has_configurable
                       || desc_fields.has_value || desc_fields.has_writable
                       || desc_fields.has_get || desc_fields.has_set;
+
+    // Module Namespace Exotic [[DefineOwnProperty]] (ES2022 §10.4.6.4): only a
+    // no-op redefinition (every present field already matches the current
+    // descriptor) succeeds; any other define throws (Object.defineProperty).
+    if (obj.flags.exotic_module_ns) {
+        ProxyDesc md = module_ns_desc_from_fields(is_accessor, &desc_flags, &desc_vals, &desc_fields);
+        if (!module_ns_define_own(ctx.vm, ctx.heap, obj, key_hstr, &md)) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "Cannot redefine property on module namespace");
+            return;
+        }
+        *ctx.result = arg0;
+        return;
+    }
 
     // Integer-Indexed exotic [[DefineOwnProperty]] (ES2022 §10.4.5.3): routes
     // through the shared ordinary_define_own, which special-cases canonical

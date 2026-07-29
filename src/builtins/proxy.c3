@@ -165,13 +165,82 @@ fn void ordinary_own_desc(Heap* heap, HObject* obj, HString* key, ProxyDesc* out
     }
 }
 
+/// Assemble a ProxyDesc from a parsed descriptor (flags + values + presence
+/// bits), mirroring the inline conversion used by the TypedArray/Array
+/// defineProperty paths. Used by the Module Namespace define branch.
+fn ProxyDesc module_ns_desc_from_fields(bool is_accessor, hobject::PropFlags* flags, TVal[2]* vals, DescFields* fields) {
+    ProxyDesc pd;
+    pd.found = true;
+    if (is_accessor) {
+        pd.has_get = fields.has_get; pd.getter = (*vals)[0];
+        pd.has_set = fields.has_set; pd.setter = (*vals)[1];
+    } else {
+        pd.has_value = fields.has_value; pd.value = (*vals)[0];
+        pd.has_writable = fields.has_writable; pd.writable = flags.writable;
+    }
+    pd.has_enumerable = fields.has_enumerable; pd.enumerable = flags.enumerable;
+    pd.has_configurable = fields.has_configurable; pd.configurable = flags.configurable;
+    return pd;
+}
+
+/// Module Namespace Exotic [[DefineOwnProperty]] (ES2022 §10.4.6.4). Returns
+/// true only when `desc` is a no-op redefinition of an existing export/own
+/// property (every present field matches the current descriptor); returns
+/// false (caller throws / Reflect returns false) otherwise, including for a
+/// non-existent key.
+fn bool module_ns_define_own(void* vm, Heap* heap, HObject* ns, HString* key, ProxyDesc* desc) {
+    ProxyDesc current;
+    module_ns_own_desc(vm, heap, ns, key, &current);
+    if (!current.found) return false;
+    // Exports (and toStringTag) are always non-configurable, non-accessor.
+    if (desc.has_configurable && desc.configurable) return false;
+    if (desc.has_enumerable && desc.enumerable != current.enumerable) return false;
+    if (desc.is_accessor_desc()) return false;
+    if (desc.has_writable && desc.writable != current.writable) return false;
+    if (desc.has_value && !same_value(desc.value, current.value)) return false;
+    return true;
+}
+
 /// Own-property descriptor with proxy recursion ([[GetOwnProperty]]).
 fn bool own_property_desc(void* vm, Heap* heap, HObject* obj, HString* key, ProxyDesc* out) {
     if (obj.flags.exotic_proxyobj) {
         return proxy_mop_get_own(vm, heap, obj, key, out);
     }
+    if (obj.flags.exotic_module_ns) {
+        module_ns_own_desc(vm, heap, obj, key, out);
+        return true;
+    }
     ordinary_own_desc(heap, obj, key, out);
     return true;
+}
+
+/// Module Namespace Exotic [[GetOwnProperty]] into a ProxyDesc (ES2022 §10.4.6.5).
+/// Export bindings (stored as accessors) are surfaced as DATA descriptors
+/// {value: live-binding-value, writable:true, enumerable:true, configurable:false};
+/// the Symbol.toStringTag property keeps its own stored data attributes.
+fn void module_ns_own_desc(void* vm, Heap* heap, HObject* obj, HString* key, ProxyDesc* out) {
+    *out = (ProxyDesc){};
+    int idx = obj.find_prop_idx((void*)key);
+    if (idx < 0) return;
+    hobject::PropFlags f = obj.get_prop_flags((uint)idx);
+    TVal value;
+    if (!builtins::module_ns_get_binding_value(vm, heap, obj, key, &value)) return;
+    out.found = true;
+    out.has_value = true; out.value = value;
+    out.has_enumerable = true;
+    out.has_configurable = true;
+    out.has_writable = true;
+    if (f.is_accessor) {
+        // Live export binding: {writable:true, enumerable:true, configurable:false}.
+        out.writable = true;
+        out.enumerable = true;
+        out.configurable = false;
+    } else {
+        // Non-export own data property (Symbol.toStringTag): reflect stored flags.
+        out.writable = f.writable;
+        out.enumerable = f.enumerable;
+        out.configurable = f.configurable;
+    }
 }
 
 /// [[IsExtensible]] with proxy recursion.
@@ -275,6 +344,8 @@ fn bool js_get(void* vm, Heap* heap, HObject* obj, HString* key, TVal* out) {
 // ============================================================================
 
 fn bool js_set_with_receiver(void* vm, Heap* heap, HObject* obj, HString* key, TVal val, TVal receiver, bool* res) {
+    // Module Namespace Exotic [[Set]] (ES2022 §10.4.6.11): always returns false.
+    if (obj.flags.exotic_module_ns) { *res = false; return true; }
     // Integer-Indexed exotic [[Set]] (ES2022 §10.4.5.10): canonical numeric
     // index keys bypass OrdinarySet entirely.
     if (is_typed_array_class(obj.get_class())) {
@@ -1032,6 +1103,10 @@ fn bool ordinary_define_own(void* vm, Heap* heap, HObject* obj, HString* key, Pr
 fn bool object_define_own(void* vm, Heap* heap, HObject* obj, HString* key, ProxyDesc* desc, bool* res) {
     if (obj.flags.exotic_proxyobj) {
         return proxy_mop_define(vm, heap, obj, key, desc, res);
+    }
+    if (obj.flags.exotic_module_ns) {
+        *res = module_ns_define_own(vm, heap, obj, key, desc);
+        return true;
     }
     return ordinary_define_own(vm, heap, obj, key, desc, res);
 }

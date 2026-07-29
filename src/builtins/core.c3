@@ -3312,6 +3312,29 @@ fn TVal make_module_binding_accessor(Heap* heap, HObject* source_bindings, HStri
     return hobject::hobject_create_accessors(heap, getter_tv, undef);
 }
 
+/// Module Namespace Exotic [[Get]] for a resolved own key, used by the
+/// reflective MOP builtins (getOwnPropertyDescriptor et al.) to materialise
+/// the DATA-descriptor `value`. `ns` must be a Module Namespace Exotic Object
+/// (ObjFlags.exotic_module_ns). Returns true and writes the live binding value
+/// into `*out` when `key` is an own property of `ns`; false when absent.
+/// Export bindings are stored as accessors — this invokes the stored getter;
+/// the Symbol.toStringTag data property is returned verbatim.
+fn bool module_ns_get_binding_value(void* vm, Heap* heap, HObject* ns, HString* key, TVal* out) {
+    out.set_undefined();
+    int idx = ns.find_prop_idx((void*)key);
+    if (idx < 0) return false;
+    if (ns.get_prop_flags((uint)idx).is_accessor) {
+        TVal slot = ns.prop_values()[idx];
+        TVal getter = hobject::hobject_access_getter(slot);
+        if (!getter.is_object()) return true;
+        TVal this_tv; this_tv.set_object(ns);
+        *out = heap.call_fn(vm, getter, null, 0, this_tv);
+        return true;
+    }
+    *out = ns.prop_values()[idx];
+    return true;
+}
+
 // ============================================================================
 // Dispatch table
 // ============================================================================

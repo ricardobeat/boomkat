@@ -2072,6 +2072,18 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     return (TVal){};
                 }
 
+                // Module Namespace Exotic [[Set]] (ES2022 §10.4.6.11): always
+                // returns false. PutValue turns that into a TypeError only for a
+                // strict reference; sloppy code silently no-ops.
+                if (hobj.flags.exotic_module_ns) {
+                    if (vm.current_func != null && vm.current_func.is_strict()) {
+                        if (!vm_throw_error(vm, vm.heap.type_err_proto, "Cannot assign to read only property of module namespace object", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                            return VM_ERROR~;
+                        }
+                    }
+                    return (TVal){};
+                }
+
                 // TypedArray element write: convert FIRST, bounds-check AFTER
                 // (ToNumber on rc can run user code — e.g. valueOf — that
                 // detaches the buffer; spec requires the conversion to happen
@@ -2915,6 +2927,22 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
 
                 void* key = get_prop_key(vm, rc);
                 if (key != null) {
+                    // Module Namespace Exotic [[Delete]] (ES2022 §10.4.6.10):
+                    // an existing own key (export or Symbol.toStringTag) cannot
+                    // be deleted (returns false); an absent key returns true.
+                    if (hobj.flags.exotic_module_ns) {
+                        if (hobj.find_prop_idx(key) >= 0) {
+                            ra.set_boolean(false);
+                            if (vm.current_func != null && vm.current_func.is_strict()) {
+                                if (!vm_throw_error(vm, vm.heap.type_err_proto, "Cannot delete property of module namespace object", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                    return VM_ERROR~;
+                                }
+                            }
+                        } else {
+                            ra.set_boolean(true);
+                        }
+                        return (TVal){};
+                    }
                     if (!hobj.es_delete_prop(key)) {
                         ra.set_boolean(false);
                         // Strict-only engine: non-configurable delete always throws.
