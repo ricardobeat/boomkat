@@ -47,6 +47,8 @@ Phase 15 (Classes) 5964 -> 7107 pass after un-skipping 1138 tests.
 
 ## Known bugs
 
+- [ ] Shape-ID space exhausts after ~66k instances of any class with private fields or methods — `put_prop` with non-WEC flags clones an uncached shape per object
+
 - [x] `Map`/`Set` `forEach` with no callback silently returned instead of throwing — `19b2ee6b`
 
 - [x] AWAIT OOM double-reported after promise rejection, abandoning the restored caller — `a8bcf9e9`
@@ -86,7 +88,7 @@ Phase 15 (Classes) 5964 -> 7107 pass after un-skipping 1138 tests.
 
 ## Class semantics (behind the skip-list)
 
-- [ ] Private-field return-override
+- [x] Private methods/accessors survive `super()` return-override — `f4c9c546`
 - [x] Private-field destructuring targets clobbered by getter calls — `c9b834ac` (the documented Base→Derived brand diagnosis was wrong; brand propagation is correct)
 - [x] `ContainsArguments` for direct eval in a field initializer — `bc64d706`
 - [x] Same-line class-body parsing — already worked; stale skip glob removed (`1e8ba3bc`, `44f35daa`)
