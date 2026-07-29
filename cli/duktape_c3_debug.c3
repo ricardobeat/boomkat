@@ -131,7 +131,7 @@ fn int main(String[] args) {
     time::Time t3 = debug ? time::now() : (time::Time)0;
 
     if (module_mode) {
-        // ESM module mode: resolve → execute (includes linking)
+        // ESM module mode: resolve -> link -> execute
         char[] module_name = path;
         esm::ModuleDef*? mod_opt = esm::resolve_module(hp, module_name, "");
         if (catch err = mod_opt) {
@@ -145,6 +145,15 @@ fn int main(String[] args) {
         }
 
         if (debug) io::printfn("  resolve:     %d us", (int)(time::now() - t3));
+
+        // Link resolves import bindings and instantiates top-level function
+        // declarations in the module env (ECMA-262 16.2.1.5.5 step 17) before
+        // any body runs. Skipping it left every module-scope `function` decl
+        // (and any cross-module import) unresolved at body-execution time.
+        if (!esm::link_module(hp, v, mod, v.global_env)) {
+            io::eprintfn("module link failed");
+            return 1;
+        }
 
         time::Time t4 = debug ? time::now() : (time::Time)0;
         v.trace = trace_vm;
