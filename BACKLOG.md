@@ -49,7 +49,7 @@ Phase 15 (Classes) 5964 -> 7107 pass after un-skipping 1138 tests.
 
 - [x] `Map`/`Set` `forEach` with no callback silently returned instead of throwing — `19b2ee6b`
 
-- [ ] AWAIT OOM path calls `vm_uncaught_error` after already rejecting the promise and restoring the caller frame, unlike the constructor-error path
+- [x] AWAIT OOM double-reported after promise rejection, abandoning the restored caller — `a8bcf9e9`
 
 - [x] `eval('arguments.length')` in an ordinary function threw ReferenceError — `b46936fd`
 
