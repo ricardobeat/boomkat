@@ -252,11 +252,6 @@ fn bool contains_substr(char[] haystack, char[] needle) {
 }
 
 fn bool is_module_test(char[] path, char[] src) {
-    if (contains_substr(path, "language/module-code/") ||
-        contains_substr(path, "language/import/") ||
-        contains_substr(path, "language/export/")) {
-        return true;
-    }
     usz scan_end = src.len < 4096 ? src.len : (usz)4096;
     usz i = 0;
     // Find "flags:" within the frontmatter
@@ -268,8 +263,29 @@ fn bool is_module_test(char[] path, char[] src) {
         }
         i++;
     }
-    if (i + 6 >= scan_end) return false;
-    // Look for "module" within the brackets
+    // No "flags:" block at all. Per test262 INTERPRETING.md, absence of the
+    // `module` flag means the test is global (script) code — directory
+    // placement is not itself a mode signal (e.g.
+    // language/module-code/top-level-await/new-await-script-code.js has no
+    // `flags:` block and deliberately tests SCRIPT semantics). The one
+    // reliable signal left is the source itself: a flagless module-code/
+    // import/export test still needs an actual top-level `import`/`export`
+    // declaration to parse at all, so fall back to a raw keyword scan rather
+    // than trusting the path.
+    if (i + 6 >= scan_end) {
+        return contains_substr(path, "language/module-code/") ||
+            contains_substr(path, "language/import/") ||
+            contains_substr(path, "language/export/")
+            ? (contains_substr(src, "import") || contains_substr(src, "export"))
+            : false;
+    }
+    // A `flags:` block IS present — trust it over the path prefix. A test
+    // whose frontmatter explicitly lists flags without "module" (e.g.
+    // `flags: [async]`) is deliberately exercising non-module/script-code
+    // semantics even when physically filed under module-code/ — see
+    // language/module-code/top-level-await/new-await-script-code.js, which
+    // tests that `await` is a legal identifier/class name in SCRIPT code and
+    // must not be parsed via the module (always-reserved-await) path.
     while (i + 6 < scan_end && src[i] != ']') {
         if (src[i] == 'm' && src[i+1] == 'o' && src[i+2] == 'd' && src[i+3] == 'u'
             && src[i+4] == 'l' && src[i+5] == 'e') {
