@@ -4122,6 +4122,10 @@ fn bool register_promise_constructor(EnvRecord* global_env, Heap* heap) {
     proto.prototype = heap.object_proto;
     heap.promise_proto = proto;
 
+    // Cache the reaction-chain "next" key so heap.c3's GC mark phase can
+    // walk pending reactions without importing this module (circular).
+    hobject::promise_reaction_next_key = builtin_intern_string(heap, PROMISE_REACTION_NEXT_KEY);
+
     if (!register_string_proto_method(proto, heap, "then",    Builtin.PROMISE_PROTO_THEN.ordinal))    return false;
     if (!register_string_proto_method(proto, heap, "catch",   Builtin.PROMISE_PROTO_CATCH.ordinal))   return false;
     if (!register_string_proto_method(proto, heap, "finally", Builtin.PROMISE_PROTO_FINALLY.ordinal)) return false;

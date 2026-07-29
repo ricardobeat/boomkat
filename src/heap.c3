@@ -1922,6 +1922,13 @@ fn void Heap.mark_generator_state(&self, GeneratorState* gs) {
             self.mark_tval(&gs.saved_regs[i]);
         }
     }
+    // Mark the suspended body's lexical/variable environments. gs.var_env/
+    // lex_env are opaque void* (heap.c3 cannot import env.c3 — circular),
+    // so the typed EnvRecord* dereference happens in hobject.c3 instead.
+    HObject* gs_var_bindings = hobject::env_record_bindings(gs.var_env);
+    if (gs_var_bindings != null) { self.mark_hobject(gs_var_bindings); }
+    HObject* gs_lex_bindings = hobject::env_record_bindings(gs.lex_env);
+    if (gs_lex_bindings != null) { self.mark_hobject(gs_lex_bindings); }
     // Mark TVal fields
     self.mark_tval(&gs.this_binding);
     self.mark_tval(&gs.resume_value);
@@ -2015,6 +2022,18 @@ fn void Heap.drain_gray(&self) {
                     }
                     break;
                 }
+                // Async/await resume/reject builtins repurpose var_env to
+                // stash a GeneratorState* instead of an EnvRecord* — treating
+                // it as an EnvRecord below would read gs.func (a
+                // CompiledFunction*) through the EnvRecord.bindings offset
+                // and mark_hobject a non-HObject pointer. Mark the
+                // GeneratorState (which itself keeps the real var_env/lex_env
+                // alive) and skip the EnvRecord walk entirely for these.
+                if (obj.flags.is_async_state) {
+                    GeneratorState* gs = (GeneratorState*)(*obj.extra_ptr()).func.var_env;
+                    self.mark_generator_state(gs);
+                    break;
+                }
                 if ((*obj.extra_ptr()).func.var_env != null && (*obj.extra_ptr()).func.var_env.bindings != null) {
                     self.mark_hobject((*obj.extra_ptr()).func.var_env.bindings);
                 }
@@ -2024,13 +2043,6 @@ fn void Heap.drain_gray(&self) {
                 self.mark_tval(&(*obj.extra_ptr()).func.captured_this);
                 if ((*obj.extra_ptr()).func.captured_new_target != null) {
                     self.mark_hobject((*obj.extra_ptr()).func.captured_new_target);
-                }
-                // Async/await resume/reject builtins stash their GeneratorState
-                // in var_env; keep it alive so suspended async functions are
-                // not collected while waiting for their Promise to settle.
-                if (obj.flags.is_async_state) {
-                    GeneratorState* gs = (GeneratorState*)(*obj.extra_ptr()).func.var_env;
-                    self.mark_generator_state(gs);
                 }
                 break;
             case ObjClass.GENERATOR:
@@ -2055,12 +2067,25 @@ fn void Heap.drain_gray(&self) {
                 break;
             case ObjClass.PROMISE:
                 // Mark the resolved value/rejection reason and the linked list
-                // of pending reaction records.
+                // of pending reaction records. The chain's "next" pointer is
+                // stored as a hidden TVal property (see
+                // hobject::promise_reaction_next_key /
+                // builtins::reaction_set_next), NOT HeapHeader.next (that's
+                // the unrelated heap_allocated GC-list thread pointer) —
+                // reading .next here would walk garbage.
                 self.mark_tval(&(*obj.extra_ptr()).promise.result);
                 HObject* reaction = (*obj.extra_ptr()).promise.reactions_head;
                 while (reaction != null) {
                     self.mark_hobject(reaction);
-                    reaction = (HObject*)reaction.next;
+                    HObject* next_reaction = null;
+                    if (hobject::promise_reaction_next_key != null) {
+                        if (try nv = reaction.get_prop((void*)hobject::promise_reaction_next_key)) {
+                            if (nv.is_object() && nv.get_heapptr() != null) {
+                                next_reaction = (HObject*)nv.get_heapptr();
+                            }
+                        }
+                    }
+                    reaction = next_reaction;
                 }
                 break;
             case ObjClass.ARRAYBUFFER:

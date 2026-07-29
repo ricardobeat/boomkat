@@ -44,6 +44,17 @@ fn void hobject_set_active_heap(void* heap) {
     _active_heap = heap;
 }
 
+/// Reads the `bindings` field out of an opaque EnvRecord* pointer. Exists so
+/// heap.c3 (which cannot import env.c3 — env.c3 imports heap.c3) can walk a
+/// GeneratorState's saved var_env/lex_env during GC marking without a typed
+/// EnvRecord* in scope; hobject.c3 already imports env.c3 for HObjectFunction's
+/// var_env/lex_env fields, so it can do the real typed dereference here.
+/// Returns null for a null env_ptr.
+fn HObject* env_record_bindings(void* env_ptr) {
+    if (env_ptr == null) return null;
+    return ((env::EnvRecord*)env_ptr).bindings;
+}
+
 /// Called by heap::destroy() and heap::reset() before teardown — prevents
 /// hobject_free from doing string RC during teardown.
 fn void hobject_clear_active_heap() {
@@ -57,6 +68,11 @@ fn void hobject_clear_active_heap() {
 /// Cached pointer to the interned "length" string, set during heap init.
 /// Used by put_prop to sync array_length on LENGTH writes.
 void* builtin_length_key = null;
+
+/// Cached pointer to the interned "\xFFpromise_reaction_next" string, set
+/// during heap init. Lets heap.c3's mark phase walk a Promise's pending
+/// reaction chain without importing builtins/promise.c3 (which imports heap).
+void* promise_reaction_next_key = null;
 
 /// Default is false. Pass `-D NOSHAPECACHE` to drop the 8-byte shape pointer cache.
 const bool USE_SHAPE_CACHE = !$feature(NOSHAPECACHE);
@@ -2081,6 +2097,44 @@ fn void hobject_free(HObject* obj, void* heap_ptr, bool free_header = true) {
             }
             (*obj.extra_ptr()).gen.generator_data = null;
         }
+    }
+
+    // Free the GeneratorState owned by a plain async function's suspended
+    // await: resume_fn and reject_fn (both ObjClass.FUNCTION, is_async_state)
+    // are independently GC'd reaction closures that share ONE GeneratorState
+    // via var_env — unlike the GENERATOR case above, there is no single
+    // owning HObject, so freeing it from whichever of the two dies first
+    // would leave the survivor holding a dangling var_env (use-after-free
+    // the next time it's invoked or swept). gs.ref_count (set to 2 when the
+    // pair is created — see the AWAIT opcode handler in vm_generators.c3)
+    // tracks how many of the two are still alive; only the second teardown
+    // actually frees the struct. An async-generator's internal-await
+    // reactions (ASYNC_GEN_AWAIT_RESUME/REJECT) also set is_async_state and
+    // point var_env at a gs, but that gs is the generator's own persistent
+    // state (gs.is_async_gen == true), owned and freed by its GENERATOR
+    // HObject above — never by these transient reaction closures.
+    if (obj.flags.obj_class == ObjClass.FUNCTION && obj.flags.is_async_state) {
+        heap::GeneratorState* gs = (heap::GeneratorState*)(*obj.extra_ptr()).func.var_env;
+        if (gs != null && !gs.is_async_gen) {
+            if (gs.ref_count > 0) { gs.ref_count--; }
+            if (gs.ref_count == 0) {
+                if (_active_heap != null) {
+                    heap::Heap* h = (heap::Heap*)_active_heap;
+                    if (gs.saved_regs != null) {
+                        for (uint i = 0; i < gs.num_regs; i++) {
+                            h.decref_tval(&gs.saved_regs[i]);
+                        }
+                        h.free_func(h.heap_udata, gs.saved_regs);
+                    }
+                    h.decref_tval(&gs.this_binding);
+                    h.free_func(h.heap_udata, gs);
+                } else {
+                    if (gs.saved_regs != null) { mem::free(gs.saved_regs); }
+                    mem::free(gs);
+                }
+            }
+        }
+        (*obj.extra_ptr()).func.var_env = null;
     }
 
     // Decref string, object, buffer, and BigInt values held in property slots

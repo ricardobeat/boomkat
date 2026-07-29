@@ -698,6 +698,12 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 (*reject_fn.extra_ptr()).func.builtin_fn_index = (int)builtins::Builtin.ASYNC_REJECT.ordinal;
                 (*reject_fn.extra_ptr()).func.var_env = (EnvRecord*)gs;
                 reject_fn.flags.is_async_state = true;
+                // resume_fn and reject_fn now both own a reference to gs via
+                // var_env; hobject_free decrefs on teardown of either one and
+                // only frees gs once both are gone (see the is_async_state
+                // case in hobject_free — never for an async-generator's own
+                // gs, which is owned by the GENERATOR object instead).
+                gs.ref_count = 2;
                 TVal reject_tv;
                 reject_tv.set_object(reject_fn);
 
