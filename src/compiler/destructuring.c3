@@ -477,11 +477,19 @@ fn void CompilerContext.emit_deferred_target(&self, DestructBind* bind)
 
     // Enable deferred brand check: for private field targets, emit_private_access
     // loads the brand symbol but skips CHK_BRAND. We detect the private target
-    // after parsing by checking deferred_brand_reg.
+    // after parsing by checking deferred_brand_reg. The brand register itself
+    // is pre-allocated (bind.private_brand_reg, from emit_destruct_bindings's
+    // pre-scan) and handed to emit_private_access via deferred_brand_reg_hint —
+    // it must land BELOW the source property's upcoming GETPROP result
+    // register, or a getter triggered while reading the source clobbers it
+    // (invoke_getter writes its callee/this pair at [result_reg,
+    // result_reg + 1] before the call even starts) before the deferred
+    // CHK_BRAND runs.
     self.defer_brand_check = true;
     self.deferred_brand_reg = 0xFFFF;
     self.deferred_brand_name_c = 0xFF;
     self.deferred_brand_obj_reg = 0xFFFF;
+    self.deferred_brand_reg_hint = bind.private_brand_reg;
 
     ushort pre_reg = self.next_reg;
     ushort tgt_obj  = 0xFFFF;
@@ -490,25 +498,23 @@ fn void CompilerContext.emit_deferred_target(&self, DestructBind* bind)
     if (catch self.parse_assign_target_lhs(&tgt_obj, &tgt_key, &tgt_name)) {
         // Unreachable: the same token stream parsed successfully at collection.
         self.defer_brand_check = false;
+        self.deferred_brand_reg_hint = 0xFFFF;
+        self.free_reg(bind.private_brand_reg);
         return;
     }
+    self.deferred_brand_reg_hint = 0xFFFF;
 
     // Check if a brand check was deferred (private field target).
     if (self.deferred_brand_reg != 0xFFFF) {
         bind.is_private_target = true;
-        bind.private_brand_reg = self.deferred_brand_reg;
+        // deferred_brand_reg equals bind.private_brand_reg (the hint was
+        // honoured) — already the pre-allocated persistent register, so no
+        // further protection is needed past this point. The CHK_BRAND's
+        // object operand is bind.member_obj_reg (set below via LDREG), not
+        // self.deferred_brand_obj_reg (the parse-time temp `this` register,
+        // unsafe to read after the source GETPROP's getter call — see
+        // DestructBind's doc comment).
         bind.private_brand_name_c = self.deferred_brand_name_c;
-        bind.private_brand_obj_reg = self.deferred_brand_obj_reg;
-        // Preserve the brand register past the upcoming free_regs_to by
-        // bumping next_reg back up.  emit_destruct_bindings emits the deferred
-        // CHK_BRAND using this register (which is the brand symbol holding
-        // slot — the value can't be re-loaded, since the actual stable symbol
-        // was emitted by NEW_PRIV_SYM only at class-eval time), and frees
-        // it after the CHK_BRAND.  Without this preservation the LIFO
-        // free_regs_to below would mark the slot free and the subsequent
-        // allocation at [0x001E] LDCONST r14 in the test trace would clobber
-        // it with the iterator's "value" string (mangling the brand symbol
-        // the eventual CHK_BRAND reads).
 
         // Strip the trailing GETPROP_PRIVATE emitted by member_expr while
         // parsing `this.#field`.  The read result is unused for the
@@ -522,24 +528,20 @@ fn void CompilerContext.emit_deferred_target(&self, DestructBind* bind)
             && self.code[self.code_count - 1].op == Opcode.GETPROP_PRIVATE) {
             self.code_count--;
         }
-
-        // Reserve up through the deferred brand register so free_regs_to
-        // can't reclaim it.
-        ushort need_above = self.deferred_brand_reg + 1;
-        if (self.next_reg <= need_above) self.next_reg = need_above;
     } else {
         bind.is_private_target = false;
+        // Not a private target after all — release the reserved slot.
+        self.free_reg(bind.private_brand_reg);
     }
     self.defer_brand_check = false;
 
     self.emit_abc(Opcode.LDREG, (uint)bind.member_obj_reg, (uint)tgt_obj, 0);
     self.emit_abc(Opcode.LDREG, (uint)bind.member_prop_reg, (uint)tgt_key, 0);
     self.free_regs_to(pre_reg);
-    // Restore register height so the deferred brand slot survives the
-    // LIFO reclamation above.  emit_destruct_bindings emits the deferred
-    // CHK_BRAND using this register; allocation in the meantime (iterator
-    // setup, for-of CALL frames, etc.) would otherwise reclaim and
-    // clobber the brand symbol with the wrong value.
+    // bind.private_brand_reg (when is_private_target) is a persistent
+    // register allocated in emit_destruct_bindings's pre-scan, well below
+    // pre_reg — free_regs_to(pre_reg) above cannot reclaim it. Defensive
+    // no-op guard kept in case a future caller passes a lower pre_reg.
     if (bind.is_private_target && self.next_reg <= bind.private_brand_reg) {
         self.next_reg = (ushort)(bind.private_brand_reg + 1);
     }

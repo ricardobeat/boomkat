@@ -284,14 +284,6 @@ SKIP_FILES = {
     "language/statements/class/elements/private-setter-is-not-a-own-property.js",
     "language/expressions/class/elements/private-getter-is-not-a-own-property.js",
     "language/expressions/class/elements/private-setter-is-not-a-own-property.js",
-    # B54 — private-fieldset-evaluation-order-3 + private-class-field-on-
-    # nonextensible-return-override. These rely on the constructor's
-    # field-init/brand stamp propagating to the override object when
-    # `super()` returns a substituted `this` — but our construct path
-    # doesn't carry the brand across the Base→Derived handoff when the
-    # Base superclass returns an object. Defer until we revisit
-    # return-override plumbing in vm_calls.c3 / vm_execute.c3.
-    "language/statements/class/elements/privatefieldset-evaluation-order-3.js",
     "language/comments/hashbang/use-strict.js",  # hashbang is not a directive prologue, so the body `with ({}) {}` stays sloppy; strict-only engine rejects `with` (AGENTS.md)
     # P7 — class-name-static-initializer-default-export.js and friends require
     # module-mode execution (`flags: [module]`). The runner doesn't currently

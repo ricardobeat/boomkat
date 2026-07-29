@@ -476,7 +476,14 @@ fn ushort? CompilerContext.emit_private_access(&self, char[] name, ushort obj_re
     // inside method/initializer bodies whose pools differ from the
     // class-enclosing context that declared the entry.
     uint brand_bind_idx = self.add_string_constant(entry.brand_slot_name);
-    ushort brand_reg = self.alloc_reg();
+    // Deferred targets (destructuring assignment) pre-allocate the brand
+    // register BELOW the upcoming GETPROP's result register — see
+    // deferred_brand_reg_hint's doc comment. A lazily alloc_reg()'d register
+    // here could otherwise land at or above the GETPROP result register and
+    // get clobbered when the source property's getter runs (invoke_getter
+    // writes callee/this at [result_reg, result_reg + 1] before the call).
+    ushort brand_reg = self.deferred_brand_reg_hint != 0xFFFF
+        ? self.deferred_brand_reg_hint : self.alloc_reg();
     self.emit(bytecode::make_a_bc(Opcode.GETVAR, (uint)brand_reg, brand_bind_idx));
     uint name_const_idx = self.add_string_constant(name);
     uint name_c = name_const_idx <= 0xFE ? name_const_idx : 0xFF;

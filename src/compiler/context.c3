@@ -328,6 +328,16 @@ struct CompilerContext {
     uint deferred_brand_name_c;
     /// Object register for the deferred CHK_BRAND.
     ushort deferred_brand_obj_reg;
+    /// When not 0xFFFF, emit_private_access uses THIS register for the brand
+    /// symbol instead of allocating a fresh one. Set by emit_deferred_target
+    /// before re-parsing a private-field destructuring target so the brand
+    /// symbol lands in a register pre-allocated BELOW the upcoming GETPROP's
+    /// result register — invoke_getter writes the getter's callee/this pair
+    /// at [result_reg, result_reg + 1] before the call even starts, so a
+    /// register grabbed lazily inside emit_private_access could land at or
+    /// above result_reg + 1 and get clobbered before the deferred CHK_BRAND
+    /// reads it.
+    ushort deferred_brand_reg_hint;
 
     /// Property call: the object register to use as 'this' in emit_call.
     /// Set to MAX_REGISTERS when not in a property call.
@@ -655,6 +665,7 @@ fn void CompilerContext.init(&self, Lexer* lex, void* heap) {
     self.patch_count = 0;
     self.const_hash_count = 0;
     self.call_prop_obj_reg = MAX_REGISTERS;
+    self.deferred_brand_reg_hint = 0xFFFF;
     self.pushback_count = 0;
     self.pending_async_arrow_src = 0xFFFFFFFF;
     self.pending_async_function_src = 0xFFFFFFFF;

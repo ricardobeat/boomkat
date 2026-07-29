@@ -103,8 +103,13 @@ struct DestructBind {
     ushort private_brand_reg;
     // Constant-pool index for the private name in the deferred CHK_BRAND.
     uint private_brand_name_c;
-    // Object register for the deferred CHK_BRAND.
-    ushort private_brand_obj_reg;
+    // The deferred CHK_BRAND's object operand is member_obj_reg (below), NOT
+    // a separate field — member_obj_reg is the persistent, pre-scan-allocated
+    // copy of `this`, safe across the source property's GETPROP (which may
+    // invoke a getter). The original parse-time temp register captured by
+    // emit_private_access is NOT safe to hold onto past that point: a getter
+    // call writes its `this` argument at [result_reg + 1], which can land on
+    // an arbitrary earlier temp.
 }
 
 /// Lexer position captured by collect_assign_target for a deferred member
@@ -715,6 +720,16 @@ fn void CompilerContext.emit_destruct_bindings(&self,
             // survive the protocol CALLs up to the final PUTPROP.
             binds[di].member_obj_reg  = self.alloc_persistent_reg();
             binds[di].member_prop_reg = self.alloc_persistent_reg();
+            // Reserve a persistent slot for a possible private-field brand
+            // symbol too — we don't know yet whether the target is
+            // `this.#x` until emit_deferred_target re-parses it, but the
+            // register must be allocated NOW (below the source property's
+            // upcoming GETPROP result register) so a getter invoked while
+            // reading the source (invoke_getter writes callee/this at
+            // [result_reg, result_reg + 1] before the call) cannot land on
+            // it and clobber the brand symbol. Freed immediately if the
+            // target turns out not to be private.
+            binds[di].private_brand_reg = self.alloc_persistent_reg();
         }
         if (binds[di].deferred_computed_key != null) {
             // Stable register for a deferred computed key's evaluated value:
@@ -960,18 +975,16 @@ fn void CompilerContext.emit_destruct_bindings(&self,
                     // 1. Evaluate target (lref) — get object + key reference.
                     // 2. GetV(value, propertyName) — read source property.
                     // 3. PutValue — assign (including brand check for private fields).
-                    // So emit_deferred_target runs first, then GETPROP, then the
-                    // deferred CHK_BRAND for private targets.
+                    // So emit_deferred_target runs first, then GETPROP; the deferred
+                    // CHK_BRAND for private targets runs later, at PutValue time —
+                    // the ASSIGN_TARGET switch below (right before PUTPROP), NOT
+                    // here. Emitting it here too would run CHK_BRAND twice (once
+                    // before PutValue, wrongly early, and once at the correct
+                    // PutValue point) for every private-member destructuring target.
                     if (binds[di].deferred_target != null) {
                         self.emit_deferred_target(&binds[di]);
                     }
                     self.emit_abc(Opcode.GETPROP, (uint)bind_reg, (uint)src_reg, (uint)binds[di].computed_key_reg);
-                    // Deferred CHK_BRAND for private field targets: the brand check
-                    // must run AFTER the source property is read (GetV), per spec.
-                    if (binds[di].is_private_target) {
-                        self.emit_abc(Opcode.CHK_BRAND, (uint)binds[di].private_brand_obj_reg, (uint)binds[di].private_brand_reg, binds[di].private_brand_name_c);
-                        self.free_reg(binds[di].private_brand_reg);
-                    }
                 } else {
                     if (binds[di].deferred_target != null) {
                         self.emit_deferred_target(&binds[di]);
@@ -980,12 +993,9 @@ fn void CompilerContext.emit_destruct_bindings(&self,
                     self.emit_a_bc(Opcode.LDCONST, (uint)key_reg, binds[di].key_idx);
                     self.emit_abc(Opcode.GETPROP, (uint)bind_reg, (uint)src_reg, (uint)key_reg);
                     self.free_reg(key_reg);
-                    // Deferred CHK_BRAND for private field targets: the brand check
-                    // must run AFTER the source property is read (GetV), per spec.
-                    if (binds[di].is_private_target) {
-                        self.emit_abc(Opcode.CHK_BRAND, (uint)binds[di].private_brand_obj_reg, (uint)binds[di].private_brand_reg, binds[di].private_brand_name_c);
-                        self.free_reg(binds[di].private_brand_reg);
-                    }
+                    // See the computed-key branch above: the CHK_BRAND for a
+                    // private-member target runs later, at PutValue time (the
+                    // ASSIGN_TARGET switch below), not here.
                 }
             } else {
                 if (binds[di].key_idx == 0xFFFF) {
@@ -1136,8 +1146,16 @@ fn void CompilerContext.emit_destruct_bindings(&self,
                     // — it set is_private_target during the earlier emit).
                     if (binds[di].is_member_target) {
                         if (binds[di].is_private_target) {
+                            // Use member_obj_reg (the persistent, pre-scan-
+                            // allocated copy of `this`), NOT private_brand_obj_reg
+                            // (the original parse-time temp register): a getter
+                            // invoked while reading the source property writes
+                            // its `this` argument at [result_reg + 1] (see
+                            // invoke_getter), which can land exactly on a
+                            // temp register captured before the persistent
+                            // copy was made, corrupting it before this read.
                             self.emit_abc(Opcode.CHK_BRAND,
-                                (uint)binds[di].private_brand_obj_reg,
+                                (uint)binds[di].member_obj_reg,
                                 (uint)binds[di].private_brand_reg,
                                 binds[di].private_brand_name_c);
                             self.free_reg(binds[di].private_brand_reg);
