@@ -533,6 +533,7 @@ fn void builtin_eval(BuiltinContext* ctx) {
     void* parent_priv_names = null;
     uint parent_priv_count = 0;
     bool caller_super_is_home_object = false;
+    bool caller_forbids_arguments = false;
     if (precheck_act_count > 0) {
         precheck_caller = &precheck_vm.activations[precheck_act_count - 1];
         caller_has_direct_eval = (precheck_caller.flags & vm::ACT_FLAG_DIRECT_EVAL) != 0;
@@ -577,6 +578,13 @@ fn void builtin_eval(BuiltinContext* ctx) {
                 caller_super_is_home_object = caller_cf.super_is_home_object();
                 parent_priv_names = caller_cf.eval_private_names;
                 parent_priv_count = caller_cf.eval_private_name_count;
+                // ContainsArguments (ES2022 §15.7.10 step 14): a direct eval
+                // called from a class field/static initializer or static
+                // block — or from another eval body that itself inherited
+                // the restriction (forbid_arguments is stamped on every
+                // compiled body, including nested eval CFs) — must reject a
+                // bare `arguments` in its own source at eval-call time.
+                caller_forbids_arguments = caller_cf.forbid_arguments();
             }
         }
     }
@@ -590,7 +598,8 @@ fn void builtin_eval(BuiltinContext* ctx) {
                                                     parent_priv_names, parent_priv_count,
                                                     caller_has_direct_eval,
                                                     caller_super_is_home_object,
-                                                    caller_allows_super_call);
+                                                    caller_allows_super_call,
+                                                    caller_forbids_arguments);
     CompiledFunction* func;
     if (try f = cf) {
         func = f;

@@ -3565,6 +3565,11 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
     arrow_ctx.adopt_private_names(self);
     arrow_ctx.private_scope_start = self.private_scope_start;
     arrow_ctx.private_scope_depth = self.private_scope_depth;
+    // Arrows have no `arguments` binding of their own — an `arguments`
+    // reference inside an arrow body resolves the ENCLOSING function's
+    // binding, so the enclosing body's ContainsArguments restriction
+    // (class field/static initializer, static block) applies here too.
+    arrow_ctx.forbid_arguments = self.forbid_arguments;
 
     // Propagate eval context flags (for new.target checks in eval context).
     // Arrow functions must respect the parent eval context's restrictions
@@ -4029,6 +4034,11 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner(&self, char[]* params,
     arrow_ctx.adopt_private_names(self);
     arrow_ctx.private_scope_start = self.private_scope_start;
     arrow_ctx.private_scope_depth = self.private_scope_depth;
+    // Arrows have no `arguments` binding of their own — an `arguments`
+    // reference inside an arrow body resolves the ENCLOSING function's
+    // binding, so the enclosing body's ContainsArguments restriction
+    // (class field/static initializer, static block) applies here too.
+    arrow_ctx.forbid_arguments = self.forbid_arguments;
 
     // Propagate eval context flags (for new.target checks in eval context).
     // Arrow functions must respect the parent eval context's restrictions

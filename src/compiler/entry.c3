@@ -143,7 +143,8 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
                                     uint  parent_private_name_count = 0,
                                     bool  is_direct_eval = false,
                                     bool  parent_super_is_home_object = false,
-                                    bool  allow_super_call = false) {
+                                    bool  allow_super_call = false,
+                                    bool  caller_forbids_arguments = false) {
     g_last_err_msg[0] = 0;
     g_last_err_line = 0;
     g_last_err_col  = 0;
@@ -162,6 +163,12 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
     // SyntaxError even though the runtime env carries __super__ and new.target.
     ctx.is_constructable = allow_super_call;
     ctx.eval_direct_in_function = direct_in_function;
+    // Inherit the caller's ContainsArguments restriction (ES2022 §15.7.10
+    // step 14 / §PerformEval): a direct eval called from inside a class
+    // field/static initializer or static block must reject a bare
+    // `arguments` reference in the eval SOURCE at eval-call time, not just
+    // in the enclosing initializer's own text.
+    ctx.forbid_arguments = is_direct_eval && caller_forbids_arguments;
     ctx.eval_acc_reg = ctx.alloc_reg();
 
     // Adopt caller's private-name snapshot (ES2022 §8.7.1). When the caller

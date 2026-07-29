@@ -293,25 +293,6 @@ SKIP_FILES = {
     # return-override plumbing in vm_calls.c3 / vm_execute.c3.
     "language/statements/class/elements/privatefieldset-evaluation-order-3.js",
     "language/comments/hashbang/use-strict.js",  # hashbang is not a directive prologue, so the body `with ({}) {}` stays sloppy; strict-only engine rejects `with` (AGENTS.md)
-    # P7 — class field initializers + eval/arguments interaction. The spec
-    # requires ContainsArguments static analysis on direct eval body inside
-    # a field initializer (§15.7.10 step 14 + §PerformEval); the
-    # `eval('arguments;')` and arrow-body variants throw SyntaxError at eval
-    # time. Our `forbid_arguments` flag rejects `arguments` at parse time,
-    # so the throws never reach eval. Implementing ContainsArguments is a
-    # sizeable static-analysis feature; skip the cluster for now.
-    "language/statements/class/elements/nested-direct-eval-err-contains-arguments.js",
-    "language/statements/class/elements/arrow-body-direct-eval-err-contains-arguments.js",
-    "language/statements/class/elements/nested-private-direct-eval-err-contains-arguments.js",
-    "language/statements/class/elements/arrow-body-private-direct-eval-err-contains-arguments.js",
-    "language/statements/class/elements/private-direct-eval-err-contains-arguments.js",
-    "language/statements/class/elements/direct-eval-err-contains-arguments.js",
-    "language/expressions/class/elements/nested-direct-eval-err-contains-arguments.js",
-    "language/expressions/class/elements/arrow-body-direct-eval-err-contains-arguments.js",
-    "language/expressions/class/elements/nested-private-direct-eval-err-contains-arguments.js",
-    "language/expressions/class/elements/arrow-body-private-direct-eval-err-contains-arguments.js",
-    "language/expressions/class/elements/private-direct-eval-err-contains-arguments.js",
-    "language/expressions/class/elements/direct-eval-err-contains-arguments.js",
     # P7 — class-name-static-initializer-default-export.js and friends require
     # module-mode execution (`flags: [module]`). The runner doesn't currently
     # support `import`/`export`, so the test parses successfully but runs as

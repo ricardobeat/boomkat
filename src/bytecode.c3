@@ -1258,6 +1258,12 @@ bitstruct FuncFlags : uint {
     /// inner eval's caller CF reports is_global_fn()==true (all eval CFs set
     /// is_global) and would spuriously reject `new.target`.
     bool  eval_allows_new_target : 29;
+    /// Function body forbids a bare `arguments` reference (class field/static
+    /// initializer or static block, ES2022 §15.7.10/§15.7.11). A direct eval
+    /// called from within such a body inherits this restriction onto the
+    /// eval's own compiled body (ES2022 §15.7.10 step 14 ContainsArguments /
+    /// §PerformEval) — see compile_eval's `caller_forbids_arguments` param.
+    bool  forbid_arguments      : 30;
 }
 
 /// A compiled function template — the immutable bytecode representation of
@@ -1552,6 +1558,13 @@ macro bool CompiledFunction.has_rest(&self) {
 /// lexical environment at call time (ES2015 §14.1.20 NamedEvaluation).
 macro bool CompiledFunction.is_namebinding(&self) {
     return self.flags.is_namebinding;
+}
+
+/// Returns `true` when the function body forbids a bare `arguments`
+/// reference (class field/static initializer, static block). Used to
+/// propagate the restriction onto a direct eval called from within.
+macro bool CompiledFunction.forbid_arguments(&self) {
+    return self.flags.forbid_arguments;
 }
 
 // ============================================================================

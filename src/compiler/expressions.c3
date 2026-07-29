@@ -3021,7 +3021,8 @@ fn ushort? CompilerContext.primary_expr(&self) {
 
                 // When 'arguments' is referenced inside a non-arrow function body,
                 // set the uses_arguments flag so the VM creates the arguments object.
-                if (str_eq(id_tok.str_value, "arguments") && !self.is_global) {
+                if (str_eq(id_tok.str_value, "arguments")
+                        && (!self.is_global || self.forbid_arguments)) {
                     if (self.forbid_arguments) {
                         return self.fail("'arguments' is not allowed in class field initializer")~;
                     }
@@ -3365,7 +3366,8 @@ fn ushort? CompilerContext.primary_expr(&self) {
                         return var_reg;
                     }
                 }
-                if (str_eq(id_tok.str_value, "arguments") && !self.is_global) {
+                if (str_eq(id_tok.str_value, "arguments")
+                        && (!self.is_global || self.forbid_arguments)) {
                     if (self.forbid_arguments) {
                         return self.fail("'arguments' is not allowed in class field initializer")~;
                     }
@@ -3504,7 +3506,8 @@ fn ushort? CompilerContext.primary_expr(&self) {
                         return var_reg;
                     }
                 }
-                if (str_eq(id_tok.str_value, "arguments") && !self.is_global) {
+                if (str_eq(id_tok.str_value, "arguments")
+                        && (!self.is_global || self.forbid_arguments)) {
                     if (self.forbid_arguments) {
                         return self.fail("'arguments' is not allowed in class field initializer")~;
                     }
