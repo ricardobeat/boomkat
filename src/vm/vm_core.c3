@@ -116,7 +116,7 @@ fn bool invoke_getter(Vm* vm, hobject::AccessorResult* acc,
             }
             regs_base = act.bottom;
         } else {
-            vm.heap.tval_copy_ref(&regs_base[result_reg], ctx.result);
+            vm.heap.store_builtin_result(&regs_base[result_reg], ctx.result);
         }
         return false;
     }

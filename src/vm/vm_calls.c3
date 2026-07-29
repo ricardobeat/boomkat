@@ -570,7 +570,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                     nargs = ctx.re_nargs;
                     // Fall through to OBJECT handling
                 } else {
-                    vm.heap.tval_copy_ref(ds.regs_base + result_reg, &lf_result);
+                    vm.heap.store_builtin_result(ds.regs_base + result_reg, &lf_result);
                     track_heap_store(ds.act, ds.regs_base + result_reg, result_reg);
                     return (TVal){};
                 }
@@ -675,7 +675,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                                 }
                                 return (TVal){};
                             }
-                            vm.heap.tval_copy_ref(ds.regs_base + result_reg, &inner_result);
+                            vm.heap.store_builtin_result(ds.regs_base + result_reg, &inner_result);
                             track_heap_store(ds.act, ds.regs_base + result_reg, result_reg);
                             return (TVal){};
                         }
@@ -707,7 +707,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                                     }
                                     return (TVal){};
                                 }
-                                vm.heap.tval_copy_ref(ds.regs_base + result_reg, &bound_inner_result);
+                                vm.heap.store_builtin_result(ds.regs_base + result_reg, &bound_inner_result);
                                 track_heap_store(ds.act, ds.regs_base + result_reg, result_reg);
                                 return (TVal){};
                             }
@@ -716,7 +716,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                             return (TVal){};
                         }
                     } else {
-                        vm.heap.tval_copy_ref(ds.regs_base + result_reg, &bound_result);
+                        vm.heap.store_builtin_result(ds.regs_base + result_reg, &bound_result);
                         track_heap_store(ds.act, ds.regs_base + result_reg, result_reg);
                         return (TVal){};
                     }
@@ -757,7 +757,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                     }
 
                     if (!ctx.needs_re_dispatch) {
-                        vm.heap.tval_copy_ref(ds.regs_base + result_reg, &builtin_result);
+                        vm.heap.store_builtin_result(ds.regs_base + result_reg, &builtin_result);
                         track_heap_store(ds.act, ds.regs_base + result_reg, result_reg);
                     }
 
@@ -798,7 +798,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                                 }
                                 return (TVal){};
                             }
-                            vm.heap.tval_copy_ref(ds.regs_base + result_reg, &inner_result);
+                            vm.heap.store_builtin_result(ds.regs_base + result_reg, &inner_result);
                             track_heap_store(ds.act, ds.regs_base + result_reg, result_reg);
                             return (TVal){};
                         }
@@ -830,7 +830,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                                     }
                                     return (TVal){};
                                 }
-                                vm.heap.tval_copy_ref(ds.regs_base + result_reg, &bfn_inner_result);
+                                vm.heap.store_builtin_result(ds.regs_base + result_reg, &bfn_inner_result);
                                 track_heap_store(ds.act, ds.regs_base + result_reg, result_reg);
                                 return (TVal){};
                             }
@@ -2219,7 +2219,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                                 }
                                 return (TVal){};
                             }
-                            vm.heap.tval_copy_ref(ds.regs_base + result_reg, &rd_result);
+                            vm.heap.store_builtin_result(ds.regs_base + result_reg, &rd_result);
                             track_heap_store(ds.act, ds.regs_base + result_reg, result_reg);
                             return (TVal){};
                         }
@@ -2279,7 +2279,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                         }
                         return (TVal){};
                     }
-                    vm.heap.tval_copy_ref(ds.regs_base + result_reg, &ctor_result);
+                    vm.heap.store_builtin_result(ds.regs_base + result_reg, &ctor_result);
                     return (TVal){};
                 }
                 // Object claims to be callable but has no compiled function

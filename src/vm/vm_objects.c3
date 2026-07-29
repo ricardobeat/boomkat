@@ -58,6 +58,10 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
     Vm* vm = ds.vm;
     switch (op) {
         case Opcode.NEWOBJ: {
+            // Release whatever ra held before overwriting it — an object
+            // literal inside a loop body reuses the same destination
+            // register on each iteration.
+            vm.heap.decref_tval(ra);
             HObject*? new_obj = vm.heap.alloc_object(hobject::ObjClass.OBJECT);
             if (try o = new_obj) {
                 o.prototype = vm.heap.object_proto;
@@ -70,6 +74,10 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
         }
 
         case Opcode.NEWARR: {
+            // Release whatever ra held before overwriting it — an array
+            // literal inside a loop body reuses the same destination
+            // register on each iteration.
+            vm.heap.decref_tval(ra);
             HObject*? new_arr = vm.heap.alloc_object(hobject::ObjClass.ARRAY);
             if (try a = new_arr) {
                 a.prototype = vm.heap.array_proto;
@@ -85,6 +93,10 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
 
         case Opcode.NEWREGEXP: {
             // A = dest register, BC = constant pool index of "/pattern/flags" string
+            // Release whatever ra held before every exit path below overwrites
+            // it — a literal recompiled inside a loop body reuses the same
+            // destination register on each iteration.
+            vm.heap.decref_tval(ra);
             uint bc = insn.get_bc();
             if (bc < vm.current_func.const_count) {
                 TVal raw_tv = ds.constants[bc];

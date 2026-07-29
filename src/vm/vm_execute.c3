@@ -1779,6 +1779,7 @@ fn TVal? Vm.run(Vm* vm) {
                             if (heap_allocated) vm.heap.free_func(vm.heap.heap_udata, buf);
                             if (try s = maybe_s) {
                                 vm.heap.set_reg_string(ra, s);
+                                track_heap_store(ds.act, ra, (uint)insn.a);
                             } else {
                                 ra.set_undefined();
                             }
@@ -1786,6 +1787,7 @@ fn TVal? Vm.run(Vm* vm) {
                             HString* interned = intern_string(vm, buf[:total]);
                             if (heap_allocated) vm.heap.free_func(vm.heap.heap_udata, buf);
                             vm.heap.set_reg_string(ra, interned);
+                            track_heap_store(ds.act, ra, (uint)insn.a);
                         }
                         continue;
                     }
@@ -1848,6 +1850,7 @@ fn TVal? Vm.run(Vm* vm) {
                         if (heap_allocated) vm.heap.free_func(vm.heap.heap_udata, buf);
                         if (try s = maybe_s) {
                             vm.heap.set_reg_string(ra, s);
+                            track_heap_store(ds.act, ra, (uint)insn.a);
                         } else {
                             ra.set_undefined();
                         }
@@ -1855,6 +1858,7 @@ fn TVal? Vm.run(Vm* vm) {
                         HString* interned = intern_string(vm, buf[:total]);
                         if (heap_allocated) vm.heap.free_func(vm.heap.heap_udata, buf);
                         vm.heap.set_reg_string(ra, interned);
+                        track_heap_store(ds.act, ra, (uint)insn.a);
                     }
                 } else {
                     ra.set_undefined();
@@ -2950,6 +2954,9 @@ fn TVal? Vm.run(Vm* vm) {
                     if (ic_owner != null && ic.cached_prop_alloc == (void*)ic_owner.prop_values()) {
                         TVal ic_val = *ic.prop_value_ptr;
                         if (!ic_val.is_heap_allocated()) {
+                            // Register may still hold a heap ref from an earlier write —
+                            // release it before the raw (non-increffing) overwrite.
+                            vm.heap.decref_tval(ra);
                             *ra = ic_val;
                         } else {
                             vm.heap.tval_copy_ref(ra, &ic_val);
@@ -3227,6 +3234,19 @@ fn TVal? Vm.run(Vm* vm) {
                     } else {
                         vm.heap.tval_copy_ref(callee_result, &val);
                     }
+                }
+                // callee_result points into the CALLER's register file (set up
+                // as act.bottom + result_reg when the CALL/NEW/construct opcode
+                // ran) — record the store against the caller's activation so
+                // decref_callee_regs releases it when the caller itself returns.
+                // Without this, a heap-ref return value landing in a register
+                // above the caller's previous max_heap_reg high-water mark is
+                // never decref'd: harmless for objects (GC backstop) and
+                // interned strings (string-table retention), but a permanent
+                // leak for a large, non-interned string return value.
+                if (callee_result.is_heap_allocated()) {
+                    track_heap_store(callee_act.parent, callee_result,
+                        (uint)(callee_result - callee_act.parent.bottom));
                 }
             }
             if (val_pinned) vm.heap.decref_tval(&val);
@@ -4113,6 +4133,10 @@ fn TVal? Vm.run(Vm* vm) {
                                     void* ptr = ra.get_heapptr();
                                     if (ptr != null) ((types::HeapHeader*)ptr).incref();
                                 }
+                                // Release ra's ref — the binding now owns the
+                                // reference (mirrors the slow path below).
+                                vm.heap.decref_tval(ra);
+                                ra.set_undefined();
                                 break;
                             }
                             vic.env = null;
@@ -4127,6 +4151,9 @@ fn TVal? Vm.run(Vm* vm) {
                     env::env_declare_var(ds.act.var_env, key, *ra,
                         ds.act.var_env == vm.global_env,
                         ((CompiledFunction*)ds.act.func).is_eval_fn());
+                    // Release ra's ref — see PUTVAR below for the same pattern.
+                    vm.heap.decref_tval(ra);
+                    ra.set_undefined();
 
                     // Populate VarIC for next time
                     if (ds.var_ic_base != null) {
@@ -4163,6 +4190,14 @@ fn TVal? Vm.run(Vm* vm) {
                     $endif
 
                     env::env_declare_lex(ds.act.lex_env, key, *ra);
+                    // Release ra's ref — the binding now owns the reference
+                    // (put_prop/env_declare_lex increfs its own copy). Without
+                    // this, ra holds a stale, un-decref'd claim that survives
+                    // until the register is next written — a permanent leak
+                    // if that value is a large, non-interned string with no
+                    // other owner.
+                    vm.heap.decref_tval(ra);
+                    ra.set_undefined();
                 }
             }
             continue;
@@ -4180,6 +4215,9 @@ fn TVal? Vm.run(Vm* vm) {
                     $endif
 
                     ds.act.lex_env.bindings.put_prop(key, *ra, hobject::PROP_FLAGS_EC);
+                    // Release ra's ref — see PUTLEX above.
+                    vm.heap.decref_tval(ra);
+                    ra.set_undefined();
                 }
             }
             continue;

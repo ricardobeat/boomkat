@@ -13,6 +13,7 @@ import std::core::mem::allocators;
 // Heap management — allocator, GC bookkeeping, string table
 // ============================================================================
 
+
 // --- Allocator callback signatures ----------------------------------------
 
 alias AllocFunc   = fn void*(void* udata, usz size);
@@ -860,6 +861,8 @@ fn hobject::Shape* Heap.get_shape(&self, ushort shape_id) {
  * the heap struct itself.
  */
 fn void Heap.destroy(&self) {
+    self.decref_live_strings_before_teardown();
+
     // Deactivate the active heap so hobject_free skips its RC decref loop —
     // teardown frees everything directly, mixing decref with str_table
     // backshift-delete corrupts the table for the subsequent str_table sweep.
@@ -991,31 +994,39 @@ fn void Heap.destroy(&self) {
  * the previous test run retained — avoiding the create/destroy churn that
  * causes allocator fragmentation and RSS bloat.
  */
-fn void Heap.reset(&self) {
-    // Decref all string TVals held by live objects BEFORE entering teardown mode.
-    // This frees non-interned strings (not in str_table, not in heap_allocated)
-    // that were referenced only by object properties — e.g. a global variable
-    // holding a large string built with String.fromCodePoint.  Without this pass,
-    // non-interned strings leak across heap.reset() calls in the batch runner.
-    {
-        HeapHeader* cur = self.heap_allocated;
-        while (cur != null) {
-            if (cur.is_object()) {
-                hobject::HObject* obj = (hobject::HObject*)cur;
-                hobject::PropValue* pvs = obj.prop_values();
-                for (uint i = 0; i < obj.prop_count; i++) {
-                    if (pvs[i].is_string() || pvs[i].is_bigint()) { self.decref_tval(&pvs[i]); }
-                }
-                types::TVal* arr = obj.array_part();
-                if (arr != null) {
-                    uint used = obj.array_used;
-                    for (uint i = 0; i < used; i++) {
-                        if (arr[i].is_string() || arr[i].is_bigint()) { self.decref_tval(&arr[i]); }
-                    }
+/**
+ * Decref all string/BigInt TVals reachable from live objects (property
+ * values, array elements) and the valstack, BEFORE entering teardown mode.
+ *
+ * Non-interned strings (not in str_table, not linked on heap_allocated —
+ * strings are pure refcounted leaves, never GC-traced nodes) have no other
+ * path back to zero once teardown starts force-freeing objects directly:
+ * hobject_free's normal RC decref of property values is gated on
+ * hobject::_active_heap, which teardown clears first specifically so that
+ * freeing one object can't cascade into decref-driven frees of others while
+ * the heap_allocated list is being unlinked/walked. Without this pass, a
+ * global (or any object/array) holding a large string built with e.g.
+ * String.fromCodePoint or `+=` concatenation leaks it across every
+ * Heap.reset()/Heap.destroy() call.
+ */
+fn void Heap.decref_live_strings_before_teardown(&self) {
+    HeapHeader* cur = self.heap_allocated;
+    while (cur != null) {
+        if (cur.is_object()) {
+            hobject::HObject* obj = (hobject::HObject*)cur;
+            hobject::PropValue* pvs = obj.prop_values();
+            for (uint i = 0; i < obj.prop_count; i++) {
+                if (pvs[i].is_string() || pvs[i].is_bigint()) { self.decref_tval(&pvs[i]); }
+            }
+            types::TVal* arr = obj.array_part();
+            if (arr != null) {
+                uint used = obj.array_used;
+                for (uint i = 0; i < used; i++) {
+                    if (arr[i].is_string() || arr[i].is_bigint()) { self.decref_tval(&arr[i]); }
                 }
             }
-            cur = cur.next;
         }
+        cur = cur.next;
     }
     // Also decref strings still on the valstack (from an aborted/thrown test).
     if (self.valstack_base != null && self.valstack_top_ptr != null) {
@@ -1026,6 +1037,10 @@ fn void Heap.reset(&self) {
             base++;
         }
     }
+}
+
+fn void Heap.reset(&self) {
+    self.decref_live_strings_before_teardown();
 
     // Deactivate the active heap so hobject_free skips the RC decref loop —
     // same teardown-mode guard as in destroy().
@@ -1524,6 +1539,44 @@ fn void Heap.tval_copy_ref(&self, TVal* dst, TVal* src) @inline {
         }
         self.decref_tval(dst);
         *dst = *src;
+    }
+}
+
+/// Move a builtin's result (held in a transient local TVal, e.g. `ctx.result`'s
+/// backing slot) into a VM register.
+///
+/// Builtins populate their result via increffing setters (`set_string`,
+/// `set_object`, ...) regardless of whether the underlying value is brand new
+/// (refcount 0 before the setter ran) or an existing, already-owned value
+/// being passed through (refcount >= 1 before the setter ran). `tval_copy_ref`
+/// establishes the register's own reference correctly in both cases, but the
+/// transient local's own claim from the builtin's setter is never released —
+/// harmless for objects (GC mark-sweep reclaims them) and small strings (kept
+/// alive by the string table regardless of refcount), but a permanent leak for
+/// large, non-interned strings, which have no such backstop.
+///
+/// If the transient's value has refcount == 1 right after the builtin ran,
+/// that reference can only be the setter's own — nothing else has had a
+/// chance to add a reference to a value the builtin just created. In that
+/// case the transient's claim is released here once the register has taken
+/// over ownership. If refcount > 1, the value already had another owner
+/// before the builtin ran (e.g. unwrapping a boxed String's stored primitive)
+/// and the transient's extra reference is left alone, matching current
+/// (correct) behaviour.
+fn void Heap.store_builtin_result(&self, TVal* dst, TVal* transient) @inline {
+    bool transient_is_sole_owner = false;
+    if (transient.is_heap_allocated()) {
+        void* ptr = transient.get_heapptr();
+        // Excluding an aliased dst/transient (same underlying object already
+        // sitting in the destination register) keeps the sole-owner check
+        // from firing on a reference dst itself already accounts for.
+        if (ptr != null && ptr != dst.get_heapptr() && ((HeapHeader*)ptr).refcount == 1) {
+            transient_is_sole_owner = true;
+        }
+    }
+    self.tval_copy_ref(dst, transient);
+    if (transient_is_sole_owner) {
+        self.decref((HeapHeader*)transient.get_heapptr());
     }
 }
 

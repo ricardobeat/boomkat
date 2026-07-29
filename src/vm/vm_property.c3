@@ -98,9 +98,12 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         if (ic.cached_prop_alloc == (void*)ic_owner.prop_values()) {
                             // Ultra-fast path: when the IC value is not a heap
                             // pointer (common for fastint/number results), skip
-                            // decref/incref/track_heap_store entirely.
+                            // incref/track_heap_store for the new value — but ra
+                            // itself may still hold a heap ref from an earlier
+                            // write, so its old value must still be released.
                             TVal ic_val = *ic.prop_value_ptr;
                             if (!ic_val.is_heap_allocated()) {
+                                vm.heap.decref_tval(ra);
                                 *ra = ic_val;
                             } else {
                                 vm.heap.tval_copy_ref(ra, &ic_val);
@@ -282,6 +285,9 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     if (mega != null) {
                         TVal mega_val = *mega.prop_value_ptr;
                         if (!mega_val.is_heap_allocated()) {
+                            // Register may still hold a heap ref from an earlier write —
+                            // release it before the raw (non-increffing) overwrite.
+                            vm.heap.decref_tval(ra);
                             *ra = mega_val;
                         } else {
                             vm.heap.tval_copy_ref(ra, &mega_val);
@@ -621,6 +627,9 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             if (ic_owner != null && ic.cached_prop_alloc == (void*)ic_owner.prop_values()) {
                                 TVal ic_val = *ic.prop_value_ptr;
                                 if (!ic_val.is_heap_allocated()) {
+                                    // Register may still hold a heap ref from an earlier write —
+                                    // release it before the raw (non-increffing) overwrite.
+                                    vm.heap.decref_tval(ra);
                                     *ra = ic_val;
                                 } else {
                                     vm.heap.tval_copy_ref(ra, &ic_val);
@@ -713,6 +722,9 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         if (mega != null) {
                             TVal mega_val = *mega.prop_value_ptr;
                             if (!mega_val.is_heap_allocated()) {
+                                // Register may still hold a heap ref from an earlier write —
+                                // release it before the raw (non-increffing) overwrite.
+                                vm.heap.decref_tval(ra);
                                 *ra = mega_val;
                             } else {
                                 vm.heap.tval_copy_ref(ra, &mega_val);
@@ -971,6 +983,9 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     if (ic_owner != null && ic.cached_prop_alloc == (void*)ic_owner.prop_values()) {
                         TVal ic_val = *ic.prop_value_ptr;
                         if (!ic_val.is_heap_allocated()) {
+                            // Register may still hold a heap ref from an earlier write —
+                            // release it before the raw (non-increffing) overwrite.
+                            vm.heap.decref_tval(ra);
                             *ra = ic_val;
                         } else {
                             vm.heap.tval_copy_ref(ra, &ic_val);
@@ -1133,6 +1148,9 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             if (owner2 != null && ic2.cached_prop_alloc == (void*)owner2.prop_values()) {
                                 TVal ic2_val = *ic2.prop_value_ptr;
                                 if (!ic2_val.is_heap_allocated()) {
+                                    // Register may still hold a heap ref from an earlier write —
+                                    // release it before the raw (non-increffing) overwrite.
+                                    vm.heap.decref_tval(ra2);
                                     *ra2 = ic2_val;
                                 } else {
                                     vm.heap.tval_copy_ref(ra2, &ic2_val);
@@ -1572,6 +1590,9 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             if (owner2 != null && ic2.cached_prop_alloc == (void*)owner2.prop_values()) {
                                 TVal ic2_val = *ic2.prop_value_ptr;
                                 if (!ic2_val.is_heap_allocated()) {
+                                    // Register may still hold a heap ref from an earlier write —
+                                    // release it before the raw (non-increffing) overwrite.
+                                    vm.heap.decref_tval(ra2);
                                     *ra2 = ic2_val;
                                 } else {
                                     vm.heap.tval_copy_ref(ra2, &ic2_val);
