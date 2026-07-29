@@ -2097,8 +2097,12 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     // without needing to touch the value at all here, matching
                     // the "assignment is a no-op" spec outcome.
                     if (is_int_idx && idx_long >= 0) {
-                        char[8] scratch;
-                        builtins::ta_write_element((char*)&scratch, ta_cls, &converted, &conv_ctx);
+                        // Coerce the value to its element scalar ONCE. This may run
+                        // user code (valueOf/toString/toPrimitive) that resizes and
+                        // reallocates the backing buffer, so bounds and the data
+                        // pointer must be (re-)derived AFTER coercion, and the store
+                        // itself must use ta_store_scalar (which never re-enters).
+                        builtins::TAScalar sc = builtins::ta_coerce_element(ta_cls, &converted, &conv_ctx);
                         if (conv_ctx.should_throw) {
                             if (!vm_throw_value(vm, conv_ctx.throw_value, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                                 return vm_uncaught_error(vm, &conv_ctx.throw_value);
@@ -2115,7 +2119,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             && (ulong)idx_long < (ulong)elem_count) {
                             char* base = (*buf.extra_ptr()).ab.data + (*hobj.extra_ptr()).view.byte_offset;
                             char* p = base + (idx_long << shift);
-                            builtins::ta_write_element(p, ta_cls, &converted, &conv_ctx);
+                            builtins::ta_store_scalar(p, ta_cls, &sc);
                         }
                         // OOB/detached after conversion — spec: silently succeed.
                     }
@@ -2167,8 +2171,10 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             TVal conv_scratch; conv_scratch.set_undefined();
                             conv_ctx.result = &conv_scratch;
                             TVal converted = *rc;
-                            char[8] scratch;
-                            builtins::ta_write_element((char*)&scratch, ta_cls, &converted, &conv_ctx);
+                            // Coerce once, then re-derive bounds/pointer and store a
+                            // scalar — coercion may resize/realloc the buffer (see the
+                            // numeric-key site above).
+                            builtins::TAScalar sc = builtins::ta_coerce_element(ta_cls, &converted, &conv_ctx);
                             if (conv_ctx.should_throw) {
                                 if (!vm_throw_value(vm, conv_ctx.throw_value, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                                     return vm_uncaught_error(vm, &conv_ctx.throw_value);
@@ -2185,7 +2191,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                 && (ulong)idx < (ulong)elem_count) {
                                 char* base = (*buf.extra_ptr()).ab.data + (*hobj.extra_ptr()).view.byte_offset;
                                 char* p = base + ((ulong)idx << shift);
-                                builtins::ta_write_element(p, ta_cls, &converted, &conv_ctx);
+                                builtins::ta_store_scalar(p, ta_cls, &sc);
                             }
                             // OOB/detached after conversion: spec says silently succeed.
                             return (TVal){};
