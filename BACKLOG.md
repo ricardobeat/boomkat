@@ -5,6 +5,7 @@
 ## Status
 
 18 of 19 test262 phases at 0 failures; phase 25 (ESM) at 399 pass / 9 fail.
+Phase 15 (Classes) 5964 -> 7107 pass after un-skipping 1138 tests.
 
 ## test262
 
@@ -44,6 +45,8 @@
 
 ## Known bugs
 
+- [ ] `eval('arguments.length')` inside an ordinary function throws ReferenceError
+
 - [ ] `heap.int_to_hstring` small-int cache increfs without a matching decref
 - [ ] Destructuring-assignment to a member target drops `await` in the RHS
 - [ ] Re-measure `RET` this_binding-clear cost on an idle machine
@@ -78,10 +81,10 @@
 ## Class semantics (behind the skip-list)
 
 - [ ] Private-field return-override
-- [ ] Brand propagation across Base→Derived when the superclass returns an object
-- [ ] `ContainsArguments` static analysis for direct eval in a field initializer
-- [ ] Same-line class-body parsing
-- [ ] Forward references to private names from computed property keys
+- [x] Private-field destructuring targets clobbered by getter calls — `c9b834ac` (the documented Base→Derived brand diagnosis was wrong; brand propagation is correct)
+- [x] `ContainsArguments` for direct eval in a field initializer — `bc64d706`
+- [x] Same-line class-body parsing — already worked; stale skip glob removed (`1e8ba3bc`, `44f35daa`)
+- [x] Private names visible from computed property keys — `10a0a74b`
 - [x] Public field install routes through `[[DefineOwnProperty]]` — `e5fd5da2`
 
 ## Engine design review
