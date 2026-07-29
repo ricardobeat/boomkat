@@ -368,16 +368,7 @@ fn ulong flatten_into(HObject* downstream, HObject* source, ulong source_len, ul
 fn void builtin_array_proto_flat(BuiltinContext* ctx) {
     HObject* obj = array_proto_get_this(ctx);
     if (obj == null) {
-        HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
-        if (try err = err_raw) {
-            err.prototype = ctx.heap.type_err_proto;
-            HString* msg = builtin_intern_string(ctx.heap, "Array.prototype.flat requires 'this' to be an object");
-            TVal msg_tv; msg_tv.set_string(msg);
-            HString* msg_key = builtin_intern_string(ctx.heap, "message");
-            err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
-            ctx.should_throw = true;
-            ctx.throw_value.set_object(err);
-        }
+        arr_throw_type_error(ctx, "Array.prototype.flat requires 'this' to be an object");
         return;
     }
 
@@ -411,16 +402,7 @@ fn void builtin_array_proto_flat(BuiltinContext* ctx) {
 fn void builtin_array_proto_flatMap(BuiltinContext* ctx) {
     HObject* obj = array_proto_get_this(ctx);
     if (obj == null) {
-        HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
-        if (try err = err_raw) {
-            err.prototype = ctx.heap.type_err_proto;
-            HString* msg = builtin_intern_string(ctx.heap, "Array.prototype.flatMap requires 'this' to be an object");
-            TVal msg_tv; msg_tv.set_string(msg);
-            HString* msg_key = builtin_intern_string(ctx.heap, "message");
-            err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
-            ctx.should_throw = true;
-            ctx.throw_value.set_object(err);
-        }
+        arr_throw_type_error(ctx, "Array.prototype.flatMap requires 'this' to be an object");
         return;
     }
 
@@ -1620,22 +1602,7 @@ fn void builtin_array_proto_sort(BuiltinContext* ctx) {
         if (!arg0.is_undefined()) {
             if (!arg0.is_object() || arg0.get_heapptr() == null ||
                 !((HObject*)arg0.get_heapptr()).is_callable()) {
-                HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
-                if (try err = err_raw) {
-                    err.prototype = ctx.heap.type_err_proto;
-                    HString* msg_str = builtin_intern_string(ctx.heap,
-                        "Array.prototype.sort: comparefn is not a function or undefined");
-                    if (msg_str != null) {
-                        TVal msg_val;
-                        msg_val.set_string(msg_str);
-                        HString* msg_key = builtin_intern_string(ctx.heap, "message");
-                        err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WC);
-                    }
-                    TVal err_tv;
-                    err_tv.set_object(err);
-                    ctx.throw_value = err_tv;
-                }
-                ctx.should_throw = true;
+                arr_throw_type_error(ctx, "Array.prototype.sort: comparefn is not a function or undefined");
                 return;
             }
             comparefn = *arg0;
@@ -1933,16 +1900,7 @@ fn void builtin_array_proto_toReversed(BuiltinContext* ctx) {
     if (obj == null) {
         TVal this_val = ctx.regs[ctx.base_reg - 1];
         if (this_val.is_undefined() || this_val.is_null()) {
-            HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
-            if (try err = err_raw) {
-                err.prototype = ctx.heap.type_err_proto;
-                HString* msg = builtin_intern_string(ctx.heap, "Array.prototype.toReversed called on null or undefined");
-                TVal msg_tv; msg_tv.set_string(msg);
-                HString* msg_key = builtin_intern_string(ctx.heap, "message");
-                err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
-                ctx.should_throw = true;
-                ctx.throw_value.set_object(err);
-            }
+            arr_throw_type_error(ctx, "Array.prototype.toReversed called on null or undefined");
         }
         return;
     }
@@ -1992,16 +1950,7 @@ fn void builtin_array_proto_toSorted(BuiltinContext* ctx) {
     if (obj == null) {
         TVal this_val = ctx.regs[ctx.base_reg - 1];
         if (this_val.is_undefined() || this_val.is_null()) {
-            HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
-            if (try err = err_raw) {
-                err.prototype = ctx.heap.type_err_proto;
-                HString* msg = builtin_intern_string(ctx.heap, "Array.prototype.toSorted called on null or undefined");
-                TVal msg_tv; msg_tv.set_string(msg);
-                HString* msg_key = builtin_intern_string(ctx.heap, "message");
-                err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
-                ctx.should_throw = true;
-                ctx.throw_value.set_object(err);
-            }
+            arr_throw_type_error(ctx, "Array.prototype.toSorted called on null or undefined");
         }
         return;
     }
@@ -2153,16 +2102,7 @@ fn void builtin_array_proto_toSpliced(BuiltinContext* ctx) {
     if (this_val.is_object() && this_val.get_heapptr() != null) {
         obj = (HObject*)this_val.get_heapptr();
     } else if (this_val.is_null() || this_val.is_undefined()) {
-        HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
-        if (try err = err_raw) {
-            err.prototype = ctx.heap.type_err_proto;
-            HString* msg = builtin_intern_string(ctx.heap, "Array.prototype.toSpliced called on null or undefined");
-            TVal msg_tv; msg_tv.set_string(msg);
-            HString* msg_key = builtin_intern_string(ctx.heap, "message");
-            err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
-            ctx.should_throw = true;
-            ctx.throw_value.set_object(err);
-        }
+        arr_throw_type_error(ctx, "Array.prototype.toSpliced called on null or undefined");
         return;
     } else {
         // Primitive: ToObject wrapping (Boolean, Number, String)
@@ -2296,16 +2236,7 @@ fn void builtin_array_proto_with(BuiltinContext* ctx) {
     if (obj == null) {
         TVal this_val = ctx.regs[ctx.base_reg - 1];
         if (this_val.is_undefined() || this_val.is_null()) {
-            HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
-            if (try err = err_raw) {
-                err.prototype = ctx.heap.type_err_proto;
-                HString* msg = builtin_intern_string(ctx.heap, "Array.prototype.with called on null or undefined");
-                TVal msg_tv; msg_tv.set_string(msg);
-                HString* msg_key = builtin_intern_string(ctx.heap, "message");
-                err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
-                ctx.should_throw = true;
-                ctx.throw_value.set_object(err);
-            }
+            arr_throw_type_error(ctx, "Array.prototype.with called on null or undefined");
         }
         return;
     }
@@ -2342,16 +2273,7 @@ fn void builtin_array_proto_with(BuiltinContext* ctx) {
     }
 
     if (actual_index >= len) {
-        HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
-        if (try err = err_raw) {
-            err.prototype = ctx.heap.range_err_proto;
-            HString* msg = builtin_intern_string(ctx.heap, "Invalid array index");
-            TVal msg_tv; msg_tv.set_string(msg);
-            HString* msg_key = builtin_intern_string(ctx.heap, "message");
-            err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
-            ctx.should_throw = true;
-            ctx.throw_value.set_object(err);
-        }
+        arr_throw_range_error(ctx, "Invalid array index");
         return;
     }
 

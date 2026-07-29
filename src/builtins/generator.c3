@@ -175,17 +175,7 @@ fn void builtin_generator_proto_next(BuiltinContext* ctx) {
 
     if (gs.state == GEN_EXECUTING) {
         // ES6 §25.3.1.2: throw TypeError if .next() called while executing
-        HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
-        if (try err = err_raw) {
-            err.prototype = ctx.heap.type_err_proto;
-            HString* msg_str = builtin_intern_string(ctx.heap, "Generator is executing");
-            TVal msg_tv; msg_tv.set_string(msg_str);
-            err.put_prop(builtin_intern_string(ctx.heap, "message"), msg_tv, hobject::PROP_FLAGS_WC);
-            ctx.should_throw = true;
-            ctx.throw_value.set_object(err);
-        } else {
-            ctx.result.set_undefined();
-        }
+        builtin_throw(ctx, ctx.heap.type_err_proto, "Generator is executing");
         return;
     }
 
@@ -282,17 +272,7 @@ fn void builtin_generator_proto_throw(BuiltinContext* ctx) {
 
     if (gs.state == GEN_EXECUTING) {
         // ES6 §25.3.1.4: throw TypeError if .throw() called while executing
-        HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
-        if (try err = err_raw) {
-            err.prototype = ctx.heap.type_err_proto;
-            HString* msg_str = builtin_intern_string(ctx.heap, "Generator is executing");
-            TVal msg_tv; msg_tv.set_string(msg_str);
-            err.put_prop(builtin_intern_string(ctx.heap, "message"), msg_tv, hobject::PROP_FLAGS_WC);
-            ctx.should_throw = true;
-            ctx.throw_value.set_object(err);
-        } else {
-            ctx.result.set_undefined();
-        }
+        builtin_throw(ctx, ctx.heap.type_err_proto, "Generator is executing");
         return;
     }
 
@@ -383,17 +363,7 @@ fn void builtin_generator_proto_return(BuiltinContext* ctx) {
 
     if (gs.state == GEN_EXECUTING) {
         // ES6 §25.3.1.3: throw TypeError if .return() called while executing
-        HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
-        if (try err = err_raw) {
-            err.prototype = ctx.heap.type_err_proto;
-            HString* msg_str = builtin_intern_string(ctx.heap, "Generator is executing");
-            TVal msg_tv; msg_tv.set_string(msg_str);
-            err.put_prop(builtin_intern_string(ctx.heap, "message"), msg_tv, hobject::PROP_FLAGS_WC);
-            ctx.should_throw = true;
-            ctx.throw_value.set_object(err);
-        } else {
-            ctx.result.set_undefined();
-        }
+        builtin_throw(ctx, ctx.heap.type_err_proto, "Generator is executing");
         return;
     }
 

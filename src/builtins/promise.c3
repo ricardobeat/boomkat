@@ -860,21 +860,7 @@ fn void promise_add_reaction(HObject* promise, HObject* reaction, Heap* heap) {
 fn void builtin_promise(BuiltinContext* ctx) {
     // ES6 §25.4.3.1 step 1: If NewTarget is undefined, throw a TypeError exception.
     if (!ctx.is_constructor) {
-        HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
-        if (catch err_e = err_raw) {
-            ctx.result.set_undefined();
-            return;
-        }
-        HObject* err = err_raw;
-        err.prototype = ctx.heap.type_err_proto;
-        HString* msg_key = builtin_intern_string(ctx.heap, "message");
-        HString* msg_str = builtin_intern_string(ctx.heap, "Promise cannot be called without 'new'");
-        if (msg_key != null && msg_str != null) {
-            TVal msg_tv; msg_tv.set_string(msg_str);
-            err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
-        }
-        ctx.should_throw = true;
-        ctx.throw_value.set_object(err);
+        builtin_throw(ctx, ctx.heap.type_err_proto, "Promise cannot be called without 'new'");
         return;
     }
     HObject*? prom_raw = promise_create(ctx.heap);
@@ -903,21 +889,7 @@ fn void builtin_promise(BuiltinContext* ctx) {
         exec_callable = exec_func.is_callable();
     }
     if (!exec_callable) {
-        HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
-        if (catch err_e = err_raw) {
-            ctx.result.set_undefined();
-            return;
-        }
-        HObject* err = err_raw;
-        err.prototype = ctx.heap.type_err_proto;
-        HString* msg_key = builtin_intern_string(ctx.heap, "message");
-        HString* msg_str = builtin_intern_string(ctx.heap, "Promise resolver undefined is not a function");
-        if (msg_key != null && msg_str != null) {
-            TVal msg_tv; msg_tv.set_string(msg_str);
-            err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
-        }
-        ctx.should_throw = true;
-        ctx.throw_value.set_object(err);
+        builtin_throw(ctx, ctx.heap.type_err_proto, "Promise resolver undefined is not a function");
         return;
     }
 

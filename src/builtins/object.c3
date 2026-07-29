@@ -3025,20 +3025,9 @@ fn void builtin_object_defineProperties(BuiltinContext* ctx) {
             // ToPropertyDescriptor(desc_obj)
             if (!desc_obj_val.is_object()) {
                 // TypeError — property descriptor must be an object
-                HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
-                if (catch err2 = err_raw) { ctx.result.set_undefined(); return; }
-                HObject* err = err_raw;
-                err.prototype = ctx.heap.type_err_proto;
-                HString* msg_key = builtin_intern_string(ctx.heap, "message");
                 char[128] msg_buf;
                 int msg_len = (int)(io::bprintf(&msg_buf, "Property descriptor for '%s' must be an object", (String)p_key.get_data()) ?? msg_buf[:0]).len;
-                HString* msg_str = builtin_intern_string(ctx.heap, msg_buf[:msg_len]);
-                if (msg_key == null || msg_str == null) { ctx.result.set_undefined(); return; }
-                TVal msg_tv;
-                msg_tv.set_string(msg_str);
-                err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
-                ctx.should_throw = true;
-                ctx.throw_value.set_object(err);
+                builtin_throw(ctx, ctx.heap.type_err_proto, msg_buf[:msg_len]);
                 return;
             }
             HObject* desc_obj = (HObject*)desc_obj_val.get_heapptr();
@@ -3155,18 +3144,7 @@ fn void builtin_object_defineProperties(BuiltinContext* ctx) {
             }
             if (existing_idx < 0) {
                 if (!obj.flags.extensible) {
-                    HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
-                    if (catch err3 = err_raw) { ctx.result.set_undefined(); return; }
-                    HObject* err = err_raw;
-                    err.prototype = ctx.heap.type_err_proto;
-                    HString* msg_key = builtin_intern_string(ctx.heap, "message");
-                    HString* msg_str = builtin_intern_string(ctx.heap, "Cannot define property on a non-extensible object");
-                    if (msg_key == null || msg_str == null) { ctx.result.set_undefined(); return; }
-                    TVal msg_tv;
-                    msg_tv.set_string(msg_str);
-                    err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
-                    ctx.should_throw = true;
-                    ctx.throw_value.set_object(err);
+                    builtin_throw(ctx, ctx.heap.type_err_proto, "Cannot define property on a non-extensible object");
                     return;
                 }
                 if (is_accessor) {
@@ -3226,18 +3204,7 @@ fn void builtin_object_defineProperties(BuiltinContext* ctx) {
                     }
 
                     if (reject) {
-                        HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
-                        if (catch err4 = err_raw) { ctx.result.set_undefined(); return; }
-                        HObject* err = err_raw;
-                        err.prototype = ctx.heap.type_err_proto;
-                        HString* msg_key = builtin_intern_string(ctx.heap, "message");
-                        HString* msg_str = builtin_intern_string(ctx.heap, "Cannot redefine non-configurable property");
-                        if (msg_key == null || msg_str == null) { ctx.result.set_undefined(); return; }
-                        TVal msg_tv;
-                        msg_tv.set_string(msg_str);
-                        err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
-                        ctx.should_throw = true;
-                        ctx.throw_value.set_object(err);
+                        builtin_throw(ctx, ctx.heap.type_err_proto, "Cannot redefine non-configurable property");
                         return;
                     }
                 }
@@ -3280,18 +3247,7 @@ fn void builtin_object_defineProperties(BuiltinContext* ctx) {
                         // non-writable property (SameValue check).
                         if (!cur_flags.configurable && !cur_flags.writable) {
                             if (!same_value(*current, desc_vals[0])) {
-                                HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
-                                if (catch err5 = err_raw) { ctx.result.set_undefined(); return; }
-                                HObject* err = err_raw;
-                                err.prototype = ctx.heap.type_err_proto;
-                                HString* msg_key = builtin_intern_string(ctx.heap, "message");
-                                HString* msg_str = builtin_intern_string(ctx.heap, "Cannot change value of non-writable non-configurable property");
-                                if (msg_key == null || msg_str == null) { ctx.result.set_undefined(); return; }
-                                TVal msg_tv;
-                                msg_tv.set_string(msg_str);
-                                err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
-                                ctx.should_throw = true;
-                                ctx.throw_value.set_object(err);
+                                builtin_throw(ctx, ctx.heap.type_err_proto, "Cannot change value of non-writable non-configurable property");
                                 return;
                             }
                         }
@@ -3382,18 +3338,7 @@ fn bool has_configurable_in_desc_helper(Heap* heap, HObject* desc_obj) {
 fn void builtin_object_create(BuiltinContext* ctx) {
     // Step 1: Check prototype argument
     if (ctx.argc < 1) {
-        HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
-        if (catch err1 = err_raw) { ctx.result.set_undefined(); return; }
-        HObject* err = err_raw;
-        err.prototype = ctx.heap.type_err_proto;
-        HString* msg_key = builtin_intern_string(ctx.heap, "message");
-        HString* msg_str = builtin_intern_string(ctx.heap, "Object.create requires at least 1 argument");
-        if (msg_key == null || msg_str == null) { ctx.result.set_undefined(); return; }
-        TVal msg_tv;
-        msg_tv.set_string(msg_str);
-        err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
-        ctx.should_throw = true;
-        ctx.throw_value.set_object(err);
+        builtin_throw(ctx, ctx.heap.type_err_proto, "Object.create requires at least 1 argument");
         return;
     }
     TVal proto_val = ctx.regs[ctx.base_reg];
@@ -3404,18 +3349,7 @@ fn void builtin_object_create(BuiltinContext* ctx) {
     } else if (proto_val.is_object()) {
         // valid
     } else {
-        HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
-        if (catch err2 = err_raw) { ctx.result.set_undefined(); return; }
-        HObject* err = err_raw;
-        err.prototype = ctx.heap.type_err_proto;
-        HString* msg_key = builtin_intern_string(ctx.heap, "message");
-        HString* msg_str = builtin_intern_string(ctx.heap, "Object prototype may only be an Object or null");
-        if (msg_key == null || msg_str == null) { ctx.result.set_undefined(); return; }
-        TVal msg_tv;
-        msg_tv.set_string(msg_str);
-        err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
-        ctx.should_throw = true;
-        ctx.throw_value.set_object(err);
+        builtin_throw(ctx, ctx.heap.type_err_proto, "Object prototype may only be an Object or null");
         return;
     }
     HObject*? proto_obj_raw = null;
@@ -3445,35 +3379,13 @@ fn void builtin_object_create(BuiltinContext* ctx) {
                 props = (HObject*)props_val.get_heapptr();
             } else if (props_val.is_null()) {
                 // ToObject(null) → TypeError
-                HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
-                if (catch err4 = err_raw) { ctx.result.set_undefined(); return; }
-                HObject* err = err_raw;
-                err.prototype = ctx.heap.type_err_proto;
-                HString* msg_key = builtin_intern_string(ctx.heap, "message");
-                HString* msg_str = builtin_intern_string(ctx.heap, "Cannot convert undefined or null to object");
-                if (msg_key == null || msg_str == null) { ctx.result.set_undefined(); return; }
-                TVal msg_tv;
-                msg_tv.set_string(msg_str);
-                err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
-                ctx.should_throw = true;
-                ctx.throw_value.set_object(err);
+                builtin_throw(ctx, ctx.heap.type_err_proto, "Cannot convert undefined or null to object");
                 return;
             } else {
                 // ToObject(primitive) → wrap via builtin_to_object
                 if (!builtin_to_object(ctx, props_val)) {
                     // Should not happen for non-null/non-undefined
-                    HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
-                    if (catch err5 = err_raw) { ctx.result.set_undefined(); return; }
-                    HObject* err = err_raw;
-                    err.prototype = ctx.heap.type_err_proto;
-                    HString* msg_key = builtin_intern_string(ctx.heap, "message");
-                    HString* msg_str = builtin_intern_string(ctx.heap, "Cannot convert undefined or null to object");
-                    if (msg_key == null || msg_str == null) { ctx.result.set_undefined(); return; }
-                    TVal msg_tv;
-                    msg_tv.set_string(msg_str);
-                    err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
-                    ctx.should_throw = true;
-                    ctx.throw_value.set_object(err);
+                    builtin_throw(ctx, ctx.heap.type_err_proto, "Cannot convert undefined or null to object");
                     return;
                 }
                 props = (HObject*)ctx.result.get_heapptr();
@@ -3537,21 +3449,10 @@ fn void builtin_object_create(BuiltinContext* ctx) {
                 // ToPropertyDescriptor(desc_obj_val)
                 if (!desc_obj_val.is_object()) {
                     // ToPropertyDescriptor requires an object — throw TypeError
-                    HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
-                    if (catch err6 = err_raw) { ctx.result.set_undefined(); return; }
-                    HObject* err = err_raw;
-                    err.prototype = ctx.heap.type_err_proto;
-                    HString* msg_key = builtin_intern_string(ctx.heap, "message");
                     char[128] msg_buf;
                     int msg_len = (int)(io::bprintf(&msg_buf, "Property descriptor for '%s' must be an object",
                                                  (String)pk_key.get_data()) ?? msg_buf[:0]).len;
-                    HString* msg_str = builtin_intern_string(ctx.heap, msg_buf[:msg_len]);
-                    if (msg_key == null || msg_str == null) { ctx.result.set_undefined(); return; }
-                    TVal msg_tv;
-                    msg_tv.set_string(msg_str);
-                    err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
-                    ctx.should_throw = true;
-                    ctx.throw_value.set_object(err);
+                    builtin_throw(ctx, ctx.heap.type_err_proto, msg_buf[:msg_len]);
                     return;
                 }
                 HObject* desc_obj = (HObject*)desc_obj_val.get_heapptr();
@@ -3589,21 +3490,10 @@ fn void builtin_object_create(BuiltinContext* ctx) {
                 TVal desc_obj_val = props.array_part()[i];
 
                 if (!desc_obj_val.is_object()) {
-                    HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
-                    if (catch err7 = err_raw) { ctx.result.set_undefined(); return; }
-                    HObject* err = err_raw;
-                    err.prototype = ctx.heap.type_err_proto;
-                    HString* msg_key = builtin_intern_string(ctx.heap, "message");
                     char[128] msg_buf;
                     int msg_len = (int)(io::bprintf(&msg_buf, "Property descriptor for '%s' must be an object",
                                                  (String)pk_key.get_data()) ?? msg_buf[:0]).len;
-                    HString* msg_str = builtin_intern_string(ctx.heap, msg_buf[:msg_len]);
-                    if (msg_key == null || msg_str == null) { ctx.result.set_undefined(); return; }
-                    TVal msg_tv;
-                    msg_tv.set_string(msg_str);
-                    err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
-                    ctx.should_throw = true;
-                    ctx.throw_value.set_object(err);
+                    builtin_throw(ctx, ctx.heap.type_err_proto, msg_buf[:msg_len]);
                     return;
                 }
                 HObject* desc_obj = (HObject*)desc_obj_val.get_heapptr();
@@ -3650,21 +3540,10 @@ fn void builtin_object_create(BuiltinContext* ctx) {
                         TVal ch_val;
                         ch_val.set_string(ch_hstr);
                         if (!ch_val.is_object()) {
-                            HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
-                            if (catch err_str = err_raw) { ctx.result.set_undefined(); return; }
-                            HObject* err = err_raw;
-                            err.prototype = ctx.heap.type_err_proto;
-                            HString* msg_key = builtin_intern_string(ctx.heap, "message");
                             char[128] msg_buf;
                             int msg_len = (int)(io::bprintf(&msg_buf, "Property descriptor for '%s' must be an object",
                                                          (String)pk_key.get_data()) ?? msg_buf[:0]).len;
-                            HString* msg_str = builtin_intern_string(ctx.heap, msg_buf[:msg_len]);
-                            if (msg_key == null || msg_str == null) { ctx.result.set_undefined(); return; }
-                            TVal msg_tv;
-                            msg_tv.set_string(msg_str);
-                            err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
-                            ctx.should_throw = true;
-                            ctx.throw_value.set_object(err);
+                            builtin_throw(ctx, ctx.heap.type_err_proto, msg_buf[:msg_len]);
                             return;
                         }
                     }
@@ -4106,17 +3985,7 @@ fn void builtin_object_assign(BuiltinContext* ctx) {
     TVal downstream_val = ctx.regs[ctx.base_reg];
     // TypeError if downstream is null or undefined
     if (downstream_val.is_null() || downstream_val.is_undefined()) {
-        HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
-        if (catch err1 = err_raw) { ctx.result.set_undefined(); return; }
-        HObject* err = err_raw;
-        err.prototype = ctx.heap.type_err_proto;
-        HString* msg_key = builtin_intern_string(ctx.heap, "message");
-        HString* msg_str = builtin_intern_string(ctx.heap, "Cannot convert undefined or null to object");
-        if (msg_key == null || msg_str == null) { ctx.result.set_undefined(); return; }
-        TVal msg_tv; msg_tv.set_string(msg_str);
-        err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
-        ctx.should_throw = true;
-        ctx.throw_value.set_object(err);
+        builtin_throw(ctx, ctx.heap.type_err_proto, "Cannot convert undefined or null to object");
         return;
     }
     // ES2015 §19.1.2.1 step 1: ToObject(target). Symbol values are tagged
