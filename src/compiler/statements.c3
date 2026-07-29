@@ -4268,18 +4268,23 @@ fn void? CompilerContext.function_declaration(&self, bool is_async_decl = false,
     // If so, skip it entirely to avoid duplicate compilation.
     // For global scope, check against hoisted_fn_names
     if (self.is_global) {
-        // Extract function name from current lexer position
-        Token? star_opt = self.lexer.next_token();
-        if (catch _err2 = star_opt) return;
-        if (star_opt.type == TokenType.STAR) {
-            // Generator function - put star back and continue
-            self.lexer.pushback(star_opt);
-        } else {
-            // Not a star - put it back (it's the function name)
-            self.lexer.pushback(star_opt);
-        }
-        Token? name_opt = self.lexer.next_token();
-        if (catch _err = name_opt) return;
+        // Extract function name from current lexer position. A `function*`
+        // generator's name is TWO tokens ahead (`*` then the identifier), and
+        // the lexer's single-slot pushback can't hold both — use the
+        // CompilerContext's 4-deep token pushback stack instead (already used
+        // elsewhere for the same "peek N, put all back" pattern, e.g.
+        // peek2_is_lparen), pushing back in reverse order so `advance()`
+        // replays them in their original order for the fallthrough re-parse.
+        //
+        // (A prior version pushed the `*` back onto the lexer's single slot
+        // and immediately called next_token() again, which just re-read the
+        // same `*` — the "already hoisted" name lookup below always saw
+        // name_opt.type == STAR, never IDENTIFIER, so every module-level
+        // generator declaration fell through to re-compile and re-run
+        // CLOSURE+DECLVAR at its own textual position, re-instantiating a
+        // fresh closure that link-time hoisting had already installed once.)
+        Token star_opt = self.advance()!;
+        Token name_opt = star_opt.type == TokenType.STAR ? self.advance()! : star_opt;
         if (name_opt.type == TokenType.IDENTIFIER) {
             char[] fn_name = name_opt.str_value;
             if (fn_name.len > 0) {
@@ -4301,8 +4306,16 @@ fn void? CompilerContext.function_declaration(&self, bool is_async_decl = false,
                 }
             }
         }
-        // Put back the name token for normal processing
-        self.lexer.pushback(name_opt);
+        // Not already hoisted (or not an identifier at all, e.g. a stray
+        // token the later expect_binding_identifier() will properly reject):
+        // put both tokens back (LIFO — name first, so `*` pops first) for
+        // normal processing to re-consume in original order.
+        if (star_opt.type == TokenType.STAR) {
+            self.pushback(name_opt);
+            self.pushback(star_opt);
+        } else {
+            self.pushback(name_opt);
+        }
     }
 
     // Function declarations are hoisted to function scope — need env.
