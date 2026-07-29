@@ -180,6 +180,25 @@ struct ModuleDef {
     // Rooted with a ModuleDef-owned reference for the module's lifetime and
     // marked by mark_roots since ModuleDefs live outside the GC-scanned heap.
     HObject*                      eval_promise;
+
+    // Approximation of ECMA-262 [[CycleRoot]] (§16.2.1.5.5 InnerModuleEvaluation
+    // step 11.c.iv.1 / the SCC-closing loop at the end of that algorithm): the
+    // other module in this module's strongly-connected import cycle that owns
+    // the cycle's shared async completion — null means "no cycle root recorded"
+    // (this module is not known to be part of a still-open cycle). Set on the
+    // NON-root member(s) of a two-module cycle the moment execute_module's DFS
+    // discovers the cycle (see execute_module's async_dep resolution): when
+    // `mod`'s dependency loop reaches a `dep` that is itself still EVALUATING
+    // because `dep` is `mod`'s own ancestor (a genuine back-edge, not merely a
+    // suspended async body — see the eval_promise==null distinction there),
+    // `dep` is mod's cycle root and mod.cycle_root is set to it. A later
+    // importer resolving async_dep against a pending dependency follows
+    // dep.cycle_root (if set) instead of dep itself, so it waits on the whole
+    // cycle's completion rather than one leaf of it — see Note 2 under
+    // InnerModuleEvaluation ("modules depending on a module of an asynchronous
+    // cycle ... will instead depend on the execution of the root of the cycle
+    // via [[CycleRoot]]").
+    ModuleDef*                     cycle_root;
 }
 
 // ============================================================================
@@ -1055,6 +1074,21 @@ fn bool execute_module(Heap* heap, Vm* vm, ModuleDef* mod) {
         ReqModuleEntry* rme = &mod.req_modules[i];
         if (rme.resolved == null) continue;
         ModuleDef* dep = (ModuleDef*)rme.resolved;
+        if (dep.status == ModuleStatus.EVALUATING && dep.eval_promise == null) {
+            // Cycle guard about to be hit one level down (inside the
+            // execute_module(dep) call just below, at this function's own
+            // early `if (mod.status == ModuleStatus.EVALUATING) return true`):
+            // `dep` is genuinely still on the DFS call stack above this frame
+            // — an ancestor of `mod`, i.e. a real import-cycle back-edge, not
+            // a dependency that already suspended on its own TLA/async
+            // subgraph (that case has a non-null eval_promise and is handled
+            // by the branch below instead). `mod` therefore belongs to the
+            // strongly-connected cycle rooted at `dep` — record that so a
+            // LATER importer reaching `mod` through this same cycle (once it
+            // becomes async — see the async_dep resolution below) waits on
+            // `dep`, the cycle's root, instead of on `mod`.
+            mod.cycle_root = dep;
+        }
         if (dep.status != ModuleStatus.EVALUATED) {
             if (!execute_module(heap, vm, dep)) return module_record_eval_error(heap, vm, mod);
             // Only a dependency that GENUINELY suspended somewhere in its own
@@ -1067,10 +1101,23 @@ fn bool execute_module(Heap* heap, Vm* vm, ModuleDef* mod) {
             // pending on anything — it will reach EVALUATED normally once
             // that outer frame's own body finishes, and must not be confused
             // with an async/TLA subgraph.
-            if (dep.eval_promise != null &&
-                builtins::promise_get_state(dep.eval_promise, builtins::PROMISE_PENDING)
+            //
+            // If `dep` belongs to a cycle whose root is some OTHER module
+            // (dep.cycle_root set, and not mod itself — mod itself is the
+            // cycle's root when dep.cycle_root == mod, which happens for the
+            // root's own view of its direct cycle member; see the branch
+            // above), that root is the real dependency mod's own execution
+            // must wait for, per ECMA-262 §16.2.1.5.5 step 11.c.iv.1 (a
+            // required module already through its own DFS is replaced by
+            // requiredModule.[[CycleRoot]]) and Note 2 ("modules depending on
+            // a module of an asynchronous cycle ... instead depend on the
+            // execution of the root of the cycle").
+            ModuleDef* wait_on = (dep.cycle_root != null && dep.cycle_root != mod)
+                ? dep.cycle_root : dep;
+            if (wait_on.eval_promise != null &&
+                builtins::promise_get_state(wait_on.eval_promise, builtins::PROMISE_PENDING)
                     == builtins::PROMISE_PENDING) {
-                async_dep = dep;
+                async_dep = wait_on;
             }
         }
     }
