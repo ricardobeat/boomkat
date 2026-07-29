@@ -259,10 +259,45 @@ fn TVal? dispatch_exceptions(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
 
                     vm.activation_count--;
 
+                    // Async function: resolve the promise with the return value
+                    // and write the promise to callee_result (instead of the
+                    // raw value). Mirrors the plain RET/RETUNDEF inline path in
+                    // vm_execute.c3 — without it, the body's caller would
+                    // receive the raw return value (e.g. `2`) overwriting the
+                    // Promise that vm_calls.c3 pre-installed in callee_result,
+                    // and `f().then(...)` would crash with "undefined is not a
+                    // function". Must go through promise_resolve_with_value
+                    // (not a bare promise_settle) so a returned thenable/Promise
+                    // is adopted per ES2015 §25.5.5.4 AsyncFunctionStart /
+                    // §27.2.1.3.2 — the async function's promise takes on the
+                    // eventual settlement of the returned promise rather than
+                    // fulfilling with the promise object.
+                    if ((callee_act.flags & ACT_FLAG_ASYNC) != 0 && callee_act.async_promise != null) {
+                        builtins::promise_resolve_with_value(callee_act.async_promise, val, vm.heap, (void*)vm);
+                        // Release pin on original return value (promise now holds a ref)
+                        if (val_pinned) {
+                            vm.heap.decref_tval(&val);
+                        }
+                        // Replace val with promise; its birth ref (refcount=1) acts as the pin
+                        val.set_object(callee_act.async_promise);
+                        val_pinned = true;
+                    }
+
                     if (vm.activation_count == 0) {
+                        // call_fn resume path: no caller in the active stack to
+                        // receive the promise. Set vm.return_val and halt so the
+                        // outer Vm.run() loop sees ds.halt and returns
+                        // ds.halt_value (= vm.return_val) to vm_call_fn_impl.
+                        // (Returning vm.return_val from dispatch_exceptions
+                        // itself wouldn't propagate — Vm.run's
+                        // `if (catch err = dispatch_exceptions(...))` only
+                        // fires on faults, so non-fault returns fall through to
+                        // `continue` and re-execute stale bytecode.)
                         vm.heap.tval_copy_ref(&vm.return_val, &val);
                         if (val_pinned) vm.heap.decref_tval(&val);
-                        return vm.return_val;
+                        ds.halt = true;
+                        ds.halt_value = vm.return_val;
+                        return (TVal){};
                     }
                     if (callee_result != null) {
                         // ES2015 §9.2.2 step 13: constructor returning a
