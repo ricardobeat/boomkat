@@ -28,7 +28,7 @@ Phase 15 (Classes) 5964 -> 7107 pass after un-skipping 1138 tests.
 
 ## Refcounting
 
-- [ ] Re-measure the property-write cost on an idle machine
+- [ ] `8c4cc55e` made property writes ~1.8% slower on `o.x=i` and ~4.5% on bench_object (measured idle, A/A floor ~1%)
 - [x] Audit builtins for `tval_copy_ref(ctx.result, &ctx.this_val)` — `65098c11`
 - [x] Refcount object/buffer values in property and array slots — `6d7e71ca`
 - [x] Combine incref/decref heap checks in `put_prop`/`set_array_idx` — `8c4cc55e`
@@ -47,11 +47,11 @@ Phase 15 (Classes) 5964 -> 7107 pass after un-skipping 1138 tests.
 
 - [ ] `eval('arguments.length')` inside an ordinary function throws ReferenceError
 
-- [ ] `heap.int_to_hstring` small-int cache increfs without a matching decref
+- [x] Pinned-string refcount drift via GETPROP_CACHE writeback — `3b741b0e`
 - [ ] Destructuring-assignment to a member target drops `await` in the RHS
-- [ ] Re-measure `RET` this_binding-clear cost on an idle machine
-- [ ] `async function`'s own `GeneratorState` leaks
-- [ ] Re-measure the baseline leak count
+- [x] `05007aa0` RET cost — below a ~0.5-1% noise floor, not resolvable
+- [x] Async `GeneratorState` leak, plus the GC crash it hid — `b0c63211`
+- [ ] `leaks --atExit` hangs on this binary/macOS combination — use live_obj_count instead
 - [x] `error.c3` `.stack` name fallback fabricated `[object Object]` — `d5bb7997`
 - [x] Generator initial-call `new_target` — verified not a bug (activation popped before any NEWTARGET)
 - [x] Bound-function own-property order differed from qjs — `6e1422ec`
