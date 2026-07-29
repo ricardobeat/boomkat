@@ -1613,4 +1613,28 @@ struct PrivateNameEntry {
     bool   has_getter;   // P4
     bool   has_setter;   // P4
     bool   is_static;    // P5: static private member — brand_slot_name is the STATIC brand
+    // Private INSTANCE method/accessor only (is_method && !is_static): a
+    // hidden lexical slot holding the closure object the class-body's
+    // prototype-install loop builds (class.c3), so __field_init__ can
+    // re-install the SAME closure onto each instance's own
+    // [[PrivateElements]] — needed when a derived constructor's super()
+    // returns an object whose [[Prototype]] chain never reaches the class
+    // prototype (return-override; see class.c3's field_init emission for
+    // the full rationale). Allocated right after prescan (alongside
+    // brand_slot_name) so it exists before any member body — which may
+    // read `this.#m` in a field initializer — compiles. For a plain
+    // method (`#m() {}`) this is the method's own closure slot; for an
+    // accessor (`get #x`/`set #x`) this is unused — see
+    // getter_closure_slot_name / setter_closure_slot_name instead, since a
+    // get/set pair needs TWO independent closures re-installed under one
+    // shared key.
+    char[] method_closure_slot_name;
+    // Private accessor only (is_method && has_getter/has_setter): separate
+    // closure slots for the getter and setter halves of a `get #x`/`set #x`
+    // pair — each keyword is compiled as its own ClassMethod/CLOSURE even
+    // though both merge into this ONE PrivateNameEntry (same slot_name/key).
+    // Empty when the corresponding half doesn't exist (set-only or
+    // get-only accessor).
+    char[] getter_closure_slot_name;
+    char[] setter_closure_slot_name;
 }
