@@ -2872,6 +2872,37 @@ fn ushort? CompilerContext.member_expr(&self) {
     return obj;
 }
 
+/// Compute the super base register for `super.x` / `super[x]` (§13.3.7.1
+/// GetSuperBase): loads `__super__` (or `__static_super__` for static
+/// methods, whose HomeObject is the constructor itself) and derives its
+/// [[Prototype]]. When the binding already holds the HomeObject
+/// (super_is_home_object, or any static method) that's a direct GETPROTO;
+/// otherwise `__super__` holds the superclass constructor value itself
+/// (the `extends Base` case), so the base is `Base.prototype` via GETPROP.
+/// Returns the register holding the super base (caller owns/frees it).
+fn ushort CompilerContext.emit_super_base(&self) {
+    uint super_name_idx = self.super_is_static_method
+        ? self.add_string_constant("__static_super__")
+        : self.add_string_constant("__super__");
+    ushort super_ctor_reg = self.alloc_reg();
+    self.emit(bytecode::make_a_bc(Opcode.GETVAR, (uint)super_ctor_reg, super_name_idx));
+    ushort super_proto_reg;
+    if (self.super_is_static_method || self.super_is_home_object) {
+        super_proto_reg = self.alloc_reg();
+        self.emit_abc(Opcode.GETPROTO, (uint)super_proto_reg, (uint)super_ctor_reg, 0);
+        self.free_reg(super_ctor_reg);
+    } else {
+        uint proto_name_idx = self.add_string_constant("prototype");
+        ushort proto_key_reg = self.alloc_reg();
+        self.emit(bytecode::make_a_bc(Opcode.LDCONST, (uint)proto_key_reg, proto_name_idx));
+        super_proto_reg = self.alloc_reg();
+        self.emit_abc(Opcode.GETPROP, (uint)super_proto_reg, (uint)super_ctor_reg, (uint)proto_key_reg);
+        self.free_reg(proto_key_reg);
+        self.free_reg(super_ctor_reg);
+    }
+    return super_proto_reg;
+}
+
 /// Parse primary expressions: literals, identifiers, grouping, etc.
 fn ushort? CompilerContext.primary_expr(&self) {
     TokenType tt = self.peek_type();
@@ -3810,26 +3841,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 ushort super_key_reg;
                 if (self.match(TokenType.DOT)) {
                     // DOT: compute super base first, then emit constant key.
-                    // Static methods' HomeObject is the constructor itself
-                    // (__static_super__, always via GETPROTO) — see §13.3.7.1.
-                    uint super_name_idx = self.super_is_static_method
-                        ? self.add_string_constant("__static_super__")
-                        : self.add_string_constant("__super__");
-                    ushort super_ctor_reg = self.alloc_reg();
-                    self.emit(bytecode::make_a_bc(Opcode.GETVAR, (uint)super_ctor_reg, super_name_idx));
-                    if (self.super_is_static_method || self.super_is_home_object) {
-                        super_proto_reg = self.alloc_reg();
-                        self.emit_abc(Opcode.GETPROTO, (uint)super_proto_reg, (uint)super_ctor_reg, 0);
-                        self.free_reg(super_ctor_reg);
-                    } else {
-                        uint proto_name_idx = self.add_string_constant("prototype");
-                        ushort proto_key_reg = self.alloc_reg();
-                        self.emit(bytecode::make_a_bc(Opcode.LDCONST, (uint)proto_key_reg, proto_name_idx));
-                        super_proto_reg = self.alloc_reg();
-                        self.emit_abc(Opcode.GETPROP, (uint)super_proto_reg, (uint)super_ctor_reg, (uint)proto_key_reg);
-                        self.free_reg(proto_key_reg);
-                        self.free_reg(super_ctor_reg);
-                    }
+                    super_proto_reg = self.emit_super_base();
                     char[] prop_str = self.read_property_name()!;
                     uint prop_idx = self.add_string_constant(prop_str);
                     super_key_reg = self.alloc_reg();
@@ -3851,26 +3863,8 @@ fn ushort? CompilerContext.primary_expr(&self) {
                     self.advance()!;  // consume '['
                     super_key_reg = self.expression()!;
                     self.expect(TokenType.RBRACKET)!;
-                    // Now compute super base. Static methods use __static_super__
-                    // (the constructor) always via GETPROTO — see the DOT branch above.
-                    uint super_name_idx = self.super_is_static_method
-                        ? self.add_string_constant("__static_super__")
-                        : self.add_string_constant("__super__");
-                    ushort super_ctor_reg = self.alloc_reg();
-                    self.emit(bytecode::make_a_bc(Opcode.GETVAR, (uint)super_ctor_reg, super_name_idx));
-                    if (self.super_is_static_method || self.super_is_home_object) {
-                        super_proto_reg = self.alloc_reg();
-                        self.emit_abc(Opcode.GETPROTO, (uint)super_proto_reg, (uint)super_ctor_reg, 0);
-                        self.free_reg(super_ctor_reg);
-                    } else {
-                        uint proto_name_idx = self.add_string_constant("prototype");
-                        ushort proto_key_reg = self.alloc_reg();
-                        self.emit(bytecode::make_a_bc(Opcode.LDCONST, (uint)proto_key_reg, proto_name_idx));
-                        super_proto_reg = self.alloc_reg();
-                        self.emit_abc(Opcode.GETPROP, (uint)super_proto_reg, (uint)super_ctor_reg, (uint)proto_key_reg);
-                        self.free_reg(proto_key_reg);
-                        self.free_reg(super_ctor_reg);
-                    }
+                    // Now compute super base (§13.3.7.1 GetSuperBase).
+                    super_proto_reg = self.emit_super_base();
                     result = self.alloc_reg();
                     self.emit_abc(Opcode.GETPROP_SUPER, (uint)result, (uint)super_proto_reg, (uint)super_key_reg);
                 }
