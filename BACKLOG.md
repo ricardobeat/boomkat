@@ -46,6 +46,8 @@ Phase 15 (Classes) 5964 -> 7107 pass after un-skipping 1138 tests.
 
 ## Known bugs
 
+- [ ] AWAIT OOM path calls `vm_uncaught_error` after already rejecting the promise and restoring the caller frame, unlike the constructor-error path
+
 - [x] `eval('arguments.length')` in an ordinary function threw ReferenceError — `b46936fd`
 
 - [x] Pinned-string refcount drift via GETPROP_CACHE writeback — `3b741b0e`
@@ -90,8 +92,8 @@ Phase 15 (Classes) 5964 -> 7107 pass after un-skipping 1138 tests.
 
 ## Engine design review
 
-- [ ] Generator driver family unification
-- [ ] Three super mechanisms unification
+- [x] Generator driver family — three genuinely distinct spec algorithms; only the AWAIT teardown was duplicated — `68b42b11`
+- [x] Super mechanisms — GetSuperBase deduped (`a245dab8`); GetSuperConstructor is a real semantic difference, not unifiable
 - [ ] Builtin error-throw boilerplate — ~55 raw sites left
 - [ ] Lexer scan buffers
 - [x] Enum/metadata/dispatch triple registration in core.c3 — `a1513ec5`
