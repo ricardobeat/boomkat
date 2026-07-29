@@ -283,15 +283,6 @@ SKIP_FILES = {
     # lex_env split, this-binding, (0,eval) direct-eval detection);
     # removed from this list.
     "language/eval-code/indirect/always-non-strict.js",  # `with ({}) {}` — unsupported (AGENTS.md)
-    # B54 — private-field-on-return-override tests. The spec puts private
-    # methods on the class prototype, but the subclass return-override
-    # exercises the case where super() returns a fresh object whose
-    # [[Prototype]] is NOT the subclass prototype — `obj.#m` from a static
-    # accessor then has nothing to find (the brand isn't stamped, and the
-    # method prototype chain is broken). To pass this we'd need to copy
-    # private methods onto each instance, which is a deep architectural
-    # change; defer until we tackle returning-override semantics per se.
-    "language/statements/class/subclass/private-class-field-on-nonextensible-return-override.js",  # class proto layout mismatch
     # B54 — Annex B __lookupGetter__/__lookupSetter__ dependent assertions.
     # Strict-only engine never installs these legacy methods on
     # Object.prototype, so `this.__lookupSetter__(...)` throws

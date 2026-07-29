@@ -36,6 +36,44 @@ fn void CompilerContext.ensure_field_init_ctx(&self, CompilerContext* target_ctx
     target_ctx.emit_simple(Opcode.PUSH_LEX);
 }
 
+/// Mint and declare a fresh hidden lexical slot name
+/// ("#priv:<class-id>:<tag><index>") for stashing a private instance
+/// method/accessor closure past the member-install loop — see the
+/// PrivateNameEntry.method_closure_slot_name / getter_closure_slot_name /
+/// setter_closure_slot_name doc comments (context.c3) for why this is
+/// needed. `index` should be unique per private name in the class body
+/// (e.g. its offset into private_name_table); `tag` distinguishes plain
+/// method ("mclo") from getter ("gclo") / setter ("sclo") slots. Same
+/// source-illegal "#priv:" prefix as declare_class_brand, so it can never
+/// collide with or be resolved via resolve_private_name.
+fn char[] CompilerContext.mint_priv_closure_slot(&self, usz index, char[] tag) {
+    uint class_id = self.private_scope_depth > 0
+        ? self.private_class_id[self.private_scope_depth - 1] : 0;
+    char[96] buf;
+    char[16] digits;
+    char[] prefix = "#priv:";
+    usz pos = 0;
+    for (usz i = 0; i < prefix.len && pos < buf.len; i++) buf[pos++] = prefix[i];
+    usz dcnt = 0;
+    do {
+        digits[dcnt++] = (char)('0' + class_id % 10);
+        class_id /= 10;
+    } while (class_id > 0);
+    while (dcnt > 0 && pos < buf.len) buf[pos++] = digits[--dcnt];
+    buf[pos++] = ':';
+    for (usz i = 0; i < tag.len && pos < buf.len; i++) buf[pos++] = tag[i];
+    usz cnt = index;
+    usz dcnt2 = 0;
+    do {
+        digits[dcnt2++] = (char)('0' + cnt % 10);
+        cnt /= 10;
+    } while (cnt > 0);
+    while (dcnt2 > 0 && pos < buf.len) buf[pos++] = digits[--dcnt2];
+    char[] name = self.intern_slot_name(buf[:pos]);
+    self.declare_priv_slot(name);
+    return name;
+}
+
 /// Format a numeric literal's canonical property-key text (ES2015 §7.1.12.1
 /// ToString applied to the NumericValue) into `buf`. Numeric literal tokens
 /// are always finite. Used for field-name inference on numeric keys
@@ -478,6 +516,107 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
         }
     }
 
+    // Instance field initializers compile into one hidden __field_init__
+    // function, in source order (plan 054 §2d). Created lazily on the first
+    // `#name = expr;` / `#name;` field so classes without fields pay no cost.
+    // Declared here (before the member loop, earlier than its original
+    // position) because private instance methods/accessors need it too —
+    // see immediately below.
+    CompilerContext field_init_ctx;
+    bool has_field_init = false;
+    uint field_count = 0;
+
+    // Private instance methods/accessors (ES2022 §7.3.28
+    // PrivateMethodOrAccessorAdd): per spec these install into EVERY
+    // instance's own [[PrivateElements]], not just the class prototype.
+    // The prototype install (below, in the member-install loop) is a
+    // correct optimization ONLY when an instance's [[Prototype]] really is
+    // the class prototype — a derived constructor's `super()` can return an
+    // unrelated object (return-override, §9.2.2 step 13.c allows any
+    // Object) whose prototype chain never reaches this class's prototype
+    // at all, so GETPROP_PRIVATE's chain walk would never find the method.
+    // Reserve each instance method/accessor's closure slot(s) NOW (using
+    // the prescanned private_name_table, which already knows is_method/
+    // has_getter/has_setter/is_static for every `#name` in this class body,
+    // independent of source order) and emit the __field_init__ re-install
+    // code — GETVAR the slot (PUTLEX'd by the CLOSURE in the member-install
+    // loop once the method actually compiles, later) + CLASS_INITGET/
+    // CLASS_INITSET/CLASS_INITPROP onto `this` — BEFORE any field
+    // initializer statement is parsed. Per spec InitializeInstanceElements
+    // (methods, step 4, then fields, step 5) methods must be visible to
+    // field initializers: `a = this.#m()` where #m is itself installed via
+    // return-override must see the per-instance #m before `a`'s
+    // initializer runs (test262 prod-private-method-initialize-order.js).
+    // A `get #x`/`set #x` pair merges into ONE PrivateNameEntry (same key)
+    // but is still TWO separate closures (two ClassMethod/CLOSURE sites),
+    // so it gets two independent slots (getter_closure_slot_name /
+    // setter_closure_slot_name) and two independent CLASS_INITGET/
+    // CLASS_INITSET emissions that both target the same key — merging into
+    // one accessor cell on the instance exactly like the prototype-install
+    // loop merges them on the prototype. Static private methods/accessors
+    // are unaffected — their target is always ctor_reg, whose identity
+    // return-override can't change.
+    {
+        uint priv_scope_begin_m = self.private_scope_depth > 0
+            ? self.private_scope_start[self.private_scope_depth - 1] : 0;
+        for (uint pmi = priv_scope_begin_m; pmi < self.private_name_table.count; pmi++) {
+            PrivateNameEntry* pme = &self.private_name_table.entries[pmi];
+            if (!pme.is_method || pme.is_static) continue;
+
+            if (!has_field_init) {
+                has_field_init = true;
+                self.ensure_field_init_ctx(&field_init_ctx, false);
+            }
+
+            ushort fi_key_reg = field_init_ctx.alloc_reg();
+            field_init_ctx.emit(bytecode::make_a_bc(Opcode.GETVAR, (uint)fi_key_reg,
+                field_init_ctx.add_string_constant(pme.slot_name)));
+
+            if (!pme.has_getter && !pme.has_setter) {
+                // Plain method: one closure slot, CLASS_INITPROP.
+                char[] mclo_name = self.mint_priv_closure_slot((usz)(pmi - priv_scope_begin_m), "mclo");
+                pme.method_closure_slot_name = mclo_name;
+                ushort fi_method_reg = field_init_ctx.alloc_reg();
+                field_init_ctx.emit(bytecode::make_a_bc(Opcode.GETVAR, (uint)fi_method_reg,
+                    field_init_ctx.add_string_constant(mclo_name)));
+                ushort fi_this_reg = field_init_ctx.alloc_reg();
+                field_init_ctx.emit(bytecode::make_a_bc(Opcode.LDTHIS, (uint)fi_this_reg, 0));
+                field_init_ctx.emit_abc(Opcode.CLASS_INITPROP, (uint)fi_this_reg, (uint)fi_key_reg, (uint)fi_method_reg);
+                field_init_ctx.free_reg(fi_this_reg);
+                field_init_ctx.free_reg(fi_method_reg);
+            } else {
+                // Accessor (getter and/or setter): each half gets its own
+                // slot + its own CLASS_INITGET/CLASS_INITSET, both against
+                // the same fi_key_reg so they merge into one accessor cell.
+                if (pme.has_getter) {
+                    char[] gclo_name = self.mint_priv_closure_slot((usz)(pmi - priv_scope_begin_m), "gclo");
+                    pme.getter_closure_slot_name = gclo_name;
+                    ushort fi_g_reg = field_init_ctx.alloc_reg();
+                    field_init_ctx.emit(bytecode::make_a_bc(Opcode.GETVAR, (uint)fi_g_reg,
+                        field_init_ctx.add_string_constant(gclo_name)));
+                    ushort fi_this_g = field_init_ctx.alloc_reg();
+                    field_init_ctx.emit(bytecode::make_a_bc(Opcode.LDTHIS, (uint)fi_this_g, 0));
+                    field_init_ctx.emit_abc(Opcode.CLASS_INITGET, (uint)fi_this_g, (uint)fi_key_reg, (uint)fi_g_reg);
+                    field_init_ctx.free_reg(fi_this_g);
+                    field_init_ctx.free_reg(fi_g_reg);
+                }
+                if (pme.has_setter) {
+                    char[] sclo_name = self.mint_priv_closure_slot((usz)(pmi - priv_scope_begin_m), "sclo");
+                    pme.setter_closure_slot_name = sclo_name;
+                    ushort fi_s_reg = field_init_ctx.alloc_reg();
+                    field_init_ctx.emit(bytecode::make_a_bc(Opcode.GETVAR, (uint)fi_s_reg,
+                        field_init_ctx.add_string_constant(sclo_name)));
+                    ushort fi_this_s = field_init_ctx.alloc_reg();
+                    field_init_ctx.emit(bytecode::make_a_bc(Opcode.LDTHIS, (uint)fi_this_s, 0));
+                    field_init_ctx.emit_abc(Opcode.CLASS_INITSET, (uint)fi_this_s, (uint)fi_key_reg, (uint)fi_s_reg);
+                    field_init_ctx.free_reg(fi_this_s);
+                    field_init_ctx.free_reg(fi_s_reg);
+                }
+            }
+            field_init_ctx.free_reg(fi_key_reg);
+        }
+    }
+
     // Parse class body
     self.expect(TokenType.LBRACE)!;
 
@@ -487,13 +626,6 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
     // Per-class-body counter for computed public-field-key hidden slots
     // (P7) — combined with the class id to build unique binding names.
     uint computed_field_key_count = 0;
-
-    // Instance field initializers compile into one hidden __field_init__
-    // function, in source order (plan 054 §2d). Created lazily on the first
-    // `#name = expr;` / `#name;` field so classes without fields pay no cost.
-    CompilerContext field_init_ctx;
-    bool has_field_init = false;
-    uint field_count = 0;
 
     // Static private field initializers (P5) compile into a second hidden
     // function, __static_init__, run once right after class evaluation with
@@ -1469,6 +1601,34 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
         uint mi_idx = methods[mi].inner_idx;
         ushort method_reg = self.alloc_reg();
         self.emit(bytecode::make_a_bc(Opcode.CLOSURE, (uint)method_reg, mi_idx));
+
+        // Private instance method/accessor: stash this SAME closure object
+        // into its hidden slot so __field_init__ can re-install it (own
+        // [[PrivateElements]] copy, for the return-override case) onto each
+        // instance without building a second, distinct closure — see
+        // PrivateNameEntry's method_closure_slot_name / getter_closure_slot_name
+        // / setter_closure_slot_name doc comments (context.c3). A plain
+        // method uses method_closure_slot_name; an accessor's getter/setter
+        // are two separate ClassMethod/CLOSURE sites, each with its own slot.
+        if (methods[mi].is_private && !methods[mi].is_static) {
+            // methods[mi].priv_slot_name IS the owning PrivateNameEntry's
+            // slot_name (assigned when the ClassMethod was recorded, from
+            // `pe.slot_name` where pe = resolve_private_name(...)) — find
+            // that same entry back by matching slot_name (a stable,
+            // interned slice) rather than re-resolving by source name,
+            // which the ClassMethod struct doesn't retain.
+            char[] mclo_slot = "";
+            for (uint pei = 0; pei < self.private_name_table.count; pei++) {
+                PrivateNameEntry* pme_install = &self.private_name_table.entries[pei];
+                if (pme_install.slot_name.ptr != methods[mi].priv_slot_name.ptr) continue;
+                mclo_slot = methods[mi].is_getter ? pme_install.getter_closure_slot_name
+                    : (methods[mi].is_setter ? pme_install.setter_closure_slot_name
+                       : pme_install.method_closure_slot_name);
+                break;
+            }
+            self.emit_a_bc(Opcode.PUTLEX, (uint)method_reg,
+                self.add_string_constant(mclo_slot));
+        }
 
         ushort target_reg = methods[mi].is_static ? ctor_reg : proto_reg;
 
