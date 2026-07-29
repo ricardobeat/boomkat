@@ -23,7 +23,7 @@ All 18 test262 phases at 0 failures. 32,078 of 53,319 tests attempted.
 ## Refcounting
 
 - [ ] Re-measure the property-write cost on an idle machine
-- [ ] Audit builtins for `tval_copy_ref(ctx.result, &ctx.this_val)`
+- [x] Audit builtins for `tval_copy_ref(ctx.result, &ctx.this_val)` — `65098c11`
 - [x] Refcount object/buffer values in property and array slots — `6d7e71ca`
 - [x] Combine incref/decref heap checks in `put_prop`/`set_array_idx` — `8c4cc55e`
 - [x] Fix under-refcount in `%IteratorPrototype%[@@iterator]` — `104e61ae`
@@ -32,23 +32,29 @@ All 18 test262 phases at 0 failures. 32,078 of 53,319 tests attempted.
 ## Strings
 
 - [x] Cursor cache for non-ASCII string indexing — `85f372ed`
-- [ ] Audit remaining ~45 `char_at` / `char_offset_to_byte_offset` call sites for redundant bounds checks
+- [x] `char_at` call-site audit — already complete at `85f372ed`
 - [ ] Native UTF-16/Latin1 string storage
 - [x] Cache `char_length` on `HString` — `b09359d9`
 - [x] Skip redundant `char_length` bounds recheck in `char_at` — `688dd30d`
 
 ## Known bugs
 
+- [ ] `heap.int_to_hstring` small-int cache increfs without a matching decref
+- [ ] Destructuring-assignment to a member target drops `await` in the RHS
+- [ ] Re-measure `RET` this_binding-clear cost on an idle machine
+
 - [ ] `async function`'s own `GeneratorState` leaks
 - [ ] Re-measure the baseline leak count
-- [ ] `error.c3:92` `.stack` name fallback skips ToPrimitive
-- [ ] Generator initial-call activation may not assign `new_target` (`vm_calls.c3:1772`)
-- [ ] Bound-function own-property order differs from qjs
+- [x] `error.c3` `.stack` name fallback fabricated `[object Object]` — `d5bb7997`
+- [x] Generator initial-call `new_target` — verified not a bug (activation popped before any NEWTARGET)
+- [x] Bound-function own-property order differed from qjs — `6e1422ec`
 - [x] Bound-function internals leaked through `Object.getOwnPropertyNames` — `49e0847e`
 - [x] `new Date(-1).getUTCFullYear()` returned 1970 — `bfe1215a`
 - [x] Generator-resume path leaked a stale `new_target` — `e57c58a8`
 - [x] `finally` skipped when `return` passes through a catch-only `try` — `79ca7134`, `40076777`
 - [x] `Array.prototype.sort` segfaulted on a throwing `toString` — `a93ff1a9`
+- [x] `yield` rejected in destructuring assignment-pattern defaults (32 tests) — `fa9ca71b`
+- [x] Double-decref of `this_binding` on RET corrupted the allocator — `05007aa0`
 - [x] `Map.set(-0)` / `Set.add(-0)` stored `-0` instead of `+0` — `4bc5bbdf`
 - [x] Object-rest getters never fired; non-enumerables leaked in — `245b390f`
 - [x] URI encode/decode accepted lone surrogates — `eea15205`
