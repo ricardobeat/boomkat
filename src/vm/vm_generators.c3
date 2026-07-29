@@ -609,12 +609,20 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 if (gs_raw == null) {
                     // OOM: cannot suspend.  Reject the async Promise if
                     // applicable, otherwise propagate as an uncaught error.
+                    // async_reject_and_pop already settles the Promise (or
+                    // halts the VM when the last activation drained) and
+                    // restores the caller frame in `ds` — raising an
+                    // uncaught VM error on top of that would report the
+                    // failure twice and abandon the just-restored caller, so
+                    // only fall back to vm_uncaught_error when there was no
+                    // Promise to reject at all.
                     TVal oom_reason;
                     oom_reason.set_undefined();
-                    if (async_reject_and_pop(ds, oom_reason)) {
-                        if (ds.halt) { return (TVal){}; }
+                    if (!async_reject_and_pop(ds, oom_reason)) {
+                        return vm_uncaught_error(vm, &oom_reason);
                     }
-                    return vm_uncaught_error(vm, &oom_reason);
+                    if (!ds.halt) { ds.needs_restart = true; }
+                    return (TVal){};
                 }
                 GeneratorState* gs = (GeneratorState*)gs_raw;
                 mem::clear(gs_raw, (sz)(GeneratorState::size));
