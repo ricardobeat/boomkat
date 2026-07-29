@@ -1489,12 +1489,15 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
     // closes a `${` substitution must not be treated as a JS block boundary,
     // while braces INSIDE a substitution expression count like any others.
     TemplateScan tscan;
-    // Byte offset of the `function` keyword when preceded by `async` at
+    // Byte offset of the `async` keyword when it precedes `function` at
     // brace_depth 0. The async-detection branch below pushes `function`
-    // back so it's re-scanned on the *next* loop iteration — but pushback
-    // does not rewind lexer.pos, so that iteration's `pos_before` snapshot
-    // no longer points at `function`'s start. Stash the true offset here so
-    // the FUNCTION-handling branch can use it for source-text retention.
+    // back so it's re-scanned on the *next* loop iteration — that
+    // iteration's own `pos_before` snapshot only covers `function` onward,
+    // so the FUNCTION-handling branch uses this instead for source-text
+    // retention: starting the retained span at `async` (rather than
+    // `function`, with a synthesized literal "async " prefix bolted on)
+    // preserves whatever the source actually wrote in between, comments
+    // included (ES2019 §19.2.3.5 requires the exact source text).
     uint pending_async_fn_kw_pos = 0xFFFFFFFF;
 
     while (true) {
@@ -1549,15 +1552,20 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
             tok_opt.str_value[0] == 'a' && tok_opt.str_value[1] == 's' &&
             tok_opt.str_value[2] == 'y' && tok_opt.str_value[3] == 'n' &&
             tok_opt.str_value[4] == 'c') {
+            // Capture "async"'s own true source offset before peeking past
+            // it — self.lexer.token_start still reflects `tok_opt` (the just-
+            // consumed "async" identifier) at this point. Using this exact
+            // byte offset (instead of `function`'s, with a synthesized
+            // literal "async " prefix bolted on later) lets the retained
+            // source text preserve whatever the source actually wrote
+            // between "async" and "function" — inline comments included
+            // (ES2019 §19.2.3.5 requires the exact source text).
+            uint async_kw_pos = self.lexer.token_start;
             Token? async_peek = self.lexer.next_token();
             if (catch _err_peek = async_peek) continue;
             if (async_peek.type == TokenType.FUNCTION) {
                 // "async" consumed; push "function" back for the next iteration.
-                // Capture its true source offset now — pushback does not
-                // rewind lexer.pos, so the next iteration's `pos_before`
-                // would otherwise point past `function` (see
-                // pending_async_fn_kw_pos declaration above).
-                pending_async_fn_kw_pos = self.lexer.token_start;
+                pending_async_fn_kw_pos = async_kw_pos;
                 {
                     Token fn_tok = async_peek;
                     self.lexer.pushback(fn_tok);
@@ -1720,9 +1728,19 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
 
             // Handle generator star
             bool saved_gen = self.is_generator;
+            bool saved_user_gen = self.is_user_generator;
             self.is_generator = false;
+            self.is_user_generator = false;
             if (self.match(TokenType.STAR)) {
                 self.is_generator = true;
+                // Distinguishes a real syntactic generator from `is_generator`
+                // being set for async-function suspend machinery — without
+                // this, compile_inner_function's propagated inner_ctx never
+                // marks the closure a sync generator (is_sync_generator ==
+                // is_generator && is_user_generator && !is_async), so
+                // instantiate_closure builds a plain function whose call
+                // returns undefined instead of a Generator object.
+                self.is_user_generator = true;
             }
 
             Token name_tok2 = self.expect(TokenType.IDENTIFIER)!;
@@ -1750,6 +1768,7 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
             self.is_async = false;
 
             self.is_generator = saved_gen;
+            self.is_user_generator = saved_user_gen;
             self.is_constructable = saved_is_constructable;
 
             uint inner_idx = self.add_inner_func(inner);
@@ -2003,12 +2022,14 @@ fn void? CompilerContext.hoist_global_fn_decls(&self, bool checks_only = false) 
             tok_opt.str_value[0] == 'a' && tok_opt.str_value[1] == 's' &&
             tok_opt.str_value[2] == 'y' && tok_opt.str_value[3] == 'n' &&
             tok_opt.str_value[4] == 'c') {
+            // Capture "async"'s own true source offset before peeking past
+            // it (see hoist_decls' identical branch for why this must be
+            // "async"'s offset, not "function"'s).
+            uint async_kw_pos = self.lexer.token_start;
             Token? async_peek = self.lexer.next_token();
             if (catch _err_peek = async_peek) continue;
             if (async_peek.type == TokenType.FUNCTION) {
-                // Capture `function`'s true source offset before pushing it
-                // back — pushback does not rewind lexer.pos.
-                pending_async_fn_kw_pos = self.lexer.token_start;
+                pending_async_fn_kw_pos = async_kw_pos;
                 {
                     Token fn_tok = async_peek;
                     self.lexer.pushback(fn_tok);
@@ -2131,9 +2152,19 @@ fn void? CompilerContext.hoist_global_fn_decls(&self, bool checks_only = false) 
 
             // Handle generator star
             bool saved_gen = self.is_generator;
+            bool saved_user_gen = self.is_user_generator;
             self.is_generator = false;
+            self.is_user_generator = false;
             if (self.match(TokenType.STAR)) {
                 self.is_generator = true;
+                // Distinguishes a real syntactic generator from `is_generator`
+                // being set for async-function suspend machinery — without
+                // this, compile_inner_function's propagated inner_ctx never
+                // marks the closure a sync generator (is_sync_generator ==
+                // is_generator && is_user_generator && !is_async), so
+                // instantiate_closure builds a plain function whose call
+                // returns undefined instead of a Generator object.
+                self.is_user_generator = true;
             }
 
             Token name_tok2 = self.expect(TokenType.IDENTIFIER)!;
@@ -2161,6 +2192,7 @@ fn void? CompilerContext.hoist_global_fn_decls(&self, bool checks_only = false) 
             self.is_async = false;
 
             self.is_generator = saved_gen;
+            self.is_user_generator = saved_user_gen;
             self.is_constructable = saved_is_constructable;
 
             uint inner_idx = self.add_inner_func(inner);
