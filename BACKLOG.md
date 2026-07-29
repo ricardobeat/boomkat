@@ -29,7 +29,7 @@ Phase 15 (Classes) 5964 -> 7107 pass after un-skipping 1138 tests.
 
 ## Refcounting
 
-- [ ] `8c4cc55e` made property writes ~1.8% slower on `o.x=i` and ~4.5% on bench_object (measured idle, A/A floor ~1%)
+- [ ] Property writes ~3.6% slower than `1a66b347` — cost of the pinned-string guard in `935db5c3` (+3.6%) and `241c1f02` (+1.0%); ~1 point recovered by reordering, rest is inherent
 - [x] Audit builtins for `tval_copy_ref(ctx.result, &ctx.this_val)` — `65098c11`
 - [x] Refcount object/buffer values in property and array slots — `6d7e71ca`
 - [x] Combine incref/decref heap checks in `put_prop`/`set_array_idx` — `8c4cc55e`
