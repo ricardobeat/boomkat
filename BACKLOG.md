@@ -4,14 +4,18 @@
 
 ## Status
 
-All 18 test262 phases at 0 failures. 32,078 of 53,319 tests attempted.
+18 of 19 test262 phases at 0 failures; phase 25 (ESM) at 393 pass / 15 fail.
 
 ## test262
 
-- [ ] Modules — ~726 tests (`language/module-code`, `language/import`)
+- [x] Modules — phase 25 wired; 393/729 pass, 15 fail — `13912b8d`..`ed040486`
+- [ ] Module namespace TDZ ReferenceError escapes an enclosing try/catch (7 tests)
+- [ ] Dynamic-import DFS evaluation order and top-level-await sibling independence (4 tests)
+- [ ] Same-module `import {x}; export {x}` re-export needs ParseModule table cross-referencing (2 tests)
+- [ ] `top-level-await/new-await-script-code.js` compile error (1 CE)
+- [ ] `scripts/test262_skip.cfg` is dead — the live skip mechanism is embedded in run_test262.py
 - [ ] RegExp property-escapes tests time out under load
 - [ ] Decide where `just test262-gate` runs (Actions / pre-push hook / manual)
-- [ ] Single source of truth for `UNSUPPORTED_PATTERN` vs `scripts/test262_skip.cfg`
 - [x] Add 14 orphaned directories to `PHASES` — `916ffaed`
 - [x] Add `built-ins/Iterator` to phase 21 — `1a29b357`
 - [x] Un-skip `numeric-separator-literal` — `a54af668`
@@ -42,7 +46,6 @@ All 18 test262 phases at 0 failures. 32,078 of 53,319 tests attempted.
 - [ ] `heap.int_to_hstring` small-int cache increfs without a matching decref
 - [ ] Destructuring-assignment to a member target drops `await` in the RHS
 - [ ] Re-measure `RET` this_binding-clear cost on an idle machine
-
 - [ ] `async function`'s own `GeneratorState` leaks
 - [ ] Re-measure the baseline leak count
 - [x] `error.c3` `.stack` name fallback fabricated `[object Object]` — `d5bb7997`
