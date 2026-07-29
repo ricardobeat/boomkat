@@ -45,10 +45,10 @@ Phase 15 (Classes) 5964 -> 7107 pass after un-skipping 1138 tests.
 
 ## Known bugs
 
-- [ ] `eval('arguments.length')` inside an ordinary function throws ReferenceError
+- [x] `eval('arguments.length')` in an ordinary function threw ReferenceError — `b46936fd`
 
 - [x] Pinned-string refcount drift via GETPROP_CACHE writeback — `3b741b0e`
-- [ ] Destructuring-assignment to a member target drops `await` in the RHS
+- [x] Destructuring-assignment to a member target dropped `await` — fixed incidentally by `1a66b347`
 - [x] `05007aa0` RET cost — below a ~0.5-1% noise floor, not resolvable
 - [x] Async `GeneratorState` leak, plus the GC crash it hid — `b0c63211`
 - [ ] `leaks --atExit` hangs on this binary/macOS combination — use live_obj_count instead
