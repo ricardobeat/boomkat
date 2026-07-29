@@ -2842,6 +2842,14 @@ fn CompiledFunction*? CompilerContext.compile_key_expr(&self) {
     key_ctx.forbid_return = self.forbid_return;
     key_ctx.forbid_await = self.forbid_await;
     key_ctx.forbid_yield = self.forbid_yield;
+    // The key is evaluated in the enclosing class scope, so private names
+    // declared on that class (including ones declared later in the body,
+    // via the pre-scan) must resolve inside the key expression too — e.g.
+    // `[self.#f] = 1; #f = 2;` (private-field-is-visible-in-computed-
+    // properties.js) and `[this.#m()] = 1` referencing a sibling method.
+    key_ctx.adopt_private_names(self);
+    key_ctx.private_scope_start = self.private_scope_start;
+    key_ctx.private_scope_depth = self.private_scope_depth;
 
     key_ctx.emit_simple(Opcode.PUSH_LEX);
     ushort expr_reg = key_ctx.assignment_expr()!;

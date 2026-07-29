@@ -319,19 +319,6 @@ SKIP_FILES = {
     # assertion runs. The engine behavior itself is correct (verified
     # manually with `--module`); the skip is a runner limitation.
     "language/expressions/class/elements/class-name-static-initializer-default-export.js",
-    # Forward references to private names from computed property keys —
-    # the pre-scan in private_names.c3 recognises only direct `obj.#x`
-    # access via prev_tok_type DOT/OPT_CHAIN, but the `[self.#x] = ...`
-    # pattern inside a field initializer uses `self` as a bare identifier
-    # and the inner `#x` is wrapped in computed-key parens. The
-    # compile_key_expr path doesn't adopt_private_names from the parent
-    # class context, so `self.#x` inside the key resolves to a SyntaxError.
-    # Pre-existing — was hidden behind the public-field skip.
-    "language/statements/class/elements/private-method-is-visible-in-computed-properties.js",
-    "language/statements/class/elements/private-field-is-not-clobbered-by-computed-property.js",
-    "language/statements/class/elements/private-accessor-is-visible-in-computed-properties.js",
-    "language/statements/class/elements/private-field-with-initialized-id-is-visible-in-computed-properties.js",
-    "language/statements/class/elements/private-field-is-visible-in-computed-properties.js",
     # Same-line `y = this.#x = 1; #x;` pattern — chained private-write then
     # field declaration. The chained private-write requires the field-init
     # context to parse `this.#x = 1` as a private brand-gated assignment,

@@ -441,6 +441,43 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
         }
     }
 
+    // Private class fields (ES2022): allocate a fresh hidden symbol for every
+    // private name declared in this class body (own scope only — nested
+    // classes push/pop their own) and the instance brand, if any, BEFORE any
+    // class element compiles/runs. Each NEW_PRIV_SYM result is stored into
+    // its compiler-managed lexical slot (declared during the pre-scan) so
+    // method/field-init bodies resolve it via GETVAR, exactly like __super__.
+    // Fresh per class *evaluation* — this is what gives per-evaluation-
+    // freshness for free. This must run before the member loop below because
+    // a computed property key (`[expr]`) is evaluated immediately, in source
+    // order, at class-definition time (ES2022 §15.7.15 step 6.a.i) — it can
+    // reference a private name (`[this.#m()]`) that is declared later in the
+    // same class body, per the pre-scan, so the symbol/brand must already
+    // exist in scope by then (test262 private-*-is-visible-in-computed-
+    // properties.js). The STATIC brand is intentionally NOT created here —
+    // it stamps the constructor object itself via ADD_BRAND, which needs
+    // ctor_reg, not yet live until the constructor closure is built below.
+    {
+        uint priv_scope_begin = self.private_scope_depth > 0
+            ? self.private_scope_start[self.private_scope_depth - 1] : 0;
+        for (uint pi = priv_scope_begin; pi < self.private_name_table.count; pi++) {
+            uint desc_idx = self.add_string_constant(self.private_name_table.entries[pi].name);
+            ushort sym_reg = self.alloc_reg();
+            self.emit_a_bc(Opcode.NEW_PRIV_SYM, (uint)sym_reg, desc_idx);
+            self.emit_a_bc(Opcode.PUTLEX, (uint)sym_reg,
+                self.add_string_constant(self.private_name_table.entries[pi].slot_name));
+            self.free_reg(sym_reg);
+        }
+        if (has_brand) {
+            uint brand_desc_idx = self.add_string_constant("brand");
+            ushort brand_reg = self.alloc_reg();
+            self.emit_a_bc(Opcode.NEW_PRIV_SYM, (uint)brand_reg, brand_desc_idx);
+            self.emit_a_bc(Opcode.PUTLEX, (uint)brand_reg,
+                self.add_string_constant(brand_slot_name));
+            self.free_reg(brand_reg);
+        }
+    }
+
     // Parse class body
     self.expect(TokenType.LBRACE)!;
 
@@ -1368,32 +1405,11 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
         self.emit_a_bc(Opcode.PUTLEX, (uint)super_reg, super_name_idx);
     }
 
-    // Private class fields (ES2022): allocate a fresh hidden symbol for every
-    // private name declared in this class body (own scope only — nested
-    // classes push/pop their own), and the class brand if any private member
-    // exists. Each NEW_PRIV_SYM result is stored into its compiler-managed
-    // lexical slot (declared during the pre-scan) so method/field-init
-    // bodies resolve it via GETVAR, exactly like __super__.  Fresh per class
-    // *evaluation* — this is what gives per-evaluation-freshness for free.
+    // P5 static brand: allocated here (not with the instance brand / private
+    // symbols above, which must exist before the member loop for computed
+    // keys) because it stamps the CONSTRUCTOR object itself via ADD_BRAND,
+    // which needs ctor_reg — not live until the constructor closure exists.
     {
-        uint priv_scope_begin = self.private_scope_depth > 0
-            ? self.private_scope_start[self.private_scope_depth - 1] : 0;
-        for (uint pi = priv_scope_begin; pi < self.private_name_table.count; pi++) {
-            uint desc_idx = self.add_string_constant(self.private_name_table.entries[pi].name);
-            ushort sym_reg = self.alloc_reg();
-            self.emit_a_bc(Opcode.NEW_PRIV_SYM, (uint)sym_reg, desc_idx);
-            self.emit_a_bc(Opcode.PUTLEX, (uint)sym_reg,
-                self.add_string_constant(self.private_name_table.entries[pi].slot_name));
-            self.free_reg(sym_reg);
-        }
-        if (has_brand) {
-            uint brand_desc_idx = self.add_string_constant("brand");
-            ushort brand_reg = self.alloc_reg();
-            self.emit_a_bc(Opcode.NEW_PRIV_SYM, (uint)brand_reg, brand_desc_idx);
-            self.emit_a_bc(Opcode.PUTLEX, (uint)brand_reg,
-                self.add_string_constant(brand_slot_name));
-            self.free_reg(brand_reg);
-        }
         if (has_static_brand) {
             // P5: the static brand is stamped on the CONSTRUCTOR object
             // itself, right here in the class-evaluation bytecode (ctor_reg
