@@ -4,12 +4,13 @@
 
 ## Status
 
-18 of 19 test262 phases at 0 failures; phase 25 (ESM) at 393 pass / 15 fail.
+18 of 19 test262 phases at 0 failures; phase 25 (ESM) at 399 pass / 9 fail.
 
 ## test262
 
 - [x] Modules — phase 25 wired; 393/729 pass, 15 fail — `13912b8d`..`ed040486`
-- [ ] Module namespace TDZ ReferenceError escapes an enclosing try/catch (7 tests)
+- [x] Indirect re-exports leaked as local identifiers; relative-path module identity — `ab7d4fc3`
+- [ ] Direct self-import of a `class` binding doesn't throw TDZ for `typeof` before the class runs (2 tests)
 - [ ] Dynamic-import DFS evaluation order and top-level-await sibling independence (4 tests)
 - [ ] Same-module `import {x}; export {x}` re-export needs ParseModule table cross-referencing (2 tests)
 - [ ] `top-level-await/new-await-script-code.js` compile error (1 CE)
