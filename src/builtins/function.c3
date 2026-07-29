@@ -749,49 +749,12 @@ fn void builtin_function_proto_bind(BuiltinContext* ctx) {
         (*bound_obj.extra_ptr()).func.bound_args = null;
     }
 
-    // ── Set .name: "bound " + targetName (ES6 §19.2.3.3) ──────────────
-    // Per spec: Get(target, "name") — must invoke accessor getters and
-    // propagate any abrupt completion (throw) before creating the bound fn.
-    HString* name_key = builtin_intern_string(ctx.heap, "name");
-    char[128] name_buf;
-    int name_pos = 0;
-    // Copy "bound " prefix
-    char[] prefix = "bound ";
-    for (usz i = 0; i < prefix.len; i++) name_buf[name_pos++] = prefix[i];
-
-    if (downstream.is_object()) {
-        HObject* tobj = (HObject*)downstream.get_heapptr();
-        if (tobj != null) {
-            // Use full Get semantics: invokes getter, propagates throw.
-            TVal? target_name_val = builtins_generic_get(tobj, name_key, ctx);
-            if (ctx.should_throw) {
-                // Getter threw — propagate. bound_args_arr already freed above.
-                return;
-            }
-            if (try tn = target_name_val) {
-                if (tn.is_string() && tn.get_heapptr() != null) {
-                    HString* tn_str = (HString*)tn.get_heapptr();
-                    // Symbols are stored as HString with is_symbol flag;
-                    // per spec Type(targetName) must be String (not Symbol).
-                    if (!tn_str.is_symbol()) {
-                        char* tn_data = tn_str.get_cstr();
-                        uint tn_len = tn_str.blen;
-                        for (usz i = 0; i < tn_len && name_pos < 126; i++) {
-                            name_buf[name_pos++] = tn_data[i];
-                        }
-                    }
-                }
-                // Non-string targetName (or Symbol) → use "" (nothing after "bound ")
-            }
-        }
-    }
-    HString* bound_name = builtin_intern_string(ctx.heap, name_buf[:name_pos]);
-    if (bound_name != null) {
-        TVal name_tv; name_tv.set_string(bound_name);
-        bound_obj.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC);
-    }
-
-    // ── Set .length (ES6 §19.2.3.3 SetFunctionLength) ────────────────
+    // ── Set .length (ES6 §19.2.3.3 SetFunctionLength) ──────────────────
+    // Ordering: BoundFunctionCreate's caller (Function.prototype.bind, ES2022
+    // §20.2.3.2) computes and sets L (step 5) before it ever reads targetName
+    // (step 6) — so "length" must land as an own property before "name",
+    // matching creation-order-sensitive consumers like
+    // Object.getOwnPropertyNames.
     // Use double throughout so values up to Number.MAX_SAFE_INTEGER (2^53-1)
     // and +Infinity are preserved exactly (spec: ToIntegerOrInfinity then
     // max(0, targetLen - boundArgc)).
@@ -848,6 +811,48 @@ fn void builtin_function_proto_bind(BuiltinContext* ctx) {
     len_flags.configurable = true;
     len_flags.is_accessor = false;
     bound_obj.put_prop(len_key, len_tv, len_flags);
+
+    // ── Set .name: "bound " + targetName (ES6 §19.2.3.3) ──────────────
+    // Per spec: Get(target, "name") — must invoke accessor getters and
+    // propagate any abrupt completion (throw) before creating the bound fn.
+    HString* name_key = builtin_intern_string(ctx.heap, "name");
+    char[128] name_buf;
+    int name_pos = 0;
+    // Copy "bound " prefix
+    char[] prefix = "bound ";
+    for (usz i = 0; i < prefix.len; i++) name_buf[name_pos++] = prefix[i];
+
+    if (downstream.is_object()) {
+        HObject* tobj = (HObject*)downstream.get_heapptr();
+        if (tobj != null) {
+            // Use full Get semantics: invokes getter, propagates throw.
+            TVal? target_name_val = builtins_generic_get(tobj, name_key, ctx);
+            if (ctx.should_throw) {
+                // Getter threw — propagate. bound_args_arr already freed above.
+                return;
+            }
+            if (try tn = target_name_val) {
+                if (tn.is_string() && tn.get_heapptr() != null) {
+                    HString* tn_str = (HString*)tn.get_heapptr();
+                    // Symbols are stored as HString with is_symbol flag;
+                    // per spec Type(targetName) must be String (not Symbol).
+                    if (!tn_str.is_symbol()) {
+                        char* tn_data = tn_str.get_cstr();
+                        uint tn_len = tn_str.blen;
+                        for (usz i = 0; i < tn_len && name_pos < 126; i++) {
+                            name_buf[name_pos++] = tn_data[i];
+                        }
+                    }
+                }
+                // Non-string targetName (or Symbol) → use "" (nothing after "bound ")
+            }
+        }
+    }
+    HString* bound_name = builtin_intern_string(ctx.heap, name_buf[:name_pos]);
+    if (bound_name != null) {
+        TVal name_tv; name_tv.set_string(bound_name);
+        bound_obj.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC);
+    }
 
     // Bound function exotic objects have no own "prototype" property
     // (ES2015 §19.2.3.2 BoundFunctionCreate step 4 only sets length/name).
