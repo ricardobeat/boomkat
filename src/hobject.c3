@@ -1520,22 +1520,17 @@ fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags) {
 
     // --- Transition shape to include the new property ---
     // We already called find_prop_idx() above which confirmed the key is new,
-    // so use transition_shape_new() which skips the O(N) chain walk.
+    // so use transition_shape_new_flags() which skips the O(N) chain walk.
+    // The transition is keyed on (parent, key, flags), so installing the same
+    // property with the same non-default flags on every instance of a class
+    // (e.g. a private field) converges on one shared shape instead of forcing
+    // a private, uncacheable shape per object via set_prop_flags().
     if (_active_heap != null) {
         heap::Heap* h = (heap::Heap*)_active_heap;
-        ushort new_shape_id = h.transition_shape_new(self.shape_id, key);
+        ushort new_shape_id = h.transition_shape_new_flags(self.shape_id, key, pflags);
         if (new_shape_id != self.shape_id) {
             self.shape_id = new_shape_id;
             self.set_shape(h.get_shape(new_shape_id));
-        }
-        // If the caller wants non-default flags, update the shape.
-        // set_prop_flags handles making the shape private if shared.
-        if (self.prop_count > 0) {
-            PropFlags shape_f = self.get_prop_flags(new_idx);
-            if (shape_f.writable != pflags.writable || shape_f.enumerable != pflags.enumerable ||
-                shape_f.configurable != pflags.configurable || shape_f.is_accessor != pflags.is_accessor) {
-                self.set_prop_flags(new_idx, pflags);
-            }
         }
     }
 

@@ -807,6 +807,12 @@ struct TransitionEntry {
     uint parent_id;
     void* key;
     ushort shape_id;
+    /// Property flags this transition installs (raw PropFlags byte). Part of
+    /// the dedup key: two objects reaching the same parent shape and adding
+    /// the same key with the same flags can share the resulting shape, but a
+    /// transition that installs different flags for that key must be a
+    /// distinct shape (or every reader would see the wrong attributes).
+    char flags;
 }
 
 fn void Heap.init_transition_table(&self) {
@@ -817,24 +823,25 @@ fn void Heap.init_transition_table(&self) {
     mem::set(self.trans_table, 0xFF, (sz)(bytes));
 }
 
-fn uint hash_transition(uint parent_id, void* key) @inline {
+fn uint hash_transition(uint parent_id, void* key, char flags) @inline {
     uint h = parent_id;
     h ^= (uint)((usz)key);
+    h ^= (uint)flags;
     h = ((h >> 16) ^ h) * 0x45D9_F3B;
     h = ((h >> 16) ^ h) * 0x45D9_F3B;
     h = (h >> 16) ^ h;
     return h;
 }
 
-fn ushort Heap.lookup_transition(&self, uint parent_id, void* key) {
-    uint h = hash_transition(parent_id, key);
+fn ushort Heap.lookup_transition(&self, uint parent_id, void* key, char flags) {
+    uint h = hash_transition(parent_id, key, flags);
     uint mask = self.trans_mask;
     uint slot = h & mask;
     TransitionEntry* table = self.trans_table;
     for (uint i = 0; i <= mask; i++) {
         TransitionEntry* e = &table[slot];
         if (e.parent_id == SHAPE_NONE) return SHAPE_ID_NONE;
-        if (e.parent_id == parent_id && e.key == key) return e.shape_id;
+        if (e.parent_id == parent_id && e.key == key && e.flags == flags) return e.shape_id;
         slot = (slot + 1) & mask;
     }
     return SHAPE_ID_NONE;
@@ -851,7 +858,7 @@ fn void Heap.transition_table_grow(&self) {
     for (uint i = 0; i <= old_mask; i++) {
         TransitionEntry* e = &old_table[i];
         if (e.parent_id == SHAPE_NONE) continue;
-        uint h = hash_transition(e.parent_id, e.key);
+        uint h = hash_transition(e.parent_id, e.key, e.flags);
         uint slot = h & new_mask;
         while (new_table[slot].parent_id != SHAPE_NONE) slot = (slot + 1) & new_mask;
         new_table[slot] = *e;
@@ -861,11 +868,11 @@ fn void Heap.transition_table_grow(&self) {
     self.trans_mask = new_mask;
 }
 
-fn void Heap.insert_transition(&self, uint parent_id, void* key, ushort shape_id) {
+fn void Heap.insert_transition(&self, uint parent_id, void* key, char flags, ushort shape_id) {
     if ((self.trans_count + 1) * 100 > (self.trans_mask + 1) * SHAPE_TRANS_LOAD) {
         self.transition_table_grow();
     }
-    uint h = hash_transition(parent_id, key);
+    uint h = hash_transition(parent_id, key, flags);
     uint mask = self.trans_mask;
     uint slot = h & mask;
     TransitionEntry* table = self.trans_table;
@@ -875,6 +882,7 @@ fn void Heap.insert_transition(&self, uint parent_id, void* key, ushort shape_id
     if (key != null) {
         ((HeapHeader*)key).incref();
     }
+    table[slot].flags = flags;
     table[slot].shape_id = shape_id;
     self.trans_count++;
 }
@@ -913,29 +921,45 @@ fn uint Heap.alloc_shape_slot(&self) {
 }
 
 
-/// Transition to a new shape that includes the given property key.
+/// Transition to a new shape that includes the given property key, using the
+/// default WEC data-property flags.  Thin wrapper over
+/// transition_shape_new_flags() for the overwhelmingly common case.
+fn ushort Heap.transition_shape_new(&self, ushort cur_shape_id, void* key) {
+    return self.transition_shape_new_flags(cur_shape_id, key, hobject::PROP_FLAGS_WEC);
+}
+
+/// Transition to a new shape that includes the given property key with the
+/// given flags.
 ///
 /// If the current shape already has this key, returns the current shape
 /// (the caller should update the existing slot).
 /// Transition to a new shape for a property that is KNOWN to be new.
 /// Skips the O(N) chain walk — the caller has already confirmed via
 /// find_prop_idx() that the key does not exist in the object.
-fn ushort Heap.transition_shape_new(&self, ushort cur_shape_id, void* key) {
+///
+/// The transition table is keyed on (parent shape, key, flags): two objects
+/// that reach the same parent shape and add the same key with the same flags
+/// converge on one shared shape, even when those flags are non-default (e.g.
+/// every instance of a class installing the same private field). Only a
+/// transition that installs *different* flags for that key gets a distinct
+/// shape — sharing is never based on key alone.
+fn ushort Heap.transition_shape_new_flags(&self, ushort cur_shape_id, void* key, hobject::PropFlags flags) {
     if (cur_shape_id >= self.shape_count || self.shapes[cur_shape_id] == null) {
         return cur_shape_id;
     }
 
     hobject::Shape* cur = self.shapes[cur_shape_id];
+    char raw_flags = (char)flags;
 
     // Check transition table for existing child shape (another object may have
-    // already taken the same transition).
-    ushort existing = self.lookup_transition(cur_shape_id, key);
+    // already taken the same transition with the same flags).
+    ushort existing = self.lookup_transition(cur_shape_id, key, raw_flags);
     if (existing != SHAPE_ID_NONE) {
         return existing;
     }
 
     // Allocate a new shape that extends the current one.
-    hobject::Shape* ns = hobject::shape_extend(cur, cur_shape_id, key, hobject::PROP_FLAGS_WEC);
+    hobject::Shape* ns = hobject::shape_extend(cur, cur_shape_id, key, flags);
     if (ns == null) return cur_shape_id;
 
     uint new_id = self.alloc_shape_slot();
@@ -945,7 +969,7 @@ fn ushort Heap.transition_shape_new(&self, ushort cur_shape_id, void* key) {
     }
 
     self.shapes[new_id] = ns;
-    self.insert_transition(cur_shape_id, key, (ushort)new_id);
+    self.insert_transition(cur_shape_id, key, raw_flags, (ushort)new_id);
     return (ushort)new_id;
 }
 
