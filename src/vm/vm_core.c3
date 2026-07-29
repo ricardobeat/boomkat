@@ -445,8 +445,15 @@ fn TVal handle_return(Vm* vm, TVal val) @inline {
     if (vm.activation_count == 0) {
         vm.heap.tval_copy_ref(&vm.return_val, &val);
         // Release the this_binding reference after the return value is saved.
+        // Clear the slot after releasing the ref: activation slots are pooled
+        // by depth index and reused without zeroing (see the fast-call path's
+        // matching comment), so a future call reusing this same slot would
+        // otherwise decref these stale bits a second time via tval_copy_ref's
+        // own dst-decref, underflowing the refcount of whatever object this
+        // this_binding used to hold.
         if ((callee_act.flags & ACT_FLAG_THIS_OWNED) != 0) {
             vm.heap.decref_tval(&callee_act.this_binding);
+            callee_act.this_binding.set_undefined();
         }
         return val;
     }
@@ -498,8 +505,14 @@ fn TVal handle_return(Vm* vm, TVal val) @inline {
     // (construct returns may read this_binding to produce the result value).
     // ACT_FLAG_THIS_OWNED is set by paths that incref this_binding (inline CALL,
     // getter invocation) and NOT set by vm_call_fn_impl (raw assign + restore).
+    // Clear the slot after releasing the ref: activation slots are pooled by
+    // depth index and reused without zeroing, so a future call reusing this
+    // same slot would otherwise decref these stale bits a second time via
+    // tval_copy_ref's own dst-decref, underflowing the refcount of whatever
+    // object this this_binding used to hold.
     if ((callee_act.flags & ACT_FLAG_THIS_OWNED) != 0) {
         vm.heap.decref_tval(&callee_act.this_binding);
+        callee_act.this_binding.set_undefined();
     }
 
     // Restore valstack_top to match caller's nregs

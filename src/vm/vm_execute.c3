@@ -3354,6 +3354,18 @@ fn TVal? Vm.run(Vm* vm) {
                 }
             }
             if (val_pinned) vm.heap.decref_tval(&val);
+            // Release the this_binding reference AFTER the result has been written
+            // (construct returns above may still read callee_act.this_binding to
+            // produce the result value). Activation slots are pooled by depth index
+            // and reused without zeroing: the next call landing on this same slot
+            // writes a new this_binding via tval_copy_ref, whose own dst-decref
+            // would otherwise fire on these stale bits a second time — or, if this
+            // object has since become unreachable and been swept, read freed memory.
+            // Mirrors handle_return's (out-of-line) release/clear in vm_core.c3.
+            if ((callee_act.flags & ACT_FLAG_THIS_OWNED) != 0) {
+                vm.heap.decref_tval(&callee_act.this_binding);
+                callee_act.this_binding.set_undefined();
+            }
             // Restore caller state inline — skip outer loop restart.
             ds.act = &vm.activations[vm.activation_count - 1];
             vm.valstack_bottom = ds.act.bottom;
@@ -3552,6 +3564,16 @@ fn TVal? Vm.run(Vm* vm) {
                     }
                     *callee_result = undef_val;
                 }
+            }
+            // Release the this_binding reference AFTER the result has been written
+            // (the ACT_FLAG_CONSTRUCT branch above may still read callee_act.this_binding
+            // to produce the result value). See the matching RET handler above and
+            // handle_return (vm_core.c3) for why the slot must also be cleared here,
+            // not just decref'd — activation slots are pooled by depth index and
+            // reused without zeroing.
+            if ((callee_act.flags & ACT_FLAG_THIS_OWNED) != 0) {
+                vm.heap.decref_tval(&callee_act.this_binding);
+                callee_act.this_binding.set_undefined();
             }
             // Restore caller state inline — skip outer loop restart.
             ds.act = &vm.activations[vm.activation_count - 1];

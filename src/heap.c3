@@ -1565,6 +1565,10 @@ fn HObject*? Heap.alloc_object(&self, hobject::ObjClass cls) {
         if (self.live_obj_count > self.peak_live_obj_count) {
             self.peak_live_obj_count = self.live_obj_count;
         }
+        self.gc_trigger_counter--;
+        if (self.gc_trigger_counter <= 0) {
+            self.gc_pending = true;
+        }
     }
     return result;
 }

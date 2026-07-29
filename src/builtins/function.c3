@@ -347,11 +347,21 @@ fn void builtin_function_proto_call(BuiltinContext* ctx) {
             }
             return;
         }
-        // Fallback: re-dispatch for compiled functions and bound functions
+        // Fallback: re-dispatch for compiled functions and bound functions.
+        // Shift args left by one (dropping thisArg) and clear the now-duplicated
+        // tail slots — same hazard as the branches above: base_reg+0 still holds
+        // the raw copy of thisArg that new_this was read from, and it now lies
+        // outside the re-dispatched call's argc window but still inside this
+        // frame's own decref window, so an uncleared slot double-decrefs thisArg
+        // (once via the this-slot the re-dispatched call tears down, once via
+        // this frame's own RET) without a matching second incref.
         ctx.regs[ctx.base_reg - 2] = downstream;
         ctx.regs[ctx.base_reg - 1] = new_this;
         for (ushort i = 0; i < remaining; i++) {
             ctx.regs[ctx.base_reg + i] = builtin_arg(ctx, i + 1);
+        }
+        for (ushort i = remaining; i < ctx.argc; i++) {
+            ctx.regs[ctx.base_reg + i].set_undefined();
         }
         ctx.needs_re_dispatch = true;
         ctx.re_nargs = remaining;
