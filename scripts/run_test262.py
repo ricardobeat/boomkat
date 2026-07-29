@@ -35,7 +35,6 @@ Usage:
 import argparse
 import collections
 import fnmatch
-import glob
 import os
 import random
 import re
@@ -297,31 +296,6 @@ SKIP_FILES = {
     # context to parse `this.#x = 1` as a private brand-gated assignment,
     # but the same-line parser treats it as separate elements. Pre-existing.
     "language/statements/class/elements/privatefieldset-typeerror-1.js",
-    # Same-line class-body parsing — multiple class elements (private
-    # fields, methods, public fields) declared on one source line separated
-    # by `;`. These tests pre-date P7 but were hidden behind the
-    # `class-fields-public` skip. The current parser treats each line as
-    # a single element under specific conditions; the fix is a unified
-    # element boundary that respects ASI-without-bracket-continuation per
-    # §11.9.1. Deferring — these need a dedicated parser refactor that
-    # crosses the class-body / expressions.c3 boundary.
-    *(lambda: (
-        [s[len("test262/test/"):] for s in
-         glob.glob("test262/test/language/statements/class/elements/*same-line*private*.js")
-         + glob.glob("test262/test/language/expressions/class/elements/*same-line*private*.js")
-         + glob.glob("test262/test/language/statements/class/elements/*new-sc-line*private*.js")
-         + glob.glob("test262/test/language/expressions/class/elements/*new-sc-line*private*.js")
-         + glob.glob("test262/test/language/statements/class/elements/*new-no-sc-line*private*.js")
-         + glob.glob("test262/test/language/expressions/class/elements/*new-no-sc-line*private*.js")
-         + glob.glob("test262/test/language/statements/class/elements/*wrapped-in-sc*private*.js")
-         + glob.glob("test262/test/language/expressions/class/elements/*wrapped-in-sc*private*.js")
-         + glob.glob("test262/test/language/statements/class/elements/*multiple-stacked*private*.js")
-         + glob.glob("test262/test/language/expressions/class/elements/*multiple-stacked*private*.js")
-         + glob.glob("test262/test/language/statements/class/elements/*multiple-definitions*private*.js")
-         + glob.glob("test262/test/language/expressions/class/elements/*multiple-definitions*private*.js")
-         + glob.glob("test262/test/language/statements/class/elements/*regular-definitions*private*.js")
-         + glob.glob("test262/test/language/expressions/class/elements/*regular-definitions*private*.js")]
-    ))(),
     # B17 — for-loop tests that depend on implicit globals (Sputnik 2009
     # era tests where `__in__deepest__loop = __in__deepest__loop` must not
     # throw ReferenceError). Our strict engine rejects implicit globals.
