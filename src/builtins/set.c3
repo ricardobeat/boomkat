@@ -554,17 +554,8 @@ fn void builtin_set_proto_forEach(BuiltinContext* ctx) {
     if (set == null) { ctx.result.set_undefined(); return; }
 
     if (ctx.argc < 1) {
-        HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
-        if (try err = err_raw) {
-            err.prototype = ctx.heap.type_err_proto;
-            HString* msg_str = builtin_intern_string(ctx.heap, "missing argument 0 when calling function forEach");
-            if (msg_str != null) {
-                TVal msg_val;
-                msg_val.set_string(msg_str);
-                HString* msg_key = builtin_intern_string(ctx.heap, "message");
-                err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WC);
-            }
-        }
+        builtin_throw_no_result_change(ctx, ctx.heap.type_err_proto,
+            "missing argument 0 when calling function forEach");
         ctx.result.set_undefined();
         return;
     }
