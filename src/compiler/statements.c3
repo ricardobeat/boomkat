@@ -4787,7 +4787,14 @@ fn void? CompilerContext.export_declaration(&self) {
             // (class_declaration returns it), not always *default*.
             char[] dflt_class_name;
             self.class_declaration(&dflt_class_name, true)!;
-            mod_register_export(mod, dflt_class_name, "default", false, 0);
+            // A class declaration's outer binding is always lexical (`let`-style,
+            // TDZ until the class evaluates) — see class_declaration's class_reg
+            // above, whether the class is named or the anonymous `*default*`
+            // symbol. Registering this as non-lexical left link_module's
+            // export pre-declaration loop seeding a plain `undefined` instead
+            // of the TDZ sentinel, so a same-module self-import of the default
+            // binding observed `undefined` instead of throwing ReferenceError.
+            mod_register_export(mod, dflt_class_name, "default", false, 0, true);
             self.match(TokenType.SEMICOLON);
             return;
         }

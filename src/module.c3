@@ -632,56 +632,26 @@ fn bool link_module(Heap* heap, vm::Vm* vm, ModuleDef* mod, EnvRecord* global_en
     // on the heap error channel for dynamic_import to surface as the rejection.
     if (!validate_indirect_exports(heap, mod)) return false;
 
-    // Resolve import bindings: copy values from source module's env
+    // Validate named imports against JSON dependencies. A JSON module exports
+    // only `default`; importing any other named binding from it is a
+    // resolution-phase SyntaxError (ECMA-262: JSON modules define no named
+    // bindings). Fail the link so run_module_file reports it as a load/
+    // resolution error. This is the only work link_module does over
+    // `mod.imports` — the actual bindings (including this module's own
+    // self-imports) are installed later by execute_module's live-binding
+    // loop, which runs after every module env's export/TDZ pre-declaration
+    // (below) has completed; installing them here, before that
+    // pre-declaration, used to shadow a self-imported `let`/`const`/`class`
+    // export's TDZ sentinel with a premature `undefined` copy.
     for (uint i = 0; i < mod.import_count; i++) {
         ImportEntry* ie = &mod.imports[i];
+        if (ie.is_star) continue;
         if (ie.req_module_idx >= mod.req_module_count) continue;
         ReqModuleEntry* rme = &mod.req_modules[ie.req_module_idx];
         if (rme.resolved == null) continue;
         ModuleDef* source_mod = (ModuleDef*)rme.resolved;
-
-        if (ie.is_star) {
-            // `import * as ns` — create namespace object
-            // For now, skip namespace object creation (Phase 2)
-            continue;
-        }
-
-        // A JSON module exports only `default`; importing any other named
-        // binding from it is a resolution-phase SyntaxError (ECMA-262: JSON
-        // modules define no named bindings). Fail the link so run_module_file
-        // reports it as a load/resolution error.
         if (source_mod.is_json && !char_slice_eq(ie.import_name, "default")) {
             return false;
-        }
-
-        // Look up the exported name in the source module's env
-        HString* key = heap.str_intern(ie.import_name);
-        if (key == null) continue;
-
-        TVal? val_opt = env::env_get(source_mod.env, key);
-        if (catch err = val_opt) {
-            // Binding not found — set to undefined (will be live-binding later)
-            TVal undef;
-            undef.set_undefined();
-            env::env_declare(mod.env, key, undef);
-        } else {
-            env::env_declare(mod.env, key, val_opt);
-        }
-
-        // Also declare the local name if different from import name
-        if (ie.local_name.len != ie.import_name.len ||
-            !char_slice_eq(ie.local_name, ie.import_name)) {
-            HString* local_key = heap.str_intern(ie.local_name);
-            if (local_key != null) {
-                TVal? local_val = env::env_get(source_mod.env, key);
-                if (catch err2 = local_val) {
-                    TVal undef;
-                    undef.set_undefined();
-                    env::env_declare(mod.env, local_key, undef);
-                } else {
-                    env::env_declare(mod.env, local_key, local_val);
-                }
-            }
         }
     }
 
