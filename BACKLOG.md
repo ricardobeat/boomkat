@@ -4,12 +4,12 @@
 
 ## Status
 
-18 of 19 test262 phases at 0 failures; phase 25 (ESM) at 408 pass / 1 fail.
+All 19 test262 phases at 0 failures.
 Phase 15 (Classes) 5964 -> 7107 pass after un-skipping 1138 tests.
 
 ## test262
 
-- [ ] `pending-async-dep-from-cycle.js` — cycle-root vs importer ordering in async dependency settlement (1 test)
+- [x] Pending async dependency must resolve through its cycle root — `4fc1e305`
 
 - [x] Modules — phase 25 wired; 393/729 pass, 15 fail — `13912b8d`..`ed040486`
 - [x] Indirect re-exports leaked as local identifiers; relative-path module identity — `ab7d4fc3`
