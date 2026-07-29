@@ -222,19 +222,28 @@ fn char[]? call_resolve_name(Heap* heap, char[] base_name, char[] specifier) {
     }
     // Bare specifier (no leading dot) — return as-is
     if (specifier.len > 0 && specifier[0] != '.') return specifier;
-    // Relative specifier — resolve against base_name's directory
-    if (base_name.len == 0) return specifier;
+    // Relative specifier — resolve against base_name's directory. A leading
+    // "./" must be stripped in every case (not just when base_name itself
+    // has a directory component) so the same file always normalizes to the
+    // same identifier regardless of which importer's relative path reached
+    // it — e.g. a top-level module loaded as "a.js" (no base directory) and
+    // a same-directory sibling's "./a.js" re-export must resolve to the
+    // identical cache key, or the module cache treats them as two distinct
+    // ModuleDefs: a cyclic self-reference silently gets its own separate,
+    // never-evaluated env, whose pre-linked TDZ export bindings then leak
+    // into a module-namespace accessor read as a spurious TDZ throw.
+    char[] rel = specifier;
+    if (rel.len >= 2 && rel[0] == '.' && rel[1] == '/') {
+        rel = rel[2..];
+    }
+    if (base_name.len == 0) return rel;
     // Find last '/' in base_name to get directory
     int last_slash = -1;
     for (usz i = 0; i < base_name.len; i++) {
         if (base_name[i] == '/') last_slash = (int)i;
     }
-    if (last_slash < 0) return specifier;
+    if (last_slash < 0) return rel;
     char[] dir = base_name[:last_slash + 1];
-    char[] rel = specifier;
-    if (rel.len >= 2 && rel[0] == '.' && rel[1] == '/') {
-        rel = rel[2..];
-    }
     usz total = dir.len + rel.len;
     void* raw = alloc::malloc_try(mem, (sz)(total + 1)) ?? null;
     if (raw == null) return MODULE_ERROR~;
@@ -676,28 +685,10 @@ fn bool link_module(Heap* heap, vm::Vm* vm, ModuleDef* mod, EnvRecord* global_en
         }
     }
 
-    // Resolve indirect exports
-    for (uint i = 0; i < mod.export_count; i++) {
-        ExportEntry* ee = &mod.exports[i];
-        if (!ee.is_indirect) continue;
-        if (ee.req_module_idx >= mod.req_module_count) continue;
-        ReqModuleEntry* rme = &mod.req_modules[ee.req_module_idx];
-        if (rme.resolved == null) continue;
-        ModuleDef* source_mod = (ModuleDef*)rme.resolved;
-
-        HString* source_key = heap.str_intern(ee.local_name);
-        HString* export_key = heap.str_intern(ee.export_name);
-        if (source_key == null || export_key == null) continue;
-
-        TVal? val_opt = env::env_get(source_mod.env, source_key);
-        if (catch err = val_opt) {
-            TVal undef;
-            undef.set_undefined();
-            env::env_declare(mod.env, export_key, undef);
-        } else {
-            env::env_declare(mod.env, export_key, val_opt);
-        }
-    }
+    // NOTE: an indirect export (`export { x } from './other'`) installs NO
+    // binding in mod.env at link time either — see the matching note in
+    // execute_module for why a re-exported name must never become a
+    // resolvable identifier inside the re-exporting module's own body.
 
     // Instantiate top-level `function` declarations (ECMA-262 16.2.1.5.5
     // step 17). InitializeEnvironment creates each function's closure once,
@@ -892,18 +883,24 @@ fn bool execute_module(Heap* heap, Vm* vm, ModuleDef* mod) {
         }
     }
 
-    // Resolve indirect exports (`export { x } from './other'`) as live
-    // bindings too — the re-export must observe the ultimate source
-    // module's current value, same as a named import.
-    for (uint i = 0; i < mod.export_count; i++) {
-        ExportEntry* ee = &mod.exports[i];
-        if (!ee.is_indirect) continue;
-        ExportBindingSource src = resolve_export_binding_source(mod, ee);
-        if (src.owner == null) continue;
-        HString* export_key = heap.str_intern(ee.export_name);
-        if (export_key == null) continue;
-        install_live_binding(heap, mod.env, export_key, src.owner, src.local_name);
-    }
+    // NOTE: an indirect export (`export { x } from './other'`) intentionally
+    // installs NO binding in mod.env — ECMA-262 §16.2.1.6.2 InitializeEnvironment
+    // only creates bindings for ImportEntries and local (non-indirect)
+    // ExportEntries; a re-exported name is never a resolvable identifier
+    // inside the re-exporting module's own body (it is only observable
+    // externally via ResolveExport / the module's namespace object, both of
+    // which resolve indirect exports directly through the export-entry
+    // metadata — see resolve_export and resolve_export_binding_source).
+    // Declaring it here as a live accessor used to make it a spurious local
+    // identifier: an internal `B;` reference (where `export { A as B } from
+    // './x'` re-exports a not-yet-initialized `A`) would incorrectly resolve
+    // through this binding as a TDZ read instead of an unresolved-reference
+    // ReferenceError, and — because the accessor's getter runs via
+    // vm.heap.call_fn's re-entrant nested Vm.run (vm_call_fn_impl) — a TDZ
+    // throw surfacing from a SECOND read of that same accessor inside an
+    // enclosing catch handler (e.g. `catch (e) { arr.push(e.name, typeof B) }`)
+    // would escape past the still-live outer catcher instead of propagating
+    // as the plain uncaught-reference behavior real engines produce.
 
     // Execute module body in its own env. A module compiled with top-level
     // await is async: run it through the async path so `await` suspends and
