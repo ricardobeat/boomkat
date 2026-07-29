@@ -473,9 +473,23 @@ fn void builtin_eval(BuiltinContext* ctx) {
 
     TVal* arg = &ctx.regs[ctx.base_reg];
 
-    // If Type(x) is not String, return x unchanged
+    // If Type(x) is not String, return x unchanged.
+    // eval is registered as a lightfunc (register_simple_builtin), so when
+    // it is reached via Heap.call_fn (vm_call_fn_impl's Case 1) rather than
+    // an ordinary CALL, `ctx.result` aliases `temp_regs[0]`, which was
+    // pre-seeded with a raw, non-incref'd copy of `this` — the same hazard
+    // documented on builtin_iterator_proto_symbol_iter. tval_copy_ref would
+    // decref that borrowed `this` out from under the caller. A bare incref
+    // (nothing to decref: the stale bits were never independently owned)
+    // is correct in every dispatch path, including the ordinary CALL path
+    // where `*ctx.result` starts undefined (decrefing undefined is already
+    // a no-op there, so this is a strict improvement, not just a guard).
     if (!arg.is_string()) {
-        ctx.heap.tval_copy_ref(ctx.result, arg);
+        if (arg.is_heap_allocated()) {
+            void* ptr = arg.get_heapptr();
+            if (ptr != null) { ((types::HeapHeader*)ptr).incref(); }
+        }
+        *ctx.result = *arg;
         return;
     }
 
