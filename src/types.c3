@@ -769,7 +769,10 @@ fn bool  HeapHeader.is_bigint(&self) { return self.flags.htype == HType.BIGINT; 
 /// bigints never use this sentinel, so is_string() is required to keep the
 /// check from colliding with a legitimately huge object refcount.
 fn void HeapHeader.incref(&self) @inline {
-    if (self.is_string() && self.refcount == STRING_PINNED_REFCOUNT) return;
+    // Refcount first: it is the field this function is about to write, so it
+    // is already the value in hand, and every non-pinned heap value fails
+    // this compare and skips the flags load entirely.
+    if (self.refcount == STRING_PINNED_REFCOUNT && self.is_string()) return;
     self.refcount++;
 }
 
@@ -818,7 +821,7 @@ fn void HeapHeader.clear_readonly(&self)    { self.flags.readonly = false; }
 /// STRING_PINNED_REFCOUNT.
 fn void HeapHeader.set_pinned(&self)        { self.refcount = STRING_PINNED_REFCOUNT; }
 /// Returns true when this is a string with a pinned refcount.
-fn bool HeapHeader.is_pinned(&self)         { return self.is_string() && self.refcount == STRING_PINNED_REFCOUNT; }
+fn bool HeapHeader.is_pinned(&self)         { return self.refcount == STRING_PINNED_REFCOUNT && self.is_string(); }
 /// Returns true when the object is read-only.
 fn bool HeapHeader.is_readonly(&self)       { return self.flags.readonly; }
 
