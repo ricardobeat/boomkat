@@ -46,6 +46,8 @@ Phase 15 (Classes) 5964 -> 7107 pass after un-skipping 1138 tests.
 
 ## Known bugs
 
+- [x] `Map`/`Set` `forEach` with no callback silently returned instead of throwing — `19b2ee6b`
+
 - [ ] AWAIT OOM path calls `vm_uncaught_error` after already rejecting the promise and restoring the caller frame, unlike the constructor-error path
 
 - [x] `eval('arguments.length')` in an ordinary function threw ReferenceError — `b46936fd`
@@ -94,8 +96,8 @@ Phase 15 (Classes) 5964 -> 7107 pass after un-skipping 1138 tests.
 
 - [x] Generator driver family — three genuinely distinct spec algorithms; only the AWAIT teardown was duplicated — `68b42b11`
 - [x] Super mechanisms — GetSuperBase deduped (`a245dab8`); GetSuperConstructor is a real semantic difference, not unifiable
-- [ ] Builtin error-throw boilerplate — ~55 raw sites left
-- [ ] Lexer scan buffers
+- [x] Builtin error-throw boilerplate — 26 more sites migrated, -277 lines; the rest resist for stated reasons — `78ae2cd4`
+- [x] Lexer scan buffers — surveyed, do NOT unify: three load-bearing differences (buffer size, borrow-vs-arena lifetime, UTF-8 vs CESU-8)
 - [x] Enum/metadata/dispatch triple registration in core.c3 — `a1513ec5`
 - [x] ArrayBuffer vs SharedArrayBuffer dedup — `21fe21f6`
 - [x] Error-throw boilerplate, highest-density sites — `47e4e1ec`, `b978b49e`
