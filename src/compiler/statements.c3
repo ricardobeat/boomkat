@@ -4679,11 +4679,19 @@ fn void? CompilerContext.export_declaration(&self) {
     if (self.current_module == null) return COMPILE_ERROR~;
     CompModuleDef* mod = self.get_module_def();
 
+    // `export async function foo() {}` — the `async` prefix is detected here
+    // (before the FUNCTION dispatch below) so the same hoistable-declaration
+    // path handles both sync and async forms.
+    bool is_async_named_fn = self.match_async_function();
     TokenType tt = self.peek_type();
 
     // export default ...
     if (tt == TokenType.DEFAULT) {
         self.advance()!; // consume 'default'
+        // `export default async function ...` — the `async` prefix is
+        // detected before the FUNCTION dispatch below so the same
+        // hoistable-declaration path handles both sync and async forms.
+        bool is_async_default_fn = self.match_async_function();
         TokenType next = self.peek_type();
 
         // export default function() {} or export default function name() {}
@@ -4708,15 +4716,24 @@ fn void? CompilerContext.export_declaration(&self) {
                 fn_name = ((Heap*)self.heap).str_intern(name_tok.str_value).get_data();
                 is_named = true;
             } else {
-                fn_name = "*default*";
+                // Anonymous `export default function(){}`: the internal
+                // module-scope binding is the synthetic `*default*` slot, but
+                // the function object's own `.name` is "default"
+                // (SetFunctionName, §14.1.20 InstantiateFunctionObject step 4)
+                // — a runtime-visible value, not the compiler-private symbol.
+                fn_name = "default";
             }
 
             bool saved_is_async = self.is_async;
             self.is_async = false;
             // Regular functions are constructable (ES2015 §14.1.2); generators
-            // never are (§14.4) — mirrors function_declaration's handling.
+            // and async functions never are (§14.4/§14.7.5) — mirrors
+            // function_declaration's handling.
             bool saved_is_constructable = self.is_constructable;
-            self.is_constructable = !self.is_generator;
+            self.is_constructable = !self.is_generator && !is_async_default_fn;
+            // The declaration's own async-ness comes from is_async_default_fn,
+            // never the enclosing flag (mirrors function_declaration).
+            self.is_async = is_async_default_fn;
             // Use the byte offset captured just past `self.advance()!` above.
             CompiledFunction* inner = self.compile_inner_function(fn_name, false, export_fn_src_start)!;
             self.is_constructable = saved_is_constructable;
@@ -4734,6 +4751,10 @@ fn void? CompilerContext.export_declaration(&self) {
             // Either way it is a hoisted function declaration bound at link
             // time (16.2.1.5.5 step 17); record it for the linker and suppress
             // body CLOSURE+DECLVAR so a cyclic early import sees the function.
+            // fn_name is "default" for the anonymous case (used as the
+            // function object's .name); the module-scope binding still uses
+            // the internal "*default*" symbol so it can't collide with a
+            // user-declared `default` identifier.
             char[] local_name = is_named ? fn_name : "*default*";
             ushort func_reg = self.declare_var(local_name, VAR);
             mod_register_func_decl(mod, local_name, inner_idx);
@@ -4880,9 +4901,13 @@ fn void? CompilerContext.export_declaration(&self) {
         ushort func_reg = self.declare_var(fn_name2, VAR);
 
         // Regular functions are constructable (ES2015 §14.1.2); generators
-        // never are (§14.4) — mirrors function_declaration's handling.
+        // and async functions never are (§14.4/§14.7.5) — mirrors
+        // function_declaration's handling.
         bool saved_is_constructable = self.is_constructable;
-        self.is_constructable = !self.is_generator;
+        self.is_constructable = !self.is_generator && !is_async_named_fn;
+        // The declaration's own async-ness comes from is_async_named_fn,
+        // never the enclosing flag (mirrors function_declaration).
+        self.is_async = is_async_named_fn;
         CompiledFunction* inner = self.compile_inner_function(fn_name2, false, named_export_src_start)!;
         self.is_constructable = saved_is_constructable;
         self.is_async = saved_is_async;
