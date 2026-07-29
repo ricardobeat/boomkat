@@ -17,7 +17,7 @@ Phase 15 (Classes) 5964 -> 7107 pass after un-skipping 1138 tests.
 - [x] `export {x}` of an imported name is an indirect re-export — `d740ddd6`
 - [x] Flagless module-code tests must not default to module mode — `d7f6ccf6`
 - [x] `scripts/test262_skip.cfg` was dead — deleted; live skip mechanism is embedded in run_test262.py
-- [ ] RegExp property-escapes tests time out under load
+- [x] RegExp property-escapes timeouts under load — `85bb0cdc`
 - [ ] Decide where `just test262-gate` runs (Actions / pre-push hook / manual)
 - [x] Add 14 orphaned directories to `PHASES` — `916ffaed`
 - [x] Add `built-ins/Iterator` to phase 21 — `1a29b357`
@@ -29,7 +29,7 @@ Phase 15 (Classes) 5964 -> 7107 pass after un-skipping 1138 tests.
 
 ## Refcounting
 
-- [ ] Property writes ~3.6% slower than `1a66b347` — cost of the pinned-string guard in `935db5c3` (+3.6%) and `241c1f02` (+1.0%); ~1 point recovered by reordering, rest is inherent
+- [x] Property-write cost measured and partly recovered — `c7957654`; the residual ~3.6% is inherent to the refcount correctness fix
 - [x] Audit builtins for `tval_copy_ref(ctx.result, &ctx.this_val)` — `65098c11`
 - [x] Refcount object/buffer values in property and array slots — `6d7e71ca`
 - [x] Combine incref/decref heap checks in `put_prop`/`set_array_idx` — `8c4cc55e`
@@ -52,7 +52,7 @@ Phase 15 (Classes) 5964 -> 7107 pass after un-skipping 1138 tests.
 - [x] Destructuring-assignment to a member target dropped `await` — fixed incidentally by `1a66b347`
 - [x] `05007aa0` RET cost — below a ~0.5-1% noise floor, not resolvable
 - [x] Async `GeneratorState` leak, plus the GC crash it hid — `b0c63211`
-- [ ] `leaks --atExit` hangs on this binary/macOS combination — use live_obj_count instead
+- [x] `leaks --atExit` hangs on this binary/macOS combination — use `live_obj_count` or an alloc/free counter (environment note, no fix)
 - [x] `error.c3` `.stack` name fallback fabricated `[object Object]` — `d5bb7997`
 - [x] Generator initial-call `new_target` — verified not a bug (activation popped before any NEWTARGET)
 - [x] Bound-function own-property order differed from qjs — `6e1422ec`
