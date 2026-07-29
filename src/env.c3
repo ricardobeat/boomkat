@@ -216,6 +216,15 @@ fn bool env_declare(EnvRecord* env, void* key, TVal val) @inline {
     return env.bindings.put_prop(key, val, hobject::PROP_FLAGS_WEC);
 }
 
+/// Declare a non-writable, enumerable binding (CreateImmutableBinding,
+/// ES2015 §8.1.1.1.3). Used for `import * as ns` module namespace bindings
+/// (§16.2.1.6.2 ModuleDeclarationInstantiation step 8.b.ii): the binding is
+/// initialized once with the namespace object and any later assignment to
+/// the local name must throw a TypeError, matching `const`-style semantics.
+fn bool env_declare_const(EnvRecord* env, void* key, TVal val) @inline {
+    return env.bindings.put_prop(key, val, hobject::PROP_FLAGS_EC);
+}
+
 /// Declare a `var`/FunctionDeclaration binding in the given environment
 /// only (no chain walk), using non-configurable flags when `env` is the
 /// global environment record. Per ES2015 §8.1.1.4.15

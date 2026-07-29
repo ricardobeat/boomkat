@@ -849,7 +849,7 @@ fn bool execute_module(Heap* heap, Vm* vm, ModuleDef* mod) {
             ns_val.set_object(ns);
             HString* local_key = heap.str_intern(ie.local_name);
             if (local_key != null) {
-                env::env_declare(mod.env, local_key, ns_val);
+                env::env_declare_const(mod.env, local_key, ns_val);
             }
             continue;
         }
