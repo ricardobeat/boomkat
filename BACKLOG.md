@@ -4,17 +4,18 @@
 
 ## Status
 
-18 of 19 test262 phases at 0 failures; phase 25 (ESM) at 399 pass / 9 fail.
+18 of 19 test262 phases at 0 failures; phase 25 (ESM) at 405 pass / 4 fail.
 Phase 15 (Classes) 5964 -> 7107 pass after un-skipping 1138 tests.
 
 ## test262
 
 - [x] Modules — phase 25 wired; 393/729 pass, 15 fail — `13912b8d`..`ed040486`
 - [x] Indirect re-exports leaked as local identifiers; relative-path module identity — `ab7d4fc3`
-- [ ] Direct self-import of a `class` binding doesn't throw TDZ for `typeof` before the class runs (2 tests)
-- [ ] Dynamic-import DFS evaluation order and top-level-await sibling independence (4 tests)
-- [ ] Same-module `import {x}; export {x}` re-export needs ParseModule table cross-referencing (2 tests)
-- [ ] `top-level-await/new-await-script-code.js` compile error (1 CE)
+- [x] Direct self-import of a `class` binding must see TDZ — `df0e57b9`
+- [ ] Dynamic import runs its resolve/link/evaluate pipeline inline instead of as a queued job (4 tests)
+- [ ] `drain_microtasks`' boolean reentrancy guard silently no-ops when called from inside a draining job
+- [x] `export {x}` of an imported name is an indirect re-export — `d740ddd6`
+- [x] Flagless module-code tests must not default to module mode — `d7f6ccf6`
 - [x] `scripts/test262_skip.cfg` was dead — deleted; live skip mechanism is embedded in run_test262.py
 - [ ] RegExp property-escapes tests time out under load
 - [ ] Decide where `just test262-gate` runs (Actions / pre-push hook / manual)
