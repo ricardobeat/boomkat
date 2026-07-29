@@ -14,6 +14,7 @@ import duktape::lexer;
 import duktape::re_bindings;
 import duktape::vm;
 import duktape::dtoa_bindings;
+import duktape::esm;
 import std::io;
 import std::math;
 
@@ -366,6 +367,11 @@ enum Builtin : uint (String js_name, int js_arity, BuiltinFunc handler) {
     REGEXP_SPECIES_GETTER {"", -1, &builtin_regexp_species_getter},
     MODULE_BINDING_GETTER {"", -1, &builtin_module_binding_getter},
     PROMISE_RESOLVE_THENABLE_JOB {"", -1, &builtin_promise_resolve_thenable_job},
+    DYNAMIC_IMPORT_JOB {"", -1, &esm::builtin_dynamic_import_job},
+    MODULE_PENDING_FINISH_FULFILLED {"", -1, &esm::builtin_module_pending_finish_fulfilled},
+    MODULE_PENDING_FINISH_REJECTED {"", -1, &esm::builtin_module_pending_finish_rejected},
+    MODULE_DEFERRED_CONTINUE_FULFILLED {"", -1, &esm::builtin_module_deferred_continue_fulfilled},
+    MODULE_DEFERRED_CONTINUE_REJECTED {"", -1, &esm::builtin_module_deferred_continue_rejected},
     PROMISE_THEN_FINALLY {"", -1, &builtin_promise_then_finally},
     PROMISE_CATCH_FINALLY {"", -1, &builtin_promise_catch_finally},
     ARRAY_SPECIES_GETTER {"", -1, &builtin_array_species_getter},

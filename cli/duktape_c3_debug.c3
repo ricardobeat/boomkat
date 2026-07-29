@@ -165,6 +165,29 @@ fn int main(String[] args) {
             }
             return 1;
         }
+        // A dynamic import() enqueues its resolve/link/evaluate pipeline as a
+        // job rather than running inline (see esm::dynamic_import) — drain
+        // it out so top-level `import()` calls in a module run under -m
+        // actually complete before the process exits.
+        for (int drain_i = 0; drain_i < 1000; drain_i++) {
+            uint before = hp.microtask_count;
+            hp.drain_microtasks((void*)v);
+            uint after = hp.microtask_count;
+            if (after == 0) break;
+            if (after == before && drain_i > 5) break;
+        }
+        // mod itself may have settled asynchronously during the drain above
+        // (a rejected top-level await, or a rejected async dependency it was
+        // transitively chained onto — see esm::execute_module's async_dep
+        // handling) rather than synchronously in the execute_module call.
+        if (mod.status == esm::ModuleStatus.ERRORED) {
+            if (mod.has_eval_error) {
+                print_uncaught_error(hp, &mod.eval_error);
+            } else {
+                io::eprintfn("module execute failed");
+            }
+            return 1;
+        }
         if (debug) io::printfn("  execute:     %d us", (int)(time::now() - t4));
         return 0;
     }

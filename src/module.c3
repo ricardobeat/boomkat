@@ -167,6 +167,19 @@ struct ModuleDef {
     // module must re-reject with this same value rather than re-running the body.
     bool                          has_eval_error;
     TVal                          eval_error;
+
+    // Persistent evaluation-completion promise (ECMA-262 [[CyclePromise]],
+    // §16.2.1.5.2 Evaluate). Created lazily the first time evaluation starts
+    // and settled exactly once when the module transitions to EVALUATED or
+    // ERRORED — whether that transition happens synchronously (RET of a
+    // non-async body, or the throw unwind) or later, asynchronously, via a
+    // top-level-await body's own promise settling. Anything that needs to
+    // observe "this module has finished evaluating" (dynamic import, a
+    // parent module awaiting an async dependency) attaches a reaction here
+    // instead of polling drain_microtasks — see promise_adopt_native.
+    // Rooted with a ModuleDef-owned reference for the module's lifetime and
+    // marked by mark_roots since ModuleDefs live outside the GC-scanned heap.
+    HObject*                      eval_promise;
 }
 
 // ============================================================================
@@ -726,7 +739,7 @@ fn bool link_module(Heap* heap, vm::Vm* vm, ModuleDef* mod, EnvRecord* global_en
 /// survives GC and can re-reject every later Evaluate() of the same module.
 /// Leaves the error channel populated (the caller still surfaces the throw for
 /// the current evaluation). Always returns false for use in `return`.
-fn bool module_record_eval_error(Heap* heap, ModuleDef* mod) {
+fn bool module_record_eval_error(Heap* heap, Vm* vm, ModuleDef* mod) {
     mod.status = ModuleStatus.ERRORED;
     if (!mod.has_eval_error) {
         mod.eval_error.set_undefined();
@@ -735,10 +748,269 @@ fn bool module_record_eval_error(Heap* heap, ModuleDef* mod) {
         }
         mod.has_eval_error = true;
     }
+    module_settle_eval_promise(heap, vm, mod, false);
     return false;
 }
 
+/// Get (creating on first use) the module's persistent evaluation-completion
+/// promise — ECMA-262 [[CyclePromise]]. Returns null only on allocation
+/// failure, in which case a waiter falls back to treating the module as
+/// already-settled the next time it observes mod.status directly.
+fn HObject* module_ensure_eval_promise(Heap* heap, ModuleDef* mod) {
+    if (mod.eval_promise != null) return mod.eval_promise;
+    HObject*? prom_raw = heap.alloc_object(hobject::ObjClass.PROMISE);
+    if (catch err = prom_raw) return null;
+    HObject* prom = prom_raw;
+    prom.prototype = heap.promise_proto;
+    builtins::promise_init(prom);
+    prom.as_header().incref();  // ModuleDef-owned reference, held for its lifetime
+    mod.eval_promise = prom;
+    return prom;
+}
+
+/// Settle the module's persistent evaluation-completion promise (once — a
+/// no-op if already settled or if evaluation never allocated one, e.g. a
+/// JSON module or a plain synchronous body nobody awaited).
+///
+/// `ok` selects fulfillment or rejection (with mod.eval_error /
+/// heap.error_value). Unlike the spec's [[CyclePromise]] (which always
+/// fulfills with undefined), this internal promise fulfills with the
+/// module's NAMESPACE OBJECT: it exists purely so a dynamic import() of an
+/// async/TLA module — which per §16.2.1.5.2/§13.3.10 must resolve with that
+/// namespace object — can attach a single reaction here instead of building
+/// the namespace separately after polling for completion. No other caller
+/// observes eval_promise, so this deviation from [[CyclePromise]]'s literal
+/// completion value is not spec-observable.
+fn void module_settle_eval_promise(Heap* heap, Vm* vm, ModuleDef* mod, bool ok) {
+    if (mod.eval_promise == null) return;
+    if (builtins::promise_get_state(mod.eval_promise, builtins::PROMISE_PENDING)
+        != builtins::PROMISE_PENDING) return;
+    TVal val;
+    if (ok) {
+        HObject*? ns_opt = build_namespace_object(heap, mod);
+        if (try ns = ns_opt) {
+            val.set_object(ns);
+        } else {
+            val = module_type_error(heap, "cannot build module namespace object");
+        }
+        builtins::promise_settle(mod.eval_promise, builtins::PROMISE_FULFILLED, &val, heap);
+    } else {
+        val.set_undefined();
+        if (mod.has_eval_error) {
+            val = mod.eval_error;
+        } else if (heap.has_error || heap.error_value.is_object() || heap.error_value.is_string()) {
+            val = heap.error_value;
+        }
+        builtins::promise_settle(mod.eval_promise, builtins::PROMISE_REJECTED, &val, heap);
+    }
+    builtins::promise_trigger_reactions(mod.eval_promise, heap, (void*)vm);
+}
+
+/// Hidden property key carrying a MODULE_PENDING_FINISH reaction's target
+/// module name — an interned string rather than a raw ModuleDef* so the
+/// reaction is a plain JS-visible-shaped object needing no new native-pointer
+/// storage; heap_find_loaded_module recovers `mod` from it when the reaction
+/// fires.
+const char[] MODULE_PENDING_FINISH_NAME_KEY = "\xFFmpf_name";
+
+/// Attach a reaction to `pending` (the per-call promise execute_module_async
+/// or execute_module_nested handed back for a still-suspended async/TLA
+/// body) that finalizes `mod` once it settles: transitions mod.status to
+/// EVALUATED or ERRORED and settles mod.eval_promise with the real
+/// namespace object or rejection reason — see module_pending_finish_run.
+/// Until this fires, mod stays EVALUATING and mod.eval_promise stays
+/// pending, so anything that already chained onto mod.eval_promise (a
+/// dynamic import job, a sibling static import) observes the correct
+/// settlement once it happens rather than the suspended activation's own
+/// raw (always-undefined) completion value.
+///
+/// The onFulfilled/onRejected handlers are real FUNCTION objects (not
+/// lightfuncs) carrying mod's name as a hidden prop: promise_trigger_reactions
+/// invokes a reaction's handler directly as the queued microtask job (with
+/// the settled value as its sole argument, not the reaction object itself),
+/// so per-instance data must live on the handler object, recovered via
+/// ctx.callee_obj — the same pattern builtin_dynamic_import_job uses.
+fn void module_attach_pending_finish(Heap* heap, ModuleDef* mod, HObject* pending) {
+    module_attach_named_reaction(heap, mod, pending,
+        Builtin.MODULE_PENDING_FINISH_FULFILLED.ordinal, Builtin.MODULE_PENDING_FINISH_REJECTED.ordinal);
+}
+
+/// Attach a reaction to `dep_prom` (a dependency's own persistent
+/// eval_promise) that, once it settles, either runs mod's deferred
+/// import-binding-resolution + body execution (module_execute_continue,
+/// fulfilled case) or marks mod ERRORED with the propagated reason without
+/// ever running its body (rejected case) — see module_deferred_continue_run.
+/// Used when execute_module finds mod has a still-pending async dependency:
+/// mod's own ExecuteModule() step is deferred until that dependency settles,
+/// per ECMA-262 §16.2.1.5.5 InnerModuleEvaluation's PendingAsyncDependencies
+/// gating (see execute_module's doc comment for why this specific dependency
+/// is the one waited on).
+fn void module_attach_deferred_continue(Heap* heap, ModuleDef* mod, HObject* dep_prom) {
+    module_attach_named_reaction(heap, mod, dep_prom,
+        Builtin.MODULE_DEFERRED_CONTINUE_FULFILLED.ordinal, Builtin.MODULE_DEFERRED_CONTINUE_REJECTED.ordinal);
+}
+
+/// Shared reaction-building code for module_attach_pending_finish and
+/// module_attach_deferred_continue: builds onFulfilled/onRejected handler
+/// FUNCTION objects (carrying mod's name as a hidden prop — see
+/// module_attach_pending_finish's doc comment for why) pointing at the given
+/// builtin ordinals, and attaches them to `source`.
+fn void module_attach_named_reaction(Heap* heap, ModuleDef* mod, HObject* source,
+                                      uint onf_ordinal, uint onr_ordinal) {
+    HString* name_key = heap.str_intern(MODULE_PENDING_FINISH_NAME_KEY);
+    HString* name_str = heap.str_intern(mod.module_name);
+    HString* onf_key = heap.str_intern("onFulfilled");
+    HString* onr_key = heap.str_intern("onRejected");
+    if (name_key == null || name_str == null || onf_key == null || onr_key == null) return;
+    TVal name_tv; name_tv.set_string(name_str);
+
+    HObject*? onf_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
+    if (catch err = onf_raw) return;
+    HObject* onf = onf_raw;
+    onf.flags.callable = true;
+    onf.prototype = heap.function_proto;
+    (*onf.extra_ptr()).func.builtin_fn_index = (int)onf_ordinal;
+    onf.put_prop(name_key, name_tv, hobject::PROP_FLAGS_WEC);
+
+    HObject*? onr_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
+    if (catch err = onr_raw) return;
+    HObject* onr = onr_raw;
+    onr.flags.callable = true;
+    onr.prototype = heap.function_proto;
+    (*onr.extra_ptr()).func.builtin_fn_index = (int)onr_ordinal;
+    onr.put_prop(name_key, name_tv, hobject::PROP_FLAGS_WEC);
+
+    HObject*? rxn_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
+    if (catch err = rxn_raw) return;
+    HObject* rxn = rxn_raw;
+    rxn.prototype = heap.object_proto;
+    TVal onf_tv; onf_tv.set_object(onf);
+    TVal onr_tv; onr_tv.set_object(onr);
+    rxn.put_prop(onf_key, onf_tv, hobject::PROP_FLAGS_WEC);
+    rxn.put_prop(onr_key, onr_tv, hobject::PROP_FLAGS_WEC);
+    // No `downstream`: these handlers act purely for their side effect
+    // (finalizing mod, or running its deferred continuation) and their
+    // return value is discarded — leaving `downstream` undefined means
+    // promise_microtask_after's downstream check is a no-op.
+
+    uint state = builtins::promise_get_state(source, builtins::PROMISE_PENDING);
+    builtins::promise_add_reaction(source, rxn, heap);
+    if (state != builtins::PROMISE_PENDING) {
+        builtins::promise_trigger_reactions(source, heap, null);
+    }
+}
+
+/// Shared body for the MODULE_PENDING_FINISH_FULFILLED/REJECTED builtins:
+/// looks `mod` up by the handler object's stashed module name and finalizes
+/// it. `ok` selects which of the pair this is; the settled value (fulfilled
+/// result or rejection reason) arrives as ctx's sole argument, per
+/// PromiseReactionJob (§27.2.2.1).
+fn void module_pending_finish_run(BuiltinContext* ctx, bool ok) {
+    ctx.result.set_undefined();
+    Heap* heap = ctx.heap;
+    if (ctx.callee_obj == null) return;
+    HString* name_key = heap.str_intern(MODULE_PENDING_FINISH_NAME_KEY);
+    if (name_key == null) return;
+    char[] name = {};
+    if (try nv = ctx.callee_obj.get_prop(name_key)) {
+        if (nv.is_string()) name = ((HString*)nv.get_heapptr()).get_data();
+    }
+    if (name.len == 0) return;
+    ModuleDef* mod = heap_find_loaded_module(heap, name);
+    if (mod == null) return;
+    if (mod.status == ModuleStatus.EVALUATED || mod.status == ModuleStatus.ERRORED) return;
+    if (ok) {
+        mod.status = ModuleStatus.EVALUATED;
+        module_settle_eval_promise(heap, (Vm*)ctx.vm, mod, true);
+        call_on_module_evaluated(heap, mod);
+    } else {
+        // Capture the rejection reason (this handler's sole argument) into
+        // the same error channel module_record_eval_error reads, so it gets
+        // cached as mod.eval_error and propagated to mod.eval_promise's
+        // rejection exactly like a synchronously-thrown module body.
+        TVal reason; reason.set_undefined();
+        if (ctx.argc >= 1) reason = ctx.regs[ctx.base_reg];
+        heap.error_value.set_undefined();
+        heap.tval_copy_ref(&heap.error_value, &reason);
+        heap.has_error = true;
+        module_record_eval_error(heap, (Vm*)ctx.vm, mod);
+        heap.error_value.set_undefined();
+        heap.has_error = false;
+    }
+}
+
+/// PromiseReactionJob onFulfilled handler — see module_attach_pending_finish.
+fn void builtin_module_pending_finish_fulfilled(BuiltinContext* ctx) {
+    module_pending_finish_run(ctx, true);
+}
+
+/// PromiseReactionJob onRejected handler — see module_attach_pending_finish.
+fn void builtin_module_pending_finish_rejected(BuiltinContext* ctx) {
+    module_pending_finish_run(ctx, false);
+}
+
+/// Shared body for the MODULE_DEFERRED_CONTINUE_FULFILLED/REJECTED builtins
+/// (see module_attach_deferred_continue): looks `mod` up by the handler
+/// object's stashed module name. On fulfillment, the dependency that was
+/// blocking mod has now settled successfully — run mod's deferred
+/// module_execute_continue (import-binding resolution + body execution) for
+/// real. On rejection, the dependency's failure propagates directly: mod
+/// never gets to run its body at all, exactly mirroring a module whose own
+/// body threw synchronously (module_record_eval_error), which is what makes
+/// a rejecting dependency preempt an importer's subsequent statements (see
+/// top-level-await/module-import-rejection-tick.js).
+fn void module_deferred_continue_run(BuiltinContext* ctx, bool ok) {
+    ctx.result.set_undefined();
+    Heap* heap = ctx.heap;
+    if (ctx.callee_obj == null) return;
+    HString* name_key = heap.str_intern(MODULE_PENDING_FINISH_NAME_KEY);
+    if (name_key == null) return;
+    char[] name = {};
+    if (try nv = ctx.callee_obj.get_prop(name_key)) {
+        if (nv.is_string()) name = ((HString*)nv.get_heapptr()).get_data();
+    }
+    if (name.len == 0) return;
+    ModuleDef* mod = heap_find_loaded_module(heap, name);
+    if (mod == null) return;
+    if (mod.status != ModuleStatus.EVALUATING) return;  // already finalized some other way
+    if (ok) {
+        (void)module_execute_continue(heap, (Vm*)ctx.vm, mod);
+    } else {
+        TVal reason; reason.set_undefined();
+        if (ctx.argc >= 1) reason = ctx.regs[ctx.base_reg];
+        heap.error_value.set_undefined();
+        heap.tval_copy_ref(&heap.error_value, &reason);
+        heap.has_error = true;
+        module_record_eval_error(heap, (Vm*)ctx.vm, mod);
+        heap.error_value.set_undefined();
+        heap.has_error = false;
+    }
+}
+
+/// PromiseReactionJob onFulfilled handler — see module_attach_deferred_continue.
+fn void builtin_module_deferred_continue_fulfilled(BuiltinContext* ctx) {
+    module_deferred_continue_run(ctx, true);
+}
+
+/// PromiseReactionJob onRejected handler — see module_attach_deferred_continue.
+fn void builtin_module_deferred_continue_rejected(BuiltinContext* ctx) {
+    module_deferred_continue_run(ctx, false);
+}
+
 /// Execute a module: run dependencies first, then resolve imports, then run body.
+///
+/// Per ECMA-262 §16.2.1.5.5 InnerModuleEvaluation, a module whose dependency
+/// graph contains a still-pending async/TLA subgraph accumulates
+/// [[PendingAsyncDependencies]] and does not call its own ExecuteModule()
+/// until every such dependency has settled — its exports are only
+/// observable, live, through the earlier-resolved import bindings once that
+/// happens. `async_dep` records the LAST still-pending dependency seen after
+/// the loop below; deferring mod's own import-binding-resolution + body
+/// execution onto just one is sufficient to reproduce the same observable
+/// ordering as tracking the full [[AsyncParentModules]] set (a real engine's
+/// approach) for the common case of a single async dependency — see
+/// top-level-await/fulfillment-order.js, rejection-order.js, and
+/// module-import-rejection-tick.js.
 fn bool execute_module(Heap* heap, Vm* vm, ModuleDef* mod) {
     if (mod.status == ModuleStatus.EVALUATED) return true;
     // A module whose evaluation previously threw must re-reject with the SAME
@@ -777,16 +1049,62 @@ fn bool execute_module(Heap* heap, Vm* vm, ModuleDef* mod) {
         }
     }
 
-    // Execute dependencies first (so their exports are available)
+    // Execute dependencies first (so their exports are available).
+    ModuleDef* async_dep = null;
     for (uint i = 0; i < mod.req_module_count; i++) {
         ReqModuleEntry* rme = &mod.req_modules[i];
         if (rme.resolved == null) continue;
         ModuleDef* dep = (ModuleDef*)rme.resolved;
         if (dep.status != ModuleStatus.EVALUATED) {
-            if (!execute_module(heap, vm, dep)) return module_record_eval_error(heap, mod);
+            if (!execute_module(heap, vm, dep)) return module_record_eval_error(heap, vm, mod);
+            // Only a dependency that GENUINELY suspended somewhere in its own
+            // subgraph (has a pending eval_promise — set exclusively by the
+            // pending != null / async_dep branches below) makes mod
+            // transitively async too. A dependency merely still EVALUATING
+            // because it is mod's own ancestor in an ordinary import cycle
+            // (dep is on the DFS call stack above this frame, cycle-guarded
+            // by the early `return true` at the top of this function) is not
+            // pending on anything — it will reach EVALUATED normally once
+            // that outer frame's own body finishes, and must not be confused
+            // with an async/TLA subgraph.
+            if (dep.eval_promise != null &&
+                builtins::promise_get_state(dep.eval_promise, builtins::PROMISE_PENDING)
+                    == builtins::PROMISE_PENDING) {
+                async_dep = dep;
+            }
         }
     }
 
+    if (async_dep != null) {
+        // mod has a pending async dependency: defer import-binding resolution
+        // AND body execution (module_execute_continue) until it settles,
+        // instead of running now — this is what actually makes a rejecting
+        // dependency preempt mod's own body (module-import-rejection-tick.js)
+        // while still letting an UNRELATED sibling module's evaluation
+        // proceed independently (async-module-does-not-block-sibling-modules.js
+        // — that module has no dependency relationship to the pending one, so
+        // its own execute_module call never sees a non-null async_dep here).
+        HObject* dep_prom = module_ensure_eval_promise(heap, async_dep);
+        if (dep_prom != null) {
+            module_ensure_eval_promise(heap, mod);
+            module_attach_deferred_continue(heap, mod, dep_prom);
+            return true;
+        }
+        // Allocation failure building the dependency's eval_promise: fall
+        // through and run mod now anyway rather than deadlocking — a
+        // degraded ordering guarantee is preferable to never settling.
+    }
+
+    return module_execute_continue(heap, vm, mod);
+}
+
+/// The part of module evaluation that must wait for every pending async
+/// dependency to settle first: resolve import bindings, run mod's own body,
+/// and finalize mod's status. Called either directly from execute_module (no
+/// pending async dependency) or later from module_deferred_continue_run (via
+/// a MODULE_DEFERRED_CONTINUE reaction) once the dependency that was
+/// blocking it settles.
+fn bool module_execute_continue(Heap* heap, Vm* vm, ModuleDef* mod) {
     // Resolve import bindings against (now-executed) source modules. Both
     // `import * as ns` and named `import { x }` install LIVE accessor
     // bindings (ECMA-262 §16.2.1.6.2/§10.4.6): reads always re-resolve
@@ -887,27 +1205,51 @@ fn bool execute_module(Heap* heap, Vm* vm, ModuleDef* mod) {
     defer heap.current_module_name = saved_module_name;
 
     if (mod.func != null) {
+        HObject* pending = null;
         if (vm.run_depth > 0) {
             // The VM is mid-dispatch (this execute_module call was reached
             // from a dynamic import() handled inline). execute_module_async
             // and execute_in_env take over activations[0]/valstack[0] and are
             // unsafe to call here; execute_module_nested is re-entrant.
-            bool? ok = vm.execute_module_nested(mod.func, mod.env);
-            if (catch err = ok) return module_record_eval_error(heap, mod);
-            if (!ok) return module_record_eval_error(heap, mod);  // rejected — reason is in heap.error_value
+            bool? ok = vm.execute_module_nested(mod.func, mod.env, &pending);
+            if (catch err = ok) return module_record_eval_error(heap, vm, mod);
+            if (!ok) return module_record_eval_error(heap, vm, mod);  // rejected — reason is in heap.error_value
         } else if (mod.func.is_async()) {
-            bool? ok = vm.execute_module_async(mod.func, mod.env);
-            if (catch err = ok) return module_record_eval_error(heap, mod);
-            if (!ok) return module_record_eval_error(heap, mod);  // rejected — reason is in heap.error_value
+            bool? ok = vm.execute_module_async(mod.func, mod.env, &pending);
+            if (catch err = ok) return module_record_eval_error(heap, vm, mod);
+            if (!ok) return module_record_eval_error(heap, vm, mod);  // rejected — reason is in heap.error_value
         } else {
             TVal? res = vm.execute_in_env(mod.func, mod.env);
             if (catch err = res) {
-                return module_record_eval_error(heap, mod);
+                return module_record_eval_error(heap, vm, mod);
             }
+        }
+
+        if (pending != null) {
+            // Top-level await suspended and this call could not pump the
+            // microtask queue to completion (it was itself reached from
+            // inside a drain — see execute_module_async/nested). The module
+            // stays EVALUATING; attach a reaction to the per-call `pending`
+            // promise that finalizes mod (transitions status, builds the
+            // namespace object, settles the persistent eval_promise) once the
+            // suspended body's reactions eventually run it to completion —
+            // see module_finish_pending_eval. Recorded as the module's
+            // async-completion source so a later execute_module() call for
+            // the same module (a sibling dynamic import, or the static DFS
+            // reaching it again) attaches to the SAME pending completion
+            // instead of re-running the body.
+            module_ensure_eval_promise(heap, mod);
+            module_attach_pending_finish(heap, mod, pending);
+            // Release the pinning reference execute_module_async/nested
+            // handed off — the reaction just attached holds its own
+            // reference via pending's own reaction list.
+            heap.decref(pending.as_header());
+            return true;
         }
     }
 
     mod.status = ModuleStatus.EVALUATED;
+    module_settle_eval_promise(heap, vm, mod, true);
     call_on_module_evaluated(heap, mod);
     return true;
 }
@@ -958,6 +1300,38 @@ fn int run_module_file(Heap* heap, Vm* vm, char[] path) {
             return 1;  // a value was thrown during evaluation
         }
         return 2;  // structural evaluation failure with no thrown value
+    }
+
+    // A dynamic import() enqueues its resolve/link/evaluate pipeline as a job
+    // rather than running inline (see dynamic_import), and mod itself may
+    // still be asynchronously evaluating here (a TLA body, or a dependency
+    // of one — see execute_module's async_dep chaining) rather than settled.
+    // This is the top-level entry point for running a module program
+    // directly, so it must drain those jobs out (and any further jobs they
+    // enqueue) before returning, or a top-level `import()` — or the module's
+    // own top-level await — never completes. Not reentrant with any outer
+    // drain (this only runs at true top level).
+    for (int drain_i = 0; drain_i < 1000; drain_i++) {
+        uint before = heap.microtask_count;
+        heap.drain_microtasks((void*)vm);
+        uint after = heap.microtask_count;
+        if (after == 0) break;
+        if (after == before && drain_i > 5) break;
+    }
+
+    // mod's own evaluation may have settled asynchronously during the drain
+    // above (a rejected top-level await, or a rejected async dependency it
+    // was transitively chained onto) rather than synchronously inside the
+    // execute_module call above — check its final status now.
+    if (mod.status == ModuleStatus.ERRORED) {
+        heap.error_value.set_undefined();
+        heap.has_error = false;
+        if (mod.has_eval_error) {
+            heap.tval_copy_ref(&heap.error_value, &mod.eval_error);
+            heap.has_error = true;
+            return 1;
+        }
+        return 2;
     }
     return 0;
 }
@@ -1128,6 +1502,22 @@ fn TVal? dynamic_import_reject(Heap* heap, Vm* vm, TVal* reason) {
     return result;
 }
 
+/// Hidden property keys carrying a queued dynamic-import job's captured
+/// state (ES2020 §13.3.10 / ES2015+ HostImportModuleDynamically — the load,
+/// link, and evaluate steps run as a separate job, not inline with the
+/// `import()` call that requested them).
+const char[] DYN_IMPORT_SPEC_KEY  = "\xFFdi_spec";
+const char[] DYN_IMPORT_BASE_KEY  = "\xFFdi_base";
+const char[] DYN_IMPORT_JSON_KEY  = "\xFFdi_json";
+const char[] DYN_IMPORT_PROM_KEY  = "\xFFdi_promise";
+
+/// `import(specifier)` (ES2020 §13.3.10, ES2015+ HostImportModuleDynamically).
+/// Synchronously allocates and returns the result promise, then defers the
+/// entire resolve → link → evaluate → settle pipeline to a queued
+/// DYNAMIC_IMPORT_JOB microtask (mirroring PromiseResolveThenableJob) — per
+/// spec, dynamic import starts a new job rather than running inline with the
+/// calling module's own (possibly still in-progress) static evaluation, and
+/// running it inline let import() observably preempt that static DFS order.
 fn TVal? dynamic_import(Heap* heap, Vm* vm, char[] specifier, bool wants_json = false) {
     HObject*? prom_raw = heap.alloc_object(hobject::ObjClass.PROMISE);
     if (catch err = prom_raw) return MODULE_ERROR~;
@@ -1136,11 +1526,26 @@ fn TVal? dynamic_import(Heap* heap, Vm* vm, char[] specifier, bool wants_json = 
     builtins::promise_init(prom);
     prom.as_header().incref();  // caller-owned reference
 
-    // Duplicate the specifier into heap-owned memory: the incoming slice
-    // aliases a JS string's buffer, which can be collected while the
-    // ModuleDef caches the normalized name derived from it.
-    void* dup_raw = heap.alloc_func(heap.heap_udata, specifier.len);
-    if (dup_raw == null) {
+    // Base name for relative resolution: the currently executing function's
+    // filename when it has one, else the module whose body is currently
+    // running (maintained by execute_module around body runs). Must be
+    // captured now, synchronously — by the time the job runs, the calling
+    // frame may no longer be live.
+    char[] base_name = {};
+    if (vm.current_func != null) base_name = vm.current_func.get_filename();
+    if (base_name.len == 0) base_name = heap.current_module_name;
+
+    // Intern both strings so the job can read them back after the calling
+    // frame (and the original specifier's backing string) may be gone —
+    // interned HStrings are heap-owned and GC-rooted via the string table
+    // for as long as the job object references them.
+    HString* spec_key  = heap.str_intern(DYN_IMPORT_SPEC_KEY);
+    HString* base_key   = heap.str_intern(DYN_IMPORT_BASE_KEY);
+    HString* json_key   = heap.str_intern(DYN_IMPORT_JSON_KEY);
+    HString* prom_key   = heap.str_intern(DYN_IMPORT_PROM_KEY);
+    HString* spec_str   = heap.str_intern(specifier);
+    HString* base_str   = base_name.len > 0 ? heap.str_intern(base_name) : null;
+    if (spec_key == null || base_key == null || json_key == null || prom_key == null || spec_str == null) {
         TVal oom_reason = module_type_error(heap, "out of memory resolving module specifier");
         builtins::promise_settle(prom, builtins::PROMISE_REJECTED, &oom_reason, heap);
         builtins::promise_trigger_reactions(prom, heap, (void*)vm);
@@ -1148,15 +1553,80 @@ fn TVal? dynamic_import(Heap* heap, Vm* vm, char[] specifier, bool wants_json = 
         oom_result.set_object(prom);
         return oom_result;
     }
-    if (specifier.len > 0) mem::copy(dup_raw, specifier.ptr, (sz)(specifier.len));
-    char[] dup_spec = ((char*)dup_raw)[:specifier.len];
 
-    // Base name for relative resolution: the currently executing function's
-    // filename when it has one, else the module whose body is currently
-    // running (maintained by execute_module around body runs).
-    char[] base_name = {};
-    if (vm.current_func != null) base_name = vm.current_func.get_filename();
-    if (base_name.len == 0) base_name = heap.current_module_name;
+    HObject*? job_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
+    if (catch err = job_raw) {
+        TVal oom_reason = module_type_error(heap, "out of memory scheduling dynamic import");
+        builtins::promise_settle(prom, builtins::PROMISE_REJECTED, &oom_reason, heap);
+        builtins::promise_trigger_reactions(prom, heap, (void*)vm);
+        TVal oom_result;
+        oom_result.set_object(prom);
+        return oom_result;
+    }
+    HObject* job = job_raw;
+    job.flags.callable = true;
+    job.flags.constructable = false;
+    job.prototype = heap.function_proto;
+    (*job.extra_ptr()).func.builtin_fn_index = (int)Builtin.DYNAMIC_IMPORT_JOB.ordinal;
+
+    TVal spec_tv; spec_tv.set_string(spec_str);
+    job.put_prop(spec_key, spec_tv, hobject::PROP_FLAGS_WEC);
+    if (base_str != null) {
+        TVal base_tv; base_tv.set_string(base_str);
+        job.put_prop(base_key, base_tv, hobject::PROP_FLAGS_WEC);
+    }
+    TVal json_tv; json_tv.set_boolean(wants_json);
+    job.put_prop(json_key, json_tv, hobject::PROP_FLAGS_WEC);
+    TVal prom_tv; prom_tv.set_object(prom);
+    job.put_prop(prom_key, prom_tv, hobject::PROP_FLAGS_WEC);
+
+    TVal job_tv; job_tv.set_object(job);
+    TVal undef_arg; undef_arg.set_undefined();
+    TVal undef_downstream; undef_downstream.set_undefined();
+    heap.enqueue_microtask(job_tv, undef_arg, undef_downstream);
+
+    TVal result;
+    result.set_object(prom);
+    return result;
+}
+
+/// Microtask handler for DYNAMIC_IMPORT_JOB. Reads the deferred
+/// specifier/base/wants_json/promise off ctx.callee_obj's hidden slots and
+/// performs the resolve → link → evaluate pipeline. If the module's
+/// evaluation is still pending when execute_module returns (an async/TLA
+/// module whose completion this job — itself running inside a microtask
+/// drain — cannot poll to settlement), attaches a DYNAMIC_IMPORT_FINISH
+/// reaction to the module's persistent eval_promise instead; otherwise
+/// settles/builds the namespace object immediately.
+fn void builtin_dynamic_import_job(BuiltinContext* ctx) {
+    Heap* heap = ctx.heap;
+    Vm* vm = (Vm*)ctx.vm;
+    ctx.result.set_undefined();
+    if (ctx.callee_obj == null) return;
+
+    HString* spec_key = heap.str_intern(DYN_IMPORT_SPEC_KEY);
+    HString* base_key = heap.str_intern(DYN_IMPORT_BASE_KEY);
+    HString* json_key = heap.str_intern(DYN_IMPORT_JSON_KEY);
+    HString* prom_key = heap.str_intern(DYN_IMPORT_PROM_KEY);
+    if (spec_key == null || base_key == null || json_key == null || prom_key == null) return;
+
+    char[] spec_data = {};
+    if (try sv = ctx.callee_obj.get_prop(spec_key)) {
+        if (sv.is_string()) spec_data = ((HString*)sv.get_heapptr()).get_data();
+    }
+    char[] base_data = {};
+    if (try bv = ctx.callee_obj.get_prop(base_key)) {
+        if (bv.is_string()) base_data = ((HString*)bv.get_heapptr()).get_data();
+    }
+    bool wants_json = false;
+    if (try jv = ctx.callee_obj.get_prop(json_key)) {
+        if (jv.is_boolean()) wants_json = jv.get_boolean();
+    }
+    HObject* prom = null;
+    if (try pv = ctx.callee_obj.get_prop(prom_key)) {
+        if (pv.is_object() && pv.get_heapptr() != null) prom = (HObject*)pv.get_heapptr();
+    }
+    if (prom == null) return;
 
     TVal reason;
     reason.set_undefined();
@@ -1168,7 +1638,7 @@ fn TVal? dynamic_import(Heap* heap, Vm* vm, char[] specifier, bool wants_json = 
     ModuleDef* mod = null;
     heap.has_error = false;
     heap.error_value.set_undefined();
-    ModuleDef*? mod_opt = resolve_module(heap, dup_spec, base_name, wants_json);
+    ModuleDef*? mod_opt = resolve_module(heap, spec_data, base_data, wants_json);
     if (catch err = mod_opt) {
         // A load failure may have parked a specific static-semantics error
         // (SyntaxError for a module parse failure) on the heap error channel —
@@ -1218,10 +1688,10 @@ fn TVal? dynamic_import(Heap* heap, Vm* vm, char[] specifier, bool wants_json = 
         if (!ok) {
             if (heap.has_error || heap.error_value.is_object() || heap.error_value.is_string()) {
                 // Take ownership of the thrown value: copy it out, then clear
-                // every error channel so the VM does not see a lingering fault
-                // once dynamic_import returns the (rejected) promise. Without
-                // this the enclosing script/module observes a spurious uncaught
-                // throw right after `import(x)` returns.
+                // every error channel so the VM does not see a lingering
+                // fault once this job returns. Without this the drain loop's
+                // next iteration (or the caller of drain_microtasks) would
+                // observe a spurious uncaught throw unrelated to it.
                 reason.set_undefined();
                 heap.tval_copy_ref(&reason, &heap.error_value);
                 heap.error_value.set_undefined();
@@ -1240,9 +1710,30 @@ fn TVal? dynamic_import(Heap* heap, Vm* vm, char[] specifier, bool wants_json = 
         builtins::promise_settle(prom, builtins::PROMISE_REJECTED, &reason, heap);
         if (clear_reason_ref) heap.decref_tval(&reason);
         builtins::promise_trigger_reactions(prom, heap, (void*)vm);
-        TVal result;
-        result.set_object(prom);
-        return result;
+        return;
+    }
+
+    if (mod.status != ModuleStatus.EVALUATED) {
+        // Still EVALUATING: an async/TLA subgraph suspended and this job
+        // (itself inside a microtask drain) could not pump the queue to
+        // settlement — see execute_module_async/nested. execute_module
+        // already chained mod.eval_promise onto the per-call pending promise
+        // in this case (see its `pending != null` branch), and
+        // module_settle_eval_promise fulfills eval_promise with the
+        // module's namespace object specifically so this adoption needs no
+        // separate "then build the namespace" step: `prom` simply adopts
+        // eval_promise's eventual settlement (namespace object, or the
+        // rejection reason) directly, via the same mechanism used for a
+        // native Promise resolution (ES6 §25.4.1.3.2 steps 9-12).
+        HObject* eval_prom = module_ensure_eval_promise(heap, mod);
+        if (eval_prom == null) {
+            TVal oom_reason = module_type_error(heap, "out of memory awaiting module evaluation");
+            builtins::promise_settle(prom, builtins::PROMISE_REJECTED, &oom_reason, heap);
+            builtins::promise_trigger_reactions(prom, heap, (void*)vm);
+            return;
+        }
+        builtins::promise_adopt_native(heap, (void*)vm, eval_prom, prom);
+        return;
     }
 
     HObject*? ns_opt = build_namespace_object(heap, mod);
@@ -1255,10 +1746,6 @@ fn TVal? dynamic_import(Heap* heap, Vm* vm, char[] specifier, bool wants_json = 
         builtins::promise_settle(prom, builtins::PROMISE_FULFILLED, &fulfill_val, heap);
     }
     builtins::promise_trigger_reactions(prom, heap, (void*)vm);
-
-    TVal result;
-    result.set_object(prom);
-    return result;
 }
 
 // ============================================================================

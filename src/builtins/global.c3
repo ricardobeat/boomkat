@@ -783,7 +783,8 @@ fn void builtin_eval_script(BuiltinContext* ctx) {
     }
 
     vm::Vm* eval_vm = (vm::Vm*)ctx.vm;
-    bool? ok = eval_vm.execute_module_nested(func, ctx.global_env);
+    HObject* pending = null;
+    bool? ok = eval_vm.execute_module_nested(func, ctx.global_env, &pending);
     if (catch err = ok) {
         ctx.result.set_undefined();
         return;
@@ -796,6 +797,15 @@ fn void builtin_eval_script(BuiltinContext* ctx) {
         ctx.heap.has_error = false;
         eval_vm.has_error = false;
         return;
+    }
+    if (pending != null) {
+        // The evaluated script suspended on top-level await and this call
+        // could not pump the microtask queue to completion because it was
+        // itself reached from inside a drain (e.g. $262.evalScript invoked
+        // from a .then() callback). Nothing here needs to observe its
+        // eventual settlement — the pinning reference handed off is simply
+        // released, matching the not-draining path's own transient pin.
+        ctx.heap.decref(pending.as_header());
     }
 
     ctx.result.set_undefined();

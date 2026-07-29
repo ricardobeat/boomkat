@@ -1250,7 +1250,7 @@ fn TVal? Vm.execute_in_env(Vm* vm, CompiledFunction* func, EnvRecord* env) {
 /// the module's evaluation promise REJECTED; in that case the rejection reason
 /// is left in heap.error_value so the caller surfaces it as the module's
 /// uncaught error. Returns a fault only on hard setup failure.
-fn bool? Vm.execute_module_async(Vm* vm, CompiledFunction* func, EnvRecord* env) {
+fn bool? Vm.execute_module_async(Vm* vm, CompiledFunction* func, EnvRecord* env, HObject** out_pending) {
     // Allocate the module evaluation Promise up front so top-level await can
     // suspend into it and RET can settle it.
     HObject*? prom_raw = vm.heap.alloc_object(hobject::ObjClass.PROMISE);
@@ -1307,27 +1307,40 @@ fn bool? Vm.execute_module_async(Vm* vm, CompiledFunction* func, EnvRecord* env)
 
     // Run the body. If it completes synchronously, RET settles mod_promise
     // (fulfilled) or a throw rejects it. If it suspends on top-level await,
-    // Vm.run returns and the reactions run during the drain below, eventually
+    // Vm.run returns and the reactions run during a later drain, eventually
     // settling mod_promise.
     (void)Vm.run(vm);
     // Clear a synchronous throw: for an async body a thrown value must reject
     // the promise (which RET/the unwind already did), not remain a live VM
-    // fault, so the drain and the caller see a settled promise instead.
+    // fault, so the caller sees a settled promise instead.
     vm.has_error = false;
     vm.heap.has_error = false;
 
-    // Drive microtasks until the module promise settles (or the queue drains).
-    // drain_microtasks resumes suspended async activations via reactions.
-    for (uint guard = 0; guard < 100000; guard++) {
-        if (builtins::promise_get_state(mod_promise, builtins::PROMISE_PENDING)
-            != builtins::PROMISE_PENDING) break;
-        if (vm.heap.microtask_count == 0) break;
-        vm.heap.drain_microtasks((void*)vm);
+    // Never pump the microtask queue here to wait for settlement — per
+    // ECMA-262 §16.2.1.5.2/§16.2.1.5.5, an async/TLA module's evaluation
+    // does not block: the caller (a sibling static import in the same DFS,
+    // or a dynamic import job) must move on and let mod_promise settle later
+    // via its own reactions. Polling to completion was both wrong per spec
+    // (it made a static import of an async sibling module block, when
+    // §16.2.1.5.5's "Execute dependencies first" step must NOT wait — see
+    // top-level-await/async-module-does-not-block-sibling-modules.js) and
+    // actively unsafe when reached from inside a drain (a dynamic import job
+    // is itself a queued microtask; drain_microtasks' reentrancy guard would
+    // silently no-op, making a poll loop spin until its guard budget
+    // exhausted). Every entry point that needs to observe eventual
+    // completion (run_module_file's top-level drain loop, a dynamic import
+    // job chaining onto eval_promise) does so by draining after this
+    // function returns, not by blocking inside it.
+    uint final_state = builtins::promise_get_state(mod_promise, builtins::PROMISE_PENDING);
+    if (final_state == builtins::PROMISE_PENDING) {
+        // Still pending: hand the pinned promise to the caller so it can
+        // chain mod.eval_promise onto it (promise_adopt_native) instead of
+        // polling. The caller now owns the pinning reference.
+        *out_pending = mod_promise;
+        return true;
     }
 
-    // Inspect the settled promise while it is still pinned.
-    bool rejected = builtins::promise_get_state(mod_promise, builtins::PROMISE_PENDING)
-                    == builtins::PROMISE_REJECTED;
+    bool rejected = final_state == builtins::PROMISE_REJECTED;
     if (rejected) {
         TVal reason = builtins::promise_get_result(mod_promise);
         vm.heap.tval_copy_ref(&vm.heap.error_value, &reason);
@@ -1348,8 +1361,14 @@ fn bool? Vm.execute_module_async(Vm* vm, CompiledFunction* func, EnvRecord* env)
 /// Returns true when the module body evaluated to completion; false when it
 /// threw (sync body) or its evaluation promise rejected (async/TLA body) —
 /// in that case the thrown value / rejection reason is left in
-/// heap.error_value. Faults only on hard setup failure.
-fn bool? Vm.execute_module_nested(Vm* vm, CompiledFunction* func, EnvRecord* env) {
+/// heap.error_value. Faults only on hard setup failure. For an async/TLA
+/// body that is still pending once this call returns (top-level await
+/// suspended and — because we are reached from inside a microtask drain,
+/// e.g. a dynamic import job — cannot be polled to completion here),
+/// `*out_pending` is set to the pinned per-evaluation promise so the caller
+/// can chain onto it instead; `true` is returned in that case too (not yet
+/// known to have failed).
+fn bool? Vm.execute_module_nested(Vm* vm, CompiledFunction* func, EnvRecord* env, HObject** out_pending) {
     uint nregs = func.num_regs;
 
     // Compute the true top of the current (topmost live) activation's
@@ -1496,16 +1515,11 @@ fn bool? Vm.execute_module_nested(Vm* vm, CompiledFunction* func, EnvRecord* env
         // remain a live VM fault.
         vm.has_error = false;
         vm.heap.has_error = false;
-
-        // Drive microtasks until the module promise settles (or the queue
-        // drains). drain_microtasks resumes suspended async activations
-        // via reactions.
-        for (uint guard = 0; guard < 100000; guard++) {
-            if (builtins::promise_get_state(mod_promise, builtins::PROMISE_PENDING)
-                != builtins::PROMISE_PENDING) break;
-            if (vm.heap.microtask_count == 0) break;
-            vm.heap.drain_microtasks((void*)vm);
-        }
+        // Never pump the queue here — see the matching comment in
+        // execute_module_async. mod_promise settles later via its own
+        // reactions; the caller chains onto it (or leaves it pending, for
+        // execute_module_nested's non-module eval-script caller) instead of
+        // blocking.
     }
 
     // Deregister the shadow frame now that the inner run (and any drains)
@@ -1524,9 +1538,16 @@ fn bool? Vm.execute_module_nested(Vm* vm, CompiledFunction* func, EnvRecord* env
     vm.heap.resume_gen = (GeneratorState*)saved_resume_gen;
 
     if (is_async_body) {
+        uint final_state = builtins::promise_get_state(mod_promise, builtins::PROMISE_PENDING);
+        if (final_state == builtins::PROMISE_PENDING) {
+            // Still pending: hand the pinned promise to the caller so it can
+            // chain mod.eval_promise onto it instead of polling. The caller
+            // now owns the pinning reference.
+            *out_pending = mod_promise;
+            return true;
+        }
         // Inspect the settled promise while it is still pinned.
-        bool rejected = builtins::promise_get_state(mod_promise, builtins::PROMISE_PENDING)
-                        == builtins::PROMISE_REJECTED;
+        bool rejected = final_state == builtins::PROMISE_REJECTED;
         if (rejected) {
             TVal reason = builtins::promise_get_result(mod_promise);
             vm.heap.tval_copy_ref(&vm.heap.error_value, &reason);
