@@ -15,7 +15,7 @@ Phase 15 (Classes) 5964 -> 7107 pass after un-skipping 1138 tests.
 - [ ] Dynamic-import DFS evaluation order and top-level-await sibling independence (4 tests)
 - [ ] Same-module `import {x}; export {x}` re-export needs ParseModule table cross-referencing (2 tests)
 - [ ] `top-level-await/new-await-script-code.js` compile error (1 CE)
-- [ ] `scripts/test262_skip.cfg` is dead — the live skip mechanism is embedded in run_test262.py
+- [x] `scripts/test262_skip.cfg` was dead — deleted; live skip mechanism is embedded in run_test262.py
 - [ ] RegExp property-escapes tests time out under load
 - [ ] Decide where `just test262-gate` runs (Actions / pre-push hook / manual)
 - [x] Add 14 orphaned directories to `PHASES` — `916ffaed`
