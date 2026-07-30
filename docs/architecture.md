@@ -1,187 +1,65 @@
 # Engine architecture
 
-A guide to how this JavaScript engine is put together: what the major pieces
-are, how a value moves through them, and which invariants hold everything
-together. It is written for someone reading or changing the code, so it favours
-the parts that are hard to work out from a single file.
+A guide to how this JavaScript engine fits together: what the major pieces are,
+how a value moves through them, and which invariants hold everything in place.
+It is written for someone reading or changing the code, so it concentrates on
+what is hard to work out from any single file.
 
-Sections are added as each area of the codebase is reviewed.
+The engine is a register-based bytecode interpreter written in C3, with a
+single-pass compiler, a hybrid refcounting and mark-and-sweep collector, hidden
+classes with inline caches, and ES2015-and-later features including generators,
+async functions, proxies, typed arrays, and ES modules.
 
-## Values and objects
+## How a script runs
 
-### TVal
+Before the details, the shape of the whole thing. Running `f("hi")` from a file
+involves every layer:
 
-Every register, property slot, and stack slot holds a `TVal`. The default build
-NaN-boxes it into a single 8-byte `ulong`; passing `-D NONANBOX` switches to a
-16-byte tagged union with identical semantics, which is useful when debugging.
+1. **Compile.** `compile()` sets up a `CompilerContext` and parses. The lexer
+   hands over tokens on demand, and bytecode is emitted as each construct is
+   recognized. There is no AST. Function bodies become nested
+   `CompiledFunction`s, string literals are interned into the constant pool, and
+   `finish()` runs the fusion and move-elimination passes over the finished
+   instruction stream.
 
-NaN-boxing exploits the unused payload space in IEEE 754 NaNs. A double is any
-value whose top 16 bits are at or below `0xFFF0`; everything above that is a
-tagged non-double, with the payload in the low 48 bits:
+2. **Set up.** The VM pushes an activation for the top-level code, pointing its
+   register window into the valstack and its environment at the global scope.
 
-| Tag | Payload |
+3. **Execute.** `Vm.run` loads the frame into a `Dispatch` struct and enters the
+   inner loop. `GETVAR` resolves `f` through an inline cache; `LDCONST` loads
+   the interned `"hi"`; `CALL` finds a plain compiled function, pushes an
+   activation, and signals a restart so the outer loop reloads state for the new
+   frame.
+
+4. **Allocate.** Anything the body constructs comes from the heap: an object
+   gets a pooled `HObject` header, a shape describing its layout, and a temproot
+   flag so a collection running before it is anchored cannot free it.
+
+5. **Collect.** Refcounting reclaims most values as registers are overwritten.
+   At a backward jump the VM may reach a safepoint, where mark-and-sweep runs to
+   collect the cycles refcounting cannot.
+
+6. **Drain.** When the script returns, the microtask queue runs, settling
+   promises and resuming any async function that was awaiting.
+
+Each section below expands one of those steps.
+
+## Where the code lives
+
+| Path | What is in it |
 |---|---|
-| `0xFFF1` | 48-bit signed integer (fastint) |
-| `0xFFF2` | `HBigInt*` |
-| `0xFFF3`, `0xFFF4` | undefined, null (no payload) |
-| `0xFFF5` | boolean, 0 or 1 |
-| `0xFFF6`, `0xFFF7` | raw pointer, lightfunc |
-| `0xFFF8` … `0xFFFA` | `HString*`, `HObject*`, buffer |
-| `0xFFFF` | deleted-slot sentinel |
-
-Two consequences are worth knowing. `set_number` normalizes any NaN it stores to
-a canonical positive NaN, because a negative NaN's bits would collide with the
-tag range. And the tag layout is deliberate: undefined and null are adjacent so
-`is_nullish` is one range check, and numbers and fastints sit below every
-pointer tag so `is_numeric` and `is_heap_allocated` are also single comparisons.
-
-**Fastints** are the integer fast path. An integer that fits in 48 bits is
-stored as a fastint rather than a double, so integer arithmetic avoids
-float round-tripping. `set_fastint_or_number` is the one place that decides,
-and arithmetic opcodes write their results through it rather than repeating the
-range check.
-
-The `DELETED` tag is internal and never a JavaScript value. It marks an array
-slot that was deleted, which the dense array part cannot express with
-`undefined` alone.
-
-### HeapHeader
-
-Every collected allocation begins with a `HeapHeader`: flags, a refcount, and
-the two list pointers that thread the heap together. `HString` and `HObject`
-each define their own flags bitstruct whose low 7 bits mirror the header's, so a
-raw cast from either to `HeapHeader*` reads the correct type and GC bits.
-
-A refcount of `STRING_PINNED_REFCOUNT` marks a pinned string, on which incref
-and decref do nothing. That sentinel is only meaningful together with
-`is_string()`, since an object could legitimately reach the same count.
-
-### HString
-
-Strings are immutable, and their bytes live in the same allocation as the
-header, so `get_data()` is pointer arithmetic. A NUL always follows the last
-byte, letting the data pointer go straight to a C API.
-
-The invariant that matters most: **string equality is pointer identity**.
-Interning is what makes that true, so any path that produces an `HString` which
-escapes without interning will silently break strict equality, `indexOf`, and
-property-key lookup. The exception is deliberate: strings over
-`MAX_INTERN_BYTES` are left un-interned and compared by content, which
-`equals_hstring` handles by falling back when either side is not interned.
-
-Internally the bytes are **CESU-8**, not standard UTF-8. An ECMAScript string is
-a sequence of UTF-16 code units, so every astral codepoint is split into its two
-surrogate halves and each half encoded separately as a 3-byte sequence. That is
-what makes `"\u{1F600}".length === 2` come out right, and it lets lone
-surrogates round-trip, which the spec permits. `normalize_to_cesu8` is the only
-normalization point, called at intern time so one logical string cannot reach
-the table under two different encodings. `write_cesu8_as_utf8` inverts it at
-every host-visible boundary, so nothing outside the engine sees a surrogate
-half.
-
-Character indexing is by UTF-16 code unit and cached. Each string remembers one
-`(char_offset, byte_offset)` cursor, and `char_offset_to_byte_offset` scans from
-whichever of the string start, the string end, or that cursor is nearest.
-Because strings are immutable, the cache is only ever updated, never
-invalidated. ASCII strings skip all of it: one byte is one character.
-
-### HObject
-
-An object is a `HObjectBase` prefix followed, for most classes, by an
-`HObjectExtra` union holding subtype fields. `flags.obj_class` says which
-variant is live, and `alloc_size_for_class` decides how much space to allocate:
-
-- `OBJECT` and `ARGUMENTS` need no union at all.
-- `ARRAY` keeps its `array_length` in the union's first four bytes.
-- Everything else, `ERROR` and `PROXY` included, gets the full union.
-
-Every class but `GETTER_SETTER` also carries `INLINE_PROPS` (4) property slots
-at the tail of its allocation, so an object with few properties needs no
-separate property block at all.
-
-**Property storage** has three layers, and a lookup tries them in order:
-
-1. **The dense array part**, for integer-indexed properties. It holds bare
-   `TVal`s with no per-element flags, and `undefined` doubles as the hole
-   sentinel. `dense_index_ok` keeps it dense only while an index stays near the
-   current size, so `a[2**31] = x` cannot allocate billions of empty slots.
-2. **A hash table**, built once an object reaches `HASH_MIN_PROPS` (8)
-   properties. It maps a key pointer to an index in the value array.
-3. **A linear scan of the shape chain**, which is what small objects use.
-
-Because array builtins like `push` write only to the dense part while `PUTPROP`
-writes the property table, `put_prop` syncs numeric-string keys into both.
-
-### Shapes
-
-Names and flags do not live on the object. They live in a shared `Shape`, and
-the object stores only values. Adding a property moves the object from a parent
-shape to a child, so shapes form a transition tree, and a transition table keyed
-on `(parent, key, flags)` makes objects that add the same properties in the same
-order converge on one shape.
-
-Including the flags in that key matters: every instance of a class installing
-the same private field can share a shape, while the same key added with
-different attributes gets its own.
-
-Some operations need a shape that belongs to one object alone.
-`make_shape_private` flattens the chain into a standalone shape and leaves it
-out of the transition table, which is how `seal`, `freeze`, and per-property
-flag edits avoid leaking into every object sharing the shape.
-
-One optimization is worth calling out because it changes the complexity of
-ordinary reads. `has_nondefault_flags` is set the moment any non-default
-property is installed and never cleared. While it is false, `get_prop_flags`
-returns the default descriptor in O(1) instead of walking a shape chain that,
-for a dictionary-mode object, is one node deep per property.
-
-### Inline caches
-
-Three caches sit above property lookup:
-
-- **`ICEntry`**, one per `GETPROP`/`PUTPROP` site, holding the last resolved
-  shape, index, and a direct pointer to the value. A hit requires the shape to
-  match and the owner's `prop_alloc` to be unchanged, which is one pointer
-  comparison.
-- **`VarICEntry`**, one per `GETVAR`/`TYPEOFIDENT` site, caching the resolved
-  environment record so the scope-chain walk can be skipped.
-- **The megamorphic cache** on the heap, shared across all sites and keyed by
-  `(shape_id, key)`. It is a lossy single-slot table, so a collision simply
-  evicts, and it caches own properties only, since it cannot detect a change to
-  an intermediate prototype.
-
-### Bytecode
-
-The compiler emits fixed-width 32-bit instructions for a register machine. An
-8-bit opcode occupies the low byte, and the remaining 24 bits are read in one of
-five layouts: three 8-bit operands (`ABC`), an 8-bit `A` plus a 16-bit `BC`, an
-8-bit `A` plus a signed bias-encoded `sBx`, or a full 24-bit operand, signed or
-unsigned.
-
-A `CompiledFunction` is the immutable template many closures can share. It
-carries the instruction stream, the constant pool, templates for nested
-functions, the register budget, source metadata, and the inline-cache arrays,
-which run parallel to the instruction stream so `ic_entries[pc]` serves
-`code[pc]`.
-
-`FuncFlags` records what the compiler learned about the body, and several flags
-drive real fast paths. `needs_env` is the clearest: when it is false, the call
-path skips creating a function scope entirely and reuses the captured parent
-environment.
-
-### Environments
-
-A scope is an `EnvRecord`: a parent pointer, a bindings object, and two booleans
-marking whether it is declarative and whether it is a function boundary. Records
-come from a pool, since they are created and discarded constantly.
-
-Uninitialized `let` and `const` bindings hold a **TDZ sentinel**, encoded as
-`undefined` with a non-zero payload so it is distinguishable from real
-`undefined` without costing a tag. Reading one throws a `ReferenceError`.
-
-Assignment goes through `env_try_put_lex`, which walks the lexical chain once
-and returns what happened: updated, unbound and so the caller should try the var
-environment, a `const` violation, or a TDZ read.
+| `src/lexer.c3` | Tokenizer, driven on demand by the compiler |
+| `src/compiler/` | Single-pass parser and code generator, plus the optimization passes |
+| `src/bytecode.c3` | Instruction encoding, the opcode set, `CompiledFunction` |
+| `src/vm/` | The dispatch loop, calls, property access, exceptions, generators |
+| `src/heap.c3` | Allocation, both collectors, the string table, shapes |
+| `src/types.c3` | `TVal` and `HeapHeader`, the two universal representations |
+| `src/hobject.c3` | Object layout, property storage, shapes, inline caches |
+| `src/hstring.c3` | Immutable interned strings and the CESU-8 encoding |
+| `src/env.c3` | Environment records and the scope chain |
+| `src/module.c3` | The ESM lifecycle: resolve, link, evaluate |
+| `src/builtins/` | The standard library, one file per area |
+| `cli/` | The `duktape_c3` and debug binaries, and the test262 runner |
 
 ## From source to bytecode
 
@@ -386,115 +264,185 @@ fresh object in a raw local. The VM collects at backward jumps, which bounds
 allocation between collections in a loop, and throttles them with
 `bwd_gc_budget` so a tight loop does not thrash the collector.
 
-## Builtins and modules
+## Values and objects
 
-### One declaration per builtin
+The two sections above described how code is compiled and executed. This one and
+the next describe what it operates on: how a value is represented, how an object
+stores its properties, and how both are allocated and reclaimed.
 
-Every native function has an entry in the `Builtin` enum, which carries its
-JavaScript name, its arity, and a pointer to the implementation as associated
-values. The dispatch table and the metadata lookup are both generated from that
-one declaration, so adding a builtin means adding one line.
+### TVal
 
-`builtin_fn_index` is a runtime-only field on the function object and is never
-written to bytecode or disk, which means members can be appended freely with no
-stable numbering to preserve.
+Every register, property slot, and stack slot holds a `TVal`. The default build
+NaN-boxes it into a single 8-byte `ulong`; passing `-D NONANBOX` switches to a
+16-byte tagged union with identical semantics, which is useful when debugging.
 
-A builtin receives a `BuiltinContext`: the VM, the register window, the argument
-count, `this`, the result slot, and whether it was called as a constructor. Two
-fields exist for `Function.prototype.call` and `.apply`, which rewrite their own
-arguments and ask the CALL handler to re-dispatch rather than calling through
-themselves.
+NaN-boxing exploits the unused payload space in IEEE 754 NaNs. A double is any
+value whose top 16 bits are at or below `0xFFF0`; everything above that is a
+tagged non-double, with the payload in the low 48 bits:
 
-### Lightfuncs
+| Tag | Payload |
+|---|---|
+| `0xFFF1` | 48-bit signed integer (fastint) |
+| `0xFFF2` | `HBigInt*` |
+| `0xFFF3`, `0xFFF4` | undefined, null (no payload) |
+| `0xFFF5` | boolean, 0 or 1 |
+| `0xFFF6`, `0xFFF7` | raw pointer, lightfunc |
+| `0xFFF8` … `0xFFFA` | `HString*`, `HObject*`, buffer |
+| `0xFFFF` | deleted-slot sentinel |
 
-Most builtins are reachable without a heap object at all. A **lightfunc** is a
-`TVal` whose payload is a function pointer, so `Math.max` costs no allocation.
-`.name`, `.length`, and `.prototype` are synthesized from the enum metadata on
-demand.
+Two consequences are worth knowing. `set_number` normalizes any NaN it stores to
+a canonical positive NaN, because a negative NaN's bits would collide with the
+tag range. And the tag layout is deliberate: undefined and null are adjacent so
+`is_nullish` is one range check, and numbers and fastints sit below every
+pointer tag so `is_numeric` and `is_heap_allocated` are also single comparisons.
 
-Deleting one of those virtual properties has to be recorded somewhere, since
-there is no object to delete from. The heap keeps a bitset, three bits per
-builtin index, for exactly that.
+**Fastints** are the integer fast path. An integer that fits in 48 bits is
+stored as a fastint rather than a double, so integer arithmetic avoids
+float round-tripping. `set_fastint_or_number` is the one place that decides,
+and arithmetic opcodes write their results through it rather than repeating the
+range check.
 
-A lightfunc is promoted to a real `HObject` the moment code needs object
-identity: assigning an own property, using it as a `WeakMap` key, or anything
-else that must survive a round trip.
+The `DELETED` tag is internal and never a JavaScript value. It marks an array
+slot that was deleted, which the dense array part cannot express with
+`undefined` alone.
 
-### Promises and the job queue
+### HeapHeader
 
-A promise's state, result, and reaction list live in its `HObjectExtra` union
-slot, not in its property table, so user code cannot reach them by name. The
-reaction chain links through a hidden property rather than `HeapHeader.next`,
-which threads the unrelated GC list.
+Every collected allocation begins with a `HeapHeader`: flags, a refcount, and
+the two list pointers that thread the heap together. `HString` and `HObject`
+each define their own flags bitstruct whose low 7 bits mirror the header's, so a
+raw cast from either to `HeapHeader*` reads the correct type and GC bits.
 
-Reactions become microtasks in the heap's queue, drained after each top-level
-script and after `vm_call_fn_impl` returns. The drain walks forward with a cursor
-so jobs enqueued by a running handler execute in the same drain, which is the
-ordering the spec requires.
+A refcount of `STRING_PINNED_REFCOUNT` marks a pinned string, on which incref
+and decref do nothing. That sentinel is only meaningful together with
+`is_string()`, since an object could legitimately reach the same count.
 
-Async functions attach to this machinery directly. `AWAIT` suspends the
-generator-style frame and schedules its resumption as a promise reaction, so the
-microtask queue drives every async function's continuation.
+### HString
 
-### Iterators
+Strings are immutable, and their bytes live in the same allocation as the
+header, so `get_data()` is pointer arithmetic. A NUL always follows the last
+byte, letting the data pointer go straight to a C API.
 
-The iterator protocol appears in three layers. Ordinary iterators are objects
-with `next`; `%IteratorHelperPrototype%` backs the lazy `map`, `filter`, `take`,
-`drop`, and `flatMap` results; and `%AsyncFromSyncIteratorPrototype%` adapts a
-sync iterator for `for await`.
+The invariant that matters most: **string equality is pointer identity**.
+Interning is what makes that true, so any path that produces an `HString` which
+escapes without interning will silently break strict equality, `indexOf`, and
+property-key lookup. The exception is deliberate: strings over
+`MAX_INTERN_BYTES` are left un-interned and compared by content, which
+`equals_hstring` handles by falling back when either side is not interned.
 
-The helpers are not generators here, though the spec describes them as such. Each
-is a small state machine driven off the underlying iterator's `next`, which
-avoids a generator frame per helper in a chain. Only `flatMap` needs extra state,
-for the inner iterator it is currently draining.
+Internally the bytes are **CESU-8**, not standard UTF-8. An ECMAScript string is
+a sequence of UTF-16 code units, so every astral codepoint is split into its two
+surrogate halves and each half encoded separately as a 3-byte sequence. That is
+what makes `"\u{1F600}".length === 2` come out right, and it lets lone
+surrogates round-trip, which the spec permits. `normalize_to_cesu8` is the only
+normalization point, called at intern time so one logical string cannot reach
+the table under two different encodings. `write_cesu8_as_utf8` inverts it at
+every host-visible boundary, so nothing outside the engine sees a surrogate
+half.
 
-### Typed arrays and buffers
+Character indexing is by UTF-16 code unit and cached. Each string remembers one
+`(char_offset, byte_offset)` cursor, and `char_offset_to_byte_offset` scans from
+whichever of the string start, the string end, or that cursor is nearest.
+Because strings are immutable, the cache is only ever updated, never
+invalidated. ASCII strings skip all of it: one byte is one character.
 
-An `ArrayBuffer` owns a backing store and an intrusive list of the views over it,
-so detaching or resizing can find every view that must be updated. A detached
-buffer is marked with a sentinel byte length, which is distinct from a live
-zero-length one.
+### HObject
 
-Resizable buffers (ES2024) make length dynamic. A view created without an
-explicit length tracks its buffer, so its effective length is recomputed on every
-access rather than read from the view.
+An object is a `HObjectBase` prefix followed, for most classes, by an
+`HObjectExtra` union holding subtype fields. `flags.obj_class` says which
+variant is live, and `alloc_size_for_class` decides how much space to allocate:
 
-The subtle part is ordering. Writing to a typed array coerces the value first,
-and that coercion can run user code that resizes or detaches the buffer, so
-bounds are rechecked after coercion rather than before.
+- `OBJECT` and `ARGUMENTS` need no union at all.
+- `ARRAY` keeps its `array_length` in the union's first four bytes.
+- Everything else, `ERROR` and `PROXY` included, gets the full union.
 
-### Proxies
+Every class but `GETTER_SETTER` also carries `INLINE_PROPS` (4) property slots
+at the tail of its allocation, so an object with few properties needs no
+separate property block at all.
 
-A `Proxy` holds its target and handler, both nulled on revocation. Callable
-proxies dispatch through the ordinary builtin path by overlaying
-`builtin_fn_index` at the same offset the function struct uses.
+**Property storage** has three layers, and a lookup tries them in order:
 
-Because a proxy can appear anywhere on a prototype chain, the chain walkers in
-`hobject.c3` need to reach the trap machinery in the builtins layer, which would
-be a circular dependency. The heap holds function pointers, set at VM creation,
-that bridge the two.
+1. **The dense array part**, for integer-indexed properties. It holds bare
+   `TVal`s with no per-element flags, and `undefined` doubles as the hole
+   sentinel. `dense_index_ok` keeps it dense only while an index stays near the
+   current size, so `a[2**31] = x` cannot allocate billions of empty slots.
+2. **A hash table**, built once an object reaches `HASH_MIN_PROPS` (8)
+   properties. It maps a key pointer to an index in the value array.
+3. **A linear scan of the shape chain**, which is what small objects use.
 
-### The module system
+Because array builtins like `push` write only to the dense part while `PUTPROP`
+writes the property table, `put_prop` syncs numeric-string keys into both.
 
-A module moves through compile, resolve, link, execute, and namespace
-construction, with `ModuleStatus` recording where it is. That status is also how
-cycles are handled: reaching a module already `LINKING` or `EVALUATING` means a
-cycle, and the recursion stops rather than looping.
+### Shapes
 
-Linking is what makes exports live. Rather than copying values, an importing
-module's binding is an accessor that reads through to the exporting module's
-environment slot, so a later assignment in the exporter is visible to every
-importer, and reading before initialization still throws on TDZ.
+Names and flags do not live on the object. They live in a shared `Shape`, and
+the object stores only values. Adding a property moves the object from a parent
+shape to a child, so shapes form a transition tree, and a transition table keyed
+on `(parent, key, flags)` makes objects that add the same properties in the same
+order converge on one shape.
 
-Top-level `await` makes evaluation asynchronous, so a module carries a persistent
-evaluation promise that settles once, whether the body finished synchronously or
-suspended. A module waiting on an async dependency chains onto that promise
-instead of polling, which is necessary because the wait often happens inside a
-microtask drain that cannot pump itself.
+Including the flags in that key matters: every instance of a class installing
+the same private field can share a shape, while the same key added with
+different attributes gets its own.
 
-Host integration goes through `ModuleHostHooks`: specifier resolution, source
-loading, and load and evaluation callbacks, so an embedder decides what a
-specifier means.
+Some operations need a shape that belongs to one object alone.
+`make_shape_private` flattens the chain into a standalone shape and leaves it
+out of the transition table, which is how `seal`, `freeze`, and per-property
+flag edits avoid leaking into every object sharing the shape.
+
+One optimization is worth calling out because it changes the complexity of
+ordinary reads. `has_nondefault_flags` is set the moment any non-default
+property is installed and never cleared. While it is false, `get_prop_flags`
+returns the default descriptor in O(1) instead of walking a shape chain that,
+for a dictionary-mode object, is one node deep per property.
+
+### Inline caches
+
+Three caches sit above property lookup:
+
+- **`ICEntry`**, one per `GETPROP`/`PUTPROP` site, holding the last resolved
+  shape, index, and a direct pointer to the value. A hit requires the shape to
+  match and the owner's `prop_alloc` to be unchanged, which is one pointer
+  comparison.
+- **`VarICEntry`**, one per `GETVAR`/`TYPEOFIDENT` site, caching the resolved
+  environment record so the scope-chain walk can be skipped.
+- **The megamorphic cache** on the heap, shared across all sites and keyed by
+  `(shape_id, key)`. It is a lossy single-slot table, so a collision simply
+  evicts, and it caches own properties only, since it cannot detect a change to
+  an intermediate prototype.
+
+### Bytecode
+
+The compiler emits fixed-width 32-bit instructions for a register machine. An
+8-bit opcode occupies the low byte, and the remaining 24 bits are read in one of
+five layouts: three 8-bit operands (`ABC`), an 8-bit `A` plus a 16-bit `BC`, an
+8-bit `A` plus a signed bias-encoded `sBx`, or a full 24-bit operand, signed or
+unsigned.
+
+A `CompiledFunction` is the immutable template many closures can share. It
+carries the instruction stream, the constant pool, templates for nested
+functions, the register budget, source metadata, and the inline-cache arrays,
+which run parallel to the instruction stream so `ic_entries[pc]` serves
+`code[pc]`.
+
+`FuncFlags` records what the compiler learned about the body, and several flags
+drive real fast paths. `needs_env` is the clearest: when it is false, the call
+path skips creating a function scope entirely and reuses the captured parent
+environment.
+
+### Environments
+
+A scope is an `EnvRecord`: a parent pointer, a bindings object, and two booleans
+marking whether it is declarative and whether it is a function boundary. Records
+come from a pool, since they are created and discarded constantly.
+
+Uninitialized `let` and `const` bindings hold a **TDZ sentinel**, encoded as
+`undefined` with a non-zero payload so it is distinguishable from real
+`undefined` without costing a tag. Reading one throws a `ReferenceError`.
+
+Assignment goes through `env_try_put_lex`, which walks the lexical chain once
+and returns what happened: updated, unbound and so the caller should try the var
+environment, a `const` violation, or a TDZ read.
 
 ## Memory: the heap, the collector, and strings
 
@@ -703,3 +651,114 @@ own to drain later. It then clears every pointer that could outlive the freed
 memory, including cached symbols, the megamorphic cache, generator init state,
 and the environment freelist, whose nodes hold bindings pointing into the heap
 that was just released.
+
+## Builtins and modules
+
+### One declaration per builtin
+
+Every native function has an entry in the `Builtin` enum, which carries its
+JavaScript name, its arity, and a pointer to the implementation as associated
+values. The dispatch table and the metadata lookup are both generated from that
+one declaration, so adding a builtin means adding one line.
+
+`builtin_fn_index` is a runtime-only field on the function object and is never
+written to bytecode or disk, which means members can be appended freely with no
+stable numbering to preserve.
+
+A builtin receives a `BuiltinContext`: the VM, the register window, the argument
+count, `this`, the result slot, and whether it was called as a constructor. Two
+fields exist for `Function.prototype.call` and `.apply`, which rewrite their own
+arguments and ask the CALL handler to re-dispatch rather than calling through
+themselves.
+
+### Lightfuncs
+
+Most builtins are reachable without a heap object at all. A **lightfunc** is a
+`TVal` whose payload is a function pointer, so `Math.max` costs no allocation.
+`.name`, `.length`, and `.prototype` are synthesized from the enum metadata on
+demand.
+
+Deleting one of those virtual properties has to be recorded somewhere, since
+there is no object to delete from. The heap keeps a bitset, three bits per
+builtin index, for exactly that.
+
+A lightfunc is promoted to a real `HObject` the moment code needs object
+identity: assigning an own property, using it as a `WeakMap` key, or anything
+else that must survive a round trip.
+
+### Promises and the job queue
+
+A promise's state, result, and reaction list live in its `HObjectExtra` union
+slot, not in its property table, so user code cannot reach them by name. The
+reaction chain links through a hidden property rather than `HeapHeader.next`,
+which threads the unrelated GC list.
+
+Reactions become microtasks in the heap's queue, drained after each top-level
+script and after `vm_call_fn_impl` returns. The drain walks forward with a cursor
+so jobs enqueued by a running handler execute in the same drain, which is the
+ordering the spec requires.
+
+Async functions attach to this machinery directly. `AWAIT` suspends the
+generator-style frame and schedules its resumption as a promise reaction, so the
+microtask queue drives every async function's continuation.
+
+### Iterators
+
+The iterator protocol appears in three layers. Ordinary iterators are objects
+with `next`; `%IteratorHelperPrototype%` backs the lazy `map`, `filter`, `take`,
+`drop`, and `flatMap` results; and `%AsyncFromSyncIteratorPrototype%` adapts a
+sync iterator for `for await`.
+
+The helpers are not generators here, though the spec describes them as such. Each
+is a small state machine driven off the underlying iterator's `next`, which
+avoids a generator frame per helper in a chain. Only `flatMap` needs extra state,
+for the inner iterator it is currently draining.
+
+### Typed arrays and buffers
+
+An `ArrayBuffer` owns a backing store and an intrusive list of the views over it,
+so detaching or resizing can find every view that must be updated. A detached
+buffer is marked with a sentinel byte length, which is distinct from a live
+zero-length one.
+
+Resizable buffers (ES2024) make length dynamic. A view created without an
+explicit length tracks its buffer, so its effective length is recomputed on every
+access rather than read from the view.
+
+The subtle part is ordering. Writing to a typed array coerces the value first,
+and that coercion can run user code that resizes or detaches the buffer, so
+bounds are rechecked after coercion rather than before.
+
+### Proxies
+
+A `Proxy` holds its target and handler, both nulled on revocation. Callable
+proxies dispatch through the ordinary builtin path by overlaying
+`builtin_fn_index` at the same offset the function struct uses.
+
+Because a proxy can appear anywhere on a prototype chain, the chain walkers in
+`hobject.c3` need to reach the trap machinery in the builtins layer, which would
+be a circular dependency. The heap holds function pointers, set at VM creation,
+that bridge the two.
+
+### The module system
+
+A module moves through compile, resolve, link, execute, and namespace
+construction, with `ModuleStatus` recording where it is. That status is also how
+cycles are handled: reaching a module already `LINKING` or `EVALUATING` means a
+cycle, and the recursion stops rather than looping.
+
+Linking is what makes exports live. Rather than copying values, an importing
+module's binding is an accessor that reads through to the exporting module's
+environment slot, so a later assignment in the exporter is visible to every
+importer, and reading before initialization still throws on TDZ.
+
+Top-level `await` makes evaluation asynchronous, so a module carries a persistent
+evaluation promise that settles once, whether the body finished synchronously or
+suspended. A module waiting on an async dependency chains onto that promise
+instead of polling, which is necessary because the wait often happens inside a
+microtask drain that cannot pump itself.
+
+Host integration goes through `ModuleHostHooks`: specifier resolution, source
+loading, and load and evaluation callbacks, so an embedder decides what a
+specifier means.
+
