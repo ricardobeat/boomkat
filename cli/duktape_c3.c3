@@ -66,31 +66,78 @@ fn int main(String[] args) {
         // vm_uncaught_error) and a genuine internal VM fault are different
         // failures, so report exactly one of them: printing both made every
         // ordinary uncaught throw look like an engine crash.
-        bool printed = false;
+        //
+        // "VM error:" is reserved strictly for an internal fault with no JS
+        // error attached. Any thrown VALUE — including a non-Error primitive
+        // or an object without `.message` — is reported by print_uncaught, so
+        // that wording stays a reliable signal of a genuine engine bug.
         if (v.heap.has_error) {
-            TVal* err_val = &v.heap.error_value;
-            if (err_val.is_object()) {
-                HObject* err_obj = (HObject*)err_val.get_heapptr();
-                if (err_obj != null) {
-                    HString* msg_key = (HString*)v.heap.strs[heap::BuiltinStr.MESSAGE];
-                    TVal? msg_tv_opt = err_obj.get_prop(msg_key);
-                    if (try msg_tv = msg_tv_opt) {
-                        if (msg_tv.is_string()) {
-                            HString* msg_str = (HString*)msg_tv.get_heapptr();
-                            char[] msg_data = msg_str.get_data();
-                            io::eprintf("Uncaught: ");
-                            for (usz i = 0; i < msg_data.len; i++) io::eprintf("%c", msg_data[i]);
-                            io::eprintf("\n");
-                            printed = true;
-                        }
-                    }
-                }
-            }
-        }
-        if (!printed) {
+            print_uncaught(v.heap, &v.heap.error_value);
+        } else {
             io::eprintfn("VM error: %s (at execute)", err);
         }
         return 1;
     }
     return 0;
+}
+
+/// Report an uncaught JS exception on stderr as a single line.
+///
+/// `throw` accepts any value, so the thrown value is frequently not an Error:
+/// a bare string, a number, or a plain object with no `.message`. Those used to
+/// fall through to the internal-fault wording, which described an ordinary
+/// JS-level throw as an engine crash and — worse — burned the one phrase that
+/// signals a real internal fault.
+///
+/// Values are formatted directly rather than through vm_to_string: this runs on
+/// the error path, and a user-supplied `toString`/`get message` could throw or
+/// re-enter the VM while it is already unwinding.
+fn void print_uncaught(Heap* hp, TVal* err_val) {
+    io::eprintf("Uncaught: ");
+    print_tval_stderr(hp, err_val);
+    io::eprintf("\n");
+}
+
+/// Format a single TVal for stderr. Objects print their `message` when they
+/// have a string one (the Error shape); anything else gets a terse tag, since
+/// this is a diagnostic, not a general-purpose inspector.
+fn void print_tval_stderr(Heap* hp, TVal* v) {
+    switch (v.get_tag()) {
+        case types::TValTag.UNDEFINED: io::eprintf("undefined"); return;
+        case types::TValTag.NULL_VAL:  io::eprintf("null");      return;
+        case types::TValTag.BOOLEAN:   io::eprintf(v.get_boolean() ? "true" : "false"); return;
+        case types::TValTag.FASTINT:   io::eprintf("%d", v.get_fastint()); return;
+        case types::TValTag.NUMBER:    io::eprintf("%g", v.get_number()); return;
+        case types::TValTag.STRING:    print_hstring_stderr((HString*)v.get_heapptr()); return;
+        default: break;
+    }
+    if (!v.is_object()) {
+        io::eprintf("<unknown value>");
+        return;
+    }
+    HObject* obj = (HObject*)v.get_heapptr();
+    if (obj == null) {
+        io::eprintf("<null object>");
+        return;
+    }
+    // Error-shaped: print the message, matching the long-standing wording for
+    // `throw new Error("msg")`.
+    HString* msg_key = (HString*)hp.strs[heap::BuiltinStr.MESSAGE];
+    TVal? msg_tv_opt = obj.get_prop(msg_key);
+    if (try msg_tv = msg_tv_opt) {
+        if (msg_tv.is_string()) {
+            print_hstring_stderr((HString*)msg_tv.get_heapptr());
+            return;
+        }
+    }
+    io::eprintf("[object]");
+}
+
+fn void print_hstring_stderr(HString* s) {
+    if (s == null) {
+        io::eprintf("<null string>");
+        return;
+    }
+    char[] d = s.get_data();
+    for (usz i = 0; i < d.len; i++) io::eprintf("%c", d[i]);
 }

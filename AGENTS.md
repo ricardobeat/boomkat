@@ -98,6 +98,17 @@ it treats them as a file path. Debug flags (no perf impact on release builds):
 - `-d` / `--debug` — stage-level timing (load, compile, execute)
 - `--no-optimize` — disable all compiler peephole passes (debug aid). When a miscompiled pattern reproduces only on optimized builds, this flag narrows the bug to either code generation or one of the peephole passes. The flag toggles `compiler::g_disable_optimize` (also accessible from C3 code via `compiler::set_disable_optimize(bool)` / `compiler::get_disable_optimize()`); per-context `CompilerContext.disable_optimize` is initialised from the global in `CompilerContext.init()`. When disabled, the bytecode is copied verbatim into the `CompiledFunction` (NOPs included) so every peephole-produced instruction is visible in the dump.
 
+  **Caveat — `--no-optimize` output is not always correct.** The local-var-to-register elision guarded by `elide_ok` (`src/compiler/context.c3`) is not purely an optimization: with it disabled, a function-local `var` is emitted as `DECLVAR_HOIST`/`DECLVAR`/`PUTVAR`, which currently resolve against the *global* environment, so an inner `var x` leaks to the outer scope. Minimal repro:
+
+  ```js
+  var x = "outer";
+  function f(){ var x = "inner"; }
+  f();
+  print(x);   // optimized: "outer" (correct)   --no-optimize: "inner" (wrong)
+  ```
+
+  Three files in `test/` (`function_scope.js`, `test_capture_analysis.js`, `test_spread.js`) fail under `--no-optimize` for this reason. So use the flag to compare *bytecode shape* (its intended purpose), and treat a wrong **value** under `--no-optimize` as suspect until reproduced on an optimized build. This is a pre-existing codegen bug, not a peephole bug.
+
 `just lldb <file>` builds with `-O0` and launches lldb with a backtrace on crash — use when a JS file triggers a VM fault. On `VM_ERROR` the CLI also dumps the failing instruction and first 32 registers to stderr.
 
 ### Printing TVal values (C3 gotcha)

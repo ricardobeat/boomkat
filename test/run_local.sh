@@ -1,11 +1,14 @@
 #!/bin/bash
 # Run the local JS test suite.
 #
-# Two surfaces, because they need different invocations:
+# Three surfaces, because they need different invocations:
 #   1. test/*.js       — plain scripts, run as `duktape_c3 <file>`.
 #   2. test/modules/   — ESM fixtures, run as `duktape_c3 --module <entry>`;
 #                        delegated to test/modules/run.sh, which owns the
 #                        entry-point list. The flat sweep skips the directory.
+#   3. test/uncaught/  — uncaught-exception reporting on stderr; delegated to
+#                        test/uncaught/run.sh. These exit non-zero on purpose,
+#                        so the flat sweep cannot express them.
 #
 # A test fails if the engine exits non-zero or prints a line containing FAIL
 # (the convention local tests use for an assertion-failure branch).
@@ -46,4 +49,11 @@ echo ""
 bash "$DIR/modules/run.sh" "$ENGINE"
 MOD_RC=$?
 
-[ "$FAIL" -eq 0 ] && [ "$MOD_RC" -eq 0 ]
+# Uncaught-exception reporting — asserted from the shell because these cases
+# exit non-zero with diagnostics on stderr by construction, which the flat
+# sweep above would count as failures.
+echo ""
+bash "$DIR/uncaught/run.sh" "$ENGINE"
+UNC_RC=$?
+
+[ "$FAIL" -eq 0 ] && [ "$MOD_RC" -eq 0 ] && [ "$UNC_RC" -eq 0 ]
