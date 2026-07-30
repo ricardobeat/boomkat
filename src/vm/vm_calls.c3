@@ -867,6 +867,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, Instruction insn, bool*
                     // async_promise here, new_target further down. Keep the two in
                     // sync: any field added to activation_begin belongs here too.
                     new_act.async_gen_state = null;
+                    new_act.forin = null;
                     new_act.curr_pc = target_fast.code;
                     new_act.bottom = new_bottom;
                     new_act.retval = ds.regs_base + result_reg;
@@ -1527,7 +1528,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                     new_act_r.func = target;
                     new_act_r.var_env = gs.var_env;
                     new_act_r.lex_env = gs.lex_env;
-                    new_act_r.cat = gs.cat;
+                    forin_restore_from_gen(new_act_r, gs);
                     new_act_r.curr_pc = gs.saved_pc;
                     new_act_r.bottom = new_bottom_r;
                     new_act_r.retval = ds.regs_base + result_reg;

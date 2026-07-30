@@ -140,6 +140,47 @@ enum GenSuspendKind : char {
     AG_SUSPEND_YIELD,  /// body reached a `yield` — settle current request {v,false}
 }
 
+// ============================================================================
+// For-in enumeration state
+// ============================================================================
+
+/// Runtime state for a for-in loop iteration.  Created by INITFOR.
+///
+/// OWNERSHIP: the state is owned by the *activation that created it*, via the
+/// intrusive `parent` chain rooted at `Activation.forin` — exactly like the
+/// Catcher chain hanging off `Activation.cat`. The `iter_state` register that
+/// INITFOR writes holds a BORROWED pointer, read by NEXTFOR to advance the
+/// enumeration; it is never the owner.
+///
+/// The register cannot be the owner because a for-in has many abrupt exits
+/// (break, labeled break, return, throw, labeled continue to an outer loop)
+/// and the compiler frees the register after the loop, so a state left behind
+/// by an early exit becomes unreachable. Making the *frame* the owner means
+/// no exit edge has to remember anything: every one of them either re-runs
+/// INITFOR (which releases the state its own output register still names) or
+/// pops the activation (which drains the whole chain). See free_forin_chain.
+///
+/// `keys` holds a flat array of interned HString* pointers collected from
+/// the object and its prototype chain (omitting duplicates). The array and
+/// the struct itself are plain-malloc'd; forin_state_free releases both.
+///
+/// `target` is the original for-in target (a borrowed pointer to the
+/// heap-allocated HObject). It is temproot-pinned for the lifetime of the
+/// enumeration so the target stays reachable even when the loop body
+/// doesn't reference it, and so NEXTFOR can re-check property existence
+/// at yield time per EnumerateObjectProperties — a property deleted from
+/// the target before its turn is skipped (plan 062 group N). The pin also
+/// keeps the property table alive, which is what makes the un-incref'd
+/// HString* in `keys` safe: it is released only in forin_state_free, at the
+/// same moment `keys` itself goes away.
+struct ForInState {
+    HString** keys;      /// Array of interned property-name HString* pointers
+    HObject* target;     /// Borrowed pointer to the for-in target (NOT owned)
+    ForInState* parent;  /// Next state on the owning activation's chain
+    uint count;          /// Number of keys in the array
+    uint index;          /// Current position (next key to return)
+}
+
 /// Saved execution context for a generator.
 ///
 /// When a generator function is called, instead of executing the body
@@ -165,6 +206,13 @@ struct GeneratorState {
     void* var_env;            // EnvRecord* (opaque)
     void* lex_env;            // EnvRecord* (opaque)
     void* cat;                // Catcher* chain head (opaque) — saved across yields
+    /// ForInState* chain head (opaque) — saved across yields, exactly like
+    /// `cat`. A generator can suspend in the middle of a for-in, and the
+    /// suspend pops the activation, so ownership of the frame's live for-in
+    /// states must MOVE here or the pop would free states that saved_regs
+    /// still points at (use-after-free on resume). Resume moves them back.
+    /// If the generator is never resumed, gs_release frees them.
+    void* forin;
     TVal this_binding;
     TVal resume_value;        // value passed by .next()
     ResumeKind resume_kind;   // how the generator was resumed
@@ -265,6 +313,20 @@ fn void gs_release(GeneratorState* gs, void* heap_ptr, bool run_decref) {
         h.decref_tval(&gs.this_binding);
     }
     if (gs.saved_regs != null) { h.free_func(h.heap_udata, gs.saved_regs); }
+    // A generator abandoned mid-for-in (never resumed to exhaustion, then
+    // collected) still owns the states its body was enumerating — they were
+    // MOVED here when the body suspended. Nothing else can reach them now, so
+    // this is their last chance to be freed. In teardown mode the target
+    // HObjects are already gone, so the pin must not be touched through them.
+    ForInState* fi = (ForInState*)gs.forin;
+    while (fi != null) {
+        ForInState* fi_parent = fi.parent;
+        if (run_decref && fi.target != null) { ((HeapHeader*)fi.target).clear_temproot(); }
+        if (fi.keys != null) { h.free_func(h.heap_udata, fi.keys); }
+        h.free_func(h.heap_udata, fi);
+        fi = fi_parent;
+    }
+    gs.forin = null;
     h.free_func(h.heap_udata, gs);
 }
 
@@ -2055,6 +2117,16 @@ fn void Heap.mark_generator_state(&self, GeneratorState* gs) {
     // async yield* delegation state (held across suspensions)
     self.mark_tval(&gs.ays_received);
     self.mark_tval(&gs.ays_next_method);
+    // A body suspended inside a for-in owns the enumeration state (it MOVES
+    // here at every yield), and the target's temproot pin does not survive a
+    // safepoint GC. Mark it for the same reason mark_activation_fields marks
+    // a running frame's chain: otherwise the object being enumerated is swept
+    // while the generator sleeps, and resuming reads freed memory.
+    ForInState* gfi = (ForInState*)gs.forin;
+    while (gfi != null) {
+        if (gfi.target != null) { self.mark_hobject(gfi.target); }
+        gfi = gfi.parent;
+    }
     // Mark heap object pointers
     if (gs.delegated_iter != null) {
         self.mark_hobject((HObject*)gs.delegated_iter);
