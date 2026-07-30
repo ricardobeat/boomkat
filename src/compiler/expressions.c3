@@ -389,9 +389,12 @@ fn ushort? CompilerContext.assignment_expr(&self) {
             // For var targets: PUTVAR clears the source register, so we need a
             // stable result register that holds the final value on both paths.
             ushort lor_res = left;
+            uint lor_const_ni = 0;
             if (!lhs_was_member && lhs_was_getvar) {
                 lor_res = self.alloc_reg();
                 self.emit_abc(Opcode.LDREG, (uint)lor_res, (uint)left, 0);
+            } else if (!lhs_was_member) {
+                lor_const_ni = self.find_const_name_idx(left);
             }
             uint skip_jump = self.emit_cond_jump(Opcode.IF_TRUE, (uint)lor_res);
             ushort right = self.assignment_expr()!;
@@ -411,6 +414,11 @@ fn ushort? CompilerContext.assignment_expr(&self) {
                     // lor_res already holds the value and is our result.
                     self.emit_abc(Opcode.LDREG, (uint)left, (uint)lor_res, 0);
                     self.emit_a_bc(ident_store_op, (uint)left, lhs_getvar_name_idx);
+                } else if (lor_const_ni != 0xFFFFFFFFu) {
+                    // Register-cached CONST target: route through PUTVAR_ASSIGN
+                    // so the env const check fires (plan 062 group H).
+                    self.emit_abc(Opcode.LDREG, (uint)left, (uint)lor_res, 0);
+                    self.emit_a_bc(Opcode.PUTVAR_ASSIGN, (uint)left, lor_const_ni);
                 }
                 la_result = lor_res;
             }
@@ -420,9 +428,12 @@ fn ushort? CompilerContext.assignment_expr(&self) {
         if (is_logical_and_assign) {
             // x &&= expr: skip RHS if left is falsy.
             ushort land_res = left;
+            uint land_const_ni = 0;
             if (!lhs_was_member && lhs_was_getvar) {
                 land_res = self.alloc_reg();
                 self.emit_abc(Opcode.LDREG, (uint)land_res, (uint)left, 0);
+            } else if (!lhs_was_member) {
+                land_const_ni = self.find_const_name_idx(left);
             }
             uint skip_jump = self.emit_cond_jump(Opcode.IF_FALSE, (uint)land_res);
             ushort right = self.assignment_expr()!;
@@ -439,6 +450,9 @@ fn ushort? CompilerContext.assignment_expr(&self) {
                 if (lhs_was_getvar) {
                     self.emit_abc(Opcode.LDREG, (uint)left, (uint)land_res, 0);
                     self.emit_a_bc(ident_store_op, (uint)left, lhs_getvar_name_idx);
+                } else if (land_const_ni != 0xFFFFFFFFu) {
+                    self.emit_abc(Opcode.LDREG, (uint)left, (uint)land_res, 0);
+                    self.emit_a_bc(Opcode.PUTVAR_ASSIGN, (uint)left, land_const_ni);
                 }
                 la_result = land_res;
             }
@@ -450,9 +464,12 @@ fn ushort? CompilerContext.assignment_expr(&self) {
             // For var targets: allocate a stable result register before branching;
             // initialize it to left so the skip (non-nullish) path has a valid value.
             ushort nc_res = left;
+            uint nc_const_ni = 0;
             if (!lhs_was_member && lhs_was_getvar) {
                 nc_res = self.alloc_reg();
                 self.emit_abc(Opcode.LDREG, (uint)nc_res, (uint)left, 0);
+            } else if (!lhs_was_member) {
+                nc_const_ni = self.find_const_name_idx(left);
             }
             ushort cmp_reg = self.alloc_reg();
             // Check null
@@ -485,6 +502,9 @@ fn ushort? CompilerContext.assignment_expr(&self) {
                     // PUTVAR clears its source; copy to left first, then write env.
                     self.emit_abc(Opcode.LDREG, (uint)left, (uint)nc_res, 0);
                     self.emit_a_bc(ident_store_op, (uint)left, lhs_getvar_name_idx);
+                } else if (nc_const_ni != 0xFFFFFFFFu) {
+                    self.emit_abc(Opcode.LDREG, (uint)left, (uint)nc_res, 0);
+                    self.emit_a_bc(Opcode.PUTVAR_ASSIGN, (uint)left, nc_const_ni);
                 }
                 la_result = nc_res;
             }
@@ -656,6 +676,21 @@ fn ushort? CompilerContext.assignment_expr(&self) {
                 self.emit_a_bc(ident_store_op, (uint)right, lhs_getvar_name_idx);
                 return right;
             }
+            if (void_ctx) {
+                // Register-cached CONST target in a discarded context (e.g.
+                // `for (const v of arr) { v = 2; }` body — plan 062 group H).
+                // Mirror the lhs_was_getvar branch above so the env-based
+                // PUTVAR_ASSIGN fires the const check.
+                uint const_ni = self.find_const_name_idx(left);
+                if (const_ni != 0xFFFFFFFFu) {
+                    if (left != right) {
+                        self.emit_abc(Opcode.LDREG, (uint)left, (uint)right, 0);
+                        self.free_reg(right);
+                    }
+                    self.emit_a_bc(Opcode.PUTVAR_ASSIGN, (uint)left, const_ni);
+                    return left;
+                }
+            }
             // Simple assignment: left = right
             if (left != right) {
                 self.emit_abc(Opcode.LDREG, (uint)left, (uint)right, 0);
@@ -669,6 +704,20 @@ fn ushort? CompilerContext.assignment_expr(&self) {
                 self.emit_a_bc(ident_store_op, (uint)left, lhs_getvar_name_idx);
                 self.free_reg(left);
                 left = tmp;
+            } else {
+                uint const_ni = self.find_const_name_idx(left);
+                if (const_ni != 0xFFFFFFFFu) {
+                    // Register-cached CONST target (e.g. `for (const v of arr)
+                    // { v = 2; }` after the for-of head — plan 062 group H). The
+                    // LDREG above wrote the new value into the register, but a
+                    // const violation must still throw TypeError. Force PUTVAR_ASSIGN
+                    // through the env so the runtime's non-writable flag fires.
+                    ushort tmp = self.alloc_reg();
+                    self.emit_abc(Opcode.LDREG, (uint)tmp, (uint)left, 0);
+                    self.emit_a_bc(Opcode.PUTVAR_ASSIGN, (uint)left, const_ni);
+                    self.free_reg(left);
+                    left = tmp;
+                }
             }
         }
         return left;
@@ -713,6 +762,18 @@ fn ushort? CompilerContext.assignment_expr(&self) {
             self.emit_a_bc(ident_store_op, (uint)left, lhs_getvar_name_idx);
             self.free_reg(left);
             left = tmp;
+        } else {
+            uint const_ni = self.find_const_name_idx(left);
+            if (const_ni != 0xFFFFFFFFu) {
+                // Register-cached CONST target. The compound op wrote the new
+                // value into `left`; route a PUTVAR_ASSIGN through the env so a
+                // const violation throws TypeError (plan 062 group H).
+                ushort tmp = self.alloc_reg();
+                self.emit_abc(Opcode.LDREG, (uint)tmp, (uint)left, 0);
+                self.emit_a_bc(Opcode.PUTVAR_ASSIGN, (uint)left, const_ni);
+                self.free_reg(left);
+                left = tmp;
+            }
         }
         return left;
     }
@@ -1276,11 +1337,19 @@ fn ushort? CompilerContext.unary_expr(&self) {
                 uint getglobal_reg = self.code[self.code_count - 1].a;
                 self.code[self.code_count - 1] = bytecode::make_a_bc(Opcode.INC_GLOBAL, getglobal_reg, name_idx);
             } else {
-                self.emit_abc(Opcode.INC, (uint)op_inc, 0, 0);
-                if (inc_was_getvar) {
-                    Opcode inc_store = inc_was_getglobal_prim ? Opcode.PUTGLOBAL_PRIM
-                        : (inc_was_getglobal ? Opcode.PUTGLOBAL : Opcode.PUTVAR_ASSIGN);
-                    self.emit_a_bc(inc_store, (uint)op_inc, inc_getvar_name_idx);
+                // Register-cached local. Mirror the postfix INC path: route
+                // through INC_VAR when `op_inc` is a CONST binding's home
+                // register, so the runtime env walk throws TypeError.
+                uint const_ni = self.find_const_name_idx(op_inc);
+                if (const_ni != 0xFFFFFFFFu) {
+                    self.emit_a_bc(Opcode.INC_VAR, (uint)op_inc, const_ni);
+                } else {
+                    self.emit_abc(Opcode.INC, (uint)op_inc, 0, 0);
+                    if (inc_was_getvar) {
+                        Opcode inc_store = inc_was_getglobal_prim ? Opcode.PUTGLOBAL_PRIM
+                            : (inc_was_getglobal ? Opcode.PUTGLOBAL : Opcode.PUTVAR_ASSIGN);
+                        self.emit_a_bc(inc_store, (uint)op_inc, inc_getvar_name_idx);
+                    }
                 }
             }
             self.last_was_getvar = false;
@@ -1335,11 +1404,19 @@ fn ushort? CompilerContext.unary_expr(&self) {
                 uint getglobal_reg = self.code[self.code_count - 1].a;
                 self.code[self.code_count - 1] = bytecode::make_a_bc(Opcode.DEC_GLOBAL, getglobal_reg, name_idx);
             } else {
-                self.emit_abc(Opcode.DEC, (uint)op_dec, 0, 0);
-                if (dec_was_getvar) {
-                    Opcode dec_store = dec_was_getglobal_prim ? Opcode.PUTGLOBAL_PRIM
-                        : (dec_was_getglobal ? Opcode.PUTGLOBAL : Opcode.PUTVAR_ASSIGN);
-                    self.emit_a_bc(dec_store, (uint)op_dec, dec_getvar_name_idx);
+                // Register-cached local. Mirror the postfix DEC path: route
+                // through DEC_VAR when `op_dec` is a CONST binding's home
+                // register so the runtime env walk throws TypeError.
+                uint const_ni = self.find_const_name_idx(op_dec);
+                if (const_ni != 0xFFFFFFFFu) {
+                    self.emit_a_bc(Opcode.DEC_VAR, (uint)op_dec, const_ni);
+                } else {
+                    self.emit_abc(Opcode.DEC, (uint)op_dec, 0, 0);
+                    if (dec_was_getvar) {
+                        Opcode dec_store = dec_was_getglobal_prim ? Opcode.PUTGLOBAL_PRIM
+                            : (dec_was_getglobal ? Opcode.PUTGLOBAL : Opcode.PUTVAR_ASSIGN);
+                        self.emit_a_bc(dec_store, (uint)op_dec, dec_getvar_name_idx);
+                    }
                 }
             }
             self.last_was_getvar = false;
@@ -1456,11 +1533,22 @@ fn ushort? CompilerContext.postfix_expr(&self) {
                 uint getglobal_reg = self.code[self.code_count - 1].a;
                 self.code[self.code_count - 1] = bytecode::make_a_bc(Opcode.INC_GLOBAL, getglobal_reg, name_idx);
             } else {
-                self.emit_abc(Opcode.INC, (uint)operand, 0, 0);
-                if (lhs_was_getvar) {
-                    Opcode pf_store = lhs_was_getglobal_prim ? Opcode.PUTGLOBAL_PRIM
-                        : (lhs_was_getglobal ? Opcode.PUTGLOBAL : Opcode.PUTVAR_ASSIGN);
-                    self.emit_a_bc(pf_store, (uint)operand, lhs_getvar_name_idx);
+                // Register-cached local (no GETVAR was emitted). The bare INC
+                // opcode only mutates the register and would silently succeed on
+                // a const violation. If `operand` is a CONST binding, route the
+                // write through INC_VAR — the runtime walks the env, finds the
+                // non-writable flag installed by the surviving PUTLEX_C, and
+                // throws TypeError (plan 062 group H).
+                uint const_ni = self.find_const_name_idx(operand);
+                if (const_ni != 0xFFFFFFFFu) {
+                    self.emit_a_bc(Opcode.INC_VAR, (uint)operand, const_ni);
+                } else {
+                    self.emit_abc(Opcode.INC, (uint)operand, 0, 0);
+                    if (lhs_was_getvar) {
+                        Opcode pf_store = lhs_was_getglobal_prim ? Opcode.PUTGLOBAL_PRIM
+                            : (lhs_was_getglobal ? Opcode.PUTGLOBAL : Opcode.PUTVAR_ASSIGN);
+                        self.emit_a_bc(pf_store, (uint)operand, lhs_getvar_name_idx);
+                    }
                 }
             }
             self.last_was_getvar = false;
@@ -1535,11 +1623,19 @@ fn ushort? CompilerContext.postfix_expr(&self) {
                 uint getglobal_reg = self.code[self.code_count - 1].a;
                 self.code[self.code_count - 1] = bytecode::make_a_bc(Opcode.DEC_GLOBAL, getglobal_reg, name_idx);
             } else {
-                self.emit_abc(Opcode.DEC, (uint)operand, 0, 0);
-                if (lhs_was_getvar) {
-                    Opcode pf_store = lhs_was_getglobal_prim ? Opcode.PUTGLOBAL_PRIM
-                        : (lhs_was_getglobal ? Opcode.PUTGLOBAL : Opcode.PUTVAR_ASSIGN);
-                    self.emit_a_bc(pf_store, (uint)operand, lhs_getvar_name_idx);
+                // Register-cached local. Mirror the INC postfix branch: route
+                // the write through DEC_VAR when `operand` is a CONST binding so
+                // the runtime env walk throws TypeError on assignment.
+                uint const_ni = self.find_const_name_idx(operand);
+                if (const_ni != 0xFFFFFFFFu) {
+                    self.emit_a_bc(Opcode.DEC_VAR, (uint)operand, const_ni);
+                } else {
+                    self.emit_abc(Opcode.DEC, (uint)operand, 0, 0);
+                    if (lhs_was_getvar) {
+                        Opcode pf_store = lhs_was_getglobal_prim ? Opcode.PUTGLOBAL_PRIM
+                            : (lhs_was_getglobal ? Opcode.PUTGLOBAL : Opcode.PUTVAR_ASSIGN);
+                        self.emit_a_bc(pf_store, (uint)operand, lhs_getvar_name_idx);
+                    }
                 }
             }
             self.last_was_getvar = false;

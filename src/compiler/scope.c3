@@ -153,6 +153,32 @@ fn ushort? CompilerContext.find_local_reg(&self, char[] name) {
     return SCOPE_ERROR~;
 }
 
+/// Return the constant-pool name index for `reg`'s binding when it is a CONST
+/// declaration in scope_stack; return 0xFFFFFFFF otherwise. Used at every
+/// register-only write site (postfix INC/DEC, plain/compound/logical
+/// assignment) so a const violation is routed through PUTVAR_ASSIGN /
+/// INC_VAR / DEC_VAR — the bare register-only opcode (INC/DEC/LDREG-without-PUT)
+/// silently succeeds on a const, which is the bug plan 062 group H fixes.
+///
+/// Returns 0xFFFFFFFF (not 0) for "no match" because add_string_constant can
+/// legitimately return 0 for the very first string interned into a fresh pool,
+/// and the caller compares against the sentinel to decide whether to emit the
+/// const-checking opcode.
+///
+/// Adds the binding's name to the constant pool on hit (idempotent — same
+/// string always interns to the same index), so the caller's emitted opcode
+/// references a valid pool slot.
+fn uint CompilerContext.find_const_name_idx(&self, ushort reg) {
+    if (self.scope_depth == 0) return 0xFFFFFFFF;
+    for (uint i = 0; i < self.scope_depth; i++) {
+        ScopeEntry* e = &self.scope_stack[i];
+        if (e.reg == reg && e.kind == ScopeKind.CONST) {
+            return self.add_string_constant(e.name);
+        }
+    }
+    return 0xFFFFFFFF;
+}
+
 /// Check if a register is the slot of a declared local variable/let/const/param.
 /// Returns true if the register holds a live local binding that must NOT be
 /// freed by expression_statement (the binding outlives the expression).

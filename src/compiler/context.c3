@@ -1107,6 +1107,14 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     // see resolve_var). The env *writes* below are therefore dead, so we NOP
     // them; this lets the VM skip allocating the scope HObject per call (the
     // dominant cost in call-heavy code). NOP is a valid jump target → layout-safe.
+    //
+    // PUTLEX_C is intentionally NOT in the elide list: a `const` binding must
+    // install its non-writable flag in the lex_env so a register-only write
+    // compiled to PUTVAR_ASSIGN / INC_VAR / DEC_VAR (the const-guard sites
+    // added by plan 062 group H) can throw TypeError on assignment. NOP'ing
+    // PUTLEX_C silently drops that flag and lets the assignment succeed.
+    // INITTZ stays in the list (it only matters for the typeof special case
+    // handled below).
     {
         bool elide_has_params_needing_env = self.has_rest || self.default_count > 0;
         bool elide_needs_runtime_env = ((self.has_local_bindings || self.has_lexical_bindings || self.num_args > 0) && self.has_closures)
@@ -1133,9 +1141,11 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
             for (uint i = 0; i < self.code_count; i++) {
                 Opcode dop = self.code[i].op;
                 // Declarations always target the function's own immediate scope.
+                // PUTLEX_C is intentionally excluded — see the comment above the
+                // elision block for why const env writes must survive.
                 if (dop == Opcode.DECLVAR || dop == Opcode.DECLVAR_HOIST
                     || dop == Opcode.PUTLEX
-                    || dop == Opcode.PUTLEX_C || dop == Opcode.INITTZ) {
+                    || dop == Opcode.INITTZ) {
                     if (dop == Opcode.INITTZ) {
                         bool keep_tdz = false;
                         for (uint k = 0; k < typeof_name_count; k++) {
