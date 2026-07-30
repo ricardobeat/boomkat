@@ -4,7 +4,7 @@ A port of the [Duktape JavaScript engine](https://duktape.org/) from C to [C3](h
 
 ## Status
 
-**Work in Progress** — A functional JavaScript engine running real workloads.
+**Work in Progress.** A functional JavaScript engine running real workloads.
 
 - **71.8% test262 pass rate** on the targeted subset (21,121 of 29,459 executable tests, session 250); roadmap to 100% in `plans/040-test262-100-percent.md`
 - **100/100 Rosetta Code tests** pass
@@ -13,28 +13,28 @@ A port of the [Duktape JavaScript engine](https://duktape.org/) from C to [C3](h
 
 ### Completed Modules ✅
 
-- **`src/types.c3`** — Tagged value representation (`TVal`), NaN-boxing, heap headers, reference counting
-- **`src/heap.c3`** — Heap allocation, string interning, mark-and-sweep GC, GC safe points
-- **`src/hstring.c3`** — Interned UTF-8 strings, hashing, iteration, operations
-- **`src/hobject.c3`** — JavaScript objects, shapes, property storage, dense arrays, prototypes
-- **`src/env.c3`** — Lexical and variable environment records
-- **`src/bytecode.c3`** — Instruction formats, opcodes, constant pools, disassembler
-- **`src/lexer.c3`** — Full ES2015+ tokenizer (numbers, strings, templates, punctuators, strict mode)
-- **`src/compiler/`** — Bytecode compiler: parser, AST, register allocation, scope management, control flow, classes, destructuring
-- **`src/vm.c3`** — Register-based bytecode interpreter, call stack, inline caches, exception handling
-- **`src/builtins/`** — Built-in objects and functions: Object, Array, Function, String, Number, Boolean, Date, RegExp, JSON, Math, Error, Map, Set, WeakMap, WeakSet, Symbol, Promise, Generator, Iterator, Global
-- **`src/re_bindings.c3`** — RegExp engine bindings (libregexp)
+- **`src/types.c3`**: Tagged value representation (`TVal`), NaN-boxing, heap headers, reference counting
+- **`src/heap.c3`**: Heap allocation, string interning, mark-and-sweep GC, GC safe points
+- **`src/hstring.c3`**: Interned UTF-8 strings, hashing, iteration, operations
+- **`src/hobject.c3`**: JavaScript objects, shapes, property storage, dense arrays, prototypes
+- **`src/env.c3`**: Lexical and variable environment records
+- **`src/bytecode.c3`**: Instruction formats, opcodes, constant pools, disassembler
+- **`src/lexer.c3`**: Full ES2015+ tokenizer (numbers, strings, templates, punctuators, strict mode)
+- **`src/compiler/`**: Single-pass parser and bytecode generator: register allocation, scope management, control flow, classes, destructuring
+- **`src/vm/`**: Register-based bytecode interpreter, call stack, inline caches, exception handling
+- **`src/builtins/`**: Built-in objects and functions: Object, Array, Function, String, Number, Boolean, Date, RegExp, JSON, Math, Error, Map, Set, WeakMap, WeakSet, Symbol, Promise, Generator, Iterator, Global
+- **`src/re_bindings.c3`**: RegExp engine bindings (libregexp)
 
 ### Build
 
-**Runtime:** [C3 v0.8.0+](https://c3-lang.org/) — the only requirement to build and run the engine itself.
+**Runtime:** [C3 v0.8.0+](https://c3-lang.org/): the only requirement to build and run the engine itself.
 
 **Dev tooling** (only needed for the test262 conformance suite, benchmarks, and `just` recipes):
-- [`just`](https://github.com/casey/just) — task runner wrapping the commands below
-- Python 3.6+ — orchestrates `scripts/run_test262.py` (parallel workers, RSS sampling, skip list, retry passes); stdlib only, no `pip install`
-- `jq` — Makefile parses `project.json` for target sources
-- `bash` — shell recipes under `scripts/` and the `justfile`
-- `cc` — builds the vendored Duktape v2.7.0 CLI used for benchmark comparisons
+- [`just`](https://github.com/casey/just): task runner wrapping the commands below
+- Python 3.6+: orchestrates `scripts/run_test262.py` (parallel workers, RSS sampling, skip list, retry passes); stdlib only, no `pip install`
+- `jq`: Makefile parses `project.json` for target sources
+- `bash`: shell recipes under `scripts/` and the `justfile`
+- `cc`: builds the vendored Duktape v2.7.0 CLI used for benchmark comparisons
 
 ```bash
 # Default build (NaN-boxing)
@@ -73,8 +73,8 @@ See `justfile` for all tasks. Common ones:
 
 ### Build Flags
 
-- `-D NONANBOX` — Disable NaN-boxing; use 16-byte tagged union `TVal`. Useful for 16-bit ESP32 targets.
-- `-D NOSHAPECACHE` — Disable the per-object 8-byte shape pointer cache to save memory.
+- `-D NONANBOX`: Disable NaN-boxing; use 16-byte tagged union `TVal`. Useful for 16-bit ESP32 targets.
+- `-D NOSHAPECACHE`: Disable the per-object 8-byte shape pointer cache to save memory.
 
 ## Project Structure
 
@@ -88,9 +88,9 @@ duktape-c3/
 │   ├── env.c3            # Environment records
 │   ├── bytecode.c3       # VM instructions
 │   ├── lexer.c3          # Tokenizer
-│   ├── compiler/         # Parser and bytecode compiler
+│   ├── compiler/         # Single-pass parser and bytecode generator
 │   ├── builtins/         # Built-in objects and functions
-│   ├── vm.c3             # Bytecode interpreter
+│   ├── vm/               # Bytecode interpreter
 │   └── re_bindings.c3    # RegExp bindings
 ├── cli/              # CLI frontends: duktape_c3 (plain JS) + duktape_c3_debug (inspect) + test262_runner (test262 harness)
 ├── benchmarks/       # Performance and memory benchmarks
@@ -127,6 +127,6 @@ MIT (following original Duktape license)
 
 ## References
 
-- [Duktape](https://duktape.org/) — Original C implementation
-- [C3 Language](https://c3-lang.org/) — C3 docs and spec
-- [ECMAScript 2015+](https://262.ecma-international.org/) — JavaScript spec
+- [Duktape](https://duktape.org/): Original C implementation
+- [C3 Language](https://c3-lang.org/): C3 docs and spec
+- [ECMAScript 2015+](https://262.ecma-international.org/): JavaScript spec
