@@ -1480,14 +1480,42 @@ fn bool proxy_mop_own_keys(void* vm, Heap* heap, HObject* proxy, HObject** arr_o
 /// Returns keys in *buf_out (caller frees via heap.free_func) and the count.
 fn bool proxy_filtered_own_keys(void* vm, Heap* heap, HObject* proxy, int mode,
                                 HString*** buf_out, uint* count_out) {
+    uint total;
+    return proxy_partitioned_own_keys(vm, heap, proxy, mode, buf_out, count_out, &total);
+}
+
+/// As `proxy_filtered_own_keys`, but in mode 0 also reports the keys the
+/// enumerability filter rejected instead of discarding them.
+///
+/// The result buffer is partitioned: `[0, *count_out)` holds the enumerable
+/// string keys in [[OwnPropertyKeys]] trap order, and `[*count_out, *total_out)`
+/// holds the string keys [[GetOwnProperty]] reported as existing but NOT
+/// enumerable, in reverse trap order. for-in (EnumerateObjectProperties) needs
+/// the second group only as a set, to mark those names already-seen so a
+/// same-named enumerable property further up the prototype chain is
+/// suppressed, so their relative order is immaterial.
+///
+/// Keys for which [[GetOwnProperty]] returns undefined appear in neither
+/// group: EnumerateObjectProperties records a key as visited only "if desc is
+/// not undefined", so an absent key must not shadow the prototype chain.
+///
+/// Partitioning a single pass keeps the trap invocation count and order
+/// identical to the enumerable-only filter: exactly one [[GetOwnProperty]] per
+/// string key returned by [[OwnPropertyKeys]], in trap order.
+///
+/// In modes 1 and 2 no enumerability filter runs, so `*total_out == *count_out`.
+fn bool proxy_partitioned_own_keys(void* vm, Heap* heap, HObject* proxy, int mode,
+                                   HString*** buf_out, uint* count_out, uint* total_out) {
     *buf_out = null;
     *count_out = 0;
+    *total_out = 0;
     HObject* arr;
     if (!proxy_mop_own_keys(vm, heap, proxy, &arr)) return false;
     uint n = arr.array_used;
     HString** buf = (HString**)heap.alloc_func(heap.heap_udata, (usz)(n + 1) * (usz)void*::size);
     if (buf == null) { proxy_throw_type(heap, "out of memory"); return false; }
     uint out_n = 0;
+    uint tail = n;
     for (uint i = 0; i < n; i++) {
         TVal el = arr.array_part()[i];
         if (!el.is_string()) continue;
@@ -1505,12 +1533,18 @@ fn bool proxy_filtered_own_keys(void* vm, Heap* heap, HObject* proxy, int mode,
                 heap.free_func(heap.heap_udata, buf);
                 return false;
             }
-            if (!d.found || !d.enumerable) continue;
+            if (!d.found) continue;
+            if (!d.enumerable) { buf[--tail] = k; continue; }
         }
         buf[out_n++] = k;
     }
+    // Close the gap between the two groups so the rejected keys sit directly
+    // after the enumerable ones.
+    uint total = out_n;
+    for (uint i = tail; i < n; i++) buf[total++] = buf[i];
     *buf_out = buf;
     *count_out = out_n;
+    *total_out = total;
     return true;
 }
 

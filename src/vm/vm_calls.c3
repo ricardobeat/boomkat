@@ -1973,6 +1973,12 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                 new_act.async_promise = async_prom;
                 // Write Promise to result register now so the caller gets it
                 // if the function suspends at an AWAIT before returning.
+                // set_object increfs, so the register owns a real reference —
+                // distinct from the birth ref that new_act.async_promise holds.
+                // If the body instead returns normally, the RET paths in
+                // vm_execute.c3 and vm_exceptions.c3 overwrite this slot with
+                // the same promise and decref the reference installed here;
+                // keep this an owning store or those decrefs become a UAF.
                 ds.regs_base[result_reg].set_object(async_prom);
             } else if (target.is_async()) {
                 // Async function from the fast path or other path
@@ -3026,6 +3032,15 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                           | (target.has_direct_eval() ? ACT_FLAG_DIRECT_EVAL : 0)
                           | ACT_FLAG_THIS_OWNED
                           | (target.is_derived_ctor() ? ACT_FLAG_DERIVED : 0);
+            // Activation slots are pooled by depth index and reused without
+            // zeroing, so both async fields would otherwise carry over from
+            // whatever generator/async frame last occupied this index. A
+            // constructor is never async (ACT_FLAG_CONSTRUCT above clears
+            // ACT_FLAG_ASYNC, which gates the async_promise reads), but the
+            // stale pointers are still visible to code that reads the fields
+            // unconditionally — mirrors the super-call path above.
+            new_act.async_promise = null;
+            new_act.async_gen_state = null;
             vm.heap.tval_copy_ref(&new_act.this_binding, &this_tval);
             new_act.new_target = hobj;  // constructor function, not instance
 
