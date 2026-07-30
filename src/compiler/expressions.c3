@@ -717,6 +717,14 @@ fn ushort? CompilerContext.assignment_expr(&self) {
                     self.emit_a_bc(Opcode.PUTVAR_ASSIGN, (uint)left, const_ni);
                     self.free_reg(left);
                     left = tmp;
+                } else {
+                    // `left` IS the target local's home register, and it is
+                    // what this assignment expression evaluates to. Mark it so
+                    // an enclosing operator (`(u = 45) > 0`, `(u = 45) + 1`)
+                    // copies it to a temp instead of using the variable's own
+                    // slot as the result destination and clobbering it.
+                    self.last_was_local_var = true;
+                    return left;
                 }
             }
         }
@@ -773,6 +781,13 @@ fn ushort? CompilerContext.assignment_expr(&self) {
                 self.emit_a_bc(Opcode.PUTVAR_ASSIGN, (uint)left, const_ni);
                 self.free_reg(left);
                 left = tmp;
+            } else {
+                // As in the simple-assignment path above: `left` IS the
+                // target local's home register and doubles as this
+                // expression's value, so mark it for the enclosing
+                // operator's copy-to-temp guard (`(n *= 0.3) > 0`).
+                self.last_was_local_var = true;
+                return left;
             }
         }
         return left;

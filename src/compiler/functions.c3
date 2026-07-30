@@ -1896,6 +1896,14 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
                         break;
                     }
                 } else if (sep != TokenType.COMMA) {
+                    // Not a separator, so it belongs to whatever follows the
+                    // `var` statement — push it back. For an unterminated
+                    // final declarator (`function f(){ return x; var t }`)
+                    // that token is the function body's own `}`; swallowing
+                    // it would leave brace_depth stuck above 0, so the scan
+                    // would run past the end of this body and hoist a
+                    // sibling function's locals into it.
+                    self.lexer.pushback(sep_opt);
                     break;
                 }
             }

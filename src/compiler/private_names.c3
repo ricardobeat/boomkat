@@ -45,12 +45,21 @@ fn char[] format_private_slot_name(char[] buf, uint class_id, char[] name) {
     return buf[:pos];
 }
 
-/// Intern a slot binding name and return its stable byte slice. Interned
-/// HString data outlives every CompilerContext, so the slice is safe to
-/// store in PrivateNameEntry and to pass to declare_priv_slot's tracker.
+/// Intern a slot binding name and return its stable byte slice, safe to
+/// store in PrivateNameEntry, in a module's import/export metadata, and to
+/// pass to declare_priv_slot's tracker.
+///
+/// The string table holds only a weak reference, so a name that nothing else
+/// in the program mentions sits at refcount 1 and is freed (and its bytes
+/// zeroed) the moment that single reference is dropped — leaving every stored
+/// slice pointing at reclaimed memory. Pin it so the data genuinely outlives
+/// the CompilerContext: these names are read back long after compilation, at
+/// link time (e.g. the alias in `export { x as y }`, which appears nowhere
+/// else in the source).
 fn char[] CompilerContext.intern_slot_name(&self, char[] slot_name) {
     Heap* hp = (Heap*)self.heap;
     HString* hstr = hp.str_intern(slot_name);
+    ((HeapHeader*)hstr).set_pinned();
     char[] data = hstr.get_data();
     return data;
 }
