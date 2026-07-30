@@ -139,25 +139,198 @@ function assignInLogical() {
 }
 eq(assignInLogical(), "45:true", "assignment under && leaves target intact");
 
-// ── KNOWN FAILURE (not asserted): both operands assign the SAME local ────
-// `(w = 2) * (w = 3)` is still miscompiled: the left operand is not copied to
-// a temp, so the right operand's assignment overwrites w's home register
-// before the MUL reads it, and both MUL inputs decode to w's slot:
+// ── Both operands assign the SAME local ──────────────────────────────────
+// Previously miscompiled: the left operand's VALUE was not copied to a temp,
+// so the right operand's assignment overwrote w's home register before the
+// MUL read it, and both MUL inputs decoded to w's slot:
 //
 //     [3] LDINT r0, +2      ; w = 2
-//     [4] LDINT r0, +3      ; w = 3  -- clobbers the left operand
+//     [4] LDINT r0, +3      ; w = 3  -- clobbered the left operand
 //     [5] MUL   r1 = r0, r0 ; 3 * 3 => 9
 //
-// node (and the spec) give 6; this engine gives 9. The b0fdc49c fix improved
-// this shape (w itself now reads back as 3 rather than 9) but did not fix the
-// product. Deliberately left as a live defect rather than asserted at 9 — a
-// test pinning the wrong answer is worse than no test. Note it only misbehaves
-// inside a function; at top level globals take a different path and give 6.
-//
-//     function g(){ var w=0; return (w=2)*(w=3); }  // returns 9, should be 6
-//
-// When that is fixed, replace this comment with:
-//     eq(sameTargetBoth(), "6:3", "(w=2)*(w=3) evaluates left before clobber");
+// `a op b` must use a's value as of before b runs (GetValue(lref) precedes
+// b's evaluation), so this is 2 * 3 = 6. binary_expr now copies the left
+// value to a temp ahead of the right operand whenever the right operand can
+// write a register. Only misbehaved inside a function; at top level globals
+// take a different path and were already correct.
+function sameTargetBoth() {
+  var w = 0;
+  var r = (w = 2) * (w = 3);
+  return r + ":" + w;
+}
+eq(sameTargetBoth(), "6:3", "(w=2)*(w=3) evaluates left before clobber");
+
+// Addition is affected identically — the defect was never specific to `*`.
+function sameTargetBothAdd() {
+  var x = 0;
+  var r = (x = 2) + (x = 3);
+  return r + ":" + x;
+}
+eq(sameTargetBothAdd(), "5:3", "(x=2)+(x=3) evaluates left before clobber");
+
+// The same variable assigned only on the right: the bare `v` read on the left
+// must still see the pre-assignment value.
+function sameTargetRightOnly() {
+  var v = 10;
+  var r = v - (v = 4);
+  return r + ":" + v;
+}
+eq(sameTargetRightOnly(), "6:4", "v-(v=4) reads v before the assignment");
+
+// Chained, so the temp for the first operator is still live across the second.
+function sameTargetChained() {
+  var w = 0;
+  var r = (w = 2) * (w = 3) * (w = 4);
+  return r + ":" + w;
+}
+eq(sameTargetChained(), "24:4", "(w=2)*(w=3)*(w=4) chains left-to-right");
+
+// Inside a loop, where the register pressure and the back edge differ.
+function sameTargetInLoop() {
+  var out = 0, w = 0;
+  for (var i = 0; i < 3; i++) { out += (w = 2) * (w = 3); }
+  return out + ":" + w;
+}
+eq(sameTargetInLoop(), "18:3", "(w=2)*(w=3) inside a loop");
+
+// A compound assignment on the right also writes the home register.
+function sameTargetCompoundRight() {
+  var n = 5;
+  var r = n + (n *= 2);
+  return r + ":" + n;
+}
+eq(sameTargetCompoundRight(), "15:10", "n+(n*=2) reads n before the compound");
+
+// An update expression on the right likewise.
+function sameTargetUpdateRight() {
+  var n = 5;
+  var r = n + (n++);
+  return r + ":" + n;
+}
+eq(sameTargetUpdateRight(), "10:6", "n+(n++) reads n before the increment");
+
+// ── Compound assignment reads its target BEFORE evaluating the RHS ───────
+// `g op= rhs` is: resolve the Reference for g, GetValue(g) -> old, evaluate
+// rhs, apply op(old, rhs), PutValue. Previously the RHS was compiled first
+// and the compound op then read g's home register, which the RHS had already
+// overwritten — `g += (g = 2)` computed 2 + 2 = 4 instead of 5 + 2 = 7.
+function compoundRhsAssignsTargetAdd() {
+  var g = 5;
+  g += (g = 2);
+  return g;
+}
+eq(compoundRhsAssignsTargetAdd(), 7, "g += (g=2) reads g before the RHS");
+
+function compoundRhsAssignsTargetSub() {
+  var g = 5;
+  g -= (g = 2);
+  return g;
+}
+eq(compoundRhsAssignsTargetSub(), 3, "g -= (g=2) reads g before the RHS");
+
+function compoundRhsAssignsTargetMul() {
+  var g = 5;
+  g *= (g = 3);
+  return g;
+}
+eq(compoundRhsAssignsTargetMul(), 15, "g *= (g=3) reads g before the RHS");
+
+// A non-commutative operator, so an operand swap cannot hide behind the value.
+function compoundRhsAssignsTargetShift() {
+  var g = 8;
+  g >>= (g = 2);
+  return g;
+}
+eq(compoundRhsAssignsTargetShift(), 2, "g >>= (g=2) reads g before the RHS");
+
+// The compound expression's own VALUE must also be the post-op result.
+function compoundExprValue() {
+  var g = 5;
+  var r = (g += (g = 2));
+  return r + ":" + g;
+}
+eq(compoundExprValue(), "7:7", "(g += (g=2)) evaluates to 7");
+
+// String concatenation goes through the same ADD.
+function compoundRhsAssignsTargetConcat() {
+  var s = "a";
+  s += (s = "b");
+  return s;
+}
+eq(compoundRhsAssignsTargetConcat(), "ab", "s += (s='b') reads s before the RHS");
+
+// Inside a loop, where the back edge and register pressure differ.
+function compoundInLoop() {
+  var g = 5, out = "";
+  for (var i = 0; i < 2; i++) { g = 5; g += (g = 2); out += g + ","; }
+  return out;
+}
+eq(compoundInLoop(), "7,7,", "g += (g=2) inside a loop");
+
+// A RHS that assigns a DIFFERENT variable must not gain the copy's cost or
+// change behaviour.
+function compoundRhsAssignsOther() {
+  var g = 5, z = 0;
+  g += (z = 2);
+  return g + ":" + z;
+}
+eq(compoundRhsAssignsOther(), "7:2", "g += (z=2) unaffected");
+
+// Member targets take the PUTPROP path and were already correct; pin them so
+// the local-only gating cannot silently start applying to them.
+function compoundObjPropRhsAssigns() {
+  var o = { p: 5 };
+  o.p += (o.p = 2);
+  return o.p;
+}
+eq(compoundObjPropRhsAssigns(), 7, "o.p += (o.p=2) reads o.p before the RHS");
+
+function compoundArrIdxRhsAssigns() {
+  var q = [5];
+  q[0] += (q[0] = 2);
+  return q[0];
+}
+eq(compoundArrIdxRhsAssigns(), 7, "q[0] += (q[0]=2) reads q[0] before the RHS");
+
+// ── Logical assignment must still SHORT-CIRCUIT ──────────────────────────
+// &&=, ||= and ??= do not evaluate the RHS when the test fails, so they must
+// not acquire the eager old-value copy.
+function logicalAndAssignSkips() {
+  var g = 0, ran = 0;
+  g &&= (ran = 1);
+  return g + ":" + ran;
+}
+eq(logicalAndAssignSkips(), "0:0", "g &&= rhs skips the RHS when g is falsy");
+
+function logicalOrAssignSkips() {
+  var g = 1, ran = 0;
+  g ||= (ran = 1);
+  return g + ":" + ran;
+}
+eq(logicalOrAssignSkips(), "1:0", "g ||= rhs skips the RHS when g is truthy");
+
+function nullishAssignSkips() {
+  var g = 0, ran = 0;
+  g ??= (ran = 1);
+  return g + ":" + ran;
+}
+eq(nullishAssignSkips(), "0:0", "g ??= rhs skips the RHS when g is not nullish");
+
+// …and must still take the RHS when the test passes, including when the RHS
+// assigns the target itself (the assignment wins, then PutValue rewrites it).
+function logicalAndAssignTakes() {
+  var g = 1;
+  g &&= (g = 9);
+  return g;
+}
+eq(logicalAndAssignTakes(), 9, "g &&= (g=9) takes the RHS when g is truthy");
+
+function nullishAssignTakes() {
+  var g = null;
+  g ??= (g = 9);
+  return g;
+}
+eq(nullishAssignTakes(), 9, "g ??= (g=9) takes the RHS when g is null");
 
 print('codegen_assign_clobber: ' + pass + ' passed, ' + fail + ' failed');
 if (fail > 0) { print('SOME TESTS FAILED'); throw new Error('FAIL'); }
