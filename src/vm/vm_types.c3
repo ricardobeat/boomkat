@@ -11,12 +11,12 @@ import duktape::re_bindings;
 import std::io;
 import std::math;
 
-/// Duktape bytecode virtual machine — register-based interpreter.
+/// The bytecode virtual machine: a register-based interpreter.
 ///
-/// Architecture matches Duktape's duk_js_executor.c and duk_js_call.c:
-/// - Value stack with activation records indexed by byte offsets
-/// - CALL opcode: A=nargs, BC=base (callee at base, this at base+1, args at base+2..base+1+nargs)
-/// - Bytecode executed via inner loop that restarts on ECMAScript-to-ECMAScript calls
+/// Execution runs over a value stack of activation records. A CALL takes the
+/// argument count in A and a base register in BC, with the callee at `base`,
+/// `this` at `base+1`, and the arguments from `base+2`. The inner dispatch loop
+/// restarts on a JS-to-JS call rather than recursing.
 module duktape::vm;
 
 import duktape::types;
@@ -45,9 +45,9 @@ const uint MAX_CALLS        = 512;
 const uint INITIAL_VALSTACK = 1024;
 
 // ============================================================================
-// Shadow activation frame — used by vm_call_fn_impl to keep outer activations
-// visible to GC while the inner Vm.run() executes.  Linked list stored in
-// the Vm struct; frames are stack-allocated in vm_call_fn_impl.
+// Shadow activation frames keep outer activations visible to the GC while a
+// nested Vm.run() executes. vm_call_fn_impl allocates them on the C stack and
+// links them through the Vm struct.
 // ============================================================================
 
 struct ShadowActFrame {
@@ -60,13 +60,13 @@ struct ShadowActFrame {
 }
 
 // ============================================================================
-// Activation record (matches duk_activation in duktape)
+// Activation record: one call frame
 // ============================================================================
 
 struct Activation {
-    /// Function being executed (for compfunc/natfunc; borrowed reference)
+    /// The function being executed, borrowed.
     void* func;
-    /// Previous (parent) activation, or null for outermost
+    /// The calling activation, null at the outermost frame.
     Activation* parent;
     /// Current variable environment
     EnvRecord* var_env;
@@ -75,44 +75,43 @@ struct Activation {
     /// Current catcher chain (null if none)
     void* cat;
 
-    /// Next instruction to execute (points into bytecode; stable pointer)
-    /// null for native calls
+    /// Next instruction to execute, a stable pointer into the bytecode.
+    /// Null for native calls.
     Instruction* curr_pc;
-    /// Pointer into valstack for this activation's bottom (absolute).
-    /// Used to reset valstack_bottom on return.
+    /// This activation's bottom in the valstack, used to reset valstack_bottom
+    /// on return.
     TVal* bottom;
-    /// Pointer into valstack where return value goes (absolute).
-    /// Only set for non-topmost activations.
+    /// Where in the valstack the return value goes. Only set on non-topmost
+    /// activations.
     TVal* retval;
     /// Flags: strict, tailcalled, construct, etc.
     uint flags;
-    /// The 'this' binding for this activation (full TVal)
+    /// This activation's `this` binding.
     TVal this_binding;
-    /// For construct calls: the originally created object (before constructor ran)
+    /// The `new.target` value: the constructor a `new` expression named, or the
+    /// arrow's captured one. Null outside a construct call.
     HObject* new_target;
-    /// For async functions: the associated Promise (owned reference while activation is live)
+    /// An async function's Promise, owned while the activation lives.
     HObject* async_promise;
-    /// For a generator/async body resume: the GeneratorState this activation is
-    /// executing. Lets exception unwinding transition the generator to
-    /// GEN_COMPLETED when an uncaught throw pops past its body (ES6 §25.3.3.2).
-    /// null for ordinary frames.
+    /// The GeneratorState this activation is running, for a generator or async
+    /// body resume, and null on ordinary frames. It lets exception unwinding move
+    /// the generator to GEN_COMPLETED when an uncaught throw pops past its body
+    /// (ES6 §25.3.3.2).
     ///
-    /// BORROW, never a hold: this does NOT take a gs_acquire. The borrow is safe
-    /// only because the frame is popped before the generator's own holders can
-    /// release it — the state outlives every activation running its body.
+    /// This is a borrow and takes no gs_acquire, which is safe only because the
+    /// frame is popped before the generator's own holders release the state.
     ///
-    /// Because vm.activations[] is a pool that is reused WITHOUT zeroing, every
-    /// push must write this field. A stale non-null value left by an earlier
-    /// frame makes the `walk.async_gen_state == gs` parent search in YIELD match
-    /// the wrong activation. Push through activation_begin() rather than
-    /// assigning the field ad hoc.
+    /// vm.activations[] is a pool reused without zeroing, so every push must
+    /// write this field. A stale non-null value makes YIELD's
+    /// `walk.async_gen_state == gs` parent search match the wrong activation.
+    /// Push through activation_begin() rather than setting the field directly.
     void* async_gen_state;
-    /// Value stack pointer to function (borrowed; for lightfuncs)
+    /// The callee as a TVal, borrowed, which lightfuncs need.
     TVal tv_func;
-    /// Highest register index that ever held a heap ref (object/buffer).
-    /// 0 means no heap refs in any register — decref_callee_regs can skip.
+    /// Highest register index that has ever held a heap reference.
+    /// 0 means no register holds a heap reference, so decref_callee_regs can skip.
     uint max_heap_reg;
-    /// Caller's valstack_top saved at CALL time — restored on RET without recomputation.
+    /// The caller's valstack_top at CALL time, restored on RET without recomputing.
     TVal* caller_valstack_top;
 }
 
@@ -123,22 +122,21 @@ const uint ACT_FLAG_ASYNC          = 1u << 4;
 /// Set when this_binding was incref'd via tval_copy_ref and must be
 /// decref'd when the activation is popped in handle_return.
 const uint ACT_FLAG_THIS_OWNED     = 1u << 5;
-/// Activation is a derived class constructor (extends + super() required).
-/// Used by handle_return to enforce §9.2.2 step 13.c: non-object non-undefined
-/// return value throws TypeError.
+/// A derived class constructor, which `extends` creates and `super()` must
+/// initialize. handle_return enforces §9.2.2 step 13.c on it: returning anything
+/// but an object or undefined throws a TypeError.
 const uint ACT_FLAG_DERIVED        = 1u << 6;
-/// Activation was created by SUPER_CALL — on return, its constructed object
+/// The activation came from SUPER_CALL, so on return its constructed object
 /// initializes the pending derived-constructor this_binding up the chain.
 const uint ACT_FLAG_SUPER_CTOR     = 1u << 7;
-/// The callee for this activation was BORROWED from a permanent global
-/// binding: it was written into the caller's callee register (== retval slot
-/// for CALL_VAR) with a plain copy, no incref, and not tracked by
-/// track_heap_store. On return the result overwrites that same slot, so the
-/// write-back must NOT decref the (non-owned) old value. See resolve_call_var.
+/// The callee was borrowed from a permanent global binding: copied into the
+/// caller's callee register, which for CALL_VAR is also the retval slot, with no
+/// incref and no track_heap_store. The return value overwrites that same slot,
+/// so the write-back must not decref what it finds there. See resolve_call_var.
 const uint ACT_FLAG_BORROWED_CALLEE = 1u << 8;
 
 // ============================================================================
-// Catcher — exception handler chain entry
+// Catcher, one entry in the exception handler chain
 // ============================================================================
 
 /// Flags for catcher struct.
@@ -150,12 +148,12 @@ const uint CATCHER_FLAG_PENDING_CONTINUE = 1u << 4;
 const uint CATCHER_FLAG_IN_FINALLY       = 1u << 5;
 /// Set alongside PENDING_RETURN when the return originates from a generator
 /// return (RET_GEN/RETUNDEF_GEN, or a .return()/.throw() completion injected
-/// via LOAD_RESUME) — tells ENDFINALLY to complete via the generator-aware
+/// via LOAD_RESUME), which tells ENDFINALLY to complete through the generator-aware
 /// path (wrap in IteratorResult, mark GEN_COMPLETED) instead of a plain RET.
 const uint CATCHER_FLAG_PENDING_RETURN_GEN = 1u << 6;
 
-/// A catcher entry pushed by TRY for exception handling.
-/// Singly-linked list rooted in Activation.cat.
+/// One handler pushed by TRY, on the singly-linked chain rooted at
+/// Activation.cat.
 struct Catcher {
     /// Previous (parent) catcher in the chain, or null if none.
     Catcher* parent;
@@ -167,19 +165,18 @@ struct Catcher {
     Instruction* catch_pc;
     /// Absolute PC of the finally handler (FINALLY instruction), or null if none.
     Instruction* finally_pc;
-    /// Absolute PC of the ENDFINALLY that terminates this finally block, or
-    /// null until lazily computed (by the FINALLY opcode).  A `return` executed
-    /// inside the finally body jumps here to abort the rest of the body and run
-    /// the ENDFINALLY completion, matching the abrupt-completion-override
-    /// semantics that break/continue/throw already have.
+    /// PC of the ENDFINALLY closing this finally block, which the FINALLY opcode
+    /// computes on first use. A `return` inside the finally body jumps here to
+    /// skip the rest of the body and run the completion, the same override that
+    /// break, continue, and throw already get.
     Instruction* endfinally_pc;
     /// Saved return value for return-through-finally (set by RET).
     TVal return_val;
     /// Saved PC target for break/continue-through-finally.
     Instruction* pending_pc;
-    /// Lexical environment at TRY entry (EnvRecord*). Exceptional exits skip
-    /// the try block's POP_LEX instructions, so CATCH/FINALLY restore this to
-    /// keep the lex chain balanced and give the catch scope a clean base.
+    /// The lexical environment at TRY entry. An exceptional exit skips the try
+    /// block's POP_LEX instructions, so CATCH and FINALLY restore this to keep
+    /// the chain balanced and give the catch scope a clean base.
     void* saved_lex_env;
 }
 
@@ -187,21 +184,17 @@ struct Catcher {
 // For-in enumeration state
 // ============================================================================
 
-/// Runtime state for a for-in loop iteration.  Created by INITFOR and
-/// consumed/freed by NEXTFOR.
+/// One for-in loop's iteration state, created by INITFOR and freed by NEXTFOR.
 ///
-/// `keys` holds a flat array of interned HString* pointers collected from
-/// the object and its prototype chain (omitting duplicates).  The array
-/// and the struct itself are plain-malloc'd and freed when the loop
-/// finishes (NEXTFOR returning false) or on catcher unwind.
+/// `keys` is a flat array of interned property names gathered from the object
+/// and its prototype chain, with duplicates omitted. It and the struct are
+/// malloc'd, and both are freed when the loop ends or a catcher unwinds past it.
 ///
-/// `target_obj` is the original for-in target (a borrowed pointer to the
-/// heap-allocated HObject). It is temproot-pinned for the lifetime of the
-/// enumeration so the target stays reachable even when the loop body
-/// doesn't reference it, and so NEXTFOR can re-check property existence
-/// at yield time per EnumerateObjectProperties — a property deleted from
-/// the target before its turn is skipped (plan 062 group N). The temproot
-/// is cleared when the state is freed in NEXTFOR.
+/// `target` is borrowed, but temproot-pinned for the whole enumeration. That
+/// keeps it reachable even when the loop body never mentions it, and lets
+/// NEXTFOR re-check each property's existence at yield time, as
+/// EnumerateObjectProperties requires, so a property deleted before its turn is
+/// skipped. Freeing the state clears the temproot.
 struct ForInState {
     HString** keys;    /// Array of interned property-name HString* pointers
     HObject* target;   /// Borrowed pointer to the for-in target (NOT owned)
@@ -210,7 +203,7 @@ struct ForInState {
 }
 
 // ============================================================================
-// VM state (matches duk_hthread)
+// Vm, the interpreter's own state
 // ============================================================================
 
 struct Vm {
@@ -229,12 +222,12 @@ struct Vm {
 
     // Current execution state (stable pointers reloaded on restart)
     CompiledFunction* current_func;
-    Instruction* curr_pc; /// Pointer to current PC variable (for sync)
+    Instruction* curr_pc; /// Current PC, kept in sync with the dispatch loop's local
 
     // Global environment
     EnvRecord* global_env;
 
-    // Global lexical environment — the Global Environment Record's
+    // Global lexical environment, the Global Environment Record's
     // DeclarativeRecord (ES2015 §8.1.1.4). Holds top-level `let`/`const`/
     // `class` bindings, which are NOT properties of the global object.
     // Declarative, parented to `global_env` (the ObjectRecord), and persists
@@ -244,13 +237,11 @@ struct Vm {
     // Return value (for outer executor return)
     TVal return_val;
 
-    // Debug tracing (zero overhead when false — single predicted-not-taken branch)
+    // Debug tracing, costing one predicted-not-taken branch when false
     bool trace;
 
-    // Linked list of shadow activation frames registered by vm_call_fn_impl
-    // so that GC can mark saved outer activations during inner Vm.run() calls.
-    // Frames are stack-allocated in vm_call_fn_impl and linked/unlinked around
-    // the inner Vm.run() invocation.
+    // Shadow activation frames, linked and unlinked by vm_call_fn_impl around a
+    // nested Vm.run() so the GC can mark the saved outer activations.
     void* shadow_act_list;  // ShadowActFrame*
 
     // Error state
@@ -269,7 +260,7 @@ struct Vm {
 }
 
 // ============================================================================
-// Per-frame dispatch state — bundled so sub-dispatch functions can be
+// Per-frame dispatch state, bundled so sub-dispatch functions can be
 // extracted into separate files without threading 12 parameters.
 // ============================================================================
 

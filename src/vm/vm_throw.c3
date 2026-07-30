@@ -8,7 +8,7 @@ import duktape::heap;
 import duktape::builtins;
 
 // ============================================================================
-// Catcher chain — helper functions
+// Catcher chain helpers
 // ============================================================================
 
 /// If the activation being unwound is a generator/async body, transition its
@@ -130,7 +130,7 @@ fn bool vm_throw_value(Vm* vm, TVal thrown_val, Activation* act,
             cat = cat.parent;
         }
         if (local_only) break;  // Don't walk parent activations
-        // No catcher in this activation — the throw unwinds past it. If it is an
+        // No catcher in this activation, so the throw unwinds past it. If it is an
         // async function body, the throw does not propagate to the caller: it
         // rejects the function's Promise (which the caller already received) and
         // the async frame returns normally. Absorb it here.

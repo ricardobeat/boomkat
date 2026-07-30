@@ -12,8 +12,8 @@ import duktape::builtins;
 // GC activation marking
 // ============================================================================
 
-/// Mark env bindings held by a single activation.  Shared between the live
-/// activation array and the shadow frame stack.
+/// Mark the env bindings one activation holds. Both the live activation array
+/// and the shadow frame stack go through here.
 fn void mark_activation_envs(heap::Heap* h, Activation* act) @inline {
     if (act.var_env != null && act.var_env.bindings != null) {
         h.mark_hobject(act.var_env.bindings);
@@ -21,13 +21,13 @@ fn void mark_activation_envs(heap::Heap* h, Activation* act) @inline {
     if (act.lex_env != null && act.lex_env.bindings != null && act.lex_env != act.var_env) {
         h.mark_hobject(act.lex_env.bindings);
     }
-    // Walk the full var_env parent chain to keep all enclosing scopes alive.
+    // The parent chains keep every enclosing scope alive.
     env::EnvRecord* cur = act.var_env;
     while (cur != null) {
         if (cur.bindings != null) { h.mark_hobject(cur.bindings); }
         cur = cur.parent;
     }
-    // Also walk the lex_env parent chain in case it diverges from var_env.
+    // lex_env can diverge from var_env, so it is walked separately.
     cur = act.lex_env;
     while (cur != null) {
         if (cur.bindings != null) { h.mark_hobject(cur.bindings); }
@@ -35,16 +35,18 @@ fn void mark_activation_envs(heap::Heap* h, Activation* act) @inline {
     }
 }
 
-/// Mark every heap value held in a JS activation's [bottom, frame_end) span.
-/// The valstack range scanned by mark_roots is bounded by vm.valstack_top,
-/// which is only a high-water mark for the deepest frame and can sit below an
-/// outer frame's full register span (inline JS-to-JS calls do not raise it),
-/// or below scratch slots where a builtin has staged call arguments. A live
-/// value in such a slot (e.g. a BigInt box held across a callee) would then be
-/// invisible to the GC, collected, and later read as freed memory. Marking each
-/// live frame's own span makes register rooting independent of valstack_top.
-/// Native/builtin frames have func==null and no registers here. Callers choose
-/// frame_end to cover the frame's registers plus any staged-argument scratch.
+/// Mark every heap value in an activation's [bottom, frame_end) register span.
+///
+/// mark_roots scans the valstack only up to vm.valstack_top, which is a
+/// high-water mark for the deepest frame. It can sit below an outer frame's full
+/// register span, since inline JS-to-JS calls do not raise it, or below scratch
+/// slots holding a builtin's staged arguments. A value living only in such a
+/// slot, such as a BigInt box held across a callee, would be collected and later
+/// read as freed memory. Marking each frame's own span removes that dependence
+/// on valstack_top.
+///
+/// Native and builtin frames have func == null and no registers here. Callers
+/// pick frame_end to cover the registers plus any staged-argument scratch.
 fn void mark_activation_regs(heap::Heap* h, Activation* act, TVal* frame_end) @inline {
     if (act.func == null || act.bottom == null) return;
     TVal* regs = act.bottom;
@@ -55,39 +57,33 @@ fn void mark_activation_regs(heap::Heap* h, Activation* act, TVal* frame_end) @i
     }
 }
 
-/// Mark heap references held in an Activation's own struct fields (not the
-/// register span, not the env chain). These slots can be the sole surviving
-/// root for a value across a safepoint GC:
-///  - this_binding: owned ref (ACT_FLAG_THIS_OWNED); for getters/setters the
-///    receiver is copied ONLY here (registers are cleared, no arg slot holds it).
-///  - this_binding (construct): the freshly allocated constructor instance is
-///    parked here by a raw assign and, under GC pressure inside the constructor
-///    body, is otherwise collected — its [[Prototype]] then reads as freed
-///    memory (confirmed via a Reflect.construct/derived-class stress repro).
-///  - new_target: an HObject* for the constructor/newTarget. Defensive — every
-///    repro attempted co-rooted it via a caller register or the class binding,
-///    but marking it removes the dependence on that incidental rooting.
-///  - async_promise: the async function/module's outer Promise, owned while the
-///    activation is live and settled only after the body returns. Defensive:
-///    co-rooted by the microtask queue / resolve-reject closures in practice.
-///  - async_gen_state: the GeneratorState this frame is resuming; mark its
-///    contents so a suspended-then-resumed async generator is not swept mid-body.
-///    Defensive: the gs is normally reachable via its owning generator object.
-///  - Catcher.thrown_val: an in-flight exception parked in a catcher across a
-///    GC that runs while unwinding (e.g. allocation-heavy finally blocks) —
-///    confirmed collectible without this mark via a throw-through-finally repro.
-/// Marking a null/undefined slot is a harmless no-op (mark_tval/mark_hobject and
-/// mark_generator_state all null-check).
+/// Mark the heap references an Activation holds in its own fields, as opposed to
+/// its registers or env chain. Each of these can be a value's only surviving
+/// root across a safepoint GC:
+///
+///  - `this_binding` when the frame owns it. A getter or setter copies the
+///    receiver only here, since the registers are cleared and no argument slot
+///    holds it. A construct call parks the freshly allocated instance here by
+///    raw assignment, and under GC pressure inside the constructor body it is
+///    otherwise collected, after which its [[Prototype]] reads as freed memory.
+///    An ordinary call's `this` came from a register or env that still roots it,
+///    so deep non-method recursion skips this mark entirely.
+///  - `new_target`, the constructor or newTarget object.
+///  - `async_promise`, the outer Promise of an async function or module, owned
+///    while the activation lives and settled only after the body returns.
+///  - `async_gen_state`, the GeneratorState this frame is resuming, so a
+///    suspended and resumed async generator is not swept mid-body.
+///  - Every `Catcher.thrown_val` on the chain. An in-flight exception set by
+///    THROW and not yet consumed by CATCH is on no valstack, so a GC during
+///    unwinding, such as one triggered by an allocation-heavy finally block,
+///    would otherwise collect it.
+///
+/// The last three are defensive: in practice each is co-rooted elsewhere, by the
+/// microtask queue, the owning generator object, or a caller register. Marking
+/// them removes the dependence on that incidental rooting.
+///
+/// A null or undefined slot marks harmlessly, since every mark helper null-checks.
 fn void mark_activation_fields(heap::Heap* h, Activation* act) @inline {
-    // this_binding can be the sole root of a heap value in two cases:
-    //  - ACT_FLAG_THIS_OWNED: the frame incref'd `this` into this slot
-    //    (getters/setters, inline CALL) — the register copy may be gone.
-    //  - ACT_FLAG_CONSTRUCT: the freshly allocated instance is stored here by a
-    //    raw assign (vm_execute construct entry) and is not reliably in any
-    //    register during the constructor body (verified collectible under GC).
-    // An ordinary call's `this` was copied from a register/env that still roots
-    // it, so deep non-method recursion (this === undefined, both flags clear)
-    // stays free of the per-frame mark.
     if ((act.flags & (ACT_FLAG_THIS_OWNED | ACT_FLAG_CONSTRUCT)) != 0) {
         h.mark_tval(&act.this_binding);
     }
@@ -96,9 +92,6 @@ fn void mark_activation_fields(heap::Heap* h, Activation* act) @inline {
     if (act.async_gen_state != null) {
         h.mark_generator_state((heap::GeneratorState*)act.async_gen_state);
     }
-    // Walk the catcher chain: an in-flight exception parked in Catcher.thrown_val
-    // (set by THROW, not yet consumed by CATCH) is not on the valstack and would
-    // otherwise be collected across a safepoint GC that runs while unwinding.
     Catcher* c = (Catcher*)act.cat;
     while (c != null) {
         h.mark_tval(&c.thrown_val);
@@ -107,10 +100,11 @@ fn void mark_activation_fields(heap::Heap* h, Activation* act) @inline {
     }
 }
 
-/// Mark all env bindings held by live activation records.
-/// Called from heap's mark_roots to keep per-call var_envs alive during GC.
-/// Also marks saved activations stored in vm_call_fn_impl's shadow frame list
-/// so that outer call frames remain alive during nested Vm.run() execution.
+/// Mark the env bindings of every live activation, which is what keeps per-call
+/// var_envs alive. heap's mark_roots calls this.
+///
+/// It also covers the activations saved in vm_call_fn_impl's shadow frame list,
+/// so outer call frames survive a nested Vm.run().
 fn void vm_mark_activations(void* vm_ptr, void* heap_ptr) {
     Vm* vm = (Vm*)vm_ptr;
     heap::Heap* h = (heap::Heap*)heap_ptr;
@@ -118,7 +112,7 @@ fn void vm_mark_activations(void* vm_ptr, void* heap_ptr) {
     // VM-level TVal scratch that outlives any single register span and is not
     // part of the scanned valstack: a heap value parked here (e.g. a closure
     // returned into vm.return_val by a top-level RET, or a pending throw value)
-    // must be rooted, or a safepoint GC — which clears temproots — collects it
+    // must be rooted, or a safepoint GC, which clears temproots, collects it
     // and the next decref of the stale slot is a use-after-free.
     h.mark_tval(&vm.return_val);
     h.mark_tval(&vm.throw_value);
@@ -127,7 +121,7 @@ fn void vm_mark_activations(void* vm_ptr, void* heap_ptr) {
     // Each frame's register span runs from its bottom to the next inner frame's
     // bottom (which contains the argument/scratch slots this frame staged for
     // that callee); the innermost frame runs to the end of the allocated
-    // valstack (see below — staged-argument scratch is not tracked precisely).
+    // valstack (see below: staged-argument scratch is not tracked precisely).
     for (uint i = 0; i < vm.activation_count; i++) {
         mark_activation_envs(h, &vm.activations[i]);
         mark_activation_fields(h, &vm.activations[i]);
@@ -146,7 +140,7 @@ fn void vm_mark_activations(void* vm_ptr, void* heap_ptr) {
         // allocated valstack: builtins stage call arguments in scratch slots
         // above num_regs whose exact extent is not tracked by valstack_top, and
         // a live value there must not be collected. Slots past the live data are
-        // zero-initialised (undefined) — marking them is a harmless no-op — so
+        // zero-initialised to undefined, which marks harmlessly, so
         // scanning to valstack_end is safe and cannot miss a staged argument.
         if (i + 1 < vm.activation_count) {
             TVal* nb = vm.activations[i + 1].bottom;
@@ -201,7 +195,7 @@ fn bool invoke_getter(Vm* vm, hobject::AccessorResult* acc,
     HObject* func_obj = (HObject*)getter_fn.get_heapptr();
     if (func_obj == null || !func_obj.is_callable()) return false;
 
-    // Fast path: builtin function getter — call directly, no JS frame needed
+    // A builtin getter is called directly, with no JS frame.
     if (func_obj.callable_kind() == hobject::CallableKind.BUILTIN_FN &&
         (*func_obj.extra_ptr()).func.builtin_fn_index >= 0) {
         uint fn_idx = (uint)(*func_obj.extra_ptr()).func.builtin_fn_index;
@@ -224,7 +218,7 @@ fn bool invoke_getter(Vm* vm, hobject::AccessorResult* acc,
         builtins::dispatch_builtin(fn_idx, &ctx);
         if (ctx.should_throw) {
             if (!vm_throw_value(vm, ctx.throw_value, act, curr_pc, needs_restart)) {
-                // Uncaught — mark error state so dispatch_property propagates VM_ERROR~.
+                // Uncaught, so flag the error and let dispatch_property propagate it.
                 vm.has_error = true;
                 vm.heap.has_error = true;
                 vm.heap.tval_copy_ref(&vm.heap.error_value, &ctx.throw_value);
@@ -287,7 +281,7 @@ fn bool invoke_getter(Vm* vm, hobject::AccessorResult* acc,
     new_act.bottom = new_bottom;
     new_act.retval = act.bottom + result_reg;
     new_act.flags = 0;
-    // Getter invocation is never a construct call — new.target must read as
+    // Invoking a getter is never a construct call, so new.target must read as
     // undefined inside the getter body, regardless of how the property
     // access was reached (including via super.prop from a constructor).
     new_act.new_target = null;
@@ -305,7 +299,7 @@ fn bool invoke_getter(Vm* vm, hobject::AccessorResult* acc,
     // Create the arguments object for getters/setters that reference `arguments`.
     // Per ES2015 §14.3 step 7 + §14.5.14 step 11 (Runtime Semantics: ClassDefinitionEvaluation
     // for MethodDefinition), the `arguments` object is bound for getter/setter bodies just
-    // like for ordinary methods — without this, a getter body doing `var a = arguments`
+    // as for ordinary methods. Without it a getter body doing `var a = arguments`
     // raises ReferenceError. Getters/setters never receive user-supplied args (the
     // property-access syntax passes none), so the object is always empty.
     if (target.uses_arguments()) {
@@ -344,7 +338,7 @@ fn void track_heap_store(Activation* act, TVal* val, uint reg_idx) @inline {
 
 /// ES2015 §9.2.2 step 15 / §8.1.1.3.4: an explicit `return;`, `return undefined;`,
 /// or implicit fallthrough from a derived constructor falls through to
-/// GetThisBinding() — if super() was never called, this_binding is still the
+/// GetThisBinding(): if super() was never called, this_binding is still the
 /// TDZ sentinel and must throw ReferenceError. Shared by RET (when the return
 /// value is undefined) and RETUNDEF so both opcodes enforce the same check.
 fn bool derived_ctor_returns_undefined_uninitialized(Activation* callee_act) @inline {
@@ -369,7 +363,7 @@ fn void clear_borrowed_callee_slot(Activation* act) @inline {
 /// Free every Catcher still chained on an activation that is being popped.
 /// A `return` from inside a try block (or an unwind past the frame) leaves
 /// the TRY-allocated catcher(s) on act.cat: CATCH/ENDTRY/ENDFINALLY only pop
-/// them on their own control paths, which an early return never reaches —
+/// them on their own control paths, which an early return never reaches, so
 /// without this, each such frame permanently leaks its Catcher allocation(s).
 /// thrown_val is the one owned reference a parked catcher can hold (written
 /// via tval_copy_ref while routing a throw to a finally); release it too.
@@ -388,7 +382,7 @@ fn void free_catcher_chain(Vm* vm, Activation* act) @inline {
 /// Decrement the reference count of every register in the given activation.
 /// Must be called BEFORE the activation is popped, while the register range
 /// is still valid.  Safe to call on activations with null func (no registers).
-/// Fast-path: if max_heap_reg == 0, no register ever held a heap ref — skip.
+/// A max_heap_reg of 0 means no register ever held a heap reference.
 fn void decref_callee_regs(Vm* vm, Activation* callee_act) {
     if (callee_act.func == null) return;
     if (callee_act.max_heap_reg == 0) return;  // fast path: no heap refs
@@ -416,7 +410,7 @@ fn void decref_callee_regs(Vm* vm, Activation* callee_act) {
 /// is deliberate: at -O2 LLVM's loop-idiom-recognition pass re-derives a
 /// `memset_pattern16` libc call from the index form when this helper is inlined
 /// at the call sites, re-introducing exactly the call overhead we mean to
-/// avoid — measured ~9% of fib(32) samples.  The pointer form is not lowered to
+/// avoid, measured at about 9% of fib(32) samples. The pointer form is not lowered to
 /// memset. Verify with `objdump` after any change here (the lowering decision is
 /// sensitive to the surrounding inlined context, not just this loop's shape).
 fn void zero_regs_undefined(TVal* regs, uint start, uint end) @inline {
@@ -487,7 +481,7 @@ fn TVal handle_return(Vm* vm, TVal val) @inline {
         TVal* result_slot = callee_result;
         if ((callee_act.flags & ACT_FLAG_BORROWED_CALLEE) != 0) {
             // Borrowed callee: the old value in result_slot is the non-owned
-            // borrowed closure — incref the result and raw-overwrite, never
+            // borrowed closure, so incref the result and raw-overwrite, never
             // decref the borrowed value.
             if (final_val.is_heap_allocated() && final_val.get_heapptr() != null) {
                 ((HeapHeader*)final_val.get_heapptr()).incref();

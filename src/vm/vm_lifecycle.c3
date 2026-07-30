@@ -31,7 +31,7 @@ fn Vm*? vm_create(Heap* heap) {
 
     // Allocate value stack. Must be zeroed: register/valstack slots are only
     // ever safe to tval_copy_ref/decref_tval when they hold a genuine TVal
-    // (0 = undefined) — malloc reuse of a just-freed valstack (e.g. the
+    // (0 means undefined). malloc reuse of a just-freed valstack, such as the
     // previous VM's, torn down by vm_destroy) can otherwise hand back memory
     // still containing stale heap pointers, causing a later decref to hit an
     // already-freed object and corrupt the pool freelist.
@@ -104,7 +104,7 @@ fn Vm*? vm_create(Heap* heap) {
     return vm;
 }
 
-/// Proxy MOP bridges — connect the hobject chain walkers to the builtins-layer
+/// Proxy MOP bridges, connecting the hobject chain walkers to the builtins-layer
 /// proxy trap implementations (see heap.proxy_get_fn / proxy_has_fn).
 fn bool vm_proxy_get_bridge(void* vm, void* heap, void* proxy, void* key, TVal receiver, TVal* out) {
     return builtins::proxy_mop_get(vm, (Heap*)heap, (HObject*)proxy, (HString*)key, receiver, out);
@@ -136,7 +136,7 @@ fn void vm_destroy(Vm* vm) {
 fn bool vm_reset(Vm* vm, Heap* heap) {
     if (vm == null || heap == null) { return false; }
 
-    // Rewind the value stack and clear stale TVal refs — after heap.reset(),
+    // Rewind the value stack and clear stale TVal refs. After heap.reset(),
     // all HObject*/HString* are freed, so any lingering TVal heap pointer
     // would cause use-after-free when overwritten.
     for (uint i = 0; i < vm.valstack_size; i++) {
@@ -145,7 +145,7 @@ fn bool vm_reset(Vm* vm, Heap* heap) {
     vm.valstack_top    = vm.valstack;
     vm.valstack_bottom = vm.valstack;
 
-    // Clear stale TVal/pointer refs in activations — all heap objects from the
+    // Clear stale refs in the activations: every heap object from the
     // previous run are freed, so this_binding, tv_func, etc. are dangling.
     for (uint i = 0; i < vm.activation_count; i++) {
         vm.activations[i].this_binding.set_undefined();
