@@ -952,15 +952,20 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     // Saves 1 dispatch per property access.  The key constant-pool index is baked into
     // GETPROPC.c, so jumping into the NOP slot (if rK's LDCONST happened to be a jump
     // target) still produces correct results: NOP falls through to GETPROPC which reads
-    // the index from the instruction itself, not from rK.
+    // the index from the instruction itself, not from rK.  Control arriving at the
+    // GETPROPC *itself* from a branch is a different matter and is rejected by the
+    // shared driver's jump-target guard — see run_fusion_rule.
     //
     // Declarative — see src/compiler/fusion.c3 (FUSION_GETPROPC rule) for the
-    // pattern/guard/rewrite definition and the shared NOP-skip + dead-after-
-    // liveness driver (run_fusion_rule). Ported 1:1 from the original
-    // hand-written pass; equivalence is checked by the golden-bytecode suite
-    // (test/golden_bytecode/, `just test-golden-bytecode`).
+    // pattern/guard/rewrite definition and the shared NOP-skip + jump-target +
+    // dead-after-liveness driver (run_fusion_rule). Needs a code_count-sized
+    // bool scratch for the jump-target bitset — allocated here to keep
+    // fusion.c3 free of heap dependencies.
     if (!self.disable_optimize && self.code_count >= 2) {
-        fuse_getpropc(self.code, self.code_count, self.constants);
+        bool* gp_jump_targets = (bool*)h.alloc_func(h.heap_udata, (usz)self.code_cap);
+        if (gp_jump_targets == null) { self.cleanup(); return COMPILE_ERROR~; }
+        fuse_getpropc(self.code, self.code_count, gp_jump_targets, self.constants);
+        h.free_func(h.heap_udata, gp_jump_targets);
     }
 
     // --- Peephole: fuse compare (LT/LE/GT/GE/SEQ/SNEQ) + IF_FALSE/IF_TRUE ---
@@ -987,16 +992,36 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     //   LT/LE/GT/GE/ADD/SUB/MUL (b/c = register operands in ABC format).
     // GETPROPC is excluded: its c field is a constant-pool index, not a register.
     //
-    // Jump-target safety:
-    //   - If the LDREG slot is a jump target it becomes a NOP; control falls through
-    //     to the consumer which now reads rS directly — correct.
-    //   - If the consumer slot is a jump target, a jump landing there would have
-    //     expected rT to be loaded.  After substitution the consumer reads rS instead.
-    //     rS is the source register (the actual variable), so it still holds the
-    //     expected value — correct.
-    //   Therefore no jump-target guard is needed for either slot.
+    // Jump-target safety — the CONSUMER slot must not be a jump target:
+    //   A branch landing on the consumer never executed the LDREG, so it set
+    //   neither rT nor rS via this pair; it arrived with rT already holding the
+    //   value it wants. After substitution the consumer reads rS instead, which
+    //   that path never wrote. This is exactly a ternary's join:
+    //
+    //       IF_FALSE cond -> false_arm
+    //       <true arm>  ... writes rT      JUMP -> join
+    //     false_arm:
+    //       <false arm> ... writes rS
+    //       LDREG rT = rS                  <- this pair
+    //     join:
+    //       ADD  rD = rD, rT               <- jump target
+    //
+    //   Collapsing to `ADD rD = rD, rS` makes the true arm's JUMP land on an ADD
+    //   reading the FALSE arm's scratch, so `5 + (c ? 10 : 20)` yielded 25 for
+    //   every condition — silently, with no error.
+    //
+    //   The LDREG slot itself being a jump target is NOT rejected: control landing
+    //   there falls through into a consumer reading rS, and every branch that
+    //   targets an LDREG the parser emitted is a loop back-edge onto a body whose
+    //   rS is a live local (re-read each iteration), not a per-arm scratch. Adding
+    //   that guard costs the `total = total + i` loop-body copy elision with no
+    //   correctness gain (golden_bytecode/loop_addi covers it).
     if (!self.disable_optimize && self.code_count >= 2) {
+        bool* cp_jump_targets = (bool*)h.alloc_func(h.heap_udata, (usz)self.code_cap);
+        if (cp_jump_targets == null) { self.cleanup(); return COMPILE_ERROR~; }
+        build_jump_targets(self.code, self.code_count, cp_jump_targets);
         for (uint i = 0; i + 1 < self.code_count; i++) {
+            if (cp_jump_targets[i + 1]) { continue; }
             if (self.code[i].op != Opcode.LDREG) { continue; }
 
             uint rT = (uint)self.code[i].a;
@@ -1055,6 +1080,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
             self.code[i + 1] = bytecode::make_abc(cop, (uint)consumer.a, new_b, new_c);
             self.code[i] = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
         }
+        h.free_func(h.heap_udata, cp_jump_targets);
     }
 
     // --- Peephole: fuse LDINT rK, imm + ADD/SUB rD = …,rK → NOP + ADDI/SUBI rD = rS, imm ---
@@ -1063,12 +1089,17 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     // consumer of rK is now the next NON-NOP instruction.
     //
     // Declarative — see src/compiler/fusion.c3 (FUSION_ADDI_SUBI rule) for the
-    // pattern/guard/rewrite definition and the shared NOP-skip + dead-after-
-    // liveness driver (run_fusion_rule). Ported 1:1 from the original
-    // hand-written pass; equivalence is checked by the golden-bytecode suite
-    // (test/golden_bytecode/, `just test-golden-bytecode`).
+    // pattern/guard/rewrite definition and the shared NOP-skip + jump-target +
+    // dead-after-liveness driver (run_fusion_rule). The jump-target guard is
+    // load-bearing here: a ternary's false arm is physically adjacent to the
+    // join point (`5 + (c ? 10 : 20)`), so without it the false arm's literal
+    // gets baked into an ADDI the true arm branches straight onto. Needs a
+    // code_count-sized bool scratch for the bitset.
     if (!self.disable_optimize && self.code_count >= 2) {
-        fuse_addi_subi(self.code, self.code_count);
+        bool* addi_jump_targets = (bool*)h.alloc_func(h.heap_udata, (usz)self.code_cap);
+        if (addi_jump_targets == null) { self.cleanup(); return COMPILE_ERROR~; }
+        fuse_addi_subi(self.code, self.code_count, addi_jump_targets);
+        h.free_func(h.heap_udata, addi_jump_targets);
     }
 
     // --- Liveness-based move elimination: `producer rT=... ; LDREG rDst=rT`
