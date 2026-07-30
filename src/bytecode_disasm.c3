@@ -1,27 +1,22 @@
 /// Disassembler for the bytecode representation defined in `bytecode.c3`.
 ///
-/// This translation unit is part of the `duktape::bytecode` module and
-/// contains the human-readable disassembly helpers: the 119-entry
-/// `OPCODE_NAMES` table, the `get_opcode_name` lookup, the per-format
-/// formatter inside `Instruction.disassemble`, and the small
-/// `write_str` / `write_uint` / `write_int` buffer-writer helpers.
+/// Part of the `duktape::bytecode` module, holding the disassembly helpers: the
+/// `OPCODE_NAMES` table, the `get_opcode_name` lookup, the per-format formatter
+/// in `Instruction.disassemble`, and the `write_str`, `write_uint`, and
+/// `write_int` buffer writers.
 ///
-/// All real implementations are gated on the `TRACE_VM` build feature.
-/// The release build provides no-op stubs so that callers (`vm_trace.c3`,
-/// the `-c` / `--format json` dumpers in `benchmarks/duktape_c3.c3`,
-/// and the `dump_vm_state` crash helper) remain linkable. LLVM's dead
-/// code elimination drops the `OPCODE_NAMES` array from the final binary
-/// when nothing in the `TRACE_VM` branch references it.
+/// The `TRACE_VM` feature gates every real implementation. Release builds get
+/// no-op stubs instead, which keeps callers linkable: `vm_trace.c3`, the `-c`
+/// and `--format json` dumpers, and the `dump_vm_state` crash helper. Dead code
+/// elimination then drops `OPCODE_NAMES` from the binary.
 module duktape::bytecode;
 
 // ============================================================================
-// Instruction.disassemble — one-line textual rendering
+// Instruction.disassemble: one-line textual rendering
 // ============================================================================
 
-/// Writes a one-line textual disassembly of the instruction into `buf`.
-/// Returns the number of characters that were written.
-///
-/// Format examples:
+/// Write a one-line disassembly of the instruction into `buf`, returning how
+/// many characters it wrote. For example:
 ///   `ADD       r3 = r1, r2`
 ///   `LDCONST   r0 = K[42]`
 ///   `JUMP      +17`
@@ -33,12 +28,10 @@ $if $feature(TRACE_VM):
     OpFormat fmt = get_op_format(op);
     usz pos = 0;
 
-    // Write opcode name (we use the ordinal as a compact representation;
-    // a full name table could be added later).
     pos = write_opcode_name(op, buf, pos);
 
     // Pad to column 16 for alignment (widest mnemonic is CALL_UNDEF_THIS,
-    // 15 chars — leave at least one trailing space before the operands).
+    // 15 chars, so leave at least one space before the operands).
     while (pos < 16 && pos < buf.len) {
         buf[pos] = ' ';
         pos++;
@@ -111,7 +104,7 @@ $if $feature(TRACE_VM):
 
     return pos;
 $else
-    // TRACE_VM disabled — keep callers (CLI -c/--format json) linkable.
+    // Without TRACE_VM this stub keeps the CLI dumpers linkable.
     // The CLI in the release build detects missing TRACE_VM and tells the
     // user to use `just build-trace`. Code should never reach this stub.
     (void)buf;

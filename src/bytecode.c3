@@ -1,9 +1,8 @@
-/// Duktape bytecode definitions — instruction encoding, opcodes, and compiled
+/// Bytecode definitions: instruction encoding, the opcode set, and the compiled
 /// function representation.
 ///
-/// Duktape uses a register-based virtual machine with fixed-width 32-bit
-/// instructions.  Each instruction packs an 8-bit opcode and up to three
-/// operand fields into a single `uint`:
+/// The VM is register-based with fixed-width 32-bit instructions. Each packs an
+/// 8-bit opcode and up to three operand fields into one `uint`:
 ///
 ///   ```
 ///   31       24 23       16 15        8 7         0
@@ -14,18 +13,17 @@
 ///
 /// Alternative operand layouts share the same 32 bits:
 ///
-///   - **A-BC** : A (8 bits, 8–15) + BC (16 bits, 16–31)
-///   - **ABC**  : full 24-bit operand (bits 8–31)
+///   - **A-BC** : A (8 bits, 8-15) plus BC (16 bits, 16-31)
+///   - **ABC**  : one 24-bit operand (bits 8-31)
 ///   - **A-sBx**: A (8 bits) + signed Bx (16 bits, bias-encoded)
 ///   - **sABC** : signed 24-bit operand (bias-encoded)
 ///
-/// The `Instruction` bitstruct provides both direct field access and
-/// convenience methods for every layout.
+/// The `Instruction` bitstruct exposes the raw fields and an accessor for every
+/// layout.
 ///
-/// Human-readable disassembly (`Instruction.disassemble`, the
-/// `OPCODE_NAMES` table, and the `write_*` buffer-writer helpers) lives
-/// in the sibling file `bytecode_disasm.c3` and is gated on the
-/// `TRACE_VM` build feature.
+/// Disassembly lives in `bytecode_disasm.c3` behind the `TRACE_VM` feature:
+/// `Instruction.disassemble`, the `OPCODE_NAMES` table, and the `write_*`
+/// helpers.
 module duktape::bytecode;
 
 import duktape::types;
@@ -35,12 +33,12 @@ import duktape::hobject;
 // Constants
 // ============================================================================
 
-/// Bias applied to a 16-bit signed operand so it can be stored unsigned.
-/// Value range: -(2^15) .. +(2^15 - 1)  →  stored as 0 .. 65535.
+/// Bias that lets a 16-bit signed operand be stored unsigned, mapping
+/// -(2^15) .. 2^15-1 onto 0 .. 65535.
 const uint BC_BIAS  = 0x8000;
 
-/// Bias applied to a 24-bit signed operand.
-/// Value range: -(2^23) .. +(2^23 - 1)  →  stored as 0 .. 16777215.
+/// The same for a 24-bit signed operand, mapping -(2^23) .. 2^23-1 onto
+/// 0 .. 16777215.
 const uint ABC_BIAS = 0x80_0000;
 
 /// Maximum unsigned value that fits in the 8-bit A, B, or C fields.
@@ -54,33 +52,30 @@ const int  MAX_SBC  = 0x7FFF;
 const int  MIN_SBC  = -0x8000;
 
 // ============================================================================
-// Opcode — all virtual-machine operations
+// Opcode: every virtual-machine operation
 // ============================================================================
 
-/// Bytecode operation codes.
-///
-/// Each opcode is 8 bits wide, giving 256 possible operations.  The enum
-/// values are arranged in logical groups: load/store, arithmetic, unary,
-/// bitwise, comparison, control flow, property access, object creation,
-/// function calls, variable access, closures, iterators, exception
-/// handling, and miscellaneous.
+/// The operation codes. Each is 8 bits, so there is room for 256, and they are
+/// grouped below by what they do: loads and stores, arithmetic, unary and
+/// bitwise operations, comparison, control flow, property access, object
+/// creation, calls, variable access, closures, iterators, and exceptions.
 enum Opcode : char {
     // ---- Load / Store ----------------------------------------------------
 
-    /// `A = reg[B]`  — register-to-register copy.
+    /// `A = reg[B]`: register-to-register copy.
     LDREG,
-    /// `A = constants[BC]`  — load from the constant pool (A-BC format).
+    /// `A = constants[BC]`: load from the constant pool (A-BC format).
     LDCONST,
-    /// `constants[BC] = A`  — write into the constant pool (A-BC format).
+    /// `constants[BC] = A`: write into the constant pool (A-BC format).
     /// Used for tagged-template site caching: the constant pool slot is
     /// shared by every closure instantiated from the same CompiledFunction,
     /// so storing the template object there the first time a tagged
     /// template expression is reached implements the per-call-site
     /// [[TemplateRegistry]] cache (ES2015 §12.2.9.3) without extra state.
     SETCONST,
-    /// `A = (int)sBx`  — load a signed 16-bit immediate (A-sBx format).
+    /// `A = (int)sBx`: load a signed 16-bit immediate (A-sBx format).
     LDINT,
-    /// `A = (A << 16) | BC`  — extend a previously loaded integer with
+    /// `A = (A << 16) | BC`: extend a previously loaded integer with
     /// the low 16 bits (A-BC format).
     LDINTX,
     /// `A = undefined`.
@@ -91,7 +86,7 @@ enum Opcode : char {
     LDTRUE,
     /// `A = false`.
     LDFALSE,
-    /// `A = this`  — load the current `this` binding.
+    /// `A = this`: load the current `this` binding.
     LDTHIS,
 
     // ---- Arithmetic (A = B op C) -----------------------------------------
@@ -106,55 +101,55 @@ enum Opcode : char {
     DIV,
     /// `A = B % C`.
     MOD,
-    /// `A = B ** C`  — exponentiation.
+    /// `A = B ** C`: exponentiation.
     EXP,
-    /// `A = B + imm8`  — add small unsigned immediate (fused LDINT+ADD).
+    /// `A = B + imm8`: add small unsigned immediate (fused LDINT+ADD).
     /// C holds an 8-bit unsigned immediate (0..255); B is the source register.
     /// Fastint fast path only; falls back to the same coercion as ADD.
     ADDI,
-    /// `A = B - imm8`  — subtract small unsigned immediate (fused LDINT+SUB).
+    /// `A = B - imm8`: subtract small unsigned immediate (fused LDINT+SUB).
     /// C holds an 8-bit unsigned immediate (0..255); B is the source register.
     SUBI,
 
     // ---- Unary (A = op B) ------------------------------------------------
 
-    /// `A = +B`  — unary plus (ToNumber coercion).
+    /// `A = +B`: unary plus (ToNumber coercion).
     UNP,
-    /// `A = -B`  — unary minus.
+    /// `A = -B`: unary minus.
     UNM,
-    /// `A = ~B`  — bitwise NOT.
+    /// `A = ~B`: bitwise NOT.
     BNOT,
-    /// `A = !B`  — logical NOT.
+    /// `A = !B`: logical NOT.
     LNOT,
     /// `A = typeof B`.
     TYPEOF,
-    /// `A = void B`  — always produces `undefined`.
+    /// `A = void B`: always produces `undefined`.
     VOID,
 
     // ---- Bitwise (A = B op C) --------------------------------------------
 
-    /// `A = B & C`  — bitwise AND.
+    /// `A = B & C`: bitwise AND.
     BAND,
-    /// `A = B | C`  — bitwise OR.
+    /// `A = B | C`: bitwise OR.
     BOR,
-    /// `A = B ^ C`  — bitwise XOR.
+    /// `A = B ^ C`: bitwise XOR.
     BXOR,
-    /// `A = B << C`  — left shift.
+    /// `A = B << C`: left shift.
     SHL,
-    /// `A = B >> C`  — signed right shift.
+    /// `A = B >> C`: signed right shift.
     SHR,
-    /// `A = B >>> C`  — unsigned right shift.
+    /// `A = B >>> C`: unsigned right shift.
     USHR,
 
     // ---- Comparison (A = B op C) -----------------------------------------
 
-    /// `A = (B == C)`  — abstract equality.
+    /// `A = (B == C)`: abstract equality.
     EQ,
-    /// `A = (B != C)`  — abstract inequality.
+    /// `A = (B != C)`: abstract inequality.
     NEQ,
-    /// `A = (B === C)`  — strict equality.
+    /// `A = (B === C)`: strict equality.
     SEQ,
-    /// `A = (B !== C)`  — strict inequality.
+    /// `A = (B !== C)`: strict inequality.
     SNEQ,
     /// `A = (B < C)`.
     LT,
@@ -171,81 +166,81 @@ enum Opcode : char {
 
     // ---- Control flow ----------------------------------------------------
 
-    /// `PC += sABC`  — unconditional relative jump (signed 24-bit offset,
+    /// `PC += sABC`: unconditional relative jump (signed 24-bit offset,
     /// sABC format).
     JUMP,
-    /// `if (A) PC += sBC`  — branch when truthy (A-sBx format).
+    /// `if (A) PC += sBC`: branch when truthy (A-sBx format).
     IF_TRUE,
-    /// `if (!A) PC += sBC`  — branch when falsy (A-sBx format).
+    /// `if (!A) PC += sBC`: branch when falsy (A-sBx format).
     IF_FALSE,
 
     // ---- Property access -------------------------------------------------
 
-    /// `A = B[C]`  — get property. Coerces C to a property key internally
+    /// `A = B[C]`: get property. Coerces C to a property key internally
     /// (ToPropertyKey, §7.1.19) to perform the lookup, but does NOT write
-    /// the coerced key back into register C — safe to use on any key
+    /// the coerced key back into register C, which is safe for any key
     /// register, including one that aliases a live local variable.
     GETPROP,
-    /// `A = B[K]`  — get property with constant pool key.  Fused LDCONST+GETPROP.
+    /// `A = B[K]`: get property with constant pool key.  Fused LDCONST+GETPROP.
     /// Format ABC: A = dst reg, B = obj reg, C = constant-pool index of property key string.
     GETPROPC,
-    /// `A = B[C]`, and C = ToPropertyKey(C)  — identical to GETPROP, but ALSO
+    /// `A = B[C]`, and C = ToPropertyKey(C). Identical to GETPROP, but it also
     /// writes the ToPropertyKey-coerced string back into register C so a
     /// follow-up PUTPROP/TOPROPKEY on the same register is idempotent (no
     /// second toString()/Symbol.toPrimitive() invocation on the key), per
     /// §7.1.19. Opt-in: emitted by member_expr for computed (`[expr]`) member
     /// accesses that may later be reused as a compound/logical-assign or
-    /// postfix/prefix-increment target — see member_expr's LBRACKET branch
+    /// postfix or prefix increment target. See member_expr's LBRACKET branch
     /// in expressions.c3. Plain assignment (`obj[k] = v`) strips this
     /// instruction from the bytecode stream before it ever executes, so the
     /// writeback never interferes with that path's evaluation order. C must
     /// be a compiler-owned temp register (never a caller's local var) at
-    /// every such call site — see CompilerContext.shield_computed_key.
+    /// every such call site. See CompilerContext.shield_computed_key.
     GETPROP_CACHE,
-    /// `A[B] = C`  — put (set) property.
+    /// `A[B] = C`: put (set) property.
     PUTPROP,
     /// `A[B] = C` as a fresh non-enumerable data property (writable and
-    /// configurable, enumerable false) — bypasses the normal [[Set]]
+    /// configurable, enumerable false), bypassing the normal [[Set]]
     /// semantics of PUTPROP. Used for the `.raw` property of tagged
     /// template objects (ES2015 §12.2.9.3 GetTemplateObject step 8), which
     /// is a real data property but must not show up in for-in/Object.keys.
     PUTPROP_NE,
-    /// `A = delete B[C]`  — delete property.
+    /// `A = delete B[C]`: delete property.
     DELPROP,
 
     // ---- Object / Array creation -----------------------------------------
 
-    /// `A = {}`  — create a new empty plain object.
+    /// `A = {}`: create a new empty plain object.
     NEWOBJ,
-    /// `A = []`  — create a new empty array.
+    /// `A = []`: create a new empty array.
     NEWARR,
     /// Set array length: `A.length = BC` (A-BC format).
     SETALEN,
-    /// `Object.freeze(A)`, ignoring non-objects — used to freeze tagged
+    /// `Object.freeze(A)`, ignoring non-objects. Used to freeze tagged
     /// template objects (ES2015 §12.2.9.3 GetTemplateObject).
     FREEZEOBJ,
 
     // ---- Function calls --------------------------------------------------
 
-    /// `A = B(C..C+N)`  — function call.  A = result register,
+    /// `A = B(C..C+N)`: function call.  A = result register,
     /// B = callee register, C = argument count.
     /// Value stack: valstack[B] = callee, valstack[B+1..B+C] = args.
     /// After call: valstack[A] = return value.
     CALL,
-    /// `A = B.C(...)`  — method call (receiver is B).
+    /// `A = B.C(...)`: method call (receiver is B).
     CALL_PROP,
-    /// `A = new B(C...)`  — constructor invocation.
+    /// `A = new B(C...)`: constructor invocation.
     NEW_OBJ,
     /// Tail-call optimisation: reuses the current stack frame.
     TAILCALL,
-    /// `return A`  — return register A's value.
+    /// `return A`: return register A's value.
     RET,
-    /// `return undefined`  — implicit return.
+    /// `return undefined`: implicit return.
     RETUNDEF,
 
     // ---- Variable access -------------------------------------------------
 
-    /// `A = variable[constants[BC]]`  — read a variable by name
+    /// `A = variable[constants[BC]]`: read a variable by name
     /// looked up in the constant pool (A-BC format).
     GETVAR,
     /// `A = env chain has a binding named constants[BC]` (A-BC). Captures
@@ -256,29 +251,29 @@ enum Opcode : char {
     /// holds true (A-BC). Pairs with RESOLVEVAR: an RHS side effect that
     /// creates the global cannot retroactively make the LHS resolvable.
     THROW_UNRESOLVED,
-    /// `variable[constants[BC]] = A`  — write a variable by name (A-BC).
+    /// `variable[constants[BC]] = A`: write a variable by name (A-BC).
     /// Initialization store: does NOT perform a TDZ check (used by param sync,
     /// for-loop iteration variables, etc. which legitimately write a binding
     /// that may still hold the TDZ sentinel).
     PUTVAR,
-    /// `variable[constants[BC]] = A`  — user ASSIGNMENT to a variable by name
+    /// `variable[constants[BC]] = A`: user ASSIGNMENT to a variable by name
     /// (A-BC). Identical to PUTVAR but throws ReferenceError when the target is
     /// a let/const binding still in its temporal dead zone (assignment before
     /// initialization). Emitted only for genuine assignment expressions.
     PUTVAR_ASSIGN,
-    /// `declare variable[constants[BC]] = A`  — declare+initialize a `var` in
+    /// `declare variable[constants[BC]] = A`: declare+initialize a `var` in
     /// the immediate var_env only (does not walk the scope chain).
     DECLVAR,
-    /// `declare variable[constants[BC]]` — the hoisting pass's stub for a `var`
+    /// `declare variable[constants[BC]]`: the hoisting pass's stub for a `var`
     /// with no initializer (A-BC; A holds undefined). At global scope such a
     /// declaration carries no value, so an existing global property must be left
-    /// entirely untouched (CanDeclareGlobalVar steps 4-5) — including its value,
+    /// entirely untouched (CanDeclareGlobalVar steps 4-5), including its value,
     /// which a plain DECLVAR would overwrite with undefined. The distinction is
     /// static (does the declarator have an initializer?), not a runtime test on
     /// the operand: `for (var v of [1, , 3])` legitimately declares undefined on
     /// a hole and must assign it.
     DECLVAR_HOIST,
-    /// `declare function[constants[BC]] = A` — instantiate a top-level
+    /// `declare function[constants[BC]] = A`: instantiate a top-level
     /// FunctionDeclaration's binding (A-BC). Identical to DECLVAR outside a
     /// global Environment Record, but when var_env IS the global env it
     /// follows CreateGlobalFunctionBinding (ES2024 §9.1.1.4.18): an existing
@@ -289,54 +284,54 @@ enum Opcode : char {
     /// this: CreateGlobalVarBinding must leave an existing property entirely
     /// untouched, so the two declaration kinds need distinct opcodes.
     DECLGLOBALFUNC,
-    /// `A = global[constants[BC]]` — read a top-level global binding by name
+    /// `A = global[constants[BC]]`: read a top-level global binding by name
     /// (A-BC). Emitted only at true global scope (no nested lexical env), where
     /// lex_env == global_lex_env and var_env == global_env are both permanent
     /// GC roots. A per-PC inline cache records (bindings, shape_id, prop_idx) so
     /// a hit is a single shape compare + direct indexed load into the global
-    /// object's property storage — no env-chain walk, no generation dependent
+    /// object's property storage, with no env-chain walk and no generation dependent
     /// load, no name compare. Falls back to the GETVAR slow path on a miss.
     GETGLOBAL,
-    /// `global[constants[BC]] = A` — user assignment to a top-level global
+    /// `global[constants[BC]] = A`: user assignment to a top-level global
     /// binding by name (A-BC). Like PUTVAR_ASSIGN (TDZ + const-assignment
     /// throws) but specialized to the two global objects, with the same slot
     /// inline cache as GETGLOBAL for the write-back.
     PUTGLOBAL,
-    /// `A = global[constants[BC]]` — read a top-level global binding that a
+    /// `A = global[constants[BC]]`: read a top-level global binding that a
     /// whole-program compile-time proof classified as primitive-only (every
     /// assignment anywhere in the unit, including nested functions, stores a
     /// provably-primitive value; no eval/globalThis/Function/with observability).
     /// Because the slot can never hold a heap value at runtime, the read is a
-    /// raw `*dst = *slot` — no is_heap check, no refcount, no track_heap_store.
+    /// raw `*dst = *slot`: no is_heap check, no refcount, no track_heap_store.
     /// Shares GETGLOBAL's varref slot IC for stable-pointer resolution.
     GETGLOBAL_PRIM,
-    /// `global[constants[BC]] = A` — write to a proven primitive-only global
+    /// `global[constants[BC]] = A`: write to a proven primitive-only global
     /// (see GETGLOBAL_PRIM). A raw `*slot = A` with no decref of the overwritten
     /// value (provably primitive) and no incref/track of the stored value.
     PUTGLOBAL_PRIM,
-    /// `global[dst] = global[src]` — fused copy between two proven
+    /// `global[dst] = global[src]`: fused copy between two proven
     /// primitive-only globals (the GETGLOBAL_PRIM + PUTGLOBAL_PRIM pair for a
     /// plain `a = b` assignment). A two-word instruction: this word (A-BC) holds
     /// the destination name index in BC; the immediately-following word (a NOP,
     /// preserved through compaction like TRY's finally slot) holds the source
     /// name index in its BC. The VM reads both words, advances PC by 2, and does
-    /// a raw `*dst_slot = *src_slot` — both slots provably primitive, so no
+    /// a raw `*dst_slot = *src_slot`: both slots provably primitive, so no
     /// is_heap check, no refcount, no track_heap_store. Uses two adjacent
     /// per-PC VarICEntry slots: pc_off (dst, write IC) and pc_off+1 (src, read
     /// IC); the trailing word's IC slot is otherwise unused.
     MOVE_GG,
-    /// `A = typeof identifier`  — typeof on a variable name (A-BC format).
+    /// `A = typeof identifier`: typeof on a variable name (A-BC format).
     /// Returns "undefined" for unresolvable references per ES5 §11.4.3.
     TYPEOFIDENT,
-    /// `A = delete variable[constants[BC]]`  — delete a variable (A-BC).
+    /// `A = delete variable[constants[BC]]`: delete a variable (A-BC).
     DELVAR,
 
     // ---- Closures --------------------------------------------------------
 
-    /// `A = create_closure(inner_funcs[BC])`  — instantiate an inner
+    /// `A = create_closure(inner_funcs[BC])`: instantiate an inner
     /// function template as a closure (A-BC format).
     CLOSURE,
-    /// `A = outer_scope[BC]`  — read a captured (bound) variable from an
+    /// `A = outer_scope[BC]`: read a captured (bound) variable from an
     /// enclosing scope (A-BC format).
     GETBOUND,
 
@@ -345,7 +340,7 @@ enum Opcode : char {
     /// Initialise a for-in iterator over object A.  B = iterator state
     /// register.
     INITFOR,
-    /// `A = next key, B = has_next`  — advance the for-in iterator.
+    /// `A = next key, B = has_next`: advance the for-in iterator.
     NEXTFOR,
 
     // ---- Exception handling ----------------------------------------------
@@ -354,7 +349,7 @@ enum Opcode : char {
     TRY,
     /// Pop the current try block.
     ENDTRY,
-    /// `throw A`  — throw an exception.
+    /// `throw A`: throw an exception.
     THROW,
     /// Throw a ReferenceError with a constant pool message.
     /// A=unused, B=msg_const_idx. Used for `delete super.x` (always ReferenceError).
@@ -362,29 +357,29 @@ enum Opcode : char {
     /// Throw a SyntaxError with a constant pool message.
     /// A=unused, B=msg_const_idx. Used for GlobalDeclarationInstantiation
     /// checks (ES6+ §15.1.8) that must surface as a *runtime* throw rather
-    /// than a compile-time failure — e.g. a top-level `let`/`const` colliding
+    /// than a compile-time failure, such as a top-level `let` or `const` colliding
     /// with a restricted global name (`undefined`, `NaN`, `Infinity`).
     THROW_SYNTAX,
-    /// `A = <caught exception>`  — store the caught value.
+    /// `A = <caught exception>`: store the caught value.
     CATCH,
     /// Enter the finally block.
     FINALLY,
     /// Exit the finally block (may re-throw or continue).
     ENDFINALLY,
 
-    /// `A = ToPropertyKey(reg[A])`  — in-place coercion of a computed
+    /// `A = ToPropertyKey(reg[A])`: in-place coercion of a computed
     /// property-name expression's value to a property key (string/symbol),
     /// per ToPropertyKey (§7.1.19) / ComputedPropertyName evaluation
     /// (§13.2.5.5). Used by object destructuring-assignment computed keys
     /// (`{[expr]: target} = rhs`) to coerce the key at PropertyName-evaluation
-    /// time — before the (possibly deferred) AssignmentTarget is evaluated —
+    /// time, before the possibly deferred AssignmentTarget is evaluated,
     /// matching KeyedDestructuringAssignmentEvaluation's step ordering without
     /// duplicating the later property read done by GETPROP/PUTPROP (which
     /// idempotently no-ops on an already-string register).
     TOPROPKEY,
-    /// `A = ToString(reg[A])`  — in-place coercion to string via §7.1.17,
+    /// `A = ToString(reg[A])`: in-place coercion to string via §7.1.17,
     /// used for template literal substitutions (§13.2.8.1
-    /// SubstitutionEvaluation calls ToString directly — unlike the `+`
+    /// SubstitutionEvaluation calls ToString directly, unlike the `+`
     /// operator, which goes through ToPrimitive(default) first). This
     /// distinction is only observable when Symbol.prototype[@@toPrimitive]
     /// has been redefined/removed, since it otherwise always returns the
@@ -397,24 +392,24 @@ enum Opcode : char {
     NOP,
     /// Trigger a debugger breakpoint.
     DEBUGGER,
-    /// `PC += sABC`  — unconditional relative jump for `break` out of
+    /// `PC += sABC`: unconditional relative jump for `break` out of
     /// a loop/switch.  Like JUMP but the VM intercepts it when crossing
     /// a try-finally boundary to execute the finally block first.
     BREAK,
-    /// `PC += sABC`  — unconditional relative jump for `continue`.
+    /// `PC += sABC`: unconditional relative jump for `continue`.
     /// Like JUMP but the VM intercepts it when crossing a try-finally
     /// boundary to execute the finally block first.
     CONTINUE,
 
     // ---- Special property initialisation ----------------------------------
 
-    /// `A[B] = C`  — initialise a data property without triggering setters.
+    /// `A[B] = C`: initialise a data property without triggering setters.
     INITSET,
     /// Define getter: `Object.defineProperty(A, B, {get: C})`.
     INITGET,
     /// Define setter: `Object.defineProperty(A, B, {set: C})`.
     INITSETI,
-    /// `A[B] = C` — define a data property with WEC flags (overrides any
+    /// `A[B] = C`: define a data property with WEC flags (overrides any
     /// existing non-writable property, since DefinePropertyOrThrow semantics
     /// allow replacement when the existing property is configurable). Used
     /// for array literal element initialization.
@@ -461,13 +456,13 @@ enum Opcode : char {
     PUSH_VAR,
     /// Pop the current variable environment, restoring act.var_env to parent.
     POP_VAR,
-    /// `lex_env[constants[BC]] = A`  — write a binding into the current
+    /// `lex_env[constants[BC]] = A`: write a binding into the current
     /// lexical environment (for `let` declarations).  A-BC format.
     PUTLEX,
-    /// `lex_env[constants[BC]] = A`  — write a non-writable binding into
+    /// `lex_env[constants[BC]] = A`: write a non-writable binding into
     /// the current lexical environment (for `const` declarations).  A-BC format.
     PUTLEX_C,
-    /// `lex_env[constants[BC]] = TDZ_SENTINEL` — store the temporal dead zone
+    /// `lex_env[constants[BC]] = TDZ_SENTINEL`: store the temporal dead zone
     /// sentinel for the variable named by constants[BC] into the current
     /// lexical environment.  Used at block entry to mark `let`/`const`
     /// bindings as uninitialized before their declaration is reached.
@@ -477,25 +472,25 @@ enum Opcode : char {
     /// emitted only at the top of a global Script/eval so a collision throws
     /// before any binding is instantiated. BC indexes the declared name in
     /// the constant pool; A is unused (A-BC format).
-    ///   CHKGLOBALLEX  — a lexical name (let/const/class): throws SyntaxError
+    ///   CHKGLOBALLEX:  a lexical name (let, const, class). Throws SyntaxError
     ///     if the name already has a var binding, a global lexical binding,
     ///     or a restricted (non-configurable, non-plain-data) global property.
-    ///   CHKGLOBALVAR  — a var name: throws SyntaxError if a global lexical
+    ///   CHKGLOBALVAR:  a var name. Throws SyntaxError if a global lexical
     ///     binding exists; else TypeError if CanDeclareGlobalVar is false.
-    ///   CHKGLOBALFUNC — a function name: throws TypeError if
+    ///   CHKGLOBALFUNC: a function name. Throws TypeError if
     ///     CanDeclareGlobalFunction is false.
     CHKGLOBALLEX,
     CHKGLOBALVAR,
     CHKGLOBALFUNC,
 
-    /// `A = create_regexp(constants[BC])` — compile a regexp literal
+    /// `A = create_regexp(constants[BC])`: compile a regexp literal
     /// from the raw `/pattern/flags` string stored at constant pool index BC.
     /// Creates a new HObject of class REGEXP with compiled regexp data.
     NEWREGEXP,
 
     // ---- Spread operator (ES6) -------------------------------------------
 
-    /// `A[B] = spread(C)` — spread elements of array C into target array A
+    /// `A[B] = spread(C)`: spread elements of array C into target array A
     /// starting at index B.  B is incremented by the number of elements.
     /// ABC format: A=target_arr_reg, B=idx_reg, C=source_reg.
     ARRSPRD,
@@ -508,11 +503,11 @@ enum Opcode : char {
     /// protocol.  Used by the default derived constructor to forward args.
     /// Count written to register B.  ABC format.
     FWD_ARGS,
-    /// `A = call B with nargs from valstack[C]` — function call with
+    /// `A = call B with nargs from valstack[C]`: function call with
     /// runtime argument count (for spread arguments).
     /// ABC format: A=result_reg, B=callee_reg, C=nargs_reg.
     CALL_S,
-    /// `A = B(C..C+N)` with an implicitly-undefined `this` — identical to
+    /// `A = B(C..C+N)` with an implicitly-undefined `this`: identical to
     /// CALL, but the callee's this-binding is taken to be `undefined`
     /// without reading the `callee_reg+1` slot. Emitted by the compiler for
     /// plain (non-method) calls `f(...)`, where the receiver is always
@@ -523,7 +518,7 @@ enum Opcode : char {
     /// Fused GETVAR + CALL_UNDEF_THIS: `A = variable[constants[C]](A+2..A+1+B)`.
     /// Loads the callee by name (via the same VarIC path as GETVAR, keyed on
     /// this instruction's own pc) directly into register A, then performs a
-    /// plain-undefined-this call — one dispatch instead of two. Emitted only
+    /// plain-undefined-this call, so one dispatch replaces two. Emitted only
     /// when the callee is a bare identifier reference (not a local variable
     /// register) immediately followed by a call with no spread arguments,
     /// and the name's constant-pool index fits in 8 bits (else the compiler
@@ -532,8 +527,8 @@ enum Opcode : char {
     /// of the callee's name (must be < 256).
     CALL_VAR,
     /// Fused GETGLOBAL + CALL_UNDEF_THIS: `A = global[constants[C]](A+2..A+1+B)`.
-    /// The global-scope analog of CALL_VAR. Resolves the callee — a bare
-    /// top-level global-function binding — via GETGLOBAL's lean stable-pointer
+    /// The global-scope analog of CALL_VAR. Resolves the callee, a bare
+    /// top-level global-function binding, via GETGLOBAL's lean stable-pointer
     /// varref IC (keyed on this instruction's own pc) directly into register A,
     /// then performs a plain-undefined-this call: one dispatch instead of the
     /// GETGLOBAL + CALL_UNDEF_THIS pair. The global object owns the binding, so
@@ -545,12 +540,12 @@ enum Opcode : char {
     /// ABC format: A=result/callee register, B=argument count, C=constant pool
     /// index of the callee's name (must be < 256).
     CALL_GLOBAL,
-    /// `A = spread(C) into object` — copy all own enumerable properties
+    /// `A = spread(C) into object`: copy all own enumerable properties
     /// from source C into target object A.  null/undefined sources are
     /// silently skipped (as in Object.assign).  ABC format:
     /// A=target_obj_reg, B=0 (unused), C=source_reg.
     OBJSPRD,
-    /// `A = CopyDataProperties(C, excludedNames=array B)` — object-rest
+    /// `A = CopyDataProperties(C, excludedNames=array B)`: object-rest
     /// collection (`{...rest}` in a destructuring pattern), per ES2018
     /// §7.3.24 CopyDataProperties / §13.15.5.6. Like OBJSPRD but skips own
     /// keys present (by ToPropertyKey-coerced value) in the array at B.
@@ -559,54 +554,54 @@ enum Opcode : char {
 
     // ---- ES6 Classes -----------------------------------------------------
 
-    /// `A.[[Prototype]] = B` — set the internal [[Prototype]] of object A
+    /// `A.[[Prototype]] = B`: set the internal [[Prototype]] of object A
     /// to object B (used for `extends` to set `Derived.prototype.__proto__`).
     /// ABC format: A=derived_obj_reg, B=proto_reg.
     SETPROTO,
-    /// `A = GetPrototypeOf(B)` — read the internal [[Prototype]] of object B
+    /// `A = GetPrototypeOf(B)`: read the internal [[Prototype]] of object B
     /// (routing through the Proxy [[GetPrototypeOf]] trap when B is a proxy).
     /// Yields null for a null prototype and undefined for non-object B.
     /// ABC format: A=dst_reg, B=obj_reg.
     GETPROTO,
-    /// `A[B] = C` with receiver = the current `this` binding — the store form
+    /// `A[B] = C` with the current `this` as receiver. The store form
     /// of `super.x = v` (§13.15.2 SetSuperProperty): the property walk starts
     /// at the super base (A) but accessor setters / new data properties land
     /// on the receiver.  ABC format: A=super_base_reg, B=key_reg, C=val_reg.
     PUTPROP_SUPER,
-    /// `A = B[C]` — super property get with correct receiver (§13.5.3 GetValue).
+    /// `A = B[C]`: super property get with correct receiver (§13.5.3 GetValue).
     /// The property lookup starts at super base B with key C, but accessor getters
     /// are invoked with `this` = current activation's this_binding, not B.
     /// ABC format: A=result_reg, B=super_base_reg, C=key_reg.
     GETPROP_SUPER,
-    /// `A = super(B, C..C+N)` — call superclass constructor.
+    /// `A = super(B, C..C+N)`: call superclass constructor.
     /// Uses the current activation's `new.target` as the new object's constructor.
     /// ABC format: A=result_reg, B=super_ctor_reg, C=arg_count.
     SUPER_CALL,
-    /// `A = super(B, args[C..])` — same as SUPER_CALL but C is a register
+    /// `A = super(B, args[C..])`: same as SUPER_CALL but C is a register
     /// holding the runtime argument count (for spread arguments in default
     /// constructors).  ABC format: A=result_reg, B=super_ctor_reg, C=nargs_reg.
     SUPER_CALL_S,
-    /// `A = new.target` — load `new.target` into register A.
+    /// `A = new.target`: load `new.target` into register A.
     /// Returns undefined if not in a constructor call.
     /// A-only format: A=result_reg, B=0, C=0.
     NEWTARGET,
 
     // ---- Generators (ES6) ------------------------------------------------
 
-    /// `A = load_resume` — load the value passed to .next() into A.
+    /// `A = load_resume`: load the value passed to .next() into A.
     /// Emitted by the compiler after every YIELD instruction so that the
     /// yield expression evaluates to the value the caller passed to .next(val).
     /// ABC format: A=result_reg, B=0, C=0.
     LOAD_RESUME,
 
-    /// `yield A` — suspend generator execution and return the value in A.
+    /// `yield A`: suspend generator execution and return the value in A.
     /// YIELD saves the current activation state (registers, PC, environments)
     /// to the generator object and returns {value: A, done: false} to the
     /// caller of .next()/.throw()/.return().
     /// ABC format: A=value_reg, B=0, C=0.
     YIELD,
 
-    /// `A = yield* B` — delegate to another generator/iterable.
+    /// `A = yield* B`: delegate to another generator/iterable.
     /// ABC format: A=result_reg, B=iterable_reg, C=0.
     YIELD_STAR,
 
@@ -614,7 +609,7 @@ enum Opcode : char {
     /// §27.6.3.8). Delegates over the async iterator protocol: every inner
     /// next/throw/return result is Awaited, and each yielded value is Awaited
     /// (AsyncGeneratorYield). Unlike the sync YIELD_STAR, this is a resumable
-    /// state machine — each spec Await is a real suspension that re-enters this
+    /// state machine: each spec Await is a real suspension that re-enters this
     /// opcode (gs.ays_step records the delegation position). Forwards the
     /// consumer's .throw()/.return() completions to the inner iterator's
     /// throw/return methods with the missing-method fallbacks (AsyncIteratorClose
@@ -622,7 +617,7 @@ enum Opcode : char {
     /// ABC format: A=result_reg, B=iterable_reg, C=0.
     YIELD_STAR_ASYNC,
 
-    /// `return A` from a generator — marks generator as completed,
+    /// `return A` from a generator, marking it completed,
     /// wraps result in IteratorResult, and returns.
     /// Same encoding as RET (ABC format).
     RET_GEN,
@@ -630,14 +625,14 @@ enum Opcode : char {
     /// Same encoding as RETUNDEF (NONE format).
     RETUNDEF_GEN,
 
-    /// `await A` — suspend async function at a thenable value.
+    /// `await A`: suspend async function at a thenable value.
     /// Saves register state, enqueues a resume callback via the thenable's
     /// `.then()`, and pops the activation.  The resume callback re-enters
     /// the function at the next instruction (LOAD_RESUME) with the settled value.
     /// ABC format: A=value_reg, B=0, C=0.
     AWAIT,
 
-    /// `import(specifier)` — dynamic import expression (ES2020).
+    /// `import(specifier)`: dynamic import expression (ES2020).
     /// Resolves, links and evaluates the requested module (re-entrantly when a
     /// module body is already running) and stores a Promise in A that fulfills
     /// with the module's namespace object or rejects with the module's
@@ -674,26 +669,26 @@ enum Opcode : char {
     DEC,
 
     /// Write a value into the call-argument area at a runtime-computed slot.
-    /// Used for non-spread arguments that follow a spread — their position
+    /// Used for non-spread arguments that follow a spread, whose position
     /// depends on the runtime spread count, which is not known at compile time.
     /// ABC format: A=base_reg (first_arg register), B=count_reg (running total),
     /// C=src_reg (value to write). Effect: regs[A + regs[B]] = regs[C];
     /// then regs[B]++.
     PUTARG,
 
-    /// `new ctor(...args)` with a spread — same as NEW_OBJ but reads the
+    /// `new ctor(...args)` with a spread. Same as NEW_OBJ, but it reads the
     /// runtime argument count from a register (like CALL_S). ABC format:
     /// A=result_reg, B=ctor_reg, C=nargs_reg.
     NEW_OBJ_S,
 
     // ---- Variable arithmetic fusion ---------------------------------------
 
-    /// `variable[constants[BC]] = variable[constants[BC]] + 1` — fused
+    /// `variable[constants[BC]] = variable[constants[BC]] + 1`: fused
     /// GETVAR + INC + PUTVAR.  Reads a variable by name, increments it,
     /// and writes it back in a single dispatch.  Uses the VarIC for both
     /// read and write.  A-BC format: A=0 (unused), BC=constant pool index.
     INC_VAR,
-    /// `variable[constants[BC]] = variable[constants[BC]] - 1` — fused
+    /// `variable[constants[BC]] = variable[constants[BC]] - 1`: fused
     /// GETVAR + DEC + PUTVAR.  Same layout as INC_VAR.
     DEC_VAR,
     /// Global-scope variants of INC_VAR / DEC_VAR: fused read+op+write against
@@ -734,7 +729,7 @@ enum Opcode : char {
 
     // ---- Fused strict-equality compare-and-branch ----------------------------
     // Strict equality (===/!==) never coerces operands, so unlike the loose
-    // EQ/NEQ path these can never call user code or throw — the fused handler is
+    // EQ/NEQ path these can never call user code or throw, so the fused handler is
     // a pure value compare with no needs_restart/throw dance. Two opcodes cover
     // all four source patterns: SEQ+IF_TRUE and SNEQ+IF_FALSE both branch when
     // the operands are strictly equal (JMP_SEQ); SNEQ+IF_TRUE and SEQ+IF_FALSE
@@ -754,7 +749,7 @@ enum Opcode : char {
     /// immediately-following word is a NOP whose BC holds the global's name
     /// index. The VM reads both words and advances PC by 2, so the trailing
     /// word is preserved through NOP compaction via `nop_keep`.
-    /// The loaded value is never materialized in a register — fusion requires
+    /// The loaded value never reaches a register, since fusion requires
     /// the original scratch register to be dead after the branch on both the
     /// fall-through and taken paths.
     /// Offset convention matches JMP_LT: relative to the instruction after the
@@ -805,7 +800,7 @@ enum Opcode : char {
     /// type exactly as ITER_CLOSE (0=non-throw, 1=throw-suppress, 2=auto).
     ITER_CLOSE_ASYNC,
 
-    /// `IsConstructor(A)` — throw TypeError if register A is not a constructor.
+    /// `IsConstructor(A)`: throw TypeError if register A is not a constructor.
     /// Used at class `extends` time (ES2022 §15.7.14 step 5.f).
     /// A-only format: A=value_reg, B=0, C=0.
     CHKCTOR,
@@ -840,7 +835,7 @@ enum Opcode : char {
 
     /// Boolean brand check for the `#x in obj` ergonomic brand probe
     /// (ES2022 class-fields-private-in). Like CHK_BRAND but sets ra to a
-    /// boolean instead of throwing on miss — the probe tests presence,
+    /// boolean instead of throwing on a miss, since the probe tests presence,
     /// not access. A=object, B=register holding the brand symbol,
     /// C=constant pool index of the private name (for error messages,
     /// not currently used here since this opcode never throws).
@@ -853,7 +848,7 @@ enum Opcode : char {
     INITPROP_PRIV,
 
     /// Private field read: `A = B[C]` bypassing proxy [[Get]] traps.
-    /// Same as GETPROP but skips the proxy exotic dispatch — used for
+    /// Same as GETPROP but skips the proxy exotic dispatch, used for
     /// private field/method access (`this.#x`) where spec PrivateFieldGet
     /// does a direct internal-slot lookup, not [[Get]].
     /// Throws TypeError if the private member has no [[Get]] field (set-only
@@ -865,7 +860,7 @@ enum Opcode : char {
     /// ABC format: A=dst_reg, B=obj_reg, C=key_reg.
     GETPROP_PRIVATE,
 
-    /// `A = ToNumeric(B)` — coercion used by postfix ++/-- to compute the
+    /// `A = ToNumeric(B)`: coercion used by postfix ++/-- to compute the
     /// returned old value.  Unlike UNP (unary plus), a BigInt operand passes
     /// through unchanged rather than throwing (ES2020 §7.1.3 ToNumeric).
     TONUMERIC,
@@ -874,12 +869,12 @@ enum Opcode : char {
     /// executing module's import-meta object into A, lazily creating it (an
     /// ordinary null-prototype object carrying a `url` data property) on first
     /// access and caching it on the ModuleDef so every evaluation observes the
-    /// same identity. Only emitted in module code — `import.meta` in script /
+    /// same identity. Only emitted in module code, since `import.meta` in script or
     /// eval / Function-body code is an early SyntaxError caught at compile time.
     /// ABC format: A=result_reg, B=0, C=0.
     IMPORT_META,
 
-    /// Sentinel — not a real opcode; marks the end of the enum.
+    /// Marks the end of the enum, and is not a real opcode.
     LAST_OP,
 }
 
@@ -895,7 +890,7 @@ enum OpFormat : char {
     A_BC,
     /// A (8-bit) + sBx (16-bit signed / bias-encoded).
     A_SBX,
-    /// Full 24-bit unsigned operand (bits 8–31).
+    /// Full 24-bit unsigned operand (bits 8-31).
     WIDE_ABC,
     /// Full 24-bit signed operand (bias-encoded).
     WIDE_SABC,
@@ -1010,7 +1005,7 @@ case PUTLEX:     return A_BC;
 }
 
 // ============================================================================
-// Instruction — the 32-bit encoded instruction word
+// Instruction: the 32-bit encoded instruction word
 // ============================================================================
 
 /// A single 32-bit bytecode instruction.
@@ -1018,18 +1013,18 @@ case PUTLEX:     return A_BC;
 /// The bitstruct provides named access to the four 8-bit fields.  Higher-
 /// level layouts (A-BC, ABC, A-sBx, sABC) are accessed through methods.
 bitstruct Instruction : uint {
-    /// Opcode (bits 0–7).
+    /// Opcode (bits 0-7).
     Opcode op  : 0..7;
-    /// A operand — usually the destination register (bits 8–15).
+    /// A operand, usually the destination register (bits 8-15).
     uint   a   : 8..15;
-    /// B operand — source register or constant index (bits 16–23).
+    /// B operand, a source register or constant index (bits 16-23).
     uint   b   : 16..23;
-    /// C operand — source register or constant index (bits 24–31).
+    /// C operand, a source register or constant index (bits 24-31).
     uint   c   : 24..31;
 }
 
 // ============================================================================
-// Instruction — static constructors
+// Instruction: static constructors
 // ============================================================================
 
 /// Encode an instruction in standard A-B-C format.
@@ -1059,8 +1054,8 @@ fn Instruction make_a_bc(Opcode op, uint a, uint bc) {
 
 /// Encode an instruction in the wide ABC format.
 ///
-/// The full 24-bit unsigned operand occupies bits 8–31 (A, B, C fields
-/// concatenated).  A = bits 8–15, B = bits 16–23, C = bits 24–31.
+/// The 24-bit unsigned operand spans bits 8-31, which is the A, B, and C fields
+/// concatenated: A at bits 8-15, B at 16-23, C at 24-31.
 fn Instruction make_abc_wide(Opcode op, uint abc) {
     return {
         .op = op,
@@ -1088,7 +1083,7 @@ fn Instruction make_sabc(Opcode op, int sabc) {
 }
 
 // ============================================================================
-// Instruction — field accessors
+// Instruction: field accessors
 // ============================================================================
 
 /// Returns the opcode.
@@ -1136,7 +1131,7 @@ macro int Instruction.get_sabc(&self) {
 }
 
 // ============================================================================
-// Instruction — raw word access
+// Instruction: raw word access
 // ============================================================================
 
 /// Returns the raw 32-bit word.
@@ -1150,7 +1145,7 @@ macro Instruction from_raw(uint raw) {
 }
 
 // ============================================================================
-// CompiledFunction — bytecode container
+// CompiledFunction: bytecode container
 // ============================================================================
 
 /// Flags specific to compiled function templates.
@@ -1184,12 +1179,13 @@ bitstruct FuncFlags : uint {
     bool  is_generator  : 13;
     /// Function is an async function.
     bool  is_async      : 14;
-    /// Function body has direct `eval()` calls — prevents optimisations.
+    /// The body contains a direct `eval()`, which blocks several optimisations.
     bool  has_direct_eval: 15;
     /// Function is a constructor method.
     bool  is_constructable: 16;
-    /// Function never creates local bindings — the CALL fast path can
-    /// skip `env_create_function_scope` and reuse the parent env directly.
+    /// The function accesses its own environment bindings at runtime. When
+    /// false, the CALL fast path skips `env_create_function_scope` and reuses
+    /// the captured parent env.
     bool  needs_env       : 17;
     bool  is_global       : 18;
     /// Function needs the CALL fast path to create a lex_env bridge
@@ -1198,89 +1194,80 @@ bitstruct FuncFlags : uint {
     bool  needs_lex_bridge: 19;
     /// Function is an ESM module body (top-level import/export).
     bool  is_module        : 20;
-    /// Function is a class constructor (ES2015 §14.5.14 step 25: the
-    /// resulting constructor's .prototype is non-configurable, so static
-    /// `class.prototype = ...` must throw TypeError).  When false, .prototype
-    /// uses PROP_FLAGS_WEC (configurable=true).
+    /// A class constructor, whose .prototype is non-configurable per ES2015
+    /// §14.5.14 step 25, so `class.prototype = ...` must throw a TypeError.
+    /// Other functions get a configurable .prototype.
     bool  is_class_ctor    : 21;
     /// Function body had a "use strict" directive.
     bool  is_strict        : 22;
-    /// Constructor is a derived class constructor (ES2015 §9.2.2 step 13.c):
-    /// `return <non-object>` in a derived constructor throws TypeError unless
-    /// the value is undefined. Set when has_super_binding is true at compile time.
+    /// A derived class constructor. ES2015 §9.2.2 step 13.c makes returning a
+    /// non-object from one a TypeError unless the value is undefined. Set when
+    /// has_super_binding held at compile time.
     bool  is_derived_ctor  : 23;
     /// Function is compiled eval code (compile_eval), not Script/global code.
     /// Per ES2015 §18.2.1.2 EvalDeclarationInstantiation step 16.a,
     /// CreateGlobalVarBinding(vn, true) installs eval-created global var/
-    /// function bindings as *configurable* — distinct from a real Script's
+    /// function bindings as configurable, unlike a real Script's
     /// GlobalDeclarationInstantiation (§15.1.11 step 18.a), which installs
     /// them non-configurable via CreateGlobalVarBinding(vn, false).
     bool  is_eval          : 24;
-    /// The eval SOURCE carried its own "use strict" directive prologue. The
-    /// engine executes all code in strict mode (is_strict is always set), but
-    /// EvalDeclarationInstantiation's leak semantics depend on the *source's*
-    /// own strictness (ES2015 §18.2.1.1 PerformEval step 12): strict eval gets
-    /// a fresh varEnv (declarations never escape), non-strict indirect/global
-    /// eval installs its `var`/`function` bindings on the global object. Only
-    /// meaningful on is_eval functions.
+    /// The eval source carried its own "use strict" prologue. Everything here
+    /// runs strict, so is_strict is always set, but PerformEval step 12 keys
+    /// declaration leaking off the source's own strictness: a strict eval gets a
+    /// fresh varEnv its declarations cannot escape, while a non-strict indirect
+    /// or global eval installs `var` and `function` bindings on the global
+    /// object. Only meaningful when is_eval is set.
     bool  eval_src_strict  : 25;
     /// Function is a method/accessor with a [[HomeObject]] (enables super.x
     /// syntax).  Set at compile time when super_is_home_object is true.
     bool  has_home_object  : 26;
-    /// Function inherited a HomeObject context (object-literal concise
-    /// method, class method without `extends`, or any other method whose
-    /// super base is the receiver's [[Prototype]] rather than the
-    /// superclass's `.prototype`). The value is the same as
-    /// CompilerContext.super_is_home_object at finish() time. Direct eval
-    /// inherits this from the caller (entry.c3: compile_eval) so `super.x`
-    /// inside `eval` resolves against `Object.getPrototypeOf(homeObject)`
-    /// (per ES2015 §15.7.3 PerformEval step 7, which requires
-    /// HasHomeObject on the calling EnvRec), not `__super__.prototype`.
-    /// Distinct from has_home_object, which is also set on derived-class
-    /// methods whose super base is the SUPERCLASS prototype (not the
-    /// receiver's prototype).
+    /// The function's super base is the receiver's [[Prototype]] rather than a
+    /// superclass's `.prototype`. That covers object-literal concise methods and
+    /// class methods without `extends`, and mirrors
+    /// CompilerContext.super_is_home_object at finish() time.
+    ///
+    /// compile_eval passes it down from the caller, so `super.x` inside an eval
+    /// resolves against `Object.getPrototypeOf(homeObject)`, which PerformEval
+    /// step 7 requires, rather than `__super__.prototype`.
+    ///
+    /// has_home_object is broader: it is also set on derived-class methods,
+    /// whose super base is the superclass prototype.
     bool  super_is_home_object : 27;
-    /// Function was written with a `*` (syntactic generator): `function*`,
-    /// `*m(){}`, `async function*`, or `async *m(){}`. Distinct from
-    /// `is_generator`, which is ALSO set on plain async functions so they can
-    /// reuse the suspend/resume (YIELD/LOAD_RESUME) machinery via AWAIT. The
-    /// pair distinguishes the four kinds:
+    /// The function was written with a `*`: `function*`, `*m(){}`,
+    /// `async function*`, or `async *m(){}`. `is_generator` is broader, since a
+    /// plain async function sets it too in order to reuse the YIELD and
+    /// LOAD_RESUME suspend machinery through AWAIT. Together they separate the
+    /// four kinds:
     ///   plain function     : !is_generator, !is_async, !is_user_generator
     ///   sync generator     :  is_generator, !is_async,  is_user_generator
     ///   async function     :  is_generator,  is_async, !is_user_generator
     ///   async generator    :  is_generator,  is_async,  is_user_generator
     /// See `is_async_gen()`.
     bool  is_user_generator    : 28;
-    /// Compiled eval code (is_eval) whose source may legally reference
-    /// `new.target` — i.e. it was direct eval processed inside a non-arrow
-    /// FunctionBody (ES2015 §13.3.5.1 / Annex B). Recorded so a NESTED direct
-    /// eval inside this eval body can inherit the permission: without it the
-    /// inner eval's caller CF reports is_global_fn()==true (all eval CFs set
-    /// is_global) and would spuriously reject `new.target`.
+    /// Eval code whose source may reference `new.target`, meaning a direct eval
+    /// inside a non-arrow FunctionBody (ES2015 §13.3.5.1 and Annex B). A nested
+    /// direct eval inherits the permission from here. Without it the inner
+    /// eval's caller reports is_global_fn(), since every eval sets is_global,
+    /// and would reject `new.target`.
     bool  eval_allows_new_target : 29;
-    /// Function body forbids a bare `arguments` reference (class field/static
-    /// initializer or static block, ES2022 §15.7.10/§15.7.11). A direct eval
-    /// called from within such a body inherits this restriction onto the
-    /// eval's own compiled body (ES2022 §15.7.10 step 14 ContainsArguments /
-    /// §PerformEval) — see compile_eval's `caller_forbids_arguments` param.
+    /// The body forbids a bare `arguments`, which holds inside a class field or
+    /// static initializer and a static block (ES2022 §15.7.10 and §15.7.11). A
+    /// direct eval called from such a body inherits the restriction; see
+    /// compile_eval's `caller_forbids_arguments` parameter.
     bool  forbid_arguments      : 30;
 }
 
-/// A compiled function template — the immutable bytecode representation of
+/// A compiled function template: the immutable bytecode representation of
 /// an ECMAScript function produced by the compiler.
 ///
-/// One CompiledFunction may be shared by many closures (each with its own
-/// set of captured variable bindings).  The struct stores everything the
-/// VM needs to execute the function:
-///   - The instruction stream (`code`).
-///   - The constant pool for literal values (`constants`).
-///   - Templates for inner (nested) functions (`inner_funcs`).
-///   - Register budget and argument counts.
-///   - Source-level metadata for debugging.
+/// Many closures can share one CompiledFunction, each carrying its own captured
+/// bindings. It holds everything the VM needs to run the function: the
+/// instruction stream, the constant pool, the templates for nested functions,
+/// the register budget and argument counts, and source metadata for debugging.
 struct CompiledFunction {
     // ---- Inline HeapHeader (binary-compatible with HeapHeader*) ----------
 
-    /// Bit-packed flags — HeapHeader-compatible prefix + function metadata.
+    /// Bit-packed flags: a HeapHeader-compatible prefix plus function metadata.
     FuncFlags       flags;
     /// Next pointer in the heap GC linked list.
     HeapHeader*     next;
@@ -1295,7 +1282,7 @@ struct CompiledFunction {
     /// Number of instructions in `code`.
     uint            code_count;
 
-    /// Constant pool — literal values (numbers, strings, etc.) referenced
+    /// Constant pool holding the literal values, such as numbers and strings,
     /// by LDCONST and friends.
     TVal*           constants;
     /// Number of entries in `constants`.
@@ -1313,8 +1300,8 @@ struct CompiledFunction {
     ushort          num_regs;
     /// Number of formal parameters (used for call-setup).
     ushort          num_args;
-    /// "Declared" formal count exposed as `Function.length`.  May differ
-    /// from `num_args` when rest parameters are present.
+    /// The formal count `Function.length` reports, which differs from
+    /// `num_args` when a rest parameter or a default value is present.
     ushort          num_formals;
 
     // ---- Source-level debug info ----------------------------------------
@@ -1348,74 +1335,66 @@ struct CompiledFunction {
     uint            var_ic_count;
 
     // ---- NEWREGEXP literal compile cache ---------------------------------
-    /// Per-NEWREGEXP site cache of the compiled regexp bytecode
-    /// (`ReCompiled*`), parallel to the instruction stream:
-    /// `regexp_cache[pc_offset]` holds the shared, refcounted compiled
-    /// bytecode for the regexp literal at `code[pc_offset]`, so the literal
-    /// is compiled once instead of on every execution. Lazily allocated on
-    /// first NEWREGEXP execution; entries are `re_free`d (refcount drop) when
-    /// the function is freed. Borrowing RegExp objects take their own ref.
+    /// Compiled bytecode for each NEWREGEXP site, parallel to the instruction
+    /// stream, so `regexp_cache[pc_offset]` serves the literal at
+    /// `code[pc_offset]` and it compiles once rather than on every execution.
+    /// The array appears on the first NEWREGEXP execution, and freeing the
+    /// function re_frees each entry. RegExp objects borrowing an entry take
+    /// their own reference.
     void**          regexp_cache;    // ReCompiled*[] (opaque), or null
     uint            regexp_cache_count;
 
     // ---- Source-text retention (Function.prototype.toString) ------------
-    /// Heap-owned copy of the original source text spanned by this function
-    /// (between the function's opening `function` keyword / arrow head and
-    /// its closing `}` or expression end). NULL when source was not retained.
-    /// Used by builtin_function_proto_toString (ES2019 §19.2.3.5).
+    /// The function's original source text, from the `function` keyword or arrow
+    /// head through the closing `}` or end of expression, copied onto the heap.
+    /// Null when the source was not retained.
+    /// builtin_function_proto_toString reads it (ES2019 §19.2.3.5).
     char*           src_ptr;
     /// Length in bytes (no NUL terminator counted).
     uint            src_len;
 
     // ---- Private class fields (ES2022) -----------------------------------
 
-    /// The hidden `__field_init__` function template compiling every
-    /// instance field initializer in source order (see class.c3), or NULL
-    /// when the class declares no instance fields. A raw pointer (not an
-    /// index into inner_funcs) because __field_init__ is compiled in the
-    /// class-enclosing scope's CompilerContext, a different inner-function
-    /// table than this constructor's own — see vm_calls.c3
-    /// vm_init_private_members for why the VM construct path needs this to
-    /// be self-contained rather than pool-index-relative.
+    /// The hidden `__field_init__` template holding every instance field
+    /// initializer in source order (see class.c3), or null when the class
+    /// declares no instance fields.
+    ///
+    /// It is a raw pointer rather than an inner_funcs index because
+    /// __field_init__ is compiled in the class-enclosing scope's
+    /// CompilerContext, whose inner-function table is not this constructor's.
+    /// vm_calls.c3's vm_init_private_members explains why the construct path
+    /// needs it self-contained.
     CompiledFunction* field_init_func;
-    /// Interned binding name (e.g. "#priv:brand") used to look up the
-    /// class's brand symbol in the constructor's lex_env (classScope) at
-    /// construction time, or NULL when the class has no private members and
-    /// stamps no brand. A raw HString* (not a constant-pool index) for the
-    /// same reason as field_init_func.
+    /// Interned binding name, such as "#priv:brand", that finds the class's
+    /// brand symbol in the constructor's lex_env at construction time. Null when
+    /// the class has no private members and stamps no brand. A raw HString*,
+    /// for the same reason as field_init_func.
     void*           brand_name_hstr;
 
     // ---- Direct-eval private-name snapshot (ES2022 §8.7.1) ------------------
     //
-    // Per spec, direct eval inherits the calling execution context's
-    // PrivateEnvironment. The compiler can't know at eval-compile-time what
-    // those private names are (eval compiles against a fresh CompilerContext),
-    // so the OUTER function (the one whose body contains `eval(...)`) saves
-    // a snapshot of its private-name table here before its CompilerContext's
-    // scratch buffer is freed by cleanup(). At eval-call time builtin_eval
-    // reads this snapshot from the caller's activation and passes it to
-    // compile_eval so the eval body can resolve `#x` references against the
-    // inherited names.
+    // Direct eval inherits the calling context's PrivateEnvironment, but eval
+    // compiles against a fresh CompilerContext and cannot know those names. So
+    // the function whose body contains the `eval(...)` snapshots its
+    // private-name table here before cleanup() frees the scratch buffer. At call
+    // time builtin_eval reads the snapshot from the caller's activation and
+    // hands it to compile_eval, letting the eval body resolve `#x`.
     //
-    // Only populated when the function has_direct_eval AND inherited any
-    // private names from a parent class body (i.e. private_name_count > 0
-    // AND the table was adopted, not owned). NULL/0 otherwise.
+    // Populated only when the function has_direct_eval and adopted private names
+    // from a parent class body, and null otherwise.
     //
-    // Heap-tracked: when the heap tears down, this buffer is freed alongside
-    // the other CompiledFunction sub-arrays (see Heap.free_compiled_funcs).
-    // The string fields inside each PrivateNameEntry point at interned HString
-    // data (stable for the heap's lifetime), so copying the entry structs is
-    // safe — the data they reference outlives the snapshot.
+    // Heap.free_compiled_funcs frees this alongside the other sub-arrays. Each
+    // PrivateNameEntry's strings point at interned HString data that outlives
+    // the snapshot, so copying the entry structs is safe.
     //
-    // void* (not PrivateNameEntry*) because that type lives in the compiler
-    // module which bytecode.c3 doesn't import; the compiler and builtin_eval
-    // cast both sides consistently.
+    // Typed void* because PrivateNameEntry lives in the compiler module, which
+    // bytecode.c3 does not import. The compiler and builtin_eval both cast.
     void*           eval_private_names;
     uint            eval_private_name_count;
 }
 
 // ============================================================================
-// CompiledFunction — HeapHeader compatibility
+// CompiledFunction: HeapHeader compatibility
 // ============================================================================
 
 /// Returns a HeapHeader pointer to this compiled function
@@ -1425,7 +1404,7 @@ macro HeapHeader* CompiledFunction.as_header(&self) {
 }
 
 // ============================================================================
-// CompiledFunction — flag accessors
+// CompiledFunction: flag accessors
 // ============================================================================
 
 /// Returns `true` when the function is an arrow function.
@@ -1449,17 +1428,14 @@ macro bool CompiledFunction.is_user_generator(&self) {
     return self.flags.is_user_generator;
 }
 
-/// Returns `true` for an async generator (`async function*` / `async *m(){}`):
-/// both `async` and a syntactic `*`. The single predicate that replaces the
-/// scattered flag-combination checks throughout the VM/compiler.
+/// Returns `true` for an async generator, meaning `async function*` or
+/// `async *m(){}`, which is `async` together with a syntactic `*`.
 macro bool CompiledFunction.is_async_gen(&self) {
     return self.flags.is_async && self.flags.is_user_generator;
 }
 
-/// Returns `true` for a spec sync GeneratorFunction (`function*` / `*m(){}`):
-/// a syntactic `*` that is NOT async. This is the meaning of the historical
-/// `is_generator() && !is_async()` idiom; both forms are equivalent because a
-/// sync generator has `is_user_generator == is_generator` and `!is_async`.
+/// Returns `true` for a sync GeneratorFunction, meaning `function*` or `*m(){}`:
+/// a syntactic `*` without `async`.
 macro bool CompiledFunction.is_sync_generator(&self) {
     return self.flags.is_user_generator && !self.flags.is_async;
 }
@@ -1469,23 +1445,20 @@ macro bool CompiledFunction.is_constructable(&self) {
     return self.flags.is_constructable;
 }
 
-/// Returns `true` when the function is an ES2015 class constructor.  Such
-/// functions have a non-configurable .prototype property (ES6 §14.5.14
-/// step 25) and must throw TypeError on `Object.defineProperty(ctor, ...)`
-/// or static-method redefinition of .prototype.
+/// Returns `true` for a class constructor, whose .prototype is non-configurable
+/// (ES6 §14.5.14 step 25), so redefining it throws a TypeError.
 macro bool CompiledFunction.is_class_ctor(&self) {
     return self.flags.is_class_ctor;
 }
 
-/// Returns `true` when this is a derived class constructor.  Per ES2015 §9.2.2
-/// step 13.c, returning a non-object non-undefined value from a derived
-/// constructor throws TypeError.
+/// Returns `true` for a derived class constructor, where ES2015 §9.2.2 step 13.c
+/// makes returning anything but an object or undefined a TypeError.
 macro bool CompiledFunction.is_derived_ctor(&self) {
     return self.flags.is_derived_ctor;
 }
 
-/// Returns `true` when the function has no local bindings and the CALL fast
-/// path can skip `env_create_function_scope`.
+/// Returns `true` when the function accesses its own environment bindings, so
+/// the CALL fast path must create a scope for it. See FuncFlags.needs_env.
 macro bool CompiledFunction.needs_env(&self) {
     return self.flags.needs_env;
 }
@@ -1496,12 +1469,12 @@ macro bool CompiledFunction.is_global_fn(&self) {
 }
 
 /// Returns `true` when this is compiled eval code (as opposed to Script or
-/// module top-level code) — see FuncFlags.is_eval.
+/// module top-level code). See FuncFlags.is_eval.
 macro bool CompiledFunction.is_eval_fn(&self) {
     return self.flags.is_eval;
 }
 /// Returns `true` when this eval CF's own source may reference new.target
-/// (direct eval in a non-arrow function body) — used so a nested eval can
+/// (direct eval in a non-arrow function body), so a nested eval can
 /// inherit new.target legality. See FuncFlags.eval_allows_new_target.
 macro bool CompiledFunction.eval_allows_new_target(&self) {
     return self.flags.eval_allows_new_target;
@@ -1536,14 +1509,12 @@ macro bool CompiledFunction.has_home_object(&self) {
     return self.flags.has_home_object;
 }
 
-/// Returns `true` when the function's super base is derived from its
-/// [[HomeObject]] (object-literal concise method, class method without
-/// `extends`, or any other HomeObject-context). Distinct from
-/// `has_home_object`, which is also true for derived-class methods whose
-/// super base is `superclass.prototype`. Used by `builtin_eval` to decide
-/// whether `super.x` inside a direct eval should call `GetSuperBase` via
-/// `__super__` directly (HomeObject form) or via `__super__.prototype`
-/// (class-extends form).
+/// Returns `true` when the super base comes from the [[HomeObject]] itself,
+/// as in an object-literal concise method or a class method without `extends`.
+/// `has_home_object` is broader, covering derived-class methods whose super base
+/// is `superclass.prototype`. `builtin_eval` uses this to decide whether
+/// `super.x` in a direct eval resolves through `__super__` or
+/// `__super__.prototype`.
 macro bool CompiledFunction.super_is_home_object(&self) {
     return self.flags.super_is_home_object;
 }
@@ -1553,7 +1524,7 @@ macro bool CompiledFunction.has_rest(&self) {
     return self.flags.has_rest;
 }
 
-/// Returns `true` when the function is a named function expression — the
+/// Returns `true` for a named function expression, where the
 /// VM must bind the function's name to the function object in a fresh
 /// lexical environment at call time (ES2015 §14.1.20 NamedEvaluation).
 macro bool CompiledFunction.is_namebinding(&self) {
@@ -1568,12 +1539,12 @@ macro bool CompiledFunction.forbid_arguments(&self) {
 }
 
 // ============================================================================
-// CompiledFunction — code access
+// CompiledFunction: code access
 // ============================================================================
 
 /// Returns the instruction at the given program-counter index.
 ///
-/// No bounds checking is performed — the caller must ensure `pc` is
+/// No bounds check: the caller must ensure `pc` is
 /// within `[0, code_count)`.
 fn Instruction CompiledFunction.get_insn(&self, uint pc) @inline {
     return self.code[pc];
@@ -1581,14 +1552,14 @@ fn Instruction CompiledFunction.get_insn(&self, uint pc) @inline {
 
 /// Returns the constant at the given index in the constant pool.
 ///
-/// No bounds checking — the caller must ensure `idx < const_count`.
+/// No bounds check: the caller must ensure `idx < const_count`.
 fn TVal CompiledFunction.get_const(&self, uint idx) @inline {
     return self.constants[idx];
 }
 
 /// Returns the inner function template at the given index.
 ///
-/// No bounds checking — the caller must ensure `idx < inner_count`.
+/// No bounds check: the caller must ensure `idx < inner_count`.
 fn CompiledFunction* CompiledFunction.get_inner(&self, uint idx) @inline {
     return self.inner_funcs[idx];
 }
@@ -1625,12 +1596,12 @@ fn uint CompiledFunction.get_line(&self, uint pc) {
 // Disassembler lives in `bytecode_disasm.c3`
 // ============================================================================
 //
-// The human-readable disassembler (`Instruction.disassemble`), the 119-entry
-// `OPCODE_NAMES` table, and the small `write_*` buffer-writer helpers all
-// live in `src/bytecode_disasm.c3` (same module, `duktape::bytecode`). That
-// translation unit gates its real implementations on the `TRACE_VM` build
-// feature so that release builds skip the `.text` cost and LLVM drops the
-// `OPCODE_NAMES` array from `.rodata` once no reachable code references it.
-// Build the `duktape_c3_debug` target (or pass `-D TRACE_VM`) to wire the
-// dump helpers and `-t` / `-c` / `--format json` CLI features.
+// `Instruction.disassemble`, the `OPCODE_NAMES` table, and the `write_*`
+// buffer-writer helpers live in `src/bytecode_disasm.c3`, in this same
+// `duktape::bytecode` module. That file gates its implementations on the
+// `TRACE_VM` feature, so a release build pays no `.text` cost and LLVM drops
+// `OPCODE_NAMES` from `.rodata` once nothing reachable references it.
+//
+// Build the `duktape_c3_debug` target, or pass `-D TRACE_VM`, to get the dump
+// helpers and the `-t`, `-c`, and `--format json` CLI options.
 
