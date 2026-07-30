@@ -1,6 +1,6 @@
 # Progress: Duktape C3 — test262 Conformance Tracker
 
-**Last Updated:** Session 300 — **45,617 pass / 0 fail / 0 CE** (7,207 skipped). Plan 062 complete: the 13,030 orphaned core-language tests are now in `PHASES` (2/7/24) and all 14 root-cause groups (A–N) are fixed, plus one cross-group interaction regression caught by the gate. Two-run `test262-gate` zero-fail.
+**Last Updated:** Session 301 — **45,617 pass / 0 fail / 0 CE** (7,207 skipped). Plan 062 complete (gate 2/2 zero-fail); this session fixed the `for (let y in ...) { var y; }` family — the orphan latent bug `function f() { var y; for (let y in {}) {} }` was falsely rejected because the block pre-scan collected the for-head let via paren_depth==0 (parens don't bump brace_depth). Two-part fix: gate let/const collection behind paren_depth==0 in the block and switch pre-scans (in valid code a let/const at top-level paren depth can only be a for-head), and add a parse-time `check_var_lex_conflict` (§13.7.4.1/§13.7.5.13 for-head BoundNames vs body VarDeclaredNames) at every true var declaration site. The second part also catches latent false-accepts at top level / non-block contexts (B,C,D,H,I,J,K,L of the probe) that the block pre-scan never covered. 70 lines net. Probes match node exactly across 21 legal/illegal cases (blocks, switch, do-while, block-fn, catch, nested var-in-head, destructure).
 
 **Target:** 100% test262 pass rate on the targeted subset (see plan 040).
 

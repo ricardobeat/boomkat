@@ -10,6 +10,7 @@ Details for the open items: `plans/062-core-language-coverage.md`.
 
 ## Core language bugs
 
+- [x] `for (let y in/of ...)` falsely rejected as duplicate when an enclosing function has `var y` (the head's lexical scope must not conflict with function-level var names; no test262 coverage — gate is green)
 - [x] `return` inside `finally` in an async function raises a VM error and allocates without bound
 - [x] `await` as a plain identifier rejected as an invalid assignment target
 - [x] `for-in`/`for-of` head does not accept a bare comma expression
