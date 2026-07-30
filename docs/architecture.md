@@ -7,6 +7,182 @@ the parts that are hard to work out from a single file.
 
 Sections are added as each area of the codebase is reviewed.
 
+## Values and objects
+
+### TVal
+
+Every register, property slot, and stack slot holds a `TVal`. The default build
+NaN-boxes it into a single 8-byte `ulong`; passing `-D NONANBOX` switches to a
+16-byte tagged union with identical semantics, which is useful when debugging.
+
+NaN-boxing exploits the unused payload space in IEEE 754 NaNs. A double is any
+value whose top 16 bits are at or below `0xFFF0`; everything above that is a
+tagged non-double, with the payload in the low 48 bits:
+
+| Tag | Payload |
+|---|---|
+| `0xFFF1` | 48-bit signed integer (fastint) |
+| `0xFFF2` | `HBigInt*` |
+| `0xFFF3`, `0xFFF4` | undefined, null (no payload) |
+| `0xFFF5` | boolean, 0 or 1 |
+| `0xFFF6`, `0xFFF7` | raw pointer, lightfunc |
+| `0xFFF8` … `0xFFFA` | `HString*`, `HObject*`, buffer |
+| `0xFFFF` | deleted-slot sentinel |
+
+Two consequences are worth knowing. `set_number` normalizes any NaN it stores to
+a canonical positive NaN, because a negative NaN's bits would collide with the
+tag range. And the tag layout is deliberate: undefined and null are adjacent so
+`is_nullish` is one range check, and numbers and fastints sit below every
+pointer tag so `is_numeric` and `is_heap_allocated` are also single comparisons.
+
+**Fastints** are the integer fast path. An integer that fits in 48 bits is
+stored as a fastint rather than a double, so integer arithmetic avoids
+float round-tripping. `set_fastint_or_number` is the one place that decides,
+and arithmetic opcodes write their results through it rather than repeating the
+range check.
+
+The `DELETED` tag is internal and never a JavaScript value. It marks an array
+slot that was deleted, which the dense array part cannot express with
+`undefined` alone.
+
+### HeapHeader
+
+Every collected allocation begins with a `HeapHeader`: flags, a refcount, and
+the two list pointers that thread the heap together. `HString` and `HObject`
+each define their own flags bitstruct whose low 7 bits mirror the header's, so a
+raw cast from either to `HeapHeader*` reads the correct type and GC bits.
+
+A refcount of `STRING_PINNED_REFCOUNT` marks a pinned string, on which incref
+and decref do nothing. That sentinel is only meaningful together with
+`is_string()`, since an object could legitimately reach the same count.
+
+### HString
+
+Strings are immutable, and their bytes live in the same allocation as the
+header, so `get_data()` is pointer arithmetic. A NUL always follows the last
+byte, letting the data pointer go straight to a C API.
+
+The invariant that matters most: **string equality is pointer identity**.
+Interning is what makes that true, so any path that produces an `HString` which
+escapes without interning will silently break strict equality, `indexOf`, and
+property-key lookup. The exception is deliberate: strings over
+`MAX_INTERN_BYTES` are left un-interned and compared by content, which
+`equals_hstring` handles by falling back when either side is not interned.
+
+Internally the bytes are **CESU-8**, not standard UTF-8. An ECMAScript string is
+a sequence of UTF-16 code units, so every astral codepoint is split into its two
+surrogate halves and each half encoded separately as a 3-byte sequence. That is
+what makes `"\u{1F600}".length === 2` come out right, and it lets lone
+surrogates round-trip, which the spec permits. `normalize_to_cesu8` is the only
+normalization point, called at intern time so one logical string cannot reach
+the table under two different encodings. `write_cesu8_as_utf8` inverts it at
+every host-visible boundary, so nothing outside the engine sees a surrogate
+half.
+
+Character indexing is by UTF-16 code unit and cached. Each string remembers one
+`(char_offset, byte_offset)` cursor, and `char_offset_to_byte_offset` scans from
+whichever of the string start, the string end, or that cursor is nearest.
+Because strings are immutable, the cache is only ever updated, never
+invalidated. ASCII strings skip all of it: one byte is one character.
+
+### HObject
+
+An object is a `HObjectBase` prefix followed, for most classes, by an
+`HObjectExtra` union holding subtype fields. `flags.obj_class` says which
+variant is live, and `alloc_size_for_class` decides how much space to allocate:
+
+- `OBJECT` and `ARGUMENTS` need no union at all.
+- `ARRAY` keeps its `array_length` in the union's first four bytes.
+- Everything else, `ERROR` and `PROXY` included, gets the full union.
+
+Every class but `GETTER_SETTER` also carries `INLINE_PROPS` (4) property slots
+at the tail of its allocation, so an object with few properties needs no
+separate property block at all.
+
+**Property storage** has three layers, and a lookup tries them in order:
+
+1. **The dense array part**, for integer-indexed properties. It holds bare
+   `TVal`s with no per-element flags, and `undefined` doubles as the hole
+   sentinel. `dense_index_ok` keeps it dense only while an index stays near the
+   current size, so `a[2**31] = x` cannot allocate billions of empty slots.
+2. **A hash table**, built once an object reaches `HASH_MIN_PROPS` (8)
+   properties. It maps a key pointer to an index in the value array.
+3. **A linear scan of the shape chain**, which is what small objects use.
+
+Because array builtins like `push` write only to the dense part while `PUTPROP`
+writes the property table, `put_prop` syncs numeric-string keys into both.
+
+### Shapes
+
+Names and flags do not live on the object. They live in a shared `Shape`, and
+the object stores only values. Adding a property moves the object from a parent
+shape to a child, so shapes form a transition tree, and a transition table keyed
+on `(parent, key, flags)` makes objects that add the same properties in the same
+order converge on one shape.
+
+Including the flags in that key matters: every instance of a class installing
+the same private field can share a shape, while the same key added with
+different attributes gets its own.
+
+Some operations need a shape that belongs to one object alone.
+`make_shape_private` flattens the chain into a standalone shape and leaves it
+out of the transition table, which is how `seal`, `freeze`, and per-property
+flag edits avoid leaking into every object sharing the shape.
+
+One optimization is worth calling out because it changes the complexity of
+ordinary reads. `has_nondefault_flags` is set the moment any non-default
+property is installed and never cleared. While it is false, `get_prop_flags`
+returns the default descriptor in O(1) instead of walking a shape chain that,
+for a dictionary-mode object, is one node deep per property.
+
+### Inline caches
+
+Three caches sit above property lookup:
+
+- **`ICEntry`**, one per `GETPROP`/`PUTPROP` site, holding the last resolved
+  shape, index, and a direct pointer to the value. A hit requires the shape to
+  match and the owner's `prop_alloc` to be unchanged, which is one pointer
+  comparison.
+- **`VarICEntry`**, one per `GETVAR`/`TYPEOFIDENT` site, caching the resolved
+  environment record so the scope-chain walk can be skipped.
+- **The megamorphic cache** on the heap, shared across all sites and keyed by
+  `(shape_id, key)`. It is a lossy single-slot table, so a collision simply
+  evicts, and it caches own properties only, since it cannot detect a change to
+  an intermediate prototype.
+
+### Bytecode
+
+The compiler emits fixed-width 32-bit instructions for a register machine. An
+8-bit opcode occupies the low byte, and the remaining 24 bits are read in one of
+five layouts: three 8-bit operands (`ABC`), an 8-bit `A` plus a 16-bit `BC`, an
+8-bit `A` plus a signed bias-encoded `sBx`, or a full 24-bit operand, signed or
+unsigned.
+
+A `CompiledFunction` is the immutable template many closures can share. It
+carries the instruction stream, the constant pool, templates for nested
+functions, the register budget, source metadata, and the inline-cache arrays,
+which run parallel to the instruction stream so `ic_entries[pc]` serves
+`code[pc]`.
+
+`FuncFlags` records what the compiler learned about the body, and several flags
+drive real fast paths. `needs_env` is the clearest: when it is false, the call
+path skips creating a function scope entirely and reuses the captured parent
+environment.
+
+### Environments
+
+A scope is an `EnvRecord`: a parent pointer, a bindings object, and two booleans
+marking whether it is declarative and whether it is a function boundary. Records
+come from a pool, since they are created and discarded constantly.
+
+Uninitialized `let` and `const` bindings hold a **TDZ sentinel**, encoded as
+`undefined` with a non-zero payload so it is distinguishable from real
+`undefined` without costing a tag. Reading one throws a `ReferenceError`.
+
+Assignment goes through `env_try_put_lex`, which walks the lexical chain once
+and returns what happened: updated, unbound and so the caller should try the var
+environment, a `const` violation, or a TDZ read.
+
 ## Memory: the heap, the collector, and strings
 
 Everything the engine allocates at runtime belongs to a `Heap`. One heap holds
