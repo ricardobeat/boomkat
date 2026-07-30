@@ -232,20 +232,16 @@ int128); these belong in `SKIP_FILES` alongside the existing
 
 ## Execution
 
-Batch 1 (merged, validated): A (async finally/return), F (for-in shadowing),
-J (construct prototype fallback). Batch 2 partial (merged, validated):
-B (`await` identifier), I (`delete` grouping). Post-merge main: phase 2 → 1761
-pass / 0 fail / 2 unexpected CE (the two BigInt extremes, group M), phase 7 →
-1184 pass / 21 fail, phase 24 → 1227 pass / 4 fail; rosetta 100/100, golden
-bytecode 10/10. Group D+E is in flight: TDZ + completion-value fixes landed 10
-of 13 tests; `scope-head-lex-open/close` + `scope-body-lex-open` (closure
-capture of the head TDZ environment) remain.
+Batches 1-3 (merged, validated): A (async finally/return), F (for-in shadowing),
+J (construct prototype fallback), B (`await` identifier), I (`delete` grouping),
+D+E (for-in head TDZ + completion value — incl. closure capture of the head
+env), C (for-in/of comma RHS), G (nested block TDZ), K (async no-LineTerminator).
+Post-merge main: phase 2 → 1761 pass / 0 fail / 2 unexpected CE (the two BigInt
+extremes, group M), phase 7 → 1204 pass / 4 fail (H×3 + N), phase 24 → 1230
+pass / 1 fail (L); rosetta 100/100, golden bytecode 10/10.
 
-Remaining batches — agents in `.worktrees/agent-1|2|3`, each reset to current
-`main`, each scoped to one group:
+Final batch — agents in `.worktrees/agent-1|2|3`, each reset to current `main`:
 
-2. D+E (for-in head TDZ + completion value — same file, one agent) — IN FLIGHT, 3 scope tests left
-3. C (for-in comma head), G (nested TDZ), K (escaped `async` / no-LineTerminator)
 4. H (const assignment), L (await thenable), M (BigInt skip entries) + N (for-in deletion liveness)
 
 ## Verification
