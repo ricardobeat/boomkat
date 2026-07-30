@@ -637,11 +637,23 @@ fn void run_cmp_branch_fusion(Instruction* code, uint code_count, bool* jump_tar
         // Bridge correction (B23/B26/B28): a FORWARD IF_FALSE/IF_TRUE at the
         // branch's target is an `&&`/`||` continuation; extend the fused offset
         // past it. A backward continuation is a loop back-edge — not a bridge.
+        //
+        // The continuation MUST read rA — the very register this fusion stops
+        // materializing. That is the whole reason the correction exists: the
+        // bridge would otherwise re-test a stale compare result. A forward
+        // IF_FALSE/IF_TRUE on any OTHER register is an unrelated branch that
+        // merely happens to sit at the target, and skipping past it deletes a
+        // real instruction from the taken path. A backward branch landing on
+        // the first statement of a loop body is exactly that shape: `for (...)
+        // { if (j) ... }` puts an `IF_FALSE rJ` at the back-edge target, and
+        // treating it as a bridge moved the back-edge into the else arm, so
+        // every iteration after the first re-ran only that arm.
         int bridge_sbx = 0;
         uint bridge_slot = (uint)((int)i + 2 + sbx);
         if (bridge_slot < code_count) {
             Opcode bop = code[bridge_slot].op;
-            if (bop == Opcode.IF_FALSE || bop == Opcode.IF_TRUE) {
+            if ((bop == Opcode.IF_FALSE || bop == Opcode.IF_TRUE)
+                && (uint)code[bridge_slot].a == rA) {
                 int cand = code[bridge_slot].get_sbc();
                 if (cand > 0) { bridge_sbx = cand; }
             }
