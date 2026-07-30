@@ -224,6 +224,56 @@ fn void mod_register_star_export(CompModuleDef* mod, uint req_idx) {
 // Statement parsing
 // ============================================================================
 
+/// Parse and compile a single `Statement` in a position where the grammar
+/// admits `Statement` but NOT `StatementListItem` — the body of `if`/`else`,
+/// a loop, or a label.
+///
+/// Only a StatementList (a block, a function body, a case clause, the top
+/// level) may contain a Declaration. `if (x) let y = 1;`, `while (0) class C
+/// {}` and `for (;;) function f(){}` are therefore early SyntaxErrors, even
+/// though each body is a perfectly good StatementListItem. The engine has one
+/// `statement()` for both positions, so without this guard every declaration
+/// form was silently accepted as a bare body.
+///
+/// `let` is only treated as a declaration here when a binding actually
+/// follows, so the guard reports the accurate "declaration in body position"
+/// error for `if (x) let y = 1;` rather than a generic parse failure. Bare
+/// `let` as an identifier reference (`if (x) let;`) is rejected either way —
+/// `statement()` routes every LET token to var_declaration(), so this engine
+/// does not support `let` as an IdentifierReference at all.
+fn void? CompilerContext.statement_body(&self) {
+    switch (self.peek_type()) {
+        case TokenType.CONST:
+        case TokenType.CLASS:
+        case TokenType.FUNCTION:
+            return self.fail("declaration not allowed as a single-statement body")~;
+        case TokenType.LET:
+            // Distinguish the `let` declaration from the `let` identifier by
+            // the token that follows it.
+            if (self.peek2_starts_binding()) {
+                return self.fail("declaration not allowed as a single-statement body")~;
+            }
+        default:
+            break;
+    }
+    return self.statement();
+}
+
+/// Two-token lookahead for `let` in a single-statement body: true when the
+/// token after `let` can begin a BindingList, which is what makes the `let` a
+/// LexicalDeclaration rather than an identifier reference. Non-destructive:
+/// the consumed token is pushed back before returning.
+fn bool CompilerContext.peek2_starts_binding(&self) {
+    Token? cur_opt = self.advance();
+    if (catch _e = cur_opt) return false;
+    Token cur = cur_opt;
+    TokenType next_tt = self.peek_type();
+    self.pushback(cur);
+    return next_tt == TokenType.IDENTIFIER || next_tt == TokenType.LBRACKET ||
+           next_tt == TokenType.LBRACE || next_tt == TokenType.LET ||
+           next_tt == TokenType.YIELD || next_tt == TokenType.AWAIT;
+}
+
 /// Parse and compile a single statement, dispatching on token type.
 /// After the statement completes, reclaim_stmt_regs releases any temporaries
 /// stranded above the statement's base watermark by non-LIFO free patterns
@@ -1414,7 +1464,7 @@ fn void? CompilerContext.if_statement(&self) {
     self.free_reg(cond_reg);
 
     // Compile then-branch
-    self.statement()!;
+    self.statement_body()!;
 
     if (self.match(TokenType.ELSE)) {
         // Emit jump over else-branch
@@ -1422,7 +1472,7 @@ fn void? CompilerContext.if_statement(&self) {
         self.patch_jump(false_jump);
 
         // Compile else-branch
-        self.statement()!;
+        self.statement_body()!;
 
         self.patch_jump(end_jump);
     } else {
@@ -1578,7 +1628,7 @@ fn void? CompilerContext.while_statement(&self) {
     if (self.eval_mode) {
         self.emit_abc(Opcode.LDUNDEF, (uint)self.eval_acc_reg, 0, 0);
     }
-    self.statement()!;
+    self.statement_body()!;
 
     // Save post-body lexer state — outer parser resumes here after return.
     uint  _post_pos; uint  _post_line; uint  _post_col;
@@ -2259,7 +2309,7 @@ fn void? CompilerContext.for_statement(&self) {
                                                 DestructStoreMode.DECLARE, is_lexical, is_const);
                 }
 
-                self.statement()!;
+                self.statement_body()!;
 
                 // CreatePerIterationEnvironment.  Copy all leaf bindings before
                 // replacing the current environment so closures from this body
@@ -2427,7 +2477,7 @@ fn void? CompilerContext.for_statement(&self) {
                 // Compile body. Each body evaluation starts with an empty
                 // completion; an expression statement then replaces it.
                 if (self.eval_mode) self.emit_abc(Opcode.LDUNDEF, (uint)self.eval_acc_reg, 0, 0);
-                self.statement()!;
+                self.statement_body()!;
 
                 // CreatePerIterationEnvironment: copy the current binding into a
                 // fresh environment before the next NEXTFOR.  Closures created
@@ -2812,7 +2862,7 @@ fn void? CompilerContext.for_statement(&self) {
         self.emit_abc(Opcode.LDUNDEF, (uint)self.eval_acc_reg, 0, 0);
     }
 
-    self.statement()!;
+    self.statement_body()!;
 
     // Save the lexer state after the body — this is where the outer parser
     // must resume after for_statement returns.  Steps 6 and 7 will restore
@@ -3034,7 +3084,7 @@ fn void? CompilerContext.emit_bare_forin_loop(&self, char[] var_name, ushort obj
     self.free_reg(has_next);
 
     if (self.eval_mode) self.emit_abc(Opcode.LDUNDEF, (uint)self.eval_acc_reg, 0, 0);
-    self.statement()!;
+    self.statement_body()!;
 
     self.loop_stack[self.loop_depth - 1].continue_target = self.code_count;
     int back_offset = (int)loop_start - (int)self.code_count - 1;
@@ -3245,7 +3295,7 @@ fn void? CompilerContext.emit_forof(&self, ForOfHead head, ushort src_reg, uint 
     if (self.eval_mode) {
         self.emit_abc(Opcode.LDUNDEF, (uint)self.eval_acc_reg, 0, 0);
     }
-    self.statement()!;
+    self.statement_body()!;
 
     self.emit_simple(Opcode.ENDTRY);
     uint jump_over = self.emit_jump(Opcode.JUMP);
@@ -3488,7 +3538,7 @@ fn void? CompilerContext.emit_bare_forin_destruct_loop(&self, bool is_array_patt
                                     DestructStoreMode.DECLARE, false, false);
     }
 
-    self.statement()!;
+    self.statement_body()!;
 
     int back_offset = (int)loop_start - (int)self.code_count - 1;
     self.emit(bytecode::make_sabc(Opcode.JUMP, back_offset));
@@ -3538,7 +3588,7 @@ fn void? CompilerContext.emit_forin_loop_member(&self, ForLhsSnapshot lhs_snap, 
     self.emit_member_lhs_store(lhs_snap, key_reg)!;
 
     if (self.eval_mode) self.emit_abc(Opcode.LDUNDEF, (uint)self.eval_acc_reg, 0, 0);
-    self.statement()!;
+    self.statement_body()!;
 
     self.loop_stack[self.loop_depth - 1].continue_target = self.code_count;
     int back_offset = (int)loop_start - (int)self.code_count - 1;
@@ -3592,7 +3642,7 @@ fn void? CompilerContext.do_while_statement(&self) {
     self.push_loop(loop_start, true);  // temporary; we'll fix continue_target
 
     // Compile body
-    self.statement()!;
+    self.statement_body()!;
 
     // Fix the continue target to point to the condition
     if (self.loop_depth > 0) {
@@ -4216,13 +4266,13 @@ fn void? CompilerContext.labeled_statement(&self, char[] name) {
         // self.loop_depth (the current depth before the loop's push_loop).
         self.labels[label_idx].loop_index = self.loop_depth;
         self.labels[label_idx].is_loop = true;
-        self.statement()!;
+        self.statement_body()!;
     } else {
         // Non-loop label — push a virtual loop entry so break can target it.
         self.push_loop(self.code_count, false);
         self.labels[label_idx].loop_index = self.loop_depth - 1;
         self.labels[label_idx].is_loop = false;
-        self.statement()!;
+        self.statement_body()!;
         self.pop_loop(); // patches all breaks targeting this label
     }
 
