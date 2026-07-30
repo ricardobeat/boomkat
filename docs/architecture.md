@@ -386,6 +386,116 @@ fresh object in a raw local. The VM collects at backward jumps, which bounds
 allocation between collections in a loop, and throttles them with
 `bwd_gc_budget` so a tight loop does not thrash the collector.
 
+## Builtins and modules
+
+### One declaration per builtin
+
+Every native function has an entry in the `Builtin` enum, which carries its
+JavaScript name, its arity, and a pointer to the implementation as associated
+values. The dispatch table and the metadata lookup are both generated from that
+one declaration, so adding a builtin means adding one line.
+
+`builtin_fn_index` is a runtime-only field on the function object and is never
+written to bytecode or disk, which means members can be appended freely with no
+stable numbering to preserve.
+
+A builtin receives a `BuiltinContext`: the VM, the register window, the argument
+count, `this`, the result slot, and whether it was called as a constructor. Two
+fields exist for `Function.prototype.call` and `.apply`, which rewrite their own
+arguments and ask the CALL handler to re-dispatch rather than calling through
+themselves.
+
+### Lightfuncs
+
+Most builtins are reachable without a heap object at all. A **lightfunc** is a
+`TVal` whose payload is a function pointer, so `Math.max` costs no allocation.
+`.name`, `.length`, and `.prototype` are synthesized from the enum metadata on
+demand.
+
+Deleting one of those virtual properties has to be recorded somewhere, since
+there is no object to delete from. The heap keeps a bitset, three bits per
+builtin index, for exactly that.
+
+A lightfunc is promoted to a real `HObject` the moment code needs object
+identity: assigning an own property, using it as a `WeakMap` key, or anything
+else that must survive a round trip.
+
+### Promises and the job queue
+
+A promise's state, result, and reaction list live in its `HObjectExtra` union
+slot, not in its property table, so user code cannot reach them by name. The
+reaction chain links through a hidden property rather than `HeapHeader.next`,
+which threads the unrelated GC list.
+
+Reactions become microtasks in the heap's queue, drained after each top-level
+script and after `vm_call_fn_impl` returns. The drain walks forward with a cursor
+so jobs enqueued by a running handler execute in the same drain, which is the
+ordering the spec requires.
+
+Async functions attach to this machinery directly. `AWAIT` suspends the
+generator-style frame and schedules its resumption as a promise reaction, so the
+microtask queue drives every async function's continuation.
+
+### Iterators
+
+The iterator protocol appears in three layers. Ordinary iterators are objects
+with `next`; `%IteratorHelperPrototype%` backs the lazy `map`, `filter`, `take`,
+`drop`, and `flatMap` results; and `%AsyncFromSyncIteratorPrototype%` adapts a
+sync iterator for `for await`.
+
+The helpers are not generators here, though the spec describes them as such. Each
+is a small state machine driven off the underlying iterator's `next`, which
+avoids a generator frame per helper in a chain. Only `flatMap` needs extra state,
+for the inner iterator it is currently draining.
+
+### Typed arrays and buffers
+
+An `ArrayBuffer` owns a backing store and an intrusive list of the views over it,
+so detaching or resizing can find every view that must be updated. A detached
+buffer is marked with a sentinel byte length, which is distinct from a live
+zero-length one.
+
+Resizable buffers (ES2024) make length dynamic. A view created without an
+explicit length tracks its buffer, so its effective length is recomputed on every
+access rather than read from the view.
+
+The subtle part is ordering. Writing to a typed array coerces the value first,
+and that coercion can run user code that resizes or detaches the buffer, so
+bounds are rechecked after coercion rather than before.
+
+### Proxies
+
+A `Proxy` holds its target and handler, both nulled on revocation. Callable
+proxies dispatch through the ordinary builtin path by overlaying
+`builtin_fn_index` at the same offset the function struct uses.
+
+Because a proxy can appear anywhere on a prototype chain, the chain walkers in
+`hobject.c3` need to reach the trap machinery in the builtins layer, which would
+be a circular dependency. The heap holds function pointers, set at VM creation,
+that bridge the two.
+
+### The module system
+
+A module moves through compile, resolve, link, execute, and namespace
+construction, with `ModuleStatus` recording where it is. That status is also how
+cycles are handled: reaching a module already `LINKING` or `EVALUATING` means a
+cycle, and the recursion stops rather than looping.
+
+Linking is what makes exports live. Rather than copying values, an importing
+module's binding is an accessor that reads through to the exporting module's
+environment slot, so a later assignment in the exporter is visible to every
+importer, and reading before initialization still throws on TDZ.
+
+Top-level `await` makes evaluation asynchronous, so a module carries a persistent
+evaluation promise that settles once, whether the body finished synchronously or
+suspended. A module waiting on an async dependency chains onto that promise
+instead of polling, which is necessary because the wait often happens inside a
+microtask drain that cannot pump itself.
+
+Host integration goes through `ModuleHostHooks`: specifier resolution, source
+loading, and load and evaluation callbacks, so an embedder decides what a
+specifier means.
+
 ## Memory: the heap, the collector, and strings
 
 Everything the engine allocates at runtime belongs to a `Heap`. One heap holds
