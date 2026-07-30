@@ -114,6 +114,17 @@ fn bool fusion_abc_reads_reg(Instruction ins, uint reg) {
             // A = dst, B = src register, C = key-constant index.
             return (uint)ins.b == reg;
         default:
+            // KNOWN CONSERVATIVE GAP (deliberately not widened here): plain
+            // CALL and CALL_UNDEF_THIS also decode C as an argument COUNT, not
+            // a register (vm_calls.c3: `nargs = insn.c`), so a scratch register
+            // whose number happens to equal the argc is falsely reported live
+            // and its fusion is skipped. That is the SAFE direction (a missed
+            // optimization, never a miscompile), which is why it is left alone
+            // rather than folded into the carve-out above: adding an opcode
+            // here is a correctness-critical claim about that opcode's operand
+            // encoding, and each one needs its own verification against
+            // vm_calls.c3. CALL_S must never be added — it genuinely reads C as
+            // a register (`ds.regs_base + insn.c`).
             return (uint)ins.b == reg || (uint)ins.c == reg;
     }
 }
@@ -127,7 +138,17 @@ fn bool fusion_abc_reads_reg(Instruction ins, uint reg) {
 /// rule. Only ABC-format opcodes have plain register operands in b/c;
 /// A_BC/A_SBX/WIDE_* operands are indices or branch offsets, never register
 /// references, and must not be misread as one — see fusion_abc_reads_reg for
-/// the ABC forms whose b/c are likewise not registers.
+/// the ABC forms whose b/c are likewise not registers. The same applies to
+/// field A on the WIDE forms, and is enforced below.
+///
+/// CONSERVATISM DIRECTION (the property that makes this scan's imprecision
+/// safe, stated once because every caller depends on it): this is a linear
+/// scan over slots, NOT a CFG walk. It therefore keeps scanning straight
+/// through a branch into code that is not the fall-through successor. That
+/// can only report a register LIVE when a real CFG walk would prove it dead —
+/// i.e. it can only SUPPRESS a fusion, never permit an unsafe one. The
+/// opposite error (reporting a live register dead) is the one that
+/// miscompiles, and it is exactly what the WIDE-format guard below prevents.
 fn bool fusion_reg_live_from(Instruction* code, uint code_count, uint start, uint reg) {
     for (uint j = start; j < code_count; j++) {
         Instruction jns = code[j];
@@ -139,7 +160,20 @@ fn bool fusion_reg_live_from(Instruction* code, uint code_count, uint start, uin
         if (bytecode::get_op_format(jop) == OpFormat.ABC) {
             if (fusion_abc_reads_reg(jns, reg)) { return true; }
         }
-        if ((uint)jns.a == reg) { return false; }   // overwritten -> dead from here
+        // Only non-WIDE forms use A as a destination register. WIDE_SABC/
+        // WIDE_ABC (JUMP/BREAK/CONTINUE) pack a 24-bit branch offset across
+        // A/B/C, so their A field is the offset's LOW BYTE — reading it as a
+        // write to register `a` makes any `JUMP +N` look like an overwrite of
+        // register N and ends the scan early, reporting a still-live register
+        // as dead. That is the unsafe direction: it PERMITS a fusion whose
+        // consumer's value is read again at the branch target. Measured on
+        // test262, 212 scans stopped on exactly this alias (211 JUMP, 1 BREAK).
+        // cmp_result_live_from and run_move_gg_fusion's scan already carried
+        // this guard; this shared helper was the copy that omitted it.
+        OpFormat jfmt_w = bytecode::get_op_format(jop);
+        if (jfmt_w != OpFormat.WIDE_SABC && jfmt_w != OpFormat.WIDE_ABC) {
+            if ((uint)jns.a == reg) { return false; }   // overwritten -> dead from here
+        }
     }
     return false;
 }
@@ -648,6 +682,15 @@ fn void run_cmp_branch_fusion(Instruction* code, uint code_count, bool* jump_tar
         // { if (j) ... }` puts an `IF_FALSE rJ` at the back-edge target, and
         // treating it as a bridge moved the back-edge into the else arm, so
         // every iteration after the first re-ran only that arm.
+        //
+        // NEGATIVE-TARGET HANDLING (stated because it is load-bearing and not
+        // obvious from the expression): the target is computed in signed `int`
+        // and then cast to `uint`. A backward branch far enough to run off the
+        // front of the function yields a negative value, which wraps to a huge
+        // unsigned number and is rejected by the `< code_count` bound below —
+        // so no explicit `>= 0` test is needed, and adding one would be dead
+        // code. The same applies to `skip_tgt` further down. Do NOT change
+        // either to a signed comparison without re-deriving both bounds.
         int bridge_sbx = 0;
         uint bridge_slot = (uint)((int)i + 2 + sbx);
         if (bridge_slot < code_count) {
@@ -746,26 +789,10 @@ fn void run_move_gg_fusion(Instruction* code, uint code_count, bool* jump_target
 
         // rX must be dead after the pair: PUTGLOBAL_PRIM sets it undefined and
         // the fused op writes no register, so any later read would see garbage.
-        // Scan forward from i+2 until rX is written (dead) or read (live).
-        bool rX_live = false;
-        for (uint j = i + 2; j < code_count; j++) {
-            Instruction jns = code[j];
-            Opcode jop = jns.op;
-            if (jop == Opcode.IF_TRUE || jop == Opcode.IF_FALSE) {
-                if ((uint)jns.a == rX) { rX_live = true; break; }
-                continue;
-            }
-            OpFormat jfmt = bytecode::get_op_format(jop);
-            if (jfmt == OpFormat.ABC) {
-                if (fusion_abc_reads_reg(jns, rX)) { rX_live = true; break; }
-            }
-            // A write to rX in field A (non-wide forms use A as destination)
-            // ends the scan: rX is redefined before any read, hence dead.
-            if (jfmt != OpFormat.WIDE_SABC && jfmt != OpFormat.WIDE_ABC) {
-                if ((uint)jns.a == rX) { break; }
-            }
-        }
-        if (rX_live) { continue; }
+        // Uses the shared scan (which owns the WIDE-format A-is-not-a-register
+        // rule) rather than a private copy — a hand-copied liveness scan here
+        // is exactly how the shared helper came to be missing that guard.
+        if (fusion_reg_live_from(code, code_count, i + 2, rX)) { continue; }
 
         uint dst_name = code[i + 1].get_bc();   // D — destination global
         uint src_name = code[i].get_bc();        // S — source global
