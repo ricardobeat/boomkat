@@ -75,10 +75,18 @@ fn ushort CompilerContext.declare_var(&self, char[] name, ScopeKind kind) {
         // (plan 045; the pre_scan_captures pass fills the capture set).
         bool captured = !self.is_global && kind != SCOPEMARK
                      && self.is_captured_name(name);
+        // A `let`/`const` enters its temporal dead zone the moment the binding
+        // is declared: any read before the declaration's `PUTLEX`/`PUTLEX_C`
+        // emits must throw ReferenceError.  Marking the entry here forces
+        // `resolve_var` to emit `GETVAR` (which reads the TDZ sentinel that
+        // `block()` / `for_of` / `class` install via `INITTZ`).  Cleared by
+        // `emit_var_store` after the publishing `PUTLEX` runs.
+        bool is_tdz = kind == LET || kind == CONST;
         self.scope_stack[self.scope_depth].name = name;
         self.scope_stack[self.scope_depth].reg = reg;
         self.scope_stack[self.scope_depth].kind = kind;
         self.scope_stack[self.scope_depth].is_captured = captured;
+        self.scope_stack[self.scope_depth].is_tdz = is_tdz;
         if (captured) { self.has_captured_local = true; }
         self.scope_depth++;
     }
@@ -87,7 +95,8 @@ fn ushort CompilerContext.declare_var(&self, char[] name, ScopeKind kind) {
 
 /// Resolve a variable name to its register. Searches from innermost scope out.
 /// Returns SCOPE_ERROR if not found or if the variable is captured (must go
-/// through the environment chain instead of using a register).
+/// through the environment chain instead of using a register) or is in TDZ
+/// (must go through the env so the runtime TDZ sentinel throws ReferenceError).
 fn ushort? CompilerContext.resolve_var(&self, char[] name) {
     // Search from top of scope stack backwards
     if (self.scope_depth == 0) {
@@ -99,7 +108,11 @@ fn ushort? CompilerContext.resolve_var(&self, char[] name) {
         if (str_eq(self.scope_stack[i].name, name)) {
             // If captured (e.g. shadowed by a let/const in an inner scope),
             // force environment lookup so the VM walks the lex_env chain.
-            if (self.scope_stack[i].is_captured) {
+            // Same for a `let`/`const` in its temporal dead zone: register
+            // access would bypass the INITTZ sentinel and return `undefined`,
+            // violating §13.3.1 / §14.3.1.2 (TDZ must throw ReferenceError
+            // until the initialiser's PUTLEX/PUTLEX_C runs).
+            if (self.scope_stack[i].is_captured || self.scope_stack[i].is_tdz) {
                 return SCOPE_ERROR~;
             }
             return self.scope_stack[i].reg;

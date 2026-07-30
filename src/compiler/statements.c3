@@ -1153,6 +1153,25 @@ fn void CompilerContext.emit_var_store(&self, ushort reg, uint name_idx, bool is
         } else {
             self.emit_a_bc(Opcode.PUTLEX, (uint)reg, name_idx);
         }
+        // The PUTLEX/PUTLEX_C above publishes the binding's initial value to
+        // the lex_env and replaces the INITTZ sentinel — the TDZ period ends
+        // here.  Clear `is_tdz` on the inner-most matching scope_stack entry
+        // so subsequent reads inside the same scope can use the fast register
+        // path again.
+        if (name_idx < self.const_count) {
+            HString* hs = (HString*)self.constants[name_idx].get_heapptr();
+            if (hs != null) {
+                char[] bname = hs.get_data();
+                for (uint i = self.scope_depth; i > 0; i--) {
+                    uint idx = i - 1;
+                    if (self.scope_stack[idx].kind == SCOPEMARK) continue;
+                    if (str_eq(self.scope_stack[idx].name, bname)) {
+                        self.scope_stack[idx].is_tdz = false;
+                        break;
+                    }
+                }
+            }
+        }
     } else {
         // DECLVAR declares the binding in the immediate var_env (function-scoped).
         // PUTVAR (plain assignment) walks the chain to update existing bindings.
