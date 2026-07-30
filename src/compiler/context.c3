@@ -88,6 +88,17 @@ struct ScopeEntry {
     ushort reg;
     ScopeKind kind;
     bool is_captured;
+    /// True for a `let`/`const` binding that has been declared but whose
+    /// initialiser has not yet completed (i.e. the `PUTLEX`/`PUTLEX_C` that
+    /// publishes its value has not been emitted).  While true, the binding
+    /// is in its temporal dead zone: a read via `resolve_var` would return
+    /// the bare register (holding `undefined`) and bypass the runtime TDZ
+    /// sentinel installed in the block's lex_env by `INITTZ`.  Marking it
+    /// here forces `resolve_var` to return `SCOPE_ERROR` so the read is
+    /// emitted as `GETVAR` against the env, which throws ReferenceError
+    /// while the sentinel is still in place.  Cleared by `emit_var_store`
+    /// after the binding's `PUTLEX`/`PUTLEX_C` is emitted.
+    bool is_tdz;
 }
 
 struct LoopInfo {
