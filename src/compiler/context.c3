@@ -1115,6 +1115,15 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     // PUTLEX_C silently drops that flag and lets the assignment succeed.
     // INITTZ stays in the list (it only matters for the typeof special case
     // handled below).
+    //
+    // Invariant: elision must agree with resolve_var in scope.c3 — any binding
+    // whose reads are forced through the env (is_captured=true on its scope
+    // entry) MUST keep its env writes (DECLVAR/INITTZ/PUTLEX), because NOP'ing
+    // them would leave the env without the binding and cause ReferenceError on
+    // the next GETVAR. The has_captured_local flag is the indicator maintained
+    // for this check; sites that set is_captured=true manually (after
+    // declare_var) must also set has_captured_local=true. See the for-in head
+    // in statements.c3 (the iter-var entry) for the canonical example.
     {
         bool elide_has_params_needing_env = self.has_rest || self.default_count > 0;
         bool elide_needs_runtime_env = ((self.has_local_bindings || self.has_lexical_bindings || self.num_args > 0) && self.has_closures)
