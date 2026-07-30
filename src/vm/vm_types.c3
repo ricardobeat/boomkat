@@ -90,7 +90,25 @@ struct Activation {
     TVal this_binding;
     /// For construct calls: the originally created object (before constructor ran)
     HObject* new_target;
-    /// For async functions: the associated Promise (owned reference while activation is live)
+    /// For async functions/modules: the Promise the body settles on return.
+    ///
+    /// BORROW, not a hold, despite holding the promise's birth ref in practice:
+    /// no push site increfs into this slot and no pop site decrefs out of it.
+    /// What actually keeps the promise alive across an AWAIT suspension is the
+    /// caller's result register (vm_calls.c3 stores it with set_object, an
+    /// owning store) plus the reaction closures on the microtask queue. Do not
+    /// add a release on pop — the RET paths in vm_execute.c3 already account
+    /// for exactly three references (birth, result register, returned value).
+    ///
+    /// Because vm.activations[] is a pool reused WITHOUT zeroing, every push
+    /// must write this field. Every functional read is gated on ACT_FLAG_ASYNC,
+    /// but mark_activation_fields() is NOT: it marks the raw pointer on every
+    /// GC for every activation below activation_count. A stale value inherited
+    /// from a settled async frame at the same depth is a freed HObject*, and
+    /// marking it writes set_reachable() into freed memory and then traverses
+    /// its recycled prototype/property words — which ends as a "pointer being
+    /// freed was not allocated" abort inside sweep(). Push through
+    /// activation_begin() rather than assigning the field ad hoc.
     HObject* async_promise;
     /// For a generator/async body resume: the GeneratorState this activation is
     /// executing. Lets exception unwinding transition the generator to
@@ -104,8 +122,9 @@ struct Activation {
     /// Because vm.activations[] is a pool that is reused WITHOUT zeroing, every
     /// push must write this field. A stale non-null value left by an earlier
     /// frame makes the `walk.async_gen_state == gs` parent search in YIELD match
-    /// the wrong activation. Push through activation_begin() rather than
-    /// assigning the field ad hoc.
+    /// the wrong activation, and vm_complete_gen_on_unwind writes GEN_COMPLETED
+    /// through it on `!= null` alone. Push through activation_begin() rather
+    /// than assigning the field ad hoc.
     void* async_gen_state;
     /// Value stack pointer to function (borrowed; for lightfuncs)
     TVal tv_func;

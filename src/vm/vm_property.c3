@@ -2421,14 +2421,10 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                         obj_tv.set_object(hobj);
                                         caller_regs[callee_reg + 1] = obj_tv;
 
-                                        Activation* new_act = &vm.activations[vm.activation_count];
-                                        vm.activation_count++;
-                                        // Pooled activation slots are reused without zeroing; clear the
-                                        // generator borrow or this frame inherits the stale GeneratorState
-                                        // of whatever generator body last ran at this depth.
-                                        new_act.async_gen_state = null;
-                                        new_act.max_heap_reg = 0;
-                                        new_act.caller_valstack_top = vm.valstack_top;
+                                        // Setter invocation is never async and never a construct call:
+                                        // activation_begin clears async_promise, async_gen_state and
+                                        // new_target, which the pooled slot would otherwise inherit.
+                                        Activation* new_act = activation_begin(vm);
 
                                         EnvRecord* setter_var_env = (*setter_obj.extra_ptr()).func.var_env;
                                         if (try fv_s = env::env_create_function_scope(vm.heap, (*setter_obj.extra_ptr()).func.var_env)) { setter_var_env = fv_s; }
@@ -2444,8 +2440,6 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                         if (target.has_direct_eval()) {
                                             new_act.flags |= ACT_FLAG_DIRECT_EVAL;
                                         }
-                                        // Setter invocation is never a construct call.
-                                        new_act.new_target = null;
                                         vm.heap.tval_copy_ref(&new_act.this_binding, &obj_tv);
 
                                         TVal* new_regs = new_act.bottom;
@@ -2631,14 +2625,10 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                     obj_tv.set_object(acc.this_obj);
                                     caller_regs[callee_reg + 1] = obj_tv;
 
-                                    Activation* new_act = &vm.activations[vm.activation_count];
-                                    vm.activation_count++;
-                                    // Pooled activation slots are reused without zeroing; clear the
-                                    // generator borrow or this frame inherits the stale GeneratorState
-                                    // of whatever generator body last ran at this depth.
-                                    new_act.async_gen_state = null;
-                                    new_act.max_heap_reg = 0;
-                                    new_act.caller_valstack_top = vm.valstack_top;
+                                    // Setter invocation is never async and never a construct call:
+                                    // activation_begin clears async_promise, async_gen_state and
+                                    // new_target, which the pooled slot would otherwise inherit.
+                                    Activation* new_act = activation_begin(vm);
 
                                     EnvRecord* setter_var_env = (*setter_obj.extra_ptr()).func.var_env;
                                     if (try fv_s = env::env_create_function_scope(vm.heap, (*setter_obj.extra_ptr()).func.var_env)) { setter_var_env = fv_s; }
@@ -2654,8 +2644,6 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                     if (target.has_direct_eval()) {
                                         new_act.flags |= ACT_FLAG_DIRECT_EVAL;
                                     }
-                                    // Setter invocation is never a construct call.
-                                    new_act.new_target = null;
                                     vm.heap.tval_copy_ref(&new_act.this_binding, &obj_tv);
 
                                     TVal* new_regs = new_act.bottom;
