@@ -183,6 +183,97 @@ Assignment goes through `env_try_put_lex`, which walks the lexical chain once
 and returns what happened: updated, unbound and so the caller should try the var
 environment, a `const` violation, or a TDZ read.
 
+## From source to bytecode
+
+### The lexer
+
+The lexer is on-demand rather than a separate pass: the compiler asks for the
+next token as it parses. That matters because JavaScript cannot be tokenized
+context-free. Whether `/` starts a regexp or is division depends on what came
+before, and a `}` may close a block or resume a template literal.
+
+Automatic semicolon insertion needs line-break information, so the lexer records
+whether a newline preceded each token. It also tracks template-substitution
+nesting, since a `}` inside `${...}` is not a block close.
+
+Lookahead is the other reason the two stay coupled. Deciding whether `async (x)`
+begins an async arrow or a call to a function named `async` requires peeking past
+several tokens, and `tokens.c3` holds those speculative helpers. They restore
+lexer state on a miss, so the peek is invisible to the parse.
+
+### The compiler
+
+Parsing and code generation happen together in one pass. There is no AST: the
+parser emits bytecode as it recognizes each construct, which keeps compilation
+fast and memory use flat, and shapes everything else about the design.
+
+`CompilerContext` holds the state for one function being compiled: the code
+buffer, constant pool, register allocator, scope stack, and the flags that end up
+in `FuncFlags`. Nested functions get their own context, and the inner
+`CompiledFunction` is added to the parent's `inner_funcs`.
+
+Working without an AST does cost something. Some constructs are only recognizable
+after their opening tokens have been consumed and code emitted, so the compiler
+either patches emitted instructions later or re-parses from a saved lexer
+position. Arrow functions and destructuring assignment both use the second
+approach: `(a, b)` might be a parenthesized expression or an arrow's parameter
+list, and `[a, b] = c` is an array literal until the `=` arrives.
+
+### Registers and scopes
+
+Registers are allocated as a stack. Expressions take temporaries from the top and
+release them in reverse, while parameters and locals get permanent slots for the
+function's lifetime.
+
+Some sequences need a register freed in the middle of an expression, which the
+straightforward stack discipline cannot express without stranding higher slots.
+`regalloc.c3` documents where that happens and how those cases are handled.
+
+Scopes are a compile-time stack mirroring the runtime environment chain. The
+compiler resolves a name to a register where it can, and falls back to an
+environment lookup where it cannot. `needs_env` records the outcome for the whole
+function: when it stays false, the VM skips creating a scope on every call, which
+is one of the larger wins available to a one-pass compiler.
+
+### Classes and private names
+
+Classes compile to a constructor function plus installation code for methods,
+accessors, and fields. Instance fields become a hidden `__field_init__` function
+the constructor runs after `this` is bound, which is why `CompiledFunction`
+carries a direct pointer to it rather than an index.
+
+Private names (`#x`) are compile-time resolved to hidden symbols kept in a stack
+of `PrivateNameEntry` records scoped by class nesting. A class with any private
+member also stamps a *brand* on its instances, so `#x in obj` and private access
+on a foreign object can be checked without a property lookup.
+
+Direct `eval` complicates this: the spec gives eval the caller's
+PrivateEnvironment, but eval compiles against a fresh context. The enclosing
+function therefore snapshots its private-name table into
+`CompiledFunction.eval_private_names`, and `builtin_eval` passes it back in.
+
+### Optimization passes
+
+After a function body is compiled, `finish()` runs several passes over the
+instruction stream. Their order is deliberate and documented in `fusion.c3`:
+
+1. `GETVAR` + `INC`/`DEC` + `PUTVAR` fuses into `INC_VAR`/`DEC_VAR`.
+2. `LDCONST` + `GETPROP` fuses into `GETPROPC`.
+3. A comparison feeding a branch fuses into a jump form such as `JMP_LT`. Loose
+   `EQ` and `NEQ` are excluded, since they coerce and can throw.
+4. Copy propagation substitutes through `LDREG` moves. This must run before any
+   pass whose trigger and consumer can be separated by a parser-emitted move.
+5. Move elimination removes the moves copy propagation made dead.
+6. Peephole cleanup and NOP compaction close the stream up.
+
+Two facts make this safe. Every fusion consumes instructions the compiler itself
+emitted in a known shape, and the jump-aware passes maintain a whole-function
+bitset of jump targets, so no fusion can span a label another branch lands on.
+
+A separate pass, `prim_globals.c3`, proves that certain globals are never
+observed through `eval`, `with`, `delete`, or a getter, which lets global reads
+and writes compile to guard-free opcodes.
+
 ## The virtual machine
 
 ### The dispatch loop
