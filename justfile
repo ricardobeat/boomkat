@@ -127,6 +127,14 @@ test-local:
     @just build duktape_c3
     bash test/run_local.sh
 
+# Assert that exiting a for-in early (break/return/throw) costs no more peak
+# RSS than running it to exhaustion. Lives outside test-local because it needs
+# /usr/bin/time -l rather than an in-script assertion — the engine exposes no
+# GC trigger, so a stranded enumeration state is only visible as RSS growth.
+test-forin-rss:
+    @just build duktape_c3
+    bash scripts/check_forin_early_exit_rss.sh
+
 # ── Rosetta Code ─────────────────────────────────────────────────────────────
 
 # Run Rosetta Code tests on duktape-c3 (rebuilds first)

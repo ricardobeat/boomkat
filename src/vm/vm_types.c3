@@ -74,6 +74,17 @@ struct Activation {
     EnvRecord* lex_env;
     /// Current catcher chain (null if none)
     void* cat;
+    /// Live for-in enumeration states created by this frame (null if none).
+    ///
+    /// Every INITFOR pushes here and the frame owns them until it is popped,
+    /// so no abrupt exit out of a for-in body can strand a state. Head of a
+    /// heap::ForInState chain; typed as void* to match `cat`.
+    ///
+    /// Because vm.activations[] is a pool reused WITHOUT zeroing, every push
+    /// must clear this — a stale chain inherited from a returned frame at the
+    /// same depth would be double-freed on the next pop. Cleared by
+    /// activation_begin(); do not assign the field ad hoc.
+    void* forin;
 
     /// Next instruction to execute (points into bytecode; stable pointer)
     /// null for native calls
@@ -86,6 +97,16 @@ struct Activation {
     TVal* retval;
     /// Flags: strict, tailcalled, construct, etc.
     uint flags;
+    /// Highest register index that ever held a heap ref (object/buffer).
+    /// 0 means no heap refs in any register — decref_callee_regs can skip.
+    ///
+    /// Kept adjacent to `flags` so the two uints share one 8-byte slot: every
+    /// other field here is 8-byte aligned, so a lone uint costs 8 bytes. That
+    /// matters because vm.activations is Activation[MAX_CALLS] and three
+    /// re-entrant paths in vm_execute.c3 copy the whole array to a STACK
+    /// local, which the compiler caps at 64 Kb (= 512 * 128). Adding a field
+    /// without reclaiming padding blows that limit.
+    uint max_heap_reg;
     /// The 'this' binding for this activation (full TVal)
     TVal this_binding;
     /// For construct calls: the originally created object (before constructor ran)
@@ -128,9 +149,6 @@ struct Activation {
     void* async_gen_state;
     /// Value stack pointer to function (borrowed; for lightfuncs)
     TVal tv_func;
-    /// Highest register index that ever held a heap ref (object/buffer).
-    /// 0 means no heap refs in any register — decref_callee_regs can skip.
-    uint max_heap_reg;
     /// Caller's valstack_top saved at CALL time — restored on RET without recomputation.
     TVal* caller_valstack_top;
 }
@@ -200,32 +218,6 @@ struct Catcher {
     /// the try block's POP_LEX instructions, so CATCH/FINALLY restore this to
     /// keep the lex chain balanced and give the catch scope a clean base.
     void* saved_lex_env;
-}
-
-// ============================================================================
-// For-in enumeration state
-// ============================================================================
-
-/// Runtime state for a for-in loop iteration.  Created by INITFOR and
-/// consumed/freed by NEXTFOR.
-///
-/// `keys` holds a flat array of interned HString* pointers collected from
-/// the object and its prototype chain (omitting duplicates).  The array
-/// and the struct itself are plain-malloc'd and freed when the loop
-/// finishes (NEXTFOR returning false) or on catcher unwind.
-///
-/// `target_obj` is the original for-in target (a borrowed pointer to the
-/// heap-allocated HObject). It is temproot-pinned for the lifetime of the
-/// enumeration so the target stays reachable even when the loop body
-/// doesn't reference it, and so NEXTFOR can re-check property existence
-/// at yield time per EnumerateObjectProperties — a property deleted from
-/// the target before its turn is skipped (plan 062 group N). The temproot
-/// is cleared when the state is freed in NEXTFOR.
-struct ForInState {
-    HString** keys;    /// Array of interned property-name HString* pointers
-    HObject* target;   /// Borrowed pointer to the for-in target (NOT owned)
-    uint count;        /// Number of keys in the array
-    uint index;        /// Current position (next key to return)
 }
 
 // ============================================================================

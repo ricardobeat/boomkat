@@ -155,6 +155,18 @@ fn bool vm_reset(Vm* vm, Heap* heap) {
         vm.activations[i].var_env = null;
         vm.activations[i].lex_env = null;
         vm.activations[i].cat = null;
+        // Free any for-in states the interrupted run left behind. The target
+        // HObjects are already gone (heap.reset() ran before this), so the
+        // pin must NOT be cleared through them — release only the malloc'd
+        // key array and struct, which the heap reset does not own.
+        ForInState* fi = (ForInState*)vm.activations[i].forin;
+        while (fi != null) {
+            ForInState* fi_parent = fi.parent;
+            if (fi.keys != null) { vm.heap.free_func(vm.heap.heap_udata, fi.keys); }
+            vm.heap.free_func(vm.heap.heap_udata, fi);
+            fi = fi_parent;
+        }
+        vm.activations[i].forin = null;
         vm.activations[i].new_target = null;
     }
     vm.activation_count = 0;

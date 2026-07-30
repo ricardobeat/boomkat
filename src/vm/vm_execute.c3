@@ -381,6 +381,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
             act.var_env = cfn_var_env;
             act.lex_env = resolve_call_lex_env(vm, hobj, target, cfn_var_env);
             act.cat = null;
+            act.forin = null;
             act.curr_pc = target.code;
             act.async_promise = null;
             act.async_gen_state = null;
@@ -396,7 +397,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                     act.curr_pc = (Instruction*)gs_r.saved_pc;
                     act.var_env = (EnvRecord*)gs_r.var_env;
                     act.lex_env = (EnvRecord*)gs_r.lex_env;
-                    act.cat = gs_r.cat;
+                    forin_restore_from_gen(act, gs_r);
                     // Restore saved registers instead of initializing fresh
                     $if $feature(HEAP_VERIFY):
                         vm.heap.verify_roots("before_resume_restore");
@@ -999,6 +1000,7 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
     act.var_env = cfn_var_env;
     act.lex_env = resolve_call_lex_env(vm, ctor, target, cfn_var_env);
     act.cat = null;
+    act.forin = null;
     act.curr_pc = target.code;
     act.async_promise = null;
     act.async_gen_state = null;
@@ -1142,6 +1144,7 @@ fn TVal? Vm.execute(Vm* vm, CompiledFunction* func) {
     entry_act.var_env = vm.global_env;
     entry_act.lex_env = vm.global_lex_env != null ? vm.global_lex_env : vm.global_env;
     entry_act.cat = null;
+    entry_act.forin = null;
     entry_act.curr_pc = func.code;  // Points into bytecode
     entry_act.retval = null;
     entry_act.flags = 0;
@@ -1206,6 +1209,7 @@ fn TVal? Vm.execute_in_env(Vm* vm, CompiledFunction* func, EnvRecord* env) {
     entry_act.var_env = env;
     entry_act.lex_env = env;
     entry_act.cat = null;
+    entry_act.forin = null;
     entry_act.curr_pc = func.code;
     entry_act.retval = null;
     entry_act.flags = 0;
@@ -1282,6 +1286,7 @@ fn bool? Vm.execute_module_async(Vm* vm, CompiledFunction* func, EnvRecord* env,
     entry_act.var_env = env;
     entry_act.lex_env = env;
     entry_act.cat = null;
+    entry_act.forin = null;
     entry_act.curr_pc = func.code;
     entry_act.retval = null;
     entry_act.flags = ACT_FLAG_ASYNC;
@@ -1470,6 +1475,7 @@ fn bool? Vm.execute_module_nested(Vm* vm, CompiledFunction* func, EnvRecord* env
     // than on the global object. ESM modules pass their own combined env.
     act.lex_env = (env == vm.global_env && vm.global_lex_env != null) ? vm.global_lex_env : env;
     act.cat = null;
+    act.forin = null;
     act.curr_pc = func.code;
     act.async_gen_state = null;
     act.bottom = frame;

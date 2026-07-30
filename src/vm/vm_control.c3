@@ -83,6 +83,14 @@ fn void vm_complete_generator_return(Dispatch* ds, TVal* val) {
         vm.heap.tval_copy_ref(&vm.return_val, &wrapped_val);
     }
 
+    // The body is GEN_COMPLETED and can never resume, so anything it still
+    // owns is dead. Unlike a yield, this pop is final: a generator closed by
+    // .return() while suspended inside a for-in (or one whose body returns out
+    // of a for-in) would otherwise strand its enumeration state until the
+    // generator object itself is collected — which for a short-lived instance
+    // may be never. Only the for-in chain is drained here; the catcher chain
+    // is still aliased by gs.cat and freed with the generator state.
+    free_forin_chain(vm, ret_act);
     vm.activation_count--;
     // activation_count can hit 0 here when this generator body was entered
     // via the re-entrant call_fn path (e.g. YIELD_STAR calling a delegated
@@ -530,6 +538,19 @@ fn TVal? dispatch_iterator(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
     switch (op) {
         case Opcode.INITFOR: {
             // ra = object to enumerate, rb = iter_state (output)
+
+            // Re-entering the same for-in (an enclosing loop went around
+            // again after the body took an abrupt exit) finds the previous
+            // state still named by this very register. Release it before
+            // overwriting: this is what bounds memory for the extremely
+            // common `for (k in o) break;` idiom without the compiler having
+            // to emit anything at the break edge. Any state that survives
+            // until the frame pops is caught by free_forin_chain instead.
+            if (rb.is_pointer()) {
+                forin_chain_remove(vm, &ds.act.forin, (ForInState*)rb.get_heapptr());
+                rb.set_null();
+            }
+
             // null/undefined → skip loop (rb = null marker)
             if (ra.is_null() || ra.is_undefined()) {
                 rb.set_null();
@@ -588,8 +609,11 @@ fn TVal? dispatch_iterator(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
             }
             // Pin the target so the loop body — which may overwrite every
             // register — cannot accidentally let the GC collect the object
-            // we're iterating.  NEXTFOR clears this when the state is freed.
+            // we're iterating.  Released in forin_state_free.
             obj.as_header().set_temproot();
+            // Hand ownership to the activation; the register only borrows.
+            state.parent = (ForInState*)ds.act.forin;
+            ds.act.forin = (void*)state;
             rb.set_pointer(state);
             return (TVal){};
         }
@@ -628,12 +652,11 @@ fn TVal? dispatch_iterator(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 return (TVal){};
             }
 
-            // Exhausted — release the target pin and free the state.
-            if (state.target != null) {
-                state.target.as_header().clear_temproot();
-            }
-            vm.heap.free_func(vm.heap.heap_udata, state.keys);
-            vm.heap.free_func(vm.heap.heap_udata, state);
+            // Exhausted — unlink from the owning frame and free. Clearing the
+            // register too keeps a re-run of this loop's INITFOR from seeing a
+            // dangling pointer.
+            forin_chain_remove(vm, &ds.act.forin, state);
+            rc.set_null();
             rb.set_boolean(false);
             ra.set_undefined();
             break;
