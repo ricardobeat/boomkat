@@ -586,6 +586,10 @@ fn TVal? dispatch_iterator(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 rb.set_null();
                 break;
             }
+            // Pin the target so the loop body — which may overwrite every
+            // register — cannot accidentally let the GC collect the object
+            // we're iterating.  NEXTFOR clears this when the state is freed.
+            obj.as_header().set_temproot();
             rb.set_pointer(state);
             return (TVal){};
         }
@@ -594,22 +598,45 @@ fn TVal? dispatch_iterator(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
             // ra = iter_var (output key), rb = has_next (output bool)
             // rc = iter_state (input ForInState*)
             ForInState* state = (ForInState*)rc.get_heapptr();
-            if (state == null || state.index >= state.count) {
-                // No more keys — clean up and signal done
-                if (state != null) {
-                    vm.heap.free_func(vm.heap.heap_udata, state.keys);
-                    vm.heap.free_func(vm.heap.heap_udata, state);
-                }
+            if (state == null) {
                 rb.set_boolean(false);
                 ra.set_undefined();
                 break;
             }
 
-            // Return the next key
-            vm.heap.set_reg_string(ra, state.keys[state.index]);
-            state.index++;
-            rb.set_boolean(true);
-            return (TVal){};
+            // EnumerateObjectProperties / ForIn/OfBodyEvaluation semantics
+            // (plan 062 group N): a key whose property was deleted from the
+            // target before its turn must be skipped — and is *not* replaced
+            // by undefined, because the key is no longer addressable on the
+            // target.  Walk the pre-collected key list, advancing the index
+            // past any key that no longer resolves.  Properties added during
+            // enumeration are not visited (we only walk the snapshot),
+            // matching QuickJS / Duktape.  Exotic-keyed targets (TypedArray,
+            // String wrapper) and proxy targets get a dedicated existence
+            // path inside `forin_key_still_exists` because their integer
+            // indices are served by the exotic handler rather than the
+            // named-property table.
+            while (state.index < state.count) {
+                HString* k = state.keys[state.index];
+                state.index++;
+                if (state.target == null || !forin_key_still_exists(state.target, k)) {
+                    // Property was deleted before its turn — skip it.
+                    continue;
+                }
+                vm.heap.set_reg_string(ra, k);
+                rb.set_boolean(true);
+                return (TVal){};
+            }
+
+            // Exhausted — release the target pin and free the state.
+            if (state.target != null) {
+                state.target.as_header().clear_temproot();
+            }
+            vm.heap.free_func(vm.heap.heap_udata, state.keys);
+            vm.heap.free_func(vm.heap.heap_udata, state);
+            rb.set_boolean(false);
+            ra.set_undefined();
+            break;
         }
 
         default:

@@ -66,6 +66,49 @@ fn bool forin_mark_seen(Heap* h, HString*** seen, uint* seen_cnt, uint* seen_cap
     return true;
 }
 
+/// Returns true iff `key` still resolves to a property on `target` (own or
+/// inherited) at the moment of the call.  Used by NEXTFOR to honour the
+/// EnumerateObjectProperties liveness rule (plan 062 group N): a property
+/// deleted from the target before its turn is skipped, never yielded as
+/// undefined.  This is a re-check — the snapshot is fixed at INITFOR time.
+///
+/// Exotic-keyed targets get a dedicated branch because their integer-indexed
+/// properties are served by the exotic handler, not via the named-prop table
+/// or dense part that `has_prop_proto` consults.  Proxies bypass the check
+/// entirely — their keys are virtual (added/removed via traps) and re-
+/// invoking [[HasProperty]] could yield inconsistent results, matching
+/// Duktape's `check_existence = !IS_PROXY(enum_target)` bypass.
+fn bool forin_key_still_exists(HObject* target, HString* key) {
+    if (target == null || key == null) return false;
+    if (target.flags.exotic_proxyobj) return true;
+    if (target.has_prop_proto((void*)key)) return true;
+
+    // TypedArray exotic: integer-indexed elements are accessible via the
+    // exotic [[Get]] handler, not find_prop_idx / dense_arridx_lookup.  An
+    // index is live as long as the buffer is not detached and the index is
+    // within [[ArrayLength]] (mirrors IsValidIntegerIndex, ES2022 §10.4.5.9).
+    if (builtins::is_typed_array_class(target.get_class())) {
+        if (key.is_arridx()) {
+            return (uint)key.array_index() < builtins::ta_element_count(target);
+        }
+        return false;
+    }
+
+    // String exotic: indexed character properties (0..char_length-1) live
+    // only in the primitive string's content, not in the wrapper's props.
+    // Strings are immutable so this can't be deleted mid-iteration, but a
+    // caller asking for a non-arridx key that has_prop_proto already
+    // rejected is correctly reported as absent.
+    if (target.flags.exotic_stringobj && (*target.extra_ptr()).prim.primitive_value.is_string()) {
+        if (key.is_arridx()) {
+            HString* prim = (HString*)(*target.extra_ptr()).prim.primitive_value.get_heapptr();
+            return prim != null && (uint)key.array_index() < prim.char_length();
+        }
+    }
+
+    return false;
+}
+
 /// Collect all enumerable property keys from an object and its prototype
 /// chain, de-duplicated (own keys shadow prototype keys).
 ///
@@ -325,6 +368,7 @@ fn ForInState* collect_forin_keys(Vm* vm, HObject* obj) {
     ForInState* state = (ForInState*)h.alloc_func(h.heap_udata, ForInState::size);
     if (state == null) { h.free_func(h.heap_udata, keys); return null; }
     state.keys = keys;
+    state.target = obj;
     state.count = count;
     state.index = 0;
     return state;

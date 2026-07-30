@@ -184,8 +184,17 @@ struct Catcher {
 /// the object and its prototype chain (omitting duplicates).  The array
 /// and the struct itself are plain-malloc'd and freed when the loop
 /// finishes (NEXTFOR returning false) or on catcher unwind.
+///
+/// `target_obj` is the original for-in target (a borrowed pointer to the
+/// heap-allocated HObject). It is temproot-pinned for the lifetime of the
+/// enumeration so the target stays reachable even when the loop body
+/// doesn't reference it, and so NEXTFOR can re-check property existence
+/// at yield time per EnumerateObjectProperties — a property deleted from
+/// the target before its turn is skipped (plan 062 group N). The temproot
+/// is cleared when the state is freed in NEXTFOR.
 struct ForInState {
     HString** keys;    /// Array of interned property-name HString* pointers
+    HObject* target;   /// Borrowed pointer to the for-in target (NOT owned)
     uint count;        /// Number of keys in the array
     uint index;        /// Current position (next key to return)
 }

@@ -394,12 +394,12 @@ fn void promise_resolve_with_value(HObject* promise, TVal value, Heap* heap, voi
         return;
     }
 
-    // Steps 9-12: resolve.then lookup, callable check, and (if thenable)
-    // wrapper-promise creation + then(resolve, reject) invocation are all
-    // handled by promise_coerce_thenable. It signals a poisoned `.then`
-    // getter or a throwing then() call via heap.has_error; distinguish that
-    // from "not a thenable" (returns null with no error).
-    HObject*? wrapper_raw = promise_coerce_thenable(heap, value, vm);
+    // Steps 9-12: Get `then` and enqueue the PromiseResolveThenableJob. The
+    // resolving functions must target `promise` itself. Do not create an
+    // intermediate wrapper Promise and adopt it: that adds an extra reaction
+    // job between the thenable and the promise being resolved, which changes
+    // observable microtask ordering (notably for await on a thenable).
+    bool thenable_queued = promise_enqueue_thenable_job(heap, promise, value, vm);
     if (heap.has_error) {
         TVal err = heap.error_value;
         heap.has_error = false;
@@ -407,21 +407,11 @@ fn void promise_resolve_with_value(HObject* promise, TVal value, Heap* heap, voi
         promise_trigger_reactions(promise, heap, vm);
         return;
     }
-    if (catch err_c = wrapper_raw) {
-        // Unexpected fault treated as non-thenable fulfillment.
-        promise_settle(promise, PROMISE_FULFILLED, &value, heap);
-        promise_trigger_reactions(promise, heap, vm);
-        return;
-    }
-    if (wrapper_raw == null) {
-        // Step 10: not callable (or not an object) — fulfill with resolution.
-        promise_settle(promise, PROMISE_FULFILLED, &value, heap);
-        promise_trigger_reactions(promise, heap, vm);
-        return;
-    }
-    // Step 12: the wrapper adopts the thenable's eventual settlement; chain
-    // that into `promise`.
-    promise_adopt_native(heap, vm, wrapper_raw, promise);
+    if (thenable_queued) return;
+
+    // Step 10: not callable (or not an object) — fulfill with resolution.
+    promise_settle(promise, PROMISE_FULFILLED, &value, heap);
+    promise_trigger_reactions(promise, heap, vm);
 }
 
 /// PromiseResolve(%Promise%, value) — ES2017 §25.4.4.5, specialised for the
@@ -1978,102 +1968,34 @@ fn TVal promise_get_prop_thru_accessor(Heap* heap, void* vm, HObject* obj, HStri
     return heap.call_fn(vm, getter, null, 0, this_tv);
 }
 
-/// If `val` is a non-Promise object with a callable `.then` method, create a
-/// new Promise, call `thenable.then(resolve, reject)`, and return the wrapper
-/// Promise. Returns `null` for non-thenables, in which case the caller should
-/// await the original value as a non-thenable (no-op). If reading `.then`
-/// throws (poisoned accessor), heap.has_error is set and `null` is returned;
-/// callers must check heap.has_error to distinguish this from "not thenable".
-fn HObject*? promise_coerce_thenable(Heap* heap, TVal val, void* vm) {
-    if (!val.is_object() || val.get_heapptr() == null) return null;
+/// If `val` is an object with a callable `.then` method, enqueue a
+/// PromiseResolveThenableJob targeting `promise`. Returns true when a job was
+/// queued, or false for non-thenables / allocation failure. If reading `.then`
+/// throws (poisoned accessor), heap.has_error is set and false is returned;
+/// callers must check heap.has_error to distinguish that from "not thenable".
+fn bool promise_enqueue_thenable_job(Heap* heap, HObject* promise, TVal val, void* vm) {
+    if (!val.is_object() || val.get_heapptr() == null) return false;
     HObject* obj = (HObject*)val.get_heapptr();
 
     // Get .then property (through accessors — a poisoned `then` getter must
     // propagate its throw, not be silently swallowed).
     HString* then_key = builtin_intern_string(heap, "then");
-    if (then_key == null) return null;
+    if (then_key == null) return false;
     TVal then_method = promise_get_prop_thru_accessor(heap, vm, obj, then_key);
-    if (heap.has_error) return null;
+    if (heap.has_error) return false;
 
     bool then_callable = then_method.is_lightfunc() ||
         (then_method.is_object() && then_method.get_heapptr() != null &&
          ((HObject*)then_method.get_heapptr()).is_callable());
-    if (!then_callable) return null;
+    if (!then_callable || promise == null) return false;
 
-    // Create wrapper Promise
-    HObject*? wrapper_raw = promise_create(heap);
-    if (catch err = wrapper_raw) return null;
-    HObject* wrapper = wrapper_raw;
-
-    // Hidden property key used by resolve/reject callbacks
-    HString* promise_key = builtin_intern_string(heap, "\xFFpromise");
-    HString* cell_key = builtin_intern_string(heap, "\xFFcap_cell");
-
-    // Shared [[AlreadyResolved]] cell (ES6 §25.4.1.3 CreateResolvingFunctions
-    // step 2): must be marked true synchronously the moment EITHER resolve
-    // or reject is first called, even though resolving a thenable value
-    // defers the actual settlement to a queued job. Without this, a
-    // thenable.then() that calls resolve(anotherThenable) and then throws
-    // synchronously would incorrectly reject the wrapper via the throw,
-    // since the wrapper's promise state is still PENDING (the nested
-    // thenable's own job hasn't run yet) — see
-    // exception-after-resolve-in-thenable-job.js.
-    HObject* already_cell = promise_new_already_cell(heap);
-
-    // Create resolve callback
-    HObject*? resolve_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
-    if (catch err = resolve_raw) return null;
-    HObject* resolve_fn = resolve_raw;
-    resolve_fn.flags.callable = true;
-    resolve_fn.flags.constructable = false;
-    resolve_fn.prototype = heap.function_proto;
-    (*resolve_fn.extra_ptr()).func.builtin_fn_index = (int)Builtin.PROMISE_RESOLVE_CALLBACK.ordinal;
-    // Set length=1, name="" per ES2015 §25.4.1.3.2 (PromiseCapability records)
-    HString* len_key = builtin_intern_string(heap, "length");
-    if (len_key != null) {
-        TVal len_tv; len_tv.set_fastint(1);
-        resolve_fn.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NWC);
-    }
-    HString* name_key = builtin_intern_string(heap, "name");
-    if (name_key != null) {
-        TVal name_tv; name_tv.set_string(builtin_intern_string(heap, ""));
-        resolve_fn.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC);
-    }
-    if (promise_key != null) {
-        TVal wrapper_tv; wrapper_tv.set_object(wrapper);
-        resolve_fn.put_prop(promise_key, wrapper_tv, hobject::PROP_FLAGS_WEC);
-    }
-    if (cell_key != null && already_cell != null) {
-        TVal cell_tv; cell_tv.set_object(already_cell);
-        resolve_fn.put_prop(cell_key, cell_tv, hobject::PROP_FLAGS_WEC);
-    }
-    TVal resolve_tv; resolve_tv.set_object(resolve_fn);
-
-    // Create reject callback
-    HObject*? reject_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
-    if (catch err = reject_raw) return null;
-    HObject* reject_fn = reject_raw;
-    reject_fn.flags.callable = true;
-    reject_fn.flags.constructable = false;
-    reject_fn.prototype = heap.function_proto;
-    (*reject_fn.extra_ptr()).func.builtin_fn_index = (int)Builtin.PROMISE_REJECT_CALLBACK.ordinal;
-    if (len_key != null) {
-        TVal len_tv; len_tv.set_fastint(1);
-        reject_fn.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NWC);
-    }
-    if (name_key != null) {
-        TVal name_tv; name_tv.set_string(builtin_intern_string(heap, ""));
-        reject_fn.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC);
-    }
-    if (promise_key != null) {
-        TVal wrapper_tv; wrapper_tv.set_object(wrapper);
-        reject_fn.put_prop(promise_key, wrapper_tv, hobject::PROP_FLAGS_WEC);
-    }
-    if (cell_key != null && already_cell != null) {
-        TVal cell_tv2; cell_tv2.set_object(already_cell);
-        reject_fn.put_prop(cell_key, cell_tv2, hobject::PROP_FLAGS_WEC);
-    }
-    TVal reject_tv; reject_tv.set_object(reject_fn);
+    // Promise Resolve Functions are tied directly to the promise being
+    // resolved. promise_new_capability also supplies the shared
+    // [[AlreadyResolved]] cell required when a thenable calls both callbacks.
+    PromiseCapability cap = promise_new_capability(heap, promise);
+    if (cap.resolve_func == null || cap.reject_func == null) return false;
+    TVal resolve_tv; resolve_tv.set_object(cap.resolve_func);
+    TVal reject_tv; reject_tv.set_object(cap.reject_func);
 
     // Per ES6 §25.4.1.3.2 step 12 / §25.4.2.2 PromiseResolveThenableJob: the
     // `then.call(resolution, resolve, reject)` call must run as a queued job,
@@ -2081,7 +2003,7 @@ fn HObject*? promise_coerce_thenable(Heap* heap, TVal val, void* vm) {
     // (executor, resolve callback, etc.) — otherwise thenable.then() would
     // observably run before the resolving call returns.
     HObject*? job_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
-    if (catch err = job_raw) return null;
+    if (catch err = job_raw) return false;
     HObject* job = job_raw;
     job.flags.callable = true;
     job.flags.constructable = false;
@@ -2101,16 +2023,14 @@ fn HObject*? promise_coerce_thenable(Heap* heap, TVal val, void* vm) {
     TVal undef_downstream; undef_downstream.set_undefined();
     heap.enqueue_microtask(job_tv, undef_arg, undef_downstream);
 
-    return wrapper;
+    return true;
 }
 
 /// Microtask handler for PromiseResolveThenableJob (ES6 §25.4.2.2). Reads
 /// the deferred then/resolution/resolve/reject off ctx.callee_obj's hidden
 /// slots and performs `then.call(resolution, resolve, reject)`. If that call
-/// throws, invokes `reject(error)` (per spec step, unless already settled —
-/// the resolve/reject callbacks themselves enforce [[AlreadyResolved]] via
-/// the target promise's PENDING check, since no capability cell is used
-/// here, so a direct settle-if-pending on the wrapper is sufficient).
+/// throws, invokes `reject(error)`; the resolve/reject callbacks enforce their
+/// shared [[AlreadyResolved]] cell, so a throw after resolution is ignored.
 fn void builtin_promise_resolve_thenable_job(BuiltinContext* ctx) {
     Heap* heap = ctx.heap;
     ctx.result.set_undefined();

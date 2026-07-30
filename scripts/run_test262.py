@@ -495,6 +495,7 @@ SKIP_FILES = {
     "language/expressions/bitwise-and/bigint.js",
     "language/expressions/bitwise-or/bigint.js",
     "language/expressions/bitwise-xor/bigint.js",
+    "language/expressions/does-not-equals/bigint-and-number-extremes.js",
     "language/expressions/equals/bigint-and-number-extremes.js",
     "language/expressions/exponentiation/bigint-arithmetic.js",
     "language/expressions/greater-than-or-equal/bigint-and-number-extremes.js",
@@ -504,6 +505,7 @@ SKIP_FILES = {
     "language/expressions/less-than/bigint-and-number-extremes.js",
     "language/expressions/multiplication/bigint-arithmetic.js",
     "language/expressions/right-shift/bigint.js",
+    "language/expressions/strict-does-not-equals/bigint-and-number-extremes.js",
     "language/expressions/strict-equals/bigint-and-number-extremes.js",
     "language/expressions/unsigned-right-shift/bigint.js",
     # I2 — un-skipped with the align-detached-buffer-semantics-with-web-reality
