@@ -363,7 +363,9 @@ fn void? CompilerContext.statement(&self) {
 ///     contexts where the lexer still returns the keyword token, and
 ///     var_declaration deliberately accepts them. The strict-only engine
 ///     must always reject.
-fn bool is_restricted_name(char[] name) @inline {
+fn bool is_restricted_name(char[] name,
+                           bool in_async_or_module = true,
+                           bool in_generator_or_blocked_yield = true) @inline {
     switch (name.len) {
         case 3:
             // "let"
@@ -377,12 +379,18 @@ fn bool is_restricted_name(char[] name) @inline {
             break;
         case 5:
             // "await", "false", "yield"
+            // await is reserved only inside an async function/arrow/method, a
+            // module, or a class static block ([Await] grammar parameter);
+            // outside those scopes it is a plain IdentifierName and may appear
+            // as an assignment target. Same shape for yield, with [Yield]
+            // scoping. Pass false from callers that know the context is
+            // outside the reservation scope (assignment LHS, destructuring).
             if (name[0] == 'a' && name[1] == 'w' && name[2] == 'a' &&
-                name[3] == 'i' && name[4] == 't') return true;
+                name[3] == 'i' && name[4] == 't') return in_async_or_module;
             if (name[0] == 'f' && name[1] == 'a' && name[2] == 'l' &&
                 name[3] == 's' && name[4] == 'e') return true;
             if (name[0] == 'y' && name[1] == 'i' && name[2] == 'e' &&
-                name[3] == 'l' && name[4] == 'd') return true;
+                name[3] == 'l' && name[4] == 'd') return in_generator_or_blocked_yield;
             break;
         case 6:
             // "static"

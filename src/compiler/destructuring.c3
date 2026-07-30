@@ -907,7 +907,9 @@ fn void? CompilerContext.collect_obj_assign_binds(&self,
             bool is_member = self.parse_assign_target_lhs(&tgt_obj, &tgt_key, &tgt_name)!;
             if (!is_member) {
                 HString* hs = (HString*)self.constants[tgt_name].get_heapptr();
-                if (is_restricted_name(hs.get_data())) return COMPILE_ERROR~;
+                if (is_restricted_name(hs.get_data(),
+                                       self.is_async || self.is_module || self.forbid_await,
+                                       self.is_generator || self.forbid_yield)) return COMPILE_ERROR~;
             }
             if (*count < binds.len) {
                 binds[*count].name_idx         = tgt_name;
@@ -968,7 +970,9 @@ fn void? CompilerContext.collect_obj_assign_binds(&self,
         if (shorthand) {
             // `{a}` or `{a = d}` — identifier target named by the key.
             HString* hs = (HString*)self.constants[key_idx].get_heapptr();
-            if (is_restricted_name(hs.get_data())) return COMPILE_ERROR~;
+            if (is_restricted_name(hs.get_data(),
+                                   self.is_async || self.is_module || self.forbid_await,
+                                   self.is_generator || self.forbid_yield)) return COMPILE_ERROR~;
             if (*count < binds.len) {
                 binds[*count].name_idx    = key_idx;
                 binds[*count].key_idx     = key_idx;
@@ -1036,7 +1040,9 @@ fn void? CompilerContext.collect_obj_assign_binds(&self,
             uint tgt_name = tgt_bind.name_idx;
             if (!is_member) {
                 HString* hs = (HString*)self.constants[tgt_name].get_heapptr();
-                if (is_restricted_name(hs.get_data())) {
+                if (is_restricted_name(hs.get_data(),
+                                       self.is_async || self.is_module || self.forbid_await,
+                                       self.is_generator || self.forbid_yield)) {
                     if (deferred_key != null) mem::free(deferred_key);
                     return COMPILE_ERROR~;
                 }

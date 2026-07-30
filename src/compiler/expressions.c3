@@ -291,8 +291,15 @@ fn ushort? CompilerContext.assignment_expr(&self) {
     // SyntaxError. Only fires for a bare identifier target — member
     // expressions never reach here with last_lhs_name_len set
     // (save_lhs_ident_name is called only from identifier resolution).
+    // `await` and `yield` are reserved in this position only when the
+    // [Await]/[Yield] grammar parameters say so — i.e. inside an async
+    // function/arrow/method, a module, a class static block (for await) or
+    // any generator (for yield). Outside those scopes `await = 1` /
+    // `yield = 1` are perfectly legal simple assignments.
     if (!self.last_was_member && self.last_lhs_name_len > 0
-        && is_restricted_name(self.last_lhs_name_buf[:self.last_lhs_name_len])) {
+        && is_restricted_name(self.last_lhs_name_buf[:self.last_lhs_name_len],
+                              self.is_async || self.is_module || self.forbid_await,
+                              self.is_generator || self.forbid_yield)) {
         return self.fail("Assignment to eval or arguments is not allowed in strict mode")~;
     }
 
@@ -1217,8 +1224,12 @@ fn ushort? CompilerContext.unary_expr(&self) {
                 return COMPILE_ERROR~;
             }
             // ES5 §11.4.4 strict mode: ++eval / ++arguments is a SyntaxError.
+            // `await`/`yield` are reserved only in their respective async /
+            // generator contexts; see the matching check in assignment_expr.
             if (!self.last_was_member && self.last_lhs_name_len > 0
-                && is_restricted_name(self.last_lhs_name_buf[:self.last_lhs_name_len])) {
+                && is_restricted_name(self.last_lhs_name_buf[:self.last_lhs_name_len],
+                                      self.is_async || self.is_module || self.forbid_await,
+                                      self.is_generator || self.forbid_yield)) {
                 return self.fail("Assignment to eval or arguments is not allowed in strict mode")~;
             }
             // postfix_expr leaves self.last_was_getvar / self.last_was_member
@@ -1282,8 +1293,12 @@ fn ushort? CompilerContext.unary_expr(&self) {
                 return COMPILE_ERROR~;
             }
             // ES5 §11.4.5 strict mode: --eval / --arguments is a SyntaxError.
+            // `await`/`yield` are reserved only in their respective async /
+            // generator contexts; see the matching check in assignment_expr.
             if (!self.last_was_member && self.last_lhs_name_len > 0
-                && is_restricted_name(self.last_lhs_name_buf[:self.last_lhs_name_len])) {
+                && is_restricted_name(self.last_lhs_name_buf[:self.last_lhs_name_len],
+                                      self.is_async || self.is_module || self.forbid_await,
+                                      self.is_generator || self.forbid_yield)) {
                 return self.fail("Assignment to eval or arguments is not allowed in strict mode")~;
             }
             // See INC case above for why member takes priority over getvar.
@@ -1396,8 +1411,12 @@ fn ushort? CompilerContext.postfix_expr(&self) {
             return COMPILE_ERROR~;
         }
         // ES5 §11.3.1/§11.3.2 strict mode: eval++ / arguments-- is a SyntaxError.
+        // `await`/`yield` are reserved only in their respective async /
+        // generator contexts; see the matching check in assignment_expr.
         if (!self.last_was_member && self.last_lhs_name_len > 0
-            && is_restricted_name(self.last_lhs_name_buf[:self.last_lhs_name_len])) {
+            && is_restricted_name(self.last_lhs_name_buf[:self.last_lhs_name_len],
+                                  self.is_async || self.is_module || self.forbid_await,
+                                  self.is_generator || self.forbid_yield)) {
             return self.fail("Assignment to eval or arguments is not allowed in strict mode")~;
         }
     }
