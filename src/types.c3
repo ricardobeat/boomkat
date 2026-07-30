@@ -1,8 +1,6 @@
-/// Core types for the Duktape JavaScript engine.
-///
-/// This module defines the fundamental value representation (TVal),
-/// garbage-collected heap object headers (HeapHeader), portable type
-/// aliases, numeric constants, and engine fault codes.
+/// Core engine types: the tagged value representation (TVal), the heap object
+/// header every collected allocation starts with (HeapHeader), portable type
+/// aliases, numeric constants, and fault codes.
 module duktape::types;
 
 // ============================================================================
@@ -61,7 +59,7 @@ faultdef INTERNAL_ERROR;
 faultdef API_ERROR;
 
 // ============================================================================
-// TVal — Tagged value (the core JS value representation)
+// TVal, the tagged value representation
 // ============================================================================
 
 /// Discriminator for the payload stored inside a TVal.
@@ -72,7 +70,7 @@ enum TValTag : char {
     NULL_VAL,
     /// ECMAScript boolean (true / false).
     BOOLEAN,
-    /// IEEE 754 double – the general ECMAScript number type.
+    /// IEEE 754 double, the general ECMAScript number type.
     NUMBER,
     /// 48-bit fast integer optimisation path.
     FASTINT,
@@ -88,9 +86,8 @@ enum TValTag : char {
     LIGHTFUNC,
     /// Pointer to a heap-allocated BigInt (interned HString digit string).
     BIGINT,
-    /// Internal deletion sentinel for Set/Map entry tracking.
-    /// Not a valid ECMAScript value — used to mark array_part slots
-    /// that have been deleted, distinct from stored undefined values.
+    /// Internal sentinel marking a deleted array_part slot, which a stored
+    /// undefined must not be confused with. Never a valid ECMAScript value.
     DELETED,
 }
 
@@ -104,9 +101,8 @@ const long FASTINT_MAX =  140737488355327L;  //  2^47 - 1
 /// Default is true. Pass `-D NONANBOX` to c3c to disable.
 const bool USE_NANBOX = !$feature(NONANBOX);
 
-/// Toggle for strict environment access checking. When true, the VM will trap
-/// (via unreachable) if a function with needs_env=false tries to touch its own
-/// environment bindings. This helps catch bugs before register-local optimization.
+/// When true, the VM traps if a function with needs_env=false touches its own
+/// environment bindings, which catches bugs in the register-local optimization.
 /// Default is false. Pass `-D ENV_STRICT` to c3c to enable.
 const bool ENV_STRICT = $feature(ENV_STRICT);
 
@@ -154,7 +150,7 @@ macro ulong nanbox_get_payload(ulong v) {
     return v & NANBOX_PAYLOAD_MASK;
 }
 
-/// A tagged value – the universal currency of the value stack.
+/// A tagged value. Every register, property, and stack slot holds one.
 struct TVal @if(USE_NANBOX) {
     /// NaN-boxed: 8-byte representation.
     ulong bits;
@@ -172,7 +168,7 @@ struct TVal @if(!USE_NANBOX) {
 }
 
 // ---------------------------------------------------------------------------
-// TVal — tag query (for switch statements)
+// TVal: tag query
 // ---------------------------------------------------------------------------
 
 /// Returns the TValTag discriminator. In the NaN-box path, this decodes
@@ -200,7 +196,7 @@ $endif
 }
 
 // ---------------------------------------------------------------------------
-// TVal — raw bits (for hashing / constant-pool dedup)
+// TVal: raw bits, for hashing and constant-pool dedup
 // ---------------------------------------------------------------------------
 
 /// Returns a 64-bit representation of the TVal suitable for hashing.
@@ -225,7 +221,7 @@ $endif
 }
 
 // ---------------------------------------------------------------------------
-// TVal — type predicates
+// TVal: type predicates
 // ---------------------------------------------------------------------------
 
 macro bool TVal.is_undefined(&self) {
@@ -327,7 +323,8 @@ $endif
 
 macro bool TVal.is_nullish(&self) {
 $if USE_NANBOX:
-    // undefined=0xFFF3..., null=0xFFF4... — consecutive tags, both zero payload
+    // UNDEFINED (0xFFF3) and NULL_VAL (0xFFF4) are consecutive tags, and both
+    // carry a zero payload, so one range check covers them.
     ulong tag = self.bits >> 48;
     return tag >= TAG_UNDEFINED && tag <= TAG_NULL_VAL && (self.bits & NANBOX_PAYLOAD_MASK) == 0;
 $else
@@ -362,7 +359,7 @@ macro void TVal.set_temproot(&self) {
 }
 
 // ---------------------------------------------------------------------------
-// TVal — getters
+// TVal: getters
 // ---------------------------------------------------------------------------
 
 macro bool TVal.get_boolean(&self) {
@@ -414,11 +411,11 @@ $else
 $endif
 }
 
-/// Single-branch combined FASTINT check for two TVal pointers.
-/// In the NaN-box build: XORing each value's top 16 bits with TAG_FASTINT
-/// yields zero iff that value IS a FASTINT; ORing the two results means the
-/// OR is zero iff BOTH are FASTINTs — one branch, no sequential dependency.
-/// Falls back to two is_fastint() calls in the non-NaN-box build.
+/// True when both values are FASTINTs, in one branch.
+/// In the NaN-box build, XORing a value's top 16 bits with TAG_FASTINT gives
+/// zero exactly when it is a FASTINT, so ORing the two results is zero only
+/// when both are, with no sequential dependency between them. The non-NaN-box
+/// build falls back to two is_fastint() calls.
 macro bool both_fastint(TVal* b, TVal* c) {
 $if USE_NANBOX:
     return (((b.bits ^ (TAG_FASTINT << 48)) | (c.bits ^ (TAG_FASTINT << 48))) >> 48) == 0;
@@ -427,20 +424,17 @@ $else
 $endif
 }
 
-/// Single-branch combined "is either value heap-allocated" check for two
-/// TVal pointers. Used to skip both the incref and decref side of a
-/// property/array-slot overwrite in one test when neither the incoming nor
-/// the outgoing value needs refcounting (the overwhelmingly common case:
-/// numeric/boolean writes). Computes each value's own is_heap_allocated()
-/// result and ORs them — still two tag extractions, but one combined branch
-/// instead of two independent ones, and it lets callers skip the
-/// `_active_heap != null` load entirely when both sides are non-heap.
+/// True when either value is heap-allocated, in one branch.
+/// Overwriting a property or array slot with a number or boolean, which is the
+/// common case, needs neither an incref nor a decref. One test covers both
+/// sides, and callers can also skip the `_active_heap != null` load. The two tag
+/// extractions still happen, but they feed a single branch.
 macro bool either_heap_allocated(TVal* b, TVal* c) {
     return b.is_heap_allocated() || c.is_heap_allocated();
 }
 
 // ---------------------------------------------------------------------------
-// TVal — mutating setters
+// TVal: mutating setters
 // ---------------------------------------------------------------------------
 
 macro void TVal.set_undefined(&self) {
@@ -503,10 +497,9 @@ $else
 $endif
 }
 
-/// Store an integer result, boxing as a fastint when it fits the fastint range
-/// and falling back to a double otherwise.  This is the canonical way to write
-/// the result of integer arithmetic (ADD/SUB/ADDI/SUBI/...) — do not open-code
-/// the range check at call sites.
+/// Store an integer result as a fastint when it fits that range, and as a double
+/// otherwise. Integer arithmetic opcodes such as ADD, SUB, ADDI and SUBI write
+/// their results through here rather than open-coding the range check.
 macro void TVal.set_fastint_or_number(&self, long val) {
     if (val >= FASTINT_MIN && val <= FASTINT_MAX) {
         self.set_fastint(val);
@@ -574,7 +567,7 @@ $endif
 }
 
 // ---------------------------------------------------------------------------
-// TVal — static constructors
+// TVal: static constructors
 // ---------------------------------------------------------------------------
 
 macro TVal make_undefined() {
@@ -693,7 +686,7 @@ $endif
 }
 
 // ============================================================================
-// HeapHeader — common header for all GC-managed objects
+// HeapHeader, the common header on every collected allocation
 // ============================================================================
 
 /// Discriminator for the heap-allocated object families.
@@ -724,15 +717,12 @@ bitstruct HeapFlags : uint {
     bool  readonly     : 6;
 }
 
-/// Sentinel refcount marking a string whose reference count must never
-/// change: incref/decref on such a string are no-ops (see
-/// HeapHeader.incref / Heap.decref). Used for interned strings that live
-/// for the lifetime of the heap — builtin strings, well-known symbols, and
-/// the small-integer string cache — so that transient borrows from
-/// registers/TVals need no matching release. Only ever tested together
-/// with HeapHeader.is_string(): this bit pattern has no special meaning
-/// for objects/buffers/bigints, whose refcount can legitimately reach any
-/// value.
+/// Sentinel refcount marking a pinned string, on which incref and decref do
+/// nothing (see HeapHeader.incref and Heap.decref). It marks interned strings
+/// that live as long as the heap, meaning builtin strings, well-known symbols,
+/// and the small-integer cache, so a transient borrow into a register or TVal
+/// needs no matching release. Always test it together with is_string(): an
+/// object, buffer, or bigint can legitimately reach this refcount.
 const uint STRING_PINNED_REFCOUNT = 0x7FFF_FFFF;
 
 /// Every GC-managed object begins with this header.  The doubly-linked
@@ -746,7 +736,7 @@ struct HeapHeader {
 }
 
 // ---------------------------------------------------------------------------
-// HeapHeader — type queries
+// HeapHeader: type queries
 // ---------------------------------------------------------------------------
 
 /// Returns the HType stored in the flags word.
@@ -760,24 +750,18 @@ fn bool  HeapHeader.is_buffer(&self) { return self.flags.htype == HType.BUFFER; 
 /// Returns true when this header belongs to a BigInt box.
 fn bool  HeapHeader.is_bigint(&self) { return self.flags.htype == HType.BIGINT; }
 
-/// Increments the reference count of this heap object.
-/// Safe to call on null pointers (no-op).
-/// No-op on a pinned string (refcount == STRING_PINNED_REFCOUNT): its
-/// refcount is a fixed sentinel that must never be mutated by ordinary
-/// incref/decref traffic — callers that transiently borrow a pinned string
-/// (e.g. into a register or TVal) need no matching decref. Objects/buffers/
-/// bigints never use this sentinel, so is_string() is required to keep the
-/// check from colliding with a legitimately huge object refcount.
+/// Take a reference to this heap object. Pinned strings keep their sentinel
+/// refcount, so this does nothing for them. See STRING_PINNED_REFCOUNT.
 fn void HeapHeader.incref(&self) @inline {
-    // Refcount first: it is the field this function is about to write, so it
-    // is already the value in hand, and every non-pinned heap value fails
-    // this compare and skips the flags load entirely.
+    // The refcount is tested first because it is the field about to be written
+    // and so is already in hand. Every non-pinned value fails the compare and
+    // skips the flags load.
     if (self.refcount == STRING_PINNED_REFCOUNT && self.is_string()) return;
     self.refcount++;
 }
 
 // ---------------------------------------------------------------------------
-// HeapHeader — flag accessors
+// HeapHeader: flag accessors
 // ---------------------------------------------------------------------------
 
 /// Marks the object as reachable (used by the mark phase).
@@ -812,21 +796,17 @@ fn bool HeapHeader.is_finalized(&self)      { return self.flags.finalized; }
 fn void HeapHeader.set_readonly(&self)      { self.flags.readonly = true; }
 /// Clears the read-only flag.
 fn void HeapHeader.clear_readonly(&self)    { self.flags.readonly = false; }
-
-/// Pins a string's refcount at STRING_PINNED_REFCOUNT: incref/decref become
-/// no-ops and the sweep backstop never frees it. Used for interned strings
-/// that live for the lifetime of the heap (builtin strings, well-known
-/// symbols, the small-integer string cache) so that transient borrows from
-/// registers/TVals need no matching release. String-only — see
-/// STRING_PINNED_REFCOUNT.
-fn void HeapHeader.set_pinned(&self)        { self.refcount = STRING_PINNED_REFCOUNT; }
-/// Returns true when this is a string with a pinned refcount.
-fn bool HeapHeader.is_pinned(&self)         { return self.refcount == STRING_PINNED_REFCOUNT && self.is_string(); }
 /// Returns true when the object is read-only.
 fn bool HeapHeader.is_readonly(&self)       { return self.flags.readonly; }
 
+/// Pin a string's refcount, so incref and decref do nothing and no sweep ever
+/// frees it. Strings only; see STRING_PINNED_REFCOUNT for which ones and why.
+fn void HeapHeader.set_pinned(&self)        { self.refcount = STRING_PINNED_REFCOUNT; }
+/// Returns true when this is a string with a pinned refcount.
+fn bool HeapHeader.is_pinned(&self)         { return self.refcount == STRING_PINNED_REFCOUNT && self.is_string(); }
+
 // ---------------------------------------------------------------------------
-// HeapHeader — linked-list helpers
+// HeapHeader: linked-list helpers
 // ---------------------------------------------------------------------------
 
 /// Initialises the header for a freshly allocated heap object of the

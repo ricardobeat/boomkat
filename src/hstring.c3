@@ -1,16 +1,11 @@
-/// Duktape string object (HString) — immutable, interned, UTF-8 strings.
+/// HString, the representation behind every ECMAScript string value.
 ///
-/// HStrings are the internal representation for all ECMAScript string values.
-/// They are:
-///   - Immutable:  once created the byte content never changes.
-///   - Interned:   deduplicated through the heap's string table so pointer
-///                 equality implies string equality.
-///   - Variable-length: the raw UTF-8 bytes are stored immediately after the
-///                 struct header in a single contiguous allocation.
+/// The byte content never changes once the string is created, and the raw UTF-8
+/// bytes follow the struct header in one contiguous allocation. Interning
+/// through the heap's string table makes pointer equality mean string equality.
 ///
-/// This module defines the HString struct, its bitstruct flags, allocation
-/// helpers, a standalone hash function, and various UTF-8 / array-index
-/// utilities.
+/// This module holds the struct and its flags, the allocation helpers, a
+/// standalone hash function, and the UTF-8 and array-index utilities.
 module duktape::hstring;
 
 import duktape::types;
@@ -40,9 +35,9 @@ const uint REGISTRY_SLOT_NONE = (uint)-1;
 /// been computed for this string.
 const uint CHARLEN_NONE = (uint)-1;
 
-/// Sentinel used by `scan_backwards_n` to signal a back-walk that ran past
-/// the start of the string (malformed UTF-8 input with a "wasted" character
-/// length that outruns the byte sequence).
+/// Returned by `scan_backwards_n` when the back-walk ran past the start of the
+/// string, which happens on malformed UTF-8 whose character length outruns its
+/// byte sequence.
 const uint SCAN_UNDERFLOW = (uint)-1;
 
 /// Unicode replacement character (U+FFFD).
@@ -54,18 +49,18 @@ const uint SURROGATE_HIGH_END   = 0xDBFF;
 /// First/last UTF-16 low (trail) surrogate codepoint.
 const uint SURROGATE_LOW_START  = 0xDC00;
 const uint SURROGATE_LOW_END    = 0xDFFF;
-/// First astral (non-BMP) codepoint — requires a surrogate pair in UTF-16.
+/// First astral (non-BMP) codepoint, which UTF-16 needs a surrogate pair for.
 const uint ASTRAL_START         = 0x1_0000;
 
 // ============================================================================
-// HStringFlags — per-string bit-packed flags
+// HStringFlags, the per-string bit-packed flags
 // ============================================================================
 
 /// Bit-packed flags word for HString.
 ///
-/// Bits 0–6 are reserved for HeapHeader-compatible type/GC bits so that a
-/// raw cast from HString* to HeapHeader* still reads the correct htype and
-/// mark bits.  Bits 7+ carry string-specific metadata.
+/// Bits 0 to 6 mirror HeapHeader's type and GC bits, so a raw cast from
+/// HString* to HeapHeader* still reads the right htype and mark bits. Bits 7
+/// and up carry string-specific metadata.
 bitstruct HStringFlags : uint {
     /// HeapHeader-compatible type discriminator (always HType.STRING).
     HType htype             : 0..1;
@@ -103,38 +98,32 @@ bitstruct HStringFlags : uint {
 /// Header size in bytes, used to locate the inline string data.
 const usz HSTRING_HDR_SIZE = HString::size;
 
-/// A heap-allocated, immutable, interned string.
+/// A heap-allocated, immutable string.
 ///
-/// The raw UTF-8 bytes are stored immediately after the struct in the same
-/// allocation; use `get_data()` to obtain a slice over them.  A NUL
-/// terminator is always written past the last byte so the data pointer is
-/// safe to hand to C APIs that expect C-strings.
+/// The raw UTF-8 bytes sit immediately after the struct in the same allocation;
+/// `get_data()` returns a slice over them. A NUL terminator is always written
+/// past the last byte, so the data pointer can go straight to a C API.
 struct HString {
-    /// Combined HeapHeader-compatible + string-specific flags.
+    /// HeapHeader-compatible bits plus the string-specific ones.
     HStringFlags flags;
     uint         refcount;
-    /// Slot held by a non-interned string in the heap's large-string
-    /// registry, or `REGISTRY_SLOT_NONE` when the string is interned (the
-    /// string table tracks those instead) or registration was declined.
+    /// Slot this string holds in the heap's large-string registry, or
+    /// `REGISTRY_SLOT_NONE` for an interned string, which the string table
+    /// tracks instead, and for one whose registration was declined.
     uint registry_slot;
 
     // --- String-specific fields ---
 
-    /// Pre-computed hash (FNV-1a over the raw bytes).  Interned strings use
-    /// it to index the string table; non-interned strings still need it as
-    /// the fast-reject in `equals_hstring`, so it always holds the real
-    /// content hash.
+    /// FNV-1a hash of the raw bytes, always the real content hash. Interned
+    /// strings index the string table with it, and non-interned ones use it as
+    /// the fast reject in `equals_hstring`.
     uint hash;
     /// Byte length of the UTF-8 data (excluding the NUL terminator).
     uint blen;
-    /// Cached character (UTF-16 code unit) length, or `CHARLEN_NONE` when
-    /// not yet computed.  ASCII strings never populate this — `blen` is
-    /// already the char length for them.  Write-once: strings are
-    /// immutable, so the cache never needs invalidating.
-    /// Cached character (UTF-16 code unit) length, or `CHARLEN_NONE` when
-    /// not yet computed.  ASCII strings never populate this — `blen` is
-    /// already the char length for them.  Write-once: strings are
-    /// immutable, so the cache never needs invalidating.
+    /// Character length in UTF-16 code units, or `CHARLEN_NONE` before it has
+    /// been computed. ASCII strings leave it unset, since `blen` is already
+    /// their character length. Written once, because an immutable string's
+    /// cache never needs invalidating.
     uint cached_charlen;
     /// Cached character offset for non-ASCII sequential scanning.
     uint cached_char_offset;
@@ -163,13 +152,11 @@ macro char* HString.get_cstr(&self) {
 }
 
 // ============================================================================
-// HString — comparison
+// HString: comparison
 // ============================================================================
 
-/// Compares this string's raw bytes with `data`.
-///
-/// Because strings are interned, callers that already hold two HString
-/// pointers should prefer `equals_hstring` (pointer comparison).
+/// Compare this string's raw bytes with `data`. Callers holding two HString
+/// pointers should use `equals_hstring`, which can compare by pointer.
 fn bool HString.equals(&self, char[] data) {
     if (self.blen != (uint)data.len) {
         return false;
@@ -180,10 +167,10 @@ fn bool HString.equals(&self, char[] data) {
     return mem::equals(self.get_cstr(), data.ptr, data.len);
 }
 
-/// Compares two HStrings for equality.  When both are interned pointer
-/// equality is sufficient (the string table guarantees uniqueness).  When
-/// either is non-interned (e.g. a concatenation temporary), compare by
-/// content, using the pre-computed hash as a fast-reject.
+/// Compare two HStrings. The string table guarantees uniqueness, so two
+/// interned strings are equal exactly when their pointers match. If either is
+/// non-interned, such as a concatenation temporary, the comparison falls back
+/// to content, with the hash as a fast reject.
 fn bool HString.equals_hstring(&self, HString* other) {
     if (self == other) return true;
     if (!self.flags.is_interned || !other.flags.is_interned) {
@@ -216,7 +203,7 @@ fn int hstring_compare(HString* a, HString* b) {
 }
 
 // ============================================================================
-// HString — flag accessors
+// HString: flag accessors
 // ============================================================================
 
 /// Returns `true` when all bytes are in the ASCII range (< 0x80).
@@ -238,14 +225,12 @@ fn bool HString.has_extdata(&self)           { return self.flags.has_extdata; }
 fn bool HString.is_interned(&self)           { return self.flags.is_interned; }
 
 // ============================================================================
-// HString — lazy computed fields
+// HString: lazily computed fields
 // ============================================================================
 
-/// Compute the character (codepoint) length on demand.
-///
-/// For ASCII strings this equals `blen`.  For multi-byte UTF-8 the bytes
-/// are walked once to count codepoints and the result is cached — strings
-/// are immutable, so the cache never needs invalidating.
+/// Character length, computed on demand. For an ASCII string this is `blen`.
+/// Multi-byte UTF-8 is walked once to count codepoints, then cached, which is
+/// safe because the string is immutable.
 fn uint HString.char_length(&self) {
     if (self.flags.is_ascii) return self.blen;
     if (self.cached_charlen != CHARLEN_NONE) return self.cached_charlen;
@@ -268,7 +253,7 @@ fn uint HString.array_index(&self) {
 }
 
 // ============================================================================
-// HString — Unicode helpers
+// HString: Unicode helpers
 // ============================================================================
 
 /// Returns the Unicode codepoint at character index `char_idx`.
@@ -283,12 +268,9 @@ fn uint HString.char_at(&self, uint char_idx) {
     return self.char_at_unchecked(char_idx);
 }
 
-/// Same as `char_at`, but skips the bounds check against `char_length()`.
-///
-/// Only call this when the caller has already established
-/// `char_idx < char_length()` (or an equivalent bound) — otherwise the walk
-/// may run past the end of the string. Saves a redundant (possibly O(n))
-/// `char_length()` call when the caller already has the length in hand.
+/// `char_at` without the bounds check, for callers that have already
+/// established `char_idx < char_length()`. It saves a `char_length()` call that
+/// can itself be O(n). An unchecked index may walk past the end of the string.
 fn uint HString.char_at_unchecked(&self, uint char_idx) {
     char[] data = self.get_data();
 
@@ -305,24 +287,22 @@ fn uint HString.char_at_unchecked(&self, uint char_idx) {
     return decode_codepoint(data, byte_off);
 }
 
-/// Converts a character (UTF-16 code-unit) offset to a byte offset within the
+/// Convert a character offset, in UTF-16 code units, to a byte offset into the
 /// string's UTF-8 data.
 ///
-/// Strategy, in order:
-///   1. ASCII fast path — 1 byte per character.
-///   2. Exact cursor-cache hit — single field load.
-///   3. Pick the nearest scan origin among:
-///      * string start (forward scan)
-///      * string end   (backward scan — Duktape's scan-from-nearest-end trick)
-///      * cache entry  (forward *or* backward depending on direction)
-///      and walk the shortest distance. Each step skips continuation bytes
-///      (0x80..0xBF), matching `compute_charlen` and `utf8_seq_len`.
+/// Three cases, in order:
+///   1. ASCII, where one byte is one character.
+///   2. An exact hit on the cursor cache, which is a single field load.
+///   3. Otherwise, walk from whichever origin is nearest: the string start
+///      scanning forward, the string end scanning backward, or the cache entry
+///      in either direction. Each step skips continuation bytes (0x80 to 0xBF),
+///      matching `compute_charlen` and `utf8_seq_len`.
 ///
-/// Returns `self.blen` for `char_offset >= char_length()`. Strings are
-/// immutable so the cache is never invalidated — only updated.
+/// Returns `self.blen` when `char_offset >= char_length()`. The cache is only
+/// ever updated, never invalidated, since the string is immutable.
 fn uint HString.char_offset_to_byte_offset(&self, uint char_offset) {
     if (self.flags.is_ascii) {
-        // ASCII: 1 byte per character — trivial mapping.
+        // One byte per character.
         if (char_offset >= self.blen) {
             return self.blen;
         }
@@ -350,9 +330,9 @@ fn uint HString.char_offset_to_byte_offset(&self, uint char_offset) {
         return blen;
     }
 
-    // Compute distances from {start, end, cache} to the target. Use uint
-    // saturating subtraction; clen>char_offset and bidirectional compares
-    // make this well-defined.
+    // Distance from each candidate origin to the target. char_offset is below
+    // char_length here, and each subtraction picks its larger operand, so none
+    // of these underflow.
     uint dist_start = char_offset;
     uint dist_end = char_length - char_offset;
     uint dist_cache = char_offset > self.cached_char_offset
@@ -375,12 +355,11 @@ fn uint HString.char_offset_to_byte_offset(&self, uint char_offset) {
         byte_off = scan_backwards_n(data, blen, dist_end);
     }
 
-    // Defensive fallback: malformed UTF-8 may diverge (a lone continuation
-    // byte is treated as a 1-char unit by utf8_seq_len/compute_charlen but
-    // missed by the backward-scanner's "non-continuation byte" test). In
-    // practice this is rare — internal strings are normalized to CESU-8 at
-    // intern time — but if a scan runs past one end, fall back to a fresh
-    // forward walk that matches compute_charlen.
+    // Malformed UTF-8 can make the scanners disagree: utf8_seq_len and
+    // compute_charlen count a lone continuation byte as one character, while
+    // the backward scanner's non-continuation test skips it. Interning
+    // normalizes to CESU-8, so this is rare, but a scan that runs past either
+    // end falls back to a forward walk that matches compute_charlen.
     if (byte_off == SCAN_UNDERFLOW || byte_off > blen) {
         byte_off = 0;
         for (uint ci = 0; ci < char_offset && byte_off < blen; ci++) {
@@ -394,14 +373,13 @@ fn uint HString.char_offset_to_byte_offset(&self, uint char_offset) {
     return byte_off;
 }
 
-/// Advance the cursor forward by exactly `n` non-continuation bytes
-/// (UTF-16 code units under CESU-8), starting at `start`.
+/// Advance from `start` by exactly `n` non-continuation bytes, which are UTF-16
+/// code units under CESU-8.
 ///
-/// `start` must be a character-start byte offset (i.e. on a valid start byte
-/// or `0` / `blen`). Returns the byte offset of the (n+1)-th character, or
-/// `blen + 1` as an out-of-bounds sentinel when the scan ran past `blen`.
-/// Sentinel value chosen so a single `> blen` check distinguishes "scan
-/// overshoot" from "scanned to the very end" without aliasing either.
+/// `start` must be a character-start byte offset, meaning a valid start byte,
+/// `0`, or `blen`. Returns the byte offset of the (n+1)-th character, or
+/// `blen + 1` if the scan ran past `blen`. That sentinel lets one `> blen` check
+/// tell an overshoot apart from a scan that reached exactly the end.
 fn uint scan_forwards_n(char[] data, uint start, uint blen, uint n) @local {
     uint p = start;
     while (n > 0) {
@@ -414,12 +392,10 @@ fn uint scan_forwards_n(char[] data, uint start, uint blen, uint n) @local {
     return p;
 }
 
-/// Step the cursor backward by exactly `n` non-continuation bytes (UTF-16
-/// code units), starting at `start`. `start` must be a character-start byte
-/// offset. Returns the byte offset of the n-th previous character start, or
-/// `SCAN_UNDERFLOW` (UINT_MAX) if the walk ran past offset 0. The sentinel
-/// lies outside any plausible cache value (always <= blen) so the caller can
-/// detect it without a separate flag.
+/// Step back from `start` by exactly `n` non-continuation bytes. `start` must be
+/// a character-start byte offset. Returns the byte offset of the n-th previous
+/// character start, or `SCAN_UNDERFLOW` if the walk ran past offset 0. Since any
+/// real offset is at most `blen`, that sentinel needs no separate flag.
 fn uint scan_backwards_n(char[] data, uint start, uint n) @local {
     uint p = start;
     while (n > 0) {
@@ -435,17 +411,14 @@ fn uint scan_backwards_n(char[] data, uint start, uint n) @local {
 // Allocation
 // ============================================================================
 
-/// Allocates and initialises a new HString.
+/// Allocate and initialise an HString as one block of
+/// `HSTRING_HDR_SIZE + data.len + 1` bytes, copying `data` in after the header
+/// and appending a NUL terminator.
 ///
-/// The allocation is a single block of `HSTRING_HDR_SIZE + data.len + 1`
-/// bytes.  The raw bytes from `data` are copied immediately after the
-/// struct header and a NUL terminator is appended.
+/// `heap_ptr` is an opaque Heap pointer the caller casts back. Interning is the
+/// caller's job; nothing here touches the string table.
 ///
-/// `heap_ptr` is an opaque pointer to the Heap (cast back by the caller).
-/// This function does **not** insert the string into the string table —
-/// the caller is responsible for interning.
-///
-/// Returns the new HString or a fault on allocation failure.
+/// Returns the new HString, or a fault if allocation fails.
 fn HString*? hstring_alloc(void* heap_ptr, char[] data, uint hash) {
     usz total = HSTRING_HDR_SIZE + (usz)data.len + 1;  // +1 for NUL
 
@@ -459,29 +432,24 @@ fn HString*? hstring_alloc(void* heap_ptr, char[] data, uint hash) {
 
     HString* s = (HString*)raw;
 
-    // --- Header flags ---
     s.flags.htype = HType.STRING;
-
-    // --- Hash & lengths ---
     s.hash = hash;
     s.blen = (uint)data.len;
 
     // Unregistered until the caller decides the string needs a registry slot.
     s.registry_slot = REGISTRY_SLOT_NONE;
-    // Charlen is computed lazily on first char_length() call.
+    // char_length() fills this in on first use.
     s.cached_charlen = CHARLEN_NONE;
 
     bool ascii = check_is_ascii(data);
     s.flags.is_ascii = ascii;
 
-    // --- Array-index detection ---
     uint idx_val;
     if (is_valid_array_index(data, &idx_val)) {
         s.flags.is_arridx = true;
     }
 
-    // --- Symbol / hidden-symbol detection ---
-    // Symbols have a 0xFF first byte; hidden symbols have 0xFF 0xFF.
+    // A symbol starts with 0xFF, and a hidden symbol with 0xFF 0xFF.
     if (data.len > 0 && (uint)data[0] == 0xFF) {
         s.flags.is_symbol = true;
         if (data.len > 1 && (uint)data[1] == 0xFF) {
@@ -489,11 +457,10 @@ fn HString*? hstring_alloc(void* heap_ptr, char[] data, uint hash) {
         }
     }
 
-    // Reference count starts at 0 — the intern table is a weak reference.
-    // The first real user (TVal assignment, shape key, etc.) increfs.
+    // Starts at 0: the first owner increfs, whether that is str_table_insert
+    // taking the table's reference or a TVal assignment.
     s.refcount = 0;
 
-    // --- Copy bytes + NUL terminate ---
     char* dest = (char*)((usz)raw + HSTRING_HDR_SIZE);
     if (data.len > 0) {
         mem::copy(dest, data.ptr, (sz)(data.len));
@@ -509,8 +476,8 @@ fn HString*? hstring_alloc(void* heap_ptr, char[] data, uint hash) {
 
 /// Compute a 32-bit FNV-1a hash of the raw byte slice `data`.
 ///
-/// This is the non-seeded version suitable for use outside of a heap
-/// context (e.g., during bootstrap before the PRNG is initialised).
+/// Unseeded, for use outside a heap context such as bootstrap, before the
+/// heap's hash seed exists. Heap.hash_string is the seeded version.
 fn uint hash_string(char[] data) {
     uint h = FNV1A_OFFSET_BASIS;
     foreach (b : data) {
@@ -526,9 +493,9 @@ fn uint hash_string(char[] data) {
 
 /// Count the number of Unicode codepoints in a UTF-8 byte slice.
 ///
-/// Counts leading bytes only (bytes that are not continuation bytes
-/// 0x80..0xBF).  Malformed sequences are tolerated: each unexpected
-/// continuation byte is counted as a separate character.
+/// Only leading bytes count, meaning those outside the 0x80 to 0xBF
+/// continuation range. Malformed input is tolerated, with each unexpected
+/// continuation byte counting as its own character.
 fn uint compute_charlen(char[] data) {
     uint count = 0;
     uint i = 0;
@@ -553,8 +520,8 @@ fn bool check_is_ascii(char[] data) {
 
 /// Decode a single UTF-8 codepoint starting at `data[offset]`.
 ///
-/// Returns `UNICODE_REPLACEMENT` on malformed input.  Does not advance an
-/// offset — the caller is expected to know the sequence length.
+/// Returns `UNICODE_REPLACEMENT` on malformed input. The caller tracks the
+/// sequence length itself, since this advances no offset.
 fn uint decode_codepoint(char[] data, uint offset) {
     uint len = (uint)data.len;
     if (offset >= len) {
@@ -609,9 +576,9 @@ fn uint decode_codepoint(char[] data, uint offset) {
     return UNICODE_REPLACEMENT;
 }
 
-/// Encode a Unicode codepoint as UTF-8 into `buf` and return the number of
-/// bytes written (1–4).  Returns 0 if the codepoint is out of range or the
-/// buffer is too small.
+/// Encode a Unicode codepoint as UTF-8 into `buf`, returning how many bytes it
+/// wrote, from 1 to 4. Returns 0 for a codepoint out of range or a buffer too
+/// small to hold it.
 fn uint encode_codepoint(uint cp, char[] buf) {
     if (cp < 0x80) {
         if (buf.len < 1) { return 0; }
@@ -643,24 +610,23 @@ fn uint encode_codepoint(uint cp, char[] buf) {
 }
 
 // ============================================================================
-// UTF-16 code-unit / CESU-8 utilities
+// UTF-16 code units and CESU-8
 //
-// ECMAScript strings are sequences of UTF-16 code units (spec: "String
-// value" is a finite ordered sequence of 16-bit unsigned integers), not
-// Unicode codepoints. Astral codepoints (>= U+10000) are represented in
-// source/property/index semantics as a *pair* of surrogate code units.
+// An ECMAScript string is a sequence of UTF-16 code units, which the spec
+// defines as a finite ordered sequence of 16-bit unsigned integers, rather than
+// a sequence of Unicode codepoints. Source, property, and index semantics all
+// represent an astral codepoint (>= U+10000) as a pair of surrogate code units.
 //
-// Internally we still store bytes as UTF-8-shaped sequences (so ASCII stays
-// a fast 1-byte-per-unit path and non-BMP text stays readable to any tool
-// that tolerates CESU-8), but every codepoint >= U+10000 is decomposed into
-// its two surrogate halves *before* encoding, and each half is encoded as
-// an independent 3-byte UTF-8 sequence (this is exactly CESU-8/WTF-8).
-// Lone surrogates (unpaired half from \uD800-\uDFFF, e.g. via \u{D800}
-// escapes) round-trip the same way — spec strings permit them.
+// The bytes here are still UTF-8 shaped, which keeps ASCII on a fast
+// one-byte-per-unit path and leaves non-BMP text readable to anything that
+// tolerates CESU-8. Every codepoint >= U+10000 is split into its two surrogate
+// halves before encoding, and each half is encoded as its own 3-byte sequence.
+// That is exactly CESU-8, or WTF-8. Lone surrogates, such as an unpaired half
+// written as \u{D800}, round-trip the same way, and the spec permits them.
 //
-// char_length()/char_at()/char_offset_to_byte_offset() therefore count and
-// index by UTF-16 code unit: a 3-byte sequence in the D800-DFFF range
-// counts as one unit (a surrogate half), matching `"\u{1F600}".length === 2`.
+// char_length(), char_at(), and char_offset_to_byte_offset() therefore count and
+// index by UTF-16 code unit: a 3-byte sequence in the D800 to DFFF range is one
+// unit, a surrogate half, which is what makes `"\u{1F600}".length === 2`.
 // ============================================================================
 
 /// True when `cp` is a UTF-16 surrogate codepoint (high or low half).
@@ -713,12 +679,10 @@ fn uint encode_codepoint_cesu8(uint cp, char[] buf) {
     return 6;
 }
 
-/// Returns the byte length of the UTF-16 code unit sequence starting at
-/// `data[offset]`, under CESU-8 storage. Because every code unit — BMP or
-/// surrogate half — is encoded as a standalone 1-4 byte UTF-8 sequence,
-/// this is identical to `utf8_seq_len`; kept as a distinct name so call
-/// sites read as "advance one code unit" rather than "advance one UTF-8
-/// sequence".
+/// Byte length of the UTF-16 code unit starting at `data[offset]` in CESU-8
+/// storage. Every code unit, whether BMP or a surrogate half, is its own 1 to 4
+/// byte sequence, so this does what `utf8_seq_len` does. The separate name lets
+/// call sites read as "advance one code unit".
 fn uint utf16_unit_byte_len(char[] data, uint offset) @inline {
     return utf8_seq_len(data[offset]);
 }
@@ -745,11 +709,10 @@ fn uint advance_string_index_byte_len(char[] data, uint offset, bool unicode) {
     return seq_len;
 }
 
-/// True when `data` contains any raw 4-byte UTF-8 lead byte (0xF0-0xF7),
-/// i.e. an astral codepoint encoded as standard UTF-8 rather than CESU-8.
-/// Every internal string is expected to be CESU-8-canonical (see
-/// `normalize_to_cesu8`); this is the fast-path check callers use to skip
-/// normalization for the overwhelmingly common case (no 4-byte sequences).
+/// True when `data` holds a raw 4-byte UTF-8 lead byte (0xF0 to 0xF7), meaning
+/// an astral codepoint in standard UTF-8 rather than CESU-8. Internal strings
+/// are CESU-8 canonical (see `normalize_to_cesu8`), and this check lets callers
+/// skip normalization for the common case of no 4-byte sequences.
 fn bool has_raw_utf8_astral(char[] data) {
     foreach (b : data) {
         if (((uint)b & 0xF8) == 0xF0) return true;
@@ -761,17 +724,15 @@ fn bool has_raw_utf8_astral(char[] data) {
 /// astral sequence is decoded and re-emitted as a UTF-16 surrogate pair
 /// (two 3-byte sequences). All other bytes pass through unchanged.
 ///
-/// This is the single normalization chokepoint for string interning —
-/// without it, the same logical string could reach the intern table in two
-/// different byte encodings (a literal astral character typed directly in
-/// source vs. the same character via a `\u{...}` escape or
-/// `String.fromCodePoint`), breaking both `===` and property-key dedup
-/// since strings are compared/hashed by raw bytes. Mirrors Duktape's own
-/// "everything is CESU-8 at intern time" invariant (duk_heap_stringtable.c).
+/// Interning normalizes here and nowhere else. Strings are compared and hashed
+/// by raw bytes, so without this one logical string could reach the table in two
+/// encodings, a literal astral character in source against the same character
+/// from a `\u{...}` escape or `String.fromCodePoint`, breaking `===` and
+/// property-key dedup.
 ///
-/// Writes into `out` (caller-provided, must be large enough — worst case
-/// `data.len + data.len/4*2` since each 4-byte sequence grows to 6 bytes)
-/// and returns the number of bytes written.
+/// Returns the number of bytes written into `out`, which the caller supplies and
+/// which must hold `data.len + data.len/4*2` in the worst case, since each
+/// 4-byte sequence grows to 6.
 fn uint normalize_to_cesu8(char[] data, char[] out) {
     uint len = (uint)data.len;
     uint i = 0;
@@ -779,10 +740,9 @@ fn uint normalize_to_cesu8(char[] data, char[] out) {
     while (i < len) {
         uint b0 = (uint)data[i];
         if ((b0 & 0xF8) == 0xF0) {
-            // 4-byte lead — decode the astral codepoint and re-emit as a
-            // surrogate pair. Falls back to copying the raw byte on
-            // malformed/truncated input (matches decode_codepoint's
-            // tolerant behavior elsewhere).
+            // Decode the astral codepoint and re-emit it as a surrogate pair.
+            // Malformed or truncated input falls through to the raw byte copy
+            // below, matching how decode_codepoint tolerates it elsewhere.
             uint cp = decode_codepoint(data, i);
             if (cp >= ASTRAL_START && cp <= 0x10_FFFF) {
                 o += encode_codepoint_cesu8(cp, out[o..]);
@@ -801,15 +761,15 @@ fn uint normalize_to_cesu8(char[] data, char[] out) {
 /// `write_cesu8_as_utf8`.
 alias PutByteFn = fn void(char);
 
-/// Write CESU-8-canonical `data` to a byte sink as standard, valid UTF-8 —
-/// the inverse of `normalize_to_cesu8`. Surrogate pairs are recombined into
-/// their astral codepoint and re-encoded as a single 4-byte UTF-8 sequence;
-/// everything else passes through unchanged. Lone (unpaired) surrogates are
-/// replaced with U+FFFD, since standard UTF-8 cannot represent them.
+/// Write CESU-8-canonical `data` to a byte sink as standard UTF-8, inverting
+/// `normalize_to_cesu8`. Surrogate pairs recombine into their astral codepoint
+/// and re-encode as one 4-byte sequence, and everything else passes through.
+/// Unpaired surrogates become U+FFFD, which standard UTF-8 has no way to
+/// represent.
 ///
-/// Use this at every host-visible text boundary (print/console.log, file
-/// I/O, etc.) — internal storage is CESU-8, but nothing outside the engine
-/// should ever observe raw surrogate-half byte sequences.
+/// Every host-visible text boundary goes through here, including print,
+/// console.log, and file I/O, so nothing outside the engine sees a raw
+/// surrogate-half sequence.
 fn void write_cesu8_as_utf8(char[] data, PutByteFn put_byte_fn) {
     uint len = (uint)data.len;
     uint i = 0;
@@ -848,16 +808,14 @@ fn void write_cesu8_as_utf8(char[] data, PutByteFn put_byte_fn) {
 
 /// Determine whether `data` is a valid ECMAScript array index string.
 ///
-/// Valid array indices are the canonical decimal representations of
-/// integers in the range 0 .. 2^32-2 (i.e., "0" through "4294967294").
-/// Leading zeros are **not** allowed except for the string "0" itself.
+/// A valid index is the canonical decimal form of an integer from 0 to 2^32-2,
+/// so "0" through "4294967294". Only the string "0" may start with a zero.
 ///
-/// On success, stores the numeric index in `*out_index` and returns `true`.
+/// On success the numeric value goes to `*out_index`.
 fn bool is_valid_array_index(char[] data, uint* out_index) {
     uint len = (uint)data.len;
 
-    // Empty string or unreasonably long — not an index.
-    // Max is "4294967294" = 10 digits.
+    // The largest index, "4294967294", is 10 digits.
     if (len == 0 || len > 10) {
         return false;
     }
@@ -881,7 +839,7 @@ fn bool is_valid_array_index(char[] data, uint* out_index) {
         val = val * 10 + (ulong)d;
     }
 
-    // Must be ≤ MAX_ARRIDX (0xFFFF_FFFE = 4294967294).
+    // MAX_ARRIDX is 0xFFFF_FFFE, or 4294967294.
     if (val > (ulong)MAX_ARRIDX) {
         return false;
     }
@@ -902,12 +860,12 @@ fn uint utf8_seq_len(char lead) @inline {
     if ((b & 0xE0) == 0xC0) { return 2; }
     if ((b & 0xF0) == 0xE0) { return 3; }
     if ((b & 0xF8) == 0xF0) { return 4; }
-    return 1;  // unexpected continuation byte — skip one
+    return 1;  // an unexpected continuation byte advances one
 }
 
-/// Fast integer-to-buffer conversion — writes decimal digits into buf.
-/// Returns the number of bytes written (excluding NUL), or 0 on overflow.
-/// buf must have capacity >= 2 bytes; 21 bytes suffices for any int64.
+/// Write `val` into `buf` as decimal digits, returning how many bytes it wrote,
+/// or 0 if the buffer was too small. `cap` must be at least 2, and 21 bytes
+/// holds any int64.
 fn int int_to_buf(long val, char* buf, usz cap) {
     if (cap < 2) return 0;
     usz pos = cap;
