@@ -278,7 +278,16 @@ fn TVal? dispatch_exceptions(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                         if (val_pinned) {
                             vm.heap.decref_tval(&val);
                         }
-                        // Replace val with promise; its birth ref (refcount=1) acts as the pin
+                        // Replace val with the promise. set_object increfs, so
+                        // this is a genuine owned reference and val_pinned
+                        // stays accurate: the writeback below either transfers
+                        // it into callee_result (the val_pinned branch: decref
+                        // dst, raw write, clear the flag) or the trailing
+                        // `if (val_pinned) decref_tval(&val)` releases it.
+                        // The promise's birth ref is a separate reference held
+                        // by callee_act.async_promise, and vm_calls.c3
+                        // pre-installed one more into the result register; do
+                        // not conflate the three.
                         val.set_object(callee_act.async_promise);
                         val_pinned = true;
                     }
