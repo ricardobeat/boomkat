@@ -10,19 +10,20 @@ Details for the open items: `plans/062-core-language-coverage.md`.
 
 ## Core language bugs
 
-- [ ] `return` inside `finally` in an async function raises a VM error and allocates without bound
-- [ ] `await` as a plain identifier rejected as an invalid assignment target
-- [ ] `for-in`/`for-of` head does not accept a bare comma expression
-- [ ] `for-in` head lexical bindings are not in a TDZ while the head expression evaluates
-- [ ] `for-in` completion value starts from the preceding statement instead of `undefined`
-- [ ] `for-in` emits a prototype property shadowed by a non-enumerable own property
-- [ ] `let`/`const` self-reference TDZ missed for a block nested in a function body
-- [ ] Assignment to a `const` bound in a `for-in`/`for-of` body must throw TypeError
-- [ ] `delete (obj.prop)` rejected as an unqualified identifier
-- [ ] `[[Construct]]` with a non-object `.prototype` must fall back to `%Object.prototype%`
-- [ ] `[no LineTerminator here]` after `async` not enforced; escaped `async` treated as the keyword
-- [ ] `await` on a non-promise thenable fails under the harness — reproduce before fixing
-- [ ] Skip-list the two `bigint-and-number-extremes` tests (256-bit literals, fixed-width int128 by design)
+- [x] `return` inside `finally` in an async function raises a VM error and allocates without bound
+- [x] `await` as a plain identifier rejected as an invalid assignment target
+- [x] `for-in`/`for-of` head does not accept a bare comma expression
+- [x] `for-in` head lexical bindings are not in a TDZ while the head expression evaluates
+- [x] `for-in` completion value starts from the preceding statement instead of `undefined`
+- [x] `for-in` emits a prototype property shadowed by a non-enumerable own property
+- [x] `let`/`const` self-reference TDZ missed for a block nested in a function body
+- [x] Assignment to a `const` bound in a `for-in`/`for-of` body must throw TypeError
+- [x] `delete (obj.prop)` rejected as an unqualified identifier
+- [x] `[[Construct]]` with a non-object `.prototype` must fall back to `%Object.prototype%`
+- [x] `for-in` yields keys deleted during enumeration (`S12.6.4_A7_T2` — keys are pre-collected)
+- [x] `[no LineTerminator here]` after `async` not enforced; escaped `async` treated as the keyword
+- [x] `await` on a non-promise thenable fails under the harness — reproduce before fixing
+- [x] Skip-list the two `bigint-and-number-extremes` tests (256-bit literals, fixed-width int128 by design)
 
 ## Out of scope
 

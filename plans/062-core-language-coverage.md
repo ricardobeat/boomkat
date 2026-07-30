@@ -232,17 +232,23 @@ int128); these belong in `SKIP_FILES` alongside the existing
 
 ## Execution
 
-Batches 1-3 (merged, validated): A (async finally/return), F (for-in shadowing),
-J (construct prototype fallback), B (`await` identifier), I (`delete` grouping),
-D+E (for-in head TDZ + completion value — incl. closure capture of the head
-env), C (for-in/of comma RHS), G (nested block TDZ), K (async no-LineTerminator).
-Post-merge main: phase 2 → 1761 pass / 0 fail / 2 unexpected CE (the two BigInt
-extremes, group M), phase 7 → 1204 pass / 4 fail (H×3 + N), phase 24 → 1230
-pass / 1 fail (L); rosetta 100/100, golden bytecode 10/10.
+All batches merged and validated. A, B, C, D+E, F, G, H, I, J, K, L, M, N all
+landed on main. Final numbers: phase 2 → 1761 pass / 0 fail / 723 skip / 0
+unexpected CE, phase 7 → 1208 pass / 0 fail / 690 skip / 0 unexpected CE,
+phase 24 → 1231 pass / 0 fail / 252 skip / 0 unexpected CE; rosetta 100/100,
+golden bytecode 10/10.
 
-Final batch — agents in `.worktrees/agent-1|2|3`, each reset to current `main`:
+Notable fixes worth remembering:
 
-4. H (const assignment), L (await thenable), M (BigInt skip entries) + N (for-in deletion liveness)
+- H: register-resident-locals optimization NOP'd `PUTLEX_C`, dropping the
+  const non-writable flag in lex_env; register-only write sites now route
+  through the env when the LHS register is a known const (context.c3,
+  expressions.c3, scope.c3).
+- L: `await` of a thenable went through an intermediate wrapper promise +
+  extra adoption microtask, shifting resumption behind unrelated reactions;
+  the thenable job now settles the target promise directly (promise.c3).
+- N: for-in pre-snapshots keys; NEXTFOR now re-checks key existence at yield
+  time (vm_forin.c3, vm_control.c3).
 
 ## Verification
 
