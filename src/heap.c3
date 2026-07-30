@@ -2005,6 +2005,34 @@ fn void Heap.mark_tval(&self, TVal* v) {
     }
 }
 
+/**
+ * Mark the `bindings` HObject of every EnvRecord in a scope chain.
+ *
+ * A scope chain link is an EnvRecord, which is pool-allocated and never itself
+ * collected — but its `bindings` object is an ordinary heap node. Marking only
+ * the innermost link therefore roots one scope and leaves every enclosing one
+ * collectible: a closure suspended over `outer -> middle -> inner` survives a
+ * sweep with `inner.bindings` intact and `outer.bindings` freed, and the first
+ * GETVAR that walks past `inner` reads a recycled pool block (surfaces as
+ * HObject.get_shape <- find_prop_idx on the env walk).
+ *
+ * Ownership rule: whoever roots a scope chain roots the WHOLE chain. Callers
+ * must never mark `env.bindings` directly. mark_activation_envs (vm_core.c3)
+ * does the same walk for live frames; this is its object-graph counterpart for
+ * closures, generator objects and suspended GeneratorStates.
+ *
+ * `env_ptr` is an opaque EnvRecord* — heap.c3 cannot import env.c3 (env.c3
+ * imports heap.c3), so the typed field reads happen in hobject.c3.
+ */
+fn void Heap.mark_env_chain(&self, void* env_ptr) {
+    void* cur = env_ptr;
+    while (cur != null) {
+        HObject* bindings = hobject::env_record_bindings(cur);
+        if (bindings != null) { self.mark_hobject(bindings); }
+        cur = hobject::env_record_parent(cur);
+    }
+}
+
 /// Mark all references held by a suspended GeneratorState (used by both
 /// generator objects and async/await resume/reject builtin functions).
 fn void Heap.mark_generator_state(&self, GeneratorState* gs) {
@@ -2015,13 +2043,10 @@ fn void Heap.mark_generator_state(&self, GeneratorState* gs) {
             self.mark_tval(&gs.saved_regs[i]);
         }
     }
-    // Mark the suspended body's lexical/variable environments. gs.var_env/
-    // lex_env are opaque void* (heap.c3 cannot import env.c3 — circular),
-    // so the typed EnvRecord* dereference happens in hobject.c3 instead.
-    HObject* gs_var_bindings = hobject::env_record_bindings(gs.var_env);
-    if (gs_var_bindings != null) { self.mark_hobject(gs_var_bindings); }
-    HObject* gs_lex_bindings = hobject::env_record_bindings(gs.lex_env);
-    if (gs_lex_bindings != null) { self.mark_hobject(gs_lex_bindings); }
+    // Mark the suspended body's lexical/variable scope chains in full — the
+    // body resumes with these as its env and will read enclosing scopes.
+    self.mark_env_chain(gs.var_env);
+    self.mark_env_chain(gs.lex_env);
     // Mark TVal fields
     self.mark_tval(&gs.this_binding);
     self.mark_tval(&gs.resume_value);
@@ -2151,24 +2176,19 @@ fn void Heap.drain_gray(&self) {
                     self.mark_generator_state(gs);
                     break;
                 }
-                if ((*obj.extra_ptr()).func.var_env != null && (*obj.extra_ptr()).func.var_env.bindings != null) {
-                    self.mark_hobject((*obj.extra_ptr()).func.var_env.bindings);
-                }
-                if ((*obj.extra_ptr()).func.lex_env != null && (*obj.extra_ptr()).func.lex_env.bindings != null) {
-                    self.mark_hobject((*obj.extra_ptr()).func.lex_env.bindings);
-                }
+                // A closure's captured scope chain, in full: reading an outer
+                // variable after a sweep that only rooted the innermost link
+                // dereferences a recycled EnvRecord.bindings.
+                self.mark_env_chain((void*)(*obj.extra_ptr()).func.var_env);
+                self.mark_env_chain((void*)(*obj.extra_ptr()).func.lex_env);
                 self.mark_tval(&(*obj.extra_ptr()).func.captured_this);
                 if ((*obj.extra_ptr()).func.captured_new_target != null) {
                     self.mark_hobject((*obj.extra_ptr()).func.captured_new_target);
                 }
                 break;
             case ObjClass.GENERATOR:
-                if ((*obj.extra_ptr()).gen.var_env != null && (*obj.extra_ptr()).gen.var_env.bindings != null) {
-                    self.mark_hobject((*obj.extra_ptr()).gen.var_env.bindings);
-                }
-                if ((*obj.extra_ptr()).gen.lex_env != null && (*obj.extra_ptr()).gen.lex_env.bindings != null) {
-                    self.mark_hobject((*obj.extra_ptr()).gen.lex_env.bindings);
-                }
+                self.mark_env_chain((void*)(*obj.extra_ptr()).gen.var_env);
+                self.mark_env_chain((void*)(*obj.extra_ptr()).gen.lex_env);
                 // Mark GeneratorState fields for suspended generators
                 GeneratorState* gs = (GeneratorState*)(*obj.extra_ptr()).gen.generator_data;
                 self.mark_generator_state(gs);
