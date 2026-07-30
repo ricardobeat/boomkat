@@ -28,15 +28,15 @@ struct DestructIterState {
 }
 
 /// How emit_destruct_bindings syncs each leaf binding to the environment.
-/// PARAM_SYNC: function parameters — already declared in the env at call entry;
+/// PARAM_SYNC: function parameters, already declared in the env at call entry;
 ///   PUTVAR + GETVAR reload (PUTVAR clears the source register). The adjacent
 ///   same-reg/same-name pair is elided by the register-locals pass when the
 ///   function needs no runtime env.
-/// DECLARE: statement declarations (var/let/const [pattern] = rhs) — declare
+/// DECLARE: statement declarations (var/let/const [pattern] = rhs), declare
 ///   the binding via emit_var_store (DECLVAR / PUTLEX / PUTLEX_C).
-/// ASSIGN_TARGET: destructuring assignment ([a, b] = rhs) — register-resident
+/// ASSIGN_TARGET: destructuring assignment ([a, b] = rhs), register-resident
 ///   locals are written directly by the extraction (no env op); everything
-///   else gets a bare PUTVAR (no GETVAR reload — the pair would be
+///   else gets a bare PUTVAR (no GETVAR reload, the pair would be
 ///   misidentified as loop-var sync and elided, dropping genuine env stores).
 enum DestructStoreMode {
     PARAM_SYNC,
@@ -68,7 +68,7 @@ struct DestructBind {
     bool   is_computed_key;   // true = key comes from computed_key_reg, not key_idx
     ushort computed_key_reg;  // register holding the evaluated computed key
     // ASSIGN_TARGET only: the identifier target is env-resident (did not resolve
-    // to a reused local register), so the emitter must PUTVAR by name — this
+    // to a reused local register), so the emitter must PUTVAR by name, this
     // runs the VM's const-assignment check. Set by the assignment collectors;
     // decouples the store decision from is_local_var_reg register-number guessing
     // (a fresh temp can collide with reserved low registers like r0).
@@ -104,7 +104,7 @@ struct DestructBind {
     // Constant-pool index for the private name in the deferred CHK_BRAND.
     uint private_brand_name_c;
     // The deferred CHK_BRAND's object operand is member_obj_reg (below), NOT
-    // a separate field — member_obj_reg is the persistent, pre-scan-allocated
+    // a separate field, member_obj_reg is the persistent, pre-scan-allocated
     // copy of `this`, safe across the source property's GETPROP (which may
     // invoke a getter). The original parse-time temp register captured by
     // emit_private_access is NOT safe to hold onto past that point: a getter
@@ -152,7 +152,7 @@ fn void? CompilerContext.collect_obj_param_binds(&self,
     // and statement destructuring (`let`/`const`/`var`/`for-in`/`for-of`/
     // `export var`) where the default value is an AssignmentExpression and the
     // gate must NOT apply. The caller is responsible for setting in_formal_params
-    // correctly before invoking us — we no longer override it here, since that
+    // correctly before invoking us, we no longer override it here, since that
     // was over-eager and broke destructuring statements inside async/generator
     // functions (test262 module-code/top-level-await/syntax/export-var-*).
 
@@ -244,14 +244,14 @@ fn void? CompilerContext.collect_obj_param_binds(&self,
             continue;
         }
 
-        // Property name — per ES2015 §13.3.3.7, may be an IdentifierName
+        // Property name, per ES2015 §13.3.3.7, may be an IdentifierName
         // (incl. reserved words), a string literal, or a numeric literal.
         TokenType prop_key_tt = self.peek_type();
         char[] prop_key = self.destructuring_property_key()!;
         uint prop_key_idx = self.add_string_constant(prop_key);
 
         if (self.match(TokenType.COLON)) {
-            // {source: target} — target can be identifier or nested pattern
+            // {source: target}, target can be identifier or nested pattern
             if (self.check(TokenType.LBRACE) || self.check(TokenType.LBRACKET)) {
                 // Create a synthetic binding for the intermediate extraction
                 // e.g. {a: {x,y}} → synthetic for "a" extracts the nested object
@@ -291,10 +291,10 @@ fn void? CompilerContext.collect_obj_param_binds(&self,
                 }
             }
         } else {
-            // Shorthand: {a} — direct child of this destructuring param.
+            // Shorthand: {a}, direct child of this destructuring param.
             // Unlike {key: target}, the property key here IS the binding
             // identifier, so a class static block's forbid_await gate (ES2022
-            // §15.7.11: BindingIdentifier may not be `await`) applies —
+            // §15.7.11: BindingIdentifier may not be `await`) applies,
             // {key: target} form keeps `await` as a plain PropertyName,
             // which is always allowed (test262 static-init-await-reference
             // dstr variants use {await} directly, not {await: x}).
@@ -314,7 +314,7 @@ fn void? CompilerContext.collect_obj_param_binds(&self,
             }
         }
 
-        // Default: {a = expr} or {a: pattern = expr} — compile as a thunk
+        // Default: {a = expr} or {a: pattern = expr}, compile as a thunk
         // function like regular defaults. When the previous element was a
         // nested pattern, the default belongs to the synthetic binding.
         if (self.match(TokenType.ASSIGN)) {
@@ -341,7 +341,7 @@ fn void? CompilerContext.collect_obj_param_binds(&self,
 /// Parse an array destructuring pattern. The '[' token has already been
 /// consumed. Collects all leaf-level binding names into the provided arrays.
 ///
-/// Shared between formal-parameter destructuring and statement destructuring —
+/// Shared between formal-parameter destructuring and statement destructuring,
 /// the caller is responsible for setting `in_formal_params` correctly before
 /// invoking us (see `collect_obj_param_binds` for the rationale).
 fn void? CompilerContext.collect_arr_param_binds(&self,
@@ -461,7 +461,7 @@ fn void? CompilerContext.collect_arr_param_binds(&self,
             }
         }
 
-        // Default: [a = expr] or [pattern = expr] — compile as a thunk
+        // Default: [a = expr] or [pattern = expr], compile as a thunk
         // function like regular defaults. When the previous element was a
         // nested pattern, the default belongs to the synthetic binding.
         if (self.match(TokenType.ASSIGN)) {
@@ -546,7 +546,7 @@ fn void CompilerContext.emit_destruct_iter_setup(&self, ushort src_reg, Destruct
 /// Must be preceded by emit_destruct_iter_setup for the same iterator state.
 fn void CompilerContext.emit_destruct_iter_next(&self, DestructIterState* state, ushort dest_reg) {
     // IteratorBindingInitialization §13.3.3: once the iterator has reported
-    // done:true, [[done]] is latched — later elements bind undefined without
+    // done:true, [[done]] is latched, later elements bind undefined without
     // calling .next() again, and the trailing IteratorClose must be skipped.
     // We encode [[done]] by clearing method_reg to undefined (ITER_CLOSE
     // no-ops on non-objects), so first test it before calling .next().
@@ -560,7 +560,7 @@ fn void CompilerContext.emit_destruct_iter_next(&self, DestructIterState* state,
     self.emit_abc(Opcode.LDREG, (uint)state.callee_reg, (uint)state.next_reg, 0);
     self.emit_abc(Opcode.LDREG, (uint)state.callee_this_reg, (uint)state.method_reg, 0);
 
-    // Latch [[done]] across the protocol calls: §7.4.6/§7.4.7 — a throw from
+    // Latch [[done]] across the protocol calls: §7.4.6/§7.4.7, a throw from
     // .next() or from reading .done/.value sets [[Done]] before rethrowing,
     // so the enclosing catch must NOT call IteratorClose for it. Park the
     // iterator in save_reg and restore it only on a successful not-done step.
@@ -572,7 +572,7 @@ fn void CompilerContext.emit_destruct_iter_next(&self, DestructIterState* state,
     self.emit_abc(Opcode.CALL, (uint)result_reg, (uint)state.callee_reg, 0);
 
     // IteratorStep (§7.4.7) reads `.done` first and only reads `.value`
-    // (IteratorValue, §7.4.8) when not done — an observable ordering when
+    // (IteratorValue, §7.4.8) when not done, an observable ordering when
     // `.done`/`.value` are accessor properties (a `.value` getter must not
     // run when the iterator reports done:true).
     ushort key_reg = self.alloc_reg();
@@ -592,11 +592,11 @@ fn void CompilerContext.emit_destruct_iter_next(&self, DestructIterState* state,
     uint end_jump = self.emit_jump(Opcode.JUMP);
 
     // Exhausted: bind undefined (mark target also clears method_reg, which is
-    // already undefined on this path — harmless).
+    // already undefined on this path, harmless).
     self.patch_jump(exhausted_jump);
     self.emit_abc(Opcode.LDUNDEF, (uint)dest_reg, 0, 0);
     // Just-became-done: IteratorStep returns false without reading .value
-    // (§7.4.7), so bind undefined here too — dest_reg was never populated on
+    // (§7.4.7), so bind undefined here too, dest_reg was never populated on
     // this path since .value is now only read when not done.
     self.patch_jump(mark_jump);
     self.emit_abc(Opcode.LDUNDEF, (uint)dest_reg, 0, 0);
@@ -635,7 +635,7 @@ fn void CompilerContext.emit_object_rest(&self,
     ushort parent = binds[rest_di].parent_idx;
 
     // Build the excludedNames array: one element per explicit sibling key,
-    // evaluated/coerced to a property key (string or symbol) up front —
+    // evaluated/coerced to a property key (string or symbol) up front.
     // CopyDataProperties compares against these values, not raw expressions.
     ushort excl_reg = self.alloc_reg();
     self.emit_abc(Opcode.NEWARR, (uint)excl_reg, 0, 0);
@@ -721,7 +721,7 @@ fn void CompilerContext.emit_destruct_bindings(&self,
             binds[di].member_obj_reg  = self.alloc_persistent_reg();
             binds[di].member_prop_reg = self.alloc_persistent_reg();
             // Reserve a persistent slot for a possible private-field brand
-            // symbol too — we don't know yet whether the target is
+            // symbol too, we don't know yet whether the target is
             // `this.#x` until emit_deferred_target re-parses it, but the
             // register must be allocated NOW (below the source property's
             // upcoming GETPROP result register) so a getter invoked while
@@ -754,7 +754,7 @@ fn void CompilerContext.emit_destruct_bindings(&self,
     }
 
     for (uint di = 0; di < count; di++) {
-        // Resolve source register — either the argument slot or a parent group temp
+        // Resolve source register, either the argument slot or a parent group temp
         ushort src_reg;
         if (binds[di].parent_idx == 0xFFFF) {
             src_reg = binds[di].arg_idx;
@@ -894,7 +894,7 @@ fn void CompilerContext.emit_destruct_bindings(&self,
                 int back_offset = (int)collect_start - (int)self.code_count - 1;
                 self.emit(bytecode::make_sabc(Opcode.JUMP, back_offset));
                 self.patch_jump(done_jump);
-                // Rest consumed the iterator to done:true — latch [[done]] so
+                // Rest consumed the iterator to done:true, latch [[done]] so
                 // the trailing IteratorClose is skipped (§13.3.3.8 step 4.b).
                 self.emit_abc(Opcode.LDUNDEF, (uint)state.method_reg, 0, 0);
 
@@ -940,20 +940,20 @@ fn void CompilerContext.emit_destruct_bindings(&self,
                 self.code[skip_addr] = bytecode::make_a_sbx(Opcode.IF_TRUE, (uint)cmp_reg, skip_off);
             }
 
-            // REQUIRE_OBJ — TypeError if null/undefined nested target.
+            // REQUIRE_OBJ, TypeError if null/undefined nested target.
             // Skip for rest synthetics (always an array).
             if (binds[di].key_idx != 0xFFFF) {
                 self.emit_abc(Opcode.REQUIRE_OBJ, (uint)group_reg, 0, 0);
             }
         } else {
-            // Leaf binding — a real variable.
+            // Leaf binding, a real variable.
             // Member-expression assignment targets (ASSIGN_TARGET) pass 0xFFFF
             // here rather than a pre-allocated register: the caller cannot know
             // where the persistent member_obj_reg/member_prop_reg/computed_key_reg
             // will land (allocated in the pre-scan above), and GETPROP's accessor
             // getter call frame is placed AT the result register (reusing it and
-            // everything above), so bind_reg must be allocated *after* — i.e. at
-            // a higher register number than — any live persistent register or
+            // everything above), so bind_reg must be allocated *after*, i.e. at
+            // a higher register number than, any live persistent register or
             // the getter call would clobber it. Allocate it fresh here instead.
             ushort bind_reg = binding_regs[di];
             if (bind_reg == 0xFFFF) {
@@ -972,11 +972,11 @@ fn void CompilerContext.emit_destruct_bindings(&self,
                         self.emit_deferred_computed_key(&binds[di]);
                     }
                     // Per ES2022 §13.15.5.6 KeyedDestructuringAssignmentEvaluation:
-                    // 1. Evaluate target (lref) — get object + key reference.
-                    // 2. GetV(value, propertyName) — read source property.
-                    // 3. PutValue — assign (including brand check for private fields).
+                    // 1. Evaluate target (lref), get object + key reference.
+                    // 2. GetV(value, propertyName), read source property.
+                    // 3. PutValue, assign (including brand check for private fields).
                     // So emit_deferred_target runs first, then GETPROP; the deferred
-                    // CHK_BRAND for private targets runs later, at PutValue time —
+                    // CHK_BRAND for private targets runs later, at PutValue time,
                     // the ASSIGN_TARGET switch below (right before PUTPROP), NOT
                     // here. Emitting it here too would run CHK_BRAND twice (once
                     // before PutValue, wrongly early, and once at the correct
@@ -1014,8 +1014,8 @@ fn void CompilerContext.emit_destruct_bindings(&self,
                     }
                     DestructIterState* state = &iter_states[iter_idx];
 
-                    // Emit the deferred rest member-target evaluation now — AFTER
-                    // the iterator is opened but BEFORE collection — so a throw from
+                    // Emit the deferred rest member-target evaluation now, AFTER
+                    // the iterator is opened but BEFORE collection, so a throw from
                     // a side-effecting target (e.g. `...{}[thrower()]`) triggers
                     // IteratorClose on the open iterator (ES2022 §13.15.5.3).
                     if (binds[di].deferred_target != null) {
@@ -1073,7 +1073,7 @@ fn void CompilerContext.emit_destruct_bindings(&self,
                     int back_offset = (int)collect_start - (int)self.code_count - 1;
                     self.emit(bytecode::make_sabc(Opcode.JUMP, back_offset));
                     self.patch_jump(done_jump);
-                    // Rest consumed the iterator to done:true — latch [[done]] so
+                    // Rest consumed the iterator to done:true, latch [[done]] so
                     // the trailing IteratorClose is skipped (§13.3.3.8 step 4.b),
                     // matching the synthetic-rest path. Without this, ITER_CLOSE
                     // calls .return() on an already-done iterator.
@@ -1143,7 +1143,7 @@ fn void CompilerContext.emit_destruct_bindings(&self,
                     // targets, the brand check was deferred and must run AFTER
                     // the value has been extracted into bind_reg, matching the
                     // object-pattern code path's structure (see emit_deferred_target
-                    // — it set is_private_target during the earlier emit).
+                    //, it set is_private_target during the earlier emit).
                     if (binds[di].is_member_target) {
                         if (binds[di].is_private_target) {
                             // Use member_obj_reg (the persistent, pre-scan-
@@ -1167,7 +1167,7 @@ fn void CompilerContext.emit_destruct_bindings(&self,
                         self.free_reg(binds[di].member_prop_reg);
                         self.free_reg(binds[di].member_obj_reg);
                     } else if (binds[di].assign_needs_putvar || !self.is_local_var_reg(bind_reg)) {
-                        // Destructuring assignment target — throws on TDZ let/const.
+                        // Destructuring assignment target, throws on TDZ let/const.
                         self.emit_a_bc(Opcode.PUTVAR_ASSIGN, (uint)bind_reg, ni);
                     }
             }
@@ -1176,7 +1176,7 @@ fn void CompilerContext.emit_destruct_bindings(&self,
 
     // Close the TRY guard and emit the IteratorClose finally block.
     //
-    // IteratorClose must run on EVERY abrupt completion of the destructuring —
+    // IteratorClose must run on EVERY abrupt completion of the destructuring,
     // not just throw, but also a `return` completion (e.g. a generator `.return()`
     // resuming a `yield` inside a target lref such as `[...{}[yield]]`) and
     // break/continue. A catch-only handler fires on throw alone, so the guard is
@@ -1184,18 +1184,18 @@ fn void CompilerContext.emit_destruct_bindings(&self,
     // ENDFINALLY then re-dispatches the pending completion (throw/return/break/
     // continue/normal). On the normal path the finally still runs, which also
     // covers §13.15.5.3 "if [[done]] is false, IteratorClose" for a
-    // partially-consumed iterator — so no separate normal-path close is needed.
+    // partially-consumed iterator, so no separate normal-path close is needed.
     if (iter_try_addr != 0xFFFFFFFF && iter_count > 0) {
         // Normal path: end the try region, then fall through to the finally.
         // (The jump slot's finally offset also routes abrupt completions here.)
         self.emit_simple(Opcode.ENDTRY);
 
-        // FINALLY block — entered on normal completion (fall-through) and on any
+        // FINALLY block, entered on normal completion (fall-through) and on any
         // abrupt completion (via the catcher's finally_pc).
         uint finally_target = self.code_count;
         self.emit_simple(Opcode.FINALLY);
         for (uint i = 0; i < iter_count; i++) {
-            // B=2: auto-detect completion type — suppress .return() errors only
+            // B=2: auto-detect completion type, suppress .return() errors only
             // when the pending completion is a throw (§7.4.6 steps 6/8); a return
             // completion (e.g. generator .return() through a yield here) must
             // propagate a throwing/non-object .return().
@@ -1209,7 +1209,7 @@ fn void CompilerContext.emit_destruct_bindings(&self,
         self.code[iter_jump_slot] = bytecode::make_a_bc(Opcode.NOP, 0, finally_off);
     } else if (iter_try_addr != 0xFFFFFFFF) {
         // TRY was emitted but no iterators were set up (unusual: pure object binds
-        // after the pre-scan flag — should not happen, but be safe).
+        // after the pre-scan flag, should not happen, but be safe).
         self.emit_simple(Opcode.ENDTRY);
         uint finally_target_e = self.code_count;
         self.emit_simple(Opcode.FINALLY);
@@ -1253,10 +1253,10 @@ fn void CompilerContext.skip_braced_block(&self) {
 /// Skip past a full class declaration/expression, starting with the lexer
 /// positioned just after the `class` keyword. Consumes the optional binding
 /// name, an optional `extends <LeftHandSideExpression>`, and the class body
-/// `{ ... }`. A class body is its own scope for VarDeclaredNames — none of
+/// `{ ... }`. A class body is its own scope for VarDeclaredNames, none of
 /// its element bodies (methods, accessors, static blocks, field
 /// initializers) contribute `var`/`function` declarations to the enclosing
-/// function or Program scope — so hoist_decls must skip it wholesale rather
+/// function or Program scope, so hoist_decls must skip it wholesale rather
 /// than brace-walk into a method and mis-hoist that method's locals.
 fn void CompilerContext.skip_class_body(&self) {
     // Advance to the class body's opening '{', which is the first LBRACE at
@@ -1287,7 +1287,7 @@ fn void CompilerContext.skip_class_body(&self) {
             tscan.on_lbrace();
         }
         else if (tt == TokenType.LBRACE && paren_depth == 0 && bracket_depth == 0) {
-            // Found the class body's opening brace — skip the balanced body.
+            // Found the class body's opening brace, skip the balanced body.
             self.skip_braced_block();
             return;
         }
@@ -1434,7 +1434,7 @@ fn void CompilerContext.skip_expression(&self) {
         else if (tt == TokenType.RPAREN) {
             if (paren_depth == 0 && brace_depth == 0 && bracket_depth == 0
                 && tscan.depth == 0) {
-                // This closing paren belongs to the caller — push back
+                // This closing paren belongs to the caller, push back
                 self.lexer.pushback(tok_opt);
                 break;
             }
@@ -1474,9 +1474,9 @@ fn void CompilerContext.skip_expression(&self) {
 /// bytecode so they are available before any statements run.
 fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = false) {
     // self.is_async doubles as the "saw `async function`" latch between loop
-    // iterations below. It must start clear — otherwise, inside an async
+    // iterations below. It must start clear, otherwise, inside an async
     // function's body, the enclosing flag would mark every hoisted plain
-    // `function` declaration as async — and the enclosing function's flag
+    // `function` declaration as async, and the enclosing function's flag
     // must survive this pass (it is read by finish() when the enclosing
     // body's compilation completes).
     bool enclosing_is_async = self.is_async;
@@ -1499,7 +1499,7 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
     // top level (no enclosing brace to consume), so top-level declarations
     // sit at brace_depth 0. For a function-local scan, the lexer starts
     // *before* the function body's own opening '{' (hoist_decls runs prior
-    // to CompilerContext.block(), which consumes it) — that '{' is the
+    // to CompilerContext.block(), which consumes it), that '{' is the
     // first LBRACE this scan sees, so declarations at the top of the
     // function body sit at brace_depth 1, not 0.
     uint own_depth = is_global ? 0 : 1;
@@ -1509,7 +1509,7 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
     TemplateScan tscan;
     // Byte offset of the `async` keyword when it precedes `function` at
     // brace_depth 0. The async-detection branch below pushes `function`
-    // back so it's re-scanned on the *next* loop iteration — that
+    // back so it's re-scanned on the *next* loop iteration, that
     // iteration's own `pos_before` snapshot only covers `function` onward,
     // so the FUNCTION-handling branch uses this instead for source-text
     // retention: starting the retained span at `async` (rather than
@@ -1567,7 +1567,7 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
         // a FUNCTION token with is_async already set.  An escaped `async`
         // (`\u0061sync …`) is a plain IdentifierName, not the contextual
         // keyword (ES2024 §5.1.5); a LineTerminator between `async` and
-        // `function` (ES2017 §14.7) makes them separate statements — let
+        // `function` (ES2017 §14.7) makes them separate statements, let
         // each be handled in their own iteration.
         if (brace_depth == own_depth && tt == TokenType.IDENTIFIER &&
             !tok_opt.has_escape &&
@@ -1576,12 +1576,12 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
             tok_opt.str_value[2] == 'y' && tok_opt.str_value[3] == 'n' &&
             tok_opt.str_value[4] == 'c') {
             // Capture "async"'s own true source offset before peeking past
-            // it — self.lexer.token_start still reflects `tok_opt` (the just-
+            // it, self.lexer.token_start still reflects `tok_opt` (the just-
             // consumed "async" identifier) at this point. Using this exact
             // byte offset (instead of `function`'s, with a synthesized
             // literal "async " prefix bolted on later) lets the retained
             // source text preserve whatever the source actually wrote
-            // between "async" and "function" — inline comments included
+            // between "async" and "function", inline comments included
             // (ES2019 §19.2.3.5 requires the exact source text).
             uint async_kw_pos = self.lexer.token_start;
             Token? async_peek = self.lexer.next_token();
@@ -1597,14 +1597,14 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
                 continue;
             }
             // Not followed by function (or line terminator broke the
-            // `async function` pairing) — push back the peeked token.
+            // `async function` pairing), push back the peeked token.
             {
                 Token async_tok = async_peek;
                 self.lexer.pushback(async_tok);
             }
         }
 
-        // An arrow function's block body is its own VarDeclaredNames scope —
+        // An arrow function's block body is its own VarDeclaredNames scope,
         // skip it whole so its `var`s never hoist into this scope (arrows
         // with expression bodies contain no statement-level `var`s and any
         // nested function/class braces they carry are handled by their own
@@ -1623,7 +1623,7 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
         }
 
         if (tt == TokenType.CLASS) {
-            // A class body is its own VarDeclaredNames scope — skip it whole
+            // A class body is its own VarDeclaredNames scope, skip it whole
             // so a method/field-initializer's `var` locals never leak into
             // this scope. This applies at any depth the scan reaches (a class
             // at the scope's top level, or one nested in an if/for/try block);
@@ -1634,8 +1634,8 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
         }
 
         // A `function` nested inside a block (if/for/try/plain `{}`) at global
-        // scope — a function expression (`x = function(){ var y }`) or a
-        // block-scoped function declaration — is its own VarDeclaredNames
+        // scope, a function expression (`x = function(){ var y }`) or a
+        // block-scoped function declaration, is its own VarDeclaredNames
         // scope. Skip its body wholesale so its inner `var`s don't leak into
         // the Program's global scope. (At own_depth the handler below does the
         // hoist-aware skip; deeper functions only need to be skipped.)
@@ -1654,7 +1654,7 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
         if (brace_depth == own_depth && tt == TokenType.FUNCTION) {
             // At global/module scope, function declarations are already hoisted
             // by hoist_global_fn_decls().  Skip them here to avoid double
-            // compilation — just advance past the star, name, and body.
+            // compilation, just advance past the star, name, and body.
             if (is_global) {
                 self.is_async = false;
                 // Consume optional generator star
@@ -1663,20 +1663,20 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
                 if (skip_star.type == TokenType.STAR) {
                     // Star consumed; next token is the name
                 } else {
-                    // Not a star — push back (it's the name)
+                    // Not a star, push back (it's the name)
                     self.lexer.pushback(skip_star);
                 }
                 // Consume function name
                 Token? skip_name = self.lexer.next_token();
                 if (catch _err_skip2 = skip_name) continue;
                 if (skip_name.type != TokenType.IDENTIFIER) {
-                    // Anonymous function expression — push the token back so
+                    // Anonymous function expression, push the token back so
                     // skip_function_body sees the full `function (...) { ... }`.
                     // For example in `(function() { ... }())`, the `(` is the
                     // function's param-open; we must leave it for the skipper.
                     self.lexer.pushback(skip_name);
                 }
-                // skip_function_body expects lexer past the name — skip (params) { body }
+                // skip_function_body expects lexer past the name, skip (params) { body }
                 self.skip_function_body();
                 continue;
             }
@@ -1687,13 +1687,13 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
             Token? star_opt = self.lexer.next_token();
             if (catch _err2 = star_opt) continue;
             if (star_opt.type != TokenType.STAR) {
-                // Not a star — put it back (it's the function name)
+                // Not a star, put it back (it's the function name)
                 self.lexer.pushback(star_opt);
             }
             Token? name_opt = self.lexer.next_token();
             if (catch _err = name_opt) break;
             if (name_opt.type != TokenType.IDENTIFIER) {
-                // Anonymous function expression (e.g. an IIFE) — not a
+                // Anonymous function expression (e.g. an IIFE), not a
                 // declaration, so its `var`s belong to its own scope, not
                 // this one. Push back the token (the param-list '(') so
                 // skip_function_body sees the full `(...) { ... }` and
@@ -1745,7 +1745,7 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
             // source-text retention. For `async function`, `pos_before` (and
             // thus the re-consumed token's start) points past `function`'s
             // true start because the async-detection iteration's pushback
-            // of `function` didn't rewind lexer.pos — use the offset
+            // of `function` didn't rewind lexer.pos, use the offset
             // captured at detection time instead.
             uint hoist_fn1_src_start = hoist_is_async ? pending_async_fn_kw_pos : self.lexer.token_start;
             pending_async_fn_kw_pos = 0xFFFFFFFF;
@@ -1758,7 +1758,7 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
             if (self.match(TokenType.STAR)) {
                 self.is_generator = true;
                 // Distinguishes a real syntactic generator from `is_generator`
-                // being set for async-function suspend machinery — without
+                // being set for async-function suspend machinery, without
                 // this, compile_inner_function's propagated inner_ctx never
                 // marks the closure a sync generator (is_sync_generator ==
                 // is_generator && is_user_generator && !is_async), so
@@ -1770,7 +1770,7 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
             Token name_tok2 = self.expect(TokenType.IDENTIFIER)!;
             // Intern the name now: name_tok2.str_value may be a borrow into
             // the lexer's shared ident_buf scratch (escaped identifiers like
-            // `a` decode through the slow path — see scan_identifier),
+            // `a` decode through the slow path, see scan_identifier),
             // which compile_inner_function below will overwrite while
             // scanning the parameter list and body. Every subsequent use
             // must go through this stable, interned slice instead of the
@@ -1805,7 +1805,7 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
             // Lexer is now past the function body. Continue scanning.
         } else if (tt == TokenType.VAR) {
             // var declarations hoist through nested blocks (if/for/try/plain
-            // `{}`) to the enclosing function or Program/module scope —
+            // `{}`) to the enclosing function or Program/module scope,
             // only a nested FUNCTION body is a hoisting boundary, and those
             // are fully skipped above (skip_function_body) before their
             // contents are ever seen here, so no brace_depth guard is
@@ -1886,7 +1886,7 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
                 if (sep == TokenType.ASSIGN) {
                     self.skip_expression();
                     // skip_expression stops (and pushes back) at the next
-                    // comma/semicolon without consuming it — re-check here
+                    // comma/semicolon without consuming it, re-check here
                     // so a subsequent declarator in the same `var` statement
                     // (`var x, y = 1, z;`) is not skipped.
                     Token? sep_opt2 = self.lexer.next_token();
@@ -1900,7 +1900,7 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
                 }
             }
         } else if (!is_global && brace_depth == 0) {
-            // Top-level token that isn't a declaration (function/var) — the
+            // Top-level token that isn't a declaration (function/var), the
             // remaining program is real code (statements). Restore the lexer
             // to before this token and stop pre-scanning; the main statement()
             // loop will parse it.
@@ -2014,7 +2014,7 @@ fn void? CompilerContext.hoist_global_fn_decls(&self, bool checks_only = false) 
         if (tt == TokenType.RBRACE) {
             TemplateBrace tb = tscan.classify_rbrace(self.lexer);
             if (tb == TemplateBrace.LEX_ERROR) break;
-            // A completed template at top level is like an expression — not a
+            // A completed template at top level is like an expression, not a
             // statement terminator, so leave prev_toplevel as-is.
             if (tb == TemplateBrace.SUBST) continue;
             brace_depth--;
@@ -2025,7 +2025,7 @@ fn void? CompilerContext.hoist_global_fn_decls(&self, bool checks_only = false) 
             continue;
         }
 
-        // An arrow function's block body is its own scope — skip it whole so
+        // An arrow function's block body is its own scope, skip it whole so
         // a `function` declaration inside it is never hoisted to global (same
         // boundary rule as hoist_decls; see the ARROW case there).
         if (tt == TokenType.ARROW) {
@@ -2089,11 +2089,11 @@ fn void? CompilerContext.hoist_global_fn_decls(&self, bool checks_only = false) 
                 || prev_toplevel == TokenType.LBRACE
                 || prev_toplevel == TokenType.EOF_TOKEN;
             if (!in_stmt_pos) {
-                // Expression position — skip the entire function expression
+                // Expression position, skip the entire function expression
                 // body so we don't compile it here.  The statement parser
                 // will see the `function` token on the second pass.
                 // Clear any is_async latched by the `async function` detection
-                // above — this function is being skipped, so the flag must not
+                // above, this function is being skipped, so the flag must not
                 // leak into later declarations in the scan.
                 self.is_async = false;
                 self.skip_function_body();
@@ -2107,7 +2107,7 @@ fn void? CompilerContext.hoist_global_fn_decls(&self, bool checks_only = false) 
             Token? star_opt = self.lexer.next_token();
             if (catch _err2 = star_opt) continue;
             if (star_opt.type != TokenType.STAR) {
-                // Not a star — put it back (it's the function name)
+                // Not a star, put it back (it's the function name)
                 self.lexer.pushback(star_opt);
             }
             Token? name_opt = self.lexer.next_token();
@@ -2133,7 +2133,7 @@ fn void? CompilerContext.hoist_global_fn_decls(&self, bool checks_only = false) 
             }
             // ES2024 §16.2.1.1 module early errors: top-level function
             // declarations are lexically declared in a module body, so a
-            // duplicate name is a duplicate in LexicallyDeclaredNames — a
+            // duplicate name is a duplicate in LexicallyDeclaredNames, a
             // SyntaxError. Scripts keep the ES5 last-one-wins var semantics.
             if (already && self.is_module) {
                 return self.fail("duplicate module-level function declaration")~;
@@ -2174,7 +2174,7 @@ fn void? CompilerContext.hoist_global_fn_decls(&self, bool checks_only = false) 
             // source-text retention. For `async function`, `pos_before` (and
             // thus the re-consumed token's start) points past `function`'s
             // true start because the async-detection iteration's pushback
-            // of `function` didn't rewind lexer.pos — use the offset
+            // of `function` didn't rewind lexer.pos, use the offset
             // captured at detection time instead.
             uint hoist_fn1_src_start = hoist_is_async ? pending_async_fn_kw_pos : self.lexer.token_start;
             pending_async_fn_kw_pos = 0xFFFFFFFF;
@@ -2187,7 +2187,7 @@ fn void? CompilerContext.hoist_global_fn_decls(&self, bool checks_only = false) 
             if (self.match(TokenType.STAR)) {
                 self.is_generator = true;
                 // Distinguishes a real syntactic generator from `is_generator`
-                // being set for async-function suspend machinery — without
+                // being set for async-function suspend machinery, without
                 // this, compile_inner_function's propagated inner_ctx never
                 // marks the closure a sync generator (is_sync_generator ==
                 // is_generator && is_user_generator && !is_async), so
@@ -2199,7 +2199,7 @@ fn void? CompilerContext.hoist_global_fn_decls(&self, bool checks_only = false) 
             Token name_tok2 = self.expect(TokenType.IDENTIFIER)!;
             // Intern the name now: name_tok2.str_value may be a borrow into
             // the lexer's shared ident_buf scratch (escaped identifiers like
-            // `a` decode through the slow path — see scan_identifier),
+            // `a` decode through the slow path, see scan_identifier),
             // which compile_inner_function below will overwrite while
             // scanning the parameter list and body. Every subsequent use
             // must go through this stable, interned slice instead of the
@@ -2231,7 +2231,7 @@ fn void? CompilerContext.hoist_global_fn_decls(&self, bool checks_only = false) 
             // linker creates each closure once, before ANY module body runs,
             // so cyclic early imports observe the hoisted function and its
             // identity stays stable across evaluation. Record the declaration
-            // for the linker and DO NOT emit body-level CLOSURE+DECLVAR — that
+            // for the linker and DO NOT emit body-level CLOSURE+DECLVAR, that
             // would re-instantiate a fresh closure on every evaluation and
             // change the export's identity. Scripts (non-module) keep the
             // in-body instantiation below.
@@ -2252,7 +2252,7 @@ fn void? CompilerContext.hoist_global_fn_decls(&self, bool checks_only = false) 
             self.free_reg(func_reg);
 
             // Lexer is now past the function body. A completed declaration
-            // ends at its `}`, so record RBRACE (a statement terminator) —
+            // ends at its `}`, so record RBRACE (a statement terminator),
             // the next top-level `function` starts a new declaration.
             prev_toplevel = TokenType.RBRACE;
             has_prev = true;
@@ -2286,7 +2286,7 @@ fn void? CompilerContext.hoist_global_fn_decls(&self, bool checks_only = false) 
 /// Emit the parameter prologue: the function-level lexical scope, the TDZ
 /// sentinels, the default-value checks, and the PUTLEXes that make each param
 /// visible. Runs after the parameter list is parsed and every param has a
-/// register, and before the body — including before `emit_destruct_bindings`,
+/// register, and before the body, including before `emit_destruct_bindings`,
 /// since destructuring patterns may reference earlier params.
 ///
 /// Shared by all four compilation entry points (`parse_function_body`,
@@ -2319,7 +2319,7 @@ fn void? CompilerContext.emit_param_prologue(&self, ushort arg_count,
         }
 
         // Emit PUTLEX for pre-default params only.
-        // Pre-default params are not in TDZ — they're already initialized by arguments.
+        // Pre-default params are not in TDZ, they're already initialized by arguments.
         ushort ai = 0;
         while (ai < first_default_idx) {
             uint ni = param_name_indices[ai];
@@ -2410,7 +2410,7 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
     // We're inside FormalParameters; destructured patterns collect via
     // collect_*_param_binds and rely on in_formal_params being true so the
     // FormalParameter default-value gate at compile_default_expr applies. (The
-    // flag is no longer toggled inside the collect functions themselves — that
+    // flag is no longer toggled inside the collect functions themselves, that
     // was over-eager and broke destructuring STATEMENTS inside async/generator
     // functions, where the default-value gate does NOT apply.)
     bool saved_in_fp = self.in_formal_params;
@@ -2600,7 +2600,7 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
     self.expect(TokenType.RPAREN)!;
 
     // Declare destructured bindings as variables.
-    // Synthetics don't get variables — they're intermediate extraction points.
+    // Synthetics don't get variables, they're intermediate extraction points.
     for (uint i = 0; i < destruct_count; i++) {
         if (destruct_binds[i].is_synthetic) {
             destruct_binding_regs[i] = 0xFFFF;
@@ -2640,7 +2640,7 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
     // Hoist var and function declarations to the top of the function scope.
     self.hoist_decls(false)!;
 
-    // Params and hoisted slots are now allocated — pin them for the body.
+    // Params and hoisted slots are now allocated, pin them for the body.
     self.reserved_regs = self.next_reg;
 
     // Compile function body block. Function bodies parsed as expressions
@@ -2652,7 +2652,7 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
 
     // Pop the function-level lexical scope.
     // NOTE: for functions with explicit return, this POP_LEX won't execute,
-    // but that's harmless — the activation is destroyed on return.
+    // but that's harmless, the activation is destroyed on return.
     if (has_func_lex) {
         self.emit_simple(Opcode.POP_LEX);
     }
@@ -2687,7 +2687,7 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
 
 /// Whether any branch instruction in the freshly compiled body targets the
 /// fall-off-end position (code_count). Such a branch would advance curr_pc to
-/// code_end, which the VM no longer guards against per-instruction — so the
+/// code_end, which the VM no longer guards against per-instruction, so the
 /// caller must append a terminating RETUNDEF to catch that path. Offset
 /// decoding mirrors moveelim's jump-target scan (the authoritative branch set).
 fn bool CompilerContext.branch_targets_fall_off_end(&self) {
@@ -2736,7 +2736,7 @@ fn CompiledFunction*? CompilerContext.compile_default_expr(&self, char[] inferre
 
     // Propagate generator context so yield is accepted inside default
     // expressions of generator functions (e.g. [x = yield] = []).
-    // The default thunk itself is NOT a generator — it's a regular function
+    // The default thunk itself is NOT a generator, it's a regular function
     // whose body may contain yield that suspends the *enclosing* generator.
     def_ctx.is_generator = self.is_generator;
     def_ctx.is_user_generator = self.is_user_generator;
@@ -2753,14 +2753,14 @@ fn CompiledFunction*? CompilerContext.compile_default_expr(&self, char[] inferre
     //     thunk is invoked synchronously from the destructuring implementation
     //     (which doesn't have an outer async activation to suspend) and
     //     returning a Promise from the thunk breaks the destructuring protocol.
-    //     This is a known limitation — test262 top-level-await/syntax/
+    //     This is a known limitation, test262 top-level-await/syntax/
     //     export-var-await-expr-* and async-function destructuring await in
     //     default positions are deferred until we implement the right shape
     //     (QuickJS compiles these as regular (non-thunk) parsing of the
     //     default expression into the destructuring site, not a separate
     //     function). For now, the syntactic gate still fires: `await` IS
     //     accepted in the default expression as an identifier-or-operator
-    //     depending on context, but the runtime can't honor a true await —
+    //     depending on context, but the runtime can't honor a true await,
     //     the expression is parsed but execute-side suspend isn't bridged.
     def_ctx.is_module = self.is_module;
     if (self.is_module) def_ctx.is_async = self.is_async;
@@ -2774,7 +2774,7 @@ fn CompiledFunction*? CompilerContext.compile_default_expr(&self, char[] inferre
     def_ctx.private_scope_start = self.private_scope_start;
     def_ctx.private_scope_depth = self.private_scope_depth;
     // A parameter default value is part of the enclosing function/arrow's
-    // own definition site, not a nested function body it "crosses into" —
+    // own definition site, not a nested function body it "crosses into".
     // ContainsAwait/ContainsArguments still apply here when the parameter
     // list itself sits directly inside a class static block (test262
     // static-init-await-reference, arrow-function variant: `((x = await)
@@ -2788,8 +2788,8 @@ fn CompiledFunction*? CompilerContext.compile_default_expr(&self, char[] inferre
     // Contain a YieldExpression (in a generator, ES2015 §14.1.2) or an
     // AwaitExpression (in an async function, ES2017 §14.7; also
     // CreateDynamicFunction steps for the Generator/AsyncGenerator/AsyncFunction
-    // constructors). `yield`/`await` must still be reserved words here — which
-    // is why is_generator/is_async are propagated above — but the yield/await
+    // constructors). `yield`/`await` must still be reserved words here, which
+    // is why is_generator/is_async are propagated above, but the yield/await
     // *expression* productions are unavailable, so forbid them.
     if (self.in_formal_params) {
         if (self.is_generator) def_ctx.forbid_yield = true;
@@ -2799,7 +2799,7 @@ fn CompiledFunction*? CompilerContext.compile_default_expr(&self, char[] inferre
     // Per ES2015 §13.3.3.7 step 3 (NamedEvaluation), if the default is an
     // anonymous function/arrow/class/generator expression, the resulting
     // function object gets the binding identifier as its name. We
-    // propagate this via the inferred_name slot — `function_expr` /
+    // propagate this via the inferred_name slot, `function_expr` /
     // arrow / class / generator consults `has_inferred_name` (set by
     // the var initializer path in `decl_var`) and tags the function.
     if (inferred_name.len > 0 && inferred_name.len < 128) {
@@ -2810,7 +2810,7 @@ fn CompiledFunction*? CompilerContext.compile_default_expr(&self, char[] inferre
         }
     }
 
-    // Function-level lexical scope (empty — no parameters)
+    // Function-level lexical scope (empty, no parameters)
     def_ctx.emit_simple(Opcode.PUSH_LEX);
 
     // Compile expression with implicit return
@@ -2822,7 +2822,7 @@ fn CompiledFunction*? CompilerContext.compile_default_expr(&self, char[] inferre
 
     CompiledFunction* func = def_ctx.finish()!;
 
-    // The default expression thunk is NOT a generator function itself — it's
+    // The default expression thunk is NOT a generator function itself, it's
     // a regular zero-arg function that may contain yield expressions which
     // suspend the *enclosing* generator. Clear the is_generator flag set by
     // finish() (propagated from the enclosing context) so the VM's CALL
@@ -2865,7 +2865,7 @@ fn CompiledFunction*? CompilerContext.compile_key_expr(&self) {
     // key is evaluated in the ENCLOSING scope (ES2022 §15.7.15 step 6.a.i),
     // so `arguments`/`return`/`await`/`yield` are still subject to whatever
     // field-initializer or static-block restrictions apply there (e.g.
-    // `class { static { (class { [arguments]() {} }); } }` — test262
+    // `class { static { (class { [arguments]() {} }); } }`, test262
     // static-init-invalid-arguments).
     key_ctx.forbid_arguments = self.forbid_arguments;
     key_ctx.forbid_return = self.forbid_return;
@@ -2873,7 +2873,7 @@ fn CompiledFunction*? CompilerContext.compile_key_expr(&self) {
     key_ctx.forbid_yield = self.forbid_yield;
     // The key is evaluated in the enclosing class scope, so private names
     // declared on that class (including ones declared later in the body,
-    // via the pre-scan) must resolve inside the key expression too — e.g.
+    // via the pre-scan) must resolve inside the key expression too, e.g.
     // `[self.#f] = 1; #f = 2;` (private-field-is-visible-in-computed-
     // properties.js) and `[this.#m()] = 1` referencing a sibling method.
     key_ctx.adopt_private_names(self);
@@ -2892,7 +2892,7 @@ fn CompiledFunction*? CompilerContext.compile_key_expr(&self) {
 /// Compile a class static initialization block (`static { ... }`, ES2022
 /// §15.7.11) into a zero-arg CompiledFunction. The caller must position the
 /// lexer right at the block's own opening `{` (i.e. `static` already
-/// consumed) and pass a class-enclosing `self` — a fresh CompilerContext is
+/// consumed) and pass a class-enclosing `self`, a fresh CompilerContext is
 /// created here, propagating the class/private-name context the same way
 /// ensure_field_init_ctx does for static field initializers, but each block
 /// gets its OWN function (own var/lex scope, own break/continue/label
@@ -2910,14 +2910,14 @@ fn CompiledFunction*? CompilerContext.compile_static_block(&self) {
     block_ctx.super_is_home_object = self.super_is_home_object;
     // HomeObject for `super.x` inside a static block is always the class
     // constructor (ES2022 §15.7.11 EvaluateClassStaticBlockBody step 4
-    // MakeMethod(body, F)) — never the prototype, regardless of whether the
+    // MakeMethod(body, F)), never the prototype, regardless of whether the
     // block sits among static or instance elements textually.
     block_ctx.super_is_static_method = true;
-    // super() is forbidden (HasDirectSuper early error) — same mechanism
+    // super() is forbidden (HasDirectSuper early error), same mechanism
     // field/static initializers use to reject it.
     block_ctx.is_constructable = false;
     // ClassStaticBlockStatementList is [~Yield, +Await, ~Return] and bans
-    // `arguments` (ContainsArguments early error) — all four gates are
+    // `arguments` (ContainsArguments early error), all four gates are
     // fresh CompilerContext-local flags that do not propagate into nested
     // function/arrow bodies compiled from within the block.
     block_ctx.forbid_arguments = true;
@@ -2928,7 +2928,7 @@ fn CompiledFunction*? CompilerContext.compile_static_block(&self) {
     block_ctx.private_scope_start = self.private_scope_start;
     block_ctx.private_scope_depth = self.private_scope_depth;
 
-    // No parameter list to parse — go straight to the body, same shape as
+    // No parameter list to parse, go straight to the body, same shape as
     // compile_inner_function's zero-param tail.
     block_ctx.pre_scan_captures();
     block_ctx.hoist_decls(false)!;
@@ -2998,7 +2998,7 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
     inner_ctx.is_constructable = self.is_constructable;
     // Propagate private-name declarations (ES2022): a method/getter/setter
     // body compiled here must resolve `this.#x` against the enclosing class
-    // body's declared names — resolve_private_name reads these fields
+    // body's declared names, resolve_private_name reads these fields
     // directly, so they must be copied (not just in_class_body).
     inner_ctx.adopt_private_names(self);
     inner_ctx.private_scope_start = self.private_scope_start;
@@ -3133,7 +3133,7 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
             // FormalParameters are BindingIdentifier[?Yield, ?Await] of THIS
             // function (inner_ctx's flags), so `await`/`yield` are valid param
             // names for a plain function/method even when the enclosing scope is
-            // a class static block — inner_ctx does not inherit forbid_await.
+            // a class static block, inner_ctx does not inherit forbid_await.
             Token param = inner_ctx.expect_binding_identifier()!;
             bool param_ctx_keyword = param.type != TokenType.IDENTIFIER;
             if (!param_ctx_keyword && is_restricted_name(param.str_value)) {
@@ -3258,12 +3258,12 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
     // Hoist var and function declarations to the top of the inner function scope.
     inner_ctx.hoist_decls(false)!;
 
-    // Params and hoisted slots are now allocated — pin them for the body.
+    // Params and hoisted slots are now allocated, pin them for the body.
     inner_ctx.reserved_regs = inner_ctx.next_reg;
 
     // Compile function body. When this function is being parsed as an
     // expression (function expression, method value, etc.) the closing `}`
-    // is not a statement boundary — the whole function is an operand, so a
+    // is not a statement boundary, the whole function is an operand, so a
     // following `/` must be read as division, not a RegularExpressionLiteral
     // (see Lexer.note_block_close doc).
     inner_ctx.block(true, is_expr)!;
@@ -3376,7 +3376,7 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
 /// Parse a function expression: function name?(...) { ... }
 fn ushort? CompilerContext.function_expr(&self, bool is_async_expr = false) {
     self.expect(TokenType.FUNCTION)!;
-    // Capture the byte offset of `function` — used by Function.prototype.toString
+    // Capture the byte offset of `function`, used by Function.prototype.toString
     // for ES2019 §19.2.3.5 source-text retention. For async function expressions,
     // use the `async` keyword's offset if pending_async_function_src is set.
     uint fexpr_src_start = (is_async_expr && self.pending_async_function_src != 0xFFFFFFFF)
@@ -3389,7 +3389,7 @@ fn ushort? CompilerContext.function_expr(&self, bool is_async_expr = false) {
     self.is_generator = false;
     self.is_user_generator = false;
 
-    // Save the enclosing async flag — it must survive this expression (a
+    // Save the enclosing async flag, it must survive this expression (a
     // module body's or async function's flag is read by finish()). The
     // expression's own async-ness comes from the is_async_expr parameter
     // (set by the `async function` expression caller), never from the
@@ -3397,7 +3397,7 @@ fn ushort? CompilerContext.function_expr(&self, bool is_async_expr = false) {
     bool saved_is_async = self.is_async;
     self.is_async = false;
 
-    // Function expressions are constructable per ES2015 §14.1.2 — they can be
+    // Function expressions are constructable per ES2015 §14.1.2, they can be
     // invoked with `new` unless they're arrow functions (handled in arrow
     // parsers) or method shorthand (constructor sets is_constructable=false
     // explicitly). Save/restore so nested functions inherit constructability.
@@ -3405,7 +3405,7 @@ fn ushort? CompilerContext.function_expr(&self, bool is_async_expr = false) {
     self.is_constructable = true;
 
     // Check for generator star: function* name?() {}
-    // Generator functions are never constructable (ES2015 §14.4) — `new` on
+    // Generator functions are never constructable (ES2015 §14.4), `new` on
     // one must throw TypeError, so is_constructable must flip to false here.
     if (self.match(TokenType.STAR)) {
         // `function*` and `async function*` are both syntactic generators.
@@ -3426,7 +3426,7 @@ fn ushort? CompilerContext.function_expr(&self, bool is_async_expr = false) {
     // a name binding (i.e. `f` is NOT visible inside the body), only the
     // display name on the function object.
     //
-    // Always clear has_inferred_name after consumption — even when the user
+    // Always clear has_inferred_name after consumption, even when the user
     // provided an explicit name (`function bar() {}`), so a following
     // `var b = function() {}` doesn't inherit a stale name from `var a = function bar() {}`.
     char[] name;
@@ -3435,9 +3435,9 @@ fn ushort? CompilerContext.function_expr(&self, bool is_async_expr = false) {
     // A function-expression name's [Yield]/[Await] grammar params are FIXED by
     // the kind of expression, not inherited from the enclosing context, so an
     // enclosing static block's forbid_await/forbid_yield do NOT apply here:
-    //   FunctionExpression        name is [~Yield, ~Await] — both allowed
-    //   GeneratorExpression       name is [+Yield, ~Await] — `yield` reserved
-    //   AsyncFunctionExpression   name is [~Yield, +Await] — `await` reserved
+    //   FunctionExpression        name is [~Yield, ~Await], both allowed
+    //   GeneratorExpression       name is [+Yield, ~Await], `yield` reserved
+    //   AsyncFunctionExpression   name is [~Yield, +Await], `await` reserved
     // self.is_generator/self.is_async already reflect this expression's own
     // generator/async-ness (set just above from the `function*`/`async`
     // prefixes), so `(function* await(){})` and `function await(){}` are valid
@@ -3489,7 +3489,7 @@ fn ushort? CompilerContext.function_expr(&self, bool is_async_expr = false) {
 /// Parse a function expression body (parameters + block) without the `function` keyword.
 /// Used for method shorthand in object literals.
 fn ushort? CompilerContext.function_expr_body(&self, uint src_start = 0xFFFFFFFF) {
-    // ES2015 §14.3: object literal method shorthand `o = { m() {} }` —
+    // ES2015 §14.3: object literal method shorthand `o = { m() {} }`,
     // the function's name is inferred from the property key. Caller
     // (object_literal / class_body parser) sets has_inferred_name before
     // calling. After consumption clear it so nested functions don't inherit.
@@ -3499,7 +3499,7 @@ fn ushort? CompilerContext.function_expr_body(&self, uint src_start = 0xFFFFFFFF
         self.has_inferred_name = false;
         self.inferred_name_len = 0;
     }
-    // Capture byte offset of the opening of the method body — the caller
+    // Capture byte offset of the opening of the method body, the caller
     // optionally supplies `src_start` if it knows the start of the full
     // declaration (e.g. `get f` for an object-literal getter, `[expr]` for a
     // computed key, or the leading `*` for a generator method). When the
@@ -3573,19 +3573,19 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
     // Strict-only engine: always strict
     arrow_ctx.lexer.set_strict(true);
 
-    // Arrow functions use the parent scope — no fresh env needed.
+    // Arrow functions use the parent scope, no fresh env needed.
     arrow_ctx.is_arrow = true;
 
     // `async (params) => ...` bodies must run resumably like async functions
     // (AWAIT is only valid in an is_async context). The flag comes from the
-    // explicit async marker on this arrow, never from the enclosing body —
+    // explicit async marker on this arrow, never from the enclosing body,
     // a plain arrow inside an async function or TLA module is synchronous.
     arrow_ctx.is_async = is_async_arrow;
     if (arrow_ctx.is_async) arrow_ctx.is_generator = true;
 
     // Propagate class context (for super expressions).
     // Arrow functions inherit super binding and constructability from the enclosing
-    // function — they lexically capture `this` and HomeObject from the outer scope.
+    // function, they lexically capture `this` and HomeObject from the outer scope.
     arrow_ctx.in_class_body = self.in_class_body;
     arrow_ctx.has_super_binding = self.has_super_binding;
     arrow_ctx.super_is_home_object = self.super_is_home_object;
@@ -3594,7 +3594,7 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
     arrow_ctx.adopt_private_names(self);
     arrow_ctx.private_scope_start = self.private_scope_start;
     arrow_ctx.private_scope_depth = self.private_scope_depth;
-    // Arrows have no `arguments` binding of their own — an `arguments`
+    // Arrows have no `arguments` binding of their own, an `arguments`
     // reference inside an arrow body resolves the ENCLOSING function's
     // binding, so the enclosing body's ContainsArguments restriction
     // (class field/static initializer, static block) applies here too.
@@ -3602,14 +3602,14 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
 
     // Propagate eval context flags (for new.target checks in eval context).
     // Arrow functions must respect the parent eval context's restrictions
-    // on new.target — if the arrow is in an indirect/global eval, new.target
+    // on new.target, if the arrow is in an indirect/global eval, new.target
     // is a SyntaxError even though the arrow doesn't have its own [[NewTarget]].
     arrow_ctx.eval_mode = self.eval_mode;
     arrow_ctx.eval_direct_in_function = self.eval_direct_in_function;
 
     // Unlike a regular function/method (whose [Yield]/[Await] grammar params
     // are re-fixed at the boundary), an ArrowFunction's ArrowParameters inherit
-    // the enclosing [Yield]/[Await] — a class static block's ContainsAwait early
+    // the enclosing [Yield]/[Await], a class static block's ContainsAwait early
     // error DOES reach into arrow parameter default expressions. So a nested
     // arrow's PARAMETERS keep the enclosing forbid_await/forbid_yield
     // (`((x = await) => 0)` in a static block is a SyntaxError), but the arrow
@@ -3628,7 +3628,7 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
     // The arrow's own function scope. Arrows have no call-time var_env of
     // their own (they run in the captured lexical environment), so without
     // this env every param/body DECLVAR would land in the ENCLOSING scope
-    // at runtime — `(() => { var q = 1; })()` must not create `q` outside.
+    // at runtime, `(() => { var q = 1; })()` must not create `q` outside.
     // Mirrors compile_arrow_inner's unconditional PUSH_VAR. When parameter
     // expressions exist, this env holds only the params and two further
     // scopes stack on top (PUSH_LEX for TDZ'd defaults, PUSH_VAR for the
@@ -3844,7 +3844,7 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
     if (arrow_ctx.check(TokenType.LBRACE)) {
         // Collect names captured by nested callables (plan 045).
         arrow_ctx.pre_scan_captures();
-        // Params are allocated — pin them for the body.
+        // Params are allocated, pin them for the body.
         arrow_ctx.reserved_regs = arrow_ctx.next_reg;
         // Block body: { ... }
         arrow_ctx.advance()!;
@@ -3999,7 +3999,7 @@ fn ushort? CompilerContext.parse_arrow_function(&self, char[]* params, ushort pa
     // Consume the ARROW token
     self.expect(TokenType.ARROW)!;
 
-    // Create inner CompiledFunction for the arrow — apply inferred name
+    // Create inner CompiledFunction for the arrow, apply inferred name
     // (from enclosing `var f = ...`) per ES2015 §14.1.20 SetFunctionName.
     char[] arrow_name;
     if (self.has_inferred_name) {
@@ -4020,7 +4020,7 @@ fn ushort? CompilerContext.parse_arrow_function(&self, char[]* params, ushort pa
     CompiledFunction* inner = self.compile_arrow_inner(params, param_count, has_rest, effective_src_start, arrow_is_async)!;
 
     // Set the function's display name from the inferred source. This is a
-    // non-binding name (no lexical scope entry) — only the name property.
+    // non-binding name (no lexical scope entry), only the name property.
     if (arrow_name.len > 0) {
         char* name_heap = (char*)alloc::malloc_try(mem, (sz)((usz)arrow_name.len + 1)) ?? null;
         if (name_heap != null) {
@@ -4051,19 +4051,19 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner(&self, char[]* params,
     // Strict-only engine: always strict
     arrow_ctx.lexer.set_strict(true);
 
-    // Arrow functions use the parent scope — no fresh env needed.
+    // Arrow functions use the parent scope, no fresh env needed.
     arrow_ctx.is_arrow = true;
 
     // `async (params) => ...` bodies must run resumably like async functions
     // (AWAIT is only valid in an is_async context). The flag comes from the
-    // explicit async marker on this arrow, never from the enclosing body —
+    // explicit async marker on this arrow, never from the enclosing body,
     // a plain arrow inside an async function or TLA module is synchronous.
     arrow_ctx.is_async = is_async_arrow;
     if (arrow_ctx.is_async) arrow_ctx.is_generator = true;
 
     // Propagate class context (for super expressions).
     // Arrow functions inherit super binding and constructability from the enclosing
-    // function — they lexically capture `this` and HomeObject from the outer scope.
+    // function, they lexically capture `this` and HomeObject from the outer scope.
     arrow_ctx.in_class_body = self.in_class_body;
     arrow_ctx.has_super_binding = self.has_super_binding;
     arrow_ctx.super_is_home_object = self.super_is_home_object;
@@ -4072,7 +4072,7 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner(&self, char[]* params,
     arrow_ctx.adopt_private_names(self);
     arrow_ctx.private_scope_start = self.private_scope_start;
     arrow_ctx.private_scope_depth = self.private_scope_depth;
-    // Arrows have no `arguments` binding of their own — an `arguments`
+    // Arrows have no `arguments` binding of their own, an `arguments`
     // reference inside an arrow body resolves the ENCLOSING function's
     // binding, so the enclosing body's ContainsArguments restriction
     // (class field/static initializer, static block) applies here too.
@@ -4080,7 +4080,7 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner(&self, char[]* params,
 
     // Propagate eval context flags (for new.target checks in eval context).
     // Arrow functions must respect the parent eval context's restrictions
-    // on new.target — if the arrow is in an indirect/global eval, new.target
+    // on new.target, if the arrow is in an indirect/global eval, new.target
     // is a SyntaxError even though the arrow doesn't have its own [[NewTarget]].
     arrow_ctx.eval_mode = self.eval_mode;
     arrow_ctx.eval_direct_in_function = self.eval_direct_in_function;
@@ -4132,7 +4132,7 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner(&self, char[]* params,
     if (arrow_ctx.check(TokenType.LBRACE)) {
         // Collect names captured by nested callables (plan 045).
         arrow_ctx.pre_scan_captures();
-        // Params are allocated — pin them for the body.
+        // Params are allocated, pin them for the body.
         arrow_ctx.reserved_regs = arrow_ctx.next_reg;
         // Block body: { ... }
         arrow_ctx.advance()!;

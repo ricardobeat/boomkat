@@ -38,7 +38,7 @@ fn void CompilerContext.ensure_field_init_ctx(&self, CompilerContext* target_ctx
 
 /// Mint and declare a fresh hidden lexical slot name
 /// ("#priv:<class-id>:<tag><index>") for stashing a private instance
-/// method/accessor closure past the member-install loop — see the
+/// method/accessor closure past the member-install loop, see the
 /// PrivateNameEntry.method_closure_slot_name / getter_closure_slot_name /
 /// setter_closure_slot_name doc comments (context.c3) for why this is
 /// needed. `index` should be unique per private name in the class body
@@ -213,7 +213,7 @@ fn void? CompilerContext.class_declaration(&self, char[]* out_name = null, bool 
     // Per ES2024 §15.7.1, BindingIdentifier may be `await` (in non-module)
     // or `yield` (in non-generator). Accept these contextual keywords.
     // When allow_anonymous is set (`export default class ... {}`), a missing
-    // name is legal — the class binds to `*default*` (§16.2.3.7).
+    // name is legal, the class binds to `*default*` (§16.2.3.7).
     // Intern the name immediately: an escaped class name (`class \u{43} {}`)
     // borrows the lexer's shared ident_buf scratch, which the extends clause
     // and class body parsed below will overwrite. declare_var stores this
@@ -228,9 +228,9 @@ fn void? CompilerContext.class_declaration(&self, char[]* out_name = null, bool 
         class_name = self.advance()!.str_value;
         class_name = ((Heap*)self.heap).str_intern(class_name).get_data();
     } else if (allow_anonymous && (name_tt == TokenType.EXTENDS || name_tt == TokenType.LBRACE)) {
-        // ES2024 §16.2.3.7: `export default class { ... }` — the class's
+        // ES2024 §16.2.3.7: `export default class { ... }`, the class's
         // [[FunctionName]] is the literal string "default" (visible via
-        // `this.name` in static field initializers — see
+        // `this.name` in static field initializers, see
         // test262 class-name-static-initializer-default-export). The
         // OUTER binding uses an internal name ("*default*") so the
         // declared-export machinery can identify the symbol; the function
@@ -277,9 +277,9 @@ fn void? CompilerContext.class_declaration(&self, char[]* out_name = null, bool 
     // classScope as their lex_env so the class name resolves to the
     // constructor from inside method bodies. parse_class_tail_with_name
     // emits the PUTLEX_C (initializing the class-name binding) and the
-    // matching POP_LEX BEFORE the static initializer runs — required so
+    // matching POP_LEX BEFORE the static initializer runs, required so
     // static field initializers can see the class name (§15.7.14).
-    // Anonymous default-export: `export default class { ... }` — the
+    // Anonymous default-export: `export default class { ... }`, the
     // constructor's visible `.name` must be the literal "default"
     // (ES2024 §16.2.3.7), distinct from the internal binding name
     // "*default*" used by the declared-export machinery. A named
@@ -330,14 +330,14 @@ fn ushort? CompilerContext.class_expression(&self) {
         // ES2015 §14.5.14 SetFunctionName / NamedEvaluation: an anonymous
         // class expression picks up the inferred name from an enclosing
         // `var f = class {}` or `{ p: class {} }` assignment context.
-        // The name is display-only — it does NOT create a scope binding —
+        // The name is display-only, it does NOT create a scope binding,
         // so we set `name` but leave `has_name` false.
         name = self.inferred_name_buf[:(uint)self.inferred_name_len];
         self.has_inferred_name = false;
         self.inferred_name_len = 0;
     }
 
-    // Push classScope only when we have a class name — the immutable binding
+    // Push classScope only when we have a class name, the immutable binding
     // is the only thing the spec puts in classScope, and anonymous class
     // expressions don't need one.  When we DO push, the classScope is a child
     // of the current lex env; methods CLOSURE'd inside capture it.
@@ -379,7 +379,7 @@ fn ushort? CompilerContext.class_expression(&self) {
 /// the class name binding must be live by the time static field initializers
 /// run (so e.g. `(Object.preventExtensions(C), "Test262")` inside a static
 /// initializer can refer to `C`).  When zero, the caller is responsible for
-/// the PUTLEX_C/POP_LEX — pass through to the previous single-mode behaviour.
+/// the PUTLEX_C/POP_LEX, pass through to the previous single-mode behaviour.
 ///
 /// `is_default_export`: when true, the class is the anonymous body of
 /// `export default class { ... }`. The runtime-visible `.name` must be the
@@ -444,17 +444,17 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
     self.push_private_scope();
     self.prescan_private_names()!;
 
-    // The class's brand(s): stamped on every instance (base ctor / super() —
+    // The class's brand(s): stamped on every instance (base ctor / super(),
     // see vm_calls.c3 / vm_execute.c3) whenever the class declares any
     // INSTANCE private member, and on the constructor object itself (emitted
     // directly in this class's own bytecode, below) whenever it declares any
-    // STATIC private member (P5) — a distinct symbol, so `C.#m` never
+    // STATIC private member (P5), a distinct symbol, so `C.#m` never
     // succeeds on an instance and `instance.#staticThing` never succeeds on
     // the class (test: p5-static-brand-separate-from-instance). Declared
     // right after the pre-scan (which already classified is_static per
     // entry) so every PrivateNameEntry can be backfilled with the RIGHT
-    // brand binding name before any member body — which may reference an
-    // entry — compiles.
+    // brand binding name before any member body, which may reference an
+    // entry, compiles.
     bool has_brand = false;
     char[] brand_slot_name = "";
     bool has_static_brand = false;
@@ -480,19 +480,19 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
     }
 
     // Private class fields (ES2022): allocate a fresh hidden symbol for every
-    // private name declared in this class body (own scope only — nested
+    // private name declared in this class body (own scope only, nested
     // classes push/pop their own) and the instance brand, if any, BEFORE any
     // class element compiles/runs. Each NEW_PRIV_SYM result is stored into
     // its compiler-managed lexical slot (declared during the pre-scan) so
     // method/field-init bodies resolve it via GETVAR, exactly like __super__.
-    // Fresh per class *evaluation* — this is what gives per-evaluation-
+    // Fresh per class *evaluation*, this is what gives per-evaluation-
     // freshness for free. This must run before the member loop below because
     // a computed property key (`[expr]`) is evaluated immediately, in source
-    // order, at class-definition time (ES2022 §15.7.15 step 6.a.i) — it can
+    // order, at class-definition time (ES2022 §15.7.15 step 6.a.i), it can
     // reference a private name (`[this.#m()]`) that is declared later in the
     // same class body, per the pre-scan, so the symbol/brand must already
     // exist in scope by then (test262 private-*-is-visible-in-computed-
-    // properties.js). The STATIC brand is intentionally NOT created here —
+    // properties.js). The STATIC brand is intentionally NOT created here,
     // it stamps the constructor object itself via ADD_BRAND, which needs
     // ctor_reg, not yet live until the constructor closure is built below.
     {
@@ -520,7 +520,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
     // function, in source order (plan 054 §2d). Created lazily on the first
     // `#name = expr;` / `#name;` field so classes without fields pay no cost.
     // Declared here (before the member loop, earlier than its original
-    // position) because private instance methods/accessors need it too —
+    // position) because private instance methods/accessors need it too,
     // see immediately below.
     CompilerContext field_init_ctx;
     bool has_field_init = false;
@@ -531,7 +531,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
     // instance's own [[PrivateElements]], not just the class prototype.
     // The prototype install (below, in the member-install loop) is a
     // correct optimization ONLY when an instance's [[Prototype]] really is
-    // the class prototype — a derived constructor's `super()` can return an
+    // the class prototype, a derived constructor's `super()` can return an
     // unrelated object (return-override, §9.2.2 step 13.c allows any
     // Object) whose prototype chain never reaches this class's prototype
     // at all, so GETPROP_PRIVATE's chain walk would never find the method.
@@ -539,9 +539,9 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
     // the prescanned private_name_table, which already knows is_method/
     // has_getter/has_setter/is_static for every `#name` in this class body,
     // independent of source order) and emit the __field_init__ re-install
-    // code — GETVAR the slot (PUTLEX'd by the CLOSURE in the member-install
+    // code, GETVAR the slot (PUTLEX'd by the CLOSURE in the member-install
     // loop once the method actually compiles, later) + CLASS_INITGET/
-    // CLASS_INITSET/CLASS_INITPROP onto `this` — BEFORE any field
+    // CLASS_INITSET/CLASS_INITPROP onto `this`, BEFORE any field
     // initializer statement is parsed. Per spec InitializeInstanceElements
     // (methods, step 4, then fields, step 5) methods must be visible to
     // field initializers: `a = this.#m()` where #m is itself installed via
@@ -551,10 +551,10 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
     // but is still TWO separate closures (two ClassMethod/CLOSURE sites),
     // so it gets two independent slots (getter_closure_slot_name /
     // setter_closure_slot_name) and two independent CLASS_INITGET/
-    // CLASS_INITSET emissions that both target the same key — merging into
+    // CLASS_INITSET emissions that both target the same key, merging into
     // one accessor cell on the instance exactly like the prototype-install
     // loop merges them on the prototype. Static private methods/accessors
-    // are unaffected — their target is always ctor_reg, whose identity
+    // are unaffected, their target is always ctor_reg, whose identity
     // return-override can't change.
     {
         uint priv_scope_begin_m = self.private_scope_depth > 0
@@ -624,7 +624,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
     ClassMethod[MAX_CLASS_METHODS] methods;
     ushort method_count = 0;
     // Per-class-body counter for computed public-field-key hidden slots
-    // (P7) — combined with the class id to build unique binding names.
+    // (P7), combined with the class id to build unique binding names.
     uint computed_field_key_count = 0;
 
     // Static private field initializers (P5) compile into a second hidden
@@ -656,7 +656,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
         self.lexer.refresh_token_start();
 
         // Class static initialization block (ES2022 §15.7.11): `static { ... }`.
-        // Checked before match_static_modifier — `{` can never start a
+        // Checked before match_static_modifier, `{` can never start a
         // PropertyName, so this is never ambiguous with `static` used as a
         // field/method name. Compiled as its own zero-arg function (own var/
         // lex scope, unlike static field initializers which all share
@@ -679,7 +679,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
             continue;
         }
 
-        // Check for static modifier — only consume `static` when followed by
+        // Check for static modifier, only consume `static` when followed by
         // a method name (identifier, keyword, string, number, `[`, `*`, get/set).
         // When followed by `(`, `static` IS the method name, not a modifier.
         bool is_static = false;
@@ -691,7 +691,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
 
         // Capture source start for Function.prototype.toString (ES2019 §19.2.3.5).
         // Per spec, the class method's source text does NOT include the `static`
-        // keyword — it starts at the method-kind prefix (`get`/`set`/`*`/`async`)
+        // keyword, it starts at the method-kind prefix (`get`/`set`/`*`/`async`)
         // or directly at the property name.  After a static modifier the lexer's
         // token_start may already point past a pushed-back `get`/`set` token, so
         // prefer the element start recorded by match_static_modifier.
@@ -700,7 +700,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
             class_elem_src_start = self.static_elem_src_start;
         }
 
-        // Private instance/static field: `#name = expr;` or `#name;` — but
+        // Private instance/static field: `#name = expr;` or `#name;`, but
         // NOT when followed by `(`, which is a private method (P3, handled
         // below alongside public methods so generator/async modifiers and
         // compile_inner_function are shared).
@@ -713,7 +713,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
             // buffer; a nested class inside `assignment_expr()` below can
             // declare private names and grow (realloc) that buffer, dangling
             // `entry`. The slot_name slice itself is interned (stable), so
-            // copying the slice is enough — we never touch `entry` again after
+            // copying the slice is enough, we never touch `entry` again after
             // the initializer compiles.
             char[] entry_slot_name = entry.slot_name;
 
@@ -728,7 +728,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
             if (self.match(TokenType.ASSIGN)) {
                 // ES2022 §15.7.10 step 7 / DefineField step 7: an anonymous
                 // function definition initializer gets SetFunctionName with
-                // the private name — "#field" (hash included).
+                // the private name, "#field" (hash included).
                 target_ctx.has_inferred_name = true;
                 if (priv_name.len + 1 < 128) {
                     target_ctx.inferred_name_buf[0] = '#';
@@ -752,7 +752,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
             // separator (`#x = 1 y`) is a SyntaxError.
             target_ctx.expect_semicolon_or_asi()!;
 
-            // this[#name_sym] = init_reg — PrivateFieldAdd bypasses setters,
+            // this[#name_sym] = init_reg, PrivateFieldAdd bypasses setters,
             // proxies, and the extensibility check (INITPROP_PRIV). For a
             // static field, `this` inside __static_init__ is bound to the
             // constructor (see __static_init__'s CALL emission below).
@@ -770,7 +770,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
             continue;
         }
 
-        // ES2015 §14.4: generator-method shorthand — `*m() { yield ... }`.
+        // ES2015 §14.4: generator-method shorthand, `*m() { yield ... }`.
         // Save the generator + async flags; they are only overridden right
         // before compiling the method body below. Anything parsed before that
         // (identifier method names, `[expr]` computed keys) runs in the
@@ -778,7 +778,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
         bool saved_is_generator = self.is_generator;
         bool saved_is_user_generator = self.is_user_generator;
         bool saved_is_async = self.is_async;
-        // ES2017 §14.6: async-method shorthand — `async m() { await ... }`.
+        // ES2017 §14.6: async-method shorthand, `async m() { await ... }`.
         // `async` is not a keyword; match_async_method_prefix consumes it only
         // when it is a modifier (followed on the same line by a method name),
         // so `async() {}` still parses as a method named "async".
@@ -792,7 +792,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
         bool is_setter = false;
         // Private method/accessor (P3/P4): `#m()`, `get #x()`, `set #x(v)`.
         // The key is loaded from the private name's own symbol slot instead
-        // of a string/computed-key constant — see the install loop below.
+        // of a string/computed-key constant, see the install loop below.
         bool is_private_member = false;
         char[] priv_member_name = {};
 
@@ -801,7 +801,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
         // raw token text (e.g. "0x10" instead of "16").
         bool method_name_is_number = false;
         double method_name_num_value = 0.0;
-        // Same idea for a BIGINT token (e.g. `1n() {}`) — key is
+        // Same idea for a BIGINT token (e.g. `1n() {}`), key is
         // ToString(NumericValue(NumericLiteral)) per ES2020 PropertyName.
         bool method_name_is_bigint = false;
         char[] method_name_bigint_src = {};
@@ -809,7 +809,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
         // Check for computed key [expr]
         bool has_computed_key = false;
         // True when the name came from a computed string-literal key
-        // (`['constructor']`) collapsed to a fixed name — PropName of a
+        // (`['constructor']`) collapsed to a fixed name, PropName of a
         // ComputedPropertyName is the empty string, so the field-name early
         // errors (constructor/prototype) must NOT fire for it (ES2022
         // §15.7.1); the runtime CreateDataPropertyOrThrow still applies.
@@ -824,13 +824,13 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
             self.advance()!;  // consume `[`
             // ES2015 §14.5.13 step 1: a computed key whose *literal string value* is
             // "prototype" combined with `static` is an early SyntaxError (covered by
-            // §14.5.1's "static method named prototype" rule — test262
+            // §14.5.1's "static method named prototype" rule, test262
             // static-method-non-configurable-err).  Detect that literal-string form
             // at compile time so we can reject it cleanly instead of waiting for a
             // runtime TypeError out of DefinePropertyOrThrow.
             if (self.check(TokenType.STRING)) {
                 // The STRING shortcut only applies when the next token is `]`
-                // — i.e. `["foo"]` is genuinely a fixed-name key. Anything
+                //, i.e. `["foo"]` is genuinely a fixed-name key. Anything
                 // else (`["foo" + "bar"]`, `["foo", "bar"]`) is a real
                 // computed-key expression, not a literal collapsed to a
                 // fixed name. Without this guard `["s" + "tatic"]` would
@@ -883,7 +883,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
                 method_name = lexer::make_token(TokenType.IDENTIFIER, 0, 0);
             }
         } else if (self.check(TokenType.HASH_IDENT)) {
-            // Private method: `#m() {}` (accessors — `get #x`/`set #x` — are
+            // Private method: `#m() {}` (accessors, `get #x`/`set #x`, are
             // detected below via the `get`/`set` IDENTIFIER branch, which
             // also accepts a following HASH_IDENT as the accessor's name).
             Token priv_name_tok = self.advance()!;
@@ -895,7 +895,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
             // IDENTIFIER or any keyword (extends, class, if, return, etc.) as method name
             method_name = self.advance()!;
             // Check for getter/setter: `get prop() {}` / `set prop(v) {}`
-            // Skip when this is a generator-method shorthand — `*get` / `*set` is a SyntaxError.
+            // Skip when this is a generator-method shorthand, `*get` / `*set` is a SyntaxError.
             if (!is_generator_method && (method_name.str_value.len == 3
                  && method_name.str_value[0] == 'g'
                  && method_name.str_value[1] == 'e'
@@ -905,7 +905,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
                     && method_name.str_value[1] == 'e'
                     && method_name.str_value[2] == 't')) {
                 // Accessor only when the NEXT token can start a property
-                // name; otherwise `get`/`set` is itself the member name —
+                // name; otherwise `get`/`set` is itself the member name,
                 // `get() {}` (method), `get = 5` / `get;` / `get}` (P7
                 // fields), `get: 1` (not a class element; errors later).
                 bool next_starts_key = self.check(TokenType.IDENTIFIER)
@@ -985,7 +985,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
                 && method_name.str_value[9] == 'o'
                 && method_name.str_value[10] == 'r') {
                 if (!is_static && (is_getter || is_setter)) {
-                    // getter/setter named "constructor" — already handled above
+                    // getter/setter named "constructor", already handled above
                     return COMPILE_ERROR~;
                 }
                 if (ctor_inner_idx != 0xFFFFFFFF) {
@@ -1022,20 +1022,20 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
         } else {
             // After all name-parse branches, the only remaining class-element
             // shape that consumes no further token here is a public FIELD
-            // (`name [= expr];`) — `class { x = 1 }` / `class { x; }` /
+            // (`name [= expr];`), `class { x = 1 }` / `class { x; }` /
             // `class { [k] = v }` (computed-key branch already set method_name
             // to a sentinel and advanced past `]`). Field syntax is the
             // universal fallback for valid name forms, so anything else
             // (e.g. `{` as the first class-body token, or stray punctuation)
             // is a SyntaxError. Public field branch (P7, plan 054 §7) fires
             // here for:
-            //   - IDENTIFIER/keyword (`class { x = 1 }`)            — lexer on `=`/`;`
-            //   - computed key      (`class { [x+y] = v }`)        — lexer on `=`
-            //   - STRING            (`class { "x" = 1 }`)         — lexer on `=`
-            //   - NUMBER            (`class { 1 = 1 }`)           — lexer on `=`
-            //   - BIGINT            (`class { 1n = 1 }`)          — lexer on `=`
+            //   - IDENTIFIER/keyword (`class { x = 1 }`)           , lexer on `=`/`;`
+            //   - computed key      (`class { [x+y] = v }`)       , lexer on `=`
+            //   - STRING            (`class { "x" = 1 }`)        , lexer on `=`
+            //   - NUMBER            (`class { 1 = 1 }`)          , lexer on `=`
+            //   - BIGINT            (`class { 1n = 1 }`)         , lexer on `=`
             // and is gated by the next token NOT being `(` (a method).
-            // The HASH_IDENT case for public fields is N/A — `#x` is a
+            // The HASH_IDENT case for public fields is N/A, `#x` is a
             // private field, handled at the top of the class-body loop.
             // Reject only if the FIRST class-body token was invalid (e.g. `(`,
             // `,`, EOF).
@@ -1076,7 +1076,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
             //  - staticFieldDefinition: PropName == "prototype" || "constructor"
             //  - ComputedPropertyName: NO early error (PropName is "")
             // The literal-string form of a computed key (`['constructor']`)
-            // is NOT a ComputedPropertyName at this point — its PropName is
+            // is NOT a ComputedPropertyName at this point, its PropName is
             // the string value, so the rule applies and it MUST throw.
             // `name_from_computed_string` captures that exception.
             char[] field_propname = {};
@@ -1155,7 +1155,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
                     // self.inner_funcs[computed_key_inner_idx] when the
                     // computed-key bracket was parsed (line 614 /
                     // accessor path line 654). CLOSURE + CALL + TOPROPKEY
-                    // (in-place ToPropertyKey coercion — must run at class
+                    // (in-place ToPropertyKey coercion, must run at class
                     // definition time per ES2022 §15.7.15 step 6.a.i so an
                     // object-key that throws on toString throws NOW, not at
                     // per-instance init time).
@@ -1180,13 +1180,13 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
 
             // The field initializer value: assigned via `=` (or undefined).
             // ES2022 §15.7.10 step 7: an anonymous function definition
-            // initializer gets SetFunctionName with the field name — the
+            // initializer gets SetFunctionName with the field name, the
             // *literal* key for static-name fields, the *value* (always the
             // empty string for computed keys) for computed fields. We pass
             // the literal name for both; the only observable difference is
             // that empty-named function names come out empty (matching §B.3.4
             // step 1.a which says `let key = ? evaluation of PropertyName;`
-            // for computed keys — and PropertyName evaluation of `[expr]` is
+            // for computed keys, and PropertyName evaluation of `[expr]` is
             // the empty string per §12.2.6.9). ToPropertyKey on the key in
             // step 8.b does not feed the function name.
             bool use_inferred = !has_computed_key;
@@ -1223,7 +1223,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
             // The actual install goes into the init function:
             //   __field_init__:  this[propname] = init_reg;   (WEC, own)
             //   __static_init__: ctor[propname] = init_reg;
-            // Use INITPROP (CreateDataPropertyOrThrow semantics — WEC own,
+            // Use INITPROP (CreateDataPropertyOrThrow semantics, WEC own,
             // no prototype-chain walk, no setters triggered). For computed
             // keys, the key value is read from the hidden slot set above.
             ushort this_reg = target_ctx.alloc_reg();
@@ -1259,7 +1259,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
             // env in source order) handles computed-key install. For
             // non-computed public fields, the key is a literal constant
             // known at compile time; the install loop uses the literal-name
-            // path and `is_field_key` is unnecessary — skip the entry.
+            // path and `is_field_key` is unnecessary, skip the entry.
             if (has_computed_key && method_count < MAX_CLASS_METHODS) {
                 methods[method_count].name = {};
                 methods[method_count].inner_idx = 0xFFFFFFFF;
@@ -1317,7 +1317,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
         // ES2015 §14.5.13: getter/setter methods in class bodies have a name
         // prefixed with "get " or "set " (matching object literal semantics).
         // For a computed key ([expr]) the name is the empty string per spec.
-        // The constructor method's name is special — per ES2015 §14.5.14
+        // The constructor method's name is special, per ES2015 §14.5.14
         // ClassDefinitionEvaluation + §14.3.7 DefineMethod, the constructor's
         // name is the className (passed via DefineMethod).  For an anonymous
         // class, that means the constructor's name is "" (per spec).
@@ -1325,7 +1325,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
         usz method_name_len = 0;
         if (is_private_member) {
             // Private methods/accessors: `.name` is "#foo" / "get #foo" /
-            // "set #foo" (the hash is part of the name — P3/P4).
+            // "set #foo" (the hash is part of the name, P3/P4).
             char[] priv_prefix = is_getter ? "get #" : (is_setter ? "set #" : "#");
             usz priv_name_len = priv_member_name.len;
             if (priv_prefix.len + priv_name_len < 128) {
@@ -1342,7 +1342,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
                 method_name_len = ctor_runtime_name.len;
             }
         } else if (has_computed_key) {
-            // Leave name empty — the actual key is computed at class evaluation time.
+            // Leave name empty, the actual key is computed at class evaluation time.
             method_name_len = 0;
         } else if (is_getter || is_setter) {
             char[] prefix = is_getter ? "get " : "set ";
@@ -1411,7 +1411,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
 
     // Finish __field_init__: implicit `return;` after the last field. The
     // resulting CompiledFunction is stored as a raw pointer on the
-    // constructor (below) rather than an inner_funcs index — it was compiled
+    // constructor (below) rather than an inner_funcs index, it was compiled
     // in THIS (class-enclosing) context, a different inner-function table
     // than the constructor's own, so an index would be meaningless there.
     CompiledFunction* field_init_func = null;
@@ -1419,7 +1419,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
         field_init_ctx.emit_simple(Opcode.POP_LEX);
         field_init_ctx.emit_simple(Opcode.RETUNDEF);
         // finish() already registers the CompiledFunction with the heap's
-        // teardown tracking — no extra track_compiled_func here.
+        // teardown tracking, no extra track_compiled_func here.
         field_init_func = field_init_ctx.finish()!;
     }
     (void)field_count;
@@ -1427,7 +1427,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
     // Finish __static_init__ (P5): implicit `return;` after the last static
     // field. Compiled the same way as __field_init__, but invoked directly
     // by COMPILER-EMITTED bytecode right after class evaluation (below) with
-    // `this` = the constructor — no VM construct-path hook is needed since
+    // `this` = the constructor, no VM construct-path hook is needed since
     // static fields initialize once, not per instance.
     CompiledFunction* static_init_func = null;
     if (has_static_init) {
@@ -1481,7 +1481,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
         }
         // Private class fields (ES2022): record where the VM construct path
         // finds __field_init__ and the brand's lex-scope binding name, as
-        // raw pointers (self-contained — see the CompiledFunction field docs
+        // raw pointers (self-contained, see the CompiledFunction field docs
         // in bytecode.c3 for why these are not pool indices).
         self.inner_funcs[ctor_inner_idx].field_init_func = field_init_func;
         self.inner_funcs[ctor_inner_idx].brand_name_hstr = has_brand
@@ -1540,12 +1540,12 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
     // P5 static brand: allocated here (not with the instance brand / private
     // symbols above, which must exist before the member loop for computed
     // keys) because it stamps the CONSTRUCTOR object itself via ADD_BRAND,
-    // which needs ctor_reg — not live until the constructor closure exists.
+    // which needs ctor_reg, not live until the constructor closure exists.
     {
         if (has_static_brand) {
             // P5: the static brand is stamped on the CONSTRUCTOR object
             // itself, right here in the class-evaluation bytecode (ctor_reg
-            // is already live) — unlike the instance brand, which the VM
+            // is already live), unlike the instance brand, which the VM
             // construct path stamps per-instance, the static brand only
             // needs to be set once, now.
             uint sbrand_desc_idx = self.add_string_constant("sbrand");
@@ -1605,7 +1605,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
         // Private instance method/accessor: stash this SAME closure object
         // into its hidden slot so __field_init__ can re-install it (own
         // [[PrivateElements]] copy, for the return-override case) onto each
-        // instance without building a second, distinct closure — see
+        // instance without building a second, distinct closure, see
         // PrivateNameEntry's method_closure_slot_name / getter_closure_slot_name
         // / setter_closure_slot_name doc comments (context.c3). A plain
         // method uses method_closure_slot_name; an accessor's getter/setter
@@ -1613,7 +1613,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
         if (methods[mi].is_private && !methods[mi].is_static) {
             // methods[mi].priv_slot_name IS the owning PrivateNameEntry's
             // slot_name (assigned when the ClassMethod was recorded, from
-            // `pe.slot_name` where pe = resolve_private_name(...)) — find
+            // `pe.slot_name` where pe = resolve_private_name(...)), find
             // that same entry back by matching slot_name (a stable,
             // interned slice) rather than re-resolving by source name,
             // which the ClassMethod struct doesn't retain.
@@ -1632,7 +1632,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
 
         ushort target_reg = methods[mi].is_static ? ctor_reg : proto_reg;
 
-        // Get the key register — either from computed key expression, static
+        // Get the key register, either from computed key expression, static
         // name, or (P3/P4) the private name's own runtime symbol slot.
         ushort key_reg;
         if (methods[mi].is_private) {
@@ -1682,7 +1682,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
             // Per ES2015 §14.5.14 step 9, public class methods are
             // {writable:true, enumerable:false, configurable:true}; private
             // methods (hidden-symbol key) are additionally non-writable and
-            // non-configurable per ES2022 §7.3.28 — the CLASS_INITPROP
+            // non-configurable per ES2022 §7.3.28, the CLASS_INITPROP
             // handler picks the flag set from key.is_hidden().
             self.emit_abc(Opcode.CLASS_INITPROP, (uint)target_reg, (uint)key_reg, (uint)method_reg);
         }
@@ -1696,17 +1696,17 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
     // P5: CLOSURE __static_init__ captures the CURRENT lex_env (still the
     // classScope pushed at the start of class_decl, with className bound).
     // Per ES2022 §15.7.14 ClassDefinitionEvaluation, static field initializers
-    // must be able to resolve the class name — so the className binding
+    // must be able to resolve the class name, so the className binding
     // (initially TDZ from INITTZ at the top of class_decl/class_expr) is
     // initialized with the constructor HERE, before the matching POP_LEX
     // and the CALL that runs the initializer.  Without this, `static #g =
     // (Object.preventExtensions(C), "Test262")` throws ReferenceError on `C`
     // because the classScope binding is still TDZ when the initializer runs.
-    // Gated on `class_name_reg` only — the string-constant index may
+    // Gated on `class_name_reg` only, the string-constant index may
     // legitimately be 0 (the first string added to the pool).
     if (has_static_init) {
         // finish() already registers static_init_func with the heap's
-        // teardown tracking — no extra track_compiled_func here (double-free
+        // teardown tracking, no extra track_compiled_func here (double-free
         // if called twice, see field_init_func above).
         uint static_init_idx = self.add_inner_func(static_init_func);
         ushort si_reg = self.alloc_reg();
@@ -1715,7 +1715,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
         // is still the current lex scope (the CLOSURE above just captured
         // it for static_init, methods on the class already captured it
         // earlier).  These three instructions (LDREG, PUTLEX_C, POP_LEX)
-        // MUST be emitted as a block right before the CALL — CLOSURE must
+        // MUST be emitted as a block right before the CALL, CLOSURE must
         // come first (so it captures classScope), and the CALL must come
         // last (so className has been initialized in static_init's view of
         // the scope).  When `class_name_reg == MAX_REGISTERS`, the class

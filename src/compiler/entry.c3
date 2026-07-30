@@ -23,7 +23,7 @@ fn CompiledFunction*? compile(Lexer* lex, void* heap) {
     ctx.init(lex, heap);
     ctx.is_global = true;
 
-    // ── Save lexer state before any pre-processing ───────────────────
+    // Save lexer state before any pre-processing.
     uint saved_pos    = lex.pos;
     uint saved_line   = lex.line;
     uint saved_col    = lex.col;
@@ -61,7 +61,7 @@ fn CompiledFunction*? compile(Lexer* lex, void* heap) {
     // Hoist var declarations at the global level.
     ctx.hoist_decls(true)!;
 
-    // ── Restore lexer to beginning for statement parsing ────────────
+    // Restore lexer to beginning for statement parsing.
     lex.pos             = saved_pos;
     lex.line            = saved_line;
     lex.col             = saved_col;
@@ -237,7 +237,7 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
     // Initialize eval result accumulator to undefined (for empty eval)
     ctx.emit_abc(Opcode.LDUNDEF, (uint)ctx.eval_acc_reg, 0, 0);
 
-    // ── Save lexer state before any pre-processing ───────────────────
+    // Save lexer state before any pre-processing.
     uint saved_pos    = lex.pos;
     uint saved_line   = lex.line;
     uint saved_col    = lex.col;
@@ -268,7 +268,7 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
     // Hoist var declarations at the eval level.
     ctx.hoist_decls(true)!;
 
-    // ── Restore lexer to beginning for statement parsing ────────────
+    // Restore lexer to beginning for statement parsing.
     lex.pos             = saved_pos;
     lex.line            = saved_line;
     lex.col             = saved_col;
@@ -375,7 +375,7 @@ fn CompiledFunction*? compile_module(Lexer* lex, void* heap, char[] module_name,
     ctx.is_async = true;
     ctx.current_module = module_def;
 
-    // ── Save lexer state before any pre-processing ───────────────────
+    // Save lexer state before any pre-processing.
     uint saved_pos    = lex.pos;
     uint saved_line   = lex.line;
     uint saved_col    = lex.col;
@@ -395,7 +395,7 @@ fn CompiledFunction*? compile_module(Lexer* lex, void* heap, char[] module_name,
     // Hoist var declarations at the module level.
     ctx.hoist_decls(true)!;
 
-    // ── Restore lexer to beginning for statement parsing ────────────
+    // Restore lexer to beginning for statement parsing.
     lex.pos             = saved_pos;
     lex.line            = saved_line;
     lex.col             = saved_col;

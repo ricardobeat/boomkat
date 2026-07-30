@@ -13,7 +13,7 @@ import std::io;
 // Expression parsing
 // ============================================================================
 
-/// Fail if the previous RHS expression was an ArrowFunction — ArrowFunction
+/// Fail if the previous RHS expression was an ArrowFunction, ArrowFunction
 /// is AssignmentExpression-level and must not appear as a binary operand
 /// (`1 + () => 2`, `#x in () => {}`, ES §13.16, §13.15).
 macro CompilerContext.check_no_arrow_rhs(&self) {
@@ -33,7 +33,7 @@ fn ushort? CompilerContext.expression(&self) {
     // comma. assignment_expr consumes and clears self.void_ctx on each call, so
     // we re-arm it: non-final operands are always void; the final operand is void
     // only if the whole expression is (outer_void). We arm each operand's void
-    // flag *after* confirming a comma follows the previous one — so the operand
+    // flag *after* confirming a comma follows the previous one, so the operand
     // just parsed is known non-final and the next arming reflects the correct
     // final/non-final split. The first operand consumes the caller's flag, which
     // is correct: in the no-comma case it equals outer_void; with a comma it is
@@ -42,10 +42,10 @@ fn ushort? CompilerContext.expression(&self) {
     ushort result = self.assignment_expr()!;
 
     // Handle comma operator: evaluate each, keep last
-    // Comma discards References — clear call_prop_obj_reg after each operand,
+    // Comma discards References, clear call_prop_obj_reg after each operand,
     // including the rightmost one (comma always returns a value, not a Reference).
     // Per ES2015 §12.2.1.3 NamedEvaluation, only direct `= expr` assignments
-    // receive inferred names — a comma-expression result does not. Clear the flag
+    // receive inferred names, a comma-expression result does not. Clear the flag
     // so the rightmost operand of `(a, function(){})` never gets the outer name.
     while (self.match(TokenType.COMMA)) {
         self.free_reg(result);
@@ -58,7 +58,7 @@ fn ushort? CompilerContext.expression(&self) {
         self.inferred_name_len = 0;
         // The operand about to be parsed inherits outer_void; if another comma
         // follows (next loop iteration), it was actually non-final and its value
-        // is discarded by free_reg at the top of that iteration — but its void
+        // is discarded by free_reg at the top of that iteration, but its void
         // flag was already consumed. To keep correctness simple and avoid voiding
         // an operand whose value might still be consumed, only propagate the
         // caller's outer_void here: the final operand gets it (correct), and any
@@ -146,7 +146,7 @@ fn ushort? CompilerContext.assignment_expr(&self) {
         self.pushback_count = _pbc; self.pushback_stack = _pbs;
 
         if (has_assign) {
-            // Destructuring assignment — parse pattern and RHS
+            // Destructuring assignment, parse pattern and RHS
             self.last_was_getvar = false;
             self.last_was_member = false;
 
@@ -158,10 +158,10 @@ fn ushort? CompilerContext.assignment_expr(&self) {
                 return self.object_destructure_assign()!;
             }
         }
-        // Not destructuring assignment — fall through to normal expression parsing
+        // Not destructuring assignment, fall through to normal expression parsing
     }
 
-    // Parse LHS with lhs_mode enabled — member_expr saves (obj, key) without GETPROP
+    // Parse LHS with lhs_mode enabled, member_expr saves (obj, key) without GETPROP
     self.lhs_mode = true;
     self.last_was_member = false;
     ushort left = self.conditional_expr()!;
@@ -172,7 +172,7 @@ fn ushort? CompilerContext.assignment_expr(&self) {
     // If LHS was a member expression but next token is NOT an assignment,
     // free the saved obj/key registers (GETPROP was already emitted).
     // Skip this cleanup when inside parens or in delete mode: the inner
-    // member reference isn't actually a candidate for assignment — the
+    // member reference isn't actually a candidate for assignment, the
     // enclosing grouping/del expression still needs the obj/prop tracks
     // for patch-into-DELPROP (delete) or for the outer assignment check
     // (CoverParenthesizedExpression is never a valid assignment target
@@ -295,11 +295,11 @@ fn ushort? CompilerContext.assignment_expr(&self) {
     }
 
     // ES5 §11.13.1 strict mode: assigning to 'eval' or 'arguments' is a
-    // SyntaxError. Only fires for a bare identifier target — member
+    // SyntaxError. Only fires for a bare identifier target, member
     // expressions never reach here with last_lhs_name_len set
     // (save_lhs_ident_name is called only from identifier resolution).
     // `await` and `yield` are reserved in this position only when the
-    // [Await]/[Yield] grammar parameters say so — i.e. inside an async
+    // [Await]/[Yield] grammar parameters say so, i.e. inside an async
     // function/arrow/method, a module, a class static block (for await) or
     // any generator (for yield). Outside those scopes `await = 1` /
     // `yield = 1` are perfectly legal simple assignments.
@@ -480,12 +480,12 @@ fn ushort? CompilerContext.assignment_expr(&self) {
             self.emit_abc(Opcode.LDUNDEF, (uint)cmp_reg, 0, 0);
             self.emit_abc(Opcode.SEQ, (uint)cmp_reg, (uint)left, (uint)cmp_reg);
             uint undef_jump = self.emit_cond_jump(Opcode.IF_TRUE, (uint)cmp_reg);
-            // Not nullish — skip RHS
+            // Not nullish, skip RHS
             self.free_reg(cmp_reg);
             uint skip_jump = self.emit_jump(Opcode.JUMP);
             self.patch_jump(null_jump);
             self.patch_jump(undef_jump);
-            // Nullish — evaluate RHS and assign
+            // Nullish, evaluate RHS and assign
             ushort right = self.assignment_expr()!;
             bool right_is_local_nc = self.last_was_local_var;
             if (lhs_was_member) {
@@ -513,7 +513,7 @@ fn ushort? CompilerContext.assignment_expr(&self) {
         }
     }
 
-    // Plain member assignment must not evaluate the LHS property read —
+    // Plain member assignment must not evaluate the LHS property read,
     // only the object and key are evaluated (§13.15.2).  Drop the GETPROP
     // (or GETPROP_CACHE / GETPROP_SUPER) emitted while parsing the target so
     // getters / proxy [[Get]] traps don't run as a side effect, and so any
@@ -521,7 +521,7 @@ fn ushort? CompilerContext.assignment_expr(&self) {
     // (`base[prop] = expr()` must ToPropertyKey(prop) AFTER expr()). For
     // super targets, this also defers the HomeObject null-prototype
     // TypeError: per spec MakeSuperPropertyReference computes [[Base]]
-    // eagerly (never throws — GetSuperBase just returns null), but the
+    // eagerly (never throws, GetSuperBase just returns null), but the
     // actual ToObject(base) check happens inside PutValue, AFTER the RHS has
     // been evaluated (§6.2.5.6). Stripping the eager read here means
     // PUTPROP_SUPER's own null-base check performs that throw at the
@@ -535,7 +535,7 @@ fn ushort? CompilerContext.assignment_expr(&self) {
             && (ushort)lhs_last.a == left
             && (ushort)lhs_last.b == lhs_member_obj && (ushort)lhs_last.c == lhs_member_prop) {
             // Strip the read for plain assignment so a getter (private
-            // accessor) isn't invoked as a side effect of LHS evaluation —
+            // accessor) isn't invoked as a side effect of LHS evaluation.
             // PrivateFieldSet reads nothing, only CHK_BRAND + [[Set]] runs.
             self.code_count--;
         } else if (self.last_member_is_super) {
@@ -572,16 +572,16 @@ fn ushort? CompilerContext.assignment_expr(&self) {
              || lhs_last.op == Opcode.GETGLOBAL_PRIM)
             && (ushort)lhs_last.a == left) {
             // A strict plain assignment must, per PutValue, capture LHS
-            // resolvability BEFORE the RHS runs — hence the RESOLVEVAR probe
+            // resolvability BEFORE the RHS runs, hence the RESOLVEVAR probe
             // and IF_TRUE/THROW_REF guard emitted below. But when the LHS is a
             // GETGLOBAL naming a global THIS unit hoisted (CHKGLOBALVAR /
             // CHKGLOBALFUNC ran for it), resolvability is statically TRUE, so
             // the guard is provably dead: strip the read (its value is
             // discarded) and leave lhs_ref_reg unset. Undeclared globals keep
-            // the guard — e.g. `undeclared = (this.undeclared = 5)` must still
+            // the guard, e.g. `undeclared = (this.undeclared = 5)` must still
             // throw even though the RHS would create the global. A GETGLOBAL_PRIM
             // LHS is by construction a declared primitive-only global, so it is
-            // statically resolvable too — strip its dead read.
+            // statically resolvable too, strip its dead read.
             if (self.is_strict
                 && (lhs_last.op == Opcode.GETGLOBAL_PRIM
                     || (lhs_last.op == Opcode.GETGLOBAL
@@ -596,7 +596,7 @@ fn ushort? CompilerContext.assignment_expr(&self) {
         }
     }
 
-    // ES2015 §12.15.4 AssignmentExpression: `x = anonymousFn` — when the LHS
+    // ES2015 §12.15.4 AssignmentExpression: `x = anonymousFn`, when the LHS
     // is a simple IdentifierReference (not a member expression), pass the
     // name through for NamedEvaluation of an anonymous function/class/arrow
     // RHS. Member-expression LHS (`o.attr = fn`) must NOT be named.
@@ -612,7 +612,7 @@ fn ushort? CompilerContext.assignment_expr(&self) {
     // Compile right-hand side
     ushort right = self.assignment_expr()!;
     // A bare identifier RHS that resolved to a live local variable's own
-    // register (not a temp) must never be freed here — free_reg is LIFO and
+    // register (not a temp) must never be freed here, free_reg is LIFO and
     // would hand that exact register back out to the very next alloc_reg
     // (e.g. the callee lookup of a call in the following statement), silently
     // aliasing and clobbering the variable in place.
@@ -647,13 +647,13 @@ fn ushort? CompilerContext.assignment_expr(&self) {
             if (void_ctx && lhs_was_getvar) {
                 // Result is discarded: skip both the LHS-register copy and the
                 // result-preservation copy. PUTVAR/PUTGLOBAL clears its source
-                // register, which is harmless here since nothing else reads it —
+                // register, which is harmless here since nothing else reads it,
                 // UNLESS `right` is a live local variable's home register, which
                 // must never be clobbered. In that case copy into `left` (a temp)
                 // and store from there (one move); otherwise store straight from
                 // `right` and free it (zero moves).
                 //
-                // We do NOT free the returned register here — the caller's
+                // We do NOT free the returned register here, the caller's
                 // expression/expression_statement free logic owns it. `left` was
                 // allocated before `right`, so `right` is the top of the register
                 // stack; returning `right` lets the caller's LIFO free_reg
@@ -678,7 +678,7 @@ fn ushort? CompilerContext.assignment_expr(&self) {
             }
             if (void_ctx) {
                 // Register-cached CONST target in a discarded context (e.g.
-                // `for (const v of arr) { v = 2; }` body — plan 062 group H).
+                // `for (const v of arr) { v = 2; }` body, plan 062 group H).
                 // Mirror the lhs_was_getvar branch above so the env-based
                 // PUTVAR_ASSIGN fires the const check.
                 uint const_ni = self.find_const_name_idx(left);
@@ -708,7 +708,7 @@ fn ushort? CompilerContext.assignment_expr(&self) {
                 uint const_ni = self.find_const_name_idx(left);
                 if (const_ni != 0xFFFFFFFFu) {
                     // Register-cached CONST target (e.g. `for (const v of arr)
-                    // { v = 2; }` after the for-of head — plan 062 group H). The
+                    // { v = 2; }` after the for-of head, plan 062 group H). The
                     // LDREG above wrote the new value into the register, but a
                     // const violation must still throw TypeError. Force PUTVAR_ASSIGN
                     // through the env so the runtime's non-writable flag fires.
@@ -828,7 +828,7 @@ fn ushort? CompilerContext.binary_expr(&self, int min_prec) {
 
     // ES2022 class-fields-private-in: `[+In] PrivateIdentifier in ShiftExpression`.
     // The grammar gives the PrivateIdentifier as a standalone LHS of the `in`
-    // operator — `#x` is not a value expression by itself. If the next token is
+    // operator, `#x` is not a value expression by itself. If the next token is
     // HASH_IDENT immediately followed by `in`, consume both and emit the
     // HAS_BRAND probe; the result then feeds the normal Pratt loop so lower-
     // precedence continuations (`#x in o && y`, `#x in o === b`) still parse.
@@ -839,7 +839,7 @@ fn ushort? CompilerContext.binary_expr(&self, int min_prec) {
         if (self.peek_type() == TokenType.IN) {
             self.advance()!;  // consume 'in'
             // Resolve #name to its slot entry (a SyntaxError if the private
-            // name has no declaration in any enclosing class — matches
+            // name has no declaration in any enclosing class, matches
             // AllPrivateIdentifiersValid early-error semantics).
             PrivateNameEntry* entry = self.resolve_private_name(hash_tok.str_value)!;
             // The brand binding lives in this context's pool.
@@ -861,7 +861,7 @@ fn ushort? CompilerContext.binary_expr(&self, int min_prec) {
             self.free_reg(rhs);
             left = dst;
         } else {
-            // Not followed by `in` — `#x` alone is not a valid expression.
+            // Not followed by `in`, `#x` alone is not a valid expression.
             // Push the HASH_IDENT back so unary_expr surfaces a real error.
             self.lexer.pushback(hash_tok);
             left = self.unary_expr()!;
@@ -870,7 +870,7 @@ fn ushort? CompilerContext.binary_expr(&self, int min_prec) {
         left = self.unary_expr()!;
     }
     bool left_is_local = self.last_was_local_var;
-    // Do NOT clear self.last_was_arrow_expr here — the recursive RHS call
+    // Do NOT clear self.last_was_arrow_expr here, the recursive RHS call
     // clears it on its own entry, parses its LHS, and the inner's flag
     // survives to the post-RHS check_no_arrow_rhs() in the outer for-loop.
 
@@ -885,7 +885,7 @@ fn ushort? CompilerContext.binary_expr(&self, int min_prec) {
         // Handle short-circuit operators specially
         if (tt == TokenType.LOG_AND) {
             self.advance()!;
-            // Result merges into `left`'s register — if that is a live local
+            // Result merges into `left`'s register, if that is a live local
             // variable register, copy to a temp first so the variable isn't
             // clobbered (same guard as the regular binary path below).
             if (left_is_local) {
@@ -950,7 +950,7 @@ fn ushort? CompilerContext.binary_expr(&self, int min_prec) {
 
             self.free_reg(cmp_reg);
 
-            // Not nullish — skip right side
+            // Not nullish, skip right side
             uint skip_jump = self.emit_jump(Opcode.JUMP);
 
             // Patch null and undefined jumps to here (right side)
@@ -1054,7 +1054,7 @@ fn ushort? CompilerContext.unary_expr(&self) {
             // to normal expression parsing so the member chain is fully consumed.
             //
             // A parenthesized identifier (`typeof (x)`) is still an
-            // IdentifierReference for this purpose — CoverParenthesizedExpression
+            // IdentifierReference for this purpose, CoverParenthesizedExpression
             // doesn't change what gets evaluated, it only affects IsIdentifierRef
             // for NamedEvaluation/assignment-target purposes (ES2015 §12.5.7 has
             // no such carve-out). Detect the exact `( IDENTIFIER )` shape here (no
@@ -1107,7 +1107,7 @@ fn ushort? CompilerContext.unary_expr(&self) {
                     return res_typeof;
                 }
 
-                // Not the simple `( IDENTIFIER )` shape — restore and fall
+                // Not the simple `( IDENTIFIER )` shape, restore and fall
                 // through to normal typeof expr parsing.
                 self.lexer.pos             = saved_pos;
                 self.lexer.line            = saved_line;
@@ -1137,7 +1137,7 @@ fn ushort? CompilerContext.unary_expr(&self) {
                                         tok2.type == TokenType.LPAREN;
                         }
                         if (is_member) {
-                            // Not a bare identifier — push back and fall through
+                            // Not a bare identifier, push back and fall through
                             // to normal typeof expr (will parse the member expr)
                             self.pushback(idTok);
                         } else {
@@ -1171,7 +1171,7 @@ fn ushort? CompilerContext.unary_expr(&self) {
             // then op_typeof's GETPROP result, so obj is lowest on the stack).
             // typeof never assigns, so free prop/op_typeof and write the
             // TYPEOF result into obj's register (reusing the lowest of the
-            // three) rather than allocating a new register on top — that
+            // three) rather than allocating a new register on top, that
             // would sit above prop/obj and make freeing them no-ops, since
             // free_reg only pops the top of the LIFO register stack.
             if (self.last_was_member) {
@@ -1181,7 +1181,7 @@ fn ushort? CompilerContext.unary_expr(&self) {
                 self.last_was_member = false;
                 if (obj_is_local) {
                     // obj_reg is a live local variable (e.g. `typeof d.value`):
-                    // it must NOT be clobbered — writing the TYPEOF result into
+                    // it must NOT be clobbered, writing the TYPEOF result into
                     // it would corrupt the variable. In RHS mode member_expr has
                     // already freed prop_reg, leaving op_typeof (the GETPROP
                     // result) as the only owned temp on top of the stack, so
@@ -1205,7 +1205,7 @@ fn ushort? CompilerContext.unary_expr(&self) {
             ushort res_void = self.alloc_reg();
             self.emit_abc(Opcode.VOID, (uint)res_void, (uint)op_void, 0);
             self.free_reg(op_void);
-            // void result is never a Reference — clear tracking so
+            // void result is never a Reference, clear tracking so
             // `delete void x.prop` returns true instead of patching DELPROP.
             self.last_was_member = false;
             self.last_was_getvar = false;
@@ -1226,7 +1226,7 @@ fn ushort? CompilerContext.unary_expr(&self) {
             if (self.last_was_member) {
                 if (self.last_member_is_super) {
                     // ES2022 §13.5.1.2 step 5.b: delete super.x / delete super[x]
-                    // always throws ReferenceError — super references are not deletable.
+                    // always throws ReferenceError, super references are not deletable.
                     // The super expression (including key evaluation) has already run;
                     // now emit a THROW_REF to raise ReferenceError at runtime.
                     // Free the super base and key registers allocated during super parsing.
@@ -1242,7 +1242,7 @@ fn ushort? CompilerContext.unary_expr(&self) {
                     return err_reg;
                 }
                 // Patch the last emitted instruction from GETPROP (or
-                // GETPROP_CACHE — computed keys always emit the _CACHE
+                // GETPROP_CACHE, computed keys always emit the _CACHE
                 // variant from member_expr, see its LBRACKET branch) to
                 // DELPROP. All three have identical register layout:
                 // A = result, B = obj, C = key.
@@ -1263,7 +1263,7 @@ fn ushort? CompilerContext.unary_expr(&self) {
                 // op_del is the A register of the patched DELPROP (boolean).
                 return op_del;
             } else if (self.last_was_getvar) {
-                // `delete IdentifierReference` — Annex B.3.1 (ES5 11.4.1 step 1):
+                // `delete IdentifierReference`, Annex B.3.1 (ES5 11.4.1 step 1):
                 // strict mode rejects this as a SyntaxError. Sloppy mode runs
                 // the deletion against the variable environment. Since this
                 // engine is strict-only, we always reject.
@@ -1451,7 +1451,7 @@ fn bool CompilerContext.postfix_result_discarded(&self) {
 ///
 /// NOTE: We deliberately do NOT set `self.lhs_mode = true` here. Doing so
 /// would change how `member_expr` behaves for ALL nested member expressions
-/// inside `call_expr` — including callees of method calls like `foo.bar()` —
+/// inside `call_expr`, including callees of method calls like `foo.bar()`,
 /// keeping their obj/prop registers alive and marking them as LHS members,
 /// which breaks unrelated code. Instead we let `member_expr` always track
 /// `last_was_member` (and save obj/prop registers), let `call_expr` clear
@@ -1465,7 +1465,7 @@ fn bool CompilerContext.postfix_result_discarded(&self) {
 fn ushort? CompilerContext.postfix_expr(&self) {
     // Consume the discarded-result signal once, before descending. Clearing it
     // here means any nested sub-expression reached via call_expr (subscripts,
-    // call arguments) sees postfix_void=false — only the outermost postfix in
+    // call arguments) sees postfix_void=false, only the outermost postfix in
     // the statement/for-update descent can skip old-value materialization.
     bool result_discarded = self.postfix_void;
     self.postfix_void = false;
@@ -1488,7 +1488,7 @@ fn ushort? CompilerContext.postfix_expr(&self) {
     bool nl_before_postfix_op = self.lexer.seen_line_term;
     // ES2024 §13.4.2/13.4.3 UpdateExpression: the operand must be a
     // SimpleAssignmentTarget. Calls (`f()`), dynamic imports (`import(x)`),
-    // and other non-reference results are not — reject as an early
+    // and other non-reference results are not, reject as an early
     // SyntaxError rather than silently discarding the increment/decrement.
     if ((tt == TokenType.INC || tt == TokenType.DEC) && !nl_before_postfix_op) {
         if (!self.last_was_member && !lhs_was_getvar && !self.last_was_local_var) {
@@ -1536,7 +1536,7 @@ fn ushort? CompilerContext.postfix_expr(&self) {
                 // Register-cached local (no GETVAR was emitted). The bare INC
                 // opcode only mutates the register and would silently succeed on
                 // a const violation. If `operand` is a CONST binding, route the
-                // write through INC_VAR — the runtime walks the env, finds the
+                // write through INC_VAR, the runtime walks the env, finds the
                 // non-writable flag installed by the surviving PUTLEX_C, and
                 // throws TypeError (plan 062 group H).
                 uint const_ni = self.find_const_name_idx(operand);
@@ -1680,13 +1680,13 @@ fn ushort? CompilerContext.postfix_expr(&self) {
 }
 
 /// After the ')' of a grouping expression: decide whether a pending
-/// member-call receiver survives the parens. Member accesses — optional
-/// chains included — keep their Reference through parens (`(o.m)()` and
+/// member-call receiver survives the parens. Member accesses, optional
+/// chains included, keep their Reference through parens (`(o.m)()` and
 /// `(o?.b)()` both call with this=o; test262
 /// optional-chaining/optional-call-preserves-this.js). A short-circuited
 /// chain yields undefined and the call throws regardless, so no receiver
 /// handling is needed for that case. The receiver is dropped only when
-/// nothing call-like follows — the parenthesized value is consumed as
+/// nothing call-like follows, the parenthesized value is consumed as
 /// plain data.
 fn void CompilerContext.drop_paren_receiver_unless_ref(&self) {
     TokenType next_tt = self.peek_type();
@@ -1756,7 +1756,7 @@ fn ushort? CompilerContext.call_expr(&self) {
             }
         } else if (self.match(TokenType.DOT)) {
             if (self.check(TokenType.HASH_IDENT)) {
-                // f().#name — private field access on a call result.
+                // f().#name, private field access on a call result.
                 if (self.del_mode) {
                     return self.fail("Private fields can not be deleted")~;
                 }
@@ -1792,7 +1792,7 @@ fn ushort? CompilerContext.call_expr(&self) {
 
             // A property access on a call result is itself a MemberExpression
             // and a valid assignment/update target (`f().x = v`, `f().x++`).
-            // Record it so assignment_expr/postfix_expr can emit PUTPROP —
+            // Record it so assignment_expr/postfix_expr can emit PUTPROP,
             // mirrors member_expr's DOT branch. The obj (callee) and prop
             // registers are kept live for the store; a following call
             // (`f().m()`) clears the flag and consumes obj as 'this' below.
@@ -1821,7 +1821,7 @@ fn ushort? CompilerContext.call_expr(&self) {
             // idempotent follow-up PUTPROP (§7.1.19). Plain assignment
             // (`f()[k] = v`) strips this GETPROP before it ever executes
             // (see assignment_expr), so the writeback never fires for that
-            // case — ordering is unaffected. GETPROP_CACHE writes the
+            // case, ordering is unaffected. GETPROP_CACHE writes the
             // coerced key back into idx_reg; shield a live-local key from
             // that mutation first.
             idx_reg = self.shield_computed_key(idx_reg);
@@ -1829,7 +1829,7 @@ fn ushort? CompilerContext.call_expr(&self) {
             ushort result = self.alloc_reg();
             self.emit_abc(Opcode.GETPROP_CACHE, (uint)result, (uint)callee, (uint)idx_reg);
 
-            // Computed member on a call result — also a valid target
+            // Computed member on a call result, also a valid target
             // (`f()[k] = v`). See the DOT branch above.
             if (self.check(TokenType.LPAREN) || self.check(TokenType.OPT_CHAIN)) {
                 self.free_reg(idx_reg);
@@ -1867,15 +1867,15 @@ fn ushort? CompilerContext.call_expr(&self) {
 
             // Process the access following ?.
             if (self.check(TokenType.LPAREN)) {
-                // a?.() — clear direct eval flag, optional chain calls are never direct eval
+                // a?.(), clear direct eval flag, optional chain calls are never direct eval
                 self.callee_is_eval = false;
                 callee = self.emit_call(callee)!;
                 self.last_was_member = false;
                 self.last_was_getvar = false;
             } else if (self.match(TokenType.LBRACKET)) {
-                // a?.[expr] — result is never a referenceable member/target
+                // a?.[expr], result is never a referenceable member/target
                 // (optional chains can't be assignment targets per spec), so
-                // plain GETPROP suffices — no coerced-key cache needed.
+                // plain GETPROP suffices, no coerced-key cache needed.
                 ushort idx_reg = self.expression()!;
                 self.expect(TokenType.RBRACKET)!;
 
@@ -1892,7 +1892,7 @@ fn ushort? CompilerContext.call_expr(&self) {
                 self.call_prop_obj_reg = callee;
                 callee = result;
             } else if (self.check(TokenType.HASH_IDENT)) {
-                // a?.#name — short-circuits above on nullish `a`; on the live
+                // a?.#name, short-circuits above on nullish `a`; on the live
                 // path this is a normal (brand-checked) private field read.
                 // Result is never a referenceable member/target, matching the
                 // a?.prop case below.
@@ -1913,7 +1913,7 @@ fn ushort? CompilerContext.call_expr(&self) {
                 self.call_prop_obj_reg = callee;
                 callee = priv_result2;
             } else {
-                // a?.prop — result is never a referenceable member
+                // a?.prop, result is never a referenceable member
                 char[] prop_str = self.read_property_name()!;
                 uint prop_const = self.add_string_constant(prop_str);
 
@@ -1978,14 +1978,14 @@ fn ushort? CompilerContext.emit_call(&self, ushort callee_reg) {
         && self.last_getvar_name_idx <= bytecode::MAX_C;
     // CALL_GLOBAL fusion candidate: the global-scope analog. The callee read
     // was emitted as plain GETGLOBAL (true global slot scope, non-prim-only
-    // binding — GETGLOBAL_PRIM globals are never functions, so a callee is
+    // binding, GETGLOBAL_PRIM globals are never functions, so a callee is
     // always plain GETGLOBAL) and is still the last instruction targeting this
     // exact callee register. Fuses into CALL_GLOBAL, which reloads the callee
     // via GETGLOBAL's varref IC and calls in one dispatch.
     // last_was_getglobal (unlike last_was_getvar) is only cleared inside
     // emit_ident_read, so it can stay stale-true through a member-access
     // callee (a method call). Require call_prop_obj_reg == MAX_REGISTERS so
-    // this fires only for a plain bare-global call — the same non-method
+    // this fires only for a plain bare-global call, the same non-method
     // precondition that makes the CALL_GLOBAL emission below reachable.
     bool getglobal_callee = self.last_was_getvar
         && self.last_was_getglobal
@@ -2018,7 +2018,7 @@ fn ushort? CompilerContext.emit_call(&self, ushort callee_reg) {
     // Also move when the callee register is a named local's home register:
     // CALL writes the result to the callee base, which would destroy the
     // binding (e.g. `function f(){} f(); f();` with f's register at the top
-    // of the stack — the first call's result clobbers f).
+    // of the stack, the first call's result clobbers f).
     if (callee_reg + 1 < self.next_reg || self.is_local_var_reg(callee_reg)) {
         // Relocation invalidates the CALL_VAR fusion: the GETVAR at
         // getvar_code_pos wrote into the OLD callee_reg (about to be
@@ -2039,7 +2039,7 @@ fn ushort? CompilerContext.emit_call(&self, ushort callee_reg) {
         // No relocation: the GETVAR/GETGLOBAL at getvar_code_pos is still the
         // last emitted instruction and nothing has read callee_reg's value yet
         // (arg compilation below only uses callee_reg as a register-number
-        // anchor). Drop it from the code stream entirely — CALL_VAR/CALL_GLOBAL
+        // anchor). Drop it from the code stream entirely, CALL_VAR/CALL_GLOBAL
         // at the end of this call will load the callee itself. This is what
         // actually elides the dispatch: the load's bytes never execute.
         self.code_count = getvar_code_pos;
@@ -2081,7 +2081,7 @@ fn ushort? CompilerContext.emit_call(&self, ushort callee_reg) {
                     has_spread = true;
                     // Shift the callee frame up by one and place the running-total
                     // register (SPREAD_ARG/PUTARG's B field, CALL_S's nargs source)
-                    // in the freed low slot, below first_arg — so an unbounded
+                    // in the freed low slot, below first_arg, so an unbounded
                     // spread cannot overwrite it or the arguments. Updates
                     // callee_reg / first_arg in place.
                     total_count_reg = self.begin_spread_args(&callee_reg, &first_arg, arg_count);
@@ -2121,7 +2121,7 @@ fn ushort? CompilerContext.emit_call(&self, ushort callee_reg) {
             } else {
                 ushort arg_reg = self.assignment_expr()!;
                 if (has_spread) {
-                    // Non-spread arg following a spread — destination
+                    // Non-spread arg following a spread, destination
                     // slot depends on the runtime spread count held in
                     // total_count_reg. The new PUTARG opcode writes the
                     // value at regs[first_arg + total_count] and
@@ -2169,13 +2169,13 @@ fn ushort? CompilerContext.emit_call(&self, ushort callee_reg) {
         // CALL_S reads the callee value from callee_reg directly (no
         // fused variant). If the GETVAR/GETGLOBAL was stripped speculatively
         // above (spread-ness is only known once args are fully parsed), restore
-        // it here — CALL_S needs the real value in the register.
+        // it here, CALL_S needs the real value in the register.
         if (getvar_callee) {
             self.emit(bytecode::make_a_bc(Opcode.GETVAR, (uint)callee_reg, getvar_name_idx));
         } else if (getglobal_callee) {
             self.emit(bytecode::make_a_bc(Opcode.GETGLOBAL, (uint)callee_reg, getvar_name_idx));
         }
-        // CALL_S: A=result, B=callee_reg, C=nargs_reg — reuse callee_reg for result
+        // CALL_S: A=result, B=callee_reg, C=nargs_reg, reuse callee_reg for result
         self.emit_abc(Opcode.CALL_S, (uint)callee_reg, (uint)callee_reg, (uint)total_count_reg);
     } else if (undef_this && getvar_callee) {
         // Fuse the callee's GETVAR into this call: the GETVAR instruction
@@ -2301,7 +2301,7 @@ fn ushort? CompilerContext.emit_tagged_template(&self, ushort callee_reg) {
     // === Site cache: constants[cache_idx] holds this call site's frozen
     // template object across every evaluation, shared by all closures
     // instantiated from the enclosing CompiledFunction (ES2015 §12.2.9.3
-    // GetTemplateObject — the cache is per Parse Node, not per closure).
+    // GetTemplateObject, the cache is per Parse Node, not per closure).
     // The slot starts as `undefined`; the first evaluation builds and
     // freezes the array, then stores it back with SETCONST.
     TVal undef_tv;
@@ -2350,7 +2350,7 @@ fn ushort? CompilerContext.emit_tagged_template(&self, ushort callee_reg) {
     }
     self.emit(bytecode::make_a_bc(Opcode.SETALEN, (uint)raw_arr_reg, part_count));
 
-    // Set .raw property on template array — a real but non-enumerable data
+    // Set .raw property on template array, a real but non-enumerable data
     // property (ES2015 §12.2.9.3 step 8: CreateDataProperty, then step 9
     // demotes it to non-writable/non-configurable via freeze below; own
     // enumerability is fixed at creation since freeze doesn't alter it).
@@ -2362,7 +2362,7 @@ fn ushort? CompilerContext.emit_tagged_template(&self, ushort callee_reg) {
         self.free_reg(raw_key_reg);
     }
 
-    // Both arrays are frozen — non-configurable/non-writable integrity
+    // Both arrays are frozen, non-configurable/non-writable integrity
     // level (ES2015 §12.2.9.3 steps 10-11).
     self.emit_abc(Opcode.FREEZEOBJ, (uint)raw_arr_reg, 0, 0);
     self.free_reg(raw_arr_reg);
@@ -2457,7 +2457,7 @@ fn ushort? CompilerContext.new_expr(&self) {
             // that last case, so a missing flag means we must reject.
             //
             // We also reject when not in eval mode AND not otherwise in
-            // a constructable context (e.g. class constructor) — global
+            // a constructable context (e.g. class constructor), global
             // / module / function code outside a constructor body has no
             // [[NewTarget]] either (ES2015 §13.3.1.1 step 1 / step 5).
             // Top-level code is already rejected by is_global + !constructable,
@@ -2481,7 +2481,7 @@ fn ushort? CompilerContext.new_expr(&self) {
             self.emit_abc(Opcode.NEWTARGET, (uint)result_reg, 0, 0);
             ctor_reg = result_reg;
         } else {
-            // Not 'target' — error
+            // Not 'target', error
             return COMPILE_ERROR~;
         }
     } else {
@@ -2656,7 +2656,7 @@ fn ushort? CompilerContext.new_expr(&self) {
             self.patch_jump(skip);
         } else if (self.match(TokenType.DOT)) {
             if (self.check(TokenType.HASH_IDENT)) {
-                // new X().#name — private field access on a freshly constructed
+                // new X().#name, private field access on a freshly constructed
                 // object. Resolves to a COMPILE_ERROR if no enclosing class
                 // declares the name (e.g. eval("new C().#x") with no
                 // PrivateEnvironment in scope); mirrors member_expr's DOT
@@ -2680,7 +2680,7 @@ fn ushort? CompilerContext.new_expr(&self) {
                 }
                 // priv_result is the freshly-allocated top register; priv_prop_reg
                 // sits directly below it and stays live for postfix PUTPROP (same
-                // reasoning as member_expr's DOT branch — free_reg is a no-op below
+                // reasoning as member_expr's DOT branch, free_reg is a no-op below
                 // the top, and next_reg already == priv_result + 1 here).
                 ctor_reg = priv_result;
                 continue;
@@ -2727,7 +2727,7 @@ fn ushort? CompilerContext.new_expr(&self) {
             self.call_prop_obj_reg = saved_prop_obj;
             self.expect(TokenType.RBRACKET)!;
             // May be reused as a compound/logical-assign or postfix/prefix
-            // target (`new X()[k] += v`) — see call_expr's LBRACKET branch
+            // target (`new X()[k] += v`), see call_expr's LBRACKET branch
             // for why GETPROP_CACHE + shield is needed here.
             idx_reg = self.shield_computed_key(idx_reg);
             ushort result = self.alloc_reg();
@@ -2784,12 +2784,12 @@ fn ushort? CompilerContext.member_expr(&self) {
 
     for (;;) {
         if (self.match(TokenType.DOT)) {
-            // Member access (obj.prop) — not a direct identifier reference,
+            // Member access (obj.prop), not a direct identifier reference,
             // so clear the direct eval flag.
             self.callee_is_eval = false;
 
             if (self.check(TokenType.HASH_IDENT)) {
-                // obj.#name — private field access. `delete obj.#x` is a
+                // obj.#name, private field access. `delete obj.#x` is a
                 // SyntaxError (early error; not a runtime concern here).
                 if (self.del_mode) {
                     return self.fail("Private fields can not be deleted")~;
@@ -2829,7 +2829,7 @@ fn ushort? CompilerContext.member_expr(&self) {
                 continue;
             }
 
-            // Get next token — after '.' it can be an identifier OR any keyword
+            // Get next token, after '.' it can be an identifier OR any keyword
             // (ES5 §11.2.1: property name must be an IdentifierName)
             Token? prop_name_opt = self.lexer.next_token();
             if (catch err = prop_name_opt) return COMPILE_ERROR~;
@@ -2867,7 +2867,7 @@ fn ushort? CompilerContext.member_expr(&self) {
             if (self.del_mode || self.lhs_mode) {
                 // LHS / delete mode: keep obj/prop alive for possible PUTPROP/DELPROP
                 // Also set up for potential method call 'this'. Always save obj
-                // for this-binding — it will be freed by assignment_expr cleanup
+                // for this-binding, it will be freed by assignment_expr cleanup
                 // if no call follows, or consumed by emit_call/emit_tagged_template.
                 TokenType next_tt = self.peek_type();
                 // Free old call_prop_obj_reg before overwriting
@@ -2884,7 +2884,7 @@ fn ushort? CompilerContext.member_expr(&self) {
                 }
             } else {
                 // RHS mode: free prop_reg immediately, UNLESS the next token is
-                // a postfix INC/DEC — in that case postfix_expr needs prop alive
+                // a postfix INC/DEC, in that case postfix_expr needs prop alive
                 // to emit PUTPROP after INC/DEC. postfix_expr will free it.
                 // Always save obj as call_prop_obj_reg for potential this-binding
                 // (e.g. parenthesized expressions followed by a call).
@@ -2910,7 +2910,7 @@ fn ushort? CompilerContext.member_expr(&self) {
             obj = result;
             obj_is_base_local = false;
         } else if (self.match(TokenType.LBRACKET)) {
-            // Computed member access — not a direct identifier reference.
+            // Computed member access, not a direct identifier reference.
             self.callee_is_eval = false;
             // Save lhs_mode: the inner expression() calls assignment_expr()
             // which resets lhs_mode to false, clobbering the outer mode.
@@ -2954,7 +2954,7 @@ fn ushort? CompilerContext.member_expr(&self) {
                 }
             } else {
                 // RHS mode: free idx_reg immediately, UNLESS the next token is
-                // a postfix INC/DEC — in that case postfix_expr needs idx_reg alive
+                // a postfix INC/DEC, in that case postfix_expr needs idx_reg alive
                 // to emit PUTPROP after INC/DEC. postfix_expr will free it.
                 // Always save obj as call_prop_obj_reg for potential this-binding.
                 TokenType next_tt = self.peek_type();
@@ -2975,7 +2975,7 @@ fn ushort? CompilerContext.member_expr(&self) {
             obj = result;
             obj_is_base_local = false;
         } else if (self.is_next_template()) {
-            // MemberExpression : MemberExpression TemplateLiteral — a tagged
+            // MemberExpression : MemberExpression TemplateLiteral, a tagged
             // template is itself a MemberExpression (distinct from a call
             // expression's `Arguments`), so `new tag\`...\`` evaluates the
             // tagged template first and applies `new` to its result.
@@ -3141,7 +3141,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 }
                 // `undefined` is an ordinary identifier bound to a non-writable
                 // global property (ES2015 §18.1.3), not a syntactic keyword like
-                // true/false/null — it must fall through to normal identifier
+                // true/false/null, it must fall through to normal identifier
                 // resolution below so `undefined = 12` parses (AssignmentTargetType
                 // simple) and throws TypeError at runtime rather than being
                 // rejected as an early SyntaxError.
@@ -3150,7 +3150,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 if (self.check(TokenType.ARROW)) {
                     char[][1] params_arr;
                     params_arr[0] = id_tok.str_value;
-                    // Capture byte offset of the IDENTIFIER (just consumed) — the
+                    // Capture byte offset of the IDENTIFIER (just consumed), the
                     // source for the arrow head runs from here to its body.
                     uint ident_arrow_src = self.lexer.token_start;
                     return self.parse_arrow_function(&params_arr[0], 1, false, ident_arrow_src)!;
@@ -3161,7 +3161,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 // This must be set BEFORE the early return for local variables.
                 self.callee_is_eval = str_eq(id_tok.str_value, "eval");
 
-                // Try to resolve as a local variable first (skip at global scope — use environment)
+                // Try to resolve as a local variable first (skip at global scope, use environment)
                 if (!self.is_global) {
                     if (try var_reg = self.resolve_var(id_tok.str_value)) {
                         self.last_was_getvar = false;
@@ -3227,7 +3227,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 self.advance()!;  // consume ')'
                 if (self.check(TokenType.ARROW)) {
                     // No-param arrow: () => ...
-                    // Restore lexer to right after '(' — parse_arrow_function_reparse
+                    // Restore lexer to right after '(', parse_arrow_function_reparse
                     // will re-parse from source.
                     self.lexer.pos             = saved_pos;
                     self.lexer.line            = saved_line;
@@ -3268,8 +3268,8 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 // SetFunctionName check (which also requires !lhs_was_member)
                 // doesn't fire for a grouped identifier.
                 self.last_lhs_name_len = 0;
-                // A parenthesized arrow is a CoverParenthesizedExpression —
-                // a PrimaryExpression — so it IS legal as a binary operand
+                // A parenthesized arrow is a CoverParenthesizedExpression,
+                // a PrimaryExpression, so it IS legal as a binary operand
                 // (`"x" in (() => {})`). Clear the marker the inner arrow set;
                 // the arrow-as-binary-operand check only targets bare arrows.
                 self.last_was_arrow_expr = false;
@@ -3303,7 +3303,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                     }
 
                     // A parameter may also be a destructuring pattern, e.g.
-                    // (x, [b]) => ... or (x, {c} = {}) => ... — skip over it
+                    // (x, [b]) => ... or (x, {c} = {}) => ..., skip over it
                     // (handling nesting) rather than bailing, so mixed
                     // identifier/destructured param lists are still detected
                     // as arrow functions. The skipped pattern's bindings
@@ -3351,7 +3351,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 }
 
                 if (is_arrow) {
-                    // Restore lexer to right after '(' — compile_arrow_inner
+                    // Restore lexer to right after '(', compile_arrow_inner
                     // will re-parse params from source (handling defaults).
                     self.lexer.pos             = saved_pos;
                     self.lexer.line            = saved_line;
@@ -3393,8 +3393,8 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 // SetFunctionName check (which also requires !lhs_was_member)
                 // doesn't fire for a grouped identifier.
                 self.last_lhs_name_len = 0;
-                // A parenthesized arrow is a CoverParenthesizedExpression —
-                // a PrimaryExpression — so it IS legal as a binary operand
+                // A parenthesized arrow is a CoverParenthesizedExpression,
+                // a PrimaryExpression, so it IS legal as a binary operand
                 // (`"x" in (() => {})`). Clear the marker the inner arrow set;
                 // the arrow-as-binary-operand check only targets bare arrows.
                 self.last_was_arrow_expr = false;
@@ -3447,8 +3447,8 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 // SetFunctionName check (which also requires !lhs_was_member)
                 // doesn't fire for a grouped identifier.
                 self.last_lhs_name_len = 0;
-                // A parenthesized arrow is a CoverParenthesizedExpression —
-                // a PrimaryExpression — so it IS legal as a binary operand
+                // A parenthesized arrow is a CoverParenthesizedExpression,
+                // a PrimaryExpression, so it IS legal as a binary operand
                 // (`"x" in (() => {})`). Clear the marker the inner arrow set;
                 // the arrow-as-binary-operand check only targets bare arrows.
                 self.last_was_arrow_expr = false;
@@ -3472,8 +3472,8 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 // SetFunctionName check (which also requires !lhs_was_member)
                 // doesn't fire for a grouped identifier.
                 self.last_lhs_name_len = 0;
-                // A parenthesized arrow is a CoverParenthesizedExpression —
-                // a PrimaryExpression — so it IS legal as a binary operand
+                // A parenthesized arrow is a CoverParenthesizedExpression,
+                // a PrimaryExpression, so it IS legal as a binary operand
                 // (`"x" in (() => {})`). Clear the marker the inner arrow set;
                 // the arrow-as-binary-operand check only targets bare arrows.
                 self.last_was_arrow_expr = false;
@@ -3495,7 +3495,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
             if (!self.is_generator) {
                 // Outside generators, `yield` is just an identifier per
                 // ES2024 §13.1.1. Handle it via the standard identifier
-                // path — same pattern as the AWAIT case when !is_async.
+                // path, same pattern as the AWAIT case when !is_async.
                 // A class static block's own statement list is [~Yield]
                 // (ES2022 §15.7.11): `yield` there is a SyntaxError instead,
                 // regardless of the enclosing generator-ness.
@@ -3546,12 +3546,12 @@ fn ushort? CompilerContext.primary_expr(&self) {
             }
             self.advance()!;  // consume 'yield'
             // ES2015 §14.4 YieldExpression: `yield [no LineTerminator here] *`
-            // and `yield [no LineTerminator here] AssignmentExpression` — a
+            // and `yield [no LineTerminator here] AssignmentExpression`, a
             // LineTerminator right after `yield` forces the bare `yield`
             // (yields undefined), same as ASI restricted productions.
             // `seen_line_term` reflects whitespace scanned *before* the most
             // recently produced token, so force the lookahead scan (via
-            // peek_type) before reading it — otherwise it's stale from
+            // peek_type) before reading it, otherwise it's stale from
             // before `yield` itself (see postfix_expr's nl_before_postfix_op
             // for the same pattern).
             self.peek_type();
@@ -3568,7 +3568,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 if (self.is_async_gen()) {
                     // async `yield* EXPR` (ES2018 §14.4.14 async / §27.6.3.8):
                     // delegate over the *async* iterator protocol. GET_ITER_ASYNC
-                    // does GetIterator(EXPR, async) — preferring @@asyncIterator
+                    // does GetIterator(EXPR, async), preferring @@asyncIterator
                     // and wrapping a sync source in %AsyncFromSyncIterator%. The
                     // YIELD_STAR_ASYNC opcode is then a resumable state machine
                     // that Awaits every inner next/throw/return result, Awaits
@@ -3582,7 +3582,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                     self.free_reg(iter_reg);
                     return result_reg;
                 }
-                // yield* iterable — delegate to the inner iterable via the ES6 iterator protocol.
+                // yield* iterable, delegate to the inner iterable via the ES6 iterator protocol.
                 // The YIELD_STAR opcode handles Getting the iterator, calling .next() in a
                 // suspend/resume loop, and properly delegating .throw()/.return().
                 ushort result_reg = self.alloc_reg();
@@ -3619,17 +3619,17 @@ fn ushort? CompilerContext.primary_expr(&self) {
             }
         }
 
-        // `await expr` — contextual keyword, only valid in async functions.
+        // `await expr`, contextual keyword, only valid in async functions.
         // Emits AWAIT + LOAD_RESUME so the VM can suspend/resume at this point.
         // In script (non-module) code, `await` is just an IdentifierName per
-        // ES2024 §13.1.1 — only the operator in async functions. Outside of
+        // ES2024 §13.1.1, only the operator in async functions. Outside of
         // an async function (and outside a module) `await` is an identifier,
         // so handle it via the standard identifier-as-expression path:
         // resolve as a local variable if possible, else emit GETVAR.
         case TokenType.AWAIT:
         {
             if (!self.is_async) {
-                // In a module, `await` is always reserved (ES2024 §13.1.1) —
+                // In a module, `await` is always reserved (ES2024 §13.1.1),
                 // it is never a plain IdentifierName, even outside an async
                 // function. Reject rather than treating it as an identifier.
                 // A class static block's own statement list is likewise
@@ -3692,7 +3692,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
             return operand;
         }
 
-        // `import(...)` — dynamic import expression (ES2020) — or the
+        // `import(...)`, dynamic import expression (ES2020), or the
         // `import.meta` meta-property (ES2024 §13.3.12).
         case TokenType.IMPORT:
         {
@@ -3702,7 +3702,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
             // Script, direct/indirect eval, or a Function/Generator/Async
             // body it is an early SyntaxError (compile_eval never sets
             // is_module). The terminal words `import` and `meta` must appear
-            // literally — a Unicode escape in either is a SyntaxError.
+            // literally, a Unicode escape in either is a SyntaxError.
             if (self.check(TokenType.DOT)) {
                 if (!self.module_goal) {
                     return self.fail("import.meta is only valid in a module")~;
@@ -3791,7 +3791,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
         case TokenType.SUPER:
         {
             self.advance()!;  // consume 'super'
-            // super() — call superclass constructor
+            // super(), call superclass constructor
             if (self.match(TokenType.LPAREN)) {
                 // Look up __super__ from the environment
                 if (!self.has_super_binding) {
@@ -3815,7 +3815,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 ushort total_count_reg = MAX_REGISTERS;
                 if (!self.check(TokenType.RPAREN)) {
                     for (;;) {
-                        // Spread argument: super(...iterable) — same lowering
+                        // Spread argument: super(...iterable), same lowering
                         // as emit_call (SPREAD_ARG + runtime count register).
                         if (self.match(TokenType.ELLIPSIS)) {
                             if (!has_spread) {
@@ -3874,7 +3874,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 }
                 self.expect(TokenType.RPAREN)!;
 
-                // Place 'this' slot — use LDUNDEF as a placeholder; SUPER_CALL
+                // Place 'this' slot, use LDUNDEF as a placeholder; SUPER_CALL
                 // allocates the actual new object (OrdinaryCreateFromConstructor)
                 // using new.target.prototype and ignores this slot.
                 self.emit_abc(Opcode.LDUNDEF, (uint)(super_reg + 1), 0, 0);
@@ -3895,8 +3895,8 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 return super_reg;
             }
 
-            // super.property — access property on superclass prototype
-            // super[expr] — computed property access on superclass prototype
+            // super.property, access property on superclass prototype
+            // super[expr], computed property access on superclass prototype
             if (self.check(TokenType.DOT) || self.check(TokenType.LBRACKET)) {
                 // super.x / super[x] is syntactically valid in any class method or
                 // object-literal method, even without `extends`. The runtime raises
@@ -3905,7 +3905,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                     return COMPILE_ERROR~;
                 }
 
-                // `delete super.x` / `delete super[x]` — ES2022 §13.5.1.2 step 5.b
+                // `delete super.x` / `delete super[x]`, ES2022 §13.5.1.2 step 5.b
                 // (and the test262 super-property-* tests): the IsSuperReference
                 // check throws ReferenceError for ANY delete of a super property,
                 // regardless of the super base's value. This check must run BEFORE
@@ -3924,7 +3924,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                     if (self.match(TokenType.DOT)) {
                         char[] prop_str = self.read_property_name()!;
                     } else if (self.match(TokenType.LBRACKET)) {
-                        // Save register state — the inner expression's emitted
+                        // Save register state, the inner expression's emitted
                         // code is unreachable, so its register allocations
                         // must not leak into the surrounding scope.
                         ushort saved_next_reg = self.next_reg;
@@ -3972,7 +3972,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                     self.emit_abc(Opcode.GETPROP_SUPER, (uint)result, (uint)super_proto_reg, (uint)super_key_reg);
                 } else {
                     // LBRACKET: §13.3.7.1 step 2 requires GetThisBinding() BEFORE
-                    // evaluating the key expression — in a derived constructor
+                    // evaluating the key expression, in a derived constructor
                     // `this` is TDZ-sentinel until super() returns, so
                     // `super[super()]` must throw ReferenceError from the *outer*
                     // super's this-check, not from evaluating the key. Emit a
@@ -4036,7 +4036,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
             Token next_tok = self.lexer.scan_template_after_expr()!;
 
             // §13.2.8.1 SubstitutionEvaluation: each substitution value is
-            // converted via ToString directly — unlike the `+` operator,
+            // converted via ToString directly, unlike the `+` operator,
             // which goes through ToPrimitive(default) first. The two only
             // differ observably when Symbol.prototype[@@toPrimitive] has
             // been redefined/removed. Coerce here so the ADD below (both
@@ -4125,7 +4125,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
             return re_reg;
         }
 
-        // `new MemberExpression` — e.g. `new Foo()`, `new new RegExp`.
+        // `new MemberExpression`, e.g. `new Foo()`, `new new RegExp`.
         // Grammar: MemberExpression includes `new MemberExpression Arguments`,
         // so `new` can appear in any primary/member position and chains.
         case TokenType.NEW:
@@ -4154,7 +4154,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
 /// directly in `primary_expr`'s IDENTIFIER case, so this function is only
 /// reached when `primary_expr`'s default case sees a token that cannot start
 /// any expression (e.g. EOF, a stray operator with no operand). That is a
-/// syntax error, not a valid empty expression — silently emitting `undefined`
+/// syntax error, not a valid empty expression, silently emitting `undefined`
 /// here previously masked things like a lone `++`/`+` at end of input.
 fn ushort? CompilerContext.literal_keyword(&self) {
     return self.fail("unexpected token in expression")~;
@@ -4231,7 +4231,7 @@ fn void? CompilerContext.validate_regexp_literal(&self, char[] raw) {
 
 /// Parse object literal: { key: value, ... }
 fn ushort? CompilerContext.object_literal(&self) {
-    // An object literal is not an AnonymousFunctionDefinition — any pending
+    // An object literal is not an AnonymousFunctionDefinition, any pending
     // inferred name (e.g. from `var o = {...}`) does not apply here and
     // must not leak into a later, unrelated anonymous function expression
     // (ES2015 §12.15.4 NamedEvaluation only applies to the RHS itself).
@@ -4252,13 +4252,13 @@ fn ushort? CompilerContext.object_literal(&self) {
     ushort obj_reg = self.alloc_reg();
     self.emit_abc(Opcode.NEWOBJ, (uint)obj_reg, 0, 0);
     // The __super__ binding costs a register, so it is created lazily on the
-    // first concise method / accessor — plain data literals skip it entirely
+    // first concise method / accessor, plain data literals skip it entirely
     // (large array-of-literal initialisers would otherwise exhaust registers).
     bool super_bound = false;
 
     // ES2015 §12.2.6.1 Early Errors: it is a SyntaxError for a literal to
     // contain more than one `__proto__: value` property. Only that form counts
-    // — shorthand, methods, accessors and computed keys are all exempt (they
+    //, shorthand, methods, accessors and computed keys are all exempt (they
     // define an ordinary own property rather than setting [[Prototype]]).
     // A local is exactly the right scope: nested literals recurse into their
     // own call and so track their own count.
@@ -4270,7 +4270,7 @@ fn ushort? CompilerContext.object_literal(&self) {
                 break;
             }
 
-            // ES2015 §14.3: generator-method shorthand — `*m() { yield ... }`.
+            // ES2015 §14.3: generator-method shorthand, `*m() { yield ... }`.
             // Save the generator + async flags; they are only overridden right
             // before compiling the method body below. Property keys, computed
             // keys, spread expressions, and `key: value` expressions are all
@@ -4290,7 +4290,7 @@ fn ushort? CompilerContext.object_literal(&self) {
             // on a later refresh would drop the method name (ES2019 §19.2.3.5).
             self.lexer.refresh_token_start();
             uint prop_src_start = self.lexer.token_start;
-            // ES2017 §14.6: async-method shorthand — `{ async m() {} }`.
+            // ES2017 §14.6: async-method shorthand, `{ async m() {} }`.
             // `async` is not a keyword; match_async_method_prefix consumes it
             // only when it is a modifier (followed on the same line by a
             // method-name token), so `{ async: 1 }`, `{ async }`, and
@@ -4306,7 +4306,7 @@ fn ushort? CompilerContext.object_literal(&self) {
             bool is_computed_key = false;  // true iff the key came from `[expr]`
             // Source start for Function.prototype.toString retention. Captured
             // above (prop_src_start) at the property's first token, which is the
-            // correct span origin for all method forms — `async`/`*` prefixes,
+            // correct span origin for all method forms, `async`/`*` prefixes,
             // `get`/`set`, and identifier/string/number/computed keys alike.
             uint key_src_start = prop_src_start;
 
@@ -4315,7 +4315,7 @@ fn ushort? CompilerContext.object_literal(&self) {
                 || lexer::keyword_to_string(key_tt).len > 0) {
                 Token key_tok = self.advance()!;
                 // ES2015 §12.2.6.8: shorthand is only legal for a plain
-                // IdentifierReference — string-literal keys and reserved
+                // IdentifierReference, string-literal keys and reserved
                 // words used as keys must not be treated as shorthand.
                 // `true` / `false` / `null` lex as plain IDENTIFIER tokens in
                 // this lexer (resolved to literals by string comparison at
@@ -4323,7 +4323,7 @@ fn ushort? CompilerContext.object_literal(&self) {
                 // spec and cannot be used as an IdentifierReference.
                 // `{ await }` / `{ yield }` shorthand is a valid
                 // IdentifierReference where the context permits the keyword as
-                // an identifier — outside a module/async fn for `await`, outside
+                // an identifier, outside a module/async fn for `await`, outside
                 // a generator for `yield` (a class static block's forbid flags
                 // reset in a nested non-async function/arrow, so this is how the
                 // static-init-await object-shorthand test compiles). The keyword
@@ -4337,7 +4337,7 @@ fn ushort? CompilerContext.object_literal(&self) {
 
                 // Check for getter/setter: `get prop() {}` / `set prop(v) {}`
                 // If key is "get" or "set" AND next token is a property key (not `:` or `(`)
-                // Generator-method shorthand forbids the getter/setter shape — `*get` / `*set`
+                // Generator-method shorthand forbids the getter/setter shape, `*get` / `*set`
                 // would otherwise be misparsed as a method shorthand that named `get`/`set`,
                 // so we disable the detection entirely when a star was consumed.
                 bool is_obj_getter = false;
@@ -4358,7 +4358,7 @@ fn ushort? CompilerContext.object_literal(&self) {
 
                 if (is_obj_getter || is_obj_setter) {
                     // `async get x() {}` / `async set x(v) {}` are SyntaxErrors
-                    // per ES2017 §14.6 — the async modifier only combines with
+                    // per ES2017 §14.6, the async modifier only combines with
                     // plain method shorthand.
                     if (is_async_method) return COMPILE_ERROR~;
                     // Parse the actual property name
@@ -4369,7 +4369,7 @@ fn ushort? CompilerContext.object_literal(&self) {
                         key_reg = self.assignment_expr()!;
                         self.expect(TokenType.RBRACKET)!;
                         // ES2015 §12.2.6.7: ToPropertyKey happens as part of
-                        // evaluating the computed key — coerce in place now
+                        // evaluating the computed key, coerce in place now
                         // (see the matching comment in the data-property
                         // computed-key branch below) so an abrupt completion
                         // (e.g. Object.create(null) with no toString/valueOf)
@@ -4399,7 +4399,7 @@ fn ushort? CompilerContext.object_literal(&self) {
                         // ES2015 §14.3: getter/setter names are prefixed with
                         // "get " or "set " so `o = { get foo() {} }; o.foo.name === "get foo"`.
                         // Always overwrite the inherited inferred name (from var
-                        // `o = ...`) — the property key + get/set prefix is the
+                        // `o = ...`), the property key + get/set prefix is the
                         // more specific source.
                         char[] prefix = is_obj_getter ? "get " : "set ";
                         usz prop_len = prop_tok.str_value.len;
@@ -4415,7 +4415,7 @@ fn ushort? CompilerContext.object_literal(&self) {
                         }
                     }
 
-                    // Compile the getter/setter function body — pass the
+                    // Compile the getter/setter function body, pass the
                     // source offset of the `get`/`set` keyword so the retained
                     // source span starts there (per ES2019 §19.2.3.5).
                     // Accessors are never generators or async; clear the flags
@@ -4428,7 +4428,7 @@ fn ushort? CompilerContext.object_literal(&self) {
                         // Give this object literal's `__super__` binding its own
                         // lexical environment record (PUSH_LEX) instead of
                         // re-declaring `let __super__` directly in the enclosing
-                        // scope — otherwise a sibling object literal later in the
+                        // scope, otherwise a sibling object literal later in the
                         // same block clobbers the first literal's binding and
                         // corrupts already-created closures that captured it.
                         self.emit_simple(Opcode.PUSH_LEX);
@@ -4477,7 +4477,7 @@ fn ushort? CompilerContext.object_literal(&self) {
                 self.emit(bytecode::make_a_bc(Opcode.LDCONST, (uint)key_reg, key_idx));
 
                 // ES2015 §14.3 / §14.1.20: method name inference. Always overwrite
-                // the inherited inferred name from the enclosing assignment — the
+                // the inherited inferred name from the enclosing assignment, the
                 // property key is the more specific source for the function name.
                 self.has_inferred_name = true;
                 self.inferred_name_len = (ushort)key_tok.str_value.len;
@@ -4493,7 +4493,7 @@ fn ushort? CompilerContext.object_literal(&self) {
                 key_reg = self.alloc_reg();
                 self.emit(bytecode::make_a_bc(Opcode.LDCONST, (uint)key_reg, key_idx));
             } else if (key_tt == TokenType.BIGINT) {
-                // ES2020 PropertyName: NumericLiteral (DecimalBigIntegerLiteral) —
+                // ES2020 PropertyName: NumericLiteral (DecimalBigIntegerLiteral),
                 // the property name is ToString(NumericValue(NumericLiteral)).
                 // Load the BigInt then coerce via TOPROPKEY (same runtime path
                 // as computed keys) rather than duplicating BigInt->string here.
@@ -4503,7 +4503,7 @@ fn ushort? CompilerContext.object_literal(&self) {
                 self.emit(bytecode::make_a_bc(Opcode.LDCONST, (uint)key_reg, key_idx));
                 self.emit_abc(Opcode.TOPROPKEY, (uint)key_reg, 0, 0);
             } else if (key_tt == TokenType.LBRACKET) {
-                // Computed property key — clear inferred name since the actual
+                // Computed property key, clear inferred name since the actual
                 // key is computed at runtime (per ES2015 §14.3 the inferred
                 // name is the empty string for computed keys).
                 is_computed_key = true;
@@ -4533,7 +4533,7 @@ fn ushort? CompilerContext.object_literal(&self) {
                 self.emit_abc(Opcode.TOPROPKEY, (uint)key_reg, 0, 0);
             } else if (self.match(TokenType.ELLIPSIS)) {
                 // Object spread: ...expr
-                // `*...expr` is not legal — restore flags and reject.
+                // `*...expr` is not legal, restore flags and reject.
                 if (is_generator_method) return COMPILE_ERROR~;
                 ushort spread_reg = self.assignment_expr()!;
                 self.emit_abc(Opcode.OBJSPRD, (uint)obj_reg, 0, (uint)spread_reg);
@@ -4555,7 +4555,7 @@ fn ushort? CompilerContext.object_literal(&self) {
 
             // Check for method shorthand or data property
             if (self.check(TokenType.LPAREN)) {
-                // Method shorthand: key() { ... } — name inferred from key (set above)
+                // Method shorthand: key() { ... }, name inferred from key (set above)
                 // Set the generator/async flags to exactly this method's own
                 // kind (assign, not set-on-true: a plain method defined inside
                 // a generator/async body must NOT inherit the enclosing
@@ -4592,7 +4592,7 @@ fn ushort? CompilerContext.object_literal(&self) {
                 self.is_async = saved_is_async;
             } else if (is_shorthand_key && (self.check(TokenType.COMMA) || self.check(TokenType.RBRACE))) {
                 // ES2015 §12.2.6.8: IdentifierReference shorthand property
-                // `{ cause }` is equivalent to `{ cause: cause }` — the value
+                // `{ cause }` is equivalent to `{ cause: cause }`, the value
                 // comes from the binding named by the key. Only legal when
                 // the property key came from an IdentifierReference or
                 // StringLiteral, never a numeric/computed key. `*a` shorthand
@@ -4600,9 +4600,9 @@ fn ushort? CompilerContext.object_literal(&self) {
                 // async modifier requires a method).
                 if (is_generator_method || is_async_method) return COMPILE_ERROR~;
                 // Read the binding into a register, then PUTPROP as usual.
-                // Resolve as a local (parameter/let/const/var register) first —
+                // Resolve as a local (parameter/let/const/var register) first,
                 // matching plain IdentifierReference resolution in primary_expr
-                // — and only fall back to a dynamic GETVAR-by-name lookup when
+                //, and only fall back to a dynamic GETVAR-by-name lookup when
                 // it isn't a local (global scope, or a name not locally bound).
                 bool resolved_local = false;
                 if (!self.is_global) {
@@ -4621,8 +4621,8 @@ fn ushort? CompilerContext.object_literal(&self) {
                 self.is_generator = saved_is_generator;
                 self.is_async = saved_is_async;
             } else {
-                // key: value — name inferred from key (set above)
-                // `*a: 1` is not legal per ES2015 §14.3 — generator shorthand
+                // key: value, name inferred from key (set above)
+                // `*a: 1` is not legal per ES2015 §14.3, generator shorthand
                 // must be a method (`*a() {}`). Same for `async a: 1`.
                 if (is_generator_method || is_async_method) return COMPILE_ERROR~;
                 self.expect(TokenType.COLON)!;
@@ -4632,7 +4632,7 @@ fn ushort? CompilerContext.object_literal(&self) {
                     if (seen_proto_key) return COMPILE_ERROR~;
                     seen_proto_key = true;
                     // `__proto__: fn` is a prototype-set, not a property
-                    // definition — no NamedEvaluation (§12.2.6.8 step 5).
+                    // definition, no NamedEvaluation (§12.2.6.8 step 5).
                     self.has_inferred_name = false;
                     self.inferred_name_len = 0;
                 } else if (is_computed_key) {
@@ -4642,10 +4642,10 @@ fn ushort? CompilerContext.object_literal(&self) {
                     // *empty* name so a following function/arrow/class/generator
                     // expression still consumes and clears the flag (leaving its
                     // compiled name empty, to be patched at runtime once the key
-                    // is known — see INITPROPN/class_initaccessor_set_name).
+                    // is known, see INITPROPN/class_initaccessor_set_name).
                     // Anything that is NOT such an expression (identifier ref,
                     // comma expr, literal, ...) never touches the flag, so it
-                    // stays set afterward — that's the signal used below to
+                    // stays set afterward, that's the signal used below to
                     // choose INITPROPN vs plain INITPROP.
                     self.has_inferred_name = true;
                     self.inferred_name_len = 0;
@@ -4688,7 +4688,7 @@ fn ushort? CompilerContext.object_literal(&self) {
 
 /// Parse array literal: [ expr, expr, ... ]
 fn ushort? CompilerContext.array_literal(&self) {
-    // Not an AnonymousFunctionDefinition — clear any pending inferred name
+    // Not an AnonymousFunctionDefinition, clear any pending inferred name
     // so it doesn't leak into an unrelated later function expression.
     // See the matching comment in object_literal.
     self.has_inferred_name = false;
@@ -4751,7 +4751,7 @@ fn ushort? CompilerContext.array_literal(&self) {
                     self.emit_abc(Opcode.ADD, (uint)idx_reg, (uint)idx_reg, (uint)one);
                     self.free_reg(one);
                 } else {
-                    // Compile-time index — use INITPROP (DefinePropertyOrThrow).
+                    // Compile-time index, use INITPROP (DefinePropertyOrThrow).
                     ushort idx_const = self.alloc_reg();
                     self.emit(bytecode::make_a_sbx(Opcode.LDINT, (uint)idx_const, (int)index));
                     self.emit_abc(Opcode.INITPROP, (uint)arr_reg, (uint)idx_const, (uint)elem_reg);

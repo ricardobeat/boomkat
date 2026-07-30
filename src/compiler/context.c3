@@ -106,8 +106,8 @@ struct LoopInfo {
     uint break_patch_head;
     uint continue_patch_head; ///< chain of pending continue jumps (deferred until target resolved)
     bool is_loop;             ///< false for switch pseudo-loops (continue skips these)
-    int  saved_lex_depth;     ///< cur_lex_depth at loop entry — break/continue POP_LEX back to this
-    int  iter_close_reg;      ///< >= 0: for-of iterator reg — emit ITER_CLOSE on break/return; -1 = none
+    int  saved_lex_depth;     ///< cur_lex_depth at loop entry, break/continue POP_LEX back to this
+    int  iter_close_reg;      ///< >= 0: for-of iterator reg, emit ITER_CLOSE on break/return; -1 = none
     bool is_await_loop;       ///< for-await-of: break/return unwind uses ITER_CLOSE_ASYNC (plan 057)
 }
 
@@ -136,7 +136,7 @@ struct ParamDefault {
 }
 
 /// Tracks a destructured parameter's outer `= default`: `f([x] = [])`.
-/// Unlike ParamDefault, there is no single identifier/var-env binding — the
+/// Unlike ParamDefault, there is no single identifier/var-env binding, the
 /// arg slot is a plain register. Recorded during param parsing and emitted
 /// in a later pass (see emit_destruct_param_defaults) once every parameter's
 /// arg slot is finalised, so scratch registers can never land on a
@@ -162,7 +162,7 @@ uint      g_last_err_col;
 /// (GETVAR+INC+PUTVAR → INC_VAR, LDCONST+GETPROP → GETPROPC, comparison
 /// fusion, copy-propagation, dead DECLVAR elision, NOP compaction).
 /// Set via the CLI `--no-optimize` flag; default off.  Useful when a
-/// miscompiled pattern reproduces only on optimized builds — narrows
+/// miscompiled pattern reproduces only on optimized builds, narrows
 /// the bug to either code generation or one of the peephole passes.
 bool g_disable_optimize = false;
 
@@ -244,7 +244,7 @@ struct CompilerContext {
     bool last_was_getvar;
     uint last_getvar_name_idx;
     /// Set when the last primary_expr returned an ArrowFunction. The Pratt parser
-    /// uses this to reject `1 + () => 2`, `#x in () => {}`, etc. — ArrowFunction
+    /// uses this to reject `1 + () => 2`, `#x in () => {}`, etc., ArrowFunction
     /// is an AssignmentExpression-level production and must not appear as a
     /// binary operand without parentheses (ES §13.16, §13.15). Cleared by
     /// binary_expr once the unary_expr return is consumed.
@@ -284,12 +284,12 @@ struct CompilerContext {
     ushort last_member_prop_reg;
     /// True when last_member_obj_reg is a live local-variable register (the
     /// member base was a bare local, e.g. `d.value`), so it must NOT be
-    /// overwritten as a scratch destination — doing so corrupts the variable.
+    /// overwritten as a scratch destination, doing so corrupts the variable.
     bool last_member_obj_is_local;
     /// True when the recorded member expression is a `super.x` / `super[x]`
-    /// reference — its store form must use PUTPROP_SUPER (receiver = this).
+    /// reference, its store form must use PUTPROP_SUPER (receiver = this).
     bool last_member_is_super;
-    /// True when the recorded member expression is `obj.#name` — a CHK_BRAND
+    /// True when the recorded member expression is `obj.#name`, a CHK_BRAND
     /// (own-only presence check) must run before the GETPROP/PUTPROP that
     /// reads/writes last_member_prop_reg (which holds the resolved private
     /// symbol, not a plain string key). `delete obj.#x` is a SyntaxError and
@@ -343,7 +343,7 @@ struct CompilerContext {
     /// symbol instead of allocating a fresh one. Set by emit_deferred_target
     /// before re-parsing a private-field destructuring target so the brand
     /// symbol lands in a register pre-allocated BELOW the upcoming GETPROP's
-    /// result register — invoke_getter writes the getter's callee/this pair
+    /// result register, invoke_getter writes the getter's callee/this pair
     /// at [result_reg, result_reg + 1] before the call even starts, so a
     /// register grabbed lazily inside emit_private_access could land at or
     /// above result_reg + 1 and get clobbered before the deferred CHK_BRAND
@@ -371,7 +371,7 @@ struct CompilerContext {
     /// the ONLY context in which `new.target` is a permitted syntax inside
     /// the eval source. `false` for indirect eval, eval from script top
     /// level, eval from an ArrowFunction, eval from a class constructor,
-    /// etc. — `new_expr()` reads it to decide whether to reject new.target
+    /// etc., `new_expr()` reads it to decide whether to reject new.target
     /// as a SyntaxError. Set by `compile_eval` based on the activation
     /// the runtime passes in (see builtin_eval in src/builtins/global.c3).
     bool   eval_direct_in_function;
@@ -410,28 +410,28 @@ struct CompilerContext {
     /// True while the body being compiled belongs to a static class method
     /// (or a static getter/setter). Per §13.3.7.1 GetSuperBase, a static
     /// method's HomeObject is the class constructor itself, not its
-    /// .prototype — so `super.x` there must resolve against __static_super__
+    /// .prototype, so `super.x` there must resolve against __static_super__
     /// (always via GETPROTO on the constructor) rather than __super__.
     bool super_is_static_method;
 
-    // Private class members (ES2022) — name resolution.  Stack of declared
+    // Private class members (ES2022), name resolution.  Stack of declared
     // private names across nested class bodies; private_scope_start marks
     // where each class body's names begin so pop_private_scope can trim
     // back to the enclosing class's names on exit. Growable (a class body
     // may declare arbitrarily many distinct private names).
     /// Shared private-name stack (see PrivateNameTable). Every context in one
     /// class compile points at the SAME table, so an in-place realloc during
-    /// growth is visible to all borrowers — no stale `entries` pointer. The
+    /// growth is visible to all borrowers, no stale `entries` pointer. The
     /// table struct itself is heap-allocated and reference-counted-by-ownership:
     /// exactly one context (`owns_private_names == true`) frees it.
     PrivateNameTable* private_name_table;
     /// False when private_name_table was adopted (borrowed) from an enclosing
-    /// context via adopt_private_names — such a context must not free the
+    /// context via adopt_private_names, such a context must not free the
     /// shared table in cleanup().
     bool owns_private_names;
     uint[MAX_CLASS_NESTING] private_scope_start;
     /// Compile-time class id per open class body (parallel to
-    /// private_scope_start) — makes each class's slot binding names unique
+    /// private_scope_start), makes each class's slot binding names unique
     /// ("#priv:<id>:foo") so sibling/nested classes never share bindings.
     uint[MAX_CLASS_NESTING] private_class_id;
     uint private_scope_depth;
@@ -449,7 +449,7 @@ struct CompilerContext {
     /// (ES2022 §15.7.11: ClassStaticBlockStatementList is [~Yield, +Await]
     /// unconditionally, unlike field initializers which inherit [?Yield,
     /// ?Await] from the enclosing context). `await` is always the reserved
-    /// keyword here — never usable as an identifier or BindingIdentifier —
+    /// keyword here, never usable as an identifier or BindingIdentifier,
     /// and the `await` operator itself is a SyntaxError (ContainsAwait early
     /// error). Like forbid_arguments/forbid_return, nested function/arrow
     /// bodies get a fresh CompilerContext that does not inherit this flag.
@@ -457,7 +457,7 @@ struct CompilerContext {
     /// True while compiling a class static initialization block body.
     /// ClassStaticBlockStatementList is [~Yield], and this strict-only
     /// engine treats `yield` as a reserved word (not a plain identifier) in
-    /// strict code — so a `yield` reference at the block's own level is a
+    /// strict code, so a `yield` reference at the block's own level is a
     /// SyntaxError. Like forbid_await, resets to false in any nested
     /// function/arrow body (fresh CompilerContext).
     bool forbid_yield;
@@ -465,7 +465,7 @@ struct CompilerContext {
     /// True while parsing the enclosing function's FormalParameters. Parameter
     /// defaults must reject yield/await EXPRESSIONS (FormalParameters may not
     /// Contain them, §14.1.2/§14.7), but destructuring defaults in the BODY of
-    /// a generator/async fn legally contain them — this flag tells
+    /// a generator/async fn legally contain them, this flag tells
     /// compile_default_expr which position it is compiling for.
     bool in_formal_params;
 
@@ -491,13 +491,13 @@ struct CompilerContext {
     // arguments tracking
     bool uses_arguments;        // true when 'arguments' is referenced in function body
 
-    // Local binding tracking — used to decide needs_env optimisation.
+    // Local binding tracking, used to decide needs_env optimisation.
     // Set to true when the function body contains any var/function declarations
     // that would be hoisted to the function scope.
     bool has_local_bindings;
     // Set by declare_var for let/const declarations. Lexical bindings live in
     // PUSH_LEX block environments, not the function var_env, but a nested
-    // closure still reads them via the env chain (GETVAR) — so a function with
+    // closure still reads them via the env chain (GETVAR), so a function with
     // lexical bindings and closures must keep its PUTLEX/PUTLEX_C/INITTZ
     // stores and its runtime env.
     bool has_lexical_bindings;
@@ -514,14 +514,14 @@ struct CompilerContext {
     // free_reg / free_regs_to never release registers below it.
     ushort reserved_regs;
 
-    // Closure tracking — set to true when a nested function is defined in
+    // Closure tracking, set to true when a nested function is defined in
     // this function's body.  Combined with has_local_bindings to decide
     // needs_env: if the function has var bindings but no nested functions
     // that could capture them, the env can be skipped.
     bool has_closures;
     // True once any local in this function is forced through the environment
     // (let/const block shadowing of an outer var, catch parameter). Such a
-    // function must keep its scope object — its captured locals are read via
+    // function must keep its scope object, its captured locals are read via
     // GETVAR, so the register-locals env-elision must not fire.
     bool has_captured_local;
     // True for a named function expression whose CompiledFunction will be
@@ -551,7 +551,7 @@ struct CompilerContext {
     bool capture_all;
 
     // Hoisted function declaration names (so main pass can skip recompilation).
-    // Fixed-size — bounded by top-level function count in a single module.
+    // Fixed-size, bounded by top-level function count in a single module.
     char[][256] hoisted_fn_names;
     ushort hoisted_fn_count;
 
@@ -562,9 +562,9 @@ struct CompilerContext {
     // is statically resolvable, so the RESOLVEVAR/THROW_REF guard is provably
     // dead and elided. Indices (not slices) are stored because interned string
     // constants dedupe by content, so the same name always maps to the same
-    // pool index within a context — sidestepping the lexer scratch-buffer
+    // pool index within a context, sidestepping the lexer scratch-buffer
     // lifetime hazard of escaped identifiers. Populated only for Script global
-    // scope (not modules — those bind via GETVAR, and not eval). Grows on the
+    // scope (not modules, those bind via GETVAR, and not eval). Grows on the
     // thread allocator; freed in cleanup().
     List{uint} declared_global_name_idxs;
 
@@ -579,13 +579,13 @@ struct CompilerContext {
     // guarded GETGLOBAL/PUTGLOBAL path is used by default (conservative).
     List{uint} prim_only_name_idxs;
 
-    // Direct eval tracking — when true, the CALL path must create a fresh env.
+    // Direct eval tracking, when true, the CALL path must create a fresh env.
     bool has_direct_eval;
     /// Set by primary_expr when the identifier "eval" is resolved; checked and
     /// cleared by emit_call to detect direct eval calls (eval(...) by name).
     bool callee_is_eval;
 
-    // Arrow/async tracking — needed for needs_env computation in finish().
+    // Arrow/async tracking, needed for needs_env computation in finish().
     bool is_arrow;
     bool is_async;
 
@@ -604,11 +604,11 @@ struct CompilerContext {
     // 0xFFFFFFFF means "not pending".
     uint pending_async_function_src;
 
-    // Module tracking — true when compiling an ESM module body.
+    // Module tracking, true when compiling an ESM module body.
     bool is_module;
     void* current_module;  // ModuleDef* (opaque to avoid import cycle)
 
-    // True when the syntactic goal symbol is Module — set on the module-body
+    // True when the syntactic goal symbol is Module, set on the module-body
     // context AND propagated into every nested function/arrow/generator context
     // it contains. Unlike `is_module` (module-body only; also gates top-level
     // `await` reservation), this stays true inside nested functions so the
@@ -626,7 +626,7 @@ struct CompilerContext {
     ushort inferred_name_len;
     bool has_inferred_name;
 
-    // Optimization toggle — when true, finish() skips the peephole passes
+    // Optimization toggle, when true, finish() skips the peephole passes
     // (GETVAR+INC+PUTVAR → INC_VAR, LDCONST+GETPROP → GETPROPC, comparison
     // fusion, copy-propagation, dead DECLVAR elision, NOP compaction).
     // Useful for debugging the compiler: when a miscompiled pattern works
@@ -638,7 +638,7 @@ struct CompilerContext {
 }
 
 // ============================================================================
-// CompilerContext — generator/async kind predicates
+// CompilerContext, generator/async kind predicates
 // ============================================================================
 
 /// True for an async generator body (`async function*` / `async *m(){}`):
@@ -656,7 +656,7 @@ macro bool CompilerContext.is_sync_generator(&self) {
 }
 
 // ============================================================================
-// CompilerContext — initialisation and finalisation
+// CompilerContext, initialisation and finalisation
 // ============================================================================
 
 fn void CompilerContext.init(&self, Lexer* lex, void* heap) {
@@ -710,7 +710,7 @@ fn void CompilerContext.init(&self, Lexer* lex, void* heap) {
     self.prim_only_name_idxs.allocator = mem;
 
     // Strict-only engine: lexer always in strict mode (affects FutureReservedWord
-    // keyword recognition — implements/interface/package/private/protected/public).
+    // keyword recognition, implements/interface/package/private/protected/public).
     self.lexer.set_strict(true);
 }
 
@@ -734,7 +734,7 @@ fn void CompilerContext.cleanup(&self) {
 
 /// Borrow the private-names table from an enclosing context (a method,
 /// default-parameter thunk, or arrow body compiled for a class element only
-/// resolves private names, never declares into the table — see
+/// resolves private names, never declares into the table, see
 /// declare_private_name's call sites, all of which are reached through
 /// class.c3's own `self`, never a propagated child context). Frees this
 /// context's own (still-empty) buffer first so it isn't leaked.
@@ -748,7 +748,7 @@ fn void CompilerContext.adopt_private_names(&self, CompilerContext* parent) {
     }
     // Borrow the parent's shared table by pointer. A nested class in a field
     // initializer that DECLARES private names grows this same table in place,
-    // so the growth (and any realloc of entries) is visible to `parent` too —
+    // so the growth (and any realloc of entries) is visible to `parent` too,
     // no stale-pointer desync between borrower and owner.
     self.private_name_table = parent.private_name_table;
     self.owns_private_names = false;
@@ -837,7 +837,7 @@ fn uint CompilerContext.add_inner_func(&self, CompiledFunction* func) {
 /// `function f({x} = {})`. Compiles the default expression as a thunk and
 /// records it in `destruct_defaults` for later emission by
 /// `emit_destruct_param_defaults`, once every parameter's arg slot is
-/// finalised — emitting immediately here would let scratch registers land
+/// finalised, emitting immediately here would let scratch registers land
 /// on the arg slot of a not-yet-parsed parameter later in the list.
 ///
 /// Returns `true` if a default was consumed, `false` and no-op otherwise.
@@ -937,7 +937,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     //   → NOP  /  INC_VAR name  /  NOP
     // Saves 2 dispatches per loop iteration on the hot counter path.
     //
-    // Declarative — see src/compiler/fusion.c3 (FUSION_INC_DEC_VAR rule,
+    // Declarative, see src/compiler/fusion.c3 (FUSION_INC_DEC_VAR rule,
     // run_fusion3_rule driver) for the pattern/guard/rewrite definition.
     // Ported 1:1 from the original hand-written pass; equivalence is checked
     // by the golden-bytecode suite (test/golden_bytecode/, `just
@@ -952,7 +952,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     // target) still produces correct results: NOP falls through to GETPROPC which reads
     // the index from the instruction itself, not from rK.
     //
-    // Declarative — see src/compiler/fusion.c3 (FUSION_GETPROPC rule) for the
+    // Declarative, see src/compiler/fusion.c3 (FUSION_GETPROPC rule) for the
     // pattern/guard/rewrite definition and the shared NOP-skip + dead-after-
     // liveness driver (run_fusion_rule). Ported 1:1 from the original
     // hand-written pass; equivalence is checked by the golden-bytecode suite
@@ -968,7 +968,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     // form. Relational forms fuse to JMP_N*/JMP_*; strict equality to JMP_SEQ/
     // JMP_SNEQ. Loose EQ/NEQ are deliberately excluded (they coerce and can
     // throw). Needs a code_count-sized bool scratch buffer for the jump-target
-    // bitset — allocate it here to keep fusion.c3 free of heap dependencies.
+    // bitset, allocate it here to keep fusion.c3 free of heap dependencies.
     if (!self.disable_optimize && self.code_count >= 2) {
         bool* jump_targets = (bool*)h.alloc_func(h.heap_udata, (usz)self.code_cap);
         if (jump_targets == null) { self.cleanup(); return COMPILE_ERROR~; }
@@ -976,7 +976,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         h.free_func(h.heap_udata, jump_targets);
     }
 
-    // --- Peephole: copy propagation — NOP LDREG rT = rS when immediately followed
+    // --- Peephole: copy propagation, NOP LDREG rT = rS when immediately followed
     // by a consumer that reads rT as a plain register operand (b or c), rT is dead
     // after the consumer, and rS is not clobbered between them (trivially true since
     // they are adjacent).
@@ -987,11 +987,11 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     //
     // Jump-target safety:
     //   - If the LDREG slot is a jump target it becomes a NOP; control falls through
-    //     to the consumer which now reads rS directly — correct.
+    //     to the consumer which now reads rS directly, correct.
     //   - If the consumer slot is a jump target, a jump landing there would have
     //     expected rT to be loaded.  After substitution the consumer reads rS instead.
     //     rS is the source register (the actual variable), so it still holds the
-    //     expected value — correct.
+    //     expected value, correct.
     //   Therefore no jump-target guard is needed for either slot.
     if (!self.disable_optimize && self.code_count >= 2) {
         for (uint i = 0; i + 1 < self.code_count; i++) {
@@ -1024,8 +1024,8 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
 
             // rT must be dead after the consumer: scan forward from i+2.
             // If the consumer itself writes rT (consumer.a == rT), the LDREG value is
-            // immediately overwritten by the consumer — no scan needed, rT is dead.
-            // Note: IF_TRUE/IF_FALSE use field A as a READ (not a write) — handle them
+            // immediately overwritten by the consumer, no scan needed, rT is dead.
+            // Note: IF_TRUE/IF_FALSE use field A as a READ (not a write), handle them
             // explicitly so they are not mistaken for an overwrite of rT.
             bool rT_live = false;
             if ((uint)consumer.a != rT) {
@@ -1060,7 +1060,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     // otherwise sit between an LDINT literal and its arithmetic consumer, so the
     // consumer of rK is now the next NON-NOP instruction.
     //
-    // Declarative — see src/compiler/fusion.c3 (FUSION_ADDI_SUBI rule) for the
+    // Declarative, see src/compiler/fusion.c3 (FUSION_ADDI_SUBI rule) for the
     // pattern/guard/rewrite definition and the shared NOP-skip + dead-after-
     // liveness driver (run_fusion_rule). Ported 1:1 from the original
     // hand-written pass; equivalence is checked by the golden-bytecode suite
@@ -1102,7 +1102,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     // Must run BEFORE the NOP compaction below so the NOPs we introduce here are
     // physically removed too. When this function needs no runtime scope object
     // (no closures / eval / arguments / default-or-rest params, and not an
-    // arrow/generator/async), nothing can ever read its scope — all of its
+    // arrow/generator/async), nothing can ever read its scope, all of its
     // non-captured locals live purely in registers (reads already use registers;
     // see resolve_var). The env *writes* below are therefore dead, so we NOP
     // them; this lets the VM skip allocating the scope HObject per call (the
@@ -1116,7 +1116,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     // INITTZ stays in the list (it only matters for the typeof special case
     // handled below).
     //
-    // Invariant: elision must agree with resolve_var in scope.c3 — any binding
+    // Invariant: elision must agree with resolve_var in scope.c3, any binding
     // whose reads are forced through the env (is_captured=true on its scope
     // entry) MUST keep its env writes (DECLVAR/INITTZ/PUTLEX), because NOP'ing
     // them would leave the env without the binding and cause ReferenceError on
@@ -1138,7 +1138,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
                      && !self.is_async;
         if (!self.disable_optimize && elide_ok) {
             // TYPEOFIDENT relies on the INITTZ sentinel in the block env to
-            // throw for `typeof x` inside x's temporal dead zone — collect the
+            // throw for `typeof x` inside x's temporal dead zone, collect the
             // name indices it references so those sentinels are kept.
             uint[64] typeof_names;
             uint typeof_name_count = 0;
@@ -1150,7 +1150,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
             for (uint i = 0; i < self.code_count; i++) {
                 Opcode dop = self.code[i].op;
                 // Declarations always target the function's own immediate scope.
-                // PUTLEX_C is intentionally excluded — see the comment above the
+                // PUTLEX_C is intentionally excluded, see the comment above the
                 // elision block for why const env writes must survive.
                 if (dop == Opcode.DECLVAR || dop == Opcode.DECLVAR_HOIST
                     || dop == Opcode.PUTLEX
@@ -1291,7 +1291,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
                 case Opcode.JMP_LT_G: {
                     // Two-word ABC: signed 8-bit offset in field A, applied by
                     // the VM after BOTH words are consumed, so the target is
-                    // (pc + 2) + off — and the new base is likewise the slot
+                    // (pc + 2) + off, and the new base is likewise the slot
                     // after the kept trailing word.
                     int off = (int)(ichar)self.code[i].a;
                     int tgt_old = (int)i + 2 + off;
@@ -1321,7 +1321,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         }
 
         // Step 4: copy the (possibly compacted) instruction stream into the
-    // CompiledFunction.  When disable_optimize is true we still copy — we
+    // CompiledFunction.  When disable_optimize is true we still copy, we
     // just keep every instruction (including the peephole-produced NOPs).
     uint final_count = self.disable_optimize ? self.code_count : new_count;
     usz code_bytes = (usz)final_count * Instruction::size;
@@ -1337,7 +1337,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     Instruction* dst_code = (Instruction*)code_raw;
     uint dst_idx = 0;
     if (self.disable_optimize) {
-        // Copy everything verbatim — preserves all NOPs introduced by the
+        // Copy everything verbatim, preserves all NOPs introduced by the
         // peephole passes, but the VM treats NOP as no-op so execution is
         // correct.  Useful for debugging: every instruction the peephole
         // produced is visible in the dump.
@@ -1401,14 +1401,14 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     func.flags.is_async = self.is_async;
     func.flags.is_arrow = self.is_arrow;
     func.flags.is_strict = self.is_strict;
-    // A direct eval's source is opaque at compile time — it may reference
+    // A direct eval's source is opaque at compile time, it may reference
     // `arguments` even though the enclosing function's own parsed text never
     // does (ES2022 §15.7.10 PerformEval materializes the caller's arguments
     // binding regardless). Force uses_arguments here for any ordinary
     // function containing a direct eval so the VM creates the arguments
     // object the eval body's runtime GETVAR lookup depends on. Arrows and
     // eval bodies themselves have no `arguments` binding of their own, so
-    // this is skipped for them — a direct eval nested in an arrow or in
+    // this is skipped for them, a direct eval nested in an arrow or in
     // another eval body resolves `arguments` through the nearest enclosing
     // ordinary function's binding instead (arrows propagate has_direct_eval
     // to that enclosing context explicitly; eval re-dispatch always runs
@@ -1464,7 +1464,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         func.num_formals = self.num_args;
     }
 
-    // Allocate Inline Cache array — one entry per instruction, zeroed.
+    // Allocate Inline Cache array, one entry per instruction, zeroed.
     if (func.code_count > 0) {
         usz ic_bytes = (usz)func.code_count * hobject::ICEntry::size;
         void* ic_raw = h.alloc_func(h.heap_udata, ic_bytes);
@@ -1474,7 +1474,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
             func.ic_count = func.code_count;
         }
 
-        // Allocate Variable IC array — one entry per instruction, zeroed.
+        // Allocate Variable IC array, one entry per instruction, zeroed.
         usz vic_bytes = (usz)func.code_count * hobject::VarICEntry::size;
         void* vic_raw = h.alloc_func(h.heap_udata, vic_bytes);
         if (vic_raw != null) {
@@ -1483,7 +1483,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
             func.var_ic_count = func.code_count;
         }
 
-        // Allocate NEWREGEXP literal compile cache — one ReCompiled* slot per
+        // Allocate NEWREGEXP literal compile cache, one ReCompiled* slot per
         // constant-pool entry, keyed by the regexp literal's constant index,
         // zeroed (null = not yet compiled).
         if (func.const_count > 0) {
@@ -1507,7 +1507,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     // hand it to compile_eval. cleanup() below would otherwise free the
     // scratch buffer; the snapshot needs to outlive this context.
     //
-    // Only snapshot when the table was ADOPTED from a parent — `owns_private_names
+    // Only snapshot when the table was ADOPTED from a parent, `owns_private_names
     // == false` means an outer class compiled the entries. A table owned by
     // this context means WE declared the names here, so direct eval can only
     // see them via the lex env chain (no class scope to inherit), and a
@@ -1521,14 +1521,14 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         usz snap_bytes = (usz)snap_count * PrivateNameEntry::size;
         PrivateNameEntry* snap = (PrivateNameEntry*)h.alloc_func(h.heap_udata, snap_bytes);
         if (snap != null) {
-            // memcpy the entire entry table — every entry's name/slot_name/
+            // memcpy the entire entry table, every entry's name/slot_name/
             // brand_slot_name slices point at interned HString data (stable),
             // so the byte-level copy is safe.
             mem::copy(snap, self.private_name_table.entries, (sz)(snap_bytes));
             func.eval_private_names = (void*)snap;
             func.eval_private_name_count = snap_count;
         }
-        // If alloc fails, leave the snapshot null — eval will just not see
+        // If alloc fails, leave the snapshot null, eval will just not see
         // inherited private names (matches the pre-fix behaviour). Failing
         // the compile here would be worse: a transient alloc hiccup would
         // break every class-body eval test.
@@ -1537,7 +1537,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     // Run bytecode peephole optimizations (GETPROPC2 chain fusion, etc.)
     peephole::peephole_scan(func, hp);
 
-    // Free compiler scratch buffers — the CompiledFunction owns its own copies.
+    // Free compiler scratch buffers, the CompiledFunction owns its own copies.
     self.cleanup();
 
     return func;
@@ -1580,7 +1580,7 @@ struct ClassMethod {
     // from this compiler-managed slot binding name (the private symbol),
     // instead of LDCONST from `name`/`computed_key_*`.
     bool   is_private;
-    char[] priv_slot_name;          // e.g. "#priv:3:foo" — the name's own symbol
+    char[] priv_slot_name;          // e.g. "#priv:3:foo", the name's own symbol
     // Public computed-key FIELD (P7): pseudo-entry, not a method. The install
     // loop evaluates the key once at class-definition time (in source order,
     // interleaved with method-key evaluation) and PUTLEXes it into this
@@ -1591,7 +1591,7 @@ struct ClassMethod {
 }
 
 // ============================================================================
-// Private class members (ES2022) — name resolution scope
+// Private class members (ES2022), name resolution scope
 // ============================================================================
 
 /// Initial capacity of the growable private-names table (across all nested
@@ -1608,8 +1608,8 @@ const uint MAX_CLASS_NESTING = 16;
 
 /// Shared, heap-allocated backing store for the private-names stack. A single
 /// class compile involves many CompilerContexts (the class-enclosing `self`
-/// plus per-element field/method/arrow/block bodies), all of which resolve —
-/// and some of which DECLARE (a nested class inside a field initializer) —
+/// plus per-element field/method/arrow/block bodies), all of which resolve,
+/// and some of which DECLARE (a nested class inside a field initializer),
 /// against the SAME logical private-name stack. They share one PrivateNameTable
 /// through a pointer so that a growth (realloc of `entries`) done by any one of
 /// them is immediately visible to all the others: growing in place mutates this
@@ -1628,40 +1628,40 @@ struct PrivateNameEntry {
     char[] name;         // e.g. "foo" (without '#')
     // Lexical binding name of this name's symbol slot, e.g. "#priv:3:foo"
     // (unique per class body via a compile-time class id, so sibling and
-    // nested classes never collide). Points at interned HString data —
-    // stable storage — so any CompilerContext (method body, __field_init__)
+    // nested classes never collide). Points at interned HString data,
+    // stable storage, so any CompilerContext (method body, __field_init__)
     // can add it to its OWN constant pool: constant indices are context-
     // relative and must never cross function boundaries.
     char[] slot_name;
     // Binding name of the OWNING class's brand slot ("#priv:<id>:brand").
-    // Own-property presence of the brand — not of this name's own key — is
+    // Own-property presence of the brand, not of this name's own key, is
     // what CHK_BRAND verifies for `obj.#foo` accesses (the brand is
     // unforgeable and shared by every field on the class; the field's own
     // key is only used for the GETPROP/PUTPROP that follows).
     char[] brand_slot_name;
-    bool   is_method;    // declared as a method/accessor (affects write errors) — P3/P4
+    bool   is_method;    // declared as a method/accessor (affects write errors), P3/P4
     bool   has_getter;   // P4
     bool   has_setter;   // P4
-    bool   is_static;    // P5: static private member — brand_slot_name is the STATIC brand
+    bool   is_static;    // P5: static private member, brand_slot_name is the STATIC brand
     // Private INSTANCE method/accessor only (is_method && !is_static): a
     // hidden lexical slot holding the closure object the class-body's
     // prototype-install loop builds (class.c3), so __field_init__ can
     // re-install the SAME closure onto each instance's own
-    // [[PrivateElements]] — needed when a derived constructor's super()
+    // [[PrivateElements]], needed when a derived constructor's super()
     // returns an object whose [[Prototype]] chain never reaches the class
     // prototype (return-override; see class.c3's field_init emission for
     // the full rationale). Allocated right after prescan (alongside
-    // brand_slot_name) so it exists before any member body — which may
-    // read `this.#m` in a field initializer — compiles. For a plain
+    // brand_slot_name) so it exists before any member body, which may
+    // read `this.#m` in a field initializer, compiles. For a plain
     // method (`#m() {}`) this is the method's own closure slot; for an
-    // accessor (`get #x`/`set #x`) this is unused — see
+    // accessor (`get #x`/`set #x`) this is unused, see
     // getter_closure_slot_name / setter_closure_slot_name instead, since a
     // get/set pair needs TWO independent closures re-installed under one
     // shared key.
     char[] method_closure_slot_name;
     // Private accessor only (is_method && has_getter/has_setter): separate
     // closure slots for the getter and setter halves of a `get #x`/`set #x`
-    // pair — each keyword is compiled as its own ClassMethod/CLOSURE even
+    // pair, each keyword is compiled as its own ClassMethod/CLOSURE even
     // though both merge into this ONE PrivateNameEntry (same slot_name/key).
     // Empty when the corresponding half doesn't exist (set-only or
     // get-only accessor).

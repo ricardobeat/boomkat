@@ -62,10 +62,10 @@ struct ForLhsSnapshot {
     Token[4] pbs;
 }
 
-// ── for-of / for-await-of unified codegen (plan 057) ──
+// --- for-of and for-await-of codegen ---
 // All for-of loops share one skeleton (emit_forof); only what happens to each
 // yielded value differs. ForOfHead is a tagged union describing that per-value
-// step. `is_await` on emit_forof selects the sync vs async iterator protocol —
+// step. `is_await` on emit_forof selects the sync vs async iterator protocol,
 // the loop shape is otherwise identical.
 enum ForOfKind {
     IDENT,        // for (x of e) / for (let x of e) / for (const x of e) / for (var x of e)
@@ -82,8 +82,8 @@ struct ForOfHead {
     bool   id_is_bare;     // true = assign to existing lvalue, no declaration
     // Bare target that resolves to a register-cached local: id_reg is that
     // local's HOME register, so the bind writes the value straight into it (and
-    // skips PUTVAR). Without this the body — which reads the local from its home
-    // register — would see a stale value, since PUTVAR only updates the env slot
+    // skips PUTVAR). Without this the body, which reads the local from its home
+    // register, would see a stale value, since PUTVAR only updates the env slot
     // and then clears its source register (see the bare-forof var-desync fix).
     bool   id_reg_resident;
 
@@ -118,7 +118,7 @@ struct CompFuncDeclEntry {
     uint   inner_func_idx;
 }
 
-/// Compiler-side view of ModuleDef — field layout must match module::ModuleDef.
+/// Compiler-side view of ModuleDef, field layout must match module::ModuleDef.
 struct CompModuleDef {
     char[]                              module_name;
     char                                status;
@@ -135,7 +135,7 @@ struct CompModuleDef {
 }
 
 /// Register a top-level module function declaration for eager link-time
-/// instantiation (deduplicates by name — a later declaration of the same
+/// instantiation (deduplicates by name, a later declaration of the same
 /// name replaces the earlier inner_func_idx, mirroring last-wins hoisting).
 fn void mod_register_func_decl(CompModuleDef* mod, char[] name, uint inner_func_idx) {
     for (uint i = 0; i < mod.func_decl_count; i++) {
@@ -202,7 +202,7 @@ fn void mod_register_export(CompModuleDef* mod, char[] local_name, char[] export
 /// Find the ImportEntry (if any) whose local binding name is `local_name`.
 /// Used by `export { x }` (no `from` clause) to implement ECMA-262
 /// §16.2.1.7.1 ParseModule step 10.1: an export whose LocalName matches an
-/// already-imported binding is NOT a local export — it becomes an indirect
+/// already-imported binding is NOT a local export, it becomes an indirect
 /// re-export sourced from the ImportEntry's own module/import name, per
 /// Table 59. Returns null when `local_name` names an ordinary local binding.
 fn CompImportEntry* mod_find_import_by_local(CompModuleDef* mod, char[] local_name) {
@@ -300,7 +300,7 @@ fn void? CompilerContext.statement(&self) {
                 // `token_start` may be stale here (it reflects the most
                 // recently *consumed* token, but the identifier we're about to
                 // dispatch on is typically still a peeked lookahead). Refresh
-                // it so `id_tok_start` is the identifier's real source offset —
+                // it so `id_tok_start` is the identifier's real source offset,
                 // required for `async function ...` declarations, whose
                 // Function.prototype.toString span starts at the `async`
                 // keyword. Without this, a stale offset can point past the
@@ -315,7 +315,7 @@ fn void? CompilerContext.statement(&self) {
                     break;
                 }
 
-                // `async function name() {}` — treat as function declaration,
+                // `async function name() {}`, treat as function declaration,
                 // but only when `async` IS the contextual keyword and there
                 // is no LineTerminator between `async` and `function`
                 // (ES2017 §14.7). Escaped `\u0061sync` is a plain identifier
@@ -358,7 +358,7 @@ fn void? CompilerContext.statement(&self) {
                     return self.fail("using declarations are not supported")~;
                 }
 
-                // Not a label or async function — push the identifier back and fall through
+                // Not a label or async function, push the identifier back and fall through
                 self.lexer.pushback(id_tok);
             }
             self.expression_statement()!;
@@ -368,16 +368,16 @@ fn void? CompilerContext.statement(&self) {
 }
 
 /// Check if a name is restricted in strict mode (ES5 §11.6.2.2, ES2024 §13.3.1).
-/// The engine is strict-only — there is no non-strict context in which these
+/// The engine is strict-only, there is no non-strict context in which these
 /// may appear in a binding position, so we always reject:
-///   - `eval`, `arguments` — ES5 strict-only identifiers (§11.6.2.2).
-///   - `null`, `true`, `false` — NullLiteral / BooleanLiteral sources; never
+///   - `eval`, `arguments`, ES5 strict-only identifiers (§11.6.2.2).
+///   - `null`, `true`, `false`, NullLiteral / BooleanLiteral sources; never
 ///     valid as an IdentifierName in binding position. Lexed as IDENTIFIER
 ///     with `str_value` matching the literal name (no dedicated token type
 ///     in this engine), so a post-advance check is the only way to catch
 ///     `var true = 1` while still allowing property access `obj.true` etc.
 ///   - `yield`, `await`, `let`, `static`, `implements`, `interface`, `package`,
-///     `private`, `protected`, `public` — strict-mode reserved words. Most
+///     `private`, `protected`, `public`, strict-mode reserved words. Most
 ///     already come through this path via the lexer's KEYWORDS table
 ///     (which would deliver a keyword token instead of IDENTIFIER), but
 ///     `yield` and `await` slip through in non-generator / non-module
@@ -507,7 +507,7 @@ fn void? CompilerContext.parse_directives(&self) {
 /// str_value points into the source buffer, so it is stored as a (pos, len)
 /// span reconstructed later from `lexer.source`. An identifier that contained
 /// a unicode escape (`\uXXXX`) is decoded by the lexer into a reused scratch
-/// buffer whose contents don't survive the next token — so its bytes are
+/// buffer whose contents don't survive the next token, so its bytes are
 /// interned to stable storage and kept directly in the span instead.
 fn void CompilerContext.record_name_span(&self, NameSpan* span, Token name_tok, char* source_base) {
     char* end = &self.lexer.source[self.lexer.source.len - 1];
@@ -522,7 +522,7 @@ fn void CompilerContext.record_name_span(&self, NameSpan* span, Token name_tok, 
     }
 }
 
-/// Reconstruct a prescanned binding name from a NameSpan — either its
+/// Reconstruct a prescanned binding name from a NameSpan, either its
 /// interned decoded bytes (escaped identifiers) or a slice of the source.
 fn char[] CompilerContext.name_span_text(&self, NameSpan span) {
     if (span.name.len > 0) return span.name;
@@ -530,7 +530,7 @@ fn char[] CompilerContext.name_span_text(&self, NameSpan span) {
 }
 
 /// True when a `class` following `prev_tt` is a ClassDeclaration (statement
-/// position — its BindingIdentifier is a block-scoped lexical binding),
+/// position, its BindingIdentifier is a block-scoped lexical binding),
 /// rather than a ClassExpression (`x = class C {}`, `f(class C {})`, etc.,
 /// where `C` binds only inside the class body). A declaration only begins a
 /// Statement, so the token before it is a statement boundary; an expression
@@ -599,13 +599,13 @@ fn uint CompilerContext.pre_scan_lexical_decls(&self, NameSpan* spans, uint capa
     // top-level parens can only be a for-head LexicalDeclaration (valid code
     // has no other parenthesised let/const), and for-head names bind in the
     // for statement's own declarative environment (ES2024 §14.7.4/§14.7.5),
-    // NOT in this block — collecting them here TDZ-initialises a bogus
+    // NOT in this block, collecting them here TDZ-initialises a bogus
     // block-scope binding and falsely triggers the lex-vs-var early error
     // for `function f() { var x; for (let x in {}) {} }`. The for-head vs
     // body-var early error (§13.7.4.1/§13.7.5.13) is enforced at parse time
     // by check_var_lex_conflict.
     uint     paren_depth = 0;
-    // Previous significant token — used to tell a class DECLARATION from a
+    // Previous significant token, used to tell a class DECLARATION from a
     // class EXPRESSION (see class_is_declaration). Branches that consume
     // extra tokens and `continue` reset this to a statement boundary, since
     // a let/const/class declaration is always statement-terminated.
@@ -685,12 +685,12 @@ fn uint CompilerContext.pre_scan_lexical_decls(&self, NameSpan* spans, uint capa
             continue;
         }
 
-        // class Name { ... } — collect the binding name. Class declarations
+        // class Name { ... }, collect the binding name. Class declarations
         // are lexically scoped exactly like let/const (ES2015 §14.5.15
         // BlockDeclarationInstantiation), so a `typeof C` before `class C {}`
         // must observe the TDZ, not fall through to "undefined". A class
         // EXPRESSION's name (`var A = class B {}`) is NOT such a binding and
-        // must not be collected — distinguished by statement position.
+        // must not be collected, distinguished by statement position.
         if (brace_depth == 0 && tt == TokenType.CLASS && class_is_declaration(prev_tt)) {
             Token? name_opt = self.lexer.next_token();
             if (catch _err4 = name_opt) {
@@ -766,7 +766,7 @@ fn uint CompilerContext.pre_scan_var_decls(&self, NameSpan* spans, uint capacity
             continue;
         }
 
-        // function / function* / async function / class — consume the whole
+        // function / function* / async function / class, consume the whole
         // nested body inline: its `var` names belong to that nested scope's
         // VarDeclaredNames, not this block's. The inner walk swallows every
         // token through the body's closing RBRACE, so the outer loop resumes
@@ -859,7 +859,7 @@ fn uint CompilerContext.pre_scan_var_decls(&self, NameSpan* spans, uint capacity
 ///
 /// ES2015 §14.12 CaseBlock has its own lexical scope (BlockDeclarationInstantiation),
 /// so all of these names must be TDZ-initialized/scoped to the switch, exactly
-/// like block()'s treatment of let/const — this just widens the name set to
+/// like block()'s treatment of let/const, this just widens the name set to
 /// match everything CaseBlockEvaluation's BlockDeclarationInstantiation collects.
 ///
 /// Saves and restores the lexer state so normal parsing can proceed afterwards.
@@ -884,7 +884,7 @@ fn uint CompilerContext.pre_scan_switch_lexical_decls(&self, NameSpan* spans, ui
     // expression so `case 0: var A = class B {}` doesn't leak `B`.
     TokenType prev_tt = TokenType.SEMICOLON;
     // A `case`/`default` label ends at its `:`, which opens statement
-    // position — a FunctionDeclaration or `class` there is a lexical
+    // position, a FunctionDeclaration or `class` there is a lexical
     // CaseBlock binding. Distinguish that label colon from a ternary
     // `?:` colon by tracking whether an unmatched `?` is still open, and
     // from a colon nested in parens/brackets via paren_depth.
@@ -943,7 +943,7 @@ fn uint CompilerContext.pre_scan_switch_lexical_decls(&self, NameSpan* spans, ui
         }
         if (tt == TokenType.COLON && paren_depth == 0) {
             if (question_depth > 0) {
-                // Closes a ternary — not a case label.
+                // Closes a ternary, not a case label.
                 question_depth--;
                 prev_tt = tt;
             } else {
@@ -956,7 +956,7 @@ fn uint CompilerContext.pre_scan_switch_lexical_decls(&self, NameSpan* spans, ui
 
         // let/const: collect one or more comma-separated identifier names.
         // Excludes for-head parens (a let/const at paren_depth > 0 is a
-        // for-head LexicalDeclaration, scoped to the for statement — see
+        // for-head LexicalDeclaration, scoped to the for statement, see
         // pre_scan_lexical_decls).
         if (paren_depth == 0 && (tt == TokenType.LET || tt == TokenType.CONST)) {
             for (;;) {
@@ -985,7 +985,7 @@ fn uint CompilerContext.pre_scan_switch_lexical_decls(&self, NameSpan* spans, ui
             continue;
         }
 
-        // class Name { ... } — collect the binding name (declaration only).
+        // class Name { ... }, collect the binding name (declaration only).
         if (tt == TokenType.CLASS && class_is_declaration(prev_tt)) {
             Token? name_opt = self.lexer.next_token();
             if (catch _err4 = name_opt) {
@@ -1003,11 +1003,11 @@ fn uint CompilerContext.pre_scan_switch_lexical_decls(&self, NameSpan* spans, ui
         // Only a FunctionDeclaration (statement position) binds a lexical name;
         // a function *expression* like `x = function f(){}` or `(function f(){})`
         // binds nothing in the enclosing block. Same statement-position rule as
-        // classes — `prev_tt` must be `;`/`{`/`}`. Capture it before the async
+        // classes, `prev_tt` must be `;`/`{`/`}`. Capture it before the async
         // lookahead consumes prev_tt.
         bool fn_at_stmt_pos = class_is_declaration(prev_tt);
 
-        // async function [*] Name (...) { ... } — only when "async" is
+        // async function [*] Name (...) { ... }, only when "async" is
         // immediately followed by "function" (contextual keyword check).
         if (tt == TokenType.IDENTIFIER &&
             tok.str_value.len == 5 &&
@@ -1020,7 +1020,7 @@ fn uint CompilerContext.pre_scan_switch_lexical_decls(&self, NameSpan* spans, ui
             }
             Token peek_tok = peek_opt;
             if (peek_tok.type != TokenType.FUNCTION) {
-                // Not `async function` — this identifier is a plain expression
+                // Not `async function`, this identifier is a plain expression
                 // token; nothing further to do here (statement parsing handles it).
                 prev_tt = peek_tok.type;
                 continue;
@@ -1038,7 +1038,7 @@ fn uint CompilerContext.pre_scan_switch_lexical_decls(&self, NameSpan* spans, ui
             continue;
         }
 
-        // function [*] Name (...) { ... } — collect the binding name.
+        // function [*] Name (...) { ... }, collect the binding name.
         {
             Token? star_opt = self.lexer.next_token();
             if (catch _err6 = star_opt) {
@@ -1125,7 +1125,7 @@ fn void? CompilerContext.block(&self, bool check_directives, bool suppress_regex
     }
 
     // Push a new lexical scope for let/const/class/function declarations inside
-    // this block. Skip when the block has none — saves an allocation on every
+    // this block. Skip when the block has none, saves an allocation on every
     // function call (most functions have no block-scoped variables).
     bool has_lex = num_lex > 0;
     if (has_lex) {
@@ -1177,7 +1177,7 @@ fn void? CompilerContext.block(&self, bool check_directives, bool suppress_regex
     // ECMAScript lexical grammar, a following `/` starts a
     // RegularExpressionLiteral, not division (see Lexer.note_block_close doc).
     // Function bodies compiled as *expressions* (function expressions, arrow
-    // bodies used as call arguments, etc.) are not statement boundaries — the
+    // bodies used as call arguments, etc.) are not statement boundaries, the
     // whole `function(){...}` is itself an operand, so a following `/` must
     // be read as division. Callers pass suppress_regex_hint=true for those.
     if (!suppress_regex_hint) {
@@ -1203,7 +1203,7 @@ fn void CompilerContext.emit_var_store(&self, ushort reg, uint name_idx, bool is
             self.emit_a_bc(Opcode.PUTLEX, (uint)reg, name_idx);
         }
         // The PUTLEX/PUTLEX_C above publishes the binding's initial value to
-        // the lex_env and replaces the INITTZ sentinel — the TDZ period ends
+        // the lex_env and replaces the INITTZ sentinel, the TDZ period ends
         // here.  Clear `is_tdz` on the inner-most matching scope_stack entry
         // so subsequent reads inside the same scope can use the fast register
         // path again.
@@ -1235,7 +1235,7 @@ fn void? CompilerContext.var_declaration(&self) {
     bool is_lexical = (decl_tok.type == TokenType.LET || decl_tok.type == TokenType.CONST);
     ScopeKind kind = is_const ? CONST : (decl_tok.type == TokenType.LET ? LET : VAR);
 
-    // var declarations are hoisted to function scope — need env allocation.
+    // var declarations are hoisted to function scope, need env allocation.
     if (!is_lexical) {
         self.has_local_bindings = true;
     }
@@ -1257,7 +1257,7 @@ fn void? CompilerContext.var_declaration(&self) {
             Token name_tok;
             // `await`/`yield` reach here only when the context already permits
             // them as identifiers, so the context-blind is_restricted_name
-            // check below must not re-reject them — it applies to the plain
+            // check below must not re-reject them, it applies to the plain
             // Identifier path only. `await` is an identifier only outside a
             // module AND outside an async function/arrow (§13.1.1); `yield`
             // only outside a generator.
@@ -1367,7 +1367,7 @@ fn void? CompilerContext.var_declaration(&self) {
 
             // At global scope, free the var register and any leaked temporaries
             // from the initializer evaluation.  Global vars use PUTVAR/GETVAR
-            // at runtime — the register is only needed briefly as the PUTVAR source.
+            // at runtime, the register is only needed briefly as the PUTVAR source.
             // Lexical declarations (let/const) at global scope have their registers
             // managed by pop_scope_to() from the enclosing block() or from the
             // top-level compile() cleanup.
@@ -1395,7 +1395,7 @@ fn void? CompilerContext.if_statement(&self) {
     // In eval mode, the if-statement always produces a completion value.
     // Per spec §14.6.2: if-false-no-else returns NormalCompletion(undefined);
     // if-with-else returns UpdateEmpty(branchCompletion, undefined).
-    // Either way, any prior completion value is replaced — reset to undefined
+    // Either way, any prior completion value is replaced, reset to undefined
     // now so an empty or not-taken branch leaves the correct undefined result.
     if (self.eval_mode) {
         self.emit_abc(Opcode.LDUNDEF, (uint)self.eval_acc_reg, 0, 0);
@@ -1466,7 +1466,7 @@ fn void? CompilerContext.while_statement(&self) {
     _cond_pbs   = self.pushback_stack;
 
     // ----------------------------------------------------------------
-    // Step 1: Check for while(true) — constant true, skip rotate overhead.
+    // Step 1: Check for while(true), constant true, skip rotate overhead.
     //         Also detect simple `<ident> <relop> <numeric literal>` condition.
     // ----------------------------------------------------------------
     bool is_const_true = false;
@@ -1479,7 +1479,7 @@ fn void? CompilerContext.while_statement(&self) {
     if (_cond_pbc == 0 && !_cond_haspb && !_cond_haslk) {
         Token? t1o = self.lexer.next_token();
         if (try t1 = t1o) {
-            // while(true) — 'true' is lexed as an IDENTIFIER with str_value "true"
+            // while(true), 'true' is lexed as an IDENTIFIER with str_value "true"
             if (t1.type == TokenType.IDENTIFIER && str_eq(t1.str_value, "true")) {
                 Token? t2o = self.lexer.next_token();
                 if (try t2 = t2o) {
@@ -1577,7 +1577,7 @@ fn void? CompilerContext.while_statement(&self) {
     }
     self.statement()!;
 
-    // Save post-body lexer state — outer parser resumes here after return.
+    // Save post-body lexer state, outer parser resumes here after return.
     uint  _post_pos; uint  _post_line; uint  _post_col;
     Token _post_cur; Token _post_look; bool  _post_haslk;
     Token _post_push; bool _post_haspb; bool _post_slt;
@@ -1589,7 +1589,7 @@ fn void? CompilerContext.while_statement(&self) {
     _post_pbc   = self.pushback_count; _post_pbs   = self.pushback_stack;
 
     // ----------------------------------------------------------------
-    // Step 6: cond_label — patch initial JUMP and update continue_target.
+    // Step 6: cond_label, patch initial JUMP and update continue_target.
     // ----------------------------------------------------------------
     uint cond_label = self.code_count;
     if (self.loop_depth > 0) {
@@ -1603,7 +1603,7 @@ fn void? CompilerContext.while_statement(&self) {
     // Step 7: Compile condition with IF_TRUE back edge to body_label.
     // ----------------------------------------------------------------
     if (is_const_true) {
-        // while(true) — unconditional back edge.
+        // while(true), unconditional back edge.
         int back = (int)body_label - (int)self.code_count - 1;
         self.emit(bytecode::make_sabc(Opcode.JUMP, back));
     } else if (has_simple_cond) {
@@ -1693,7 +1693,7 @@ fn void CompilerContext.emit_create_per_iteration_env(&self,
 fn void? CompilerContext.for_statement(&self) {
     self.expect(TokenType.FOR)!;
 
-    // `for await (LHS of expr)` — ES2018 async iteration (§14.7.5). Only valid
+    // `for await (LHS of expr)`, ES2018 async iteration (§14.7.5). Only valid
     // inside an async function/method or at module top level (both set is_async).
     // The async-ness rides on `for_is_await` and is threaded to emit_forof; the
     // for-in and C-style forms reject it below (no async for-in / async C-for).
@@ -1782,7 +1782,7 @@ fn void? CompilerContext.for_statement(&self) {
     // Check for parenthesized identifier LHS: for ((x) of expr) / for ((x) in expr).
     // Per ES2015 §13.7.5 a parenthesized LeftHandSideExpression is a valid for-of/in
     // head when the inner expression is an assignment target. The simplest common case
-    // is a parenthesized identifier — detect it via a three-token lookahead:
+    // is a parenthesized identifier, detect it via a three-token lookahead:
     // '(' IDENTIFIER ')' followed by 'of' or 'in'.
     if (next_tt == TokenType.LPAREN) {
         uint saved_pos  = self.lexer.pos;
@@ -1863,7 +1863,7 @@ fn void? CompilerContext.for_statement(&self) {
     // Check for bare for-of/for-in with a member-expression LHS:
     // for (obj.prop of expr) / for (obj[key] in expr). Per ES2015
     // §13.7.5.1 the head's AssignmentExpression may be any valid
-    // assignment target, not just an identifier — member expressions
+    // assignment target, not just an identifier, member expressions
     // are the common non-identifier case (destructuring patterns are
     // handled separately and are out of scope here, tracked as B37).
     //
@@ -1876,7 +1876,7 @@ fn void? CompilerContext.for_statement(&self) {
         && next_tt != TokenType.LET && next_tt != TokenType.CONST
         && next_tt != TokenType.LBRACKET && next_tt != TokenType.LBRACE) {
         // Destructuring LHS (`[a, b] of arr` / `{x} of arr`) is handled
-        // by the bare-destructuring branch below — member_expr cannot
+        // by the bare-destructuring branch below, member_expr cannot
         // parse a `[...]`/`{...}` pattern but would still emit code for
         // any elements (e.g. GETVAR for a bare `[x]` element) that
         // survives the lexer restore, leaving a stray GETVAR in the
@@ -1940,7 +1940,7 @@ fn void? CompilerContext.for_statement(&self) {
     // Per ES2015 §13.7.5 the destructuring target is in the enclosing
     // scope (no new block scope per iteration), and the bindings are
     // var-scoped. Scan the pattern with the lexer only (no code emission
-    // — any speculative compile of the LHS would leak GETVAR/INC/etc.
+    //, any speculative compile of the LHS would leak GETVAR/INC/etc.
     // instructions into the actual code buffer before the lexer is
     // restored).  Save lexer state, peek past the pattern for `of`/`in`,
     // restore, then dispatch.
@@ -2088,7 +2088,7 @@ fn void? CompilerContext.for_statement(&self) {
                 bool is_array_pattern = (after_decl == TokenType.LBRACKET);
                 ushort iter_reg = 0;
 
-                // ── Parse the destructuring pattern inline ──
+                // Parse the destructuring pattern inline.
                 // We parse bindings here and emit iterator-based extraction
                 // into the loop body below, avoiding lexer state issues with
                 // destructure_for_value (which can't re-parse after the header
@@ -2127,7 +2127,7 @@ fn void? CompilerContext.for_statement(&self) {
                     }
                 }
 
-                // ── TDZ scope for head bindings (spec §13.7.5.12) ──
+                // TDZ scope for the head bindings (§13.7.5.12).
                 // Before evaluating the RHS expression, a TDZ environment is
                 // created for the ForDeclaration names so that any reference
                 // to them inside the RHS throws a ReferenceError.
@@ -2142,7 +2142,7 @@ fn void? CompilerContext.for_statement(&self) {
                         uint name_idx = self.add_string_constant(bname);
                         self.emit_a_bc(Opcode.INITTZ, 0, name_idx);
                         // Mark outer scope entry as captured so the compiler
-                        // emits GETVAR instead of LDREG — prevents bypassing
+                        // emits GETVAR instead of LDREG, prevents bypassing
                         // the TDZ sentinel in the new lex_env.
                         for (uint j = 0; j < saved_scope; j++) {
                             if (str_eq(self.scope_stack[j].name, bname)) {
@@ -2156,7 +2156,7 @@ fn void? CompilerContext.for_statement(&self) {
 
                 iter_reg = self.expression()!;
 
-                // Pop the TDZ scope — the head binding references are now
+                // Pop the TDZ scope, the head binding references are now
                 // resolved against the outer scope for the iterator protocol.
                 if (has_head_tdz) {
                     self.emit_simple(Opcode.POP_LEX);
@@ -2183,7 +2183,7 @@ fn void? CompilerContext.for_statement(&self) {
                 bool is_array_pattern = (after_decl == TokenType.LBRACKET);
                 ushort obj_reg = 0;
 
-                // ── Collect the pattern via the shared param collectors ──
+                // Collect the pattern with the shared param collectors.
                 DestructBind[MAX_DESTRUCT_BINDS] fdbinds;
                 uint fdcount = 0;
                 self.advance()!; // consume '[' or '{'
@@ -2373,7 +2373,7 @@ fn void? CompilerContext.for_statement(&self) {
                     // SCOPE_ERROR → GETVAR).  The matching has_captured_local
                     // flip is required so the register-resident-locals
                     // elision in CompilerContext.finish() does NOT NOP the
-                    // per-iteration PUTLEX/INITTZ below — NOP'ing them
+                    // per-iteration PUTLEX/INITTZ below, NOP'ing them
                     // leaves the env without the binding and the body's
                     // GETVAR throws "p is not defined" (regression fixed
                     // when this flag was set here but the elide gate missed
@@ -2461,11 +2461,11 @@ fn void? CompilerContext.for_statement(&self) {
                 self.free_regs_to(saved_reg);
                 return;
             }
-            // Check for "of" (for-of) — contextual keyword, not a reserved word
+            // Check for "of" (for-of), contextual keyword, not a reserved word
             if (try tok = self.lexer.peek()) {
                 if (tok.type == TokenType.IDENTIFIER && str_eq(tok.str_value, "of")) {
                     self.advance()!;  // consume "of"
-                    // ── TDZ scope for head binding (spec §13.7.5.12) ──
+                    // TDZ scope for the head binding (§13.7.5.12).
                     // Before evaluating the RHS, a TDZ environment is created
                     // for the head name so that typeof/name access inside the
                     // RHS throws ReferenceError (temporal dead zone).
@@ -2474,7 +2474,7 @@ fn void? CompilerContext.for_statement(&self) {
                         self.cur_lex_depth++;
                         self.emit_a_bc(Opcode.INITTZ, 0, self.add_string_constant(name_tok.str_value));
                         // Mark the outer scope entry as captured so the compiler
-                        // emits GETVAR instead of LDREG — without this, a
+                        // emits GETVAR instead of LDREG, without this, a
                         // register-cached value from an outer scope would bypass
                         // the TDZ sentinel in the new lex_env.
                         for (uint j = 0; j < saved_scope; j++) {
@@ -2606,7 +2606,7 @@ fn void? CompilerContext.for_statement(&self) {
             self.expect(TokenType.SEMICOLON)!;
         }
     } else if (next_tt != TokenType.SEMICOLON) {
-        // Expression init (C-style for) — no async form.
+        // Expression init (C-style for), no async form.
         if (for_is_await) return self.fail("'for await' requires a 'for await (... of ...)' head")~;
         ushort init_reg = self.expression()!;
         self.free_reg(init_reg);
@@ -2620,7 +2620,7 @@ fn void? CompilerContext.for_statement(&self) {
         }
         self.expect(TokenType.SEMICOLON)!;
     } else {
-        // Empty init (C-style `for (;;)`) — no async form.
+        // Empty init (C-style `for (;;)`), no async form.
         if (for_is_await) return self.fail("'for await' requires a 'for await (... of ...)' head")~;
         self.expect(TokenType.SEMICOLON)!;
     }
@@ -2628,7 +2628,7 @@ fn void? CompilerContext.for_statement(&self) {
     // Register floor for the re-compiled condition and increment. Lexical
     // (let/const) for-init variables stay live in registers allocated ABOVE
     // saved_reg for the whole loop, so the condition/increment temporaries must
-    // allocate above them — not at saved_reg, which sits below the loop var and
+    // allocate above them, not at saved_reg, which sits below the loop var and
     // would let e.g. the GETPROP key of `i < obj.length` clobber `i`.
     ushort cond_floor = self.next_reg;
     if (cond_floor < saved_reg) cond_floor = saved_reg;
@@ -2642,7 +2642,7 @@ fn void? CompilerContext.for_statement(&self) {
     //   incr_label:                  ← continue targets here
     //     <increment>
     //   cond_label:
-    //     <condition>  (IF_TRUE → body_label  — back edge)
+    //     <condition>  (IF_TRUE → body_label , back edge)
     //   exit:                        ← break patches here
     //
     // With the JMP_LT/JMP_LE/JMP_GT/JMP_GE peephole, the per-iteration hot path
@@ -2811,7 +2811,7 @@ fn void? CompilerContext.for_statement(&self) {
 
     self.statement()!;
 
-    // Save the lexer state after the body — this is where the outer parser
+    // Save the lexer state after the body, this is where the outer parser
     // must resume after for_statement returns.  Steps 6 and 7 will restore
     // lexer state for re-compilation; we restore to here at the very end.
     uint  _post_pos; uint  _post_line; uint  _post_col;
@@ -2825,14 +2825,14 @@ fn void? CompilerContext.for_statement(&self) {
     _post_pbc   = self.pushback_count; _post_pbs   = self.pushback_stack;
 
     // ----------------------------------------------------------------
-    // Step 6: incr_label — CreatePerIterationEnvironment, then compile increment.
+    // Step 6: incr_label, CreatePerIterationEnvironment, then compile increment.
     // ----------------------------------------------------------------
     // Per-iteration environment (ES2015 §14.7.4.2 CreatePerIterationEnvironment):
     // The spec runs CreatePerIterationEnvironment *after* the body and *before*
     // the increment on every iteration (ForBodyEvaluation step 3.e). We emit the
     // env-cycling code here at incr_label so that `continue` also triggers it,
     // keeping the semantics correct: GETVAR reads the binding's current value (the
-    // env is authoritative — INC_VAR and PUTVAR both update it), then POP_LEX/
+    // env is authoritative, INC_VAR and PUTVAR both update it), then POP_LEX/
     // PUSH_LEX/PUTLEX installs that value into a fresh env. The increment then runs
     // in the fresh env, and the next body iteration will read the updated value
     // from that same env through its captured reference.
@@ -2860,7 +2860,7 @@ fn void? CompilerContext.for_statement(&self) {
         if (self.next_reg < cond_floor) {
             self.next_reg = cond_floor;
         }
-        // The update clause's value is discarded (see free_reg below) — signal
+        // The update clause's value is discarded (see free_reg below), signal
         // the void context so a plain assignment skips its result-preservation
         // moves.
         self.void_ctx = true;
@@ -2880,7 +2880,7 @@ fn void? CompilerContext.for_statement(&self) {
     }
 
     // ----------------------------------------------------------------
-    // Step 7: cond_label — patch initial JUMP, compile condition with IF_TRUE back edge.
+    // Step 7: cond_label, patch initial JUMP, compile condition with IF_TRUE back edge.
     // ----------------------------------------------------------------
     if (!has_empty_cond) {
         self.patch_jump(cond_jump);
@@ -2945,7 +2945,7 @@ fn void? CompilerContext.for_statement(&self) {
             self.free_reg(cond_reg);
         }
     } else {
-        // for(;;) — unconditional back edge
+        // for(;;), unconditional back edge
         int back = (int)body_label - (int)self.code_count - 1;
         self.emit(bytecode::make_sabc(Opcode.JUMP, back));
     }
@@ -3046,12 +3046,11 @@ fn void? CompilerContext.emit_bare_forin_loop(&self, char[] var_name, ushort obj
     self.free_regs_to(saved_reg);
 }
 
-// ─────────────────────────────────────────────────────────────────────────
-// Unified for-of codegen (plan 057). One skeleton drives every for-of form;
-// ForOfHead selects the per-value step (bind identifier / destructure / member
-// store). `is_await` selects the sync vs async iterator protocol — currently
-// always false; the async protocol lands in plan 057 phases 2–3.
-// ─────────────────────────────────────────────────────────────────────────
+// ============================================================================
+// Unified for-of codegen: one skeleton drives every for-of form, with ForOfHead
+// selecting the per-value step, which binds an identifier, destructures, or
+// stores to a member. `is_await` selects the sync or async iterator protocol.
+// ============================================================================
 
 // Iterator record produced by emit_iter_open and threaded through the loop.
 struct IterRec {
@@ -3069,7 +3068,7 @@ struct IterRec {
 /// %AsyncFromSyncIterator% adapter so a plain sync iterable (array, generator)
 /// works under `for await`. Either way the iterator lands in method_reg (below
 /// the callee window) and .next in next_reg, with the callee/this window ABOVE
-/// them — so a generator source overlaying the sliding window on resume cannot
+/// them, so a generator source overlaying the sliding window on resume cannot
 /// clobber them (see plan 042/043).
 fn IterRec? CompilerContext.emit_iter_open(&self, ushort src_reg, bool is_await) {
     ushort method_reg;
@@ -3128,7 +3127,7 @@ fn uint? CompilerContext.emit_iter_step(&self, IterRec rec, ushort val_slot) {
     self.emit_abc(Opcode.CALL, (uint)result_reg, (uint)rec.callee_reg, 0);
 
     // for-await (§14.7.5.6): the async .next() returns a Promise of the
-    // IteratorResult — await it, then treat the settled value as the result.
+    // IteratorResult, await it, then treat the settled value as the result.
     // GET_ITER_ASYNC guarantees a genuine async iterator (sync sources are
     // adapter-wrapped, and the adapter awaits the value internally), so a single
     // await here suffices; the settled result is a plain {value, done} object.
@@ -3173,7 +3172,7 @@ fn void CompilerContext.emit_iter_close(&self, IterRec rec, bool throw_variant) 
         // ITER_CLOSE_ASYNC leaves the .return() result in method_reg (or
         // undefined when there is nothing to close) and reports whether a
         // real result needs awaiting in did_await_reg. §7.4.11 only calls
-        // Await when .return() was actually invoked — unlike a real user
+        // Await when .return() was actually invoked, unlike a real user
         // `await`, AWAIT always costs a microtask tick now, so the no-close
         // case must skip it entirely rather than "awaiting undefined".
         ushort did_await_reg = self.alloc_reg();
@@ -3232,8 +3231,8 @@ fn void? CompilerContext.emit_forof(&self, ForOfHead head, ushort src_reg, uint 
 
     uint exit_jump = self.emit_iter_step(rec, val_slot)!;
 
-    // ── IteratorClose-on-throw guard (§14.7.5.6): wrap bind + body so any
-    // abrupt completion closes the iterator before propagating. ──
+    // IteratorClose-on-throw guard (§14.7.5.6): wrapping the bind and body means
+    // any abrupt completion closes the iterator before propagating.
     uint iter_try_addr  = self.emit_a_bc(Opcode.TRY, 0, 0);
     uint iter_jump_slot = self.emit_a_bc(Opcode.NOP, 0, 0);
 
@@ -3276,7 +3275,7 @@ fn void? CompilerContext.emit_forof(&self, ForOfHead head, ushort src_reg, uint 
 
     // Exit path (done=true): pop the per-iter env. Per ES2022 §14.7.5.7
     // ForIn/OfBodyEvaluation, a `nextResult.[[Done]]` of true ends the loop
-    // with a normal completion directly — IteratorClose/AsyncIteratorClose
+    // with a normal completion directly, IteratorClose/AsyncIteratorClose
     // is only invoked for an abrupt completion out of the loop (break,
     // throw, or a `return` inside the body), never on natural exhaustion.
     self.patch_jump(exit_jump);
@@ -3317,7 +3316,7 @@ fn void? CompilerContext.emit_head_bind(&self, ForOfHead head, ushort val_slot) 
         case IDENT:
             if (head.id_is_bare && head.id_reg_resident) {
                 // Register-cached local target: write straight into its home
-                // register (id_reg). No PUTVAR — that would update only the env
+                // register (id_reg). No PUTVAR, that would update only the env
                 // slot and then clear the source reg, leaving the body's register
                 // read of the local stale (bare-forof var-desync fix). Matches how
                 // a plain `b = val` assignment to a register-resident local emits.
@@ -3355,10 +3354,10 @@ fn void? CompilerContext.emit_head_bind(&self, ForOfHead head, ushort val_slot) 
 /// Bindings are VAR-scoped and persist across iterations (no per-iter
 /// block scope). The '[' or '{' has NOT been consumed on entry.
 fn void? CompilerContext.emit_bare_forof_destruct_loop(&self, bool is_array_pattern, uint saved_scope, ushort saved_reg, bool is_await = false) {
-    // ── Collect the assignment pattern via the shared collectors ──
+    // Collect the assignment pattern with the shared collectors.
     // Bare for-of (`for ([a] of ...)` / `for ({x} of ...)`) assigns to existing
     // lvalues, so this uses the assignment collectors (full LHS grammar) and
-    // emits via emit_destruct_bindings(ASSIGN_TARGET) — one algorithm shared
+    // emits via emit_destruct_bindings(ASSIGN_TARGET), one algorithm shared
     // with array/object destructuring assignment.
     //
     // The pattern's default values are AssignmentExpressions (ES2022
@@ -3615,7 +3614,7 @@ fn void? CompilerContext.do_while_statement(&self) {
 /// Emit the non-throw IteratorClose for the loop at loop_stack[li] during an
 /// abrupt-exit unwind (break/return/labeled break). For a for-await loop this is
 /// AsyncIteratorClose (§7.4.11): the .return() result must be awaited. Clobbering
-/// the iterator register with the awaited result is safe here — the loop is being
+/// the iterator register with the awaited result is safe here, the loop is being
 /// abandoned. Assumes loop_stack[li].iter_close_reg >= 0.
 fn void CompilerContext.emit_unwind_iter_close(&self, uint li) {
     uint reg = (uint)self.loop_stack[li].iter_close_reg;
@@ -3631,7 +3630,7 @@ fn void CompilerContext.emit_unwind_iter_close(&self, uint li) {
 /// Parse return statement.
 /// Emit ITER_CLOSE for every enclosing for-of loop, innermost first.
 /// A return exits all loops in the function, so each loop's iterator must be
-/// closed (§14.7.5.7 — abrupt loop completions call IteratorClose).
+/// closed (§14.7.5.7, abrupt loop completions call IteratorClose).
 fn void CompilerContext.emit_return_iter_closes(&self) {
     for (int li = (int)self.loop_depth - 1; li >= 0; li--) {
         if (self.loop_stack[li].iter_close_reg >= 0) {
@@ -3643,7 +3642,7 @@ fn void CompilerContext.emit_return_iter_closes(&self) {
 fn void? CompilerContext.return_statement(&self) {
     self.expect(TokenType.RETURN)!;
 
-    // ES2015 §14.9.1: `return` is only valid inside a FunctionBody — a
+    // ES2015 §14.9.1: `return` is only valid inside a FunctionBody, a
     // top-level Script or eval-code Program has no function to return from.
     // A nested function body gets its own CompilerContext (is_global always
     // false there), so this only fires for genuinely top-level `return`.
@@ -3652,7 +3651,7 @@ fn void? CompilerContext.return_statement(&self) {
     }
 
     // ES2022 §15.7.11: a class static block's own StatementList is
-    // ClassStaticBlockStatementList[~Return] — `return` at this level is a
+    // ClassStaticBlockStatementList[~Return], `return` at this level is a
     // SyntaxError (a nested function/method declared inside the block is
     // its own CompilerContext with forbid_return left false, so it may
     // still return from itself).
@@ -3703,20 +3702,20 @@ fn void? CompilerContext.throw_statement(&self) {
 /// Parse try/catch/finally statement.
 ///
 /// Bytecode layout:
-///   TRY A=flags, BC=catch_offset     — A bit0=catch, bit1=finally
-///   NOP A=0,    BC=finally_offset    — jump slot (0 if no finally)
+///   TRY A=flags, BC=catch_offset    , A bit0=catch, bit1=finally
+///   NOP A=0,    BC=finally_offset   , jump slot (0 if no finally)
 ///   <try block>
 ///   ENDTRY
 ///   JUMP -> finally_or_after
-///   [CATCH rX  — at try_addr + catch_offset]
+///   [CATCH rX , at try_addr + catch_offset]
 ///   [<catch block>]
-///   [FINALLY   — at try_addr + finally_offset (if has_finally)]
+///   [FINALLY  , at try_addr + finally_offset (if has_finally)]
 ///   [<finally block>]
 ///   [ENDFINALLY]
 fn void? CompilerContext.try_statement(&self) {
     self.expect(TokenType.TRY)!;
 
-    // ── Eval-mode completion value tracking ──────────────────────────
+    // --- Eval-mode completion value tracking ---
     // ES2015 §13.15.8: for try-finally / try-catch-finally, if the
     // finally block completes normally, the try statement's completion
     // value is the try block's value (B) or the catch block's value (C),
@@ -3728,13 +3727,13 @@ fn void? CompilerContext.try_statement(&self) {
     //      (captures C for the exceptional path).
     //   4. Restoring eval_acc_reg after the finally block (before
     //      ENDFINALLY, which handles return/break/continue/throw by
-    //      jumping away — so the restore only fires for normal completion).
+    //      jumping away, so the restore only fires for normal completion).
     ushort try_completion_reg = 0;
     bool eval_try_tracking = false;
 
     // Emit TRY instruction (placeholder: A=0, BC=0, jump_slot BC=0)
     uint try_addr = self.emit_a_bc(Opcode.TRY, 0, 0);
-    // Jump slot — the VM reads this word for the finally_offset (BC field)
+    // Jump slot, the VM reads this word for the finally_offset (BC field)
     uint jump_slot_addr = self.emit_a_bc(Opcode.NOP, 0, 0);
 
     // Push try info
@@ -3786,7 +3785,7 @@ fn void? CompilerContext.try_statement(&self) {
         bool catch_binding_scope = false;
 
         if (self.match(TokenType.LPAREN)) {
-            // Catch parameter — either a plain identifier (ES5) or a
+            // Catch parameter, either a plain identifier (ES5) or a
             // destructuring pattern (ES2019 §13.15.1).
             TokenType ct = self.peek_type();
             if (ct == TokenType.LBRACKET || ct == TokenType.LBRACE) {
@@ -3805,7 +3804,7 @@ fn void? CompilerContext.try_statement(&self) {
 
                 // Per spec: the thrown value must be object-coercible
                 // (null/undefined throws TypeError) for object patterns
-                // — even empty `{}` patterns, per ES2019 §13.15.1.5.
+                //, even empty `{}` patterns, per ES2019 §13.15.1.5.
                 // Array patterns also throw if the value isn't iterable,
                 // but iterator-protocol .next() already produces a TypeError
                 // for null/undefined via GetMethod's ToObject step.
@@ -3895,7 +3894,7 @@ fn void? CompilerContext.try_statement(&self) {
 
         // In eval mode, reset eval_acc_reg to undefined at the start of the
         // finally block.  Per ES2015 §13.15.1, `If F.[[Type]] is normal, set
-        // F to C. Return Completion(UpdateEmpty(F, undefined)).` — but for
+        // F to C. Return Completion(UpdateEmpty(F, undefined)).`, but for
         // abrupt completions (break/continue/return/throw) inside the finally
         // block with no preceding expression statement, the abrupt
         // completion's empty value must surface as undefined (UpdateEmpty),
@@ -3971,12 +3970,12 @@ fn void? CompilerContext.switch_statement(&self) {
 
     // ES2015 §14.12 / §13.12.9: CaseBlockEvaluation runs against a fresh
     // lexical environment (blockEnv) produced by BlockDeclarationInstantiation
-    // over the CaseBlock — let/const/class/hoisted-function declarations made
+    // over the CaseBlock, let/const/class/hoisted-function declarations made
     // directly in any case/default clause are scoped to the switch and must
     // not leak into the enclosing scope. This mirrors block()'s handling of
     // `{ ... }` blocks exactly, just with a wider pre-scan (block() only
     // needs let/const because class/function declarations there are already
-    // handled by their own scoping — switch's CaseBlock is the one place
+    // handled by their own scoping, switch's CaseBlock is the one place
     // those additionally need confining).
     uint saved_switch_scope_depth = self.scope_depth;
     self.push_scope_marker();
@@ -4000,7 +3999,7 @@ fn void? CompilerContext.switch_statement(&self) {
         self.emit_a_bc(Opcode.INITTZ, 0, name_idx);
 
         // Mark any outer scope_stack entry with the same name as captured so
-        // the compiler emits GETVAR instead of LDREG for it — without this, a
+        // the compiler emits GETVAR instead of LDREG for it, without this, a
         // register-cached outer value would bypass the TDZ sentinel we just
         // installed in the new lex_env.
         for (uint j = 0; j < saved_switch_scope_depth; j++) {
@@ -4030,7 +4029,7 @@ fn void? CompilerContext.switch_statement(&self) {
 
     // While compiling case/default bodies, function/generator/async-function
     // declarations found by the pre-scan above must bind into the switch's
-    // own lex_env (PUTLEX) rather than the enclosing var_env (DECLVAR) — see
+    // own lex_env (PUTLEX) rather than the enclosing var_env (DECLVAR), see
     // force_lexical_fn_decl's doc comment.
     bool saved_force_lexical_fn_decl = self.force_lexical_fn_decl;
     if (switch_has_lex) {
@@ -4137,12 +4136,12 @@ fn void? CompilerContext.switch_statement(&self) {
 
     // Pop the CaseBlock's lexical scope, removing any let/const/class/function
     // bindings declared directly in a case/default clause. This must sit at
-    // the address every "falls off the end" control-flow path converges on —
+    // the address every "falls off the end" control-flow path converges on,
     // the last body's fall-through jump AND the "no match, no default" path
     // both target end_addr, so end_addr must point AT this POP_LEX (not past
     // it) or those paths would skip it entirely and leak the binding.
     // `break` unwinds past this scope separately via push_loop's
-    // saved_lex_depth (see push_loop above), then jumps to end_addr itself —
+    // saved_lex_depth (see push_loop above), then jumps to end_addr itself,
     // executing this POP_LEX again would be wrong, so pop_loop's break jumps
     // are patched to AFTER this POP_LEX instead (see below).
     uint pop_lex_addr = self.code_count;
@@ -4215,7 +4214,7 @@ fn void? CompilerContext.labeled_statement(&self, char[] name) {
         self.labels[label_idx].is_loop = true;
         self.statement()!;
     } else {
-        // Non-loop label — push a virtual loop entry so break can target it.
+        // Non-loop label, push a virtual loop entry so break can target it.
         self.push_loop(self.code_count, false);
         self.labels[label_idx].loop_index = self.loop_depth - 1;
         self.labels[label_idx].is_loop = false;
@@ -4237,7 +4236,7 @@ fn void? CompilerContext.break_statement(&self) {
     self.expect(TokenType.BREAK)!;
 
     if (self.peek_type() == TokenType.IDENTIFIER && !self.lexer.seen_line_term) {
-        // Labeled break — find the label and add jump to its loop's break chain
+        // Labeled break, find the label and add jump to its loop's break chain
         Token label_tok = self.advance()!;
         char[] label_name = label_tok.str_value;
 
@@ -4245,7 +4244,7 @@ fn void? CompilerContext.break_statement(&self) {
             if (str_eq(self.labels[i].name, label_name)) {
                 uint loop_idx = self.labels[i].loop_index;
                 // Unwind the lex_env stack back to the labeled loop's depth.
-                // Same pattern as the unlabeled break below — the labeled
+                // Same pattern as the unlabeled break below, the labeled
                 // branch was previously missing this, so a `break label`
                 // inside a labeled block with a `let` (which pushed a
                 // PUSH_LEX via block()) left the inner binding visible after
@@ -4278,8 +4277,8 @@ fn void? CompilerContext.break_statement(&self) {
         return COMPILE_ERROR~;
     }
 
-    // Unlabeled break — break out of the innermost loop or switch.
-    // ES6 §13.13.1 BreakStatement : break ; — must be enclosed by an
+    // Unlabeled break, break out of the innermost loop or switch.
+    // ES6 §13.13.1 BreakStatement : break ;, must be enclosed by an
     // IterationStatement or SwitchStatement. If there is none, this is a
     // SyntaxError (the BREAK opcode would otherwise dangle with no patch).
     if (self.loop_depth == 0) {
@@ -4311,7 +4310,7 @@ fn void? CompilerContext.continue_statement(&self) {
     self.expect(TokenType.CONTINUE)!;
 
     if (self.peek_type() == TokenType.IDENTIFIER && !self.lexer.seen_line_term) {
-        // Labeled continue — find the label and jump to its loop's continue target
+        // Labeled continue, find the label and jump to its loop's continue target
         Token label_tok = self.advance()!;
         char[] label_name = label_tok.str_value;
 
@@ -4349,7 +4348,7 @@ fn void? CompilerContext.continue_statement(&self) {
         return COMPILE_ERROR~;
     }
 
-    // Unlabeled continue — jump to continue target of the innermost *real* loop
+    // Unlabeled continue, jump to continue target of the innermost *real* loop
     // (skip switch pseudo-loops that only handle break)
     int loop_idx = (int)self.loop_depth - 1;
     while (loop_idx >= 0 && !self.loop_stack[loop_idx].is_loop) {
@@ -4375,7 +4374,7 @@ fn void? CompilerContext.continue_statement(&self) {
 
 /// Parse expression statement.
 fn void? CompilerContext.expression_statement(&self) {
-    // The statement's value is discarded — except in eval, where the last
+    // The statement's value is discarded, except in eval, where the last
     // expression statement supplies the implicit completion value. Signal the
     // void context so a plain assignment can skip its result-preservation moves.
     if (!self.eval_mode) {
@@ -4417,7 +4416,7 @@ fn void? CompilerContext.function_declaration(&self, bool is_async_decl = false,
     if (self.is_global) {
         // Extract function name from current lexer position. A `function*`
         // generator's name is TWO tokens ahead (`*` then the identifier), and
-        // the lexer's single-slot pushback can't hold both — use the
+        // the lexer's single-slot pushback can't hold both, use the
         // CompilerContext's 4-deep token pushback stack instead (already used
         // elsewhere for the same "peek N, put all back" pattern, e.g.
         // peek2_is_lparen), pushing back in reverse order so `advance()`
@@ -4425,7 +4424,7 @@ fn void? CompilerContext.function_declaration(&self, bool is_async_decl = false,
         //
         // (A prior version pushed the `*` back onto the lexer's single slot
         // and immediately called next_token() again, which just re-read the
-        // same `*` — the "already hoisted" name lookup below always saw
+        // same `*`, the "already hoisted" name lookup below always saw
         // name_opt.type == STAR, never IDENTIFIER, so every module-level
         // generator declaration fell through to re-compile and re-run
         // CLOSURE+DECLVAR at its own textual position, re-instantiating a
@@ -4447,7 +4446,7 @@ fn void? CompilerContext.function_declaration(&self, bool is_async_decl = false,
                     // Skip the rest of the function body
                     self.skip_function_body();
                     // The body's closing `}` is a statement/declaration
-                    // boundary — a following `/` starts a regexp literal.
+                    // boundary, a following `/` starts a regexp literal.
                     self.lexer.note_block_close();
                     return;
                 }
@@ -4455,7 +4454,7 @@ fn void? CompilerContext.function_declaration(&self, bool is_async_decl = false,
         }
         // Not already hoisted (or not an identifier at all, e.g. a stray
         // token the later expect_binding_identifier() will properly reject):
-        // put both tokens back (LIFO — name first, so `*` pops first) for
+        // put both tokens back (LIFO, name first, so `*` pops first) for
         // normal processing to re-consume in original order.
         if (star_opt.type == TokenType.STAR) {
             self.pushback(name_opt);
@@ -4465,7 +4464,7 @@ fn void? CompilerContext.function_declaration(&self, bool is_async_decl = false,
         }
     }
 
-    // Function declarations are hoisted to function scope — need env.
+    // Function declarations are hoisted to function scope, need env.
     self.has_local_bindings = true;
 
     // Save and reset generator state: nested function declarations
@@ -4475,14 +4474,14 @@ fn void? CompilerContext.function_declaration(&self, bool is_async_decl = false,
     self.is_generator = false;
     self.is_user_generator = false;
 
-    // Save the enclosing function's async flag — it must survive this
+    // Save the enclosing function's async flag, it must survive this
     // declaration (finish() reads it when the enclosing body completes).
     // The declaration's own async-ness comes from the is_async_decl
     // parameter, never from the enclosing flag.
     bool saved_is_async = self.is_async;
     self.is_async = false;
 
-    // Regular function declarations are constructable per ES2015 §14.1.2 — they
+    // Regular function declarations are constructable per ES2015 §14.1.2, they
     // can be invoked with `new` if they aren't arrow functions or methods with
     // super. Save/restore the constructable flag around the inner compile so
     // nested functions inside it inherit it.
@@ -4490,7 +4489,7 @@ fn void? CompilerContext.function_declaration(&self, bool is_async_decl = false,
     self.is_constructable = true;
 
     // Check for generator star: function* name() {}
-    // Generator functions are never constructable (ES2015 §14.4) — `new` on
+    // Generator functions are never constructable (ES2015 §14.4), `new` on
     // one must throw TypeError, so is_constructable must flip to false here.
     if (self.match(TokenType.STAR)) {
         // `function*` and `async function*` are both syntactic generators.
@@ -4499,7 +4498,7 @@ fn void? CompilerContext.function_declaration(&self, bool is_async_decl = false,
         self.is_constructable = false;
     }
 
-    // Async functions are not constructors (ES2017 §14.7.5 — no [[Construct]]).
+    // Async functions are not constructors (ES2017 §14.7.5, no [[Construct]]).
     if (is_async_decl) {
         self.is_constructable = false;
     }
@@ -4536,7 +4535,7 @@ fn void? CompilerContext.function_declaration(&self, bool is_async_decl = false,
         // Inside a switch CaseBlock: scope this declaration to the switch's
         // own lex_env (installed by switch_statement's PUSH_LEX) instead of
         // the function-scoped var_env, so it disappears when the switch's
-        // POP_LEX runs — matching BlockDeclarationInstantiation (§14.12).
+        // POP_LEX runs, matching BlockDeclarationInstantiation (§14.12).
         self.emit_a_bc(Opcode.PUTLEX, (uint)func_reg, name_idx);
     } else {
         // Declare the binding in the immediate var_env so inner functions can
@@ -4546,7 +4545,7 @@ fn void? CompilerContext.function_declaration(&self, bool is_async_decl = false,
         self.emit_a_bc(Opcode.DECLGLOBALFUNC, (uint)func_reg, name_idx);
     }
 
-    // At global scope, free the register — the function object lives in the
+    // At global scope, free the register, the function object lives in the
     // environment via GETVAR/PUTVAR, not in a register-cached scope slot.
     if (self.is_global) {
         self.free_reg(func_reg);
@@ -4563,7 +4562,7 @@ fn CompModuleDef* CompilerContext.get_module_def(&self) {
     return (CompModuleDef*)self.current_module;
 }
 
-/// Expect the contextual keyword `from` (not a reserved word — must be
+/// Expect the contextual keyword `from` (not a reserved word, must be
 /// checked as an identifier with value "from").
 fn void? CompilerContext.expect_from(&self) {
     Token tok = self.expect(TokenType.IDENTIFIER)!;
@@ -4572,7 +4571,7 @@ fn void? CompilerContext.expect_from(&self) {
     }
 }
 
-/// Match the contextual keyword `from` — consumes and returns true if the
+/// Match the contextual keyword `from`, consumes and returns true if the
 /// current token is the identifier "from".
 fn bool CompilerContext.match_from(&self) {
     if (self.peek_type() != TokenType.IDENTIFIER) return false;
@@ -4583,7 +4582,7 @@ fn bool CompilerContext.match_from(&self) {
     if (str_eq(tok.str_value, "from")) {
         return true;
     }
-    // Not 'from' — push back
+    // Not 'from', push back
     self.lexer.pushback(tok);
     return false;
 }
@@ -4621,7 +4620,7 @@ fn bool CompilerContext.match_as(&self) {
 ///
 /// Syntax errors (early / parse phase): a non-string attribute value, a
 /// missing `:`, and duplicate attribute keys (compared after escape decoding).
-/// Unknown keys and unknown `type` values are NOT parse errors — they are left
+/// Unknown keys and unknown `type` values are NOT parse errors, they are left
 /// for the host load step, matching the spec and the test262 corpus (the
 /// resolution-phase tests rely on the syntax being accepted).
 fn bool? CompilerContext.parse_with_clause(&self) {
@@ -4839,7 +4838,7 @@ fn void? CompilerContext.export_declaration(&self) {
     if (self.current_module == null) return COMPILE_ERROR~;
     CompModuleDef* mod = self.get_module_def();
 
-    // `export async function foo() {}` — the `async` prefix is detected here
+    // `export async function foo() {}`, the `async` prefix is detected here
     // (before the FUNCTION dispatch below) so the same hoistable-declaration
     // path handles both sync and async forms.
     bool is_async_named_fn = self.match_async_function();
@@ -4848,7 +4847,7 @@ fn void? CompilerContext.export_declaration(&self) {
     // export default ...
     if (tt == TokenType.DEFAULT) {
         self.advance()!; // consume 'default'
-        // `export default async function ...` — the `async` prefix is
+        // `export default async function ...`, the `async` prefix is
         // detected before the FUNCTION dispatch below so the same
         // hoistable-declaration path handles both sync and async forms.
         bool is_async_default_fn = self.match_async_function();
@@ -4880,14 +4879,14 @@ fn void? CompilerContext.export_declaration(&self) {
                 // module-scope binding is the synthetic `*default*` slot, but
                 // the function object's own `.name` is "default"
                 // (SetFunctionName, §14.1.20 InstantiateFunctionObject step 4)
-                // — a runtime-visible value, not the compiler-private symbol.
+                //, a runtime-visible value, not the compiler-private symbol.
                 fn_name = "default";
             }
 
             bool saved_is_async = self.is_async;
             self.is_async = false;
             // Regular functions are constructable (ES2015 §14.1.2); generators
-            // and async functions never are (§14.4/§14.7.5) — mirrors
+            // and async functions never are (§14.4/§14.7.5), mirrors
             // function_declaration's handling.
             bool saved_is_constructable = self.is_constructable;
             self.is_constructable = !self.is_generator && !is_async_default_fn;
@@ -4930,12 +4929,12 @@ fn void? CompilerContext.export_declaration(&self) {
             // allow_anonymous: `export default class {}` has no BindingIdentifier
             // and binds to *default* (§16.2.3.7). A named `export default class
             // Foo {}` binds `Foo` in the module scope; the "default" export is a
-            // live binding of that same name — so track the actual bound name
+            // live binding of that same name, so track the actual bound name
             // (class_declaration returns it), not always *default*.
             char[] dflt_class_name;
             self.class_declaration(&dflt_class_name, true)!;
             // A class declaration's outer binding is always lexical (`let`-style,
-            // TDZ until the class evaluates) — see class_declaration's class_reg
+            // TDZ until the class evaluates), see class_declaration's class_reg
             // above, whether the class is named or the anonymous `*default*`
             // symbol. Registering this as non-lexical left link_module's
             // export pre-declaration loop seeding a plain `undefined` instead
@@ -4963,7 +4962,7 @@ fn void? CompilerContext.export_declaration(&self) {
         // lexical binding initialized at THIS statement's position (§16.2.3.7 /
         // ExportDeclaration:ClassExpression is lexical). Before the statement
         // runs it is in TDZ, so a same-module `import * as ns; ns.default`
-        // executing above must observe the sentinel and throw ReferenceError —
+        // executing above must observe the sentinel and throw ReferenceError,
         // register it lexical so link_module pre-declares the TDZ sentinel.
         mod_register_export(mod, "*default*", "default", false, 0, true);
         self.match(TokenType.SEMICOLON);
@@ -5028,13 +5027,13 @@ fn void? CompilerContext.export_declaration(&self) {
                 mod_register_export(mod, local_names[i], export_names[i], true, req_idx);
             }
         } else {
-            // `export { a, b as c };` — a, b are local bindings UNLESS one
+            // `export { a, b as c };`, a, b are local bindings UNLESS one
             // already names an imported binding, in which case ECMA-262
             // §16.2.1.7.1 ParseModule step 10.1 reclassifies it as an
             // INDIRECT export sourced from that ImportEntry's own module/
             // import name (Table 59), never a local one. This is what makes
             // `import { foo } from './x'; export { foo };` re-export the
-            // live binding from './x' — including its own TDZ state —
+            // live binding from './x', including its own TDZ state,
             // rather than exporting a same-module local accessor that
             // never observes './x' at all.
             for (uint i = 0; i < count; i++) {
@@ -5063,7 +5062,7 @@ fn void? CompilerContext.export_declaration(&self) {
     // export function foo() {}
     if (tt == TokenType.FUNCTION) {
         self.advance()!; // consume 'function'
-        // Byte offset of the `function` keyword — captured before subsequent
+        // Byte offset of the `function` keyword, captured before subsequent
         // consumes clobber lexer.token_start. Used by toString.
         uint named_export_src_start = self.lexer.token_start;
         bool is_gen = self.match(TokenType.STAR);
@@ -5082,7 +5081,7 @@ fn void? CompilerContext.export_declaration(&self) {
         ushort func_reg = self.declare_var(fn_name2, VAR);
 
         // Regular functions are constructable (ES2015 §14.1.2); generators
-        // and async functions never are (§14.4/§14.7.5) — mirrors
+        // and async functions never are (§14.4/§14.7.5), mirrors
         // function_declaration's handling.
         bool saved_is_constructable = self.is_constructable;
         self.is_constructable = !self.is_generator && !is_async_named_fn;
@@ -5098,7 +5097,7 @@ fn void? CompilerContext.export_declaration(&self) {
         uint inner_idx = self.add_inner_func(inner);
 
         // A top-level `export function` declaration is instantiated at link
-        // time (ECMA-262 16.2.1.5.5 step 17), not by the body — record it for
+        // time (ECMA-262 16.2.1.5.5 step 17), not by the body, record it for
         // the linker and suppress body CLOSURE+DECLVAR so a cyclic early
         // import sees the hoisted function and its identity stays stable.
         mod_register_func_decl(mod, fn_name2, inner_idx);
@@ -5220,7 +5219,7 @@ fn void? CompilerContext.export_declaration(&self) {
 /// Array catch pattern (`catch ([a, b]) {}`). The '[' has already been consumed.
 /// Collects via the shared collector, declares each leaf LET-scoped in the catch
 /// scope, and extracts through emit_destruct_bindings (iterator protocol,
-/// defaults, rest, IteratorClose) — the single destructuring algorithm.
+/// defaults, rest, IteratorClose), the single destructuring algorithm.
 fn void? CompilerContext.compile_catch_array_pattern(&self, ushort catch_val_reg) {
     DestructBind[MAX_DESTRUCT_BINDS] binds;
     uint count = 0;

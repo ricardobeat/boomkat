@@ -117,7 +117,7 @@ enum TokenType : ushort {
     LOG_AND_ASSIGN, LOG_OR_ASSIGN, NULLISH_ASSIGN,
     ARROW,
     OPT_CHAIN,
-    HASH_IDENT,   // #name — private identifier (text excludes the '#')
+    HASH_IDENT,   // #name, private identifier (text excludes the '#')
 }
 
 // ============================================================================
@@ -137,7 +137,7 @@ struct Token {
     // True when this identifier/keyword token was written with at least one
     // Unicode escape (`\uXXXX` / `\u{H+}`). Meta-property productions such as
     // `import.meta` (ES2024 §13.3.12) require their terminal words to appear
-    // literally — an escaped `import` or `meta` is a SyntaxError — so the
+    // literally, an escaped `import` or `meta` is a SyntaxError, so the
     // parser inspects this after re-reading the word token.
     bool has_escape;
 }
@@ -417,7 +417,7 @@ fn uint encode_utf8_to_buf(char[STRING_BUF_SIZE]* buf, uint offset, uint cp) {
         return offset + 3;
     }
     // Supplementary plane: ECMAScript strings are UTF-16 code unit
-    // sequences (spec §6.1.4) — encode `\u{H+}` astral escapes as a
+    // sequences (spec §6.1.4), encode `\u{H+}` astral escapes as a
     // surrogate pair (CESU-8 storage: each half gets its own 3-byte UTF-8
     // sequence) so `"\u{1F600}".length === 2`, matching a real JS engine.
     uint v = cp - 0x1_0000;
@@ -482,7 +482,7 @@ struct Lexer {
 }
 
 // ============================================================================
-// Lexer — initialisation
+// Lexer, initialisation
 // ============================================================================
 
 /// Create a new lexer for the given source text.
@@ -502,7 +502,7 @@ fn Lexer lexer_init(char[] source, void* heap) {
     lex.seen_line_term = false;
     lex.at_line_start = true;
     lex.heap = heap;
-    // Allocate the shared arena holder eagerly (tiny — one pointer) so that
+    // Allocate the shared arena holder eagerly (tiny, one pointer) so that
     // every speculative lexer copy made during parsing shares the SAME non-null
     // holder from the start. A lazily-created holder would be invisible to (and
     // unfreed by) the original if a copy created it first. No blocks are
@@ -572,7 +572,7 @@ fn char[] Lexer.arena_dup(&self, char* src, usz n) {
 /// end of the compilation that owns this lexer, after all tokens (and thus all
 /// decoded `str_value`/`raw_value` slices) have been consumed/interned.
 /// Idempotent. Safe to call on any lexer copy that shares the arena, but must
-/// be called exactly once per compilation — call it on the owning lexer.
+/// be called exactly once per compilation, call it on the owning lexer.
 fn void Lexer.free_arena(&self) {
     Heap* h = (Heap*)self.heap;
     LexArena* arena = self.arena;
@@ -590,7 +590,7 @@ fn void Lexer.free_arena(&self) {
 
 /// Skip a leading HashbangComment (`#!` up to but not including the first
 /// LineTerminator) per ECMAScript §12.5. Must be called, if at all, before
-/// any tokens are produced — it only matches when `pos == 0` and the first
+/// any tokens are produced, so it only matches when `pos == 0` and the first
 /// two bytes are the literal ASCII characters `#` and `!` (escape sequences
 /// like `#!` must NOT match, since they are not the literal source
 /// characters). Callers opt into this for Script, Module, and eval source
@@ -634,7 +634,7 @@ fn void Lexer.reset(&self, char[] source) {
 }
 
 // ============================================================================
-// Lexer — low-level source reading
+// Lexer, low-level source reading
 // ============================================================================
 
 /// Peek at the current character without advancing.  Returns 0 at EOF.
@@ -651,7 +651,7 @@ fn char Lexer.peek_char_at(&self, uint n) {
 }
 
 /// Check whether the current position starts the 3-byte UTF-8 encoding of
-/// LINE SEPARATOR (U+2028) or PARAGRAPH SEPARATOR (U+2029) — the two
+/// LINE SEPARATOR (U+2028) or PARAGRAPH SEPARATOR (U+2029), the two
 /// LineTerminator code points not representable as a single `char`.
 fn bool Lexer.peek_is_ls_ps(&self) {
     return self.peek_char() == 0xE2 && self.peek_char_at(1) == 0x80
@@ -746,7 +746,7 @@ fn uint Lexer.remaining(&self) {
 }
 
 // ============================================================================
-// Lexer — skip whitespace and comments
+// Lexer, skip whitespace and comments
 // ============================================================================
 
 /// Skip whitespace, line terminators, single-line comments (//),
@@ -786,7 +786,7 @@ fn void Lexer.skip_whitespace_and_comments(&self) {
             continue;
         }
 
-        // U+2028 (line separator) and U+2029 (paragraph separator) — UTF-8: E2 80 A8 / E2 80 A9
+        // U+2028 (line separator) and U+2029 (paragraph separator), UTF-8: E2 80 A8 / E2 80 A9
         if (c == (char)0xE2 && self.remaining() >= 3) {
             char n1 = self.source[self.pos + 1];
             char n2 = self.source[self.pos + 2];
@@ -800,7 +800,7 @@ fn void Lexer.skip_whitespace_and_comments(&self) {
             }
         }
 
-        // U+00A0 no-break space — UTF-8: C2 A0. WhiteSpace (ES §12.2), not a
+        // U+00A0 no-break space, UTF-8: C2 A0. WhiteSpace (ES §12.2), not a
         // line terminator, so it does not set seen_line_term.
         if (c == (char)0xC2 && self.remaining() >= 2 && self.source[self.pos + 1] == (char)0xA0) {
             self.pos += 2;
@@ -809,11 +809,11 @@ fn void Lexer.skip_whitespace_and_comments(&self) {
         }
 
         // Other Zs whitespace (ES §12.2):
-        //   U+1680 OGHAM SPACE MARK           — UTF-8: E1 9A 80
-        //   U+2000..U+200A                    — UTF-8: E2 80 80..E2 80 8A
-        //   U+202F NARROW NO-BREAK SPACE      — UTF-8: E2 80 AF
-        //   U+205F MEDIUM MATHEMATICAL SPACE  — UTF-8: E2 81 9F
-        //   U+3000 IDEOGRAPHIC SPACE          — UTF-8: E3 80 80
+        //   U+1680 OGHAM SPACE MARK          , UTF-8: E1 9A 80
+        //   U+2000..U+200A                   , UTF-8: E2 80 80..E2 80 8A
+        //   U+202F NARROW NO-BREAK SPACE     , UTF-8: E2 80 AF
+        //   U+205F MEDIUM MATHEMATICAL SPACE , UTF-8: E2 81 9F
+        //   U+3000 IDEOGRAPHIC SPACE         , UTF-8: E3 80 80
         if (c == (char)0xE1 && self.remaining() >= 3
             && self.source[self.pos + 1] == (char)0x9A
             && self.source[self.pos + 2] == (char)0x80) {
@@ -845,7 +845,7 @@ fn void Lexer.skip_whitespace_and_comments(&self) {
             continue;
         }
 
-        // U+FEFF zero-width no-break space (BOM) — UTF-8: EF BB BF. WhiteSpace
+        // U+FEFF zero-width no-break space (BOM), UTF-8: EF BB BF. WhiteSpace
         // (ES §12.2), not a line terminator.
         if (c == (char)0xEF && self.remaining() >= 3
             && self.source[self.pos + 1] == (char)0xBB && self.source[self.pos + 2] == (char)0xBF) {
@@ -898,7 +898,7 @@ fn void Lexer.skip_whitespace_and_comments(&self) {
             }
             // ES2024 §12.4: if a MultiLineComment contains a line terminator
             // code point, the entire comment is considered a LineTerminator
-            // for parsing by the syntactic grammar — so it triggers ASI
+            // for parsing by the syntactic grammar, so it triggers ASI
             // (seen_line_term) and permits a following `-->`
             // HTMLCloseComment (at_line_start).
             if (comment_had_newline) {
@@ -970,7 +970,7 @@ fn void Lexer.skip_whitespace_and_comments(&self) {
 }
 
 // ============================================================================
-// Lexer — scan numeric literal
+// Lexer, scan numeric literal
 // ============================================================================
 
 /// Parse a numeric literal token.
@@ -1113,7 +1113,7 @@ fn Token? Lexer.scan_number(&self) {
     } else {
         // A leading '0' followed by another digit (or a separator, which can
         // only ever be followed by a digit) is either a legacy octal literal
-        // or a NonOctalDecimalIntegerLiteral (e.g. 08, 09) — neither
+        // or a NonOctalDecimalIntegerLiteral (e.g. 08, 09), neither
         // production admits NumericLiteralSeparator, so separators are
         // rejected outright rather than just checked for placement.
         bool is_legacy_octal_like = c == '0' && self.remaining() >= 2 &&
@@ -1163,7 +1163,7 @@ fn Token? Lexer.scan_number(&self) {
                 frac_prev_was_digit = true;
             }
             // Fraction digits optional: "0." is a valid numeric literal (ES5
-            // §7.8.3) — but a separator must still sit between two digits, so
+            // §7.8.3), but a separator must still sit between two digits, so
             // a trailing "_" right before the loop exits (e.g. "1.5_") is an
             // error even though a bare "1." is fine.
             if (frac_saw_separator && !frac_prev_was_digit) return LEX_ERROR~;
@@ -1254,7 +1254,7 @@ fn Token? Lexer.scan_number(&self) {
 }
 
 // ============================================================================
-// Lexer — scan string literal
+// Lexer, scan string literal
 // ============================================================================
 
 /// Parse a string literal ('...' or "...").
@@ -1280,7 +1280,7 @@ fn Token? Lexer.scan_string(&self) {
     }
 
     if (!has_escapes) {
-        // No escapes — return slice into source
+        // No escapes, return slice into source
         uint str_start = self.pos;
         self.pos = scan_pos;
         self.col += scan_pos - str_start;
@@ -1347,7 +1347,7 @@ fn Token? Lexer.scan_string(&self) {
                 case '\\': buf[buf_len] = '\\'; buf_len++;
 
                 case 'x':
-                    // \xHH — Unicode codepoint U+00HH, encoded as UTF-8.
+                    // \xHH, Unicode codepoint U+00HH, encoded as UTF-8.
                     // Values >= 0x80 need a 2-byte UTF-8 sequence; storing
                     // the raw byte would produce invalid CESU-8 and cause
                     // str_intern to emit replacement characters.
@@ -1361,7 +1361,7 @@ fn Token? Lexer.scan_string(&self) {
                 case 'u':
                     if (self.at_end()) return LEX_ERROR~;
                     if (self.peek_char() == '{') {
-                        // \u{H..H} — variable length Unicode escape
+                        // \u{H..H}, variable length Unicode escape
                         self.advance_char(); // consume {
                         uint ucp = 0;
                         uint udigits = 0;
@@ -1376,7 +1376,7 @@ fn Token? Lexer.scan_string(&self) {
                         self.advance_char(); // consume }
                         buf_len = encode_utf8_to_buf(&buf, buf_len, ucp);
                     } else {
-                        // \uHHHH — exactly 4 hex digits
+                        // \uHHHH, exactly 4 hex digits
                         if (self.remaining() < 4) return LEX_ERROR~;
                         uint ucp4 = 0;
                         for (int i = 0; i < 4; i++) {
@@ -1388,10 +1388,10 @@ fn Token? Lexer.scan_string(&self) {
                     }
 
                 case '\n':
-                    // Line continuation — just skip the newline
+                    // Line continuation, just skip the newline
                     break;
                 case '\r':
-                    // Line continuation — also skip following \n if present
+                    // Line continuation, also skip following \n if present
                     if (!self.at_end() && self.peek_char() == '\n') {
                         self.advance_char();
                     }
@@ -1440,7 +1440,7 @@ fn Token? Lexer.scan_string(&self) {
 }
 
 // ============================================================================
-// Lexer — scan identifier or keyword
+// Lexer, scan identifier or keyword
 // ============================================================================
 
 /// Parse an identifier or keyword.
@@ -1481,7 +1481,7 @@ fn Token? Lexer.scan_identifier(&self) {
     char[] name = self.scan_ident_body_decoded()!;
 
     // Per ES2024 §12.6.1, an IdentifierName written via Unicode escapes that
-    // resolves to a reserved word still behaves like that reserved word — a
+    // resolves to a reserved word still behaves like that reserved word, a
     // parser trying to use it as a binding identifier (var \u{62}reak) must
     // reject it just like the unescaped form. The fast path above already
     // catches the unescaped form; mirror that here so the slow path produces
@@ -1559,7 +1559,7 @@ fn char[]? Lexer.scan_ident_body_decoded(&self) {
 
     // Build name slice. C3's .. is inclusive, so [0..buf_len-1] gives buf_len bytes.
     //
-    // NOTE: callers MUST treat this slice as a borrow only — ident_buf is a
+    // NOTE: callers MUST treat this slice as a borrow only, ident_buf is a
     // per-Lexer scratch reused by every subsequent scan, so the parser can
     // only use the slice until the next token is scanned. Anything kept
     // across scans (PrivateNameEntry.name, scope_stack[i].name, label names,
@@ -1572,7 +1572,7 @@ fn char[]? Lexer.scan_ident_body_decoded(&self) {
 }
 
 // ============================================================================
-// Lexer — scan punctuator
+// Lexer, scan punctuator
 // ============================================================================
 
 /// Parse a punctuator (operator or delimiter).
@@ -1794,7 +1794,7 @@ fn Token? Lexer.scan_punctuator(&self) {
 }
 
 // ============================================================================
-// Lexer — scan regular expression literal
+// Lexer, scan regular expression literal
 // ============================================================================
 
 /// Parse a regular expression literal: /pattern/flags
@@ -1818,7 +1818,7 @@ fn Token? Lexer.scan_regexp(&self) {
         }
 
         if (c == '\\') {
-            // Escape sequence — consume backslash and next char
+            // Escape sequence, consume backslash and next char
             self.advance_char();
             if (self.at_end() || self.peek_char() == '\n' || self.peek_char() == '\r' || self.peek_is_ls_ps()) {
                 return LEX_ERROR~;
@@ -1869,7 +1869,7 @@ fn Token? Lexer.scan_regexp(&self) {
 }
 
 // ============================================================================
-// Lexer — scan template literal
+// Lexer, scan template literal
 // ============================================================================
 
 /// Scan the content of a template string part (between delimiters).
@@ -1921,7 +1921,7 @@ fn char[]? Lexer.scan_template_content(&self, char* end_char, bool* has_escapes,
     }
 
     if (!found_escapes) {
-        // No escapes — return slice into source
+        // No escapes, return slice into source
         uint text_len = scan_pos - start_pos;
         self.pos = scan_pos;
         self.col += text_len;
@@ -1944,7 +1944,7 @@ fn char[]? Lexer.scan_template_content(&self, char* end_char, bool* has_escapes,
     // Slow path: build decoded (cooked) and raw text in parallel stack buffers.
     // The raw buffer mirrors the source text exactly except that bare CR and
     // CRLF sequences are normalized to LF, per the TRV of LineTerminatorSequence
-    // (ES2015 11.8.6.1) — this applies to raw text just as much as cooked.
+    // (ES2015 11.8.6.1), which applies to raw text just as much as cooked.
     char[STRING_BUF_SIZE] buf;
     uint buf_len = 0;
     char[STRING_BUF_SIZE] raw_buf;
@@ -2033,7 +2033,7 @@ fn char[]? Lexer.scan_template_content(&self, char* end_char, bool* has_escapes,
                 case '$':  buf[buf_len] = '$';  buf_len++;  // \$ escapes dollar
 
                 case 'x':
-                    // \xHH in template literals — same UTF-8 encoding fix as
+                    // \xHH in template literals, same UTF-8 encoding fix as
                     // in regular string literals: the value is a Unicode codepoint.
                     if (self.remaining() < 2 ||
                         !is_hex_digit(self.peek_char()) ||
@@ -2093,7 +2093,7 @@ fn char[]? Lexer.scan_template_content(&self, char* end_char, bool* has_escapes,
                     }
 
                 default:
-                    // Other non-standard escape (e.g. \q) — emit the character as-is.
+                    // Other non-standard escape (e.g. \q), emit the character as-is.
                     buf[buf_len] = esc; buf_len++;
             }
             if (*has_invalid_escape) break;
@@ -2192,7 +2192,7 @@ fn Token? Lexer.scan_template_head(&self) {
     }
 
     if (end_char == '`') {
-        // No substitutions — this is a simple string template
+        // With no substitutions this is a simple string template.
         self.advance_char(); // consume closing backtick
         Token tok = make_token(TokenType.STRING, start_line, start_col);
         tok.str_value = content;
@@ -2262,7 +2262,7 @@ fn Token? Lexer.scan_template_after_expr(&self) {
 }
 
 /// Called by the parser immediately after consuming a `}` that closes a
-/// BlockStatement, function body, or class body in statement position —
+/// BlockStatement, function body, or class body in statement position,
 /// contexts where a following `/` must be read as a RegularExpressionLiteral
 /// rather than division.
 fn void Lexer.note_block_close(&self) {
@@ -2275,7 +2275,7 @@ fn void Lexer.note_block_close(&self) {
 /// closing brackets, `this`, `true`, `false`, `null`, the `/` is
 /// division; otherwise it starts a regexp.
 /// Postfix `++`/`--` end an operand (unlike prefix `++`/`--`, which is an
-/// operator applied to a following operand) — `x++ / 2` must lex `/` as
+/// operator applied to a following operand), `x++ / 2` must lex `/` as
 /// division, not the start of a regexp literal. The lexer has no syntactic
 /// distinction between prefix and postfix INC/DEC at this point, but a
 /// `++`/`--` immediately after an operand can only be the postfix form
@@ -2306,7 +2306,7 @@ fn bool Lexer.prev_was_operand(&self) {
 }
 
 // ============================================================================
-// Lexer — main tokenisation entry point
+// Lexer, main tokenisation entry point
 // ============================================================================
 
 /// Advance to the next token and return it.
@@ -2315,7 +2315,7 @@ fn Token? Lexer.next_token(&self) {
     if (self.has_pushed_back) {
         self.has_pushed_back = false;
         self.current = self.pushed_back;
-        // No token_start update — pushback is purely speculative; the prior
+        // No token_start update, pushback is purely speculative; the prior
         // token_start still reflects the most recently *consumed* token.
         return self.current;
     }
@@ -2408,10 +2408,10 @@ fn Token? Lexer.peek(&self) {
         return self.lookahead;
     }
 
-    // Save current state — including token_start so peek doesn't shift it.
+    // Save current state, including token_start so peek doesn't shift it.
     // Without this guard, after peeking the lookahead, `lexer.token_start`
     // would reflect the *peeked* token rather than the most recently *consumed*
-    // one — so e.g. capturing `lexer.token_start` after `check(ARROW)` for an
+    // one, so e.g. capturing `lexer.token_start` after `check(ARROW)` for an
     // `IDENT ARROW` arrow head would yield the arrow's position, not `IDENT`'s.
     Token saved_current = self.current;
     uint saved_token_start = self.token_start;
@@ -2461,12 +2461,12 @@ fn void Lexer.refresh_token_start(&self) {
         self.token_start = self.lookahead_token_start;
         return;
     }
-    // No cached token — scan one forward, then pushback so the lexer state
+    // No cached token, scan one forward, then pushback so the lexer state
     // appears unchanged for the next consumer.
     if (try tok = self.next_token()) {
         self.pushed_back = tok;
         self.has_pushed_back = true;
-        // next_token() set token_start to the start of `tok`'s source text —
+        // next_token() set token_start to the start of `tok`'s source text, so
         // keep it.
     }
     // On lex failure, leave token_start stale; the next consumer will fail

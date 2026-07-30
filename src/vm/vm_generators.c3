@@ -583,7 +583,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 bool await_was_settled =
                     builtins::promise_get_state(await_obj, 0) != builtins::PROMISE_PENDING;
 
-                // ── Async-generator internal await (ES2018 §27.6) ────────────
+                // Async-generator internal await (ES2018 §27.6).
                 // When this AWAIT fires inside an async-generator body, we must
                 // suspend onto the SAME GeneratorState that owns the request
                 // queue (ds.act.async_gen_state), not a fresh one, and re-drive
@@ -1717,7 +1717,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
 
             uint step = gs.ays_step;
 
-            // ── First entry: capture the iterator, seed the loop with NEXT ──
+            // First entry: capture the iterator, seed the loop with NEXT.
             if (step == AYS_INACTIVE && gs.delegated_iter == null) {
                 TVal iter_val = *rb;
                 if (!iter_val.is_object() || iter_val.get_heapptr() == null) {
@@ -1757,7 +1757,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
             HObject* iterator = (HObject*)gs.delegated_iter;
             if (iterator == null) { ra[0].set_undefined(); return (TVal){}; }
 
-            // ── Resumption after an Await: adopt the settled completion ──────
+            // Resumption after an Await: adopt the settled completion.
             // async_gen_resume_body set gs.resume_kind = NEXT (fulfilled) or
             // THROW (rejected) with the settled value; adopt it as `settled`.
             // A rejected inner-result Await propagates as a throw into the outer
@@ -1852,7 +1852,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 return (TVal){};
             }
 
-            // ── Resumption after a GeneratorYield (or first NEXT seed): the ──
+            // Resumption after a GeneratorYield (or first NEXT seed): the.
             // consumer resumed via .next(v)/.throw(v)/.return(v). Choose the
             // inner method to invoke based on the resumption completion.
             //
