@@ -1776,8 +1776,16 @@ fn void? CompilerContext.for_statement(&self) {
             self.advance()!; // consume identifier
             self.advance()!; // consume ')'
             self.advance()!; // consume 'in'
-            ushort obj_reg = self.assignment_expr()!;
-            self.expect(TokenType.RPAREN)!;
+                ushort obj_reg = self.assignment_expr()!;
+                if (is_lexical) {
+                    // Keep the head TDZ environment alive beneath a distinct
+                    // iteration environment so closures created by the RHS
+                    // retain the uninitialised binding.
+                    self.emit_simple(Opcode.PUSH_LEX);
+                    self.cur_lex_depth++;
+                }
+                self.expect(TokenType.RPAREN)!;
+
             self.emit_bare_forin_loop(paren_id_name, obj_reg, saved_scope, saved_reg)!;
             return;
         }
@@ -2134,15 +2142,21 @@ fn void? CompilerContext.for_statement(&self) {
                 }
 
                 self.expect(TokenType.IN)!;
-                obj_reg = self.assignment_expr()!;
-                self.expect(TokenType.RPAREN)!;
-
                 if (is_lexical) {
-                    // The initial environment is the first iteration's
-                    // environment.  It is replaced after each body evaluation.
+                    self.emit_simple(Opcode.PUSH_LEX);
+                    self.cur_lex_depth++;
+                    for (uint i = 0; i < fdcount; i++) {
+                        if (fdbinds[i].is_synthetic) continue;
+                        HString* hs = (HString*)self.constants[fdbinds[i].name_idx].get_heapptr();
+                        self.emit_a_bc(Opcode.INITTZ, 0, self.add_string_constant(hs.get_data()));
+                    }
+                }
+                obj_reg = self.assignment_expr()!;
+                if (is_lexical) {
                     self.emit_simple(Opcode.PUSH_LEX);
                     self.cur_lex_depth++;
                 }
+                self.expect(TokenType.RPAREN)!;
 
                 ushort iter_state = self.alloc_reg();
                 self.emit_abc(Opcode.INITFOR, (uint)obj_reg, (uint)iter_state, 0);
@@ -2191,7 +2205,8 @@ fn void? CompilerContext.for_statement(&self) {
 
                 if (is_lexical) {
                     self.emit_simple(Opcode.POP_LEX);
-                    self.cur_lex_depth--;
+                    self.emit_simple(Opcode.POP_LEX);
+                    self.cur_lex_depth -= 2;
                 }
 
                 self.free_reg(iter_state);
@@ -2265,34 +2280,49 @@ fn void? CompilerContext.for_statement(&self) {
                 if (for_is_await) return self.fail("'for await' requires 'of', not 'in'")~;
                 // for (let/const/var x in obj) { ... }
                 self.advance()!;  // consume 'in'
-                // Declare the for-in variable so let/const semantics
-                // (write-protection, TDZ, duplicate detection) are enforced.
-                // For lexical bindings, declare_var pushes a scope_stack entry
-                // so the body can resolve the name via the scope chain.
+                // ForIn/OfHeadEvaluation creates the lexical head environment
+                // before evaluating the RHS. The binding must therefore be in
+                // TDZ while the object expression is evaluated.
+                // Ensure a register-cached outer binding cannot bypass the TDZ
+                // environment while compiling the RHS.
+                if (is_lexical) {
+                    for (uint j = 0; j < saved_scope; j++) {
+                        if (str_eq(self.scope_stack[j].name, name_tok.str_value)) {
+                            self.scope_stack[j].is_captured = true;
+                            self.has_captured_local = true;
+                            break;
+                        }
+                    }
+                }
                 ushort iter_var = self.declare_var(name_tok.str_value, decl_kind);
+                if (is_lexical) {
+                    self.scope_stack[self.scope_depth - 1].is_captured = true;
+                    self.emit_simple(Opcode.PUSH_LEX);
+                    self.cur_lex_depth++;
+                    self.emit_a_bc(Opcode.INITTZ, 0, self.add_string_constant(name_tok.str_value));
+                }
                 ushort obj_reg = self.assignment_expr()!;
-                self.expect(TokenType.RPAREN)!;
-
-                // For let/const, push the loop's initial per-iteration lexical
-                // environment.  The environment is replaced after each body
-                // evaluation; the first iteration uses this initial environment.
-                // Keep cur_lex_depth in sync so break/continue unwind to this
-                // environment before reaching the loop exit/rotation path.
-                bool needs_forin_periter = is_lexical
-                    && (self.is_global || self.is_captured_name(name_tok.str_value));
+                // Keep the head TDZ environment alive for closures created by
+                // the RHS, while the loop gets a distinct binding environment.
                 if (is_lexical) {
                     self.emit_simple(Opcode.PUSH_LEX);
                     self.cur_lex_depth++;
                 }
+                self.expect(TokenType.RPAREN)!;
 
-                // Emit INITFOR to set up the iterator
+                // The head TDZ environment is retained beneath the initial
+                bool needs_forin_periter = is_lexical
+                    && (self.is_global || self.is_captured_name(name_tok.str_value));
+                // The TDZ environment above remains active for the first iteration.
                 ushort iter_state = self.alloc_reg();
                 self.emit_abc(Opcode.INITFOR, (uint)obj_reg, (uint)iter_state, 0);
 
+                if (self.eval_mode) self.emit_abc(Opcode.LDUNDEF, (uint)self.eval_acc_reg, 0, 0);
                 uint loop_start = self.code_count;
                 self.push_loop(loop_start, true);
 
                 // Emit NEXTFOR: iter_var = next key, B = has_next
+
                 ushort has_next = self.alloc_reg();
                 self.emit_abc(Opcode.NEXTFOR, (uint)iter_var, (uint)has_next, (uint)iter_state);
 
@@ -2307,7 +2337,9 @@ fn void? CompilerContext.for_statement(&self) {
                 uint forin_name_idx = self.add_string_constant(name_tok.str_value);
                 self.emit_var_store(iter_var, forin_name_idx, is_lexical, is_const);
 
-                // Compile body
+                // Compile body. Each body evaluation starts with an empty
+                // completion; an expression statement then replaces it.
+                if (self.eval_mode) self.emit_abc(Opcode.LDUNDEF, (uint)self.eval_acc_reg, 0, 0);
                 self.statement()!;
 
                 // CreatePerIterationEnvironment: copy the current binding into a
@@ -2330,11 +2362,13 @@ fn void? CompilerContext.for_statement(&self) {
                 self.patch_jump(exit_jump);
                 self.pop_loop();
 
-                // Pop the final lexical environment for let/const.  Earlier
-                // environments remain alive when captured by loop closures.
+                // Pop the final iteration environment and the retained head TDZ
+                // environment. Earlier iteration environments remain alive when
+                // captured by loop closures.
                 if (is_lexical) {
                     self.emit_simple(Opcode.POP_LEX);
-                    self.cur_lex_depth--;
+                    self.emit_simple(Opcode.POP_LEX);
+                    self.cur_lex_depth -= 2;
                 }
 
                 self.free_reg(iter_state);
@@ -2899,6 +2933,7 @@ fn void? CompilerContext.emit_bare_forin_loop(&self, char[] var_name, ushort obj
     ushort iter_state = self.alloc_reg();
     self.emit_abc(Opcode.INITFOR, (uint)obj_reg, (uint)iter_state, 0);
 
+    if (self.eval_mode) self.emit_abc(Opcode.LDUNDEF, (uint)self.eval_acc_reg, 0, 0);
     uint loop_start = self.code_count;
     self.push_loop(loop_start, true);
 
@@ -2909,6 +2944,7 @@ fn void? CompilerContext.emit_bare_forin_loop(&self, char[] var_name, ushort obj
     uint exit_jump = self.emit_cond_jump(Opcode.IF_FALSE, (uint)has_next);
     self.free_reg(has_next);
 
+    if (self.eval_mode) self.emit_abc(Opcode.LDUNDEF, (uint)self.eval_acc_reg, 0, 0);
     self.statement()!;
 
     self.loop_stack[self.loop_depth - 1].continue_target = self.code_count;
@@ -3334,6 +3370,7 @@ fn void? CompilerContext.emit_bare_forin_destruct_loop(&self, bool is_array_patt
     ushort obj_reg = self.assignment_expr()!;
     self.expect(TokenType.RPAREN)!;
 
+
     ushort iter_state = self.alloc_reg();
     self.emit_abc(Opcode.INITFOR, (uint)obj_reg, (uint)iter_state, 0);
 
@@ -3398,6 +3435,7 @@ fn void? CompilerContext.emit_forin_loop_member(&self, ForLhsSnapshot lhs_snap, 
     ushort iter_state = self.alloc_reg();
     self.emit_abc(Opcode.INITFOR, (uint)obj_reg, (uint)iter_state, 0);
 
+    if (self.eval_mode) self.emit_abc(Opcode.LDUNDEF, (uint)self.eval_acc_reg, 0, 0);
     uint loop_start = self.code_count;
     self.push_loop(loop_start, true);
 
@@ -3409,6 +3447,7 @@ fn void? CompilerContext.emit_forin_loop_member(&self, ForLhsSnapshot lhs_snap, 
 
     self.emit_member_lhs_store(lhs_snap, key_reg)!;
 
+    if (self.eval_mode) self.emit_abc(Opcode.LDUNDEF, (uint)self.eval_acc_reg, 0, 0);
     self.statement()!;
 
     self.loop_stack[self.loop_depth - 1].continue_target = self.code_count;
