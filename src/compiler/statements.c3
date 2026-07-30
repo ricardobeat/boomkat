@@ -315,15 +315,36 @@ fn void? CompilerContext.statement(&self) {
                     break;
                 }
 
-                // `async function name() {}` — treat as function declaration
-                if (self.peek_type() == TokenType.FUNCTION &&
-                    id_tok.str_value.len == 5 &&
+                // `async function name() {}` — treat as function declaration,
+                // but only when `async` IS the contextual keyword and there
+                // is no LineTerminator between `async` and `function`
+                // (ES2017 §14.7). Escaped `\u0061sync` is a plain identifier
+                // (ES2024 §5.1.5), not the contextual keyword, and a line
+                // terminator restores the default reading: `async` is an
+                // IdentifierReference expression statement, and the
+                // following `function …` is a separate FunctionDeclaration.
+                if (id_tok.str_value.len == 5 &&
                     id_tok.str_value[0] == 'a' && id_tok.str_value[1] == 's' &&
                     id_tok.str_value[2] == 'y' && id_tok.str_value[3] == 'n' &&
-                    id_tok.str_value[4] == 'c') {
-                    // id_tok was `async`; next token is `function`
-                    self.function_declaration(true, id_tok_start)!;
-                    break;
+                    id_tok.str_value[4] == 'c' &&
+                    !id_tok.has_escape) {
+                    Token next_tok;
+                    if (self.pushback_count > 0) {
+                        next_tok = self.pushback_stack[self.pushback_count - 1];
+                    } else {
+                        Token? peek_opt = self.lexer.peek();
+                        if (catch _e = peek_opt) {
+                            return self.fail("expected statement, got end of input")~;
+                        }
+                        next_tok = peek_opt;
+                    }
+                    if (next_tok.type == TokenType.FUNCTION && next_tok.line == id_tok.line) {
+                        // id_tok was `async`; next token is `function` on
+                        // the same line. Consume was the `async`; the next
+                        // advance() in function_declaration returns `function`.
+                        self.function_declaration(true, id_tok_start)!;
+                        break;
+                    }
                 }
 
                 // `using` is a reserved declaration introducer in current
