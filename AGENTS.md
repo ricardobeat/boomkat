@@ -34,10 +34,15 @@ All common tasks are `just` recipes (`just list` to see them all). The fast debu
 | Debug build (`-O0`) | `just build-debug <target>` |
 | ASAN test262 runner | `just build-asan` (`out/test262_runner_asan`) |
 | Rosetta suite | `just rosetta` (22+ language features; the go-to regression check) |
+| Local suite | `just test-local` (every `test/*.js` + the ESM fixtures) |
+| Run one JS file as ESM | `just run-module <file>` (`./out/duktape_c3 --module <file>`) |
+| ESM module tests only | `just modules` (`test/modules/`, 12 entry points) |
 | One test262 phase | `just test262-phase <n>` |
 | Full test262 | `just test262` |
 
 **Validate changes with `just rosetta`, `just run` on a local repro, or a single `just test262-phase <n>` — not a full `just test262` run, which is slow and noisy.** Test fixtures live in `test/`; test262 lives under `test262/`.
+
+**ESM tests need `--module`.** `import`/`export` are rejected at parse time by the plain runner, so an ESM fixture run as a plain script always reports a SyntaxError. Every ESM test therefore lives under `test/modules/<tNN_name>/main.js` (with its dependency files alongside) and is invoked through `test/modules/run.sh`, which passes `--module` and treats a non-zero exit as failure. `just test-local` runs both surfaces: the flat `test/*.js` sweep under the plain runner, then `run.sh` for the module fixtures. Do NOT add `import`/`export` files directly to `test/` — they would read as spurious failures in the flat sweep. `test/test_async_500k.js` is skipped by the local suite: it passes but takes ~20s, so it is a perf stress test, not a regression check.
 
 For test262 work: `python3 scripts/run_test262.py --phase <n> --log <file>` writes per-test `RESULT<TAB>path` lines for failure clustering, and `python3 scripts/run_test262.py --single <path-under-test262/test>` reproduces one test through the canonical worker path. **`--single` warns `⚠ SUITE SKIPS THIS TEST` (naming the reason) when the test carries an unsupported-feature or `noStrict` flag — a raw COMPILE_ERROR/FAIL on such a test is NOT a real failure**, the suite skips it. Add `--debug` (concat assert/sta/includes + run under `duktape_c3`) or `--keep` (emit the combined file for `just lldb` / `--trace-vm`). The runner kills workers exceeding 2 GB RSS (`MEMKILL`) — see `plans/040-test262-100-percent.md` §A5.
 
