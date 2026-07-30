@@ -1,6 +1,6 @@
 # Progress: Duktape C3 — test262 Conformance Tracker
 
-**Last Updated:** Session 299 — **41,830 pass / 0 fail / 0 CE** (7,406 skipped). Cleared the remaining backlog: large-string registry backstop (recovering the leak-fix perf cost and exposing a call-callee use-after-free), a GC temproot invariant break affecting every builtin that re-enters the VM, a lexer scratch-buffer borrow corrupting escaped declaration names across params/classes/modules, the bare-`var` inline-cache clobber, and six spec fixes.
+**Last Updated:** Session 300 — **45,617 pass / 0 fail / 0 CE** (7,207 skipped). Plan 062 complete: the 13,030 orphaned core-language tests are now in `PHASES` (2/7/24) and all 14 root-cause groups (A–N) are fixed, plus one cross-group interaction regression caught by the gate. Two-run `test262-gate` zero-fail.
 
 **Target:** 100% test262 pass rate on the targeted subset (see plan 040).
 
@@ -11,6 +11,26 @@
 - **Single-test repro**: `python3 scripts/run_test262.py --single <path>` (warns if the suite skips the test; `--debug`/`--keep` concat harness for `just lldb` / `--trace-vm`).
 - **Phase counts**: `bash scripts/count_test262_by_phase.sh` · **Delta**: `bash scripts/test262_delta.sh`.
 - **Build**: `c3c build test262_runner` or `c3c build duktape_c3` (plain runner; `duktape_c3_debug` for `-c`/`-t` inspection).
+
+## Session 300 (2026-07-30)
+
+Plan 062 (core-language coverage) executed end-to-end in four three-agent batches. **41,830 → 45,617 pass (+3,787), 0 fail, 0 CE; skipped 7,406 → 7,207.** All 14 groups landed with attribution trailers; every batch coordinator-validated (repros, `--single` on each target test, owning phases, rosetta 100/100, golden 10/10) before merging.
+
+- **A** — async `return`-through-`finally` overwrote the pre-installed promise in `callee_result` with the raw value (9 MEMKILLs); ENDFINALLY's pending-return path now mirrors the RET path's async settle, and the swallowed `return vm.return_val` from `dispatch_exceptions` (non-fault returns are discarded at the dispatch site) became `ds.halt` (b10cff46).
+- **F** — for-in recorded only *yielded* keys as seen; non-enumerable own keys are now pre-marked so they suppress enumerable proto keys (0be22cdc).
+- **J** — `[[Construct]]` defaulted to null proto instead of `%Object.prototype%` when `constructor.prototype` was non-object (cee60e97).
+- **B** — `await`/`yield` were unconditionally restricted assignment targets; the check now consults the current function's async/generator context (66f6fcae).
+- **I** — the assignment-LHS cleanup cleared `last_was_member` inside grouping parens, so `delete (o.prop)` read as unqualified; cleanup now gated on `!inside_parens && !del_mode` (2b97a88a).
+- **D+E** — for-in head TDZ (head env created before RHS eval, kept alive for RHS closures, distinct per-iteration envs) and completion value (`V` starts `undefined`; the reset must sit *before* the loop back-edge target — first attempt put it at `loop_start` and wiped the body completion every iteration, caught in merge validation via `eval('1; for (var a in {x:0}) { 5; }')` → must be 5) (249173d2 → fca8012).
+- **C** — for-in/of RHS parsed as `AssignmentExpression`; now full `Expression` in all six head paths (da2609bc).
+- **G** — `let`/`const` self-reference TDZ was missed in function-nested blocks because register reads bypassed the env sentinel; `ScopeEntry.is_tdz` forces env-path reads until initialized (9afcd9bd).
+- **K** — `async` contextual keyword now enforces `[no LineTerminator here]` and rejects escaped spellings at all four detection sites incl. both hoist pre-scans (114b69c).
+- **H** — the register-resident-locals optimization NOP'd `PUTLEX_C`, dropping the const non-writable flag; register-only write sites now route through the env when the LHS is a known const (ee28a47d).
+- **L** — `await` of a thenable went through an intermediate wrapper promise + extra adoption microtask, breaking reaction ordering; the thenable job now settles the target promise directly (2855c4b).
+- **M** — the two ~256-bit BigInt extremes tests skip-listed (int128 by design) (51e580a7).
+- **N** — for-in pre-snapshotted keys without re-checking existence; NEXTFOR now skips keys deleted before their turn (e0b30ef7).
+- **Cross-group regression** — the full gate (not per-phase runs) caught `for (let p in x) f(p)` inside functions throwing `p is not defined`: D+E marked the iter-var `is_captured` without the lockstep `has_captured_local = true`, so `finish()` NOP'd the env writes while G forced reads through the env. One-line flip + the invariant documented at the elision site (5ffaceb8). Lesson recorded: per-phase validation is necessary but not sufficient — run the gate after multi-group merges.
+- Gates: two-run `test262-gate` **45,617 pass / 0 fail / 0 CE**, golden 10/10, rosetta 100/100.
 
 ## Session 299 (2026-07-24)
 
