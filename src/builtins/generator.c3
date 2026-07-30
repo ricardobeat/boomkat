@@ -56,7 +56,7 @@ fn void builtin_dynamic_gen_function(BuiltinContext* ctx, bool is_gen, bool is_a
 
     lexer::Lexer lex = lexer::lexer_init(src_buf[:src_pos], ctx.heap);
     defer lex.free_arena();
-    CompiledFunction*? cf = compiler::compile_function_kind(&lex, ctx.heap, true, is_gen, is_async, false);
+    CompiledFunction*? cf = compiler::compile_function_kind(&lex, ctx.heap, true, is_gen, is_async, true);
     CompiledFunction* func;
     if (try f = cf) {
         func = f;

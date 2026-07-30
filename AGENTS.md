@@ -17,7 +17,8 @@ The engine is strict-only — a single execution mode. Non-strict / Annex B feat
 
 **Guardrails:**
 - The engine is single-mode; there is no `is_strict` / `ACT_FLAG_STRICT` flag to branch on.
-- `"use strict"` is parsed and ignored (a no-op, accepted for source compatibility).
+- `"use strict"` is parsed and ignored (a no-op, accepted for source compatibility). The one exception: in a dynamic `Function`/`GeneratorFunction`/`AsyncFunction` body it clears `FuncFlags.subst_global_this` (below).
+- `this`-substitution is **not** a strictness distinction here. `FuncFlags.subst_global_this` is set only on bodies built by the dynamic function constructors, so `Function('return this')()` keeps returning the global object (a ubiquitous UMD idiom). Ordinary functions never substitute, and functions nested inside a dynamic body do not inherit the flag.
 - Direct vs. indirect `eval` is not a strict-mode distinction; both are fully supported. `ACT_FLAG_DIRECT_EVAL` / `has_direct_eval` / `callee_is_eval` are orthogonal to strict mode.
 - `noStrict`-flagged test262 tests fail to compile by design.
 

@@ -2073,13 +2073,10 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 }
 
                 // Module Namespace Exotic [[Set]] (§10.4.6.11): always returns
-                // false. PutValue turns that into a TypeError for a strict
-                // reference; sloppy code silently no-ops.
+                // false, which PutValue turns into a TypeError (strict-only engine).
                 if (hobj.flags.exotic_module_ns) {
-                    if (vm.current_func != null && vm.current_func.is_strict()) {
-                        if (!vm_throw_error(vm, vm.heap.type_err_proto, "Cannot assign to read only property of module namespace object", ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                            return VM_ERROR~;
-                        }
+                    if (!vm_throw_error(vm, vm.heap.type_err_proto, "Cannot assign to read only property of module namespace object", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                        return VM_ERROR~;
                     }
                     return (TVal){};
                 }
@@ -2305,15 +2302,12 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             // Accessor property — invoke setter
                             TVal setter_fn = hobject::hobject_access_setter(*entry);
                             // No setter (get-only accessor): §10.1.9.3 / OrdinarySet
-                            // step returns false; PutValue only turns that into a
-                            // TypeError for a strict reference (§13.15.2) — code
-                            // compiled without "use strict" silently no-ops instead.
+                            // returns false, which PutValue turns into a TypeError
+                            // (§13.15.2) — always, in this strict-only engine.
                             if (!setter_fn.is_object() || setter_fn.get_heapptr() == null) {
-                                if (vm.current_func != null && vm.current_func.is_strict()) {
-                                    HString* nm = (HString*)key;
-                                    if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Cannot set property '%s' which has only a getter", nm.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                                        return VM_ERROR~;
-                                    }
+                                HString* nm = (HString*)key;
+                                if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Cannot set property '%s' which has only a getter", nm.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                    return VM_ERROR~;
                                 }
                                 return (TVal){};
                             }
@@ -2543,15 +2537,11 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         // find_accessor_proto sets found=true for any accessor property on
                         // the chain, even a get-only one (accessor_fn left as undefined in
                         // that case). ES2024 §10.1.9.2 OrdinarySet step 2 returns false for
-                        // an inherited accessor with no [[Set]]; PutValue only turns that
-                        // into a TypeError for a strict reference (§13.15.2) — code compiled
-                        // without "use strict" silently no-ops instead of creating an own
-                        // property.
+                        // an inherited accessor with no [[Set]], which PutValue turns into a
+                        // TypeError (§13.15.2) rather than creating an own property.
                         if (acc.found && (!acc.accessor_fn.is_object() || acc.accessor_fn.get_heapptr() == null)) {
-                            if (vm.current_func != null && vm.current_func.is_strict()) {
-                                if (!vm_throw_error(vm, vm.heap.type_err_proto, "Cannot set property which has only a getter", ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                                    return VM_ERROR~;
-                                }
+                            if (!vm_throw_error(vm, vm.heap.type_err_proto, "Cannot set property which has only a getter", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                return VM_ERROR~;
                             }
                             return (TVal){};
                         }
@@ -2996,15 +2986,12 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 if (key != null) {
                     // Module Namespace Exotic [[Delete]] (§10.4.6.10): an
                     // existing own key (export or Symbol.toStringTag) is
-                    // non-configurable → false (throws in strict module code);
-                    // an absent key → true.
+                    // non-configurable → false, which throws; an absent key → true.
                     if (hobj.flags.exotic_module_ns) {
                         if (hobj.find_prop_idx(key) >= 0) {
                             ra.set_boolean(false);
-                            if (vm.current_func != null && vm.current_func.is_strict()) {
-                                if (!vm_throw_error(vm, vm.heap.type_err_proto, "Cannot delete property of module namespace object", ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                                    return VM_ERROR~;
-                                }
+                            if (!vm_throw_error(vm, vm.heap.type_err_proto, "Cannot delete property of module namespace object", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                return VM_ERROR~;
                             }
                         } else {
                             ra.set_boolean(true);

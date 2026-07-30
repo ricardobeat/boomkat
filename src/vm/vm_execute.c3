@@ -474,7 +474,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                     act.this_binding = gs_rb2.this_binding;  // raw copy, no stale-decref
                 } else {
                     // Generator was created with undefined/null this — apply ES5 §10.4.3.
-                    if (!target.is_arrow() && !target.is_strict()
+                    if (!target.is_arrow() && target.subst_global_this()
                         && vm.global_env != null && vm.global_env.bindings != null) {
                         this_val.set_object(vm.global_env.bindings);
                     }
@@ -498,7 +498,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                 act.this_binding = arrow_this;
             } else {
                 // Non-resume: ES5 §10.4.3 — substitute global object for undefined/null this.
-                if (!target.is_strict()
+                if (target.subst_global_this()
                     && (this_val.is_undefined() || this_val.is_null())
                     && vm.global_env != null && vm.global_env.bindings != null) {
                     this_val.set_object(vm.global_env.bindings);
@@ -4533,9 +4533,10 @@ fn TVal? Vm.run(Vm* vm) {
                         }
                         break;
                     } else if (put_result == 0) {
-                        // Not in lex env — check var env. Strict-mode: assigning
-                        // to an undeclared name throws ReferenceError.
-                        if (vm.current_func.is_strict() && !env::env_has(ds.act.var_env, key)) {
+                        // Not in lex env — check var env. Assigning to an
+                        // undeclared name throws ReferenceError (strict-only engine;
+                        // there are no implicit globals).
+                        if (!env::env_has(ds.act.var_env, key)) {
                             HString* name_hstr = (HString*)key;
                             if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "'%s' is not defined", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
                                 return VM_ERROR~;
@@ -4853,10 +4854,10 @@ fn TVal? Vm.run(Vm* vm) {
                         }
                         break;
                     } else if (put_result == 0) {
-                        // Not in lex env — check var env. In strict mode, assigning
-                        // to an identifier that does not exist anywhere in the scope
-                        // chain throws ReferenceError (ES5 §11.13.1 / ES2015 §12.15.4).
-                        if (vm.current_func.is_strict() && !env::env_has(ds.act.var_env, key)) {
+                        // Not in lex env — check var env. Assigning to an identifier
+                        // that does not exist anywhere in the scope chain throws
+                        // ReferenceError (ES5 §11.13.1 / ES2015 §12.15.4).
+                        if (!env::env_has(ds.act.var_env, key)) {
                             HString* name_hstr = (HString*)key;
                             if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "'%s' is not defined", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
                                 return VM_ERROR~;
