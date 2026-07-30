@@ -51,7 +51,7 @@ const uint FORIN_NEARER_MAX = 16;
 /// yielded.  Chains longer than FORIN_NEARER_MAX fall back to that eager
 /// recording for the overflowing levels (see forin_record_non_enumerable).
 struct ForInSeen {
-    HString** entries;   /// Dense insertion-ordered list of yielded keys
+    HString** entries;   /// Dense insertion-ordered list of yielded keys; null until the first insert
     uint count;
     uint cap;
     uint* index;         /// Open-addressing table: slot -> entries[] index + 1, 0 = empty
@@ -60,8 +60,14 @@ struct ForInSeen {
     uint nearer_count;
 }
 
-/// Grow an HString** array if needed.
+/// Grow an HString** array if needed, allocating it on first use when `*arr`
+/// is still null.
 fn bool forin_ensure_cap(Heap* h, HString*** arr, uint* cap, uint need) {
+    if (*arr == null) {
+        HString** new_arr = (HString**)h.alloc_func(h.heap_udata, *cap * HString*::size);
+        if (new_arr == null) return false;
+        *arr = new_arr;
+    }
     if (need >= *cap) {
         uint new_cap = *cap * 2;
         HString** new_arr = (HString**)h.realloc_func(h.heap_udata, *arr, new_cap * HString*::size);
@@ -272,9 +278,9 @@ fn ForInState* collect_forin_keys(Vm* vm, HObject* obj) {
     if (keys == null) return null;
     uint count = 0;
 
+    // `entries` is allocated on the first insert: a single-level enumeration,
+    // or one whose keys all come from the last level, never needs it.
     ForInSeen seen = { .cap = FORIN_INITIAL_CAP };
-    seen.entries = (HString**)h.alloc_func(h.heap_udata, seen.cap * HString*::size);
-    if (seen.entries == null) { h.free_func(h.heap_udata, keys); return null; }
 
     HObject* cur = obj;
     uint depth = 0;
