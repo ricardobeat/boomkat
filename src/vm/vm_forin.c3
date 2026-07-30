@@ -47,6 +47,25 @@ fn bool forin_add_key(Heap* h, HString*** keys, uint* count, uint* keys_cap,
     return true;
 }
 
+/// Mark a key in the seen set without adding it to the yielded-keys list.
+///
+/// Used by the for-in own-property pre-passes: ES spec EnumerateObjectProperties
+/// records EVERY own property key it visits — including non-enumerable ones —
+/// as already-seen, so a same-named enumerable property on a prototype further
+/// up the chain is suppressed (plan 062 group F). Yielding is reserved for
+/// keys that pass the enumerable filter, which the calling code applies after
+/// this pre-pass.
+fn bool forin_mark_seen(Heap* h, HString*** seen, uint* seen_cnt, uint* seen_cap,
+                        HString* key) {
+    for (uint j = 0; j < *seen_cnt; j++) {
+        if ((*seen)[j] == key) return true;
+    }
+    if (!forin_ensure_cap(h, seen, seen_cap, *seen_cnt + 1)) return false;
+    (*seen)[*seen_cnt] = key;
+    (*seen_cnt)++;
+    return true;
+}
+
 /// Collect all enumerable property keys from an object and its prototype
 /// chain, de-duplicated (own keys shadow prototype keys).
 ///
@@ -180,7 +199,27 @@ fn ForInState* collect_forin_keys(Vm* vm, HObject* obj) {
 
         // Own named properties — integer indices ascending, then strings in insertion order.
         // Phase 1: integer-indexed named properties (sorted by numeric index, enumerable only)
+        //
+        // Pre-pass: mark each OWN non-enumerable arridx named key as seen.
+        // Per spec EnumerateObjectProperties, non-enumerable own keys are
+        // still recorded as "already seen" so a same-named enumerable
+        // prototype key on the next loop level is suppressed (plan 062
+        // group F). Enumerable own indexes are NOT pre-marked here: they
+        // are added to both `seen` and `keys` by the yield step below via
+        // `forin_add_key`, and pre-marking would make that step
+        // early-return without yielding them.
         {
+            for (uint i = 0; i < cur.prop_count; i++) {
+                if (cur.prop_key_at(i) == null) continue;
+                if (cur.get_prop_flags(i).enumerable) continue;
+                HString* k = (HString*)cur.prop_key_at(i);
+                if (!k.is_arridx()) continue;
+                if (!forin_mark_seen(h, &seen, &seen_cnt, &seen_cap, k)) {
+                    h.free_func(h.heap_udata, keys);
+                    h.free_func(h.heap_udata, seen);
+                    return null;
+                }
+            }
             uint int_count = 0;
             for (uint i = 0; i < cur.prop_count; i++) {
                 if (cur.prop_key_at(i) != null && ((HString*)cur.prop_key_at(i)).is_arridx()
@@ -230,6 +269,26 @@ fn ForInState* collect_forin_keys(Vm* vm, HObject* obj) {
             }
         }
         // Phase 2: non-index string named properties (insertion order, enumerable only)
+        //
+        // Pre-pass: mark each OWN non-enumerable non-arridx non-symbol
+        // string key as seen. Same EnumerateObjectProperties rule as
+        // Phase 1 (plan 062 group F); the yield loop below handles the
+        // enumerable ones through `forin_add_key`, which also inserts
+        // into seen, so we skip pre-marking those to avoid the
+        // early-return swallowing them.
+        for (uint i = 0; i < cur.prop_count; i++) {
+            if (cur.prop_key_at(i) == null) continue;
+            if (cur.get_prop_flags(i).enumerable) continue;
+            HString* k = (HString*)cur.prop_key_at(i);
+            if (k.is_arridx()) continue;
+            if (k.is_symbol()) continue;
+            if (cur.flags.exotic_stringobj && (void*)k == vm.heap.strs[heap::BuiltinStr.LENGTH]) continue;
+            if (!forin_mark_seen(h, &seen, &seen_cnt, &seen_cap, k)) {
+                h.free_func(h.heap_udata, keys);
+                h.free_func(h.heap_udata, seen);
+                return null;
+            }
+        }
         for (uint i = 0; i < cur.prop_count; i++) {
             if (cur.get_prop_flags(i).enumerable && cur.prop_key_at(i) != null) {
                 HString* k = (HString*)cur.prop_key_at(i);
