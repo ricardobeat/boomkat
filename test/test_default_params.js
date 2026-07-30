@@ -102,4 +102,8 @@ assert(f12(1) === 1, 'f12: first explicit, second undefined');
 assert(f12(1, 2) === 3, 'f12: both explicit');
 assert(f12(undefined, 5) === 15, 'f12: first undefined triggers default, second explicit');
 
-print('PASS:', pass, 'FAIL:', fail);
+// Report the counts without the bare word "FAIL:" — a zero-failure summary
+// reading "FAIL: 0" is indistinguishable from a real failure to any harness
+// that greps the output for FAIL, which made this file look permanently red.
+print('passed: ' + pass + ', failed: ' + fail);
+print(fail === 0 ? 'test_default_params OK' : 'test_default_params FAILED');

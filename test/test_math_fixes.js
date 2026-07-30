@@ -32,14 +32,34 @@ assertSameValue(Math.min(5, NaN), NaN);
 assertSameValue(Math.min(NaN, NaN), NaN);
 assertSameValue(Math.min(3, 2, 1), 1);
 
-// Math.pow special cases per ES6
-assertSameValue(Math.pow(1, NaN), 1);
-assertSameValue(Math.pow(1, Infinity), 1);
-assertSameValue(Math.pow(1, -Infinity), 1);
-assertSameValue(Math.pow(NaN, 0), 1);
+// Math.pow special cases per ES2016 §20.2.2.26.
+// A NaN exponent is NaN even for base 1, and abs(base) === 1 with a
+// ±Infinity exponent is NaN. C99 pow() returns 1 for both of those, so they
+// are the cases most likely to regress. A ±0 exponent is 1 even for a NaN
+// base, and that one takes priority over the NaN-exponent rule.
+assertSameValue(Math.pow(1, NaN), NaN);
+assertSameValue(Math.pow(1, Infinity), NaN);
+assertSameValue(Math.pow(1, -Infinity), NaN);
 assertSameValue(Math.pow(-1, Infinity), NaN);
 assertSameValue(Math.pow(-1, -Infinity), NaN);
+assertSameValue(Math.pow(2, NaN), NaN);
+assertSameValue(Math.pow(NaN, 0), 1);
+assertSameValue(Math.pow(NaN, -0), 1);
 assertSameValue(Math.pow(2, 3), 8);
+assertSameValue(Math.pow(1, 0), 1);
+assertSameValue(Math.pow(1, 2), 1);
+
+// The ** operator must agree with Math.pow on every one of those cases —
+// it is evaluated by a separate opcode, so it can drift independently.
+assertSameValue(1 ** NaN, NaN);
+assertSameValue(1 ** Infinity, NaN);
+assertSameValue(1 ** -Infinity, NaN);
+assertSameValue((-1) ** Infinity, NaN);
+assertSameValue((-1) ** -Infinity, NaN);
+assertSameValue(2 ** NaN, NaN);
+assertSameValue(NaN ** 0, 1);
+assertSameValue(2 ** 3, 8);
+assertSameValue(1 ** 2, 1);
 
 // Math.hypot
 assertSameValue(Math.hypot(), 0);

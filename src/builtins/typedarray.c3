@@ -3244,10 +3244,10 @@ fn void builtin_ta_from(BuiltinContext* ctx) @noinline {
     bool have_iter_method = false;
 
     if (iter_sym != null && !source.is_undefined() && !source.is_null()) {
-        HObject* src_for_iter = null;
-        if (source.is_object() && source.get_heapptr() != null) {
-            src_for_iter = (HObject*)source.get_heapptr();
-        }
+        // GetMethod does the lookup on ToObject(source), so a primitive
+        // source (notably a string, which is iterable via
+        // String.prototype[@@iterator]) must take the iterator path too.
+        HObject* src_for_iter = to_object_for_lookup(heap, source);
         if (src_for_iter != null) {
             TVal? im = builtins_generic_get(src_for_iter, iter_sym, ctx);
             if (ctx.should_throw) { ctx.result.set_undefined(); return; }

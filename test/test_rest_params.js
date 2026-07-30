@@ -114,4 +114,8 @@ assert(f15(42) === 'number', 'f15: number type preserved');
 assert(f15('hi') === 'string', 'f15: string type preserved');
 assert(f15(true) === 'boolean', 'f15: boolean type preserved');
 
-print('PASS:', pass, 'FAIL:', fail);
+// Report the counts without the bare word "FAIL:" — a zero-failure summary
+// reading "FAIL: 0" is indistinguishable from a real failure to any harness
+// that greps the output for FAIL, which made this file look permanently red.
+print('passed: ' + pass + ', failed: ' + fail);
+print(fail === 0 ? 'test_rest_params OK' : 'test_rest_params FAILED');

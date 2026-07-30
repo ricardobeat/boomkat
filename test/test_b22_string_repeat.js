@@ -1,5 +1,10 @@
-// Regression test for B22: String.prototype.repeat with negative/infinite
-// count must throw RangeError per ES6 §21.1.3.14 step 4.
+// Regression test for B22: String.prototype.repeat count handling
+// (ES2015 §21.1.3.14 / ES2023 §22.1.3.16).
+//
+// The count is first put through ToIntegerOrInfinity, which truncates toward
+// zero and maps NaN to 0. RangeError is thrown only when that RESULT is
+// negative or +Infinity. So -0.5 and NaN both truncate to 0 and yield "";
+// only genuinely negative results (-1, -Infinity) and +Infinity throw.
 
 function expectThrow(name, fn, expectedName) {
     try {
@@ -16,13 +21,36 @@ function expectThrow(name, fn, expectedName) {
     }
 }
 
+function expectValue(name, fn, expected) {
+    try {
+        var r = fn();
+        if (r === expected) {
+            print("PASS " + name + ":", JSON.stringify(r));
+            return true;
+        }
+        print("FAIL " + name + ": got " + JSON.stringify(r) + ", expected " + JSON.stringify(expected));
+        return false;
+    } catch (e) {
+        print("FAIL " + name + ": unexpected " + e.constructor.name + ": " + e.message);
+        return false;
+    }
+}
+
+// Negative or +Infinity after truncation -> RangeError.
 expectThrow("repeat(-1)",  function () { return "a".repeat(-1);  }, "RangeError");
-expectThrow("repeat(-0.5)", function () { return "a".repeat(-0.5); }, "RangeError");
-expectThrow("repeat(NaN)", function () { return "a".repeat(NaN); }, "RangeError");
 expectThrow("repeat(Infinity)", function () { return "a".repeat(Infinity); }, "RangeError");
 expectThrow("repeat(-Infinity)", function () { return "a".repeat(-Infinity); }, "RangeError");
 
+// Truncates to 0 -> empty string, no throw.
+expectValue("repeat(-0.5)", function () { return "a".repeat(-0.5); }, "");
+expectValue("repeat(NaN)", function () { return "a".repeat(NaN); }, "");
+expectValue("repeat(0.9)", function () { return "a".repeat(0.9); }, "");
+expectValue("repeat(-0)", function () { return "a".repeat(-0); }, "");
+expectValue("repeat(undefined)", function () { return "a".repeat(undefined); }, "");
+expectValue("repeat(null)", function () { return "a".repeat(null); }, "");
+
 // Sanity: legitimate calls still work.
-print("repeat(0):", JSON.stringify("a".repeat(0)));
-print("repeat(3):", JSON.stringify("a".repeat(3)));
-print("repeat(2):", JSON.stringify("xy".repeat(2)));
+expectValue("repeat(0)", function () { return "a".repeat(0); }, "");
+expectValue("repeat(3)", function () { return "a".repeat(3); }, "aaa");
+expectValue("repeat('2')", function () { return "a".repeat("2"); }, "aa");
+expectValue("xy.repeat(2)", function () { return "xy".repeat(2); }, "xyxy");

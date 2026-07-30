@@ -114,7 +114,18 @@ for (var k in enumTA) keys.push(k);
 check(keys.join(",") === "0,1,2", "for-in yields indices");
 check((0 in enumTA) === true, "in operator true for in-range index");
 check((5 in enumTA) === false, "in operator false for OOB index");
-check(delete enumTA[0] === false, "delete in-range index returns false");
+// §10.4.5.4 [[Delete]] on an integer-indexed exotic returns false for a valid
+// index and true for an invalid one. This engine runs everything as strict
+// code, and the delete operator throws a TypeError when [[Delete]] returns
+// false (§13.5.1.2 step 5) — so the in-range delete is observed as a throw
+// rather than as `false`.
+var deleteThrew = false;
+try {
+    delete enumTA[0];
+} catch (e) {
+    deleteThrew = e instanceof TypeError;
+}
+check(deleteThrew, "delete in-range index throws TypeError in strict code");
 check(enumTA[0] === 10, "delete did not remove in-range element");
 check(delete enumTA[10] === true, "delete OOB index returns true");
 var desc = Object.getOwnPropertyDescriptor(enumTA, 1);

@@ -758,6 +758,36 @@ fn TVal? builtins_generic_get(HObject* obj, HString* key, BuiltinContext* ctx) {
 // Shared helpers
 // ============================================================================
 
+/// ToObject(value) for property lookup only (ES2015 §7.1.13). Objects are
+/// returned as-is; a primitive is wrapped in a throwaway object whose
+/// prototype is chosen from the primitive's own type, so user-installed
+/// methods on String/Number/Boolean/BigInt.prototype stay reachable.
+/// undefined/null return null — callers decide whether that is a TypeError.
+/// The wrapper is only for reading; it is not exposed to script.
+fn HObject* to_object_for_lookup(Heap* heap, TVal value) {
+    if (value.is_object() && value.get_heapptr() != null) {
+        return (HObject*)value.get_heapptr();
+    }
+    if (value.is_undefined() || value.is_null()) return null;
+    HObject*? wrapped = heap.alloc_object(hobject::ObjClass.OBJECT);
+    if (catch wrapped) return null;
+    HObject* obj = wrapped;
+    HObject* wrap_proto = heap.string_proto;
+    if (value.is_string()) {
+        // Retained so String.prototype methods relying on the primitive
+        // (e.g. the @@iterator returned here) see the right value.
+        (*obj.extra_ptr()).prim.primitive_value = value;
+    } else if (value.is_fastint() || value.is_number()) {
+        wrap_proto = heap.number_proto;
+    } else if (value.is_boolean()) {
+        wrap_proto = heap.bool_proto;
+    } else if (value.is_bigint()) {
+        wrap_proto = heap.bigint_proto;
+    }
+    obj.prototype = wrap_proto;
+    return obj;
+}
+
 fn void print_tval(TVal* val) {
     switch (val.get_tag()) {
         case UNDEFINED:
