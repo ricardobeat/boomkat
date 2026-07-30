@@ -470,19 +470,11 @@ fn ForInState* collect_forin_keys(Vm* vm, HObject* obj) {
                 }
             }
         }
-        // Phase 3: symbol-keyed properties (insertion order, enumerable only)
-        for (uint i = 0; i < cur.prop_count; i++) {
-            if (cur.get_prop_flags(i).enumerable && cur.prop_key_at(i) != null) {
-                HString* k = (HString*)cur.prop_key_at(i);
-                if (!k.is_symbol()) continue;
-                if (k.is_hidden()) continue;
-                if (!forin_add_key(h, &keys, &count, &keys_cap, &seen, track, k)) {
-                    h.free_func(h.heap_udata, keys);
-                    seen.free(h);
-                    return null;
-                }
-            }
-        }
+        // Symbol-keyed properties are deliberately never yielded:
+        // EnumerateObjectProperties (§14.7.5.9) yields only keys of type
+        // String. Symbols also need no place in `seen` — a symbol key can
+        // never be pointer-equal to a string key, so it can neither shadow
+        // nor be shadowed by one.
 
         if (track && !seen.push_level(cur) && !forin_record_non_enumerable(h, &seen, cur)) {
             h.free_func(h.heap_udata, keys);
