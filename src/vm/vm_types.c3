@@ -96,6 +96,16 @@ struct Activation {
     /// executing. Lets exception unwinding transition the generator to
     /// GEN_COMPLETED when an uncaught throw pops past its body (ES6 §25.3.3.2).
     /// null for ordinary frames.
+    ///
+    /// BORROW, never a hold: this does NOT take a gs_acquire. The borrow is safe
+    /// only because the frame is popped before the generator's own holders can
+    /// release it — the state outlives every activation running its body.
+    ///
+    /// Because vm.activations[] is a pool that is reused WITHOUT zeroing, every
+    /// push must write this field. A stale non-null value left by an earlier
+    /// frame makes the `walk.async_gen_state == gs` parent search in YIELD match
+    /// the wrong activation. Push through activation_begin() rather than
+    /// assigning the field ad hoc.
     void* async_gen_state;
     /// Value stack pointer to function (borrowed; for lightfuncs)
     TVal tv_func;
