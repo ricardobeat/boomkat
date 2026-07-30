@@ -1,11 +1,12 @@
-/// ESM module system — data structures, host API, loader, linker.
+/// The ESM module system: data structures, host API, loader, and linker.
 ///
-/// Implements the ES6 module lifecycle:
-///   1. COMPILE:  compile_module() → parse import/export → emit bytecode → ModuleDef
-///   2. RESOLVE:  load all transitive dependencies (recursive compile_module)
-///   3. LINK:     share env bindings between modules for live exports
-///   4. EXECUTE:  run module body (top-level statements)
-///   5. NAMESPACE: build Module Namespace Object for `import *`
+/// A module moves through five stages:
+///   1. Compile: compile_module() parses the import and export clauses and emits
+///      bytecode into a ModuleDef.
+///   2. Resolve: every transitive dependency is compiled the same way.
+///   3. Link: modules share env bindings, which is what makes exports live.
+///   4. Execute: the module body's top-level statements run.
+///   5. Namespace: `import *` builds a Module Namespace Object.
 module duktape::esm;
 
 import duktape::types;
@@ -58,13 +59,11 @@ struct ExportEntry {
     char[] export_name;     // the exported name ("default" for default export)
     bool   is_indirect;     // true for `export { x } from './other'`
     uint   req_module_idx;  // for indirect exports
-    // True when the local binding is `let`/`const`/`class` (a lexical
-    // declaration subject to TDZ). False for `var`/`function` exports,
-    // which are hoisted/initialized and never observed as TDZ even when
-    // read before the exporting module's body has run. Unused (false) for
-    // indirect exports, whose TDZ-ness is determined by the source module.
-    // Function-declaration exports are tracked separately (ModuleDef.func_decls)
-    // and instantiated at link time, so they don't need a flag here.
+    // True for a `let`, `const`, or `class` binding, which is subject to TDZ.
+    // A `var` or `function` export is hoisted and initialized, so it never reads
+    // as TDZ even before the exporting module's body runs. Indirect exports
+    // leave this false, since the source module decides. Function declarations
+    // are tracked in ModuleDef.func_decls and instantiated at link time.
     bool   is_lexical;
 }
 
@@ -81,7 +80,7 @@ struct ReqModuleEntry {
 }
 
 // ============================================================================
-// ModuleHostHooks — pluggable host callbacks
+// ModuleHostHooks, the pluggable host callbacks
 // ============================================================================
 
 alias ResolveNameFn = fn char[]?(char[] base_name, char[] specifier, void* udata);
@@ -98,7 +97,7 @@ struct ModuleHostHooks {
 }
 
 // ============================================================================
-// ModuleDef — a single module's definition
+// ModuleDef, one module's definition
 // ============================================================================
 
 const uint MAX_IMPORTS      = 64;
@@ -171,12 +170,12 @@ struct ModuleDef {
     // Persistent evaluation-completion promise (ECMA-262 [[CyclePromise]],
     // §16.2.1.5.2 Evaluate). Created lazily the first time evaluation starts
     // and settled exactly once when the module transitions to EVALUATED or
-    // ERRORED — whether that transition happens synchronously (RET of a
+    // ERRORED, whether that transition happens synchronously (RET of a
     // non-async body, or the throw unwind) or later, asynchronously, via a
     // top-level-await body's own promise settling. Anything that needs to
     // observe "this module has finished evaluating" (dynamic import, a
     // parent module awaiting an async dependency) attaches a reaction here
-    // instead of polling drain_microtasks — see promise_adopt_native.
+    // instead of polling drain_microtasks. See promise_adopt_native.
     // Rooted with a ModuleDef-owned reference for the module's lifetime and
     // marked by mark_roots since ModuleDefs live outside the GC-scanned heap.
     HObject*                      eval_promise;
@@ -184,17 +183,17 @@ struct ModuleDef {
     // Approximation of ECMA-262 [[CycleRoot]] (§16.2.1.5.5 InnerModuleEvaluation
     // step 11.c.iv.1 / the SCC-closing loop at the end of that algorithm): the
     // other module in this module's strongly-connected import cycle that owns
-    // the cycle's shared async completion — null means "no cycle root recorded"
+    // the cycle's shared async completion. Null means no cycle root was recorded
     // (this module is not known to be part of a still-open cycle). Set on the
     // NON-root member(s) of a two-module cycle the moment execute_module's DFS
     // discovers the cycle (see execute_module's async_dep resolution): when
     // `mod`'s dependency loop reaches a `dep` that is itself still EVALUATING
     // because `dep` is `mod`'s own ancestor (a genuine back-edge, not merely a
-    // suspended async body — see the eval_promise==null distinction there),
+    // suspended async body. See the eval_promise==null distinction there),
     // `dep` is mod's cycle root and mod.cycle_root is set to it. A later
     // importer resolving async_dep against a pending dependency follows
     // dep.cycle_root (if set) instead of dep itself, so it waits on the whole
-    // cycle's completion rather than one leaf of it — see Note 2 under
+    // cycle's completion rather than one leaf of it. See Note 2 under
     // InnerModuleEvaluation ("modules depending on a module of an asynchronous
     // cycle ... will instead depend on the execution of the root of the cycle
     // via [[CycleRoot]]").
@@ -241,7 +240,7 @@ fn char[]? default_module_read(char[] normalized_name, void* udata) {
 }
 
 // ============================================================================
-// Module loader — resolve, load, compile, link, execute
+// Module loader: resolve, load, compile, link, execute
 // ============================================================================
 
 /// Call the host's resolve_name hook, or use the default.
@@ -252,13 +251,13 @@ fn char[]? call_resolve_name(Heap* heap, char[] base_name, char[] specifier) {
             return hooks.resolve_name(base_name, specifier, hooks.udata);
         }
     }
-    // Bare specifier (no leading dot) — return as-is
+    // A bare specifier, meaning no leading dot, is returned unchanged.
     if (specifier.len > 0 && specifier[0] != '.') return specifier;
-    // Relative specifier — resolve against base_name's directory. A leading
+    // A relative specifier resolves against base_name's directory. A leading
     // "./" must be stripped in every case (not just when base_name itself
     // has a directory component) so the same file always normalizes to the
     // same identifier regardless of which importer's relative path reached
-    // it — e.g. a top-level module loaded as "a.js" (no base directory) and
+    // it, e.g. a top-level module loaded as "a.js" (no base directory) and
     // a same-directory sibling's "./a.js" re-export must resolve to the
     // identical cache key, or the module cache treats them as two distinct
     // ModuleDefs: a cyclic self-reference silently gets its own separate,
@@ -506,7 +505,7 @@ struct ResolveSetEntry {
     char[]     export_name;
 }
 
-/// ResolveExport(exportName, resolveSet) — ECMA-262 16.2.1.6.3 for a
+/// ResolveExport(exportName, resolveSet). ECMA-262 16.2.1.6.3 for a
 /// SourceTextModuleRecord. Returns a resolution binding, or NULL/AMBIGUOUS.
 /// `set`/`set_len` carry the resolveSet across the recursion to break circular
 /// import requests (step 2: if the same {module, exportName} is already in the
@@ -609,8 +608,8 @@ fn bool validate_indirect_exports(Heap* heap, ModuleDef* mod) {
 fn bool link_module(Heap* heap, vm::Vm* vm, ModuleDef* mod, EnvRecord* global_env) {
     if (mod.status == ModuleStatus.LINKED || mod.status == ModuleStatus.EVALUATED) return true;
     // LINKING means we're already linking this module further up the call
-    // stack — a dependency cycle (including a self-import). Treat it as done to
-    // break the recursion; its env exists and bindings resolve once the
+    // stack, so this is a dependency cycle, possibly a self-import. Treat it as
+    // done to break the recursion; its env exists and bindings resolve once the
     // outermost link_module completes. Without this a cyclic import recurses
     // until the C stack overflows (SIGSEGV).
     if (mod.status == ModuleStatus.LINKING) return true;
@@ -623,7 +622,7 @@ fn bool link_module(Heap* heap, vm::Vm* vm, ModuleDef* mod, EnvRecord* global_en
     // A JSON module has no body and no dependencies; its env (holding the sole
     // `default` binding) is created and rooted at resolve time. Just validate
     // that no importer requests a named binding other than `default` (JSON
-    // modules define no named bindings — ECMA-262; `import {x}` must be a
+    // modules define no named bindings. ECMA-262; `import {x}` must be a
     // resolution-phase SyntaxError) and mark it linked.
     if (mod.is_json) {
         mod.status = ModuleStatus.LINKED;
@@ -639,7 +638,7 @@ fn bool link_module(Heap* heap, vm::Vm* vm, ModuleDef* mod, EnvRecord* global_en
     if (catch err = env_opt) return false;
     mod.env = env_opt;
     // Register the env bindings as a GC root so objects stored in the module
-    // env (imported bindings, and — below — eagerly instantiated exported
+    // env (imported bindings, and, below, eagerly instantiated exported
     // function closures) survive collection between link and evaluation.
     // execute_module only roots the env in the path where it creates the env
     // itself; when link_module creates it first (the normal path), that block
@@ -669,7 +668,7 @@ fn bool link_module(Heap* heap, vm::Vm* vm, ModuleDef* mod, EnvRecord* global_en
     // resolution-phase SyntaxError (ECMA-262: JSON modules define no named
     // bindings). Fail the link so run_module_file reports it as a load/
     // resolution error. This is the only work link_module does over
-    // `mod.imports` — the actual bindings (including this module's own
+    // `mod.imports`. The actual bindings (including this module's own
     // self-imports) are installed later by execute_module's live-binding
     // loop, which runs after every module env's export/TDZ pre-declaration
     // (below) has completed; installing them here, before that
@@ -688,7 +687,7 @@ fn bool link_module(Heap* heap, vm::Vm* vm, ModuleDef* mod, EnvRecord* global_en
     }
 
     // NOTE: an indirect export (`export { x } from './other'`) installs NO
-    // binding in mod.env at link time either — see the matching note in
+    // binding in mod.env at link time either. See the matching note in
     // execute_module for why a re-exported name must never become a
     // resolvable identifier inside the re-exporting module's own body.
 
@@ -696,7 +695,7 @@ fn bool link_module(Heap* heap, vm::Vm* vm, ModuleDef* mod, EnvRecord* global_en
     // step 17). InitializeEnvironment creates each function's closure once,
     // during linking, before ANY module body runs. This is what makes a
     // cyclic early import observe the hoisted function (not undefined) AND
-    // keeps the binding's identity stable — the module body no longer emits
+    // keeps the binding's identity stable: the module body no longer emits
     // CLOSURE+DECLVAR for these (see hoist_global_fn_decls). The closure
     // captures the module env as both var and lex environment (its top-level
     // enclosing scope), exactly as the CLOSURE opcode would.
@@ -727,7 +726,7 @@ fn bool link_module(Heap* heap, vm::Vm* vm, ModuleDef* mod, EnvRecord* global_en
     // the body's own INITTZ (emitted by hoist_lexical_tdz for every
     // module-top-level lexical declaration) only overwrites this slot when the
     // OWNING module's body actually executes, but a live-binding accessor from
-    // a cyclically-importing module can observe this env slot beforehand — it
+    // a cyclically-importing module can observe this env slot beforehand, it
     // must see the sentinel, not undefined, so builtin_module_binding_getter
     // (builtins/core.c3) throws instead of yielding a stale undefined.
     // Function-declaration exports are already bound above and are skipped by
@@ -772,7 +771,7 @@ fn bool module_record_eval_error(Heap* heap, Vm* vm, ModuleDef* mod) {
 }
 
 /// Get (creating on first use) the module's persistent evaluation-completion
-/// promise — ECMA-262 [[CyclePromise]]. Returns null only on allocation
+/// promise. ECMA-262 [[CyclePromise]]. Returns null only on allocation
 /// failure, in which case a waiter falls back to treating the module as
 /// already-settled the next time it observes mod.status directly.
 fn HObject* module_ensure_eval_promise(Heap* heap, ModuleDef* mod) {
@@ -787,7 +786,7 @@ fn HObject* module_ensure_eval_promise(Heap* heap, ModuleDef* mod) {
     return prom;
 }
 
-/// Settle the module's persistent evaluation-completion promise (once — a
+/// Settle the module's persistent evaluation-completion promise (once, a
 /// no-op if already settled or if evaluation never allocated one, e.g. a
 /// JSON module or a plain synchronous body nobody awaited).
 ///
@@ -795,8 +794,8 @@ fn HObject* module_ensure_eval_promise(Heap* heap, ModuleDef* mod) {
 /// heap.error_value). Unlike the spec's [[CyclePromise]] (which always
 /// fulfills with undefined), this internal promise fulfills with the
 /// module's NAMESPACE OBJECT: it exists purely so a dynamic import() of an
-/// async/TLA module — which per §16.2.1.5.2/§13.3.10 must resolve with that
-/// namespace object — can attach a single reaction here instead of building
+/// async or TLA module, which §16.2.1.5.2 and §13.3.10 require to resolve with that
+/// namespace object, can attach a single reaction here instead of building
 /// the namespace separately after polling for completion. No other caller
 /// observes eval_promise, so this deviation from [[CyclePromise]]'s literal
 /// completion value is not spec-observable.
@@ -826,7 +825,7 @@ fn void module_settle_eval_promise(Heap* heap, Vm* vm, ModuleDef* mod, bool ok) 
 }
 
 /// Hidden property key carrying a MODULE_PENDING_FINISH reaction's target
-/// module name — an interned string rather than a raw ModuleDef* so the
+/// module name as an interned string rather than a raw ModuleDef*, so the
 /// reaction is a plain JS-visible-shaped object needing no new native-pointer
 /// storage; heap_find_loaded_module recovers `mod` from it when the reaction
 /// fires.
@@ -836,7 +835,7 @@ const char[] MODULE_PENDING_FINISH_NAME_KEY = "\xFFmpf_name";
 /// or execute_module_nested handed back for a still-suspended async/TLA
 /// body) that finalizes `mod` once it settles: transitions mod.status to
 /// EVALUATED or ERRORED and settles mod.eval_promise with the real
-/// namespace object or rejection reason — see module_pending_finish_run.
+/// namespace object or rejection reason. See module_pending_finish_run.
 /// Until this fires, mod stays EVALUATING and mod.eval_promise stays
 /// pending, so anything that already chained onto mod.eval_promise (a
 /// dynamic import job, a sibling static import) observes the correct
@@ -848,7 +847,7 @@ const char[] MODULE_PENDING_FINISH_NAME_KEY = "\xFFmpf_name";
 /// invokes a reaction's handler directly as the queued microtask job (with
 /// the settled value as its sole argument, not the reaction object itself),
 /// so per-instance data must live on the handler object, recovered via
-/// ctx.callee_obj — the same pattern builtin_dynamic_import_job uses.
+/// ctx.callee_obj, which is the pattern builtin_dynamic_import_job uses.
 fn void module_attach_pending_finish(Heap* heap, ModuleDef* mod, HObject* pending) {
     module_attach_named_reaction(heap, mod, pending,
         Builtin.MODULE_PENDING_FINISH_FULFILLED.ordinal, Builtin.MODULE_PENDING_FINISH_REJECTED.ordinal);
@@ -858,7 +857,7 @@ fn void module_attach_pending_finish(Heap* heap, ModuleDef* mod, HObject* pendin
 /// eval_promise) that, once it settles, either runs mod's deferred
 /// import-binding-resolution + body execution (module_execute_continue,
 /// fulfilled case) or marks mod ERRORED with the propagated reason without
-/// ever running its body (rejected case) — see module_deferred_continue_run.
+/// ever running its body (rejected case). See module_deferred_continue_run.
 /// Used when execute_module finds mod has a still-pending async dependency:
 /// mod's own ExecuteModule() step is deferred until that dependency settles,
 /// per ECMA-262 §16.2.1.5.5 InnerModuleEvaluation's PendingAsyncDependencies
@@ -871,7 +870,7 @@ fn void module_attach_deferred_continue(Heap* heap, ModuleDef* mod, HObject* dep
 
 /// Shared reaction-building code for module_attach_pending_finish and
 /// module_attach_deferred_continue: builds onFulfilled/onRejected handler
-/// FUNCTION objects (carrying mod's name as a hidden prop — see
+/// FUNCTION objects (carrying mod's name as a hidden prop; see
 /// module_attach_pending_finish's doc comment for why) pointing at the given
 /// builtin ordinals, and attaches them to `source`.
 fn void module_attach_named_reaction(Heap* heap, ModuleDef* mod, HObject* source,
@@ -909,7 +908,7 @@ fn void module_attach_named_reaction(Heap* heap, ModuleDef* mod, HObject* source
     rxn.put_prop(onr_key, onr_tv, hobject::PROP_FLAGS_WEC);
     // No `downstream`: these handlers act purely for their side effect
     // (finalizing mod, or running its deferred continuation) and their
-    // return value is discarded — leaving `downstream` undefined means
+    // return value is discarded, leaving `downstream` undefined means
     // promise_microtask_after's downstream check is a no-op.
 
     uint state = builtins::promise_get_state(source, builtins::PROMISE_PENDING);
@@ -958,12 +957,12 @@ fn void module_pending_finish_run(BuiltinContext* ctx, bool ok) {
     }
 }
 
-/// PromiseReactionJob onFulfilled handler — see module_attach_pending_finish.
+/// PromiseReactionJob onFulfilled handler. See module_attach_pending_finish.
 fn void builtin_module_pending_finish_fulfilled(BuiltinContext* ctx) {
     module_pending_finish_run(ctx, true);
 }
 
-/// PromiseReactionJob onRejected handler — see module_attach_pending_finish.
+/// PromiseReactionJob onRejected handler. See module_attach_pending_finish.
 fn void builtin_module_pending_finish_rejected(BuiltinContext* ctx) {
     module_pending_finish_run(ctx, false);
 }
@@ -971,7 +970,7 @@ fn void builtin_module_pending_finish_rejected(BuiltinContext* ctx) {
 /// Shared body for the MODULE_DEFERRED_CONTINUE_FULFILLED/REJECTED builtins
 /// (see module_attach_deferred_continue): looks `mod` up by the handler
 /// object's stashed module name. On fulfillment, the dependency that was
-/// blocking mod has now settled successfully — run mod's deferred
+/// blocking mod has now settled successfully, run mod's deferred
 /// module_execute_continue (import-binding resolution + body execution) for
 /// real. On rejection, the dependency's failure propagates directly: mod
 /// never gets to run its body at all, exactly mirroring a module whose own
@@ -1006,12 +1005,12 @@ fn void module_deferred_continue_run(BuiltinContext* ctx, bool ok) {
     }
 }
 
-/// PromiseReactionJob onFulfilled handler — see module_attach_deferred_continue.
+/// PromiseReactionJob onFulfilled handler. See module_attach_deferred_continue.
 fn void builtin_module_deferred_continue_fulfilled(BuiltinContext* ctx) {
     module_deferred_continue_run(ctx, true);
 }
 
-/// PromiseReactionJob onRejected handler — see module_attach_deferred_continue.
+/// PromiseReactionJob onRejected handler. See module_attach_deferred_continue.
 fn void builtin_module_deferred_continue_rejected(BuiltinContext* ctx) {
     module_deferred_continue_run(ctx, false);
 }
@@ -1021,13 +1020,13 @@ fn void builtin_module_deferred_continue_rejected(BuiltinContext* ctx) {
 /// Per ECMA-262 §16.2.1.5.5 InnerModuleEvaluation, a module whose dependency
 /// graph contains a still-pending async/TLA subgraph accumulates
 /// [[PendingAsyncDependencies]] and does not call its own ExecuteModule()
-/// until every such dependency has settled — its exports are only
+/// until every such dependency has settled, its exports are only
 /// observable, live, through the earlier-resolved import bindings once that
 /// happens. `async_dep` records the LAST still-pending dependency seen after
 /// the loop below; deferring mod's own import-binding-resolution + body
 /// execution onto just one is sufficient to reproduce the same observable
 /// ordering as tracking the full [[AsyncParentModules]] set (a real engine's
-/// approach) for the common case of a single async dependency — see
+/// approach) for the common case of a single async dependency. See
 /// top-level-await/fulfillment-order.js, rejection-order.js, and
 /// module-import-rejection-tick.js.
 fn bool execute_module(Heap* heap, Vm* vm, ModuleDef* mod) {
@@ -1079,31 +1078,31 @@ fn bool execute_module(Heap* heap, Vm* vm, ModuleDef* mod) {
             // execute_module(dep) call just below, at this function's own
             // early `if (mod.status == ModuleStatus.EVALUATING) return true`):
             // `dep` is genuinely still on the DFS call stack above this frame
-            // — an ancestor of `mod`, i.e. a real import-cycle back-edge, not
+            // an ancestor of `mod`, meaning a real import-cycle back-edge, not
             // a dependency that already suspended on its own TLA/async
             // subgraph (that case has a non-null eval_promise and is handled
             // by the branch below instead). `mod` therefore belongs to the
-            // strongly-connected cycle rooted at `dep` — record that so a
+            // strongly-connected cycle rooted at `dep`, record that so a
             // LATER importer reaching `mod` through this same cycle (once it
-            // becomes async — see the async_dep resolution below) waits on
+            // becomes async. See the async_dep resolution below) waits on
             // `dep`, the cycle's root, instead of on `mod`.
             mod.cycle_root = dep;
         }
         if (dep.status != ModuleStatus.EVALUATED) {
             if (!execute_module(heap, vm, dep)) return module_record_eval_error(heap, vm, mod);
             // Only a dependency that GENUINELY suspended somewhere in its own
-            // subgraph (has a pending eval_promise — set exclusively by the
+            // subgraph (has a pending eval_promise, set exclusively by the
             // pending != null / async_dep branches below) makes mod
             // transitively async too. A dependency merely still EVALUATING
             // because it is mod's own ancestor in an ordinary import cycle
             // (dep is on the DFS call stack above this frame, cycle-guarded
             // by the early `return true` at the top of this function) is not
-            // pending on anything — it will reach EVALUATED normally once
+            // pending on anything, so it will reach EVALUATED normally once
             // that outer frame's own body finishes, and must not be confused
             // with an async/TLA subgraph.
             //
             // If `dep` belongs to a cycle whose root is some OTHER module
-            // (dep.cycle_root set, and not mod itself — mod itself is the
+            // (dep.cycle_root set, and not mod itself, mod itself is the
             // cycle's root when dep.cycle_root == mod, which happens for the
             // root's own view of its direct cycle member; see the branch
             // above), that root is the real dependency mod's own execution
@@ -1125,11 +1124,11 @@ fn bool execute_module(Heap* heap, Vm* vm, ModuleDef* mod) {
     if (async_dep != null) {
         // mod has a pending async dependency: defer import-binding resolution
         // AND body execution (module_execute_continue) until it settles,
-        // instead of running now — this is what actually makes a rejecting
+        // instead of running now, this is what actually makes a rejecting
         // dependency preempt mod's own body (module-import-rejection-tick.js)
         // while still letting an UNRELATED sibling module's evaluation
         // proceed independently (async-module-does-not-block-sibling-modules.js
-        // — that module has no dependency relationship to the pending one, so
+        // That module has no dependency relationship to the pending one, so
         // its own execute_module call never sees a non-null async_dep here).
         HObject* dep_prom = module_ensure_eval_promise(heap, async_dep);
         if (dep_prom != null) {
@@ -1138,7 +1137,7 @@ fn bool execute_module(Heap* heap, Vm* vm, ModuleDef* mod) {
             return true;
         }
         // Allocation failure building the dependency's eval_promise: fall
-        // through and run mod now anyway rather than deadlocking — a
+        // through and run mod now anyway rather than deadlocking, a
         // degraded ordering guarantee is preferable to never settling.
     }
 
@@ -1167,7 +1166,7 @@ fn bool module_execute_continue(Heap* heap, Vm* vm, ModuleDef* mod) {
         ModuleDef* source_mod = (ModuleDef*)rme.resolved;
 
         if (ie.is_star) {
-            // `import * as ns from '...'` — build a Module Namespace Object
+            // `import * as ns from '...'`, build a Module Namespace Object
             HObject*? ns_opt = build_namespace_object(heap, source_mod);
             if (catch err = ns_opt) continue;
             HObject* ns = ns_opt;
@@ -1209,7 +1208,7 @@ fn bool module_execute_continue(Heap* heap, Vm* vm, ModuleDef* mod) {
                 install_live_binding(heap, mod.env, local_key, rr.owner, rr.binding_name);
             }
         } else {
-            // Unresolvable (null/ambiguous) — fall back to the old identity
+            // Unresolvable (null/ambiguous), fall back to the old identity
             // resolution against the direct source module so a same-module
             // self-import or an already-flagged link error still gets a
             // (possibly undefined) binding instead of none at all.
@@ -1219,19 +1218,19 @@ fn bool module_execute_continue(Heap* heap, Vm* vm, ModuleDef* mod) {
     }
 
     // NOTE: an indirect export (`export { x } from './other'`) intentionally
-    // installs NO binding in mod.env — ECMA-262 §16.2.1.6.2 InitializeEnvironment
+    // installs NO binding in mod.env. ECMA-262 §16.2.1.6.2 InitializeEnvironment
     // only creates bindings for ImportEntries and local (non-indirect)
     // ExportEntries; a re-exported name is never a resolvable identifier
     // inside the re-exporting module's own body (it is only observable
     // externally via ResolveExport / the module's namespace object, both of
     // which resolve indirect exports directly through the export-entry
-    // metadata — see resolve_export and resolve_export_binding_source).
+    // metadata. See resolve_export and resolve_export_binding_source).
     // Declaring it here as a live accessor used to make it a spurious local
     // identifier: an internal `B;` reference (where `export { A as B } from
     // './x'` re-exports a not-yet-initialized `A`) would incorrectly resolve
     // through this binding as a TDZ read instead of an unresolved-reference
-    // ReferenceError, and — because the accessor's getter runs via
-    // vm.heap.call_fn's re-entrant nested Vm.run (vm_call_fn_impl) — a TDZ
+    // ReferenceError, and, because the accessor's getter runs via
+    // vm.heap.call_fn's re-entrant nested Vm.run (vm_call_fn_impl). A TDZ
     // throw surfacing from a SECOND read of that same accessor inside an
     // enclosing catch handler (e.g. `catch (e) { arr.push(e.name, typeof B) }`)
     // would escape past the still-live outer catcher instead of propagating
@@ -1260,11 +1259,11 @@ fn bool module_execute_continue(Heap* heap, Vm* vm, ModuleDef* mod) {
             // unsafe to call here; execute_module_nested is re-entrant.
             bool? ok = vm.execute_module_nested(mod.func, mod.env, &pending);
             if (catch err = ok) return module_record_eval_error(heap, vm, mod);
-            if (!ok) return module_record_eval_error(heap, vm, mod);  // rejected — reason is in heap.error_value
+            if (!ok) return module_record_eval_error(heap, vm, mod);  // rejected, reason is in heap.error_value
         } else if (mod.func.is_async()) {
             bool? ok = vm.execute_module_async(mod.func, mod.env, &pending);
             if (catch err = ok) return module_record_eval_error(heap, vm, mod);
-            if (!ok) return module_record_eval_error(heap, vm, mod);  // rejected — reason is in heap.error_value
+            if (!ok) return module_record_eval_error(heap, vm, mod);  // rejected, reason is in heap.error_value
         } else {
             TVal? res = vm.execute_in_env(mod.func, mod.env);
             if (catch err = res) {
@@ -1275,12 +1274,12 @@ fn bool module_execute_continue(Heap* heap, Vm* vm, ModuleDef* mod) {
         if (pending != null) {
             // Top-level await suspended and this call could not pump the
             // microtask queue to completion (it was itself reached from
-            // inside a drain — see execute_module_async/nested). The module
+            // inside a drain. See execute_module_async/nested). The module
             // stays EVALUATING; attach a reaction to the per-call `pending`
             // promise that finalizes mod (transitions status, builds the
             // namespace object, settles the persistent eval_promise) once the
-            // suspended body's reactions eventually run it to completion —
-            // see module_finish_pending_eval. Recorded as the module's
+            // suspended body's reactions eventually run it to completion.
+            // See module_finish_pending_eval. Recorded as the module's
             // async-completion source so a later execute_module() call for
             // the same module (a sibling dynamic import, or the static DFS
             // reaching it again) attaches to the SAME pending completion
@@ -1288,7 +1287,7 @@ fn bool module_execute_continue(Heap* heap, Vm* vm, ModuleDef* mod) {
             module_ensure_eval_promise(heap, mod);
             module_attach_pending_finish(heap, mod, pending);
             // Release the pinning reference execute_module_async/nested
-            // handed off — the reaction just attached holds its own
+            // handed off: the reaction just attached holds its own
             // reference via pending's own reaction list.
             heap.decref(pending.as_header());
             return true;
@@ -1352,11 +1351,11 @@ fn int run_module_file(Heap* heap, Vm* vm, char[] path) {
     // A dynamic import() enqueues its resolve/link/evaluate pipeline as a job
     // rather than running inline (see dynamic_import), and mod itself may
     // still be asynchronously evaluating here (a TLA body, or a dependency
-    // of one — see execute_module's async_dep chaining) rather than settled.
+    // of one. See execute_module's async_dep chaining) rather than settled.
     // This is the top-level entry point for running a module program
     // directly, so it must drain those jobs out (and any further jobs they
-    // enqueue) before returning, or a top-level `import()` — or the module's
-    // own top-level await — never completes. Not reentrant with any outer
+    // enqueue) before returning, or a top-level `import()`, or the module's
+    // own top-level await, never completes. Not reentrant with any outer
     // drain (this only runs at true top level).
     for (int drain_i = 0; drain_i < 1000; drain_i++) {
         uint before = heap.microtask_count;
@@ -1369,7 +1368,7 @@ fn int run_module_file(Heap* heap, Vm* vm, char[] path) {
     // mod's own evaluation may have settled asynchronously during the drain
     // above (a rejected top-level await, or a rejected async dependency it
     // was transitively chained onto) rather than synchronously inside the
-    // execute_module call above — check its final status now.
+    // execute_module call above, check its final status now.
     if (mod.status == ModuleStatus.ERRORED) {
         heap.error_value.set_undefined();
         heap.has_error = false;
@@ -1384,11 +1383,11 @@ fn int run_module_file(Heap* heap, Vm* vm, char[] path) {
 }
 
 // ============================================================================
-// Dynamic import — `import(specifier)` (ES2020)
+// Dynamic import: `import(specifier)` (ES2020)
 // ============================================================================
 
 /// Resolve, link and evaluate the module named by `specifier` and return a
-/// Promise (as a TVal carrying one caller-owned reference — the caller must
+/// Promise (as a TVal carrying one caller-owned reference, the caller must
 /// decref after storing it) that fulfills with the module's namespace object
 /// or rejects with the module's load/evaluation error. Load and evaluation
 /// failures reject the returned promise; a fault means promise allocation
@@ -1452,7 +1451,7 @@ fn bool validate_import_options(Heap* heap, Vm* vm, TVal* options, TVal* reason,
     HObject* with_obj = (HObject*)with_val.get_heapptr();
     if (with_obj == null) return true;
 
-    // keys = OwnPropertyKeys(attributesObj) — proxy `ownKeys` may throw.
+    // keys = OwnPropertyKeys(attributesObj), proxy `ownKeys` may throw.
     HObject* keys_arr = null;
     HString** ord_keys = null;
     uint n = 0;
@@ -1480,7 +1479,7 @@ fn bool validate_import_options(Heap* heap, Vm* vm, TVal* options, TVal* reason,
         }
         if (key == null) continue;
         // Only String keys participate; a Symbol is a STRING-tagged HString
-        // with is_symbol set — skip it (and never invoke its getter).
+        // with is_symbol set, skip it (and never invoke its getter).
         if (key.is_symbol()) continue;
 
         // Only enumerable String-keyed own properties participate
@@ -1529,11 +1528,11 @@ fn bool validate_import_options(Heap* heap, Vm* vm, TVal* options, TVal* reason,
     return ok;
 }
 
-/// Build a Promise (as a TVal carrying one caller-owned reference — the caller
+/// Build a Promise (as a TVal carrying one caller-owned reference, the caller
 /// must decref after storing it) already rejected with `reason`. Used by the
 /// DYN_IMPORT opcode for the IfAbruptRejectPromise steps of §13.3.10: an abrupt
 /// completion from evaluating the specifier or from ToString(specifier) does
-/// not throw synchronously — it rejects the returned promise. On promise
+/// not throw synchronously; it rejects the returned promise instead. On promise
 /// allocation failure returns a fault.
 fn TVal? dynamic_import_reject(Heap* heap, Vm* vm, TVal* reason) {
     HObject*? prom_raw = heap.alloc_object(hobject::ObjClass.PROMISE);
@@ -1550,7 +1549,7 @@ fn TVal? dynamic_import_reject(Heap* heap, Vm* vm, TVal* reason) {
 }
 
 /// Hidden property keys carrying a queued dynamic-import job's captured
-/// state (ES2020 §13.3.10 / ES2015+ HostImportModuleDynamically — the load,
+/// state (ES2020 §13.3.10 and HostImportModuleDynamically): the load,
 /// link, and evaluate steps run as a separate job, not inline with the
 /// `import()` call that requested them).
 const char[] DYN_IMPORT_SPEC_KEY  = "\xFFdi_spec";
@@ -1561,7 +1560,7 @@ const char[] DYN_IMPORT_PROM_KEY  = "\xFFdi_promise";
 /// `import(specifier)` (ES2020 §13.3.10, ES2015+ HostImportModuleDynamically).
 /// Synchronously allocates and returns the result promise, then defers the
 /// entire resolve → link → evaluate → settle pipeline to a queued
-/// DYNAMIC_IMPORT_JOB microtask (mirroring PromiseResolveThenableJob) — per
+/// DYNAMIC_IMPORT_JOB microtask (mirroring PromiseResolveThenableJob), per
 /// spec, dynamic import starts a new job rather than running inline with the
 /// calling module's own (possibly still in-progress) static evaluation, and
 /// running it inline let import() observably preempt that static DFS order.
@@ -1576,16 +1575,16 @@ fn TVal? dynamic_import(Heap* heap, Vm* vm, char[] specifier, bool wants_json = 
     // Base name for relative resolution: the currently executing function's
     // filename when it has one, else the module whose body is currently
     // running (maintained by execute_module around body runs). Must be
-    // captured now, synchronously — by the time the job runs, the calling
+    // captured now, synchronously, because by the time the job runs the calling
     // frame may no longer be live.
     char[] base_name = {};
     if (vm.current_func != null) base_name = vm.current_func.get_filename();
     if (base_name.len == 0) base_name = heap.current_module_name;
 
     // Intern both strings so the job can read them back after the calling
-    // frame (and the original specifier's backing string) may be gone —
-    // interned HStrings are heap-owned and GC-rooted via the string table
-    // for as long as the job object references them.
+    // frame, and the original specifier's backing string, may be gone.
+    // Interned HStrings are heap-owned and rooted through the string table for
+    // as long as the job object references them.
     HString* spec_key  = heap.str_intern(DYN_IMPORT_SPEC_KEY);
     HString* base_key   = heap.str_intern(DYN_IMPORT_BASE_KEY);
     HString* json_key   = heap.str_intern(DYN_IMPORT_JSON_KEY);
@@ -1641,8 +1640,8 @@ fn TVal? dynamic_import(Heap* heap, Vm* vm, char[] specifier, bool wants_json = 
 /// specifier/base/wants_json/promise off ctx.callee_obj's hidden slots and
 /// performs the resolve → link → evaluate pipeline. If the module's
 /// evaluation is still pending when execute_module returns (an async/TLA
-/// module whose completion this job — itself running inside a microtask
-/// drain — cannot poll to settlement), attaches a DYNAMIC_IMPORT_FINISH
+/// module whose completion this job, itself running inside a microtask
+/// drain, cannot poll to settlement), attaches a DYNAMIC_IMPORT_FINISH
 /// reaction to the module's persistent eval_promise instead; otherwise
 /// settles/builds the namespace object immediately.
 fn void builtin_dynamic_import_job(BuiltinContext* ctx) {
@@ -1688,8 +1687,8 @@ fn void builtin_dynamic_import_job(BuiltinContext* ctx) {
     ModuleDef*? mod_opt = resolve_module(heap, spec_data, base_data, wants_json);
     if (catch err = mod_opt) {
         // A load failure may have parked a specific static-semantics error
-        // (SyntaxError for a module parse failure) on the heap error channel —
-        // prefer it over the generic TypeError, and clear the channel so the
+        // (SyntaxError for a module parse failure) on the heap error channel.
+        // Prefer it over the generic TypeError, and clear the channel so the
         // fault becomes a promise rejection rather than leaking to the
         // enclosing frame.
         if (heap.has_error || heap.error_value.is_object() || heap.error_value.is_string()) {
@@ -1712,7 +1711,7 @@ fn void builtin_dynamic_import_job(BuiltinContext* ctx) {
         if (!link_module(heap, vm, mod, vm.global_env)) {
             // A link failure may have parked a specific static-semantics error
             // (SyntaxError for an ambiguous/circular indirect export) on the
-            // heap error channel — prefer it over the generic TypeError, and
+            // heap error channel, prefer it over the generic TypeError, and
             // clear the channel so the fault becomes a promise rejection rather
             // than leaking to the enclosing frame.
             if (heap.has_error || heap.error_value.is_object() || heap.error_value.is_string()) {
@@ -1763,7 +1762,7 @@ fn void builtin_dynamic_import_job(BuiltinContext* ctx) {
     if (mod.status != ModuleStatus.EVALUATED) {
         // Still EVALUATING: an async/TLA subgraph suspended and this job
         // (itself inside a microtask drain) could not pump the queue to
-        // settlement — see execute_module_async/nested. execute_module
+        // settlement. See execute_module_async/nested. execute_module
         // already chained mod.eval_promise onto the per-call pending promise
         // in this case (see its `pending != null` branch), and
         // module_settle_eval_promise fulfills eval_promise with the
@@ -1800,7 +1799,7 @@ fn void builtin_dynamic_import_job(BuiltinContext* ctx) {
 // ============================================================================
 
 /// Build a TypeError value with the given message, for rejecting a dynamic
-/// import promise. On allocation failure returns an undefined TVal — a
+/// import promise. On allocation failure returns an undefined TVal, a
 /// degraded rejection reason is acceptable since the promise is still
 /// rejected.
 fn TVal module_type_error(Heap* heap, char[] msg) {
@@ -1850,17 +1849,17 @@ fn char[] resolve_export_local_name(ModuleDef* mod, char[] export_name) {
 }
 
 /// Resolve a ModuleDef.exports entry to the module and local binding name
-/// that actually OWNS the value — following one level of indirection for
+/// that actually OWNS the value, following one level of indirection for
 /// `export { x } from './other'` (ee.local_name there names a binding in
 /// the OTHER module, not in `mod`'s own env). Direct exports resolve to
 /// `mod` itself (with `resolve_export_local_name` applied for the
 /// `export default` "*default*" rename). Used by build_namespace_object so
-/// every export — direct or re-exported — installs a live accessor against
+/// every export, direct or re-exported, installs a live accessor against
 /// its true owning env, never a same-module self-reference for indirect
 /// entries.
 ///
 /// Returns { null, {} } when the indirection's target module isn't
-/// resolved (e.g. a load failure) — callers should treat that as
+/// resolved (e.g. a load failure), callers should treat that as
 /// "value unavailable" (undefined).
 struct ExportBindingSource {
     ModuleDef* owner;
@@ -1885,13 +1884,13 @@ fn ExportBindingSource resolve_export_binding_source(ModuleDef* mod, ExportEntry
 /// Install a LIVE binding named `dest_key` in `dest_env`: reading it always
 /// re-resolves `src_local_name` in `source_mod.env.bindings` at access time.
 /// Shared by named imports, indirect re-exports, and (via
-/// build_namespace_object) namespace exports — the one place that answers
+/// build_namespace_object) namespace exports. This is the one place that answers
 /// "read this binding live" for the whole module pipeline.
 ///
 /// Falls back to a plain `undefined` data binding when the source module has
 /// no env yet (e.g. a failed dependency), interning fails, or the target
 /// would be a direct self-reference (dest_env.bindings/dest_key identical to
-/// the source slot — e.g. a self-import of a name this module doesn't
+/// the source slot, as in a self-import of a name this module does not
 /// actually declare, such as one reachable only via an unresolved `export *`
 /// star-export). A self-pointing accessor's getter would call back into
 /// itself and recurse forever; since the slot never independently holds a
@@ -1917,7 +1916,7 @@ fn void install_live_binding(Heap* heap, EnvRecord* dest_env, HString* dest_key,
     }
     TVal accessor = builtins::make_module_binding_accessor(heap, source_mod.env.bindings, src_key);
     if (accessor.is_undefined()) {
-        // Accessor allocation failed — degrade to a one-time snapshot rather
+        // Accessor allocation failed, degrade to a one-time snapshot rather
         // than leaving the binding entirely undeclared.
         TVal? val_opt = env::env_get(source_mod.env, src_key);
         TVal val;
@@ -1977,7 +1976,7 @@ fn void ns_add_export_item(NsExportItem[MAX_NS_EXPORTS]* items, uint* count,
 /// Expand `export *` star re-exports (§16.2.3.7 GetExportedNames) into the
 /// namespace item list, transitively. For each star-target module, every one of
 /// its exported names EXCEPT `default` is added (if not already present) as a
-/// live binding into that target's own env — direct exports keep their owning
+/// live binding into that target's own env, direct exports keep their owning
 /// ExportEntry (so indirect/namespace re-exports still resolve correctly),
 /// while names the target itself only re-exports via its own `export *` are
 /// added as plain bindings in the target. `depth` guards against import cycles.
@@ -1987,7 +1986,7 @@ fn void collect_star_export_items(ModuleDef* mod, NsExportItem[MAX_NS_EXPORTS]* 
 }
 
 /// Implementation of collect_star_export_items: `root` is the module whose
-/// namespace is being built (fixed across the whole recursion — GetModuleNamespace
+/// namespace is being built (fixed across the whole recursion, GetModuleNamespace
 /// always resolves ambiguity relative to it, ECMA-262 §16.2.1.6.3), `mod` is
 /// the current module being scanned for `export *` targets.
 fn void collect_star_export_items_from(ModuleDef* root, ModuleDef* mod,
@@ -2004,11 +2003,10 @@ fn void collect_star_export_items_from(ModuleDef* root, ModuleDef* mod,
             ExportEntry* ee = &target.exports[ei];
             // `export *` never re-exports the default binding (§16.2.3.7 step 4).
             if (char_slice_eq(ee.export_name, "default")) continue;
-            // A name reached through TWO OR MORE distinct star paths with
-            // different owning bindings is ambiguous (§16.2.1.6.3 steps
-            // 9-10) and must be OMITTED from the namespace object entirely
-            // — not resolved to whichever star export happened to be
-            // visited first.
+            // A name reached through two or more distinct star paths with
+            // different owning bindings is ambiguous (§16.2.1.6.3 steps 9-10).
+            // It is left out of the namespace object entirely, rather than
+            // resolved to whichever star export was visited first.
             ResolveSetEntry[RESOLVE_SET_MAX] amb_rset;
             ResolveExportResult amb_rr = resolve_export(root, ee.export_name, &amb_rset[0], 0);
             if (amb_rr.kind == ResolveExportKind.AMBIGUOUS) continue;
@@ -2083,7 +2081,7 @@ fn HObject*? build_namespace_object(Heap* heap, ModuleDef* source_mod) {
     // A module has exactly one Module Namespace Object (ECMA-262 §10.4.6.12
     // GetModuleNamespace: cached in module.[[Namespace]]). Repeated `import * as`
     // / dynamic imports of the same module must observe the SAME object
-    // identity — build it once and cache it on the ModuleDef.
+    // identity, build it once and cache it on the ModuleDef.
     if (source_mod.namespace_obj != null) {
         return source_mod.namespace_obj;
     }
@@ -2101,7 +2099,7 @@ fn HObject*? build_namespace_object(Heap* heap, ModuleDef* source_mod) {
     // `export * as ns from './self'` (or a cyclic star-as re-export) would
     // otherwise recurse into build_namespace_object for the same module and
     // never terminate. Caching now means the recursive call returns this
-    // in-progress (still-empty) object — matching the spec's single
+    // in-progress (still-empty) object, matching the spec's single
     // GetModuleNamespace object per module. Root it for the ModuleDef's lifetime.
     ns.as_header().incref();
     source_mod.namespace_obj = ns;
@@ -2138,7 +2136,7 @@ fn HObject*? build_namespace_object(Heap* heap, ModuleDef* source_mod) {
         // Namespace re-export (`export * as ns from './other'`): the export
         // entry's local name is "*", meaning the exported value is the TARGET
         // module's own namespace object (built recursively), installed as a
-        // static data property {enumerable:true, configurable:false} — not a
+        // static data property {enumerable:true, configurable:false}, not a
         // live env binding accessor. (§16.2.3.7 / GetModuleNamespace.)
         if (it.entry != null && it.entry.is_indirect && char_slice_eq(it.entry.local_name, "*")
             && it.entry.req_module_idx < it.owner_mod.req_module_count) {
@@ -2166,7 +2164,7 @@ fn HObject*? build_namespace_object(Heap* heap, ModuleDef* source_mod) {
         // indirect or star-only export in the target module (a re-export
         // chain, possibly cyclic back through this very module), and a
         // single level of indirection is not enough to reach the true owner
-        // — see the analogous named-import fix above.
+        //. See the analogous named-import fix above.
         ExportBindingSource src = { null, {} };
         ResolveSetEntry[RESOLVE_SET_MAX] ns_rset;
         ResolveExportResult ns_rr = resolve_export(it.owner_mod, it.export_name, &ns_rset[0], 0);
@@ -2191,7 +2189,7 @@ fn HObject*? build_namespace_object(Heap* heap, ModuleDef* source_mod) {
         }
 
         if (accessor.is_undefined()) {
-            // Allocation failure or missing env — degrade to a static
+            // Allocation failure or missing env, degrade to a static
             // undefined data property rather than dropping the export key.
             TVal undef; undef.set_undefined();
             ns.put_prop(export_key, undef, hobject::PROP_FLAGS_NEC);
@@ -2201,7 +2199,7 @@ fn HObject*? build_namespace_object(Heap* heap, ModuleDef* source_mod) {
         // Export bindings are {enumerable:true, configurable:false} data-view
         // semantics implemented as an accessor per the [[Get]] live-binding
         // requirement; [[Writable]] is meaningless for accessors (the
-        // namespace has no [[Set]] — plain field left false by PROP_FLAGS
+        // namespace has no [[Set]], plain field left false by PROP_FLAGS
         // convention below).
         hobject::PropFlags acc_flags = { .writable = false, .enumerable = true, .configurable = false, .is_accessor = true };
         ns.put_prop(export_key, accessor, acc_flags);
