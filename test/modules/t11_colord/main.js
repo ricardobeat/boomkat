@@ -14,13 +14,13 @@ var hsl = c.toHsl();
 if (hsl.h !== 0 || hsl.s !== 100 || hsl.l !== 50) throw 'toHsl() mismatch';
 
 var light = c.lighten(0.2);
-if (typeof light.toHex() !== 'string') throw 'lighten() should return a Colord';
+if (light.toHex() !== '#ff6666') throw 'Expected #ff6666 from lighten, got ' + light.toHex();
 
 var dark = c.darken(0.2);
-if (typeof dark.toHex() !== 'string') throw 'darken() should return a Colord';
+if (dark.toHex() !== '#990000') throw 'Expected #990000 from darken, got ' + dark.toHex();
 
 var gray = c.grayscale();
-if (typeof gray.toHex() !== 'string') throw 'grayscale() should return a Colord';
+if (gray.toHex() !== '#808080') throw 'Expected #808080 from grayscale, got ' + gray.toHex();
 
 var inverted = c.invert();
 var invHex = inverted.toHex();
@@ -28,13 +28,14 @@ if (invHex !== '#00ffff') throw 'Expected #00ffff from invert, got ' + invHex;
 
 var blue = colord('#0000ff');
 var rotated = blue.rotate(120);
-if (typeof rotated.toHex() !== 'string') throw 'rotate() should return a Colord';
+if (rotated.toHex() !== '#ff0000') throw 'Expected #ff0000 from rotate(120), got ' + rotated.toHex();
 
-// Named colors
+// Named colors ("red", "rebeccapurple", …) come from colord's separate
+// `names` plugin, which this bundle does not include — an unparsed input
+// yields an invalid color, not a throw. Node agrees; asserting the parsed
+// value here would be asserting a plugin that isn't loaded.
 var named = colord('red');
-if (!named.isValid()) throw 'colord("red") should be valid';
-var namedHex = named.toHex();
-if (namedHex !== '#ff0000') throw 'Expected #ff0000 for "red", got ' + namedHex;
+if (named.isValid()) throw 'colord("red") should be invalid without the names plugin';
 
 // Alpha
 var alpha = colord('rgba(255, 0, 0, 0.5)');

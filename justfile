@@ -110,7 +110,7 @@ run file="test/simple.js":
     ./out/duktape_c3 {{file}}
 
 # Run a JS file as an ESM module (import/export) (skips c3c if nothing changed)
-run-module file="test/mod_main.js":
+run-module file="test/modules/t01_named/main.js":
     @make out/duktape_c3
     ./out/duktape_c3 --module {{file}}
 
@@ -118,6 +118,14 @@ run-module file="test/mod_main.js":
 modules:
     @just build duktape_c3
     bash test/modules/run.sh
+
+# Run the local test suite: every test/*.js under the plain runner, then the
+# ESM fixtures under test/modules/ (which need --module, so run.sh owns them).
+# test_async_500k.js is excluded — it passes but takes ~20s, so it is a perf
+# stress test rather than a regression check; run it directly when relevant.
+test-local:
+    @just build duktape_c3
+    bash test/run_local.sh
 
 # ── Rosetta Code ─────────────────────────────────────────────────────────────
 
