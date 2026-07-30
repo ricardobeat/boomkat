@@ -606,6 +606,33 @@ fn ushort? CompilerContext.assignment_expr(&self) {
         }
     }
 
+    // Materialize the compound target's OLD VALUE before the RHS runs.
+    // `g op= rhs` is: resolve the Reference for g, GetValue(g) -> old,
+    // evaluate rhs, then apply op(old, rhs) — so the read of g happens
+    // *first*. The compound path below applies `op` to `left` after the RHS
+    // has been compiled, and when `left` is a plain local's home register an
+    // assignment to that same variable inside the RHS overwrites the old
+    // value in place:
+    //
+    //     function f(){ var g = 5; g += (g = 2); return g; }  // 4, node says 7
+    //     function h(){ var g = 5; g -= (g = 2); return g; }  // 0, node says 3
+    //
+    // computing 2 + 2 instead of 5 + 2. Copying the old value to a temp here
+    // restores the specified order. Gated on the same conservative lookahead
+    // as binary_expr's left-operand guard, so a RHS that cannot write a
+    // register leaves the emitted code unchanged.
+    //
+    // Only reached for `op=`; the logical forms (&&=, ||=, ??=) return above
+    // because they must short-circuit and not evaluate the RHS at all.
+    ushort compound_old = left;
+    bool compound_old_copied = false;
+    if (is_compound && !lhs_was_member && !lhs_was_getvar && lhs_was_local_var
+        && self.rhs_may_write_registers()) {
+        compound_old = self.alloc_reg();
+        self.emit_abc(Opcode.LDREG, (uint)compound_old, (uint)left, 0);
+        compound_old_copied = true;
+    }
+
     // Compile right-hand side
     ushort right = self.assignment_expr()!;
     // A bare identifier RHS that resolved to a live local variable's own
@@ -743,7 +770,11 @@ fn ushort? CompilerContext.assignment_expr(&self) {
             self.emit_abc(Opcode.LDREG, (uint)tmp, (uint)left, 0);
             result_reg = tmp;
         }
-        self.emit_abc(compound_op, (uint)result_reg, (uint)result_reg, (uint)right);
+        // Read the old value from the temp saved before the RHS ran when the
+        // RHS may have overwritten the variable's home register; otherwise
+        // `compound_old == left` and this is the original in-place form.
+        self.emit_abc(compound_op, (uint)result_reg, (uint)compound_old, (uint)right);
+        if (compound_old_copied) { self.free_reg(compound_old); }
         if (!right_is_local) { self.free_reg(right); }
         if (!lhs_was_getvar && !lhs_was_member && result_reg != left) {
             self.emit_abc(Opcode.LDREG, (uint)left, (uint)result_reg, 0);

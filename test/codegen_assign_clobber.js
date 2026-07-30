@@ -209,5 +209,128 @@ function sameTargetUpdateRight() {
 }
 eq(sameTargetUpdateRight(), "10:6", "n+(n++) reads n before the increment");
 
+// ── Compound assignment reads its target BEFORE evaluating the RHS ───────
+// `g op= rhs` is: resolve the Reference for g, GetValue(g) -> old, evaluate
+// rhs, apply op(old, rhs), PutValue. Previously the RHS was compiled first
+// and the compound op then read g's home register, which the RHS had already
+// overwritten — `g += (g = 2)` computed 2 + 2 = 4 instead of 5 + 2 = 7.
+function compoundRhsAssignsTargetAdd() {
+  var g = 5;
+  g += (g = 2);
+  return g;
+}
+eq(compoundRhsAssignsTargetAdd(), 7, "g += (g=2) reads g before the RHS");
+
+function compoundRhsAssignsTargetSub() {
+  var g = 5;
+  g -= (g = 2);
+  return g;
+}
+eq(compoundRhsAssignsTargetSub(), 3, "g -= (g=2) reads g before the RHS");
+
+function compoundRhsAssignsTargetMul() {
+  var g = 5;
+  g *= (g = 3);
+  return g;
+}
+eq(compoundRhsAssignsTargetMul(), 15, "g *= (g=3) reads g before the RHS");
+
+// A non-commutative operator, so an operand swap cannot hide behind the value.
+function compoundRhsAssignsTargetShift() {
+  var g = 8;
+  g >>= (g = 2);
+  return g;
+}
+eq(compoundRhsAssignsTargetShift(), 2, "g >>= (g=2) reads g before the RHS");
+
+// The compound expression's own VALUE must also be the post-op result.
+function compoundExprValue() {
+  var g = 5;
+  var r = (g += (g = 2));
+  return r + ":" + g;
+}
+eq(compoundExprValue(), "7:7", "(g += (g=2)) evaluates to 7");
+
+// String concatenation goes through the same ADD.
+function compoundRhsAssignsTargetConcat() {
+  var s = "a";
+  s += (s = "b");
+  return s;
+}
+eq(compoundRhsAssignsTargetConcat(), "ab", "s += (s='b') reads s before the RHS");
+
+// Inside a loop, where the back edge and register pressure differ.
+function compoundInLoop() {
+  var g = 5, out = "";
+  for (var i = 0; i < 2; i++) { g = 5; g += (g = 2); out += g + ","; }
+  return out;
+}
+eq(compoundInLoop(), "7,7,", "g += (g=2) inside a loop");
+
+// A RHS that assigns a DIFFERENT variable must not gain the copy's cost or
+// change behaviour.
+function compoundRhsAssignsOther() {
+  var g = 5, z = 0;
+  g += (z = 2);
+  return g + ":" + z;
+}
+eq(compoundRhsAssignsOther(), "7:2", "g += (z=2) unaffected");
+
+// Member targets take the PUTPROP path and were already correct; pin them so
+// the local-only gating cannot silently start applying to them.
+function compoundObjPropRhsAssigns() {
+  var o = { p: 5 };
+  o.p += (o.p = 2);
+  return o.p;
+}
+eq(compoundObjPropRhsAssigns(), 7, "o.p += (o.p=2) reads o.p before the RHS");
+
+function compoundArrIdxRhsAssigns() {
+  var q = [5];
+  q[0] += (q[0] = 2);
+  return q[0];
+}
+eq(compoundArrIdxRhsAssigns(), 7, "q[0] += (q[0]=2) reads q[0] before the RHS");
+
+// ── Logical assignment must still SHORT-CIRCUIT ──────────────────────────
+// &&=, ||= and ??= do not evaluate the RHS when the test fails, so they must
+// not acquire the eager old-value copy.
+function logicalAndAssignSkips() {
+  var g = 0, ran = 0;
+  g &&= (ran = 1);
+  return g + ":" + ran;
+}
+eq(logicalAndAssignSkips(), "0:0", "g &&= rhs skips the RHS when g is falsy");
+
+function logicalOrAssignSkips() {
+  var g = 1, ran = 0;
+  g ||= (ran = 1);
+  return g + ":" + ran;
+}
+eq(logicalOrAssignSkips(), "1:0", "g ||= rhs skips the RHS when g is truthy");
+
+function nullishAssignSkips() {
+  var g = 0, ran = 0;
+  g ??= (ran = 1);
+  return g + ":" + ran;
+}
+eq(nullishAssignSkips(), "0:0", "g ??= rhs skips the RHS when g is not nullish");
+
+// …and must still take the RHS when the test passes, including when the RHS
+// assigns the target itself (the assignment wins, then PutValue rewrites it).
+function logicalAndAssignTakes() {
+  var g = 1;
+  g &&= (g = 9);
+  return g;
+}
+eq(logicalAndAssignTakes(), 9, "g &&= (g=9) takes the RHS when g is truthy");
+
+function nullishAssignTakes() {
+  var g = null;
+  g ??= (g = 9);
+  return g;
+}
+eq(nullishAssignTakes(), 9, "g ??= (g=9) takes the RHS when g is null");
+
 print('codegen_assign_clobber: ' + pass + ' passed, ' + fail + ' failed');
 if (fail > 0) { print('SOME TESTS FAILED'); throw new Error('FAIL'); }
