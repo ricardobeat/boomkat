@@ -154,6 +154,11 @@ struct GeneratorState {
                               // the generator instance's [[Prototype]] per ES2015
                               // §25.3.3, since a default-parameter side effect can
                               // still mutate functionObject.prototype up to that point.
+    void* gen_obj;            // HObject* of the generator INSTANCE this state backs
+                              // (opaque). The instance owns the state, so the state
+                              // cannot mark it as a child — this is a back-pointer,
+                              // used to root the instance while it has in-flight
+                              // async work (see Heap.mark_roots).
     TVal* saved_regs;         // malloc'd array of register values
     uint num_regs;
     void* saved_pc;           // Instruction* (opaque)
@@ -186,7 +191,20 @@ struct GeneratorState {
     // The request currently being serviced (dequeued from agr_head at the start
     // of a resume, held here across internal `await` suspensions so the eventual
     // yield/return/throw settles the right promise). Null when idle.
-    void* ag_current_request;  // AsyncGenRequest*
+    void* ag_current_request;  // HObject* — the promise the in-flight request settles
+    // The in-flight request's completion value. Held here (not just in the
+    // caller's local copy of the dequeued struct) so the mark phase can see it
+    // for as long as the request is being serviced.
+    TVal ag_current_value;
+    // Cached callable wrapper used to re-enter this suspended body (see
+    // builtins::async_resume_wrapper). Those resume paths hand control back to
+    // a full VM execution and therefore drop native_frame_depth to 0, which
+    // re-enables temproot clearing — so the wrapper cannot be a bare local
+    // protected only by its temproot, or the safepoint GC inside the call
+    // sweeps the very object being called through. Caching it here makes it a
+    // real root (mark_generator_state marks it) and removes a per-resume
+    // allocation.
+    void* resume_wrapper;     // HObject* (opaque)
     // How the async-gen body last suspended (ES2018 §27.6): AWAIT means the body
     // suspended internally on an await and the drain must NOT settle the current
     // request — a microtask resume will re-drive it. YIELD/RETURN/THROW settle.
@@ -196,7 +214,58 @@ struct GeneratorState {
     // placed into a specific register in the generator's frame on resume.
     // 0xFFFF means unused.
     uint pending_resume_reg;
+    /// Number of HObjects currently holding this GeneratorState: the GENERATOR
+    /// instance plus every `is_async_state` reaction closure that parks the
+    /// pointer in func.var_env. Maintained by gs_acquire / gs_release.
     uint ref_count;
+}
+
+/// Register one more HObject holder of `gs`. Every store of a GeneratorState*
+/// into an HObject (gen.generator_data or an is_async_state func.var_env) must
+/// be paired with this, and with a gs_release when that HObject is torn down.
+fn void gs_acquire(GeneratorState* gs) {
+    if (gs != null) { gs.ref_count++; }
+}
+
+/// Drop one HObject's hold on `gs`, freeing the state (and its saved registers)
+/// once the last holder is gone.
+///
+/// The count is the ONLY ownership signal: sweep tears every dying node down in
+/// a single pass, so a holder that decided ownership by reading a gs field
+/// would race its siblings in that same pass — the first free recycles the
+/// struct and the next holder reads back whatever landed there. Counting keeps
+/// the last teardown, in whatever order sweep visits them, the one that frees.
+///
+/// `heap_ptr` owns the allocator the state was allocated from and must always
+/// be supplied — including during full-heap teardown, which clears the
+/// `_active_heap` global but still frees through the heap's own allocator. An
+/// embedder allocator makes the difference load-bearing: releasing to libc
+/// instead is a cross-allocator free.
+///
+/// `run_decref` is false in teardown mode, where the refcount pass is skipped
+/// because the heap is already being dismantled.
+fn void gs_release(GeneratorState* gs, void* heap_ptr, bool run_decref) {
+    if (gs == null) { return; }
+    if (gs.ref_count > 0) { gs.ref_count--; }
+    if (gs.ref_count != 0) { return; }
+    if (heap_ptr == null) {
+        // No heap at all (defensive): nothing sensible to free through.
+        return;
+    }
+    Heap* h = (Heap*)heap_ptr;
+    // `saved_regs` and `this_binding` are the only fields holding an owned
+    // (incref'd) reference; every other field is transient or borrowed, and is
+    // cleared or superseded before teardown.
+    if (run_decref) {
+        if (gs.saved_regs != null) {
+            for (uint i = 0; i < gs.num_regs; i++) {
+                h.decref_tval(&gs.saved_regs[i]);
+            }
+        }
+        h.decref_tval(&gs.this_binding);
+    }
+    if (gs.saved_regs != null) { h.free_func(h.heap_udata, gs.saved_regs); }
+    h.free_func(h.heap_udata, gs);
 }
 
 /// One parked Atomics.waitAsync waiter (single-agent). `buffer` is the backing
@@ -1967,6 +2036,30 @@ fn void Heap.mark_generator_state(&self, GeneratorState* gs) {
     }
     if (gs.async_promise != null) {
         self.mark_hobject((HObject*)gs.async_promise);
+    }
+    // Keep the generator INSTANCE alive for as long as this state is reachable.
+    // Normally the instance marks the state (it owns it), never the reverse —
+    // but an async generator driven only by its own internal machinery has no
+    // JS-visible reference left: `g().next()` drops the instance immediately,
+    // and from then on the only path to the state is a reaction closure hanging
+    // off the awaited promise. Without this back-edge the instance is swept
+    // while its request queue is still being serviced, and the recycled memory
+    // is read back as a live promise (settling the chain with whatever object
+    // now occupies the freed slot).
+    if (gs.gen_obj != null) {
+        self.mark_hobject((HObject*)gs.gen_obj);
+    }
+    // The request being serviced right now has already been dequeued, so the
+    // loop below no longer covers it: from the dequeue until the settle it is
+    // reachable only from here (and, in between, from a C3 local). Missing it
+    // frees the promise the drain is about to settle, and the recycled slot is
+    // then read back as an unrelated live promise.
+    if (gs.ag_current_request != null) {
+        self.mark_hobject((HObject*)gs.ag_current_request);
+    }
+    self.mark_tval(&gs.ag_current_value);
+    if (gs.resume_wrapper != null) {
+        self.mark_hobject((HObject*)gs.resume_wrapper);
     }
     // Async-generator request queue: each pending request holds a completion
     // value and a promise capability (the promise to settle) that must stay

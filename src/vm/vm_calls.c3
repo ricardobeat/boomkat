@@ -1753,6 +1753,8 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                     gen_obj.prototype = vm.heap.generator_proto;
                 }
                 (*gen_obj.extra_ptr()).gen.generator_data = gs;
+                gs.gen_obj = gen_obj;
+                heap::gs_acquire(gs);
 
                 // If a generator param-init is already in progress (gen_initial_gs
                 // is non-null), save the outer state onto a small stack so it can
@@ -2985,6 +2987,10 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
 
             Activation* new_act = &vm.activations[vm.activation_count];
             vm.activation_count++;
+            // Pooled activation slots are reused without zeroing; clear the
+            // generator borrow or this frame inherits the stale GeneratorState
+            // of whatever generator body last ran at this depth.
+            new_act.async_gen_state = null;
             new_act.max_heap_reg = 0;
             new_act.caller_valstack_top = vm.valstack_top;
 

@@ -278,7 +278,13 @@ fn void async_gen_enqueue(BuiltinContext* ctx, GeneratorState* gs, ResumeKind ki
 }
 
 /// Pop the head request off the queue and free its node, returning the request
-/// data by value (the promise is still referenced by the returned struct).
+/// data by value.
+///
+/// The returned struct lives in a C3 local, which the mark phase cannot see, so
+/// the promise is parked in gs.ag_current_request (marked by
+/// mark_generator_state) before this returns. Without that hand-off the promise
+/// is unrooted from the moment it leaves the queue, and the first allocation the
+/// caller makes can sweep the very promise it is about to settle.
 fn AsyncGenRequest async_gen_dequeue(Heap* heap, GeneratorState* gs) {
     AsyncGenRequest* head = gs.agr_head;
     AsyncGenRequest out = *head;
@@ -286,6 +292,8 @@ fn AsyncGenRequest async_gen_dequeue(Heap* heap, GeneratorState* gs) {
     if (gs.agr_head == null) gs.agr_tail = null;
     out.next = null;
     heap.free_func(heap.heap_udata, head);
+    gs.ag_current_request = (void*)out.capability;
+    gs.ag_current_value = out.value;
     return out;
 }
 
@@ -384,7 +392,12 @@ fn void async_gen_drain(BuiltinContext* ctx, GeneratorState* gs) {
         }
 
         // Body settled (yield / return / throw) — service the outcome.
+        // Clear the in-flight marker BEFORE settling: settling runs the
+        // downstream reactions, which may re-enter this drain for a request a
+        // handler queued. That re-entry must see an idle generator, not a stale
+        // in-flight promise, or it refuses to start the new request.
         gs.ag_current_request = null;
+        gs.ag_current_value.set_undefined();
         if (!async_gen_finish_body(ctx, gs, promise, result)) break;
     }
 }
@@ -459,10 +472,18 @@ fn bool async_gen_await_return(BuiltinContext* ctx, GeneratorState* gs, HObject*
     (*ff.extra_ptr()).func.builtin_fn_index = (int)Builtin.ASYNC_GEN_RETURN_FULFILL.ordinal;
     (*ff.extra_ptr()).func.var_env = (EnvRecord*)gs;
     ff.flags.callable = true;
+    // var_env holds a GeneratorState*, not an EnvRecord*: is_async_state tells
+    // both the GC mark phase and hobject_free to read it as one (without the
+    // flag, mark_hobject would follow the EnvRecord.bindings offset into
+    // GeneratorState.func and mark a CompiledFunction* as an HObject).
+    ff.flags.is_async_state = true;
+    heap::gs_acquire(gs);
     HObject* rj = rj_raw;
     (*rj.extra_ptr()).func.builtin_fn_index = (int)Builtin.ASYNC_GEN_RETURN_REJECT.ordinal;
     (*rj.extra_ptr()).func.var_env = (EnvRecord*)gs;
     rj.flags.callable = true;
+    rj.flags.is_async_state = true;
+    heap::gs_acquire(gs);
     HObject* rxn = rxn_raw;
     rxn.prototype = heap.object_proto;
     TVal ff_tv; ff_tv.set_object(ff);
@@ -557,10 +578,16 @@ fn bool async_gen_yield_return_await(BuiltinContext* ctx, GeneratorState* gs, HO
     (*ff.extra_ptr()).func.builtin_fn_index = (int)Builtin.ASYNC_GEN_YRET_FULFILL.ordinal;
     (*ff.extra_ptr()).func.var_env = (EnvRecord*)gs;
     ff.flags.callable = true;
+    // See the ASYNC_GEN_RETURN_FULFILL pair above: var_env is a
+    // GeneratorState*, so is_async_state must mark it as such for the GC.
+    ff.flags.is_async_state = true;
+    heap::gs_acquire(gs);
     HObject* rj = rj_raw;
     (*rj.extra_ptr()).func.builtin_fn_index = (int)Builtin.ASYNC_GEN_YRET_REJECT.ordinal;
     (*rj.extra_ptr()).func.var_env = (EnvRecord*)gs;
     rj.flags.callable = true;
+    rj.flags.is_async_state = true;
+    heap::gs_acquire(gs);
     HObject* rxn = rxn_raw;
     rxn.prototype = heap.object_proto;
     TVal ff_tv; ff_tv.set_object(ff);
