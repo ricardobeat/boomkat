@@ -55,9 +55,34 @@ fn void CompilerContext.push_scope_marker(&self) {
     }
 }
 
+/// ES2024 §13.7.4.1 / §13.7.5.13 early error for `var` declarations: a var
+/// binding must not collide with a let/const/class binding in scope. This
+/// covers the for-head rule (BoundNames of the ForDeclaration vs the
+/// VarDeclaredNames of the body Statement): while the body compiles, the
+/// head's lexical names are on scope_stack, so a body `var` (recursing into
+/// nested blocks, per VarDeclaredNames) is caught here. Same-block lex-vs-var
+/// conflicts are separately caught by the block() pre-scan; this walks the
+/// WHOLE stack (past block markers) because the for-head binding lives in an
+/// outer scope relative to the body block. No-op for non-VAR kinds.
+/// Call only from true var-declaration sites (var statements, for-head var
+/// declarations) — NOT from catch-param or function-declaration paths, whose
+/// bindings follow different scoping rules.
+fn void? CompilerContext.check_var_lex_conflict(&self, char[] name, ScopeKind kind) {
+    if (kind != ScopeKind.VAR) {
+        return;
+    }
+    uint i = self.scope_depth;
+    while (i > 0) {
+        i--;
+        ScopeEntry* e = &self.scope_stack[i];
+        if ((e.kind == ScopeKind.LET || e.kind == ScopeKind.CONST) && str_eq(e.name, name)) {
+            return self.fail("lexical declaration cannot share a name with a var declaration")~;
+        }
+    }
+}
+
 /// Declare a variable in the current scope.
-fn ushort CompilerContext.declare_var(&self, char[] name, ScopeKind kind) {
-    ushort reg = self.alloc_reg();
+fn ushort CompilerContext.declare_var(&self, char[] name, ScopeKind kind) {    ushort reg = self.alloc_reg();
     // Lexical bindings must survive env-elision when a closure can read them
     // through the env chain (see has_lexical_bindings in the elide/needs_env
     // gates).

@@ -4803,6 +4803,7 @@ fn void? CompilerContext.emit_forof_loop(&self, char[] var_name, ushort iter_reg
         }
     } else {
         ScopeKind kind = is_const ? CONST : (is_lexical ? LET : VAR);
+        self.check_var_lex_conflict(var_name, kind)!;
         loop_var = self.declare_var(var_name, kind);
     }
 
