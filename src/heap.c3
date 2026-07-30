@@ -14,7 +14,7 @@ import std::core::mem::allocators;
 // Heap management: allocator, GC bookkeeping, string table
 // ============================================================================
 
-// --- Allocator callback signatures ----------------------------------------
+// --- Allocator callback signatures ---
 
 alias AllocFunc   = fn void*(void* udata, usz size);
 alias ReallocFunc = fn void*(void* udata, void* ptr, usz size);
@@ -45,11 +45,11 @@ alias VmConstructFn = fn TVal(void* vm, TVal func, TVal* args, uint nargs, TVal 
 alias ProxyGetFn = fn bool(void* vm, void* heap, void* proxy, void* key, TVal receiver, TVal* out);
 alias ProxyHasFn = fn bool(void* vm, void* heap, void* proxy, void* key, bool* out);
 
-// --- Faults ---------------------------------------------------------------
+// --- Faults ---
 
 faultdef HEAP_ALLOC_FAULT;
 
-// --- Constants ------------------------------------------------------------
+// --- Constants ---
 
 const uint  INITIAL_STR_TABLE_SIZE  = 256;
 const float STR_TABLE_LOAD_FACTOR   = 0.70;
@@ -75,7 +75,7 @@ const uint LF_MAX_TRACKED     = (LF_DELETED_WORDS * 64) / 3; // 682, the highest
 /// Sentinel marking a deleted string table entry, so open addressing can probe past it.
 const HString* STR_TABLE_TOMBSTONE = (HString*)1;
 
-// --- LongjmpState ---------------------------------------------------------
+// --- LongjmpState ---
 
 enum LjType : char {
     UNKNOWN,
@@ -95,7 +95,7 @@ struct LongjmpState {
     bool     iserror;
 }
 
-// --- GeneratorState (ES6 §25.3) -------------------------------------------
+// --- GeneratorState (ES6 §25.3) ---
 
 /// Generator execution state, per ES6 §25.3.3.1 GeneratorState.
 enum GeneratorStateType : char {
@@ -265,7 +265,7 @@ struct AtomicsWaiter {
     bool              active;
 }
 
-// --- Heap struct ----------------------------------------------------------
+// --- Heap struct ---
 
 struct Heap {
     // Allocator callbacks
@@ -542,9 +542,9 @@ struct Heap {
 
     // Pooled HObject headers, avoiding a malloc per object. The three size
     // classes match alloc_size_for_class():
-    //   plain (72B): OBJECT, ERROR, ARGUMENTS, PROXY
-    //   array (80B): ARRAY
-    //   func (104B): FUNCTION, REGEXP, BOOLEAN, NUMBER, STRING, DATE, and so on
+    //   plain: OBJECT and ARGUMENTS, which need no HObjectExtra
+    //   array: ARRAY, whose array_length lives in the union
+    //   func:  everything else, including ERROR and PROXY
     mempool::FixedBlockPool obj_pool_plain;
     mempool::FixedBlockPool obj_pool_array;
     mempool::FixedBlockPool obj_pool_func;
