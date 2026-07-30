@@ -808,8 +808,6 @@ def skip_reason(path, es5_only=False):
     except OSError:
         return "unreadable file"
 
-    if "$DONOTEVALUATE" in header:
-        return "$DONOTEVALUATE (parse-only / negative test)"
     m = UNSUPPORTED_PATTERN.search(header)
     if m:
         # The pattern's alternation is non-capturing; recover the specific
@@ -839,6 +837,28 @@ def skip_reason(path, es5_only=False):
     # these tests are inapplicable.
     if re.search(r"flags:\s*\[.*\bCanBlockIsFalse\b", header):
         return "CanBlockIsFalse (engine agent can suspend)"
+
+    # $DONOTEVALUATE tells the harness not to RUN the file; it is not a reason
+    # not to COMPILE it. A `negative: phase: parse` test asserts the engine
+    # REJECTS the source, which is checked entirely by compiling: the worker
+    # reports CE and categorize_ce() scores `expected-parse` as a pass. These
+    # are the only tests that verify what the engine must refuse, so skipping
+    # them left the whole parse-rejection surface unmeasured.
+    #
+    # This check is deliberately LAST: a test excluded by the unsupported-
+    # feature, noStrict, or agent-harness rules above stays excluded, so
+    # un-skipping parse-negatives cannot resurrect a test another rule owns.
+    if "$DONOTEVALUATE" in header:
+        hdr, _ = _read_header(path)
+        n = _NEGATIVE_RE.search(hdr)
+        if n:
+            first = n.group(1).strip().splitlines()[0].strip().rstrip(",")
+            if "parse" in first:
+                return None  # compile-and-assert-rejection: runnable
+        # Everything else $DONOTEVALUATE covers (chiefly `phase: resolution`
+        # module-linking errors, which need the loader rather than the parser)
+        # still has no compile-only verdict, so it stays skipped.
+        return "$DONOTEVALUATE (non-parse negative test)"
     return None
 
 
