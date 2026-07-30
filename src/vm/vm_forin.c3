@@ -135,15 +135,22 @@ fn ForInState* collect_forin_keys(Vm* vm, HObject* obj) {
         if (cur.flags.exotic_proxyobj) {
             HString** pkeys;
             uint pn;
-            if (!builtins::proxy_filtered_own_keys(vm, h, cur, 0, &pkeys, &pn)) {
+            uint ptotal;
+            if (!builtins::proxy_partitioned_own_keys(vm, h, cur, 0, &pkeys, &pn, &ptotal)) {
                 // Trap threw: surface as an empty enumeration; the pending
                 // heap error is rethrown by the FORIN opcode handler.
                 h.free_func(h.heap_udata, keys);
                 h.free_func(h.heap_udata, seen);
                 return null;
             }
-            for (uint i = 0; i < pn; i++) {
-                if (!forin_add_key(h, &keys, &count, &keys_cap, &seen, &seen_cnt, &seen_cap, pkeys[i])) {
+            // [0, pn) are enumerable and get yielded; [pn, ptotal) are the
+            // non-enumerable own keys, marked seen only so they shadow a
+            // same-named enumerable prototype key (EnumerateObjectProperties).
+            for (uint i = 0; i < ptotal; i++) {
+                bool ok = i < pn
+                    ? forin_add_key(h, &keys, &count, &keys_cap, &seen, &seen_cnt, &seen_cap, pkeys[i])
+                    : forin_mark_seen(h, &seen, &seen_cnt, &seen_cap, pkeys[i]);
+                if (!ok) {
                     h.free_func(h.heap_udata, pkeys);
                     h.free_func(h.heap_udata, keys);
                     h.free_func(h.heap_udata, seen);
@@ -319,13 +326,16 @@ fn ForInState* collect_forin_keys(Vm* vm, HObject* obj) {
         // enumerable ones through `forin_add_key`, which also inserts
         // into seen, so we skip pre-marking those to avoid the
         // early-return swallowing them.
+        //
+        // A String object's own `length` is one of these non-enumerable keys:
+        // it is never yielded, but it is marked seen so it shadows a `length`
+        // inherited from the prototype chain.
         for (uint i = 0; i < cur.prop_count; i++) {
             if (cur.prop_key_at(i) == null) continue;
             if (cur.get_prop_flags(i).enumerable) continue;
             HString* k = (HString*)cur.prop_key_at(i);
             if (k.is_arridx()) continue;
             if (k.is_symbol()) continue;
-            if (cur.flags.exotic_stringobj && (void*)k == vm.heap.strs[heap::BuiltinStr.LENGTH]) continue;
             if (!forin_mark_seen(h, &seen, &seen_cnt, &seen_cap, k)) {
                 h.free_func(h.heap_udata, keys);
                 h.free_func(h.heap_udata, seen);
@@ -337,7 +347,6 @@ fn ForInState* collect_forin_keys(Vm* vm, HObject* obj) {
                 HString* k = (HString*)cur.prop_key_at(i);
                 if (k.is_arridx()) continue;
                 if (k.is_symbol()) continue;
-                if (cur.flags.exotic_stringobj && (void*)k == vm.heap.strs[heap::BuiltinStr.LENGTH]) continue;
                 if (!forin_add_key(h, &keys, &count, &keys_cap, &seen, &seen_cnt, &seen_cap, k)) {
                     h.free_func(h.heap_udata, keys);
                     h.free_func(h.heap_udata, seen);
