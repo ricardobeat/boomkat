@@ -183,6 +183,118 @@ Assignment goes through `env_try_put_lex`, which walks the lexical chain once
 and returns what happened: updated, unbound and so the caller should try the var
 environment, a `const` violation, or a TDZ read.
 
+## The virtual machine
+
+### The dispatch loop
+
+`Vm.run` is a loop inside a loop. The outer one loads all per-frame state into a
+`Dispatch` struct: the code base, constant pool, inline-cache arrays, register
+base, and program counter. The inner one dispatches instructions.
+
+A JS-to-JS call does not recurse into the interpreter. It pushes an activation
+and sets `needs_restart`, which breaks back to the outer loop to reload state for
+the new frame. Deep JavaScript recursion therefore costs activation slots rather
+than C stack, and `MAX_CALLS` (512) bounds it.
+
+Two invariants keep the inner loop tight. The compiler ends every function with
+an explicit `RET`, so there is no fall-off-the-end check, and only the return and
+generator opcodes set `halt`, so it is tested at those sites rather than once per
+instruction.
+
+Some paths do need real re-entry, and `vm_call_fn_impl` handles them: a builtin
+calling back into JS, a getter, a `Symbol.toPrimitive`. These run a nested
+`Vm.run`, which is why the VM tracks `run_depth` and why saved frames need
+relocating if the valstack moves underneath them.
+
+### Frames
+
+An `Activation` is one call frame: the function, the parent activation, the var
+and lex environments, the catcher chain, the program counter, and where in the
+valstack its registers start.
+
+Registers are a window into a single growable valstack rather than a per-frame
+allocation. That makes calls cheap and makes `ensure_valstack_grow` delicate,
+since a realloc invalidates every absolute pointer into it.
+
+Frames also carry the flags that drive spec behaviour: `ACT_FLAG_CONSTRUCT`,
+`ACT_FLAG_DERIVED` for a derived constructor's return check,
+`ACT_FLAG_THIS_OWNED` when the frame holds a reference to `this`, and
+`ACT_FLAG_BORROWED_CALLEE` when the callee was copied from a global binding
+without an incref, so the return write-back must not decref it.
+
+The GC's view of a frame is deliberately explicit. `mark_roots` only scans the
+valstack up to `valstack_top`, a high-water mark for the deepest frame, so each
+live frame's own register span is marked separately, along with the fields that
+can be a value's only root: an owned `this`, `new_target`, an async function's
+promise, the generator state being resumed, and every in-flight exception parked
+in a catcher.
+
+### Calls
+
+`resolve_call_var` picks the path. The fast path is a plain compiled function
+that is neither a generator nor a class constructor, which is the common case; it
+sets up the activation inline and restarts the outer loop. Everything else,
+meaning lightfuncs, builtins, bound functions, generators, and class
+constructors, goes through the slower dispatch in `vm_calls.c3`.
+
+Constructors add the `new.target` chain and, for a derived class, the deferred
+`this`. A derived constructor starts with `this` in TDZ, and `super()` walks up
+the activation chain to find the frame whose binding it must initialize.
+Reading `this` before that throws, and returning a non-object non-undefined from
+a derived constructor throws too.
+
+### Property access
+
+`GETPROP` and `PUTPROP` try, in order: the per-site inline cache, the
+megamorphic cache, then a full lookup. An IC hit needs the shape to match and the
+owner's `prop_alloc` to be unchanged. Fused two-hop forms exist for `a.b.c`, and
+string primitives auto-box on the first hop.
+
+Writes are where the exotics live. An array-index write may go to the dense part,
+grow it, or fall through to the property table. A `length` write on an array
+truncates. A typed-array write coerces the value first, and that coercion can run
+user code that resizes or detaches the buffer, so the bounds are rechecked
+afterwards.
+
+### Exceptions
+
+`TRY` pushes a `Catcher` onto a chain rooted in the activation; `THROW` walks it
+outward. The catcher records both handler PCs and the lexical environment at
+entry, because an exceptional exit skips the try block's `POP_LEX` instructions
+and the chain has to be rebalanced.
+
+`finally` is the complicated part. A `return`, `break`, or `continue` crossing a
+finally block is parked in the catcher as a pending completion and resumed by
+`ENDFINALLY` once the block finishes, which is what lets a `return` inside the
+finally body override the one that was already pending.
+
+### Generators and async
+
+A generator call does not run its body. It allocates a `GeneratorState`, runs
+parameter initialization, and suspends at `GEN_START`, returning the generator
+object.
+
+`YIELD` copies the live registers, program counter, environments, and catcher
+chain into that state and returns to the caller. `.next()`, `.throw()`, and
+`.return()` restore them and resume, with `ResumeKind` telling `YIELD` whether to
+return a value, inject an exception, or inject a return.
+
+Async functions reuse the same machinery: `AWAIT` is a suspension whose
+continuation is a promise reaction, so an async function is a generator whose
+resumptions are driven by the microtask queue rather than by user calls.
+
+`yield*` delegation is a resumable state machine, because in an async generator
+every spec `Await` inside the delegation is itself a real suspension. The
+delegation's own program counter therefore lives in `ays_step` on the generator
+state.
+
+### Safepoints
+
+A collection cannot run at an arbitrary instruction, since a builtin may hold a
+fresh object in a raw local. The VM collects at backward jumps, which bounds
+allocation between collections in a loop, and throttles them with
+`bwd_gc_budget` so a tight loop does not thrash the collector.
+
 ## Memory: the heap, the collector, and strings
 
 Everything the engine allocates at runtime belongs to a `Heap`. One heap holds
