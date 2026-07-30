@@ -595,6 +595,16 @@ fn uint CompilerContext.pre_scan_lexical_decls(&self, NameSpan* spans, uint capa
 
     uint     count       = 0;
     uint     brace_depth = 0;
+    // Paren nesting at the block's top level. A let/const keyword inside
+    // top-level parens can only be a for-head LexicalDeclaration (valid code
+    // has no other parenthesised let/const), and for-head names bind in the
+    // for statement's own declarative environment (ES2024 §14.7.4/§14.7.5),
+    // NOT in this block — collecting them here TDZ-initialises a bogus
+    // block-scope binding and falsely triggers the lex-vs-var early error
+    // for `function f() { var x; for (let x in {}) {} }`. The for-head vs
+    // body-var early error (§13.7.4.1/§13.7.5.13) is enforced at parse time
+    // by check_var_lex_conflict.
+    uint     paren_depth = 0;
     // Previous significant token — used to tell a class DECLARATION from a
     // class EXPRESSION (see class_is_declaration). Branches that consume
     // extra tokens and `continue` reset this to a statement boundary, since
@@ -628,8 +638,23 @@ fn uint CompilerContext.pre_scan_lexical_decls(&self, NameSpan* spans, uint capa
             continue;
         }
 
-        // Only collect let/const at the top level of this block (depth 0).
-        if (brace_depth == 0 && (tt == TokenType.LET || tt == TokenType.CONST)) {
+        if (tt == TokenType.LPAREN) {
+            paren_depth++;
+            prev_tt = tt;
+            continue;
+        }
+
+        if (tt == TokenType.RPAREN) {
+            if (paren_depth > 0) {
+                paren_depth--;
+            }
+            prev_tt = tt;
+            continue;
+        }
+
+        // Only collect let/const at the top level of this block (depth 0),
+        // excluding for-head parens (see paren_depth above).
+        if (brace_depth == 0 && paren_depth == 0 && (tt == TokenType.LET || tt == TokenType.CONST)) {
             // Collect one or more identifier names (comma-separated).
             for (;;) {
                 Token? name_opt = self.lexer.next_token();
@@ -930,7 +955,10 @@ fn uint CompilerContext.pre_scan_switch_lexical_decls(&self, NameSpan* spans, ui
         }
 
         // let/const: collect one or more comma-separated identifier names.
-        if (tt == TokenType.LET || tt == TokenType.CONST) {
+        // Excludes for-head parens (a let/const at paren_depth > 0 is a
+        // for-head LexicalDeclaration, scoped to the for statement — see
+        // pre_scan_lexical_decls).
+        if (paren_depth == 0 && (tt == TokenType.LET || tt == TokenType.CONST)) {
             for (;;) {
                 Token? name_opt = self.lexer.next_token();
                 if (catch _err2 = name_opt) {
@@ -1254,6 +1282,7 @@ fn void? CompilerContext.var_declaration(&self) {
             ushort reg;
             bool already_declared = false;
             if (!is_lexical) {
+                self.check_var_lex_conflict(name_tok.str_value, kind)!;
                 // var declarations: check if already declared (from hoisting
                 // or from an outer var declaration in the same function).
                 // If so, reuse the existing register and skip DECLVAR/LDUNDEF.
@@ -2085,6 +2114,7 @@ fn void? CompilerContext.for_statement(&self) {
                 for (uint i = 0; i < bind_count; i++) {
                     if (dbinds[i].is_synthetic) continue;
                     HString* hs = (HString*)self.constants[dbinds[i].name_idx].get_heapptr();
+                    self.check_var_lex_conflict(hs.get_data(), decl_kind)!;
                     ushort dreg = self.declare_var(hs.get_data(), decl_kind);
                     dbinding_regs[i] = dreg;
                 }
@@ -2172,6 +2202,7 @@ fn void? CompilerContext.for_statement(&self) {
                 for (uint i = 0; i < fdcount; i++) {
                     if (fdbinds[i].is_synthetic) continue;
                     HString* hs = (HString*)self.constants[fdbinds[i].name_idx].get_heapptr();
+                    self.check_var_lex_conflict(hs.get_data(), decl_kind)!;
                     fdbinding_regs[i] = self.declare_var(hs.get_data(), decl_kind);
                     if (is_lexical && (self.is_global || self.is_captured_name(hs.get_data()))) {
                         fd_periter_name_idxs[fd_periter_count] = fdbinds[i].name_idx;
@@ -2289,6 +2320,7 @@ fn void? CompilerContext.for_statement(&self) {
                         // expression will overwrite. declare_var stores this
                         // slice into scope_stack, which outlives this token.
                         char[] extra_name2 = ((Heap*)self.heap).str_intern(extra_name.str_value).get_data();
+                        self.check_var_lex_conflict(extra_name2, decl_kind)!;
                         ushort extra_reg = self.declare_var(extra_name2, decl_kind);
                         if (self.match(TokenType.ASSIGN)) {
                             ushort extra_val = self.assignment_expr()!;
@@ -2334,10 +2366,10 @@ fn void? CompilerContext.for_statement(&self) {
                         }
                     }
                 }
+                self.check_var_lex_conflict(name_tok.str_value, decl_kind)!;
                 ushort iter_var = self.declare_var(name_tok.str_value, decl_kind);
                 if (is_lexical) {
-                    // Mark the freshly-declared iter-var entry as captured
-                    // and force its reads through the env (resolves_var →
+                    // Mark the freshly-declared iter-var entry as captured                    // and force its reads through the env (resolves_var →
                     // SCOPE_ERROR → GETVAR).  The matching has_captured_local
                     // flip is required so the register-resident-locals
                     // elision in CompilerContext.finish() does NOT NOP the
@@ -2469,6 +2501,7 @@ fn void? CompilerContext.for_statement(&self) {
             // Standard for loop: we already consumed the decl keyword and identifier
             if (for_is_await) return self.fail("'for await' requires a 'for await (... of ...)' head")~;
             // Declare the variable and optionally initialize
+            self.check_var_lex_conflict(name_tok.str_value, decl_kind)!;
             ushort var_reg;
             if (!is_lexical) {
                 // Capture-blind lookup: a captured var must be detected as
@@ -2534,6 +2567,7 @@ fn void? CompilerContext.for_statement(&self) {
                     // declare_var stores this slice into scope_stack, which
                     // outlives this token.
                     char[] extra_name2 = ((Heap*)self.heap).str_intern(extra_name.str_value).get_data();
+                    self.check_var_lex_conflict(extra_name2, decl_kind)!;
                     ushort extra_reg;
                     if (!is_lexical) {
                         ushort? existing2 = self.resolve_var(extra_name2);
@@ -3415,6 +3449,7 @@ fn void? CompilerContext.emit_bare_forin_destruct_loop(&self, bool is_array_patt
     for (uint i = 0; i < dcount; i++) {
         if (dbinds[i].is_synthetic) continue;
         HString* hs = (HString*)self.constants[dbinds[i].name_idx].get_heapptr();
+        self.check_var_lex_conflict(hs.get_data(), ScopeKind.VAR)!;
         dbinding_regs[i] = self.declare_var(hs.get_data(), ScopeKind.VAR);
     }
 

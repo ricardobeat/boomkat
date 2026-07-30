@@ -110,6 +110,7 @@ fn void? CompilerContext.array_destructure(&self, ScopeKind kind, bool is_lexica
     for (uint i = 0; i < count; i++) {
         if (binds[i].is_synthetic) continue;
         HString* hs = (HString*)self.constants[binds[i].name_idx].get_heapptr();
+        self.check_var_lex_conflict(hs.get_data(), kind)!;
         ushort dreg = self.declare_var(hs.get_data(), kind);
         binding_regs[i] = dreg;
         // Surface each leaf binding name (interned, stable) so `export var
@@ -199,6 +200,7 @@ fn void? CompilerContext.object_destructure(&self, ScopeKind kind, bool is_lexic
     for (uint i = 0; i < count; i++) {
         if (binds[i].is_synthetic) continue;
         HString* hs = (HString*)self.constants[binds[i].name_idx].get_heapptr();
+        self.check_var_lex_conflict(hs.get_data(), kind)!;
         ushort dreg = self.declare_var(hs.get_data(), kind);
         binding_regs[i] = dreg;
         // Surface each leaf binding name (interned, stable) so `export var
