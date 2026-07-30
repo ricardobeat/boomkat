@@ -102,4 +102,11 @@ assert(f12(1) === 1, 'f12: first explicit, second undefined');
 assert(f12(1, 2) === 3, 'f12: both explicit');
 assert(f12(undefined, 5) === 15, 'f12: first undefined triggers default, second explicit');
 
-print('PASS:', pass, 'FAIL:', fail);
+// Report the counts without emitting the bare token "FAIL" on a clean run —
+// `FAIL: 0` reads as a failure to any harness grepping stdout for FAIL.
+// "SOME TESTS FAILED" is the same marker test/forin.js uses.
+print('test_default_params: ' + pass + ' passed, ' + fail + ' failed');
+if (fail > 0) {
+    print('SOME TESTS FAILED');
+    throw new Error('FAIL');
+}

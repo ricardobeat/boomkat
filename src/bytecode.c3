@@ -1216,8 +1216,11 @@ bitstruct FuncFlags : uint {
     /// GlobalDeclarationInstantiation (§15.1.11 step 18.a), which installs
     /// them non-configurable via CreateGlobalVarBinding(vn, false).
     bool  is_eval          : 24;
-    /// The eval SOURCE carried its own "use strict" directive prologue. The
-    /// engine executes all code in strict mode (is_strict is always set), but
+    /// The eval SOURCE carried its own "use strict" directive prologue.
+    /// Script/module/eval code is always compiled strict, but the dynamic
+    /// Function/GeneratorFunction/AsyncFunction constructors compile a sloppy
+    /// body unless it opts in (compiler::compile_function's `force_strict`
+    /// parameter), so is_strict is NOT universally set — see is_strict().
     /// EvalDeclarationInstantiation's leak semantics depend on the *source's*
     /// own strictness (ES2015 §18.2.1.1 PerformEval step 12): strict eval gets
     /// a fresh varEnv (declarations never escape), non-strict indirect/global
@@ -1515,7 +1518,23 @@ macro bool CompiledFunction.needs_lex_bridge(&self) {
     return self.flags.needs_lex_bridge;
 }
 
-/// Returns `true` when the function body had a "use strict" directive.
+/// Returns `true` when this function's code is strict.
+///
+/// This is a runtime flag and it is genuinely NOT always true: the VM's
+/// sloppy-mode paths that branch on it are live. Script, module and eval code
+/// is always compiled strict, but the dynamic Function, GeneratorFunction and
+/// AsyncFunction constructors (ES2019 §19.2.1.1.1) compile a body with no
+/// enclosing lexical context to inherit strictness from, so it is sloppy
+/// unless its own directive prologue says "use strict" — see the
+/// `force_strict` parameter of compiler::compile_function.
+///
+/// Consequently the `is_strict()` guards in the VM (undeclared-assignment
+/// ReferenceError, ES5 §10.4.3 global-object `this` substitution, and the
+/// §13.15.2 PutValue "throw only for a strict reference" cases: getter-only
+/// accessors, non-writable properties and module-namespace [[Set]]/[[Delete]])
+/// each select observably different behaviour and must not be simplified away.
+/// Distinct from eval_source_is_strict(), which reports the *source's* own
+/// strictness for eval declaration-leak semantics.
 macro bool CompiledFunction.is_strict(&self) {
     return self.flags.is_strict;
 }
