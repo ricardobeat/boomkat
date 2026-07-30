@@ -859,14 +859,13 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, Instruction insn, bool*
                         }
                     }
                     new_act.cat = null;
-                    // Activation slots are pooled by depth index and NOT
-                    // zeroed before reuse. Every other call path (generator
-                    // resume, tailcall, super-call) explicitly initializes
-                    // async_gen_state; this fast path must too, or a plain
-                    // call reusing a slot last occupied by a generator body
-                    // at the same depth inherits a stale non-null pointer
-                    // that vm_throw.c3's unwind walk and the YIELD paths read
-                    // unconditionally. One store, no measurable cost.
+                    // This path cannot call activation_begin(): it publishes the
+                    // slot to the GC only after the frame is fully built (see the
+                    // deferred `vm.activation_count++` below), whereas the helper
+                    // publishes immediately. It must therefore repeat the helper's
+                    // pooled-slot initialization by hand — async_gen_state and
+                    // async_promise here, new_target further down. Keep the two in
+                    // sync: any field added to activation_begin belongs here too.
                     new_act.async_gen_state = null;
                     new_act.curr_pc = target_fast.code;
                     new_act.bottom = new_bottom;
@@ -1522,10 +1521,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                     }
 
                     // Push activation
-                    Activation* new_act_r = &vm.activations[vm.activation_count];
-                    vm.activation_count++;
-                    new_act_r.max_heap_reg = 0;
-                    new_act_r.caller_valstack_top = vm.valstack_top;
+                    Activation* new_act_r = activation_begin(vm);
 
                     new_act_r.parent = ds.act;
                     new_act_r.func = target;
@@ -1540,13 +1536,10 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                                     | (target.has_direct_eval() ? ACT_FLAG_DIRECT_EVAL : 0);
                     vm.heap.tval_copy_ref(&new_act_r.this_binding, &gs.this_binding);
                     new_act_r.flags |= ACT_FLAG_THIS_OWNED;
-                    // vm.activations[] slots are not zeroed between pushes — a
+                    // new.target stays null (from activation_begin): a
                     // generator/async function can never itself be a `new`
-                    // target (ES2015 §14.4: generator/async function objects
-                    // have no [[Construct]]), so new.target must always read
-                    // undefined on resume, not whatever a previous activation
-                    // at this same array index left behind.
-                    new_act_r.new_target = null;
+                    // target — ES2015 §14.4 gives generator/async function
+                    // objects no [[Construct]].
 
                     // Copy saved registers to valstack
                     $if $feature(HEAP_VERIFY):
@@ -1785,10 +1778,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                 }
 
                 // Push activation frame (same pattern as non-generator compiled calls)
-                Activation* new_act_g = &vm.activations[vm.activation_count];
-                vm.activation_count++;
-                new_act_g.max_heap_reg = 0;
-                new_act_g.caller_valstack_top = vm.valstack_top;
+                Activation* new_act_g = activation_begin(vm);
                 new_act_g.parent = ds.act;
                 new_act_g.func = target;
                 new_act_g.var_env = gen_var_env;
@@ -1810,8 +1800,6 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                 if (target.has_direct_eval()) {
                     new_act_g.flags |= ACT_FLAG_DIRECT_EVAL;
                 }
-                new_act_g.async_promise = null;
-                new_act_g.async_gen_state = null;
                 {
                     TVal raw_this_g = ds.regs_base[callee_reg + 1];
                     vm.heap.tval_copy_ref(&new_act_g.this_binding, &raw_this_g);
@@ -1925,10 +1913,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                 return (TVal){};
             }
 
-            Activation* new_act = &vm.activations[vm.activation_count];
-            vm.activation_count++;
-            new_act.max_heap_reg = 0;
-            new_act.caller_valstack_top = vm.valstack_top;
+            Activation* new_act = activation_begin(vm);
 
             EnvRecord* call_var_env2 = (*hobj.extra_ptr()).func.var_env;
             // Only allocate a fresh scope when the function actually uses its env
@@ -1948,10 +1933,8 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
             if (target.has_direct_eval()) {
                 new_act.flags |= ACT_FLAG_DIRECT_EVAL;
             }
-            new_act.async_promise = null;
-            new_act.async_gen_state = null;
-            // A regular (non-construct) call has no [[NewTarget]]; clear the
-            // stale value from a prior `new` that reused this pooled slot.
+            // A regular (non-construct) call has no [[NewTarget]] —
+            // activation_begin already cleared the pooled slot's stale value.
             // Arrows resolve new.target lexically from their captured value.
             //
             // Eval functions are special (ES2015 §18.2.1.1 PerformEval step
@@ -2543,10 +2526,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                 return (TVal){};
             }
 
-            Activation* new_act = &vm.activations[vm.activation_count];
-            vm.activation_count++;
-            new_act.max_heap_reg = 0;
-            new_act.caller_valstack_top = vm.valstack_top;
+            Activation* new_act = activation_begin(vm);
 
             EnvRecord* super_var_env = (*super_hobj.extra_ptr()).func.var_env;
             if (try fv_su = env::env_create_function_scope(vm.heap, (*super_hobj.extra_ptr()).func.var_env)) { super_var_env = fv_su; }
@@ -2564,8 +2544,6 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
             new_act.flags = ACT_FLAG_CONSTRUCT | ACT_FLAG_SUPER_CTOR
                           | (super_is_derived ? ACT_FLAG_DERIVED : 0)
                           | (super_target.has_direct_eval() ? ACT_FLAG_DIRECT_EVAL : 0);
-            new_act.async_promise = null;
-            new_act.async_gen_state = null;
             vm.heap.tval_copy_ref(&new_act.this_binding, &ds.regs_base[callee_reg + 1]);
             new_act.flags |= ACT_FLAG_THIS_OWNED;
             new_act.new_target = new_target;  // Pass through new.target
@@ -2985,14 +2963,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                 return (TVal){};
             }
 
-            Activation* new_act = &vm.activations[vm.activation_count];
-            vm.activation_count++;
-            // Pooled activation slots are reused without zeroing; clear the
-            // generator borrow or this frame inherits the stale GeneratorState
-            // of whatever generator body last ran at this depth.
-            new_act.async_gen_state = null;
-            new_act.max_heap_reg = 0;
-            new_act.caller_valstack_top = vm.valstack_top;
+            Activation* new_act = activation_begin(vm);
 
             EnvRecord* ctor_var_env = (*hobj.extra_ptr()).func.var_env;
             if (try fv_ct = env::env_create_function_scope(vm.heap, (*hobj.extra_ptr()).func.var_env)) { ctor_var_env = fv_ct; }
@@ -3038,15 +3009,6 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                           | (target.has_direct_eval() ? ACT_FLAG_DIRECT_EVAL : 0)
                           | ACT_FLAG_THIS_OWNED
                           | (target.is_derived_ctor() ? ACT_FLAG_DERIVED : 0);
-            // Activation slots are pooled by depth index and reused without
-            // zeroing, so both async fields would otherwise carry over from
-            // whatever generator/async frame last occupied this index. A
-            // constructor is never async (ACT_FLAG_CONSTRUCT above clears
-            // ACT_FLAG_ASYNC, which gates the async_promise reads), but the
-            // stale pointers are still visible to code that reads the fields
-            // unconditionally — mirrors the super-call path above.
-            new_act.async_promise = null;
-            new_act.async_gen_state = null;
             vm.heap.tval_copy_ref(&new_act.this_binding, &this_tval);
             new_act.new_target = hobj;  // constructor function, not instance
 

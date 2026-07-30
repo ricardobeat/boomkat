@@ -67,9 +67,12 @@ fn void mark_activation_regs(heap::Heap* h, Activation* act, TVal* frame_end) @i
 ///  - new_target: an HObject* for the constructor/newTarget. Defensive — every
 ///    repro attempted co-rooted it via a caller register or the class binding,
 ///    but marking it removes the dependence on that incidental rooting.
-///  - async_promise: the async function/module's outer Promise, owned while the
-///    activation is live and settled only after the body returns. Defensive:
-///    co-rooted by the microtask queue / resolve-reject closures in practice.
+///  - async_promise: the async function/module's outer Promise, settled only
+///    after the body returns. Co-rooted by the caller's result register and the
+///    microtask queue in practice, so the mark itself is defensive — but it is
+///    UNGUARDED by ACT_FLAG_ASYNC and therefore depends on every push site
+///    clearing the field (activation_begin). A stale pointer here is a freed
+///    HObject* and marking it corrupts the heap; see Activation.async_promise.
 ///  - async_gen_state: the GeneratorState this frame is resuming; mark its
 ///    contents so a suspended-then-resumed async generator is not swept mid-body.
 ///    Defensive: the gs is normally reachable via its owning generator object.
@@ -267,14 +270,12 @@ fn bool invoke_getter(Vm* vm, hobject::AccessorResult* acc,
         return false;
     }
 
-    Activation* new_act = &vm.activations[vm.activation_count];
-    vm.activation_count++;
-    // Pooled activation slots are reused without zeroing; clear the
-    // generator borrow or this frame inherits the stale GeneratorState
-    // of whatever generator body last ran at this depth.
-    new_act.async_gen_state = null;
-    new_act.max_heap_reg = 0;
-    new_act.caller_valstack_top = vm.valstack_top;
+    // Getter invocation is never async and never a construct call: the
+    // pooled-slot pointer fields (async_promise, async_gen_state, new_target)
+    // are all cleared by activation_begin, so new.target reads undefined here
+    // however the property access was reached (including super.prop from a
+    // constructor).
+    Activation* new_act = activation_begin(vm);
 
     EnvRecord* invoke_getter_var_env = (*func_obj.extra_ptr()).func.var_env;
     if (try fv_ig = env::env_create_function_scope(vm.heap, (*func_obj.extra_ptr()).func.var_env)) { invoke_getter_var_env = fv_ig; }
@@ -287,10 +288,6 @@ fn bool invoke_getter(Vm* vm, hobject::AccessorResult* acc,
     new_act.bottom = new_bottom;
     new_act.retval = act.bottom + result_reg;
     new_act.flags = 0;
-    // Getter invocation is never a construct call — new.target must read as
-    // undefined inside the getter body, regardless of how the property
-    // access was reached (including via super.prop from a constructor).
-    new_act.new_target = null;
     if (target.has_direct_eval()) {
         new_act.flags |= ACT_FLAG_DIRECT_EVAL;
     }
@@ -329,6 +326,39 @@ fn bool invoke_getter(Vm* vm, hobject::AccessorResult* acc,
 
     *needs_restart = true;
     return true;
+}
+
+/// Push a fresh activation onto vm.activations[] and initialize every field
+/// whose stale value would be READ by a later frame.
+///
+/// vm.activations[] is a pool indexed by depth and reused WITHOUT zeroing, so a
+/// raw pointer field is only sound if EVERY push writes it. Two fields are read
+/// unconditionally — without any flag guard — by code that runs for ordinary
+/// frames:
+///   - async_promise: mark_activation_fields() marks it on every GC for every
+///     activation below activation_count. A stale value left by a settled async
+///     frame at the same depth is a freed HObject*; mark_hobject then writes
+///     set_reachable() into freed memory and drains its (garbage) prototype and
+///     property pointers, which ends in sweep() free()ing a pointer it never
+///     allocated.
+///   - async_gen_state: the unwind walk in vm_throw.c3 and the YIELD parent
+///     search in vm_generators.c3 both dereference it on `!= null` alone.
+/// new_target is included because NEWTARGET reads it directly and a plain call
+/// must not observe a prior `new` on the same slot.
+///
+/// Callers must still set parent/func/var_env/lex_env/curr_pc/bottom/retval and
+/// OR in their own flags; those are written unconditionally at every site today.
+/// Anything new that a non-async or non-generator frame can read must be
+/// initialized HERE, not at the individual call sites.
+macro Activation* activation_begin(Vm* vm) {
+    Activation* act = &vm.activations[vm.activation_count];
+    vm.activation_count++;
+    act.async_promise = null;
+    act.async_gen_state = null;
+    act.new_target = null;
+    act.max_heap_reg = 0;
+    act.caller_valstack_top = vm.valstack_top;
+    return act;
 }
 
 /// Track a heap-ref store in the current activation.  Call after any
