@@ -2336,7 +2336,19 @@ fn void? CompilerContext.for_statement(&self) {
                 }
                 ushort iter_var = self.declare_var(name_tok.str_value, decl_kind);
                 if (is_lexical) {
+                    // Mark the freshly-declared iter-var entry as captured
+                    // and force its reads through the env (resolves_var →
+                    // SCOPE_ERROR → GETVAR).  The matching has_captured_local
+                    // flip is required so the register-resident-locals
+                    // elision in CompilerContext.finish() does NOT NOP the
+                    // per-iteration PUTLEX/INITTZ below — NOP'ing them
+                    // leaves the env without the binding and the body's
+                    // GETVAR throws "p is not defined" (regression fixed
+                    // when this flag was set here but the elide gate missed
+                    // it).  Mirrors the outer-scope walk above, which sets
+                    // both flags together.
                     self.scope_stack[self.scope_depth - 1].is_captured = true;
+                    self.has_captured_local = true;
                     self.emit_simple(Opcode.PUSH_LEX);
                     self.cur_lex_depth++;
                     self.emit_a_bc(Opcode.INITTZ, 0, self.add_string_constant(name_tok.str_value));
