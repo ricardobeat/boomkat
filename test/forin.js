@@ -52,5 +52,34 @@ for (var i in arr) {
 }
 assert(idx_count >= 3, "for-in on array finds at least 3 keys");
 
+// --- Prototype-chain shadowing ---
+// A non-enumerable own property hides a same-named enumerable one further up
+// the chain (EnumerateObjectProperties records every own key it visits).
+var shadow_base = { sk: 1 };
+var shadow_obj = Object.create(shadow_base);
+Object.defineProperty(shadow_obj, "sk", { value: 2, enumerable: false });
+var shadow_count = 0;
+for (var k in shadow_obj) { shadow_count = shadow_count + 1; }
+assert(shadow_count == 0, "non-enumerable own key shadows inherited enumerable");
+
+// Deeper than the lazily-probed level window, exercising the eager fallback.
+var deep = { dk: 1 };
+for (var i = 0; i < 25; i++) { deep = Object.create(deep); }
+Object.defineProperty(deep, "dk", { value: 0, enumerable: false });
+var deep_count = 0;
+for (var k in deep) { deep_count = deep_count + 1; }
+assert(deep_count == 0, "shadowing holds past the lazy level window");
+
+// --- Large key sets ---
+// Enough keys to promote the de-duplication set to its hash index, with a
+// second level whose keys all miss: the probe must terminate on every miss.
+var many_base = {};
+for (var i = 0; i < 60; i++) { many_base["h" + i] = i; }
+var many = Object.create(many_base);
+for (var i = 0; i < 60; i++) { many["g" + i] = i; }
+var many_count = 0;
+for (var k in many) { many_count = many_count + 1; }
+assert(many_count == 120, "120 keys across two levels enumerate once each");
+
 print("PASS: " + pass + " / " + (pass + fail) + " assertions");
 if (fail > 0) { print("SOME TESTS FAILED"); }
