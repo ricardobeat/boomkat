@@ -1,0 +1,50 @@
+--- Bytecode ---
+[  0] CHKGLOBALLEX    r0, 0
+[  1] INITTZ          r0, 0
+[  2] NEWOBJ          r1 = r0, r0
+[  3] LDTRUE          r2 = r0, r0
+[  4] IF_FALSE        r2, +2
+[  5] LDINT           r3, +1
+[  6] JUMP            +2
+[  7] LDINT           r4, +2
+[  8] LDREG           r3 = r4, r0
+[  9] TOPROPKEY       r3 = r0, r0
+[ 10] LDINT           r4, +2
+[ 11] ???             r1 = r3, r4
+[ 12] LDREG           r0 = r1, r0
+[ 13] PUTLEX          r0, 0
+[ 14] GETGLOBAL       r1, 1
+[ 15] LDCONST         r2, 2
+[ 16] GETPROP         r3 = r1, r2
+[ 17] LDREG           r4 = r1, r0
+[ 18] GETGLOBAL       r5, 0
+[ 19] LDTRUE          r6 = r0, r0
+[ 20] IF_FALSE        r6, +3
+[ 21] LDINT           r8, +1
+[ 22] LDREG           r7 = r8, r0
+[ 23] JUMP            +2
+[ 24] LDINT           r8, +2
+[ 25] LDREG           r7 = r8, r0
+[ 26] GETPROP_CACHE   r8 = r5, r7
+[ 27] LDREG           r5 = r8, r0
+[ 28] LDINT           r6, +2
+[ 29] CALL            r3 = r3, r2
+[ 30] GETGLOBAL       r1, 1
+[ 31] LDCONST         r2, 2
+[ 32] GETPROP         r3 = r1, r2
+[ 33] LDREG           r4 = r1, r0
+[ 34] GETGLOBAL       r5, 0
+[ 35] LDTRUE          r8 = r0, r0
+[ 36] IF_FALSE        r8, +2
+[ 37] LDINT           r9, +1
+[ 38] JUMP            +2
+[ 39] LDINT           r10, +2
+[ 40] LDREG           r9 = r10, r0
+[ 41] LDREG           r8 = r9, r0
+[ 42] CALL_GLOBAL     r6, argc=1, K[3]
+[ 43] GETPROP_CACHE   r7 = r5, r6
+[ 44] LDREG           r5 = r7, r0
+[ 45] LDINT           r6, +2
+[ 46] CALL            r3 = r3, r2
+[ 47] RETUNDEF        
+--- End bytecode ---
