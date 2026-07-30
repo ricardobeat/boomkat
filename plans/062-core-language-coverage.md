@@ -136,7 +136,7 @@ non-enumerable ones — as "already seen", so a same-named enumerable prototype
 property is not emitted. We only record the keys we actually yield.
 
 Tests: `language/statements/for-in/order-enumerable-shadowed.js`,
-`12.6.4-2.js`, `S12.6.4_A7_T2.js`
+`12.6.4-2.js`
 
 ### G. TDZ for a `let`/`const` self-reference is missed inside a function body
 
@@ -215,6 +215,13 @@ while the reduced form resolves correctly. Reproduce under the harness before
 assuming a fix is needed — may be an ordering/job-count assertion rather than a
 value bug.
 
+### N. `for-in` yields keys deleted during enumeration (found in batch 1)
+
+`language/statements/for-in/S12.6.4_A7_T2.js` was listed under group F but is a
+different bug: we pre-collect the key list, so a property deleted mid-loop is
+still yielded (ours: `aa1baundefinedca3`, expected: `aa1ca3`). Spec requires
+liveness — a key whose property was deleted before its turn is skipped.
+
 ### M. BigInt precision limit (out of scope, needs a skip entry)
 
 `does-not-equals/bigint-and-number-extremes.js` and
@@ -225,13 +232,21 @@ int128); these belong in `SKIP_FILES` alongside the existing
 
 ## Execution
 
-Three agents at a time in `.worktrees/batch1|2|3`, each reset to current `main`,
-each scoped to one group. Suggested batching by independence:
+Batch 1 (merged, validated): A (async finally/return), F (for-in shadowing),
+J (construct prototype fallback). Batch 2 partial (merged, validated):
+B (`await` identifier), I (`delete` grouping). Post-merge main: phase 2 → 1761
+pass / 0 fail / 2 unexpected CE (the two BigInt extremes, group M), phase 7 →
+1184 pass / 21 fail, phase 24 → 1227 pass / 4 fail; rosetta 100/100, golden
+bytecode 10/10. Group D+E is in flight: TDZ + completion-value fixes landed 10
+of 13 tests; `scope-head-lex-open/close` + `scope-body-lex-open` (closure
+capture of the head TDZ environment) remain.
 
-1. A (async finally/return), F (for-in shadowing), J (construct prototype fallback)
-2. D+E (for-in head TDZ + completion value — same file, one agent), B (`await` identifier), I (`delete` grouping)
+Remaining batches — agents in `.worktrees/agent-1|2|3`, each reset to current
+`main`, each scoped to one group:
+
+2. D+E (for-in head TDZ + completion value — same file, one agent) — IN FLIGHT, 3 scope tests left
 3. C (for-in comma head), G (nested TDZ), K (escaped `async` / no-LineTerminator)
-4. H (const assignment), L (await thenable), M (BigInt skip entries)
+4. H (const assignment), L (await thenable), M (BigInt skip entries) + N (for-in deletion liveness)
 
 ## Verification
 
