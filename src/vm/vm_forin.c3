@@ -18,6 +18,12 @@ const uint FORIN_INITIAL_CAP = 64;
 /// cache lines of pointers and scanning beats hashing.
 const uint FORIN_SEEN_HASH_THRESHOLD = 12;
 
+/// Slot count of the index built at promotion.  MUST be a power of two —
+/// ForInSeen probes with `& index_mask` and relies on the walk visiting every
+/// slot, so a non-power-of-two mask makes a miss loop forever.  Sized to keep
+/// the load factor at or below 1/2 at the promotion threshold.
+const uint FORIN_SEEN_INDEX_CAP = 64;
+
 /// Chain levels probed lazily for shadowing before falling back to eager
 /// recording.  Sized to cover any realistic prototype chain while keeping
 /// ForInSeen small enough to live on the stack.
@@ -70,9 +76,11 @@ fn bool forin_ensure_cap(Heap* h, HString*** arr, uint* cap, uint need) {
 /// already well mixed, so it is used directly rather than hashing the pointer.
 macro uint forin_seen_slot(ForInSeen* s, HString* key) => key.hash & s.index_mask;
 
-/// (Re)build the open-addressing index at `index_cap` slots, sized to keep the
-/// load factor at or below 1/2.  Returns false only on allocation failure, in
-/// which case the set stays valid and simply keeps scanning linearly.
+/// (Re)build the open-addressing index at `index_cap` slots, which MUST be a
+/// power of two.  Callers keep the load factor at or below 1/2 so a probe
+/// always terminates on an empty slot.  Returns false only on allocation
+/// failure, in which case the set stays valid and simply keeps scanning
+/// linearly.
 fn bool ForInSeen.reindex(&self, Heap* h, uint index_cap) @local {
     uint* tbl = (uint*)h.alloc_func(h.heap_udata, (usz)index_cap * uint::size);
     if (tbl == null) return false;
@@ -111,7 +119,7 @@ fn bool ForInSeen.append(&self, Heap* h, HString* key) @local {
     if (self.index == null) {
         // Switch to hashing once linear scanning stops paying off.
         if (self.count > FORIN_SEEN_HASH_THRESHOLD) {
-            self.reindex(h, FORIN_SEEN_HASH_THRESHOLD * 4);
+            self.reindex(h, FORIN_SEEN_INDEX_CAP);
         }
         return true;
     }
