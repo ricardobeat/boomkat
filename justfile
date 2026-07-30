@@ -80,6 +80,15 @@ lldb file="test/simple.js":
     c3c -O0 build duktape_c3
     lldb ./out/duktape_c3 -b -o "run {{file}}" -o "bt"
 
+# Build the AddressSanitizer test262 runner (`out/test262_runner_asan`): the
+# `test262_runner_asan` target is -O0 with `"sanitize": "address"`, for chasing
+# use-after-free / heap-overflow bugs the ordinary runner only shows as a
+# sporadic crash. Not part of `just all` (ASAN + -O0 is slow), so build it
+# explicitly — a stale ASAN binary reports clean on code it does not contain.
+# Usage: just build-asan && echo test/simple.js | ./out/test262_runner_asan --worker
+build-asan:
+    @make out/test262_runner_asan
+
 # Build with NaN-boxing disabled (`-D NONANBOX`)
 build-nonanbox t="duktape_c3":
     c3c -D NONANBOX build "{{t}}"

@@ -12,12 +12,17 @@ target_sources = $(shell jq -r '.["c-sources"][]' project.json) \
                      if [ -d "$$s" ]; then find "$$s" -name '*.c3'; else echo "$$s"; fi; \
                  done)
 
-.PHONY: all lib test262_runner duktape_c3 duktape_c3_debug clean
+.PHONY: all lib test262_runner test262_runner_asan duktape_c3 duktape_c3_debug clean
 
 all: lib test262_runner duktape_c3
 
 lib: out/lib.a
 test262_runner: out/test262_runner
+# Deliberately not in `all`: the ASAN build is -O0 + sanitizer instrumentation
+# and would slow every default build. Build it explicitly when chasing a
+# lifetime bug, otherwise a stale binary reports clean results for code it
+# does not contain.
+test262_runner_asan: out/test262_runner_asan
 duktape_c3: out/duktape_c3
 duktape_c3_debug: out/duktape_c3_debug
 
@@ -26,6 +31,9 @@ out/lib.a: project.json $(call target_sources,lib)
 
 out/test262_runner: project.json $(call target_sources,test262_runner)
 	c3c build test262_runner
+
+out/test262_runner_asan: project.json $(call target_sources,test262_runner_asan)
+	c3c build test262_runner_asan
 
 out/duktape_c3: project.json $(call target_sources,duktape_c3)
 	c3c build duktape_c3
