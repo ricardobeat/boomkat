@@ -196,6 +196,15 @@ struct GeneratorState {
     // caller's local copy of the dequeued struct) so the mark phase can see it
     // for as long as the request is being serviced.
     TVal ag_current_value;
+    // Cached callable wrapper used to re-enter this suspended body (see
+    // builtins::async_resume_wrapper). Those resume paths hand control back to
+    // a full VM execution and therefore drop native_frame_depth to 0, which
+    // re-enables temproot clearing — so the wrapper cannot be a bare local
+    // protected only by its temproot, or the safepoint GC inside the call
+    // sweeps the very object being called through. Caching it here makes it a
+    // real root (mark_generator_state marks it) and removes a per-resume
+    // allocation.
+    void* resume_wrapper;     // HObject* (opaque)
     // How the async-gen body last suspended (ES2018 §27.6): AWAIT means the body
     // suspended internally on an await and the drain must NOT settle the current
     // request — a microtask resume will re-drive it. YIELD/RETURN/THROW settle.
@@ -2049,6 +2058,9 @@ fn void Heap.mark_generator_state(&self, GeneratorState* gs) {
         self.mark_hobject((HObject*)gs.ag_current_request);
     }
     self.mark_tval(&gs.ag_current_value);
+    if (gs.resume_wrapper != null) {
+        self.mark_hobject((HObject*)gs.resume_wrapper);
+    }
     // Async-generator request queue: each pending request holds a completion
     // value and a promise capability (the promise to settle) that must stay
     // reachable while queued.

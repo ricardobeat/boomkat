@@ -4155,6 +4155,38 @@ fn bool register_promise_constructor(EnvRecord* global_env, Heap* heap) {
 // Async/await resume and reject callbacks
 // ============================================================================
 
+/// Get the callable wrapper used to re-enter a suspended async body, creating
+/// it on first use and caching it on the GeneratorState.
+///
+/// The wrapper MUST NOT be a bare local: both callers hand control to a full VM
+/// execution and drop native_frame_depth to 0 first (correctly — the resumed
+/// body is not a nested builtin frame, and leaving the depth raised would
+/// suppress temproot clearing and string sweeping for the whole body). At depth
+/// 0 a safepoint GC inside the call clears temproots, so a wrapper protected
+/// only by its temproot is swept while the call is still dispatching through
+/// it. Caching on the gs makes it a real root — mark_generator_state marks it —
+/// and drops one allocation per resume.
+///
+/// Returns null only on allocation failure.
+fn HObject* async_resume_wrapper(Heap* heap, GeneratorState* gs) {
+    HObject* func_obj;
+    if (gs.resume_wrapper != null) {
+        func_obj = (HObject*)gs.resume_wrapper;
+    } else {
+        HObject*? func_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
+        if (catch err = func_raw) { return null; }
+        func_obj = func_raw;
+        func_obj.flags.callable = true;
+        (*func_obj.extra_ptr()).func.comp_func = (CompiledFunction*)gs.func;
+        gs.resume_wrapper = (void*)func_obj;
+    }
+    // The body's environments move with each suspension, so refresh them on
+    // every use rather than trusting what the last resume cached.
+    (*func_obj.extra_ptr()).func.var_env = (EnvRecord*)gs.var_env;
+    (*func_obj.extra_ptr()).func.lex_env = (EnvRecord*)gs.lex_env;
+    return func_obj;
+}
+
 /// Resume callback for async/await. Called as a microtask when a pending
 /// Promise settles with a fulfilled value.  Re-enters the suspended async
 /// function at the AWAIT point via the generator resume mechanism.
@@ -4177,17 +4209,12 @@ fn void builtin_async_resume(BuiltinContext* ctx) {
 
     // Build a callable TVal for the compiled function and invoke it directly.
     // vm_call_fn_impl Case 3 checks resume_gen and restores the saved PC/regs.
-    HObject*? func_raw = ctx.heap.alloc_object(hobject::ObjClass.FUNCTION);
-    if (catch err = func_raw) {
+    HObject* func_obj = async_resume_wrapper(ctx.heap, gs);
+    if (func_obj == null) {
         ctx.heap.resume_gen = null;
         ctx.result.set_undefined();
         return;
     }
-    HObject* func_obj = func_raw;
-    func_obj.flags.callable = true;
-    (*func_obj.extra_ptr()).func.comp_func = (CompiledFunction*)gs.func;
-    (*func_obj.extra_ptr()).func.var_env = (EnvRecord*)gs.var_env;
-    (*func_obj.extra_ptr()).func.lex_env = (EnvRecord*)gs.lex_env;
 
     TVal func_tv;
     func_tv.set_object(func_obj);
@@ -4227,17 +4254,12 @@ fn void builtin_async_reject(BuiltinContext* ctx) {
     // Build a callable TVal for the compiled function and invoke it directly.
     // vm_call_fn_impl Case 3 checks resume_gen and restores the saved PC/regs.
     // LOAD_RESUME will inject the throw via vm_throw_value.
-    HObject*? func_raw = ctx.heap.alloc_object(hobject::ObjClass.FUNCTION);
-    if (catch err = func_raw) {
+    HObject* func_obj = async_resume_wrapper(ctx.heap, gs);
+    if (func_obj == null) {
         ctx.heap.resume_gen = null;
         ctx.result.set_undefined();
         return;
     }
-    HObject* func_obj = func_raw;
-    func_obj.flags.callable = true;
-    (*func_obj.extra_ptr()).func.comp_func = (CompiledFunction*)gs.func;
-    (*func_obj.extra_ptr()).func.var_env = (EnvRecord*)gs.var_env;
-    (*func_obj.extra_ptr()).func.lex_env = (EnvRecord*)gs.lex_env;
 
     TVal func_tv;
     func_tv.set_object(func_obj);
