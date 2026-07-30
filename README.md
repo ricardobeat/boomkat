@@ -103,30 +103,23 @@ duktape-c3/
 
 ## Design Notes
 
-### Tagged Values
+[docs/architecture.md](docs/architecture.md) is the full guide: how a script
+gets from source to running code, and how the compiler, VM, object model, and
+collector fit together. The short version:
 
-Like original Duktape, the default build uses NaN-boxing for efficient value representation:
-- 64-bit doubles for numbers
-- Special NaN bit patterns for undefined, null, bool, pointer
-- 48-bit fast integers and pointer tagging for heap objects
+**Tagged values.** The default build NaN-boxes every value into 8 bytes, using
+the unused payload space in IEEE 754 NaNs for undefined, null, booleans,
+pointers, and 48-bit fast integers. Pass `-D NONANBOX` for a 16-byte tagged
+union with the same semantics.
 
-Pass `-D NONANBOX` to use an explicit 16-byte tagged union instead.
+**Memory.** Reference counting reclaims most values immediately, and
+mark-and-sweep collects the cycles it cannot. Strings are interned so equality
+is pointer identity, with long strings deliberately left out to avoid concat
+bloat. Object headers come from fixed-block pools.
 
-### Memory Management
-
-Hybrid approach:
-- **Reference counting** for immediate reclamation
-- **Mark-and-sweep GC** for cycles and bulk cleanup
-- **String interning** with selective interning to avoid concat bloat
-- **Fixed-block object pools** for common object sizes
-
-### Bytecode VM
-
-Register-based VM with:
-- Fixed 32-bit instructions and multiple operand formats
-- Direct constant-pool access
-- Inline property/variable caches
-- Fused opcodes for hot paths
+**Bytecode VM.** Register-based, with fixed 32-bit instructions in five operand
+formats, inline caches for property and variable access, hidden classes behind
+those caches, and fused opcodes on the hot paths.
 
 ## License
 
