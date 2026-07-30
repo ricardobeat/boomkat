@@ -1211,115 +1211,127 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     // finally_offset.  The VM unconditionally reads and advances past this word,
     // so it must be preserved even after compaction.  We mark those slots in
     // `keep[]` before building the pc_map.
-    if (!self.disable_optimize && self.code_count > 0) {
-        // Step 1: mark TRY jump slots as non-removable.
-        bool* nop_keep = (bool*)h.alloc_func(h.heap_udata, (usz)self.code_cap);
-        if (nop_keep == null) { self.cleanup(); return COMPILE_ERROR~; }
-        mem::clear(nop_keep, (sz)((usz)self.code_count));
-        for (uint i = 0; i < self.code_count; i++) {
-            if (self.code[i].op == Opcode.TRY && i + 1 < self.code_count) {
-                nop_keep[i + 1] = true;
-            }
-            // MOVE_GG's trailing word (a NOP holding the source name index in
-            // its BC) is read by the VM as the second half of the two-word
-            // instruction; keep it through compaction like TRY's finally slot.
-            if (self.code[i].op == Opcode.MOVE_GG && i + 1 < self.code_count) {
-                nop_keep[i + 1] = true;
-            }
-            // JMP_LT_G's trailing word (a NOP holding the global's name index
-            // in its BC) is the second half of the two-word instruction.
-            if (self.code[i].op == Opcode.JMP_LT_G && i + 1 < self.code_count) {
-                nop_keep[i + 1] = true;
-            }
-        }
-
-        // Step 2: build pc_map[old_pc] → new_pc.
-        // NOP slots that are not kept map to the new_pc of the next kept slot.
-        uint* pc_map = (uint*)h.alloc_func(h.heap_udata, (usz)((long)(self.code_cap + 1) * (long)uint::size));
-        if (pc_map == null) { h.free_func(h.heap_udata, nop_keep); self.cleanup(); return COMPILE_ERROR~; }
+    // The guard is on code_count alone, NOT on disable_optimize: Step 4 below
+    // is the only place func.code / func.code_count are ever assigned, so
+    // skipping this block wholesale left every compiled function with a null
+    // code pointer and `--no-optimize` segfaulted on entry to the VM. Steps
+    // 1-3 (which only exist to compact NOPs and remap offsets) are gated
+    // individually instead, and Step 4 already copies verbatim when
+    // disable_optimize is set.
+    if (self.code_count > 0) {
+        bool* nop_keep = null;
+        uint* pc_map = null;
         uint new_count = 0;
-        for (uint i = 0; i < self.code_count; i++) {
-            pc_map[i] = new_count;
-            if (self.code[i].op != Opcode.NOP || nop_keep[i]) {
-                new_count++;
+        if (!self.disable_optimize) {
+            // Step 1: mark TRY jump slots as non-removable.
+            nop_keep = (bool*)h.alloc_func(h.heap_udata, (usz)self.code_cap);
+            if (nop_keep == null) { self.cleanup(); return COMPILE_ERROR~; }
+            mem::clear(nop_keep, (sz)((usz)self.code_count));
+            for (uint i = 0; i < self.code_count; i++) {
+                if (self.code[i].op == Opcode.TRY && i + 1 < self.code_count) {
+                    nop_keep[i + 1] = true;
+                }
+                // MOVE_GG's trailing word (a NOP holding the source name index in
+                // its BC) is read by the VM as the second half of the two-word
+                // instruction; keep it through compaction like TRY's finally slot.
+                if (self.code[i].op == Opcode.MOVE_GG && i + 1 < self.code_count) {
+                    nop_keep[i + 1] = true;
+                }
+                // JMP_LT_G's trailing word (a NOP holding the global's name index
+                // in its BC) is the second half of the two-word instruction.
+                if (self.code[i].op == Opcode.JMP_LT_G && i + 1 < self.code_count) {
+                    nop_keep[i + 1] = true;
+                }
             }
-        }
-        pc_map[self.code_count] = new_count; // sentinel for targets at end
 
-        // Step 3: remap all branch/handler offsets in-place.
-        for (uint i = 0; i < self.code_count; i++) {
-            Opcode cop = self.code[i].op;
-            switch (cop) {
-                case Opcode.JUMP:
-                case Opcode.BREAK:
-                case Opcode.CONTINUE: {
-                    // WIDE_SABC: target = (pc+1) + sabc
-                    int sabc = self.code[i].get_sabc();
-                    int tgt_old = (int)i + 1 + sabc;
-                    int tgt_new = (int)pc_map[(uint)tgt_old];
-                    int new_sabc = tgt_new - ((int)pc_map[i] + 1);
-                    self.code[i] = bytecode::make_sabc(cop, new_sabc);
+            // Step 2: build pc_map[old_pc] → new_pc.
+            // NOP slots that are not kept map to the new_pc of the next kept slot.
+            pc_map = (uint*)h.alloc_func(h.heap_udata, (usz)((long)(self.code_cap + 1) * (long)uint::size));
+            if (pc_map == null) { h.free_func(h.heap_udata, nop_keep); self.cleanup(); return COMPILE_ERROR~; }
+            for (uint i = 0; i < self.code_count; i++) {
+                pc_map[i] = new_count;
+                if (self.code[i].op != Opcode.NOP || nop_keep[i]) {
+                    new_count++;
                 }
-                case Opcode.IF_TRUE:
-                case Opcode.IF_FALSE: {
-                    // A_SBX: target = (pc+1) + sbx
-                    uint ra = (uint)self.code[i].a;
-                    int sbx = self.code[i].get_sbc();
-                    int tgt_old = (int)i + 1 + sbx;
-                    int tgt_new = (int)pc_map[(uint)tgt_old];
-                    int new_sbx = tgt_new - ((int)pc_map[i] + 1);
-                    self.code[i] = bytecode::make_a_sbx(cop, ra, new_sbx);
-                }
-                case Opcode.JMP_NLT:
-                case Opcode.JMP_NLE:
-                case Opcode.JMP_NGT:
-                case Opcode.JMP_NGE:
-                case Opcode.JMP_LT:
-                case Opcode.JMP_LE:
-                case Opcode.JMP_GT:
-                case Opcode.JMP_GE:
-                case Opcode.JMP_SEQ:
-                case Opcode.JMP_SNEQ: {
-                    // ABC: signed 8-bit offset in field A; target = (pc+1) + (int)(char)a
-                    // NOP removal only shrinks distances, so the new offset is <= old.
-                    int off = (int)(ichar)self.code[i].a;
-                    int tgt_old = (int)i + 1 + off;
-                    int tgt_new = (int)pc_map[(uint)tgt_old];
-                    int new_off = tgt_new - ((int)pc_map[i] + 1);
-                    // Offset must still fit in signed 8 bits (removal only shrinks gaps).
-                    $assert $defined(new_off);
-                    self.code[i].a = (uint)(char)new_off;
-                }
-                case Opcode.JMP_LT_G: {
-                    // Two-word ABC: signed 8-bit offset in field A, applied by
-                    // the VM after BOTH words are consumed, so the target is
-                    // (pc + 2) + off — and the new base is likewise the slot
-                    // after the kept trailing word.
-                    int off = (int)(ichar)self.code[i].a;
-                    int tgt_old = (int)i + 2 + off;
-                    int tgt_new = (int)pc_map[(uint)tgt_old];
-                    int new_off = tgt_new - ((int)pc_map[i] + 2);
-                    $assert $defined(new_off);
-                    self.code[i].a = (uint)(char)new_off;
-                }
-                case Opcode.TRY: {
-                    // A_BC: BC = catch_offset (absolute from TRY instruction).
-                    // Adjacent slot i+1 (NOP, kept): BC = finally_offset (same base).
-                    uint try_new = pc_map[i];
-                    uint catch_off_old = self.code[i].get_bc();
-                    uint catch_tgt_old = i + catch_off_old;
-                    uint new_catch_off = pc_map[catch_tgt_old] - try_new;
-                    uint finally_off_old = self.code[i + 1].get_bc();
-                    uint new_finally_off = 0;
-                    if (finally_off_old != 0) {
-                        uint finally_tgt_old = i + finally_off_old;
-                        new_finally_off = pc_map[finally_tgt_old] - try_new;
-                    }
-                    self.code[i] = bytecode::make_a_bc(Opcode.TRY, (uint)self.code[i].a, new_catch_off);
-                    self.code[i + 1] = bytecode::make_a_bc(Opcode.NOP, 0, new_finally_off);
-                }
-                default: {}
             }
+            pc_map[self.code_count] = new_count; // sentinel for targets at end
+
+            // Step 3: remap all branch/handler offsets in-place.
+            for (uint i = 0; i < self.code_count; i++) {
+                Opcode cop = self.code[i].op;
+                switch (cop) {
+                    case Opcode.JUMP:
+                    case Opcode.BREAK:
+                    case Opcode.CONTINUE: {
+                        // WIDE_SABC: target = (pc+1) + sabc
+                        int sabc = self.code[i].get_sabc();
+                        int tgt_old = (int)i + 1 + sabc;
+                        int tgt_new = (int)pc_map[(uint)tgt_old];
+                        int new_sabc = tgt_new - ((int)pc_map[i] + 1);
+                        self.code[i] = bytecode::make_sabc(cop, new_sabc);
+                    }
+                    case Opcode.IF_TRUE:
+                    case Opcode.IF_FALSE: {
+                        // A_SBX: target = (pc+1) + sbx
+                        uint ra = (uint)self.code[i].a;
+                        int sbx = self.code[i].get_sbc();
+                        int tgt_old = (int)i + 1 + sbx;
+                        int tgt_new = (int)pc_map[(uint)tgt_old];
+                        int new_sbx = tgt_new - ((int)pc_map[i] + 1);
+                        self.code[i] = bytecode::make_a_sbx(cop, ra, new_sbx);
+                    }
+                    case Opcode.JMP_NLT:
+                    case Opcode.JMP_NLE:
+                    case Opcode.JMP_NGT:
+                    case Opcode.JMP_NGE:
+                    case Opcode.JMP_LT:
+                    case Opcode.JMP_LE:
+                    case Opcode.JMP_GT:
+                    case Opcode.JMP_GE:
+                    case Opcode.JMP_SEQ:
+                    case Opcode.JMP_SNEQ: {
+                        // ABC: signed 8-bit offset in field A; target = (pc+1) + (int)(char)a
+                        // NOP removal only shrinks distances, so the new offset is <= old.
+                        int off = (int)(ichar)self.code[i].a;
+                        int tgt_old = (int)i + 1 + off;
+                        int tgt_new = (int)pc_map[(uint)tgt_old];
+                        int new_off = tgt_new - ((int)pc_map[i] + 1);
+                        // Offset must still fit in signed 8 bits (removal only shrinks gaps).
+                        $assert $defined(new_off);
+                        self.code[i].a = (uint)(char)new_off;
+                    }
+                    case Opcode.JMP_LT_G: {
+                        // Two-word ABC: signed 8-bit offset in field A, applied by
+                        // the VM after BOTH words are consumed, so the target is
+                        // (pc + 2) + off — and the new base is likewise the slot
+                        // after the kept trailing word.
+                        int off = (int)(ichar)self.code[i].a;
+                        int tgt_old = (int)i + 2 + off;
+                        int tgt_new = (int)pc_map[(uint)tgt_old];
+                        int new_off = tgt_new - ((int)pc_map[i] + 2);
+                        $assert $defined(new_off);
+                        self.code[i].a = (uint)(char)new_off;
+                    }
+                    case Opcode.TRY: {
+                        // A_BC: BC = catch_offset (absolute from TRY instruction).
+                        // Adjacent slot i+1 (NOP, kept): BC = finally_offset (same base).
+                        uint try_new = pc_map[i];
+                        uint catch_off_old = self.code[i].get_bc();
+                        uint catch_tgt_old = i + catch_off_old;
+                        uint new_catch_off = pc_map[catch_tgt_old] - try_new;
+                        uint finally_off_old = self.code[i + 1].get_bc();
+                        uint new_finally_off = 0;
+                        if (finally_off_old != 0) {
+                            uint finally_tgt_old = i + finally_off_old;
+                            new_finally_off = pc_map[finally_tgt_old] - try_new;
+                        }
+                        self.code[i] = bytecode::make_a_bc(Opcode.TRY, (uint)self.code[i].a, new_catch_off);
+                        self.code[i + 1] = bytecode::make_a_bc(Opcode.NOP, 0, new_finally_off);
+                    }
+                    default: {}
+                }
+            }
+
         }
 
         // Step 4: copy the (possibly compacted) instruction stream into the
