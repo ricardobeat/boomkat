@@ -32,6 +32,7 @@ All common tasks are `just` recipes (`just list` to see them all). The fast debu
 | Build a target | `just build <target>` (e.g. `duktape_c3`, `duktape_c3_debug`, `test262_runner`) |
 | Build everything | `just all` |
 | Debug build (`-O0`) | `just build-debug <target>` |
+| ASAN test262 runner | `just build-asan` (`out/test262_runner_asan`) |
 | Rosetta suite | `just rosetta` (22+ language features; the go-to regression check) |
 | One test262 phase | `just test262-phase <n>` |
 | Full test262 | `just test262` |
@@ -51,6 +52,17 @@ Typical debug loop: minimize a failure to a single-line `.js` repro → `just ru
 ## Build Flags
 
 - `-D NONANBOX` — disable NaN-boxing, using the 16-byte tagged union `TVal` instead. Default is nanbox-on. Use `just build-nonanbox` or `just test-nonanbox` to exercise the non-nanbox path (e.g., for 16-bit ESP32 targets).
+
+## AddressSanitizer
+
+`just build-asan` builds `out/test262_runner_asan` (the `test262_runner_asan` target: same sources as the normal runner, `-O0` plus `"sanitize": "address"`). Use it to turn a use-after-free or heap-overflow that only shows up as a sporadic crash into a precise allocation/free trace. Drive it exactly like the normal worker:
+
+```
+just build-asan
+echo test262/test/<path>.js | ./out/test262_runner_asan --worker
+```
+
+**It is deliberately excluded from `just all` and `make all`** — ASAN at `-O0` would slow every default build. That means it does not rebuild unless you ask for it, so **always rebuild before trusting a clean result**: a stale ASAN binary reports no errors for code it does not contain, which reads as proof a lifetime bug is fixed when the binary simply predates the fix.
 
 ## NaN-Boxing (src/types.c3)
 
