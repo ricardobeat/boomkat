@@ -1,40 +1,76 @@
-// Test duplicate data property names in strict mode (ES5 §11.1.5)
+// Duplicate property names in object literals.
+// ES5 §11.1.5 made duplicate data properties a SyntaxError in strict mode.
+// ES2015 §12.2.6 REMOVED that restriction entirely: a duplicate key is now
+// always legal and the last value simply wins, in strict mode as in sloppy.
+// The one duplicate that is still an early SyntaxError is `__proto__: value`
+// appearing twice (ES2015 §12.2.6.1), because that form sets [[Prototype]]
+// rather than defining an own property.
 // Our engine is strict-only, so all code runs in strict mode.
 
-// Test 1: Duplicate data property name should be SyntaxError
+// Test 1: Duplicate data property name is legal; last value wins
 try {
-    eval("({a: 1, a: 2})");
-    print("FAIL: test1 - duplicate data property should throw SyntaxError");
+    var o1 = eval("({a: 1, a: 2})");
+    if (o1.a === 2) {
+        print("PASS: test1 - duplicate data property keeps last value");
+    } else {
+        print("FAIL: test1 - expected a === 2, got " + o1.a);
+    }
+} catch (e) {
+    print("FAIL: test1 - unexpected error: " + e.message);
+}
+
+// Test 2: Duplicate numeric property names are legal; last value wins
+try {
+    var o2 = eval("({0: 1, 0: 2})");
+    if (o2[0] === 2) {
+        print("PASS: test2 - duplicate numeric property keeps last value");
+    } else {
+        print("FAIL: test2 - expected [0] === 2, got " + o2[0]);
+    }
+} catch (e) {
+    print("FAIL: test2 - unexpected error: " + e.message);
+}
+
+// Test 3: Numeric and string equivalent keys collapse to one property
+try {
+    var o3 = eval("({0: 1, '0': 2})");
+    if (o3[0] === 2 && Object.keys(o3).length === 1) {
+        print("PASS: test3 - numeric '0' and string '0' are the same key");
+    } else {
+        print("FAIL: test3 - got [0]=" + o3[0] + " keys=" + Object.keys(o3).length);
+    }
+} catch (e) {
+    print("FAIL: test3 - unexpected error: " + e.message);
+}
+
+// Test 3a: Duplicate `__proto__: value` is still an early SyntaxError
+try {
+    eval("({__proto__: null, __proto__: null})");
+    print("FAIL: test3a - duplicate __proto__ should throw SyntaxError");
 } catch (e) {
     if (e instanceof SyntaxError) {
-        print("PASS: test1 - duplicate data property throws SyntaxError");
+        print("PASS: test3a - duplicate __proto__ throws SyntaxError");
     } else {
-        print("FAIL: test1 - expected SyntaxError, got " + typeof e);
+        print("FAIL: test3a - expected SyntaxError, got " + e.constructor.name);
     }
 }
 
-// Test 2: Duplicate numeric property names should be SyntaxError
+// Test 3b: A single `__proto__: value` sets the prototype, and the other
+// property forms named __proto__ are exempt from the duplicate rule
 try {
-    eval("({0: 1, 0: 2})");
-    print("FAIL: test2 - duplicate numeric property should throw SyntaxError");
-} catch (e) {
-    if (e instanceof SyntaxError) {
-        print("PASS: test2 - duplicate numeric property throws SyntaxError");
+    var o3b = eval("({__proto__: null})");
+    var okProto = Object.getPrototypeOf(o3b) === null;
+    // computed / shorthand / method keys define own properties instead
+    eval("({['__proto__']: 1, __proto__: null})");
+    eval("({__proto__: null, __proto__() {}})");
+    eval("({__proto__: null, get __proto__() {}})");
+    if (okProto) {
+        print("PASS: test3b - single __proto__ sets prototype, other forms exempt");
     } else {
-        print("FAIL: test2 - expected SyntaxError, got " + typeof e);
+        print("FAIL: test3b - prototype not set to null");
     }
-}
-
-// Test 3: Numeric and string equivalent keys should be duplicate
-try {
-    eval("({0: 1, '0': 2})");
-    print("FAIL: test3 - numeric and string '0' should be duplicate");
 } catch (e) {
-    if (e instanceof SyntaxError) {
-        print("PASS: test3 - numeric '0' and string '0' are duplicate");
-    } else {
-        print("FAIL: test3 - expected SyntaxError, got " + typeof e);
-    }
+    print("FAIL: test3b - unexpected error: " + e.message);
 }
 
 // Test 4: Non-duplicate property names should not throw

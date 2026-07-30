@@ -2860,31 +2860,7 @@ fn void builtin_array_from(BuiltinContext* ctx) {
 
     if (iter_sym != null) {
         // GetMethod(items, @@iterator) — ToObject if needed for property access
-        HObject* items_obj = null;
-        if (items.is_object() && items.get_heapptr() != null) {
-            items_obj = (HObject*)items.get_heapptr();
-        } else if (!items.is_undefined() && !items.is_null()) {
-            // Wrap primitive in temporary object to look up @@iterator —
-            // ToObject's prototype selection depends on the primitive's own
-            // type (ES2015 §7.1.13), not always String.prototype: a
-            // Number.prototype[Symbol.iterator]/Boolean.prototype[...]
-            // installed by user code must be reachable too.
-            HObject*? wrapped = heap.alloc_object(hobject::ObjClass.OBJECT);
-            if (try w = wrapped) {
-                items_obj = w;
-                HObject* wrap_proto = heap.string_proto;
-                if (items.is_string()) {
-                    (*items_obj.extra_ptr()).prim.primitive_value = items;
-                } else if (items.is_fastint() || items.is_number()) {
-                    wrap_proto = heap.number_proto;
-                } else if (items.is_boolean()) {
-                    wrap_proto = heap.bool_proto;
-                } else if (items.is_bigint()) {
-                    wrap_proto = heap.bigint_proto;
-                }
-                items_obj.prototype = wrap_proto;
-            }
-        }
+        HObject* items_obj = to_object_for_lookup(heap, items);
 
         if (items_obj != null) {
             TVal? iter_method_opt = builtins_generic_get(items_obj, iter_sym, ctx);

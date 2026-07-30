@@ -2148,9 +2148,11 @@ fn TVal? Vm.run(Vm* vm) {
             if (ds.needs_restart) break;
             double exp_c = vm_to_number(vm,rc);
             if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
-            // ES2016 §12.6.4: abs(base) == 1 && exp is ±Infinity → NaN (C99 pow returns 1)
+            // ES2016 §12.6.4 (same result as Math.pow): a NaN exponent is NaN
+            // even for base 1, and abs(base) == 1 with a ±Infinity exponent is
+            // NaN. C99 pow returns 1 for both, so patch them here.
             double exp_r;
-            if (math::abs(exp_b) == 1.0 && !math::is_finite(exp_c) && !math::is_nan(exp_c)) {
+            if (math::abs(exp_b) == 1.0 && !math::is_finite(exp_c)) {
                 exp_r = double::nan;
             } else {
                 exp_r = math::pow(exp_b, exp_c);

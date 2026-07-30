@@ -96,10 +96,20 @@ var n1 = Date.now();
 var n2 = Date.now();
 assert(n2 >= n1, "Date.now() is monotonic");
 
-// Test 20: toString includes GMT
+// Test 20: toString is local time, so it must not be asserted against a
+// fixed year — west of UTC the epoch falls on 1969-12-31. Assert the parts
+// that are timezone-independent instead: the GMT offset that toString always
+// carries (§21.4.4.41 TimeZoneString), and the UTC accessors.
 var d12 = new Date(0);
 var ts2 = d12.toString();
-assert(ts2.indexOf('1970') >= 0 || ts2.indexOf('Invalid') >= 0,
-       "toString contains 1970 or is Invalid Date");
+assert(ts2.indexOf('GMT') >= 0, "toString contains GMT offset");
+assert(d12.toUTCString() === "Thu, 01 Jan 1970 00:00:00 GMT",
+       "toUTCString of epoch is exact");
+assert(d12.getUTCFullYear() === 1970 && d12.getUTCMonth() === 0
+       && d12.getUTCDate() === 1, "epoch is 1970-01-01 in UTC");
+// The local-time year is either 1969 or 1970 depending on the offset sign.
+var ly = d12.getFullYear();
+assert(ly === 1969 || ly === 1970, "local year of epoch is 1969 or 1970");
+assert(ts2.indexOf(String(ly)) >= 0, "toString year agrees with getFullYear");
 
 console.log(__failed ? "SOME TESTS FAILED" : "ALL DATE TESTS PASSED");

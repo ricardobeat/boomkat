@@ -4256,6 +4256,14 @@ fn ushort? CompilerContext.object_literal(&self) {
     // (large array-of-literal initialisers would otherwise exhaust registers).
     bool super_bound = false;
 
+    // ES2015 §12.2.6.1 Early Errors: it is a SyntaxError for a literal to
+    // contain more than one `__proto__: value` property. Only that form counts
+    // — shorthand, methods, accessors and computed keys are all exempt (they
+    // define an ordinary own property rather than setting [[Prototype]]).
+    // A local is exactly the right scope: nested literals recurse into their
+    // own call and so track their own count.
+    bool seen_proto_key = false;
+
     if (!self.check(TokenType.RBRACE)) {
         for (;;) {
             if (self.check(TokenType.RBRACE)) {
@@ -4619,6 +4627,10 @@ fn ushort? CompilerContext.object_literal(&self) {
                 if (is_generator_method || is_async_method) return COMPILE_ERROR~;
                 self.expect(TokenType.COLON)!;
                 if (is_proto_key) {
+                    // ES2015 §12.2.6.1: a second `__proto__: value` is an early
+                    // SyntaxError.
+                    if (seen_proto_key) return COMPILE_ERROR~;
+                    seen_proto_key = true;
                     // `__proto__: fn` is a prototype-set, not a property
                     // definition — no NamedEvaluation (§12.2.6.8 step 5).
                     self.has_inferred_name = false;

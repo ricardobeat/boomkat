@@ -10,9 +10,25 @@ if (obj.b === 2) { pass = pass + 1; } else { print("FAIL: obj.b should remain 2"
 // 2. Delete non-existent property returns true
 if (delete obj.nonexistent) { pass = pass + 1; } else { print("FAIL: delete obj.nonexistent should be true"); fail = fail + 1; }
 
-// 3. Delete from primitives (always returns true)
-if (delete null.a) { pass = pass + 1; } else { print("FAIL: delete null.a should be true"); fail = fail + 1; }
-if (delete undefined.a) { pass = pass + 1; } else { print("FAIL: delete undefined.a should be true"); fail = fail + 1; }
+// 3. Delete on a non-reference returns true without evaluating anything.
+// `delete 42` / `delete "hello"` are not references, so the result is true
+// (ES2015 §12.5.3.2 step 3). But `delete null.a` IS a property reference:
+// its base is evaluated and ToObject(null) throws a TypeError, in strict and
+// sloppy alike. Verified against node.
+try {
+    delete null.a;
+    print("FAIL: delete null.a should throw TypeError"); fail = fail + 1;
+} catch (e) {
+    if (e instanceof TypeError) { pass = pass + 1; }
+    else { print("FAIL: delete null.a threw " + e.constructor.name); fail = fail + 1; }
+}
+try {
+    delete undefined.a;
+    print("FAIL: delete undefined.a should throw TypeError"); fail = fail + 1;
+} catch (e) {
+    if (e instanceof TypeError) { pass = pass + 1; }
+    else { print("FAIL: delete undefined.a threw " + e.constructor.name); fail = fail + 1; }
+}
 if (delete 42) { pass = pass + 1; } else { print("FAIL: delete 42 should be true"); fail = fail + 1; }
 if (delete "hello") { pass = pass + 1; } else { print("FAIL: delete 'hello' should be true"); fail = fail + 1; }
 
@@ -36,10 +52,14 @@ if (nested.x.z === 20) { pass = pass + 1; } else { print("FAIL: nested.x.z shoul
 if (delete nested.x) { pass = pass + 1; } else { print("FAIL: delete nested.x"); fail = fail + 1; }
 if (nested.x === undefined) { pass = pass + 1; } else { print("FAIL: nested.x should be undefined after delete"); fail = fail + 1; }
 
-// 7. Variable delete (sloppy mode: returns true, variable unaffected)
-var myvar = "hello";
-if (delete myvar) { pass = pass + 1; } else { print("FAIL: delete myvar (should be true)"); fail = fail + 1; }
-if (myvar === "hello") { pass = pass + 1; } else { print("FAIL: myvar should still be 'hello' after delete"); fail = fail + 1; }
+// 7. SKIPPED: variable delete (`delete myvar`).
+// This is sloppy-mode-only behaviour. Deleting an unqualified identifier is
+// an early SyntaxError in strict code (ES2015 §12.5.3.1), and this engine
+// runs all code as strict, so the statement cannot even be parsed here --
+// it has to stay commented out rather than merely skipped at runtime.
+// Not an engine bug: matches node's behaviour under "use strict".
+//   var myvar = "hello";
+//   delete myvar;  // SyntaxError in strict mode
 
 // 8. Delete from prototype chain (own property delete vs inherited)
 function Foo() {}
