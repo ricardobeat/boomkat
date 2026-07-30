@@ -145,10 +145,10 @@ fn bool ForInSeen.push_level(&self, HObject* level) @local {
 /// True iff `key` is an own named property of an already-walked level.
 ///
 /// Symbols are exempt: they are yielded by their own phase and never
-/// participate in shadowing.  A String object's `length` is exempt because its
-/// indexed characters — not the named-property slot — are what the exotic
-/// phase enumerates, so the slot must not suppress an inherited enumerable
-/// `length`.
+/// participate in shadowing.  A String object's own `length` is NOT exempt —
+/// it is non-enumerable, so EnumerateObjectProperties still records it as
+/// visited and it suppresses a same-named enumerable property inherited from
+/// the prototype chain.
 fn bool ForInSeen.shadowed(&self, Heap* h, HString* key) @local {
     if (key.is_symbol()) return false;
     for (uint i = 0; i < self.nearer_count; i++) {
@@ -166,8 +166,8 @@ fn void ForInSeen.free(&self, Heap* h) @local {
 
 /// Eager fallback for chain levels beyond FORIN_NEARER_MAX: copy `level`'s own
 /// non-enumerable string keys straight into the seen set, giving the same
-/// shadowing effect as a lazy `shadowed` probe would.  The `is_symbol` and
-/// String-`length` exemptions mirror `shadowed`.
+/// shadowing effect as a lazy `shadowed` probe would.  The `is_symbol`
+/// exemption mirrors `shadowed`.
 fn bool forin_record_non_enumerable(Heap* h, ForInSeen* seen, HObject* level) {
     for (uint i = 0; i < level.prop_count; i++) {
         void* pk = level.prop_key_at(i);
@@ -175,7 +175,6 @@ fn bool forin_record_non_enumerable(Heap* h, ForInSeen* seen, HObject* level) {
         if (level.get_prop_flags(i).enumerable) continue;
         HString* k = (HString*)pk;
         if (k.is_symbol()) continue;
-        if (level.flags.exotic_stringobj && pk == h.strs[heap::BuiltinStr.LENGTH]) continue;
         if (seen.contains(k)) continue;
         if (!seen.append(h, k)) return false;
     }
