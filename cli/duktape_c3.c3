@@ -62,9 +62,12 @@ fn int main(String[] args) {
     TVal? result = v.execute(f);
     hp.drain_microtasks((void*)v);
     if (catch err = result) {
-        io::eprintfn("VM error: %s (at execute)", err);
+        // An uncaught JS exception (recorded by the THROW opcode or by
+        // vm_uncaught_error) and a genuine internal VM fault are different
+        // failures, so report exactly one of them: printing both made every
+        // ordinary uncaught throw look like an engine crash.
+        bool printed = false;
         if (v.heap.has_error) {
-            // Print uncaught error message
             TVal* err_val = &v.heap.error_value;
             if (err_val.is_object()) {
                 HObject* err_obj = (HObject*)err_val.get_heapptr();
@@ -78,10 +81,14 @@ fn int main(String[] args) {
                             io::eprintf("Uncaught: ");
                             for (usz i = 0; i < msg_data.len; i++) io::eprintf("%c", msg_data[i]);
                             io::eprintf("\n");
+                            printed = true;
                         }
                     }
                 }
             }
+        }
+        if (!printed) {
+            io::eprintfn("VM error: %s (at execute)", err);
         }
         return 1;
     }
