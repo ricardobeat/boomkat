@@ -1,0 +1,18 @@
+--- Bytecode ---
+[  0] CHKGLOBALFUNC   r0, 0
+[  1] CLOSURE         r0, 0
+[  2] DECLGLOBALFUNC  r0, 0
+[  3] LDTRUE          r2 = r0, r0
+[  4] LDINT           r3, +4
+[  5] LDINT           r4, +5
+[  6] CALL_GLOBAL     r0, argc=3, K[0]
+[  7] RETUNDEF        
+
+--- Inner function 0 ---
+[  0] IF_FALSE        r0, +2
+[  1] ADDI            r3 = r1, r1
+[  2] JUMP            +2
+[  3] LDINT           r5, +2
+[  4] MUL             r3 = r2, r5
+[  5] RET             r3 = r0, r0
+--- End bytecode ---
