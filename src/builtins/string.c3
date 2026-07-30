@@ -1250,7 +1250,7 @@ fn void builtin_string_proto_trim(BuiltinContext* ctx) {
     char* data = s_hstr.get_cstr();
     uint len = s_hstr.blen;
 
-    // ── Trim leading whitespace (by codepoint) ──
+    // Trim leading whitespace (by codepoint).
     uint start = 0;
     while (start < len) {
         uint seq_len;
@@ -1265,7 +1265,7 @@ fn void builtin_string_proto_trim(BuiltinContext* ctx) {
         return;
     }
 
-    // ── Trim trailing whitespace (by codepoint) ──
+    // Trim trailing whitespace (by codepoint).
     uint end = len;
     while (end > start) {
         // Walk backward to find the lead byte of the last codepoint
@@ -1425,7 +1425,7 @@ fn void builtin_string_proto_split(BuiltinContext* ctx) {
         }
     }
 
-    // ── RegExp separator ─────────────────────────────────────────────────
+    // RegExp separator.
     if (is_regexp_object(sep_val)) {
         if (limit == 0) {
             TVal lv0; lv0.set_fastint(0);
@@ -1538,7 +1538,7 @@ fn void builtin_string_proto_split(BuiltinContext* ctx) {
         return;
     }
 
-    // ── String separator: ToString(separator), must happen before limit=0 check ──
+    // String separator: ToString(separator), must happen before limit=0 check.
     HString* sep_hstr = builtin_to_string_vm(ctx, sep_val);
     if (ctx.should_throw) return;
     if (sep_hstr == null) {
@@ -1784,7 +1784,7 @@ fn void builtin_string_proto_replace(BuiltinContext* ctx) {
     char* input = s_hstr.get_cstr();
     int input_len = (int)s_hstr.blen;
 
-    // ── Check for @@replace protocol (ES6 §21.1.3.14 step 2) ─────────────
+    // Check for @@replace protocol (ES6 §21.1.3.14 step 2).
     // Step 2: If searchValue is neither undefined nor null, GetMethod(searchValue, @@replace).
     // Use builtins_generic_get so accessor/getter properties are invoked (propagating throws).
     if (ctx.argc >= 1 && !search_val.is_null() && !search_val.is_undefined()) {
@@ -1827,7 +1827,7 @@ fn void builtin_string_proto_replace(BuiltinContext* ctx) {
         }
     }
 
-    // ── RegExp searchValue ────────────────────────────────────────────────
+    // RegExp searchValue.
     if (is_regexp_object(search_val)) {
         HObject* rx = (HObject*)search_val.get_heapptr();
 
@@ -1845,7 +1845,7 @@ fn void builtin_string_proto_replace(BuiltinContext* ctx) {
         }
 
         if (!global_flag) {
-            // ── Non-global: single match ──────────────────────────────────
+            // Non-global: single match.
             int out_start = 0;
             int out_end = 0;
             int out_num_captures = 0;
@@ -1926,7 +1926,7 @@ fn void builtin_string_proto_replace(BuiltinContext* ctx) {
             ctx.result.set_string(builtin_intern_string(ctx.heap, buf[:bOff]));
             return;
         } else {
-            // ── Global: replace all matches ───────────────────────────────
+            // Global: replace all matches.
             HString* li_key = builtin_intern_string(ctx.heap, "lastIndex");
             TVal zero_tv; zero_tv.set_fastint(0);
             rx.put_prop(li_key, zero_tv, hobject::PROP_FLAGS_WEC);
@@ -2026,7 +2026,7 @@ fn void builtin_string_proto_replace(BuiltinContext* ctx) {
         }
     }
 
-    // ── String searchValue ──────────────────────────────────────────────
+    // String searchValue.
     // Step 5: Let searchString be ? ToString(searchValue).
     HString* search_hstr = builtin_to_string_vm(ctx, search_val);
     if (ctx.should_throw) return;
@@ -3249,7 +3249,7 @@ fn void builtin_string_proto_normalize(BuiltinContext* ctx) {
         return;
     }
 
-    // ── Step 1: Decode CESU-8 → Unicode codepoints (reassembling surrogate pairs) ──
+    // Step 1: Decode CESU-8 → Unicode codepoints (reassembling surrogate pairs).
     char* raw_data = s_hstr.get_cstr();
     uint blen = s_hstr.blen;
 
@@ -3260,7 +3260,7 @@ fn void builtin_string_proto_normalize(BuiltinContext* ctx) {
         return;
     }
 
-    // ── Step 2: Run Unicode normalization via libunicode ────────────────────
+    // Step 2: Run Unicode normalization via libunicode.
     int out_len = 0;
     uint* result_cps = unicode_bindings::unicode_normalize_simple(src_cps,
                         (int)num_cps, n_type, &out_len);
@@ -3279,7 +3279,7 @@ fn void builtin_string_proto_normalize(BuiltinContext* ctx) {
         return;
     }
 
-    // ── Step 3: Encode normalized codepoints back to CESU-8 ─────────────────
+    // Step 3: Encode normalized codepoints back to CESU-8.
     // Worst case: 6 bytes per codepoint (astral in CESU-8)
     usz out_bytes_max = (usz)out_len * 6 + 1;
     char* out_buf = (char*)alloc::malloc_try(mem, (sz)(out_bytes_max)) ?? null;
@@ -3297,7 +3297,7 @@ fn void builtin_string_proto_normalize(BuiltinContext* ctx) {
     }
     mem::free(result_cps);
 
-    // ── Step 4: Create HString from CESU-8 bytes ────────────────────────────
+    // Step 4: Create HString from CESU-8 bytes.
     HString* result_hstr = ctx.heap.str_intern(out_buf[:out_off]);
     mem::free(out_buf);
 

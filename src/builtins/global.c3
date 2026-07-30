@@ -225,7 +225,7 @@ fn void builtin_parse_int(BuiltinContext* ctx) {
         ctx.result.set_number(double::nan);
         return;
     }
-    // ── Radix coercion (ES2015 §18.2.5 step 7: ToInt32) ────────────────────
+    // Radix coercion (ES2015 §18.2.5 step 7: ToInt32).
     // Done before string scanning; a throwing radix must propagate.
     int radix = 0;
     if (ctx.argc > 1) {
@@ -243,7 +243,7 @@ fn void builtin_parse_int(BuiltinContext* ctx) {
     usz blen = h.blen;
     usz i = 0;
 
-    // ── Step 2: strip leading StrWhiteSpace (WhiteSpace + LineTerminator) ──
+    // Step 2: strip leading StrWhiteSpace (WhiteSpace + LineTerminator).
     // Covers ASCII ws plus the common Unicode spaces test262 exercises via
     // their UTF-8 encodings (NBSP U+00A0, BOM U+FEFF, various U+2000..U+200A,
     // U+2028/U+2029, U+1680, U+202F, U+205F, U+3000).
@@ -257,14 +257,14 @@ fn void builtin_parse_int(BuiltinContext* ctx) {
         break;
     }
 
-    // ── Step 4-5: optional sign ────────────────────────────────────────────
+    // Step 4-5: optional sign.
     int sign = 1;
     if (i < blen && (cstr[i] == '+' || cstr[i] == '-')) {
         if (cstr[i] == '-') sign = -1;
         i++;
     }
 
-    // ── Step 8-10: radix normalisation + 0x prefix ─────────────────────────
+    // Step 8-10: radix normalisation + 0x prefix.
     bool strip_prefix = false;
     if (radix == 0) {
         radix = 10;
@@ -281,7 +281,7 @@ fn void builtin_parse_int(BuiltinContext* ctx) {
         radix = 16;
     }
 
-    // ── Step 11-16: consume digits ─────────────────────────────────────────
+    // Step 11-16: consume digits.
     double value = 0.0;
     bool saw_digit = false;
     while (i < blen) {
@@ -373,7 +373,7 @@ fn void builtin_parse_float(BuiltinContext* ctx) {
     usz blen = h.blen;
     usz i = 0;
 
-    // ── Strip leading StrWhiteSpace (WhiteSpace + LineTerminator) ──────────
+    // Strip leading StrWhiteSpace (WhiteSpace + LineTerminator).
     while (i < blen) {
         char c = cstr[i];
         if (c == ' ' || c == '\t' || c == '\n' || c == '\r'
@@ -383,7 +383,7 @@ fn void builtin_parse_float(BuiltinContext* ctx) {
         break;
     }
 
-    // ── Match the longest StrDecimalLiteral prefix (ES2015 §7.1.3.1 Table 10) ──
+    // Match the longest StrDecimalLiteral prefix (ES2015 §7.1.3.1 Table 10).
     // Grammar: [+-]? (Infinity | DecimalDigits? "." DecimalDigits? Exponent?
     //                  | DecimalDigits Exponent?)
     // Crucially, this does NOT include the "0x"/"0X" hex prefix that

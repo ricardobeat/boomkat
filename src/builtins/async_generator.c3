@@ -37,7 +37,7 @@ import duktape::env;
 /// object_proto, generator machinery) and after the async-iterator symbol
 /// helpers are available.
 fn bool register_async_generator(EnvRecord* global_env, Heap* heap) {
-    // ── %AsyncIteratorPrototype% (§27.1.3) ───────────────────────────────
+    // %AsyncIteratorPrototype% (§27.1.3).
     // A plain object inheriting from %Object.prototype% whose sole own member
     // is @@asyncIterator, an accessor-free method returning `this`.
     HObject*? ai_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
@@ -73,7 +73,7 @@ fn bool register_async_generator(EnvRecord* global_env, Heap* heap) {
         }
     }
 
-    // ── %AsyncGeneratorPrototype% (§27.6.1) ──────────────────────────────
+    // %AsyncGeneratorPrototype% (§27.6.1).
     // Inherits from %AsyncIteratorPrototype%; next/return/throw + @@toStringTag.
     HObject*? ag_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = ag_raw) return false;
@@ -94,7 +94,7 @@ fn bool register_async_generator(EnvRecord* global_env, Heap* heap) {
         }
     }
 
-    // ── %AsyncGeneratorFunction.prototype% (= %AsyncGenerator%, §27.4.3) ──
+    // %AsyncGeneratorFunction.prototype% (= %AsyncGenerator%, §27.4.3).
     // Inherits from %Function.prototype%; its own `.prototype` is
     // %AsyncGeneratorPrototype%, and @@toStringTag = "AsyncGeneratorFunction".
     HObject*? agf_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
@@ -120,7 +120,7 @@ fn bool register_async_generator(EnvRecord* global_env, Heap* heap) {
         }
     }
 
-    // ── %AsyncGeneratorFunction% constructor (§27.4.1) ───────────────────
+    // %AsyncGeneratorFunction% constructor (§27.4.1).
     HObject*? ctor_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
     if (catch err = ctor_raw) return false;
     HObject* ctor = ctor_raw;

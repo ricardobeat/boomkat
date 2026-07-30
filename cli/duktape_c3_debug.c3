@@ -96,7 +96,7 @@ fn int main(String[] args) {
         return 1;
     }
 
-    // ── Load source ──────────────────────────────────────────────────────────
+    // Load source.
     time::Time t0 = debug ? time::now() : (time::Time)0;
     char[]? source_opt = file::load_temp(path);
     if (catch err = source_opt) {
@@ -106,7 +106,7 @@ fn int main(String[] args) {
     char[] source = source_opt;
     if (debug) io::printfn("  load source: %d us", (int)(time::now() - t0));
 
-    // ── Create heap ──────────────────────────────────────────────────────────
+    // Create heap.
     time::Time t1 = debug ? time::now() : (time::Time)0;
     Heap*? hp = heap::create(null, null, null, null, null);
     if (catch err = hp) {
@@ -116,7 +116,7 @@ fn int main(String[] args) {
     defer hp.destroy();
     if (debug) io::printfn("  heap create: %d us", (int)(time::now() - t1));
 
-    // ── Create VM ────────────────────────────────────────────────────────────
+    // Create VM.
     time::Time t2 = debug ? time::now() : (time::Time)0;
     Vm*? v = vm::vm_create(hp);
     if (catch err = v) {
@@ -127,7 +127,7 @@ fn int main(String[] args) {
     v.trace = trace_vm;
     if (debug) io::printfn("  vm create:   %d us", (int)(time::now() - t2));
 
-    // ── Compile ──────────────────────────────────────────────────────────────
+    // Compile.
     time::Time t3 = debug ? time::now() : (time::Time)0;
 
     if (module_mode) {
@@ -251,7 +251,7 @@ $endif
         // Already handled above
     }
 
-    // ── Execute ──────────────────────────────────────────────────────────────
+    // Execute.
     time::Time t4 = debug ? time::now() : (time::Time)0;
     TVal? res = v.execute(func);
     if (catch err = res) {

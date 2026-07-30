@@ -572,7 +572,7 @@ fn bool register_generator_constructor(EnvRecord* global_env, Heap* heap) {
         env::env_declare_nonenum(global_env, gf_key, gf_tv);
     }
 
-    // ── AsyncFunction infrastructure (ES2017 §25.7) ──────────────────────────
+    // AsyncFunction infrastructure (ES2017 §25.7).
     // AsyncFunction.prototype inherits from Function.prototype (§25.7.3).
     HObject*? af_proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = af_proto_raw) return false;

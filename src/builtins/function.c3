@@ -759,7 +759,7 @@ fn void builtin_function_proto_bind(BuiltinContext* ctx) {
         (*bound_obj.extra_ptr()).func.bound_args = null;
     }
 
-    // ── Set .length (ES6 §19.2.3.3 SetFunctionLength) ──────────────────
+    // Set .length (ES6 §19.2.3.3 SetFunctionLength).
     // Ordering: BoundFunctionCreate's caller (Function.prototype.bind, ES2022
     // §20.2.3.2) computes and sets L (step 5) before it ever reads targetName
     // (step 6), so "length" must land as an own property before "name",
@@ -822,7 +822,7 @@ fn void builtin_function_proto_bind(BuiltinContext* ctx) {
     len_flags.is_accessor = false;
     bound_obj.put_prop(len_key, len_tv, len_flags);
 
-    // ── Set .name: "bound " + targetName (ES6 §19.2.3.3) ──────────────
+    // Set .name: "bound " + targetName (ES6 §19.2.3.3).
     // Per spec: Get(target, "name"), must invoke accessor getters and
     // propagate any abrupt completion (throw) before creating the bound fn.
     HString* name_key = builtin_intern_string(ctx.heap, "name");
