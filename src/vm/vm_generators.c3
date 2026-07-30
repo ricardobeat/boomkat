@@ -11,7 +11,7 @@ import duktape::re_bindings;
 import std::math;
 
 // ============================================================================
-// vm_generators — generator opcodes
+// Generator opcodes
 // ============================================================================
 
 // Async yield* delegation sub-states (ES2018 §14.4.14 / §27.6.3.8). The
@@ -31,7 +31,7 @@ const uint AYS_AWAIT_RETVAL   = 7; // resuming after Await(received.value) (miss
 /// reactions to `await_obj`, saves the body state with `saved_pc = save_pc`,
 /// signals the drain (ag_did_await), pops the async-gen activation, and returns
 /// control to the drain's caller. `save_pc` is the instruction to re-enter on
-/// resolution — the LOAD_RESUME after AWAIT, or the YIELD_STAR_ASYNC opcode
+/// resolution: the LOAD_RESUME after AWAIT, or the YIELD_STAR_ASYNC opcode
 /// itself for the delegation state machine. Returns false on OOM (the caller
 /// should treat that as a no-op continuation, matching AWAIT's OOM handling).
 fn bool ag_suspend_on_await(Dispatch* ds, GeneratorState* gs, HObject* await_obj, bool await_was_settled, void* save_pc) {
@@ -144,7 +144,7 @@ fn TVal ays_get_prop(Vm* vm, HObject* obj, HString* key, bool* err) {
 
 /// GetMethod(obj, key) (ES §7.3.10): accessor-aware read, then require the
 /// result be undefined/null (→ *found=false) or callable (→ *found=true).
-/// A non-callable, non-nullish value is a TypeError — but that check is left to
+/// A non-callable, non-nullish value is a TypeError, but that check is left to
 /// callers that need it (the async yield* fallbacks only branch on presence).
 fn TVal ays_get_method(Vm* vm, HObject* obj, HString* key, bool* found, bool* err) {
     *found = false;
@@ -200,7 +200,7 @@ fn void ays_pop_to_caller(Dispatch* ds, TVal result) {
 fn bool ays_throw_into_body(Dispatch* ds, GeneratorState* gs, TVal errval) {
     Vm* vm = ds.vm;
     if (vm_throw_value(vm, errval, ds.act, &ds.curr_pc, &ds.needs_restart, true)) {
-        // Caught inside the body — resume there.
+        // Caught inside the body, so resume there.
         ds.needs_restart = true;
         return true;
     }
@@ -246,7 +246,7 @@ fn bool ays_throw_type(Dispatch* ds, GeneratorState* gs, char[] msg) {
 /// GeneratorYield inside the async yield* state machine (ES2018 §14.4.14 async
 /// step 7.a.v): settle the in-flight request with the yielded `value` and
 /// suspend, re-entering YIELD_STAR_ASYNC when the consumer resumes. `value` is
-/// the already-read IteratorValue of the inner result — it is NOT re-Awaited
+/// the already-read IteratorValue of the inner result, which is not re-Awaited
 /// (a manually-implemented async iterator that yields a promise surfaces it
 /// unwrapped) and is placed into a fresh {value, done:false} so the drain's
 /// finish step reads plain data props (never re-invoking the inner getters,
@@ -301,7 +301,7 @@ fn bool ays_await(Dispatch* ds, GeneratorState* gs, TVal value, uint next_step) 
 /// any enclosing try/finally in the body (like an injected `return`), else
 /// completes the generator now so the drain settles {value, done:true}.
 fn void ays_return_from_body(Dispatch* ds, GeneratorState* gs, TVal value) {
-    // Walk up to the nearest catcher with a finally — the innermost catcher
+    // Walk up to the nearest catcher with a finally. The innermost catcher
     // may be a catch-only try (no finally_pc), in which case the return must
     // still route through an enclosing finally.
     Catcher* cat = find_and_unlink_finally_catcher(ds.vm, ds.act);
@@ -328,7 +328,7 @@ fn void ays_return_from_body(Dispatch* ds, GeneratorState* gs, TVal value) {
 /// draining the last activation, halts the VM with `reason` as the return
 /// value instead (no caller frame to resume). Returns false without doing
 /// anything if the current activation isn't an async function with a
-/// Promise attached — the caller must fall back to a plain uncaught error.
+/// Promise attached, so the caller falls back to a plain uncaught error.
 fn bool async_reject_and_pop(Dispatch* ds, TVal reason) {
     Vm* vm = ds.vm;
     if ((ds.act.flags & ACT_FLAG_ASYNC) == 0 || ds.act.async_promise == null) {
@@ -370,7 +370,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
     Vm* vm = ds.vm;
     switch (op) {
         case Opcode.LOAD_RESUME: {
-            // LOAD_RESUME A — load the value passed to .next(val) into A.
+            // LOAD_RESUME A: load the value passed to .next(val) into A.
             // Emitted after YIELD so the yield expression evaluates to the
             // resume value. Also handles throw/return injection: for THROW,
             // call vm_throw_value to find the nearest catcher; for RETURN,
@@ -456,7 +456,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                                 // Try to find a catcher in the caller's chain
                                 if (!vm_throw_value(vm, throw_val, caller_act,
                                                     &caller_act.curr_pc, &ds.needs_restart)) {
-                                    // Unhandled — set error for the VM to return
+                                    // Unhandled, so flag the error for the VM to return
                                     vm.has_error = true;
                                     vm.heap.has_error = true;
                                     if (caller_act.retval != null) {
@@ -464,7 +464,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                                     }
                                 }
                             } else {
-                                // No caller frame in this Vm.run invocation — the
+                                // No caller frame in this Vm.run invocation, so the
                                 // generator body was resumed via the re-entrant
                                 // call_fn path (e.g. an AsyncFromSync adapter's
                                 // .throw() calling this sync generator's .throw()).
@@ -480,7 +480,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                             }
                         }
                     } else {
-                        // Catcher found in generator — the exception will be caught.
+                        // A catcher in the generator will catch this.
                         // Keep resume_gen set but switch to NEXT so the next YIELD
                         // properly saves state and sets gs.state = GEN_SUSPENDED_YIELD.
                         gs_lr.resume_kind = NEXT;
@@ -499,7 +499,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     gs_lr.resume_kind = NEXT;
 
                     // Walk up the catcher chain to the nearest one with a
-                    // finally — the innermost catcher may be a plain
+                    // finally. The innermost catcher may be a plain
                     // catch-only try (no finally_pc), in which case the
                     // return must still route through an enclosing finally.
                     Catcher* ret_cat3 = find_and_unlink_finally_catcher(vm, ds.act);
@@ -507,7 +507,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                         ret_cat3.return_val = ret_val_raw;
                         // If the suspended yield point is already inside this
                         // catcher's finally body (e.g. `try {} finally { yield;
-                        // }`), don't re-enter finally_pc — jump to
+                        // }`), do not re-enter finally_pc; jump to
                         // endfinally_pc instead so the finally doesn't run
                         // twice (mirrors RET_GEN/RETUNDEF_GEN).
                         if (!(ret_cat3.flags & CATCHER_FLAG_PENDING_RETURN)) {
@@ -534,7 +534,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     return (TVal){};
                 }
 
-                // Normal NEXT — load resume value.
+                // A normal NEXT loads the resume value.
                 vm.heap.tval_copy_ref(&ra[0], &gs_lr.resume_value);
                 // Clear resume_gen now that the resume has been fully consumed:
                 // the generator body may go on to call a fresh instance of the
@@ -546,14 +546,14 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 if (vm.heap.resume_gen == gs_lr) { vm.heap.resume_gen = null; }
             }
             // If resume_gen is null (e.g., after AWAIT with non-thenable),
-            // don't overwrite the register — the value is already correct.
+            // do not overwrite the register, whose value is already correct.
             return (TVal){};
         }
 
         case Opcode.AWAIT: {
-            // AWAIT A — await the value in register A.
-            // Per ES2017 §25.5.5.3 / §27.7.5.3 Await, every awaited value —
-            // including non-objects and non-thenables — is routed through
+            // AWAIT A: await the value in register A.
+            // Per ES2017 §25.5.5.3 and §27.7.5.3 Await, every awaited value,
+            // non-objects and non-thenables included, is routed through
             // PromiseResolve(%Promise%, value) and a resume reaction is
             // attached via .then. PromiseResolve performs an observable
             // `Get(x, "constructor")` lookup when x is already a Promise,
@@ -613,7 +613,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     // applicable, otherwise propagate as an uncaught error.
                     // async_reject_and_pop already settles the Promise (or
                     // halts the VM when the last activation drained) and
-                    // restores the caller frame in `ds` — raising an
+                    // restores the caller frame in `ds`, so raising an
                     // uncaught VM error on top of that would report the
                     // failure twice and abandon the just-restored caller, so
                     // only fall back to vm_uncaught_error when there was no
@@ -684,7 +684,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 if (catch _e2 = reject_raw) {
                     // Clear resume_fn's async_state so the GC won't dereference
                     // the freed GeneratorState via var_env, and hand back the
-                    // hold it took above — that was the only one, so this frees.
+                    // hold it took above, which was the only one, so this frees.
                     resume_fn.flags.is_async_state = false;
                     (*resume_fn.extra_ptr()).func.var_env = null;
                     heap::gs_release(gs, (void*)vm.heap, true);
@@ -706,7 +706,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 if (catch _e3 = rxn_raw) {
                     // Clear both callbacks' async_state so the GC won't
                     // dereference the freed GeneratorState via var_env, and hand
-                    // back both holds — the second release frees the state.
+                    // back both holds, and the second release frees the state.
                     resume_fn.flags.is_async_state = false;
                     (*resume_fn.extra_ptr()).func.var_env = null;
                     reject_fn.flags.is_async_state = false;
@@ -767,8 +767,8 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
         }
 
         case Opcode.YIELD: {
-            // YIELD A — suspend generator and return {value: A, done: false}
-            // Prefer async_gen_state from the current activation — this is the stable
+            // YIELD A: suspend generator and return {value: A, done: false}
+            // Prefer async_gen_state from the current activation, the stable
             // reference to the generator being suspended.  heap.resume_gen may have
             // been overwritten by a nested call to another generator's .next() during
             // the body (e.g. a for-of loop over an inner generator), so we cannot
@@ -782,7 +782,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
             // the enclosing generator's state. The sync-generator case reaches
             // this via resume_gen, but an async generator's body is re-driven by
             // async_gen_resume_body/AWAIT, which clears resume_gen before the
-            // thunk runs — so the parent walk is the only surviving link.
+            // thunk runs, so the parent walk is the only surviving link.
             if (gs_yield == null) {
                 Activation* walk_ag = ds.act.parent;
                 while (walk_ag != null) {
@@ -807,7 +807,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 // intervening activations.
                 Activation* gen_act = ds.act;
                 if (ds.act.func != gs.func) {
-                    // Current activation is not the generator — walk parents.
+                    // This activation is not the generator, so walk the parents.
                     Activation* walk = ds.act.parent;
                     while (walk != null) {
                         if (walk.async_gen_state == gs) {
@@ -835,7 +835,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 // The saved PC must point into the generator's bytecode, not
                 // the inner function's bytecode. gen_act.curr_pc was set by
                 // the CALL opcode to the instruction after the call site in
-                // the generator's code — that's where execution should resume.
+                // the generator's code, which is where execution resumes.
                 //
                 // However, the CALL that invoked the default thunk never
                 // completed (the thunk yielded instead of returning). We must
@@ -843,7 +843,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 // resumes, the resume value (.next(val)) is placed into the
                 // correct slot for the code after the CALL to read.
                 if (ds.act.async_gen_state == null && gen_act != ds.act) {
-                    // Yield inside a non-generator inner function — record the
+                    // A yield inside a non-generator inner function records the
                     // call result register for the resume path.
                     Instruction call_insn = gen_act.curr_pc[-1];
                     gs.pending_resume_reg = (uint)call_insn.a;
@@ -873,7 +873,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 ResumeKind rkind = gs.resume_kind;
 
                 if (rkind == THROW) {
-                    // .throw() — inject exception at yield point
+                    // .throw() injects an exception at the yield point.
                     // Pop activation, set has_error so the outer loop
                     // re-enters the generator with an exception pending
                     vm.heap.resume_gen = null;
@@ -886,7 +886,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                         // try/catch inside generator). retval is null when this
                         // activation was entered via the re-entrant call_fn path
                         // (e.g. YIELD_STAR calling a delegated generator's
-                        // .next() directly) — the result is read back via
+                        // .next() directly), so the result is read back via
                         // vm.return_val in that case instead.
                         if (yield_act.retval != null) {
                             vm.heap.tval_copy_ref(yield_act.retval, &gs.throw_value);
@@ -896,7 +896,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
 
                         vm.activation_count--;
                         // activation_count can hit 0 here for the same
-                        // re-entrant-call reason — halt like the plain RET path.
+                        // re-entrant-call reason, so halt like the plain RET path.
                         if (vm.activation_count == 0) {
                             ds.halt = true;
                             ds.halt_value = vm.return_val;
@@ -914,10 +914,10 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 }
 
                 if (rkind == RETURN) {
-                    // .return() — inject return at yield point. If this yield
+                    // .return() injects a return at the yield point. If this yield
                     // is itself inside a try/finally (e.g. the resumed body
                     // yielded again from within a `finally` block), that
-                    // finally must run before the generator completes —
+                    // finally must run before the generator completes, so
                     // mirrors RET_GEN/LOAD_RESUME's RETURN handling instead
                     // of completing unconditionally.
                     Catcher* yield_ret_cat = find_and_unlink_finally_catcher(vm, gen_act);
@@ -946,7 +946,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                         return (TVal){};
                     }
 
-                    // .return() — inject return at yield point
+                    // .return() injects a return at the yield point.
                     // Mark generator as completed, return {value: rv, done: true}
                     gs.state = GEN_COMPLETED;
                     vm.heap.resume_gen = null;
@@ -971,7 +971,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                         Activation* yield_act = &vm.activations[vm.activation_count - 1];
                         // retval is null when this activation was entered via
                         // the re-entrant call_fn path (e.g. YIELD_STAR calling
-                        // a delegated generator's .next() directly) — the
+                        // a delegated generator's .next() directly), so the
                         // result is read back via vm.return_val in that case.
                         if (yield_act.retval != null) {
                             vm.heap.tval_copy_ref(yield_act.retval, &wrapped_val);
@@ -981,7 +981,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
 
                         vm.activation_count--;
                         // activation_count can hit 0 here for the same
-                        // re-entrant-call reason — halt like the plain RET path.
+                        // re-entrant-call reason, so halt like the plain RET path.
                         if (vm.activation_count == 0) {
                             ds.halt = true;
                             ds.halt_value = vm.return_val;
@@ -998,7 +998,8 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     return (TVal){};
                 }
 
-                // Normal .next() — clear resume_gen so CALL handler doesn't try to resume again
+                // A normal .next() clears resume_gen so the CALL handler does not
+                // resume again.
                 vm.heap.resume_gen = null;
             }
 
@@ -1030,7 +1031,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 // Write wrapped result to caller's frame. retval is null when
                 // this activation was entered via the re-entrant call_fn path
                 // (e.g. YIELD_STAR calling a delegated generator's .next()
-                // directly) rather than the CALL opcode — the result is read
+                // directly) rather than the CALL opcode, so the result is read
                 // back via vm.return_val in that case instead.
                 if (yield_act.retval != null) {
                     vm.heap.tval_copy_ref(yield_act.retval, &wrapped_val);
@@ -1040,7 +1041,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
 
                 vm.activation_count--;
                 // activation_count can hit 0 here for the same re-entrant-call
-                // reason — there is no caller activation in *this* Vm.run
+                // reason: there is no caller activation in this Vm.run
                 // invocation to fall back to, so halt like the plain RET path.
                 if (vm.activation_count == 0) {
                     ds.halt = true;
@@ -1059,9 +1060,9 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
         }
 
         case Opcode.YIELD_STAR: {
-            // yield* iterable — delegate to another iterable (ES2020 §14.4.14).
+            // yield* delegates to another iterable (ES2020 §14.4.14).
             // A = result_reg, B = iterable_reg, C = 0.
-            // Use async_gen_state from the current activation — stable reference
+            // Use async_gen_state from the current activation, a stable reference
             // that doesn't get overwritten by nested generator calls.
             TVal iterable_val = *rb;
             GeneratorState* gs = (GeneratorState*)ds.act.async_gen_state;
@@ -1318,7 +1319,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                         // finally block runs before the generator actually completes.
                         gs.delegated_iter = null;
                         TVal no_ret_val = gs.return_value;
-                        // Walk up to the nearest catcher with a finally — the
+                        // Walk up to the nearest catcher with a finally. The
                         // innermost catcher may be a catch-only try (no
                         // finally_pc), in which case the return must still
                         // route through an enclosing finally.
@@ -1390,7 +1391,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     }
                     gs.resume_kind = NEXT; gs.resume_value.set_undefined();
                     if (rd) {
-                        // ES2020 §14.4.14 step 5.c.ii.7: done=true — read value and return it
+                        // ES2020 §14.4.14 step 5.c.ii.7, done=true: read the value and return it.
                         TVal rv2; rv2.set_undefined();
                         {
                             hobject::PropLookupResult rv2_res = rro2.get_prop_or_accessor_proto(vk2, true);
@@ -1414,9 +1415,9 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                             }
                         }
                         // ES2020 §14.4.14 step 5.c.ii.6: delegate's .return() completed (done:true)
-                        // — outer generator returns rv2, routing through any enclosing finally.
+                        // The outer generator returns rv2, routing through any enclosing finally.
                         gs.delegated_iter = null;
-                        // Walk up to the nearest catcher with a finally — the
+                        // Walk up to the nearest catcher with a finally. The
                         // innermost catcher may be a catch-only try (no
                         // finally_pc), in which case the return must still
                         // route through an enclosing finally.
@@ -1437,11 +1438,12 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     received_val = rresult; ys_yield_raw = true; ys_state = YS_YIELD;
                 }
                 else {
-                    // NEXT resume — use resume value for iterator.next()
+                    // A NEXT resume passes the resume value to iterator.next().
                     received_val = gs.resume_value; gs.resume_kind = NEXT; gs.resume_value.set_undefined();
                 }
             } else {
-                // First entry: GetIterator(iterable) — get @@iterator method with accessor support.
+                // First entry runs GetIterator(iterable), reading @@iterator with
+                // accessor support.
                 HString* iter_sym = vm.heap.iterator_symbol;
                 if (iter_sym == null) iter_sym = builtins::ensure_iterator_symbol(vm.heap);
                 if (iter_sym == null) {
@@ -1524,7 +1526,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
             // or to yield forward (done=false case).
             if (ys_state == YS_CALL_NEXT) {
                 HString* nk = intern_string(vm, "next");
-                // Get the .next method — accessor support
+                // Get the .next method, with accessor support.
                 TVal nm; nm.set_undefined(); bool nm_callable = false;
                 {
                     hobject::PropLookupResult nk_res = iterator.get_prop_or_accessor_proto(nk, true);
@@ -1636,7 +1638,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
 
             // State YS_YIELD: suspend the generator and yield received_val to the outer caller.
             // When ys_yield_raw=true, received_val is already a full IteratorResult object
-            // (from the inner iterator's next() result — spec §14.4.14 step 5.a.iv).
+            // (from the inner iterator's next() result, per §14.4.14 step 5.a.iv).
             // Otherwise wrap it in {value: received_val, done: false}.
             if (ys_state == YS_YIELD) {
                 for (uint i = 0; i < gs.num_regs; i++) {
@@ -1670,7 +1672,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     }
                     // retval is null when this activation was entered via the
                     // re-entrant call_fn path (e.g. an outer YIELD_STAR calling
-                    // this generator's .next() directly) — the result is read
+                    // this generator's .next() directly), so the result is read
                     // back via vm.return_val in that case instead.
                     if (p_act.retval != null) {
                         vm.heap.tval_copy_ref(p_act.retval, &p_wrapped);
@@ -1679,7 +1681,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     }
                     vm.activation_count--;
                     // activation_count can hit 0 here for the same
-                    // re-entrant-call reason — halt like the plain RET path.
+                    // re-entrant-call reason, so halt like the plain RET path.
                     if (vm.activation_count == 0) {
                         ds.halt = true;
                         ds.halt_value = vm.return_val;
@@ -1743,7 +1745,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     gs.ays_next_method = nm0;
                 }
                 // §14.4.14 step 6: the initial received completion is
-                // NormalCompletion(undefined) — the delegate's first .next() is
+                // NormalCompletion(undefined): the delegate's first .next() is
                 // always called with undefined, regardless of the argument the
                 // consumer passed to the async generator's first .next(). (Only
                 // resumptions AFTER a delegated yield thread the consumer value.)
@@ -1771,7 +1773,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
 
                 if (await_rejected) {
                     // The awaited promise rejected: throw into the outer body.
-                    // The delegation is abandoned (delegated_iter cleared) —
+                    // The delegation is abandoned, with delegated_iter cleared, so
                     // IteratorClose is NOT performed here (the inner call already
                     // completed abnormally). §14.4.14: `? Await` rethrows.
                     gs.delegated_iter = null; gs.ays_step = AYS_INACTIVE;
@@ -1780,7 +1782,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 }
 
                 if (step == AYS_AWAIT_RETVAL) {
-                    // step 7.c.iii.ii: missing return method — the awaited
+                    // step 7.c.iii.ii, a missing return method: the awaited
                     // received.value is now `settled`; return it as a return
                     // completion (routing through any enclosing finally).
                     gs.delegated_iter = null; gs.ays_step = AYS_INACTIVE;
@@ -1809,7 +1811,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     return (TVal){};
                 }
                 HObject* res_obj = (HObject*)settled.get_heapptr();
-                // IteratorComplete (done read first — observable ordering).
+                // IteratorComplete, reading done first, which is observable.
                 HString* done_k = (HString*)vm.heap.strs[heap::BuiltinStr.DONE];
                 HString* value_k = (HString*)vm.heap.strs[heap::BuiltinStr.VALUE];
                 bool gerr = false;
@@ -1858,7 +1860,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
             // resumption's value, and converting a rejected await to a THROW) is
             // performed by the async-generator drain BEFORE the body is resumed
             // (async_gen_yield_return_await + the YRET fulfill/reject reactions).
-            // So the value delivered here is already unwrapped — do NOT Await it
+            // So the value delivered here is already unwrapped and must not be Awaited
             // again, or the delegate's return() would see a double-awaited value
             // and the observable tick/getter order would gain an extra Await.
             ResumeKind consumer_kind = gs.resume_kind;
@@ -1951,7 +1953,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 return (TVal){};
             }
 
-            // consumer_kind == RETURN — §14.4.14 step 7.c.
+            // consumer_kind == RETURN, per §14.4.14 step 7.c.
             {
                 HString* ret_k = intern_string(vm, "return");
                 bool merr = false; bool found = false;
@@ -1983,7 +1985,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
         }
 
         case Opcode.GEN_START: {
-            // GEN_START — emitted by the compiler after all parameter initialization
+            // GEN_START: emitted by the compiler after all parameter initialization
             // in a generator function.  Reached only during the initial call (when
             // heap.gen_initial_gs is non-null).  Saves the current activation state
             // into the pre-allocated GeneratorState, writes the generator object to
@@ -2021,7 +2023,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
             TVal* retval_g = ds.act.retval;
 
             // ES2015 §25.3.3 step 1: OrdinaryCreateFromConstructor(functionObject,
-            // "%GeneratorPrototype%") — resolved here (after FunctionDeclaration-
+            // "%GeneratorPrototype%"), resolved here, after FunctionDeclaration-
             // Instantiation/param-init has run, per EvaluateBody step ordering) so
             // a default parameter's side effect on functionObject.prototype is
             // observed (generator-created-after-decl-inst.js). Falls back to the
@@ -2071,7 +2073,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
             vm.activation_count--;
 
             if (vm.activation_count == 0) {
-                // Caller was the top-level — return the generator object.
+                // The caller was the top level, so return the generator object.
                 if (retval_g != null) {
                     ds.halt = true;
                     ds.halt_value = *retval_g;

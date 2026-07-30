@@ -11,7 +11,7 @@ import duktape::re_bindings;
 import std::math;
 
 // ============================================================================
-// vm_calls — function/object/generator call dispatch
+// Call dispatch for functions, constructors, and generators
 // ============================================================================
 
 /// Finish initializing a strict `arguments` exotic object: set .length,
@@ -45,11 +45,11 @@ fn void finish_arguments_object(Vm* vm, HObject* args_obj, HObject* callee, uint
 /// Initialize the pending derived-constructor this_binding after super()
 /// produced the constructed object. super() may execute inside an arrow
 /// function whose activation inherited the constructor's uninitialized (TDZ)
-/// this — walk up through TDZ activations until the derived constructor
+/// this, so walk up through TDZ activations until the derived constructor
 /// itself is initialized (§9.2.2 "initialized" state).
 ///
 /// Returns true if the target derived-constructor frame's this_binding was
-/// ALREADY initialized (i.e. this was a second super() call) — per §8.1.1.3.1
+/// already initialized, meaning this is a second super() call. Per §8.1.1.3.1
 /// BindThisValue step 3, that must throw ReferenceError. The base-constructor
 /// side effects (already executed by the time this runs, per §12.3.5.1 step 4
 /// Construct-before-BindThisValue) still happened; only the this-binding is
@@ -57,7 +57,7 @@ fn void finish_arguments_object(Vm* vm, HObject* args_obj, HObject* callee, uint
 fn bool super_init_this_chain(Vm* vm, Activation* act, TVal* constructed, Activation** bound_act = null) {
     // Intermediate frames with a real this (e.g. an object method that
     // invoked the super-capturing arrow) are skipped, not a stop condition;
-    // the walk ends at the first derived-constructor frame — the one whose
+    // the walk ends at the first derived-constructor frame, the one whose
     // super binding this call resolved through.
     Activation* a = act;
     ShadowActFrame* shadow = (ShadowActFrame*)vm.shadow_act_list;
@@ -65,7 +65,7 @@ fn bool super_init_this_chain(Vm* vm, Activation* act, TVal* constructed, Activa
         if (a == null) {
             // The chain may cross a vm_call_fn_impl boundary (e.g. super()
             // inside an iterator .return() invoked by ITER_CLOSE). The outer
-            // activations were memcpy-saved and their live slots zeroed —
+            // activations were memcpy-saved and their live slots zeroed, so
             // continue into the saved copies; they are what gets restored.
             if (shadow == null) break;
             if (shadow.count == 0) { shadow = (ShadowActFrame*)shadow.prev; continue; }
@@ -87,10 +87,10 @@ fn bool super_init_this_chain(Vm* vm, Activation* act, TVal* constructed, Activa
 }
 
 /// Private class fields (ES2022): stamp the class brand and run
-/// `__field_init__(this)` at the spec-mandated point — right after `this` is
+/// `__field_init__(this)` at the point the spec requires, right after `this` is
 /// bound (base constructor: NEW_OBJ; derived constructor: super_init_this_chain).
 /// `ctor_lex_env`/`ctor_var_env` are the CONSTRUCTOR ACTIVATION's own
-/// environments (not the closure template's captured ones) — these are what
+/// environments, not the closure template's captured ones, since these are what
 /// GETVAR/PUTLEX inside the constructor body itself resolve private-name
 /// slots through, so using the same chain here keeps brand/field-init
 /// lookups consistent with the constructor's own view of classScope even
@@ -98,9 +98,9 @@ fn bool super_init_this_chain(Vm* vm, Activation* act, TVal* constructed, Activa
 /// self-binding). `target` is the constructor's CompiledFunction template;
 /// `this_tv` is the bound instance.
 ///
-/// Returns `true` on success (including "nothing to do" — no brand, no
+/// Returns `true` on success, including when there is nothing to do: no brand, no
 /// fields). Returns `false` when duplicate initialization or field-init threw
-/// and the throw was propagated via vm_throw_value/VM_ERROR — the caller must
+/// and the throw was propagated through vm_throw_value, so the caller must
 /// abort the construct path (mirrors every other opcode-handler error convention:
 /// `if (!vm_throw_error(...)) return VM_ERROR~;`).
 fn bool? vm_init_private_members(Vm* vm, EnvRecord* ctor_lex_env, EnvRecord* ctor_var_env,
@@ -170,8 +170,8 @@ fn bool? vm_init_private_members(Vm* vm, EnvRecord* ctor_lex_env, EnvRecord* cto
 /// constructor before super() ran). A value captured at closure-creation
 /// time cannot observe super_init_this_chain()'s later in-place mutation of
 /// the owning derived-constructor activation's this_binding, so on the TDZ
-/// fallback path we re-walk from the calling activation — using the same
-/// parent/shadow_act_list traversal as super_init_this_chain — to find that
+/// fallback path re-walks from the calling activation, using the same parent and
+/// shadow_act_list traversal as super_init_this_chain, to find that
 /// activation's *current* this_binding. `caller_act` is the activation that
 /// is invoking the arrow right now; for a well-formed program this is always
 /// either the derived-constructor activation itself or a frame reached from
@@ -235,7 +235,7 @@ fn bool is_global_bindings(Vm* vm, HObject* b) @inline {
 /// be freed for the duration of the call; the callee value is written into
 /// the register WITHOUT an incref (a plain copy) and NOT registered via
 /// track_heap_store. The caller (try_fast_compiled_call) commits this borrow
-/// only when it also takes the compiled-function fast path — where the result
+/// only when it also takes the compiled-function fast path, where the result
 /// overwrites the same register on return and must therefore skip decref-ing
 /// the (non-owned) old value. For any other callee kind the caller "un-borrows"
 /// by incref+track before dispatching, so every slow path stays balanced.
@@ -431,7 +431,7 @@ fn void? resolve_call_var(Dispatch* ds, uint name_const_idx, uint callee_reg, bo
 /// env walk, same getter/TDZ handling) so CALL_GLOBAL keeps GETGLOBAL's IC hit
 /// rate. Emitted only where lex_env == global_lex_env and var_env ==
 /// global_env, so any binding it resolves lives in a permanent global
-/// environment record — a GC root for the life of the realm. The data-slot
+/// environment record, a GC root for the life of the realm. The data-slot
 /// callee is therefore borrowed (plain copy, no incref, no track_heap_store),
 /// exactly as resolve_call_var does for a global-resolved callee; `borrowed`
 /// is set true. The caller commits the borrow only on the compiled-fn fast
@@ -606,7 +606,7 @@ fn void? resolve_call_global(Dispatch* ds, uint name_const_idx, uint callee_reg,
 }
 
 /// Fast path for CALL/CALL_S/CALL_UNDEF_THIS on a direct (non-generator,
-/// non-class-ctor) compiled-function callee — the overwhelmingly common
+/// non-class-ctor) compiled-function callee, which is the common
 /// shape for ordinary recursive/iterative JS calls. Hoisted out of
 /// dispatch_calls so Vm.run's CALL case can @inline it directly and skip
 /// the `bl dispatch_calls` + full inner-switch dispatch entirely for this
@@ -624,7 +624,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, Instruction insn, bool*
     // Safe point: run deferred GC before entering callee
     if (vm.heap.gc_pending) { vm.heap.safepoint_gc(); }
     // Compiler convention: A=result_reg, B=callee_reg, C=nargs (or nargs_reg
-    // for CALL_S). CALL_VAR is the odd one out — it has no separate callee
+    // for CALL_S). CALL_VAR is the odd one out, with no separate callee
     // register operand (the callee is loaded BY this instruction, not read
     // from a register another instruction wrote): A=result_reg=callee_reg,
     // B=nargs, C=name constant-pool index.
@@ -651,12 +651,12 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, Instruction insn, bool*
     // CALL_UNDEF_THIS (plain non-method calls `f(...)`) elides the
     // per-call `LDUNDEF callee_reg+1` dispatch the compiler would
     // otherwise emit for CALL. The receiver of a plain call is always
-    // undefined, so materialize that here — once, before any fast/slow
+    // undefined, so materialize that here once, before any fast or slow
     // path reads the this-slot (compiled-fn fast path via saved_this,
     // and bound/builtin/lightfunc slow paths via regs_base[callee_reg+1]).
     // Replacing one full opcode dispatch with one register store into an
     // already-hot slot is the net win. CALL_VAR is likewise always a plain
-    // (undefined-this) call — same reasoning applies.
+    // (undefined-this) call, by the same reasoning.
     if (op == Opcode.CALL_UNDEF_THIS || is_fused_var) {
         ds.regs_base[callee_reg + 1].set_undefined();
     }
@@ -677,7 +677,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, Instruction insn, bool*
         }
         // A TDZ access or getter throw that WAS caught also routes through
         // vm_throw_value inside resolve_call_var, which sets needs_restart
-        // and installs the catch handler's activation/pc — but returns
+        // and installs the catch handler's activation and pc, but returns
         // successfully (not a fault) since the error was handled. ra was
         // never written in that case (there is no resolved callee value),
         // so this call must not proceed to read/invoke func_slot; bail out
@@ -695,8 +695,8 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, Instruction insn, bool*
     // compiled-function activation-setup fast path below, where the result
     // overwrites the borrowed callee register on return and the write-back
     // is taught (via ACT_FLAG_BORROWED_CALLEE) to skip decref-ing the old
-    // (non-owned) value. Any other callee kind — generator, class ctor,
-    // lightfunc/builtin/bound (slow path) — reads and rewrites the callee
+    // (non-owned) value. Any other callee kind, meaning a generator, a class
+    // ctor, or a lightfunc, builtin, or bound function, reads and rewrites the callee
     // register with ordinary owned semantics, so restore the owning
     // reference here before proceeding.
     if (callee_borrowed) {
@@ -775,7 +775,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, Instruction insn, bool*
                         // the callee register. If the RangeError is caught, this
                         // frame keeps running and its register sweeps / a later
                         // CALL_VAR's entry decref must never see the non-owned
-                        // value — neutralize it raw (no decref: borrowed).
+                        // value, so neutralize it raw, with no decref, since it is borrowed.
                         if (callee_borrowed) {
                             ds.regs_base[callee_reg].set_undefined();
                         }
@@ -794,7 +794,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, Instruction insn, bool*
                     Activation* new_act = &vm.activations[vm.activation_count];
 
                     EnvRecord* fast_var_env;
-                    // Arrow functions inherit their enclosing lexical environment —
+                    // Arrow functions inherit their enclosing lexical environment, so
                     // they don't get a fresh function scope, and they don't have a
                     // var_env of their own.  Use the captured lex_env directly.
                     if (target_fast.is_arrow()) {
@@ -827,7 +827,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, Instruction insn, bool*
                     new_act.func = target_fast;
                     new_act.var_env = fast_var_env;
                     // Captured block scope + named-function-expression name
-                    // binding (ES2015 §14.1.20) — shared with every other call
+                    // binding (ES2015 §14.1.20), shared with every other call
                     // path; see resolve_call_lex_env.
                     //
                     // Inline the common case: resolve_call_lex_env does real
@@ -835,7 +835,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, Instruction insn, bool*
                     // lex scope (cap_lex != null && cap_lex != var_env &&
                     // cap_lex.is_declarative) or is a named function expression
                     // (is_namebinding). For a plain global/leaf function (fib,
-                    // g) neither holds — cap_lex is null or == var_env — so the
+                    // g) neither holds, with cap_lex null or equal to var_env, so the
                     // function just returns var_env. Skipping the call here
                     // removes a per-call function call on the hot recursion/call
                     // path (~8% on call40); byte-identical result in this case.
@@ -904,7 +904,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, Instruction insn, bool*
                         : (target_fast.is_eval_fn() ? ds.act.new_target : null);
                     new_act.max_heap_reg = 0;
                     new_act.caller_valstack_top = vm.valstack_top;
-                    // Arrow functions use lexical this — captured once at
+                    // Arrow functions use a lexical `this`, captured once at
                     // CLOSURE-creation time (§9.2.1 [[ThisMode]]=lexical), not
                     // the calling activation's this_binding (which only
                     // coincidentally matches when an arrow is invoked from
@@ -913,7 +913,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, Instruction insn, bool*
                     // defined inside a derived constructor before super()
                     // ran), re-resolve the *live* this_binding via the same
                     // parent/shadow_act_list walk super_init_this_chain() uses
-                    // to mutate it — a stale TDZ snapshot would never observe
+                    // to mutate it, and a stale TDZ snapshot would never observe
                     // that later mutation.
                     // Undefined-this calls (CALL_UNDEF_THIS / CALL_VAR /
                     // CALL_GLOBAL) into a NON-arrow, STRICT function: the
@@ -921,8 +921,8 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, Instruction insn, bool*
                     // performs no this-coercion, so skip the arrow/coercion/
                     // this-src resolution below and set it directly. Arrows use
                     // lexical captured_this and MUST take the full path. Sloppy
-                    // (non-strict) functions — e.g. bodies created via the
-                    // Function constructor — must take the coercion path so an
+                    // (non-strict) functions, such as bodies created through the
+                    // Function constructor, must take the coercion path so an
                     // undefined receiver becomes the global object (ES5 §10.4.3),
                     // observable as `Function('return this;')()`.
                     if ((op == Opcode.CALL_UNDEF_THIS || is_fused_var) && !target_fast.is_arrow() && target_fast.is_strict()) {
@@ -950,7 +950,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, Instruction insn, bool*
                         if (!this_src.is_heap_allocated()) {
                             // this_binding for the previous use of this activation slot
                             // was already decreffed by handle_return (ACT_FLAG_THIS_OWNED).
-                            // Plain overwrite — no ownership; handle_return will not decref.
+                            // A plain overwrite takes no ownership, so handle_return will not decref.
                             new_act.this_binding = *this_src;
                         } else {
                             vm.heap.tval_copy_ref(&new_act.this_binding, this_src);
@@ -960,7 +960,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, Instruction insn, bool*
                     }
                     }
 
-                    // Activation fully initialized — now make it visible to GC.
+                    // The activation is fully initialized, so make it visible to the GC.
                     vm.activation_count++;
 
                     TVal* new_regs = new_act.bottom;
@@ -987,7 +987,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, Instruction insn, bool*
                     }
 
                     // Copy args: in the sliding-window model new_regs == old_args
-                    // Values are already in place — set missing parameter registers
+                    // The values are already in place, so set missing parameter registers
                     // to undefined so default parameter checks (param !== undefined) work.
                     uint formals = (uint)target_fast.num_formals;
                     if (target_fast.has_rest()) {
@@ -1077,7 +1077,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
             }
             // Slow path: re-derive result_reg/callee_reg/nargs/func_val (the
             // fast-path helper already applied CALL_UNDEF_THIS's this-slot
-            // clear, which is idempotent to repeat here — and for CALL_VAR /
+            // clear, which is idempotent to repeat here, and for CALL_VAR and
             // CALL_GLOBAL, already resolved the callee-by-name into
             // ds.regs_base[callee_reg]).
             bool is_fused_var = op == Opcode.CALL_VAR || op == Opcode.CALL_GLOBAL;
@@ -1122,7 +1122,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                 // high-water mark is over-decrefed by decref_callee_regs at
                 // RET and freed prematurely. The local + tval_copy_ref makes
                 // the register reference owned (and survives a valstack
-                // realloc inside the builtin) — same pattern as the HObject
+                // realloc inside the builtin), the same pattern as the HObject
                 // builtin path below.
                 TVal lf_result; lf_result.set_undefined();
                 builtins::BuiltinContext ctx;
@@ -1152,7 +1152,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                 }
 
                 if (ctx.needs_re_dispatch) {
-                    // Builtin (.call/.apply/bound) modified the stack — re-dispatch
+                    // A builtin such as .call, .apply, or bound modified the stack, so re-dispatch
                     func_val = ds.regs_base[callee_reg];
                     nargs = ctx.re_nargs;
                     // Fall through to OBJECT handling
@@ -1183,7 +1183,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                 return (TVal){};
             }
 
-            // Handle bound function objects — dispatch to builtin_bound_call
+            // Bound function objects dispatch to builtin_bound_call
             if (hobj.callable_kind() == hobject::CallableKind.BOUND_FN) {
                 if ((*hobj.extra_ptr()).func.builtin_fn_index >= 0) {
                     uint fn_idx = (uint)(*hobj.extra_ptr()).func.builtin_fn_index;
@@ -1357,9 +1357,9 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                             uint lf_idx = (uint)(usz)func_val.get_heapptr();
                             // Local result slot: a borrowed pass-through result
                             // written straight into the register file would be
-                            // over-decrefed by the RET sweep (this exact path —
+                            // over-decrefed by the RET sweep (this exact path,
                             // boundFn(...) re-dispatching to a pass-through
-                            // lightfunc like Promise.resolve — freed a live
+                            // a lightfunc such as Promise.resolve, freed a live
                             // promise prematurely).
                             TVal inner_result; inner_result.set_undefined();
                             builtins::BuiltinContext inner;
@@ -1448,7 +1448,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
             if (hobj != null && (*hobj.extra_ptr()).func.comp_func != null) {
                 target = (*hobj.extra_ptr()).func.comp_func;
             } else {
-                // Not a compiled function — result should already be set by the handler
+                // Not a compiled function, so the handler has already set the result.
                 ds.regs_base[result_reg].set_undefined();
                 return (TVal){};
             }
@@ -1540,7 +1540,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                                     | (target.has_direct_eval() ? ACT_FLAG_DIRECT_EVAL : 0);
                     vm.heap.tval_copy_ref(&new_act_r.this_binding, &gs.this_binding);
                     new_act_r.flags |= ACT_FLAG_THIS_OWNED;
-                    // vm.activations[] slots are not zeroed between pushes — a
+                    // vm.activations[] slots are not zeroed between pushes, so a
                     // generator/async function can never itself be a `new`
                     // target (ES2015 §14.4: generator/async function objects
                     // have no [[Construct]]), so new.target must always read
@@ -1593,7 +1593,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                     // A .return()/.throw() that resumes a yield suspended inside a
                     // non-generator thunk (e.g. `[x = yield]` default or `{}[yield]`
                     // computed key) is an ABRUPT completion at the generator's
-                    // resume point — it must NOT resume normally with the value.
+                    // resume point, so it must not resume normally with the value.
                     // The generator's frame has been restored above; now inject the
                     // completion into it so any enclosing try/finally (e.g. the
                     // destructuring IteratorClose guard) runs before the generator
@@ -1656,7 +1656,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                 // generator): create Promise, fall through to non-generator
                 // path and run the body immediately. Async generators
                 // (is_async && is_user_generator) instead take the generator
-                // initial-call path below — they suspend at GEN_START and
+                // initial-call path below, since they suspend at GEN_START and
                 // return an AsyncGenerator object without running the body.
                 if (target.is_async() && !target.is_user_generator()) {
                     HObject*? prom_raw = builtins::promise_create(vm.heap);
@@ -1666,7 +1666,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                         ds.regs_base[result_reg].set_undefined();
                         return (TVal){};
                     }
-                    // Don't break — fall through to non-generator path below
+                    // Fall through to the non-generator path below.
                 } else {
                 // Initial call: run parameter initialization eagerly, then
                 // suspend at the GEN_START opcode and return the generator object.
@@ -1759,7 +1759,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                 // If a generator param-init is already in progress (gen_initial_gs
                 // is non-null), save the outer state onto a small stack so it can
                 // be restored when the inner generator's GEN_START completes.
-                // Example: `*outer([[,] = innerGen()])` — calling innerGen() during
+                // For example `*outer([[,] = innerGen()])`, where calling innerGen() during
                 // outer's param-init would otherwise clobber gen_initial_*.
                 if (vm.heap.gen_initial_gs != null) {
                     uint depth = vm.heap.gen_init_stack_depth;
@@ -1956,14 +1956,14 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
             //
             // Eval functions are special (ES2015 §18.2.1.1 PerformEval step
             // 11, plus §13.3.5.1 EvaluateNewTarget): an eval body has no
-            // own [[NewTarget]] — it inherits the new.target of its direct
+            // own [[NewTarget]]; it inherits the new.target of its direct
             // caller (the function whose body contains the eval call). For
             // direct eval from a function, that's the caller's new_target;
             // for eval from script top-level / arrow / indirect call, it's
             // null. compile_eval already validated the syntax (rejects
             // new.target in eval-from-arrow / eval-from-script), so by the
             // time we run this opcode the eval body is guaranteed to be
-            // inside a non-arrow function body — but the runtime still has
+            // inside a non-arrow function body, but the runtime still has
             // to actually copy the new_target through to the activation,
             // because NEWTARGET reads it directly from `act.new_target`.
             new_act.new_target = target.is_arrow()
@@ -1975,7 +1975,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                 new_act.async_promise = async_prom;
                 // Write Promise to result register now so the caller gets it
                 // if the function suspends at an AWAIT before returning.
-                // set_object increfs, so the register owns a real reference —
+                // set_object increfs, so the register owns a real reference, and
                 // distinct from the birth ref that new_act.async_promise holds.
                 // If the body instead returns normally, the RET paths in
                 // vm_execute.c3 and vm_exceptions.c3 overwrite this slot with
@@ -1990,11 +1990,11 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                     new_act.async_promise = p;
                 }
             }
-            // Arrow functions use lexical this — captured once at
+            // Arrow functions use a lexical `this`, captured once at
             // CLOSURE-creation time (§9.2.1 [[ThisMode]]=lexical), not the
             // calling activation's this_binding. Exception: a still-TDZ
             // captured value (arrow defined before super() ran) must be
-            // re-resolved live — see super_walk_live_this().
+            // re-resolved live; see super_walk_live_this().
             // ES5 §10.4.3: for non-arrow compiled functions, coerce null/undefined → global.
             if (target.is_arrow()) {
                 TVal arrow_this2 = (*hobj.extra_ptr()).func.captured_this;
@@ -2091,7 +2091,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
 
             // Create arguments object for the new activation if the target
             // function references it. This is the slow-path mirror of the
-            // fast-path version above — needed when the call re-dispatched
+            // fast-path version above, needed when the call re-dispatched
             // through a bound function (BUILTIN_FN → bound call → compiled
             // target via the fallback generic path) and the target uses
             // `arguments`. Without this, the function sees `arguments is
@@ -2147,7 +2147,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
             HObject* obj = (HObject*)ra.get_heapptr();
             if (obj == null) return (TVal){};
             if (rb.is_null()) {
-                // `{ __proto__: null }` — set prototype to null (no prototype chain).
+                // `{ __proto__: null }` sets the prototype to null.
                 obj.prototype = null;
             } else if (rb.is_object()) {
                 HObject* proto = (HObject*)rb.get_heapptr();
@@ -2160,7 +2160,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
         }
 
         case Opcode.GETPROTO: {
-            // A = GetPrototypeOf(B) — proxy-aware prototype read for `super`
+            // A = GetPrototypeOf(B), a proxy-aware prototype read for `super`
             // in object-literal methods (HomeObject semantics).
             if (!rb.is_object()) {
                 ra.set_undefined();
@@ -2183,7 +2183,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
 
         case Opcode.SUPER_CALL:
         case Opcode.SUPER_CALL_S: {
-            // A = super(B, args...) — call superclass constructor
+            // A = super(B, args...) calls the superclass constructor.
             // SUPER_CALL: C = immediate arg count
             // SUPER_CALL_S: C = register holding runtime arg count
             // Uses current activation's new.target
@@ -2257,7 +2257,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                     }
                 } else {
                     // §8.1.1.3.1 BindThisValue step 3: this_binding is already
-                    // initialized (a prior super() call already bound it) —
+                    // initialized, meaning a prior super() call already bound it, so
                     // a second super() call throws ReferenceError.
                     vm_throw_error(vm, vm.heap.ref_err_proto, "Super constructor may only be called once", ds.act, &ds.curr_pc, &ds.needs_restart);
                 }
@@ -2283,7 +2283,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
             // walking past arrow activations that carry none.
             HObject* new_target = super_walk_new_target(vm, ds.act);
             if (new_target == null) {
-                // Not in a constructor — new.target is undefined
+                // Outside a constructor, new.target is undefined.
                 // Fall back to simple call behavior
                 // This shouldn't normally happen since super() is only valid in constructors
                 ra.set_undefined();
@@ -2325,7 +2325,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                         return (TVal){};
                     }
                     if (sc_bound_ctx.needs_re_dispatch) {
-                        // bound_call rewrote callee_reg — re-read the target
+                        // bound_call rewrote callee_reg, so re-read the target
                         super_val = ds.regs_base[callee_reg];
                         nargs = sc_bound_ctx.re_nargs;
                         if (super_val.is_lightfunc()) {
@@ -2468,7 +2468,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
             CompiledFunction* super_target = (*super_hobj.extra_ptr()).func.comp_func;
 
             // OrdinaryCreateFromConstructor (§9.1.13): allocate the new object
-            // using new.target.prototype — but only when the superclass is a
+            // using new.target.prototype, but only when the superclass is a
             // BASE constructor. A derived superclass gets an uninitialized
             // `this` (TDZ) and allocates in its own super() (§9.2.2 step 5);
             // allocating here too would construct two objects and initialize
@@ -2508,7 +2508,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                 // super() runs its OWN brand stamp + field init right after
                 // creating `this`, exactly like the direct-`new` path in
                 // NEW_OBJ. The RET-side hook only covers the DERIVED caller's
-                // members after `this` binds — without this call, a base
+                // members after `this` binds. Without this call a base
                 // class's private members never initialize on super()
                 // construction (e.g. `class D extends B {}` with B's fields).
                 if (!vm_init_private_members(vm,
@@ -2554,7 +2554,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
             new_act.func = super_target;
             new_act.var_env = super_var_env;
             // Captured block scope + named-function-expression name
-            // binding — shared with every other call path; see
+            // binding, shared with every other call path; see
             // resolve_call_lex_env.
             new_act.lex_env = resolve_call_lex_env(vm, super_hobj, super_target, super_var_env);
             new_act.cat = null;
@@ -2658,7 +2658,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
         case Opcode.NEW_OBJ:
         case Opcode.NEW_OBJ_S: {
             // Compiler convention: A=result_reg, B=callee_reg, C=nargs (NEW_OBJ)
-            // or C=nargs_reg (NEW_OBJ_S — reads nargs at runtime).
+            // or C=nargs_reg (NEW_OBJ_S, which reads nargs at runtime).
             uint result_reg = insn.a;
             uint callee_reg = insn.b;
             uint nargs;
@@ -2702,7 +2702,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                 ctx.result = ds.regs_base + result_reg;
                 ctx.heap = vm.heap;
                 // [[Construct]]: the this slot at callee_reg+1 is not written by the
-                // compiler for `new` — its content is stale frame data. Constructor
+                // compiler for `new`, so its content is stale frame data. Constructor
                 // builtins allocate their own instance and ignore this_val; pass
                 // undefined so non-constructor builtins fail their receiver checks
                 // deterministically instead of acting on garbage.
@@ -2743,7 +2743,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                 return (TVal){};
             }
 
-            // Handle bound function objects — dispatch to builtin_bound_call
+            // Bound function objects dispatch to builtin_bound_call
             if (hobj.callable_kind() == hobject::CallableKind.BOUND_FN) {
                 if ((*hobj.extra_ptr()).func.builtin_fn_index >= 0) {
                     uint fn_idx = (uint)(*hobj.extra_ptr()).func.builtin_fn_index;
@@ -2770,7 +2770,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                     ctx.result = ds.regs_base + result_reg;
                     ctx.heap = vm.heap;
                     // [[Construct]]: the this slot at callee_reg+1 is not written by the
-                    // compiler for `new` — its content is stale frame data. Constructor
+                    // compiler for `new`, so its content is stale frame data. Constructor
                     // builtins allocate their own instance and ignore this_val; pass
                     // undefined so non-constructor builtins fail their receiver checks
                     // deterministically instead of acting on garbage.
@@ -2801,7 +2801,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                         // Route those to the BUILTIN_FN constructor path instead of
                         // the compiled-function path below, which would deref a
                         // null comp_func and crash. Repeat the constructable check
-                        // first — `bind` does not change constructability.
+                        // first, since `bind` does not change constructability.
                         if (hobj != null && hobj.is_constructable()
                             && hobj.callable_kind() == hobject::CallableKind.BUILTIN_FN
                             && (*hobj.extra_ptr()).func.builtin_fn_index >= 0) {
@@ -2876,7 +2876,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                     ctx.result = &ctor_result;
                     ctx.heap = vm.heap;
                     // [[Construct]]: the this slot at callee_reg+1 is not written by the
-                    // compiler for `new` — its content is stale frame data. Constructor
+                    // compiler for `new`, so its content is stale frame data. Constructor
                     // builtins allocate their own instance and ignore this_val; pass
                     // undefined so non-constructor builtins fail their receiver checks
                     // deterministically instead of acting on garbage.
@@ -2889,7 +2889,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                     ctx.callee_obj = hobj;
                     // For a plain `new Builtin()` the new.target IS the callee, so
                     // GetPrototypeFromConstructor(hobj, default) will find the same
-                    // intrinsic prototype that the constructor would hardcode — no
+                    // intrinsic prototype that the constructor would hardcode, so no
                     // change in behaviour for non-subclassed calls.
                     ctx.new_target = hobj;
                     builtins::dispatch_builtin(fn_idx, &ctx);
@@ -2905,7 +2905,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                     return (TVal){};
                 }
                 // Object claims to be callable but has no compiled function
-                // and no builtin index — treat as non-constructor
+                // and no builtin index, so treat it as a non-constructor.
                 HString* type_str = typeof_string(vm, &func_val);
                 if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "%s is not a constructor", type_str.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
                     return VM_ERROR~;
@@ -2924,7 +2924,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                 return (TVal){};
             }
 
-            // Step 1: Create new object — skip for derived constructors, which get
+            // Step 1: create the new object, skipped for derived constructors, which get
             // an uninitialized `this` until super() allocates and sets it.
             // ES2015 §9.2.2 step 5: "derived" constructors do not OrdinaryCreateFromConstructor
             // here; super() does it inside the base class [[Construct]].
@@ -3018,7 +3018,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                 // CALL fast path (line ~4503) which also honors func.lex_env
                 // when it's a *declarative* (block) scope.  Without this,
                 // constructors for `class B extends A { constructor() { super(); } }`
-                // can't see the classScope's `__super__` binding — the
+                // cannot see the classScope's `__super__` binding, so the
                 // constructor's CLOSURE captures func.lex_env = classScope but
                 // NEW_OBJ was unconditionally resetting it to ctor_var_env.
                 EnvRecord* cap_lex_noname = (*hobj.extra_ptr()).func.lex_env;
@@ -3044,7 +3044,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
             // constructor is never async (ACT_FLAG_CONSTRUCT above clears
             // ACT_FLAG_ASYNC, which gates the async_promise reads), but the
             // stale pointers are still visible to code that reads the fields
-            // unconditionally — mirrors the super-call path above.
+            // unconditionally, mirroring the super-call path above.
             new_act.async_promise = null;
             new_act.async_gen_state = null;
             vm.heap.tval_copy_ref(&new_act.this_binding, &this_tval);

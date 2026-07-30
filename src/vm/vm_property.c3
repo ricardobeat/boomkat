@@ -12,7 +12,7 @@ import duktape::re_bindings;
 import std::math;
 
 // ============================================================================
-// vm_property — GETPROP / PUTPROP / DELPROP and inline-cache paths
+// GETPROP, PUTPROP, DELPROP, and the inline-cache paths
 // ============================================================================
 /// Rethrow a pending proxy-op error (heap.error_value) in the current frame.
 /// Returns the opcode-handler result: {} when a catcher was found, VM_ERROR~ otherwise.
@@ -28,7 +28,7 @@ fn TVal? vm_proxy_rethrow(Vm* vm, Dispatch* ds) {
 /// Auto-box a Symbol primitive (`sym_val`) and resolve `key` on it, invoking
 /// an accessor getter (e.g. Symbol.prototype.description) if one is found.
 /// Used by the GETPROPC2 fused-hop paths, mirroring the wrapper-object
-/// auto-box already done by the single-hop GETPROPC symbol handling — a
+/// auto-box already done by the single-hop GETPROPC symbol handling, since a
 /// direct `symbol_proto.get_prop_proto` lookup would return the raw
 /// accessor-pair object instead of invoking the getter.
 /// Writes the result into `*dst` (register `dst_reg`) and sets
@@ -124,18 +124,18 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             track_heap_store(ds.act, ra, (uint)insn.a);
                             return (TVal){};
                         }
-                        // Array hole — fall through to prototype chain lookup
+                        // An array hole falls through to the prototype chain.
                     }
                 }
 
-                // ARRAY exotic: .length fast path — return array_length directly
+                // An ARRAY exotic's .length comes straight from array_length.
                 if (hobj_cls == hobject::ObjClass.ARRAY && rc.is_string() && rc.get_heapptr() == (void*)vm.heap.strs[heap::BuiltinStr.LENGTH]) {
                     ra.set_fastint((long)*hobj.array_len_ptr());
                     return (TVal){};
                 }
 
                 // TypedArray element access: ta[i] where i is a numeric index.
-                // OOB/detached is spec undefined (not a hole) — never falls
+                // Out-of-bounds or detached reads as undefined, not a hole, so it never falls
                 // through to the prototype chain.
                 if (builtins::is_typed_array_class(hobj_cls)
                     && (rc.is_fastint() || rc.is_number())) {
@@ -171,7 +171,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 // ToPropertyKey (§7.1.19) must be idempotent when a compound
                 // assignment reuses this same key register for the follow-up
                 // PUTPROP: `base[prop] *= expr()` may only call prop.toString()
-                // once. GETPROP_CACHE (opt-in — see bytecode.c3) writes the
+                // once. GETPROP_CACHE, which is opt-in (see bytecode.c3), writes the
                 // resolved string key back into rc so that a later
                 // get_prop_key(vm, rc) on this register is a no-op (STRING
                 // tag short-circuits without re-invoking ToPrimitive). Plain
@@ -233,7 +233,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         return (TVal){};
                     }
                     // ES5 strict mode: function.caller and function.arguments throw TypeError
-                    // (AddRestrictedFunctionProperties poison pill) — but only when the
+                    // (the AddRestrictedFunctionProperties poison pill), but only when the
                     // function has no own property of that name (e.g. a class's own
                     // `static get arguments() {}` shadows the poison pill; ES2015
                     // ClassDefinitionEvaluation defines own properties before the pill
@@ -299,7 +299,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     if (res.kind == hobject::PropLookupKind.PROP_ACCESSOR) {
                         // ES2022 §7.3.25 PrivateGet: a set-only private
                         // accessor throws TypeError on read (unlike a public
-                        // set-only accessor, which reads as undefined —
+                        // set-only accessor, which reads as undefined, so
                         // §10.1.9.2 OrdinaryGet returns undefined when no
                         // [[Get]]). Hidden-symbol keys are exclusively used
                         // for private members, so this check never fires for
@@ -655,7 +655,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             return (TVal){};
                         }
                         // ES5 strict mode: function.caller and function.arguments throw TypeError
-                        // (AddRestrictedFunctionProperties poison pill) — skipped when the
+                        // (the AddRestrictedFunctionProperties poison pill), skipped when the
                         // function has its own property of that name (see GETPROP above).
                         if (hobj.is_callable() && hobj.get_class() == hobject::ObjClass.FUNCTION
                             && (key_hstr.equals("caller") || key_hstr.equals("arguments"))
@@ -836,7 +836,8 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             ra.set_undefined();
                         }
                     } else {
-                        // Auto-box string primitive: constant string key — skip numeric-index fast path
+                        // Auto-boxing a string primitive with a constant string key skips
+                        // the numeric-index fast path.
                         if (key_hstr != null) {
                             // Fast path: .length → string character count
                             if ((void*)key_hstr == (void*)vm.heap.strs[heap::BuiltinStr.LENGTH]) {
@@ -1056,7 +1057,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         hobject::PropLookupResult r1 = hobj1.get_prop_or_accessor_proto(key1, true);
                         if (r1.kind == hobject::PropLookupKind.PROP_DATA) {
                             mid_val = r1.data_val;
-                            // Populate IC1 — only cache OWN property lookups (see GETPROP).
+                            // Populate IC1, caching own property lookups only (see GETPROP).
                             if (r1.owner == hobj1 && r1.owner != null && ds.ic_base != null) {
                                 hobject::ICEntry* ic1 = ds.ic_base + pc1;
                                 int idx1 = r1.owner.find_prop_idx(key1);
@@ -1114,7 +1115,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     }
 
                     // ES5 strict mode: function.caller and function.arguments throw
-                    // TypeError (AddRestrictedFunctionProperties poison pill) — unless
+                    // TypeError (the AddRestrictedFunctionProperties poison pill), unless
                     // the function has its own property of that name (see GETPROP).
                     if (hobj2.is_callable() && hobj2.get_class() == hobject::ObjClass.FUNCTION
                         && key2_hstr != null
@@ -1170,7 +1171,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             if (r2.kind == hobject::PropLookupKind.PROP_DATA) {
                                 vm.heap.tval_copy_ref(ra2, &r2.data_val);
                                 track_heap_store(ds.act, ra2, dst2_reg);
-                                // Populate IC2 — only cache OWN property lookups (see GETPROP).
+                                // Populate IC2, caching own property lookups only (see GETPROP).
                                 if (r2.owner == hobj2 && r2.owner != null && ds.ic_base != null) {
                                     hobject::ICEntry* ic2 = ds.ic_base + pc2;
                                     int idx2 = r2.owner.find_prop_idx(key2);
@@ -1328,7 +1329,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     *ra = mid_val;
                 }
             } else if (rb.is_string()) {
-                // rb is a string primitive — auto-box for hop 1, then hop 2 on the result.
+                // rb is a string primitive, so auto-box for hop 1 and run hop 2 on the result.
                 TVal mid_val;
                 mid_val.set_undefined();
                 HString* rb_str = (HString*)rb.get_heapptr();
@@ -1377,7 +1378,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     }
                 }
 
-                // Hop 2: mid_val[key2] (simplified — no IC)
+                // Hop 2 is mid_val[key2], with no inline cache.
                 if (mid_val.is_object()) {
                     HObject* hobj2 = (HObject*)mid_val.get_heapptr();
                     if (hobj2 != null && key2_hstr != null) {
@@ -1446,7 +1447,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     HString* mid_str = (HString*)mid_val.get_heapptr();
                     if (mid_str != null && key2_hstr != null) {
                         // Always check for "length" by string content, not just
-                        // by pointer identity — the constant pool may have a
+                        // by pointer identity, since the constant pool may have a
                         // different HString instance for "length" than the
                         // BuiltinStr.LENGTH sentinel. Same pattern as in GETPROPC.
                         bool key2_is_length = (key2_hstr == (void*)vm.heap.strs[heap::BuiltinStr.LENGTH])
@@ -1609,7 +1610,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             if (r2.kind == hobject::PropLookupKind.PROP_DATA) {
                                 vm.heap.tval_copy_ref(ra2, &r2.data_val);
                                 track_heap_store(ds.act, ra2, dst2_reg);
-                                // Populate IC2 — only cache OWN property lookups (see GETPROP).
+                                // Populate IC2, caching own property lookups only (see GETPROP).
                                 if (r2.owner == hobj2 && r2.owner != null && ds.ic_base != null) {
                                     hobject::ICEntry* ic2 = ds.ic_base + pc2;
                                     int idx2 = r2.owner.find_prop_idx(key2);
@@ -1712,7 +1713,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             ra2.set_undefined();
                         }
                     } else if (key2_hstr != null) {
-                        // .length fast path — check by content, not just pointer identity.
+                        // The .length fast path checks by content, not pointer identity.
                         bool key2_is_length = ((void*)key2_hstr == (void*)vm.heap.strs[heap::BuiltinStr.LENGTH])
                             || key2_hstr.equals("length");
                         if (key2_is_length) {
@@ -1777,7 +1778,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     if (try v = result) { mid_val = v; }
                 }
 
-                // Common hop 2 dispatch (simplified, no IC — same pattern as string source).
+                // The shared hop 2 dispatch, with no inline cache, as for a string source.
                 if (mid_val.is_object()) {
                     HObject* hobj2 = (HObject*)mid_val.get_heapptr();
                     if (hobj2 != null && key2_hstr != null) {
@@ -1907,7 +1908,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     if (try v = result) { mid_val = v; }
                 }
 
-                // Common hop 2 dispatch (simplified, no IC — same pattern as string source).
+                // The shared hop 2 dispatch, with no inline cache, as for a string source.
                 if (mid_val.is_object()) {
                     HObject* hobj2 = (HObject*)mid_val.get_heapptr();
                     if (hobj2 != null && key2_hstr != null) {
@@ -2029,7 +2030,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     *ra = mid_val;
                 }
             } else {
-                // rb is not a recognised type — both hops fail
+                // rb is not a recognised type, so both hops fail.
                 ra.set_undefined();
                 ra2.set_undefined();
             }
@@ -2042,7 +2043,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
 
                 // ES5 strict mode: function.caller = ... and function.arguments = ...
                 // throw TypeError (AddRestrictedFunctionProperties poison pill).
-                // Strict-only engine: always throws — unless the function has its own
+                // This engine is strict-only, so it always throws, unless the function has its own
                 // property of that name (e.g. a class's own `static set arguments`).
                 if (hobj.is_callable() && hobj.get_class() == hobject::ObjClass.FUNCTION && rb.is_string()) {
                     HString* key_hstr = (HString*)rb.get_heapptr();
@@ -2085,7 +2086,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 }
 
                 // TypedArray element write: convert FIRST, bounds-check AFTER
-                // (ToNumber on rc can run user code — e.g. valueOf — that
+                // (ToNumber on rc can run user code, such as valueOf, that
                 // detaches the buffer; spec requires the conversion to happen
                 // regardless, then silently drop the store if now OOB).
                 if (builtins::is_typed_array_class(hobj.get_class())
@@ -2099,12 +2100,12 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     conv_ctx.heap = vm.heap;
                     conv_ctx.should_throw = false;
                     // ta_write_element's rejection paths (Symbol/BigInt) write
-                    // through ctx.result unconditionally — must not be stack garbage.
+                    // through ctx.result unconditionally, so it must not be stack garbage.
                     TVal conv_scratch; conv_scratch.set_undefined();
                     conv_ctx.result = &conv_scratch;
                     TVal converted = *rc;
                     // Only run the (possibly side-effecting) conversion when
-                    // the index is a plausible integer — non-integer/negative
+                    // the index is a plausible integer. A non-integer or negative
                     // indices are ignored per CanonicalNumericIndexString
                     // without needing to touch the value at all here, matching
                     // the "assignment is a no-op" spec outcome.
@@ -2133,7 +2134,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             char* p = base + (idx_long << shift);
                             builtins::ta_store_scalar(p, ta_cls, &sc);
                         }
-                        // OOB/detached after conversion — spec: silently succeed.
+                        // Out-of-bounds or detached after conversion silently succeeds.
                     }
                     return (TVal){};
                 }
@@ -2141,7 +2142,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 // Fast path: dense array indexed store (a[i] = v where i is a valid array index)
                 // ES5 §15.4: array index P satisfies ToString(ToUint32(P))===P && ToUint32(P)≠2^32−1
                 // Cap at 2^24 to avoid insane allocations for sparse arrays with huge indices.
-                // Guard with array_part() != null — after seal/freeze the array part is
+                // Guarded on array_part() != null, since after seal or freeze it is
                 // abandoned and elements live as named properties with proper flags.
                 if ((hobj.get_class() == hobject::ObjClass.ARRAY || hobj.get_class() == hobject::ObjClass.ARGUMENTS)
                     && hobj.array_part() != null
@@ -2157,13 +2158,13 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             }
                             return (TVal){};
                         }
-                        // Dense write failed (index beyond capacity cap) — fall through to put_prop.
+                        // The dense write hit the capacity cap, so fall through to put_prop.
                     }
                 }
 
                 // Integer-indexed exotic [[Set]] (ES2022 §9.4.5.5) for TypedArray string keys.
                 // This handles the case where receiver == hobj (the TypedArray itself).
-                // - Arridx string key ("0", "1", …): IntegerIndexedElementSet — convert value,
+                // - An arridx string key runs IntegerIndexedElementSet: convert the value,
                 //   write if in-bounds (or no-op if OOB/detached).
                 // - Non-arridx numeric-looking keys ("1.5", "-0", "NaN"): silently no-op.
                 if (rb.is_string()
@@ -2184,7 +2185,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             conv_ctx.result = &conv_scratch;
                             TVal converted = *rc;
                             // Coerce once, then re-derive bounds/pointer and store a
-                            // scalar — coercion may resize/realloc the buffer (see the
+                            // scalar, since coercion may resize or realloc the buffer (see the
                             // numeric-key site above).
                             builtins::TAScalar sc = builtins::ta_coerce_element(ta_cls, &converted, &conv_ctx);
                             if (conv_ctx.should_throw) {
@@ -2212,7 +2213,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             if (builtins::is_canonical_numeric_index(vm.heap, key_hstr, &cni_d)) {
                                 // IntegerIndexedElementSet (§10.4.5.10) coerces the
                                 // value (ToNumber/ToBigInt) BEFORE checking that the
-                                // canonical numeric index is a valid integer index —
+                                // canonical numeric index is a valid integer index, so
                                 // a non-arridx canonical index ("1.1", "-0", ...) is
                                 // always out of bounds, so the write itself is a
                                 // no-op, but the coercion must still run (and its
@@ -2254,7 +2255,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     }
                 }
 
-                // ARRAY exotic: .length write — a plain assignment is Set(A, "length",
+                // A length write on an ARRAY exotic: a plain assignment is Set(A, "length",
                 // v, true) (ES2024 §13.15.2 PutValue, this engine being strict-only),
                 // which OrdinarySet defines as DefineOwnProperty(A, "length", {[[Value]]: v})
                 // when "length" is an own data property (§10.1.9.2 step 4). Route
@@ -2302,11 +2303,11 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         TVal* entry = &hobj.prop_values()[exist_idx];
                         hobject::PropFlags exist_flags = hobj.get_prop_flags((uint)exist_idx);
                         if (exist_flags.is_accessor) {
-                            // Accessor property — invoke setter
+                            // An accessor property invokes its setter.
                             TVal setter_fn = hobject::hobject_access_setter(*entry);
                             // No setter (get-only accessor): §10.1.9.3 / OrdinarySet
                             // step returns false; PutValue only turns that into a
-                            // TypeError for a strict reference (§13.15.2) — code
+                            // TypeError for a strict reference (§13.15.2), and code
                             // compiled without "use strict" silently no-ops instead.
                             if (!setter_fn.is_object() || setter_fn.get_heapptr() == null) {
                                 if (vm.current_func != null && vm.current_func.is_strict()) {
@@ -2321,7 +2322,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                 HObject* setter_obj = (HObject*)setter_fn.get_heapptr();
                                 // BUILTIN_FN setter (e.g. Function.prototype.caller/arguments
                                 // thrower). Stage a call frame with [callee, this, value]
-                                // mirroring the regular BUILTIN_FN dispatch — the setter
+                                // mirroring the regular BUILTIN_FN dispatch, so the setter
                                 // receives one argument (the assigned value) and the receiver
                                 // is the accessor-owning object. Stage above the current
                                 // activation's frame (not at vm.valstack[0..2]) so parent
@@ -2502,7 +2503,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         // ARRAY exotic: element may live in the dense array part even when
                         // absent from the named-property table (string key "0" on an array
                         // that only has a dense slot at 0). Treat dense elements as own
-                        // writable data properties (§10.1.9.2 — own property found → update).
+                        // writable data properties (§10.1.9.2: an own property found is updated).
                         TVal dense_existing;
                         if (hobj.dense_arridx_lookup(key, &dense_existing)) {
                             HString* dense_key = (HString*)key;
@@ -2514,7 +2515,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         // Proxy or TypedArray anywhere on the prototype chain: both
                         // have exotic [[Set]] methods that OrdinarySetWithOwnDescriptor
                         // must recurse into (§9.1.9.2 step 2.b), not treat as a flat
-                        // OrdinaryGetOwnProperty lookup — run the full [[Set]]
+                        // OrdinaryGetOwnProperty lookup, so run the full [[Set]]
                         // (receiver = hobj) through js_set_with_receiver.
                         {
                             HObject* pscan = hobj.prototype;
@@ -2544,7 +2545,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         // the chain, even a get-only one (accessor_fn left as undefined in
                         // that case). ES2024 §10.1.9.2 OrdinarySet step 2 returns false for
                         // an inherited accessor with no [[Set]]; PutValue only turns that
-                        // into a TypeError for a strict reference (§13.15.2) — code compiled
+                        // into a TypeError for a strict reference (§13.15.2), and code compiled
                         // without "use strict" silently no-ops instead of creating an own
                         // property.
                         if (acc.found && (!acc.accessor_fn.is_object() || acc.accessor_fn.get_heapptr() == null)) {
@@ -2704,7 +2705,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                     if (!d_flags.is_accessor && !d_flags.writable) {
                                         proto_nonwritable = true;
                                     }
-                                    break;  // found a property (data or accessor) — stop
+                                    break;  // a property, data or accessor, ends the walk
                                 }
                                 data_cur = data_cur.prototype;
                                 data_depth++;
@@ -2816,7 +2817,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
         case Opcode.PUTPROP_NE: {
             // A[B] = C as a fresh non-enumerable data property. Only used by
             // the compiler for the `.raw` property of tagged template
-            // objects, on a plain array we just created — no exotic
+            // objects, on a plain array just created, so no exotic
             // receiver (Proxy/TypedArray) is ever passed here.
             if (ra.is_object()) {
                 HObject* hobj = (HObject*)ra.get_heapptr();
@@ -2829,7 +2830,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
         }
 
         case Opcode.PUTPROP_SUPER: {
-            // super.x = v — [[Set]] on the super base with receiver = this.
+            // `super.x = v` is [[Set]] on the super base with `this` as receiver.
             if (!ra.is_object()) {
                 if (!vm_throw_error(vm, vm.heap.type_err_proto, "Cannot set property on non-object super base", ds.act, &ds.curr_pc, &ds.needs_restart)) {
                     return VM_ERROR~;
@@ -2861,7 +2862,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
         }
 
         case Opcode.GETPROP_SUPER: {
-            // super[key] / super.prop get — property lookup starts at super base (ra)
+            // A `super[key]` or `super.prop` read starts its lookup at the super base (ra).
             // but accessor getters are invoked with this = current this_binding.
             // Format: A=result, B=super_base, C=key.
             if (!rb.is_object()) {
@@ -2907,7 +2908,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
             // Returns boolean: true if deleted or not found,
             // false if the property exists and is non-configurable.
 
-            // ES6 §12.5.3.2 step 5.b: ToObject(base) — throws TypeError
+            // ES6 §12.5.3.2 step 5.b, ToObject(base), throws a TypeError
             // for null/undefined. This must run BEFORE the value check,
             // because the runtime semantics require ToObject on the base.
             if (rb.is_null() || rb.is_undefined()) {
@@ -2942,9 +2943,9 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
 
                 // TypedArray (§10.4.5.4 [[Delete]]): a CanonicalNumericIndexString
                 // (or numeric) key that is a valid integer index is
-                // non-configurable — delete returns false without deleting.
+                // non-configurable, so delete returns false without deleting.
                 // Any other numeric-ish key (out-of-range, negative, "-0",
-                // non-canonical) has nothing to delete — returns true.
+                // non-canonical) has nothing to delete, so it returns true.
                 if (builtins::is_typed_array_class(hobj.get_class())) {
                     bool is_numeric_key = false;
                     bool is_valid_int_idx = false;
@@ -2963,7 +2964,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             double cni_d;
                             if (builtins::is_canonical_numeric_index(vm.heap, key_hstr, &cni_d)) {
                                 // Canonical but not a plain array-index string
-                                // (e.g. "-0", "1.5", "NaN") — never a valid
+                                // ("-0", "1.5", "NaN") is never a valid
                                 // integer index, so nothing to delete.
                                 is_numeric_key = true;
                                 is_valid_int_idx = false;
@@ -3036,7 +3037,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 }
             }
             // For other primitives (number, string, boolean), the spec's
-            // ToObject() would box them — but our base is already a primitive
+            // ToObject() would box them, but the base here is already a primitive
             // TVal, so property deletion on it returns true (the property
             // simply doesn't exist on the boxed wrapper).
             return (TVal){};

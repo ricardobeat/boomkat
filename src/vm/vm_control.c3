@@ -12,7 +12,7 @@ import duktape::re_bindings;
 import std::math;
 
 // ============================================================================
-// vm_control — return / variable access / closure / iterator / exceptions / misc
+// Return, variable access, closures, iterators, exceptions, and miscellany
 // ============================================================================
 
 /// Find the nearest catcher (starting at `act.cat`) that owns a finally
@@ -21,7 +21,7 @@ import std::math;
 /// null). A `return` reaching an intervening catch-only try (e.g. `try {
 /// try { return x; } catch (e) {} } finally { ... }`) must still route
 /// through the enclosing finally, but the catch-only catcher's own ENDTRY
-/// never runs (the return short-circuits it) — this mirrors what ENDTRY does
+/// never runs, since the return short-circuits it, which mirrors what ENDTRY does
 /// on the normal fall-through path so the chain doesn't end up with a stale
 /// catch-only catcher still attached above the finally one.
 fn Catcher* find_and_unlink_finally_catcher(Vm* vm, Activation* act) {
@@ -43,7 +43,7 @@ fn Catcher* find_and_unlink_finally_catcher(Vm* vm, Activation* act) {
 /// through a try/finally in a generator body).
 fn void vm_complete_generator_return(Dispatch* ds, TVal* val) {
     Vm* vm = ds.vm;
-    // Prefer async_gen_state from the completing activation — a stable
+    // Prefer async_gen_state from the completing activation, which is a stable
     // reference that isn't affected by resume_gen having already been
     // cleared/reused by a nested call to a fresh instance of the same (or
     // another) generator function earlier in this body's execution (e.g. a
@@ -75,7 +75,7 @@ fn void vm_complete_generator_return(Dispatch* ds, TVal* val) {
     Activation* ret_act = &vm.activations[vm.activation_count - 1];
     // retval is null when this activation was entered via the re-entrant
     // call_fn path (e.g. YIELD_STAR calling a delegated generator's .next()
-    // directly) rather than the CALL opcode — the result is read back via
+    // directly) rather than the CALL opcode, so the result is read back via
     // vm.return_val in that case instead.
     if (ret_act.retval != null) {
         vm.heap.tval_copy_ref(ret_act.retval, &wrapped_val);
@@ -87,7 +87,7 @@ fn void vm_complete_generator_return(Dispatch* ds, TVal* val) {
     // activation_count can hit 0 here when this generator body was entered
     // via the re-entrant call_fn path (e.g. YIELD_STAR calling a delegated
     // generator's .next() directly) rather than the CALL opcode, so there is
-    // no caller activation in *this* Vm.run invocation to fall back to —
+    // no caller activation in this Vm.run invocation to fall back to, so
     // halt like the plain RET path does.
     if (vm.activation_count == 0) {
         ds.halt = true;
@@ -143,7 +143,7 @@ fn TVal? dispatch_returns(Dispatch* ds, Opcode op, TVal* ra) {
             // a try-finally inside the generator body, save the return value,
             // mark it as a generator-return, and jump to the finally handler
             // instead of completing immediately (mirrors plain RET).
-            // Walk up to the nearest catcher with a finally — the innermost
+            // Walk up to the nearest catcher with a finally. The innermost
             // catcher may be a catch-only try (no finally_pc).
             Catcher* ret_cat = find_and_unlink_finally_catcher(vm, ds.act);
             if (ret_cat != null && ret_cat.finally_pc != null) {
@@ -151,12 +151,12 @@ fn TVal? dispatch_returns(Dispatch* ds, Opcode op, TVal* ra) {
                 if (!(ret_cat.flags & CATCHER_FLAG_PENDING_RETURN)) {
                     ret_cat.flags |= CATCHER_FLAG_PENDING_RETURN | CATCHER_FLAG_PENDING_RETURN_GEN;
                     // Don't jump to finally_pc if we're already inside the
-                    // finally body — see plain RET for details.
+                    // finally body; see plain RET for details.
                     if ((ret_cat.flags & CATCHER_FLAG_IN_FINALLY) == 0) {
                         ds.curr_pc = ret_cat.finally_pc;
                         ds.act.curr_pc = ds.curr_pc;
                     } else if (ret_cat.endfinally_pc != null) {
-                        // Return inside the finally body — abort the rest and
+                        // A return inside the finally body aborts the rest and
                         // jump to ENDFINALLY (see plain RET for details).
                         ds.curr_pc = ret_cat.endfinally_pc;
                         ds.act.curr_pc = ds.curr_pc;
@@ -176,7 +176,7 @@ fn TVal? dispatch_returns(Dispatch* ds, Opcode op, TVal* ra) {
         case Opcode.RETUNDEF_GEN: {
             TVal undef_val;
             undef_val.set_undefined();
-            // Walk up to the nearest catcher with a finally — the innermost
+            // Walk up to the nearest catcher with a finally. The innermost
             // catcher may be a catch-only try (no finally_pc).
             Catcher* ret_cat2 = find_and_unlink_finally_catcher(vm, ds.act);
             if (ret_cat2 != null && ret_cat2.finally_pc != null) {
@@ -207,7 +207,7 @@ fn TVal? dispatch_returns(Dispatch* ds, Opcode op, TVal* ra) {
     }
 }
 
-/// ES2015 §9.2.11 SetFunctionName helper for computed-key methods/accessors —
+/// ES2015 §9.2.11 SetFunctionName, for computed-key methods and accessors:
 /// shared by CLASS_INITGET/CLASS_INITSET/CLASS_INITPROP (class bodies) and
 /// INITGET/INITSET/INITPROP (object literals).
 /// If the accessor function `fn_obj` currently has an empty `.name` property,
@@ -266,7 +266,7 @@ const int INITPROP_ABRUPT = 2;       // heap.has_error / heap.error_value alread
 
 /// Shared INITPROP/INITPROPN body: define a data property with WEC flags
 /// using CreateDataPropertyOrThrow semantics (ES2022 §7.3.4 step 4, also
-/// reached via §15.7.10 step 8.b for class fields) — if the property already
+/// reached via §15.7.10 step 8.b for class fields). If the property already
 /// exists and is configurable, it is replaced. An existing non-configurable
 /// property (e.g. `class { static [x] = 42 }` where x="prototype" hits the
 /// class's non-configurable .prototype) or a non-extensible receiver (e.g.
@@ -279,12 +279,12 @@ const int INITPROP_ABRUPT = 2;       // heap.has_error / heap.error_value alread
 ///
 /// A Proxy receiver (e.g. a class extending a base whose constructor returns
 /// `new Proxy(this, {...})`) must instead go through the full
-/// [[DefineOwnProperty]] MOP (ES2022 §15.7.10 step 8.b — class field install
-/// — and §7.3.4 CreateDataPropertyOrThrow generally) so its `defineProperty`
+/// [[DefineOwnProperty]] MOP (ES2022 §15.7.10 step 8.b for a class field install,
+/// and §7.3.4 CreateDataPropertyOrThrow generally) so its `defineProperty`
 /// trap observably fires. That path is routed to object_define_own, which
 /// recurses through nested proxies and falls back to ordinary semantics once
 /// it reaches a non-exotic target. Ordinary (non-proxy) receivers never pay
-/// for this — the exotic_proxyobj flag check is the only added cost.
+/// for this, so the exotic_proxyobj flag check is the only added cost.
 ///
 /// Callers have already coerced the key on computed-key paths via TOPROPKEY,
 /// so `get_prop_key` here is idempotent.
@@ -320,12 +320,12 @@ fn int initprop_define(Vm* vm, HObject* hobj, TVal* key_val, TVal* val) {
             nf.is_accessor = false;
             hobj.set_prop_flags((uint)idx, nf);
         } else {
-            // Existing non-configurable property — caller throws TypeError.
+            // An existing non-configurable property; the caller throws TypeError.
             return INITPROP_TYPE_ERROR;
         }
     } else {
         // CreateDataPropertyOrThrow (ES2022 §7.3.4): non-extensible
-        // receiver — caller throws TypeError.
+        // receiver, so the caller throws TypeError.
         if (!hobj.is_extensible()) {
             return INITPROP_TYPE_ERROR;
         }
@@ -367,19 +367,19 @@ fn HObject* instantiate_closure(Vm* vm, CompiledFunction* template, EnvRecord* v
     // `this` once, at closure-creation time, so it survives being called from
     // any later call site (bare call, .call/.apply/.bind, builtin callback
     // thisArg, or a call routed through vm_call_fn_impl's nested-Vm.run
-    // boundary) — none of which reflect the arrow's true lexical `this`.
+    // boundary), none of which reflect the arrow's true lexical `this`.
     if (template.is_arrow() && enclosing_this != null) {
         vm.heap.tval_copy_ref(&(*func_obj.extra_ptr()).func.captured_this, enclosing_this);
     }
     // ES2015 §9.2.1 [[NewTarget]]=lexical: capture the enclosing function's
     // new.target once, at closure-creation time (same rationale as
-    // captured_this — the enclosing construct frame may have returned by the
+    // captured_this, since the enclosing construct frame may have returned by the
     // time the arrow runs). Borrowed reference kept reachable through the GC
     // mark path (objects are mark-and-swept, not refcount-freed).
     (*func_obj.extra_ptr()).func.captured_new_target = template.is_arrow() ? enclosing_new_target : null;
 
     // Set .length property (ES5 §15.3.5.1: non-writable, non-enumerable, configurable).
-    // Must be defined before .name — SetFunctionLength/SetFunctionName ordering
+    // Must be defined before .name, matching the SetFunctionLength and SetFunctionName ordering
     // (e.g. FunctionDeclarationInstantiation / ClassDefinitionEvaluation set
     // length first) is observable via Object.getOwnPropertyNames insertion order.
     HString* len_key = (HString*)vm.heap.strs[heap::BuiltinStr.LENGTH];
@@ -388,7 +388,7 @@ fn HObject* instantiate_closure(Vm* vm, CompiledFunction* template, EnvRecord* v
     func_obj.put_prop(len_key, len_val, hobject::PROP_FLAGS_NWC);
 
     // Set .name property (ES6 §14.1.20: non-writable, non-enumerable, configurable)
-    // Always set name — anonymous functions get "" per spec
+    // Always set name; anonymous functions get "" per spec.
     char[] name_data = template.get_name();
     HString* name_hstr;
     if (name_data.len > 0) {
@@ -417,7 +417,7 @@ fn HObject* instantiate_closure(Vm* vm, CompiledFunction* template, EnvRecord* v
     // instance's prototype per ES2015 §14.4 GeneratorFunction), get a
     // .prototype property. Arrow functions, async functions, and (non-
     // generator) methods/accessors are not constructable and must not have
-    // .prototype (ES6 §14.2.16, ES2017 §14.7.5, ES2015 §14.3.9 —
+    // .prototype (ES6 §14.2.16, ES2017 §14.7.5, ES2015 §14.3.9,
     // DefineMethod creates functions without .prototype).
     if (template.is_constructable() || is_true_generator || is_async_generator) {
         // ES5 §13.2.2 step 15: create .prototype property on the function
@@ -554,7 +554,8 @@ fn TVal? dispatch_iterator(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 obj.prototype = vm.heap.string_proto;
                 HString* prim_str = (HString*)ra.get_heapptr();
                 (*obj.extra_ptr()).prim.primitive_value.set_string(prim_str);
-                // Set .length own property (ES5 §15.5.5.1) — non-writable, non-enumerable, non-configurable.
+                // The .length own property (ES5 §15.5.5.1) is non-writable,
+                // non-enumerable, and non-configurable.
                 // Indexed character properties are served lazily via exotic_stringobj during enumeration.
                 HString* len_key = (HString*)vm.heap.strs[heap::BuiltinStr.LENGTH];
                 TVal len_tv;
@@ -586,8 +587,8 @@ fn TVal? dispatch_iterator(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 rb.set_null();
                 break;
             }
-            // Pin the target so the loop body — which may overwrite every
-            // register — cannot accidentally let the GC collect the object
+            // Pin the target so the loop body, which may overwrite every
+            // register, cannot let the GC collect the object
             // we're iterating.  NEXTFOR clears this when the state is freed.
             obj.as_header().set_temproot();
             rb.set_pointer(state);
@@ -606,7 +607,7 @@ fn TVal? dispatch_iterator(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
 
             // EnumerateObjectProperties / ForIn/OfBodyEvaluation semantics
             // (plan 062 group N): a key whose property was deleted from the
-            // target before its turn must be skipped — and is *not* replaced
+            // target before its turn must be skipped, and is not replaced
             // by undefined, because the key is no longer addressable on the
             // target.  Walk the pre-collected key list, advancing the index
             // past any key that no longer resolves.  Properties added during
@@ -620,7 +621,7 @@ fn TVal? dispatch_iterator(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 HString* k = state.keys[state.index];
                 state.index++;
                 if (state.target == null || !forin_key_still_exists(state.target, k)) {
-                    // Property was deleted before its turn — skip it.
+                    // The property was deleted before its turn, so skip it.
                     continue;
                 }
                 vm.heap.set_reg_string(ra, k);
@@ -628,7 +629,7 @@ fn TVal? dispatch_iterator(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 return (TVal){};
             }
 
-            // Exhausted — release the target pin and free the state.
+            // Exhausted, so release the target pin and free the state.
             if (state.target != null) {
                 state.target.as_header().clear_temproot();
             }
@@ -664,10 +665,10 @@ fn TVal? throw_type_error_at(Vm* vm, Dispatch* ds, String msg) {
 }
 
 /// ToObject for method receivers: return the object form of `v`, or null (with a
-/// pending TypeError absent — caller handles null/undefined before calling this).
+/// pending TypeError absent; the caller handles null and undefined first).
 /// Objects pass through; primitives are not wrapped here because @@asyncIterator
 /// / @@iterator live on the wrapper prototypes reachable via the object's own
-/// prototype chain — for-await sources are always objects in practice, so this
+/// prototype chain. for-await sources are always objects in practice, so this
 /// only needs the object fast path.
 fn HObject* to_object_for_method(Vm* vm, TVal v) {
     if (v.is_object() && v.get_heapptr() != null) return (HObject*)v.get_heapptr();
@@ -710,11 +711,11 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, In
             // and redirect to the finally handler.
             // If the current catcher's own finally is what we're executing
             // right now (CATCHER_FLAG_IN_FINALLY), redirecting to it again
-            // would loop forever — this break/continue overrides whatever
+            // would loop forever. This break or continue overrides whatever
             // pending completion it was carrying, so pop and discard it; it
             // will never reach ENDFINALLY. The next catcher up the chain may
             // itself be IN_FINALLY too (nested try/finally within the first
-            // one's finally block) — in that case the jump target already
+            // one's finally block), the jump target already
             // lies inside its still-active finally, so we don't redirect at
             // all and just let the jump proceed there directly.
             Catcher* bc_cat = (Catcher*)ds.act.cat;
@@ -742,7 +743,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, In
                 ds.act.curr_pc = ds.curr_pc;
                 break;
             }
-            // No active finally handler — jump directly to target
+            // No active finally handler, so jump straight to the target.
             if (target < (ds.curr_pc - ds.code_base)) {
                 if (--vm.heap.bwd_gc_budget == 0) {
                     if (vm.heap.gc_pending) { vm.heap.safepoint_gc(); }
@@ -858,14 +859,14 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, In
                             }
                             return (TVal){};
                         }
-                        // Dense write failed (capacity cap) — fall through to named-prop.
+                        // The dense write hit the capacity cap, so fall through.
                     }
                 }
 
                 int initprop_status = initprop_define(vm, hobj, rb, rc);
                 if (initprop_status == INITPROP_ABRUPT) {
                     // A Proxy `defineProperty` trap (or getOwnPropertyDescriptor,
-                    // consulted while validating the trap's result) threw —
+                    // consulted while validating the trap's result) threw, so
                     // propagate that value rather than synthesizing our own.
                     TVal perr = vm.heap.error_value;
                     vm.heap.has_error = false;
@@ -890,7 +891,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, In
         }
 
         case Opcode.INITPROPN: {
-            // A=object, B=key, C=value — identical to INITPROP (minus the
+            // A=object, B=key, C=value, identical to INITPROP (minus the
             // array dense-write fast path, since this opcode is only emitted
             // for object-literal data/method properties), but additionally
             // performs SetFunctionName if the value is a function with an
@@ -898,7 +899,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, In
             // value`) whose value is statically known to be an
             // AnonymousFunctionDefinition (ES2015 §12.2.6.9 step 6), and for
             // computed-key method shorthand (always renamed unconditionally,
-            // like class methods) — the compiler already names static-key
+            // like class methods), since the compiler already names static-key
             // cases directly, so this only fires for computed keys.
             if (ra.is_object()) {
                 HObject* hobj = (HObject*)ra.get_heapptr();
@@ -953,7 +954,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, In
                     int idx = hobj.find_prop_idx(key);
                     TVal* initget_props = hobj.prop_values();
                     // A private get/set pair (`get #x` + `set #x`) shares one
-                    // hidden-symbol key and is installed non-configurable —
+                    // hidden-symbol key and is installed non-configurable, so
                     // merging the other half of the pair into the SAME
                     // accessor cell must take precedence over the
                     // non-configurable rejection below (which exists to catch
@@ -975,7 +976,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, In
                         return (TVal){};
                     } else {
                         // Create new accessor property. Private accessors
-                        // (hidden-symbol key — ES2022 §7.3.28) are
+                        // (hidden-symbol key, ES2022 §7.3.28) are
                         // non-configurable; public class accessors remain
                         // configurable per §14.5.14 step 9.
                         TVal undef;
@@ -1075,7 +1076,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, In
                 if (key != null && hobj != null) {
                     int idx = hobj.find_prop_idx(key);
                     if (idx >= 0) {
-                        // Existing property — if configurable, replace it.
+                        // An existing property is replaced when configurable.
                         hobject::PropFlags ef = hobj.get_prop_flags((uint)idx);
                         if (ef.configurable) {
                             TVal put_val = *rc;
@@ -1109,7 +1110,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, In
                 }
                 // ES2015 §9.2.11 SetFunctionName for computed-key methods:
                 // if the function's .name is empty, set it to the key name
-                // (string) or "[desc]" (symbol) — no prefix for plain methods.
+                // (string) or "[desc]" (symbol), with no prefix for plain methods.
                 if (rc.is_object() && key != null) {
                     class_initaccessor_set_name(vm, (HObject*)rc.get_heapptr(), rb, "");
                 }
@@ -1145,9 +1146,9 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, In
             // Push a new declarative environment for the function body's var scope.
             // Per §9.2.10 step 27: when hasParameterExpressions is true, body vars
             // must not share the same environment as parameter bindings. The new
-            // env's outer is the parameter environment — i.e. the current lex_env
+            // env's outer is the parameter environment, meaning the current lex_env
             // (which PUSH_LEX advanced past var_env to hold TDZ'd/defaulted
-            // params) — not the stale pre-PUSH_LEX var_env, or default-param
+            // params), not the stale pre-PUSH_LEX var_env, or default-param
             // values written via PUTLEX/PUTVAR into the parameter scope would be
             // unreachable from the body's env chain.
             EnvRecord*? pvar_raw = env::env_create_declarative(vm.heap, ds.act.lex_env);
@@ -1202,13 +1203,13 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, In
             // has no `.return` method, do nothing (per spec).
             //
             // B field encodes the completion type:
-            //   B=0 — non-throw completion (break / return / exhaustion):
+            //   B=0: a non-throw completion (break, return, or exhaustion):
             //         propagate errors from .return access (TypeError if
             //         non-callable) and from .return() call.
-            //   B=1 — throw completion (body threw):
+            //   B=1: a throw completion (the body threw):
             //         suppress all errors from .return access / call; the
             //         original throw takes precedence (§7.4.6 steps 6,8).
-            //   B=2 — auto: emitted inside a finally that handles ANY completion.
+            //   B=2: auto, emitted inside a finally that handles any completion.
             //         Inspect the enclosing (in-finally) catcher's pending state:
             //         a pending throw suppresses (§7.4.6 step 6/8), while a
             //         pending return/break/continue or a normal completion
@@ -1247,7 +1248,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, In
                 return (TVal){};
             }
 
-            // Not found or undefined — no close needed.
+            // Not found or undefined, so nothing to close.
             if (ret_lookup.kind == hobject::PropLookupKind.PROP_NOT_FOUND) {
                 return (TVal){};
             }
@@ -1279,7 +1280,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, In
                         ret_method = acc.accessor_fn;
                     }
                 } else {
-                    // Getter returned non-object (null / undefined) — treat as undefined.
+                    // A non-object getter result is treated as undefined.
                     return (TVal){};
                 }
             } else {
@@ -1416,7 +1417,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, In
                 return throw_type_error_at(vm, ds, "sync iterator is not an object");
             }
             // Build %AsyncFromSyncIterator% around the sync iterator. This reads
-            // the sync iterator's `next` once (§7.4.2 GetIterator) — a throwing
+            // the sync iterator's `next` once (§7.4.2 GetIterator), so a throwing
             // `next` getter surfaces via heap.has_error and must propagate.
             HObject*? wrapped = builtins::async_from_sync_iterator(vm.heap, (HObject*)sync_iter.get_heapptr(), (void*)vm);
             if (vm.heap.has_error) {
@@ -1441,7 +1442,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, In
             // AWAIT it. rc is set to true only when a real .return() result
             // needs awaiting; codegen skips the AWAIT+LOAD_RESUME pair when
             // rc is false (there is nothing to close, so §7.4.11 never calls
-            // Await at all — unlike a real user `await`, AWAIT always costs a
+            // Await at all. Unlike a real user `await`, AWAIT always costs a
             // tick now, so this synthetic no-close case must not reach it).
             rc.set_boolean(false);
             bool is_throw_completion = (insn.b == 1);
@@ -1602,7 +1603,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, In
 
         case Opcode.CHK_BRAND: {
             // A=object, B=register holding the brand symbol, C=constant pool
-            // index of the private name (0xFF = unknown — not encodable in
+            // index of the private name (0xFF means unknown, not encodable in
             // 8 bits). Throws TypeError unless A is an object AND has the
             // brand symbol as an OWN property (own-only: must not walk the
             // prototype chain, or Object.create(instance).#x would falsely pass).
@@ -1643,7 +1644,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, In
             // property. Own-only matches the CHK_BRAND rule (spec private
             // brand check is own-property) and ensures `Object.create(obj)`
             // doesn't falsely pass. If B isn't an object, throw TypeError
-            // — the `in` operator requires an object RHS per
+            // The `in` operator requires an object RHS per
             // ES2022 RelationalExpression[+In]PrivateIdentifier in
             // ShiftExpression step 4; a primitive RHS must reject with
             // TypeError so callers can branch on it (test262
@@ -1737,7 +1738,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, In
                             track_heap_store(ds.act, ra, (uint)insn.a);
                             return (TVal){};
                         }
-                        // Skip proxy exotic objects — go directly to their target
+                        // Skip proxy exotic objects and go straight to the target
                         if (cur.flags.exotic_proxyobj) {
                             cur = builtins::proxy_target(cur);
                         } else {
