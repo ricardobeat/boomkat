@@ -170,8 +170,15 @@ fn ushort? CompilerContext.assignment_expr(&self) {
     TokenType tt2 = self.peek_type();
 
     // If LHS was a member expression but next token is NOT an assignment,
-    // free the saved obj/key registers (GETPROP was already emitted)
-    if (self.last_was_member && tt2 != TokenType.ASSIGN
+    // free the saved obj/key registers (GETPROP was already emitted).
+    // Skip this cleanup when inside parens or in delete mode: the inner
+    // member reference isn't actually a candidate for assignment — the
+    // enclosing grouping/del expression still needs the obj/prop tracks
+    // for patch-into-DELPROP (delete) or for the outer assignment check
+    // (CoverParenthesizedExpression is never a valid assignment target
+    // in strict mode, so the grouping here can't be an assignment LHS).
+    if (!self.inside_parens && !self.del_mode
+        && self.last_was_member && tt2 != TokenType.ASSIGN
         && tt2 != TokenType.PLUS_ASSIGN && tt2 != TokenType.MINUS_ASSIGN
         && tt2 != TokenType.STAR_ASSIGN && tt2 != TokenType.SLASH_ASSIGN
         && tt2 != TokenType.PERCENT_ASSIGN && tt2 != TokenType.STARSTAR_ASSIGN
