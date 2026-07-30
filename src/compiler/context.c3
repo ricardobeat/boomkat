@@ -484,9 +484,13 @@ struct CompilerContext {
     // the loop's lex_env before jumping.
     int  cur_lex_depth;
 
-    // Strict mode
-    bool is_strict;             // always true (strict-only engine)
+    // Strict mode: the engine is strict-only, so there is no strictness flag.
+    // `saw_use_strict` records only that a (no-op) directive was parsed.
     bool saw_use_strict;        // true only when an actual "use strict" directive was parsed
+    // Set by the dynamic Function/GeneratorFunction/AsyncFunction constructors
+    // so an undefined receiver coerces to globalThis — see
+    // FuncFlags.subst_global_this. Cleared by a "use strict" directive.
+    bool subst_global_this;
 
     // arguments tracking
     bool uses_arguments;        // true when 'arguments' is referenced in function body
@@ -680,8 +684,6 @@ fn void CompilerContext.init(&self, Lexer* lex, void* heap) {
     self.pushback_count = 0;
     self.pending_async_arrow_src = 0xFFFFFFFF;
     self.pending_async_function_src = 0xFFFFFFFF;
-    // Strict-only engine: all code is strict by default.
-    self.is_strict = true;
 
     // Allocate growable buffers
     Heap* h = (Heap*)heap;
@@ -1400,7 +1402,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     func.flags.is_user_generator = self.is_user_generator;
     func.flags.is_async = self.is_async;
     func.flags.is_arrow = self.is_arrow;
-    func.flags.is_strict = self.is_strict;
+    func.flags.subst_global_this = self.subst_global_this;
     // A direct eval's source is opaque at compile time — it may reference
     // `arguments` even though the enclosing function's own parsed text never
     // does (ES2022 §15.7.10 PerformEval materializes the caller's arguments

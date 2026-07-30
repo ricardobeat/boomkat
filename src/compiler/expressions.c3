@@ -582,16 +582,13 @@ fn ushort? CompilerContext.assignment_expr(&self) {
             // throw even though the RHS would create the global. A GETGLOBAL_PRIM
             // LHS is by construction a declared primitive-only global, so it is
             // statically resolvable too — strip its dead read.
-            if (self.is_strict
-                && (lhs_last.op == Opcode.GETGLOBAL_PRIM
-                    || (lhs_last.op == Opcode.GETGLOBAL
-                        && self.is_declared_global(lhs_getvar_name_idx)))) {
+            if (lhs_last.op == Opcode.GETGLOBAL_PRIM
+                || (lhs_last.op == Opcode.GETGLOBAL
+                    && self.is_declared_global(lhs_getvar_name_idx))) {
                 self.code_count--;
-            } else if (self.is_strict) {
+            } else {
                 self.code[self.code_count - 1] = bytecode::make_a_bc(Opcode.RESOLVEVAR, (uint)left, lhs_getvar_name_idx);
                 lhs_ref_reg = left;
-            } else {
-                self.code_count--;
             }
         }
     }
@@ -1262,12 +1259,16 @@ fn ushort? CompilerContext.unary_expr(&self) {
                 self.last_was_member = false;
                 // op_del is the A register of the patched DELPROP (boolean).
                 return op_del;
-            } else if (self.last_was_getvar) {
+            } else if (self.last_was_getvar || self.last_was_local_var) {
                 // `delete IdentifierReference` — Annex B.3.1 (ES5 11.4.1 step 1):
                 // strict mode rejects this as a SyntaxError. Sloppy mode runs
                 // the deletion against the variable environment. Since this
-                // engine is strict-only, we always reject.
+                // engine is strict-only, we always reject. Both operand shapes
+                // must be caught: a name that resolved to a register
+                // (last_was_local_var) is just as much an IdentifierReference
+                // as one that needs a runtime GETVAR/GETGLOBAL.
                 self.last_was_getvar = false;
+                self.last_was_local_var = false;
                 return self.fail("delete of an unqualified identifier in strict mode")~;
             } else {
                 // Delete of a non-reference (literal, expression result, etc.).

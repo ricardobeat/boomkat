@@ -483,10 +483,13 @@ fn void? CompilerContext.parse_directives(&self) {
                     }
                 }
                 if (is_use_strict) {
-                    self.is_strict = true;
+                    // Code is already strict; the directive is a no-op except
+                    // that it makes a dynamic Function body an ordinary strict
+                    // function, whose undefined receiver stays undefined.
                     self.saw_use_strict = true;
+                    self.subst_global_this = false;
                     if (self.current_func != null) {
-                        self.current_func.flags.is_strict = true;
+                        self.current_func.flags.subst_global_this = false;
                     }
                 }
             }

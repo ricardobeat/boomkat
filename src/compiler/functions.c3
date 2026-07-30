@@ -2950,7 +2950,6 @@ fn CompiledFunction*? CompilerContext.compile_static_block(&self) {
     }
 
     CompiledFunction* func = block_ctx.finish()!;
-    func.flags.is_strict = block_ctx.is_strict;
     return func;
 }
 
@@ -2972,8 +2971,9 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
     // (see is_named_func_expr doc in context.c3).
     inner_ctx.is_named_func_expr = is_named_expr && name.len > 0;
 
-    // Propagate strict mode: inner functions inherit enclosing strict context.
-    inner_ctx.is_strict = self.is_strict;
+    // subst_global_this is deliberately NOT propagated: a function nested
+    // inside a dynamic Function body is an ordinary function whose
+    // [[ThisMode]] is strict, so its undefined receiver stays undefined.
 
     // Propagate generator flag: if the caller is compiling a generator,
     // the inner context (which parses the body) needs to know it's in a generator.
@@ -3298,8 +3298,6 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
     }
 
     CompiledFunction* func = inner_ctx.finish()!;
-
-    func.flags.is_strict = inner_ctx.is_strict;
 
     // Set function name. The name parameter is a slice into the caller's
     // inferred_name_buf (or a lexer token buffer), which gets reused for

@@ -1203,8 +1203,15 @@ bitstruct FuncFlags : uint {
     /// `class.prototype = ...` must throw TypeError).  When false, .prototype
     /// uses PROP_FLAGS_WEC (configurable=true).
     bool  is_class_ctor    : 21;
-    /// Function body had a "use strict" directive.
-    bool  is_strict        : 22;
+    /// Substitute the global object for an undefined/null `this` receiver
+    /// (ES5 §10.4.3 OrdinaryCallBindThis with [[ThisMode]]=global). The engine
+    /// is strict-only, so this is NOT derived from strictness: it is set only
+    /// on bodies built by the dynamic Function / GeneratorFunction /
+    /// AsyncFunction constructors, whose [[ThisMode]] the spec derives from a
+    /// *sloppy* enclosing realm rather than from the caller's scope. Keeps the
+    /// ubiquitous UMD idiom `Function('return this')()` yielding globalThis.
+    /// A `"use strict"` directive in the dynamic body clears it.
+    bool  subst_global_this: 22;
     /// Constructor is a derived class constructor (ES2015 §9.2.2 step 13.c):
     /// `return <non-object>` in a derived constructor throws TypeError unless
     /// the value is undefined. Set when has_super_binding is true at compile time.
@@ -1217,7 +1224,7 @@ bitstruct FuncFlags : uint {
     /// them non-configurable via CreateGlobalVarBinding(vn, false).
     bool  is_eval          : 24;
     /// The eval SOURCE carried its own "use strict" directive prologue. The
-    /// engine executes all code in strict mode (is_strict is always set), but
+    /// engine executes all code in strict mode, but
     /// EvalDeclarationInstantiation's leak semantics depend on the *source's*
     /// own strictness (ES2015 §18.2.1.1 PerformEval step 12): strict eval gets
     /// a fresh varEnv (declarations never escape), non-strict indirect/global
@@ -1515,9 +1522,10 @@ macro bool CompiledFunction.needs_lex_bridge(&self) {
     return self.flags.needs_lex_bridge;
 }
 
-/// Returns `true` when the function body had a "use strict" directive.
-macro bool CompiledFunction.is_strict(&self) {
-    return self.flags.is_strict;
+/// Returns `true` when an undefined/null `this` receiver must be replaced by
+/// the global object — see FuncFlags.subst_global_this.
+macro bool CompiledFunction.subst_global_this(&self) {
+    return self.flags.subst_global_this;
 }
 
 /// Returns `true` when the function uses `arguments`.
