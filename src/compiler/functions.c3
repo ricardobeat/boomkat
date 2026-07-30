@@ -1562,10 +1562,15 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
         }
 
         // Detect `async function` at the scan's own top level: the pre-scan
-        // sees IDENTIFIER("async") first, peeks at FUNCTION, and if so
-        // pushes "function" back so the next iteration handles it as a
-        // FUNCTION token with is_async already set.
+        // sees IDENTIFIER("async") first, peeks at FUNCTION on the SAME line,
+        // and if so pushes "function" back so the next iteration handles it as
+        // a FUNCTION token with is_async already set.  An escaped `async`
+        // (`\u0061sync …`) is a plain IdentifierName, not the contextual
+        // keyword (ES2024 §5.1.5); a LineTerminator between `async` and
+        // `function` (ES2017 §14.7) makes them separate statements — let
+        // each be handled in their own iteration.
         if (brace_depth == own_depth && tt == TokenType.IDENTIFIER &&
+            !tok_opt.has_escape &&
             tok_opt.str_value.len == 5 &&
             tok_opt.str_value[0] == 'a' && tok_opt.str_value[1] == 's' &&
             tok_opt.str_value[2] == 'y' && tok_opt.str_value[3] == 'n' &&
@@ -1581,7 +1586,7 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
             uint async_kw_pos = self.lexer.token_start;
             Token? async_peek = self.lexer.next_token();
             if (catch _err_peek = async_peek) continue;
-            if (async_peek.type == TokenType.FUNCTION) {
+            if (async_peek.type == TokenType.FUNCTION && async_peek.line == tok_opt.line) {
                 // "async" consumed; push "function" back for the next iteration.
                 pending_async_fn_kw_pos = async_kw_pos;
                 {
@@ -1591,7 +1596,8 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
                 self.is_async = true;
                 continue;
             }
-            // Not followed by function — push back the peeked token
+            // Not followed by function (or line terminator broke the
+            // `async function` pairing) — push back the peeked token.
             {
                 Token async_tok = async_peek;
                 self.lexer.pushback(async_tok);
@@ -2034,8 +2040,13 @@ fn void? CompilerContext.hoist_global_fn_decls(&self, bool checks_only = false) 
             continue;
         }
 
-        // Detect `async function` at brace_depth 0
+        // Detect `async function` at brace_depth 0.  Escaped `\u0061sync`
+        // is a plain identifier (ES2024 §5.1.5); a LineTerminator between
+        // `async` and `function` (ES2017 §14.7) makes them separate statements.
+        // In either case let the pre-scan fall through to the existing
+        // handling (the second pass then re-applies the same rule).
         if (brace_depth == 0 && tt == TokenType.IDENTIFIER &&
+            !tok_opt.has_escape &&
             tok_opt.str_value.len == 5 &&
             tok_opt.str_value[0] == 'a' && tok_opt.str_value[1] == 's' &&
             tok_opt.str_value[2] == 'y' && tok_opt.str_value[3] == 'n' &&
@@ -2046,7 +2057,7 @@ fn void? CompilerContext.hoist_global_fn_decls(&self, bool checks_only = false) 
             uint async_kw_pos = self.lexer.token_start;
             Token? async_peek = self.lexer.next_token();
             if (catch _err_peek = async_peek) continue;
-            if (async_peek.type == TokenType.FUNCTION) {
+            if (async_peek.type == TokenType.FUNCTION && async_peek.line == tok_opt.line) {
                 pending_async_fn_kw_pos = async_kw_pos;
                 {
                     Token fn_tok = async_peek;

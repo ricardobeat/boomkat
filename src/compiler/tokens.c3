@@ -227,11 +227,15 @@ fn void CompilerContext.pushback(&self, Token tok) {
     }
 }
 
-/// Detect the `async` prefix for function declarations/expressions.
+/// Detect the `async` prefix for function declarations/expressions
+/// (ES2017 §14.7 Async Function Definitions).
 /// Returns true and consumes the `async` token if the current token is
-/// the identifier "async" and the next token is "function" (not a
-/// function call like `async(x) => ...` or a method like `async(x)`).
-/// Returns false and leaves the input untouched otherwise.
+/// the identifier "async" (NOT written via Unicode escapes — an escaped
+/// `async` is a regular IdentifierName, never the contextual keyword),
+/// followed by `function` on the SAME line (the `[no LineTerminator here]`
+/// restriction between `async` and `function`).  Returns false and leaves
+/// the input untouched otherwise — including when `async` was a method
+/// call like `async(x) => ...` or a method named `async`.
 fn bool CompilerContext.match_async_function(&self) {
     if (self.peek_type() != TokenType.IDENTIFIER) return false;
     Token? cur_opt = self.advance();
@@ -248,10 +252,40 @@ fn bool CompilerContext.match_async_function(&self) {
         self.pushback(cur);
         return false;
     }
-    // Peek the next token: must be `function`
-    TokenType next = self.peek_type();
-    if (next != TokenType.FUNCTION) {
+    // Escaped `async` (`\u0061sync` etc.) is a plain IdentifierName, never
+    // the contextual keyword (ES2024 §5.1.5 — terminal symbols must appear
+    // exactly as written). Backtrack; the parser falls through to identifier
+    // handling (the identifier will resolve at runtime, or throw ReferenceError
+    // if unbound).
+    if (cur.has_escape) {
+        self.pushback(cur);
+        return false;
+    }
+    // Look up the next token WITHOUT consuming it: on a true result the
+    // function body (and everything after) must remain unconsumed so the
+    // inner-function compiler reads it directly off the shared lexer; the
+    // compiler pushback stack is invisible to inner contexts.
+    Token next_tok;
+    if (self.pushback_count > 0) {
+        next_tok = self.pushback_stack[self.pushback_count - 1];
+    } else {
+        Token? peek_opt = self.lexer.peek();
+        if (catch _e = peek_opt) {
+            self.pushback(cur);
+            return false;
+        }
+        next_tok = peek_opt;
+    }
+    if (next_tok.type != TokenType.FUNCTION) {
         // `async` was used as a regular identifier (e.g., variable or arrow param)
+        self.pushback(cur);
+        return false;
+    }
+    // [no LineTerminator here] between `async` and `function` (ES2017 §14.7).
+    // Without this, `async\nfunction f(){}` would parse as an AsyncFunction
+    // declaration when the spec requires it to be two statements: an identifier
+    // reference (which throws ReferenceError) followed by a regular FunctionDeclaration.
+    if (next_tok.line != cur.line) {
         self.pushback(cur);
         return false;
     }
@@ -262,10 +296,17 @@ fn bool CompilerContext.match_async_function(&self) {
 /// Detect the `async` prefix for arrow functions: `async x => ...` or
 /// `async (params) => ...`. Pure lookahead — never consumes any tokens,
 /// so the caller decides when to advance past `async` on a true result.
-/// Returns true if the current token is the identifier "async" and is
-/// followed by either `IDENTIFIER ARROW` or an `LPAREN` (the latter is
-/// only a shape check; whether it truly resolves to an arrow is left to
-/// the existing LPAREN speculative-arrow scan in primary_expr).
+/// Returns true if the current token is the identifier "async" (NOT
+/// written via Unicode escapes — ES2024 §5.1.5 forbids escape recognition
+/// for terminal symbols), is on the SAME line as the next token, and is
+/// followed by either `IDENTIFIER ARROW` (`async x => ...`) or an `LPAREN`
+/// (`async (params) => ...`; shape-only — the LPAREN speculative-arrow
+/// scan in primary_expr decides if it truly resolves to an arrow).
+/// Returns false in all other cases — including any of:
+///   - `escaped` (`\u0061sync ...`)
+///   - line terminator between `async` and the binding identifier / `(`
+///   - `async` followed by anything other than IDENTIFIER or LPAREN on
+///     the same line (e.g. `async;`, `async = ...`)
 fn bool CompilerContext.is_async_arrow_lookahead(&self) {
     if (self.peek_type() != TokenType.IDENTIFIER) return false;
     Token? cur_opt = self.advance();
@@ -278,20 +319,61 @@ fn bool CompilerContext.is_async_arrow_lookahead(&self) {
         self.pushback(cur);
         return false;
     }
-    TokenType next = self.peek_type();
-    if (next == TokenType.LPAREN) {
+    // Escaped `async` is a plain IdentifierName, never the contextual keyword.
+    if (cur.has_escape) {
+        self.pushback(cur);
+        return false;
+    }
+    // Read the next token WITHOUT consuming it: we must leave `async` and
+    // the following tokens in place — the caller's primary_expr() will
+    // advance past `async` and re-enter, and on the IDENTIFIER-ARROW path
+    // the binding identifier + `=>` are then consumed fresh.
+    Token next_tok;
+    if (self.pushback_count > 0) {
+        next_tok = self.pushback_stack[self.pushback_count - 1];
+    } else {
+        Token? peek_opt = self.lexer.peek();
+        if (catch _e = peek_opt) {
+            self.pushback(cur);
+            return false;
+        }
+        next_tok = peek_opt;
+    }
+    if (next_tok.type == TokenType.LPAREN) {
+        // [no LineTerminator here] before the `(`.  When satisfied we treat
+        // this as an `async ( ... ) => ...` cover call; when violated the
+        // spec's `async` is just an identifier expr statement and the `(`
+        // starts a separate expression.
+        if (next_tok.line != cur.line) {
+            self.pushback(cur);
+            return false;
+        }
         self.pushback(cur);
         return true;
     }
-    if (next == TokenType.IDENTIFIER) {
+    if (next_tok.type == TokenType.IDENTIFIER) {
+        // [no LineTerminator here] between `async` and the binding identifier.
+        // Without this, `async\nx => {}` would parse as an AsyncArrowFunction,
+        // but per ES2017 §14.7 it must be two expression statements: an
+        // identifier reference (throws ReferenceError if unbound) and a plain
+        // arrow function.
+        if (next_tok.line != cur.line) {
+            self.pushback(cur);
+            return false;
+        }
+        // Speculative 2-token lookahead: consume the binding identifier, peek
+        // at the token after it, then put both back. Restoring via pushback
+        // is safe here because the caller's primary_expr() will advance past
+        // `async` (which we already pushed back) and reach the binding
+        // identifier fresh from the lexer/lookahead.
         Token? next_opt = self.advance();
         if (catch _e = next_opt) {
             self.pushback(cur);
             return false;
         }
-        Token next_tok = next_opt;
+        Token second_tok = next_opt;
         bool is_arrow = self.peek_type() == TokenType.ARROW;
-        self.pushback(next_tok);
+        self.pushback(second_tok);
         self.pushback(cur);
         return is_arrow;
     }
