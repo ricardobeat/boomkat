@@ -1,4 +1,4 @@
-/// DataView constructor and prototype (ES2015 §24.2) — Stage 3 of plan 049.
+/// DataView constructor and prototype (ES2015 §24.2), Stage 3 of plan 049.
 /// Reuses the ArrayBuffer/TypedArray view-linking primitives from
 /// arraybuffer.c3/typedarray.c3; this file only adds the byte-addressed
 /// get/set surface with an explicit littleEndian argument.
@@ -41,7 +41,7 @@ fn uint dv_elem_size(hobject::ObjClass cls) {
 }
 
 // ============================================================================
-// DataView(buffer, byteOffset=0, byteLength=undefined) — ES2015 §24.2.2.1
+// DataView(buffer, byteOffset=0, byteLength=undefined), ES2015 §24.2.2.1
 // ============================================================================
 
 fn void builtin_dataview(BuiltinContext* ctx) {
@@ -104,7 +104,7 @@ fn void builtin_dataview(BuiltinContext* ctx) {
     }
 
     // OrdinaryCreateFromConstructor (via new.target.prototype) can run
-    // arbitrary user code — including detaching `buf` — so it must be
+    // arbitrary user code, including detaching `buf`, so it must be
     // resolved before the view is linked, and the detach state re-checked
     // afterward, before the DataView instance is returned.
     HObject* instance_proto = typedarray_instance_proto(ctx, ctx.heap.dataview_proto);
@@ -144,7 +144,7 @@ fn void builtin_dataview(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// DataView.prototype accessors — ES2015 §24.2.4.1-3
+// DataView.prototype accessors, ES2015 §24.2.4.1-3
 // ============================================================================
 
 fn void builtin_dataview_proto_buffer_get(BuiltinContext* ctx) {
@@ -188,7 +188,7 @@ fn void builtin_dataview_proto_byteoffset_get(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Shared get/set core — §24.2.1.1 GetViewValue / §24.2.1.2 SetViewValue
+// Shared get/set core, §24.2.1.1 GetViewValue / §24.2.1.2 SetViewValue
 // ============================================================================
 
 /// Load `elem_size` bytes at `p` as a little-endian unsigned integer (up to
@@ -352,7 +352,7 @@ fn void dv_set(BuiltinContext* ctx, hobject::ObjClass elem_class) {
         little_endian = builtin_to_boolean(&ctx.regs[ctx.base_reg + 2]);
     }
 
-    // Value conversion happens BEFORE the bounds and detach checks per spec —
+    // Value conversion happens BEFORE the bounds and detach checks per spec,
     // user code (valueOf / Symbol.toPrimitive) may detach or resize the buffer
     // as a side effect. BigInt views use ToBigInt (§25.3.1.1 SetViewValue step 4
     // NumberToRawBytes vs BigIntToRawBytes), the rest use ToNumber.
@@ -403,7 +403,7 @@ fn void dv_set(BuiltinContext* ctx, hobject::ObjClass elem_class) {
 
     // DataView setters throw on detach/OOB even though value conversion
     // already ran (§24.2.1.2 steps 1-10 recheck ViewedArrayBuffer/bounds
-    // after ToNumber/ToBigInt) — unlike TypedArray element writes, which
+    // after ToNumber/ToBigInt), unlike TypedArray element writes, which
     // silently no-op on a post-conversion OOB/detach.
     if (view_is_out_of_bounds(obj)) {
         arraybuffer_throw_type_error(ctx, "DataView setter: view is out of bounds");
@@ -441,7 +441,7 @@ fn void builtin_dataview_set_float32(BuiltinContext* ctx) { dv_set(ctx, hobject:
 fn void builtin_dataview_set_float64(BuiltinContext* ctx) { dv_set(ctx, hobject::ObjClass.FLOAT64ARRAY); }
 
 // ============================================================================
-// getBigInt64/getBigUint64/setBigInt64/setBigUint64 (§25.3.4) — read/write an
+// getBigInt64/getBigUint64/setBigInt64/setBigUint64 (§25.3.4), read/write an
 // 8-byte two's-complement i64 (little/big-endian) as a BigInt, sharing the
 // dv_get/dv_set machinery with the numeric views.
 // ============================================================================

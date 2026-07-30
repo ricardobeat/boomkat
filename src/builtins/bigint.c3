@@ -118,7 +118,7 @@ fn int128? number_to_bigint(double d) {
 }
 
 // ============================================================================
-// BigInt(value) — ES2020 §20.2.1
+// BigInt(value), ES2020 §20.2.1
 // ============================================================================
 
 fn void builtin_bigint(BuiltinContext* ctx) {
@@ -168,7 +168,7 @@ fn void builtin_bigint(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// BigInt.asIntN(bits, value) / BigInt.asUintN(bits, value) — ES2020 §20.2.2
+// BigInt.asIntN(bits, value) / BigInt.asUintN(bits, value), ES2020 §20.2.2
 // ============================================================================
 
 /// Parse the `bits` argument: ToIndex (a non-negative integer).  On failure
@@ -239,7 +239,7 @@ fn void builtin_bigint_as_intn(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// BigInt.prototype.toString([radix]) / valueOf() — ES2020 §20.2.3
+// BigInt.prototype.toString([radix]) / valueOf(), ES2020 §20.2.3
 // ============================================================================
 
 /// thisBigIntValue (ES2020 §20.2.3.4): unwrap a BigInt primitive.  On failure
@@ -329,7 +329,7 @@ fn bool register_bigint_constructor(EnvRecord* global_env, Heap* heap) {
     (*ctor.extra_ptr()).func.builtin_fn_index = (int)Builtin.BIGINT.ordinal;
     ctor.flags.callable = true;
     // BigInt is not constructable with new, but must have [[Construct]] to be
-    // detected by isConstructor() — the construct behavior throws TypeError.
+    // detected by isConstructor(), the construct behavior throws TypeError.
     // Keep constructable = true (default) so Reflect.construct() works.
     ctor.prototype = heap.function_proto;
 

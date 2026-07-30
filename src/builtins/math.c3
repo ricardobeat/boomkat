@@ -196,7 +196,7 @@ fn void builtin_math_tan(BuiltinContext* ctx) {
     ctx.result.set_number(math_tan(x));
 }
 
-/// Math.random() — uses the heap's PRNG state (xorshift32).
+/// Math.random(), uses the heap's PRNG state (xorshift32).
 fn void builtin_math_random(BuiltinContext* ctx) {
     uint state = ctx.heap.rnd_state;
     state ^= state << 13;
@@ -363,13 +363,13 @@ fn void builtin_math_fround(BuiltinContext* ctx) {
 
 fn void builtin_math_f16round(BuiltinContext* ctx) {
     double x = math_arg(ctx, 0);
-    // fromfp16(tofp16(x)) — preserves NaN/Inf/zero (and sign of zero) exactly.
+    // fromfp16(tofp16(x)), preserves NaN/Inf/zero (and sign of zero) exactly.
     ctx.result.set_number(f16_to_double(double_to_f16(x)));
 }
 
 fn void builtin_math_clz32(BuiltinContext* ctx) {
     double x = math_arg(ctx, 0);
-    // Per spec: ToUint32(x) — NaN, +0, -0, +Infinity, -Infinity all return +0.
+    // Per spec: ToUint32(x), NaN, +0, -0, +Infinity, -Infinity all return +0.
     uint val;
     if (math::is_nan(x) || math::is_inf(x) || x == 0.0) {
         val = 0;

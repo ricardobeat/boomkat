@@ -19,7 +19,7 @@ import std::time;
 extern fn double duktape_date_make_time(double hour, double minute, double second, double ms);
 
 /// ES2015+ §21.4.1.15 MakeDate: day * msPerDay + timeWithinDay. Same
-/// separate-translation-unit trick as duktape_date_make_time — otherwise the
+/// separate-translation-unit trick as duktape_date_make_time, otherwise the
 /// multiply+add gets fused into a single-rounding FMA under relaxed fp-math.
 extern fn double duktape_date_make_date(double day, double time_within_day);
 
@@ -35,13 +35,13 @@ fn double date_now_ms() {
 
 /// Convert an epoch time value in milliseconds to whole seconds, flooring
 /// toward -infinity (not truncating toward zero) so negative time values
-/// land on the correct second — e.g. -1ms is second -1, not second 0.
+/// land on the correct second, e.g. -1ms is second -1, not second 0.
 fn long date_ms_to_sec(double time_val) {
     return (long)math::floor(time_val / 1000.0);
 }
 
 /// Floor-divide an epoch ms time value by `unit_ms` and reduce modulo
-/// `modulus`, both flooring toward -infinity — e.g. extracting the
+/// `modulus`, both flooring toward -infinity, e.g. extracting the
 /// seconds-of-minute or minutes-of-hour field from a (possibly negative)
 /// time value. Plain C `/` and `%` truncate toward zero, which silently
 /// skips the "was this negative" fixup for values like -1ms (truncates to
@@ -56,7 +56,7 @@ fn long date_floor_mod_field(double time_val, long unit_ms, long modulus) {
 /// Convert a Unix time (seconds since 1970-01-01 UTC, may be negative) into
 /// proleptic-Gregorian UTC broken-down fields. Pure integer calendar math
 /// (Howard Hinnant's days-from-civil), so it is reliable across the full
-/// ECMAScript date range without relying on libc's historical tzdata — the
+/// ECMAScript date range without relying on libc's historical tzdata, the
 /// same rationale the surrounding code already applied to gmtime_r.
 ///
 /// Outputs match the previous gmtime_r usage: `year` is the full year,
@@ -144,7 +144,7 @@ fn double date_local_to_ms(long year, long month, long day,
 /// Compute the local timezone offset (in seconds, UTC minus local) for the
 /// given epoch time, i.e. how far local time is ahead of UTC. Reads
 /// tm_gmtoff (exposed as TzDateTime.gmt_offset) directly off a single
-/// localtime_r lookup at the UTC instant — the same single-call approach
+/// localtime_r lookup at the UTC instant, the same single-call approach
 /// as the reference engine's getTimezoneOffset. Earlier revisions
 /// reinterpreted the local broken-down fields through the engine's own
 /// civil-day math to get a second offset estimate; that round trip is
@@ -165,7 +165,7 @@ fn long date_tz_offset_seconds(long t_sec) {
 fn void date_break_time_local_fields(double time_val, long* year, long* month, long* day,
                                      long* wday, long* hour, long* minute, long* second) {
     // The offset lookup key is truncated (not floored) to match the
-    // reference engine's getTimezoneOffset input exactly — see
+    // reference engine's getTimezoneOffset input exactly, see
     // date_local_to_ms for why. The calendar break-down itself still
     // needs a floored whole-seconds value so negative times land on the
     // correct civil day.
@@ -361,7 +361,7 @@ fn double date_parse_iso_str(char* str, usz len) {
 
     // Optional timezone designator
     if (pos < len && str[pos] == 'Z') {
-        // UTC timezone — use date_utc_to_ms
+        // UTC timezone, use date_utc_to_ms
         pos++;
         return date_time_clip(date_utc_to_ms(year, month - 1, day, hour, minute, second, millis));
     } else if (pos + 5 <= len && (str[pos] == '+' || str[pos] == '-')) {
@@ -522,11 +522,11 @@ fn double date_parse_locale_str(char* str, usz len) {
     return utc_ms;
 }
 
-/// Date() as function — returns current date-time string (ES5 §15.9.2.1).
+/// Date() as function, returns current date-time string (ES5 §15.9.2.1).
 fn void builtin_date(BuiltinContext* ctx) {
     double now = date_now_ms();
     if (ctx.is_constructor) {
-        // new Date(...) — create Date object
+        // new Date(...), create Date object
         HObject*? obj_raw = ctx.heap.alloc_object(hobject::ObjClass.DATE);
         if (catch err = obj_raw) {
             ctx.result.set_undefined();
@@ -565,7 +565,7 @@ fn void builtin_date(BuiltinContext* ctx) {
                 time_val = now;
             } else if (arg.is_object() && arg.get_heapptr() != null) {
                 // ES6 §20.3.2.2 step 3.a: when value is a Date object, use
-                // thisTimeValue(value) — read [[DateValue]] directly without
+                // thisTimeValue(value), read [[DateValue]] directly without
                 // calling valueOf/toString. Note: Date.prototype is a DATE
                 // object that lacks [[DateValue]]; date_this_time_value throws
                 // TypeError for it, which matches ES6 step 3.a.i.
@@ -708,7 +708,7 @@ fn void builtin_date(BuiltinContext* ctx) {
 
         ctx.result.set_object(obj);
     } else {
-        // Date() as function — return string of current time
+        // Date() as function, return string of current time
         char[128] buf;
         usz len = date_format_to_string(now, &buf, 128);
         HString* result = builtin_intern_string(ctx.heap, buf[:len]);
@@ -716,12 +716,12 @@ fn void builtin_date(BuiltinContext* ctx) {
     }
 }
 
-/// Date.now() — ES5 §15.9.4.4
+/// Date.now(), ES5 §15.9.4.4
 fn void builtin_date_now(BuiltinContext* ctx) {
     ctx.result.set_number(date_now_ms());
 }
 
-/// Date.UTC(year[, month[, day, hour, minute, second, ms]]) — ES2017+ §20.3.3.4
+/// Date.UTC(year[, month[, day, hour, minute, second, ms]]), ES2017+ §20.3.3.4
 /// (month and later arguments default to 0/1 like the Date constructor;
 /// pre-ES2017 engines coerced a missing month to NaN, but that was fixed by
 /// https://github.com/tc39/ecma262/pull/642).
@@ -854,7 +854,7 @@ fn void builtin_date_utc(BuiltinContext* ctx) {
     ctx.result.set_number(date_time_clip(t));
 }
 
-/// Date.parse(string) — ES5 §15.9.4.2
+/// Date.parse(string), ES5 §15.9.4.2
 fn void builtin_date_parse(BuiltinContext* ctx) {
     if (ctx.argc < 1) {
         ctx.result.set_number(double::nan);
@@ -889,7 +889,7 @@ fn void builtin_date_parse(BuiltinContext* ctx) {
     ctx.result.set_number(date_val);
 }
 
-/// Date.prototype.toString() — ES5 §15.9.5.2
+/// Date.prototype.toString(), ES5 §15.9.5.2
 fn void builtin_date_proto_toString(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     double time_val = date_this_time_value(ctx, &this_val);
@@ -900,13 +900,13 @@ fn void builtin_date_proto_toString(BuiltinContext* ctx) {
     ctx.result.set_string(result);
 }
 
-/// Date.prototype.toLocaleString() — ES5 §15.9.5.5
+/// Date.prototype.toLocaleString(), ES5 §15.9.5.5
 /// Falls back to toString() (no locale-specific formatting).
 fn void builtin_date_proto_toLocaleString(BuiltinContext* ctx) {
     builtin_date_proto_toString(ctx);
 }
 
-/// Date.prototype.toLocaleDateString() — ES5 §15.9.5.6
+/// Date.prototype.toLocaleDateString(), ES5 §15.9.5.6
 /// Returns the date portion only (YYYY-MM-DD style).
 fn void builtin_date_proto_toLocaleDateString(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
@@ -925,7 +925,7 @@ fn void builtin_date_proto_toLocaleDateString(BuiltinContext* ctx) {
     ctx.result.set_string(result);
 }
 
-/// Date.prototype.toLocaleTimeString() — ES5 §15.9.5.7
+/// Date.prototype.toLocaleTimeString(), ES5 §15.9.5.7
 /// Returns the time portion only (HH:MM:SS style).
 fn void builtin_date_proto_toLocaleTimeString(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
@@ -944,7 +944,7 @@ fn void builtin_date_proto_toLocaleTimeString(BuiltinContext* ctx) {
     ctx.result.set_string(result);
 }
 
-/// Date.prototype.toDateString() — ES5 §15.9.5.3
+/// Date.prototype.toDateString(), ES5 §15.9.5.3
 /// Returns the date portion: "Mon Jan 01 2024"
 fn void builtin_date_proto_toDateString(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
@@ -1003,7 +1003,7 @@ fn void builtin_date_proto_toDateString(BuiltinContext* ctx) {
     ctx.result.set_string(result);
 }
 
-/// Date.prototype.toTimeString() — ES5 §15.9.5.4
+/// Date.prototype.toTimeString(), ES5 §15.9.5.4
 /// Returns the time portion: "12:00:00 GMT+0000"
 fn void builtin_date_proto_toTimeString(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
@@ -1036,7 +1036,7 @@ fn void builtin_date_proto_toTimeString(BuiltinContext* ctx) {
     ctx.result.set_string(result);
 }
 
-/// Date.prototype.toJSON(key) — ES5 §15.9.5.44
+/// Date.prototype.toJSON(key), ES5 §15.9.5.44
 ///
 /// ES2015 §20.4.4.28:
 /// 1. Let O be ? ToObject(this value).
@@ -1068,7 +1068,7 @@ fn void builtin_date_proto_toJSON(BuiltinContext* ctx) {
     }
     TVal object_val = this_val;
 
-    // Steps 2–3: Compute ToPrimitive(O, hint Number), then check
+    // Steps 2-3: Compute ToPrimitive(O, hint Number), then check
     // "Type(tv) is Number and tv is not finite" → return null.
     HObject* obj = (HObject*)this_val.get_heapptr();
     if (obj.get_class() == hobject::ObjClass.DATE) {
@@ -1170,11 +1170,11 @@ fn void builtin_date_proto_toJSON(BuiltinContext* ctx) {
         }
     }
 
-    // Invoke(O, "toISOString") — property missing or not callable → TypeError
+    // Invoke(O, "toISOString"), property missing or not callable → TypeError
     builtin_throw(ctx, ctx.heap.type_err_proto, "toISOString is not a function");
 }
 
-/// Date.prototype.data.valueOf() — ES5 §15.9.5.8
+/// Date.prototype.data.valueOf(), ES5 §15.9.5.8
 fn void builtin_date_proto_valueOf(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     double time_val = date_this_time_value(ctx, &this_val);
@@ -1182,7 +1182,7 @@ fn void builtin_date_proto_valueOf(BuiltinContext* ctx) {
     ctx.result.set_number(time_val);
 }
 
-/// Date.prototype[Symbol.toPrimitive](hint) — ES2023 §21.4.4.45
+/// Date.prototype[Symbol.toPrimitive](hint), ES2023 §21.4.4.45
 /// Converts a Date to a primitive. hint "string"/"default" → try toString first;
 /// hint "number" → try valueOf first. Non-object this or unknown hint → TypeError.
 fn void builtin_date_proto_toPrimitive(BuiltinContext* ctx) {
@@ -1280,7 +1280,7 @@ fn void builtin_date_proto_toPrimitive(BuiltinContext* ctx) {
             ctx.heap.tval_copy_ref(ctx.result, &result);
             return;
         }
-        // Result is an Object — try the next method.
+        // Result is an Object, try the next method.
     }
 
     // No method produced a primitive → TypeError.
@@ -1288,7 +1288,7 @@ fn void builtin_date_proto_toPrimitive(BuiltinContext* ctx) {
         "Cannot convert Date to primitive");
 }
 
-/// Date.prototype.getTime() — ES5 §15.9.5.9
+/// Date.prototype.getTime(), ES5 §15.9.5.9
 fn void builtin_date_proto_getTime(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     double time_val = date_this_time_value(ctx, &this_val);
@@ -1341,28 +1341,28 @@ fn void date_get_field(BuiltinContext* ctx, int field, bool utc) {
     ctx.result.set_fastint(parts[field]);
 }
 
-/// Date.prototype.getFullYear() — ES5 §15.9.5.10
+/// Date.prototype.getFullYear(), ES5 §15.9.5.10
 fn void builtin_date_proto_getFullYear(BuiltinContext* ctx) => date_get_field(ctx, DATE_FIELD_YEAR, false);
 
-/// Date.prototype.getMonth() — ES5 §15.9.5.12
+/// Date.prototype.getMonth(), ES5 §15.9.5.12
 fn void builtin_date_proto_getMonth(BuiltinContext* ctx) => date_get_field(ctx, DATE_FIELD_MONTH, false);
 
-/// Date.prototype.getDate() — ES5 §15.9.5.14
+/// Date.prototype.getDate(), ES5 §15.9.5.14
 fn void builtin_date_proto_getDate(BuiltinContext* ctx) => date_get_field(ctx, DATE_FIELD_DAY, false);
 
-/// Date.prototype.getDay() — ES5 §15.9.5.16
+/// Date.prototype.getDay(), ES5 §15.9.5.16
 fn void builtin_date_proto_getDay(BuiltinContext* ctx) => date_get_field(ctx, DATE_FIELD_WDAY, false);
 
-/// Date.prototype.getHours() — ES5 §15.9.5.18
+/// Date.prototype.getHours(), ES5 §15.9.5.18
 fn void builtin_date_proto_getHours(BuiltinContext* ctx) => date_get_field(ctx, DATE_FIELD_HOUR, false);
 
-/// Date.prototype.getMinutes() — ES5 §15.9.5.20
+/// Date.prototype.getMinutes(), ES5 §15.9.5.20
 fn void builtin_date_proto_getMinutes(BuiltinContext* ctx) => date_get_field(ctx, DATE_FIELD_MIN, false);
 
-/// Date.prototype.getSeconds() — ES5 §15.9.5.22
+/// Date.prototype.getSeconds(), ES5 §15.9.5.22
 fn void builtin_date_proto_getSeconds(BuiltinContext* ctx) => date_get_field(ctx, DATE_FIELD_SEC, false);
 
-/// Date.prototype.getMilliseconds() — ES5 §15.9.5.24
+/// Date.prototype.getMilliseconds(), ES5 §15.9.5.24
 fn void builtin_date_proto_getMilliseconds(BuiltinContext* ctx) => date_get_field(ctx, DATE_FIELD_MS, false);
 
 /// Helper: break a time value into UTC time components via gmtime_r.
@@ -1398,7 +1398,7 @@ fn double date_utc_to_ms(long year, long month, long day,
     return duktape_date_make_date((double)epoch_day, maketime);
 }
 
-/// Helper: TimeClip — clamp time value to ±8.64e15 ms per ES5 §15.9.1.14.
+/// Helper: TimeClip, clamp time value to ±8.64e15 ms per ES5 §15.9.1.14.
 fn double date_time_clip(double t) {
     if (!math::is_finite(t)) return double::nan;
     if (math::abs(t) > 8.64e15) return double::nan;
@@ -1412,7 +1412,7 @@ fn void date_set_ms(HObject* obj, double new_ms) {
     (*obj.extra_ptr()).prim.primitive_value.set_number(new_ms);
 }
 
-/// Date.prototype.getTimezoneOffset() — ES5 §15.9.5.26
+/// Date.prototype.getTimezoneOffset(), ES5 §15.9.5.26
 fn void builtin_date_proto_getTimezoneOffset(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     double tv = date_this_time_value(ctx, &this_val);
@@ -1423,31 +1423,31 @@ fn void builtin_date_proto_getTimezoneOffset(BuiltinContext* ctx) {
     ctx.result.set_fastint(-offset / 60);
 }
 
-/// Date.prototype.getUTCFullYear() — ES5 §15.9.5.41
+/// Date.prototype.getUTCFullYear(), ES5 §15.9.5.41
 fn void builtin_date_proto_getUTCFullYear(BuiltinContext* ctx) => date_get_field(ctx, DATE_FIELD_YEAR, true);
 
-/// Date.prototype.getUTCMonth() — ES5 §15.9.5.42
+/// Date.prototype.getUTCMonth(), ES5 §15.9.5.42
 fn void builtin_date_proto_getUTCMonth(BuiltinContext* ctx) => date_get_field(ctx, DATE_FIELD_MONTH, true);
 
-/// Date.prototype.getUTCDate() — ES5 §15.9.5.43
+/// Date.prototype.getUTCDate(), ES5 §15.9.5.43
 fn void builtin_date_proto_getUTCDate(BuiltinContext* ctx) => date_get_field(ctx, DATE_FIELD_DAY, true);
 
-/// Date.prototype.getUTCDay() — ES5 §15.9.5.44
+/// Date.prototype.getUTCDay(), ES5 §15.9.5.44
 fn void builtin_date_proto_getUTCDay(BuiltinContext* ctx) => date_get_field(ctx, DATE_FIELD_WDAY, true);
 
-/// Date.prototype.getUTCHours() — ES5 §15.9.5.45
+/// Date.prototype.getUTCHours(), ES5 §15.9.5.45
 fn void builtin_date_proto_getUTCHours(BuiltinContext* ctx) => date_get_field(ctx, DATE_FIELD_HOUR, true);
 
-/// Date.prototype.getUTCMinutes() — ES5 §15.9.5.46
+/// Date.prototype.getUTCMinutes(), ES5 §15.9.5.46
 fn void builtin_date_proto_getUTCMinutes(BuiltinContext* ctx) => date_get_field(ctx, DATE_FIELD_MIN, true);
 
-/// Date.prototype.getUTCSeconds() — ES5 §15.9.5.47
+/// Date.prototype.getUTCSeconds(), ES5 §15.9.5.47
 fn void builtin_date_proto_getUTCSeconds(BuiltinContext* ctx) => date_get_field(ctx, DATE_FIELD_SEC, true);
 
-/// Date.prototype.getUTCMilliseconds() — ES5 §15.9.5.48
+/// Date.prototype.getUTCMilliseconds(), ES5 §15.9.5.48
 fn void builtin_date_proto_getUTCMilliseconds(BuiltinContext* ctx) => date_get_field(ctx, DATE_FIELD_MS, true);
 
-/// Date.prototype.setTime(time) — ES5 §15.9.5.27
+/// Date.prototype.setTime(time), ES5 §15.9.5.27
 fn void builtin_date_proto_setTime(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     double tv = date_this_time_value(ctx, &this_val);
@@ -1470,7 +1470,7 @@ fn void builtin_date_proto_setTime(BuiltinContext* ctx) {
     ctx.result.set_number(clipped);
 }
 
-/// Date.prototype.setMilliseconds(ms) — ES5 §15.9.5.28
+/// Date.prototype.setMilliseconds(ms), ES5 §15.9.5.28
 fn void builtin_date_proto_setMilliseconds(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     double tv = date_this_time_value(ctx, &this_val);
@@ -1498,7 +1498,7 @@ fn void builtin_date_proto_setMilliseconds(BuiltinContext* ctx) {
     ctx.result.set_number(clipped);
 }
 
-/// Date.prototype.setSeconds(sec[, ms]) — ES5 §15.9.5.29
+/// Date.prototype.setSeconds(sec[, ms]), ES5 §15.9.5.29
 fn void builtin_date_proto_setSeconds(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     double tv = date_this_time_value(ctx, &this_val);
@@ -1527,7 +1527,7 @@ fn void builtin_date_proto_setSeconds(BuiltinContext* ctx) {
         }
     }
     if (math::is_nan(tv)) { ctx.result.set_number(double::nan); return; }
-    // Use current ms if not provided (check argc, not NaN — NaN from ToNumber must be used)
+    // Use current ms if not provided (check argc, not NaN, NaN from ToNumber must be used)
     if (ctx.argc <= 1) { ms_arg = (double)((long)tv % 1000); if (ms_arg < 0) ms_arg += 1000; }
     // If a provided arg is NaN from ToNumber, result is NaN
     if (math::is_nan(ms_arg)) { date_set_ms(obj, double::nan); ctx.result.set_number(double::nan); return; }
@@ -1540,7 +1540,7 @@ fn void builtin_date_proto_setSeconds(BuiltinContext* ctx) {
     ctx.result.set_number(clipped);
 }
 
-/// Date.prototype.setMinutes(min[, sec[, ms]]) — ES5 §15.9.5.30
+/// Date.prototype.setMinutes(min[, sec[, ms]]), ES5 §15.9.5.30
 fn void builtin_date_proto_setMinutes(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     double tv = date_this_time_value(ctx, &this_val);
@@ -1579,7 +1579,7 @@ fn void builtin_date_proto_setMinutes(BuiltinContext* ctx) {
         }
     }
     if (math::is_nan(tv)) { ctx.result.set_number(double::nan); return; }
-    // Use current values if not provided (check argc, not NaN — NaN from ToNumber must be used)
+    // Use current values if not provided (check argc, not NaN, NaN from ToNumber must be used)
     long sec_cur = date_floor_mod_field(tv, 1000, 60);
     long ms_cur  = (long)tv % 1000; if (ms_cur < 0) ms_cur += 1000;
     if (ctx.argc <= 1) { sec_arg = (double)sec_cur; }
@@ -1596,7 +1596,7 @@ fn void builtin_date_proto_setMinutes(BuiltinContext* ctx) {
     ctx.result.set_number(clipped);
 }
 
-/// Date.prototype.setHours(hour[, min[, sec[, ms]]]) — ES5 §15.9.5.31
+/// Date.prototype.setHours(hour[, min[, sec[, ms]]]), ES5 §15.9.5.31
 fn void builtin_date_proto_setHours(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     double tv = date_this_time_value(ctx, &this_val);
@@ -1645,7 +1645,7 @@ fn void builtin_date_proto_setHours(BuiltinContext* ctx) {
         }
     }
     if (math::is_nan(tv)) { ctx.result.set_number(double::nan); return; }
-    // Use current values if not provided (check argc, not NaN — NaN from ToNumber must be used)
+    // Use current values if not provided (check argc, not NaN, NaN from ToNumber must be used)
     long min_cur = date_floor_mod_field(tv, 60000, 60);
     long sec_cur = date_floor_mod_field(tv, 1000, 60);
     long ms_cur  = (long)tv % 1000; if (ms_cur < 0) ms_cur += 1000;
@@ -1665,7 +1665,7 @@ fn void builtin_date_proto_setHours(BuiltinContext* ctx) {
     ctx.result.set_number(clipped);
 }
 
-/// Date.prototype.setDate(date) — ES5 §15.9.5.32
+/// Date.prototype.setDate(date), ES5 §15.9.5.32
 fn void builtin_date_proto_setDate(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     double tv = date_this_time_value(ctx, &this_val);
@@ -1693,7 +1693,7 @@ fn void builtin_date_proto_setDate(BuiltinContext* ctx) {
     ctx.result.set_number(clipped);
 }
 
-/// Date.prototype.setMonth(month[, date]) — ES5 §15.9.5.33
+/// Date.prototype.setMonth(month[, date]), ES5 §15.9.5.33
 fn void builtin_date_proto_setMonth(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     double tv = date_this_time_value(ctx, &this_val);
@@ -1725,7 +1725,7 @@ fn void builtin_date_proto_setMonth(BuiltinContext* ctx) {
     if (!math::is_nan(tv)) { date_break_time(tv, &year, &month, &day, &wday, &hour, &min, &sec); }
     else { year = 1970; month = 0; day = 1; hour = 0; min = 0; sec = 0; }
     if (math::is_nan(tv)) { ctx.result.set_number(double::nan); return; }
-    // Use current date if not provided (check argc, not NaN — NaN from ToNumber must be used)
+    // Use current date if not provided (check argc, not NaN, NaN from ToNumber must be used)
     if (ctx.argc <= 1) { date_arg = (double)day; }
     // If a provided arg is NaN from ToNumber, result is NaN
     if (math::is_nan(date_arg)) { date_set_ms(obj, double::nan); ctx.result.set_number(double::nan); return; }
@@ -1736,7 +1736,7 @@ fn void builtin_date_proto_setMonth(BuiltinContext* ctx) {
     ctx.result.set_number(clipped);
 }
 
-/// Date.prototype.setFullYear(year[, month[, date]]) — ES5 §15.9.5.40
+/// Date.prototype.setFullYear(year[, month[, date]]), ES5 §15.9.5.40
 fn void builtin_date_proto_setFullYear(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     double tv = date_this_time_value(ctx, &this_val);
@@ -1778,7 +1778,7 @@ fn void builtin_date_proto_setFullYear(BuiltinContext* ctx) {
     long y, m, d, wday, h, min, s;
     if (math::is_nan(tv)) { y = 1970; m = 0; d = 1; h = 0; min = 0; s = 0; }
     else { date_break_time(tv, &y, &m, &d, &wday, &h, &min, &s); }
-    // Use current values if not provided (check argc, not NaN — NaN from ToNumber must be used)
+    // Use current values if not provided (check argc, not NaN, NaN from ToNumber must be used)
     if (ctx.argc <= 1) { month_arg = (double)m; }
     if (ctx.argc <= 2) { date_arg = (double)d; }
     // If a provided arg is NaN from ToNumber, result is NaN
@@ -1790,7 +1790,7 @@ fn void builtin_date_proto_setFullYear(BuiltinContext* ctx) {
     ctx.result.set_number(clipped);
 }
 
-/// Date.prototype.setUTCMilliseconds(ms) — ES5 §15.9.5.49
+/// Date.prototype.setUTCMilliseconds(ms), ES5 §15.9.5.49
 fn void builtin_date_proto_setUTCMilliseconds(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     double tv = date_this_time_value(ctx, &this_val);
@@ -1818,7 +1818,7 @@ fn void builtin_date_proto_setUTCMilliseconds(BuiltinContext* ctx) {
     ctx.result.set_number(clipped);
 }
 
-/// Date.prototype.setUTCSeconds(sec[, ms]) — ES5 §15.9.5.50
+/// Date.prototype.setUTCSeconds(sec[, ms]), ES5 §15.9.5.50
 fn void builtin_date_proto_setUTCSeconds(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     double tv = date_this_time_value(ctx, &this_val);
@@ -1847,7 +1847,7 @@ fn void builtin_date_proto_setUTCSeconds(BuiltinContext* ctx) {
         }
     }
     if (math::is_nan(tv)) { ctx.result.set_number(double::nan); return; }
-    // Use current ms if not provided (check argc, not NaN — NaN from ToNumber must be used)
+    // Use current ms if not provided (check argc, not NaN, NaN from ToNumber must be used)
     if (ctx.argc <= 1) { ms_arg = (double)((long)tv % 1000); if (ms_arg < 0) ms_arg += 1000; }
     // If a provided arg is NaN from ToNumber, result is NaN
     if (math::is_nan(ms_arg)) { date_set_ms(obj, double::nan); ctx.result.set_number(double::nan); return; }
@@ -1860,7 +1860,7 @@ fn void builtin_date_proto_setUTCSeconds(BuiltinContext* ctx) {
     ctx.result.set_number(clipped);
 }
 
-/// Date.prototype.setUTCMinutes(min[, sec[, ms]]) — ES5 §15.9.5.51
+/// Date.prototype.setUTCMinutes(min[, sec[, ms]]), ES5 §15.9.5.51
 fn void builtin_date_proto_setUTCMinutes(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     double tv = date_this_time_value(ctx, &this_val);
@@ -1899,7 +1899,7 @@ fn void builtin_date_proto_setUTCMinutes(BuiltinContext* ctx) {
         }
     }
     if (math::is_nan(tv)) { ctx.result.set_number(double::nan); return; }
-    // Use current values if not provided (check argc, not NaN — NaN from ToNumber must be used)
+    // Use current values if not provided (check argc, not NaN, NaN from ToNumber must be used)
     long sec_cur = date_floor_mod_field(tv, 1000, 60);
     long ms_cur  = (long)tv % 1000; if (ms_cur < 0) ms_cur += 1000;
     if (ctx.argc <= 1) { sec_arg = (double)sec_cur; }
@@ -1916,7 +1916,7 @@ fn void builtin_date_proto_setUTCMinutes(BuiltinContext* ctx) {
     ctx.result.set_number(clipped);
 }
 
-/// Date.prototype.setUTCHours(hour[, min[, sec[, ms]]]) — ES5 §15.9.5.52
+/// Date.prototype.setUTCHours(hour[, min[, sec[, ms]]]), ES5 §15.9.5.52
 fn void builtin_date_proto_setUTCHours(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     double tv = date_this_time_value(ctx, &this_val);
@@ -1965,7 +1965,7 @@ fn void builtin_date_proto_setUTCHours(BuiltinContext* ctx) {
         }
     }
     if (math::is_nan(tv)) { ctx.result.set_number(double::nan); return; }
-    // Use current values if not provided (check argc, not NaN — NaN from ToNumber must be used)
+    // Use current values if not provided (check argc, not NaN, NaN from ToNumber must be used)
     long min_cur = date_floor_mod_field(tv, 60000, 60);
     long sec_cur = date_floor_mod_field(tv, 1000, 60);
     long ms_cur  = (long)tv % 1000; if (ms_cur < 0) ms_cur += 1000;
@@ -1985,7 +1985,7 @@ fn void builtin_date_proto_setUTCHours(BuiltinContext* ctx) {
     ctx.result.set_number(clipped);
 }
 
-/// Date.prototype.setUTCDate(date) — ES5 §15.9.5.53
+/// Date.prototype.setUTCDate(date), ES5 §15.9.5.53
 fn void builtin_date_proto_setUTCDate(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     double tv = date_this_time_value(ctx, &this_val);
@@ -2013,7 +2013,7 @@ fn void builtin_date_proto_setUTCDate(BuiltinContext* ctx) {
     ctx.result.set_number(clipped);
 }
 
-/// Date.prototype.setUTCMonth(month[, date]) — ES5 §15.9.5.54
+/// Date.prototype.setUTCMonth(month[, date]), ES5 §15.9.5.54
 fn void builtin_date_proto_setUTCMonth(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     double tv = date_this_time_value(ctx, &this_val);
@@ -2045,7 +2045,7 @@ fn void builtin_date_proto_setUTCMonth(BuiltinContext* ctx) {
     if (!math::is_nan(tv)) { date_break_time_utc(tv, &year, &month, &day, &wday, &hour, &min, &sec); }
     else { year = 1970; month = 0; day = 1; hour = 0; min = 0; sec = 0; }
     if (math::is_nan(tv)) { ctx.result.set_number(double::nan); return; }
-    // Use current date if not provided (check argc, not NaN — NaN from ToNumber must be used)
+    // Use current date if not provided (check argc, not NaN, NaN from ToNumber must be used)
     if (ctx.argc <= 1) { date_arg = (double)day; }
     // If a provided arg is NaN from ToNumber, result is NaN
     if (math::is_nan(date_arg)) { date_set_ms(obj, double::nan); ctx.result.set_number(double::nan); return; }
@@ -2056,7 +2056,7 @@ fn void builtin_date_proto_setUTCMonth(BuiltinContext* ctx) {
     ctx.result.set_number(clipped);
 }
 
-/// Date.prototype.setUTCFullYear(year[, month[, date]]) — ES5 §15.9.5.55
+/// Date.prototype.setUTCFullYear(year[, month[, date]]), ES5 §15.9.5.55
 fn void builtin_date_proto_setUTCFullYear(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     double tv = date_this_time_value(ctx, &this_val);
@@ -2098,7 +2098,7 @@ fn void builtin_date_proto_setUTCFullYear(BuiltinContext* ctx) {
     long y, m, d, wday, h, min, s;
     if (math::is_nan(tv)) { y = 1970; m = 0; d = 1; h = 0; min = 0; s = 0; }
     else { date_break_time_utc(tv, &y, &m, &d, &wday, &h, &min, &s); }
-    // Use current values if not provided (check argc, not NaN — NaN from ToNumber must be used)
+    // Use current values if not provided (check argc, not NaN, NaN from ToNumber must be used)
     if (ctx.argc <= 1) { month_arg = (double)m; }
     if (ctx.argc <= 2) { date_arg = (double)d; }
     // If a provided arg is NaN from ToNumber, result is NaN
@@ -2125,7 +2125,7 @@ fn void date_pad4(char* buf, long val) {
     buf[3] = (char)(val % 10 + 48);
 }
 
-/// Date.prototype.toISOString() — ES5 §15.9.5.43
+/// Date.prototype.toISOString(), ES5 §15.9.5.43
 /// Returns a string in ISO 8601 format: "YYYY-MM-DDTHH:mm:ss.sssZ".
 /// Throws RangeError if the date value is NaN.
 fn void builtin_date_proto_toISOString(BuiltinContext* ctx) {
@@ -2216,7 +2216,7 @@ fn void builtin_date_proto_toISOString(BuiltinContext* ctx) {
     }
 }
 
-/// Date.prototype.toUTCString() — ES5 §15.9.5.44
+/// Date.prototype.toUTCString(), ES5 §15.9.5.44
 fn void builtin_date_proto_toUTCString(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     double tv = date_this_time_value(ctx, &this_val);
@@ -2261,13 +2261,13 @@ fn bool register_date_constructor(EnvRecord* global_env, Heap* heap) {
     (*proto.extra_ptr()).prim.primitive_value.set_number(double::nan);
     // Date.prototype is a DATE object that does NOT have a [[DateValue]] slot
     // (ES5 §15.9.1.1, §15.9.4). Flag it so thisTimeValue throws TypeError
-    // when called with Date.prototype as `this` — while a real Date instance
+    // when called with Date.prototype as `this`, while a real Date instance
     // holding NaN as its time value still returns NaN from getDate/etc.
     proto.flags.is_date_proto = true;
     heap.date_proto = proto;
 
     // .constructor is wired below (after the constructor HObject exists) to
-    // point at the function object itself, not a lightfunc — see below.
+    // point at the function object itself, not a lightfunc, see below.
 
     // Add Date.prototype.toString()
     if (!register_string_proto_method(proto, heap, "toString", Builtin.DATE_PROTO_TOSTRING.ordinal)) return false;
@@ -2278,7 +2278,7 @@ fn bool register_date_constructor(EnvRecord* global_env, Heap* heap) {
     // Add Date.prototype.data.valueOf()
     if (!register_string_proto_method(proto, heap, "valueOf", Builtin.DATE_PROTO_VALUEOF.ordinal)) return false;
 
-    // Add Date.prototype[Symbol.toPrimitive] — ES2023 §21.4.4.45.
+    // Add Date.prototype[Symbol.toPrimitive], ES2023 §21.4.4.45.
     // Property descriptor: writable:false, enumerable:false, configurable:true.
     {
         HString* toprim_key = ensure_toprimitive_symbol(heap);
@@ -2399,19 +2399,19 @@ fn bool register_date_constructor(EnvRecord* global_env, Heap* heap) {
     // Add Date.prototype.toUTCString()
     if (!register_string_proto_method(proto, heap, "toUTCString", Builtin.DATE_PROTO_TOUTCSTRING.ordinal)) return false;
 
-    // Add Date.prototype.toLocaleString() — ES5 §15.9.5.5
+    // Add Date.prototype.toLocaleString(), ES5 §15.9.5.5
     if (!register_string_proto_method(proto, heap, "toLocaleString", Builtin.DATE_PROTO_TOLOCALESTRING.ordinal)) return false;
 
-    // Add Date.prototype.toLocaleDateString() — ES5 §15.9.5.6
+    // Add Date.prototype.toLocaleDateString(), ES5 §15.9.5.6
     if (!register_string_proto_method(proto, heap, "toLocaleDateString", Builtin.DATE_PROTO_TOLOCALEDATESTRING.ordinal)) return false;
 
-    // Add Date.prototype.toLocaleTimeString() — ES5 §15.9.5.7
+    // Add Date.prototype.toLocaleTimeString(), ES5 §15.9.5.7
     if (!register_string_proto_method(proto, heap, "toLocaleTimeString", Builtin.DATE_PROTO_TOLOCALETIMESTRING.ordinal)) return false;
 
-    // Add Date.prototype.toDateString() — ES5 §15.9.5.3
+    // Add Date.prototype.toDateString(), ES5 §15.9.5.3
     if (!register_string_proto_method(proto, heap, "toDateString", Builtin.DATE_PROTO_TODATESTRING.ordinal)) return false;
 
-    // Add Date.prototype.toTimeString() — ES5 §15.9.5.4
+    // Add Date.prototype.toTimeString(), ES5 §15.9.5.4
     if (!register_string_proto_method(proto, heap, "toTimeString", Builtin.DATE_PROTO_TOTIMESTRING.ordinal)) return false;
 
     // Register Date as a global constructor (proper function object for static methods)

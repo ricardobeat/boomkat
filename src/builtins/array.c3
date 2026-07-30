@@ -15,7 +15,7 @@ import duktape::vm;
 // Additional Array.prototype methods
 // ============================================================================
 
-/// Array.of(...items) — ES6 §22.1.2.3
+/// Array.of(...items), ES6 §22.1.2.3
 fn void builtin_array_of(BuiltinContext* ctx) {
     uint len = (uint)ctx.argc;
 
@@ -80,7 +80,7 @@ fn void builtin_array_of(BuiltinContext* ctx) {
     ctx.result.set_object(arr);
 }
 
-/// Array.prototype.fill(value, start, end) — ES6 §22.1.3.6
+/// Array.prototype.fill(value, start, end), ES6 §22.1.3.6
 fn void builtin_array_proto_fill(BuiltinContext* ctx) {
     HObject* obj = array_proto_get_this(ctx);
     if (obj == null) { ctx.result.set_undefined(); return; }
@@ -133,7 +133,7 @@ fn void builtin_array_proto_fill(BuiltinContext* ctx) {
 }
 
 /// Practical cap for iterative methods: beyond this many elements we don't
-/// Array.prototype.at(index) — ES2022 §22.1.3.1
+/// Array.prototype.at(index), ES2022 §22.1.3.1
 fn void builtin_array_proto_at(BuiltinContext* ctx) {
     HObject* obj = array_proto_get_this(ctx);
     if (obj == null) { ctx.result.set_undefined(); return; }
@@ -141,7 +141,7 @@ fn void builtin_array_proto_at(BuiltinContext* ctx) {
     ulong len;
     if (!array_to_length(obj, ctx.heap, ctx, &len)) { ctx.result.set_undefined(); return; }
 
-    // Step 3: ToIntegerOrInfinity(index) — coerces via valueOf/toString and
+    // Step 3: ToIntegerOrInfinity(index), coerces via valueOf/toString and
     // clamps NaN to 0 (ES2022 §23.1.3.1).
     double idx_d = (ctx.argc > 0) ? builtin_to_integer_vm(ctx, &ctx.regs[ctx.base_reg]) : 0.0;
     if (ctx.should_throw) { ctx.result.set_undefined(); return; }
@@ -158,7 +158,7 @@ fn void builtin_array_proto_at(BuiltinContext* ctx) {
     }
 }
 
-/// Array.prototype.copyWithin(downstream, start, end) — ES6 §22.1.3.3
+/// Array.prototype.copyWithin(downstream, start, end), ES6 §22.1.3.3
 fn void builtin_array_proto_copyWithin(BuiltinContext* ctx) {
     HObject* obj = array_proto_get_this(ctx);
     if (obj == null) { ctx.result.set_undefined(); return; }
@@ -273,7 +273,7 @@ fn void builtin_array_proto_copyWithin(BuiltinContext* ctx) {
     ctx.result.set_object(obj);
 }
 
-/// Array.prototype.includes(searchElement, fromIndex) — ES7 §22.1.3.13
+/// Array.prototype.includes(searchElement, fromIndex), ES7 §22.1.3.13
 fn void builtin_array_proto_includes(BuiltinContext* ctx) {
     HObject* obj = array_proto_get_this(ctx);
     if (obj == null) { ctx.result.set_undefined(); return; }
@@ -364,7 +364,7 @@ fn ulong flatten_into(HObject* downstream, HObject* source, ulong source_len, ul
     return downstream_idx;
 }
 
-/// Array.prototype.flat(depth) — ES2019 §22.1.3.10
+/// Array.prototype.flat(depth), ES2019 §22.1.3.10
 fn void builtin_array_proto_flat(BuiltinContext* ctx) {
     HObject* obj = array_proto_get_this(ctx);
     if (obj == null) {
@@ -398,7 +398,7 @@ fn void builtin_array_proto_flat(BuiltinContext* ctx) {
     ctx.result.set_object(result);
 }
 
-/// Array.prototype.flatMap(mapFn, thisArg) — ES2019 §22.1.3.11
+/// Array.prototype.flatMap(mapFn, thisArg), ES2019 §22.1.3.11
 fn void builtin_array_proto_flatMap(BuiltinContext* ctx) {
     HObject* obj = array_proto_get_this(ctx);
     if (obj == null) {
@@ -480,7 +480,7 @@ fn void builtin_array_proto_flatMap(BuiltinContext* ctx) {
     // For ARRAY class, update the internal length to match the written
     // elements so the length property reflects the actual element count.
     // For non-ARRAY results (e.g. from a custom species constructor),
-    // do not set length — the spec does not call for it.
+    // do not set length, the spec does not call for it.
     if (result.get_class() == hobject::ObjClass.ARRAY) {
         array_set_length_ulong(result, n, ctx.heap, ctx.vm);
     }
@@ -502,7 +502,7 @@ fn void builtin_array(BuiltinContext* ctx) {
     HObject* arr = arr_raw;
     arr.prototype = builtin_proto_from_new_target(ctx, ctx.heap.array_proto);
 
-    // Array's exotic "length" is not a regular own property — it lives in the
+    // Array's exotic "length" is not a regular own property, it lives in the
     // dedicated array_len_ptr() slot (ES6 §9.4.2.1 ArraySetLength / [[DefineOwnProperty]]
     // "length" is {writable:true, enumerable:false, configurable:false}, and this
     // engine's array exotic implementation never materialises it as a table entry).
@@ -530,7 +530,7 @@ fn void builtin_array(BuiltinContext* ctx) {
             // ToUint32 check per ES5 §9.6
             uint n = (uint)(long)d;
             if ((double)n != d) {
-                // Invalid array length — throw RangeError
+                // Invalid array length, throw RangeError
                 arr_throw_range_error(ctx, "Invalid array length");
                 ctx.result.set_object(arr);
                 return;
@@ -598,7 +598,7 @@ fn HObject* array_proto_get_this(BuiltinContext* ctx) {
 // Array.prototype helpers
 // ============================================================================
 
-/// ES5 §9.6 ToUint32 — convert a double to uint32 per the spec algorithm.
+/// ES5 §9.6 ToUint32, convert a double to uint32 per the spec algorithm.
 /// NaN, ±Infinity, ±0 → 0. Otherwise floor(abs(x)) mod 2^32.
 fn uint to_uint32(double val) {
     // NaN: NaN != NaN is true in IEEE 754
@@ -616,7 +616,7 @@ fn uint to_uint32(double val) {
     return (uint)n;
 }
 
-/// Resolve a spec "relative index" against a length — the clamping half of
+/// Resolve a spec "relative index" against a length, the clamping half of
 /// ES2022 §23.1.3.x steps like "if relativeStart < 0, let k be max(len +
 /// relativeStart, 0); else let k be min(relativeStart, len)". `rel` must
 /// already have gone through ToIntegerOrInfinity.
@@ -843,7 +843,7 @@ fn void array_set_length(HObject* obj, uint len_val, Heap* heap) {
                             if (ai >= len_val) {
                                 PropFlags pf = obj.get_prop_flags((uint)pi);
                                 if (!pf.configurable) {
-                                    // Cannot delete — adjust target length to ai+1.
+                                    // Cannot delete, adjust target length to ai+1.
                                     len_val = ai + 1;
                                     continue;
                                 }
@@ -1098,7 +1098,7 @@ fn void builtin_array_proto_toString(BuiltinContext* ctx) {
         return;
     }
 
-    // Step 4: Return Call(func, array) — call join with the object as this
+    // Step 4: Return Call(func, array), call join with the object as this
     if (ctx.heap.call_fn != null && ctx.vm != null) {
         TVal this_tv;
         if (obj != null) {
@@ -1131,7 +1131,7 @@ fn void builtin_array_proto_join(BuiltinContext* ctx) {
     ulong raw_len;
     if (!array_to_length(obj, ctx.heap, ctx, &raw_len)) { ctx.result.set_undefined(); return; }
 
-    // Get separator — §23.1.3.16 step 3: if undefined (or absent), use ",".
+    // Get separator, §23.1.3.16 step 3: if undefined (or absent), use ",".
     HString* sep_str = null;
     char[] sep = ",";
     if (ctx.argc > 0 && !ctx.regs[ctx.base_reg].is_undefined()) {
@@ -1279,7 +1279,7 @@ fn void builtin_array_proto_pop(BuiltinContext* ctx) {
     if (!array_to_length(obj, ctx.heap, ctx, &len)) { ctx.result.set_undefined(); return; }
     HString* len_key_pop = (HString*)ctx.heap.strs[heap::BuiltinStr.LENGTH];
     if (len == 0) {
-        // ES2022 §23.1.3.20 step 3.a: Set(O, "length", 0, true) — throws if non-writable.
+        // ES2022 §23.1.3.20 step 3.a: Set(O, "length", 0, true), throws if non-writable.
         if (!arr_set_length_or_throw(ctx, obj, len_key_pop, 0)) { ctx.result.set_undefined(); return; }
         ctx.result.set_undefined();
         return;
@@ -1302,7 +1302,7 @@ fn void builtin_array_proto_pop(BuiltinContext* ctx) {
     arr_delete_elem_or_throw(ctx, obj, idx);
     if (ctx.should_throw) { ctx.result.set_undefined(); return; }
 
-    // ES2022 §23.1.3.20 step 6: Set(O, "length", idx, true) — throws if non-writable.
+    // ES2022 §23.1.3.20 step 6: Set(O, "length", idx, true), throws if non-writable.
     if (!arr_set_length_or_throw(ctx, obj, len_key_pop, idx)) { ctx.result.set_undefined(); return; }
 
     // Return the popped element
@@ -1314,7 +1314,7 @@ fn void builtin_array_proto_pop(BuiltinContext* ctx) {
 // ============================================================================
 fn void builtin_array_proto_push(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
-    // ES2022 §23.1.3.23 step 1-2: ToObject — throw for null/undefined, box primitives.
+    // ES2022 §23.1.3.23 step 1-2: ToObject, throw for null/undefined, box primitives.
     if (this_val.is_null() || this_val.is_undefined()) {
         arr_throw_type_error(ctx, "Array.prototype.push called on null or undefined");
         return;
@@ -1341,7 +1341,7 @@ fn void builtin_array_proto_push(BuiltinContext* ctx) {
         }
     }
 
-    // Step 6: Set(O, "length", new_len, true) — throws if length is not writable.
+    // Step 6: Set(O, "length", new_len, true), throws if length is not writable.
     ulong new_len = len + (ulong)ctx.argc;
     HString* len_key = (HString*)ctx.heap.strs[heap::BuiltinStr.LENGTH];
     if (!arr_set_length_or_throw(ctx, obj, len_key, new_len)) {
@@ -1371,7 +1371,7 @@ fn void builtin_array_proto_reverse(BuiltinContext* ctx) {
         ulong upper = len - 1 - lower;
 
         // ES2022 §23.1.3.27 steps 5.a-5.d: HasProperty then conditional Get,
-        // for lower then upper (in that order — matters for Proxy trap order).
+        // for lower then upper (in that order, matters for Proxy trap order).
         bool has_lower = arr_has_prop(obj, lower, ctx.heap, ctx.vm);
         if (ctx.should_throw) { ctx.result.set_undefined(); return; }
         TVal lower_val;
@@ -1415,7 +1415,7 @@ fn void builtin_array_proto_shift(BuiltinContext* ctx) {
     if (!array_to_length(obj, ctx.heap, ctx, &len)) { ctx.result.set_undefined(); return; }
 
     HString* len_key_shift = (HString*)ctx.heap.strs[heap::BuiltinStr.LENGTH];
-    // Step 3: empty array — Set(O, "length", 0, true) throws if non-writable.
+    // Step 3: empty array, Set(O, "length", 0, true) throws if non-writable.
     if (len == 0) {
         if (!arr_set_length_or_throw(ctx, obj, len_key_shift, 0)) { ctx.result.set_undefined(); return; }
         ctx.result.set_undefined();
@@ -1453,7 +1453,7 @@ fn void builtin_array_proto_shift(BuiltinContext* ctx) {
     arr_delete_elem_or_throw(ctx, obj, len - 1);
     if (ctx.should_throw) { ctx.result.set_undefined(); return; }
 
-    // Step 8: Set(O, "length", len - 1, true) — throws if non-writable.
+    // Step 8: Set(O, "length", len - 1, true), throws if non-writable.
     if (!arr_set_length_or_throw(ctx, obj, len_key_shift, len - 1)) { ctx.result.set_undefined(); return; }
 
     // Step 9: return first
@@ -1480,7 +1480,7 @@ fn void builtin_array_proto_slice(BuiltinContext* ctx) {
     ulong k;
     k = arr_relative_index(relative_start, len);
 
-    // Determine end — ES2022 §23.1.3.25 step 6: if end is undefined, use len.
+    // Determine end, ES2022 §23.1.3.25 step 6: if end is undefined, use len.
     double relative_end = (double)len;
     if (ctx.argc > 1 && !ctx.regs[ctx.base_reg + 1].is_undefined()) {
         relative_end = builtin_to_integer_vm(ctx, &ctx.regs[ctx.base_reg + 1]);
@@ -1587,7 +1587,7 @@ fn int array_sort_compare(BuiltinContext* ctx, TVal comparefn, bool has_comparef
 }
 
 // ============================================================================
-// Array.prototype.sort (ES2022 §23.1.3.30) — with comparefn support
+// Array.prototype.sort (ES2022 §23.1.3.30), with comparefn support
 // ============================================================================
 fn void builtin_array_proto_sort(BuiltinContext* ctx) {
     HObject* obj = array_proto_get_this(ctx);
@@ -1748,7 +1748,7 @@ fn void builtin_array_proto_splice(BuiltinContext* ctx) {
     ulong actual_delete_count;
     if (ctx.argc == 0) {
         // ES2022 §23.1.3.28 step 8: when no arguments at all, insertCount = 0
-        // and actualDeleteCount = 0 — splice is a no-op that just returns an
+        // and actualDeleteCount = 0, splice is a no-op that just returns an
         // empty result array and writes the (possibly ToLength-clamped)
         // length back to O.
         actual_delete_count = 0;
@@ -2097,7 +2097,7 @@ fn void builtin_array_proto_toSorted(BuiltinContext* ctx) {
 fn void builtin_array_proto_toSpliced(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
 
-    // Step 1: ToObject(this value) — supports primitives, frozen arrays, etc.
+    // Step 1: ToObject(this value), supports primitives, frozen arrays, etc.
     HObject* obj = null;
     if (this_val.is_object() && this_val.get_heapptr() != null) {
         obj = (HObject*)this_val.get_heapptr();
@@ -2115,7 +2115,7 @@ fn void builtin_array_proto_toSpliced(BuiltinContext* ctx) {
         }
     }
 
-    // Step 2: LengthOfArrayLike(O) — may be up to 2^53-1; the limit checks
+    // Step 2: LengthOfArrayLike(O), may be up to 2^53-1; the limit checks
     // happen on newLen below (§23.1.3.35 steps 11-13), not here.
     ulong len;
     if (!array_to_length(obj, ctx.heap, ctx, &len)) { ctx.result.set_undefined(); return; }
@@ -2329,7 +2329,7 @@ fn void builtin_array_proto_unshift(BuiltinContext* ctx) {
     ushort arg_count = ctx.argc;
 
     // ES2022 §23.1.3.31 step 4: with no arguments there is nothing to shift
-    // and no overflow to check — length is just re-clamped below.
+    // and no overflow to check, length is just re-clamped below.
     if (arg_count > 0) {
         // Step 4.a: throw before any element is moved.
         if (len + (ulong)arg_count > (ulong)types::DUK_MAX_SAFE_INT) {
@@ -2351,7 +2351,7 @@ fn void builtin_array_proto_unshift(BuiltinContext* ctx) {
                 }
             } else {
                 if (ctx.should_throw) { ctx.result.set_undefined(); return; }
-                // Source is a hole — delete the destination element.
+                // Source is a hole, delete the destination element.
                 if (!array_delete_elem_ulong_checked(ctx, obj, to)) {
                     ctx.result.set_undefined(); return;
                 }
@@ -2406,7 +2406,7 @@ fn void builtin_array_proto_indexOf(BuiltinContext* ctx) {
         search_elem.set_undefined();
     }
 
-    // Get fromIndex (default 0) — per ES5 §15.4.4.14 step 3.
+    // Get fromIndex (default 0), per ES5 §15.4.4.14 step 3.
     // builtin_to_integer handles Infinity / -Infinity / NaN / hex strings.
     double relative_start = 0.0;
     if (ctx.argc > 1) {
@@ -2480,7 +2480,7 @@ fn void builtin_array_proto_lastIndexOf(BuiltinContext* ctx) {
         search_elem.set_undefined();
     }
 
-    // Get fromIndex (default len - 1) — per ES5 §15.4.4.15 step 3.
+    // Get fromIndex (default len - 1), per ES5 §15.4.4.15 step 3.
     double relative_start = (double)(len - 1);
     if (ctx.argc > 1) {
         relative_start = builtin_to_integer_vm(ctx, &ctx.regs[ctx.base_reg + 1]);
@@ -2526,7 +2526,7 @@ fn void builtin_array_proto_lastIndexOf(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Array.prototype.concat (ES6 §22.1.3.1 — with Symbol.isConcatSpreadable)
+// Array.prototype.concat (ES6 §22.1.3.1, with Symbol.isConcatSpreadable)
 // ============================================================================
 fn void builtin_array_proto_concat(BuiltinContext* ctx) {
     HObject* obj = array_proto_get_this(ctx);
@@ -2573,12 +2573,12 @@ fn bool concat_process_item(BuiltinContext* ctx, TVal item, HString* concat_sym,
     ulong n = *n_ptr;
 
     if (!item.is_object() || item.get_heapptr() == null) {
-        // Primitive — add as single element (§23.1.3.1 step 5.d.ii).
+        // Primitive, add as single element (§23.1.3.1 step 5.d.ii).
         if (n >= (ulong)types::DUK_MAX_SAFE_INT) {
             arr_throw_type_error(ctx, "Concatenating would exceed the maximum array length (2^53-1)");
             return false;
         }
-        // CreateDataPropertyOrThrow — throws TypeError on a non-extensible
+        // CreateDataPropertyOrThrow, throws TypeError on a non-extensible
         // (species-created) result rather than silently dropping the element.
         if (!array_set_elem_ulong_checked(ctx, result, n, item)) return false;
         n++;
@@ -2589,9 +2589,9 @@ fn bool concat_process_item(BuiltinContext* ctx, TVal item, HString* concat_sym,
     HObject* item_obj = (HObject*)item.get_heapptr();
 
     // ES2022 §23.1.3.1 step 5.b: spreadable = IsConcatSpreadable(E)
-    // 5.b.ii: Get(E, @@isConcatSpreadable) — use full Get semantics so
+    // 5.b.ii: Get(E, @@isConcatSpreadable), use full Get semantics so
     //         accessor getters are invoked and their throws propagate.
-    // 5.b.iii: If undefined, fall back to IsArray(E) — §7.2.2 IsArray recurses
+    // 5.b.iii: If undefined, fall back to IsArray(E), §7.2.2 IsArray recurses
     //          through proxy targets; revoked proxy → TypeError.
     bool spread;
     bool is_array;
@@ -2657,17 +2657,17 @@ fn bool arr_from_is_callable(TVal v) {
     return false;
 }
 
-/// IteratorClose(iterator, completion) — ES2022 §7.4.8, "poor man's" variant
+/// IteratorClose(iterator, completion), ES2022 §7.4.8, "poor man's" variant
 /// used when abandoning iteration early due to an abrupt completion that has
 /// already been recorded in ctx (ctx.should_throw/ctx.throw_value). Calls
 /// iterator.return() if present, discarding *its* result but propagating a
 /// throw from close itself would override the original completion per spec
-/// step 5 — however we keep the original completion (matching most engines'
+/// step 5, however we keep the original completion (matching most engines'
 /// pragmatic behavior for a non-throwing return()) since ctx already holds
 /// the completion to propagate. If close() throws, the original completion
 /// is preserved (spec step 5 says close()'s throw masks the original only
 /// when the original was a normal completion, which is not this call site's
-/// use — this helper is only invoked to close on an *abrupt* completion).
+/// use, this helper is only invoked to close on an *abrupt* completion).
 fn void arr_iterator_close_after_throw(BuiltinContext* ctx, TVal iterator) {
     if (ctx.heap.call_fn == null || ctx.vm == null) return;
     if (!iterator.is_object() || iterator.get_heapptr() == null) return;
@@ -2679,16 +2679,16 @@ fn void arr_iterator_close_after_throw(BuiltinContext* ctx, TVal iterator) {
         if (return_method.is_undefined() || return_method.is_null()) return;
         if (!arr_from_is_callable(return_method)) return;
         ctx.heap.call_fn(ctx.vm, return_method, null, 0, iterator);
-        // Swallow any error from return() itself — the original abrupt
+        // Swallow any error from return() itself, the original abrupt
         // completion already recorded in ctx takes precedence.
         ctx.heap.has_error = false;
     }
 }
 
-/// Set(O, "length", value, true) — ES2022 §7.3.4, restricted to the
+/// Set(O, "length", value, true), ES2022 §7.3.4, restricted to the
 /// "length" key on the Array.from result object A. Unlike arr_create_data_
 /// property_or_throw (which bypasses the prototype chain), this honours an
-/// inherited accessor setter for "length" — needed when A came from a custom
+/// inherited accessor setter for "length", needed when A came from a custom
 /// constructor whose .prototype defines a length setter. Returns true on
 /// success; on failure sets ctx.should_throw and returns false.
 fn bool arr_set_length_or_throw(BuiltinContext* ctx, HObject* obj, HString* len_key, ulong len_val) {
@@ -2807,7 +2807,7 @@ fn bool arr_set_length_or_throw(BuiltinContext* ctx, HObject* obj, HString* len_
     }
 
     // No accessor anywhere on the chain (no own property or inherited data
-    // property) — define as a new own data property on obj.
+    // property), define as a new own data property on obj.
     if (!obj.put_prop(len_key, len_tv, hobject::PROP_FLAGS_WEC)) {
         arr_throw_type_error(ctx, "Cannot set property length, no space left");
         return false;
@@ -2815,14 +2815,14 @@ fn bool arr_set_length_or_throw(BuiltinContext* ctx, HObject* obj, HString* len_
     return true;
 }
 
-/// Array.from ( items [ , mapfn [ , thisArg ] ] ) — ES2022 §23.1.2.1
+/// Array.from ( items [ , mapfn [ , thisArg ] ] ), ES2022 §23.1.2.1
 fn void builtin_array_from(BuiltinContext* ctx) {
     Heap* heap = ctx.heap;
 
     // Step 1: Let C be the this value.
     TVal c_val = ctx.this_val;
 
-    // Step 2: items (first arg) — use undefined if missing
+    // Step 2: items (first arg), use undefined if missing
     TVal items;
     if (ctx.argc > 0) {
         items = ctx.regs[ctx.base_reg];
@@ -2831,7 +2831,7 @@ fn void builtin_array_from(BuiltinContext* ctx) {
     }
 
     // Step 3-4: mapfn (second arg, optional). If not undefined, must be
-    // callable — TypeError otherwise. This check (and thisArg capture) must
+    // callable, TypeError otherwise. This check (and thisArg capture) must
     // happen before any iteration/construction.
     TVal mapfn;
     bool mapping = false;
@@ -2859,7 +2859,7 @@ fn void builtin_array_from(BuiltinContext* ctx) {
     bool have_iter_method = false;
 
     if (iter_sym != null) {
-        // GetMethod(items, @@iterator) — ToObject if needed for property access
+        // GetMethod(items, @@iterator), ToObject if needed for property access
         HObject* items_obj = to_object_for_lookup(heap, items);
 
         if (items_obj != null) {
@@ -2875,7 +2875,7 @@ fn void builtin_array_from(BuiltinContext* ctx) {
     }
 
     if (have_iter_method) {
-        // === Iterable path — ES2022 §23.1.2.1 step 6 ===
+        // === Iterable path, ES2022 §23.1.2.1 step 6 ===
         if (!arr_from_is_callable(iter_method)) {
             arr_throw_type_error(ctx, "Result of the Symbol.iterator method is not callable");
             ctx.result.set_undefined();
@@ -2884,7 +2884,7 @@ fn void builtin_array_from(BuiltinContext* ctx) {
         if (heap.call_fn == null || ctx.vm == null) { ctx.result.set_undefined(); return; }
 
         // 6.a-c: If IsConstructor(C), let A be Construct(C); else ArrayCreate(0).
-        // This runs BEFORE GetIterator (6.d) per spec order — a throwing
+        // This runs BEFORE GetIterator (6.d) per spec order, a throwing
         // constructor must propagate without ever creating the iterator.
         HObject* arr = null;
         if (c_val.is_object() && c_val.get_heapptr() != null && arr_from_is_callable(c_val)) {
@@ -2940,7 +2940,7 @@ fn void builtin_array_from(BuiltinContext* ctx) {
             // g.ii-iii: next = IteratorStep(iterator); ReturnIfAbrupt.
             TVal? next_method_opt = builtins_generic_get(iter_obj, next_key, ctx);
             if (ctx.should_throw) {
-                // GetMethod(iterator, "next") threw — no iterator to close
+                // GetMethod(iterator, "next") threw, no iterator to close
                 // (IteratorStep itself failed before invoking next()).
                 ctx.result.set_undefined();
                 return;
@@ -3030,7 +3030,7 @@ fn void builtin_array_from(BuiltinContext* ctx) {
         return;
     }
 
-    // === Array-like path — ES2022 §23.1.2.1 steps 7-19 ===
+    // === Array-like path, ES2022 §23.1.2.1 steps 7-19 ===
     // items must not be null or undefined (ToObject would throw).
     if (items.is_undefined() || items.is_null()) {
         arr_throw_type_error(ctx, "Cannot convert undefined or null to object");
@@ -3038,7 +3038,7 @@ fn void builtin_array_from(BuiltinContext* ctx) {
         return;
     }
 
-    // ToObject — handle strings specially (direct char access)
+    // ToObject, handle strings specially (direct char access)
     HObject* array_like;
     bool is_string_prim = items.is_string();
     HString* str_val = null;
@@ -3053,7 +3053,7 @@ fn void builtin_array_from(BuiltinContext* ctx) {
         (*array_like.extra_ptr()).prim.primitive_value = items;
     }
 
-    // Get .length — Get(arrayLike, "length") then ToLength.
+    // Get .length, Get(arrayLike, "length") then ToLength.
     HString* len_key = builtin_intern_string(heap, "length");
     ulong len = 0;
     if (is_string_prim) {
@@ -3098,7 +3098,7 @@ fn void builtin_array_from(BuiltinContext* ctx) {
     }
 
     // 13-17. Repeat, while k < len: read arrayLike[k] (re-fetched from the
-    // still-live array_like object each iteration, per spec order — the
+    // still-live array_like object each iteration, per spec order, the
     // mapfn/getter side effects visible during iteration reflect the current
     // state of arrayLike, not a value snapshotted before the loop began).
     for (ulong k = 0; k < len; k++) {
@@ -3108,11 +3108,11 @@ fn void builtin_array_from(BuiltinContext* ctx) {
 
         if (is_string_prim && str_val != null) {
             // String primitive: `len` above is char_length() (UTF-16 code
-            // units), so index by code unit here too, not raw byte —
+            // units), so index by code unit here too, not raw byte,
             // otherwise this silently regresses on any multi-byte string
             // when the iterator-protocol path (spec-preferred) isn't taken.
             // NOTE: this array-like fallback is spec-incorrect for strings
-            // in general — Array.from(str) should always go through the
+            // in general, Array.from(str) should always go through the
             // @@iterator protocol (codepoint-by-codepoint) per ES6
             // §23.1.1.1 step 3, landing here only means that path wasn't
             // triggered; tracked separately from the CESU-8 migration.
@@ -3166,7 +3166,7 @@ fn void builtin_array_from(BuiltinContext* ctx) {
     ctx.result.set_object(arr);
 }
 
-/// Array.isArray(arg) — ES6 §22.1.2.2
+/// Array.isArray(arg), ES6 §22.1.2.2
 fn void builtin_array_isArray(BuiltinContext* ctx) {
     if (ctx.argc == 0) {
         ctx.result.set_boolean(false);
@@ -3192,7 +3192,7 @@ fn void builtin_array_isArray(BuiltinContext* ctx) {
 // Array constructor registration
 
 // ============================================================================
-// Array.prototype callback methods — native implementations using heap.call_fn
+// Array.prototype callback methods, native implementations using heap.call_fn
 // ============================================================================
 
 /// Helper: ToObject for Array.prototype methods (ES5 §9.9).
@@ -3273,10 +3273,10 @@ fn void arr_throw_type_error(BuiltinContext* ctx, char[] msg) {
     builtin_throw_no_result_change(ctx, ctx.heap.type_err_proto, msg);
 }
 
-/// CreateDataPropertyOrThrow(O, P, V) — ES2022 §7.3.7 / §7.3.6 CreateDataProperty.
+/// CreateDataPropertyOrThrow(O, P, V), ES2022 §7.3.7 / §7.3.6 CreateDataProperty.
 /// Used by Array.from to define each result index with {writable:true,
-/// enumerable:true, configurable:true} semantics rather than plain [[Set]] —
-/// this matters when the result object's index was pre-defined as
+/// enumerable:true, configurable:true} semantics rather than plain [[Set]].
+/// This matters when the result object's index was pre-defined as
 /// non-configurable with different attributes (must throw), or when the
 /// object is non-extensible and the property doesn't already exist (must
 /// throw). Returns true on success; on failure sets ctx.should_throw and
@@ -3288,7 +3288,7 @@ fn bool arr_create_data_property_or_throw(BuiltinContext* ctx, HObject* obj, HSt
         // If the existing property is already {W:true, E:true, C:true} and a
         // plain data property, CreateDataProperty may simply overwrite the
         // value. Otherwise, since configurable is false, redefining to the
-        // desired attributes is disallowed — throw per DefineOwnProperty's
+        // desired attributes is disallowed, throw per DefineOwnProperty's
         // "reject" path (ES2022 §10.1.6.3 step 4/5 validation).
         if (!existing.configurable
             && (existing.is_accessor || !existing.writable || !existing.enumerable)) {
@@ -3351,7 +3351,7 @@ fn bool arr_has_prop(HObject* obj, ulong key, Heap* heap, void* vm = null) {
     return @ok(found);
 }
 
-/// Helper: DeletePropertyOrThrow(obj, key) for a numeric array index — used by
+/// Helper: DeletePropertyOrThrow(obj, key) for a numeric array index, used by
 /// methods (e.g. reverse) that must delete a hole through the Proxy
 /// [[Delete]] trap rather than mutating the target's property table directly.
 /// Sets ctx.should_throw on a proxy trap failure/throw.
@@ -3442,7 +3442,7 @@ fn bool is_builtin_array_ctor(HObject* obj) {
            (*obj.extra_ptr()).func.builtin_fn_index == (int)Builtin.ARRAY.ordinal;
 }
 
-/// ArraySpeciesCreate helper — ES2022 §9.4.2.3
+/// ArraySpeciesCreate helper, ES2022 §9.4.2.3
 /// Determines the constructor to use for derived array results.
 /// Returns true if out_constructor is set (caller should construct with new);
 /// returns false if the caller should fall back to a plain Array.
@@ -3589,7 +3589,7 @@ fn bool array_can_set_index(BuiltinContext* ctx, HObject* obj, ulong idx) {
                 // CreateDataProperty always requests {configurable:true, enumerable:true}.
                 // ValidateAndApplyPropertyDescriptor rejects if the existing prop is
                 // non-configurable (because configurable/enumerable would change).
-                // Non-writable but configurable is fine — defineProperty can change it.
+                // Non-writable but configurable is fine, defineProperty can change it.
                 if (!pf.configurable) {
                     arr_throw_type_error(ctx, "Cannot redefine non-configurable property");
                     return false;
@@ -3644,7 +3644,7 @@ fn bool array_set_elem_ulong_checked(BuiltinContext* ctx, HObject* obj, ulong id
         HString* key = ctx.heap.int_to_hstring((long)idx);
         if (key != null) {
             // Use put_prop when: (a) a named property exists that may have non-WEC
-            // flags, or (b) the value is undefined — because undefined == hole in
+            // flags, or (b) the value is undefined, because undefined == hole in
             // the dense array and would make the slot appear absent.
             bool has_named = obj.find_prop_idx(key) >= 0;
             bool is_undef = val.is_undefined();
@@ -3775,7 +3775,7 @@ fn bool array_set_elem_ulong_set(BuiltinContext* ctx, HObject* obj, ulong idx, T
         if (f.is_accessor) {
             TVal setter = hobject::hobject_access_setter(obj.prop_values()[(uint)own_idx]);
             if (setter.is_undefined() || setter.is_null()) {
-                // Own getter-only accessor — [[Set]] returns false → TypeError.
+                // Own getter-only accessor, [[Set]] returns false → TypeError.
                 arr_throw_type_error(ctx, "Cannot set property, has only a getter");
                 return false;
             }
@@ -3810,7 +3810,7 @@ fn bool array_set_elem_ulong_set(BuiltinContext* ctx, HObject* obj, ulong idx, T
     if (acc.found) {
         TVal setter = acc.accessor_fn;
         if (setter.is_undefined() || setter.is_null()) {
-            // Inherited getter-only accessor — [[Set]] returns false → TypeError.
+            // Inherited getter-only accessor, [[Set]] returns false → TypeError.
             arr_throw_type_error(ctx, "Cannot set property, has only a getter");
             return false;
         }
@@ -3844,13 +3844,13 @@ fn bool array_set_elem_ulong_set(BuiltinContext* ctx, HObject* obj, ulong idx, T
             // Try dense array first; fall back to named property when the
             // dense part can't grow (e.g. index >= 2^31).
             if (obj.set_array_idx((uint)idx, val)) {
-                // Dense write succeeded — auto-grow length.
+                // Dense write succeeded, auto-grow length.
                 if (know_current_len && idx >= current_len) {
                     array_set_length_ulong(obj, idx + 1, ctx.heap);
                 }
                 return true;
             }
-            // Dense write failed — store as named property (sparse array).
+            // Dense write failed, store as named property (sparse array).
             // Do NOT auto-grow length here; the caller is responsible.
             obj.put_prop(key, val, hobject::PROP_FLAGS_WEC);
         }
@@ -3887,7 +3887,7 @@ fn bool arr_get_elem(HObject* obj, uint key, Heap* heap, TVal* out) {
     HString* pk = heap.int_to_hstring((long)key);
     if (pk == null) return false;
 
-    // Check own properties first — may be an accessor (set via defineProperty)
+    // Check own properties first, may be an accessor (set via defineProperty)
     // This must come BEFORE the dense array fast path because accessor properties
     // at numeric indices override the dense array value.
     int own_idx = obj.find_prop_idx(pk);
@@ -3994,7 +3994,7 @@ fn bool arr_get_elem_vm(HObject* obj, ulong key, Heap* heap, BuiltinContext* ctx
     HString* pk = heap.int_to_hstring((long)key);
     if (pk == null) return false;
 
-    // Check own properties — may be an accessor (set via defineProperty)
+    // Check own properties, may be an accessor (set via defineProperty)
     int own_idx = obj.find_prop_idx(pk);
     if (own_idx >= 0) {
         PropFlags pf = obj.get_prop_flags((uint)own_idx);
@@ -4053,7 +4053,7 @@ fn TVal arr_call_callback(BuiltinContext* ctx, TVal callback, TVal thisArg, TVal
     return res;
 }
 
-/// Array.prototype.forEach(callbackfn[, thisArg]) — ES5 §15.4.4.18
+/// Array.prototype.forEach(callbackfn[, thisArg]), ES5 §15.4.4.18
 fn void builtin_array_proto_forEach(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     HObject* o = arr_to_object(this_val, ctx.heap);
@@ -4085,7 +4085,7 @@ fn void builtin_array_proto_forEach(BuiltinContext* ctx) {
     ctx.result.set_undefined();
 }
 
-/// Array.prototype.map(callbackfn[, thisArg]) — ES5 §15.4.4.19
+/// Array.prototype.map(callbackfn[, thisArg]), ES5 §15.4.4.19
 fn void builtin_array_proto_map(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     HObject* o = arr_to_object(this_val, ctx.heap);
@@ -4109,7 +4109,7 @@ fn void builtin_array_proto_map(BuiltinContext* ctx) {
     TVal callback = cb_val;
     TVal thisArg;
     if (ctx.argc >= 2) { thisArg = ctx.regs[ctx.base_reg + 1]; } else { thisArg.set_undefined(); }
-    // Step 5: ArraySpeciesCreate(O, len) — use species constructor if available.
+    // Step 5: ArraySpeciesCreate(O, len), use species constructor if available.
     // A null result means the species lookup or construction completed
     // abruptly; the pending exception must propagate rather than be walked
     // into the mapping loop.
@@ -4141,7 +4141,7 @@ fn void builtin_array_proto_map(BuiltinContext* ctx) {
     ctx.result.set_object((void*)arr);
 }
 
-/// Array.prototype.filter(callbackfn[, thisArg]) — ES5 §15.4.4.20
+/// Array.prototype.filter(callbackfn[, thisArg]), ES5 §15.4.4.20
 fn void builtin_array_proto_filter(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     HObject* o = arr_to_object(this_val, ctx.heap);
@@ -4158,7 +4158,7 @@ fn void builtin_array_proto_filter(BuiltinContext* ctx) {
     TVal callback = cb_val;
     TVal thisArg;
     if (ctx.argc >= 2) { thisArg = ctx.regs[ctx.base_reg + 1]; } else { thisArg.set_undefined(); }
-    // Step 7: ArraySpeciesCreate(O, 0) — result length is not known in advance.
+    // Step 7: ArraySpeciesCreate(O, 0), result length is not known in advance.
     HObject* arr = array_species_create_result(ctx, o, 0);
     if (arr == null) { ctx.result.set_undefined(); return; }
     if (arr != null) ((HeapHeader*)arr).set_temproot();
@@ -4190,10 +4190,10 @@ fn void builtin_array_proto_filter(BuiltinContext* ctx) {
     ctx.result.set_object((void*)arr);
 }
 
-/// Array.prototype.find(callbackfn[, thisArg]) — ES6 §22.1.3.8
+/// Array.prototype.find(callbackfn[, thisArg]), ES6 §22.1.3.8
 /// Returns the first element for which callbackfn returns truthy,
 /// or undefined if none.
-/// Per spec, every index in [0, len) is visited in order — the
+/// Per spec, every index in [0, len) is visited in order, the
 /// callback is called even for missing indices (treated as undefined),
 /// so there is no hole-skipping HasProperty precheck.
 fn void builtin_array_proto_find(BuiltinContext* ctx) {
@@ -4228,10 +4228,10 @@ fn void builtin_array_proto_find(BuiltinContext* ctx) {
     ctx.result.set_undefined();
 }
 
-/// Array.prototype.findLast(callbackfn[, thisArg]) — ES2023 §22.1.3.9
+/// Array.prototype.findLast(callbackfn[, thisArg]), ES2023 §22.1.3.9
 /// Returns the last element for which callbackfn returns truthy,
 /// or undefined if none.
-/// Per spec, every index in [0, len) is visited in reverse — the
+/// Per spec, every index in [0, len) is visited in reverse, the
 /// callback is called even for missing indices (treated as undefined),
 /// so there is no hole-skipping HasProperty precheck.
 fn void builtin_array_proto_findLast(BuiltinContext* ctx) {
@@ -4266,10 +4266,10 @@ fn void builtin_array_proto_findLast(BuiltinContext* ctx) {
     ctx.result.set_undefined();
 }
 
-/// Array.prototype.findLastIndex(callbackfn[, thisArg]) — ES2023 §22.1.3.10
+/// Array.prototype.findLastIndex(callbackfn[, thisArg]), ES2023 §22.1.3.10
 /// Returns the last index for which callbackfn returns truthy,
 /// or -1 if none.
-/// Per spec, every index in [0, len) is visited in reverse — the
+/// Per spec, every index in [0, len) is visited in reverse, the
 /// callback is called even for missing indices (treated as undefined),
 /// so there is no hole-skipping HasProperty precheck.
 fn void builtin_array_proto_findLastIndex(BuiltinContext* ctx) {
@@ -4311,10 +4311,10 @@ fn void builtin_array_proto_findLastIndex(BuiltinContext* ctx) {
     (*ctx.result) = neg;
 }
 
-/// Array.prototype.findIndex(callbackfn[, thisArg]) — ES6 §22.1.3.9
+/// Array.prototype.findIndex(callbackfn[, thisArg]), ES6 §22.1.3.9
 /// Returns the index of the first element for which callbackfn returns truthy,
 /// or -1 if none.
-/// Per spec, every index in [0, len) is visited in order — the
+/// Per spec, every index in [0, len) is visited in order, the
 /// callback is called even for missing indices (treated as undefined),
 /// so there is no hole-skipping HasProperty precheck.
 fn void builtin_array_proto_findIndex(BuiltinContext* ctx) {
@@ -4356,7 +4356,7 @@ fn void builtin_array_proto_findIndex(BuiltinContext* ctx) {
     (*ctx.result) = neg;
 }
 
-/// Array.prototype.every(callbackfn[, thisArg]) — ES5 §15.4.4.17
+/// Array.prototype.every(callbackfn[, thisArg]), ES5 §15.4.4.17
 fn void builtin_array_proto_every(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     HObject* o = arr_to_object(this_val, ctx.heap);
@@ -4390,7 +4390,7 @@ fn void builtin_array_proto_every(BuiltinContext* ctx) {
     ctx.result.set_boolean(true);
 }
 
-/// Array.prototype.some(callbackfn[, thisArg]) — ES5 §15.4.4.16
+/// Array.prototype.some(callbackfn[, thisArg]), ES5 §15.4.4.16
 fn void builtin_array_proto_some(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     HObject* o = arr_to_object(this_val, ctx.heap);
@@ -4424,7 +4424,7 @@ fn void builtin_array_proto_some(BuiltinContext* ctx) {
     ctx.result.set_boolean(false);
 }
 
-/// Array.prototype.reduce(callbackfn[, initialValue]) — ES5 §15.4.4.21
+/// Array.prototype.reduce(callbackfn[, initialValue]), ES5 §15.4.4.21
 fn void builtin_array_proto_reduce(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     HObject* o = arr_to_object(this_val, ctx.heap);
@@ -4485,7 +4485,7 @@ fn void builtin_array_proto_reduce(BuiltinContext* ctx) {
     (*ctx.result) = acc;
 }
 
-/// Array.prototype.reduceRight(callbackfn[, initialValue]) — ES5 §15.4.4.22
+/// Array.prototype.reduceRight(callbackfn[, initialValue]), ES5 §15.4.4.22
 fn void builtin_array_proto_reduceRight(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     HObject* o = arr_to_object(this_val, ctx.heap);
@@ -4550,7 +4550,7 @@ fn void builtin_array_proto_reduceRight(BuiltinContext* ctx) {
     (*ctx.result) = acc;
 }
 
-/// Array[@@species] getter — ES2022 §23.1.2.5. Returns the this value (the
+/// Array[@@species] getter, ES2022 §23.1.2.5. Returns the this value (the
 /// constructor itself), so a subclass like `class MyArray extends Array {}`
 /// gets MyArray back from ArraySpeciesCreate by inheriting this accessor
 /// through its constructor's prototype chain.
@@ -4634,7 +4634,7 @@ fn bool register_array_constructor(EnvRecord* global_env, Heap* heap) {
     if (!register_array_proto_method(proto, heap, "reduce",     Builtin.ARRAY_PROTO_REDUCE.ordinal))     return false;
     if (!register_array_proto_method(proto, heap, "reduceRight",Builtin.ARRAY_PROTO_REDUCERIGHT.ordinal)) return false;
 
-    // Array.prototype.toLocaleString — ES5 §15.4.4.3
+    // Array.prototype.toLocaleString, ES5 §15.4.4.3
     // Delegates to Object.prototype.toLocaleString for each element, then joins with ", ".
     if (!register_compiled_proto_method(proto, heap, global_env, "toLocaleString",
         "(){if(this==null)throw new TypeError('toLocaleString called on null or undefined');var O=Object(this);var len=O.length>>>0;if(len>>>0!==len)len=0;var separator=\",\";var elements=[];for(var k=0;k<len;k++){var nextElement=O[k];var s=(nextElement===null||nextElement===void 0)?\"\":nextElement.toLocaleString();elements.push(s)}return elements.join(separator)}", 0)) return false;

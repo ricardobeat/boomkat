@@ -1,10 +1,10 @@
-/// Proxy exotic object — ES2020 §10.5.
+/// Proxy exotic object, ES2020 §10.5.
 ///
 /// Implements the Proxy constructor, Proxy.revocable, and the essential
 /// internal methods (MOP operations) with their trap-result invariant
 /// validation.  The "trap absent" default forwards each operation to the
 /// [[ProxyTarget]] using the ordinary semantics (the Reflect.* operations,
-/// hand-rolled here — the JS-visible Reflect global stays out of scope).
+/// hand-rolled here, the JS-visible Reflect global stays out of scope).
 ///
 /// Error reporting: these functions are callable both from builtins (via
 /// BuiltinContext) and directly from the VM opcode handlers, so errors are
@@ -34,7 +34,7 @@ fn HObject* proxy_handler(HObject* p) @inline { return (*p.extra_ptr()).proxy.ha
 const char[] PROXY_REVOKE_SLOT = "\xFFproxyRevokeSlot";
 
 // ============================================================================
-// Error helper — heap-level TypeError (usable without a BuiltinContext)
+// Error helper, heap-level TypeError (usable without a BuiltinContext)
 // ============================================================================
 
 fn void proxy_throw_type(Heap* heap, char[] msg) {
@@ -96,12 +96,12 @@ fn void ProxyDesc.complete(&self) {
     if (!self.has_configurable) { self.configurable = false; self.has_configurable = true; }
 }
 
-/// Ordinary own-property lookup into a ProxyDesc (no proxy recursion here —
+/// Ordinary own-property lookup into a ProxyDesc (no proxy recursion here,
 /// callers that may see a proxy use own_property_desc below).
 fn void ordinary_own_desc(Heap* heap, HObject* obj, HString* key, ProxyDesc* out) {
     *out = (ProxyDesc){};
     // Integer-Indexed exotic [[GetOwnProperty]] (ES2022 §10.4.5.1): canonical
-    // numeric index keys never live in the property table — bypass it entirely.
+    // numeric index keys never live in the property table, bypass it entirely.
     if (is_typed_array_class(obj.get_class())) {
         double num;
         if (ta_key_numeric_index(heap, key, &num)) {
@@ -170,7 +170,7 @@ fn void ordinary_own_desc(Heap* heap, HObject* obj, HString* key, ProxyDesc* out
 /// {value: live-binding-value, writable:true, enumerable:true, configurable:false};
 /// symbol keys (including @@toStringTag) go through OrdinaryGetOwnProperty
 /// unchanged. Returns false (leaving heap.has_error set) if reading the live
-/// binding threw — e.g. the export is still in TDZ (§10.4.6.5 step 4 calls
+/// binding threw, e.g. the export is still in TDZ (§10.4.6.5 step 4 calls
 /// O.[[Get]], which throws ReferenceError for an uninitialized binding). Callers
 /// must propagate that via proxy_ctx_ok / their own error channel.
 fn bool module_ns_own_desc(void* vm, Heap* heap, HObject* ns, HString* key, ProxyDesc* out) {
@@ -184,7 +184,7 @@ fn bool module_ns_own_desc(void* vm, Heap* heap, HObject* ns, HString* key, Prox
     if (idx < 0) return true;          // not an export → undefined descriptor
     TVal value;
     module_ns_get_binding_value(vm, heap, ns, key, &value);
-    if (heap.has_error) return false;  // TDZ ReferenceError — propagate
+    if (heap.has_error) return false;  // TDZ ReferenceError, propagate
     // Live export binding: {value, writable:true, enumerable:true,
     // configurable:false} (§10.4.6.5 step 5).
     out.found = true;
@@ -230,7 +230,7 @@ fn ProxyDesc module_ns_desc_from_fields(bool is_accessor, hobject::PropFlags* fl
 /// present field matches the current descriptor); returns false otherwise
 /// (caller throws for Object.defineProperty / returns false for Reflect).
 /// A non-existent key returns false. Sets `*err` true (and leaves heap.has_error
-/// set) if computing the current descriptor threw (TDZ) — the caller must
+/// set) if computing the current descriptor threw (TDZ), the caller must
 /// propagate rather than throw a TypeError.
 fn bool module_ns_define_own(void* vm, Heap* heap, HObject* ns, HString* key, ProxyDesc* desc, bool* err) {
     *err = false;
@@ -389,7 +389,7 @@ fn bool js_set_with_receiver(void* vm, Heap* heap, HObject* obj, HString* key, T
             return proxy_mop_set(vm, heap, cur, key, val, receiver, res);
         }
         // A TypedArray encountered while walking up the prototype chain
-        // (cur != obj) has its own exotic [[Set]] — OrdinarySetWithOwnDescriptor
+        // (cur != obj) has its own exotic [[Set]], OrdinarySetWithOwnDescriptor
         // recurses into parent.[[Set]](P, V, Receiver) rather than treating it
         // as a flat OrdinaryGetOwnProperty lookup (ES2024 §9.1.9.2 step 2.b).
         if (cur != obj && is_typed_array_class(cur.get_class())) {
@@ -408,7 +408,7 @@ fn bool js_set_with_receiver(void* vm, Heap* heap, HObject* obj, HString* key, T
                 return true;
             }
             if (!d.writable) { *res = false; return true; }
-            break;  // writable data prop found — define on receiver below
+            break;  // writable data prop found, define on receiver below
         }
         cur = cur.prototype;
         depth++;
@@ -431,7 +431,7 @@ fn bool js_set_with_receiver(void* vm, Heap* heap, HObject* obj, HString* key, T
             nd.has_enumerable = true; nd.enumerable = existing.enumerable;
             nd.has_configurable = true; nd.configurable = existing.configurable;
         } else {
-            // Step 8: CreateDataProperty — full WEC descriptor.
+            // Step 8: CreateDataProperty, full WEC descriptor.
             nd.has_writable = true; nd.writable = true;
             nd.has_enumerable = true; nd.enumerable = true;
             nd.has_configurable = true; nd.configurable = true;
@@ -439,7 +439,7 @@ fn bool js_set_with_receiver(void* vm, Heap* heap, HObject* obj, HString* key, T
         return proxy_mop_define(vm, heap, recv_obj, key, &nd, res);
     }
     // Integer-Indexed exotic receiver: [[DefineOwnProperty]]({value}) on a
-    // TypedArray routes through IntegerIndexedElementSet, not put_prop — and
+    // TypedArray routes through IntegerIndexedElementSet, not put_prop, and
     // an out-of-bounds numeric index simply fails rather than falling back
     // to CreateDataProperty.
     if (is_typed_array_class(recv_obj.get_class())) {
@@ -528,7 +528,7 @@ fn bool js_has_property(void* vm, Heap* heap, HObject* obj, HString* key, bool* 
 }
 
 // ============================================================================
-// Trap lookup — GetMethod(handler, name)
+// Trap lookup, GetMethod(handler, name)
 // ============================================================================
 
 /// Result: 0 = error pending, 1 = no trap (forward to target), 2 = trap found.
@@ -573,7 +573,7 @@ fn bool proxy_call_trap(void* vm, Heap* heap, TVal trap, HObject* handler,
 }
 
 // ============================================================================
-// [[Get]] — trap "get" (§10.5.8)
+// [[Get]], trap "get" (§10.5.8)
 // ============================================================================
 
 fn bool proxy_mop_get(void* vm, Heap* heap, HObject* proxy, HString* key, TVal receiver, TVal* out) {
@@ -606,7 +606,7 @@ fn bool proxy_mop_get(void* vm, Heap* heap, HObject* proxy, HString* key, TVal r
 }
 
 // ============================================================================
-// [[Set]] — trap "set" (§10.5.9)
+// [[Set]], trap "set" (§10.5.9)
 // ============================================================================
 
 fn bool proxy_mop_set(void* vm, Heap* heap, HObject* proxy, HString* key, TVal val, TVal receiver, bool* res) {
@@ -641,7 +641,7 @@ fn bool proxy_mop_set(void* vm, Heap* heap, HObject* proxy, HString* key, TVal v
 }
 
 // ============================================================================
-// [[Has]] — trap "has" (§10.5.7)
+// [[Has]], trap "has" (§10.5.7)
 // ============================================================================
 
 fn bool proxy_mop_has(void* vm, Heap* heap, HObject* proxy, HString* key, bool* out) {
@@ -677,7 +677,7 @@ fn bool proxy_mop_has(void* vm, Heap* heap, HObject* proxy, HString* key, bool* 
 }
 
 // ============================================================================
-// [[Delete]] — trap "deleteProperty" (§10.5.10)
+// [[Delete]], trap "deleteProperty" (§10.5.10)
 // ============================================================================
 
 fn bool proxy_mop_delete(void* vm, Heap* heap, HObject* proxy, HString* key, bool* out) {
@@ -868,7 +868,7 @@ fn bool array_set_length_desc(void* vm, Heap* heap, HObject* obj, ProxyDesc* des
     bool arr_has_new_len = false;
     if (desc.has_value) {
         TVal new_len_val = desc.value;
-        // Step 3: ToUint32 — ToPrimitive("number") + ToNumber, then uint32 cast.
+        // Step 3: ToUint32, ToPrimitive("number") + ToNumber, then uint32 cast.
         // builtin_to_number_vm's throw paths write through ctx.result, so it
         // must point at real storage even though this scratch value is unused.
         TVal conv_scratch;
@@ -884,7 +884,7 @@ fn bool array_set_length_desc(void* vm, Heap* heap, HObject* obj, ProxyDesc* des
             return false;
         }
         uint new_len_uint = to_uint32(num1);
-        // Step 4: ToNumber — ToPrimitive("number") a second time. The second
+        // Step 4: ToNumber, ToPrimitive("number") a second time. The second
         // valueOf call is observable and can mutate the length descriptor.
         double num2 = builtin_to_number_vm(&conv_ctx, &new_len_val);
         if (conv_ctx.should_throw) {
@@ -918,7 +918,7 @@ fn bool array_set_length_desc(void* vm, Heap* heap, HObject* obj, ProxyDesc* des
 
     // Reject accessor descriptor on length (length is always a data property).
     // Like every other ValidateAndApplyPropertyDescriptor rejection, this is a
-    // `false` result, not a thrown error — Object.defineProperty is the only
+    // `false` result, not a thrown error, Object.defineProperty is the only
     // caller that converts a false [[DefineOwnProperty]] result into a thrown
     // TypeError; Reflect.defineProperty surfaces the plain `false`.
     if (desc.is_accessor_desc()) {
@@ -948,7 +948,7 @@ fn bool array_set_length_desc(void* vm, Heap* heap, HObject* obj, ProxyDesc* des
     // Apply the new length value, deleting elements and checking configurable.
     // Step 3.l walks every index from old_len-1 down to new_len, but [[Delete]]
     // on an absent index is a silent no-op, so the only observable indices are
-    // the object's own array-index keys — walking every integer down from
+    // the object's own array-index keys, walking every integer down from
     // old_len (which can be close to 2^32) hangs for hours on sparse arrays
     // with huge indices. Instead: find the highest own array-index key in
     // [arr_new_len, old_len) that is non-configurable (that's exactly the
@@ -1020,7 +1020,7 @@ fn bool array_set_length_desc(void* vm, Heap* heap, HObject* obj, ProxyDesc* des
 
     // ES2024 §10.4.2.4 step 20: stopping at a non-configurable element is a
     // `false` result (like the other validation rejections above), not a
-    // thrown error — Object.defineProperty wraps it into a TypeError.
+    // thrown error, Object.defineProperty wraps it into a TypeError.
     if (threw_type_error) {
         return true;
     }
@@ -1129,14 +1129,14 @@ fn bool object_define_own(void* vm, Heap* heap, HObject* obj, HString* key, Prox
     if (obj.flags.exotic_module_ns) {
         bool err;
         *res = module_ns_define_own(vm, heap, obj, key, desc, &err);
-        if (err) return false;   // TDZ ReferenceError — propagate
+        if (err) return false;   // TDZ ReferenceError, propagate
         return true;
     }
     return ordinary_define_own(vm, heap, obj, key, desc, res);
 }
 
 // ============================================================================
-// [[GetOwnProperty]] — trap "getOwnPropertyDescriptor" (§10.5.5)
+// [[GetOwnProperty]], trap "getOwnPropertyDescriptor" (§10.5.5)
 // ============================================================================
 
 fn bool proxy_mop_get_own(void* vm, Heap* heap, HObject* proxy, HString* key, ProxyDesc* out) {
@@ -1195,7 +1195,7 @@ fn bool proxy_mop_get_own(void* vm, Heap* heap, HObject* proxy, HString* key, Pr
 }
 
 // ============================================================================
-// [[DefineOwnProperty]] — trap "defineProperty" (§10.5.6)
+// [[DefineOwnProperty]], trap "defineProperty" (§10.5.6)
 // ============================================================================
 
 fn bool proxy_mop_define(void* vm, Heap* heap, HObject* proxy, HString* key, ProxyDesc* desc, bool* res) {
@@ -1249,7 +1249,7 @@ fn bool proxy_mop_define(void* vm, Heap* heap, HObject* proxy, HString* key, Pro
 }
 
 // ============================================================================
-// [[OwnPropertyKeys]] — trap "ownKeys" (§10.5.11)
+// [[OwnPropertyKeys]], trap "ownKeys" (§10.5.11)
 // ============================================================================
 
 /// Collect all own property keys of an ordinary object (dense array indices
@@ -1683,7 +1683,7 @@ fn bool proxy_mop_prevent_extensions(void* vm, Heap* heap, HObject* proxy, bool*
     return true;
 }
 
-/// SetIntegrityLevel(O, level) — ES2015 §7.3.13 — for a Proxy target.
+/// SetIntegrityLevel(O, level), ES2015 §7.3.13, for a Proxy target.
 /// Routes [[PreventExtensions]] then [[DefineOwnProperty]] for every own key
 /// through the MOP so a `defineProperty`/`preventExtensions` trap observes
 /// the same partial descriptors an ordinary object walk would apply: data
@@ -1727,7 +1727,7 @@ fn bool proxy_set_integrity_level(void* vm, Heap* heap, HObject* proxy, bool fro
     return true;
 }
 
-/// TestIntegrityLevel(O, level) — ES2015 §7.3.15 — for a Proxy.
+/// TestIntegrityLevel(O, level), ES2015 §7.3.15, for a Proxy.
 /// The proxy MOP calls are required even when their traps are absent: in that
 /// case proxy_mop_own_keys forwards to the target's [[OwnPropertyKeys]], while
 /// [[GetOwnProperty]] still runs on the outer proxy for every forwarded key.
@@ -1762,7 +1762,7 @@ fn bool proxy_test_integrity_level(void* vm, Heap* heap, HObject* proxy,
 }
 
 // ============================================================================
-// IsArray recursion (§7.2.2) — a Proxy is an array iff its target is.
+// IsArray recursion (§7.2.2), a Proxy is an array iff its target is.
 // ============================================================================
 
 fn bool proxy_is_array(Heap* heap, HObject* obj, bool* out) {
@@ -1789,7 +1789,7 @@ fn HObject* proxy_create(BuiltinContext* ctx, TVal target_tv, TVal handler_tv) {
     // objects (e.g. Object.prototype.hasOwnProperty, parseInt, eval). The
     // ProxyCreate spec accepts any Object as the target/handler; since
     // lightfuncs satisfy `typeof === "function"` and `IsCallable`, materialize
-    // them into full callable HObjects before storing the proxy slots — same
+    // them into full callable HObjects before storing the proxy slots, same
     // pattern as Object.setPrototypeOf's lightfunc handling.
     if (target_tv.is_lightfunc()) {
         uint fn_idx = (uint)(usz)target_tv.get_heapptr();
@@ -1913,7 +1913,7 @@ fn void builtin_proxy_revoke(BuiltinContext* ctx) {
     ctx.callee_obj.put_prop((void*)slot_key, undef, hobject::PROP_FLAGS_NWC);
 }
 
-/// Proxy [[Call]] and [[Construct]] — dispatched through the ordinary builtin
+/// Proxy [[Call]] and [[Construct]], dispatched through the ordinary builtin
 /// call path (the proxy object's extra.proxy.builtin_fn_index points here and
 /// ctx.callee_obj is the proxy itself).
 fn void builtin_proxy_call(BuiltinContext* ctx) {
@@ -1945,7 +1945,7 @@ fn void builtin_proxy_call(BuiltinContext* ctx) {
             // defaulting to the proxy itself (p) for ordinary `new P(...)` calls.
             // Before forwarding we must simulate GetPrototypeFromConstructor(p,
             // "%ObjectPrototype%")'s Get(p, "prototype") step, which triggers the
-            // proxy's [[Get]] trap — if that trap revokes p, the subsequent
+            // proxy's [[Get]] trap, if that trap revokes p, the subsequent
             // GetFunctionRealm(p) would throw (revoked proxy). We replicate that
             // check explicitly:
             HString* proto_key_str = builtin_intern_string(heap, "prototype");

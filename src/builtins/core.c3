@@ -41,7 +41,7 @@ fn double math_atanh(double x)          => math::atanh(x);
 fn double math_log2(double x)           => math::log2(x);
 fn double math_log10(double x)          => math::log10(x);
 
-// No std::math equivalent — these three remain link-time libm externs.
+// No std::math equivalent, these three remain link-time libm externs.
 extern fn double math_log1p(double x)         @MathLibc("log1p");
 extern fn double math_expm1(double x)         @MathLibc("expm1");
 extern fn double math_cbrt(double x)          @MathLibc("cbrt");
@@ -50,7 +50,7 @@ extern fn double math_cbrt(double x)          @MathLibc("cbrt");
 // The Tm struct mirrors C's struct tm layout exactly.
 
 // ============================================================================
-// BuiltinContext — passed to every builtin handler
+// BuiltinContext, passed to every builtin handler
 // ============================================================================
 
 struct BuiltinContext {
@@ -86,7 +86,7 @@ alias BuiltinFunc = fn void(BuiltinContext*);
 
 /// Stable identifiers for every native builtin function, indexed into
 /// builtin_dispatch_table via `.ordinal`. Never serialized to bytecode or
-/// disk — builtin_fn_index is a runtime-only field on the function object
+/// disk, builtin_fn_index is a runtime-only field on the function object
 /// (HObjectFunction / HObjectProxy), so members may be appended freely
 /// without a stable numbering scheme.
 ///
@@ -96,7 +96,7 @@ alias BuiltinFunc = fn void(BuiltinContext*);
 ///  - handler: the native implementation, or null for internal-only ordinals
 ///    that are never dispatched through builtin_dispatch_table.
 /// builtin_get_metadata() and builtin_dispatch_table are both generated from
-/// this single declaration at compile time (see below) — adding a builtin
+/// this single declaration at compile time (see below), adding a builtin
 /// requires exactly one new line here.
 enum Builtin : uint (String js_name, int js_arity, BuiltinFunc handler) {
     PRINT {"print", 1, &builtin_print},
@@ -599,7 +599,7 @@ enum Builtin : uint (String js_name, int js_arity, BuiltinFunc handler) {
     SET_PROTO_ISDISJOINTFROM {"isDisjointFrom", 1, &builtin_set_proto_isDisjointFrom}, // Set.prototype.isDisjointFrom(other)
     REGEXP_ESCAPE {"escape", 1, &builtin_regexp_escape},                               // RegExp.escape(string) (ES2026 proposal-regex-escaping)
     // --- Iterator Helpers (ES2025 §27.1) ---
-    ITERATOR_CTOR {"Iterator", 0, &builtin_iterator_ctor},                             // Iterator() — throws (abstract, subclassable)
+    ITERATOR_CTOR {"Iterator", 0, &builtin_iterator_ctor},                             // Iterator(), throws (abstract, subclassable)
     ITERATOR_FROM {"from", 1, &builtin_iterator_from},                                 // Iterator.from(obj)
     ITERATOR_PROTO_CONSTRUCTOR_GET {"get constructor", 0, &builtin_iterator_proto_constructor_get}, // get Iterator.prototype.constructor
     ITERATOR_PROTO_CONSTRUCTOR_SET {"set constructor", 1, &builtin_iterator_proto_constructor_set}, // set Iterator.prototype.constructor
@@ -669,11 +669,11 @@ enum Builtin : uint (String js_name, int js_arity, BuiltinFunc handler) {
     ASYNC_GEN_YRET_FULFILL {"", -1, &builtin_async_gen_yret_fulfill},                  // native reaction: yield-resumption return value fulfilled → resume body w/ return
     ASYNC_GEN_YRET_REJECT {"", -1, &builtin_async_gen_yret_reject},                    // native reaction: yield-resumption return value rejected → resume body w/ throw
     REGEXP_PROTO_COMPILE {"compile", 2, &builtin_regexp_proto_compile},                // RegExp.prototype.compile(pattern, flags) (Annex B §B.2.4.1)
-    ATOMICS_PAUSE {"", -1, &builtin_atomics_pause},                                    // Atomics.pause([iterationNumber]) — microwait hint (ES2025 §25.4.6)
+    ATOMICS_PAUSE {"", -1, &builtin_atomics_pause},                                    // Atomics.pause([iterationNumber]), microwait hint (ES2025 §25.4.6)
     // --- error-stack-accessor proposal ---
     ERROR_PROTO_STACK_GET {"get stack", 0, &builtin_error_proto_stack_get},            // get Error.prototype.stack
     ERROR_PROTO_STACK_SET {"set stack", 1, &builtin_error_proto_stack_set},            // set Error.prototype.stack
-    LAST {"", -1, null}, // sentinel — one past the highest valid builtin; not a real builtin
+    LAST {"", -1, null}, // sentinel, one past the highest valid builtin; not a real builtin
 }
 
 /// ES2015 §9.1.14 OrdinaryCreateFromConstructor / §9.1.15 GetPrototypeFromConstructor.
@@ -693,7 +693,7 @@ fn HObject* builtin_proto_from_new_target(BuiltinContext* ctx, HObject* default_
     HObject* nt = ctx.new_target;
     if (nt == null) return default_proto;
     // Avoid the trivial case: if new_target is the builtin itself (plain `new Builtin()`)
-    // its ".prototype" IS default_proto, so we'd return the same value — but it's still
+    // its ".prototype" IS default_proto, so we'd return the same value, but it's still
     // correct to do the lookup for callee-less lightfunc paths.
     HString* proto_key = (HString*)ctx.heap.strs[heap::BuiltinStr.PROTOTYPE];
     if (proto_key == null) return default_proto;
@@ -707,7 +707,7 @@ fn HObject* builtin_proto_from_new_target(BuiltinContext* ctx, HObject* default_
     return default_proto;
 }
 
-/// ES5 §8.12.3 [[Get]] / ES2020 §10.1.8.1 OrdinaryGet — for builtins that
+/// ES5 §8.12.3 [[Get]] / ES2020 §10.1.8.1 OrdinaryGet, for builtins that
 /// need full Get semantics on a property (walks prototype chain, invokes
 /// accessor getters). Returns the resolved TVal, or faults on throw (per
 /// ES2017 §25.4.1.5 step 7 `ReturnIfAbrupt`). A `null`/missing key
@@ -728,7 +728,7 @@ fn TVal? builtins_generic_get(HObject* obj, HString* key, BuiltinContext* ctx) {
             // ES5 §8.12.3 / ES2020 §10.1.8.1 step 6: invoke the accessor's
             // getter with `this` set to the object where the accessor was
             // found (not the receiver). For prototype accessors this is
-            // critical — calling the getter with the derived instance as
+            // critical, calling the getter with the derived instance as
             // `this` would trip the common pattern of "if (this is not
             // <Class>) throw".
             TVal getter_this;
@@ -762,7 +762,7 @@ fn TVal? builtins_generic_get(HObject* obj, HString* key, BuiltinContext* ctx) {
 /// returned as-is; a primitive is wrapped in a throwaway object whose
 /// prototype is chosen from the primitive's own type, so user-installed
 /// methods on String/Number/Boolean/BigInt.prototype stay reachable.
-/// undefined/null return null — callers decide whether that is a TypeError.
+/// undefined/null return null, callers decide whether that is a TypeError.
 /// The wrapper is only for reading; it is not exposed to script.
 fn HObject* to_object_for_lookup(Heap* heap, TVal value) {
     if (value.is_object() && value.get_heapptr() != null) {
@@ -929,7 +929,7 @@ fn uint decode_codepoint_at(char* data, uint off, uint total_len, uint* seq_len)
         *seq_len = 4;
         return ((b0 & 0x07) << 18) | ((b1 & 0x3F) << 12) | ((b2 & 0x3F) << 6) | (b3 & 0x3F);
     }
-    // Invalid lead byte — skip one byte
+    // Invalid lead byte, skip one byte
     *seq_len = 1;
     return 0;
 }
@@ -1018,7 +1018,7 @@ fn double builtin_string_to_number(HString* hstr) {
         return (double)val;
     }
 
-    // --- Binary integer literal (0b... / 0B...) — ES2015 §7.1.3.1 ---
+    // --- Binary integer literal (0b... / 0B...), ES2015 §7.1.3.1 ---
     // Unlike parseInt, ToNumber(String) accepts the ES2015 non-decimal
     // integer literal prefixes 0b/0o/0x (but NOT a sign or a trailing radix).
     if (p[0] == '0' && (p[1] == 'b' || p[1] == 'B')) {
@@ -1039,7 +1039,7 @@ fn double builtin_string_to_number(HString* hstr) {
         return val;
     }
 
-    // --- Octal integer literal (0o... / 0O...) — ES2015 §7.1.3.1 ---
+    // --- Octal integer literal (0o... / 0O...), ES2015 §7.1.3.1 ---
     if (p[0] == '0' && (p[1] == 'o' || p[1] == 'O')) {
         uint j = 2;
         if (p[j] < '0' || p[j] > '7') return double::nan; // require ≥1 digit
@@ -1123,7 +1123,7 @@ fn void builtin_to_number(TVal* val, TVal* result) {
             return;
         case STRING: {
             double d = builtin_string_to_number((HString*)val.get_heapptr());
-            // Try fastint preservation — but not for -0 (fastint can't represent it)
+            // Try fastint preservation, but not for -0 (fastint can't represent it)
             if (d != 0.0 || !math::signbit(d)) {
                 long fi = (long)d;
                 if ((double)fi == d && fi >= types::DUK_MIN_SAFE_INT && fi <= types::DUK_MAX_SAFE_INT) {
@@ -1151,7 +1151,7 @@ fn void builtin_to_number(TVal* val, TVal* result) {
     }
 }
 
-/// Simplified ToPrimitive for builtins — unwraps Boolean/Number/String wrapper objects.
+/// Simplified ToPrimitive for builtins, unwraps Boolean/Number/String wrapper objects.
 fn TVal to_primitive_value_local(TVal* val) @public {
     if (val.is_object() && val.get_heapptr() != null) {
         HObject* obj = (HObject*)val.get_heapptr();
@@ -1220,10 +1220,9 @@ fn bool builtin_to_boolean(TVal* val) {
 // ============================================================================
 
 fn HString* builtin_intern_string(Heap* heap, char[] data) {
-    // Delegate to Heap.str_intern rather than duplicating lookup/alloc here
-    // — it normalizes raw 4-byte UTF-8 astral sequences to CESU-8 before
-    // hashing, which this hand-rolled version used to skip, causing the
-    // same logical string to intern under two different byte encodings.
+    // Heap.str_intern normalizes raw 4-byte UTF-8 astral sequences to CESU-8
+    // before hashing, so one logical string cannot intern under two different
+    // byte encodings.
     return heap.str_intern(data);
 }
 
@@ -1256,12 +1255,12 @@ fn HObject* check_collection_class(BuiltinContext* ctx, hobject::ObjClass want, 
 }
 
 // ============================================================================
-// CanBeHeldWeakly (ES2023 §7.2.11) — shared by WeakMap key / WeakSet value /
+// CanBeHeldWeakly (ES2023 §7.2.11), shared by WeakMap key / WeakSet value /
 // WeakRef target / FinalizationRegistry target+token checks.
 // ============================================================================
 
 /// True if `val` is an object, or a Symbol that is not in the global Symbol
-/// registry (i.e. not created via Symbol.for — well-known symbols like
+/// registry (i.e. not created via Symbol.for, well-known symbols like
 /// Symbol.iterator are fine, since only Symbol.for results are registered).
 fn bool can_be_held_weakly(Heap* heap, TVal val) {
     if (val.is_object() && val.get_heapptr() != null) return true;
@@ -1295,7 +1294,7 @@ fn int find_in_array_part(HObject* obj, TVal val, uint stride) {
 
 /// Throws a TypeError built from `msg` and marks ctx to throw / return undefined.
 /// Allocs an Error object with the given prototype and message, then marks
-/// ctx to throw it. Does not touch ctx.result — callers that need
+/// ctx to throw it. Does not touch ctx.result, callers that need
 /// ctx.result.set_undefined() (the common case for builtin call handlers)
 /// should call builtin_throw() instead.
 fn void builtin_throw_no_result_change(BuiltinContext* ctx, HObject* proto, char[] msg) {
@@ -1332,10 +1331,10 @@ fn void coll_throw(BuiltinContext* ctx, char[] msg) {
 /// is_pair: true for Map/WeakMap (entries are [k,v], adder called with 2 args),
 ///          false for Set/WeakSet (entries are single values, adder called with 1 arg).
 /// allow_array_fallback: reserved for array-like indexed iteration when
-///          @@iterator is missing. Map/Set/WeakMap/WeakSet all pass false —
+///          @@iterator is missing. Map/Set/WeakMap/WeakSet all pass false,
 ///          @@iterator must be callable or construction throws "iterable
 ///          argument is not iterable" (ES2015 §7.4.1 GetIterator; matches
-///          V8/SpiderMonkey — there is no array-like fallback in the spec).
+///          V8/SpiderMonkey, there is no array-like fallback in the spec).
 /// requires_new_msg / arg_not_object_msg / adder_not_callable_msg / not_iterable_msg:
 ///          pre-built full error messages (avoids runtime string formatting).
 fn void coll_construct(BuiltinContext* ctx, hobject::ObjClass obj_class, HObject* proto,
@@ -1512,7 +1511,7 @@ fn void coll_construct(BuiltinContext* ctx, hobject::ObjClass obj_class, HObject
                         if (try d = builtins_generic_get(res_obj, done_key, ctx)) { done_val = d; }
                     }
                     if (ctx.should_throw) {
-                        // done getter threw — close iterator then propagate.
+                        // done getter threw, close iterator then propagate.
                         arr_iterator_close_after_throw(ctx, iterator);
                         ctx.result.set_undefined();
                         return;
@@ -1526,7 +1525,7 @@ fn void coll_construct(BuiltinContext* ctx, hobject::ObjClass obj_class, HObject
                         if (try v = builtins_generic_get(res_obj, value_key, ctx)) { val_tv = v; }
                     }
                     if (ctx.should_throw) {
-                        // value getter threw — close iterator then propagate (ES2022 §7.4.5).
+                        // value getter threw, close iterator then propagate (ES2022 §7.4.5).
                         arr_iterator_close_after_throw(ctx, iterator);
                         ctx.result.set_undefined();
                         return;
@@ -1545,7 +1544,7 @@ fn void coll_construct(BuiltinContext* ctx, hobject::ObjClass obj_class, HObject
                                 if (try kv = builtins_generic_get(pair_obj, key0, ctx)) { k = kv; }
                             }
                             if (ctx.should_throw) {
-                                // Getter for key[0] threw — close iterator then propagate.
+                                // Getter for key[0] threw, close iterator then propagate.
                                 arr_iterator_close_after_throw(ctx, iterator);
                                 ctx.result.set_undefined();
                                 return;
@@ -1554,7 +1553,7 @@ fn void coll_construct(BuiltinContext* ctx, hobject::ObjClass obj_class, HObject
                                 if (try vv = builtins_generic_get(pair_obj, key1, ctx)) { v = vv; }
                             }
                             if (ctx.should_throw) {
-                                // Getter for key[1] threw — close iterator then propagate.
+                                // Getter for key[1] threw, close iterator then propagate.
                                 arr_iterator_close_after_throw(ctx, iterator);
                                 ctx.result.set_undefined();
                                 return;
@@ -1566,13 +1565,13 @@ fn void coll_construct(BuiltinContext* ctx, hobject::ObjClass obj_class, HObject
                                 ctx.should_throw = true;
                                 ctx.throw_value = ctx.heap.error_value;
                                 ctx.heap.has_error = false;
-                                // adder threw — close iterator then propagate.
+                                // adder threw, close iterator then propagate.
                                 arr_iterator_close_after_throw(ctx, iterator);
                                 ctx.result.set_undefined();
                                 return;
                             }
                         } else {
-                            // pair entry is not an object — ES2022 §23.1.1.1 step 9f requires TypeError.
+                            // pair entry is not an object, ES2022 §23.1.1.1 step 9f requires TypeError.
                             coll_throw(ctx, "Iterator value must be an object");
                             arr_iterator_close_after_throw(ctx, iterator);
                             ctx.result.set_undefined();
@@ -1586,7 +1585,7 @@ fn void coll_construct(BuiltinContext* ctx, hobject::ObjClass obj_class, HObject
                             ctx.should_throw = true;
                             ctx.throw_value = ctx.heap.error_value;
                             ctx.heap.has_error = false;
-                            // adder threw — close iterator then propagate.
+                            // adder threw, close iterator then propagate.
                             arr_iterator_close_after_throw(ctx, iterator);
                             ctx.result.set_undefined();
                             return;
@@ -1606,12 +1605,12 @@ fn void coll_construct(BuiltinContext* ctx, hobject::ObjClass obj_class, HObject
 
 /// Shared body for Map.prototype.set / WeakMap.prototype.set (ES6 §23.1.3.9 / §23.3.3.5).
 /// require_object_key: true for WeakMap (throws "Invalid value used as weak map key"
-/// unless CanBeHeldWeakly(key) — object or non-registered symbol), false for Map
+/// unless CanBeHeldWeakly(key), object or non-registered symbol), false for Map
 /// (any key allowed).
 /// grow_hwm: true for Map (array_used is a high-water mark that must include slots
 /// with undefined keys/values for iteration), false for WeakMap (not iterable).
 /// array_used is always widened to include the value slot regardless of
-/// grow_hwm — set_array_idx only tracks non-undefined writes, so a value of
+/// grow_hwm, set_array_idx only tracks non-undefined writes, so a value of
 /// undefined (a valid Map/WeakMap value) would otherwise leave array_used
 /// short of the slot just written, corrupting find_in_array_part's scan
 /// bound for every later insert.
@@ -1632,7 +1631,7 @@ fn void coll_set_entry(BuiltinContext* ctx, HObject* coll, uint stride, bool req
     if (found >= 0) {
         // Overwrite the existing value slot directly (not via set_array_idx):
         // this slot is already counted in array_used, and a value of undefined
-        // is a legitimate Map/WeakMap value, not a hole — set_array_idx's
+        // is a legitimate Map/WeakMap value, not a hole, set_array_idx's
         // undefined-transition bookkeeping would corrupt array_used here.
         TVal* v_slot = &coll.array_part()[(uint)found + 1];
         if (value.is_heap_allocated() && value.get_heapptr() != null) {
@@ -1766,7 +1765,7 @@ fn void coll_get_or_insert_computed(BuiltinContext* ctx, HObject* coll, bool req
 
 /// Shared body for Set.prototype.add / WeakSet.prototype.add (ES6 §23.2.3.1 / §23.4.3.1).
 /// require_object_value: true for WeakSet (throws "Invalid value used in weak set"
-/// unless CanBeHeldWeakly(value) — object or non-registered symbol), false for Set
+/// unless CanBeHeldWeakly(value), object or non-registered symbol), false for Set
 /// (any value allowed).
 /// grow_hwm: true for Set (array_used high-water mark must include undefined slots
 /// for iteration), false for WeakSet (not iterable).
@@ -1793,10 +1792,10 @@ fn void coll_add_value(BuiltinContext* ctx, HObject* coll, bool require_object_v
     ctx.result.set_object(coll);
 }
 
-/// Shared body for Map/Set.prototype.delete (tombstone: mark deleted, keep slot —
+/// Shared body for Map/Set.prototype.delete (tombstone: mark deleted, keep slot,
 /// preserves array_used as a high-water mark so live iterators continue correctly)
 /// and WeakMap/WeakSet.prototype.delete (compact: shift subsequent entries down and
-/// shrink array_used — safe since Weak collections are not iterable).
+/// shrink array_used, safe since Weak collections are not iterable).
 /// stride=2 for Map/WeakMap (key+value slots), stride=1 for Set/WeakSet (value only).
 fn void coll_delete(BuiltinContext* ctx, HObject* coll, TVal key, uint stride, bool tombstone) {
     int found = find_in_array_part(coll, key, stride);
@@ -1884,11 +1883,11 @@ fn bool group_by_append_map(BuiltinContext* ctx, HObject* map, TVal key, TVal va
     return true;
 }
 
-/// GroupBy ( items, callbackfn, coercion ) — ES2024 §23.1.2.1.
+/// GroupBy ( items, callbackfn, coercion ), ES2024 §23.1.2.1.
 /// `into_map`: false stores groups as data properties of a null-prototype
 /// object (Object.groupBy), true stores groups keyed by SameValueZero in a
 /// fresh Map (Map.groupBy, key -0 normalized to +0 per CanonicalizeKeyedCollectionKey).
-/// `result` receives the produced Object/Map on success, or null on failure —
+/// `result` receives the produced Object/Map on success, or null on failure,
 /// callers should check ctx.should_throw afterward to distinguish an in-band
 /// TypeError from ctx.result being validly unset.
 fn HObject* group_by_shared(BuiltinContext* ctx, bool into_map) {
@@ -1908,11 +1907,11 @@ fn HObject* group_by_shared(BuiltinContext* ctx, bool into_map) {
     }
     if (heap.call_fn == null || ctx.vm == null) return null;
 
-    // GetIterator(items) — must be an object/primitive with a callable
+    // GetIterator(items), must be an object/primitive with a callable
     // @@iterator; undefined/null @@iterator is a TypeError (no fallback).
     // Primitives are wrapped in a throwaway object whose [[Prototype]] is the
     // matching wrapper prototype, so the @@iterator lookup below walks the
-    // real prototype chain (must set items_obj.prototype directly — a named
+    // real prototype chain (must set items_obj.prototype directly, a named
     // "prototype" data property is not consulted by get_prop_or_accessor_proto).
     HObject* items_obj = null;
     if (items.is_object() && items.get_heapptr() != null) {
@@ -1971,7 +1970,7 @@ fn HObject* group_by_shared(BuiltinContext* ctx, bool into_map) {
     HObject* iter_obj = (HObject*)iterator.get_heapptr();
 
     // Result container: a null-prototype ordinary object (Object.groupBy) or
-    // a freshly constructed Map (Map.groupBy) — created before iteration.
+    // a freshly constructed Map (Map.groupBy), created before iteration.
     HObject* groups;
     if (into_map) {
         HObject*? map_raw = heap.alloc_object(hobject::ObjClass.MAP);
@@ -2030,7 +2029,7 @@ fn HObject* group_by_shared(BuiltinContext* ctx, bool into_map) {
         TVal next_value;
         if (try vv = value_opt) { next_value = vv; } else { next_value.set_undefined(); }
 
-        // ES2024 §23.1.2.1 GroupBy step 6.e: 𝔽(k) as the index arg — beyond
+        // ES2024 §23.1.2.1 GroupBy step 6.e: 𝔽(k) as the index arg, beyond
         // 2^53-1 keys the spec has already thrown RangeError (step 6.d), which
         // cannot occur in practice (would require exhausting all safe integers).
         TVal[2] cb_args;
@@ -2080,7 +2079,7 @@ fn HObject* group_by_shared(BuiltinContext* ctx, bool into_map) {
 // ToString helper (ES3 ToString for primitive types)
 // ============================================================================
 
-/// ToString(Number) per ES2015 §7.1.12.1 — shortest round-trip decimal via
+/// ToString(Number) per ES2015 §7.1.12.1, shortest round-trip decimal via
 /// QuickJS js_dtoa (FREE mode), spec exponent format (1e+21, 1e-7).
 fn HString* builtin_number_to_hstring(Heap* heap, double d) {
     if (math::is_nan(d)) return (HString*)heap.strs[heap::BuiltinStr.NAN_STR];
@@ -2210,7 +2209,7 @@ fn double builtin_to_integer(TVal* val) {
 /// ToPrimitive via the VM (invoking valueOf/toString).  When ToPrimitive
 /// returns a non-primitive, throws TypeError instead of silently returning 0.
 /// ToIntegerOrInfinity first calls ToNumber, which throws TypeError for
-/// Symbol and BigInt arguments (ES2022 §7.1.4) — checked before the object
+/// Symbol and BigInt arguments (ES2022 §7.1.4), checked before the object
 /// path since Symbols/BigInts are not objects.
 fn double builtin_to_integer_vm(BuiltinContext* ctx, TVal* val) {
     if (val.is_bigint()) {
@@ -2241,7 +2240,7 @@ fn double builtin_to_integer_vm(BuiltinContext* ctx, TVal* val) {
                     return 0.0 / 0.0;
                 }
             }
-            // ToNumber(BigInt) throws TypeError (ES2020 §7.1.4) — e.g. a wrapper
+            // ToNumber(BigInt) throws TypeError (ES2020 §7.1.4), e.g. a wrapper
             // or @@toPrimitive that yields a BigInt reaches here.
             if (prim.is_bigint()) {
                 builtin_throw(ctx, ctx.heap.type_err_proto, "Cannot convert a BigInt value to a number");
@@ -2249,7 +2248,7 @@ fn double builtin_to_integer_vm(BuiltinContext* ctx, TVal* val) {
             }
             return builtin_to_integer(&prim);
         }
-        // Both valueOf and toString returned non-primitives — ES2022 §7.1.5 step 4b
+        // Both valueOf and toString returned non-primitives, ES2022 §7.1.5 step 4b
         builtin_throw(ctx, ctx.heap.type_err_proto, "Cannot convert object to primitive value");
         return 0.0 / 0.0;
     }
@@ -2321,7 +2320,7 @@ fn double builtin_to_number_getdouble(BuiltinContext* ctx, TVal* val) {
     return num.get_number();
 }
 
-/// ToNumber for builtins with VM access — calls ToPrimitive(value) then ToNumber.
+/// ToNumber for builtins with VM access, calls ToPrimitive(value) then ToNumber.
 /// This properly handles objects by calling valueOf() first, then toString().
 fn double builtin_to_number_vm(BuiltinContext* ctx, TVal* val) {
     if (val.is_fastint()) return (double)val.get_fastint();
@@ -2350,7 +2349,7 @@ fn double builtin_to_number_vm(BuiltinContext* ctx, TVal* val) {
             return 0.0 / 0.0;
         }
         if (prim.is_object()) {
-            // Both valueOf and toString returned non-primitives — ES2022
+            // Both valueOf and toString returned non-primitives, ES2022
             // §7.1.1.1 step 3 throws TypeError. Synthesize a TypeError and
             // flag it on the context so the calling builtin propagates.
             HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
@@ -2380,14 +2379,14 @@ fn double builtin_to_number_vm(BuiltinContext* ctx, TVal* val) {
     return num.get_number();
 }
 
-/// ToString for builtins with VM access — calls ToPrimitive(value, "string") then ToString.
+/// ToString for builtins with VM access, calls ToPrimitive(value, "string") then ToString.
 /// This properly handles objects by calling toString() first, then valueOf().
 /// Throws TypeError if the value is a Symbol (ToString(symbol) must throw per spec).
 fn HString* builtin_to_string_vm(BuiltinContext* ctx, TVal* val) {
     if (val != null) val.set_temproot();
     HString* res = null;
     if (val.is_string()) {
-        // Symbols cannot be converted to string — ToString(symbol) must throw TypeError.
+        // Symbols cannot be converted to string, ToString(symbol) must throw TypeError.
         HString* s = (HString*)val.get_heapptr();
         if (s != null && s.is_symbol()) {
             arr_throw_type_error(ctx, "Cannot convert a Symbol value to a string");
@@ -2427,7 +2426,7 @@ fn HString* builtin_to_string_vm(BuiltinContext* ctx, TVal* val) {
 
 /// ToPropertyKey (ES §7.1.19): like ToString but a Symbol is a valid property
 /// key and passes through unchanged (Symbols are HString with is_symbol()).
-/// Use this — not builtin_to_string_vm — anywhere a value is being coerced to a
+/// Use this, not builtin_to_string_vm, anywhere a value is being coerced to a
 /// property key (defineProperty, hasOwn, getOwnPropertyDescriptor, in, etc.),
 /// since ToString(Symbol) throws TypeError but a Symbol key must not.
 fn HString* builtin_to_property_key_vm(BuiltinContext* ctx, TVal* val) {
@@ -2446,7 +2445,7 @@ fn HString* builtin_to_property_key_vm(BuiltinContext* ctx, TVal* val) {
             return null;
         }
         if (prim.is_string()) {
-            // Plain string or Symbol — both are valid keys, pass through.
+            // Plain string or Symbol, both are valid keys, pass through.
             res = (HString*)prim.get_heapptr();
         } else if (!prim.is_object()) {
             res = builtin_to_string(ctx.heap, &prim);
@@ -2459,12 +2458,12 @@ fn HString* builtin_to_property_key_vm(BuiltinContext* ctx, TVal* val) {
 }
 
 // ============================================================================
-// BuiltinMeta — metadata for LIGHTFUNC builtins
+// BuiltinMeta, metadata for LIGHTFUNC builtins
 // ============================================================================
 
 /// Metadata for LIGHTFUNC builtins: name and expected arity.
 /// Used by GETPROP to resolve `.name` and `.length` on LIGHTFUNC values.
-/// Derived directly from the Builtin enum's associated values — see the
+/// Derived directly from the Builtin enum's associated values, see the
 /// enum declaration for the single per-builtin source of truth.
 struct BuiltinMeta {
     char[] name;
@@ -2513,7 +2512,7 @@ fn bool register_array_proto_method(HObject* proto, Heap* heap, char[] name, uin
         name_tv.set_string(name_val);
         func_obj.put_prop(name_prop_key, name_tv, hobject::PROP_FLAGS_NWC);
     }
-    // Register on prototype — writable:true, enumerable:false, configurable:true (ES5 §15.3.5.1)
+    // Register on prototype, writable:true, enumerable:false, configurable:true (ES5 §15.3.5.1)
     TVal tv;
     tv.set_object(func_obj);
     proto.put_prop(key, tv, hobject::PROP_FLAGS_WC);
@@ -2597,7 +2596,7 @@ fn bool register_string_proto_method(HObject* proto, Heap* heap, char[] name, ui
         name_tv.set_string(name_val);
         func_obj.put_prop(name_prop_key, name_tv, hobject::PROP_FLAGS_NWC);
     }
-    // Register on prototype — writable:true, enumerable:false, configurable:true (ES5 §15.3.5.1)
+    // Register on prototype, writable:true, enumerable:false, configurable:true (ES5 §15.3.5.1)
     TVal tv;
     tv.set_object(func_obj);
     proto.put_prop(key, tv, hobject::PROP_FLAGS_WC);
@@ -2721,7 +2720,7 @@ fn void module_binding_throw_tdz(BuiltinContext* ctx, HString* name) {
 /// hidden slots on the getter function itself and read the live value.
 /// Returns undefined if the binding cannot be found. Throws a
 /// ReferenceError if the source slot still holds the TDZ sentinel (the
-/// exporting module's `let`/`const`/`class` declaration has not yet run) —
+/// exporting module's `let`/`const`/`class` declaration has not yet run),
 /// ECMA-262 SS10.4.6.8 / SS16.2.1.5.5 GetBindingValue for a not-yet-initialized
 /// binding.
 ///
@@ -2729,8 +2728,8 @@ fn void module_binding_throw_tdz(BuiltinContext* ctx, HString* name) {
 /// third module) means the resolved slot in `bindings` can itself be an
 /// accessor property installed by this same mechanism (one live binding
 /// pointing at another). Such a slot is unwrapped and its getter invoked
-/// via ctx.heap.call_fn, exactly mirroring GETVAR's own accessor-chase —
-/// a single non-recursive lookup would otherwise return the boxed
+/// via ctx.heap.call_fn, exactly mirroring GETVAR's own accessor-chase.
+/// A single non-recursive lookup would otherwise return the boxed
 /// getter/setter pair instead of the underlying value.
 fn void builtin_module_binding_getter(BuiltinContext* ctx) {
     ctx.result.set_undefined();
@@ -2811,7 +2810,7 @@ fn TVal make_module_binding_accessor(Heap* heap, HObject* source_bindings, HStri
 /// If the export binding is still in TDZ, the invoked getter throws a
 /// ReferenceError: `heap.has_error` is left set and the caller MUST propagate
 /// it (via proxy_ctx_ok / returning false) rather than treating the result as a
-/// value. Export bindings are stored as accessors — this invokes the stored
+/// value. Export bindings are stored as accessors, this invokes the stored
 /// getter; a non-export own data property (none exist for string keys today) is
 /// returned verbatim.
 fn bool module_ns_get_binding_value(void* vm, Heap* heap, HObject* ns, HString* key, TVal* out) {
@@ -2837,7 +2836,7 @@ fn bool module_ns_get_binding_value(void* vm, Heap* heap, HObject* ns, HString* 
 // ============================================================================
 
 // Function-pointer dispatch table, populated once at startup from each
-// enum member's `handler` associated value — the single per-builtin source
+// enum member's `handler` associated value, the single per-builtin source
 // of truth declared on Builtin above. Builtin.LAST.ordinal is one past the
 // highest valid index; the bounds check in dispatch_builtin mirrors the old
 // `default:` arm (set_undefined on the result). Ordinals with no JS-visible
@@ -2874,7 +2873,7 @@ fn void dispatch_builtin(uint fn_index, BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// __resetGlobals — test262 checkpoint/restore
+// __resetGlobals, test262 checkpoint/restore
 // ============================================================================
 
 fn void builtin_reset_globals(BuiltinContext* ctx) {
@@ -3003,7 +3002,7 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
     if (!register_global_immutable(global_env, heap, "NaN", NUMBER, double::nan, 0)) return false;
     if (!register_global_immutable(global_env, heap, "Infinity", NUMBER, double::inf, 0)) return false;
     {
-        // Register `undefined` — ES5 §15.1.1 value is the undefined value
+        // Register `undefined`, ES5 §15.1.1 value is the undefined value
         HString* u_key = heap.str_intern("undefined");
         if (u_key == null) return false;
         TVal u_val;
@@ -3011,7 +3010,7 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
         env::env_declare_immutable(global_env, u_key, u_val);
     }
 
-    // Register Object constructor FIRST — creates Object.prototype (root of all chains)
+    // Register Object constructor FIRST, creates Object.prototype (root of all chains)
     if (!register_object_constructor(global_env, heap)) return false;
 
     // Register Function constructor and prototype (call, apply, bind)
@@ -3023,7 +3022,7 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
     // Register Number constructor (with prototype and static properties)
     if (!register_number_constructor(global_env, heap)) return false;
 
-    // Register BigInt constructor (plan 056) — after Object.prototype exists.
+    // Register BigInt constructor (plan 056), after Object.prototype exists.
     if (!register_bigint_constructor(global_env, heap)) return false;
 
     // Register Math object
@@ -3032,7 +3031,7 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
     // Register JSON object (parse, stringify)
     if (!register_json_object(global_env, heap)) return false;
 
-    // Register Reflect object (empty — spec methods added later as needed)
+    // Register Reflect object (empty, spec methods added later as needed)
     {
         HObject*? reflect_raw = heap.alloc_object(hobject::ObjClass.REFLECT);
         if (catch err = reflect_raw) return false;
@@ -3162,7 +3161,7 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
     // GeneratorFunction as a global constructor (ES6 §25.2.2).
     if (!register_generator_constructor(global_env, heap)) return false;
 
-    // Register %IteratorPrototype% (ES6 §25.1.2) — shared prototype for all
+    // Register %IteratorPrototype% (ES6 §25.1.2), shared prototype for all
     // built-in iterators, providing [Symbol.iterator]() that returns `this`.
     if (!register_iterator_prototype(heap)) return false;
 
@@ -3172,7 +3171,7 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
     // %WrapForValidIteratorPrototype% (ES2025 §27.1).
     if (!register_iterator_ctor_and_helpers(global_env, heap)) return false;
 
-    // Register %AsyncFromSyncIteratorPrototype% (ES2018 §27.1.4) — wraps a
+    // Register %AsyncFromSyncIteratorPrototype% (ES2018 §27.1.4), wraps a
     // sync iterator so `for await` can drive it.
     if (!register_async_from_sync_iterator_prototype(heap)) return false;
 
@@ -3212,7 +3211,7 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
     if (heap.symbol_proto != null) heap.symbol_proto.prototype = heap.object_proto;
     if (heap.promise_proto != null) heap.promise_proto.prototype = heap.object_proto;
     // ES2025 §27.8.1 %GeneratorPrototype%.[[Prototype]] is %Iterator.prototype%
-    // (not Object.prototype directly) now that Iterator Helpers exist — this
+    // (not Object.prototype directly) now that Iterator Helpers exist, this
     // is what makes `function*(){}().map(...)` etc. work on generators.
     if (heap.generator_proto != null) heap.generator_proto.prototype = heap.iterator_proto;
     if (heap.iterator_proto != null)  heap.iterator_proto.prototype = heap.object_proto;
@@ -3224,7 +3223,7 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
     // so that Function.prototype.isPrototypeOf(Number) and similar work.
     // We look them up in the global environment by name.
     if (heap.function_proto != null) {
-        // NativeErrors (TypeError, RangeError, etc.) are excluded here — their [[Prototype]]
+        // NativeErrors (TypeError, RangeError, etc.) are excluded here, their [[Prototype]]
         // is the Error constructor HObject (set by register_native_error_ctor), not Function.prototype.
         char[][] ctor_names = { "Object", "Number", "Boolean", "String", "Array", "Function", "Date", "RegExp", "Error", "Map", "Set", "WeakMap", "WeakSet", "Symbol", "Promise", "GeneratorFunction" };
         for (int i = 0; i < ctor_names.len; i++) {
@@ -3238,7 +3237,7 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
         }
     }
 
-    // Register globalThis (ES2020 §19.2.1) — points back to the global object itself.
+    // Register globalThis (ES2020 §19.2.1), points back to the global object itself.
     // globalThis is a property of the global environment's bindings object.
     {
         HString* gthis_key = builtin_intern_string(heap, "globalThis");
@@ -3295,11 +3294,11 @@ fn HObject* alloc_builtin_fn(Heap* heap, uint fn_index, char[] name, int length)
 
 /// test262 host globals: __evalScript, __detachArrayBuffer, and the $262
 /// object (detachArrayBuffer / evalScript / global) expected by harness
-/// files. Installed only by the test harness binaries — never part of the
+/// files. Installed only by the test harness binaries, never part of the
 /// default engine globals.
 fn bool register_test262_host(EnvRecord* global_env, Heap* heap) {
     // Every allocated object is declared on the global env (a GC root)
-    // before the next allocation — an allocation-triggered GC would
+    // before the next allocation, an allocation-triggered GC would
     // otherwise collect the not-yet-reachable objects.
     HString* es_key = builtin_intern_string(heap, "__evalScript");
     HString* d_hidden_key = builtin_intern_string(heap, "__detachArrayBuffer");
@@ -3310,7 +3309,7 @@ fn bool register_test262_host(EnvRecord* global_env, Heap* heap) {
     if (es_key == null || d_hidden_key == null || h262_key == null
         || d_key == null || e_key == null || g_key == null) return false;
 
-    // __evalScript(src) — runs src as a global script so that var/function
+    // __evalScript(src), runs src as a global script so that var/function
     // declarations become non-configurable global properties (unlike eval()
     // which creates a fresh declarative env).
     HObject* es_fn = alloc_builtin_fn(heap, Builtin.EVAL_SCRIPT.ordinal, "evalScript", 1);

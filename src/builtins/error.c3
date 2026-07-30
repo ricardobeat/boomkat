@@ -13,7 +13,7 @@ import duktape::heap;
 // ============================================================================
 
 /// Capture `stack_str` on `err` (an ERROR-class instance) in the object's
-/// HObjectError.captured_stack field — NOT a property-table entry, so it is
+/// HObjectError.captured_stack field, NOT a property-table entry, so it is
 /// invisible to hasOwnProperty/getOwnPropertyNames/Reflect.ownKeys/for-in.
 /// The error-stack-accessor proposal exposes "stack" only via the inherited
 /// get/set accessor pair on Error.prototype, never as an own property (see
@@ -78,7 +78,7 @@ fn void builtin_error_constructor_shared(BuiltinContext* ctx, HObject* proto) {
         }
     }
 
-    // Capture .stack (stub — "name: message" format for now) as an internal
+    // Capture .stack (stub, "name: message" format for now) as an internal
     // property; it is exposed to JS only via the get/set accessor pair on
     // Error.prototype (error-stack-accessor proposal), not as an own property.
     {
@@ -91,7 +91,7 @@ fn void builtin_error_constructor_shared(BuiltinContext* ctx, HObject* proto) {
                 // Must not invoke user code here: .stack is captured during
                 // construction, and a user-supplied .name accessor/toString
                 // must NOT run at construction time (only when .name or
-                // .stack is actually read) — see instance-name-tostring
+                // .stack is actually read), see instance-name-tostring
                 // probe. builtin_to_string on an OBJECT would otherwise
                 // fabricate "[object Object]" without ever calling the
                 // user's toString, which is worse than just keeping the
@@ -162,10 +162,10 @@ fn void builtin_uri_error(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// AggregateError constructor — ES2021 §28.1.1.1
+// AggregateError constructor, ES2021 §28.1.1.1
 // ============================================================================
 
-/// IterableToList(items) — ES2022 §7.4.11 (used by AggregateError's
+/// IterableToList(items), ES2022 §7.4.11 (used by AggregateError's
 /// `errors` argument per §20.5.7.1.1 step 3). GetIterator(items, sync),
 /// then IteratorStep/IteratorValue in a loop, appending each value to a
 /// fresh Array. Any abrupt completion propagates directly (there is no
@@ -316,7 +316,7 @@ fn void builtin_aggregate_error(BuiltinContext* ctx) {
     err.prototype = builtin_proto_from_new_target(ctx, ctx.heap.aggregate_err_proto);
 
     // §20.5.7.1.1 step 5: message uses ToString via ToPrimitive (hint
-    // "string") so a throwing toString()/valueOf() propagates — builtin_to_string
+    // "string") so a throwing toString()/valueOf() propagates, builtin_to_string
     // (used elsewhere) does not run ToPrimitive and would swallow the abrupt
     // completion (see commit eea15205 for the same fix on the URI builtins).
     HString* msg_str = null;
@@ -331,7 +331,7 @@ fn void builtin_aggregate_error(BuiltinContext* ctx) {
         }
     }
 
-    // Capture .stack (stub — "AggregateError: message" format for now) as an
+    // Capture .stack (stub, "AggregateError: message" format for now) as an
     // internal property; exposed to JS only via Error.prototype's accessor.
     {
         char[512] stack_buf;
@@ -358,7 +358,7 @@ fn void builtin_aggregate_error(BuiltinContext* ctx) {
         error_set_captured_stack(err, ctx.heap, stack_str);
     }
 
-    // §20.5.7.1.1 step 3: errorsList = ? IterableToList(errors) — `errors` is
+    // §20.5.7.1.1 step 3: errorsList = ? IterableToList(errors), `errors` is
     // an ITERABLE, not a pre-built array; must throw if it isn't iterable
     // (including when omitted, since GetMethod(undefined, @@iterator) fails).
     // step 4: set the own "errors" property to a fresh Array from that list.
@@ -371,7 +371,7 @@ fn void builtin_aggregate_error(BuiltinContext* ctx) {
         err.put_prop(errors_key, errors_tv, hobject::PROP_FLAGS_WC);
     }
 
-    // ES2022 §20.5.8.1 InstallErrorCause — AggregateError's 3rd arg is options.
+    // ES2022 §20.5.8.1 InstallErrorCause, AggregateError's 3rd arg is options.
     if (ctx.argc >= 3) {
         TVal* opt_arg = &ctx.regs[ctx.base_reg + 2];
         if (opt_arg.is_object() && opt_arg.get_heapptr() != null) {
@@ -392,7 +392,7 @@ fn void builtin_aggregate_error(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Error.prototype.toString — returns "name: message" per ES5 §15.11.4.4
+// Error.prototype.toString, returns "name: message" per ES5 §15.11.4.4
 // ============================================================================
 
 fn void builtin_error_prototype_to_string(BuiltinContext* ctx) {
@@ -416,14 +416,14 @@ fn void builtin_error_prototype_to_string(BuiltinContext* ctx) {
 
         // ES2015 §19.5.3.4 step 3: let name be ? Get(O, "name"). We must use a
         // full [[Get]] (not get_prop_proto) so accessor getters on the
-        // prototype chain are invoked — and so their throws propagate via
+        // prototype chain are invoked, and so their throws propagate via
         // ctx.should_throw per ES2017 §25.4.1.5 step 7 (test262 get-throws).
         HString* name_key = builtin_intern_string(ctx.heap, "name");
         TVal? name_prop = builtins_generic_get(obj, name_key, ctx);
         if (ctx.should_throw) return;
         if (try nv = name_prop) {
             if (!nv.is_undefined()) {
-                // ES2015 §19.5.3.4 step 4: ? ToString(name) — ToString on a
+                // ES2015 §19.5.3.4 step 4: ? ToString(name), ToString on a
                 // Symbol must throw TypeError per ES2022 §7.1.4, and on an
                 // Object must invoke toPrimitive (h.string/valueOf) first per
                 // §7.1.1. builtin_to_string_vm handles both; builtin_to_string
@@ -468,7 +468,7 @@ fn void builtin_error_prototype_to_string(BuiltinContext* ctx) {
     }
 }
 // ============================================================================
-// Error.captureStackTrace — V8/SpiderMonkey extension (ES6 §19.5.2.1 stub)
+// Error.captureStackTrace, V8/SpiderMonkey extension (ES6 §19.5.2.1 stub)
 // ============================================================================
 
 fn void builtin_error_captureStackTrace(BuiltinContext* ctx) {
@@ -489,7 +489,7 @@ fn void builtin_error_captureStackTrace(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Error.prototype.stack accessor — error-stack-accessor proposal
+// Error.prototype.stack accessor, error-stack-accessor proposal
 // ============================================================================
 //
 // stack is an accessor pair on Error.prototype (not an own data property of
@@ -501,11 +501,11 @@ fn void builtin_error_captureStackTrace(BuiltinContext* ctx) {
 //     3. If E does not have an [[ErrorData]] internal slot, return undefined.
 //     4. Return an implementation-defined string that represents the stack
 //        trace of E.
-//   [[ErrorData]] presence is keyed on ObjClass.ERROR — the tag every
+//   [[ErrorData]] presence is keyed on ObjClass.ERROR, the tag every
 //   Error/NativeError constructor allocates its instances with (mirrors
 //   Error.isError). The captured text itself lives in HObjectError.
 //   captured_stack (see error_set_captured_stack), never in a JS-visible
-//   "stack" own property — a fake "stack" own data property on a non-Error
+//   "stack" own property, a fake "stack" own data property on a non-Error
 //   object is ignored, since the getter only reads the internal slot.
 fn void builtin_error_proto_stack_get(BuiltinContext* ctx) {
     TVal this_val = ctx.this_val;
@@ -526,12 +526,12 @@ fn void builtin_error_proto_stack_get(BuiltinContext* ctx) {
     // Foreign new.target (Reflect.construct(Ctor, args, NotAnError)) still
     // acquires [[ErrorData]] via Ctor's [[Construct]], but if the capture
     // above somehow found nothing, produce an empty string rather than
-    // undefined — E has [[ErrorData]], so step 4 always returns a String.
+    // undefined, E has [[ErrorData]], so step 4 always returns a String.
     HString* empty = (HString*)ctx.heap.strs[heap::BuiltinStr.EMPTY];
     ctx.result.set_string(empty);
 }
 
-/// set Error.prototype.stack — error-stack-accessor proposal:
+/// set Error.prototype.stack, error-stack-accessor proposal:
 ///   1. Let E be the this value.
 ///   2. If E is not an Object, throw a TypeError exception.
 ///   3. If v is not a String, throw a TypeError exception.
@@ -546,7 +546,7 @@ fn void builtin_error_proto_stack_set(BuiltinContext* ctx) {
     }
     TVal value = builtin_arg(ctx, 0);
     // Symbols share TVal's TAG_STRING representation (an HString with
-    // is_symbol set), so is_string() alone would wrongly accept them — a
+    // is_symbol set), so is_string() alone would wrongly accept them, a
     // Symbol is not a String value per step 3.
     bool is_real_string = value.is_string() && value.get_heapptr() != null
         && !((HString*)value.get_heapptr()).is_symbol();
@@ -559,15 +559,15 @@ fn void builtin_error_proto_stack_set(BuiltinContext* ctx) {
     ctx.result.set_undefined();
 }
 
-/// SetterThatIgnoresPrototypeProperties(thisValue, home, propertyKey, value)
-/// — ES2025 §7.3.37, specialised for "stack" on Error.prototype.
+/// SetterThatIgnoresPrototypeProperties(thisValue, home, propertyKey, value),
+/// ES2025 §7.3.37, specialised for "stack" on Error.prototype.
 ///   1. If thisValue is not an Object, throw a TypeError exception.
 ///   2. If SameValue(thisValue, home) is true, throw a TypeError exception
 ///      (emulates assignment to a non-writable data property on home).
 ///   3. Let desc be ? thisValue.[[GetOwnProperty]](propertyKey).
 ///   4. If desc is undefined, perform ? CreateDataPropertyOrThrow(thisValue,
-///      propertyKey, value) — a plain WEC data property.
-///   5. Else, perform ? Set(thisValue, propertyKey, value, true) — routes
+///      propertyKey, value), a plain WEC data property.
+///   5. Else, perform ? Set(thisValue, propertyKey, value, true), routes
 ///      through the own accessor's setter, or overwrites the own data
 ///      property (throwing if non-writable).
 /// thisValue was already confirmed to be an Object by the caller.
@@ -606,7 +606,7 @@ fn void error_setter_ignores_prototype_properties(BuiltinContext* ctx, HObject* 
         return;
     }
 
-    // Set(thisValue, propertyKey, value, Throw=true) — receiver is thisValue
+    // Set(thisValue, propertyKey, value, Throw=true), receiver is thisValue
     // itself (no separate Receiver argument in the proposal's algorithm).
     bool sres;
     if (!js_set_with_receiver(ctx.vm, heap, this_obj, key, value, ctx.this_val, &sres)) {
@@ -619,10 +619,10 @@ fn void error_setter_ignores_prototype_properties(BuiltinContext* ctx, HObject* 
 }
 
 // ============================================================================
-// Error.isError — ES2026 §20.5.2.2
+// Error.isError, ES2026 §20.5.2.2
 // ============================================================================
 
-/// Error.isError(arg) — true iff arg is an object carrying the [[ErrorData]]
+/// Error.isError(arg), true iff arg is an object carrying the [[ErrorData]]
 /// internal slot. We key this on ObjClass.ERROR (the tag every Error/NativeError
 /// constructor allocates its instances with) rather than the prototype chain,
 /// so it's cross-realm safe and returns false for objects that merely look
@@ -643,8 +643,8 @@ fn void builtin_error_isError(BuiltinContext* ctx) {
 
 /// Helper: create a prototype object for an error type.
 /// proto_parent is the [[Prototype]] (e.g. Error.prototype for subclasses).
-/// The prototype is an ordinary object (ObjClass.OBJECT) per ES2015 §19.5.6.3 —
-/// it must NOT be an Error instance itself.
+/// The prototype is an ordinary object (ObjClass.OBJECT) per ES2015 §19.5.6.3,
+/// so it must not be an Error instance itself.
 fn HObject* register_error_prototype(Heap* heap, HObject* proto_parent, char[] name_str) {
     HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = proto_raw) return null;
@@ -681,7 +681,7 @@ fn bool register_error_builtins(EnvRecord* global_env, Heap* heap) {
     tostring_tv.set_lightfunc((void*)(usz)Builtin.ERROR_PROTO_TOSTRING.ordinal);
     err_proto.put_prop(tostring_key, tostring_tv, hobject::PROP_FLAGS_WC);
 
-    // Error.prototype.stack — accessor pair (error-stack-accessor proposal).
+    // Error.prototype.stack, accessor pair (error-stack-accessor proposal).
     // { [[Enumerable]]: false, [[Configurable]]: true }.
     {
         HString* stack_key = (HString*)heap.strs[heap::BuiltinStr.STACK];
@@ -690,7 +690,7 @@ fn bool register_error_builtins(EnvRecord* global_env, Heap* heap) {
                 "get stack", "set stack")) return false;
     }
 
-    // constructor_key used throughout — HObject ctors are wired by register_native_error_ctor below.
+    // constructor_key used throughout, HObject ctors are wired by register_native_error_ctor below.
     HString* constructor_key = (HString*)heap.strs[heap::BuiltinStr.CONSTRUCTOR];
 
     // --- Create TypeError.prototype ---

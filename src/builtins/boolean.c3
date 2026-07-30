@@ -36,7 +36,7 @@ fn void builtin_boolean(BuiltinContext* ctx) {
     }
 }
 
-/// Boolean.prototype.toString — returns "true" or "false"
+/// Boolean.prototype.toString, returns "true" or "false"
 /// ES2015 §15.6.4.2: throws TypeError if `this` is not a Boolean or Boolean wrapper.
 fn void builtin_boolean_proto_toString(BuiltinContext* ctx) {
     // 'this' is at base_reg - 1
@@ -62,7 +62,7 @@ fn void builtin_boolean_proto_toString(BuiltinContext* ctx) {
     ctx.result.set_string(s);
 }
 
-/// Boolean.prototype.valueOf — ES2015 §15.6.4.3: throws TypeError if `this`
+/// Boolean.prototype.valueOf, ES2015 §15.6.4.3: throws TypeError if `this`
 /// is not a Boolean or Boolean wrapper object.
 fn void builtin_boolean_proto_valueOf(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];

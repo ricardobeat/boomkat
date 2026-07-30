@@ -16,7 +16,7 @@ import std::io;
 
 /// thisNumberValue(this value) per ES2022 §21.1.3: returns the Number value
 /// if `this` is a number primitive or a Number-wrapper object, else false.
-/// Callers must check the returned bool before using `out` — a false return
+/// Callers must check the returned bool before using `out`, a false return
 /// means the caller must throw a TypeError (this value is not a number).
 fn bool this_number_value(BuiltinContext* ctx, double* out) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
@@ -108,7 +108,7 @@ fn void builtin_number(BuiltinContext* ctx) {
     }
 }
 
-/// Number.prototype.toString(radix) — ES5 §15.7.4.2
+/// Number.prototype.toString(radix), ES5 §15.7.4.2
 /// Returns string representation in the given radix (2-36), default 10.
 fn void builtin_number_proto_toString(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
@@ -125,17 +125,17 @@ fn void builtin_number_proto_toString(BuiltinContext* ctx) {
             ((*obj.extra_ptr()).prim.primitive_value.is_number() || (*obj.extra_ptr()).prim.primitive_value.is_fastint())) {
             d = (*obj.extra_ptr()).prim.primitive_value.get_number_or_fastint();
         } else {
-            // Not a Number wrapper — throw TypeError
+            // Not a Number wrapper, throw TypeError
             builtin_throw_no_result_change(ctx, ctx.heap.type_err_proto, "Number.prototype.toString called on incompatible value");
             return;
         }
     } else {
-        // Not a number or Number wrapper — throw TypeError
+        // Not a number or Number wrapper, throw TypeError
         builtin_throw_no_result_change(ctx, ctx.heap.type_err_proto, "Number.prototype.toString called on incompatible value");
         return;
     }
 
-    // Determine radix — ToIntegerOrInfinity(radix) via the VM so that a
+    // Determine radix, ToIntegerOrInfinity(radix) via the VM so that a
     // radix object's valueOf/toString is invoked and abrupt completions
     // (thrown errors) propagate before the range check.
     int radix = 10;
@@ -227,7 +227,7 @@ fn void builtin_number_proto_toString(BuiltinContext* ctx) {
     ctx.result.set_string(result);
 }
 
-/// Number.prototype.toFixed(fractionDigits) — ES2022 §21.1.3.3
+/// Number.prototype.toFixed(fractionDigits), ES2022 §21.1.3.3
 /// Step order: ToIntegerOrInfinity(fractionDigits) and its range check happen
 /// before thisNumberValue is checked, but thisNumberValue itself must throw
 /// TypeError first if `this` is not a number (implementations commonly check
@@ -284,9 +284,9 @@ fn void builtin_number_proto_toFixed(BuiltinContext* ctx) {
     ctx.result.set_string(s);
 }
 
-/// Number.prototype.toExponential(fractionDigits) — ES2022 §21.1.3.2
+/// Number.prototype.toExponential(fractionDigits), ES2022 §21.1.3.2
 /// Step order: 1. Let x be ? thisNumberValue(this value). 2. Let f be
-/// ? ToIntegerOrInfinity(fractionDigits) — this may call user code (valueOf/
+/// ? ToIntegerOrInfinity(fractionDigits), this may call user code (valueOf/
 /// toString) so it must run even when fractionDigits is undefined behaves
 /// as a no-op (ToIntegerOrInfinity(undefined) = 0, but the "undefined" case
 /// is distinguished later to select free-format output).
@@ -350,7 +350,7 @@ fn void builtin_number_proto_toExponential(BuiltinContext* ctx) {
     ctx.result.set_string(s);
 }
 
-/// Number.prototype.toPrecision(precision) — ES2022 §21.1.3.5
+/// Number.prototype.toPrecision(precision), ES2022 §21.1.3.5
 /// Step order: 1. Let x be ? thisNumberValue(this value). 2. If precision is
 /// undefined, return ! ToString(x). 3. Let p be ? ToInteger(precision).
 /// 4. If x is NaN, return "NaN" (checked AFTER ToInteger(precision), so a
@@ -413,7 +413,7 @@ fn void builtin_number_proto_toPrecision(BuiltinContext* ctx) {
     ctx.result.set_string(s);
 }
 
-/// Number.prototype.valueOf() — ES2022 §21.1.3.7
+/// Number.prototype.valueOf(), ES2022 §21.1.3.7
 /// 1. Return ? thisNumberValue(this value). Throws TypeError if `this` is
 /// not a number primitive or Number-wrapper object.
 fn void builtin_number_proto_valueOf(BuiltinContext* ctx) {
@@ -444,7 +444,7 @@ fn void builtin_number_proto_valueOf(BuiltinContext* ctx) {
 // Number static methods (ES6 §20.1.2)
 // ============================================================================
 
-/// Number.isNaN(number) — ES6 §20.1.2.4
+/// Number.isNaN(number), ES6 §20.1.2.4
 /// Returns true only if the argument is the NaN number value (no coercion).
 fn void builtin_number_isNaN(BuiltinContext* ctx) {
     if (ctx.argc < 1 || (!ctx.regs[ctx.base_reg].is_number() && !ctx.regs[ctx.base_reg].is_fastint())) {
@@ -461,7 +461,7 @@ fn void builtin_number_isNaN(BuiltinContext* ctx) {
     }
 }
 
-/// Number.isFinite(number) — ES6 §20.1.2.2
+/// Number.isFinite(number), ES6 §20.1.2.2
 /// Returns true only if the argument is a finite number value (no coercion).
 fn void builtin_number_isFinite(BuiltinContext* ctx) {
     if (ctx.argc < 1 || (!ctx.regs[ctx.base_reg].is_number() && !ctx.regs[ctx.base_reg].is_fastint())) {
@@ -478,7 +478,7 @@ fn void builtin_number_isFinite(BuiltinContext* ctx) {
     }
 }
 
-/// Number.isInteger(number) — ES6 §20.1.2.3
+/// Number.isInteger(number), ES6 §20.1.2.3
 /// Returns true only if the argument is an integer number value (no coercion).
 fn void builtin_number_isInteger(BuiltinContext* ctx) {
     if (ctx.argc < 1 || (!ctx.regs[ctx.base_reg].is_number() && !ctx.regs[ctx.base_reg].is_fastint())) {
@@ -498,13 +498,13 @@ fn void builtin_number_isInteger(BuiltinContext* ctx) {
         ctx.result.set_boolean(false);
         return;
     }
-    // Check: floor(abs(d)) == abs(d) — i.e. no fractional part
+    // Check: floor(abs(d)) == abs(d), i.e. no fractional part
     double abs_d = d < 0 ? -d : d;
     double fl = math::floor(abs_d);
     ctx.result.set_boolean((fl == abs_d));
 }
 
-/// Number.isSafeInteger(number) — ES6 §20.1.2.5
+/// Number.isSafeInteger(number), ES6 §20.1.2.5
 /// Returns true only if the argument is a safe integer (±(2^53 - 1)).
 fn void builtin_number_isSafeInteger(BuiltinContext* ctx) {
     if (ctx.argc < 1 || (!ctx.regs[ctx.base_reg].is_number() && !ctx.regs[ctx.base_reg].is_fastint())) {
@@ -535,7 +535,7 @@ fn bool register_number_constructor(EnvRecord* global_env, Heap* heap) {
     proto.prototype = null;  // Will be Object.prototype in later phases
     heap.number_proto = proto;
 
-    // Add .toString() method — registered as a proper function object (not
+    // Add .toString() method, registered as a proper function object (not
     // LIGHTFUNC) so its .length (1, per ES2022 §21.1.3.6) can differ from
     // Number.prototype.toLocaleString's .length (0), even though both share
     // the same builtin_fn_index and would otherwise read identical metadata.
@@ -575,7 +575,7 @@ fn bool register_number_constructor(EnvRecord* global_env, Heap* heap) {
     // Add .toPrecision() method
     if (!register_string_proto_method(proto, heap, "toPrecision", Builtin.NUMBER_PROTO_TOPRECISION.ordinal)) return false;
 
-    // Number.prototype.toLocaleString — ES5 §15.7.4.5
+    // Number.prototype.toLocaleString, ES5 §15.7.4.5
     // Delegates to Number.prototype.toString (handles number primitives correctly).
     if (!register_string_proto_method(proto, heap, "toLocaleString", Builtin.NUMBER_PROTO_TOSTRING.ordinal)) return false;
 
@@ -603,7 +603,7 @@ fn bool register_number_constructor(EnvRecord* global_env, Heap* heap) {
     proto_pflags.is_accessor = false;
     num.put_prop(prototype_key, proto_tv, proto_pflags);
 
-    // Add Number.MAX_VALUE (ES5 §15.7.3.2) — non-writable, non-enumerable, non-configurable
+    // Add Number.MAX_VALUE (ES5 §15.7.3.2), non-writable, non-enumerable, non-configurable
     if (!set_num_static_prop(num, heap, "MAX_VALUE", 1.7976931348623157e+308)) return false;
     // Add Number.MIN_VALUE (ES5 §15.7.3.3)
     if (!set_num_static_prop(num, heap, "MIN_VALUE", 5e-324)) return false;
@@ -623,13 +623,13 @@ fn bool register_number_constructor(EnvRecord* global_env, Heap* heap) {
     // Add Number.isSafeInteger (ES6 §20.1.2.5)
     if (!register_string_proto_method(num, heap, "isSafeInteger", Builtin.NUMBER_ISSAFEINTEGER.ordinal)) return false;
 
-    // Add Number.EPSILON (ES6 §20.1.2.1) — 2^-52
+    // Add Number.EPSILON (ES6 §20.1.2.1), 2^-52
     if (!set_num_static_prop(num, heap, "EPSILON", 2.220446049250313e-16)) return false;
-    // Add Number.MAX_SAFE_INTEGER (ES6 §20.1.2.6) — 2^53 - 1
+    // Add Number.MAX_SAFE_INTEGER (ES6 §20.1.2.6), 2^53 - 1
     if (!set_num_static_prop(num, heap, "MAX_SAFE_INTEGER", (double)types::DUK_MAX_SAFE_INT)) return false;
-    // Add Number.MIN_SAFE_INTEGER (ES6 §20.1.2.8) — -(2^53 - 1)
+    // Add Number.MIN_SAFE_INTEGER (ES6 §20.1.2.8), -(2^53 - 1)
     if (!set_num_static_prop(num, heap, "MIN_SAFE_INTEGER", (double)types::DUK_MIN_SAFE_INT)) return false;
-    // Add Number.parseInt (ES6 §20.1.2.12) — MUST be the same function object as global parseInt.
+    // Add Number.parseInt (ES6 §20.1.2.12), MUST be the same function object as global parseInt.
     // Look up the global parseInt (already registered) and put it directly on Number.
     {
         HString* parse_int_key = builtin_intern_string(heap, "parseInt");
@@ -644,7 +644,7 @@ fn bool register_number_constructor(EnvRecord* global_env, Heap* heap) {
         }
         num.put_prop(parse_int_key, global_pi, hobject::PROP_FLAGS_WC);
     }
-    // Add Number.parseFloat (ES6 §20.1.2.13) — MUST be the same function object as global parseFloat.
+    // Add Number.parseFloat (ES6 §20.1.2.13), MUST be the same function object as global parseFloat.
     {
         HString* parse_float_key = builtin_intern_string(heap, "parseFloat");
         if (parse_float_key == null) return false;

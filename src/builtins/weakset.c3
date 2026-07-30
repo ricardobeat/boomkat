@@ -34,7 +34,7 @@ fn void builtin_weakset(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// WeakSet.prototype.add(value) — ES6 §23.4.3.1
+// WeakSet.prototype.add(value), ES6 §23.4.3.1
 // ============================================================================
 fn void builtin_weakset_proto_add(BuiltinContext* ctx) {
     HObject* ws = check_weakset(ctx);
@@ -43,7 +43,7 @@ fn void builtin_weakset_proto_add(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// WeakSet.prototype.has(value) — ES6 §23.4.3.4
+// WeakSet.prototype.has(value), ES6 §23.4.3.4
 // ============================================================================
 fn void builtin_weakset_proto_has(BuiltinContext* ctx) {
     HObject* ws = check_weakset(ctx);
@@ -56,7 +56,7 @@ fn void builtin_weakset_proto_has(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// WeakSet.prototype.delete(value) — ES6 §23.4.3.3
+// WeakSet.prototype.delete(value), ES6 §23.4.3.3
 // ============================================================================
 fn void builtin_weakset_proto_delete(BuiltinContext* ctx) {
     HObject* ws = check_weakset(ctx);
@@ -70,7 +70,7 @@ fn void builtin_weakset_proto_delete(BuiltinContext* ctx) {
 // ============================================================================
 
 fn bool register_weakset_constructor(EnvRecord* global_env, Heap* heap) {
-    // ES6 §23.4.3: WeakSet.prototype is an ordinary object — must NOT carry
+    // ES6 §23.4.3: WeakSet.prototype is an ordinary object, must NOT carry
     // the WEAKSET ObjClass flag, otherwise check_weakset() would accept it
     // as a valid WeakSet and prototype methods would skip the TypeError guard.
     HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);

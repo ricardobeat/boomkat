@@ -11,7 +11,7 @@ import duktape::hobject;
 // Symbol helpers
 // ============================================================================
 
-/// Symbol creation counter — incremented for each unique symbol to guarantee
+/// Symbol creation counter, incremented for each unique symbol to guarantee
 /// uniqueness even with identical descriptions.
 uint g_symbol_counter = 0;
 
@@ -20,7 +20,7 @@ uint g_symbol_counter = 0;
 ///
 /// `has_desc` distinguishes `Symbol()` (no description, ES2019 §19.4.3.5
 /// returns undefined) from `Symbol("")` (an explicit empty-string
-/// description) — both would otherwise encode identically as a bare 0xFF
+/// description), both would otherwise encode identically as a bare 0xFF
 /// byte. When true, a 0x01 marker byte follows the 0xFF prefix, ahead of
 /// the (possibly zero-length) description bytes; symbol_description/
 /// symbol_has_description read it back. 0x01 can never collide with the
@@ -48,7 +48,7 @@ fn HString* create_symbol_string(Heap* heap, char[] desc, bool has_desc = true) 
 
     HString*? sym = hstring::hstring_alloc(heap, buf[:(uint)pos], hash);
     if (try s = sym) {
-        // Not interned — a Symbol is unique, so the content-keyed table would
+        // Not interned, a Symbol is unique, so the content-keyed table would
         // conflate distinct Symbols sharing a description.  It still needs an
         // owner, so it goes on the large-string registry: that is the list
         // reset()/destroy() walk to release non-interned strings.
@@ -81,7 +81,7 @@ fn HString* create_hidden_symbol(Heap* heap, char[] desc) {
     HString*? sym = hstring::hstring_alloc(heap, buf[:(uint)pos], hash);
     if (try s = sym) {
         // Not interned (hidden symbols are unique); registered so
-        // reset()/destroy() can release it — see create_symbol.
+        // reset()/destroy() can release it, see create_symbol.
         heap.large_string_register(s);
         return s;
     }
@@ -194,7 +194,7 @@ fn HString* symbol_registry_get_key(Heap* heap, HString* sym) {
 
 /// Ensure the well-known @@toStringTag symbol exists.
 /// Returns the symbol HString* (usable as a property key).
-/// Well-known symbols are NOT in the global symbol registry per ES2020 §19.4 —
+/// Well-known symbols are NOT in the global symbol registry per ES2020 §19.4,
 /// only symbols created by Symbol.for live there. Heap-level cache keeps it
 /// unique across the engine.
 fn HString* ensure_tostringtag_symbol(Heap* heap) {
@@ -363,8 +363,8 @@ fn void builtin_symbol(BuiltinContext* ctx) {
     }
 
     // Get description from first argument (ToString if present). Per ES2019
-    // §19.4.1.1, `description` is undefined — and the Symbol has NO
-    // description — both when omitted and when explicitly passed `undefined`.
+    // §19.4.1.1, `description` is undefined, and the Symbol has NO
+    // description, both when omitted and when explicitly passed `undefined`.
     // ToString(symbol) must throw TypeError (desc-to-string-symbol.js), so use
     // the VM-aware variant which honors that and also routes object→ToPrimitive
     // through the VM so toString/valueOf can throw or return primitives.
@@ -389,7 +389,7 @@ fn void builtin_symbol(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Symbol.for(key) — ES6 §19.4.2.1
+// Symbol.for(key), ES6 §19.4.2.1
 // ============================================================================
 fn void builtin_symbol_for(BuiltinContext* ctx) {
     if (ctx.argc < 1) {
@@ -397,7 +397,7 @@ fn void builtin_symbol_for(BuiltinContext* ctx) {
         return;
     }
 
-    // ToString(key) — must throw TypeError for Symbol and propagate errors
+    // ToString(key), must throw TypeError for Symbol and propagate errors
     // from toString/valueOf (for/to-string-err.js, for/description.js).
     TVal key_val = ctx.regs[ctx.base_reg];
     HString* key_str = builtin_to_string_vm(ctx, &key_val);
@@ -429,7 +429,7 @@ fn void builtin_symbol_for(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Symbol.keyFor(sym) — ES6 §19.4.2.5
+// Symbol.keyFor(sym), ES6 §19.4.2.5
 // ============================================================================
 fn void builtin_symbol_keyfor(BuiltinContext* ctx) {
     if (ctx.argc < 1) {
@@ -452,7 +452,7 @@ fn void builtin_symbol_keyfor(BuiltinContext* ctx) {
     }
 }
 
-/// Symbol.prototype.description getter — ES2019 §19.4.3.5
+/// Symbol.prototype.description getter, ES2019 §19.4.3.5
 /// Returns the description string of the Symbol, or undefined.
 fn void builtin_symbol_proto_description_get(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
@@ -495,7 +495,7 @@ fn void builtin_symbol_proto_description_get(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Symbol.prototype.toString() — ES6 §19.4.3.2
+// Symbol.prototype.toString(), ES6 §19.4.3.2
 // ============================================================================
 fn void builtin_symbol_proto_toString(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
@@ -550,7 +550,7 @@ fn void builtin_symbol_proto_toString(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Symbol.prototype.data.valueOf() — ES6 §19.4.3.3
+// Symbol.prototype.data.valueOf(), ES6 §19.4.3.3
 // ============================================================================
 fn void builtin_symbol_proto_valueOf(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
@@ -596,7 +596,7 @@ fn bool symbol_proto_toprimitive_is_original(Heap* heap) {
 }
 
 // ============================================================================
-// Symbol.prototype[Symbol.toPrimitive](hint) — ES6 §19.4.3.5
+// Symbol.prototype[Symbol.toPrimitive](hint), ES6 §19.4.3.5
 // ============================================================================
 fn void builtin_symbol_proto_toprimitive(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
@@ -644,7 +644,7 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
     if (!register_string_proto_method(proto, heap, "toString", Builtin.SYMBOL_PROTO_TOSTRING.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "valueOf", Builtin.SYMBOL_PROTO_VALUEOF.ordinal)) return false;
 
-    // Register Symbol.prototype[Symbol.toPrimitive] — ES6 §19.4.3.5
+    // Register Symbol.prototype[Symbol.toPrimitive], ES6 §19.4.3.5
     // This is a function that returns the this value (the symbol itself).
     // Installed as a real function object (not a lightfunc) so it carries the
     // spec-mandated own `.name` = "[Symbol.toPrimitive]" and `.length` = 1

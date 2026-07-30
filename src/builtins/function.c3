@@ -17,11 +17,11 @@ import duktape::lexer;
 // Function constructor (ES5 §15.3)
 // ============================================================================
 
-/// Function(p1, p2, ..., pn, body) — creates a new function dynamically.
+/// Function(p1, p2, ..., pn, body), creates a new function dynamically.
 /// Called as function or constructor, behavior is identical per ES5 §15.3.1.
 fn void builtin_function(BuiltinContext* ctx) {
     // Per ES5 §15.3.1: Function() called as a plain function and `new Function()`
-    // are identical — both create a fresh function object and the thisArg is
+    // are identical, both create a fresh function object and the thisArg is
     // ignored. Nothing below reads ctx.this_val (the new function's var_env/
     // lex_env come unconditionally from the global env), so there is no thisArg
     // path to suppress; called-as-function vs. called-as-constructor need no
@@ -91,7 +91,7 @@ fn void builtin_function(BuiltinContext* ctx) {
             body_str = s.get_cstr();
             body_len = s.blen;
         } else {
-            // ToString(body) — use the VM path so a JS toString()/valueOf() that
+            // ToString(body), use the VM path so a JS toString()/valueOf() that
             // throws propagates the original exception (§20.2.1.1.1 step 8), not
             // a generic SyntaxError.
             HString* s = builtin_to_string_vm(ctx, body_arg);
@@ -171,7 +171,7 @@ fn void builtin_function(BuiltinContext* ctx) {
     // Array.prototype.toLocaleString) as distinct from user-script functions
     // (which are -1). Function.prototype.toString uses this distinction to
     // return a NativeFunction-style string instead of the literal source
-    // text — ES2019 §19.2.3.5 step 3 mandates that any function object
+    // text, ES2019 §19.2.3.5 step 3 mandates that any function object
     // created by the engine return NativeFunction grammar.
     (*func_obj.extra_ptr()).func.builtin_fn_index = -2;
 
@@ -263,7 +263,7 @@ fn void builtin_function_proto_call(BuiltinContext* ctx) {
     }
 
     // Strict-only engine: thisArg is passed through unchanged (ES5 §15.3.4.4
-    // entry 1 applies only to sloppy callees — no global substitution, no
+    // entry 1 applies only to sloppy callees, no global substitution, no
     // primitive boxing; the callee's own ToObject coercion throws as needed).
     TVal new_this;
     if (ctx.argc > 0) {
@@ -311,7 +311,7 @@ fn void builtin_function_proto_call(BuiltinContext* ctx) {
         return;
     }
 
-    // For OBJECT downstreams — dispatch directly if BUILTIN_FN, else re-dispatch
+    // For OBJECT downstreams, dispatch directly if BUILTIN_FN, else re-dispatch
     if (downstream.is_object()) {
         HObject* hobj = (HObject*)downstream.get_heapptr();
         if (hobj != null && hobj.is_callable() && hobj.callable_kind() == hobject::CallableKind.BUILTIN_FN && (*hobj.extra_ptr()).func.builtin_fn_index >= 0) {
@@ -349,7 +349,7 @@ fn void builtin_function_proto_call(BuiltinContext* ctx) {
         }
         // Fallback: re-dispatch for compiled functions and bound functions.
         // Shift args left by one (dropping thisArg) and clear the now-duplicated
-        // tail slots — same hazard as the branches above: base_reg+0 still holds
+        // tail slots, same hazard as the branches above: base_reg+0 still holds
         // the raw copy of thisArg that new_this was read from, and it now lies
         // outside the re-dispatched call's argc window but still inside this
         // frame's own decref window, so an uncleared slot double-decrefs thisArg
@@ -444,7 +444,7 @@ fn void apply_call(BuiltinContext* ctx, TVal target, TVal this_arg, TVal arg_arr
     }
 
     // CreateListFromArrayLike steps 4-6: for each index 0..len-1, let indexName
-    // be ! ToString(index), then next be ? Get(obj, indexName) — invoking any
+    // be ! ToString(index), then next be ? Get(obj, indexName), invoking any
     // accessor getter and propagating an abrupt completion immediately.
     uint max_extract = len;
     uint actual_count = 0;
@@ -489,7 +489,7 @@ fn void apply_call(BuiltinContext* ctx, TVal target, TVal this_arg, TVal arg_arr
                 if (actual_count < max_extract) extracted_args[actual_count++] = dv;
                 continue;
             }
-            // Slot is undefined — could be a hole; fall through to proto lookup.
+            // Slot is undefined, could be a hole; fall through to proto lookup.
         }
 
         char[20] buf;
@@ -534,7 +534,7 @@ fn void apply_call(BuiltinContext* ctx, TVal target, TVal this_arg, TVal arg_arr
     // Grow the valstack so the arg writes at base_reg..base_reg+count land in
     // allocated, GC-visible memory (the caller's frame is usually far smaller
     // than an arbitrary array-like). ctx.regs / ctx.result are raw pointers
-    // into the valstack — re-derive them if the realloc moved it.
+    // into the valstack, re-derive them if the realloc moved it.
     {
         Vm* vm = (Vm*)ctx.vm;
         TVal* old_vs = vm.valstack;
@@ -714,13 +714,13 @@ fn void builtin_function_proto_bind(BuiltinContext* ctx) {
         if (tobj != null) downstream_constructable = tobj.flags.constructable;
     }
     // ES6 §19.2.1.3: BoundFunctionCreate produces a function exotic object
-    // whose [[Construct]] internally invokes the target [[Construct]] — so
+    // whose [[Construct]] internally invokes the target [[Construct]], so
     // the bound function IS constructable iff the target is. (ES5 §15.3.4.5
     // had bound functions as non-constructable; ES6 changed this in 2015.)
     bound_obj.flags.constructable = downstream_constructable;
 
     // Store [[BoundTargetFunction]]/[[BoundThis]] directly on the object
-    // (not as property-table entries — see HObjectFunction.bound_target in
+    // (not as property-table entries, see HObjectFunction.bound_target in
     // hobject.c3) and only THEN flip is_bound, so a GC triggered by the
     // args-array allocation below never observes a bound object with an
     // unpopulated bound_target/bound_this (zero bits, not a valid TVal).
@@ -762,7 +762,7 @@ fn void builtin_function_proto_bind(BuiltinContext* ctx) {
     // ── Set .length (ES6 §19.2.3.3 SetFunctionLength) ──────────────────
     // Ordering: BoundFunctionCreate's caller (Function.prototype.bind, ES2022
     // §20.2.3.2) computes and sets L (step 5) before it ever reads targetName
-    // (step 6) — so "length" must land as an own property before "name",
+    // (step 6), so "length" must land as an own property before "name",
     // matching creation-order-sensitive consumers like
     // Object.getOwnPropertyNames.
     // Use double throughout so values up to Number.MAX_SAFE_INTEGER (2^53-1)
@@ -823,7 +823,7 @@ fn void builtin_function_proto_bind(BuiltinContext* ctx) {
     bound_obj.put_prop(len_key, len_tv, len_flags);
 
     // ── Set .name: "bound " + targetName (ES6 §19.2.3.3) ──────────────
-    // Per spec: Get(target, "name") — must invoke accessor getters and
+    // Per spec: Get(target, "name"), must invoke accessor getters and
     // propagate any abrupt completion (throw) before creating the bound fn.
     HString* name_key = builtin_intern_string(ctx.heap, "name");
     char[128] name_buf;
@@ -838,7 +838,7 @@ fn void builtin_function_proto_bind(BuiltinContext* ctx) {
             // Use full Get semantics: invokes getter, propagates throw.
             TVal? target_name_val = builtins_generic_get(tobj, name_key, ctx);
             if (ctx.should_throw) {
-                // Getter threw — propagate. bound_args_arr already freed above.
+                // Getter threw, propagate. bound_args_arr already freed above.
                 return;
             }
             if (try tn = target_name_val) {
@@ -903,7 +903,7 @@ fn void builtin_function_proto_toString(BuiltinContext* ctx) {
     } else if (this_val.is_object() && this_val.get_heapptr() != null) {
         HObject* obj = (HObject*)this_val.get_heapptr();
         if (obj.is_callable()) {
-            // ES2019 §19.2.3.5: callable Proxy objects have no source text —
+            // ES2019 §19.2.3.5: callable Proxy objects have no source text,
             // return a NativeFunction-style string without touching the proxy's
             // internal slots (which hold proxy data, not function data).
             if (obj.flags.exotic_proxyobj) {
@@ -913,13 +913,13 @@ fn void builtin_function_proto_toString(BuiltinContext* ctx) {
             }
 
             // Compiled JS functions retain their original source text (ES2019
-            // §19.2.3.5 / Function.prototype.toString) — if the compiler kept it,
+            // §19.2.3.5 / Function.prototype.toString), if the compiler kept it,
             // return that exact text instead of the [native code] placeholder.
             // A callable with a non-null comp_func and `builtin_fn_index == -1`
             // identifies a user-script (compiled) function; `== -2` is the
             // sentinel used by register_compiled_proto_method for engine-installed
             // built-ins (e.g. Array.prototype.toLocaleString) that are JS-defined
-            // but NOT user-script — they must return a NativeFunction string
+            // but NOT user-script, they must return a NativeFunction string
             // per spec, so we fall through to the .name branch below.
             CompiledFunction* cf = null;
             if ((*obj.extra_ptr()).func.comp_func != null
@@ -973,7 +973,7 @@ fn void builtin_function_proto_toString(BuiltinContext* ctx) {
     }
 }
 
-/// Function.prototype[Symbol.hasInstance](V) — ES6 §19.2.3.6
+/// Function.prototype[Symbol.hasInstance](V), ES6 §19.2.3.6
 /// Implements OrdinaryHasInstance(this, V): returns true iff V is an object
 /// whose prototype chain contains this.prototype. `this` (the constructor C)
 /// must be callable; if C is a bound function, its [[BoundTargetFunction]] is
@@ -1028,7 +1028,7 @@ fn void builtin_function_proto_hasInstance(BuiltinContext* ctx) {
         }
     } else if (c_val.is_lightfunc()) {
         // LIGHTFUNC constructors expose their prototype via lightfunc metadata;
-        // ordinary builtins used as C here are rare — fall through to TypeError.
+        // ordinary builtins used as C here are rare, fall through to TypeError.
         proto_val.set_undefined();
     }
 
@@ -1058,7 +1058,7 @@ fn void builtin_function_proto_hasInstance(BuiltinContext* ctx) {
     ctx.result.set_boolean(matched);
 }
 
-/// Restricted function property getter — throws TypeError on access. Used as
+/// Restricted function property getter, throws TypeError on access. Used as
 /// the [[Get]] accessor for `Function.prototype.caller` and
 /// `Function.prototype.arguments` (ES2017 §9.2.7 AddRestrictedFunctionProperties).
 fn void builtin_function_proto_restricted_getter(BuiltinContext* ctx) {
@@ -1066,7 +1066,7 @@ fn void builtin_function_proto_restricted_getter(BuiltinContext* ctx) {
         "'caller', 'callee', and 'arguments' properties may not be accessed on strict mode functions or the arguments objects for calls to them");
 }
 
-/// Restricted function property setter — throws TypeError on assignment. Used as
+/// Restricted function property setter, throws TypeError on assignment. Used as
 /// the [[Set]] accessor for `Function.prototype.caller` and
 /// `Function.prototype.arguments` (ES2017 §9.2.7 AddRestrictedFunctionProperties).
 fn void builtin_function_proto_restricted_setter(BuiltinContext* ctx) {
@@ -1089,7 +1089,7 @@ fn void builtin_bound_call(BuiltinContext* ctx) {
         return;
     }
 
-    // Extract bound data — stored directly on the object (not property-table
+    // Extract bound data, stored directly on the object (not property-table
     // entries; see HObjectFunction.bound_target in hobject.c3).
     TVal downstream = (*bound_obj.extra_ptr()).func.bound_target;
     TVal bound_this = (*bound_obj.extra_ptr()).func.bound_this;
@@ -1154,7 +1154,7 @@ fn void builtin_bound_call(BuiltinContext* ctx) {
         inner_ctx.should_throw = false;
 
         // Lightfunc builtins read their receiver from ctx.regs[base_reg - 1]
-        // (and the callee from base_reg - 2), not ctx.this_val — mirror the
+        // (and the callee from base_reg - 2), not ctx.this_val, mirror the
         // object-downstream branch below so a bound lightfunc builtin (e.g.
         // Promise.resolve.bind(Promise)) sees bound_this, not a stale slot.
         ctx.regs[ctx.base_reg - 2] = downstream;
@@ -1209,7 +1209,7 @@ fn void builtin_bound_call(BuiltinContext* ctx) {
                     return;
                 }
             }
-            // Compiled function or BUILTIN_FN — use re-dispatch.
+            // Compiled function or BUILTIN_FN, use re-dispatch.
             // Decref the old callee slot (bound function g) and incref the downstream
             // function being installed: the register slot transfers ownership and the
             // next GETVAR/tval_copy_ref will decref whatever is in the slot.
@@ -1229,7 +1229,7 @@ fn void builtin_bound_call(BuiltinContext* ctx) {
                 // decref it when the slot is overwritten or the frame unwinds.
                 // The bound args (indices < bound_argc) were read out of the
                 // stored args array via get_prop_proto without an incref, so we
-                // must add the reference here to balance that future decref —
+                // must add the reference here to balance that future decref,
                 // otherwise a bound-and-passed heap value (e.g. a constructor)
                 // is over-decreffed and freed while still live. The appended
                 // call args (i >= bound_argc) were moved out of the caller's
@@ -1268,7 +1268,7 @@ fn bool register_function_constructor(EnvRecord* global_env, Heap* heap) {
     HObject* proto = proto_raw;
     proto.prototype = null;  // Will be Object.prototype
     // ES5 §15.3.4: Function.prototype accepts any arguments and returns
-    // undefined when called as a function, and has no [[Construct]] —
+    // undefined when called as a function, and has no [[Construct]],
     // `new Function.prototype` must throw TypeError.
     proto.flags.constructable = false;
     heap.function_proto = proto;
@@ -1338,7 +1338,7 @@ fn bool register_function_constructor(EnvRecord* global_env, Heap* heap) {
     proto_len_tv.set_fastint(0);
     proto.put_prop(proto_len_key, proto_len_tv, hobject::PROP_FLAGS_NWC);
 
-    // ES6 §19.2.3: Function.prototype.name is "" — must be defined immediately
+    // ES6 §19.2.3: Function.prototype.name is "", must be defined immediately
     // after .length (property insertion order matters for property-order.js).
     // { [[Writable]]: false, [[Enumerable]]: false, [[Configurable]]: true }
     HString* proto_name_key = (HString*)heap.strs[heap::BuiltinStr.NAME];

@@ -1,23 +1,23 @@
-/// Async generators — `async function*` (ES2018 §27.4 / §27.6).
+/// Async generators, `async function*` (ES2018 §27.4 / §27.6).
 ///
 /// This module implements the object surface and request-queue machinery
 /// (plan 060 Phase B):
-///   - %AsyncIteratorPrototype%       (§27.1.3) — holds @@asyncIterator → this
-///   - %AsyncGeneratorPrototype%      (§27.6.1) — next/return/throw + @@toStringTag
+///   - %AsyncIteratorPrototype%       (§27.1.3), holds @@asyncIterator → this
+///   - %AsyncGeneratorPrototype%      (§27.6.1), next/return/throw + @@toStringTag
 ///   - %AsyncGeneratorFunction.prototype% (= %AsyncGenerator%, §27.4.3)
-///   - %AsyncGeneratorFunction%       (§27.4.1) — the constructor
+///   - %AsyncGeneratorFunction%       (§27.4.1), the constructor
 ///
 /// AsyncGeneratorEnqueue (§27.6.3.1): each next/return/throw call always
 /// returns a *fresh* promise, pushes a request `{completion_kind, value,
-/// capability}` onto a FIFO queue on the generator's GeneratorState, and — when
-/// the generator is not EXECUTING/AWAITING_RETURN — drains the queue.
+/// capability}` onto a FIFO queue on the generator's GeneratorState, and, when
+/// the generator is not EXECUTING/AWAITING_RETURN, drains the queue.
 ///
 /// The drain reuses the synchronous generator resume machinery (the same body
 /// the sync Generator.prototype.next drives) via `heap.call_fn`, which returns
 /// the body's `{value, done}` IteratorResult (or sets heap.has_error on an
 /// uncaught throw). That result is used to settle the request's promise. The
 /// yield-vs-await resume-driver split (§27.6.3.8 AsyncGeneratorYield: await the
-/// operand before settling) is Phase C — for now a `yield v` settles the
+/// operand before settling) is Phase C, for now a `yield v` settles the
 /// current request's promise with `{v, false}` synchronously, which is correct
 /// for bodies without an `await` between the yield and the settle.
 module duktape::builtins;
@@ -164,7 +164,7 @@ fn bool register_async_generator(EnvRecord* global_env, Heap* heap) {
 }
 
 // ============================================================================
-// %AsyncIteratorPrototype%[@@asyncIterator]() — ES2018 §27.1.3.1 → returns this
+// %AsyncIteratorPrototype%[@@asyncIterator](), ES2018 §27.1.3.1 → returns this
 // ============================================================================
 
 fn void builtin_async_iterator_proto_symbol_asynciter(BuiltinContext* ctx) {
@@ -172,7 +172,7 @@ fn void builtin_async_iterator_proto_symbol_asynciter(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// AsyncGeneratorFunction constructor (ES2018 §27.4.1) — CreateDynamicFunction
+// AsyncGeneratorFunction constructor (ES2018 §27.4.1), CreateDynamicFunction
 // ============================================================================
 
 fn void builtin_async_generator_function(BuiltinContext* ctx) {
@@ -242,8 +242,8 @@ fn HObject* async_gen_iter_result(Heap* heap, TVal value, bool done) {
 }
 
 /// AsyncGeneratorEnqueue (§27.6.3.1): create a fresh promise, push a request,
-/// and — if the generator is not currently running the body or awaiting a
-/// return — drain the queue. Writes the promise into ctx.result.
+/// and, if the generator is not currently running the body or awaiting a
+/// return, drain the queue. Writes the promise into ctx.result.
 fn void async_gen_enqueue(BuiltinContext* ctx, GeneratorState* gs, ResumeKind kind, TVal completion) {
     Heap* heap = ctx.heap;
 
@@ -321,13 +321,13 @@ fn void async_gen_drain(BuiltinContext* ctx, GeneratorState* gs) {
     void* vm = ctx.vm;
 
     // If a request is already in flight (an internal await is outstanding),
-    // don't start a new one — the await reaction will re-drive.
+    // don't start a new one, the await reaction will re-drive.
     if (gs.ag_current_request != null) return;
 
     while (gs.agr_head != null) {
         // COMPLETED-state fast answers (§27.6.3.7 AsyncGeneratorResume-style):
         //   next   → {undefined, true}
-        //   return → {value, true}   (§27.6.3.7 AsyncGeneratorReturn — value awaited)
+        //   return → {value, true}   (§27.6.3.7 AsyncGeneratorReturn, value awaited)
         //   throw  → reject(value)
         if (gs.state == GEN_COMPLETED) {
             AsyncGenRequest req = async_gen_dequeue(heap, gs);
@@ -391,7 +391,7 @@ fn void async_gen_drain(BuiltinContext* ctx, GeneratorState* gs) {
             return;
         }
 
-        // Body settled (yield / return / throw) — service the outcome.
+        // Body settled (yield / return / throw), service the outcome.
         // Clear the in-flight marker BEFORE settling: settling runs the
         // downstream reactions, which may re-enter this drain for a request a
         // handler queued. That re-entry must see an idle generator, not a stale
@@ -505,7 +505,7 @@ fn bool async_gen_await_return(BuiltinContext* ctx, GeneratorState* gs, HObject*
 }
 
 /// ASYNC_GEN_RETURN_FULFILL native reaction (§27.6.3.8): the awaited `.return()`
-/// value fulfilled — settle the in-flight request `{value, done:true}`, mark the
+/// value fulfilled, settle the in-flight request `{value, done:true}`, mark the
 /// generator COMPLETED, and resume draining any queued requests.
 fn void builtin_async_gen_return_fulfill(BuiltinContext* ctx) {
     GeneratorState* gs = (GeneratorState*)(*ctx.callee_obj.extra_ptr()).func.var_env;
@@ -521,7 +521,7 @@ fn void builtin_async_gen_return_fulfill(BuiltinContext* ctx) {
 }
 
 /// ASYNC_GEN_RETURN_REJECT native reaction (§27.6.3.8): the awaited `.return()`
-/// value rejected — reject the in-flight request, mark COMPLETED, resume drain.
+/// value rejected, reject the in-flight request, mark COMPLETED, resume drain.
 fn void builtin_async_gen_return_reject(BuiltinContext* ctx) {
     GeneratorState* gs = (GeneratorState*)(*ctx.callee_obj.extra_ptr()).func.var_env;
     if (gs == null) { ctx.result.set_undefined(); return; }
@@ -559,7 +559,7 @@ fn bool async_gen_yield_return_await(BuiltinContext* ctx, GeneratorState* gs, HO
             gs.state = GEN_EXECUTING;
             // yret_resume writes ctx.result (undefined). In this synchronous
             // path ctx is the live `.return()` call's context whose result is
-            // the request promise — preserve it across the nested resume.
+            // the request promise, preserve it across the nested resume.
             TVal saved_result = *ctx.result;
             async_gen_yret_resume(ctx, gs, THROW, thrown);
             *ctx.result = saved_result;
@@ -619,7 +619,7 @@ fn void async_gen_yret_resume(BuiltinContext* ctx, GeneratorState* gs, ResumeKin
     TVal result = async_gen_resume_body(ctx, gs, kind, completion);
 
     // The resumed return/throw completion may itself hit an internal await
-    // (e.g. a finally-block `await`) — stay in flight if so.
+    // (e.g. a finally-block `await`), stay in flight if so.
     if (heap.ag_did_await) {
         heap.ag_did_await = false;
         ctx.result.set_undefined();
@@ -688,7 +688,7 @@ fn void async_gen_await_reenter(BuiltinContext* ctx, GeneratorState* gs, ResumeK
     gs.ag_suspend_kind = AG_SUSPEND_NONE;
     TVal result = async_gen_resume_body(ctx, gs, kind, completion);
 
-    // Suspended again on another internal await — stay in flight.
+    // Suspended again on another internal await, stay in flight.
     if (heap.ag_did_await) {
         heap.ag_did_await = false;
         ctx.result.set_undefined();

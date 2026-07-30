@@ -67,7 +67,7 @@ fn void builtin_string(BuiltinContext* ctx) {
         obj.flags.exotic_stringobj = true;
         obj.prototype = builtin_proto_from_new_target(ctx, ctx.heap.string_proto);
         (*obj.extra_ptr()).prim.primitive_value.set_string(s);
-        // Set .length own property (ES5 §15.5.5.1) — non-writable, non-enumerable, non-configurable
+        // Set .length own property (ES5 §15.5.5.1), non-writable, non-enumerable, non-configurable
         HString* len_key = (HString*)ctx.heap.strs[heap::BuiltinStr.LENGTH];
         TVal len_tv;
         len_tv.set_fastint((long)s.char_length());
@@ -111,7 +111,7 @@ fn void builtin_string_fromcharcode(BuiltinContext* ctx) {
         return;
     }
     // Build string from code units. Worst case 3 bytes per unit, so size the
-    // buffer off argc — apply() can pass thousands of arguments.
+    // buffer off argc, apply() can pass thousands of arguments.
     usz cc_cap = (usz)ctx.argc * 3;
     char* buf = (char*)ctx.heap.alloc_func(ctx.heap.heap_udata, cc_cap);
     if (buf == null) { ctx.result.set_undefined(); return; }
@@ -135,7 +135,7 @@ fn void builtin_string_fromcharcode(BuiltinContext* ctx) {
     ctx.result.set_string(result);
 }
 
-/// String.fromCodePoint(...codePoints) — ES6 §21.1.2.2
+/// String.fromCodePoint(...codePoints), ES6 §21.1.2.2
 fn void builtin_string_fromcodepoint(BuiltinContext* ctx) {
     if (ctx.argc == 0) {
         HString* empty = builtin_intern_string(ctx.heap, "");
@@ -144,7 +144,7 @@ fn void builtin_string_fromcodepoint(BuiltinContext* ctx) {
     }
     // Build string from code points (supporting supplementary plane via UTF-8).
     // Worst case 6 bytes per argument (supplementary plane surrogate pair in
-    // CESU-8), so size the buffer off argc — callers like
+    // CESU-8), so size the buffer off argc, callers like
     // String.fromCodePoint.apply(null, hugeArray) pass thousands of args.
     usz buf_cap = (usz)ctx.argc * 6;
     char* buf = (char*)ctx.heap.alloc_func(ctx.heap.heap_udata, buf_cap);
@@ -188,7 +188,7 @@ fn void builtin_string_fromcodepoint(BuiltinContext* ctx) {
             buf[offset++] = (char)(0x80 | (ucp & 0x3F));
         } else {
             // Supplementary plane: ECMAScript strings are UTF-16 code unit
-            // sequences, so encode as a surrogate pair (CESU-8 storage —
+            // sequences, so encode as a surrogate pair (CESU-8 storage,
             // each half gets its own 3-byte UTF-8 sequence) rather than a
             // single 4-byte UTF-8 sequence, so `.length` reports 2.
             uint high; uint low;
@@ -206,7 +206,7 @@ fn void builtin_string_fromcodepoint(BuiltinContext* ctx) {
     ctx.result.set_string(result_str);
 }
 
-/// String.raw(template, ...substitutions) — ES2015 §22.1.2.4
+/// String.raw(template, ...substitutions), ES2015 §22.1.2.4
 ///
 /// Reads template.raw as an array-like, interleaves its string-coerced
 /// elements with the substitution arguments, and returns the concatenation.
@@ -321,7 +321,7 @@ fn void builtin_string_raw(BuiltinContext* ctx) {
             buf_len += (usz)seg_str.blen;
         }
 
-        // Step 12.e: If nextIndex + 1 = literalSegments, finished — exit loop.
+        // Step 12.e: If nextIndex + 1 = literalSegments, finished, exit loop.
         if (next_index + 1 == literal_segments) break;
 
         // Step 12.f: Append substitutions[nextIndex] (if present).
@@ -358,7 +358,7 @@ fn void builtin_string_raw(BuiltinContext* ctx) {
     ctx.result.set_string(result);
 }
 
-/// String.prototype.toString — returns the wrapped string value
+/// String.prototype.toString, returns the wrapped string value
 fn void builtin_string_proto_toString(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     if (this_val.is_object() && this_val.get_heapptr() != null) {
@@ -370,7 +370,7 @@ fn void builtin_string_proto_toString(BuiltinContext* ctx) {
         }
     } else if (this_val.is_string()) {
         HString* hs = (HString*)this_val.get_heapptr();
-        // Symbols stored as tagged strings — thisStringValue throws TypeError for Symbol.
+        // Symbols stored as tagged strings, thisStringValue throws TypeError for Symbol.
         if (hs != null && hs.is_symbol()) {
             builtin_throw(ctx, ctx.heap.type_err_proto,
                 "Cannot convert a Symbol value to a string");
@@ -384,7 +384,7 @@ fn void builtin_string_proto_toString(BuiltinContext* ctx) {
         "String.prototype.toString requires that 'this' be a String");
 }
 
-/// String.prototype.data.valueOf — returns the wrapped string primitive
+/// String.prototype.data.valueOf, returns the wrapped string primitive
 fn void builtin_string_proto_valueOf(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     if (this_val.is_object() && this_val.get_heapptr() != null) {
@@ -396,7 +396,7 @@ fn void builtin_string_proto_valueOf(BuiltinContext* ctx) {
         }
     } else if (this_val.is_string()) {
         HString* hs = (HString*)this_val.get_heapptr();
-        // Symbols stored as tagged strings — thisStringValue throws TypeError for Symbol.
+        // Symbols stored as tagged strings, thisStringValue throws TypeError for Symbol.
         if (hs != null && hs.is_symbol()) {
             builtin_throw(ctx, ctx.heap.type_err_proto,
                 "Cannot convert a Symbol value to a string");
@@ -424,7 +424,7 @@ fn HString* string_proto_get_this(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     if (this_val.is_string()) {
         HString* hs = (HString*)this_val.get_heapptr();
-        // Symbols stored as tagged strings — ToString(Symbol) throws TypeError.
+        // Symbols stored as tagged strings, ToString(Symbol) throws TypeError.
         if (hs != null && hs.is_symbol()) {
             builtin_throw_no_result_change(ctx, ctx.heap.type_err_proto,
                 "Cannot convert a Symbol value to a string");
@@ -472,7 +472,7 @@ fn HString* string_proto_get_this(BuiltinContext* ctx) {
             return ps;
         }
         if (prim.is_object()) {
-            // ToPrimitive returned an object — throw TypeError per §7.1.1.
+            // ToPrimitive returned an object, throw TypeError per §7.1.1.
             builtin_throw_no_result_change(ctx, ctx.heap.type_err_proto,
                 "Cannot convert object to primitive value");
             return null;
@@ -482,7 +482,7 @@ fn HString* string_proto_get_this(BuiltinContext* ctx) {
     return builtin_to_string(ctx.heap, &this_val);
 }
 
-/// String.prototype.charAt(pos) — ES5 §15.5.4.4
+/// String.prototype.charAt(pos), ES5 §15.5.4.4
 fn void builtin_string_proto_charAt(BuiltinContext* ctx) {
     HString* s_hstr = string_proto_get_this(ctx);
     if (s_hstr == null) {
@@ -505,10 +505,10 @@ fn void builtin_string_proto_charAt(BuiltinContext* ctx) {
     ctx.result.set_string(result);
 }
 
-/// String.prototype.charCodeAt(pos) — ES5 §15.5.4.5
+/// String.prototype.charCodeAt(pos), ES5 §15.5.4.5
 ///
 /// Returns the UTF-16 code unit at `pos` (a surrogate half for astral
-/// characters, never combined) — indexed by `char_length()`, not `blen`.
+/// characters, never combined), indexed by `char_length()`, not `blen`.
 fn void builtin_string_proto_charCodeAt(BuiltinContext* ctx) {
     HString* s_hstr = string_proto_get_this(ctx);
     if (s_hstr == null) {
@@ -526,7 +526,7 @@ fn void builtin_string_proto_charCodeAt(BuiltinContext* ctx) {
     ctx.result.set_fastint((long)s_hstr.char_at_unchecked(idx));
 }
 
-/// String.prototype.indexOf(searchString, position) — ES5 §15.5.4.7
+/// String.prototype.indexOf(searchString, position), ES5 §15.5.4.7
 fn void builtin_string_proto_indexOf(BuiltinContext* ctx) {
     HString* s_hstr = string_proto_get_this(ctx);
     if (s_hstr == null) {
@@ -611,7 +611,7 @@ fn void builtin_string_proto_indexOf(BuiltinContext* ctx) {
     }
 }
 
-/// String.prototype.slice(start, end) — ES5 §15.5.4.13
+/// String.prototype.slice(start, end), ES5 §15.5.4.13
 fn void builtin_string_proto_slice(BuiltinContext* ctx) {
     HString* s_hstr = string_proto_get_this(ctx);
     if (s_hstr == null) {
@@ -669,7 +669,7 @@ fn void builtin_string_proto_slice(BuiltinContext* ctx) {
     ctx.result.set_string(result);
 }
 
-/// String.prototype.substring(start, end) — ES5 §15.5.4.15
+/// String.prototype.substring(start, end), ES5 §15.5.4.15
 fn void builtin_string_proto_substring(BuiltinContext* ctx) {
     HString* s_hstr = string_proto_get_this(ctx);
     if (s_hstr == null) {
@@ -713,7 +713,7 @@ fn void builtin_string_proto_substring(BuiltinContext* ctx) {
     ctx.result.set_string(result);
 }
 
-/// String.prototype.substr(start, length) — ES5 §B.2.3
+/// String.prototype.substr(start, length), ES5 §B.2.3
 fn void builtin_string_proto_substr(BuiltinContext* ctx) {
     HString* s_hstr = string_proto_get_this(ctx);
     if (s_hstr == null) {
@@ -798,7 +798,7 @@ fn uint cesu8_decode_codepoint(char* data, uint off, uint total_len, uint* seq_l
 
         // Check for surrogate pair (CESU-8 astral encoding)
         if (cp >= 0xD800 && cp <= 0xDBFF) {
-            // High surrogate — try to find a trailing low surrogate
+            // High surrogate, try to find a trailing low surrogate
             uint off2 = off + 3;
             if (off2 + 2 < total_len) {
                 uint c0 = (uint)data[off2];
@@ -819,7 +819,7 @@ fn uint cesu8_decode_codepoint(char* data, uint off, uint total_len, uint* seq_l
         return cp;
     }
 
-    // 4-byte (standard UTF-8 — shouldn't normally appear in CESU-8 but handle defensively)
+    // 4-byte (standard UTF-8, shouldn't normally appear in CESU-8 but handle defensively)
     if ((b0 & 0xF8) == 0xF0) {
         if (off + 3 >= total_len) { *seq_len = 1; return 0; }
         uint b1 = (uint)data[off + 1];
@@ -889,10 +889,10 @@ fn uint* cesu8_to_codepoints(char* data, uint blen, uint* out_n) {
     return cps;
 }
 
-// GREEK CAPITAL LETTER SIGMA codepoint — has Final_Sigma conditional mapping.
+// GREEK CAPITAL LETTER SIGMA codepoint, has Final_Sigma conditional mapping.
 const uint CP_SIGMA = 0x03A3;
-const uint CP_SIGMA_FINAL = 0x03C2;   // ς — final form
-const uint CP_SIGMA_LOWER = 0x03C3;   // σ — non-final form
+const uint CP_SIGMA_FINAL = 0x03C2;   // ς, final form
+const uint CP_SIGMA_LOWER = 0x03C3;   // σ, non-final form
 
 /// Determine which lowercase form of Greek Sigma to use.
 /// Per Unicode Default Case Algorithms §3.13:
@@ -903,7 +903,7 @@ fn uint sigma_lower_form(uint* cps, uint n, uint idx) {
     // Look backward for a Cased character (skip Case_Ignorable).
     // Per Unicode §3.13 Final_Sigma: the "anchor" cased character must be
     // Cased AND *not* Case_Ignorable (characters that are both Cased and
-    // Case_Ignorable — like U+0345 — count only as Case_Ignorable, not as
+    // Case_Ignorable, like U+0345, count only as Case_Ignorable, not as
     // the cased anchor).
     bool preceded_by_cased = false;
     uint j = idx;
@@ -1031,7 +1031,7 @@ fn HString* unicode_case_convert_str(Heap* heap, char* data, uint blen, int conv
     return result;
 }
 
-/// String.prototype.toLowerCase() — full Unicode case mapping (ES2024 §22.1.3.26)
+/// String.prototype.toLowerCase(), full Unicode case mapping (ES2024 §22.1.3.26)
 fn void builtin_string_proto_toLowerCase(BuiltinContext* ctx) {
     HString* s_hstr = string_proto_get_this(ctx);
     if (s_hstr == null) {
@@ -1048,7 +1048,7 @@ fn void builtin_string_proto_toLowerCase(BuiltinContext* ctx) {
     ctx.result.set_string(result);
 }
 
-/// String.prototype.toUpperCase() — full Unicode case mapping (ES2024 §22.1.3.28)
+/// String.prototype.toUpperCase(), full Unicode case mapping (ES2024 §22.1.3.28)
 fn void builtin_string_proto_toUpperCase(BuiltinContext* ctx) {
     HString* s_hstr = string_proto_get_this(ctx);
     if (s_hstr == null) {
@@ -1065,18 +1065,18 @@ fn void builtin_string_proto_toUpperCase(BuiltinContext* ctx) {
     ctx.result.set_string(result);
 }
 
-/// String.prototype.toLocaleLowerCase() — locale-insensitive (uses Unicode default).
+/// String.prototype.toLocaleLowerCase(), locale-insensitive (uses Unicode default).
 fn void builtin_string_proto_toLocaleLowerCase(BuiltinContext* ctx) {
     builtin_string_proto_toLowerCase(ctx);
 }
 
-/// String.prototype.toLocaleUpperCase() — locale-insensitive (uses Unicode default).
+/// String.prototype.toLocaleUpperCase(), locale-insensitive (uses Unicode default).
 fn void builtin_string_proto_toLocaleUpperCase(BuiltinContext* ctx) {
     builtin_string_proto_toUpperCase(ctx);
 }
 
-/// String.prototype.localeCompare(that) — ES5 §15.5.4.12
-/// String.prototype.localeCompare(that) — ES5 §15.5.4.12
+/// String.prototype.localeCompare(that), ES5 §15.5.4.12
+/// String.prototype.localeCompare(that), ES5 §15.5.4.12
 ///
 /// Returns <0, 0, or >0 based on lexicographic comparison.
 /// Per ES2018 §12.3.3.2, must treat Strings that are canonically
@@ -1103,7 +1103,7 @@ fn void builtin_string_proto_localeCompare(BuiltinContext* ctx) {
         return;
     }
 
-    // NFC normalize both operands (canonical equivalence) — bytes differ
+    // NFC normalize both operands (canonical equivalence), bytes differ
     // but codepoints are equivalent after normalization. Short-circuit
     // byte-equal strings: most compare() calls (localeSort, Intl.Collator
     // fast path, etc.) are on pre-normalized ASCII.
@@ -1235,7 +1235,7 @@ fn uint utf8_codepoint_count(char* s, uint len) {
     return n;
 }
 
-/// String.prototype.trim() — ES5 §15.5.4.20
+/// String.prototype.trim(), ES5 §15.5.4.20
 ///
 /// Removes leading and trailing WhiteSpace and LineTerminator characters.
 /// Must handle the full Unicode range (not just ASCII bytes) including
@@ -1289,7 +1289,7 @@ fn void builtin_string_proto_trim(BuiltinContext* ctx) {
     ctx.result.set_string(result);
 }
 
-/// String.prototype.split(separator, limit) — ES5 §15.5.4.14
+/// String.prototype.split(separator, limit), ES5 §15.5.4.14
 fn void builtin_string_proto_split(BuiltinContext* ctx) {
     // Step 1: Let O be ? RequireObjectCoercible(this value).
     TVal this_tv = ctx.regs[ctx.base_reg - 1];
@@ -1316,7 +1316,7 @@ fn void builtin_string_proto_split(BuiltinContext* ctx) {
                         if (splitter.is_lightfunc() ||
                             (splitter.is_object() && splitter.get_heapptr() != null &&
                              ((HObject*)splitter.get_heapptr()).is_callable())) {
-                            // Call splitter(O, limit) — O is the raw this value (not ToString'd),
+                            // Call splitter(O, limit), O is the raw this value (not ToString'd),
                             // limit is the original argument (not coerced).
                             TVal[2] fn_args;
                             fn_args[0] = this_tv;
@@ -1361,7 +1361,7 @@ fn void builtin_string_proto_split(BuiltinContext* ctx) {
     HObject* arr = arr_raw;
     arr.prototype = ctx.heap.array_proto;
 
-    // If separator is undefined, return [string] — but the limit=0 case
+    // If separator is undefined, return [string], but the limit=0 case
     // (§22.1.3.21 step 10: if lim = 0, return an empty array) takes precedence.
     if (sep_tv.is_undefined()) {
         bool undef_limit_zero = false;
@@ -1401,10 +1401,10 @@ fn void builtin_string_proto_split(BuiltinContext* ctx) {
 
     // For RegExp separator, delegate to @@split on the regexp (which will call
     // RegExp.prototype[@@split]), or fall through to the built-in regexp path.
-    // For other separators: step 4 = ToString(separator) — must happen before limit=0 check.
+    // For other separators: step 4 = ToString(separator), must happen before limit=0 check.
     TVal* sep_val = &sep_tv;
 
-    // Compute limit via ToUint32 — done here, after the @@split check.
+    // Compute limit via ToUint32, done here, after the @@split check.
     // spec step 17: If limit is undefined, let lim = 2^32-1; else let lim = ? ToUint32(limit).
     uint limit = 0xFFFFFFFF;  // 2^32 - 1
     {
@@ -1538,7 +1538,7 @@ fn void builtin_string_proto_split(BuiltinContext* ctx) {
         return;
     }
 
-    // ── String separator: ToString(separator) — must happen before limit=0 check ──
+    // ── String separator: ToString(separator), must happen before limit=0 check ──
     HString* sep_hstr = builtin_to_string_vm(ctx, sep_val);
     if (ctx.should_throw) return;
     if (sep_hstr == null) {
@@ -1558,7 +1558,7 @@ fn void builtin_string_proto_split(BuiltinContext* ctx) {
     char* sep_data = sep_hstr.get_cstr();
     uint sep_len = sep_hstr.blen;
 
-    // Empty separator: split by UTF-16 code unit (ES5 §15.5.4.14 step 11 —
+    // Empty separator: split by UTF-16 code unit (ES5 §15.5.4.14 step 11,
     // T is a String of length 1 containing element q of S, where S is
     // indexed by UTF-16 code unit, not Unicode codepoint or byte).
     if (sep_len == 0) {
@@ -1646,7 +1646,7 @@ fn void builtin_string_proto_split(BuiltinContext* ctx) {
     ctx.result.set_object(arr);
 }
 
-/// String.prototype.concat(...args) — ES5 §15.5.4.6
+/// String.prototype.concat(...args), ES5 §15.5.4.6
 fn void builtin_string_proto_concat(BuiltinContext* ctx) {
     HString* s_hstr = string_proto_get_this(ctx);
     if (s_hstr == null) {
@@ -1767,7 +1767,7 @@ fn HString* builtin_replace_substitute(Heap* heap, HString* replace_str,
     return builtin_intern_string(heap, buf[:offset]);
 }
 
-/// String.prototype.replace(searchValue, replaceValue) — ES5 §15.5.4.11
+/// String.prototype.replace(searchValue, replaceValue), ES5 §15.5.4.11
 fn void builtin_string_proto_replace(BuiltinContext* ctx) {
     HString* s_hstr = string_proto_get_this(ctx);
     if (s_hstr == null) {
@@ -2120,10 +2120,10 @@ fn void builtin_string_proto_replace(BuiltinContext* ctx) {
     ctx.result.set_string(builtin_intern_string(ctx.heap, buf[:bOff]));
 }
 
-/// String.prototype.replaceAll(searchValue, replaceValue) — ES2021 §22.1.3.18
+/// String.prototype.replaceAll(searchValue, replaceValue), ES2021 §22.1.3.18
 fn void builtin_string_proto_replaceAll(BuiltinContext* ctx) {
     // Step 1: RequireObjectCoercible(this). We don't ToString the receiver
-    // yet — step 2's searchValue checks (IsRegExp, flags, @@replace) must
+    // yet, step 2's searchValue checks (IsRegExp, flags, @@replace) must
     // run and can throw or delegate *before* `this` is ever stringified.
     TVal this_tv = ctx.regs[ctx.base_reg - 1];
     if (this_tv.is_undefined() || this_tv.is_null()) {
@@ -2215,8 +2215,8 @@ fn void builtin_string_proto_replaceAll(BuiltinContext* ctx) {
         }
 
         // Step 2.c: replacer = GetMethod(searchValue, @@replace).
-        // Step 2.d: if replacer is not undefined, delegate to it entirely —
-        // this happens BEFORE ToString(this) / ToString(searchValue), so a
+        // Step 2.d: if replacer is not undefined, delegate to it entirely. This
+        // happens before ToString(this) and ToString(searchValue), so a
         // poisoned `this` or searchValue whose toString throws never fires.
         if (search_val.is_object() && search_val.get_heapptr() != null) {
             HObject* sv_obj = (HObject*)search_val.get_heapptr();
@@ -2234,7 +2234,7 @@ fn void builtin_string_proto_replaceAll(BuiltinContext* ctx) {
                             return;
                         }
                         TVal[2] fn_args;
-                        fn_args[0] = this_tv;         // O — NOT yet ToString'd
+                        fn_args[0] = this_tv;         // O, NOT yet ToString'd
                         fn_args[1] = replace_val;     // replaceValue as-is
                         TVal res = ctx.heap.call_fn(ctx.vm, replacer, &fn_args[0], 2, search_val);
                         if (ctx.heap.has_error) {
@@ -2285,7 +2285,7 @@ fn void builtin_string_proto_replaceAll(BuiltinContext* ctx) {
         if (replace_hstr == null) return;
     }
 
-    // Step 7: advanceBy = max(1, searchString length) — code-unit length,
+    // Step 7: advanceBy = max(1, searchString length), code-unit length,
     // but since matches can't straddle CESU-8 byte boundaries, byte length
     // is equivalent here.
     uint advance_by = search_len == 0 ? 1 : search_len;
@@ -2361,7 +2361,7 @@ fn void builtin_string_proto_replaceAll(BuiltinContext* ctx) {
 // Additional String.prototype methods
 // ============================================================================
 
-/// String.prototype.includes(searchString, position) — ES6 §21.1.3.7
+/// String.prototype.includes(searchString, position), ES6 §21.1.3.7
 fn void builtin_string_proto_includes(BuiltinContext* ctx) {
     HString* s_hstr = string_proto_get_this(ctx);
     if (s_hstr == null) { ctx.result.set_undefined(); return; }
@@ -2417,7 +2417,7 @@ fn void builtin_string_proto_includes(BuiltinContext* ctx) {
     ctx.result.set_boolean(found);
 }
 
-/// String.prototype.startsWith(searchString, position) — ES6 §21.1.3.18
+/// String.prototype.startsWith(searchString, position), ES6 §21.1.3.18
 fn void builtin_string_proto_startsWith(BuiltinContext* ctx) {
     HString* s_hstr = string_proto_get_this(ctx);
     if (s_hstr == null) { ctx.result.set_undefined(); return; }
@@ -2467,7 +2467,7 @@ fn void builtin_string_proto_startsWith(BuiltinContext* ctx) {
     ctx.result.set_boolean(found);
 }
 
-/// String.prototype.endsWith(searchString, endPosition) — ES6 §21.1.3.6
+/// String.prototype.endsWith(searchString, endPosition), ES6 §21.1.3.6
 fn void builtin_string_proto_endsWith(BuiltinContext* ctx) {
     HString* s_hstr = string_proto_get_this(ctx);
     if (s_hstr == null) { ctx.result.set_undefined(); return; }
@@ -2518,12 +2518,12 @@ fn void builtin_string_proto_endsWith(BuiltinContext* ctx) {
     ctx.result.set_boolean(found);
 }
 
-/// String.prototype.repeat(count) — ES6 §21.1.3.14
+/// String.prototype.repeat(count), ES6 §21.1.3.14
 fn void builtin_string_proto_repeat(BuiltinContext* ctx) {
     HString* s_hstr = string_proto_get_this(ctx);
     if (s_hstr == null) { ctx.result.set_undefined(); return; }
 
-    // Step 3: ToIntegerOrInfinity(count) — runs valueOf/toString and throws for
+    // Step 3: ToIntegerOrInfinity(count), runs valueOf/toString and throws for
     // Symbol/BigInt *before* the RangeError range check (ES2022 §22.1.3.16).
     double count_d = (ctx.argc > 0) ? builtin_to_integer_vm(ctx, &ctx.regs[ctx.base_reg]) : 0.0;
     if (ctx.should_throw) { ctx.result.set_undefined(); return; }
@@ -2558,7 +2558,7 @@ fn void builtin_string_proto_repeat(BuiltinContext* ctx) {
     ctx.heap.free_func(ctx.heap.heap_udata, buf);
 }
 
-/// String.prototype.trimStart() — ES2019 §21.1.3.26
+/// String.prototype.trimStart(), ES2019 §21.1.3.26
 fn void builtin_string_proto_trimStart(BuiltinContext* ctx) {
     HString* s_hstr = string_proto_get_this(ctx);
     if (s_hstr == null) { ctx.result.set_undefined(); return; }
@@ -2580,7 +2580,7 @@ fn void builtin_string_proto_trimStart(BuiltinContext* ctx) {
     } else { ctx.result.set_undefined(); }
 }
 
-/// String.prototype.trimEnd() — ES2019 §21.1.3.27
+/// String.prototype.trimEnd(), ES2019 §21.1.3.27
 fn void builtin_string_proto_trimEnd(BuiltinContext* ctx) {
     HString* s_hstr = string_proto_get_this(ctx);
     if (s_hstr == null) { ctx.result.set_undefined(); return; }
@@ -2607,7 +2607,7 @@ fn void builtin_string_proto_trimEnd(BuiltinContext* ctx) {
     } else { ctx.result.set_undefined(); }
 }
 
-/// String.prototype.codePointAt(pos) — ES6 §21.1.3.3
+/// String.prototype.codePointAt(pos), ES6 §21.1.3.3
 ///
 /// Indexed by UTF-16 code unit (`char_length()`). If the unit at `pos` is a
 /// high surrogate and `pos+1` is a low surrogate, combine them into the
@@ -2637,7 +2637,7 @@ fn void builtin_string_proto_codePointAt(BuiltinContext* ctx) {
     ctx.result.set_fastint((long)first);
 }
 
-/// String.prototype.at(index) — ES2022 §21.1.3.1
+/// String.prototype.at(index), ES2022 §21.1.3.1
 ///
 /// Indexed by UTF-16 code unit; returns a one-code-unit String (a lone
 /// surrogate half for astral characters), matching `charAt`.
@@ -2646,7 +2646,7 @@ fn void builtin_string_proto_at(BuiltinContext* ctx) {
     if (s_hstr == null) { ctx.result.set_undefined(); return; }
     uint clen = s_hstr.char_length();
 
-    // Step 4: ToIntegerOrInfinity(index) — coerces via valueOf/toString, NaN→0.
+    // Step 4: ToIntegerOrInfinity(index), coerces via valueOf/toString, NaN→0.
     double idx_d = (ctx.argc > 0) ? builtin_to_integer_vm(ctx, &ctx.regs[ctx.base_reg]) : 0.0;
     if (ctx.should_throw) { ctx.result.set_undefined(); return; }
 
@@ -2661,7 +2661,7 @@ fn void builtin_string_proto_at(BuiltinContext* ctx) {
     ctx.result.set_string(result);
 }
 
-/// String.prototype.padStart(maxLength, fillString) — ES2017 §21.1.3.13
+/// String.prototype.padStart(maxLength, fillString), ES2017 §21.1.3.13
 ///
 /// StringPad operates on code-unit length throughout: maxLength is a code
 /// unit count, and the fill string is truncated to land on exactly the
@@ -2719,7 +2719,7 @@ fn void builtin_string_proto_padStart(BuiltinContext* ctx) {
     } else { ctx.result.set_undefined(); }
 }
 
-/// String.prototype.padEnd(maxLength, fillString) — ES2017 §21.1.3.12
+/// String.prototype.padEnd(maxLength, fillString), ES2017 §21.1.3.12
 ///
 /// See padStart: fill is applied by whole code unit, not raw byte.
 fn void builtin_string_proto_padEnd(BuiltinContext* ctx) {
@@ -2773,7 +2773,7 @@ fn void builtin_string_proto_padEnd(BuiltinContext* ctx) {
     } else { ctx.result.set_undefined(); }
 }
 
-/// String.prototype.lastIndexOf(searchString, position) — ES5 §15.5.4.8
+/// String.prototype.lastIndexOf(searchString, position), ES5 §15.5.4.8
 fn void builtin_string_proto_lastIndexOf(BuiltinContext* ctx) {
     HString* s_hstr = string_proto_get_this(ctx);
     if (s_hstr == null) { ctx.result.set_undefined(); return; }
@@ -2870,7 +2870,7 @@ fn bool invoke_regexp_match(BuiltinContext* ctx, HObject* rx, HString* s_hstr) {
     return false;
 }
 
-/// String.prototype.match(regexp) — ES2019 §21.1.3.11
+/// String.prototype.match(regexp), ES2019 §21.1.3.11
 ///
 /// Step 2: If regexp is an object, GetMethod(regexp, @@match); if callable,
 /// invoke and return. (GetMethod returns undefined for null/undefined @@match.)
@@ -3038,7 +3038,7 @@ fn bool invoke_regexp_matchall(BuiltinContext* ctx, HObject* rx, HString* s_hstr
     return false;
 }
 
-/// String.prototype.matchAll(regexp) — ES2021 §22.1.3.14
+/// String.prototype.matchAll(regexp), ES2021 §22.1.3.14
 ///
 /// Step 2: IsRegExp check + Get("flags") + "g" check; then GetMethod(@@matchAll)
 /// delegation for any non-null/undefined argument. Steps 3-5: RegExpCreate with "g"
@@ -3196,7 +3196,7 @@ fn void builtin_string_proto_matchAll(BuiltinContext* ctx) {
     }
 }
 
-/// String.prototype.normalize([form]) — ES6 §21.1.3.12
+/// String.prototype.normalize([form]), ES6 §21.1.3.12
 ///
 /// Supports NFC, NFD, NFKC, NFKD via QuickJS's libunicode.
 fn void builtin_string_proto_normalize(BuiltinContext* ctx) {
@@ -3323,9 +3323,9 @@ fn void builtin_string_proto_normalize(BuiltinContext* ctx) {
 // isWellFormed: O(n) scan, returns boolean, no allocation.
 // toWellFormed: O(n) scan + allocation of worst-case same byte length (every
 // non-surrogate code unit is already well-formed; lone surrogates are replaced
-// by U+FFFD which encodes to exactly 3 bytes — same as the surrogate itself).
+// by U+FFFD which encodes to exactly 3 bytes, same as the surrogate itself).
 
-/// String.prototype.isWellFormed() — ES2024 §21.1.3.7
+/// String.prototype.isWellFormed(), ES2024 §21.1.3.7
 /// Returns true iff the string's UTF-16 code-unit sequence contains no lone
 /// (unpaired) surrogate code units.
 fn void builtin_string_proto_isWellFormed(BuiltinContext* ctx) {
@@ -3342,14 +3342,14 @@ fn void builtin_string_proto_isWellFormed(BuiltinContext* ctx) {
             // Must be paired with an immediately following low surrogate.
             uint next_off = i + seq_len;
             if (next_off >= len) {
-                // High surrogate at end-of-string — lone.
+                // High surrogate at end-of-string, lone.
                 ctx.result.set_boolean(false);
                 return;
             }
             uint next_cp = hstring::decode_codepoint(data, next_off);
             if (!hstring::is_low_surrogate(next_cp)) {
                 // High surrogate followed by something that is not a low
-                // surrogate — lone.
+                // surrogate, lone.
                 ctx.result.set_boolean(false);
                 return;
             }
@@ -3357,7 +3357,7 @@ fn void builtin_string_proto_isWellFormed(BuiltinContext* ctx) {
             uint low_len = hstring::utf8_seq_len(data[next_off]);
             i = next_off + low_len;
         } else if (hstring::is_low_surrogate(cp)) {
-            // Low surrogate without a preceding high surrogate — lone.
+            // Low surrogate without a preceding high surrogate, lone.
             ctx.result.set_boolean(false);
             return;
         } else {
@@ -3367,7 +3367,7 @@ fn void builtin_string_proto_isWellFormed(BuiltinContext* ctx) {
     ctx.result.set_boolean(true);
 }
 
-/// String.prototype.toWellFormed() — ES2024 §21.1.3.27
+/// String.prototype.toWellFormed(), ES2024 §21.1.3.27
 /// Returns a copy of the string with every lone surrogate code unit replaced
 /// by U+FFFD (REPLACEMENT CHARACTER, UTF-8: 0xEF 0xBF 0xBD).
 fn void builtin_string_proto_toWellFormed(BuiltinContext* ctx) {
@@ -3408,13 +3408,13 @@ fn void builtin_string_proto_toWellFormed(BuiltinContext* ctx) {
                     continue;
                 }
             }
-            // Lone high surrogate — emit U+FFFD (3 bytes: EF BF BD).
+            // Lone high surrogate, emit U+FFFD (3 bytes: EF BF BD).
             buf[o++] = (char)0xEF;
             buf[o++] = (char)0xBF;
             buf[o++] = (char)0xBD;
             i += seq_len;
         } else if (hstring::is_low_surrogate(cp)) {
-            // Lone low surrogate — emit U+FFFD.
+            // Lone low surrogate, emit U+FFFD.
             buf[o++] = (char)0xEF;
             buf[o++] = (char)0xBF;
             buf[o++] = (char)0xBD;
@@ -3462,7 +3462,7 @@ fn bool invoke_regexp_search(BuiltinContext* ctx, HObject* rx, HString* s_hstr) 
     return false;
 }
 
-/// String.prototype.search(regexp) — ES2019 §21.1.3.15
+/// String.prototype.search(regexp), ES2019 §21.1.3.15
 ///
 /// Step 2: If regexp is an object, GetMethod(regexp, @@search); if callable,
 /// invoke and return. (null/undefined @@search treated as "not found" per GetMethod.)
@@ -3547,7 +3547,7 @@ fn void builtin_string_proto_search(BuiltinContext* ctx) {
     }
 }
 fn bool register_string_constructor(EnvRecord* global_env, Heap* heap) {
-    // Create String.prototype — an exotic String object with [[StringData]] = ""
+    // Create String.prototype, an exotic String object with [[StringData]] = ""
     HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.STRING);
     if (catch err = proto_raw) return false;
     HObject* proto = proto_raw;

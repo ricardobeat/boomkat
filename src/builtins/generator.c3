@@ -110,7 +110,7 @@ fn void builtin_dynamic_gen_function(BuiltinContext* ctx, bool is_gen, bool is_a
     func_obj.prototype = builtin_proto_from_new_target(ctx, default_fn_proto);
 
     // Prototype object for generator instances (25.2.4.3: writable,
-    // non-enumerable, non-configurable — matches Function instances).
+    // non-enumerable, non-configurable, matches Function instances).
     HObject*? gen_proto_raw = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
     if (try gen_proto = gen_proto_raw) {
         // Async generators link their instance prototype to
@@ -124,7 +124,7 @@ fn void builtin_dynamic_gen_function(BuiltinContext* ctx, bool is_gen, bool is_a
     }
 
     // .length (25.2.4.1) and .name (25.2.4.2): non-writable, non-enumerable,
-    // configurable — same as CreateDynamicFunction for plain Function.
+    // configurable, same as CreateDynamicFunction for plain Function.
     HString* len_key = builtin_intern_string(ctx.heap, "length");
     TVal len_tv;
     len_tv.set_fastint((long)func.num_formals);
@@ -136,7 +136,7 @@ fn void builtin_dynamic_gen_function(BuiltinContext* ctx, bool is_gen, bool is_a
     func_obj.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC);
 
     // GeneratorFunction/AsyncFunction instances are callable but not
-    // constructable (ES2015 §25.2.3 / §25.7.3 — `new gfn()` throws TypeError).
+    // constructable (ES2015 §25.2.3 / §25.7.3, `new gfn()` throws TypeError).
     func_obj.flags.callable = true;
     func_obj.flags.constructable = false;
 
@@ -152,7 +152,7 @@ fn void builtin_async_function(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Generator.prototype.next(value) — ES6 §25.3.1.2
+// Generator.prototype.next(value), ES6 §25.3.1.2
 // ============================================================================
 
 fn void builtin_generator_proto_next(BuiltinContext* ctx) {
@@ -238,7 +238,7 @@ fn void builtin_generator_proto_next(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Generator.prototype.throw(exception) — ES6 §25.3.1.4
+// Generator.prototype.throw(exception), ES6 §25.3.1.4
 // ============================================================================
 
 fn void builtin_generator_proto_throw(BuiltinContext* ctx) {
@@ -260,7 +260,7 @@ fn void builtin_generator_proto_throw(BuiltinContext* ctx) {
     }
 
     if (gs.state == GEN_COMPLETED) {
-        // Already completed — propagate the exception (ES6 §25.3.1.4.a)
+        // Already completed, propagate the exception (ES6 §25.3.1.4.a)
         ctx.should_throw = true;
         if (ctx.argc >= 1) {
             ctx.throw_value = ctx.regs[ctx.base_reg];
@@ -316,7 +316,7 @@ fn void builtin_generator_proto_throw(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Generator.prototype.return(value) — ES6 §25.3.1.3
+// Generator.prototype.return(value), ES6 §25.3.1.3
 // ============================================================================
 
 fn void builtin_generator_proto_return(BuiltinContext* ctx) {
@@ -338,7 +338,7 @@ fn void builtin_generator_proto_return(BuiltinContext* ctx) {
     }
 
     if (gs.state == GEN_COMPLETED) {
-        // Already completed — return {value: argument, done: true}
+        // Already completed, return {value: argument, done: true}
         HObject*? result_raw = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
         if (try r = result_raw) {
             r.prototype = ctx.heap.object_proto;
@@ -368,7 +368,7 @@ fn void builtin_generator_proto_return(BuiltinContext* ctx) {
     }
 
     if (gs.state == GEN_SUSPENDED_START) {
-        // Generator has never executed — complete immediately without
+        // Generator has never executed, complete immediately without
         // executing any body code (ES6 §25.3.1.3, step 5).
         gs.state = GEN_COMPLETED;
         TVal arg_val;
@@ -439,7 +439,7 @@ fn bool register_generator_constructor(EnvRecord* global_env, Heap* heap) {
     HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = proto_raw) return false;
     HObject* proto = proto_raw;
-    // Provisional — re-wired to %Iterator.prototype% once it exists, in the
+    // Provisional, re-wired to %Iterator.prototype% once it exists, in the
     // deferred prototype-chain wiring pass (ES2025 §27.8.1).
     proto.prototype = heap.object_proto;
     heap.generator_proto = proto;
@@ -484,7 +484,7 @@ fn bool register_generator_constructor(EnvRecord* global_env, Heap* heap) {
 
     // Set GeneratorFunction.prototype.prototype → Generator.prototype
     // (ES2015 §25.2.3.3): the shared prototype every individual generator
-    // function's own `.prototype` object inherits from — this is what
+    // function's own `.prototype` object inherits from, this is what
     // `Object.getPrototypeOf(function* () {}).prototype` reads.
     // {writable:false, enumerable:false, configurable:true}.
     {
@@ -519,7 +519,7 @@ fn bool register_generator_constructor(EnvRecord* global_env, Heap* heap) {
 
     // Wire %GeneratorPrototype%.constructor → %GeneratorFunction.prototype%
     // (ES6 §25.3.1: writable:false, enumerable:false, configurable:true).
-    // Note this is gf_proto, not the GeneratorFunction constructor itself —
+    // Note this is gf_proto, not the GeneratorFunction constructor itself.
     // Object.getPrototypeOf(function* () {}) is gf_proto, and its `.prototype`
     // (proto here) points back to gf_proto via .constructor.
     {

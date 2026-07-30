@@ -34,7 +34,7 @@ fn void builtin_weakmap(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// WeakMap.prototype.set(key, value) — ES6 §23.3.3.5
+// WeakMap.prototype.set(key, value), ES6 §23.3.3.5
 // ============================================================================
 fn void builtin_weakmap_proto_set(BuiltinContext* ctx) {
     HObject* wm = check_weakmap(ctx);
@@ -43,7 +43,7 @@ fn void builtin_weakmap_proto_set(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// WeakMap.prototype.getOrInsert(key, value) — ES2025 §24.3.3.6
+// WeakMap.prototype.getOrInsert(key, value), ES2025 §24.3.3.6
 // ============================================================================
 fn void builtin_weakmap_proto_getOrInsert(BuiltinContext* ctx) {
     HObject* wm = check_weakmap(ctx);
@@ -52,7 +52,7 @@ fn void builtin_weakmap_proto_getOrInsert(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// WeakMap.prototype.getOrInsertComputed(key, callbackfn) — ES2025 §24.3.3.7
+// WeakMap.prototype.getOrInsertComputed(key, callbackfn), ES2025 §24.3.3.7
 // ============================================================================
 fn void builtin_weakmap_proto_getOrInsertComputed(BuiltinContext* ctx) {
     HObject* wm = check_weakmap(ctx);
@@ -61,7 +61,7 @@ fn void builtin_weakmap_proto_getOrInsertComputed(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// WeakMap.prototype.get(key) — ES6 §23.3.3.3
+// WeakMap.prototype.get(key), ES6 §23.3.3.3
 // ============================================================================
 fn void builtin_weakmap_proto_get(BuiltinContext* ctx) {
     HObject* wm = check_weakmap(ctx);
@@ -78,7 +78,7 @@ fn void builtin_weakmap_proto_get(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// WeakMap.prototype.has(key) — ES6 §23.3.3.4
+// WeakMap.prototype.has(key), ES6 §23.3.3.4
 // ============================================================================
 fn void builtin_weakmap_proto_has(BuiltinContext* ctx) {
     HObject* wm = check_weakmap(ctx);
@@ -91,7 +91,7 @@ fn void builtin_weakmap_proto_has(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// WeakMap.prototype.delete(key) — ES6 §23.3.3.2
+// WeakMap.prototype.delete(key), ES6 §23.3.3.2
 // ============================================================================
 fn void builtin_weakmap_proto_delete(BuiltinContext* ctx) {
     HObject* wm = check_weakmap(ctx);
@@ -105,7 +105,7 @@ fn void builtin_weakmap_proto_delete(BuiltinContext* ctx) {
 // ============================================================================
 
 fn bool register_weakmap_constructor(EnvRecord* global_env, Heap* heap) {
-    // ES6 §23.3.3: WeakMap.prototype is an ordinary object — must NOT carry
+    // ES6 §23.3.3: WeakMap.prototype is an ordinary object, must NOT carry
     // the WEAKMAP ObjClass flag, otherwise check_weakmap() would accept it
     // as a valid WeakMap and prototype methods would skip the TypeError guard.
     HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
@@ -118,9 +118,9 @@ fn bool register_weakmap_constructor(EnvRecord* global_env, Heap* heap) {
     if (!register_string_proto_method(proto, heap, "get", Builtin.WEAKMAP_PROTO_GET.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "has", Builtin.WEAKMAP_PROTO_HAS.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "delete", Builtin.WEAKMAP_PROTO_DELETE.ordinal)) return false;
-    // Add .getOrInsert(key, value) method — ES2025 §24.3.3.6
+    // Add .getOrInsert(key, value) method, ES2025 §24.3.3.6
     if (!register_string_proto_method(proto, heap, "getOrInsert", Builtin.WEAKMAP_PROTO_GETORINSERT.ordinal)) return false;
-    // Add .getOrInsertComputed(key, callbackfn) method — ES2025 §24.3.3.7
+    // Add .getOrInsertComputed(key, callbackfn) method, ES2025 §24.3.3.7
     if (!register_string_proto_method(proto, heap, "getOrInsertComputed", Builtin.WEAKMAP_PROTO_GETORINSERTCOMPUTED.ordinal)) return false;
 
     // Set @@toStringTag

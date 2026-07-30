@@ -608,7 +608,7 @@ fn uint json_walk_array_length(void* vm, Heap* heap, HObject* obj) {
     return 0;
 }
 
-/// InternalizeJSONProperty — ES2023 §25.5.1.
+/// InternalizeJSONProperty, ES2023 §25.5.1.
 /// Implements the spec algorithm: Get(holder,name) via full [[Get]] (invokes
 /// accessors and Proxy traps), recurse into object/array children in
 /// integer-ascending + insertion order (using [[OwnPropertyKeys]] for Proxy
@@ -617,7 +617,7 @@ fn uint json_walk_array_length(void* vm, Heap* heap, HObject* obj) {
 /// after return.
 fn TVal json_walk(void* vm, Heap* heap, TVal reviver, TVal holder, HString* name, char* src = null, JsonParseRecord* rec = null) {
     TVal val;
-    // Step 1: val = ? Get(holder, name) — must invoke accessor getters and
+    // Step 1: val = ? Get(holder, name), must invoke accessor getters and
     // Proxy "get" traps.
     if (holder.is_object() && holder.get_heapptr() != null) {
         HObject* holder_obj = (HObject*)holder.get_heapptr();
@@ -811,14 +811,14 @@ fn void json_throw_syntax_error(BuiltinContext* ctx, char[] msg) {
     ctx.should_throw = true;
 }
 
-/// JSON.parse(text [, reviver]) — ES5 §15.12.2
+/// JSON.parse(text [, reviver]), ES5 §15.12.2
 faultdef JSON_MODULE_PARSE_ERROR;
 
 /// Parse a whole JSON document (a JSON-module's file contents) into a TVal,
 /// mirroring `JSON.parse(source)` with no reviver (ECMA-262 ParseJSONModule /
 /// AbstractOperation §1.4). Returns JSON_MODULE_PARSE_ERROR on any syntax
 /// error (the module loader converts this into a resolution-phase SyntaxError).
-/// The returned value carries no extra reference — object results are freshly
+/// The returned value carries no extra reference, object results are freshly
 /// allocated with their prototype installed, exactly as JSON.parse yields.
 fn TVal? json_parse_module_source(Heap* heap, char[] source) {
     JsonParseCtx jctx;
@@ -883,7 +883,7 @@ fn void builtin_json_parse(BuiltinContext* ctx) {
         }
     } else {
         // Primitives (undefined → "undefined", null → "null", bool, number):
-        // plain ToString suffices — no vm call needed.
+        // plain ToString suffices, no vm call needed.
         text_str = builtin_to_string(ctx.heap, text_arg);
         if (text_str == null) {
             json_throw_syntax_error(ctx, "Invalid JSON");
@@ -1022,7 +1022,7 @@ fn usz json_escape_string(char* src, uint len, char* buf, usz buf_size) {
             uint cp = (uint)((int)c & 0x1F) << 6;
             if (i + 1 < len) { cp |= (uint)((int)src[i+1] & 0x3F); i += 2; }
             else { i++; continue; }
-            // Not a surrogate — pass through
+            // Not a surrogate, pass through
             if (pos + 2 > buf_size) break;
             buf[pos++] = (char)(0xC0 | (cp >> 6));
             buf[pos++] = (char)(0x80 | (cp & 0x3F));
@@ -1044,7 +1044,7 @@ fn usz json_escape_string(char* src, uint len, char* buf, usz buf_size) {
                     cp2 |= (uint)((int)src[next_i+1] & 0x3F) << 6;
                     cp2 |= (uint)((int)src[next_i+2] & 0x3F);
                     if (cp2 >= 0xDC00 && cp2 <= 0xDFFF) {
-                        // Valid surrogate pair — combine to supplementary code point
+                        // Valid surrogate pair, combine to supplementary code point
                         uint supplementary = 0x10000 + (cp - 0xD800) * 0x400 + (cp2 - 0xDC00);
                         i = next_i + 3;
                         // Encode as 4-byte UTF-8
@@ -1058,7 +1058,7 @@ fn usz json_escape_string(char* src, uint len, char* buf, usz buf_size) {
                 }
             }
             i = next_i;
-            // Lone surrogate — escape as \uXXXX (well-formed JSON stringify)
+            // Lone surrogate, escape as \uXXXX (well-formed JSON stringify)
             if (cp >= 0xD800 && cp <= 0xDFFF) {
                 if (pos + 6 > buf_size) break;
                 buf[pos++] = '\\'; buf[pos++] = 'u';
@@ -1067,7 +1067,7 @@ fn usz json_escape_string(char* src, uint len, char* buf, usz buf_size) {
                 buf[pos++] = hex_digits[(cp >> 4) & 0xF];
                 buf[pos++] = hex_digits[cp & 0xF];
             } else {
-                // Normal BMP character — pass through as 3-byte UTF-8
+                // Normal BMP character, pass through as 3-byte UTF-8
                 if (pos + 3 > buf_size) break;
                 buf[pos++] = (char)(0xE0 | (cp >> 12));
                 buf[pos++] = (char)(0x80 | ((cp >> 6) & 0x3F));
@@ -1091,7 +1091,7 @@ fn usz json_escape_string(char* src, uint len, char* buf, usz buf_size) {
             buf[pos++] = (char)(0x80 | (cp & 0x3F));
         }
         else {
-            // Invalid UTF-8 lead byte — skip
+            // Invalid UTF-8 lead byte, skip
             i++;
         }
     }
@@ -1167,7 +1167,7 @@ fn void json_stack_pop(JsonSerializeCtx* jctx) {
     if (jctx.visited_count > 0) jctx.visited_count--;
 }
 
-/// ES5 §9.8.1 ToString for Number values — produces the shortest string that
+/// ES5 §9.8.1 ToString for Number values, produces the shortest string that
 /// uniquely identifies the IEEE 754 double.  Writes into `buf` and returns the
 /// number of characters written.
 fn usz json_number_to_string(double d, char* buf, usz buf_size) {
@@ -1192,7 +1192,7 @@ fn usz json_number_to_string(double d, char* buf, usz buf_size) {
         return 1;
     }
     // Shortest round-trip decimal via QuickJS js_dtoa (FREE mode), same as
-    // ToString(Number) — spec exponent format, correct final-digit rounding.
+    // ToString(Number), spec exponent format, correct final-digit rounding.
     if (buf_size < 64) {
         int glen = (int)(io::bprintf(buf[:buf_size], "%.17g", d) ?? buf[:0]).len;
         return (glen > 0) ? (usz)glen : 0;
@@ -1247,7 +1247,7 @@ fn TVal json_unwrap_wrapper(JsonSerializeCtx* jctx, TVal val, bool* had_error) {
                 return result;
             }
         }
-        // No callable toString — fall back to primitive value
+        // No callable toString, fall back to primitive value
         if ((*obj.extra_ptr()).prim.primitive_value.is_string()) {
             return (*obj.extra_ptr()).prim.primitive_value;
         }
@@ -1385,8 +1385,8 @@ fn TVal json_check_property(JsonSerializeCtx* jctx, HString* key, TVal val, TVal
     }
 
     // Step 4: Unwrap wrapper objects (String/Number/Boolean/BigInt) per ES5 §15.12.3
-    // For String/Number wrappers, ToString/ToNumber calls toString()/valueOf()
-    // — must respect any overridden methods on the wrapper.
+    // For String and Number wrappers, ToString and ToNumber call toString() and
+    // valueOf(), which must respect any overridden methods on the wrapper.
     if (val.is_object() && val.get_heapptr() != null) {
         HObject* obj = (HObject*)val.get_heapptr();
         ObjClass cls = obj.get_class();
@@ -1472,7 +1472,7 @@ fn int json_serialize_object(JsonSerializeCtx* jctx, HObject* obj) {
         for (uint p = 0; p < jctx.prop_key_count; p++) {
             HString* key_hstr = jctx.prop_keys[p];
 
-            // Get value from object — full [[Get]] (accessor getters, Proxy
+            // Get value from object, full [[Get]] (accessor getters, Proxy
             // "get" trap, prototype chain).
             TVal val;
             if (!js_get(jctx.vm, jctx.heap, obj, key_hstr, &val)) {
@@ -1595,7 +1595,7 @@ fn int json_serialize_object(JsonSerializeCtx* jctx, HObject* obj) {
     } else {
         // Snapshot property keys before iterating, so that getters that delete
         // properties don't cause keys to be skipped (ES5 §15.12.3 step 4.b).
-        // We use prop_key_at(i) for i in 0..prop_count-1 — this iterates in
+        // We use prop_key_at(i) for i in 0..prop_count-1, this iterates in
         // insertion order (HObject.prop_key_at walks the shape chain, returning
         // the i-th property in insertion order).
         HString*[64] snap_keys;
@@ -1605,7 +1605,7 @@ fn int json_serialize_object(JsonSerializeCtx* jctx, HObject* obj) {
             // Skip non-enumerable properties (ES5 §15.12.3 step 4.b: only
             // enumerable own properties are serialized) and Symbol keys
             // (ES §24.5.2.1 SerializeJSONObject step 5: EnumerableOwnPropertyNames
-            // implicitly excludes Symbols — [[OwnPropertyKeys]] string filter).
+            // implicitly excludes Symbols, [[OwnPropertyKeys]] string filter).
             if (k != null && !k.is_symbol() && obj.get_prop_flags(i).enumerable) {
                 snap_keys[snap_count] = k;
                 snap_count++;
@@ -1658,7 +1658,7 @@ fn int json_serialize_object(JsonSerializeCtx* jctx, HObject* obj) {
         // Now iterate the final list.
         for (uint si = 0; si < final_count; si++) {
             HString* key_hstr = final_keys[si];
-            // Full [[Get]] — invokes accessor getters; naturally yields
+            // Full [[Get]], invokes accessor getters; naturally yields
             // undefined if the property was deleted by an earlier getter.
             TVal val;
             if (!js_get(jctx.vm, jctx.heap, obj, key_hstr, &val)) {
@@ -1667,7 +1667,7 @@ fn int json_serialize_object(JsonSerializeCtx* jctx, HObject* obj) {
             }
 
             // Apply toJSON + replacer (even without explicit replacer, this
-            // handles the spec correctly — when replacer_func is undefined
+            // handles the spec correctly, when replacer_func is undefined
             // the check just does toJSON + type unwrapping)
             bool omit = false;
             val = json_check_property(jctx, key_hstr, val, holder, &omit);
@@ -1820,14 +1820,14 @@ fn int json_serialize_array(JsonSerializeCtx* jctx, HObject* arr) {
                 elem = av;
                 found = true;
             }
-            // undefined in array_part means hole — fall through to prop lookup
+            // undefined in array_part means hole, fall through to prop lookup
         }
 
         // Build the index key for this element
         HString* idx_key = jctx.heap.int_to_hstring((long)i);
 
         if (!found) {
-            // Full [[Get]] — invokes accessor getters and Proxy "get" traps.
+            // Full [[Get]], invokes accessor getters and Proxy "get" traps.
             if (!js_get(jctx.vm, jctx.heap, arr, idx_key, &elem)) {
                 jctx.error = true;
                 return -1;
@@ -2036,7 +2036,7 @@ fn int json_serialize_val(JsonSerializeCtx* jctx, TVal* val) {
     }
 }
 
-/// JSON.stringify(value [, replacer [, space]]) — ES5 §15.12.3
+/// JSON.stringify(value [, replacer [, space]]), ES5 §15.12.3
 fn void builtin_json_stringify(BuiltinContext* ctx) {
     // Clear any stale error flag and value
     ctx.heap.has_error = false;
@@ -2108,7 +2108,7 @@ fn void builtin_json_stringify(BuiltinContext* ctx) {
                     // Read element: try dense array fast path, then full [[Get]]
                     // (Proxy "get" trap, accessors, prototype chain). A hole and
                     // an explicit `undefined` element are indistinguishable via
-                    // [[Get]] — both yield undefined, and both are skipped below
+                    // [[Get]], both yield undefined, and both are skipped below
                     // since ToString-of-undefined-derived-key never resolves.
                     TVal elem;
                     bool found = false;
@@ -2241,7 +2241,7 @@ fn void builtin_json_stringify(BuiltinContext* ctx) {
         }
     }
 
-    // Check space parameter — unwrap Number/String wrappers
+    // Check space parameter, unwrap Number/String wrappers
     uint space_num = 0;
     char[16] gap_buf;
     usz gap_len = 0;
@@ -2321,7 +2321,7 @@ fn void builtin_json_stringify(BuiltinContext* ctx) {
             }
         }
         if (is_sym_space) {
-            // Skip — leave gap empty
+            // Skip, leave gap empty
         } else if (space_arg.is_fastint()) {
             // ES5 §15.12.3 step 6: min(10, ToInteger(space)); if < 1, gap is empty
             long si = space_arg.get_fastint();
@@ -2442,7 +2442,7 @@ fn void builtin_json_stringify(BuiltinContext* ctx) {
 // JSON.rawJSON / JSON.isRawJSON (json-parse-with-source, ES2026)
 // ============================================================================
 
-/// JSON.rawJSON(text) — sec-json.rawjson.
+/// JSON.rawJSON(text), sec-json.rawjson.
 /// Returns a frozen null-prototype object with an [[IsRawJSON]] slot and a
 /// "rawJSON" data property holding the verbatim JSON text.
 fn void builtin_json_raw_json(BuiltinContext* ctx) {
@@ -2501,7 +2501,7 @@ fn void builtin_json_raw_json(BuiltinContext* ctx) {
         return;
     }
 
-    // Steps 5–8: create null-prototype object, add frozen "rawJSON" property,
+    // Steps 5-8: create null-prototype object, add frozen "rawJSON" property,
     // set [[IsRawJSON]].
     HObject*? obj_raw = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = obj_raw) { ctx.result.set_undefined(); return; }
@@ -2522,7 +2522,7 @@ fn void builtin_json_raw_json(BuiltinContext* ctx) {
     ctx.result.set_object(obj);
 }
 
-/// JSON.isRawJSON(O) — sec-json.israwjson.
+/// JSON.isRawJSON(O), sec-json.israwjson.
 fn void builtin_json_is_raw_json(BuiltinContext* ctx) {
     bool res = false;
     if (ctx.argc >= 1) {

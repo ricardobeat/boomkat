@@ -1,5 +1,5 @@
-/// Array.fromAsync ( asyncItems [ , mapfn [ , thisArg ] ] )
-/// — proposal-array-from-async (ratified for ES2026).
+/// Array.fromAsync ( asyncItems [ , mapfn [ , thisArg ] ] ), from
+/// proposal-array-from-async, ratified for ES2026.
 ///
 /// Returns a Promise that fulfills with a new array. Because this engine has
 /// no async generator functions (deferred, plan 060), the spec's async-function
@@ -13,11 +13,11 @@
 /// lives on a hidden "state" object referenced from each closure.
 ///
 /// Two source shapes share one driver:
-///   * iterator path  — @@asyncIterator, or @@iterator wrapped with
+///   * iterator path , @@asyncIterator, or @@iterator wrapped with
 ///     CreateAsyncFromSyncIterator (the AsyncFromSync adapter already
 ///     await-unwraps the value half, so the driver awaits only the next()
 ///     result and the mapped value, never the raw value).
-///   * array-like path — per-index Get + Await of the element, then optional
+///   * array-like path, per-index Get + Await of the element, then optional
 ///     mapfn + Await, then CreateDataPropertyOrThrow.
 module duktape::builtins;
 import duktape::types;
@@ -224,13 +224,13 @@ fn void afa_close_iterator(Heap* heap, void* vm, HObject* state) {
         if (!callable) return;
         TVal iter_tv; iter_tv.set_object(iter);
         heap.call_fn(vm, rm, null, 0, iter_tv);
-        // Swallow errors from return() — the original completion takes priority.
+        // Swallow errors from return(), the original completion takes priority.
         if (heap.has_error) heap.has_error = false;
     }
 }
 
 // ---------------------------------------------------------------------------
-// Main entry — Array.fromAsync
+// Main entry, Array.fromAsync
 // ---------------------------------------------------------------------------
 
 fn void builtin_array_from_async(BuiltinContext* ctx) {
@@ -242,7 +242,7 @@ fn void builtin_array_from_async(BuiltinContext* ctx) {
 
     // Create the outer result promise up front so every error path can reject
     // it and return a rejected promise (fromAsync never throws synchronously
-    // except for a bad mapfn — actually even that rejects per spec §3.i).
+    // except for a bad mapfn, actually even that rejects per spec §3.i).
     HObject*? outer_raw = promise_create(heap);
     if (catch err = outer_raw) { return; }
     HObject* outer = outer_raw;
@@ -266,7 +266,7 @@ fn void builtin_array_from_async(BuiltinContext* ctx) {
     TVal async_items;
     if (ctx.argc > 0) { async_items = ctx.regs[ctx.base_reg]; } else { async_items.set_undefined(); }
 
-    // Step 3: mapfn (arg 1). If not undefined, must be callable — else reject.
+    // Step 3: mapfn (arg 1). If not undefined, must be callable, else reject.
     TVal mapfn; mapfn.set_undefined();
     bool mapping = false;
     TVal this_arg; this_arg.set_undefined();
@@ -397,7 +397,7 @@ fn void builtin_array_from_async(BuiltinContext* ctx) {
         if (wrap_sync) {
             HObject*? adapter = async_from_sync_iterator(heap, sync_or_async_iter, ctx.vm);
             if (heap.has_error) {
-                // The sync `next` getter threw while caching [[NextMethod]] —
+                // The sync `next` getter threw while caching [[NextMethod]],
                 // reject the fromAsync promise with the thrown value.
                 TVal thrown = heap.error_value; heap.has_error = false;
                 afa_reject_outer(heap, ctx.vm, state, thrown);
@@ -484,7 +484,7 @@ fn void afa_flush_ctx_throw_to_outer(BuiltinContext* ctx, HObject* outer) {
 }
 
 /// Prologue variant: builtin_throw (which set should_throw) also clobbered
-/// ctx.result to undefined — restore the outer promise so fromAsync still
+/// ctx.result to undefined, restore the outer promise so fromAsync still
 /// RETURNS the (now rejected) promise instead of undefined. Only valid for
 /// the real fromAsync BuiltinContext, not the driver's stack-local lctx.
 fn void afa_flush_prologue_throw(BuiltinContext* ctx, HObject* outer) {
@@ -532,7 +532,7 @@ fn HObject* afa_construct_result(BuiltinContext* ctx, TVal c_val, bool with_len,
 
 /// Call iterator.next() and Await its result (which lands in
 /// builtin_array_from_async_step_fulfill). On a synchronous throw from next(),
-/// reject the outer promise directly (no iterator to close — the step failed).
+/// reject the outer promise directly (no iterator to close, the step failed).
 fn void afa_iterator_step(Heap* heap, void* vm, HObject* state) {
     HObject* iter = afa_get_obj(state, heap, AFA_ITER_SLOT);
     TVal next_method = afa_get_tval(state, heap, AFA_NEXT_SLOT);
@@ -680,12 +680,12 @@ fn bool afa_store_and_advance(BuiltinContext* ctx, HObject* state, TVal value) {
     return true;
 }
 
-/// CreateDataPropertyOrThrow(arr, key, value) — ES2022 §7.3.5.
+/// CreateDataPropertyOrThrow(arr, key, value), ES2022 §7.3.5.
 ///
 /// Routes through the full [[DefineOwnProperty]] MOP (object_define_own): a
 /// Proxy result fires its `defineProperty` trap (order-of-operations tests
 /// observe this) and any ordinary result gets correct ValidateAndApply
-/// semantics — so redefining a pre-existing non-configurable own index (e.g. a
+/// semantics, so redefining a pre-existing non-configurable own index (e.g. a
 /// custom constructor whose instances predefine a read-only element) yields
 /// res=false → a rejecting TypeError, which the simpler put_prop-only path
 /// misses. On failure closes the iterator (async path) and rejects outer.
@@ -796,7 +796,7 @@ fn void afa_arraylike_value_ready(BuiltinContext* ctx, HObject* state) {
 /// Close the iterator (if any) and reject the outer promise with the reason.
 fn void builtin_array_from_async_reject(BuiltinContext* ctx) {
     ctx.result.set_undefined();
-    // Capture the reason BEFORE clearing channels — the reject reason lives in
+    // Capture the reason BEFORE clearing channels, the reject reason lives in
     // ctx.regs, but a stale sibling-thrower error must not leak to the caller's
     // handler drained after us.
     TVal reason; reason.set_undefined();

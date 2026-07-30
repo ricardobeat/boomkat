@@ -35,7 +35,7 @@ fn void print_tval_ctx(BuiltinContext* ctx, TVal* val) {
                             return;
                         }
                     }
-                    // toString returned a non-string primitive — fall through to print_tval
+                    // toString returned a non-string primitive, fall through to print_tval
                     if (!str_result.is_object()) {
                         print_tval(&str_result);
                         return;
@@ -43,7 +43,7 @@ fn void print_tval_ctx(BuiltinContext* ctx, TVal* val) {
                 }
             }
         }
-        // No callable toString found — fall back to generic "[object Object]"
+        // No callable toString found, fall back to generic "[object Object]"
         io::printf("[object Object]");
         return;
     }
@@ -86,12 +86,12 @@ fn void builtin_console_error(BuiltinContext* ctx) {
 }
 
 fn void builtin_console_dir(BuiltinContext* ctx) {
-    // console.dir(obj) — for now identical output to console.log (no util.inspect
+    // console.dir(obj), for now identical output to console.log (no util.inspect
     // formatting). Spec only requires this be callable and return undefined.
     console_print_args(ctx, false);
 }
 
-/// console.assert(expr, ...msg) — if expr is falsy, emit "Assertion failed:" and
+/// console.assert(expr, ...msg), if expr is falsy, emit "Assertion failed:" and
 /// the remaining args to stderr. If truthy, produce no output. Returns undefined.
 fn void builtin_console_assert(BuiltinContext* ctx) {
     if (ctx.argc < 1) {
@@ -208,9 +208,9 @@ fn void builtin_parse_int(BuiltinContext* ctx) {
         ctx.result.set_number(double::nan);
         return;
     }
-    // ES2015 §18.2.5: parseInt(string, radix) — ToString(string) first.
+    // ES2015 §18.2.5: parseInt(string, radix), ToString(string) first.
     // The previous fast-path returned fastints directly (skipping ToString) and
-    // bailed to NaN for any non-string input — wrong for Number(-0), Number(NaN),
+    // bailed to NaN for any non-string input, wrong for Number(-0), Number(NaN),
     // Boolean values, etc. The spec defines parseInt on the string form of the
     // argument regardless of input type.
     TVal* arg = &ctx.regs[ctx.base_reg];
@@ -352,9 +352,9 @@ fn void builtin_parse_float(BuiltinContext* ctx) {
         ctx.result.set_number(double::nan);
         return;
     }
-    // ES2015 §18.2.4: parseFloat(string) — ToString(string) first. The previous
+    // ES2015 §18.2.4: parseFloat(string), ToString(string) first. The previous
     // direct-call into string_to_double returned NaN for booleans, undefined,
-    // null, and objects — wrong because the spec coerces any input type to a
+    // null, and objects, wrong because the spec coerces any input type to a
     // string first (e.g. parseFloat(true) is NaN, parseFloat("3.14") is 3.14).
     TVal* arg = &ctx.regs[ctx.base_reg];
     HString* h;
@@ -387,7 +387,7 @@ fn void builtin_parse_float(BuiltinContext* ctx) {
     // Grammar: [+-]? (Infinity | DecimalDigits? "." DecimalDigits? Exponent?
     //                  | DecimalDigits Exponent?)
     // Crucially, this does NOT include the "0x"/"0X" hex prefix that
-    // StringNumericLiteral (used by ToNumber) accepts — parseFloat rejects hex.
+    // StringNumericLiteral (used by ToNumber) accepts, parseFloat rejects hex.
     usz start = i;
     if (i < blen && (cstr[i] == '+' || cstr[i] == '-')) i++;
 
@@ -410,12 +410,12 @@ fn void builtin_parse_float(BuiltinContext* ctx) {
     }
 
     if (!saw_int_digit && !saw_frac_digit) {
-        // No digits at all (bare sign, bare '.', or neither) — not a number.
+        // No digits at all (bare sign, bare '.', or neither), not a number.
         ctx.result.set_number(double::nan);
         return;
     }
 
-    // Optional exponent — only valid once a mantissa digit was seen.
+    // Optional exponent, only valid once a mantissa digit was seen.
     if (i < blen && (cstr[i] == 'e' || cstr[i] == 'E')) {
         usz exp_save = i;
         usz j = i + 1;
@@ -425,12 +425,12 @@ fn void builtin_parse_float(BuiltinContext* ctx) {
         if (j > exp_digits_start) {
             i = j;
         } else {
-            i = exp_save; // malformed exponent — not part of the literal
+            i = exp_save; // malformed exponent, not part of the literal
         }
     }
 
     // Copy just the matched StrDecimalLiteral prefix into a bounded, NUL-terminated
-    // buffer before handing it to strtod — passing `&cstr[start]` directly would let
+    // buffer before handing it to strtod, passing `&cstr[start]` directly would let
     // strtod's own scanner run past our match (e.g. re-parsing "0x1" as a hex float
     // after we correctly stopped at "0"), producing a value parseFloat must reject.
     usz match_len = i - start;
@@ -477,7 +477,7 @@ fn void builtin_eval(BuiltinContext* ctx) {
     // eval is registered as a lightfunc (register_simple_builtin), so when
     // it is reached via Heap.call_fn (vm_call_fn_impl's Case 1) rather than
     // an ordinary CALL, `ctx.result` aliases `temp_regs[0]`, which was
-    // pre-seeded with a raw, non-incref'd copy of `this` — the same hazard
+    // pre-seeded with a raw, non-incref'd copy of `this`, the same hazard
     // documented on builtin_iterator_proto_symbol_iter. tval_copy_ref would
     // decref that borrowed `this` out from under the caller. A bare incref
     // (nothing to decref: the stale bits were never independently owned)
@@ -498,19 +498,19 @@ fn void builtin_eval(BuiltinContext* ctx) {
     usz src_len = source.blen;
 
     // Direct eval shares the caller's lexical environment (checked again,
-    // and used to pick env_for_eval, below) — including any `__super__`
+    // and used to pick env_for_eval, below), including any `__super__`
     // hidden binding, so `super.x`/`super[x]` may legally appear in the
     // source. Detect this before compiling so the eval CompilerContext can
     // permit the syntax (see compile_eval's allow_super doc comment).
     //
     // Per ES2022 §8.7.1, direct eval ALSO inherits the caller's
-    // PrivateEnvironment — i.e. private field/method references inside the
+    // PrivateEnvironment, i.e. private field/method references inside the
     // eval body resolve against the calling class body's declared names.
     // The caller (the function whose body contains `eval(...)`) stashed a
     // snapshot of its private-name table into its CompiledFunction when it
     // finished compiling (see context.c3 CompilerContext.finish). At runtime
     // we read that snapshot here and hand it to compile_eval, which adopts
-    // it into the fresh eval CompilerContext — after that the eval body's
+    // it into the fresh eval CompilerContext, after that the eval body's
     // `this.#m` reference resolves through `resolve_private_name` exactly
     // like a method body's reference would.
     vm::Vm* precheck_vm = (vm::Vm*)ctx.vm;
@@ -539,10 +539,10 @@ fn void builtin_eval(BuiltinContext* ctx) {
         caller_has_direct_eval = (precheck_caller.flags & vm::ACT_FLAG_DIRECT_EVAL) != 0;
         if (caller_has_direct_eval) {
             // precheck_caller.func is the caller's CompiledFunction template
-            // (for natfunc frames — like this builtin itself — the func slot
+            // (for natfunc frames, like this builtin itself, the func slot
             // isn't a CompiledFunction, so guard the cast). For compiled
             // function frames (the only paths that set ACT_FLAG_DIRECT_EVAL),
-            // func is always the corresponding CompiledFunction* — see
+            // func is always the corresponding CompiledFunction*, see
             // vm_core.c3 act_creation paths and how `target` is read.
             // The cast is safe because has_direct_eval is a function-level
             // flag that's only ever set on compiled function bodies.
@@ -552,7 +552,7 @@ fn void builtin_eval(BuiltinContext* ctx) {
                     // Nested direct eval: the immediate caller is itself an
                     // eval body (which always sets is_global). new.target is
                     // legal in the inner eval exactly when it was legal in the
-                    // enclosing eval — inherit that recorded permission rather
+                    // enclosing eval, inherit that recorded permission rather
                     // than mis-classifying the eval CF as global code.
                     caller_direct_eval_in_function = caller_cf.eval_allows_new_target();
                 } else if (!caller_cf.is_arrow() && !caller_cf.is_global_fn()) {
@@ -568,7 +568,7 @@ fn void builtin_eval(BuiltinContext* ctx) {
                     caller_eval_allows_super = true;
                 }
                 // super() (not super.x) is additionally permitted only when the
-                // enclosing function is a derived-class constructor — its
+                // enclosing function is a derived-class constructor, its
                 // FunctionEnvironmentRecord carries __super__ (the superclass
                 // constructor) and an uninitialised this-binding. See
                 // compile_eval's allow_super_call parameter.
@@ -580,9 +580,9 @@ fn void builtin_eval(BuiltinContext* ctx) {
                 parent_priv_count = caller_cf.eval_private_name_count;
                 // ContainsArguments (ES2022 §15.7.10 step 14): a direct eval
                 // called from a class field/static initializer or static
-                // block — or from another eval body that itself inherited
+                // block, or from another eval body that itself inherited
                 // the restriction (forbid_arguments is stamped on every
-                // compiled body, including nested eval CFs) — must reject a
+                // compiled body, including nested eval CFs), must reject a
                 // bare `arguments` in its own source at eval-call time.
                 caller_forbids_arguments = caller_cf.forbid_arguments();
             }
@@ -651,7 +651,7 @@ fn void builtin_eval(BuiltinContext* ctx) {
     EnvRecord* var_env_for_eval = ctx.global_env;
     TVal caller_this;
     caller_this.set_undefined();
-    // Reuse the activation captured in the precheck above — by the time we
+    // Reuse the activation captured in the precheck above, by the time we
     // get here, the only thing that could have changed is act_count itself
     // (no extra activations can be pushed between the precheck and this
     // block because builtin_eval runs to completion on this thread before
@@ -710,7 +710,7 @@ fn void builtin_eval(BuiltinContext* ctx) {
     //   - Indirect eval: thisArg = the global object
     //   - Direct eval: thisArg = the calling context's this binding
     // The re-dispatch CALL handler runs the eval'd function with `this`
-    // in the (base_reg - 1) slot — we overwrite it here since the CALL
+    // in the (base_reg - 1) slot, we overwrite it here since the CALL
     // handler for a bare `eval(...)` call site always loads `undefined`
     // there (no receiver object precedes a plain identifier callee).
     TVal this_tv;
@@ -733,7 +733,7 @@ fn void builtin_eval(BuiltinContext* ctx) {
     ctx.re_nargs = 0;
 }
 
-/// $262.evalScript(src) — the test262 host hook that runs `src` as an
+/// $262.evalScript(src), the test262 host hook that runs `src` as an
 /// independent global Script (ES2015 §18.2.1 ScriptEvaluation), NOT as an
 /// eval call. Unlike `eval`, this is never "direct" or "indirect": the
 /// compiled Program always gets a fresh top-level activation whose
@@ -790,7 +790,7 @@ fn void builtin_eval_script(BuiltinContext* ctx) {
         return;
     }
     if (!ok) {
-        // Uncaught throw inside the script — propagate it as this builtin's
+        // Uncaught throw inside the script, propagate it as this builtin's
         // own throw (execute_module_nested left it in heap.error_value).
         ctx.should_throw = true;
         ctx.throw_value = ctx.heap.error_value;
@@ -803,7 +803,7 @@ fn void builtin_eval_script(BuiltinContext* ctx) {
         // could not pump the microtask queue to completion because it was
         // itself reached from inside a drain (e.g. $262.evalScript invoked
         // from a .then() callback). Nothing here needs to observe its
-        // eventual settlement — the pinning reference handed off is simply
+        // eventual settlement, the pinning reference handed off is simply
         // released, matching the not-draining path's own transient pin.
         ctx.heap.decref(pending.as_header());
     }
@@ -838,12 +838,12 @@ fn int hex_digit_val(char c) {
 alias UriExtraUnreservedFn = fn bool(char);
 
 /// Shared Encode (ES §19.2.6.5) body driving both encodeURI and
-/// encodeURIComponent — they differ only in which ASCII punctuation passes
+/// encodeURIComponent, they differ only in which ASCII punctuation passes
 /// through unescaped (`extra_unreserved`). Walks `str` by UTF-16 code unit
 /// (internal storage is CESU-8: every surrogate half is its own 3-byte
-/// sequence — see hstring's CESU-8 utilities), pairs surrogates back into
+/// sequence, see hstring's CESU-8 utilities), pairs surrogates back into
 /// astral codepoints, UTF-8-encodes each codepoint's bytes as %XX triplets,
-/// and throws URIError on any lone (unpaired) surrogate — Encode is defined
+/// and throws URIError on any lone (unpaired) surrogate, Encode is defined
 /// over Unicode code points, and a lone surrogate is not one.
 fn void uri_encode(BuiltinContext* ctx, HString* str, UriExtraUnreservedFn extra_unreserved) {
     char[] data = str.get_data();
@@ -931,11 +931,11 @@ fn void builtin_encode_uri_component(BuiltinContext* ctx) {
 /// Decode a single %XX-escaped UTF-8 sequence starting at `data[i]` (which
 /// must be '%') into a Unicode code point. Validates continuation bytes,
 /// rejects overlong encodings, out-of-range code points (> U+10FFFF), and
-/// lone surrogates (a valid code point can never be a surrogate half — RFC
+/// lone surrogates (a valid code point can never be a surrogate half, RFC
 /// 3629 / ES §19.2.6.6 Decode step 7.f-g). On success, sets `*cp` and
 /// `*consumed` (number of source bytes eaten, i.e. 3 * byte-sequence-length)
 /// and returns true. On any malformed input returns false and leaves the
-/// outputs unspecified — the caller throws URIError.
+/// outputs unspecified, the caller throws URIError.
 fn bool uri_decode_sequence(char[] data, uint i, uint len, uint* cp, uint* consumed) {
     if (i + 2 >= len) return false;
     int d1 = hex_digit_val(data[i + 1]);
@@ -966,7 +966,7 @@ fn bool uri_decode_sequence(char[] data, uint i, uint len, uint* cp, uint* consu
     }
     // Continuation bytes are already structurally valid at this point, so
     // decode_codepoint can only differ from a genuine decode by rejecting an
-    // overlong encoding (which it also reports as UNICODE_REPLACEMENT — the
+    // overlong encoding (which it also reports as UNICODE_REPLACEMENT, the
     // same sentinel a *legitimately* decoded U+FFFD would produce). Detect
     // overlong directly instead of relying on that sentinel, so decoding an
     // actual "%EF%BF%BD" (U+FFFD) is not mistaken for malformed input.
@@ -984,7 +984,7 @@ fn bool uri_decode_sequence(char[] data, uint i, uint len, uint* cp, uint* consu
 
 /// Write `cp` into `out` at `*offset` as a CESU-8-canonical UTF-16 code-unit
 /// sequence: astral code points split into a surrogate pair (each half its
-/// own 3-byte sequence), everything else via plain UTF-8 — matching the
+/// own 3-byte sequence), everything else via plain UTF-8, matching the
 /// storage format every interned HString must be in.
 fn void uri_decode_emit(char* out, usz* offset, uint cp) {
     char[6] buf;
