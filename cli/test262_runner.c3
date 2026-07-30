@@ -1,13 +1,13 @@
-/// Batch test262 runner — reuses a single heap+VM across tests, resetting
+/// Batch test262 runner, reuses a single heap+VM across tests, resetting
 /// state between runs to avoid per-test malloc/free churn that causes RSS bloat.
 ///
 /// Reset protocol (between tests):
-///   1. heap.reset()  — frees all HObject allocations, string table, env pools,
+///   1. heap.reset() , frees all HObject allocations, string table, env pools,
 ///      shapes, compiled functions, module cache, and all pool-backed memory.
 ///      ⚠️  heap.reset() MUST also clear the megamorphic property cache
-///      (mega_cache) — pool allocators reset to the same starting addresses
+///      (mega_cache), pool allocators reset to the same starting addresses
 ///      so new objects can get false cache hits against stale entries.
-///   2. vm_destroy() + vm_create() — destroys the old VM (frees valstack, VM struct)
+///   2. vm_destroy() + vm_create(), destroys the old VM (frees valstack, VM struct)
 ///      and creates a fresh one.  vm_create() calls register_builtins() which
 ///      re-populates all builtin prototypes, constructors, and methods.
 ///      vm_reset() exists as a lighter alternative but is not used here.
@@ -74,7 +74,7 @@ fn int run_manifest_loop(char[] mpath) {
 
             bool report = (total % 100 == 0);
 
-            // Reset heap+VM — destroy+recreate VM to avoid stale-reference bugs.
+            // Reset heap+VM, destroy+recreate VM to avoid stale-reference bugs.
             // Null out `v` between destroy and a successful recreate so that a
             // failed vm_create cannot leave `v` pointing at freed memory (which
             // the next iteration's vm_destroy, or the final one, would double-free).
@@ -135,7 +135,7 @@ fn int exec_js(Vm* v, Heap* hp, char[] src) {
 
 const char[] MIN_HARNESS = "var __test262_fail=0;function Test262Error(msg){this.message=msg||'';}Test262Error.prototype.toString=function(){return'Test262Error: '+this.message;};Test262Error.thrower=function(m){throw new Test262Error(m);};function $DONOTEVALUATE(){throw'Test262: This statement should not be evaluated.';}function $ERROR(msg){__test262_fail++;}function $FAIL(msg){__test262_fail++;}function isNegativeZero(v){return v===0&&1/v===-Infinity;}function isPrimitive(v){return!v||(typeof v!=='object'&&typeof v!=='function');}function formatIdentityFreeValue(v){switch(v===null?'null':typeof v){case'string':return typeof JSON!=='undefined'?JSON.stringify(v):'\"'+v+'\"';case'bigint':return String(v)+'n';case'number':if(isNegativeZero(v))return'-0';case'boolean':case'undefined':case'null':return String(v);}return'';}function formatSimpleValue(v){var b=formatIdentityFreeValue(v);if(b)return b;try{return String(v);}catch(e){if(e.name==='TypeError')return Object.prototype.toString.call(v);throw e;}}function assert(m,b){if(m===true)return;if(b===undefined)b='Expected true but got '+assert._toString(m);throw new Test262Error(b);}assert._isSameValue=function(a,b){if(a===b)return a!==0||1/a===1/b;return a!==a&&b!==b;};assert.sameValue=function(a,e,m){try{if(assert._isSameValue(a,e))return;}catch(e){throw new Test262Error(m+'(_isSameValue threw)'+e);}if(m===undefined)m='';else m+=' ';m+='Expected SameValue(\\u00AB'+assert._toString(a)+'\\u00BB, \\u00AB'+assert._toString(e)+'\\u00BB) to be true';throw new Test262Error(m);};assert.notSameValue=function(a,u,m){if(!assert._isSameValue(a,u))return;if(m===undefined)m='';else m+=' ';m+='Expected SameValue(\\u00AB'+assert._toString(a)+'\\u00BB, \\u00AB'+assert._toString(u)+'\\u00BB) to be false';throw new Test262Error(m);};assert.throws=function(e,f,m){if(typeof f!=='function')throw new Test262Error('assert.throws requires two arguments');if(m===undefined)m='';else m+=' ';try{f();}catch(t){if(typeof t!=='object'||t===null){m+='Thrown value was not an object!';throw new Test262Error(m);}if(e===Error||t instanceof e){}else{}}return;};assert._toString=function(o){try{return''+o;}catch(e){return'[error in toString: '+e.message+']';}};";
 
-// Simplified nativeFunctionMatcher — avoids \uXXXX regex escapes and
+// Simplified nativeFunctionMatcher, avoids \uXXXX regex escapes and
 // string escape sequences that the engine doesn't support.
 // Uses charCodeAt() for character code comparisons.
 const char[] NFM_HARNESS = "function validateNativeFunctionSource(source){var pos=0;function isNewline(c){var n=c.charCodeAt(0);return n===10||n===13||n===8232||n===8233;}function isWhitespace(c){var n=c.charCodeAt(0);return n===9||n===11||n===12||n===32||n===160||n===65279;}function eatWhitespace(){while(pos<source.length){var c=source[pos];if(isWhitespace(c)||isNewline(c)){pos++;continue;}if(c==='/'){if(source[pos+1]==='/'){while(pos<source.length){if(isNewline(source[pos]))break;pos++;}continue;}if(source[pos+1]==='*'){var end=source.indexOf('*/',pos);if(end===-1)throw SyntaxError();pos=end+2;continue;}}break;}}function isIDStart(c){return/[A-Za-z_$]/.test(c);}function isIDContinue(c){return/[0-9A-Za-z_$]/.test(c);}function getIdentifier(){eatWhitespace();var start=pos;var end=pos;switch(source[end]){case'_':case'$':end++;break;default:if(isIDStart(source[end])){end++;break;}return null;}while(end<source.length){var c=source[end];switch(c){case'_':case'$':end++;break;default:if(isIDContinue(c)){end++;break;}return source.slice(start,end);}}return source.slice(start,end);}function test(s){eatWhitespace();if(/\\w/.test(s))return getIdentifier()===s;return source.slice(pos,pos+s.length)===s;}function eat(s){if(test(s)){pos+=s.length;return true;}return false;}function eatIdentifier(){var n=getIdentifier();if(n!==null){pos+=n.length;return true;}return false;}function expect(s){if(!eat(s))throw SyntaxError();}function eatString(){var ch=source.charCodeAt(pos);if(ch===39||ch===34){var match=source[pos];pos++;while(pos<source.length){var cur=source.charCodeAt(pos);if(cur===match&&source.charCodeAt(pos-1)!==92)return;if(isNewline(source[pos]))throw SyntaxError();pos++;}throw SyntaxError();}}function stumbleUntil(c){var m={']':'[',')':'('}[c];var nesting=1;while(pos<source.length){eatWhitespace();eatString();if(source[pos]===m)nesting++;else if(source[pos]===c)nesting--;pos++;if(nesting===0)return;}throw SyntaxError();}expect('function');eat('get')||eat('set');if(!eatIdentifier()&&eat('['))stumbleUntil(']');expect('(');stumbleUntil(')');expect('{');expect('[');expect('native');expect('code');expect(']');expect('}');eatWhitespace();if(pos!==source.length)throw SyntaxError();}function assertToStringOrNativeFunction(fn,expected){var actual=''+fn;try{assert.sameValue(actual,expected);}catch(unused){assertNativeFunction(fn,expected);}}function assertNativeFunction(fn,special){var actual=''+fn;try{validateNativeFunctionSource(actual);}catch(unused){throw new Test262Error('Conforms to NativeFunction Syntax: '+JSON.stringify(actual)+(special?' ('+special+')':''));}}";
@@ -187,7 +187,7 @@ fn void load_test_includes(Vm* v, Heap* hp, char[] src) {
         // NFM_HARNESS (it avoids \uXXXX regex escapes). Loading the on-disk
         // copy again would re-declare its top-level `const` bindings over the
         // already-installed ones, a genuine GlobalDeclarationInstantiation
-        // SyntaxError — so skip it, exactly as assert.js/propertyHelper.js are
+        // SyntaxError, so skip it, exactly as assert.js/propertyHelper.js are
         // never re-loaded from an `includes:` list.
         {
             char[] want = "nativeFunctionMatcher.js";
@@ -235,8 +235,8 @@ fn bool is_async_test(char[] src) {
 /// Detect if test source has `flags: [module]` in its frontmatter.
 /// Module code changes parse-time semantics (e.g. `await` is always reserved,
 /// top-level `import`/`export` are allowed, the body is implicitly strict),
-/// so `flags: [module]` tests must be compiled via compile_module — not the
-/// plain script path — or negative-parse module tests silently "pass" as
+/// so `flags: [module]` tests must be compiled via compile_module, not the
+/// plain script path, or negative-parse module tests silently "pass" as
 /// scripts.
 fn bool contains_substr(char[] haystack, char[] needle) {
     if (needle.len > haystack.len) return false;
@@ -264,7 +264,7 @@ fn bool is_module_test(char[] path, char[] src) {
         i++;
     }
     // No "flags:" block at all. Per test262 INTERPRETING.md, absence of the
-    // `module` flag means the test is global (script) code — directory
+    // `module` flag means the test is global (script) code, directory
     // placement is not itself a mode signal (e.g.
     // language/module-code/top-level-await/new-await-script-code.js has no
     // `flags:` block and deliberately tests SCRIPT semantics). The one
@@ -279,10 +279,10 @@ fn bool is_module_test(char[] path, char[] src) {
             ? (contains_substr(src, "import") || contains_substr(src, "export"))
             : false;
     }
-    // A `flags:` block IS present — trust it over the path prefix. A test
+    // A `flags:` block IS present, trust it over the path prefix. A test
     // whose frontmatter explicitly lists flags without "module" (e.g.
     // `flags: [async]`) is deliberately exercising non-module/script-code
-    // semantics even when physically filed under module-code/ — see
+    // semantics even when physically filed under module-code/, see
     // language/module-code/top-level-await/new-await-script-code.js, which
     // tests that `await` is a legal identifier/class name in SCRIPT code and
     // must not be parsed via the module (always-reserved-await) path.
@@ -299,9 +299,9 @@ fn bool is_module_test(char[] path, char[] src) {
 /// Negative-test phase, extracted from `negative:\n  phase: <p>` frontmatter.
 enum NegPhase : int {
     NONE,        // not a negative test
-    PARSE,       // negative: phase: parse      — a compile/parse (early) error is expected
-    RESOLUTION,  // negative: phase: resolution — a module-resolution error is expected
-    RUNTIME,     // negative: phase: runtime    — a runtime throw is expected
+    PARSE,       // negative: phase: parse     , a compile/parse (early) error is expected
+    RESOLUTION,  // negative: phase: resolution, a module-resolution error is expected
+    RUNTIME,     // negative: phase: runtime   , a runtime throw is expected
 }
 
 /// Extract the `type:` (expected error constructor name) from the `negative:`
@@ -346,7 +346,7 @@ fn usz negative_type(char[] src, char[] out) {
 /// own/inherited property. Returns true on match.
 fn bool thrown_type_matches(Vm* v, Heap* hp, char[] expected) {
     // The uncaught-error unwind clears vm.throw_value/throw_pending, but the
-    // thrown value persists in heap.error_value — read it from there. (v is
+    // thrown value persists in heap.error_value, read it from there. (v is
     // kept in the signature for symmetry with the rest of the harness API.)
     TVal thrown_val = hp.error_value;
     if (!thrown_val.is_object()) {
@@ -418,10 +418,10 @@ fn bool thrown_type_matches(Vm* v, Heap* hp, char[] expected) {
 /// Parse the `negative:` frontmatter block and return its declared phase.
 ///
 /// Runtime-negative tests are the dangerous case: many (all 40 in the corpus)
-/// have NO local try/assert.throws — the comment in e.g.
+/// have NO local try/assert.throws, the comment in e.g.
 /// eval-code/direct/strict-caller-global.js explicitly says they *rely on the
 /// negative frontmatter* to assert the error. Without inverting the verdict,
-/// the worker scores a correct throw as FAIL and a (buggy) non-throw as PASS —
+/// the worker scores a correct throw as FAIL and a buggy non-throw as PASS, so
 /// i.e. it rewards implementing the reverse of the spec. run_one_test() uses
 /// this to invert the runtime-negative verdict.
 fn NegPhase negative_phase(char[] src) {
@@ -440,7 +440,7 @@ fn NegPhase negative_phase(char[] src) {
         i++;
     }
     if (!found) return NegPhase.NONE;
-    // Find "phase:" after "negative:" — scan a bounded window (the YAML block).
+    // Find "phase:" after "negative:", scan a bounded window (the YAML block).
     usz block_end = i + 256 < scan_end ? i + 256 : scan_end;
     while (i + 6 < block_end) {
         if (src[i] == 'p' && src[i+1] == 'h' && src[i+2] == 'a' && src[i+3] == 's'
@@ -581,18 +581,18 @@ fn int run_one_test(Vm* v, Heap* hp, char[] test_path, char[] assert_src, char[]
     }
 
     // `negative: phase: runtime` tests expect the *execution* to throw, and
-    // (in this corpus, all 40 of them) have no local try/assert.throws — they
+    // (in this corpus, all 40 of them) have no local try/assert.throws, they
     // rely entirely on this frontmatter. Per test262 INTERPRETING.md a negative
     // test passes only if it throws AND the thrown exception's constructor name
     // matches the declared `type` AND the error occurs at the declared phase.
     // Invert the verdict accordingly. Without this the worker rewards
     // implementing the reverse of the spec (a non-throwing bug scores PASS, or
-    // a throw of the *wrong* type — e.g. the annexB HTML-comment tests that
-    // threw ReferenceError instead of the expected error — scores PASS).
+    // a throw of the wrong type, such as the annexB HTML-comment tests that
+    // threw ReferenceError instead of the expected error, scores PASS).
     if (neg == NegPhase.RUNTIME) {
         if (src_rc == 2) {
             io::eprintfn("  FAIL: runtime-negative threw at parse time, not runtime");
-            return 1;  // wrong phase — a real mismatch, not the expected error
+            return 1;  // wrong phase, a real mismatch, not the expected error
         }
         if (src_rc == 0) {
             io::eprintfn("  FAIL: runtime-negative completed without throwing");
@@ -602,24 +602,24 @@ fn int run_one_test(Vm* v, Heap* hp, char[] test_path, char[] assert_src, char[]
         char[64] tbuf;
         usz tn = negative_type(src, tbuf[..]);
         if (tn == 0) {
-            return 0;  // no declared type — a runtime throw alone suffices
+            return 0;  // no declared type, a runtime throw alone suffices
         }
         if (thrown_type_matches(v, hp, tbuf[:tn])) {
-            return 0;  // threw the expected error type at runtime — pass
+            return 0;  // threw the expected error type at runtime, pass
         }
         io::eprintfn("  FAIL: runtime-negative threw wrong error type (wanted %s)", (String)tbuf[:tn]);
-        return 1;  // threw, but not the declared type — fail
+        return 1;  // threw, but not the declared type, fail
     }
 
     // `negative: phase: parse` tests expect an early (parse-time) error. Our
     // compiler surfaces every early error as a compile error (src_rc == 2), so
-    // a compile error IS the expected outcome — the corpus's parse-negatives
+    // a compile error is the expected outcome, since the corpus's parse-negatives
     // all declare SyntaxError, which is exactly what an early parse rejection
     // represents. This mirrors the python runner's categorize_ce(), which maps
     // a CE on a `negative: phase: parse` test to a pass. A parse-negative that
     // compiled clean (src_rc != 2) failed to reject and is a real bug.
     if (neg == NegPhase.PARSE) {
-        if (src_rc == 2) { return 0; }  // expected early error — pass
+        if (src_rc == 2) { return 0; }  // expected early error, pass
         io::eprintfn("  FAIL: parse-negative did not reject at parse time");
         return 1;
     }
@@ -633,7 +633,7 @@ fn int run_one_test(Vm* v, Heap* hp, char[] test_path, char[] assert_src, char[]
     // for these corpus tests. Only a clean run (src_rc == 0) means the module
     // failed to reject and is a real bug.
     if (neg == NegPhase.RESOLUTION) {
-        if (src_rc != 0) { return 0; }  // rejected during resolve/link — pass
+        if (src_rc != 0) { return 0; }  // rejected during resolve/link, pass
         io::eprintfn("  FAIL: resolution-negative did not reject at link time");
         return 1;
     }
@@ -687,14 +687,14 @@ fn int run_one_test(Vm* v, Heap* hp, char[] test_path, char[] assert_src, char[]
         if (after == before && drain_i > 5) break;  // settled (no new enqueues this pass)
     }
     // For async tests: if the async_done flag isn't set but the queue drained,
-    // the test's promise chain must have settled without calling $DONE — bail
+    // the test's promise chain must have settled without calling $DONE, so bail
     // out so the per-test "async test never called $DONE" check fires rather
     // than letting the test return 0 from this point.
     if (async_test && drain_loops == 0) {
         // No drain happened; fall through to the normal check.
     }
 
-    // For async tests, verify that $DONE was actually called — a test that
+    // For async tests, verify that $DONE was actually called, a test that
     // sets up a promise but never settles is a harness failure, not a pass.
     if (async_test) {
         char[] adk = "__test262_async_done";
@@ -704,7 +704,7 @@ fn int run_one_test(Vm* v, Heap* hp, char[] test_path, char[] assert_src, char[]
             TVal? adtv = env::env_get(v.global_env, adks);
             if (try adval = adtv) {
                 if (adval.get_fastint() == 0) {
-                    // $DONE was never called — async test didn't settle
+                    // $DONE was never called, async test didn't settle
                     io::eprintfn("  FAIL: async test never called $DONE (drained %d loops, queue=%d)", drain_loops, hp.microtask_count);
                     return 1;
                 }
@@ -759,7 +759,7 @@ fn int run_worker_loop() {
             if (catch line_opt) { eof = true; } else { line = line_opt; }
             if (eof || line.len == 0) { continue; }
 
-            // Reset heap+VM — destroy+recreate VM to avoid stale-reference bugs.
+            // Reset heap+VM, destroy+recreate VM to avoid stale-reference bugs.
             // Null out `v` between destroy and a successful recreate so that a
             // failed vm_create cannot leave `v` pointing at freed memory (which
             // the next iteration's vm_destroy, or the final one, would double-free).

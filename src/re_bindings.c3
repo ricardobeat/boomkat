@@ -1,5 +1,5 @@
 /*
- * RegExp C bindings — C3 interop with QuickJS libregexp via re_wrapper
+ * RegExp C bindings: C3 interop with QuickJS libregexp through re_wrapper
  */
 module duktape::re_bindings;
 

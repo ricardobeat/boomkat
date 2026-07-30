@@ -1,4 +1,4 @@
-/// Duktape C3 port — debug/inspection CLI.
+/// The debug and inspection CLI.
 ///
 /// The inspection counterpart to the plain `duktape_c3` runner: same engine,
 /// plus flags to disassemble bytecode, trace execution, and time stages. To
@@ -166,7 +166,7 @@ fn int main(String[] args) {
             return 1;
         }
         // A dynamic import() enqueues its resolve/link/evaluate pipeline as a
-        // job rather than running inline (see esm::dynamic_import) — drain
+        // job rather than running inline (see esm::dynamic_import), so drain
         // it out so top-level `import()` calls in a module run under -m
         // actually complete before the process exits.
         for (int drain_i = 0; drain_i < 1000; drain_i++) {
@@ -178,7 +178,7 @@ fn int main(String[] args) {
         }
         // mod itself may have settled asynchronously during the drain above
         // (a rejected top-level await, or a rejected async dependency it was
-        // transitively chained onto — see esm::execute_module's async_dep
+        // transitively chained onto; see esm::execute_module's async_dep
         // handling) rather than synchronously in the execute_module call.
         if (mod.status == esm::ModuleStatus.ERRORED) {
             if (mod.has_eval_error) {
@@ -210,7 +210,7 @@ fn int main(String[] args) {
     if (debug) io::printfn("  compile:     %d us", (int)(time::now() - t3));
 
 $if $feature(TRACE_VM):
-    // TRACE_VM enabled — disassemble and trace flags work fully. Nothing to do.
+    // With TRACE_VM enabled the disassemble and trace flags work fully.
 $else
     // When -c/-t/--format is requested on a release build, the disassemble
     // bodies and vm trace helpers are no-ops. Notify the user once instead
@@ -257,7 +257,7 @@ $endif
     if (catch err = res) {
         // If the VM recorded an uncaught JS exception (set by vm_uncaught_error
         // or the THROW opcode), print it as a clean "Uncaught: <message>" line.
-        // Otherwise it's a true VM-level fault — show the crash dump.
+        // Otherwise this is a true VM-level fault, so show the crash dump.
         if (v.heap.has_error) {
             print_uncaught_error(v.heap, &v.heap.error_value);
         } else {
@@ -393,7 +393,7 @@ fn void print_tval_stdout(TVal* v) {
 }
 
 // ============================================================================
-// Crash dump — print VM state on error
+// Crash dump: print VM state on error
 // ============================================================================
 
 fn void dump_vm_state(Vm* v) {
@@ -544,6 +544,3 @@ fn void print_tval_stderr(TVal* v) {
     }
 }
 
-// ============================================================================
-// Deprecated — kept for backward compat, not used by new code
-// ============================================================================

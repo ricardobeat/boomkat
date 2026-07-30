@@ -1,5 +1,5 @@
 /*
- * dtoa bindings — C3 interop with QuickJS dtoa.c via dtoa_wrapper.
+ * dtoa bindings: C3 interop with QuickJS dtoa.c through dtoa_wrapper.
  *
  * QuickJS' `js_atod` is a David-Gay-style decimal parser that matches
  * V8/SpiderMonkey, so literals like `0.1 + 0.2` and `8.3 - 1` round-trip
@@ -26,12 +26,12 @@ const int JS_DTOA_EXP_ENABLED  = 4;
 /*
  * Parse a number from `str` (need not be null-terminated).
  *
- *   str   — C string to parse.
- *   pnext — out parameter; on success points to the first unconsumed char,
+ *   str:   the C string to parse.
+ *   pnext: out parameter, pointing on success at the first unconsumed char,
  *           on failure is set to `str`.
- *   radix — base; 0 means auto-detect prefix (0x/0o/0b) for ints.
- *   flags — JS_ATOD_* bits above.
- *   tmp   — pointer to DTOA_TMP_SIZE bytes of scratch memory.
+ *   radix: the base, where 0 auto-detects a 0x, 0o, or 0b prefix for ints.
+ *   flags: the JS_ATOD_* bits above.
+ *   tmp:   DTOA_TMP_SIZE bytes of scratch memory.
  *
  * Returns the parsed value (NaN on parse failure).
  */

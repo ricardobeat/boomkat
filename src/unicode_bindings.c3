@@ -1,5 +1,6 @@
 /*
- * Unicode normalization C bindings — C3 interop with QuickJS libunicode via unicode_wrapper
+ * Unicode normalization C bindings: C3 interop with QuickJS libunicode
+ * through unicode_wrapper.
  */
 module duktape::unicode_bindings;
 
@@ -14,7 +15,7 @@ extern fn uint* unicode_normalize_simple(uint* src, int src_len,
                                           int n_type, int* out_len);
 
 /*
- * Identifier classification — backed by libregexp's vendored ID_Start /
+ * Identifier classification, backed by libregexp's vendored ID_Start and
  * ID_Continue tables (matches the spec's IdentifierStart / IdentifierPart
  * property, including grandfathered Other_ID_Start / Other_ID_Continue
  * characters and ZWNJ/ZWJ (U+200C/U+200D) for the "continue" side).
@@ -33,7 +34,7 @@ extern fn int unicode_is_identifier_continue(uint cp);
  *   conv_type - 0 = uppercase, 1 = lowercase
  *   out       - caller-provided uint[3] output buffer for mapped codepoints
  *
- * Returns the number of mapped codepoints (1–3).
+ * Returns the number of mapped codepoints, 1 to 3.
  */
 extern fn int unicode_case_conv(uint cp, int conv_type, uint* out);
 
