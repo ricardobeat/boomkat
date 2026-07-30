@@ -16,7 +16,7 @@ import std::io;
 // refcount, no track_heap_store).
 //
 // SOUNDNESS: the whole correctness argument is
-//   (1) the observability gate — if ANY of the escape hatches appears, NO global
+//   (1) the observability gate: if any escape hatch appears, no global
 //       is treated primitive-only (the entire set is discarded); and
 //   (2) clearing the primitive-only bit on ANY assignment whose right-hand side
 //       is not provably primitive, including assignments inside nested functions
@@ -262,7 +262,7 @@ fn void CompilerContext.pre_scan_prim_globals(&self) {
         // Only `var` (and `function`) globals are eligible to be treated
         // primitive-only: they are hoist-initialized to undefined (no TDZ), so a
         // guard-free read before assignment is safe. `let`/`const` have a TDZ
-        // whose read must THROW, which the guard-free opcodes do not do — those
+        // whose read must throw, which the guard-free opcodes do not do, so those
         // are never marked declared (they keep the guarded GETGLOBAL path).
         if (tt == TokenType.VAR || tt == TokenType.LET || tt == TokenType.CONST) {
             decl_context = true;
@@ -357,7 +357,7 @@ fn void CompilerContext.pre_scan_prim_globals(&self) {
             if (is_simple_assign || is_compound_numeric || is_compound_plus || is_logical_assign) {
                 // A nested assignment inside an already-open RHS (`a = (b = ...)`)
                 // means the outer target's value flows from an assignment
-                // expression whose result we can no longer track — conservatively
+                // expression whose result can no longer be tracked, so conservatively
                 // clear the outer target.
                 if (rhs_target != null) rhs_target.prim_only = false;
 
@@ -392,7 +392,7 @@ fn void CompilerContext.pre_scan_prim_globals(&self) {
         // `const` are intentionally excluded (TDZ). A `function NAME` binds NAME
         // to a closure (heap) -> NOT primitive-only.
         // A declarator continues after a comma only at the SAME nesting depth as
-        // the `var` keyword — a comma inside the initializer's `f(a, b)` / `[..]`
+        // the `var` keyword. A comma inside the initializer's `f(a, b)` or `[..]`
         // / `{..}` is not a new declarator (it separates call args / elements).
         bool at_decl_depth = ((int)paren_depth == decl_paren
                               && (int)bracket_depth == decl_bracket

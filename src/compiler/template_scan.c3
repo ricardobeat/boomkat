@@ -13,7 +13,7 @@ import duktape::lexer;
 // test wrong:
 //
 //   - a substitution expression can itself contain `{...}` (object literals,
-//     block-bodied arrows: `${ (() => { ... })() }`) — those braces are
+//     block-bodied arrows: `${ (() => { ... })() }`), whose braces are
 //     ordinary JS braces, not the substitution's close;
 //   - template literals nest (`${ `inner ${x}` }`), and each nesting level
 //     tracks its own count of open expression braces.
@@ -22,10 +22,10 @@ import duktape::lexer;
 // substitution expression. Call on_template_head / on_lbrace / classify_rbrace
 // for the corresponding tokens; every other token is none of its business.
 // Expression-internal braces are still reported as BLOCK so each scanner's
-// own depth/region logic sees them exactly like braces outside a template —
+// own depth and region logic sees them exactly like braces outside a template,
 // they always come in balanced pairs, so caller-side counters net to zero.
 
-/// Substitution nesting beyond this depth shares the last slot — behavior
+/// Substitution nesting beyond this depth shares the last slot, so behavior
 /// degrades to a per-32-levels shared counter instead of failing. Real code
 /// never nests 32 template substitutions.
 const uint TEMPLATE_SCAN_MAX_DEPTH = 32;
@@ -62,7 +62,7 @@ fn void TemplateScan.on_template_head(&self) {
     }
 }
 
-/// LBRACE token. Callers still run their own brace logic afterwards — this
+/// LBRACE token. Callers still run their own brace logic afterwards, since this
 /// only records expression-internal opens so classify_rbrace can match them.
 fn void TemplateScan.on_lbrace(&self) {
     if (self.depth > 0) {

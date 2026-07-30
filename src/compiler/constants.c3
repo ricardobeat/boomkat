@@ -92,7 +92,7 @@ fn uint CompilerContext.add_constant(&self, TVal val) {
 fn uint CompilerContext.add_string_constant(&self, char[] str) {
     // Intern via Heap.str_intern (not a hand-rolled lookup/alloc) so raw
     // 4-byte UTF-8 astral sequences in source literals get normalized to
-    // CESU-8 the same way any other interned string does — otherwise a
+    // CESU-8 the same way any other interned string does, since otherwise a
     // literal emoji typed in source and the same character via `\u{...}`
     // would intern under two different byte encodings and fail `===`.
     Heap* hp = (Heap*)self.heap;
@@ -141,8 +141,8 @@ fn uint CompilerContext.add_number_constant(&self, double val) {
 ///
 /// `digits` is the lexer's literal text (possibly carrying a `0x`/`0o`/`0b`
 /// radix prefix and `_` separators).  It is parsed into a native int128 and
-/// boxed as an HBigInt.  A literal exceeding ±(2^127 − 1) — beyond this
-/// engine's fixed-width BigInt range — is a compile error (RangeError-ish).
+/// boxed as an HBigInt. A literal beyond this engine's fixed-width BigInt range
+/// is a compile error.
 fn uint? CompilerContext.add_bigint_constant(&self, char[] digits) {
     Heap* hp = (Heap*)self.heap;
 
@@ -176,7 +176,7 @@ fn uint? CompilerContext.add_bigint_constant(&self, char[] digits) {
 
     self.ensure_const_cap();
     if (self.const_count >= self.const_cap) {
-        // No pool slot available — drop our reference.
+        // No pool slot available, so drop the reference.
         hp.decref((types::HeapHeader*)box);
         return self.const_count;
     }

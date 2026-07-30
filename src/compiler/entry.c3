@@ -106,7 +106,7 @@ fn CompiledFunction*? compile(Lexer* lex, void* heap) {
 /// is compiled as an independent unit and has no static knowledge of the
 /// caller's class/method context, so this just permits the `super.x`/
 /// `super[x]` syntax to compile; the `__super__` hidden binding lookup it
-/// emits (GETVAR) still walks the real environment chain at runtime — for
+/// emits (GETVAR) still walks the real environment chain at runtime, for
 /// direct eval that chain IS the caller's, so a genuinely absent binding
 /// still throws ReferenceError there, same as the spec's HasSuperBinding
 /// check would.
@@ -116,7 +116,7 @@ fn CompiledFunction*? compile(Lexer* lex, void* heap) {
 /// `parent_private_names` is a heap-tracked snapshot of the caller's
 /// CompilerContext's private-names table (populated when the caller's
 /// CompiledFunction was finished and stashed in `eval_private_names`). When
-/// non-null, the eval CompilerContext adopts this table — subsequent
+/// non-null, the eval CompilerContext adopts this table, so subsequent
 /// `#name` references resolve through it (so `this.#m` inside a class
 /// method's eval body finds the class's `#m`). Indirect eval (no caller
 /// activation or `ACT_FLAG_DIRECT_EVAL` not set on the caller) leaves the
@@ -124,14 +124,14 @@ fn CompiledFunction*? compile(Lexer* lex, void* heap) {
 /// (no enclosing PrivateEnvironment).
 ///
 /// `direct_in_function`: true iff this eval source is being compiled
-/// inside a direct-eval call from a non-ArrowFunction's FunctionBody —
+/// inside a direct-eval call from a non-ArrowFunction's FunctionBody, so
 /// the ONLY context that legally permits `new.target` per ES2015 Annex
 /// B / §14.2.1 (ScriptedTasks: "It is a Syntax Error if StatementList
 /// Contains NewTarget unless the source code containing NewTarget is
 /// eval code that is being processed by a direct eval that is contained
 /// in function code that is not the function code of an ArrowFunction").
 /// Pass false (the default) for indirect eval, eval from script top
-/// level, or eval from an arrow function — `new_expr()` then rejects
+/// level, or eval from an arrow function, `new_expr()` then rejects
 /// new.target as a SyntaxError.  `allow_super` and
 /// `direct_in_function` track the same call-site conditions, so the two
 /// are usually equal; they're kept as separate parameters to avoid
@@ -173,7 +173,7 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
 
     // Adopt caller's private-name snapshot (ES2022 §8.7.1). When the caller
     // has none (top-level eval or an indirect eval), the fresh empty table
-    // from init() stays in place — `#name` then resolves to nothing, which
+    // from init() stays in place, `#name` then resolves to nothing, which
     // fails compile_private_name with SyntaxError exactly as the spec
     // requires for eval without an enclosing PrivateEnvironment.
     if (parent_private_names != null && parent_private_name_count > 0) {
@@ -183,7 +183,7 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
         // We COPY the inherited entries into a freshly-allocated table that
         // this context OWNS. Borrowing the snapshot's buffer directly (à la
         // compile_inner_function's adopt_private_names) would corrupt the
-        // caller's snapshot if eval declared any new private name — the
+        // caller's snapshot if eval declared any new private name, the
         // inherited entries sit at indices [0..parent_count) and a new
         // class body's #x would land at index parent_count via
         // declare_private_name → ensure_private_name_cap → realloc_func,
@@ -220,7 +220,7 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
             t.cap = new_cap;
             ctx.owns_private_names = true;
         }
-        // If alloc fails, leave private_names null — eval will treat every
+        // If alloc fails, leave private_names null, eval will treat every
         // #x reference as SyntaxError (no inherited names visible). The
         // pre-fix behaviour already did this for top-level eval; matching
         // it here on OOM is the safest fallback.
@@ -294,7 +294,7 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
 
     CompiledFunction*? result = ctx.finish()!;
     if (try func = result) {
-        // Eval code must NOT get its own scope — var declarations must go
+        // Eval code must NOT get its own scope, var declarations must go
         // to the enclosing scope (global env), not a fresh function scope.
         func.flags.needs_env = false;
     }
@@ -304,10 +304,10 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
 /// Compile a function expression or declaration.
 /// `is_expr` is true for function expressions, false for declarations.
 fn CompiledFunction*? compile_function(Lexer* lex, void* heap, bool is_expr, bool force_strict = true) {
-    // Reset error state for this compilation — see `compile`'s matching
+    // Reset error state for this compilation, see `compile`'s matching
     // reset. Without it, a stale `g_last_err_msg` left by a PREVIOUS
     // Function()-constructor SyntaxError makes finish()'s choke-point check
-    // (context.c3) fail the very next, otherwise-valid compile too — e.g.
+    // (context.c3) fail the very next, otherwise-valid compile too, e.g.
     // register_builtins() compiling Array.prototype.toLocaleString right
     // after an unrelated test threw a SyntaxError, poisoning every
     // subsequent test in the same batch-worker process.
@@ -317,7 +317,7 @@ fn CompiledFunction*? compile_function(Lexer* lex, void* heap, bool is_expr, boo
     CompilerContext ctx;
     ctx.init(lex, heap);
     // The dynamic Function constructor (ES2019 §19.2.1.1.1) compiles a body
-    // with no enclosing lexical context to inherit strictness from — it is
+    // with no enclosing lexical context to inherit strictness from, it is
     // sloppy unless its own directive prologue says "use strict" (which
     // parse_function_body's parse_directives call already detects and
     // upgrades). Every other caller of this shared entry point (internal
@@ -333,7 +333,7 @@ fn CompiledFunction*? compile_function(Lexer* lex, void* heap, bool is_expr, boo
 /// Like compile_function but with generator/async flags set for dynamic
 /// GeneratorFunction / AsyncFunction constructor (ES2019 §19.2.1.1.1).
 fn CompiledFunction*? compile_function_kind(Lexer* lex, void* heap, bool is_expr, bool is_generator, bool is_async, bool force_strict = true) {
-    // See compile_function's matching reset — same stale-flag hazard.
+    // See compile_function's matching reset, same stale-flag hazard.
     g_last_err_msg[0] = 0;
     g_last_err_line = 0;
     g_last_err_col  = 0;
@@ -343,7 +343,7 @@ fn CompiledFunction*? compile_function_kind(Lexer* lex, void* heap, bool is_expr
     ctx.is_generator = is_generator;
     // Dynamic functions: `is_generator` reflects a syntactic generator here
     // (GeneratorFunction / AsyncGeneratorFunction constructors), so it also
-    // sets is_user_generator — distinguishing an async generator from a plain
+    // sets is_user_generator, distinguishing an async generator from a plain
     // async function built via the AsyncFunction constructor.
     ctx.is_user_generator = is_generator;
     ctx.is_async = is_async;
@@ -357,7 +357,7 @@ fn CompiledFunction*? compile_function_kind(Lexer* lex, void* heap, bool is_expr
 /// Compile an ESM module body. Parses import/export declarations and
 /// emits RETUNDEF (modules return undefined, not the last expression).
 /// `module_name` is used for error messages and relative path resolution.
-/// `module_def` is an opaque ModuleDef* — the compiler writes import/export
+/// `module_def` is an opaque ModuleDef*, the compiler writes import/export
 /// metadata into it via the void* current_module field.
 fn CompiledFunction*? compile_module(Lexer* lex, void* heap, char[] module_name, void* module_def) {
     g_last_err_msg[0] = 0;
@@ -386,7 +386,7 @@ fn CompiledFunction*? compile_module(Lexer* lex, void* heap, char[] module_name,
     bool  saved_haspb = lex.has_pushed_back;
     bool  saved_slt   = lex.seen_line_term;
 
-    // Check for "use strict" directive prologue (accepted but a no-op — modules are always strict)
+    // Check for "use strict" directive prologue (accepted but a no-op, modules are always strict)
     ctx.parse_directives()!;
 
     // Hoist function declarations at the module level.
@@ -410,7 +410,7 @@ fn CompiledFunction*? compile_module(Lexer* lex, void* heap, char[] module_name,
     // Note: module top-level `let`/`const` bindings live in the Module
     // Environment Record, not the Global Environment Record, so the
     // restricted-global SyntaxError check inside hoist_lexical_tdz is
-    // skipped for modules (ctx.is_module) — this call cannot actually fail.
+    // skipped for modules (ctx.is_module), this call cannot actually fail.
     ctx.hoist_lexical_tdz();
     ctx.reserved_regs = ctx.next_reg;
     while (!ctx.is_at_end()) {

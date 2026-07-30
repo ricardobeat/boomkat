@@ -131,7 +131,7 @@ fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false) {
         pending_arrow = false;
 
         // If `)` was seen but the next token is not `{`, this was a call or
-        // grouping expression, not a param list — discard the deferred buffer.
+        // grouping expression, not a param list, so discard the deferred buffer.
         if (param_buf_pending && tt != TokenType.LBRACE && tt != TokenType.ARROW) {
             param_buf_pending = false;
             param_buf_count = 0;
@@ -221,7 +221,7 @@ fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false) {
             pending_arrow = true;
         } else if (tt == TokenType.CLASS) {
             // Class field initializers run in constructor scope with no
-            // `) {` marker — degrade rather than miss captures.
+            // `) {` marker, so degrade rather than miss captures.
             self.capture_all = true;
         } else if (tt == TokenType.COMMA || tt == TokenType.SEMICOLON
                    || tt == TokenType.COLON) {
@@ -265,7 +265,7 @@ fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false) {
     self.lexer.seen_line_term  = saved_slt;
 
     // Parameters (and destructured-parameter leaves) were declared before
-    // this scan ran — retroactively mark any the capture set names. Their
+    // this scan ran, so retroactively mark any the capture set names. Their
     // env copies already exist (param DECLVARs), so flipping reads to GETVAR
     // is safe.
     if (!self.is_global) {

@@ -5,9 +5,9 @@
 /// as an immediate/index, freeing the register and saving a dispatch. The
 /// first pair (ADDI/SUBI, see fuse_addi_subi below) was written by hand
 /// directly in CompilerContext.finish(); this file factors the error-prone
-/// shared machinery — NOP-skipping to find the real consumer, and the
+/// shared machinery, NOP-skipping to find the real consumer, and the
 /// dead-after-liveness scan that proves the scratch register can be
-/// discarded — into ONE driver (`run_fusion_rule`) so future fusions reuse
+/// discarded, into ONE driver (`run_fusion_rule`) so future fusions reuse
 /// it instead of re-deriving subtly different (and subtly buggy) copies.
 ///
 /// Phase: fusion rules that key off a scratch register produced by LDINT/
@@ -17,28 +17,28 @@
 /// into the argument slot); until those moves are NOP'd, the immediate's
 /// consumer is not yet adjacent, so a fusion pass run first would silently
 /// find no match. `run_fusion_rule` skips NOPs to find the consumer for
-/// exactly this reason — see the FUSION_PHASE_NOTE below for where each
+/// exactly this reason, see the FUSION_PHASE_NOTE below for where each
 /// existing hand-written pass would sit on this timeline.
 module duktape::compiler;
 
 import duktape::bytecode;
 import duktape::types;
 
-/// FUSION_PHASE_NOTE — ordering of every fusion-shaped pass in finish(),
+/// FUSION_PHASE_NOTE, ordering of every fusion-shaped pass in finish(),
 /// documented once here instead of re-derived per pass:
 ///
 ///   1. GETVAR+INC/DEC+PUTVAR -> INC_VAR/DEC_VAR   (no scratch-reg dependency;
-///      order-independent, could run anywhere before NOP compaction —
+///      order-independent, so it could run anywhere before NOP compaction,
 ///      declarative, this file: FUSION_INC_DEC_VAR / run_fusion3_rule)
-///   2. LDCONST+GETPROP -> GETPROPC                (same — order-independent;
+///   2. LDCONST+GETPROP -> GETPROPC                (same, order-independent;
 ///      declarative, this file: FUSION_GETPROPC / run_fusion_rule)
 ///   3. compare+IF_FALSE/IF_TRUE -> JMP_N*/JMP_*/JMP_SEQ/JMP_SNEQ
-///      (order-independent; declarative, this file: run_cmp_branch_fusion —
+///      (order-independent and declarative, in this file: run_cmp_branch_fusion,
 ///      a distinct jump-aware driver that owns the whole-function jump-target
 ///      bitset, dual-path liveness, and bridge/short-circuit corrections, and
 ///      is table-driven over the compare form (CMP_BRANCH_RULES). Loose
-///      EQ/NEQ are excluded — they coerce and can throw.)
-///   4. copy-propagation (LDREG rT=rX substitution) — MUST run before any
+///      EQ/NEQ are excluded, they coerce and can throw.)
+///   4. copy-propagation (LDREG rT=rX substitution), MUST run before any
 ///      rule whose trigger's consumer may be separated from it by a
 ///      parser-emitted LDREG move (rule 5 depends on this). Hand-written,
 ///      deliberately: pure copy-prop/DCE, not a superinstruction fusion
@@ -47,7 +47,7 @@ import duktape::types;
 ///
 /// The copy-propagation pass (rule 4) and the dead-LDREG-before-INC/DEC DCE
 /// pass (same reasoning) are the only fusion-shaped passes left hand-written
-/// in context.c3 — and they are not superinstruction fusions at all (they
+/// in context.c3, and they are not superinstruction fusions at all (they
 /// install no new opcode). All four true fusions are declarative. See
 /// plans/058-fusion-rule-framework.md for the full "why" on each.
 
@@ -90,7 +90,7 @@ struct FusionRule {
 /// Not every ABC field is a register. CALL_VAR/CALL_GLOBAL encode B as an
 /// argument count and C as a name-constant index; GETPROPC encodes C as a
 /// constant index. Comparing those raw values against a register number is a
-/// false positive that silently pins the register live and blocks fusion —
+/// false positive that silently pins the register live and blocks fusion,
 /// which is a correctness-safe direction, but costs real optimizations
 /// whenever a scratch register happens to equal an argc or constant index.
 fn bool fusion_abc_reads_reg(Instruction ins, uint reg) {
@@ -104,7 +104,7 @@ fn bool fusion_abc_reads_reg(Instruction ins, uint reg) {
             // block ABOVE A and are written by the preceding argument-setup
             // instructions, which the scan sees in their own right; a scratch
             // register still live into that block is caught there. NOTE: CALL_S
-            // is deliberately NOT in this carve-out — it decodes C as a
+            // is deliberately NOT in this carve-out, it decodes C as a
             // register (`ds.regs_base + insn.c`).
             return false;
         case Opcode.GETPROPC:
@@ -116,14 +116,14 @@ fn bool fusion_abc_reads_reg(Instruction ins, uint reg) {
 }
 
 /// Scan forward from `start` (inclusive) and report whether `reg` is read
-/// before it is next overwritten — the shared "is this scratch register
+/// before it is next overwritten, the shared "is this scratch register
 /// dead after the consumer" check every hand-written pass re-implements.
 ///
 /// IF_TRUE/IF_FALSE use field `a` as a READ (the condition register), not a
 /// write, so they're checked explicitly before the generic write-then-stop
 /// rule. Only ABC-format opcodes have plain register operands in b/c;
 /// A_BC/A_SBX/WIDE_* operands are indices or branch offsets, never register
-/// references, and must not be misread as one — see fusion_abc_reads_reg for
+/// references, and must not be misread as one, see fusion_abc_reads_reg for
 /// the ABC forms whose b/c are likewise not registers.
 fn bool fusion_reg_live_from(Instruction* code, uint code_count, uint start, uint reg) {
     for (uint j = start; j < code_count; j++) {
@@ -219,7 +219,7 @@ fn FusionMatch fusion_addi_subi_consumer(Instruction trigger, Instruction consum
     m.dest_reg   = rD;
     m.src_reg    = rS;
     // Re-decode the immediate directly rather than threading it through
-    // FusionMatch.dest_reg's caller — trigger.get_sbc() was already
+    // FusionMatch.dest_reg's caller, trigger.get_sbc() was already
     // range-checked to [-128,127] by fusion_addi_subi_trigger.
     m.imm        = (uint)(ichar)trigger.get_sbc();
     return m;
@@ -247,13 +247,13 @@ fn void fuse_addi_subi(Instruction* code, uint code_count) {
 //
 // `ctx` carries the constant pool (`TVal*`) so the trigger can check
 // `idx <= 255` (GETPROPC.c is 8 bits) and that the constant is a string
-// (GETPROPC assumes string keys) — the only rule so far that needs more
+// (GETPROPC assumes string keys), the only rule so far that needs more
 // than the raw instruction bits to validate its trigger.
 //
 // Liveness: the shared dead-after scan (`fusion_reg_live_from`) already
 // implements the exact rK-liveness rule the hand-written pass re-derived
 // (IF_TRUE/IF_FALSE read `a`; ABC-format ops read `b`/`c`; any write to
-// `a` ends the scan) — including the "rK kept alive for a following
+// `a` ends the scan), including the "rK kept alive for a following
 // PUTPROP/DELPROP in LHS/assignment mode" case, which is just "rK is read
 // again before it's overwritten", i.e. the ordinary dead-after-liveness
 // predicate. No special-casing needed.
@@ -305,7 +305,7 @@ fn void fuse_getpropc(Instruction* code, uint code_count, TVal* constants) {
 // instruction by discarding a dying scratch register. GETVAR+INC/DEC+PUTVAR
 // is shaped differently: it's a *three*-instruction window over ONE register
 // that survives the fusion (it's a live variable, not a scratch temp), so
-// there is nothing to NOP-skip to and no dead-after-liveness scan to run —
+// there is nothing to NOP-skip to and no dead-after-liveness scan to run,
 // the three ops are always physically adjacent by construction (the parser
 // never interposes anything between a variable read, its increment, and the
 // write-back), and correctness comes entirely from an equality match across
@@ -325,7 +325,7 @@ struct Fusion3Match {
 
 /// Given the three physically-adjacent instructions of a candidate window,
 /// report whether they fuse. `slot0`/`slot1`/`slot2` are `code[i]`,
-/// `code[i+1]`, `code[i+2]` — no NOP-skipping; this pattern requires exact
+/// `code[i+1]`, `code[i+2]`, no NOP-skipping; this pattern requires exact
 /// adjacency. `ctx` mirrors the 2-slot driver's opaque per-rule pointer
 /// (see `FusionTriggerFn`).
 alias Fusion3MatchFn = fn Fusion3Match(Instruction slot0, Instruction slot1, Instruction slot2, void* ctx);
@@ -336,7 +336,7 @@ struct Fusion3Rule {
 
 /// Run one 3-slot fusion rule over the whole instruction stream. On match,
 /// NOPs slot0 and slot2 and installs the rewrite (A-BC format: reg, imm) at
-/// slot1 — the middle slot is always a valid landing point for control flow
+/// slot1, the middle slot is always a valid landing point for control flow
 /// (both a jump to slot0, which falls through, and a jump to slot1 itself,
 /// which now finds the fused op) so no jump-target bitset is needed, exactly
 /// as with the 2-slot driver's trigger-NOP.
@@ -360,7 +360,7 @@ fn void run_fusion3_rule(Instruction* code, uint code_count, Fusion3Rule rule, v
 // "fuse GETVAR + INC/DEC + PUTVAR" in context.c3 for the original). `ctx`
 // carries the const_count bound (mirroring GETPROPC's use of `ctx` for the
 // constant pool), so the match fn can reject a name index the constant pool
-// hasn't grown to yet — see fuse_inc_dec_var below for how it's threaded.
+// hasn't grown to yet, see fuse_inc_dec_var below for how it's threaded.
 
 fn Fusion3Match fusion_inc_dec_var_match(Instruction slot0, Instruction slot1, Instruction slot2, void* ctx) {
     Fusion3Match m;
@@ -399,7 +399,7 @@ fn void fuse_inc_dec_var(Instruction* code, uint code_count, uint const_count) {
 // Jump-aware fusion driver: compare + IF_FALSE/IF_TRUE -> fused compare-branch
 // ============================================================================
 //
-// This is the jump-fusing driver — structurally distinct from the two
+// This is the jump-fusing driver, structurally distinct from the two
 // register-baking drivers above. It rewrites the compare slot into a fused
 // compare-and-branch and NOPs the branch slot, which means it must reason
 // about control flow (jump targets, branch offsets, both post-branch paths),
@@ -423,7 +423,7 @@ fn void fuse_inc_dec_var(Instruction* code, uint code_count, uint const_count) {
 //
 // A rule is pure data: the compare opcode it triggers on, and the fused op to
 // install for each branch direction. Relational (LT/LE/GT/GE) and strict
-// equality (SEQ/SNEQ) rules share every line of the driver — adding a compare
+// equality (SEQ/SNEQ) rules share every line of the driver, adding a compare
 // form is a table entry, not a new hand-written scan.
 //
 // NOT included: loose EQ/NEQ. Those coerce operands via abstract_eq, which can
@@ -469,7 +469,7 @@ fn Opcode cmp_branch_fused_op(Opcode cmp_op, bool is_if_false) {
 
 /// Scan a basic-block-local range [start, code_count) and report whether `reg`
 /// is read before it is overwritten. Stops (treating `reg` as live) at the
-/// first jump target — a new basic block we can't prove dead across — and at
+/// first jump target, a new basic block we can't prove dead across, and at
 /// terminal instructions (RET/THROW/JUMP) which end the block cleanly (dead).
 /// This is the compare-result liveness rule the hand-written pass ran on both
 /// the fall-through and taken-branch paths. `skip_first_target` lets the
@@ -576,7 +576,7 @@ fn void run_cmp_branch_fusion(Instruction* code, uint code_count, bool* jump_tar
 
         // Bridge correction (B23/B26/B28): a FORWARD IF_FALSE/IF_TRUE at the
         // branch's target is an `&&`/`||` continuation; extend the fused offset
-        // past it. A backward continuation is a loop back-edge — not a bridge.
+        // past it. A backward continuation is a loop back-edge, not a bridge.
         int bridge_sbx = 0;
         uint bridge_slot = (uint)((int)i + 2 + sbx);
         if (bridge_slot < code_count) {
@@ -602,7 +602,7 @@ fn void run_cmp_branch_fusion(Instruction* code, uint code_count, bool* jump_tar
 
         // (b) taken-branch path: rA must be dead from the branch target, UNLESS
         // rA aliases a compare operand (then the fused op preserves the operand's
-        // pre-compare value, which is exactly what the target expects) — EXCEPT
+        // pre-compare value, which is exactly what the target expects), EXCEPT
         // when the target itself is an IF_TRUE/IF_FALSE reading rA as a boolean
         // condition. That always wants the *comparison result*, never the
         // pre-compare operand value, so the alias exception does not apply
@@ -612,7 +612,7 @@ fn void run_cmp_branch_fusion(Instruction* code, uint code_count, bool* jump_tar
         // nonexistent) boolean result. This specifically covers `(a === b ||
         // c) ? ... : ...` and `a === b || c === d` chains landing on an
         // unrelated IF_FALSE/IF_TRUE that merely happens to read the same
-        // register — not a genuine `&&`/`||` chain continuation.
+        // register, not a genuine `&&`/`||` chain continuation.
         uint rB = (uint)code[i].b;
         uint rC = (uint)code[i].c;
         bool ra_aliases_src = (rA == rB || rA == rC);
@@ -646,7 +646,7 @@ fn void run_cmp_branch_fusion(Instruction* code, uint code_count, bool* jump_tar
 ///
 /// Two-word layout invariant: MOVE_GG's VM handler reads the IMMEDIATELY-next
 /// word as the source name, so the pair must be strictly adjacent (j == i+1).
-/// Jump-target safety: the MOVE_GG word (i) may itself be a jump target — a
+/// Jump-target safety: the MOVE_GG word (i) may itself be a jump target, a
 /// loop back-edge landing on it re-executes the full copy, which is correct.
 /// But the trailing word (i+1) must NOT be a jump target: a jump landing there
 /// would skip the read half. We also require the source register to be a dead
@@ -714,7 +714,7 @@ fn void run_move_gg_fusion(Instruction* code, uint code_count, bool* jump_target
         uint rX = (uint)code[i].a;
         if ((uint)code[i + 1].a != rX) { continue; }
 
-        // The trailing word (i+1) must not be a jump target — landing there
+        // The trailing word (i+1) must not be a jump target, landing there
         // would skip the MOVE_GG read half.
         if (jump_targets[i + 1]) { continue; }
 
@@ -741,8 +741,8 @@ fn void run_move_gg_fusion(Instruction* code, uint code_count, bool* jump_target
         }
         if (rX_live) { continue; }
 
-        uint dst_name = code[i + 1].get_bc();   // D — destination global
-        uint src_name = code[i].get_bc();        // S — source global
+        uint dst_name = code[i + 1].get_bc();   // D, destination global
+        uint src_name = code[i].get_bc();        // S, source global
 
         // Word 1: MOVE_GG, BC = dst name. Word 2: kept NOP, BC = src name.
         code[i]     = bytecode::make_a_bc(Opcode.MOVE_GG, 0, dst_name);
@@ -764,14 +764,14 @@ fn void run_move_gg_fusion(Instruction* code, uint code_count, bool* jump_target
 ///   - strictly adjacent (the VM reads the immediately-next word as the name)
 ///   - the trailing word must NOT be a jump target: landing there would skip
 ///     the load half and misread the name word as an instruction. The
-///     JMP_LT_G word itself MAY be a target — re-executing the pair is correct.
+///     JMP_LT_G word itself MAY be a target, re-executing the pair is correct.
 ///   - `rX` must be dead after the pair on BOTH the fall-through and the
 ///     taken-branch paths, since the fused op materializes no register. The
 ///     backward-branch (loop back-edge) case is covered because the scan from
 ///     the target runs over the whole loop body.
 ///   - the offset carries over unchanged: the original JMP_LT sits one slot
 ///     later and branches relative to (i+1)+1, while JMP_LT_G branches
-///     relative to i+2 after consuming both words — the same base.
+///     relative to i+2 after consuming both words, the same base.
 fn void run_jmp_lt_g_fusion(Instruction* code, uint code_count, bool* jump_targets) {
     if (code_count < 2) { return; }
 
@@ -837,7 +837,7 @@ fn void run_jmp_lt_g_fusion(Instruction* code, uint code_count, bool* jump_targe
 
         // The offset needs no re-basing: the original JMP_LT sits at slot i+1
         // and branches relative to (i+1)+1, while the fused JMP_LT_G sits at
-        // slot i and branches relative to i+2 after consuming both words —
+        // slot i and branches relative to i+2 after consuming both words,
         // the same base, so the stored offset carries over unchanged.
         int off = (int)(ichar)code[i + 1].a;
 

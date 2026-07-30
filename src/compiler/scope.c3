@@ -15,7 +15,7 @@ import std::io;
 /// Push a new scope level (for blocks, functions, etc.).
 fn void CompilerContext.push_scope(&self) {
     // We use scope_depth as a marker; entries below it belong to outer scopes.
-    // Nothing to allocate — scope_stack is shared with depth tracking.
+    // Nothing to allocate: scope_stack is shared with depth tracking.
 }
 
 /// Pop the current scope level, freeing any variables declared in it.
@@ -65,7 +65,7 @@ fn void CompilerContext.push_scope_marker(&self) {
 /// WHOLE stack (past block markers) because the for-head binding lives in an
 /// outer scope relative to the body block. No-op for non-VAR kinds.
 /// Call only from true var-declaration sites (var statements, for-head var
-/// declarations) — NOT from catch-param or function-declaration paths, whose
+/// declarations), and not from catch-param or function-declaration paths, whose
 /// bindings follow different scoping rules.
 fn void? CompilerContext.check_var_lex_conflict(&self, char[] name, ScopeKind kind) {
     if (kind != ScopeKind.VAR) {
@@ -150,7 +150,7 @@ fn ushort? CompilerContext.resolve_var(&self, char[] name) {
 /// (lexical) as opposed to `var`. Used by `export { name }` (no `from`
 /// clause) to decide whether the local export binding is TDZ-eligible.
 /// Defaults to false (treated as `var`) if the name isn't found in the
-/// scope stack — e.g. a top-level `function` declaration promoted straight
+/// scope stack, such as a top-level `function` declaration promoted straight
 /// to the module env, which is hoisted and never in TDZ.
 fn bool CompilerContext.is_name_lexical(&self, char[] name) {
     uint i = self.scope_depth;
@@ -165,7 +165,7 @@ fn bool CompilerContext.is_name_lexical(&self, char[] name) {
 
 /// Resolve a variable name to its register REGARDLESS of capture status.
 /// Only for declaration-site checks (e.g. `var` redeclaration must reuse the
-/// existing binding, never re-declare and clobber the env value) — normal
+/// existing binding, never re-declare and clobber the env value). Normal
 /// reads/writes must use resolve_var so captured locals stay env-resident.
 fn ushort? CompilerContext.find_local_reg(&self, char[] name) {
     uint i = self.scope_depth;
@@ -182,7 +182,7 @@ fn ushort? CompilerContext.find_local_reg(&self, char[] name) {
 /// declaration in scope_stack; return 0xFFFFFFFF otherwise. Used at every
 /// register-only write site (postfix INC/DEC, plain/compound/logical
 /// assignment) so a const violation is routed through PUTVAR_ASSIGN /
-/// INC_VAR / DEC_VAR — the bare register-only opcode (INC/DEC/LDREG-without-PUT)
+/// INC_VAR or DEC_VAR. The bare register-only opcode
 /// silently succeeds on a const, which is the bug plan 062 group H fixes.
 ///
 /// Returns 0xFFFFFFFF (not 0) for "no match" because add_string_constant can
@@ -190,7 +190,7 @@ fn ushort? CompilerContext.find_local_reg(&self, char[] name) {
 /// and the caller compares against the sentinel to decide whether to emit the
 /// const-checking opcode.
 ///
-/// Adds the binding's name to the constant pool on hit (idempotent — same
+/// Adds the binding's name to the constant pool on hit, which is idempotent since the same
 /// string always interns to the same index), so the caller's emitted opcode
 /// references a valid pool slot.
 fn uint CompilerContext.find_const_name_idx(&self, ushort reg) {

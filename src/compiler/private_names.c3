@@ -10,12 +10,12 @@ import std::io;
 
 
 // ============================================================================
-// Private class members (ES2022) — name resolution
+// Private class members (ES2022), name resolution
 //
 // Each private name (`#foo`) declared in a class body gets a compiler-managed
 // lexical variable in the scope enclosing the class (declared the same way
 // as `__super__`, see class.c3), holding the per-evaluation runtime hidden
-// symbol.  A stack of PrivateNameEntry records — scoped by class nesting —
+// symbol. A stack of PrivateNameEntry records, scoped by class nesting,
 // backs `resolve_private_name`; there is no get-or-create, so a reference to
 // an undeclared name is a compile-time SyntaxError.
 // ============================================================================
@@ -60,11 +60,11 @@ fn char[] CompilerContext.intern_slot_name(&self, char[] slot_name) {
 /// allocating a register or pushing to scope_stack.
 ///
 /// Why: these bindings are only ever accessed via GETVAR by name from the
-/// class's __field_init__ and method bodies — the class-enclosing scope
+/// class's __field_init__ and method bodies, the class-enclosing scope
 /// never reads them by register. declare_var would consume a register per
 /// slot, exhausting the 512-register limit for classes with ~500+ private
 /// fields (the test262 start-unicode-* / part-unicode-* suites declare every
-/// ID_Start/ID_Continue character — some versions run to 4800+ lines).
+/// ID_Start/ID_Continue character, some versions run to 4800+ lines).
 ///
 /// What it DOES still do:
 ///   - Mark has_lexical_bindings = true so the compiler does not elide the
@@ -82,7 +82,7 @@ fn char[] CompilerContext.intern_slot_name(&self, char[] slot_name) {
 ///     owned; resolve_var / find_local_reg never see the slot because all
 ///     accesses go through GETVAR with a const-pool name anyway).
 fn void CompilerContext.declare_priv_slot(&self, char[] name) {
-    // Mark the enclosing scope as having lexical bindings — required so the
+    // Mark the enclosing scope as having lexical bindings, required so the
     // class's PUSH_LEX is emitted and the env elision gate (has_closures &&
     // has_lexical_bindings) keeps the env alive.
     self.has_lexical_bindings = true;
@@ -138,7 +138,7 @@ fn PrivateNameEntry*? CompilerContext.declare_private_name(&self, char[] name) {
         return COMPILE_ERROR~;
     }
     uint idx = t.count;
-    // NOTE: `stable_name` points at interned HString data — the source
+    // `stable_name` points at interned HString data, since the source
     // `name` may itself point into the lexer's per-call ident_buf scratch
     // (for the slow HASH_IDENT path via scan_ident_body_decoded), which
     // gets overwritten on the next scan. Interning before storing fixes
@@ -166,7 +166,7 @@ fn PrivateNameEntry*? CompilerContext.declare_private_name(&self, char[] name) {
     // start-unicode-*.js / part-unicode-*.js cover every ID_Start/ID_Continue
     // char from Unicode 5.2 through 17.0.0; some exceed 4500 entries).
     // declare_priv_slot marks the binding as lexical (so the class's lex
-    // env isn't elided — PUTLEX still creates the binding at runtime) but
+    // env isn't elided, PUTLEX still creates the binding at runtime) but
     // consumes no register and no scope_stack slot.
     uint class_id = self.private_scope_depth > 0
         ? self.private_class_id[self.private_scope_depth - 1] : 0;
@@ -184,12 +184,12 @@ fn PrivateNameEntry*? CompilerContext.declare_private_name(&self, char[] name) {
 /// Declare the class brand (one per class body that has any private member).
 /// Uses a source-illegal name ("#priv:<id>:brand") distinct from any user
 /// private name so it can never be resolved via `resolve_private_name`.
-/// Returns the interned binding-name slice — callers add it to whichever
+/// Returns the interned binding-name slice, callers add it to whichever
 /// constant pool needs it (constant indices are context-relative).
 ///
-/// Like declare_private_name's slot, this is bound via declare_priv_slot —
+/// Like declare_private_name's slot, this is bound via declare_priv_slot,
 /// only GETVAR-accessed at runtime, never register-accessed by the class-
-/// enclosing scope — so it must not consume a register (test262
+/// enclosing scope, so it must not consume a register (test262
 /// start-unicode-*.js blow past the 512-register limit if it did).
 fn char[] CompilerContext.declare_class_brand(&self) {
     uint class_id = self.private_scope_depth > 0
@@ -201,7 +201,7 @@ fn char[] CompilerContext.declare_class_brand(&self) {
     return brand_name;
 }
 
-/// Declare the class's STATIC brand (P5) — a symbol distinct from the
+/// Declare the class's STATIC brand (P5), a symbol distinct from the
 /// instance brand, stamped on the constructor object rather than instances.
 /// Uses a source-illegal name ("#priv:<id>:sbrand") so it can never be
 /// resolved via `resolve_private_name`. Same register-free treatment as
@@ -235,7 +235,7 @@ fn void* CompilerContext.intern_private_binding_name(&self, char[] name) {
 /// `name` is the raw token text as scanned from source (potentially with
 /// 4-byte UTF-8 astral codepoints when a literal character or `\u{...}`
 /// escape decoded to a supplementary-plane value). We re-intern it before
-/// comparing against stored entries — every entry's `.name` was itself
+/// comparing against stored entries, every entry's `.name` was itself
 /// interned by declare_private_name, and `str_intern` rewrites raw astral
 /// UTF-8 to CESU-8 surrogate pairs, so byte-level comparison only works
 /// if both sides go through the same canonicalisation.
@@ -355,7 +355,7 @@ fn void? CompilerContext.prescan_private_names(&self) {
         } else if (depth == 1 && tok.type == TokenType.HASH_IDENT
                    && prev_tok_type != TokenType.DOT && prev_tok_type != TokenType.OPT_CHAIN) {
             // A HASH_IDENT at the class body's own nesting level is a
-            // declaration UNLESS it's a `this.#x` / `obj?.#x` access — those
+            // declaration UNLESS it's a `this.#x` / `obj?.#x` access, those
             // can appear directly at this depth too (field initializers and
             // default-parameter expressions are not wrapped in their own
             // `{`/`(`/`[`, so parens in `f=(()=>this.#s)` or `m(x=this.#p)`
@@ -378,7 +378,7 @@ fn void? CompilerContext.prescan_private_names(&self) {
             bool is_getter = elem_get_set == 'g';
             bool is_setter = elem_get_set == 's';
             bool is_static_decl = elem_saw_static;
-            // Reset for the next element — a HASH_IDENT always starts a new
+            // Reset for the next element, since a HASH_IDENT always starts a new
             // class element (method/accessor bodies/params follow as nested
             // depth, and field declarations end at the next `;`/RBRACE).
             elem_saw_static = false;
@@ -402,7 +402,7 @@ fn void? CompilerContext.prescan_private_names(&self) {
                    && !(tok.type == TokenType.IDENTIFIER && str_eq(tok.str_value, "async"))) {
             // Any other token at depth 1 (identifiers, strings, numbers,
             // `[` computed-key openers not yet at depth 2, etc.) means we
-            // are no longer at the start of an element's modifier prefix —
+            // are no longer at the start of an element's modifier prefix, so
             // but `*`/`async` are themselves modifiers, so they don't reset.
             // Non-modifier tokens (e.g. a plain method/field name) DO belong
             // to the current element and must not clear static/get/set that
@@ -459,10 +459,10 @@ fn void CompilerContext.restore_prescan_lexer(&self, uint pos, uint line, uint c
 /// Emit the shared prelude for a private-field access `obj.#name`: resolve
 /// the name (SyntaxError if undeclared), CHK_BRAND `obj_reg` against the
 /// OWNING CLASS's brand symbol (own-only presence check; TypeError at
-/// runtime if absent — the brand, not this field's own key, is the
+/// runtime if absent. The brand, not this field's own key, is the
 /// unforgeable per-class marker every field/method shares), then load this
 /// name's own runtime symbol into a fresh register via GETVAR. Returns the
-/// register holding the resolved field symbol — the caller emits
+/// register holding the resolved field symbol, the caller emits
 /// GETPROP/PUTPROP with it.
 ///
 /// When `defer_brand_check` is true, the CHK_BRAND is skipped (but the brand
@@ -471,13 +471,13 @@ fn void CompilerContext.restore_prescan_lexer(&self, uint pos, uint line, uint c
 /// is stored in `self.deferred_brand_reg` for the caller to retrieve.
 fn ushort? CompilerContext.emit_private_access(&self, char[] name, ushort obj_reg) {
     PrivateNameEntry* entry = self.resolve_private_name(name)!;
-    // The binding-name constants go into THIS context's pool — entry only
+    // The binding-name constants go into THIS context's pool, entry only
     // carries the stable name text, never a pool index, because this runs
     // inside method/initializer bodies whose pools differ from the
     // class-enclosing context that declared the entry.
     uint brand_bind_idx = self.add_string_constant(entry.brand_slot_name);
     // Deferred targets (destructuring assignment) pre-allocate the brand
-    // register BELOW the upcoming GETPROP's result register — see
+    // register BELOW the upcoming GETPROP's result register, see
     // deferred_brand_reg_hint's doc comment. A lazily alloc_reg()'d register
     // here could otherwise land at or above the GETPROP result register and
     // get clobbered when the source property's getter runs (invoke_getter

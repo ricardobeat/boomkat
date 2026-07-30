@@ -12,7 +12,7 @@
 /// site (no other value already in rDst is needed there) and rT is not
 /// live-out of the LDREG (its only remaining use was this copy). Both facts
 /// require whole-function liveness, not a local forward/backward scan from
-/// the pair itself — the register allocator's scratch/live-range reuse means
+/// the pair itself, since the register allocator's scratch and live-range reuse mean
 /// two unrelated live ranges can sit in registers that are adjacent in the
 /// instruction stream without being adjacent in their liveness. A prior
 /// local-scan-only peephole attempt measured the same win but corrupted
@@ -66,13 +66,13 @@ fn bool RegSet.equals(&self, RegSet* other) {
 }
 
 /// Whether `op`'s A field is a plain destination register that is
-/// write-only — i.e. never simultaneously read as a value, a branch
+/// write-only, meaning never simultaneously read as a value, a branch
 /// condition, or an assignment source. This is the exhaustive
 /// write-only-A allow-list (identical to `moveelim_producer_allowed`'s
 /// opcode set, since those are exactly the opcodes this pass ever proves
 /// safe to retarget); every opcode outside it is conservatively treated as
 /// reading A (see `moveelim_a_is_read` below) even for opcodes where A is
-/// actually unused (e.g. INITTZ, YIELD's B/C=0-only forms) — marking an
+/// actually unused (e.g. INITTZ, YIELD's B/C=0-only forms), marking an
 /// unused field as "read" only adds a harmless spurious liveness entry for
 /// register 0, since unused fields are always encoded as 0.
 fn bool moveelim_a_is_write_only(Opcode op) {
@@ -82,13 +82,13 @@ fn bool moveelim_a_is_write_only(Opcode op) {
 /// Whether `op` reads its A field as a genuine register operand (a value
 /// used as an input, an assignment source, or a branch condition) that
 /// liveness must track as a use. Conservative default: true for every
-/// opcode NOT proven write-only-A above — this is deliberately the inverse
+/// opcode NOT proven write-only-A above, this is deliberately the inverse
 /// of a deny-list, because the opcode surface here is too large (~130
 /// opcodes) to safely enumerate every "A is a read" case by hand (PUTVAR/
 /// PUTVAR_ASSIGN/DECLVAR/PUTLEX/PUTLEX_C/SETCONST/TOPROPKEY/TOSTR/INC/DEC/
 /// IF_TRUE/IF_FALSE were all found this way, and that list is very likely
 /// still incomplete). Over-marking A as "read" only makes liveness see a
-/// register as live longer than strictly necessary — the same direction of
+/// register as live longer than strictly necessary, which is the same direction of
 /// error as `moveelim_a_is_write`'s under-recognition above, and safe for
 /// the identical reason: it can only suppress a retarget, never permit an
 /// unsafe one.
@@ -102,10 +102,10 @@ fn bool moveelim_a_is_read(Opcode op) {
 /// This is a POSITIVE allow-list, not a deny-list: only opcodes explicitly
 /// confirmed (against their doc comments in bytecode.c3) to treat A as a
 /// pure "the result lands here" destination are included. Every other
-/// opcode — including every fused/exotic form not individually reasoned
+/// opcode, including every fused/exotic form not individually reasoned
 /// about here (JMP_NLT/JMP_SEQ/etc use A as a branch offset, not a
 /// register, GETPROPC2 splits state across two slots, CALL/CALL_PROP/
-/// NEW_OBJ/generator ops all have non-trivial A semantics) — returns
+/// NEW_OBJ/generator ops all have non-trivial A semantics), returns
 /// false. Under-recognizing a def only makes liveness treat a register as
 /// live further back than strictly necessary (a missed optimization, never
 /// an incorrect one): the register merely looks live-in one instruction
@@ -120,7 +120,7 @@ fn bool moveelim_a_is_write(Opcode op) {
 }
 
 /// Whether `op`'s producer semantics are safe to retarget: writing directly
-/// to rDst instead of rT must be equivalent to writing rT then copying —
+/// to rDst instead of rT must be equivalent to writing rT then copying, so
 /// i.e. the instruction must not itself special-case the identity of A
 /// beyond "the result lands here" (no self-referential reads of A, no
 /// multi-register writes tied to A's position, no control-flow dependence
@@ -179,7 +179,7 @@ fn bool moveelim_producer_allowed(Opcode op) {
 }
 
 /// Whether `op` is safe to retarget into rDst EVEN WHEN the producer reads
-/// rDst as one of its own source operands — i.e. `A = f(A, ...)` (or the
+/// rDst as one of its own source operands, as in `A = f(A, ...)` (or the
 /// unary `A = f(A)`) is a correct in-place accumulate on this register
 /// machine. This holds for exactly the arithmetic and bitwise value ops,
 /// each of which reads ALL of its source operands (rb, rc) into locals and
@@ -242,7 +242,7 @@ fn Instruction moveelim_retarget_a(Instruction ins, Opcode op, uint new_a) {
 
 /// Add every register `ins` reads (per its opcode's operand format, plus the
 /// A-is-read special cases) into `live`. Does NOT add the register(s) it
-/// writes — callers apply the write-kill separately so the standard
+/// writes, callers apply the write-kill separately so the standard
 /// backward liveness recurrence (`live_in = uses U (live_out - defs)`) holds.
 fn void moveelim_add_uses(Instruction ins, RegSet* live) {
     Opcode op = ins.op;
@@ -252,19 +252,19 @@ fn void moveelim_add_uses(Instruction ins, RegSet* live) {
     if (bytecode::get_op_format(op) == OpFormat.ABC) {
         // CALL/CALL_PROP/CALL_S/SUPER_CALL/SUPER_CALL_S/NEW_OBJ/NEW_OBJ_S/
         // TAILCALL's C field is an argument COUNT (or a count-register for
-        // the _S forms — itself a genuine register read), never a plain
+        // the _S forms, itself a genuine register read), never a plain
         // value register; including it as a "use" is always safe (it either
         // correctly marks a count-register live, or harmlessly marks an
         // unrelated low register live for opcodes with a literal count,
         // which can only make the analysis more conservative, never wrong).
         //
-        // GETPROPC/GETPROPC2's C is a constant-pool index, not a register —
+        // GETPROPC and GETPROPC2 use C as a constant-pool index, not a register,
         // must NOT be read as a use (would wrongly keep an unrelated
         // register alive and could suppress a valid elimination, but never
         // corrupt correctness either way since over-conservative liveness
         // is always safe). Excluded explicitly for precision.
         //
-        // LDREG (`A = B`) defaults to ABC but its C field is unused — the VM
+        // LDREG (`A = B`) defaults to ABC but its C field is unused, since the VM
         // reads only rb (verified in vm_execute.c3). Marking C (encoded 0) as
         // a use spuriously keeps r0 live across every LDREG, which in
         // particular defeats the accumulate move-elimination whenever the
@@ -281,7 +281,7 @@ fn void moveelim_add_uses(Instruction ins, RegSet* live) {
         }
     }
     // A_BC/A_SBX/WIDE_ABC/WIDE_SABC/NONE formats carry no register operands
-    // in b/c (they're indices, immediates, or branch offsets) — nothing to
+    // in b/c (they're indices, immediates, or branch offsets), nothing to
     // add for those formats beyond the a-is-read case already handled.
 }
 
@@ -298,7 +298,7 @@ fn bool moveelim_get_def(Instruction ins, uint* out_reg) {
 /// Build the jump-target bitset AND record, for TRY/ENDTRY pairs, the
 /// [start,end] index ranges to exclude from elimination entirely (an
 /// exception can transfer control from any instruction inside a protected
-/// region straight to its catch/finally handler — an edge this pass's CFG
+/// region straight to its catch/finally handler, an edge this pass's CFG
 /// walk does not otherwise model). `in_try` is sized `code_count` and set
 /// true for every instruction inside such a range (inclusive of TRY and its
 /// matching ENDTRY).
@@ -349,7 +349,7 @@ fn void moveelim_mark_jump_targets_and_try_regions(Instruction* code, uint code_
                 }
                 // Find the matching ENDTRY by scanning forward for the next
                 // ENDTRY at nesting depth 0 relative to this TRY (TRY/ENDTRY
-                // nest the same way parens do — statements.c3 emits exactly
+                // nest the same way parens do, statements.c3 emits exactly
                 // one ENDTRY per TRY at the end of the protected block).
                 uint depth = 1;
                 uint j = i + 1;
@@ -377,7 +377,7 @@ fn void moveelim_mark_jump_targets_and_try_regions(Instruction* code, uint code_
 /// as its plain destination register, retarget the producer to write rDst
 /// directly and NOP the LDREG, PROVIDED:
 ///   - rT is not live-out of the LDREG (its bitcode-visible-uses beyond this
-///     copy are none — computed from whole-function backward liveness, not
+///     copy are none, computed from whole-function backward liveness, not
 ///     a local scan);
 ///   - rDst is not live-in at the producer's site (no value already resident
 ///     in rDst needs to survive past the producer);
@@ -389,13 +389,13 @@ fn void moveelim_mark_jump_targets_and_try_regions(Instruction* code, uint code_
 ///     walk);
 ///   - the LDREG slot's *destination* being rewritten in place is fine
 ///     regardless of whether it's a jump target (a jump landing there would
-///     have expected rDst to already hold the producer's result — NOPing
+///     have expected rDst to already hold the producer's result, NOPing
 ///     it changes nothing observable since the producer immediately above
 ///     it, now the last write to rDst, already ran); the producer slot
 ///     itself must NOT be a jump target on the same reasoning as the
 ///     dead-after-liveness passes in fusion.c3 (a jump landing exactly on
 ///     the producer slot still executes the retargeted producer, which is
-///     what we want) — so no additional guard is needed for either slot's
+///     what we want), so no additional guard is needed for either slot's
 ///     jump-target status.
 fn void run_move_elimination(Instruction* code, uint code_count, bool* jump_targets, bool* in_try,
                               RegSet* live_out, RegSet* live_in) {
@@ -512,11 +512,11 @@ fn void run_move_elimination(Instruction* code, uint code_count, bool* jump_targ
         // The LDREG slot must not itself be a jump target: unlike a fusion
         // trigger (safe to NOP because control falls through to the still-
         // intact consumer immediately after), here the LDREG IS the
-        // instruction being removed. A branch that lands directly on it —
+        // instruction being removed. A branch that lands directly on it
         // e.g. the fall-through arm of an if/else or ternary converging
         // into a single post-join copy, where only ONE arm reaches this
         // slot by textual fallthrough and every other arm reaches it via a
-        // jump — still expects the copy to run for its own producer (a
+        // jump, still expects the copy to run for its own producer (a
         // different, earlier register than the textually-preceding one
         // this pass would retarget). Removing it would silently skip the
         // copy for every predecessor that isn't the textual one.
@@ -558,7 +558,7 @@ fn void run_move_elimination(Instruction* code, uint code_count, bool* jump_targ
         // it to rDst would silently change every such path.
         //
         // For the ACCUMULATE case (`A = A op B`) this guard is relaxed: the
-        // hottest instance is exactly a jump-target producer — the loop-body
+        // hottest instance is exactly a jump-target producer, the loop-body
         // entry `s = s + 1` that the back-edge conditional jumps onto. The
         // retarget is safe for EVERY entry path because (a) every path
         // reaching the producer falls straight through to this LDREG (only
@@ -574,7 +574,7 @@ fn void run_move_elimination(Instruction* code, uint code_count, bool* jump_targ
         // Does the producer read rDst as one of its own source operands?
         // Normally this bails: retargeting would make the producer read its
         // own just-clobbered destination. But for the arithmetic/bitwise
-        // accumulate ops (`A = A op B`, `A = op(A)` — the `s = s + 1` /
+        // accumulate ops (`A = A op B`, `A = op(A)`, the `s = s + 1` /
         // `acc = acc * x` / `n = n - 1` family) it is CORRECT: every op in
         // `moveelim_accum_safe` reads all its source operands before writing
         // A, so aliasing ra==rb/rc reads the old value first. See that
@@ -593,15 +593,15 @@ fn void run_move_elimination(Instruction* code, uint code_count, bool* jump_targ
         // For the ordinary (non-accumulate) case the producer does NOT read
         // rDst, so live_in[i].test(rDst) == live_out[i].test(rDst): a set
         // bit means an already-resident value survives past i and must not
-        // be clobbered — bail.
+        // be clobbered, bail.
         //
         // For the accumulate case the producer DOES read rDst, so rDst is in
-        // live_in[i] purely because of that read — which is exactly the value
+        // live_in[i] purely because of that read, which is exactly the value
         // we want to consume, not a survival hazard. The real hazard is rDst
         // being needed AFTER the producer, i.e. rDst in live_out[i]. But rDst
         // can never be live-out of the producer here: the only successor
         // reachable before rDst's next def is the LDREG at k (only NOPs sit
-        // between i and k), and the LDREG defines rDst — so it kills rDst on
+        // between i and k), and the LDREG defines rDst, killing it on
         // the path from i, leaving live_out[i] free of rDst except when a NOP
         // between i and k spuriously marks r0. Checking live_out[i] (not
         // live_in[i]) for the accumulate case is therefore the correct guard:
@@ -614,7 +614,7 @@ fn void run_move_elimination(Instruction* code, uint code_count, bool* jump_targ
         }
 
         // The LDREG slot itself must not be a jump target that also serves
-        // as a target for skip-shortcircuit style materialization tricks —
+        // as a target for skip-shortcircuit style materialization tricks,
         // no such interaction exists for this pattern (unlike the fused
         // compare-branch pass), so no extra guard beyond try-region
         // exclusion and the liveness checks above is required.

@@ -22,7 +22,7 @@ fn ushort CompilerContext.alloc_reg(&self) {
     if (self.next_reg > MAX_REGISTERS) {
         // Out of registers: flag the overflow and clamp. finish() reports it
         // as a COMPILE_ERROR; compilation continues only to keep the parser
-        // in sync — the emitted code is never run.
+        // in sync, since the emitted code is never run.
         self.reg_overflow = true;
         self.next_reg = (ushort)MAX_REGISTERS;
         self.max_reg  = (ushort)MAX_REGISTERS;
@@ -49,7 +49,7 @@ fn ushort CompilerContext.alloc_regs(&self, ushort count) {
 
 /// Free a register (only frees if it's the top of the stack).
 /// Registers below reserved_regs (parameters, hoisted function-scope slots)
-/// are permanent for the function's lifetime and are never released — an
+/// are permanent for the function's lifetime and never released. An
 /// expression that happens to return a parameter's register must not let a
 /// later temp allocation land on it and clobber the parameter.
 fn void CompilerContext.free_reg(&self, ushort reg) {
@@ -72,9 +72,9 @@ fn void CompilerContext.free_regs_to(&self, ushort saved) {
 /// local binding. Called by statement() after each completed statement.
 ///
 /// free_reg is LIFO (it only pops the top of the stack), so sub-expression
-/// shapes that must free a low register while a higher one is still live —
+/// shapes that must free a low register while a higher one is still live
 /// e.g. a member call's 'this' object register, which sits below the call
-/// window it outlives — strand registers mid-expression. Statement
+/// window it outlives, strand registers mid-expression. Statement
 /// boundaries are where nothing but declared locals may remain live, so
 /// this is the single point where the stack discipline is restored.
 /// Local slots allocated during the statement itself (declare_var runs
@@ -136,12 +136,12 @@ fn ushort CompilerContext.alloc_persistent_reg(&self) {
 /// A spread produces an unbounded number of arguments at runtime, written to
 /// `[first_arg, first_arg + count)`. The count register (SPREAD_ARG/PUTARG's B
 /// field, also CALL_S's nargs source) must therefore live *below* `first_arg`,
-/// or a large enough spread overwrites it with an argument value — and the
+/// or a large enough spread overwrites it with an argument value, and the
 /// post-spread count store then clobbers a real argument slot (see plan on
 /// spread-into-call arity). The only registers below `first_arg` are the callee
 /// and `this` slots, which the call still needs. So we relocate the callee,
 /// `this`, and the `arg_count` plain arguments already emitted up by one
-/// register and hand the freed low slot back as the count register — placing it
+/// register and hand the freed low slot back as the count register, placing it
 /// below the new `first_arg` where it survives the spread and the call.
 ///
 /// A plain argument that follows a spread (`f(...a, x)`) is emitted with PUTARG,

@@ -133,7 +133,7 @@ fn bool CompilerContext.match(&self, TokenType tt) {
 /// Terminate a statement or class field per automatic semicolon insertion
 /// (ES2024 §12.10.1). An explicit `;` is consumed. Otherwise termination is
 /// only legal when the offending token is `}` or EOF, or a line terminator
-/// precedes it — ASI never glues two tokens on the same line together, so
+/// precedes it, ASI never glues two tokens on the same line together, so
 /// anything else is a SyntaxError (e.g. `using x = 1`, `class A { accessor
 /// x }`). The do-while trailing semicolon is exempt (§12.10.1 note 1) and
 /// does NOT go through this helper.
@@ -205,7 +205,7 @@ fn bool CompilerContext.is_at_end(&self) {
 
 /// Peek two tokens ahead: true if the token AFTER the current (unconsumed)
 /// token is `(`. Used to distinguish a private method (`#m(...)`) from a
-/// private field (`#m = expr` / `#m;`) — both start with the same
+/// private field (`#m = expr` / `#m;`), both start with the same
 /// HASH_IDENT current token. Non-destructive: the current token remains
 /// unconsumed on return.
 fn bool CompilerContext.peek2_is_lparen(&self) {
@@ -230,11 +230,11 @@ fn void CompilerContext.pushback(&self, Token tok) {
 /// Detect the `async` prefix for function declarations/expressions
 /// (ES2017 §14.7 Async Function Definitions).
 /// Returns true and consumes the `async` token if the current token is
-/// the identifier "async" (NOT written via Unicode escapes — an escaped
+/// the identifier "async" (NOT written via Unicode escapes, an escaped
 /// `async` is a regular IdentifierName, never the contextual keyword),
 /// followed by `function` on the SAME line (the `[no LineTerminator here]`
 /// restriction between `async` and `function`).  Returns false and leaves
-/// the input untouched otherwise — including when `async` was a method
+/// the input untouched otherwise, including when `async` was a method
 /// call like `async(x) => ...` or a method named `async`.
 fn bool CompilerContext.match_async_function(&self) {
     if (self.peek_type() != TokenType.IDENTIFIER) return false;
@@ -253,7 +253,7 @@ fn bool CompilerContext.match_async_function(&self) {
         return false;
     }
     // Escaped `async` (`\u0061sync` etc.) is a plain IdentifierName, never
-    // the contextual keyword (ES2024 §5.1.5 — terminal symbols must appear
+    // the contextual keyword (ES2024 §5.1.5, terminal symbols must appear
     // exactly as written). Backtrack; the parser falls through to identifier
     // handling (the identifier will resolve at runtime, or throw ReferenceError
     // if unbound).
@@ -294,15 +294,15 @@ fn bool CompilerContext.match_async_function(&self) {
 }
 
 /// Detect the `async` prefix for arrow functions: `async x => ...` or
-/// `async (params) => ...`. Pure lookahead — never consumes any tokens,
+/// `async (params) => ...`. Pure lookahead, never consumes any tokens,
 /// so the caller decides when to advance past `async` on a true result.
 /// Returns true if the current token is the identifier "async" (NOT
-/// written via Unicode escapes — ES2024 §5.1.5 forbids escape recognition
+/// written via Unicode escapes, ES2024 §5.1.5 forbids escape recognition
 /// for terminal symbols), is on the SAME line as the next token, and is
 /// followed by either `IDENTIFIER ARROW` (`async x => ...`) or an `LPAREN`
-/// (`async (params) => ...`; shape-only — the LPAREN speculative-arrow
+/// (`async (params) => ...`; shape-only, the LPAREN speculative-arrow
 /// scan in primary_expr decides if it truly resolves to an arrow).
-/// Returns false in all other cases — including any of:
+/// Returns false in all other cases, including any of:
 ///   - `escaped` (`\u0061sync ...`)
 ///   - line terminator between `async` and the binding identifier / `(`
 ///   - `async` followed by anything other than IDENTIFIER or LPAREN on
@@ -325,7 +325,7 @@ fn bool CompilerContext.is_async_arrow_lookahead(&self) {
         return false;
     }
     // Read the next token WITHOUT consuming it: we must leave `async` and
-    // the following tokens in place — the caller's primary_expr() will
+    // the following tokens in place, the caller's primary_expr() will
     // advance past `async` and re-enter, and on the IDENTIFIER-ARROW path
     // the binding identifier + `=>` are then consumed fresh.
     Token next_tok;
@@ -382,8 +382,8 @@ fn bool CompilerContext.is_async_arrow_lookahead(&self) {
 }
 
 /// Detect the `async` modifier for method shorthand in class bodies and
-/// object literals (ES2017 §14.6): identifier "async" followed — on the
-/// same line, per the [no LineTerminator here] restriction — by a token
+/// object literals (ES2017 §14.6): identifier "async" followed, on the
+/// same line, per the [no LineTerminator here] restriction, by a token
 /// that can start a method name: identifier, keyword, string, number,
 /// `[` (computed key), or `*` (async generator method). It is NOT a modifier
 /// when followed by `(` (a method
@@ -403,7 +403,7 @@ fn bool CompilerContext.match_async_method_prefix(&self) {
         self.pushback(cur);
         return false;
     }
-    // Peek the following token WITHOUT consuming it — on a true result the
+    // Peek the following token WITHOUT consuming it, on a true result the
     // method name (and everything after) must remain unconsumed so that
     // compile_inner_function, which builds a fresh context reading the shared
     // lexer directly, still sees it (compiler-context pushbacks would be
@@ -419,7 +419,7 @@ fn bool CompilerContext.match_async_method_prefix(&self) {
             return false;
         }
         next_tok = peek_opt;
-        // The peek stored the element's source start — record it so the
+        // The peek stored the element's source start, record it so the
         // class compiler can retain source text that begins at the method
         // (excluding `static`, per §14.6/§19.2.3.5 method source retention).
         next_src_start = self.lexer.lookahead_token_start;
@@ -457,7 +457,7 @@ fn bool CompilerContext.match_static_modifier(&self) {
     Token? cur_opt = self.advance();
     if (catch _e = cur_opt) return false;
     Token cur = cur_opt;
-    // Peek the following token WITHOUT consuming it — on a true result the
+    // Peek the following token WITHOUT consuming it, on a true result the
     // method name (and everything after) must remain unconsumed so that
     // compile_inner_function, which builds a fresh context reading the shared
     // lexer directly, still sees it (compiler-context pushbacks would be
@@ -473,7 +473,7 @@ fn bool CompilerContext.match_static_modifier(&self) {
             return false;
         }
         next_tok = peek_opt;
-        // The peek stored the element's source start — record it so the
+        // The peek stored the element's source start, record it so the
         // class compiler can retain source text that begins at the method
         // (excluding `static`, per §14.6/§19.2.3.5 method source retention).
         next_src_start = self.lexer.lookahead_token_start;
@@ -501,7 +501,7 @@ fn bool CompilerContext.match_static_modifier(&self) {
             // If it's followed by a property name token, `static` is a modifier
             // (e.g. `static get foo()`).  If it's followed by `(`, `;`, `,`, `}`,
             // then `get`/`set` is a plain method name, and `static` is also
-            // a method name — NOT a modifier (e.g. `get static()`).
+            // a method name, NOT a modifier (e.g. `get static()`).
             Token after_accessor;
             if (self.pushback_count > 1) {
                 after_accessor = self.pushback_stack[self.pushback_count - 2];
@@ -529,7 +529,7 @@ fn bool CompilerContext.match_static_modifier(&self) {
             }
             // Whether `get`/`set` turns out to be an accessor prefix
             // (`static get foo()`) or a plain method name (`static get()`),
-            // `static` itself is a modifier either way — the method name
+            // `static` itself is a modifier either way, the method name
             // position after `static` is occupied by `get`/`set`, so
             // `static` cannot be the member name here. Fall through.
             (void)after_accessor;
@@ -552,7 +552,7 @@ fn bool CompilerContext.match_static_modifier(&self) {
 
 /// Detect a class static initialization block (`static { ... }`, ES2022).
 /// `{` can never start a PropertyName, so unlike match_static_modifier there
-/// is no ASI ambiguity to resolve with a same-line check — `static` directly
+/// is no ASI ambiguity to resolve with a same-line check, `static` directly
 /// followed by `{` (on any line) is always the ClassStaticBlock production,
 /// never `static` used as a field/method name. Returns true and consumes the
 /// `static` token if this is a static block; otherwise leaves the input
@@ -617,14 +617,14 @@ fn bool CompilerContext.skip_expr_lex(&self) {
             case TokenType.RBRACKET: {
                 if (paren_depth > 0) { paren_depth--; }
             }
-            // Function body `{...}` — keep balanced; its outer closing `}`
+            // Function body `{...}`, keep balanced; its outer closing `}`
             // is consumed by the brace counter. `;` inside the body must
             // not terminate the skip.
             case TokenType.LBRACE:    brace_depth++; continue;
             case TokenType.RBRACE: {
                 if (brace_depth > 0) brace_depth--;
             }
-            // Template literal substitutions — `}` inside a `${...}` is not
+            // Template literal substitutions, `}` inside a `${...}` is not
             // a function-body close (matches skip_braced_block convention).
             case TokenType.TEMPLATE_HEAD: template_depth++; continue;
             case TokenType.TEMPLATE_MIDDLE:
