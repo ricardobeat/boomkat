@@ -18,7 +18,7 @@ const uint FORIN_INITIAL_CAP = 64;
 /// cache lines of pointers and scanning beats hashing.
 const uint FORIN_SEEN_HASH_THRESHOLD = 12;
 
-/// Slot count of the index built at promotion.  MUST be a power of two —
+/// Slot count of the index built at promotion, which must be a power of two, since
 /// ForInSeen probes with `& index_mask` and relies on the walk visiting every
 /// slot, so a non-power-of-two mask makes a miss loop forever.  Sized to keep
 /// the load factor at or below 1/2 at the promotion threshold.
@@ -41,7 +41,7 @@ const uint FORIN_NEARER_MAX = 16;
 ///
 /// `nearer` holds the ordinary (non-proxy) chain levels already walked, so a
 /// key about to be yielded from a farther level can be tested for an own
-/// property — enumerable or not — on a nearer one.  ES
+/// property, enumerable or not, on a nearer one. ES
 /// EnumerateObjectProperties records EVERY own key it visits as already-seen,
 /// so a non-enumerable own property shadows a same-named enumerable prototype
 /// property (plan 062 group F).  Probing lazily via find_prop_idx keeps that
@@ -151,7 +151,7 @@ fn bool ForInSeen.push_level(&self, HObject* level) @local {
 /// True iff `key` is an own named property of an already-walked level.
 ///
 /// Symbols are exempt: they are yielded by their own phase and never
-/// participate in shadowing.  A String object's own `length` is NOT exempt —
+/// participate in shadowing. A String object's own `length` is not exempt:
 /// it is non-enumerable, so EnumerateObjectProperties still records it as
 /// visited and it suppresses a same-named enumerable property inherited from
 /// the prototype chain.
@@ -194,7 +194,7 @@ fn bool forin_record_non_enumerable(Heap* h, ForInSeen* seen, HObject* level) {
 /// place when it grows, so reusing one `cap` for both calls made the second
 /// call's growth check see the already-doubled capacity and wrongly skip
 /// reallocating the seen array, leaving it permanently undersized relative to
-/// `keys` — a heap buffer overflow on every subsequent write once it fell
+/// `keys`, a heap buffer overflow on every subsequent write once it fell
 /// behind.
 ///
 /// `track` is false on the final chain level: nothing above is left to
@@ -214,7 +214,7 @@ fn bool forin_add_key(Heap* h, HString*** keys, uint* count, uint* keys_cap,
 ///
 /// Ordinary chain levels get this rule for free from the lazy `shadowed`
 /// probe, which reads their own properties directly. A proxy's keys are
-/// virtual — they exist only as trap results — so a non-enumerable own key of
+/// virtual, existing only as trap results, so a non-enumerable own key of
 /// a proxy has to be inserted here to suppress a same-named enumerable key
 /// further up the chain (EnumerateObjectProperties).
 fn bool forin_mark_seen(Heap* h, ForInSeen* seen, HString* key) {
@@ -226,12 +226,12 @@ fn bool forin_mark_seen(Heap* h, ForInSeen* seen, HString* key) {
 /// inherited) at the moment of the call.  Used by NEXTFOR to honour the
 /// EnumerateObjectProperties liveness rule (plan 062 group N): a property
 /// deleted from the target before its turn is skipped, never yielded as
-/// undefined.  This is a re-check — the snapshot is fixed at INITFOR time.
+/// undefined. This is a re-check; the snapshot itself is fixed at INITFOR time.
 ///
 /// Exotic-keyed targets get a dedicated branch because their integer-indexed
 /// properties are served by the exotic handler, not via the named-prop table
 /// or dense part that `has_prop_proto` consults.  Proxies bypass the check
-/// entirely — their keys are virtual (added/removed via traps) and re-
+/// entirely, since their keys are virtual, added and removed through traps, and re-
 /// invoking [[HasProperty]] could yield inconsistent results, matching
 /// Duktape's `check_existence = !IS_PROXY(enum_target)` bypass.
 fn bool forin_key_still_exists(HObject* target, HString* key) {
@@ -310,7 +310,7 @@ fn ForInState* collect_forin_keys(Vm* vm, HObject* obj) {
             // non-enumerable own keys, marked seen only so they shadow a
             // same-named enumerable prototype key (EnumerateObjectProperties).
             // A proxy's keys are virtual, so the lazy find_prop_idx probe used
-            // for ordinary levels cannot see them — they must be recorded here.
+            // for ordinary levels cannot see them, so they are recorded here.
             for (uint i = 0; i < ptotal; i++) {
                 bool ok = i < pn
                     ? forin_add_key(h, &keys, &count, &keys_cap, &seen, track, pkeys[i])
@@ -359,7 +359,7 @@ fn ForInState* collect_forin_keys(Vm* vm, HObject* obj) {
                     return null;
                 }
             }
-            cur = null;   // null prototype — walk ends here
+            cur = null;   // a null prototype ends the walk
             depth++;
             continue;
         }
@@ -399,7 +399,7 @@ fn ForInState* collect_forin_keys(Vm* vm, HObject* obj) {
             }
         }
 
-        // Own dense array part indices — integer keys from dense storage (before named props).
+        // Integer keys from the dense array part, which come before named props.
         for (uint i = 0; i < cur.array_size; i++) {
             if (!cur.array_part()[i].is_undefined()) {
                 HString* k = vm.heap.int_to_hstring((long)i);
@@ -412,7 +412,7 @@ fn ForInState* collect_forin_keys(Vm* vm, HObject* obj) {
             }
         }
 
-        // Own named properties — integer indices ascending, then strings in insertion order.
+        // Own named properties: integer indices ascending, then strings in insertion order.
         // Phase 1: integer-indexed named properties (sorted by numeric index, enumerable only)
         {
             uint int_count = 0;
@@ -478,7 +478,7 @@ fn ForInState* collect_forin_keys(Vm* vm, HObject* obj) {
         }
         // Symbol-keyed properties are deliberately never yielded:
         // EnumerateObjectProperties (§14.7.5.9) yields only keys of type
-        // String. Symbols also need no place in `seen` — a symbol key can
+        // String. Symbols also need no place in `seen`, since a symbol key can
         // never be pointer-equal to a string key, so it can neither shadow
         // nor be shadowed by one.
 

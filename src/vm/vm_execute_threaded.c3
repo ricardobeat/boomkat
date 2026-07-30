@@ -325,7 +325,8 @@ fn Instruction* th_putglobal_prim(Instruction* pc, Instruction* code_end, TVal* 
 
 // Fused primitive-only global-to-global copy (`a = b`). Two-word instruction:
 // pc holds the destination name (BC); pc+1 (a NOP) holds the source name (BC).
-// Dual IC: dst write IC at pc_off, src read IC at pc_off+1. Hot path only —
+// Two inline caches: the dst write at pc_off and the src read at pc_off+1. The
+// hot path only,
 // any miss bails to the switch VM, which resolves the cold path AND advances
 // pc past both words. On hit, advance pc by 2.
 fn Instruction* th_move_gg(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {

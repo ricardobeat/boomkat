@@ -12,23 +12,23 @@ import duktape::re_bindings;
 import std::math;
 
 // ============================================================================
-// vm_objects — object/array creation, spreads, iterators
+// Object and array creation, spreads, and iterators
 // ============================================================================
 
 /// Result of copy_data_property: whether the caller's enumeration loop
 /// should keep going, and (independently) whether a hard VM_ERROR occurred
 /// or the getter threw a catchable value the caller must propagate.
 struct CopyPropResult {
-    bool cont;        // false: stop enumerating (getter_threw or vm_error — check which)
-    bool vm_error;     // true: put_prop failed — caller must propagate VM_ERROR~
-    bool getter_threw; // true: getter raised — thrown_val holds the value to rethrow
+    bool cont;        // false stops the enumeration; getter_threw or vm_error says why)
+    bool vm_error;     // put_prop failed, so the caller propagates VM_ERROR~
+    bool getter_threw; // a getter raised, and thrown_val holds the value to rethrow
     TVal thrown_val;
 }
 
 /// Copy one enumerable own property (by prop-table index `i`, key `key`)
 /// from `source` to `target`, invoking the getter for accessor properties
 /// ([[Get]] semantics). On a getter throw, enumeration stops and the thrown
-/// value is handed back to the caller to re-raise via vm_throw_value — later
+/// value goes back to the caller to re-raise through vm_throw_value, since later
 /// getters in the same CopyDataProperties call must not run (§7.3.25 step 5.c
 /// / Get's abrupt completion propagates through the ReturnIfAbrupt chain).
 /// Shared by OBJSPRD's and OBJREST's three key-ordering passes.
@@ -77,7 +77,7 @@ fn bool key_is_excluded(void* key, HObject* excluded) {
 /// enumerable property of `source` into `target`, skipping any key present in
 /// `excluded` (may be null for "no exclusions", as in Object.assign/OBJSPRD).
 /// Shared by OBJSPRD (object spread `{...src}`) and OBJREST (object-rest
-/// destructuring `{...rest} = src`) — the two opcodes differ only in whether
+/// destructuring `{...rest} = src`). The two opcodes differ only in whether
 /// an exclusion list is supplied. A getter throw stops enumeration and is
 /// re-raised via vm_throw_value so later getters never run and the throw is
 /// catchable by the caller (§7.3.25 step 5.c).
@@ -102,7 +102,7 @@ fn void? copy_data_properties_into(Vm* vm, Dispatch* ds, HObject* target, TVal s
         source = wrapper;
     } else {
         // Numbers, booleans, symbols, and bigints box to a wrapper with no
-        // own enumerable properties — CopyDataProperties would visit zero
+        // own enumerable properties, so CopyDataProperties would visit zero
         // keys, so this is a no-op without allocating a throwaway wrapper.
         return;
     }
@@ -203,7 +203,7 @@ fn void? copy_data_properties_into(Vm* vm, Dispatch* ds, HObject* target, TVal s
     // to be declared, rather than sorted before the string keys.
 
     // Pass 1: named-table arridx keys, ascending numeric order (not
-    // table-storage order) — sort a small (index-value, table-index)
+    // table-storage order), so sort a small (index-value, table-index)
     // list first.
     {
         uint arridx_count = 0;
@@ -391,7 +391,7 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
                             }
                         }
 
-                        // Compile the regexp — but a literal's pattern+flags are
+                        // Compile the regexp. A literal's pattern and flags are
                         // fixed, so cache the compiled (refcounted) bytecode on
                         // the CompiledFunction keyed by this literal's constant
                         // index. On a cache hit we take a fresh reference and skip
@@ -441,7 +441,7 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
                             HObject*? obj_raw = vm.heap.alloc_object(hobject::ObjClass.REGEXP);
                             if (try obj = obj_raw) {
                                 obj.prototype = vm.heap.regexp_proto;
-                                // Holds one ref — re_compile's initial ref, or
+                                // Holds one reference: re_compile's initial one, or
                                 // the fresh re_ref taken when `from_cache` gave
                                 // us the literal cache's shared bytecode.
                                 (*obj.extra_ptr()).regexp.regexp_data = compiled;
@@ -449,7 +449,7 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
                                 // Store pattern string as primitive_value
                                 HString* pattern_hs = intern_string(vm, pattern_data);
                                 (*obj.extra_ptr()).prim.primitive_value.set_string(pattern_hs);
-                                // Set lastIndex (ES5 §15.10.7) — only own data property
+                                // Set lastIndex (ES5 §15.10.7), the only own data property
                                 HString* lastindex_key = intern_string(vm, "lastIndex");
                                 TVal lastindex_tv;
                                 lastindex_tv.set_fastint(0);
@@ -462,7 +462,7 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
                                 ra.set_undefined();
                             }
                         } else {
-                            // re_compile failed — still create an empty regexp object
+                            // re_compile failed, but still create an empty regexp object
                             // so typeof works correctly
                             HObject*? obj_raw = vm.heap.alloc_object(hobject::ObjClass.REGEXP);
                             if (try obj = obj_raw) {
@@ -563,7 +563,7 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
                             return (TVal){};
                         }
                         // call_fn may have invoked user JS, reallocating the
-                        // register file — re-derive `rc` before reusing it.
+                        // register file, so re-derive `rc` before reusing it.
                         rc = ds.regs_base + (uint)insn.c;
                     } else if (im_res.kind == hobject::PropLookupKind.PROP_DATA) {
                         iter_method = im_res.data_val;
@@ -633,7 +633,7 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
 
                 HObject* result_obj = (HObject*)result.get_heapptr();
 
-                // ES IteratorComplete: Get(result, "done") — may invoke a getter that throws
+                // ES IteratorComplete: Get(result, "done") can invoke a getter that throws
                 hobject::PropLookupResult done_res = result_obj.get_prop_or_accessor_proto(done_key, true);
                 TVal done_val;
                 if (done_res.kind == hobject::PropLookupKind.PROP_ACCESSOR) {
@@ -662,7 +662,7 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
                 bool done = builtins::builtin_to_boolean(&done_val);
                 if (done) { break; }
 
-                // ES IteratorValue: Get(result, "value") — may invoke a getter that throws
+                // ES IteratorValue: Get(result, "value") can invoke a getter that throws
                 hobject::PropLookupResult value_res = result_obj.get_prop_or_accessor_proto(value_key, true);
                 TVal value_val;
                 bool value_found = true;
@@ -768,7 +768,7 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
                             return (TVal){};
                         }
                         // call_fn may have invoked user JS, reallocating the
-                        // register file — re-derive `rc` before reusing it.
+                        // register file, so re-derive `rc` before reusing it.
                         rc = ds.regs_base + (uint)insn.c;
                     } else if (im_res.kind == hobject::PropLookupKind.PROP_DATA) {
                         iter_method = im_res.data_val;
@@ -848,7 +848,7 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
 
                 HObject* result_obj = (HObject*)result.get_heapptr();
 
-                // ES IteratorComplete: Get(result, "done") — may invoke a getter that throws
+                // ES IteratorComplete: Get(result, "done") can invoke a getter that throws
                 hobject::PropLookupResult done_res2 = result_obj.get_prop_or_accessor_proto(done_key, true);
                 TVal done_val2;
                 if (done_res2.kind == hobject::PropLookupKind.PROP_ACCESSOR) {
@@ -878,7 +878,7 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
                 bool done = builtins::builtin_to_boolean(&done_val2);
                 if (done) { break; }
 
-                // ES IteratorValue: Get(result, "value") — may invoke a getter that throws
+                // ES IteratorValue: Get(result, "value") can invoke a getter that throws
                 hobject::PropLookupResult value_res2 = result_obj.get_prop_or_accessor_proto(value_key, true);
                 TVal value_val2;
                 bool value_found2 = true;
@@ -913,7 +913,7 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
                     // iterable, but the call frame's teardown (decref_callee_regs)
                     // will decref every argument slot. tval_copy_ref increfs it so
                     // that decref is balanced and the iterable's element survives
-                    // — matching FWD_ARGS and ordinary (GETVAR/etc.) argument
+                    // matching FWD_ARGS and ordinary argument
                     // evaluation, which also leave owned refs in the arg registers.
                     vm.heap.tval_copy_ref(dest_slot, &value_val2);
                     track_heap_store(ds.act, dest_slot, dest_start + k);
@@ -978,7 +978,7 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
                 if (dense != null && i < src_obj.array_size) {
                     vm.heap.tval_copy_ref(dest, &dense[i]);
                 } else {
-                    // Beyond dense part — check property table or return undefined
+                    // Past the dense part, so check the property table
                     TVal idx_val;
                     idx_val.set_fastint((long)i);
                     TVal* idx_slot = ds.regs_base + first_arg_reg + i;

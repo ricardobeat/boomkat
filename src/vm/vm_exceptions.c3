@@ -11,7 +11,7 @@ import duktape::re_bindings;
 import std::math;
 
 // ============================================================================
-// vm_exceptions — exception handling
+// Exception handling
 // ============================================================================
 /// Sub-dispatch for TRY, ENDTRY, THROW, CATCH, FINALLY, ENDFINALLY opcodes.
 fn TVal? dispatch_exceptions(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, Instruction insn) {
@@ -40,7 +40,7 @@ fn TVal? dispatch_exceptions(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
             // Allocate catcher
             Catcher* cat = (Catcher*)vm.heap.alloc_func(vm.heap.heap_udata, Catcher::size);
             if (cat == null) {
-                // Out of memory — skip catcher creation, try block will run unprotected
+                // Out of memory, so skip the catcher and let the try body run unprotected
                 break;
             }
             cat.parent = (Catcher*)ds.act.cat;
@@ -61,7 +61,7 @@ fn TVal? dispatch_exceptions(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
             // handler reads that catcher's saved_lex_env (to rebalance the lex
             // chain on abrupt entry) and pending-completion flags, and ENDFINALLY
             // pops it. Freeing it here would leave the following FINALLY reading
-            // the *enclosing* catcher — corrupting the lex chain when an outer
+            // the enclosing catcher, corrupting the lex chain when an outer
             // try (e.g. a for-of iterator-close guard) sits above a block-scoped
             // destructuring whose own iterator-close finally runs on the normal
             // path. Only catchers without a finally are popped here.
@@ -128,7 +128,7 @@ fn TVal? dispatch_exceptions(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
             // Read the thrown exception from the nearest catcher
             Catcher* cat = (Catcher*)ds.act.cat;
             if (cat != null) {
-                // Exceptional entry skipped the try block's POP_LEX ops —
+                // An exceptional entry skipped the try block's POP_LEX ops, so
                 // rebalance the lex chain to the TRY-entry level.
                 if (cat.saved_lex_env != null) {
                     ds.act.lex_env = (env::EnvRecord*)cat.saved_lex_env;
@@ -139,7 +139,7 @@ fn TVal? dispatch_exceptions(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 // Clear thrown value
                 cat.thrown_val.set_undefined();
 
-                // Clear VM-level error flags — the throw has been caught.
+                // The throw has been caught, so clear the VM error flags.
                 // Without this, a phantom vm.has_error from a deep throw
                 // persists and causes phantom errors in subsequent call_fn
                 // invocations (e.g., ToPrimitive valueOf/toString).
@@ -160,7 +160,7 @@ fn TVal? dispatch_exceptions(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
         }
 
         case Opcode.FINALLY:
-            // No-op marker — the catcher's finally_pc points here.
+            // A marker the catcher's finally_pc points at; it does nothing.
             // When entered via normal fall-through (after catch or via jump),
             // there may or may not be a catcher on the chain.
             // Mark the catcher as "in finally" so that vm_throw_value skips it
@@ -181,7 +181,7 @@ fn TVal? dispatch_exceptions(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     // Clear CATCH_ENABLED: once we enter the finally block, the
                     // try block has already completed (normal, abrupt, or via
                     // catch). A throw inside the finally must NOT be caught by
-                    // THIS try/catch's catch clause — per ES2015 §13.15.1.2 the
+                    // this try/catch's own catch clause. Per ES2015 §13.15.1.2 the
                     // catch only handles throws from the try block. Without
                     // this, a throw in the finally jumps to catch_pc, the catch
                     // body runs, then falls through to FINALLY and re-executes
@@ -215,7 +215,7 @@ fn TVal? dispatch_exceptions(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 vm.heap.free_func(vm.heap.heap_udata, cat);
 
                 if (has_pending_ret) {
-                    // Check if the parent catcher also has a finally — if so,
+                    // When the parent catcher also has a finally,
                     // propagate the pending return through it before completing.
                     if (parent_cat != null && parent_cat.finally_pc != null
                         && (parent_cat.flags & CATCHER_FLAG_FINALLY_ENABLED) != 0) {
@@ -237,7 +237,7 @@ fn TVal? dispatch_exceptions(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     if (has_pending_ret_gen) {
                         // Return was deferred from a generator body (RET_GEN/
                         // RETUNDEF_GEN, or a .return()/.throw() completion
-                        // injected via LOAD_RESUME) — complete via the
+                        // injected via LOAD_RESUME), so complete through the
                         // generator-aware path instead of a plain RET.
                         TVal gval = saved_ret_val;
                         vm_complete_generator_return(ds, &gval);
@@ -262,14 +262,14 @@ fn TVal? dispatch_exceptions(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     // Async function: resolve the promise with the return value
                     // and write the promise to callee_result (instead of the
                     // raw value). Mirrors the plain RET/RETUNDEF inline path in
-                    // vm_execute.c3 — without it, the body's caller would
+                    // vm_execute.c3. Without it the body's caller would
                     // receive the raw return value (e.g. `2`) overwriting the
                     // Promise that vm_calls.c3 pre-installed in callee_result,
                     // and `f().then(...)` would crash with "undefined is not a
                     // function". Must go through promise_resolve_with_value
                     // (not a bare promise_settle) so a returned thenable/Promise
                     // is adopted per ES2015 §25.5.5.4 AsyncFunctionStart /
-                    // §27.2.1.3.2 — the async function's promise takes on the
+                    // §27.2.1.3.2: the async function's promise takes on the
                     // eventual settlement of the returned promise rather than
                     // fulfilling with the promise object.
                     if ((callee_act.flags & ACT_FLAG_ASYNC) != 0 && callee_act.async_promise != null) {
@@ -298,7 +298,7 @@ fn TVal? dispatch_exceptions(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                         // outer Vm.run() loop sees ds.halt and returns
                         // ds.halt_value (= vm.return_val) to vm_call_fn_impl.
                         // (Returning vm.return_val from dispatch_exceptions
-                        // itself wouldn't propagate — Vm.run's
+                        // itself would not propagate, since Vm.run's
                         // `if (catch err = dispatch_exceptions(...))` only
                         // fires on faults, so non-fault returns fall through to
                         // `continue` and re-execute stale bytecode.)
@@ -375,12 +375,12 @@ fn TVal? dispatch_exceptions(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 }
 
                 if (has_pending_break || has_pending_continue) {
-                    // Check if the parent catcher also has a finally — if so,
+                    // When the parent catcher also has a finally,
                     // propagate the pending break/continue through it first.
                     // But if the parent's finally is already executing (this
                     // ENDFINALLY is completing a try/finally nested inside
                     // it), redirecting to parent.finally_pc again would loop
-                    // forever — the jump target already lies inside that
+                    // forever, since the jump target already lies inside that
                     // still-active finally, so just go there directly.
                     if (parent_cat != null && parent_cat.finally_pc != null
                         && (parent_cat.flags & CATCHER_FLAG_FINALLY_ENABLED) != 0
@@ -395,7 +395,7 @@ fn TVal? dispatch_exceptions(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                         ds.act.curr_pc = ds.curr_pc;
                         break;
                     }
-                    // All finally blocks have run — complete the break/continue
+                    // Every finally block has run, so complete the break or continue
                     // by jumping to the saved target.
                     ds.curr_pc = saved_pending_pc;
                     ds.act.curr_pc = ds.curr_pc;

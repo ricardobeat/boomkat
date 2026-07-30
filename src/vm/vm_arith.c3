@@ -11,7 +11,8 @@ import duktape::re_bindings;
 import std::math;
 
 // ============================================================================
-// vm_unary — unary ops, inc/dec, and variable inc/dec fusion (UNP..DEC_VAR).
+// Unary operations, increment and decrement, and the fused variable forms
+// (UNP through DEC_VAR).
 // Hot arithmetic / bitwise / comparison / load-store / control-flow opcodes are
 // inlined directly in Vm.run (src/vm/vm_execute.c3) to avoid per-instruction
 // call overhead; only the loop-bearing unary handlers live out-of-line here.
@@ -69,7 +70,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                     ra.set_fastint(-unm_val);
                 }
             } else if (rb.get_tag() == OBJECT) {
-                // ES2020 §12.5.7 UnaryMinus: ToNumeric(operand) — ToPrimitive
+                // ES2020 §12.5.7 UnaryMinus: ToNumeric(operand). ToPrimitive
                 // (hint number) FIRST, then pass a BigInt result through to
                 // BigInt::unaryMinus instead of ToNumber (which would throw
                 // on BigInt). Handles `-Object(1n)` / `-{[Symbol.toPrimitive]:
@@ -103,7 +104,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                 return (TVal){};
             }
             if (rb.get_tag() == OBJECT) {
-                // ES2020 §12.5.9 BitwiseNOT: ToNumeric(operand) — ToPrimitive
+                // ES2020 §12.5.9 BitwiseNOT: ToNumeric(operand). ToPrimitive
                 // (hint number) FIRST, then pass a BigInt result through to
                 // BigInt::bitwiseNOT instead of ToNumber (which would throw
                 // on BigInt). Handles `~Object(1n)` / `~{[Symbol.toPrimitive]:
@@ -154,7 +155,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
             } else {
                 // Slow path: convert to number, increment, store back.
                 // ra may hold an owned heap reference (e.g. a large
-                // non-interned string being ++'d) — release it before the
+                // non-interned string being ++'d), so release it before the
                 // raw numeric overwrite or that reference leaks.
                 double d = vm_to_number(vm,ra);
                 if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
@@ -227,7 +228,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                         TVal old_val = b.prop_values()[vic.prop_idx];
                         if (!env::is_tdz_sentinel(&old_val)
                             && b.get_prop_flags(vic.prop_idx).writable) {
-                            // ENV_STRICT: INC_VAR/DEC_VAR read traps removed — for needs_env=false
+                            // ENV_STRICT: INC_VAR and DEC_VAR read traps are gone, since a needs_env=false
                             // lex_env == parent env, so a hit here is a legitimate parent
                             // lookup, not own-local. Own-local leaks surface as 'not defined'
                             // throws and are caught by test/test_register_locals.js.
@@ -276,7 +277,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
             while (cur != null) {
                 int idx = cur.bindings.find_prop_idx(key);
                 if (idx >= 0) {
-                    // ENV_STRICT: INC_VAR/DEC_VAR read traps removed — for needs_env=false
+                    // ENV_STRICT: INC_VAR and DEC_VAR read traps are gone, since a needs_env=false
                     // lex_env == parent env, so a hit here is a legitimate parent
                     // lookup, not own-local. Own-local leaks surface as 'not defined'
                     // throws and are caught by test/test_register_locals.js.
@@ -408,7 +409,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                 HObject* gb = (HObject*)gic.bindings;
                 // Slot IC fast path: shape-id compare then a direct slot
                 // read-modify-write. Gated on varref_store_ok (writable
-                // non-configurable data global — descriptor immutable), so no
+                // non-configurable data global, whose descriptor cannot change), so no
                 // writability re-check is needed.
                 if (gb != null && gic.search_head == (void*)ds.act.lex_env
                     && gb.shape_id == gic.shape_id && gic.varref_store_ok) {
@@ -462,7 +463,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                         return (TVal){};
                     }
                     if (fl.is_accessor) {
-                        // Accessor global: no slot semantics — cannot fast-inc.
+                        // An accessor global has no slot to increment in place.
                         return VM_ERROR~;
                     }
                     if (old_val.is_fastint()) {

@@ -22,7 +22,7 @@ fn double tval_numeric_to_double(TVal* val) @inline {
     return val.is_fastint() ? (double)val.get_fastint() : val.get_number();
 }
 
-/// ECMAScript ToNumber — convert any TVal to its numeric double value.
+/// ECMAScript ToNumber: convert any TVal to a double.
 /// Handles BOOLEAN→0/1, OBJECT→ToPrimitive→number, STRING→parse, etc.
 fn double vm_to_number(Vm* vm, TVal* val) {
     switch (val.get_tag()) {
@@ -53,7 +53,7 @@ fn double vm_to_number(Vm* vm, TVal* val) {
     }
 }
 
-/// ECMAScript ToInt32 — ES5 §9.5
+/// ECMAScript ToInt32 (ES5 §9.5).
 /// Converts a double to int32 using modular arithmetic (mod 2^32).
 /// Handles NaN → 0, Infinity → 0, and large values via floor-then-mod.
 fn int toint32(double d) @inline {
@@ -122,7 +122,7 @@ fn int vm_relational_compare(Vm* vm, TVal* x, TVal* y, bool* is_undef) {
 macro bool is_truthy(TVal* val) {
     // BigInt: false iff the mathematical value is 0n (ES2020 §7.1.2).
     // get_bigint() reads via get_heapptr(), which works the same whether or
-    // not nanboxing is enabled — checked once here instead of duplicating a
+    // not nanboxing is enabled, checked once here instead of duplicating a
     // bit-level tag test in the nanbox branch below.
     if (val.is_bigint()) {
         return val.get_bigint() != 0;
@@ -237,7 +237,7 @@ fn Activation* curr_act(Vm* vm) @inline {
 
 /// Convert a TVal to an interned string key for property access.
 /// Uses a single tag extraction via switch to avoid redundant checks.
-/// ES5 §11.8.7 / ES7 §12.2.1: ToPropertyKey — unwraps wrapper objects.
+/// ToPropertyKey (ES5 §11.8.7, ES7 §12.2.1), which unwraps wrapper objects.
 fn void* get_prop_key(Vm* vm, TVal* val) {
     Heap* h = vm.heap;
     switch (val.get_tag()) {
@@ -261,7 +261,7 @@ fn void* get_prop_key(Vm* vm, TVal* val) {
         case UNDEFINED: return h.strs[heap::BuiltinStr.UNDEFINED];
         case NULL_VAL:  return h.strs[heap::BuiltinStr.NULL_STR];
         case OBJECT: {
-            // Full ToPrimitive (hint "string") for object keys — calls toString/valueOf,
+            // Object keys take a full ToPrimitive with hint "string", calling toString and valueOf,
             // Symbol.toPrimitive, etc. Sets throw_pending on failure (§7.1.1.1 step 6).
             TVal prim = to_primitive_value(vm, val, 1);
             if (vm != null && vm.throw_pending) return null;
@@ -311,7 +311,7 @@ fn HObject* lightfunc_get_proto(Vm* vm, uint fn_idx) {
 
 /// True when the builtin behind `fn_idx` is a constructor. Builtin FUNCTION
 /// objects are allocated with flags.constructable=true by default, so the flag
-/// cannot distinguish `new DataView(...)` from `new String.prototype.charAt` —
+/// cannot distinguish `new DataView(...)` from `new String.prototype.charAt`, so
 /// classify by function index instead: the lightfunc constructor table plus the
 /// constructors installed as full HObjects (typed arrays, ArrayBuffer,
 /// DataView, Proxy).
@@ -409,7 +409,7 @@ fn HString*? vm_number_to_string(Vm* vm, double val) {
             : vm.heap.strs[heap::BuiltinStr.NEGATIVE_INFINITY]);
     }
 
-    // ES5 §9.8.1: ToString(number) — -0 must produce "0", not "-0"
+    // ES5 §9.8.1 ToString(number): -0 must produce "0", not "-0".
     if (val == 0.0) {
         return vm.heap.str_intern("0");
     }
@@ -425,7 +425,7 @@ fn HString*? vm_number_to_string(Vm* vm, double val) {
 
     // ES2015 §7.1.12.1 ToString(Number): QuickJS js_dtoa in FREE mode emits
     // the shortest round-trip decimal in spec format (decimal for 1e-6..1e21,
-    // exponential outside, correct rounding — a truncate-and-retry loop can't
+    // exponential outside, correct rounding. A truncate-and-retry loop cannot
     // produce e.g. "7.300000000000001" from "7.3000000000000007").
     char[64] buf;
     char[dtoa_bindings::DTOA_FORMAT_TMP_SIZE] tmp;
@@ -446,7 +446,7 @@ fn HString*? vm_bigint_to_string(Vm* vm, int128 val) {
 }
 
 /// Convert a FASTINT to an interned HString* using the small-integer cache
-/// for values 0–255, or fast int-to-string conversion for larger values.
+/// for values 0 to 255, and a fast int-to-string conversion above that.
 fn HString*? vm_fastint_to_string(Vm* vm, long val) {
     HString* s = vm.heap.int_to_hstring(val);
     if (s == null) return null;
@@ -488,7 +488,7 @@ fn HString*? vm_to_string(Vm* vm, TVal* val) {
             // "string") rather than a standalone toString()-only lookup, so
             // getter-defined toString/valueOf (Object.defineProperty
             // accessors) and the toString-then-valueOf fallback order are
-            // both honored — not just a plain data-property toString.
+            // both honored, not just a plain data-property toString.
             if (vm != null && vm.heap.call_fn != null && val.get_heapptr() != null) {
                 TVal prim = to_primitive_value(vm, val, 1);
                 if (vm.throw_pending) return null;
@@ -720,7 +720,7 @@ fn bool vm_check_call_fn_error(Vm* vm) @inline {
     return false;
 }
 
-/// ES5 §9.1 ToPrimitive — hint "string" for +, "number" for arithmetic.
+/// ES5 §9.1 ToPrimitive, with hint "string" for + and "number" for arithmetic.
 /// Calls Symbol.toPrimitive first (ES6 §7.1.1), then valueOf/toString.
 /// Sets vm.throw_pending if both valueOf and toString return non-primitives.
 /// hint: 0 = default, 1 = string, 2 = number
@@ -740,7 +740,7 @@ fn TVal to_primitive_value(Vm* vm, TVal* val, int hint = 0) {
         bool can_fast_unwrap = (hp != null);
         if (can_fast_unwrap) {
             // Skip fast path if the instance carries its own valueOf / toString
-            // / @@toPrimitive — those would shadow the prototype methods that
+            // or @@toPrimitive, which would shadow the prototype methods that
             // the fast path implicitly relies on.
             HString* vo_key = (HString*)hp.strs[heap::BuiltinStr.VALUE_OF];
             HString* ts_key = (HString*)hp.strs[heap::BuiltinStr.TO_STRING];
@@ -770,7 +770,7 @@ fn TVal to_primitive_value(Vm* vm, TVal* val, int hint = 0) {
             }
             // Fast path: Symbol wrapper → unwrap directly. Symbol.prototype[@@toPrimitive]
             // ignores its hint and always returns [[SymbolData]] unwrapped, so skipping
-            // straight to the primitive is equivalent to calling it — but ONLY while
+            // straight to the primitive is equivalent to calling it, but only while
             // that well-known method is still the original built-in. If it has been
             // redefined/deleted, ToPrimitive must fall through to the exotic-method
             // check below (which sees it's gone) and then to OrdinaryToPrimitive,
@@ -814,7 +814,7 @@ fn TVal to_primitive_value(Vm* vm, TVal* val, int hint = 0) {
             bool toprim_callable = toprim_fn.is_lightfunc() ||
                 (toprim_fn.is_object() && toprim_fn.get_heapptr() != null && ((HObject*)toprim_fn.get_heapptr()).is_callable());
             if (toprim_callable) {
-                // Call Symbol.toPrimitive(obj, hint) — use "default" for general ToPrimitive,
+                // Call Symbol.toPrimitive(obj, hint), passing "default" for a general ToPrimitive
                 // but "string" for + operator (ES5 §11.6.1).
                 HString* hint_str = (hint == 1)
                     ? intern_string(vm, "string")
@@ -834,7 +834,7 @@ fn TVal to_primitive_value(Vm* vm, TVal* val, int hint = 0) {
                 return *val;
             } else if (!toprim_fn.is_undefined() && !toprim_fn.is_null()) {
                 // ES6 §7.1.1 step 5a / §7.3.13 Call: exoticToPrim is present
-                // but not callable — Call(exoticToPrim, ...) throws TypeError.
+                // but not callable, so Call(exoticToPrim, ...) throws a TypeError.
                 vm_set_type_error(vm, "Symbol.toPrimitive is not a function");
                 return *val;
             }
@@ -909,17 +909,17 @@ fn TVal to_primitive_value(Vm* vm, TVal* val, int hint = 0) {
     return *val;
 }
 
-/// ToNumeric(hint number) both operands of a bitwise/shift op — ES2020
+/// ToNumeric(hint number) on both operands of a bitwise or shift op. ES2020
 /// §12.12.3/§12.9.4 etc. all begin "Let lnum be ? ToNumeric(lval)" / "Let
-/// rnum be ? ToNumeric(rval)" — each ToNumeric is itself ToPrimitive followed
+/// rnum be ? ToNumeric(rval)", and each ToNumeric is itself ToPrimitive followed
 /// immediately by the BigInt-or-ToNumber dispatch (ES2020 §7.1.3). Both steps
 /// for lval must fully complete, including a Symbol-typed primitive throwing
-/// TypeError, before rval's ToPrimitive is even invoked — so this resolves
+/// TypeError before rval's ToPrimitive runs at all, so this resolves
 /// lval all the way to numeric first, then rval, rather than ToPrimitive'ing
 /// both up front. The opcode handlers in vm_execute.c3 previously checked
 /// `rb.is_bigint() || rc.is_bigint()` on the RAW operands, which misses an
 /// object whose valueOf/toString/Symbol.toPrimitive produces a BigInt (e.g.
-/// `Object(1n) << 1n`) — that object is neither BigInt nor fastint/number, so
+/// `Object(1n) << 1n`), that object is neither a BigInt nor a number, so
 /// it fell through to the plain-numeric path and threw or coerced wrongly
 /// instead of being recognized as BigInt-typed.
 ///

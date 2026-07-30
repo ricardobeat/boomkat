@@ -1,4 +1,4 @@
-/// vm_bigint — BigInt operand handling for the arithmetic / bitwise /
+/// BigInt operand handling for the arithmetic, bitwise, and
 /// comparison opcodes.
 ///
 /// The hot number paths in Vm.run call into these helpers only after checking
@@ -20,9 +20,9 @@ import duktape::hbigint;
 
 /// Outcome of vm_bigint_binop / vm_bigint_relcompare.
 enum BigIntOpResult : char {
-    NOT_BIGINT,   // Neither operand was a BigInt — caller falls through.
-    HANDLED,      // Result written into the destination register — `continue`.
-    THREW,        // A deferred throw was raised — caller must propagate it.
+    NOT_BIGINT,   // Neither operand was a BigInt, so the caller falls through.
+    HANDLED,      // The result is in the destination register; continue.
+    THREW,        // A deferred throw was raised and must be propagated.
 }
 
 // ============================================================================
@@ -242,7 +242,7 @@ fn int vm_bigint_relational(Vm* vm, TVal* x, TVal* y, bool* is_undef) {
         if (y.is_string()) {
             HString* ys = (HString*)y.get_heapptr();
             // Symbols share the STRING tag but can never be implicitly
-            // converted to a number (ES2020 §7.1.3) — throw, don't compare.
+            // converted to a number (ES2020 §7.1.3), so throw rather than compare.
             if (ys != null && ys.is_symbol()) {
                 vm_set_type_error(vm, "Cannot convert a Symbol value to a number");
                 return 0;
