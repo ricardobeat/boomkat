@@ -1,6 +1,10 @@
 # Plan 061 — Engine-wide consolidation (design review)
 
-**Status:** DRAFT (session 295). User-requested full-design review: reduce duplication, increase elegance/compactness at constant performance and correctness. Method: four read-only subsystem surveys → this ranked plan → one fix agent per item, each gated on golden bytecode + bench-fast + relevant phase sweeps.
+**Status:** RE-SURVEYED against main @ 073aa16b (session 302). Originally DRAFT (session 295). User-requested full-design review: reduce duplication, increase elegance/compactness at constant performance and correctness. Method: four read-only subsystem surveys → this ranked plan → one fix agent per item, each gated on golden bytecode + bench-fast + relevant phase sweeps.
+
+**Re-survey verdict:** ~70% still valid. Three high-ranked items are wrong: **C1 and D1 are already done** (a1513ec5, d366a2c5 — deleted from the ordering below), and **D2 conflates two unrelated mechanisms** and overstates its scope. The survey also turned up one *live shipping spec bug* (B1's arrow prologue gap) and the structural reason the suite never saw it (4604 parse-negative tests skipped wholesale). Both are now tracked independently of this plan; B1's narrow fix should ship on its own, ahead of any consolidation work.
+
+**Ranking principle (revised):** rank by how much of the *hand-maintained-invariant* bug class an item forecloses, not by lines saved. Session-302 evidence: 073aa16b (three fusion passes carried a jump-target bitset and were correct; the two without one were the two that were buggy), 0ee9fd78 (four of nine activation push sites never wrote the field), 4f486724 (a guard matching on opcode alone, never register identity). When an invariant is hand-copied N times, the bugs live in the copies that omit it.
 
 **Evidence baseline:** this session alone, duplication caused: the PUTLEX-r0 param bug (fixed 3×), the in_formal_params flag (chased through 5 sites), ~15 core.c3 merge conflicts, the arguments-object divergence (4 builders, 2 missing @@iterator), and the resume-routing drift.
 
@@ -43,15 +47,40 @@ Ordering: A1 → A2 → A3 (mechanical, independently verifiable) → A5 → A4 
 - **D5 (cosmetic, optional) PropFlags** — conventions clean; ~88 inline mutations could start from named constants.
 - **Untouchable without bench proof:** TA length fast-path branch; RET twins' refcount fast paths.
 
-## Synthesis — execution order
+## Synthesis — execution order (REVISED, session 302)
 
-1. **D1 GC roots** (bug fix, dispatched immediately).
-2. **A1+D3** pop/reload epilogue helpers (mechanical, 15+ copies).
-3. **B2** in_formal_params ownership; **B4** TemplateScan rollout; **B5** error-message normalization (each small, independent).
-4. **C1** BuiltinDef table; **C3** registrar merge; **C4** throw helpers; **C2** ToObject ladder (builtins tier, independent of VM work).
-5. **A2/A3** suspend + reaction factories; **B1** ParamListPlan (the two big structural merges — golden-bytecode-gated).
-6. **A4/A5/A6** generator state-model collapse; **C5** AB/SAB merge; **B3** CallableCtx frames.
-7. **D2** single error channel — last, on a fully green baseline.
+The original ordering front-loaded C1 and D1 (both since completed) and back-loaded B1, which contains the only confirmed live bug. Inverted.
+
+| # | Item | Files | Sites | Risk | Notes |
+|---|---|---|---|---|---|
+| 1 | **B1 arrow dup/restricted-name check** — narrow fix only | 1 | 1 fn | Low | Confirmed live bug. Ship standalone; do NOT couple to the ~600-line prologue merge. |
+| 1b | **Un-skip parse-negative test262** | 1 (runner) | — | Low | Independent of 061. Without it, item 1 has no regression net. Expect a fail-count jump — that is the blind spot becoming visible. |
+| 2 | **A4** delete `ag_suspend_kind` | 2 | 5 | Very low | Provably write-only dead state. Warm-up commit. |
+| 3 | **C3** registrar merge | 6 | ~10 | Very low | `diff`-proven byte-identical. |
+| 4 | **A1 + D3** pop/reload helpers | 5 | 22 | Medium | Must parameterize the two `valstack_top` variants — they are NOT interchangeable. Golden-gated. |
+| 5 | **B3** CallableCtx defer-frame | 3 | 14 | Low-med | 14/14 sites lack `defer` — a 100% defect rate, not partial. |
+| 6 | **A3** `is_async_state` factory | 3 | 8 | Med-high | GC-visible: the flag is the sole reason the GC marks a GeneratorState. |
+| 7 | **B1 full ParamListPlan merge** | 1 | 3 prologues | High | ~600 lines. Only after 1b provides coverage. |
+| 8 | **B4** TemplateScan rollout | 2 | 4 | Low-med | `let` inside `${...}` misparses. |
+| 9 | **A5/A6** state-model collapse | 3 | ~10 | High | A6 must PRESERVE the documented `this_binding` split, not erase it. |
+| 10 | **B2/B5/C2/C4/C5/D4/A7** | various | — | Low | Fill-in; independent; parallelizable. |
+| 11 | **D2** error channel | 6+ | ~50 | Very high | Last, alone, on a green baseline. |
+
+**Do NOT attempt while wrong-value or lifetime bugs are in flight:** D2 (rewrites the mechanism in-flight ASAN work reads), A3 and A5/A6 (generator state model), and A1 is borderline since `vm_generators.c3` is hot for that work.
+
+**Load-bearing for correctness:** B1, A3, B3, D2, plus the unlisted `activation_begin` bypass. **Cosmetic, say so plainly:** B5, D5, C2, C4, C5, A7.
+
+## Corrections from the session-302 re-survey
+
+- **C1 (BuiltinDef table) — DONE**, landed a1513ec5. `core.c3:101` is now `enum Builtin : uint (String js_name, int js_arity, BuiltinFunc handler)` with metadata and dispatch generated via `$foreach`; the 461-arm switch is gone.
+- **D1 (GC roots) — DONE**, landed d366a2c5. All six named fields are covered by `mark_activation_fields` (`vm_core.c3:84-111`).
+- **D2** — "five channels" is wrong; there are **three** ambient channels (`vm.has_error`; `heap.has_error`+`error_value`; `vm.throw_pending`+`throw_value`), of which only the first two are genuinely redundant. `ctx.should_throw` is the *native-builtin return convention* on `BuiltinContext` — a per-call stack-scoped out-parameter, not an ambient channel; folding it in would make every builtin write global VM state and break re-entrancy. **Drop it from this item.** `return_val` is a value carrier, never tested as an error flag — not a channel either. "4 epilogues" → **12**, in four distinct shapes, and only **1 of the 12** sets `throw_pending` — either the other 11 are correct by construction or latently wrong, and that is undocumented. The real workaround to kill is `promise_clear_error_channels` (36 call sites), not `afa_clear_stale_error` (4, a one-line wrapper around it).
+- **Counts corrected:** A1 9→11 (in two non-interchangeable variants), A2 4→7, A3 6→"5 hand-set sites + 3 hand-rolled rollbacks", D3 8→11, D4 6→18, C4 72→32, B3 26→14, B5 136→134 / 51→60.
+- **A6** — the `this_binding` divergence the plan wants "reconciled" is **deliberate and documented** (`vm_execute.c3` restores out-of-line with a raw assign). Reconcile means preserve, not merge.
+- **A7** — `delegated_index` already deleted (0 refs). `heap.did_yield`/`yield_value` remain.
+- **B2** — largely already fixed with `defer`; re-scope before assigning.
+- **C5** — `arraybuffer_slice_impl` already exists and both slice paths delegate to it; only the ctor and resize/grow pairs remain.
+- **NEW ITEM — `activation_begin` bypass.** `vm_calls.c3:862` deliberately cannot call `activation_begin()` and hand-repeats its initialization, with a comment asking the next reader to "keep the two in sync." 0ee9fd78 is proof that request already failed once. A compile-time-enforced shared init would foreclose the class.
 
 ## Execution rules
 
