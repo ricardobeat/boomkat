@@ -278,7 +278,13 @@ fn void async_gen_enqueue(BuiltinContext* ctx, GeneratorState* gs, ResumeKind ki
 }
 
 /// Pop the head request off the queue and free its node, returning the request
-/// data by value (the promise is still referenced by the returned struct).
+/// data by value.
+///
+/// The returned struct lives in a C3 local, which the mark phase cannot see, so
+/// the promise is parked in gs.ag_current_request (marked by
+/// mark_generator_state) before this returns. Without that hand-off the promise
+/// is unrooted from the moment it leaves the queue, and the first allocation the
+/// caller makes can sweep the very promise it is about to settle.
 fn AsyncGenRequest async_gen_dequeue(Heap* heap, GeneratorState* gs) {
     AsyncGenRequest* head = gs.agr_head;
     AsyncGenRequest out = *head;
@@ -286,6 +292,8 @@ fn AsyncGenRequest async_gen_dequeue(Heap* heap, GeneratorState* gs) {
     if (gs.agr_head == null) gs.agr_tail = null;
     out.next = null;
     heap.free_func(heap.heap_udata, head);
+    gs.ag_current_request = (void*)out.capability;
+    gs.ag_current_value = out.value;
     return out;
 }
 
@@ -384,7 +392,12 @@ fn void async_gen_drain(BuiltinContext* ctx, GeneratorState* gs) {
         }
 
         // Body settled (yield / return / throw) — service the outcome.
+        // Clear the in-flight marker BEFORE settling: settling runs the
+        // downstream reactions, which may re-enter this drain for a request a
+        // handler queued. That re-entry must see an idle generator, not a stale
+        // in-flight promise, or it refuses to start the new request.
         gs.ag_current_request = null;
+        gs.ag_current_value.set_undefined();
         if (!async_gen_finish_body(ctx, gs, promise, result)) break;
     }
 }

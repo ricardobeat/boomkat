@@ -556,6 +556,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                                 cfn_gen_obj.prototype = vm.heap.generator_proto;
                             }
                             (*cfn_gen_obj.extra_ptr()).gen.generator_data = cfn_gs;
+                            cfn_gs.gen_obj = cfn_gen_obj;
                             heap::gs_acquire(cfn_gs);
                             vm.heap.gen_initial_gs  = cfn_gs;
                             vm.heap.gen_initial_obj = cfn_gen_obj;

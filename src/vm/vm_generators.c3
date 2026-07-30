@@ -687,7 +687,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     // hold it took above — that was the only one, so this frees.
                     resume_fn.flags.is_async_state = false;
                     (*resume_fn.extra_ptr()).func.var_env = null;
-                    heap::gs_release(gs, (void*)vm.heap);
+                    heap::gs_release(gs, (void*)vm.heap, true);
                     return (TVal){};
                 }
                 HObject* reject_fn = reject_raw;
@@ -711,8 +711,8 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     (*resume_fn.extra_ptr()).func.var_env = null;
                     reject_fn.flags.is_async_state = false;
                     (*reject_fn.extra_ptr()).func.var_env = null;
-                    heap::gs_release(gs, (void*)vm.heap);
-                    heap::gs_release(gs, (void*)vm.heap);
+                    heap::gs_release(gs, (void*)vm.heap, true);
+                    heap::gs_release(gs, (void*)vm.heap, true);
                     return (TVal){};
                 }
                 HObject* rxn = rxn_raw;

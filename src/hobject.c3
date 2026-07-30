@@ -2076,14 +2076,19 @@ fn void hobject_free(HObject* obj, void* heap_ptr, bool free_header = true) {
     // outright would leave every sibling holder in the same pass reading the
     // freed struct — the read returns recycled memory, the sibling misjudges
     // ownership, and frees it a second time.
+    //
+    // `heap_ptr` (not `_active_heap`) supplies the allocator: teardown clears
+    // the global before this walk, but the state was allocated from the heap's
+    // allocator and must go back to it, not to libc's. `_active_heap` still
+    // decides whether the decref pass runs, mirroring the rule above.
     if (obj.flags.obj_class == ObjClass.GENERATOR) {
         heap::GeneratorState* gs = (heap::GeneratorState*)(*obj.extra_ptr()).gen.generator_data;
         (*obj.extra_ptr()).gen.generator_data = null;
-        heap::gs_release(gs, _active_heap);
+        heap::gs_release(gs, heap_ptr, _active_heap != null);
     } else if (obj.flags.obj_class == ObjClass.FUNCTION && obj.flags.is_async_state) {
         heap::GeneratorState* gs = (heap::GeneratorState*)(*obj.extra_ptr()).func.var_env;
         (*obj.extra_ptr()).func.var_env = null;
-        heap::gs_release(gs, _active_heap);
+        heap::gs_release(gs, heap_ptr, _active_heap != null);
     }
 
     // Decref string, object, buffer, and BigInt values held in property slots
