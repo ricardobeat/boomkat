@@ -217,6 +217,75 @@ fn bool CompilerContext.peek2_is_lparen(&self) {
     return next_tt == TokenType.LPAREN;
 }
 
+/// Conservative lookahead: could the expression starting at the current token
+/// write to some local variable's home register before the enclosing binary
+/// operator consumes its left operand?
+///
+/// Used by binary_expr to decide whether `a op b` must copy a's value to a
+/// temp before compiling b. Only an assignment (`=`, `+=`, …), an update
+/// (`++`/`--`) or a call (which may reach an assignment in a callee that
+/// shares no registers, but also covers `eval`-like surprises) can do that.
+///
+/// Deliberately an over-approximation scanned over raw tokens rather than a
+/// parse: a false positive costs one LDREG in an uncommon shape, a false
+/// negative is a miscompile. It stops at the first token that cannot be part
+/// of the right operand at this precedence, and bails out (returning true) if
+/// the scan runs long, so it is O(1) amortised on ordinary code.
+///
+/// Non-destructive: the lexer, its lookahead and the compiler pushback stack
+/// are all restored before returning.
+fn bool CompilerContext.rhs_may_write_registers(&self) {
+    // A pending pushback would have to be replayed in order; rather than
+    // reimplement that, treat it as "unknown" and take the safe answer.
+    if (self.pushback_count > 0) return true;
+
+    Lexer saved_lexer = *self.lexer;
+
+    bool result = false;
+    int depth = 0;          // nesting of ( [ { — the operand ends at depth 0
+    const int SCAN_LIMIT = 64;
+
+    for (int n = 0; n < SCAN_LIMIT; n++) {
+        Token? tok_opt = self.lexer.next_token();
+        if (catch _e = tok_opt) { result = true; break; }
+        Token tok = tok_opt;
+        TokenType tt = tok.type;
+
+        if (tt == TokenType.EOF_TOKEN) break;
+
+        if (tt == TokenType.LPAREN || tt == TokenType.LBRACKET ||
+            tt == TokenType.LBRACE) {
+            depth++;
+            continue;
+        }
+        if (tt == TokenType.RPAREN || tt == TokenType.RBRACKET ||
+            tt == TokenType.RBRACE) {
+            // Closing past our own start means the operand is over.
+            depth--;
+            if (depth < 0) break;
+            continue;
+        }
+
+        if (token_is_assignment_op(tt) ||
+            tt == TokenType.INC || tt == TokenType.DEC) {
+            result = true;
+            break;
+        }
+
+        // At depth 0, a comma or a statement terminator ends the operand.
+        if (depth == 0 &&
+            (tt == TokenType.COMMA || tt == TokenType.SEMICOLON ||
+             tt == TokenType.COLON)) {
+            break;
+        }
+
+        if (n == SCAN_LIMIT - 1) { result = true; }
+    }
+
+    *self.lexer = saved_lexer;
+    return result;
+}
+
 /// Push a token back into the input stream for backtracking.
 /// The next call to advance() will return this token.
 /// Supports up to 4 tokens of lookback.

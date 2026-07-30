@@ -987,6 +987,34 @@ fn ushort? CompilerContext.binary_expr(&self, int min_prec) {
             next_prec = prec;  // right-associative
         }
 
+        // Preserve the LEFT OPERAND'S VALUE across the right operand's
+        // evaluation. `a op b` must use a's value as it was *before* b runs
+        // (the spec's GetValue(lref) precedes b's evaluation), but when `left`
+        // is a live local's home register an assignment to that same variable
+        // inside b overwrites it in place. `(w = 2) * (w = 3)` emitted
+        //     LDINT r0, +2 / LDINT r0, +3 / MUL r1 = r0, r0
+        // and computed 3 * 3 = 9 instead of 6.
+        //
+        // This is a *different* concern from the destination selection below,
+        // which picks a register the RESULT may safely land in. That choice
+        // must stay where it is — after the right operand has been parsed —
+        // because it consumes the register the right operand just released;
+        // hoisting it up here instead reassigns the result register and
+        // destroys parameters (`n - 1` inside `fib` became `SUBI r0 = r0, r1`,
+        // overwriting `n`). Hence two separate copies, gated separately.
+        //
+        // The value copy is emitted only when the right operand can actually
+        // write a register, so ordinary code — every arithmetic expression in
+        // a hot loop — is unaffected and its bytecode stays byte-identical.
+        // rhs_may_write_registers over-approximates: a false positive costs
+        // one LDREG in a rare shape, a false negative is a miscompile.
+        if (left_is_local && self.rhs_may_write_registers()) {
+            ushort keep = self.alloc_reg();
+            self.emit_abc(Opcode.LDREG, (uint)keep, (uint)left, 0);
+            left = keep;
+            left_is_local = false;
+        }
+
         ushort right = self.binary_expr(next_prec)!;
         self.check_no_arrow_rhs();
         bool right_is_local = self.last_was_local_var;

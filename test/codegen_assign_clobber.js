@@ -139,25 +139,75 @@ function assignInLogical() {
 }
 eq(assignInLogical(), "45:true", "assignment under && leaves target intact");
 
-// ── KNOWN FAILURE (not asserted): both operands assign the SAME local ────
-// `(w = 2) * (w = 3)` is still miscompiled: the left operand is not copied to
-// a temp, so the right operand's assignment overwrites w's home register
-// before the MUL reads it, and both MUL inputs decode to w's slot:
+// ── Both operands assign the SAME local ──────────────────────────────────
+// Previously miscompiled: the left operand's VALUE was not copied to a temp,
+// so the right operand's assignment overwrote w's home register before the
+// MUL read it, and both MUL inputs decoded to w's slot:
 //
 //     [3] LDINT r0, +2      ; w = 2
-//     [4] LDINT r0, +3      ; w = 3  -- clobbers the left operand
+//     [4] LDINT r0, +3      ; w = 3  -- clobbered the left operand
 //     [5] MUL   r1 = r0, r0 ; 3 * 3 => 9
 //
-// node (and the spec) give 6; this engine gives 9. The b0fdc49c fix improved
-// this shape (w itself now reads back as 3 rather than 9) but did not fix the
-// product. Deliberately left as a live defect rather than asserted at 9 — a
-// test pinning the wrong answer is worse than no test. Note it only misbehaves
-// inside a function; at top level globals take a different path and give 6.
-//
-//     function g(){ var w=0; return (w=2)*(w=3); }  // returns 9, should be 6
-//
-// When that is fixed, replace this comment with:
-//     eq(sameTargetBoth(), "6:3", "(w=2)*(w=3) evaluates left before clobber");
+// `a op b` must use a's value as of before b runs (GetValue(lref) precedes
+// b's evaluation), so this is 2 * 3 = 6. binary_expr now copies the left
+// value to a temp ahead of the right operand whenever the right operand can
+// write a register. Only misbehaved inside a function; at top level globals
+// take a different path and were already correct.
+function sameTargetBoth() {
+  var w = 0;
+  var r = (w = 2) * (w = 3);
+  return r + ":" + w;
+}
+eq(sameTargetBoth(), "6:3", "(w=2)*(w=3) evaluates left before clobber");
+
+// Addition is affected identically — the defect was never specific to `*`.
+function sameTargetBothAdd() {
+  var x = 0;
+  var r = (x = 2) + (x = 3);
+  return r + ":" + x;
+}
+eq(sameTargetBothAdd(), "5:3", "(x=2)+(x=3) evaluates left before clobber");
+
+// The same variable assigned only on the right: the bare `v` read on the left
+// must still see the pre-assignment value.
+function sameTargetRightOnly() {
+  var v = 10;
+  var r = v - (v = 4);
+  return r + ":" + v;
+}
+eq(sameTargetRightOnly(), "6:4", "v-(v=4) reads v before the assignment");
+
+// Chained, so the temp for the first operator is still live across the second.
+function sameTargetChained() {
+  var w = 0;
+  var r = (w = 2) * (w = 3) * (w = 4);
+  return r + ":" + w;
+}
+eq(sameTargetChained(), "24:4", "(w=2)*(w=3)*(w=4) chains left-to-right");
+
+// Inside a loop, where the register pressure and the back edge differ.
+function sameTargetInLoop() {
+  var out = 0, w = 0;
+  for (var i = 0; i < 3; i++) { out += (w = 2) * (w = 3); }
+  return out + ":" + w;
+}
+eq(sameTargetInLoop(), "18:3", "(w=2)*(w=3) inside a loop");
+
+// A compound assignment on the right also writes the home register.
+function sameTargetCompoundRight() {
+  var n = 5;
+  var r = n + (n *= 2);
+  return r + ":" + n;
+}
+eq(sameTargetCompoundRight(), "15:10", "n+(n*=2) reads n before the compound");
+
+// An update expression on the right likewise.
+function sameTargetUpdateRight() {
+  var n = 5;
+  var r = n + (n++);
+  return r + ":" + n;
+}
+eq(sameTargetUpdateRight(), "10:6", "n+(n++) reads n before the increment");
 
 print('codegen_assign_clobber: ' + pass + ' passed, ' + fail + ' failed');
 if (fail > 0) { print('SOME TESTS FAILED'); throw new Error('FAIL'); }
