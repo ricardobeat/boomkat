@@ -39,7 +39,7 @@ fn void relocate_saved_frames(Vm* vm, TVal* saved_valstack, TVal** saved_bottom,
 /// Returns a fresh declarative env with `name_hstr` bound immutably to
 /// `func_obj`, chained above `parent`. Per ES2015 §14.1.20/§9.2.13, the
 /// name binding lives in an environment OUTER to the function's own body
-/// scope, so a body `var`/`let`/param with the same name shadows it —
+/// scope, so a body `var`, `let`, or parameter of the same name shadows it, and
 /// callers splice this env onto the body scope's parent chain rather than
 /// making it the search head directly.
 fn EnvRecord*? setup_named_function_expr_env(Vm* vm, EnvRecord* parent,
@@ -49,7 +49,7 @@ fn EnvRecord*? setup_named_function_expr_env(Vm* vm, EnvRecord* parent,
     if (catch err = name_env_raw) return types::ALLOC_ERROR~;
     EnvRecord* name_env = name_env_raw;
     TVal func_tv; func_tv.set_object(func_obj);
-    // Non-writable, enumerable, configurable — same flags PUTLEX_C uses for const.
+    // Non-writable, enumerable, configurable: the flags PUTLEX_C uses for const.
     name_env.bindings.put_prop((void*)name_hstr, func_tv, hobject::PROP_FLAGS_EC);
     return name_env;
 }
@@ -67,7 +67,7 @@ fn EnvRecord* resolve_call_lex_env(Vm* vm, HObject* func_obj,
     if (cap_lex != null && cap_lex != var_env && cap_lex.is_declarative) {
         // The closure was created inside a PUSH_LEX block (or a class body), so
         // its lexical bindings live in `cap_lex`. When the callee owns a fresh
-        // function scope of its own (needs_env — it declares `arguments`,
+        // function scope of its own, since needs_env is set: it declares `arguments`,
         // closures, or captured locals), those own bindings (parameters/locals)
         // live in `var_env`, whose natural parent is the captured function
         // var_env (`own_var_env`).
@@ -75,17 +75,17 @@ fn EnvRecord* resolve_call_lex_env(Vm* vm, HObject* func_obj,
         // If `cap_lex`'s parent chain itself descends to `own_var_env`, the
         // fresh scope can be reparented under `cap_lex` so its own bindings
         // resolve first, then the enclosing block's, and `own_var_env` stays
-        // reachable through `cap_lex` — a single lexical chain (search head =
+        // reachable through `cap_lex`, a single lexical chain whose search head is
         // var_env). Skip this for functions with a default/rest-parameter lex
         // bridge (that path installs its own lex_env below and reparenting
         // would risk a cycle) and when `var_env` is already on `cap_lex`'s
         // chain. Only a scope freshly allocated for THIS call is safe to
         // reparent; never mutate the shared captured `func.var_env` (reused
-        // directly by needs_env=false callees — doing so corrupts every future
+        // directly by needs_env=false callees, which would corrupt every future
         // call).
         //
         // When `cap_lex` does NOT reach `own_var_env` (they are lexical
-        // siblings sharing a common ancestor — e.g. the global DeclarativeRecord
+        // siblings sharing a common ancestor, such as the global DeclarativeRecord
         // captured alongside a sibling function/constructor scope), reparenting
         // would sever `var_env` from `own_var_env` and lose the captured
         // parameters. Instead, enter with `cap_lex` as the lexical search head
@@ -121,14 +121,14 @@ fn EnvRecord* resolve_call_lex_env(Vm* vm, HObject* func_obj,
         // ever set on functions with needs_env()==true (register-resident
         // callees resolve their own name to a register at compile time and
         // never observe this env at all), so `var_env` here is always a fresh
-        // scope allocated for this call — safe to splice into.
+        // scope allocated for this call, so it is safe to splice into.
         char[] name_data = target.get_name();
         HString* name_hstr = intern_string(vm, name_data);
         if (name_hstr != null) {
             if (try name_env = setup_named_function_expr_env(vm, var_env.parent, name_hstr, func_obj)) {
                 var_env.parent = name_env;
                 if (base == var_env) return var_env;
-                // `base` (cap_lex) doesn't reach var_env directly — GETVAR's
+                // `base`, meaning cap_lex, does not reach var_env directly, so GETVAR's
                 // lex_env walk finds cap_lex's chain first, then falls back to
                 // a separate walk starting at var_env (see the `!found &&
                 // lex_env != var_env` fallback), which now reaches name_env
@@ -140,7 +140,7 @@ fn EnvRecord* resolve_call_lex_env(Vm* vm, HObject* func_obj,
     return base;
 }
 
-/// Implementation of Heap.call_fn — calls a JS function with N arguments through the VM.
+/// Heap.call_fn's implementation: call a JS function with N arguments.
 /// OrdinaryHasInstance chain walk, routing prototype hops through the
 /// [[GetPrototypeOf]] trap when a Proxy appears on the chain.
 /// Sets ra to true on match. Returns false when an uncaught error unwinds
@@ -179,14 +179,14 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
 
     // Save resume_gen before ANY dispatch below runs. Case 2 (builtin, e.g.
     // Generator.prototype.next) may itself set vm.heap.resume_gen for the
-    // *callee's* generator before falling through to Case 3's re-dispatch —
+    // callee's generator before falling through to Case 3's re-dispatch, so
     // capturing this after Case 2 runs would save the callee's resume_gen
     // instead of the caller's, corrupting the caller generator's resume
     // state once restored below (e.g. yield* losing track of the delegating
     // generator's own suspend/resume bookkeeping).
     void* saved_resume_gen_outer = vm.heap.resume_gen;
 
-    // Case 1: lightfunc — dispatch directly via BuiltinContext
+    // Case 1: a lightfunc dispatches directly through BuiltinContext.
     if (func.is_lightfunc()) {
         uint fn_idx = (uint)(usz)func.get_heapptr();
 
@@ -233,7 +233,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
         return *ctx.result;
     }
 
-    // Case 2: HObject with builtin_fn_index — dispatch via BuiltinContext
+    // Case 2: an HObject with a builtin_fn_index also goes through BuiltinContext.
     if (func.is_object() && func.get_heapptr() != null) {
         HObject* hobj = (HObject*)func.get_heapptr();
         hobject::CallableKind fn_kind = (hobj != null && hobj.is_callable())
@@ -417,7 +417,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                     // generator body. Place the resume value into that CALL's
                     // result register so the post-CALL code reads it. This is
                     // the async-generator counterpart of the sync-generator
-                    // handling in vm_calls.c3's CALL-resume path — async
+                    // handling in vm_calls.c3's CALL-resume path, since async
                     // generators re-enter here via async_gen_resume_body/call_fn
                     // rather than through the re-dispatched CALL opcode.
                     if (gs_r.pending_resume_reg != 0xFFFF && gs_r.pending_resume_reg < nregs) {
@@ -473,7 +473,8 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                     // Boolean.prototype[Symbol.iterator] generators).
                     act.this_binding = gs_rb2.this_binding;  // raw copy, no stale-decref
                 } else {
-                    // Generator was created with undefined/null this — apply ES5 §10.4.3.
+                    // The generator was created with an undefined or null `this`,
+                    // so apply ES5 §10.4.3.
                     if (!target.is_arrow() && !target.is_strict()
                         && vm.global_env != null && vm.global_env.bindings != null) {
                         this_val.set_object(vm.global_env.bindings);
@@ -481,7 +482,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                     act.this_binding = this_val;
                 }
             } else if (target.is_arrow()) {
-                // Arrow functions have no receiver of their own — `this` is
+                // Arrow functions have no receiver of their own, so `this` is
                 // lexically inherited from the enclosing scope, captured once
                 // at CLOSURE-creation time (§9.2.1 [[ThisMode]]=lexical), not
                 // from the caller-supplied this_val (which for a call routed
@@ -490,14 +491,15 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                 // arrow's defining scope). Exception: a still-TDZ captured
                 // value (arrow defined before super() ran in a derived
                 // constructor) must be re-resolved live from the immediate
-                // caller — see super_walk_live_this().
+                // caller; see super_walk_live_this().
                 TVal arrow_this = (*hobj.extra_ptr()).func.captured_this;
                 if (env::is_tdz_sentinel(&arrow_this) && saved_act_count > 0) {
                     arrow_this = super_walk_live_this(vm, &saved_acts[saved_act_count - 1]);
                 }
                 act.this_binding = arrow_this;
             } else {
-                // Non-resume: ES5 §10.4.3 — substitute global object for undefined/null this.
+                // Not a resume, so ES5 §10.4.3 substitutes the global object for an
+                // undefined or null `this`.
                 if (!target.is_strict()
                     && (this_val.is_undefined() || this_val.is_null())
                     && vm.global_env != null && vm.global_env.bindings != null) {
@@ -512,7 +514,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
             // For the initial (non-resume) call to a generator function, set up
             // gen_initial_gs / gen_initial_obj so GEN_START can find them.
             // vm.heap.gen_initial_gs may already be set (from the inline CALL opcode)
-            // — only allocate when it isn't so we don't double-allocate.
+            // so only allocate when it is not already there.
             void* cfn_saved_gen_initial_gs  = vm.heap.gen_initial_gs;
             void* cfn_saved_gen_initial_obj = vm.heap.gen_initial_obj;
             void* cfn_saved_gen_initial_rv  = vm.heap.gen_initial_retval;
@@ -617,7 +619,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
             // was built at the initial call and saved into gs.var_env (restored
             // into act.var_env above). This re-entrant call_fn path is driven
             // with argc=0, so rebuilding here would install an empty arguments
-            // object (length 0) that shadows the correct call-time one — the
+            // object (length 0) that shadows the correct call-time one, and the
             // async-generator `arguments` bug (async generators resume through
             // call_fn, unlike sync generators which resume via the CALL opcode).
             if (target.uses_arguments() && !did_resume) {
@@ -633,7 +635,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                     args_obj.prototype = vm.heap.object_proto;
                     // Install length, callee, and @@iterator (= %Array.prototype.values%)
                     // via the shared helper so this re-entrant call_fn path produces an
-                    // arguments object identical to the normal CALL path — in particular
+                    // arguments object identical to the normal CALL path, in particular
                     // with @@iterator, so `[...arguments]` works inside builtin callbacks
                     // (forEach/map/.then reactions, AsyncFromSync adapter methods).
                     finish_arguments_object(vm, args_obj, hobj, nargs);
@@ -657,7 +659,8 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
             shadow_frame.count = saved_act_count;
             vm.shadow_act_list = &shadow_frame;
 
-            // Run the function via Vm.run (skip Vm.execute init — we already set up state)
+            // Run through Vm.run rather than Vm.execute, whose init would redo the
+            // state already set up here.
             TVal? result_opt = Vm.run(vm);
             TVal result;
             if (try r = result_opt) {
@@ -715,18 +718,18 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
 
 // trace_print_tval and trace_instruction are now in vm_trace.c3.
 
-/// Implementation of Heap.call_handler_fn — delegates to vm_call_fn_impl.
+/// Heap.call_handler_fn's implementation, which delegates to vm_call_fn_impl.
 fn TVal vm_call_handler_fn_impl(void* vm_ptr, TVal handler, TVal* arg) {
     TVal undef;
     undef.set_undefined();
     // Each PromiseReactionJob (ES2015+ §27.2.2.1) is an independent microtask:
     // it takes its input as `arg` and reports a throw via its return value or
-    // (for a native handler) heap.has_error — never via a pre-existing entry in
+    // (for a native handler) heap.has_error, never through a pre-existing entry in
     // the VM's error-propagation channels. A prior job may have left those
     // channels set: e.g. an async function whose for-await step rejected leaves
     // heap.has_error / vm.throw_pending populated with the rejection reason.
     // Clear ALL of them before this handler runs, so a stale error cannot
-    // resurface — either inside the handler (an ADD re-firing throw_pending via
+    // resurface, either inside the handler, where an ADD re-fires throw_pending via
     // vm_check_to_number_throw) or after it (promise_microtask_after seeing a
     // stale heap.has_error and wrongly rejecting the handler's downstream, which
     // dropped the onRejected result of `.then(onF, onR)` on a for-await
@@ -735,7 +738,7 @@ fn TVal vm_call_handler_fn_impl(void* vm_ptr, TVal handler, TVal* arg) {
     if (vm != null) {
         vm.throw_pending = false;
         // throw_value holds a strong ref (see the DYN_IMPORT IfAbruptReject
-        // site) — release the discarded error before clearing.
+        // site), so release the discarded error before clearing.
         if (vm.heap != null) vm.heap.decref_tval(&vm.throw_value);
         vm.throw_value.set_undefined();
         vm.has_error = false;
@@ -744,7 +747,7 @@ fn TVal vm_call_handler_fn_impl(void* vm_ptr, TVal handler, TVal* arg) {
     return vm_call_fn_impl(vm_ptr, handler, arg, 1, undef);
 }
 
-/// Implementation of Heap.construct_fn — `new Fn(args)` semantics.
+/// Heap.construct_fn's implementation: `new Fn(args)` semantics.
 /// Allocates a fresh this, runs the constructor with ACT_FLAG_CONSTRUCT,
 /// and returns the resulting instance.  Used by Promise combinators for
 /// NewPromiseCapability(C).
@@ -755,7 +758,7 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
     if (vm == null) return undef;
     Heap* heap = vm.heap;
 
-    // Save resume_gen before any dispatch below runs — a builtin constructor
+    // Save resume_gen before any dispatch below runs, since a builtin constructor
     // dispatched further down can itself set vm.heap.resume_gen for its own
     // callee before this function's own save point, corrupting the caller's
     // resume state once restored. See vm_call_fn_impl for the same fix.
@@ -849,7 +852,7 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
     }
 
     // Allocate a fresh plain object as `this`.
-    // GetPrototypeFromConstructor(new_target, "%Object.prototype%") — ES2022
+    // GetPrototypeFromConstructor(new_target, "%Object.prototype%"), per ES2022
     // §9.1.14: read new_target.prototype; if it isn't an object, fall back to
     // the default intrinsic (heap.object_proto) rather than always using it.
     HObject*? new_this_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
@@ -874,7 +877,7 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
     CompiledFunction* target = ctor.callable_kind() == hobject::CallableKind.BUILTIN_FN
         ? null : (*ctor.extra_ptr()).func.comp_func;
     // Derived class constructors (`class X extends Y`) do NOT create `this`
-    // here — super() creates it inside the base [[Construct]] (ES2015 §9.2.2
+    // here, since super() creates it inside the base [[Construct]] (ES2015 §9.2.2
     // step 5). Start with an uninitialized (TDZ-sentinel) this_binding and mark
     // the activation DERIVED so SUPER_CALL initializes it; otherwise the
     // constructed instance (e.g. a Promise subclass) is lost and combinator
@@ -886,11 +889,11 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
     // Note: target == null is the correct signal for "not a compiled
     // function" (e.g. a built-in). A compiled function with num_regs == 0
     // (empty body, no locals/params referenced) is still a real constructor
-    // and must run through the compiled-function activation path below —
+    // and must run through the compiled-function activation path below, so
     // routing it into the builtin-dispatch branch here would silently no-op
     // any user constructor with an empty or trivial body.
     if (target == null) {
-        // Built-in constructor — dispatch directly. Bound functions also
+        // A built-in constructor dispatches directly. Bound functions also
         // dispatch through builtin_fn_index (Builtin.BOUND_CALL.ordinal), so route
         // them through the same builtin-dispatch path as BUILTIN_FN.
         if (ctor.callable_kind() == hobject::CallableKind.BUILTIN_FN
@@ -1059,7 +1062,7 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
             args_obj.prototype = vm.heap.object_proto;
             // Install length, callee, and @@iterator (= %Array.prototype.values%)
             // via the shared helper so this re-entrant construct path produces an
-            // arguments object identical to the normal CALL path — with @@iterator,
+            // arguments object identical to the normal CALL path, with @@iterator,
             // so `[...arguments]` works inside constructors invoked through call_fn.
             finish_arguments_object(vm, args_obj, ctor, nargs);
             // Declare `arguments` in the function's var_env so the body can access it.
@@ -1219,7 +1222,7 @@ fn TVal? Vm.execute_in_env(Vm* vm, CompiledFunction* func, EnvRecord* env) {
     }
 
     // A Module Environment Record's HasThisBinding() is true but
-    // GetThisBinding() always returns undefined (ECMA-262 §8.1.1.5.4) — this
+    // GetThisBinding() always returns undefined (ECMA-262 §8.1.1.5.4), so this
     // entry point is module-execution only, so `this` at module top level is
     // unconditionally undefined, never globalThis.
     TVal this_val;
@@ -1258,7 +1261,7 @@ fn TVal? Vm.execute_in_env(Vm* vm, CompiledFunction* func, EnvRecord* env) {
 /// microtask queue until the promise settles.
 ///
 /// Returns true if the module evaluated to completion (promise fulfilled or
-/// still pending with an empty queue — treated as success). Returns false if
+/// still pending with an empty queue, which counts as success). Returns false if
 /// the module's evaluation promise REJECTED; in that case the rejection reason
 /// is left in heap.error_value so the caller surfaces it as the module's
 /// uncaught error. Returns a fault only on hard setup failure.
@@ -1271,7 +1274,7 @@ fn bool? Vm.execute_module_async(Vm* vm, CompiledFunction* func, EnvRecord* env,
     mod_promise.prototype = vm.heap.promise_proto;
     builtins::promise_init(mod_promise);
     // Pin it across the evaluation + microtask drain so GC can't sweep it
-    // (transient — released before returning).
+    // transiently, and released before returning.
     mod_promise.as_header().incref();
 
     Activation* entry_act = &vm.activations[0];
@@ -1292,7 +1295,7 @@ fn bool? Vm.execute_module_async(Vm* vm, CompiledFunction* func, EnvRecord* env,
     entry_act.async_gen_state = null;
 
     // A Module Environment Record's HasThisBinding() is true but
-    // GetThisBinding() always returns undefined (ECMA-262 §8.1.1.5.4) — this
+    // GetThisBinding() always returns undefined (ECMA-262 §8.1.1.5.4), so this
     // entry point is module-execution only, so `this` at module top level is
     // unconditionally undefined, never globalThis.
     TVal this_val;
@@ -1328,13 +1331,13 @@ fn bool? Vm.execute_module_async(Vm* vm, CompiledFunction* func, EnvRecord* env,
     vm.has_error = false;
     vm.heap.has_error = false;
 
-    // Never pump the microtask queue here to wait for settlement — per
+    // Never pump the microtask queue here to wait for settlement. Per
     // ECMA-262 §16.2.1.5.2/§16.2.1.5.5, an async/TLA module's evaluation
     // does not block: the caller (a sibling static import in the same DFS,
     // or a dynamic import job) must move on and let mod_promise settle later
     // via its own reactions. Polling to completion was both wrong per spec
     // (it made a static import of an async sibling module block, when
-    // §16.2.1.5.5's "Execute dependencies first" step must NOT wait — see
+    // §16.2.1.5.5's "Execute dependencies first" step must not wait; see
     // top-level-await/async-module-does-not-block-sibling-modules.js) and
     // actively unsafe when reached from inside a drain (a dynamic import job
     // is itself a queued microtask; drain_microtasks' reentrancy guard would
@@ -1365,18 +1368,19 @@ fn bool? Vm.execute_module_async(Vm* vm, CompiledFunction* func, EnvRecord* env,
 
 /// Execute a module body while the VM is already mid-dispatch (dynamic
 /// import from a running module or script). Unlike execute_in_env /
-/// execute_module_async — which take over activations[0] and valstack[0]
-/// and therefore destroy the caller's live frame — this saves the entire
+/// execute_module_async, which take over activations[0] and valstack[0] and so
+/// destroy the caller's live frame. This saves the entire
 /// activation stack and runs the module in a fresh frame above the live
 /// registers, mirroring vm_call_fn_impl, then restores the caller's state.
 ///
 /// Returns true when the module body evaluated to completion; false when it
-/// threw (sync body) or its evaluation promise rejected (async/TLA body) —
+/// threw, for a sync body, or its evaluation promise rejected, for an async or
+/// TLA body.
 /// in that case the thrown value / rejection reason is left in
 /// heap.error_value. Faults only on hard setup failure. For an async/TLA
 /// body that is still pending once this call returns (top-level await
-/// suspended and — because we are reached from inside a microtask drain,
-/// e.g. a dynamic import job — cannot be polled to completion here),
+/// suspended and cannot be polled to completion here, since this is reached from
+/// inside a microtask drain such as a dynamic import job),
 /// `*out_pending` is set to the pinned per-evaluation promise so the caller
 /// can chain onto it instead; `true` is returned in that case too (not yet
 /// known to have failed).
@@ -1453,7 +1457,7 @@ fn bool? Vm.execute_module_nested(Vm* vm, CompiledFunction* func, EnvRecord* env
         mod_promise.prototype = vm.heap.promise_proto;
         builtins::promise_init(mod_promise);
         // Pin it across the evaluation + microtask drain so GC can't sweep
-        // it (transient — released before returning).
+        // it transiently, releasing it before returning.
         mod_promise.as_header().incref();
     }
 
@@ -1485,7 +1489,7 @@ fn bool? Vm.execute_module_nested(Vm* vm, CompiledFunction* func, EnvRecord* env
     }
 
     // A Module Environment Record's HasThisBinding() is true but
-    // GetThisBinding() always returns undefined (ECMA-262 §8.1.1.5.4) — this
+    // GetThisBinding() always returns undefined (ECMA-262 §8.1.1.5.4), so this
     // entry point is module-execution only, so `this` at module top level is
     // unconditionally undefined, never globalThis.
     TVal this_val;
@@ -1527,7 +1531,7 @@ fn bool? Vm.execute_module_nested(Vm* vm, CompiledFunction* func, EnvRecord* env
         // remain a live VM fault.
         vm.has_error = false;
         vm.heap.has_error = false;
-        // Never pump the queue here — see the matching comment in
+        // Never pump the queue here; see the matching comment in
         // execute_module_async. mod_promise settles later via its own
         // reactions; the caller chains onto it (or leaves it pending, for
         // execute_module_nested's non-module eval-script caller) instead of
@@ -1574,8 +1578,8 @@ fn bool? Vm.execute_module_nested(Vm* vm, CompiledFunction* func, EnvRecord* env
     return !run_faulted;
 }
 
-/// Execute the bytecode dispatch loop. Assumes activation stack and registers
-/// are already set up by the caller.
+/// Run the bytecode dispatch loop over an activation stack and registers the
+/// caller has already set up.
 fn TVal? Vm.run(Vm* vm) {
     vm.run_depth++;
     defer vm.run_depth--;
@@ -1585,7 +1589,7 @@ fn TVal? Vm.run(Vm* vm) {
     ds.needs_restart = true;
     ds.halt = false;
 
-    // Outer restart loop: on ECMAScript-to-ECMAScript calls, reload state
+    // The outer loop reloads all frame state, which a JS-to-JS call invalidates.
     for (;;) {
         if (!ds.needs_restart) {
             break;
@@ -1595,7 +1599,7 @@ fn TVal? Vm.run(Vm* vm) {
         // A restart with no remaining activation means the top-level frame
         // just unwound (e.g. an uncaught throw in a top-level async/module
         // body: vm_throw_value settles the promise, pops to count 0, and
-        // requests a restart to "resume the caller" — but there is no caller).
+        // requests a restart to resume the caller, but there is no caller).
         // Halt cleanly instead of indexing activations[-1].
         if (vm.activation_count == 0) {
             return vm.return_val;
@@ -1615,18 +1619,17 @@ fn TVal? Vm.run(Vm* vm) {
 
         ds.regs_base = ds.act.bottom;
 
-        // Inner dispatch loop
+        // The inner dispatch loop tests neither of two conditions per
+        // instruction, which relies on invariants worth stating:
         //
-        // SPIKE EXPERIMENT 1: fall-off-end check removed from the hot path.
-        // Every compiled function/script is guaranteed (by the compiler) to
-        // end with an explicit RET/RETUNDEF-family instruction, so curr_pc
-        // can never legitimately reach code_end during normal dispatch.
+        // There is no fall-off-the-end check. The compiler ends every function
+        // and script with an explicit RET or RETUNDEF, so curr_pc cannot reach
+        // code_end during normal dispatch.
         //
-        // SPIKE EXPERIMENT 2: ds.halt is only ever set by a handful of
-        // return/generator opcodes (RET/RETUNDEF/RET_GEN/RETUNDEF_GEN and the
-        // sub-dispatch helpers in vm_control.c3/vm_generators.c3). Instead of
-        // checking it every instruction, check it only right after those
-        // specific call sites below.
+        // ds.halt is not polled either. Only the return and generator opcodes
+        // set it, meaning RET, RETUNDEF, RET_GEN, RETUNDEF_GEN, and the
+        // sub-dispatch helpers in vm_control.c3 and vm_generators.c3, so it is
+        // checked right after those call sites instead.
         for (; !ds.needs_restart; ) {
         $if $feature(THREADED_DISPATCH):
             {
@@ -1660,7 +1663,7 @@ fn TVal? Vm.run(Vm* vm) {
         // === LOAD / STORE ===
         case Opcode.LDREG:
             // Fast path: if source is not a heap ref (fastint, undefined, etc.),
-            // skip full refcounting — only decref dst if it held a heap pointer.
+            // skip full refcounting and decref dst only if it held a heap pointer.
             if (!rb.is_heap_allocated()) {
                 if (ra.is_heap_allocated()) {
                     vm.heap.decref_tval(ra);
@@ -1703,7 +1706,7 @@ fn TVal? Vm.run(Vm* vm) {
 
         case Opcode.LDINTX: {
             // Always immediately preceded by the LDINT writing ra's high
-            // bits, so ra is a fastint here — no old heap ref to release.
+            // bits, so ra is a fastint here and holds no old heap reference.
             long ix_high = ra.get_fastint();
             ra.set_fastint((ix_high << 16) | (long)insn.get_bc());
             continue;
@@ -1743,7 +1746,7 @@ fn TVal? Vm.run(Vm* vm) {
         // === ARITHMETIC ===
         case Opcode.ADD: {
             // ES5 §11.6.1: ToPrimitive both, then string concat or numeric add
-            // Fast path: FASTINT + FASTINT — most common in arithmetic benchmarks.
+            // The FASTINT + FASTINT fast path, which dominates arithmetic benchmarks.
             // Check this BEFORE OBJECT/STRING to avoid unnecessary tag dispatch.
             if (types::both_fastint(rb, rc)) {
                 long sum = rb.get_fastint() + rc.get_fastint();
@@ -1930,13 +1933,13 @@ fn TVal? Vm.run(Vm* vm) {
                 continue;
             }
             // ES5 §11.6.1: `+` is string concatenation, not numeric addition,
-            // when either operand is a string (post-ToPrimitive) — the fusion
+            // when either operand is a string after ToPrimitive, so the fusion
             // pass folds LDINT+ADD into ADDI purely on register/opcode shape
             // and cannot know rb's runtime type, so this mirrors ADD's
             // STRING+FASTINT fast path (immediate always plays the FASTINT
             // role: the fusion rule only fires for `rS + imm`/`imm + rS`).
             // Symbols share the STRING tag but must throw TypeError instead
-            // of concatenating (ES2015 §7.1.1) — is_symbol() excludes them,
+            // of concatenating (ES2015 §7.1.1), so is_symbol() excludes them
             // falling through to the generic vm_to_number() path below,
             // which already rejects symbols correctly.
             if (rb.is_string() && rb.get_heapptr() != null && !((HString*)rb.get_heapptr()).is_symbol()) {
@@ -1977,7 +1980,7 @@ fn TVal? Vm.run(Vm* vm) {
             }
             TVal immv; immv.set_fastint(imm);
             // Object operand: ToPrimitive(rb, hint number) per ES5 §11.6.1
-            // BEFORE deciding string-concat vs numeric-add — mirrors ADD's
+            // before choosing string concatenation over numeric addition, mirroring ADD's
             // object handling. The immediate is always a plain number, so
             // (unlike ADD, which must ToPrimitive both sides) only rb can
             // ever be an object here.
@@ -2188,7 +2191,7 @@ fn TVal? Vm.run(Vm* vm) {
             // instead of round-tripping through double + toint32.
         {
             // ES2020 §12.12.3: ToNumeric both operands BEFORE dispatching on
-            // BigInt — an object whose valueOf/toString/Symbol.toPrimitive
+            // BigInt: an object whose valueOf, toString, or Symbol.toPrimitive
             // yields a BigInt (e.g. `Object(1n) & 1n`) must be recognized as
             // BigInt-typed, not fall through to the plain-numeric path.
             // Non-object operands pass through unchanged, so this is only
@@ -2356,7 +2359,7 @@ fn TVal? Vm.run(Vm* vm) {
         {
             // See BAND above. Note ES2020 §12.9.4 step 6 makes >>> throw
             // TypeError when EITHER ToNumeric result is BigInt (no BigInt
-            // unsigned-shift exists) — vm_bigint_binop(USHR, ...) already
+            // unsigned-shift exists), and vm_bigint_binop(USHR, ...) already
             // encodes that, so routing an object-that-yields-BigInt through
             // the same is_bigint() dispatch below is correct here too.
             TVal* eb = rb; TVal* ec = rc;
@@ -2396,7 +2399,7 @@ fn TVal? Vm.run(Vm* vm) {
             continue;
 
         case Opcode.SEQ: {
-            // Fast path: FASTINT === FASTINT — most common in loop counters and
+            // The FASTINT === FASTINT fast path, which dominates loop counters and
             // arithmetic benchmarks. Short-circuit before full tag dispatch.
             if (types::both_fastint(rb, rc)) {
                 ra.set_boolean(rb.get_fastint() == rc.get_fastint());
@@ -2443,7 +2446,7 @@ fn TVal? Vm.run(Vm* vm) {
         }
 
         case Opcode.SNEQ: {
-            // Fast path: FASTINT !== FASTINT — short-circuit before full tag dispatch.
+            // The FASTINT !== FASTINT fast path, short-circuiting full tag dispatch.
             if (rb.is_fastint() && rc.is_fastint()) {
                 ra.set_boolean(rb.get_fastint() != rc.get_fastint());
                 continue;
@@ -2536,7 +2539,7 @@ fn TVal? Vm.run(Vm* vm) {
         // branches if the result is FALSE (i.e. branches when condition does NOT hold).
         // Offset in A (signed 8-bit, cast via char) is relative to the already-
         // incremented pc (same convention as IF_FALSE).
-        // NaN: !(NaN op x) is always true, so the branch IS taken — correct because
+        // With NaN, !(NaN op x) is always true, so the branch is taken, which is right because
         // we negate the same compare result that IF_FALSE would have tested.
 
         case Opcode.JMP_NLT:
@@ -2666,7 +2669,7 @@ fn TVal? Vm.run(Vm* vm) {
 
             HObject* rfunc = (HObject*)rval.get_heapptr();
 
-            // ES6 §12.9.4: GetMethod(C, @@hasInstance) is step 2 — must run
+            // ES6 §12.9.4 makes GetMethod(C, @@hasInstance) step 2, so it must run
             // BEFORE the IsCallable check (step 5). Get() must invoke any
             // accessor getter and propagate its error (test get-err).
             if (vm.heap.hasinstance_symbol != null) {
@@ -2677,7 +2680,7 @@ fn TVal? Vm.run(Vm* vm) {
                 AccessorResult hi_acc = rfunc.find_accessor_proto(hasinst_key, true);
                 if (hi_acc.found) {
                     // Accessor property: invoke the getter (this = original
-                    // receiver = rfunc). Getter may throw — propagate.
+                    // receiver = rfunc). A throwing getter propagates.
                     TVal this_for_getter;
                     this_for_getter.set_object(rfunc);
                     TVal getter_result = vm.heap.call_fn(vm, hi_acc.accessor_fn, null, 0, this_for_getter);
@@ -2761,7 +2764,7 @@ fn TVal? Vm.run(Vm* vm) {
                 continue;
             }
 
-            // Get rval.prototype — ES6 §7.3.19 OrdinaryHasInstance step 4: Let P be Get(C, "prototype").
+            // Read rval.prototype, which is ES6 §7.3.19 OrdinaryHasInstance step 4.
             // Get() must invoke accessor getters (per ES6 §7.3.1), so we first
             // check for an accessor property in the prototype chain and call
             // its getter; otherwise fall back to the raw data-property value.
@@ -2769,7 +2772,7 @@ fn TVal? Vm.run(Vm* vm) {
             TVal proto_val;
             AccessorResult acc = rfunc.find_accessor_proto(proto_key_str, true);
             if (acc.found) {
-                // ES6 §7.3.1 Get(O, P) — if accessor has a getter, call it with
+                // ES6 §7.3.1 Get(O, P): an accessor's getter is called with
                 // `this` bound to the original receiver (rfunc). The getter
                 // may throw or return any value.
                 TVal this_for_getter;
@@ -2785,7 +2788,7 @@ fn TVal? Vm.run(Vm* vm) {
             if (!proto_val.is_object()) {
                 // ES6 §7.3.19 OrdinaryHasInstance step 6: If Type(P) is not
                 // Object, throw a TypeError exception. The spec does NOT
-                // allow the silent-false fallback — the result must always
+                // allow the silent-false fallback, since the result must always
                 // be defined (or an abrupt completion).
                 if (!vm_throw_error(vm, vm.heap.type_err_proto, "'prototype' property is not an object", ds.act, &ds.curr_pc, &ds.needs_restart)) {
                     return VM_ERROR~;
@@ -2805,7 +2808,7 @@ fn TVal? Vm.run(Vm* vm) {
             // ES5 §11.8.7: RelationalExpression in ShiftExpression
             // Right side must be an object; TypeError otherwise.
             // Returns true if the object has a property with the given name
-            // (own or inherited — check via [[HasProperty]]).
+            // (own or inherited, checked through [[HasProperty]]).
             //
             // NOTE: Read rb (key) BEFORE writing ra, because ra may alias rb
             // (compiler can emit IN r3, r3, r4 when result overwrites the key).
@@ -2871,9 +2874,9 @@ fn TVal? Vm.run(Vm* vm) {
                         ra.set_boolean(true);
                         continue;
                     }
-                    // Array hole — fall through to prototype chain lookup
+                    // An array hole falls through to the prototype chain.
                 } else {
-                    // Index out of bounds — check prototype only
+                    // An out-of-bounds index checks only the prototype.
                     void* key = get_prop_key(vm, rb);
                     if (key != null) {
                         ra.set_boolean(obj.prototype != null && obj.prototype.has_prop_proto(key));
@@ -2945,7 +2948,7 @@ fn TVal? Vm.run(Vm* vm) {
             continue;
 
         // === PROPERTY ACCESS ===
-        // GETPROPC_CACHED is the warm monomorphic IC read — the single hottest
+        // GETPROPC_CACHED is the warm monomorphic IC read, the single hottest
         // property op in tight loops (`p.x`). Inlined; all other property ops
         // (and the IC-miss downgrade path) go through dispatch_property.
         case Opcode.GETPROPC_CACHED: {
@@ -3022,13 +3025,13 @@ fn TVal? Vm.run(Vm* vm) {
         }
 
         case Opcode.TOSTR: {
-            // In-place ToString coercion (see bytecode.c3 doc comment) — used
+            // In-place ToString coercion (see the bytecode.c3 doc comment), used
             // by template literal substitutions, which call ToString directly
             // rather than going through ToPrimitive(default) like `+`.
             if (!ra.is_string() || (ra.get_heapptr() != null && ((HString*)ra.get_heapptr()).is_symbol())) {
                 HString*? str = vm_to_string(vm, ra);
                 // vm_to_string may call user code (toString/@@toPrimitive) that
-                // reallocates the valstack — refresh before touching ra again.
+                // reallocates the valstack, so refresh before touching ra again.
                 ds.regs_base = ds.act.bottom;
                 ra = &ds.regs_base[insn.a];
                 if (vm.throw_pending) {
@@ -3119,10 +3122,10 @@ fn TVal? Vm.run(Vm* vm) {
             // Read the specifier before any write to A (A may reuse B's slot).
             TVal spec_tv = *rb;
             HString*? spec_opt = vm_to_string(vm, &spec_tv);
-            // vm_to_string can call a user toString (re-enters the VM) — refresh.
+            // vm_to_string can call a user toString, re-entering the VM, so refresh.
             ds.regs_base = ds.act.bottom;
             // §13.3.10 step 6-7: an abrupt completion from ToString(specifier)
-            // does NOT throw synchronously — IfAbruptRejectPromise rejects the
+            // does not throw synchronously; IfAbruptRejectPromise rejects the
             // returned promise with the thrown value. Capture it, clear the
             // pending throw, and hand back an already-rejected promise.
             if (vm.throw_pending) {
@@ -3199,7 +3202,7 @@ fn TVal? Vm.run(Vm* vm) {
 
         case Opcode.IMPORT_META: {
             // `import.meta` (ES2024 §13.3.12). GetActiveScriptOrModule returns
-            // the *defining* module of the running function — so a function that
+            // the defining module of the running function, so a function that
             // returns import.meta yields its own module's object even when called
             // from another module. The active function's filename carries the
             // owning module's normalized name (stamped by stamp_module_filename);
@@ -3241,7 +3244,7 @@ fn TVal? Vm.run(Vm* vm) {
             // Check for active finally catchers: if we're returning through
             // a try-finally, save the return value and jump to the finally
             // handler.  After ENDFINALLY, the saved value will be used.
-            // Walk up to the nearest catcher with a finally — the innermost
+            // Walk up to the nearest catcher with a finally. The innermost
             // catcher may be a catch-only try (no finally_pc), in which case
             // the return must still route through an enclosing finally.
             Catcher* ret_cat = find_and_unlink_finally_catcher(vm, ds.act);
@@ -3250,7 +3253,7 @@ fn TVal? Vm.run(Vm* vm) {
                 ret_cat.return_val = *ra;
                 // If PENDING_RETURN is already set, we're inside the finally
                 // block that was entered due to an earlier return.  Just update
-                // the return value and let execution continue normally —
+                // the return value and let execution continue normally, since
                 // ENDFINALLY at the end of the finally block will complete the
                 // return with the new value.  Without this check, we'd loop
                 // infinitely back to the same finally block.
@@ -3270,7 +3273,7 @@ fn TVal? Vm.run(Vm* vm) {
                     } else if (ret_cat.endfinally_pc != null) {
                         // A `return` executed inside the finally body itself.
                         // It overrides the finally's earlier pending completion
-                        // and must abort the remaining finally statements —
+                        // and must abort the remaining finally statements, so
                         // jump straight to ENDFINALLY (which will complete this
                         // return), mirroring break/continue/throw.
                         ds.curr_pc = ret_cat.endfinally_pc;
@@ -3289,13 +3292,13 @@ fn TVal? Vm.run(Vm* vm) {
                 continue;
             }
 
-            // Inline handle_return — eliminates function call overhead on every return.
+            // handle_return is inlined here to avoid a call on every return.
             TVal val = *ra;
             Activation* callee_act = &vm.activations[vm.activation_count - 1];
             TVal* callee_result = callee_act.retval;
 
             // ES2015 §9.2.2 step 13.c: derived constructor returning a non-object
-            // non-undefined value must throw TypeError — but the throw must be
+            // non-undefined value must throw a TypeError, but the throw must be
             // raised in the caller's context (not catchable inside the constructor),
             // so we set a flag to throw after restoring the caller frame.
             bool derived_return_error = (callee_act.flags & ACT_FLAG_CONSTRUCT) != 0
@@ -3304,7 +3307,7 @@ fn TVal? Vm.run(Vm* vm) {
                     && !val.is_undefined();
 
             // `return undefined;` from a derived constructor is equivalent to
-            // bare `return;` (RETUNDEF) — same TDZ check applies.
+            // bare `return;` (RETUNDEF), where the same TDZ check applies.
             if (val.is_undefined() && derived_ctor_returns_undefined_uninitialized(callee_act)) {
                 if (!vm_throw_error(vm, vm.heap.ref_err_proto,
                         "Must call super constructor in derived class before returning from derived constructor",
@@ -3334,7 +3337,7 @@ fn TVal? Vm.run(Vm* vm) {
             // Async function: resolve the promise with the return value and
             // return the promise. This must go through promise_resolve_with_value
             // (not a bare promise_settle) so that a returned thenable/Promise is
-            // adopted per ES2015 §25.5.5.4 AsyncFunctionStart / §27.2.1.3.2 — the
+            // adopted per ES2015 §25.5.5.4 AsyncFunctionStart and §27.2.1.3.2, so the
             // async function's promise takes on the eventual settlement of the
             // returned promise rather than fulfilling with the promise object.
             if ((callee_act.flags & ACT_FLAG_ASYNC) != 0 && callee_act.async_promise != null) {
@@ -3364,7 +3367,7 @@ fn TVal? Vm.run(Vm* vm) {
             if (callee_result != null) {
                 // Borrowed callee (CALL_VAR from a global binding): the old
                 // value in callee_result is the borrowed closure, which this
-                // frame never incref'd — overwrite it raw, never decref.
+                // frame never incref'd it, so overwrite raw and never decref.
                 bool ret_borrowed = (callee_act.flags & ACT_FLAG_BORROWED_CALLEE) != 0;
                 // Constructor: if callee returned an object, use it; otherwise use 'this'.
                 // (Derived non-object non-undefined case was already converted to a throw above.)
@@ -3401,14 +3404,14 @@ fn TVal? Vm.run(Vm* vm) {
             // produce the result value). Activation slots are pooled by depth index
             // and reused without zeroing: the next call landing on this same slot
             // writes a new this_binding via tval_copy_ref, whose own dst-decref
-            // would otherwise fire on these stale bits a second time — or, if this
+            // would otherwise fire on these stale bits a second time, or, if this
             // object has since become unreachable and been swept, read freed memory.
             // Mirrors handle_return's (out-of-line) release/clear in vm_core.c3.
             if ((callee_act.flags & ACT_FLAG_THIS_OWNED) != 0) {
                 vm.heap.decref_tval(&callee_act.this_binding);
                 callee_act.this_binding.set_undefined();
             }
-            // Restore caller state inline — skip outer loop restart.
+            // Restore the caller state inline, skipping the outer loop restart.
             ds.act = &vm.activations[vm.activation_count - 1];
             vm.valstack_bottom = ds.act.bottom;
             vm.valstack_top = callee_act.caller_valstack_top;
@@ -3441,7 +3444,7 @@ fn TVal? Vm.run(Vm* vm) {
 
             // After a super-constructor returns (callee was CONSTRUCT, caller is DERIVED),
             // initialize the derived constructor's this_binding with the constructed object.
-            // This is §9.2.2's "initialized" state — subsequent LDTHIS will succeed.
+            // This is §9.2.2's initialized state, after which LDTHIS succeeds.
             bool super_already_bound = false;
             Activation* super_bound_act = null;
             if ((callee_act.flags & ACT_FLAG_SUPER_CTOR) != 0
@@ -3451,7 +3454,7 @@ fn TVal? Vm.run(Vm* vm) {
                 // caller's `this_binding` already carries the "super was called"
                 // flag (stamped on the derived ctor's this by the first super()
                 // and re-resolved via captured_this for arrows), the derived
-                // ctor's this was already initialised — re-binding throws
+                // ctor's `this` was already initialised, so re-binding throws
                 // ReferenceError. Without this, the live-frame walk returns
                 // false when the derived ctor's frame is gone.
                 CompiledFunction* super_caller_cf = (CompiledFunction*)ds.act.func;
@@ -3467,7 +3470,7 @@ fn TVal? Vm.run(Vm* vm) {
                 }
                 // The result of super() is in callee_result (already written
                 // above). The immediate caller may be an arrow or a method the
-                // arrow was invoked through — walk up to the derived ctor.
+                // arrow was invoked through, so walk up to the derived ctor.
                 if (!super_already_bound) {
                     super_already_bound = super_init_this_chain(vm, &vm.activations[vm.activation_count - 1], callee_result, &super_bound_act);
                 }
@@ -3498,7 +3501,7 @@ fn TVal? Vm.run(Vm* vm) {
                 continue;
             }
             // §8.1.1.3.1 BindThisValue step 3: this_binding was already
-            // initialized by a prior super() call — the superclass constructor
+            // initialized by a prior super() call, so the superclass constructor
             // still ran (its side effects already happened above), but binding
             // the result to `this` a second time is a ReferenceError.
             if (super_already_bound) {
@@ -3525,7 +3528,7 @@ fn TVal? Vm.run(Vm* vm) {
             // Safe point: run deferred GC before returning to caller
             if (vm.heap.gc_pending) { vm.heap.safepoint_gc(); }
             // Check for active finally catchers (same as RET). Walk up to the
-            // nearest catcher with a finally — the innermost catcher may be a
+            // nearest catcher with a finally. The innermost catcher may be a
             // catch-only try (no finally_pc).
             Catcher* ret2_cat = find_and_unlink_finally_catcher(vm, ds.act);
             if (ret2_cat != null && ret2_cat.finally_pc != null) {
@@ -3533,13 +3536,13 @@ fn TVal? Vm.run(Vm* vm) {
                 if (!(ret2_cat.flags & CATCHER_FLAG_PENDING_RETURN)) {
                     ret2_cat.flags |= CATCHER_FLAG_PENDING_RETURN;
                     // Don't jump to finally_pc if we're already inside the
-                    // finally body — see RET handler for details.
+                    // finally body; see the RET handler for details.
                     if ((ret2_cat.flags & CATCHER_FLAG_IN_FINALLY) == 0) {
                         ds.curr_pc = ret2_cat.finally_pc;
                         ds.act.curr_pc = ds.curr_pc;
                     } else if (ret2_cat.endfinally_pc != null) {
                         // A `return;` executed inside the finally body itself
-                        // — abort the rest and jump to ENDFINALLY (mirrors RET).
+                        // so abort the rest and jump to ENDFINALLY, mirroring RET.
                         ds.curr_pc = ret2_cat.endfinally_pc;
                         ds.act.curr_pc = ds.curr_pc;
                     }
@@ -3554,7 +3557,7 @@ fn TVal? Vm.run(Vm* vm) {
             TVal undef_val;
             undef_val.set_undefined();
 
-            // Inline handle_return — eliminates function call overhead.
+            // handle_return is inlined here to avoid the call overhead.
             Activation* callee_act = &vm.activations[vm.activation_count - 1];
             TVal* callee_result = callee_act.retval;
 
@@ -3599,7 +3602,7 @@ fn TVal? Vm.run(Vm* vm) {
                     vm.heap.tval_copy_ref(callee_result, &callee_act.this_binding);
                 } else {
                     // Borrowed callee: the old value is the non-owned borrowed
-                    // closure — overwrite raw, never decref.
+                    // closure, so overwrite raw and never decref.
                     if ((callee_act.flags & ACT_FLAG_BORROWED_CALLEE) == 0
                             && callee_result.is_heap_allocated()) {
                         vm.heap.decref_tval(callee_result);
@@ -3611,13 +3614,13 @@ fn TVal? Vm.run(Vm* vm) {
             // (the ACT_FLAG_CONSTRUCT branch above may still read callee_act.this_binding
             // to produce the result value). See the matching RET handler above and
             // handle_return (vm_core.c3) for why the slot must also be cleared here,
-            // not just decref'd — activation slots are pooled by depth index and
+            // not just decref'd, since activation slots are pooled by depth index and
             // reused without zeroing.
             if ((callee_act.flags & ACT_FLAG_THIS_OWNED) != 0) {
                 vm.heap.decref_tval(&callee_act.this_binding);
                 callee_act.this_binding.set_undefined();
             }
-            // Restore caller state inline — skip outer loop restart.
+            // Restore the caller state inline, skipping the outer loop restart.
             ds.act = &vm.activations[vm.activation_count - 1];
             vm.valstack_bottom = ds.act.bottom;
             vm.valstack_top = ds.act.caller_valstack_top;
@@ -3670,7 +3673,7 @@ fn TVal? Vm.run(Vm* vm) {
                     HObject* this_hobj = (HObject*)su_bound_act.this_binding.get_heapptr();
                     this_hobj.put_prop(super_called_key, true_tv, hobject::PROP_FLAGS_NNC);
                 }
-                // §8.1.1.3.1 BindThisValue step 3: a second super() call — the
+                // §8.1.1.3.1 BindThisValue step 3, a second super() call: the
                 // superclass constructor already ran (side effects above), but
                 // binding its result to `this` again is a ReferenceError.
                 if (su_already_bound) {
@@ -3707,8 +3710,8 @@ fn TVal? Vm.run(Vm* vm) {
 
                     // --- VarIC fast path: skip the env-chain walk on repeat
                     // resolutions (hot strict-mode global-assignment loops).
-                    // Existence is all that's captured here — TDZ/const/
-                    // accessor state is PUTVAR_ASSIGN's business — so a hit
+                    // Only existence is captured here, since TDZ, const, and
+                    // accessor state are PUTVAR_ASSIGN's business, so a hit
                     // needs no flag checks, only the shape/generation guard
                     // (a delete anywhere in the bindings object bumps the
                     // generation and falls back to the walk).
@@ -3809,7 +3812,7 @@ fn TVal? Vm.run(Vm* vm) {
                                 } else {
                                     TVal v = b.prop_values()[vic.prop_idx];
                                     if (!env::is_tdz_sentinel(&v)) {
-                                        // ENV_STRICT: GETVAR read traps removed — for needs_env=false
+                                        // ENV_STRICT: GETVAR read traps are gone, since a needs_env=false
                                         // lex_env == parent env, so a hit here is a legitimate parent
                                         // lookup, not own-local. Own-local leaks surface as 'not defined'
                                         // throws and are caught by test/test_register_locals.js.
@@ -3834,7 +3837,7 @@ fn TVal? Vm.run(Vm* vm) {
                     while (cur != null) {
                         int idx = cur.bindings.find_prop_idx(key);
                         if (idx >= 0) {
-                            // ENV_STRICT: GETVAR read traps removed — for needs_env=false
+                            // ENV_STRICT: GETVAR read traps are gone, since a needs_env=false
                             // lex_env == parent env, so a hit here is a legitimate parent
                             // lookup, not own-local. Own-local leaks surface as 'not defined'
                             // throws and are caught by test/test_register_locals.js.
@@ -3894,7 +3897,7 @@ fn TVal? Vm.run(Vm* vm) {
                     }
 
                     if (!found && ds.act.lex_env != ds.act.var_env) {
-                        // Not in lex_env — search var_env (only needed with `with` blocks)
+                        // Not in lex_env, so search var_env, which only `with` blocks need.
                         EnvRecord* vcur = ds.act.var_env;
                         while (vcur != null) {
                             int vidx = vcur.bindings.find_prop_idx(key);
@@ -4124,7 +4127,7 @@ fn TVal? Vm.run(Vm* vm) {
             // Two-word instruction: this word (already consumed) holds the
             // destination name index in BC; the trailing word (at curr_pc)
             // holds the source name index in BC. Both slots are provably
-            // primitive, so a raw `*dst = *src` — no is_heap, no refcount,
+            // primitive, so a raw `*dst = *src` needs no is_heap check, no refcount,
             // no track_heap_store, no scratch register.
             Instruction src_word = *ds.curr_pc;
             ds.curr_pc++;
@@ -4209,7 +4212,7 @@ fn TVal? Vm.run(Vm* vm) {
                         sic.prop_idx = (ushort)sidx;
                         sic.search_head = (void*)ds.act.lex_env;
                         // Populate the destination write IC (only when the slot
-                        // is a writable, non-configurable data binding — same
+                        // is a writable, non-configurable data binding, the same
                         // gate as PUTGLOBAL_PRIM's varref_store_ok).
                         hobject::PropFlags dfl = denv.bindings.get_prop_flags((uint)didx);
                         if (dfl.writable && !dfl.is_accessor) {
@@ -4320,7 +4323,7 @@ fn TVal? Vm.run(Vm* vm) {
             // env-head pointer compare + a shape_id compare + a direct indexed
             // load. No name compare (the name-constant is fixed per PC), no
             // env-chain walk, no find_prop, no accessor-flag check (only data
-            // slots are cached — a data→accessor conversion changes shape_id and
+            // slots are cached, and a data-to-accessor conversion changes shape_id and
             // thus misses).
             //
             // BOTH guards are load-bearing:
@@ -4335,7 +4338,7 @@ fn TVal? Vm.run(Vm* vm) {
             //  - shape_id: guarantees the property layout (prop_idx → binding
             //    mapping and the prop_values() base) is unchanged, so the
             //    recomputed slot pointer is live. A bare prop_alloc/stable-pointer
-            //    guard is NOT sufficient — a shape transition reusing the same
+            //    guard is not sufficient, since a shape transition reusing the same
             //    property-table allocation would leave a stale prop_idx readable.
             uint bc = insn.get_bc();
             if (bc < vm.current_func.const_count) {
@@ -4503,7 +4506,7 @@ fn TVal? Vm.run(Vm* vm) {
                     // Enabled only for writable non-configurable data globals
                     // (varref_store_ok), whose descriptor is immutable, so the
                     // writability/accessor re-check is unnecessary. A hit is one
-                    // shape_id compare + a decref + a raw slot write — no
+                    // shape_id compare, a decref, and a raw slot write, with no
                     // flags-chain walk. The shape_id compare (not a bare
                     // prop_alloc guard) ensures prop_idx still names this binding.
                     if (ds.var_ic_base != null) {
@@ -4533,7 +4536,7 @@ fn TVal? Vm.run(Vm* vm) {
                         }
                         break;
                     } else if (put_result == 0) {
-                        // Not in lex env — check var env. Strict-mode: assigning
+                        // Not in lex env, so check var env. In strict mode, assigning
                         // to an undeclared name throws ReferenceError.
                         if (vm.current_func.is_strict() && !env::env_has(ds.act.var_env, key)) {
                             HString* name_hstr = (HString*)key;
@@ -4605,11 +4608,11 @@ fn TVal? Vm.run(Vm* vm) {
                                 // Accessor properties store a getter/setter pair, not the
                                 // actual value.  Fall through to slow path which invokes the getter.
                                 if (b.get_prop_flags(vic.prop_idx).is_accessor) {
-                                    // Invalidate IC — slow path will handle it.
+                                    // Invalidate the IC and let the slow path handle it.
                                 } else {
                                     TVal v = b.prop_values()[vic.prop_idx];
                                     if (!env::is_tdz_sentinel(&v)) {
-                                        // ENV_STRICT: TYPEOFIDENT read traps removed — for needs_env=false
+                                        // ENV_STRICT: TYPEOFIDENT read traps are gone, since a needs_env=false
                                         // lex_env == parent env, so a hit here is a legitimate parent
                                         // lookup, not own-local. Own-local leaks surface as 'not defined'
                                         // throws and are caught by test/test_register_locals.js.
@@ -4634,7 +4637,7 @@ fn TVal? Vm.run(Vm* vm) {
                     while (cur != null) {
                         int idx = cur.bindings.find_prop_idx(key);
                         if (idx >= 0) {
-                            // ENV_STRICT: TYPEOFIDENT read traps removed — for needs_env=false
+                            // ENV_STRICT: TYPEOFIDENT read traps are gone, since a needs_env=false
                             // lex_env == parent env, so a hit here is a legitimate parent
                             // lookup, not own-local. Own-local leaks surface as 'not defined'
                             // throws and are caught by test/test_register_locals.js.
@@ -4675,7 +4678,7 @@ fn TVal? Vm.run(Vm* vm) {
                                     vm.heap.set_reg_string(ra, ts);
                                 }
                                 found = true;
-                                // A caught/rejected throw already unwound curr_pc/activations —
+                                // A caught or rejected throw already unwound curr_pc and the activations,
                                 // must not cache an IC entry keyed on this (now stale) pc_off.
                                 if (!getter_threw) {
                                     ic_env = cur;
@@ -4694,7 +4697,7 @@ fn TVal? Vm.run(Vm* vm) {
                     }
 
                     if (!found) {
-                        // Not in lex_env — search var_env
+                        // Not in lex_env, so search var_env.
                         EnvRecord* vcur2 = ds.act.var_env;
                         while (vcur2 != null) {
                             int vidx2 = vcur2.bindings.find_prop_idx(key);
@@ -4744,7 +4747,7 @@ fn TVal? Vm.run(Vm* vm) {
                         }
                     }
 
-                    // Populate IC (skip for unresolvable — no env to cache)
+                    // Populate the IC, except for an unresolvable name with no env to cache.
                     if (found && ds.var_ic_base != null && ic_env != null) {
                         uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                         hobject::VarICEntry* vic = ds.var_ic_base + pc_off;
@@ -4778,18 +4781,18 @@ fn TVal? Vm.run(Vm* vm) {
                     // Combined single-walk: check lex_env, writability, and update in one pass
                     int put_result = env::env_try_put_lex(ds.act.lex_env, key, *ra);
                     if (put_result == -1) {
-                        // Const violation — throw TypeError
+                        // A const violation throws a TypeError.
                         HString* name_hstr = (HString*)key;
                         if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
                             return VM_ERROR~;
                         }
                         break;
                     } else if (put_result == 0) {
-                        // Not in lex_env — fall through to var_env
+                        // Not in lex_env, so fall through to var_env.
                         env::env_put(ds.act.var_env, key, *ra);
                     }
                     // put_result == 1: already updated in lex_env
-                    // Release ra's ref — the binding now owns the reference.
+                    // Release ra's reference, since the binding now owns one.
                     // Without this, ra holds a stale ref into the next iteration,
                     // causing strings to leak (not reach rc=0 on binding overwrite).
                     vm.heap.decref_tval(ra);
@@ -4853,7 +4856,7 @@ fn TVal? Vm.run(Vm* vm) {
                         }
                         break;
                     } else if (put_result == 0) {
-                        // Not in lex env — check var env. In strict mode, assigning
+                        // Not in lex env, so check var env. In strict mode, assigning
                         // to an identifier that does not exist anywhere in the scope
                         // chain throws ReferenceError (ES5 §11.13.1 / ES2015 §12.15.4).
                         if (vm.current_func.is_strict() && !env::env_has(ds.act.var_env, key)) {
@@ -4872,7 +4875,7 @@ fn TVal? Vm.run(Vm* vm) {
                     // either in the lex chain (put_result == 1) or in var_env
                     // (put_result == 0); cache whichever env actually owns it so a
                     // shadowing same-named binding elsewhere can never be picked up.
-                    // Only cache writable, non-accessor slots — the fast path's
+                    // Only writable, non-accessor slots are cached, since the fast path's
                     // guard trusts a plain write.
                     if (ds.var_ic_base != null) {
                         EnvRecord* owner = null;
@@ -4971,7 +4974,7 @@ fn TVal? Vm.run(Vm* vm) {
                             HObject* b = (HObject*)vic.bindings;
                             if (b != null && b.shape_id == vic.shape_id
                                 && vm.heap.shapes[b.shape_id].generation == vic.generation) {
-                                // Direct write — skip find_prop_idx + put_prop overhead
+                                // A direct write skips find_prop_idx and put_prop.
                                 TVal* pv = &b.prop_values()[vic.prop_idx];
                                 if (hobject::_active_heap != null && pv.is_string()) {
                                     ((heap::Heap*)hobject::_active_heap).decref_tval(pv);
@@ -5066,7 +5069,7 @@ fn TVal? Vm.run(Vm* vm) {
 
                     // No ENV_STRICT trap here: INITTZ targets the innermost
                     // PUSH_LEX block environment, which exists even for
-                    // needs_env=false functions — the elide pass keeps a
+                    // needs_env=false functions, since the elide pass keeps a
                     // sentinel alive when a TYPEOFIDENT references its name.
 
                     TVal tdz = env::tdz_sentinel();
@@ -5134,7 +5137,7 @@ fn TVal? Vm.run(Vm* vm) {
                             break;
                         }
                     } else {
-                        // CHKGLOBALFUNC — a function name is a var-declared
+                        // CHKGLOBALFUNC: a function name is a var-declared
                         // name, so it may not collide with a global lexical
                         // binding (SyntaxError); otherwise
                         // CanDeclareGlobalFunction must hold: definable when no
