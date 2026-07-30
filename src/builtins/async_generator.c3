@@ -459,10 +459,18 @@ fn bool async_gen_await_return(BuiltinContext* ctx, GeneratorState* gs, HObject*
     (*ff.extra_ptr()).func.builtin_fn_index = (int)Builtin.ASYNC_GEN_RETURN_FULFILL.ordinal;
     (*ff.extra_ptr()).func.var_env = (EnvRecord*)gs;
     ff.flags.callable = true;
+    // var_env holds a GeneratorState*, not an EnvRecord*: is_async_state tells
+    // both the GC mark phase and hobject_free to read it as one (without the
+    // flag, mark_hobject would follow the EnvRecord.bindings offset into
+    // GeneratorState.func and mark a CompiledFunction* as an HObject).
+    ff.flags.is_async_state = true;
+    heap::gs_acquire(gs);
     HObject* rj = rj_raw;
     (*rj.extra_ptr()).func.builtin_fn_index = (int)Builtin.ASYNC_GEN_RETURN_REJECT.ordinal;
     (*rj.extra_ptr()).func.var_env = (EnvRecord*)gs;
     rj.flags.callable = true;
+    rj.flags.is_async_state = true;
+    heap::gs_acquire(gs);
     HObject* rxn = rxn_raw;
     rxn.prototype = heap.object_proto;
     TVal ff_tv; ff_tv.set_object(ff);
@@ -557,10 +565,16 @@ fn bool async_gen_yield_return_await(BuiltinContext* ctx, GeneratorState* gs, HO
     (*ff.extra_ptr()).func.builtin_fn_index = (int)Builtin.ASYNC_GEN_YRET_FULFILL.ordinal;
     (*ff.extra_ptr()).func.var_env = (EnvRecord*)gs;
     ff.flags.callable = true;
+    // See the ASYNC_GEN_RETURN_FULFILL pair above: var_env is a
+    // GeneratorState*, so is_async_state must mark it as such for the GC.
+    ff.flags.is_async_state = true;
+    heap::gs_acquire(gs);
     HObject* rj = rj_raw;
     (*rj.extra_ptr()).func.builtin_fn_index = (int)Builtin.ASYNC_GEN_YRET_REJECT.ordinal;
     (*rj.extra_ptr()).func.var_env = (EnvRecord*)gs;
     rj.flags.callable = true;
+    rj.flags.is_async_state = true;
+    heap::gs_acquire(gs);
     HObject* rxn = rxn_raw;
     rxn.prototype = heap.object_proto;
     TVal ff_tv; ff_tv.set_object(ff);

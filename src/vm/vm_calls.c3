@@ -1753,6 +1753,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                     gen_obj.prototype = vm.heap.generator_proto;
                 }
                 (*gen_obj.extra_ptr()).gen.generator_data = gs;
+                heap::gs_acquire(gs);
 
                 // If a generator param-init is already in progress (gen_initial_gs
                 // is non-null), save the outer state onto a small stack so it can

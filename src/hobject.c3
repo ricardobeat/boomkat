@@ -2063,73 +2063,27 @@ fn void hobject_free(HObject* obj, void* heap_ptr, bool free_header = true) {
         (*obj.extra_ptr()).iter.target = null;
     }
 
-    // Free the GeneratorState owned by a suspended-or-completed generator:
-    // the saved-registers array and the state struct itself are malloc'd
-    // once at the initial call (GEN_START) and never freed elsewhere — the
-    // generator HObject is their sole owner. `saved_regs` and `this_binding`
-    // are the only GS fields that hold an owned (incref'd) reference; every
-    // other field is a transient/borrowed value cleared or superseded before
-    // this point, so only those two need a decref pass. The decref itself
-    // still needs a live heap (skipped during full-heap teardown, mirroring
-    // the prop_hash/array_part rule above), but the backing allocations must
-    // be freed unconditionally or Heap.destroy()'s teardown pass leaks them.
+    // Release this object's reference to its GeneratorState. A single gs can
+    // be reachable from several HObjects at once: the GENERATOR instance that
+    // owns the body, plus every `is_async_state` reaction closure that parks a
+    // gs pointer in func.var_env (await resume/reject, and the async-generator
+    // internal-await / return / yield-return pairs). Each of those holders
+    // counts one gs.ref_count, taken at creation via heap::gs_acquire, so
+    // whichever holder is torn down last does the actual free.
+    //
+    // Ownership MUST NOT be inferred from a gs field such as is_async_gen:
+    // sweep tears down all dying nodes in one pass, so a holder freeing the gs
+    // outright would leave every sibling holder in the same pass reading the
+    // freed struct — the read returns recycled memory, the sibling misjudges
+    // ownership, and frees it a second time.
     if (obj.flags.obj_class == ObjClass.GENERATOR) {
         heap::GeneratorState* gs = (heap::GeneratorState*)(*obj.extra_ptr()).gen.generator_data;
-        if (gs != null) {
-            if (_active_heap != null) {
-                heap::Heap* h = (heap::Heap*)_active_heap;
-                if (gs.saved_regs != null) {
-                    for (uint i = 0; i < gs.num_regs; i++) {
-                        h.decref_tval(&gs.saved_regs[i]);
-                    }
-                }
-                h.decref_tval(&gs.this_binding);
-                if (gs.saved_regs != null) { h.free_func(h.heap_udata, gs.saved_regs); }
-                h.free_func(h.heap_udata, gs);
-            } else {
-                if (gs.saved_regs != null) { mem::free(gs.saved_regs); }
-                mem::free(gs);
-            }
-            (*obj.extra_ptr()).gen.generator_data = null;
-        }
-    }
-
-    // Free the GeneratorState owned by a plain async function's suspended
-    // await: resume_fn and reject_fn (both ObjClass.FUNCTION, is_async_state)
-    // are independently GC'd reaction closures that share ONE GeneratorState
-    // via var_env — unlike the GENERATOR case above, there is no single
-    // owning HObject, so freeing it from whichever of the two dies first
-    // would leave the survivor holding a dangling var_env (use-after-free
-    // the next time it's invoked or swept). gs.ref_count (set to 2 when the
-    // pair is created — see the AWAIT opcode handler in vm_generators.c3)
-    // tracks how many of the two are still alive; only the second teardown
-    // actually frees the struct. An async-generator's internal-await
-    // reactions (ASYNC_GEN_AWAIT_RESUME/REJECT) also set is_async_state and
-    // point var_env at a gs, but that gs is the generator's own persistent
-    // state (gs.is_async_gen == true), owned and freed by its GENERATOR
-    // HObject above — never by these transient reaction closures.
-    if (obj.flags.obj_class == ObjClass.FUNCTION && obj.flags.is_async_state) {
+        (*obj.extra_ptr()).gen.generator_data = null;
+        heap::gs_release(gs, _active_heap);
+    } else if (obj.flags.obj_class == ObjClass.FUNCTION && obj.flags.is_async_state) {
         heap::GeneratorState* gs = (heap::GeneratorState*)(*obj.extra_ptr()).func.var_env;
-        if (gs != null && !gs.is_async_gen) {
-            if (gs.ref_count > 0) { gs.ref_count--; }
-            if (gs.ref_count == 0) {
-                if (_active_heap != null) {
-                    heap::Heap* h = (heap::Heap*)_active_heap;
-                    if (gs.saved_regs != null) {
-                        for (uint i = 0; i < gs.num_regs; i++) {
-                            h.decref_tval(&gs.saved_regs[i]);
-                        }
-                        h.free_func(h.heap_udata, gs.saved_regs);
-                    }
-                    h.decref_tval(&gs.this_binding);
-                    h.free_func(h.heap_udata, gs);
-                } else {
-                    if (gs.saved_regs != null) { mem::free(gs.saved_regs); }
-                    mem::free(gs);
-                }
-            }
-        }
         (*obj.extra_ptr()).func.var_env = null;
+        heap::gs_release(gs, _active_heap);
     }
 
     // Decref string, object, buffer, and BigInt values held in property slots

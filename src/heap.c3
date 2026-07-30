@@ -196,7 +196,52 @@ struct GeneratorState {
     // placed into a specific register in the generator's frame on resume.
     // 0xFFFF means unused.
     uint pending_resume_reg;
+    /// Number of HObjects currently holding this GeneratorState: the GENERATOR
+    /// instance plus every `is_async_state` reaction closure that parks the
+    /// pointer in func.var_env. Maintained by gs_acquire / gs_release.
     uint ref_count;
+}
+
+/// Register one more HObject holder of `gs`. Every store of a GeneratorState*
+/// into an HObject (gen.generator_data or an is_async_state func.var_env) must
+/// be paired with this, and with a gs_release when that HObject is torn down.
+fn void gs_acquire(GeneratorState* gs) {
+    if (gs != null) { gs.ref_count++; }
+}
+
+/// Drop one HObject's hold on `gs`, freeing the state (and its saved registers)
+/// once the last holder is gone.
+///
+/// The count is the ONLY ownership signal: sweep tears every dying node down in
+/// a single pass, so a holder that decided ownership by reading a gs field
+/// would race its siblings in that same pass — the first free recycles the
+/// struct and the next holder reads back whatever landed there. Counting keeps
+/// the last teardown, in whatever order sweep visits them, the one that frees.
+///
+/// `heap_ptr` is the active Heap, or null during full-heap teardown: the
+/// backing allocations must still be released then (or Heap.destroy leaks
+/// them), but the decref pass is skipped because the heap is already gone.
+fn void gs_release(GeneratorState* gs, void* heap_ptr) {
+    if (gs == null) { return; }
+    if (gs.ref_count > 0) { gs.ref_count--; }
+    if (gs.ref_count != 0) { return; }
+    // `saved_regs` and `this_binding` are the only fields holding an owned
+    // (incref'd) reference; every other field is transient or borrowed, and is
+    // cleared or superseded before teardown.
+    if (heap_ptr != null) {
+        Heap* h = (Heap*)heap_ptr;
+        if (gs.saved_regs != null) {
+            for (uint i = 0; i < gs.num_regs; i++) {
+                h.decref_tval(&gs.saved_regs[i]);
+            }
+        }
+        h.decref_tval(&gs.this_binding);
+        if (gs.saved_regs != null) { h.free_func(h.heap_udata, gs.saved_regs); }
+        h.free_func(h.heap_udata, gs);
+    } else {
+        if (gs.saved_regs != null) { mem::free(gs.saved_regs); }
+        mem::free(gs);
+    }
 }
 
 /// One parked Atomics.waitAsync waiter (single-agent). `buffer` is the backing
