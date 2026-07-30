@@ -1801,7 +1801,18 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                     new_act_g.flags |= ACT_FLAG_DIRECT_EVAL;
                 }
                 {
+                    // ES5 §10.4.3: for subst_global_this (non-arrow) compiled
+                    // functions, coerce null/undefined this → global object.
+                    // Applied here, at generator CREATION: GEN_START snapshots
+                    // this activation's this_binding into gs.this_binding, and
+                    // every later resume restores that snapshot verbatim — so a
+                    // substitution missed here is missed by the whole generator.
                     TVal raw_this_g = ds.regs_base[callee_reg + 1];
+                    if (target.subst_global_this()
+                        && (raw_this_g.is_undefined() || raw_this_g.is_null())
+                        && vm.global_env != null && vm.global_env.bindings != null) {
+                        raw_this_g.set_object(vm.global_env.bindings);
+                    }
                     vm.heap.tval_copy_ref(&new_act_g.this_binding, &raw_this_g);
                     new_act_g.flags |= ACT_FLAG_THIS_OWNED;
                 }
