@@ -1709,7 +1709,7 @@ fn void? CompilerContext.for_statement(&self) {
                     // consume the tokens we pushed back; tok2/of_tok is already consumed
                     self.advance()!; // id_tok
                     self.advance()!; // of_tok
-                    ushort iter_reg = self.assignment_expr()!;
+                    ushort iter_reg = self.expression()!;
                     self.expect(TokenType.RPAREN)!;
                     self.emit_forof_loop(id_tok.str_value, iter_reg, saved_scope, saved_reg, false, false, true, for_is_await)!;
                     return;
@@ -1717,7 +1717,7 @@ fn void? CompilerContext.for_statement(&self) {
             } else if (tok2.type == TokenType.IN) {
                 if (for_is_await) return self.fail("'for await' requires 'of', not 'in'")~;
                 self.advance()!;  // consume "in"
-                ushort obj_reg = self.assignment_expr()!;
+                ushort obj_reg = self.expression()!;
                 self.expect(TokenType.RPAREN)!;
                 self.emit_bare_forin_loop(id_tok.str_value, obj_reg, saved_scope, saved_reg)!;
                 return;
@@ -1784,7 +1784,7 @@ fn void? CompilerContext.for_statement(&self) {
             self.advance()!; // consume identifier
             self.advance()!; // consume ')'
             self.advance()!; // consume 'of'
-            ushort iter_reg = self.assignment_expr()!;
+            ushort iter_reg = self.expression()!;
             self.expect(TokenType.RPAREN)!;
             self.emit_forof_loop(paren_id_name, iter_reg, saved_scope, saved_reg, false, false, true, for_is_await)!;
             return;
@@ -1795,7 +1795,7 @@ fn void? CompilerContext.for_statement(&self) {
             self.advance()!; // consume identifier
             self.advance()!; // consume ')'
             self.advance()!; // consume 'in'
-                ushort obj_reg = self.assignment_expr()!;
+                ushort obj_reg = self.expression()!;
                 if (is_lexical) {
                     // Keep the head TDZ environment alive beneath a distinct
                     // iteration environment so closures created by the RHS
@@ -1872,12 +1872,12 @@ fn void? CompilerContext.for_statement(&self) {
             self.advance()!;  // consume "of" or "in"
 
             if (head_is_of) {
-                ushort iter_reg = self.assignment_expr()!;
+                ushort iter_reg = self.expression()!;
                 self.expect(TokenType.RPAREN)!;
                 self.emit_forof_loop_member(lhs_snap, iter_reg, saved_scope, saved_reg, for_is_await)!;
             } else {
                 if (for_is_await) return self.fail("'for await' requires 'of', not 'in'")~;
-                ushort obj_reg = self.assignment_expr()!;
+                ushort obj_reg = self.expression()!;
                 self.expect(TokenType.RPAREN)!;
                 self.emit_forin_loop_member(lhs_snap, obj_reg, saved_scope, saved_reg)!;
             }
@@ -2103,7 +2103,7 @@ fn void? CompilerContext.for_statement(&self) {
                     }
                 }
 
-                iter_reg = self.assignment_expr()!;
+                iter_reg = self.expression()!;
 
                 // Pop the TDZ scope — the head binding references are now
                 // resolved against the outer scope for the iterator protocol.
@@ -2170,7 +2170,7 @@ fn void? CompilerContext.for_statement(&self) {
                         self.emit_a_bc(Opcode.INITTZ, 0, self.add_string_constant(hs.get_data()));
                     }
                 }
-                obj_reg = self.assignment_expr()!;
+                obj_reg = self.expression()!;
                 if (is_lexical) {
                     self.emit_simple(Opcode.PUSH_LEX);
                     self.cur_lex_depth++;
@@ -2320,7 +2320,7 @@ fn void? CompilerContext.for_statement(&self) {
                     self.cur_lex_depth++;
                     self.emit_a_bc(Opcode.INITTZ, 0, self.add_string_constant(name_tok.str_value));
                 }
-                ushort obj_reg = self.assignment_expr()!;
+                ushort obj_reg = self.expression()!;
                 // Keep the head TDZ environment alive for closures created by
                 // the RHS, while the loop gets a distinct binding environment.
                 if (is_lexical) {
@@ -2420,7 +2420,7 @@ fn void? CompilerContext.for_statement(&self) {
                             }
                         }
                     }
-                    ushort iter_reg = self.assignment_expr()!;
+                    ushort iter_reg = self.expression()!;
                     // Pop the TDZ scope after RHS evaluation.
                     if (is_lexical) {
                         self.emit_simple(Opcode.POP_LEX);
@@ -3337,7 +3337,7 @@ fn void? CompilerContext.emit_bare_forof_destruct_loop(&self, bool is_array_patt
         }
     }
 
-    ushort iter_reg = self.assignment_expr()!;
+    ushort iter_reg = self.expression()!;
     self.expect(TokenType.RPAREN)!;
 
     // Bare assignment pattern: VAR-scoped (no per-iter env), ASSIGN_TARGET store.
@@ -3386,7 +3386,7 @@ fn void? CompilerContext.emit_bare_forin_destruct_loop(&self, bool is_array_patt
     }
 
     self.expect(TokenType.IN)!;
-    ushort obj_reg = self.assignment_expr()!;
+    ushort obj_reg = self.expression()!;
     self.expect(TokenType.RPAREN)!;
 
 
