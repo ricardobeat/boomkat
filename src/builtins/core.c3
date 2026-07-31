@@ -50,6 +50,90 @@ extern fn double math_cbrt(double x)          @MathLibc("cbrt");
 // The Tm struct mirrors C's struct tm layout exactly.
 
 // ============================================================================
+// StrBuf: a growable byte buffer for builtins that assemble a string whose
+// final size is not known up front (JSON.stringify, Array.prototype.join's
+// toLocaleString sibling, the console formatter).
+// ============================================================================
+//
+// Everything here reports allocation failure through a `bool` return rather
+// than truncating. A builtin that silently stops appending would hand back a
+// well-formed-looking but corrupt result, which is far worse than an error:
+// JSON.stringify did exactly that, returning unterminated JSON as success.
+
+/// Bytes held inline before the first heap allocation. Sized so the common
+/// case (short strings, small objects) never touches the allocator.
+const usz STRBUF_INLINE_CAP = 256;
+
+struct StrBuf {
+    Heap*  heap;
+    char*  data;      /// Points at `inline_buf` until the first growth.
+    usz    len;
+    usz    cap;
+    char[STRBUF_INLINE_CAP] inline_buf;
+}
+
+fn void StrBuf.init(&self, Heap* heap) {
+    self.heap = heap;
+    self.data = &self.inline_buf[0];
+    self.len  = 0;
+    self.cap  = STRBUF_INLINE_CAP;
+}
+
+/// Release the heap block, if the buffer ever outgrew its inline storage.
+fn void StrBuf.free(&self) {
+    if (self.data != null && self.data != &self.inline_buf[0]) {
+        self.heap.free_func(self.heap.heap_udata, self.data);
+    }
+    self.data = &self.inline_buf[0];
+    self.len  = 0;
+    self.cap  = STRBUF_INLINE_CAP;
+}
+
+/// Ensure room for `extra` more bytes. Returns false on allocation failure,
+/// leaving the buffer usable but unchanged.
+fn bool StrBuf.reserve(&self, usz extra) {
+    if (self.len + extra <= self.cap) return true;
+    usz new_cap = self.cap;
+    while (new_cap < self.len + extra) {
+        // Overflow guard: a doubling past usz range would wrap to a small
+        // capacity and turn this into a heap overflow rather than a failure.
+        if (new_cap > (usz)-1 / 2) return false;
+        new_cap *= 2;
+    }
+    char* grown;
+    if (self.data == &self.inline_buf[0]) {
+        grown = (char*)self.heap.alloc_func(self.heap.heap_udata, new_cap);
+        if (grown == null) return false;
+        if (self.len > 0) mem::copy(grown, self.data, (sz)self.len);
+    } else {
+        grown = (char*)self.heap.realloc_func(self.heap.heap_udata, self.data, new_cap);
+        if (grown == null) return false;
+    }
+    self.data = grown;
+    self.cap  = new_cap;
+    return true;
+}
+
+fn bool StrBuf.append_bytes(&self, char[] bytes) {
+    if (bytes.len == 0) return true;
+    if (!self.reserve(bytes.len)) return false;
+    mem::copy(&self.data[self.len], &bytes[0], (sz)bytes.len);
+    self.len += bytes.len;
+    return true;
+}
+
+fn bool StrBuf.append_char(&self, char c) {
+    if (!self.reserve(1)) return false;
+    self.data[self.len++] = c;
+    return true;
+}
+
+/// The accumulated bytes. Only valid until the next append.
+fn char[] StrBuf.bytes(&self) {
+    return self.data[:self.len];
+}
+
+// ============================================================================
 // BuiltinContext, passed to every builtin handler
 // ============================================================================
 
@@ -162,6 +246,7 @@ enum Builtin : uint (String js_name, int js_arity, BuiltinFunc handler) {
     STRING_PROTO_REPLACE {"replace", 2, &builtin_string_proto_replace},
     ARRAY_PROTO_TOSTRING {"toString", 0, &builtin_array_proto_toString},
     ARRAY_PROTO_JOIN {"join", 1, &builtin_array_proto_join},
+    ARRAY_PROTO_TOLOCALESTRING {"toLocaleString", 0, &builtin_array_proto_toLocaleString},
     ARRAY_PROTO_POP {"pop", 0, &builtin_array_proto_pop},
     ARRAY_PROTO_PUSH {"push", 1, &builtin_array_proto_push},
     ARRAY_PROTO_REVERSE {"reverse", 0, &builtin_array_proto_reverse},

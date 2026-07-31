@@ -114,14 +114,18 @@ fn HString*? json_parse_string(JsonParseCtx* jctx) {
     }
     jctx.pos++; // skip opening quote
 
-    char[1024] buf;
-    usz out_len = 0;
+    // Grows to fit: a fixed 1024-byte buffer rejected any longer string as a
+    // syntax error, so valid JSON produced by this very engine would not parse
+    // back. Bounded only by memory now.
+    StrBuf buf;
+    buf.init(jctx.heap);
+    defer buf.free();
 
     while (jctx.pos < jctx.len) {
         char c = jctx.src[jctx.pos];
         if (c == '\"') {
             jctx.pos++; // skip closing quote
-            return builtin_intern_string(jctx.heap, buf[:out_len]);
+            return builtin_intern_string(jctx.heap, buf.bytes());
         }
         if (c == '\\') {
             jctx.pos++;
@@ -146,14 +150,12 @@ fn HString*? json_parse_string(JsonParseCtx* jctx) {
                         ch = (char)cp;
                     } else if (cp <= 0x7FF) {
                         // UTF-8 2-byte sequence
-                        if (out_len + 2 > 1024) return null;
-                        buf[out_len++] = (char)(0xC0 | (cp >> 6));
+                        if (!buf.append_char((char)(0xC0 | (cp >> 6)))) return null;
                         ch = (char)(0x80 | (cp & 0x3F));
                     } else {
                         // UTF-8 3-byte sequence
-                        if (out_len + 3 > 1024) return null;
-                        buf[out_len++] = (char)(0xE0 | (cp >> 12));
-                        buf[out_len++] = (char)(0x80 | ((cp >> 6) & 0x3F));
+                        if (!buf.append_char((char)(0xE0 | (cp >> 12)))) return null;
+                        if (!buf.append_char((char)(0x80 | ((cp >> 6) & 0x3F)))) return null;
                         ch = (char)(0x80 | (cp & 0x3F));
                     }
                     break;
@@ -161,14 +163,12 @@ fn HString*? json_parse_string(JsonParseCtx* jctx) {
                 default:
                     return null;
             }
-            if (out_len >= 1024) return null;
-            buf[out_len++] = ch;
+            if (!buf.append_char(ch)) return null;
         } else if (c < 0x20) {
             // Control characters not allowed
             return null;
         } else {
-            if (out_len >= 1024) return null;
-            buf[out_len++] = c;
+            if (!buf.append_char(c)) return null;
             jctx.pos++;
         }
     }
@@ -1099,15 +1099,34 @@ fn usz json_escape_string(char* src, uint len, char* buf, usz buf_size) {
     return pos;
 }
 
+/// Append a JSON-escaped string to `out`, growing it to fit.
+///
+/// json_escape_string stops at its buffer end, so the destination is reserved
+/// at the worst case first: every input byte can become at most 6 output bytes
+/// (a control character or lone surrogate becoming \uXXXX), plus the two
+/// quotes. Reserving up front is what keeps a long key or value from being
+/// silently clipped, which the fixed 1024- and 4096-byte scratch buffers used
+/// to do.
+fn bool json_escape_string_to(StrBuf* out, char* src, uint len) {
+    usz worst = (usz)len * 6 + 2;
+    if (!out.reserve(worst)) return false;
+    usz written = json_escape_string(src, len, &out.data[out.len], worst);
+    // A zero return means not even the opening quote fit, which the reserve
+    // above rules out; treat it as failure rather than as an empty string.
+    if (written == 0) return false;
+    out.len += written;
+    return true;
+}
+
 /// Serialize a JSON value (internal recursive helper).
 /// Returns 0 on success, non-zero on error.
-/// Writes to buf starting at offset, updates offset.
+/// Appends to `out`, which grows to fit: the serializer must never return
+/// success carrying truncated JSON, since the caller cannot tell the two
+/// apart and a partial document parses as garbage or not at all.
 struct JsonSerializeCtx {
     Heap* heap;
     void* vm;                    // VM pointer for calling JS functions
-    char* buf;
-    usz buf_size;
-    usz offset;
+    StrBuf* out;
     usz indent_level;
     char* gap;
     usz gap_len;
@@ -1419,7 +1438,6 @@ fn TVal json_check_property(JsonSerializeCtx* jctx, HString* key, TVal val, TVal
 /// Serialize an object's properties
 fn int json_serialize_object(JsonSerializeCtx* jctx, HObject* obj) {
     if (jctx.error) return -1;
-    if (jctx.offset >= jctx.buf_size) return -1;
 
     // ES5 §15.12.3 step 1: If stack contains value, throw TypeError
     if (json_stack_has(jctx, obj)) {
@@ -1431,7 +1449,7 @@ fn int json_serialize_object(JsonSerializeCtx* jctx, HObject* obj) {
 
     jctx.indent_level++;
 
-    jctx.buf[jctx.offset++] = '{';
+    if (!jctx.out.append_char('{')) return -1;
 
     // Create holder TVal for replacer calls
     TVal holder;
@@ -1460,8 +1478,7 @@ fn int json_serialize_object(JsonSerializeCtx* jctx, HObject* obj) {
     }
 
     if (!has_props) {
-        if (jctx.offset >= jctx.buf_size) return -1;
-        jctx.buf[jctx.offset++] = '}';
+        if (!jctx.out.append_char('}')) return -1;
         return 0;
     }
 
@@ -1487,34 +1504,26 @@ fn int json_serialize_object(JsonSerializeCtx* jctx, HObject* obj) {
             if (omit) continue;
 
             if (!first) {
-                if (jctx.offset >= jctx.buf_size) return -1;
-                jctx.buf[jctx.offset++] = ',';
+                if (!jctx.out.append_char(',')) return -1;
             }
             first = false;
 
             // Indentation
             if (jctx.gap_len > 0) {
-                if (jctx.offset >= jctx.buf_size) return -1;
-                jctx.buf[jctx.offset++] = '\n';
-                for (usz g = 0; g < jctx.indent_level * jctx.gap_len && jctx.offset < jctx.buf_size; g++) {
-                    jctx.buf[jctx.offset++] = jctx.gap[g % jctx.gap_len];
+                if (!jctx.out.append_char('\n')) return -1;
+                for (usz g = 0; g < jctx.indent_level * jctx.gap_len; g++) {
+                    if (!jctx.out.append_char(jctx.gap[g % jctx.gap_len])) return -1;
                 }
             }
 
             // Key
             char* key_data = key_hstr.get_cstr();
             uint key_len = key_hstr.blen;
-            char[1024] key_buf;
-            usz key_out = json_escape_string(key_data, key_len, &key_buf, 1024);
-            usz copy = key_out < (jctx.buf_size - jctx.offset) ? key_out : (jctx.buf_size - jctx.offset);
-            for (usz k = 0; k < copy; k++) {
-                jctx.buf[jctx.offset++] = key_buf[k];
-            }
+            if (!json_escape_string_to(jctx.out, key_data, key_len)) return -1;
 
-            if (jctx.offset + 2 > jctx.buf_size) return -1;
-            jctx.buf[jctx.offset++] = ':';
+            if (!jctx.out.append_char(':')) return -1;
             if (jctx.gap_len > 0) {
-                jctx.buf[jctx.offset++] = ' ';
+                if (!jctx.out.append_char(' ')) return -1;
             }
 
             // Value
@@ -1552,34 +1561,26 @@ fn int json_serialize_object(JsonSerializeCtx* jctx, HObject* obj) {
             if (omit) continue;
 
             if (!first) {
-                if (jctx.offset >= jctx.buf_size) return -1;
-                jctx.buf[jctx.offset++] = ',';
+                if (!jctx.out.append_char(',')) return -1;
             }
             first = false;
 
             // Indentation
             if (jctx.gap_len > 0) {
-                if (jctx.offset >= jctx.buf_size) return -1;
-                jctx.buf[jctx.offset++] = '\n';
-                for (usz g = 0; g < jctx.indent_level * jctx.gap_len && jctx.offset < jctx.buf_size; g++) {
-                    jctx.buf[jctx.offset++] = jctx.gap[g % jctx.gap_len];
+                if (!jctx.out.append_char('\n')) return -1;
+                for (usz g = 0; g < jctx.indent_level * jctx.gap_len; g++) {
+                    if (!jctx.out.append_char(jctx.gap[g % jctx.gap_len])) return -1;
                 }
             }
 
             // Key
             char* key_data = key_hstr.get_cstr();
             uint key_len = key_hstr.blen;
-            char[1024] key_buf;
-            usz key_out = json_escape_string(key_data, key_len, &key_buf, 1024);
-            usz copy = key_out < (jctx.buf_size - jctx.offset) ? key_out : (jctx.buf_size - jctx.offset);
-            for (usz k = 0; k < copy; k++) {
-                jctx.buf[jctx.offset++] = key_buf[k];
-            }
+            if (!json_escape_string_to(jctx.out, key_data, key_len)) return -1;
 
-            if (jctx.offset + 2 > jctx.buf_size) return -1;
-            jctx.buf[jctx.offset++] = ':';
+            if (!jctx.out.append_char(':')) return -1;
             if (jctx.gap_len > 0) {
-                jctx.buf[jctx.offset++] = ' ';
+                if (!jctx.out.append_char(' ')) return -1;
             }
 
             // Value
@@ -1598,9 +1599,28 @@ fn int json_serialize_object(JsonSerializeCtx* jctx, HObject* obj) {
         // We use prop_key_at(i) for i in 0..prop_count-1, this iterates in
         // insertion order (HObject.prop_key_at walks the shape chain, returning
         // the i-th property in insertion order).
-        HString*[64] snap_keys;
+        // Sized to the property count rather than to a fixed cap: a 64-key
+        // ceiling silently dropped every key past the 64th and still returned
+        // success, so a large object stringified to a valid-looking but
+        // incomplete document.
+        HString** snap_keys = null;
+        HString** int_keys = null;
+        HString** final_keys = null;
+        defer {
+            if (snap_keys != null) jctx.heap.free_func(jctx.heap.heap_udata, snap_keys);
+            if (int_keys != null) jctx.heap.free_func(jctx.heap.heap_udata, int_keys);
+            if (final_keys != null) jctx.heap.free_func(jctx.heap.heap_udata, final_keys);
+        }
+        uint key_cap = obj.prop_count;
+        if (key_cap > 0) {
+            usz bytes = HString*::size * (usz)key_cap;
+            snap_keys  = (HString**)jctx.heap.alloc_func(jctx.heap.heap_udata, bytes);
+            int_keys   = (HString**)jctx.heap.alloc_func(jctx.heap.heap_udata, bytes);
+            final_keys = (HString**)jctx.heap.alloc_func(jctx.heap.heap_udata, bytes);
+            if (snap_keys == null || int_keys == null || final_keys == null) return -1;
+        }
         uint snap_count = 0;
-        for (uint i = 0; i < obj.prop_count && snap_count < 64; i++) {
+        for (uint i = 0; i < obj.prop_count && snap_count < key_cap; i++) {
             HString* k = (HString*)obj.prop_key_at(i);
             // Skip non-enumerable properties (ES5 §15.12.3 step 4.b: only
             // enumerable own properties are serialized) and Symbol keys
@@ -1615,7 +1635,6 @@ fn int json_serialize_object(JsonSerializeCtx* jctx, HObject* obj) {
         // ascending numeric order; remaining string keys follow in their original
         // order. We split into two lists, sort the integer list numerically, then
         // concatenate.
-        HString*[64] int_keys;
         uint int_count = 0;
         for (uint k = 0; k < snap_count; k++) {
             HString* kk = snap_keys[k];
@@ -1645,7 +1664,6 @@ fn int json_serialize_object(JsonSerializeCtx* jctx, HObject* obj) {
         }
         // Concatenate: integer keys first (sorted), then string keys (in
         // insertion order). Use a separate buffer to avoid clobbering snap_keys.
-        HString*[128] final_keys;
         uint final_count = 0;
         for (uint i = 0; i < int_count; i++) {
             final_keys[final_count] = int_keys[i];
@@ -1675,34 +1693,26 @@ fn int json_serialize_object(JsonSerializeCtx* jctx, HObject* obj) {
             if (omit) continue;
 
             if (!first) {
-                if (jctx.offset >= jctx.buf_size) return -1;
-                jctx.buf[jctx.offset++] = ',';
+                if (!jctx.out.append_char(',')) return -1;
             }
             first = false;
 
             // Indentation
             if (jctx.gap_len > 0) {
-                if (jctx.offset >= jctx.buf_size) return -1;
-                jctx.buf[jctx.offset++] = '\n';
-                for (usz g = 0; g < jctx.indent_level * jctx.gap_len && jctx.offset < jctx.buf_size; g++) {
-                    jctx.buf[jctx.offset++] = jctx.gap[g % jctx.gap_len];
+                if (!jctx.out.append_char('\n')) return -1;
+                for (usz g = 0; g < jctx.indent_level * jctx.gap_len; g++) {
+                    if (!jctx.out.append_char(jctx.gap[g % jctx.gap_len])) return -1;
                 }
             }
 
             // Key
             char* key_data = key_hstr.get_cstr();
             uint key_len = key_hstr.blen;
-            char[1024] key_buf;
-            usz key_out = json_escape_string(key_data, key_len, &key_buf, 1024);
-            usz copy = key_out < (jctx.buf_size - jctx.offset) ? key_out : (jctx.buf_size - jctx.offset);
-            for (usz k = 0; k < copy; k++) {
-                jctx.buf[jctx.offset++] = key_buf[k];
-            }
+            if (!json_escape_string_to(jctx.out, key_data, key_len)) return -1;
 
-            if (jctx.offset + 2 > jctx.buf_size) return -1;
-            jctx.buf[jctx.offset++] = ':';
+            if (!jctx.out.append_char(':')) return -1;
             if (jctx.gap_len > 0) {
-                jctx.buf[jctx.offset++] = ' ';
+                if (!jctx.out.append_char(' ')) return -1;
             }
 
             // Value
@@ -1719,22 +1729,19 @@ fn int json_serialize_object(JsonSerializeCtx* jctx, HObject* obj) {
 
     jctx.indent_level--;
     if (jctx.gap_len > 0) {
-        if (jctx.offset >= jctx.buf_size) return -1;
-        jctx.buf[jctx.offset++] = '\n';
-        for (usz g = 0; g < jctx.indent_level * jctx.gap_len && jctx.offset < jctx.buf_size; g++) {
-            jctx.buf[jctx.offset++] = jctx.gap[g % jctx.gap_len];
+        if (!jctx.out.append_char('\n')) return -1;
+        for (usz g = 0; g < jctx.indent_level * jctx.gap_len; g++) {
+            if (!jctx.out.append_char(jctx.gap[g % jctx.gap_len])) return -1;
         }
     }
 
-    if (jctx.offset >= jctx.buf_size) return -1;
-    jctx.buf[jctx.offset++] = '}';
+    if (!jctx.out.append_char('}')) return -1;
     return 0;
 }
 
 /// Serialize an array
 fn int json_serialize_array(JsonSerializeCtx* jctx, HObject* arr) {
     if (jctx.error) return -1;
-    if (jctx.offset >= jctx.buf_size) return -1;
 
     // ES5 §15.12.3 step 1: If stack contains value, throw TypeError
     if (json_stack_has(jctx, arr)) {
@@ -1746,7 +1753,7 @@ fn int json_serialize_array(JsonSerializeCtx* jctx, HObject* arr) {
 
     jctx.indent_level++;
 
-    jctx.buf[jctx.offset++] = '[';
+    if (!jctx.out.append_char('[')) return -1;
 
     // Create holder TVal for replacer calls
     TVal holder;
@@ -1804,8 +1811,7 @@ fn int json_serialize_array(JsonSerializeCtx* jctx, HObject* arr) {
     }
 
     if (len == 0) {
-        if (jctx.offset >= jctx.buf_size) return -1;
-        jctx.buf[jctx.offset++] = ']';
+        if (!jctx.out.append_char(']')) return -1;
         return 0;
     }
 
@@ -1840,35 +1846,27 @@ fn int json_serialize_array(JsonSerializeCtx* jctx, HObject* arr) {
         if (jctx.error) return -1;
 
         if (!first) {
-            if (jctx.offset >= jctx.buf_size) return -1;
-            jctx.buf[jctx.offset++] = ',';
+            if (!jctx.out.append_char(',')) return -1;
         }
         first = false;
 
         // Indentation
         if (jctx.gap_len > 0) {
-            if (jctx.offset >= jctx.buf_size) return -1;
-            jctx.buf[jctx.offset++] = '\n';
-            for (usz g = 0; g < jctx.indent_level * jctx.gap_len && jctx.offset < jctx.buf_size; g++) {
-                jctx.buf[jctx.offset++] = jctx.gap[g % jctx.gap_len];
+            if (!jctx.out.append_char('\n')) return -1;
+            for (usz g = 0; g < jctx.indent_level * jctx.gap_len; g++) {
+                if (!jctx.out.append_char(jctx.gap[g % jctx.gap_len])) return -1;
             }
         }
 
         // null for omitted/undefined elements
         if (omit || elem.is_undefined()) {
-            if (jctx.offset + 5 > jctx.buf_size) return -1;
-            mem::copy(jctx.buf + jctx.offset, "null", (sz)(4));
-            jctx.offset += 4;
+            if (!jctx.out.append_bytes("null")) return -1;
         } else if (elem.is_lightfunc()) {
-            if (jctx.offset + 5 > jctx.buf_size) return -1;
-            mem::copy(jctx.buf + jctx.offset, "null", (sz)(4));
-            jctx.offset += 4;
+            if (!jctx.out.append_bytes("null")) return -1;
         } else if (elem.is_object() && elem.get_heapptr() != null) {
             HObject* vobj = (HObject*)elem.get_heapptr();
             if (vobj.get_class() == ObjClass.FUNCTION) {
-                if (jctx.offset + 5 > jctx.buf_size) return -1;
-                mem::copy(jctx.buf + jctx.offset, "null", (sz)(4));
-                jctx.offset += 4;
+                if (!jctx.out.append_bytes("null")) return -1;
             } else {
                 jctx.depth++;
                 if (jctx.depth > JSON_MAX_DEPTH) {
@@ -1893,15 +1891,13 @@ fn int json_serialize_array(JsonSerializeCtx* jctx, HObject* arr) {
 
     jctx.indent_level--;
     if (jctx.gap_len > 0) {
-        if (jctx.offset >= jctx.buf_size) return -1;
-        jctx.buf[jctx.offset++] = '\n';
-        for (usz g = 0; g < jctx.indent_level * jctx.gap_len && jctx.offset < jctx.buf_size; g++) {
-            jctx.buf[jctx.offset++] = jctx.gap[g % jctx.gap_len];
+        if (!jctx.out.append_char('\n')) return -1;
+        for (usz g = 0; g < jctx.indent_level * jctx.gap_len; g++) {
+            if (!jctx.out.append_char(jctx.gap[g % jctx.gap_len])) return -1;
         }
     }
 
-    if (jctx.offset >= jctx.buf_size) return -1;
-    jctx.buf[jctx.offset++] = ']';
+    if (!jctx.out.append_char(']')) return -1;
     return 0;
 }
 
@@ -1909,63 +1905,43 @@ fn int json_serialize_array(JsonSerializeCtx* jctx, HObject* arr) {
 fn int json_serialize_val(JsonSerializeCtx* jctx, TVal* val) {
     switch (val.get_tag()) {
         case NULL_VAL: {
-            if (jctx.offset + 5 > jctx.buf_size) return -1;
-            jctx.buf[jctx.offset++] = 'n';
-            jctx.buf[jctx.offset++] = 'u';
-            jctx.buf[jctx.offset++] = 'l';
-            jctx.buf[jctx.offset++] = 'l';
+            if (!jctx.out.append_char('n')) return -1;
+            if (!jctx.out.append_char('u')) return -1;
+            if (!jctx.out.append_char('l')) return -1;
+            if (!jctx.out.append_char('l')) return -1;
             return 0;
         }
         case BOOLEAN: {
             if (val.get_boolean()) {
-                if (jctx.offset + 5 > jctx.buf_size) return -1;
-                mem::copy(jctx.buf + jctx.offset, "true", (sz)(4));
-                jctx.offset += 4;
+                if (!jctx.out.append_bytes("true")) return -1;
             } else {
-                if (jctx.offset + 6 > jctx.buf_size) return -1;
-                mem::copy(jctx.buf + jctx.offset, "false", (sz)(5));
-                jctx.offset += 5;
+                if (!jctx.out.append_bytes("false")) return -1;
             }
             return 0;
         }
         case NUMBER: {
             double d = val.get_number();
             if (math::is_nan(d) || math::is_inf(d)) {
-                if (jctx.offset + 5 > jctx.buf_size) return -1;
-                mem::copy(jctx.buf + jctx.offset, "null", (sz)(4));
-                jctx.offset += 4;
+                if (!jctx.out.append_bytes("null")) return -1;
                 return 0;
             }
             char[64] num_buf;
             usz num_len = json_number_to_string(d, &num_buf, 64);
-            if (jctx.offset + num_len > jctx.buf_size) return -1;
-            for (usz i = 0; i < num_len; i++) {
-                jctx.buf[jctx.offset++] = num_buf[i];
-            }
+            if (!jctx.out.append_bytes(num_buf[:num_len])) return -1;
             return 0;
         }
         case FASTINT: {
             char[24] buf;
             int len = hstring::int_to_buf(val.get_fastint(), &buf, 24);
             if (len <= 0) return -1;
-            if (jctx.offset + (usz)len > jctx.buf_size) return -1;
-            for (int i = 0; i < len; i++) {
-                jctx.buf[jctx.offset++] = buf[i];
-            }
+            if (!jctx.out.append_bytes(buf[:(usz)len])) return -1;
             return 0;
         }
         case STRING: {
             HString* s = (HString*)val.get_heapptr();
             char* data = s.get_cstr();
             uint slen = s.blen;
-            usz max_out = (usz)(slen * 6 + 3);
-            char[4096] str_buf;
-            usz out_len = json_escape_string(data, slen, &str_buf, 4096);
-            if (out_len == 0) return -1;
-            usz copy = out_len < (jctx.buf_size - jctx.offset) ? out_len : (jctx.buf_size - jctx.offset);
-            for (usz i = 0; i < copy; i++) {
-                jctx.buf[jctx.offset++] = str_buf[i];
-            }
+            if (!json_escape_string_to(jctx.out, data, slen)) return -1;
             return 0;
         }
         case BIGINT: {
@@ -1975,9 +1951,7 @@ fn int json_serialize_val(JsonSerializeCtx* jctx, TVal* val) {
         }
         case OBJECT: {
             if (val.get_heapptr() == null) {
-                if (jctx.offset + 5 > jctx.buf_size) return -1;
-                mem::copy(jctx.buf + jctx.offset, "null", (sz)(4));
-                jctx.offset += 4;
+                if (!jctx.out.append_bytes("null")) return -1;
                 return 0;
             }
             HObject* obj = (HObject*)val.get_heapptr();
@@ -1990,8 +1964,7 @@ fn int json_serialize_val(JsonSerializeCtx* jctx, TVal* val) {
                         HString* rs = (HString*)raw_v.get_heapptr();
                         char* rd = rs.get_cstr();
                         uint rl = rs.blen;
-                        if (jctx.offset + rl > jctx.buf_size) return -1;
-                        for (uint i = 0; i < rl; i++) jctx.buf[jctx.offset++] = rd[i];
+                        if (!jctx.out.append_bytes(rd[:rl])) return -1;
                         return 0;
                     }
                 }
@@ -1999,9 +1972,7 @@ fn int json_serialize_val(JsonSerializeCtx* jctx, TVal* val) {
             }
             if (obj.is_callable()) {
                 // Functions (including callable Proxies) serialize as null in JSON.
-                if (jctx.offset + 5 > jctx.buf_size) return -1;
-                mem::copy(jctx.buf + jctx.offset, "null", (sz)(4));
-                jctx.offset += 4;
+                if (!jctx.out.append_bytes("null")) return -1;
                 return 0;
             }
             // IsArray (§7.2.2): recurses through Proxy targets, throws
@@ -2019,9 +1990,7 @@ fn int json_serialize_val(JsonSerializeCtx* jctx, TVal* val) {
         }
         case LIGHTFUNC: {
             // Functions serialize as null
-            if (jctx.offset + 5 > jctx.buf_size) return -1;
-            mem::copy(jctx.buf + jctx.offset, "null", (sz)(4));
-            jctx.offset += 4;
+            if (!jctx.out.append_bytes("null")) return -1;
             return 0;
         }
         case UNDEFINED:
@@ -2029,9 +1998,7 @@ fn int json_serialize_val(JsonSerializeCtx* jctx, TVal* val) {
         case POINTER:
         default:
             // Undefined, Buffer, Pointer -> serialize as null
-            if (jctx.offset + 5 > jctx.buf_size) return -1;
-            mem::copy(jctx.buf + jctx.offset, "null", (sz)(4));
-            jctx.offset += 4;
+            if (!jctx.out.append_bytes("null")) return -1;
             return 0;
     }
 }
@@ -2381,14 +2348,16 @@ fn void builtin_json_stringify(BuiltinContext* ctx) {
     HString* empty_key = builtin_intern_string(ctx.heap, "");
     wrapper.put_prop(empty_key, value, hobject::PROP_FLAGS_WEC);
 
-    // Initialize serialization context
-    char[16384] buf;
+    // Initialize serialization context. The output buffer grows to fit, so the
+    // only size limit is memory, and running into it throws instead of handing
+    // back a truncated document.
+    StrBuf out;
+    out.init(ctx.heap);
+    defer out.free();
     JsonSerializeCtx jctx;
     jctx.heap = ctx.heap;
     jctx.vm = ctx.vm;
-    jctx.buf = &buf;
-    jctx.buf_size = 16384;
-    jctx.offset = 0;
+    jctx.out = &out;
     jctx.indent_level = 0;
     jctx.gap = &gap_str;
     jctx.gap_len = gap_len;
@@ -2430,11 +2399,21 @@ fn void builtin_json_stringify(BuiltinContext* ctx) {
     if (prop_keys != null) ctx.heap.free_func(ctx.heap.heap_udata, prop_keys);
 
     if (result != 0) {
+        // Every other -1 path sets jctx.error and was handled above, so the
+        // only way to get here is a failed buffer growth. Report it: returning
+        // undefined would be indistinguishable from serializing a function.
+        builtin_throw(ctx, ctx.heap.range_err_proto,
+            "Invalid string length");
         ctx.result.set_undefined();
         return;
     }
 
-    HString* result_str = builtin_intern_string(ctx.heap, buf[:jctx.offset]);
+    HString* result_str = builtin_intern_string(ctx.heap, out.bytes());
+    if (result_str == null) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "Invalid string length");
+        ctx.result.set_undefined();
+        return;
+    }
     ctx.result.set_string(result_str);
 }
 

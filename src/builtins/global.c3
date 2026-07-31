@@ -373,17 +373,16 @@ fn void console_emit_json_spec(BuiltinContext* ctx, ConsoleSink sink, TVal* arg)
         HObject* o = (HObject*)arg.get_heapptr();
         if (o.is_callable()) { sink.write("undefined"); return; }
     }
-    // Same fixed buffer size JSON.stringify uses. Both silently truncate a
-    // larger structure rather than reporting the overflow — a pre-existing
-    // limitation of json_serialize_val, which returns success after running out
-    // of room, not something specific to %j.
-    char[16384] buf;
+    // Grows to fit, like JSON.stringify's own buffer: %j has no size limit of
+    // its own, and a structure too large to render reports failure rather than
+    // printing a truncated fragment that looks like valid JSON.
+    StrBuf out;
+    out.init(ctx.heap);
+    defer out.free();
     JsonSerializeCtx jctx;
     jctx.heap = ctx.heap;
     jctx.vm = ctx.vm;
-    jctx.buf = &buf;
-    jctx.buf_size = 16384;
-    jctx.offset = 0;
+    jctx.out = &out;
     jctx.indent_level = 0;
     jctx.gap = null;
     jctx.gap_len = 0;
@@ -409,7 +408,7 @@ fn void console_emit_json_spec(BuiltinContext* ctx, ConsoleSink sink, TVal* arg)
         sink.write("undefined");
         return;
     }
-    sink.write(buf[:jctx.offset]);
+    sink.write(out.bytes());
 }
 
 /// Stderr byte sink used by write_cesu8_as_utf8.

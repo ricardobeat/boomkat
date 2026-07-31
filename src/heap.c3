@@ -72,6 +72,9 @@ const long  GC_TRIGGER_GROW_FACTOR  = 1;
 const uint  MEGA_CACHE_SIZE         = 512;
 /// Initial capacity for the gray object stack, which grows as needed.
 const uint  GRAY_STACK_INITIAL_CAP  = 64;
+/// Initial capacity for Array.prototype.join's in-progress set, allocated on
+/// first use (most programs never nest a join) and grown as needed.
+const uint  JOIN_VISITED_INITIAL_CAP = 16;
 const usz   STRS_CACHE_SIZE         = 256;
 const uint  GC_MAX_ROOTS            = 64;
 /// How many backward jumps between GC checks. Spacing them out stops loops
@@ -438,6 +441,17 @@ struct Heap {
     void** gray_objects;
     uint   gray_count;
     uint   gray_capacity;
+
+    // Arrays currently being rendered by Array.prototype.join, innermost last.
+    // The set spans nested join calls rather than living in one invocation's
+    // frame, because a cycle re-enters join through a separate call (directly,
+    // or via a user toString that joins the outer array again). An array found
+    // already on the stack contributes the empty string instead of recursing,
+    // which is what V8 does and is the only thing standing between a cyclic
+    // array and unbounded recursion. Grown on demand like gray_objects.
+    void** join_visited;
+    uint   join_visited_count;
+    uint   join_visited_capacity;
 
     // Current execution thread (HThread*)
     void* curr_thread;
@@ -1215,6 +1229,13 @@ fn void Heap.destroy(&self) {
         self.gray_objects = null;
     }
 
+    if (self.join_visited != null) {
+        self.free_func(self.heap_udata, self.join_visited);
+        self.join_visited = null;
+        self.join_visited_count = 0;
+        self.join_visited_capacity = 0;
+    }
+
     if (self.trans_table != null) {
         self.free_func(self.heap_udata, self.trans_table);
         self.trans_table = null;
@@ -1934,6 +1955,41 @@ fn void Heap.register_gc_root(&self, HeapHeader* hdr) {
         self.gc_roots[self.gc_root_count] = (void*)hdr;
         self.gc_root_count++;
     }
+}
+
+// ============================================================================
+// Array.prototype.join cycle detection
+// ============================================================================
+
+/// True when `obj` is already being joined further up the call stack, i.e.
+/// recursing into it would not terminate.
+fn bool Heap.join_visited_has(&self, HObject* obj) {
+    for (uint i = 0; i < self.join_visited_count; i++) {
+        if (self.join_visited[i] == (void*)obj) return true;
+    }
+    return false;
+}
+
+/// Mark `obj` as being joined. Returns false when the stack cannot grow, which
+/// callers must treat as a failure to enter rather than as "no cycle": pushing
+/// nothing would let the next level re-enter the same array unnoticed.
+fn bool Heap.join_visited_push(&self, HObject* obj) {
+    if (self.join_visited_count >= self.join_visited_capacity) {
+        usz new_cap = self.join_visited_capacity > 0
+                      ? (usz)self.join_visited_capacity * 2
+                      : (usz)JOIN_VISITED_INITIAL_CAP;
+        void* new_arr = self.realloc_func(self.heap_udata, self.join_visited, void*::size * new_cap);
+        if (new_arr == null) return false;
+        self.join_visited          = (void**)new_arr;
+        self.join_visited_capacity = (uint)new_cap;
+    }
+    self.join_visited[self.join_visited_count++] = (void*)obj;
+    return true;
+}
+
+/// Unmark the innermost array being joined.
+fn void Heap.join_visited_pop(&self) {
+    if (self.join_visited_count > 0) self.join_visited_count--;
 }
 
 // ============================================================================
