@@ -72,6 +72,10 @@ fn ushort? CompilerContext.expression(&self) {
             self.free_reg(self.call_prop_obj_reg);
             self.call_prop_obj_reg = MAX_REGISTERS;
         }
+        // ES §13.16.1: an Expression built with `,` has AssignmentTargetType
+        // ~invalid~, so `(a, b) = 1` is a SyntaxError even though the final
+        // operand `b` is itself a valid target. Drop the markers it set.
+        self.clear_ref_markers();
     }
 
     return result;
@@ -856,6 +860,10 @@ fn ushort? CompilerContext.conditional_expr(&self) {
 
         self.patch_jump(end_jump);
 
+        // ES §13.14.1: a ConditionalExpression has AssignmentTargetType
+        // ~invalid~ — `(a ? b : c) = 1` is a SyntaxError even though the false
+        // branch just parsed may itself have been a plain identifier.
+        self.clear_ref_markers();
         return result_reg;
     }
 
@@ -916,6 +924,7 @@ fn ushort? CompilerContext.binary_expr(&self, int min_prec) {
     // Do NOT clear self.last_was_arrow_expr here, the recursive RHS call
     // clears it on its own entry, parses its LHS, and the inner's flag
     // survives to the post-RHS check_no_arrow_rhs() in the outer for-loop.
+    bool saw_binary_op = false;
 
     for (;;) {
         self.last_was_local_var = false;
@@ -925,6 +934,14 @@ fn ushort? CompilerContext.binary_expr(&self, int min_prec) {
         if (prec < min_prec) {
             break;
         }
+        // Record that at least one binary operator was consumed. The value of
+        // this expression is then the operator's result — never a Reference —
+        // so the reference markers are cleared once, after the loop, no matter
+        // which operator form (LOG_AND / LOG_OR / NULLISH / regular) ran.
+        // Clearing here instead would not work: each form parses its right
+        // operand afterwards, and that parse sets the flags again from its own
+        // last operand (`a + b = 1` would inherit `b`'s getvar state).
+        saw_binary_op = true;
         // Handle short-circuit operators specially
         if (tt == TokenType.LOG_AND) {
             self.advance()!;
@@ -1076,7 +1093,30 @@ fn ushort? CompilerContext.binary_expr(&self, int min_prec) {
     // local-variable operand (e.g. `len = 0`, `k++`) as a valid
     // SimpleAssignmentTarget alongside last_was_getvar/last_was_member.
     self.last_was_local_var = left_is_local;
+    // ES §13.15.1: a RelationalExpression / EqualityExpression / additive /
+    // multiplicative / logical / coalesce result has AssignmentTargetType
+    // ~invalid~. When any operator was consumed above, `left` holds a computed
+    // value, so drop the reference markers the final right operand left behind
+    // — otherwise assignment_expr's SimpleAssignmentTarget check sees that
+    // operand's state and accepts `x + y = 1` or `(a === b) = 1`.
+    if (saw_binary_op) {
+        self.clear_ref_markers();
+    }
     return left;
+}
+
+/// Drop the "the expression just parsed was a Reference" markers.
+///
+/// assignment_expr, postfix_expr and the prefix `++`/`--` path accept a target
+/// only when one of these is set, so clearing them is how an operator whose
+/// result is a value (AssignmentTargetType ~invalid~, ES §13.15.1) makes
+/// `<expr> = 1` a SyntaxError. Kept as one helper because the markers must move
+/// together — an operator that cleared only some of them would still let the
+/// stale one through.
+fn void CompilerContext.clear_ref_markers(&self) {
+    self.last_was_getvar = false;
+    self.last_was_member = false;
+    self.last_was_local_var = false;
 }
 
 /// Parse a unary expression.
@@ -1084,12 +1124,17 @@ fn ushort? CompilerContext.unary_expr(&self) {
     TokenType tt = self.peek_type();
 
     switch (tt) {
+        // ES §13.5: a UnaryExpression's value is the operator's result, never
+        // a Reference (AssignmentTargetType ~invalid~). clear_ref_markers drops
+        // the operand's getvar/member/local state so assignment_expr rejects
+        // `-a = 1`, `!a = 1`, `~a = 1`, `+a = 1`.
         case TokenType.MINUS:
             self.advance()!;
             ushort operand = self.unary_expr()!;
             ushort result = self.alloc_reg();
             self.emit_abc(Opcode.UNM, (uint)result, (uint)operand, 0);
             self.free_reg(operand);
+            self.clear_ref_markers();
             return result;
 
         case TokenType.PLUS:
@@ -1098,6 +1143,7 @@ fn ushort? CompilerContext.unary_expr(&self) {
             ushort res_plus = self.alloc_reg();
             self.emit_abc(Opcode.UNP, (uint)res_plus, (uint)op_plus, 0);
             self.free_reg(op_plus);
+            self.clear_ref_markers();
             return res_plus;
 
         case TokenType.LOG_NOT:
@@ -1106,6 +1152,7 @@ fn ushort? CompilerContext.unary_expr(&self) {
             ushort res_not = self.alloc_reg();
             self.emit_abc(Opcode.LNOT, (uint)res_not, (uint)op_not, 0);
             self.free_reg(op_not);
+            self.clear_ref_markers();
             return res_not;
 
         case TokenType.BIT_NOT:
@@ -1114,6 +1161,7 @@ fn ushort? CompilerContext.unary_expr(&self) {
             ushort res_bnot = self.alloc_reg();
             self.emit_abc(Opcode.BNOT, (uint)res_bnot, (uint)op_bnot, 0);
             self.free_reg(op_bnot);
+            self.clear_ref_markers();
             return res_bnot;
 
         case TokenType.TYPEOF:

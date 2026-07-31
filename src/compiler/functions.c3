@@ -212,6 +212,14 @@ fn void? CompilerContext.collect_obj_param_binds(&self,
     // was over-eager and broke destructuring statements inside async/generator
     // functions (test262 module-code/top-level-await/syntax/export-var-*).
 
+    // A destructuring pattern in FormalParameters makes IsSimpleParameterList
+    // false (ES §15.1.3). Recorded here, at the one point every destructured
+    // parameter passes through, rather than at each of the parameter loops'
+    // call sites. Gated on in_formal_params because this function is shared
+    // with statement destructuring, where the pattern says nothing about the
+    // enclosing function's formals.
+    if (self.in_formal_params) self.has_destructured_param = true;
+
     if (self.match(TokenType.RBRACE)) return;  // empty pattern {}
 
     for (;;) {
@@ -403,7 +411,9 @@ fn void? CompilerContext.collect_obj_param_binds(&self,
 fn void? CompilerContext.collect_arr_param_binds(&self,
     DestructBind[] binds, uint* count, ushort src_reg, ushort parent_idx)
 {
-    // See collect_obj_param_binds for why we don't touch in_formal_params here.
+    // See collect_obj_param_binds for why we don't touch in_formal_params here,
+    // and for why the IsSimpleParameterList signal is gated on it.
+    if (self.in_formal_params) self.has_destructured_param = true;
 
     ushort elem_idx = 0;
 
@@ -3880,6 +3890,12 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
         arrow_ctx.reserved_regs = arrow_ctx.next_reg;
         // Block body: { ... }
         arrow_ctx.advance()!;
+        // An arrow's ConciseBody has a directive prologue like any other
+        // function body. The engine is strict-only so the directive is a
+        // no-op, but it must be consumed here for its ES §15.3.1 early error:
+        // `(a = 1) => { "use strict"; }` is a SyntaxError because the arrow's
+        // parameters are not a simple list.
+        arrow_ctx.parse_directives()!;
         while (!arrow_ctx.check(TokenType.RBRACE) && !arrow_ctx.is_at_end()) {
             arrow_ctx.statement()!;
         }
@@ -4168,6 +4184,12 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner(&self, char[]* params,
         arrow_ctx.reserved_regs = arrow_ctx.next_reg;
         // Block body: { ... }
         arrow_ctx.advance()!;
+        // An arrow's ConciseBody has a directive prologue like any other
+        // function body. The engine is strict-only so the directive is a
+        // no-op, but it must be consumed here for its ES §15.3.1 early error:
+        // `(a = 1) => { "use strict"; }` is a SyntaxError because the arrow's
+        // parameters are not a simple list.
+        arrow_ctx.parse_directives()!;
         while (!arrow_ctx.check(TokenType.RBRACE) && !arrow_ctx.is_at_end()) {
             arrow_ctx.statement()!;
         }

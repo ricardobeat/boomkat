@@ -388,6 +388,12 @@ struct CompilerContext {
     DestructParamDefault[MAX_PARAMS] destruct_defaults;
     ushort destruct_default_count;
 
+    /// Set while parsing FormalParameters when a parameter is a destructuring
+    /// pattern (`function f([a]) {}` / `function f({a}) {}`). Together with
+    /// `has_rest` and `default_count` this is IsSimpleParameterList = false
+    /// (ES §15.1.3) — see `params_are_simple`.
+    bool has_destructured_param;
+
     // Rest parameter tracking
     bool has_rest;
     ushort rest_formal_count;   // number of formals before rest parameter
@@ -1602,6 +1608,16 @@ struct NameSpan {
     // names into a reused scratch buffer, so str_value points neither into
     // the source nor at stable storage. Empty for plain (unescaped) names.
     char[] name;
+    /// True when this name was bound by a plain FunctionDeclaration — not a
+    /// generator, not async, not a class, not let/const.
+    ///
+    /// Two such declarations may share a name in the same block (ES2024
+    /// §B.3.2.1 relaxes the LexicallyDeclaredNames duplicate-entries early
+    /// error for exactly that pair, and only that pair). Every other
+    /// combination — including `function` with `function*`, `async function`,
+    /// `class` or `let` — stays a SyntaxError, so the duplicate check needs
+    /// this bit to tell them apart.
+    bool redeclarable_fn;
 }
 
 const uint MAX_CLASS_METHODS = 32;
