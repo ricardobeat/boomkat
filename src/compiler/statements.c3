@@ -892,10 +892,15 @@ fn void? CompilerContext.check_module_exports_resolvable(&self) {
 /// throws with no observable side effects. Module top-level lexicals live in
 /// the Module Environment Record, which has no such restriction, so this is
 /// Script/eval only.
-fn void CompilerContext.hoist_lexical_tdz_checks(&self) {
+fn void? CompilerContext.hoist_lexical_tdz_checks(&self) {
     if (self.is_module) return;
     NameSpan[MAX_PRESCAN_NAMES] spans;
     uint n = self.pre_scan_lexical_decls(&spans, MAX_PRESCAN_NAMES);
+    // ES2024 §16.1.1: a ScriptBody's LexicallyDeclaredNames must contain no
+    // duplicates. `let`/`const` collisions are caught at their declaration
+    // site by declare_var's scope walk, but two top-level `class` bindings
+    // never meet there, so the whole set is compared up front.
+    self.check_duplicate_lexical_names(&spans[0], n)!;
     for (uint i = 0; i < n; i++) {
         char[] name = self.name_span_text(spans[i]);
         uint chk_idx = self.add_string_constant(name);

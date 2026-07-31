@@ -1510,6 +1510,13 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
 
                 if (matched) {
                     Token idTok2 = matched_id;
+                    // The bare-identifier fast paths below bypass primary_expr,
+                    // so they must repeat its class-field-initializer check:
+                    // ES2022 §15.7.1 forbids `arguments` anywhere in an
+                    // initializer, including under `typeof`.
+                    if (self.forbid_arguments && str_eq(idTok2.str_value, "arguments")) {
+                        return self.fail("'arguments' is not allowed in class field initializer")~;
+                    }
                     if (!self.is_global) {
                         if (try local_reg = self.resolve_var(idTok2.str_value)) {
                             ushort res_typeof = self.alloc_reg();
@@ -1557,6 +1564,9 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
                             // to normal typeof expr (will parse the member expr)
                             self.pushback(idTok);
                         } else {
+                            if (self.forbid_arguments && str_eq(idTok.str_value, "arguments")) {
+                                return self.fail("'arguments' is not allowed in class field initializer")~;
+                            }
                             // If the identifier resolves to a non-captured local
                             // register, the reference is always resolvable, so use
                             // the register-based TYPEOF instead of the env-walking

@@ -42,7 +42,7 @@ fn CompiledFunction*? compile(Lexer* lex, void* heap) {
     // throws with no observable side effects. Emit the check prologue for
     // top-level lexical, var, and function names first; the real hoist passes
     // below then instantiate the bindings.
-    ctx.hoist_lexical_tdz_checks();
+    ctx.hoist_lexical_tdz_checks()!;
     ctx.hoist_decls(true, true)!;
     ctx.hoist_global_fn_decls(true)!;
     lex.pos             = saved_pos;
