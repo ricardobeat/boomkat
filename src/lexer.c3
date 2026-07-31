@@ -471,6 +471,13 @@ struct Lexer {
     /// same-line token history; used to gate AnnexB `-->` HTMLCloseComment,
     /// which is only a comment-starter at the beginning of a line.
     bool at_line_start;
+    /// True when `<!--` and `-->` are comment starters. This is the AnnexB
+    /// §B.1.1 HTML-like comment grammar, which ES2024 §12.5 makes available in
+    /// Script code only: in a Module they must stay real tokens so the source
+    /// is a SyntaxError. Defaults to true (script) and is cleared for a module
+    /// compilation; there is nothing to gate at runtime, `eval` in a module is
+    /// still eval of a Script.
+    bool html_comments;
     void* heap;
 
     /// Shared decoded-string arena holder (see LexArena). Allocated lazily on
@@ -501,6 +508,7 @@ fn Lexer lexer_init(char[] source, void* heap) {
     lex.strict_mode = true;
     lex.seen_line_term = false;
     lex.at_line_start = true;
+    lex.html_comments = true;
     lex.heap = heap;
     // Allocate the shared arena holder eagerly (tiny, one pointer) so that
     // every speculative lexer copy made during parsing shares the SAME non-null
@@ -753,10 +761,8 @@ fn uint Lexer.remaining(&self) {
 /// multi-line comments (/* ... */), and AnnexB §B.1.3 HTML-like comments
 /// (`<!--` and `-->`).
 ///
-/// NOTE: HTML-like comments are script-only per the spec (they must be a
-/// SyntaxError in module code). The lexer has no reachable module/script
-/// flag, so this is applied unconditionally to all source. See the task
-/// report for this limitation.
+/// HTML-like comments are Script-only (ES2024 §12.5), so they are gated on
+/// `html_comments`, which a module compilation clears.
 fn void Lexer.skip_whitespace_and_comments(&self) {
     self.seen_line_term = false;
     // `self.at_line_start` persists across calls: it reflects whether, since
@@ -910,7 +916,7 @@ fn void Lexer.skip_whitespace_and_comments(&self) {
 
         // AnnexB §B.1.3 SingleLineHTMLOpenComment: `<!--` starts a
         // single-line comment anywhere it appears.
-        if (c == '<' && self.peek_char_at(1) == '!' &&
+        if (self.html_comments && c == '<' && self.peek_char_at(1) == '!' &&
             self.peek_char_at(2) == '-' && self.peek_char_at(3) == '-') {
             self.pos += 4;
             self.col += 4;
@@ -934,7 +940,8 @@ fn void Lexer.skip_whitespace_and_comments(&self) {
         // single-line comment, but only when it occurs at the start of a
         // line (optionally preceded by whitespace and/or comments since the
         // last real line terminator, or since the start of source).
-        if (self.at_line_start && c == '-' && self.peek_char_at(1) == '-' &&
+        if (self.html_comments && self.at_line_start &&
+            c == '-' && self.peek_char_at(1) == '-' &&
             self.peek_char_at(2) == '>') {
             self.pos += 3;
             self.col += 3;
