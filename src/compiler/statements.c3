@@ -2465,7 +2465,7 @@ fn void? CompilerContext.for_statement(&self) {
                     if (dbinds[i].is_synthetic) continue;
                     HString* hs = (HString*)self.constants[dbinds[i].name_idx].get_heapptr();
                     self.check_var_lex_conflict(hs.get_data(), decl_kind)!;
-                    ushort dreg = self.declare_var(hs.get_data(), decl_kind);
+                    ushort dreg = self.declare_binding_var(hs.get_data(), decl_kind);
                     dbinding_regs[i] = dreg;
                 }
 
@@ -2557,7 +2557,7 @@ fn void? CompilerContext.for_statement(&self) {
                     if (fdbinds[i].is_synthetic) continue;
                     HString* hs = (HString*)self.constants[fdbinds[i].name_idx].get_heapptr();
                     self.check_var_lex_conflict(hs.get_data(), decl_kind)!;
-                    fdbinding_regs[i] = self.declare_var(hs.get_data(), decl_kind);
+                    fdbinding_regs[i] = self.declare_binding_var(hs.get_data(), decl_kind);
                     if (is_lexical && (self.is_global || self.is_captured_name(hs.get_data()))) {
                         fd_periter_name_idxs[fd_periter_count] = fdbinds[i].name_idx;
                         fd_periter_is_const[fd_periter_count] = is_const;
@@ -2724,7 +2724,7 @@ fn void? CompilerContext.for_statement(&self) {
                     }
                 }
                 self.check_var_lex_conflict(name_tok.str_value, decl_kind)!;
-                ushort iter_var = self.declare_var(name_tok.str_value, decl_kind);
+                ushort iter_var = self.declare_binding_var(name_tok.str_value, decl_kind);
                 if (is_lexical) {
                     // Mark the freshly-declared iter-var entry as captured                    // and force its reads through the env (resolves_var →
                     // SCOPE_ERROR → GETVAR).  The matching has_captured_local
@@ -2762,17 +2762,22 @@ fn void? CompilerContext.for_statement(&self) {
                 uint loop_start = self.code_count;
                 self.push_loop(loop_start, true);
 
-                // Emit NEXTFOR: iter_var = next key, B = has_next
-
+                // NEXTFOR lands the key in a SCRATCH register, never straight in
+                // the binding register: the exhausting step reports has_next=false
+                // and writes undefined to its A operand, which would clobber the
+                // binding with undefined on the way out of the loop (a `var` head's
+                // binding is readable after the loop, so that is observable). The
+                // key moves into the binding only past the exhaustion branch, the
+                // same shape emit_bare_forin_loop uses.
+                ushort key_slot = self.alloc_reg();
                 ushort has_next = self.alloc_reg();
-                self.emit_abc(Opcode.NEXTFOR, (uint)iter_var, (uint)has_next, (uint)iter_state);
+                self.emit_abc(Opcode.NEXTFOR, (uint)key_slot, (uint)has_next, (uint)iter_state);
 
                 // A completed NEXTFOR does not perform BindingInitialization.
-                // Test has_next before storing A, because NEXTFOR sets A to
-                // undefined on exhaustion and the last closure must retain the
-                // last actual iteration value.
                 uint exit_jump = self.emit_cond_jump(Opcode.IF_FALSE, (uint)has_next);
                 self.free_reg(has_next);
+
+                self.emit_abc(Opcode.LDREG, (uint)iter_var, (uint)key_slot, 0);
 
                 // Store the current key in the active per-iteration environment.
                 uint forin_name_idx = self.add_string_constant(name_tok.str_value);
@@ -2812,6 +2817,7 @@ fn void? CompilerContext.for_statement(&self) {
                     self.cur_lex_depth -= 2;
                 }
 
+                self.free_reg(key_slot);
                 self.free_reg(iter_state);
                 self.free_reg(obj_reg);
                 self.pop_scope_to(saved_scope);
