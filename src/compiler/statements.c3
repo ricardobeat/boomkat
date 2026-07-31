@@ -3197,6 +3197,16 @@ fn void CompilerContext.restore_lhs_snapshot(&self, ForLhsSnapshot s) {
 fn void? CompilerContext.emit_bare_forin_loop(&self, char[] var_name, ushort obj_reg, uint saved_scope, ushort saved_reg) {
     uint name_idx = self.add_string_constant(var_name);
     ushort iter_var = self.alloc_reg();
+    // Bare `for (b in ...)` assigns to an existing binding: the head is an
+    // assignment position, not a declaration. If the target is a register-cached
+    // local, publish the key straight into its home register so the body's
+    // register read sees it (PUTVAR alone updates only the env slot and then
+    // clears the source, desyncing the local — same hazard the bare for-of path
+    // handles in emit_head_bind).
+    ushort home_reg = MAX_REGISTERS;
+    if (!self.is_global) {
+        if (try home = self.resolve_var(var_name)) { home_reg = home; }
+    }
 
     ushort iter_state = self.alloc_reg();
     self.emit_abc(Opcode.INITFOR, (uint)obj_reg, (uint)iter_state, 0);
@@ -3207,10 +3217,22 @@ fn void? CompilerContext.emit_bare_forin_loop(&self, char[] var_name, ushort obj
 
     ushort has_next = self.alloc_reg();
     self.emit_abc(Opcode.NEXTFOR, (uint)iter_var, (uint)has_next, (uint)iter_state);
-    self.emit_a_bc(Opcode.PUTVAR, (uint)iter_var, name_idx);
 
+    // The store must follow the exhaustion test: the final NEXTFOR reports
+    // has_next=false and leaves iter_var undefined, so storing before the branch
+    // would clobber the target with undefined after the last real key (and, for
+    // an undeclared target, would throw on an empty object, which is legal).
     uint exit_jump = self.emit_cond_jump(Opcode.IF_FALSE, (uint)has_next);
     self.free_reg(has_next);
+
+    if (home_reg != MAX_REGISTERS) {
+        self.emit_abc(Opcode.LDREG, (uint)home_reg, (uint)iter_var, 0);
+    } else {
+        // PUTVAR_ASSIGN, not PUTVAR: an undeclared target must throw
+        // ReferenceError rather than create an implicit global (strict-only),
+        // and a const/TDZ target must throw like any other assignment.
+        self.emit_a_bc(Opcode.PUTVAR_ASSIGN, (uint)iter_var, name_idx);
+    }
 
     if (self.eval_mode) self.emit_abc(Opcode.LDUNDEF, (uint)self.eval_acc_reg, 0, 0);
     self.statement_body()!;
@@ -3504,9 +3526,12 @@ fn void? CompilerContext.emit_head_bind(&self, ForOfHead head, ushort val_slot) 
                 // a plain `b = val` assignment to a register-resident local emits.
                 self.emit_abc(Opcode.LDREG, (uint)head.id_reg, (uint)val_slot, 0);
             } else if (head.id_is_bare) {
-                // Env-resident bare target: stage in id_reg, then PUTVAR the env.
+                // Env-resident bare target: stage in id_reg, then store to the env.
+                // PUTVAR_ASSIGN, not PUTVAR: the head is an assignment position, so
+                // an undeclared target must throw ReferenceError instead of creating
+                // an implicit global (strict-only), and const/TDZ must throw too.
                 self.emit_abc(Opcode.LDREG, (uint)head.id_reg, (uint)val_slot, 0);
-                self.emit_a_bc(Opcode.PUTVAR, (uint)head.id_reg, head.id_name_idx);
+                self.emit_a_bc(Opcode.PUTVAR_ASSIGN, (uint)head.id_reg, head.id_name_idx);
             } else {
                 self.emit_abc(Opcode.LDREG, (uint)head.id_reg, (uint)val_slot, 0);
                 self.emit_var_store(head.id_reg, head.id_name_idx, head.is_lexical, head.is_const);
