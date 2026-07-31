@@ -296,6 +296,26 @@ fn void console_emit_string_spec(BuiltinContext* ctx, ConsoleSink sink, TVal* ar
         hstring::write_cesu8_as_utf8(s.get_data(), sink.use_stderr ? &eputc : &io::putchar);
         return;
     }
+    // An object carrying a toString of its own is rendered by it, since that is
+    // what the author wrote it for; a function likewise prints its source. An
+    // object that merely inherits Object.prototype's toString would stringify
+    // to the useless "[object Object]", so node inspects it instead.
+    if (arg.is_object() && arg.get_heapptr() != null) {
+        HObject* obj = (HObject*)arg.get_heapptr();
+        if (obj.is_callable() || inspect_has_custom_tostring(ctx.heap, obj)) {
+            if (sink.use_stderr) { print_tval_err_ctx(ctx, arg); } else { print_tval_ctx(ctx, arg); }
+            return;
+        }
+        // Node inspects a %s argument at depth 1, one level shallower than a
+        // plain argument, so `{a:{b:{c:1}}}` shows as `{ a: [Object] }`.
+        StrBuf out;
+        out.init(ctx.heap);
+        defer out.free();
+        if (inspect_at_depth(ctx.heap, ctx.vm, arg, &out, 2)) {
+            sink.write(out.data[:out.len]);
+            return;
+        }
+    }
     console_emit_value(ctx, sink, arg);
 }
 

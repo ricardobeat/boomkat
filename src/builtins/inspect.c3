@@ -36,9 +36,9 @@ const int INSPECT_MAX_DEPTH = 2;
 /// inside it; see inspect_fits_one_line for the exact arithmetic.
 const usz INSPECT_BREAK_LENGTH = 80;
 
-/// Node keeps a structure on one line only while it has at most this many
-/// entries, independent of how short they are.
-const usz INSPECT_MAX_INLINE_ENTRIES = 6;
+/// Column grouping kicks in for an array with MORE than this many entries.
+/// Shorter arrays are laid out by the plain one-line/one-per-line rule.
+const usz INSPECT_GROUP_MIN_ENTRIES = 6;
 
 /// Ceiling on the circular-reference stack. A structure nested deeper than this
 /// renders the placeholder instead of recursing, so a pathological input cannot
@@ -84,6 +84,14 @@ fn bool inspect_root(Heap* heap, void* vm, TVal* val, StrBuf* out) {
 /// quoted. This is what %o, %O and console.dir want, since none of them is the
 /// bare-string case.
 fn bool inspect_nested(Heap* heap, void* vm, TVal* val, StrBuf* out) {
+    return inspect_at_depth(heap, vm, val, out, 0);
+}
+
+/// As inspect_nested, but starting at `start_depth`, which shortens the effective
+/// depth budget. %s passes 1, since node inspects a %s argument at depth 1 and
+/// so prints `{ a: [Object] }` where a plain argument would expand one level
+/// further.
+fn bool inspect_at_depth(Heap* heap, void* vm, TVal* val, StrBuf* out, int start_depth) {
     InspectCtx ctx;
     ctx.heap = heap;
     ctx.vm = vm;
@@ -96,7 +104,7 @@ fn bool inspect_nested(Heap* heap, void* vm, TVal* val, StrBuf* out) {
     StrBuf body;
     body.init(heap);
     defer body.free();
-    if (!inspect_value(&ctx, val, 0, &body)) return false;
+    if (!inspect_value(&ctx, val, start_depth, &body)) return false;
     if (ctx.saw_circular && !out.append_bytes("<ref *1> ")) return false;
     return out.append_bytes(body.data[:body.len]);
 }
@@ -714,7 +722,7 @@ fn bool inspect_layout(InspectCtx* ctx, InspectShape shape, InspectEntries* entr
     // lines there are. Grouping may also collapse the whole thing back to one
     // line, which the test below then picks up.
     bool grouped = false;
-    if (shape.is_array_like() && entries.count > INSPECT_MAX_INLINE_ENTRIES) {
+    if (shape.is_array_like() && entries.count > INSPECT_GROUP_MIN_ENTRIES) {
         usz before = entries.count;
         if (!inspect_group_array(ctx, entries)) return false;
         grouped = entries.count != before;
@@ -882,20 +890,25 @@ fn bool inspect_append_indent(StrBuf* out, usz spaces) {
     return true;
 }
 
-/// node's reduceToSingleString: a structure stays on one line only when it has
-/// at most 6 entries AND the whole thing fits the 80-column break length. The
-/// arithmetic is node's own, verified against util.inspect across a sweep of
-/// entry counts, entry widths and nesting depths:
+/// node's reduceToSingleString: a structure stays on one line while it fits the
+/// 80-column break length. The arithmetic is node's own, verified against
+/// util.inspect across a sweep of entry counts, entry widths and nesting depths:
 ///
 ///     start = count + indentationLvl + len(open brace) + len(prefix) + 10
 ///     total = count + start + sum(len(entry))
 ///     one line iff total <= 80
 ///
+/// There is deliberately no entry-count cap here. Node gates this join on
+/// `ctx.currentDepth - recurseTimes < ctx.compact`, i.e. on the HEIGHT of the
+/// value's own subtree rather than on how many entries it has, and the depth
+/// limit already caps that height below the threshold. So a wide-but-shallow
+/// object stays on one line however many entries it has, which is why
+/// `{ k0: 0, ..., k8: 8 }` does not break.
+///
 /// An entry that itself broke onto multiple lines forces the parent to break
 /// too, since a newline inside an entry cannot appear on a single-line join.
 fn bool inspect_fits_one_line(InspectCtx* ctx, InspectShape shape, InspectEntries* entries) {
     if (entries.elided > 0) return false;
-    if (entries.count > INSPECT_MAX_INLINE_ENTRIES) return false;
 
     usz total = 2 * entries.count + ctx.indent + 1 + shape.prefix_len + 10;
     for (usz i = 0; i < entries.count; i++) {
@@ -1044,6 +1057,36 @@ fn HString* inspect_call_method(InspectCtx* ctx, HObject* obj, char[] name) {
     HString* s = (HString*)result.get_heapptr();
     if (s == null || s.is_symbol()) return null;
     return s;
+}
+
+/// True when `obj` reaches a "toString" that is not the one on
+/// Object.prototype. Node's %s renders such an object through it, on the
+/// grounds that an author who wrote a toString meant it to be the string form,
+/// while the inherited default would only ever yield "[object Object]".
+///
+/// The prototype chain is walked rather than the own properties alone, since a
+/// class puts its toString on the prototype, not on the instance.
+///
+/// A builtin's own toString does not count: node still inspects an Array, a Map
+/// and an Error rather than printing "1,2" or "[object Map]", so only a
+/// toString reached before any builtin prototype qualifies.
+fn bool inspect_has_custom_tostring(Heap* heap, HObject* obj) {
+    HString* key = builtin_intern_string(heap, "toString");
+    if (key == null) return false;
+    HObject* cur = obj;
+    while (cur != null) {
+        if (cur == heap.object_proto || inspect_is_builtin_proto(heap, cur)) return false;
+        if (cur.find_prop_idx(key) >= 0) return true;
+        cur = cur.prototype;
+    }
+    return false;
+}
+
+/// True for a built-in prototype whose toString is the engine's own, not a
+/// user-authored string form.
+fn bool inspect_is_builtin_proto(Heap* heap, HObject* obj) {
+    return obj == heap.array_proto || obj == heap.map_proto || obj == heap.set_proto
+        || obj == heap.date_proto || obj == heap.regexp_proto;
 }
 
 /// [String: 'x'], [Number: 1], [Boolean: true] for a boxed primitive, whose

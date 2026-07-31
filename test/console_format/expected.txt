@@ -56,4 +56,134 @@ undefined
 undefined
 [Circular]
 [Circular]
+{}
+{ a: 1 }
+{ a: 1, b: 2 }
+{ a: { b: 2 } }
+{ a: null, b: undefined }
+{ a: true, b: false }
+{ a: NaN, b: Infinity, c: -Infinity }
+{ a: { b: { c: 1 } } }
+{ a: { b: { c: [Object] } } }
+[ [ [ [Array] ] ] ]
+{ a: { b: { c: [Array] } } }
+[]
+[ 1, 2, 3 ]
+[ { a: 1 } ]
+{ a: [ 1, 2 ] }
+[ 1, <1 empty item>, 3 ]
+[ 1, <2 empty items>, 3 ]
+[ <1 empty item>, 1 ]
+[ 1, 2, 3, extra: 'p' ]
+bare
+{ a: 'x' }
+[ 'x', 'y' ]
+{ a: "it's" }
+{ a: 'has "dq"' }
+{ a: `has 'sq' and "dq"` }
+{ a: 'line\nbreak' }
+{ a: 'tab\there' }
+[ 'back\\slash' ]
+{ 'a-b': 1 }
+{ valid_name: 1 }
+{ 'valid_$': 1 }
+{ '2': 3, 'a-b': 1, valid_name: 4 }
+{ '': 1 }
+Map(0) {}
+Map(1) { 1 => 2 }
+Map(1) { 'k' => 'v' }
+Map(1) { { a: 1 } => [ 1 ] }
+Set(0) {}
+Set(2) { 1, 2 }
+Set(2) { 'a', { b: 1 } }
+{ m: Map(1) { 1 => 2 } }
+[Function: f]
+[Function (anonymous)]
+[Function (anonymous)]
+[class C]
+[class (anonymous)]
+[ [Function: f] ]
+{ f: [Function: g], h: [Function: h] }
+-0
+[ -0 ]
+{ a: -0 }
+0
+[ 1.5, -2.25 ]
+10n
+{ a: 1n }
+Symbol(d)
+[ Symbol(x) ]
+Symbol()
+{ Symbol(k): 1 }
+{ g: [Getter] }
+{ s: [Setter] }
+{ b: [Getter/Setter] }
+{}
+[String: 'x']
+[Number: 1]
+[Boolean: true]
+{ s: [String: 'x'] }
+[Object: null prototype] {}
+[Object: null prototype] { a: 1 }
+Int8Array(2) [ 1, 2 ]
+Int8Array(0) []
+Uint8Array(3) [ 1, 2, 3 ]
+Float64Array(1) [ 1.5 ]
+<ref *1> { self: [Circular *1] }
+<ref *1> [ [Circular *1] ]
+<ref *1> { b: { a: [Circular *1] } }
+<ref *1> Map(1) { 'k' => [Circular *1] }
+<ref *1> Set(1) { [Circular *1] }
+{ aaaaaaaaaa: 1, bbbbbbbbbb: 2, cccccccccc: 3 }
+{ aaaaaaaaaa: 1, bbbbbbbbbb: 2, cccccccccc: 3, dddddddddd: 44444 }
+{ k0: 'vvvvv', k1: 'vvvvv', k2: 'vvvvv', k3: 'vvvvv', k4: 'vvvvv' }
+{
+  k0: 'vvvvv',
+  k1: 'vvvvv',
+  k2: 'vvvvv',
+  k3: 'vvvvv',
+  k4: 'vvvvv',
+  k5: 'vvvvv'
+}
+{ k0: 0, k1: 1, k2: 2, k3: 3, k4: 4, k5: 5, k6: 6, k7: 7, k8: 8 }
+{
+  outer: { aaaaaaaaaa: 1, bbbbbbbbbb: 2, cccccccccc: 3, dddddddddd: 44444 }
+}
+[
+  1, 2, 3, 4,  5,
+  6, 7, 8, 9, 10
+]
+[
+   1,  2,  3,  4,  5,  6,  7,
+   8,  9, 10, 11, 12, 13, 14,
+  15, 16, 17, 18, 19, 20
+]
+[
+  'a', 'b', 'c',
+  'd', 'e', 'f',
+  'g'
+]
+[
+  'aaaaaaaaaa',
+  'bbbbbbbbbb',
+  'cccccccccc',
+  'dddddddddd',
+  'eeeeeeeeee'
+]
+[
+  { a: 1 }, { a: 1 },
+  { a: 1 }, { a: 1 },
+  { a: 1 }, { a: 1 },
+  { a: 1 }
+]
+{ a: 1 } [ 2 ] three
+null undefined true false 1 -0
+CUSTOM
+{ a: 1 }
+[ 1, 2 ]
+{ a: [Object] }
+Map(1) { 1 => 2 }
+{ a: 1 }
+'str'
+{ a: { b: { c: [Object] } } }
 done
