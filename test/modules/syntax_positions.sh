@@ -139,6 +139,41 @@ check ACCEPT "import.meta in a function"         'function f() { return import.m
 check ACCEPT "property named export"             'var o = { export: 1 }; o.export;'
 check ACCEPT "property named import"             'var o = { import: 1 }; o.import;'
 
+# ---------------------------------------------------------------------------
+# Escaped contextual keywords (ES2024 §12.6.1)
+# ---------------------------------------------------------------------------
+#
+# `as` and `from` are matched on their text rather than being reserved words,
+# and a spelling containing a UnicodeEscapeSequence is never the keyword. Each
+# escaped form below is therefore a plain identifier in a position where the
+# grammar demands the keyword, i.e. a SyntaxError.
+#
+# The specifiers point at ./self.mjs, which exists (created below), so a
+# REJECT here is the escape rule and not an unresolvable-module link error.
+
+printf 'export var a = 0;%s' "$(printf '\n')" > "$TMP/self.mjs"
+
+check REJECT "escaped as in export specifier"    'export var a = 0;
+export {a \u0061s b} from "./self.mjs";'
+check REJECT "escaped from in export"            'export {} \u0066rom "./self.mjs";'
+check REJECT "escaped from in import"            'import {} \u0066rom "./self.mjs";'
+check REJECT "escaped as in namespace import"    'import* \u0061s ns from "./self.mjs";'
+check REJECT "escaped as in import specifier"    'import {a \u0061s b} from "./self.mjs";'
+check REJECT "escaped as in export * as"         'export * \u0061s ns from "./self.mjs";'
+
+# The unescaped spellings must all keep working.
+check ACCEPT "plain as in export specifier"      'export var a = 0;
+export {a as b} from "./self.mjs";'
+check ACCEPT "plain from in export"              'export {} from "./self.mjs";'
+check ACCEPT "plain from in import"              'import {} from "./self.mjs";'
+check ACCEPT "plain as in namespace import"      'import* as ns from "./self.mjs";'
+check ACCEPT "plain as in import specifier"      'import {a as b} from "./self.mjs";'
+check ACCEPT "plain as in export * as"           'export * as ns from "./self.mjs";'
+
+# `as` and `from` are not reserved, so they remain ordinary identifiers.
+check ACCEPT "as and from as variable names"     'var as = 1, from = 2; as + from;'
+check ACCEPT "as and from as property names"     'var o = { as: 1, from: 2 }; o.as + o.from;'
+
 echo ""
 echo "modules/syntax_positions: $PASS passed, $FAIL failed"
 if [ "$FAIL" -gt 0 ]; then

@@ -2078,7 +2078,7 @@ fn void? CompilerContext.for_statement(&self) {
     if (next_tt == TokenType.IDENTIFIER) {
         Token id_tok = self.advance()!;
         if (try tok2 = self.lexer.peek()) {
-            if (tok2.type == TokenType.IDENTIFIER && str_eq(tok2.str_value, "of")) {
+            if (token_is_of(tok2)) {
                 // `of` is only a for-of keyword when it is not part of an arrow-function
                 // parameter list. For example, `for (async of => {}; ...)` is a plain
                 // for-loop whose init is the call expression `async(of => {})`.
@@ -2137,7 +2137,7 @@ fn void? CompilerContext.for_statement(&self) {
             Token inner_tok = self.advance()!;
             if (self.match(TokenType.RPAREN)) {
                 if (try pt = self.lexer.peek()) {
-                    if (pt.type == TokenType.IDENTIFIER && str_eq(pt.str_value, "of")) {
+                    if (token_is_of(pt)) {
                         paren_is_forof = true;
                         paren_id_name = inner_tok.str_value;
                     } else if (pt.type == TokenType.IN) {
@@ -2226,7 +2226,7 @@ fn void? CompilerContext.for_statement(&self) {
                 self.free_reg(self.last_member_obj_reg);
                 self.free_reg(mreg);
                 if (try tok3 = self.lexer.peek()) {
-                    if (tok3.type == TokenType.IDENTIFIER && str_eq(tok3.str_value, "of")) {
+                    if (token_is_of(tok3)) {
                         is_member_head = true;
                         head_is_of = true;
                     } else if (tok3.type == TokenType.IN) {
@@ -2325,7 +2325,7 @@ fn void? CompilerContext.for_statement(&self) {
 
         Token? peek_tok = self.lexer.peek();
         if (try pt = peek_tok) {
-            if (pt.type == TokenType.IDENTIFIER && str_eq(pt.str_value, "of")) {
+            if (token_is_of(pt)) {
                 is_bare_destr = true;
                 bare_is_of = true;
             } else if (pt.type == TokenType.IN) {
@@ -2409,7 +2409,7 @@ fn void? CompilerContext.for_statement(&self) {
             // Now check what follows the pattern
             Token? peek_tok = self.lexer.peek();
             if (try pt = peek_tok) {
-                if (pt.type == TokenType.IDENTIFIER && str_eq(pt.str_value, "of")) {
+                if (token_is_of(pt)) {
                     is_forof_destr = true;
                 } else if (pt.type == TokenType.IN) {
                     is_forin_destr = true;
@@ -2472,7 +2472,7 @@ fn void? CompilerContext.for_statement(&self) {
                 // Consume "of" (contextual keyword - lexed as IDENTIFIER)
                 {
                     Token of_tok = self.expect(TokenType.IDENTIFIER)!;
-                    if (!str_eq(of_tok.str_value, "of")) {
+                    if (!token_is_of(of_tok)) {
                         return COMPILE_ERROR~;
                     }
                 }
@@ -2820,7 +2820,7 @@ fn void? CompilerContext.for_statement(&self) {
             }
             // Check for "of" (for-of), contextual keyword, not a reserved word
             if (try tok = self.lexer.peek()) {
-                if (tok.type == TokenType.IDENTIFIER && str_eq(tok.str_value, "of")) {
+                if (token_is_of(tok)) {
                     self.advance()!;  // consume "of"
                     // TDZ scope for the head binding (§13.7.5.12).
                     // Before evaluating the RHS, a TDZ environment is created
@@ -3798,7 +3798,7 @@ fn void? CompilerContext.emit_bare_forof_destruct_loop(&self, bool is_array_patt
     // Consume "of" (lexed as IDENTIFIER)
     {
         Token of_tok = self.expect(TokenType.IDENTIFIER)!;
-        if (!str_eq(of_tok.str_value, "of")) {
+        if (!token_is_of(of_tok)) {
             return COMPILE_ERROR~;
         }
     }
@@ -4990,6 +4990,16 @@ fn void? CompilerContext.function_declaration(&self, bool is_async_decl = false,
 // ESM Import/Export declarations
 // ============================================================================
 
+/// True when `tok` is the contextual keyword `of` that heads a for-of loop.
+///
+/// `of` is not a reserved word, so it arrives as a plain IDENTIFIER and has to
+/// be matched on its text. An escaped spelling is never the keyword (ES2024
+/// §12.6.1), so `for (var x of [])` is a SyntaxError rather than a for-of
+/// loop -- the same rule expect_as / expect_from apply to `as` and `from`.
+fn bool token_is_of(Token tok) {
+    return tok.type == TokenType.IDENTIFIER && !tok.has_escape && str_eq(tok.str_value, "of");
+}
+
 /// Get the CompModuleDef* from the opaque current_module pointer.
 /// Returns null if not in module mode.
 fn CompModuleDef* CompilerContext.get_module_def(&self) {
@@ -4998,9 +5008,13 @@ fn CompModuleDef* CompilerContext.get_module_def(&self) {
 
 /// Expect the contextual keyword `from` (not a reserved word, must be
 /// checked as an identifier with value "from").
+///
+/// An escaped spelling is never the keyword (ES2024 §12.6.1: a
+/// ReservedWord/contextual keyword must be written with no UnicodeEscape-
+/// Sequence), so `\u0066rom` is a plain identifier here and a SyntaxError.
 fn void? CompilerContext.expect_from(&self) {
     Token tok = self.expect(TokenType.IDENTIFIER)!;
-    if (!str_eq(tok.str_value, "from")) {
+    if (tok.has_escape || !str_eq(tok.str_value, "from")) {
         return COMPILE_ERROR~;
     }
 }
@@ -5013,18 +5027,20 @@ fn bool CompilerContext.match_from(&self) {
     Token? tok_opt = self.lexer.next_token();
     if (catch _err = tok_opt) return false;
     Token tok = tok_opt;
-    if (str_eq(tok.str_value, "from")) {
+    if (!tok.has_escape && str_eq(tok.str_value, "from")) {
         return true;
     }
-    // Not 'from', push back
+    // Not 'from' (or an escaped spelling, which §12.6.1 makes a plain
+    // identifier rather than the keyword), push back
     self.lexer.pushback(tok);
     return false;
 }
 
-/// Expect the contextual keyword `as`.
+/// Expect the contextual keyword `as`. An escaped spelling is never the
+/// keyword (§12.6.1), so `\u0061s` is a SyntaxError here.
 fn void? CompilerContext.expect_as(&self) {
     Token tok = self.expect(TokenType.IDENTIFIER)!;
-    if (!str_eq(tok.str_value, "as")) {
+    if (tok.has_escape || !str_eq(tok.str_value, "as")) {
         return COMPILE_ERROR~;
     }
 }
@@ -5035,7 +5051,7 @@ fn bool CompilerContext.match_as(&self) {
     Token? tok_opt = self.lexer.next_token();
     if (catch _err = tok_opt) return false;
     Token tok = tok_opt;
-    if (str_eq(tok.str_value, "as")) {
+    if (!tok.has_escape && str_eq(tok.str_value, "as")) {
         return true;
     }
     self.lexer.pushback(tok);
