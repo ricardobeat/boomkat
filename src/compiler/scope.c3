@@ -226,6 +226,34 @@ fn ushort? CompilerContext.find_local_reg(&self, char[] name) {
     return SCOPE_ERROR~;
 }
 
+/// Declare a binding for a for-in/for-of head or a destructuring declarator and
+/// return the register it lives in.
+///
+/// A `var` name does NOT introduce a new binding here: it was already hoisted to
+/// the enclosing function scope, so this site must write into the register that
+/// hoisted binding owns. Calling declare_var unconditionally would allocate a
+/// FRESH register, leave the hoisted one holding its LDUNDEF, and (for a
+/// for-head) drop the new entry at the loop's pop_scope_to — so a read
+/// afterwards returns undefined instead of the value that was bound.
+/// The accompanying DECLVAR keeps the env slot correct, which is why the bug
+/// is invisible at global scope and for captured locals (both env-resident)
+/// and only bites register-resident function locals.
+///
+/// Mirrors the reuse-or-declare handling at the plain `for (var i = ...)` and
+/// identifier `var` statement declaration sites. `let`/`const` DO introduce a
+/// fresh binding at each of these sites, so they always declare.
+fn ushort CompilerContext.declare_binding_var(&self, char[] name, ScopeKind kind) {
+    if (kind != ScopeKind.VAR) {
+        return self.declare_var(name, kind);
+    }
+    // Capture-blind lookup: a captured var is still the same binding.
+    ushort? existing = self.find_local_reg(name);
+    if (try er = existing) {
+        return er;
+    }
+    return self.declare_var(name, kind);
+}
+
 /// Return the constant-pool name index for `reg`'s binding when it is a CONST
 /// declaration in scope_stack; return 0xFFFFFFFF otherwise. Used at every
 /// register-only write site (postfix INC/DEC, plain/compound/logical

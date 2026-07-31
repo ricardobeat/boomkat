@@ -1544,6 +1544,146 @@ fn void CompilerContext.skip_expression(&self) {
     }
 }
 
+/// Create the hoisted binding for one `var` name found by the pre-scan:
+/// a register slot, an `undefined` initial value, and the env declaration.
+/// Shared by the plain-identifier declarator path and the binding-pattern
+/// walker, which must produce byte-identical bindings for their leaf names.
+fn void CompilerContext.hoist_one_var_name(&self, char[] raw_name, bool is_global) {
+    // Intern now: raw_name may borrow the lexer's shared ident_buf scratch
+    // (escaped identifier), which the next declarator in this statement (or a
+    // later var statement in the same hoisting pass) will overwrite.
+    // declare_var stores this slice into scope_stack, which outlives the token.
+    HString* var_hstr = ((Heap*)self.heap).str_intern(raw_name);
+    char[] var_name = var_hstr.get_data();
+    ushort var_reg = self.declare_var(var_name, VAR);
+    self.has_local_bindings = true;
+    self.emit_abc(Opcode.LDUNDEF, (uint)var_reg, 0, 0);
+    uint var_name_idx = self.add_string_constant(var_name);
+    self.emit_a_bc(Opcode.DECLVAR_HOIST, (uint)var_reg, var_name_idx);
+    // At global scope, var bindings are env-resident (accessed via
+    // GETVAR/PUTVAR); the register is only a temporary DECLVAR source.
+    // Free it immediately so 500+ var declarations don't exhaust the
+    // register file.  Non-global hoisting must keep the register alive
+    // as the function's actual local-variable slot.
+    if (is_global) { self.free_reg(var_reg); }
+}
+
+/// Token-walk a `var` binding pattern and hoist every leaf BoundName in it.
+/// The opening '[' or '{' has already been consumed; this consumes through the
+/// matching close.
+///
+/// A pattern declarator (`var [a] = ...`, `var {p: b} = ...`, and above all a
+/// for-head `for (var [a] of ...)`) declares var-scoped names exactly like a
+/// plain declarator does, but the pre-scan used to stop at the non-IDENTIFIER
+/// first token and hoist nothing. For a plain statement that is masked, because
+/// var_declaration declares the names as it parses them. A for-head is not
+/// masked: emit_forof/the for-in epilogue pop the head's scope entries at
+/// pop_scope_to, so with no hoisted binding to fall back on the name is gone
+/// after the loop and reads throw "x is not defined".
+///
+/// `checks_only` mirrors the identifier path: emit the global CanDeclareGlobalVar
+/// check and no binding.
+///
+/// Leaf recognition: an IDENTIFIER is a bound name unless a ':' follows it, in
+/// which case it is an object pattern's property KEY and the bound name is
+/// whatever the value side holds. Two constructs contain expressions rather
+/// than bindings and are skipped wholesale:
+///   - a default value (`= expr`), whose identifiers are references;
+///   - a computed property key (`{[expr]: v}`), likewise. A '[' is a computed
+///     key only at a PROPERTY START inside an object pattern, that is directly
+///     after that pattern's '{' or after a ',' at its level. The same '[' in a
+///     property's value position (`{b: [c]}`) is an ordinary sub-pattern, so
+///     the walk tracks both the enclosing bracket kind and whether it is
+///     currently at a property start.
+fn void? CompilerContext.hoist_var_pattern(&self, bool is_global, bool checks_only, bool opened_with_brace) {
+    // is_obj[i] is true when nesting level i was opened by '{'. Level 0 is the
+    // caller-consumed opening bracket. Patterns deeper than this are
+    // vanishingly rare; on overflow the walk falls back to treating brackets as
+    // sub-patterns, which can only over-hoist a name (harmless: the binding is
+    // undefined and unreferenced).
+    const uint MAX_PAT_DEPTH = 32;
+    bool[MAX_PAT_DEPTH] is_obj;
+    uint depth = 1;
+    is_obj[0] = opened_with_brace;
+    // True while the next token would begin a fresh property/element at the
+    // current level: set on entry to a level and after each ','.
+    bool at_prop_start = true;
+    for (;;) {
+        Token? tok_opt = self.lexer.next_token();
+        if (catch _err = tok_opt) return;
+        Token tok = tok_opt;
+        TokenType tt = tok.type;
+        if (tt == TokenType.EOF_TOKEN) return;
+        if (tt == TokenType.COMMA) { at_prop_start = true; continue; }
+        if (tt == TokenType.LBRACKET || tt == TokenType.LBRACE) {
+            // '[' at a property start inside an object pattern is a computed
+            // key: skip the whole key expression, including its closing ']'.
+            if (tt == TokenType.LBRACKET && at_prop_start && depth > 0
+                && depth <= MAX_PAT_DEPTH && is_obj[depth - 1]) {
+                self.skip_bracketed_key();
+                at_prop_start = false;
+                continue;
+            }
+            if (depth < MAX_PAT_DEPTH) { is_obj[depth] = (tt == TokenType.LBRACE); }
+            depth++;
+            at_prop_start = true;
+            continue;
+        }
+        if (tt == TokenType.RBRACKET || tt == TokenType.RBRACE) {
+            depth--;
+            if (depth == 0) return;
+            at_prop_start = false;
+            continue;
+        }
+        if (tt == TokenType.ASSIGN) {
+            // Default value: identifiers inside it are references.
+            self.skip_expression();
+            at_prop_start = false;
+            continue;
+        }
+        at_prop_start = false;
+        if (tt != TokenType.IDENTIFIER) continue;
+
+        // A ':' next makes this token a property key, not a bound name.
+        Token? peek_opt = self.lexer.peek();
+        if (try pt = peek_opt) {
+            if (pt.type == TokenType.COLON) continue;
+        }
+
+        if (checks_only) {
+            if (is_global && !self.is_module) {
+                uint chk_idx = self.add_string_constant(tok.str_value);
+                self.emit_a_bc(Opcode.CHKGLOBALVAR, 0, chk_idx);
+                self.record_declared_global(chk_idx);
+            }
+            continue;
+        }
+        // A pattern may repeat a name (`var [a, a]`); the second is the same
+        // binding, so reuse rather than allocate a second register.
+        if (try _existing = self.find_local_reg(tok.str_value)) continue;
+        self.hoist_one_var_name(tok.str_value, is_global);
+    }
+}
+
+/// Consume a computed property key's tokens through its closing ']'. The
+/// opening '[' has already been consumed. Bracket-counting rather than
+/// skip_expression, because the key expression ends at a ']' that
+/// skip_expression would treat as a stray closer.
+fn void CompilerContext.skip_bracketed_key(&self) {
+    uint depth = 1;
+    for (;;) {
+        Token? tok_opt = self.lexer.next_token();
+        if (catch _err = tok_opt) return;
+        TokenType tt = tok_opt.type;
+        if (tt == TokenType.EOF_TOKEN) return;
+        if (tt == TokenType.LBRACKET) { depth++; continue; }
+        if (tt == TokenType.RBRACKET) {
+            depth--;
+            if (depth == 0) return;
+        }
+    }
+}
+
 /// Pre-scan function body for var and function declarations and emit hoisted
 /// bytecode so they are available before any statements run.
 fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = false) {
@@ -1888,6 +2028,31 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
                 Token? name_opt2 = self.lexer.next_token();
                 if (catch _err = name_opt2) break;
                 Token name_tok2 = name_opt2;
+                // A binding pattern declarator (`var [a] = ...` / `var {p} = ...`)
+                // binds var-scoped names just as an identifier declarator does.
+                if (name_tok2.type == TokenType.LBRACKET || name_tok2.type == TokenType.LBRACE) {
+                    self.hoist_var_pattern(is_global, checks_only,
+                                           name_tok2.type == TokenType.LBRACE)!;
+                    // Same separator handling as the identifier path below: an
+                    // initializer, then either another declarator or the end of
+                    // the statement.
+                    Token? psep_opt = self.lexer.next_token();
+                    if (catch _perr = psep_opt) break;
+                    TokenType psep = psep_opt.type;
+                    if (psep == TokenType.ASSIGN) {
+                        self.skip_expression();
+                        Token? psep_opt2 = self.lexer.next_token();
+                        if (catch _perr2 = psep_opt2) break;
+                        if (psep_opt2.type != TokenType.COMMA) {
+                            self.lexer.pushback(psep_opt2);
+                            break;
+                        }
+                    } else if (psep != TokenType.COMMA) {
+                        self.lexer.pushback(psep_opt);
+                        break;
+                    }
+                    continue;
+                }
                 if (name_tok2.type != TokenType.IDENTIFIER) break;
 
                 // ES2024 §16.2.1.1 module early errors: a module body's
@@ -1933,25 +2098,7 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
                     continue;
                 }
 
-                // Intern now: name_tok2.str_value may borrow the lexer's
-                // shared ident_buf scratch (escaped identifier), which the
-                // next declarator in this loop (or a later var statement in
-                // the same hoisting pass) will overwrite. declare_var stores
-                // this slice into scope_stack, which outlives the current
-                // token.
-                HString* var_hstr = ((Heap*)self.heap).str_intern(name_tok2.str_value);
-                char[] var_name2 = var_hstr.get_data();
-                ushort var_reg = self.declare_var(var_name2, VAR);
-                self.has_local_bindings = true;
-                self.emit_abc(Opcode.LDUNDEF, (uint)var_reg, 0, 0);
-                uint var_name_idx = self.add_string_constant(var_name2);
-                self.emit_a_bc(Opcode.DECLVAR_HOIST, (uint)var_reg, var_name_idx);
-                // At global scope, var bindings are env-resident (accessed via
-                // GETVAR/PUTVAR); the register is only a temporary DECLVAR source.
-                // Free it immediately so 500+ var declarations don't exhaust the
-                // register file.  Non-global hoisting must keep the register alive
-                // as the function's actual local-variable slot.
-                if (is_global) { self.free_reg(var_reg); }
+                self.hoist_one_var_name(name_tok2.str_value, is_global);
 
                 // Check for initializer or comma
                 Token? sep_opt = self.lexer.next_token();
