@@ -151,9 +151,17 @@ fn void vm_mark_activations(void* vm_ptr, void* heap_ptr) {
         // for that callee). For the innermost frame, extend to the end of the
         // allocated valstack: builtins stage call arguments in scratch slots
         // above num_regs whose exact extent is not tracked by valstack_top, and
-        // a live value there must not be collected. Slots past the live data are
-        // zero-initialised to undefined, which marks harmlessly, so
-        // scanning to valstack_end is safe and cannot miss a staged argument.
+        // a live value there must not be collected.
+        //
+        // This over-scan reads slots no frame currently owns, so it is only
+        // sound while every pop leaves its registers cleared. decref_callee_regs
+        // does that over [0..max_heap_reg], which is why a path that writes heap
+        // values into a frame without raising that watermark is a
+        // use-after-free here rather than a mere leak: a later frame at a
+        // different bottom reads the stale pointer bits as one of its own
+        // registers. Narrowing the span does not buy safety, since the stale
+        // slot can equally fall inside num_regs + 4; keeping pops honest is what
+        // makes the scan safe.
         if (i + 1 < vm.activation_count) {
             TVal* nb = vm.activations[i + 1].bottom;
             if (nb > frame_end) { frame_end = nb; }
