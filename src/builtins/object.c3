@@ -295,7 +295,30 @@ fn uint own_key_buf_capacity(HObject* obj) {
     return max_keys;
 }
 
-fn uint collect_own_enum_string_keys(BuiltinContext* ctx, HObject* obj, HString** key_buf, bool require_enumerable = true) {
+/// True iff `obj` has at least one own enumerable String key, i.e. iff
+/// collect_own_enum_string_keys would write at least one entry.  Callers that
+/// only need "is it empty?" use this instead of scanning `prop_count`
+/// themselves: the named property table is not the only key source, and a
+/// bare prop_count test reports an integer-indexed exotic (TypedArray
+/// elements, String-wrapper char indices) as having no keys at all.
+fn bool own_has_enum_string_key(Heap* heap, HObject* obj) {
+    if (obj.flags.exotic_stringobj && (*obj.extra_ptr()).prim.primitive_value.is_string()) {
+        HString* prim = (HString*)(*obj.extra_ptr()).prim.primitive_value.get_heapptr();
+        if (prim != null && prim.char_length() > 0) return true;
+    }
+    if (is_typed_array_class(obj.get_class()) && ta_element_count(obj) > 0) return true;
+    if (obj.flags.exotic_array || obj.flags.exotic_arguments) {
+        for (uint i = 0; i < obj.array_size; i++) {
+            if (!obj.array_part()[i].is_undefined()) return true;
+        }
+    }
+    for (uint i = 0; i < obj.prop_count; i++) {
+        if (obj.prop_key_at(i) != null) return true;
+    }
+    return false;
+}
+
+fn uint collect_own_enum_string_keys(Heap* heap, HObject* obj, HString** key_buf, bool require_enumerable = true) {
     uint key_count = 0;
 
     // STRING exotic: integer indices [0, clen) are enumerable own properties
@@ -303,7 +326,7 @@ fn uint collect_own_enum_string_keys(BuiltinContext* ctx, HObject* obj, HString*
         HString* prim = (HString*)(*obj.extra_ptr()).prim.primitive_value.get_heapptr();
         if (prim != null) {
             for (uint i = 0; i < prim.char_length(); i++) {
-                HString* k = ctx.heap.int_to_hstring((long)i);
+                HString* k = heap.int_to_hstring((long)i);
                 if (k == null) return key_count;
                 key_buf[key_count++] = k;
             }
@@ -315,7 +338,7 @@ fn uint collect_own_enum_string_keys(BuiltinContext* ctx, HObject* obj, HString*
     if (is_typed_array_class(obj.get_class())) {
         uint ta_len = ta_element_count(obj);
         for (uint i = 0; i < ta_len; i++) {
-            HString* k = ctx.heap.int_to_hstring((long)i);
+            HString* k = heap.int_to_hstring((long)i);
             if (k == null) return key_count;
             key_buf[key_count++] = k;
         }
@@ -341,7 +364,7 @@ fn uint collect_own_enum_string_keys(BuiltinContext* ctx, HObject* obj, HString*
         if (obj.array_size > 0 && array_part_is_indexed) {
             for (uint i = 0; i < obj.array_size; i++) {
                 if (!obj.array_part()[i].is_undefined()) {
-                    HString* ki = ctx.heap.int_to_hstring((long)i);
+                    HString* ki = heap.int_to_hstring((long)i);
                     if (ki != null && ki.is_arridx() && obj.find_prop_idx(ki) >= 0) continue;
                     dense_int_count++;
                 }
@@ -352,7 +375,7 @@ fn uint collect_own_enum_string_keys(BuiltinContext* ctx, HObject* obj, HString*
             // Sort buffer: [index, source_index, source_type] triples
             // source_type: 0 = named prop (index into prop table), 1 = dense array index
             usz sort_size = (usz)(total_int * 3 * 4);
-            uint* sort_buf = (uint*)ctx.heap.alloc_func(ctx.heap.heap_udata, sort_size);
+            uint* sort_buf = (uint*)heap.alloc_func(heap.heap_udata, sort_size);
             if (sort_buf != null) {
                 uint p = 0;
                 // Add integer-indexed named properties
@@ -370,7 +393,7 @@ fn uint collect_own_enum_string_keys(BuiltinContext* ctx, HObject* obj, HString*
                 // Add dense array indices (not already in named props)
                 for (uint i = 0; array_part_is_indexed && i < obj.array_size; i++) {
                     if (!obj.array_part()[i].is_undefined()) {
-                        HString* ki = ctx.heap.int_to_hstring((long)i);
+                        HString* ki = heap.int_to_hstring((long)i);
                         if (ki != null && ki.is_arridx() && obj.find_prop_idx(ki) >= 0) continue;
                         sort_buf[p * 3] = (uint)i;
                         sort_buf[p * 3 + 1] = i;         // dense array index
@@ -407,12 +430,12 @@ fn uint collect_own_enum_string_keys(BuiltinContext* ctx, HObject* obj, HString*
                         }
                     } else {
                         // Dense array index, always enumerable
-                        HString* key = ctx.heap.int_to_hstring((long)sort_buf[i * 3]);
-                        if (key == null) { ctx.heap.free_func(ctx.heap.heap_udata, sort_buf); return key_count; }
+                        HString* key = heap.int_to_hstring((long)sort_buf[i * 3]);
+                        if (key == null) { heap.free_func(heap.heap_udata, sort_buf); return key_count; }
                         key_buf[key_count++] = key;
                     }
                 }
-                ctx.heap.free_func(ctx.heap.heap_udata, sort_buf);
+                heap.free_func(heap.heap_udata, sort_buf);
             }
         }
     }
@@ -422,8 +445,8 @@ fn uint collect_own_enum_string_keys(BuiltinContext* ctx, HObject* obj, HString*
             HString* key = (HString*)obj.prop_key_at(i);
             if (key.is_symbol()) continue;  // only String keys
             if (key.is_arridx()) continue;
-            if (obj.flags.exotic_stringobj && (void*)key == (void*)ctx.heap.strs[heap::BuiltinStr.LENGTH]) continue;
-            if (obj.flags.exotic_array && (void*)key == (void*)ctx.heap.strs[heap::BuiltinStr.LENGTH]) continue;
+            if (obj.flags.exotic_stringobj && (void*)key == (void*)heap.strs[heap::BuiltinStr.LENGTH]) continue;
+            if (obj.flags.exotic_array && (void*)key == (void*)heap.strs[heap::BuiltinStr.LENGTH]) continue;
             key_buf[key_count++] = key;
         }
     }
@@ -479,7 +502,7 @@ fn void builtin_object_keys(BuiltinContext* ctx) {
         uint max_keys = own_key_buf_capacity(obj);
         key_buf = (HString**)ctx.heap.alloc_func(ctx.heap.heap_udata, (usz)(max_keys * HString*::size));
         if (key_buf == null) { ctx.result.set_undefined(); return; }
-        key_count = collect_own_enum_string_keys(ctx, obj, key_buf);
+        key_count = collect_own_enum_string_keys(ctx.heap, obj, key_buf);
         // Module Namespace Exotic: EnumerableOwnProperties (§7.3.23) calls
         // [[GetOwnProperty]] for each string key, which reads the live binding
         // and throws ReferenceError for a TDZ export (§10.4.6.5 step 4).
@@ -3867,7 +3890,7 @@ fn void builtin_object_entries(BuiltinContext* ctx) {
         HString** key_buf = (HString**)ctx.heap.alloc_func(ctx.heap.heap_udata, (usz)(max_keys * HString*::size));
         if (key_buf == null) { ctx.result.set_undefined(); return; }
         defer ctx.heap.free_func(ctx.heap.heap_udata, key_buf);
-        uint key_count = collect_own_enum_string_keys(ctx, obj, key_buf, false);
+        uint key_count = collect_own_enum_string_keys(ctx.heap, obj, key_buf, false);
         for (uint i = 0; i < key_count; i++) {
             HString* key = key_buf[i];
             if (!key_is_currently_enumerable(obj, key)) continue;
@@ -3953,7 +3976,7 @@ fn void builtin_object_values(BuiltinContext* ctx) {
         HString** key_buf = (HString**)ctx.heap.alloc_func(ctx.heap.heap_udata, (usz)(max_keys * HString*::size));
         if (key_buf == null) { ctx.result.set_undefined(); return; }
         defer ctx.heap.free_func(ctx.heap.heap_udata, key_buf);
-        uint key_count = collect_own_enum_string_keys(ctx, obj, key_buf, false);
+        uint key_count = collect_own_enum_string_keys(ctx.heap, obj, key_buf, false);
         for (uint i = 0; i < key_count; i++) {
             HString* key = key_buf[i];
             if (!key_is_currently_enumerable(obj, key)) continue;

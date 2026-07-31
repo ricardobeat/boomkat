@@ -5232,6 +5232,7 @@ fn TVal? Vm.run(Vm* vm) {
         case Opcode.POP_VAR:
         case Opcode.REQUIRE_OBJ:
         case Opcode.CHKOBJ:
+        case Opcode.CHKITER:
         case Opcode.ITER_CLOSE:
         case Opcode.GET_ITER_ASYNC:
         case Opcode.ITER_CLOSE_ASYNC:

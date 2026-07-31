@@ -689,13 +689,13 @@ fn TVal? throw_type_error_at(Vm* vm, Dispatch* ds, String msg) {
 
 /// ToObject for method receivers: return the object form of `v`, or null (with a
 /// pending TypeError absent; the caller handles null and undefined first).
-/// Objects pass through; primitives are not wrapped here because @@asyncIterator
-/// / @@iterator live on the wrapper prototypes reachable via the object's own
-/// prototype chain. for-await sources are always objects in practice, so this
-/// only needs the object fast path.
+/// Objects pass through; a primitive is boxed, because @@asyncIterator /
+/// @@iterator live on the wrapper prototypes and are only reachable through
+/// one.  `for await (c of "ab")` is the case that proves the source is not
+/// always an object: skipping the boxing left the iterator undefined and the
+/// loop failed on the `.next` read instead of walking the string.
 fn HObject* to_object_for_method(Vm* vm, TVal v) {
-    if (v.is_object() && v.get_heapptr() != null) return (HObject*)v.get_heapptr();
-    return null;
+    return builtins::to_object_for_lookup(vm.heap, v);
 }
 
 /// Resolve a PROP_ACCESSOR lookup by invoking its getter with `this = recv`.
@@ -1218,6 +1218,66 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, In
             return (TVal){};
         }
 
+        case Opcode.CHKITER: {
+            // GetIterator (ES2022 §7.4.2) step 3: the @@iterator method must be
+            // callable.  Register A holds the fetched method, B the source it
+            // came from; the CALL that follows would otherwise report the
+            // generic "undefined is not a function", describing the internal
+            // protocol lookup instead of the user's actual mistake.
+            if (insn.c == 2) {
+                // Mode 2, emitted after the @@iterator call: GetIterator step 5
+                // requires the returned iterator to be an Object.  Without this
+                // the following `.next` read reports "undefined is not a
+                // function" when the method returned a primitive.
+                if (!ra.is_object() || ra.get_heapptr() == null) {
+                    if (!vm_throw_error(vm, vm.heap.type_err_proto,
+                        "Result of the Symbol.iterator method is not an object",
+                        ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                        return VM_ERROR~;
+                    }
+                }
+                return (TVal){};
+            }
+            if (insn.c != 0) {
+                // Mode 1, emitted before the @@iterator read: a null or
+                // undefined source has no properties to read at all, so the
+                // GETPROP would otherwise report "Cannot read properties of
+                // null", leaking the internal @@iterator key into the message.
+                if (ra.is_null() || ra.is_undefined()) {
+                    HString* desc = iterable_value_desc(vm, ra);
+                    if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "%s is not iterable",
+                        desc.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                        return VM_ERROR~;
+                    }
+                }
+                return (TVal){};
+            }
+            TVal method = *ra;
+            bool callable = method.is_lightfunc() ||
+                (method.is_object() && method.get_heapptr() != null &&
+                 ((HObject*)method.get_heapptr()).is_callable());
+            if (!callable) {
+                TVal src = *rb;
+                if (method.is_undefined() || method.is_null()) {
+                    // No @@iterator at all: the source simply is not iterable.
+                    HString* desc = iterable_value_desc(vm, &src);
+                    if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "%s is not iterable",
+                        desc.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                        return VM_ERROR~;
+                    }
+                } else {
+                    // @@iterator exists but is not callable: report the bad
+                    // method value, matching the distinction node draws.
+                    HString* mdesc = typeof_string(vm, &method);
+                    if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "%s is not a function",
+                        mdesc.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                        return VM_ERROR~;
+                    }
+                }
+            }
+            return (TVal){};
+        }
+
         case Opcode.ITER_CLOSE: {
             // IteratorClose (ES2022 §7.4.6): if the value in A is an
             // object with a callable `.return` method, call it with
@@ -1357,7 +1417,12 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, In
             // `for await`.
             TVal src = *rb;
             if (src.is_null() || src.is_undefined()) {
-                return throw_type_error_at(vm, ds, "is not async iterable");
+                HString* desc = iterable_value_desc(vm, &src);
+                if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "%s is not async iterable",
+                    desc.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                    return VM_ERROR~;
+                }
+                return (TVal){};
             }
 
             HObject* src_obj = to_object_for_method(vm, src);
@@ -1424,7 +1489,12 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, In
             }
             if (sync_method.is_nullish() || !sync_method.is_object()
                 || !((HObject*)sync_method.get_heapptr()).is_callable()) {
-                return throw_type_error_at(vm, ds, "is not async iterable");
+                HString* desc = iterable_value_desc(vm, &src);
+                if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "%s is not async iterable",
+                    desc.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                    return VM_ERROR~;
+                }
+                return (TVal){};
             }
             TVal sthis = src;
             TVal sync_iter = vm.heap.call_fn(vm, sync_method, null, 0, sthis);

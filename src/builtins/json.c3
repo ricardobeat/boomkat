@@ -1465,13 +1465,11 @@ fn int json_serialize_object(JsonSerializeCtx* jctx, HObject* obj) {
             // a trap); defer the empty-object short-circuit to the key loop.
             has_props = true;
         } else {
-            // Check if object has own properties (including accessor properties with getters)
-            for (uint i = 0; i < obj.prop_count; i++) {
-                if (obj.prop_key_at(i) != null) {
-                    has_props = true;
-                    break;
-                }
-            }
+            // Does the object have any own key at all?  The named property
+            // table is not the only source: integer-indexed exotics synthesize
+            // index keys outside it, so a bare `prop_count` test short-circuits
+            // a TypedArray to "{}" before the key walk ever runs.
+            has_props = own_has_enum_string_key(jctx.heap, obj);
         }
     } else {
         has_props = true;
@@ -1594,84 +1592,26 @@ fn int json_serialize_object(JsonSerializeCtx* jctx, HObject* obj) {
             if (rc3 != 0) return rc3;
         }
     } else {
-        // Snapshot property keys before iterating, so that getters that delete
-        // properties don't cause keys to be skipped (ES5 §15.12.3 step 4.b).
-        // We use prop_key_at(i) for i in 0..prop_count-1, this iterates in
-        // insertion order (HObject.prop_key_at walks the shape chain, returning
-        // the i-th property in insertion order).
-        // Sized to the property count rather than to a fixed cap: a 64-key
-        // ceiling silently dropped every key past the 64th and still returned
-        // success, so a large object stringified to a valid-looking but
-        // incomplete document.
-        HString** snap_keys = null;
-        HString** int_keys = null;
+        // Snapshot own enumerable String keys before iterating, so that getters
+        // that delete properties don't cause keys to be skipped (ES5 §15.12.3
+        // step 4.b), in EnumerableOwnPropertyNames order: integer indices
+        // ascending, then String keys in insertion order, Symbols excluded.
+        //
+        // This uses the shared collector rather than walking prop_count here,
+        // because the named property table is not the only source of own keys:
+        // integer-indexed exotics (TypedArray elements, String-wrapper char
+        // indices) synthesize index keys outside it, and a bespoke walk sees
+        // none of them, so a typed array serialized as "{}".
         HString** final_keys = null;
         defer {
-            if (snap_keys != null) jctx.heap.free_func(jctx.heap.heap_udata, snap_keys);
-            if (int_keys != null) jctx.heap.free_func(jctx.heap.heap_udata, int_keys);
             if (final_keys != null) jctx.heap.free_func(jctx.heap.heap_udata, final_keys);
         }
-        uint key_cap = obj.prop_count;
-        if (key_cap > 0) {
-            usz bytes = HString*::size * (usz)key_cap;
-            snap_keys  = (HString**)jctx.heap.alloc_func(jctx.heap.heap_udata, bytes);
-            int_keys   = (HString**)jctx.heap.alloc_func(jctx.heap.heap_udata, bytes);
-            final_keys = (HString**)jctx.heap.alloc_func(jctx.heap.heap_udata, bytes);
-            if (snap_keys == null || int_keys == null || final_keys == null) return -1;
-        }
-        uint snap_count = 0;
-        for (uint i = 0; i < obj.prop_count && snap_count < key_cap; i++) {
-            HString* k = (HString*)obj.prop_key_at(i);
-            // Skip non-enumerable properties (ES5 §15.12.3 step 4.b: only
-            // enumerable own properties are serialized) and Symbol keys
-            // (ES §24.5.2.1 SerializeJSONObject step 5: EnumerableOwnPropertyNames
-            // implicitly excludes Symbols, [[OwnPropertyKeys]] string filter).
-            if (k != null && !k.is_symbol() && obj.get_prop_flags(i).enumerable) {
-                snap_keys[snap_count] = k;
-                snap_count++;
-            }
-        }
-        // Per ES5 §15.12.3 step 4.b.ii: integer-indexed keys are output first in
-        // ascending numeric order; remaining string keys follow in their original
-        // order. We split into two lists, sort the integer list numerically, then
-        // concatenate.
-        uint int_count = 0;
-        for (uint k = 0; k < snap_count; k++) {
-            HString* kk = snap_keys[k];
-            if (kk.is_arridx()) {
-                int_keys[int_count] = kk;
-                int_count++;
-            }
-        }
-        // Compact snap_keys to keep only non-integer keys (preserving order).
-        uint string_count = 0;
-        for (uint k = 0; k < snap_count; k++) {
-            if (!snap_keys[k].is_arridx()) {
-                snap_keys[string_count] = snap_keys[k];
-                string_count++;
-            }
-        }
-        snap_count = string_count;
-        // Insertion sort the integer keys by their numeric index.
-        for (uint i = 1; i < int_count; i++) {
-            HString* tk = int_keys[i];
-            uint j = i;
-            while (j > 0 && int_keys[j - 1].array_index() > tk.array_index()) {
-                int_keys[j] = int_keys[j - 1];
-                j--;
-            }
-            int_keys[j] = tk;
-        }
-        // Concatenate: integer keys first (sorted), then string keys (in
-        // insertion order). Use a separate buffer to avoid clobbering snap_keys.
+        uint key_cap = own_key_buf_capacity(obj);
         uint final_count = 0;
-        for (uint i = 0; i < int_count; i++) {
-            final_keys[final_count] = int_keys[i];
-            final_count++;
-        }
-        for (uint i = 0; i < snap_count; i++) {
-            final_keys[final_count] = snap_keys[i];
-            final_count++;
+        if (key_cap > 0) {
+            final_keys = (HString**)jctx.heap.alloc_func(jctx.heap.heap_udata, HString*::size * (usz)key_cap);
+            if (final_keys == null) return -1;
+            final_count = collect_own_enum_string_keys(jctx.heap, obj, final_keys);
         }
         // Now iterate the final list.
         for (uint si = 0; si < final_count; si++) {

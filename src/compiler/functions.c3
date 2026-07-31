@@ -568,6 +568,10 @@ fn void? CompilerContext.collect_arr_param_binds(&self,
 /// Sets up: src[Symbol.iterator]() → iterator, iterator.next → next method.
 /// Populates the DestructIterState with the register numbers.
 fn void CompilerContext.emit_destruct_iter_setup(&self, ushort src_reg, DestructIterState* state) {
+    // A null/undefined source is not iterable; reject it before the
+    // @@iterator read, which would otherwise fail as a property access.
+    self.emit_abc(Opcode.CHKITER, (uint)src_reg, 0, 1);
+
     // Get Symbol.iterator from the global Symbol object
     ushort sym_reg = self.alloc_reg();
     self.emit_a_bc(Opcode.GETVAR, (uint)sym_reg, self.add_string_constant("Symbol"));
@@ -585,11 +589,20 @@ fn void CompilerContext.emit_destruct_iter_setup(&self, ushort src_reg, Destruct
     self.emit_abc(Opcode.GETPROP, (uint)method_reg, (uint)src_reg, (uint)symbol_val_reg);
     self.free_reg(symbol_val_reg);
 
+    // GetIterator step 3, before the call: a non-callable @@iterator must
+    // report that the source is not iterable, not that undefined is not a
+    // function (which the bare CALL below would say).
+    self.emit_abc(Opcode.CHKITER, (uint)method_reg, (uint)src_reg, 0);
+
     // Call @@iterator() → iterator object
     ushort this_slot = self.alloc_reg();
     self.emit_abc(Opcode.LDREG, (uint)this_slot, (uint)src_reg, 0);
     self.emit_abc(Opcode.CALL, (uint)method_reg, (uint)method_reg, 0);
     self.free_reg(this_slot);
+
+    // GetIterator step 5: the iterator the method returned must be an Object,
+    // checked before the `.next` read below.
+    self.emit_abc(Opcode.CHKITER, (uint)method_reg, 0, 2);
 
     // Get .next method from iterator
     ushort next_key_reg = self.alloc_reg();

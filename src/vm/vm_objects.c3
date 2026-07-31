@@ -518,9 +518,10 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
             HObject* target = (HObject*)ra.get_heapptr();
             TVal src_tv = *rc;
 
-            // null/undefined → TypeError: not iterable
+            // null/undefined → TypeError, worded as the other iteration forms
+            // (for-of, destructuring) report it so the same mistake reads the same.
             if (src_tv.is_null() || src_tv.is_undefined()) {
-                if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Cannot spread %s",
+                if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "%s is not iterable",
                                           (src_tv.is_null() ? "null" : "undefined"),
                                           ds.act, &ds.curr_pc, &ds.needs_restart)) {
                     return VM_ERROR~;
@@ -577,7 +578,7 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
                 }
             }
             if (!has_method) {
-                HString* type_str = typeof_string(vm, &src_tv);
+                HString* type_str = iterable_value_desc(vm, &src_tv);
                 if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "%s is not iterable", type_str.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
                     return VM_ERROR~;
                 }
@@ -731,9 +732,10 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
             // Uses ES6 iterator protocol (§12.3.5.1 ArgumentListEvaluation SpreadElement)
             TVal src_tv = *rc;
 
-            // null/undefined → TypeError
+            // null/undefined → TypeError, worded as the other iteration forms
+            // (for-of, destructuring) report it so the same mistake reads the same.
             if (src_tv.is_null() || src_tv.is_undefined()) {
-                if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Cannot spread %s",
+                if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "%s is not iterable",
                                           (src_tv.is_null() ? "null" : "undefined"),
                                           ds.act, &ds.curr_pc, &ds.needs_restart)) {
                     return VM_ERROR~;
@@ -782,7 +784,7 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
                 }
             }
             if (!has_method) {
-                HString* type_str = typeof_string(vm, &src_tv);
+                HString* type_str = iterable_value_desc(vm, &src_tv);
                 if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "%s is not iterable", type_str.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
                     return VM_ERROR~;
                 }
