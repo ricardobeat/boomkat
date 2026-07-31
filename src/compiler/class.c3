@@ -223,7 +223,7 @@ fn void? CompilerContext.class_declaration(&self, char[]* out_name = null, bool 
     if (name_tt == TokenType.IDENTIFIER) {
         class_name = self.advance()!.str_value;
         class_name = ((Heap*)self.heap).str_intern(class_name).get_data();
-    } else if (name_tt == TokenType.AWAIT && !self.is_module && !self.forbid_await) {
+    } else if (self.await_is_identifier(name_tt)) {
         class_name = self.advance()!.str_value;
         class_name = ((Heap*)self.heap).str_intern(class_name).get_data();
     } else if (allow_anonymous && (name_tt == TokenType.EXTENDS || name_tt == TokenType.LBRACE)) {
@@ -309,10 +309,15 @@ fn ushort? CompilerContext.class_expression(&self) {
     ushort name_reg = MAX_REGISTERS;
     bool has_name = false;
     TokenType class_name_tt = self.peek_type();
+    // A class name is BindingIdentifier[?Yield, ?Await] in both the
+    // declaration and expression forms, so it inherits the enclosing grammar
+    // params rather than fixing them the way a function expression's name
+    // does. await_is_identifier is the shared decision.
+    //
     // `yield` is not a valid class name: it is reserved in all strict code
     // and this engine is strict-only.
     bool is_valid_class_name = (class_name_tt == TokenType.IDENTIFIER) ||
-        (class_name_tt == TokenType.AWAIT && !self.is_module && !self.forbid_await);
+        self.await_is_identifier(class_name_tt);
     if (is_valid_class_name) {
         Token name_tok = self.advance()!;
         // Intern now: an escaped class name borrows the lexer's shared

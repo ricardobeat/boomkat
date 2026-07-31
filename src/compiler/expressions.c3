@@ -4035,12 +4035,19 @@ fn ushort? CompilerContext.primary_expr(&self) {
 
         case TokenType.YIELD:
         {
-            if (!self.is_generator) {
+            if (!self.is_user_generator) {
                 // `yield` is reserved in all strict-mode code (ES2024
                 // §13.1.1) and this engine is strict-only, so outside a
                 // generator it is never an IdentifierReference: it can only
                 // be the start of a YieldExpression, which is not available
                 // here. Either way a SyntaxError.
+                //
+                // The gate is is_user_generator, not is_generator: a plain
+                // async function body is compiled as a coroutine and so has
+                // is_generator set, but it is not a GeneratorBody and its
+                // grammar is [~Yield]. Testing is_generator here let `yield`
+                // through as a bare IdentifierReference in every async
+                // function (`async function f(){ x[yield]; }`).
                 return self.fail("'yield' is a reserved word")~;
             }
             // Even inside a generator, a YieldExpression is a Syntax Error in

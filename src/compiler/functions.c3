@@ -3698,17 +3698,20 @@ fn ushort? CompilerContext.function_expr(&self, bool is_async_expr = false) {
     bool has_name = false;
     bool name_is_explicit = false;
     // A function-expression name's [Await] grammar param is FIXED by the kind
-    // of expression, not inherited from the enclosing context, so an enclosing
-    // static block's forbid_await does NOT apply here:
+    // of expression, not inherited from the enclosing context, so neither an
+    // enclosing static block's forbid_await nor an enclosing async function's
+    // is_async applies here:
     //   FunctionExpression        name is [~Await], `await` allowed
     //   AsyncFunctionExpression   name is [+Await], `await` reserved
-    // self.is_async already reflects this expression's own async-ness (set
-    // just above from the `async` prefix), so `(function* await(){})` and
-    // `function await(){}` are valid even inside a class static block, but
-    // `async function await(){}` is not. `yield` is reserved in all strict
-    // code and this engine is strict-only, so it is never a function name.
+    // The decision therefore reads the `is_async_expr` parameter, NOT
+    // self.is_async: self.is_async was cleared above so the body compile can
+    // set it, so it does not describe this expression. `(function* await(){})`
+    // and `function await(){}` are valid even inside a class static block or
+    // an async function, but `(async function await(){})` is not. `yield` is
+    // reserved in all strict code and this engine is strict-only, so it is
+    // never a function name.
     if (self.check(TokenType.IDENTIFIER) ||
-        (self.check(TokenType.AWAIT) && !self.is_module && !self.is_async)) {
+        (self.check(TokenType.AWAIT) && !self.is_module && !is_async_expr)) {
         Token name_tok = self.advance()!;
         // The name is a BindingIdentifier, so §13.1.1's restricted names are
         // rejected. Checked here rather than via expect_binding_identifier

@@ -89,6 +89,84 @@ rejects('function implements() {}');
 rejects('(function interface() {});');
 
 // ---------------------------------------------------------------------------
+// BI3: `await` as a BindingIdentifier, per the [?Await] grammar parameter
+//
+// The name of a FunctionDeclaration or a class is BindingIdentifier[?Yield,
+// ?Await]: it INHERITS the enclosing grammar params, so `await` is reserved
+// there whenever the enclosing context is async, even when the declared
+// function is itself ordinary. A FunctionExpression's name, by contrast, FIXES
+// the param from the expression's own kind, so only `async function` reserves
+// it -- an ordinary function expression nested in an async function may still
+// be named `await`. Getting these two backwards is the whole cluster.
+// ---------------------------------------------------------------------------
+
+// Declarations inherit: reserved inside an async function or async arrow.
+rejects('async function outer() { function await() {} }');
+rejects('async function outer() { function* await() {} }');
+rejects('async function outer() { async function await() {} }');
+rejects('async function outer() { class await {} }');
+rejects('async function outer() { (class await {}); }');
+rejects('async () => { function await() {} };');
+
+// Expressions fix the param from their own kind, so the async ones reject...
+rejects('(async function await() {});');
+rejects('(async function* await() {});');
+rejects('async function outer() { (async function await() {}); }');
+
+// ...but the ordinary ones stay legal, even inside an async function. This is
+// the over-rejection guard for BI3: these are valid programs.
+accepts('(function await() { return 1; });');
+accepts('(function* await() {});');
+accepts('async function outer() { (function await() { return 1; }); }');
+accepts('async function outer() { (function* await() {}); }');
+
+// At the top level nothing is async, so `await` is an ordinary identifier.
+accepts('function await() { return 1; } if (await() !== 1) throw new Error("x");');
+accepts('function* await() {}');
+accepts('async function await() {}');
+accepts('class await {}');
+accepts('async function outer() { function inner() { return 1; } return inner(); } outer();');
+
+// ---------------------------------------------------------------------------
+// BI4: `yield` is reserved in an async function body
+//
+// A plain async function is compiled as a coroutine, so it shares the
+// generator machinery -- but it is NOT a GeneratorBody and its grammar is
+// [~Yield]. `yield` there is a reserved word, never an IdentifierReference,
+// and never the start of a YieldExpression.
+// ---------------------------------------------------------------------------
+
+rejects('async function fn() { x[yield]; }');
+rejects('async function fn() { var t = yield; }');
+rejects('async function fn() { [ x = yield ] = []; }');
+rejects('async function fn() { for ([ x = yield ] of [[]]) {} }');
+rejects('async function fn() { for await ([ x = yield ] of [[]]) {} }');
+rejects('async function fn() { for await ([ [ x = yield ] ] of [[[]]]) {} }');
+rejects('async function fn() { for await ([ { x = yield } ] of [[{}]]) {} }');
+rejects('async function fn() { for await ([ x[yield] ] of [[]]) {} }');
+rejects('async function fn() { for await ([ yield ] of [[]]) {} }');
+rejects('async () => { var t = yield; };');
+
+// A real generator still gets its YieldExpression, and an async generator gets
+// both `yield` and `await`. Over-rejecting here would break every generator.
+accepts('function* g() { var t = yield; } g().next();');
+accepts('function* g() { for ([ x = yield ] of [[]]) {} }');
+accepts('function* g() { for ([ x[yield] ] of [[]]) {} }');
+accepts('async function* ag() { yield 1; await 1; }');
+
+// The for-await destructuring shapes above are legal without the `yield`.
+// Not invoked: these only need to PARSE, and calling them would assign to an
+// undeclared `x` inside a promise, whose rejection lands after grading.
+accepts('async function fn() { for await ([ x = 1 ] of [[]]) {} }');
+accepts('async function fn() { for await ([ [ x = 1 ] ] of [[[]]]) {} }');
+accepts('async function fn() { for await ([ { x = 1 } ] of [[{}]]) {} }');
+accepts('async function fn() { for await (const v of []) {} }');
+accepts('async function fn() { var q = 1; return q; }');
+
+// `await` and `yield` remain ordinary property keys inside an async function.
+accepts('async function fn() { var o = { await: 1, yield: 2 }; if (o.await + o.yield !== 3) throw new Error("x"); } fn();');
+
+// ---------------------------------------------------------------------------
 // BI2: for-in / for-of head bindings
 // ---------------------------------------------------------------------------
 

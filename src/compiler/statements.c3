@@ -5084,9 +5084,13 @@ fn void? CompilerContext.function_declaration(&self, bool is_async_decl = false,
     // Save the enclosing function's async flag, it must survive this
     // declaration (finish() reads it when the enclosing body completes).
     // The declaration's own async-ness comes from the is_async_decl
-    // parameter, never from the enclosing flag.
+    // parameter, never from the enclosing flag. The reset is deliberately
+    // deferred until after the name is parsed: unlike a FunctionExpression,
+    // a FunctionDeclaration's BindingIdentifier is [?Yield, ?Await] and so
+    // inherits the enclosing grammar params, which is what makes the inner
+    // name in `async function f(){ function await(){} }` a SyntaxError even
+    // though the inner function is itself ordinary.
     bool saved_is_async = self.is_async;
-    self.is_async = false;
 
     // Regular function declarations are constructable per ES2015 §14.1.2, they
     // can be invoked with `new` if they aren't arrow functions or methods with
@@ -5111,6 +5115,9 @@ fn void? CompilerContext.function_declaration(&self, bool is_async_decl = false,
     }
 
     Token name_tok = self.expect_binding_identifier()!;
+    // The name is parsed; from here on self.is_async describes the function
+    // being compiled, not the enclosing one.
+    self.is_async = false;
     // Intern now: an escaped function name borrows the lexer's shared
     // ident_buf scratch, which compile_inner_function below will overwrite
     // while scanning the parameter list and body. declare_var stores this
