@@ -23,8 +23,30 @@ macro CompilerContext.check_no_arrow_rhs(&self) {
     }
 }
 
-/// Parse a full expression (comma operator at lowest precedence).
+/// Parse a full expression (comma operator at lowest precedence), with the
+/// grammar's `[+In]`: an `in` operator is allowed at every level.
+///
+/// This is the entry point every nested grouping uses — parentheses, brackets,
+/// call arguments, template substitutions — and each of those re-fixes the
+/// grammar's In parameter to `[+In]`, so clearing forbid_in here is what makes
+/// `for ((a in b);;)` and `for (f(a in b);;)` legal inside a `[~In]` head.
+/// The head itself enters through expression_no_in().
 fn ushort? CompilerContext.expression(&self) {
+    bool saved_forbid_in = self.forbid_in;
+    self.forbid_in = false;
+    defer self.forbid_in = saved_forbid_in;
+    return self.expression_inner();
+}
+
+/// Parse a full expression as `Expression[~In]`: a top-level `in` operator is
+/// a SyntaxError. Only a C-style for head uses this (§14.7.4).
+fn ushort? CompilerContext.expression_no_in(&self) {
+    self.forbid_in = true;
+    defer self.forbid_in = false;
+    return self.expression_inner();
+}
+
+fn ushort? CompilerContext.expression_inner(&self) {
     // Reset the arrow-returned marker so each operand of a comma list (and
     // each `(` grouping / conditional / assignment RHS) parses in isolation.
     self.last_was_arrow_expr = false;
@@ -885,6 +907,12 @@ fn ushort? CompilerContext.conditional_expr(&self) {
     // Reset so an arrow that came in as the condition doesn't trip the binary
     // operator check on the operator that follows the conditional.
     self.last_was_arrow_expr = false;
+    // binary_expr consumes forbid_in (see the no_in capture there), but a
+    // ConditionalExpression's own In parameter still governs its false
+    // branch: `ConditionalExpression[?In] : ShortCircuitExpression[?In] ?
+    // AssignmentExpression[+In] : AssignmentExpression[?In]`. Hold it across
+    // the condition so the branches below see the enclosing value.
+    bool cond_forbid_in = self.forbid_in;
     ushort result = self.binary_expr(PREC_NULLISH)!;
 
     if (self.match(TokenType.QUESTION)) {
@@ -895,7 +923,10 @@ fn ushort? CompilerContext.conditional_expr(&self) {
         uint false_jump = self.emit_cond_jump(Opcode.IF_FALSE, (uint)result);
         self.free_reg(result);
 
-        // True branch
+        // True branch. The grammar fixes this operand to
+        // `AssignmentExpression[+In]` regardless of the enclosing In
+        // parameter, so an `in` here is legal even inside a for head.
+        self.forbid_in = false;
         ushort true_val = self.assignment_expr()!;
         self.emit_abc(Opcode.LDREG, (uint)result_reg, (uint)true_val, 0);
         self.free_reg(true_val);
@@ -905,8 +936,10 @@ fn ushort? CompilerContext.conditional_expr(&self) {
         uint end_jump = self.emit_jump(Opcode.JUMP);
         self.patch_jump(false_jump);
 
-        // False branch
+        // False branch: `AssignmentExpression[?In]`, so it inherits.
+        self.forbid_in = cond_forbid_in;
         ushort false_val = self.assignment_expr()!;
+        self.forbid_in = false;
         self.emit_abc(Opcode.LDREG, (uint)result_reg, (uint)false_val, 0);
         self.free_reg(false_val);
 
@@ -938,14 +971,27 @@ fn ushort? CompilerContext.binary_expr(&self, int min_prec) {
     bool yield_ok = self.yield_ok_here;
     self.yield_ok_here = false;
 
+    // `[~In]` reaches exactly one decision: whether this invocation's operator
+    // loop may consume an `in`. Every operand is parsed with the flag cleared,
+    // so it can never leak into a nested construct — a parenthesized
+    // subexpression, a call argument, an array element, a template
+    // substitution — all of which are `[+In]` by grammar no matter which entry
+    // point they use. This is the same consume-on-entry discipline as
+    // yield_ok_here above, and it is what keeps `for (f(a in b);;)` legal
+    // while `for (a in b;;)` is not.
+    bool no_in = self.forbid_in;
+    self.forbid_in = false;
+
     // ES2022 class-fields-private-in: `[+In] PrivateIdentifier in ShiftExpression`.
     // The grammar gives the PrivateIdentifier as a standalone LHS of the `in`
     // operator, `#x` is not a value expression by itself. If the next token is
     // HASH_IDENT immediately followed by `in`, consume both and emit the
     // HAS_BRAND probe; the result then feeds the normal Pratt loop so lower-
     // precedence continuations (`#x in o && y`, `#x in o === b`) still parse.
+    // The `#x in o` production is itself guarded by `[+In]`, so it is
+    // unavailable in a for head for the same reason a plain `in` is.
     ushort left;
-    if (min_prec <= get_binary_precedence(TokenType.IN)
+    if (min_prec <= get_binary_precedence(TokenType.IN) && !no_in
             && self.peek_type() == TokenType.HASH_IDENT) {
         Token hash_tok = self.advance()!;
         if (self.peek_type() == TokenType.IN) {
@@ -1028,6 +1074,14 @@ fn ushort? CompilerContext.binary_expr(&self, int min_prec) {
         // `yield \n * 1` fails, `*` being unable to start a statement.
         if (left_was_newline_yield) {
             break;
+        }
+        // `[~In]`: inside a C-style for head an unparenthesized `in` would be
+        // ambiguous with a for-in head, so the grammar simply has no
+        // production for it (§14.7.4). Reject rather than break — unlike ASI
+        // there is no shorter parse to fall back to, the next token in the
+        // head must be `;`.
+        if (tt == TokenType.IN && no_in) {
+            return self.fail("'in' is not allowed in a for-statement head")~;
         }
         // Record that at least one binary operator was consumed. The value of
         // this expression is then the operator's result — never a Reference —

@@ -2902,7 +2902,14 @@ fn void? CompilerContext.for_statement(&self) {
             }
             if (is_lexical) { self.emit_simple(Opcode.PUSH_LEX); self.cur_lex_depth++; }
             if (self.match(TokenType.ASSIGN)) {
+                // §14.7.4: a C-style for head declares
+                // `VariableDeclarationList[~In]` / `LexicalDeclaration[~In]`,
+                // so a declarator's Initializer is `[~In]` as well —
+                // `for (var x = 1 in {};;)` is a SyntaxError, not a for-in
+                // head. Parenthesizing (`= (1 in {})`) restores `[+In]`.
+                self.forbid_in = true;
                 ushort init_val = self.assignment_expr()!;
+                self.forbid_in = false;
                 if (init_val != var_reg) {
                     self.emit_abc(Opcode.LDREG, (uint)var_reg, (uint)init_val, 0);
                 }
@@ -2943,7 +2950,10 @@ fn void? CompilerContext.for_statement(&self) {
                         extra_reg = self.declare_var(extra_name2, decl_kind);
                     }
                     if (self.match(TokenType.ASSIGN)) {
+                        // `[~In]`, as for the first declarator above.
+                        self.forbid_in = true;
                         ushort extra_val = self.assignment_expr()!;
+                        self.forbid_in = false;
                         if (extra_val != extra_reg) {
                             self.emit_abc(Opcode.LDREG, (uint)extra_reg, (uint)extra_val, 0);
                         }
@@ -2971,7 +2981,10 @@ fn void? CompilerContext.for_statement(&self) {
     } else if (next_tt != TokenType.SEMICOLON) {
         // Expression init (C-style for), no async form.
         if (for_is_await) return self.fail("'for await' requires a 'for await (... of ...)' head")~;
-        ushort init_reg = self.expression()!;
+        // §14.7.4: the head is `Expression[~In]`, so a top-level `in` here is
+        // a SyntaxError rather than being read as a for-in head that then
+        // fails on the `;`.
+        ushort init_reg = self.expression_no_in()!;
         self.free_reg(init_reg);
         // Guard: if the init expression returned a local variable's register
         // (e.g. `i = 0` returning `i`'s reg), free_reg may have dropped

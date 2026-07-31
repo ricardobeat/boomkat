@@ -293,6 +293,22 @@ struct CompilerContext {
     /// consume-once discipline as last_was_unary_op — binary_expr reads and
     /// clears it right after the unary_expr call that produced it.
     bool last_was_newline_yield;
+    /// The grammar's `[~In]` parameter: true while parsing an expression that
+    /// may not contain a top-level `in` operator. Only the head of a C-style
+    /// `for` sets it (`for (Expression[~In] ; ... )`, ES2024 §14.7.4), where an
+    /// unparenthesized `in` would be ambiguous with a for-in head.
+    ///
+    /// `[?In]` propagation is by inheritance: the flag simply stays set down
+    /// the left spine (comma → assignment → conditional → binary), and every
+    /// construct whose grammar re-fixes the parameter to `[+In]` clears it.
+    /// That is every nested grouping — parentheses, brackets, call arguments,
+    /// template substitutions — all of which route through
+    /// CompilerContext.expression(), which saves and clears it; the for head
+    /// itself uses expression_no_in() to enter with it set. The one non-
+    /// grouping site is a conditional's middle operand, which the grammar
+    /// fixes to `[+In]` (`... ? AssignmentExpression[+In] : ...`), so
+    /// `for (a ? b in c : d;;)` is legal while `for (a ? b : c in d;;)` is not.
+    bool forbid_in;
     /// Code index of the GETVAR instruction that produced the last identifier
     /// reference (valid whenever last_was_getvar is true). Lets call_expr
     /// fuse a bare-identifier callee's GETVAR into CALL_VAR even though other
