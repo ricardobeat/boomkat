@@ -581,6 +581,16 @@ fn ResolveExportResult resolve_export(ModuleDef* mod, char[] export_name,
     return star_resolution;
 }
 
+/// Park a link-phase static-semantics SyntaxError on the heap error channel and
+/// return false, for use as a `return` in the link-time validators.
+fn bool module_raise_link_error(Heap* heap, char[] msg) {
+    TVal se = module_syntax_error(heap, msg);
+    heap.error_value.set_undefined();
+    heap.tval_copy_ref(&heap.error_value, &se);
+    heap.has_error = true;
+    return false;
+}
+
 /// Validate a module's indirect exports (ECMA-262 16.2.1.6.2
 /// InitializeEnvironment step 4): each `export { x } from './y'` must resolve to
 /// exactly one binding. A NULL or AMBIGUOUS resolution is a SyntaxError. On
@@ -592,12 +602,50 @@ fn bool validate_indirect_exports(Heap* heap, ModuleDef* mod) {
         ResolveSetEntry[RESOLVE_SET_MAX] set;
         ResolveExportResult r = resolve_export(mod, ee.export_name, &set[0], 0);
         if (r.kind != ResolveExportKind.RESOLVED) {
-            TVal se = module_syntax_error(heap,
+            return module_raise_link_error(heap,
                 "indirect export does not resolve to a single binding");
-            heap.error_value.set_undefined();
-            heap.tval_copy_ref(&heap.error_value, &se);
-            heap.has_error = true;
-            return false;
+        }
+    }
+    return true;
+}
+
+/// Validate a module's named imports (ECMA-262 16.2.1.6.2 InitializeEnvironment
+/// step 7.a-b): for each `import { x } from './y'`, ResolveExport(x) on the
+/// requested module must yield exactly one binding. A NULL (absent name, or a
+/// circular request the resolveSet cut) or AMBIGUOUS (conflicting `export *`
+/// stars) resolution is an early SyntaxError, raised HERE at link time so that
+/// no module body has run yet — matching node, which reports "does not provide
+/// an export named 'x'" before any top-level statement of the importer
+/// executes.
+///
+/// `import * as ns` is exempt: a namespace object is always constructible and
+/// a missing member reads back as plain `undefined` (§10.4.6.7), which is not
+/// an error. `import 'x'` for side effects declares no binding at all.
+///
+/// A JSON module exports only `default`; any other named import from one is the
+/// same resolution-phase SyntaxError (JSON modules define no named bindings) and
+/// is checked here rather than against resolve_export, which has no export
+/// entries to walk for a bodyless JSON module.
+fn bool validate_imports(Heap* heap, ModuleDef* mod) {
+    for (uint i = 0; i < mod.import_count; i++) {
+        ImportEntry* ie = &mod.imports[i];
+        if (ie.is_star) continue;
+        if (ie.req_module_idx >= mod.req_module_count) continue;
+        ReqModuleEntry* rme = &mod.req_modules[ie.req_module_idx];
+        if (rme.resolved == null) continue;
+        ModuleDef* source_mod = (ModuleDef*)rme.resolved;
+        if (source_mod.is_json) {
+            if (!char_slice_eq(ie.import_name, "default")) {
+                return module_raise_link_error(heap,
+                    "requested JSON module does not provide the requested export");
+            }
+            continue;
+        }
+        ResolveSetEntry[RESOLVE_SET_MAX] set;
+        ResolveExportResult r = resolve_export(source_mod, ie.import_name, &set[0], 0);
+        if (r.kind != ResolveExportKind.RESOLVED) {
+            return module_raise_link_error(heap,
+                "requested module does not provide the requested export");
         }
     }
     return true;
@@ -663,28 +711,16 @@ fn bool link_module(Heap* heap, vm::Vm* vm, ModuleDef* mod, EnvRecord* global_en
     // on the heap error channel for dynamic_import to surface as the rejection.
     if (!validate_indirect_exports(heap, mod)) return false;
 
-    // Validate named imports against JSON dependencies. A JSON module exports
-    // only `default`; importing any other named binding from it is a
-    // resolution-phase SyntaxError (ECMA-262: JSON modules define no named
-    // bindings). Fail the link so run_module_file reports it as a load/
-    // resolution error. This is the only work link_module does over
-    // `mod.imports`. The actual bindings (including this module's own
-    // self-imports) are installed later by execute_module's live-binding
-    // loop, which runs after every module env's export/TDZ pre-declaration
-    // (below) has completed; installing them here, before that
+    // Validate every named import resolves (16.2.1.6.2 step 7.a-b). This must
+    // happen at LINK time, before any module body runs: an import of a name the
+    // target does not export is an early SyntaxError, not an undefined binding.
+    // Only VALIDATION happens here. The actual bindings (including this
+    // module's own self-imports) are installed later by execute_module's
+    // live-binding loop, which runs after every module env's export/TDZ
+    // pre-declaration (below) has completed; installing them here, before that
     // pre-declaration, used to shadow a self-imported `let`/`const`/`class`
     // export's TDZ sentinel with a premature `undefined` copy.
-    for (uint i = 0; i < mod.import_count; i++) {
-        ImportEntry* ie = &mod.imports[i];
-        if (ie.is_star) continue;
-        if (ie.req_module_idx >= mod.req_module_count) continue;
-        ReqModuleEntry* rme = &mod.req_modules[ie.req_module_idx];
-        if (rme.resolved == null) continue;
-        ModuleDef* source_mod = (ModuleDef*)rme.resolved;
-        if (source_mod.is_json && !char_slice_eq(ie.import_name, "default")) {
-            return false;
-        }
-    }
+    if (!validate_imports(heap, mod)) return false;
 
     // NOTE: an indirect export (`export { x } from './other'`) installs NO
     // binding in mod.env at link time either. See the matching note in
@@ -1208,10 +1244,13 @@ fn bool module_execute_continue(Heap* heap, Vm* vm, ModuleDef* mod) {
                 install_live_binding(heap, mod.env, local_key, rr.owner, rr.binding_name);
             }
         } else {
-            // Unresolvable (null/ambiguous), fall back to the old identity
-            // resolution against the direct source module so a same-module
-            // self-import or an already-flagged link error still gets a
-            // (possibly undefined) binding instead of none at all.
+            // Unresolvable (null/ambiguous). validate_imports rejects this at
+            // link time, so reaching here means the module was NOT validated:
+            // link_module returns early for a dependency already in LINKING or
+            // EVALUATING status (a cycle, including a self-import), and such a
+            // module's imports are only resolvable once the outermost link
+            // completes. Fall back to identity resolution against the direct
+            // source module so those get a binding rather than none at all.
             char[] src_local_name = resolve_export_local_name(source_mod, ie.import_name);
             install_live_binding(heap, mod.env, local_key, source_mod, src_local_name);
         }
