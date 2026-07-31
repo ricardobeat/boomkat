@@ -1145,6 +1145,33 @@ fn void builtin_array_proto_join(BuiltinContext* ctx) {
         }
     }
 
+    // §23.1.3.16 has no cycle rule, but recursing into an array that is already
+    // being joined never terminates: a self-referencing element converts via
+    // Array.prototype.toString, which calls join again on the same array. Match
+    // V8 and yield the empty string for the re-entrant level, leaving the outer
+    // join to continue. The check sits after ToString(separator) because that
+    // side effect is observable and node performs it on the inner call too.
+    bool joining = false;
+    if (raw_len != 0) {
+        if (ctx.heap.join_visited_has(obj)) {
+            if (sep_str != null) ctx.heap.decref((types::HeapHeader*)sep_str);
+            HString* empty = (HString*)ctx.heap.strs[heap::BuiltinStr.EMPTY];
+            if (empty == null) { ctx.result.set_undefined(); return; }
+            ctx.result.set_string(empty);
+            return;
+        }
+        if (!ctx.heap.join_visited_push(obj)) {
+            // Out of memory for the in-progress set. Entering anyway would let
+            // the next level recurse unguarded, so refuse the join instead.
+            if (sep_str != null) ctx.heap.decref((types::HeapHeader*)sep_str);
+            arr_throw_range_error(ctx, "Array.prototype.join out of memory");
+            ctx.result.set_undefined();
+            return;
+        }
+        joining = true;
+    }
+    defer if (joining) ctx.heap.join_visited_pop();
+
     // Empty array-like returns ""
     if (raw_len == 0) {
         if (sep_str != null) ctx.heap.decref((types::HeapHeader*)sep_str);
@@ -1265,6 +1292,116 @@ fn void builtin_array_proto_join(BuiltinContext* ctx) {
         ctx.result.set_undefined();
         return;
     }
+    ctx.result.set_string(result);
+}
+
+// ============================================================================
+// Array.prototype.toLocaleString (ES2022 §23.1.3.29)
+// ============================================================================
+//
+// Native rather than compiled JS so it can share join's in-progress set: a
+// cycle can run through either method (an element's toLocaleString joining the
+// outer array, or vice versa), and V8 bails out of both against one set.
+fn void builtin_array_proto_toLocaleString(BuiltinContext* ctx) {
+    // Step 1-2: Let array be ? ToObject(this value).
+    HObject* obj = array_proto_get_this(ctx);
+    if (obj == null) { ctx.result.set_undefined(); return; }
+
+    // Step 3: Let len be ? LengthOfArrayLike(array).
+    ulong raw_len;
+    if (!array_to_length(obj, ctx.heap, ctx, &raw_len)) { ctx.result.set_undefined(); return; }
+
+    HString* empty = (HString*)ctx.heap.strs[heap::BuiltinStr.EMPTY];
+    if (raw_len == 0) {
+        if (empty == null) { ctx.result.set_undefined(); return; }
+        ctx.result.set_string(empty);
+        return;
+    }
+
+    // Re-entering an array already being rendered would not terminate; yield
+    // the empty string for the inner level, as in join.
+    if (ctx.heap.join_visited_has(obj)) {
+        if (empty == null) { ctx.result.set_undefined(); return; }
+        ctx.result.set_string(empty);
+        return;
+    }
+    if (!ctx.heap.join_visited_push(obj)) {
+        arr_throw_range_error(ctx, "Array.prototype.toLocaleString out of memory");
+        ctx.result.set_undefined();
+        return;
+    }
+    defer ctx.heap.join_visited_pop();
+
+    ulong len = raw_len > 0xFFFFFFFF ? 0xFFFFFFFF : raw_len;
+
+    HString* tls_key = builtin_intern_string(ctx.heap, "toLocaleString");
+    if (tls_key == null) { ctx.result.set_undefined(); return; }
+
+    // Steps 4-7: concatenate ToString(Invoke(element, "toLocaleString")),
+    // separated by ",". Built incrementally in a DString-style growable buffer
+    // so output length is bounded only by memory.
+    StrBuf out;
+    out.init(ctx.heap);
+    defer out.free();
+
+    for (ulong k = 0; k < len; k++) {
+        // Step 6.a: separator before every element but the first.
+        if (k > 0 && !out.append_bytes(",")) {
+            arr_throw_range_error(ctx, "Array.prototype.toLocaleString out of memory");
+            ctx.result.set_undefined(); return;
+        }
+
+        TVal elem;
+        bool present = arr_get_elem_vm(obj, k, ctx.heap, ctx, &elem);
+        if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+
+        // Step 6.c: undefined and null (and absent) contribute nothing.
+        if (!present || elem.is_undefined() || elem.is_null()) continue;
+
+        // Step 6.c.i: ? ToString(? Invoke(nextElement, "toLocaleString")).
+        // Invoke does GetV, which boxes a primitive element, so a number or
+        // string element resolves its own prototype's toLocaleString.
+        HObject* elem_obj = arr_to_object(elem, ctx.heap);
+        if (elem_obj == null) { ctx.result.set_undefined(); return; }
+        TVal? method_raw = elem_obj.get_prop_proto(tls_key);
+        if (catch method_raw) {
+            builtin_throw(ctx, ctx.heap.type_err_proto,
+                "element has no toLocaleString method");
+            ctx.result.set_undefined(); return;
+        }
+        TVal method = method_raw;
+        bool callable = method.is_lightfunc()
+            || (method.is_object() && method.get_heapptr() != null
+                && ((HObject*)method.get_heapptr()).is_callable());
+        if (!callable) {
+            builtin_throw(ctx, ctx.heap.type_err_proto,
+                "element toLocaleString is not a function");
+            ctx.result.set_undefined(); return;
+        }
+        if (ctx.heap.call_fn == null || ctx.vm == null) { ctx.result.set_undefined(); return; }
+        TVal s_val = ctx.heap.call_fn(ctx.vm, method, null, 0, elem);
+        if (ctx.heap.has_error) {
+            ctx.should_throw = true;
+            ctx.throw_value = ctx.heap.error_value;
+            ctx.heap.has_error = false;
+            ctx.result.set_undefined(); return;
+        }
+        HString* s = builtin_to_string_vm(ctx, &s_val);
+        if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+        if (s == null) continue;
+        // Pin across the append: the interned result is only weakly held and a
+        // GC triggered by the buffer growth would otherwise reclaim it.
+        ((types::HeapHeader*)s).incref();
+        bool ok = out.append_bytes(s.get_data());
+        ctx.heap.decref((types::HeapHeader*)s);
+        if (!ok) {
+            arr_throw_range_error(ctx, "Array.prototype.toLocaleString out of memory");
+            ctx.result.set_undefined(); return;
+        }
+    }
+
+    HString* result = builtin_intern_string(ctx.heap, out.bytes());
+    if (result == null) { ctx.result.set_undefined(); return; }
     ctx.result.set_string(result);
 }
 
@@ -4634,10 +4771,7 @@ fn bool register_array_constructor(EnvRecord* global_env, Heap* heap) {
     if (!register_array_proto_method(proto, heap, "reduce",     Builtin.ARRAY_PROTO_REDUCE.ordinal))     return false;
     if (!register_array_proto_method(proto, heap, "reduceRight",Builtin.ARRAY_PROTO_REDUCERIGHT.ordinal)) return false;
 
-    // Array.prototype.toLocaleString, ES5 §15.4.4.3
-    // Delegates to Object.prototype.toLocaleString for each element, then joins with ", ".
-    if (!register_compiled_proto_method(proto, heap, global_env, "toLocaleString",
-        "(){if(this==null)throw new TypeError('toLocaleString called on null or undefined');var O=Object(this);var len=O.length>>>0;if(len>>>0!==len)len=0;var separator=\",\";var elements=[];for(var k=0;k<len;k++){var nextElement=O[k];var s=(nextElement===null||nextElement===void 0)?\"\":nextElement.toLocaleString();elements.push(s)}return elements.join(separator)}", 0)) return false;
+    if (!register_array_proto_method(proto, heap, "toLocaleString", Builtin.ARRAY_PROTO_TOLOCALESTRING.ordinal)) return false;
 
     // Register Array.prototype[@@iterator] (ES6 §22.1.3.30)
     // Per spec, @@iterator must be the *same function object* as .values.
