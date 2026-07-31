@@ -397,7 +397,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                     act.curr_pc = (Instruction*)gs_r.saved_pc;
                     act.var_env = (EnvRecord*)gs_r.var_env;
                     act.lex_env = (EnvRecord*)gs_r.lex_env;
-                    forin_restore_from_gen(act, gs_r);
+                    chains_restore_from_gen(act, gs_r);
                     // Restore saved registers instead of initializing fresh
                     $if $feature(HEAP_VERIFY):
                         vm.heap.verify_roots("before_resume_restore");
