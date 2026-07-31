@@ -1518,8 +1518,9 @@ def main():
     parser.add_argument(
         "--phase",
         type=int,
+        action="append",
         choices=sorted(_PHASE_NUM_TO_IDX.keys()),
-        help="Run only this phase by number (0, 1, 2, … 15, 17, 21)",
+        help="Run only this phase by number (0, 1, 2, … 15, 17, 21). Can be repeated to run multiple phases.",
     )
     parser.add_argument(
         "--workers",
@@ -1623,7 +1624,10 @@ def main():
         print(f"ERROR: {VM_BINARY} not found. Build it first with: c3c build test262_runner", file=sys.stderr)
         sys.exit(1)
 
-    phases = [resolve_phase_num(args.phase)] if args.phase is not None else range(len(PHASES))
+    if args.phase is not None:
+        phases = [resolve_phase_num(p) for p in args.phase]
+    else:
+        phases = range(len(PHASES))
     grand_pass = grand_fail = grand_skip = grand_total = grand_ce = 0
     grand_ce_breakdown = {"expected-parse": 0, "expected-runtime": 0, "unexpected": 0}
 
