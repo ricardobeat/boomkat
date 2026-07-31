@@ -114,10 +114,12 @@ run-module file="test/modules/t01_named/main.js":
     @make out/duktape_c3
     ./out/duktape_c3 --module {{file}}
 
-# Run all ESM module tests
+# Run all ESM module tests: the runnable fixtures, then the module-syntax
+# declaration-position early errors (compile-only, so they need their own driver)
 modules:
     @just build duktape_c3
     bash test/modules/run.sh
+    bash test/modules/syntax_positions.sh
 
 # Run the local test suite: every test/*.js under the plain runner, then the
 # ESM fixtures under test/modules/ (which need --module, so run.sh owns them).

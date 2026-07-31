@@ -282,6 +282,13 @@ fn void? CompilerContext.statement(&self) {
     ushort stmt_base = self.next_reg;
     TokenType tt = self.peek_type();
 
+    // Consume the ModuleItem permission exactly once, into a local, and clear
+    // the field so it cannot leak into any nested statement parsed below. Only
+    // a statement dispatched directly from the module body's own loop may be
+    // an Import/ExportDeclaration.
+    bool at_module_top = self.module_top_level;
+    self.module_top_level = false;
+
     switch (tt) {
         case TokenType.LBRACE:
             self.block(false)!;
@@ -330,10 +337,20 @@ fn void? CompilerContext.statement(&self) {
             if (is_expr) {
                 self.expression_statement()!;
             } else {
+                // An ImportDeclaration is a ModuleItem, legal only in a
+                // Module's top-level StatementList (ES2024 §16.2.1).
+                if (!at_module_top) {
+                    return self.fail("'import' declarations may only appear at the top level of a module")~;
+                }
                 self.import_declaration()!;
             }
         }
         case TokenType.EXPORT:
+            // Likewise an ExportDeclaration is a ModuleItem: never valid
+            // inside a block, loop/switch body, label or try/catch/finally.
+            if (!at_module_top) {
+                return self.fail("'export' declarations may only appear at the top level of a module")~;
+            }
             self.export_declaration()!;
         case TokenType.SEMICOLON:
             // Empty statement
@@ -5144,7 +5161,11 @@ fn void? CompilerContext.export_declaration(&self) {
         // executing above must observe the sentinel and throw ReferenceError,
         // register it lexical so link_module pre-declares the TDZ sentinel.
         mod_register_export(mod, "*default*", "default", false, 0, true);
-        self.match(TokenType.SEMICOLON);
+        // `export default AssignmentExpression ;` — the semicolon is part of
+        // the production, so it is required (via ASI), unlike the
+        // HoistableDeclaration / ClassDeclaration forms above, which end at
+        // their own closing brace and take no semicolon.
+        self.expect_semicolon_or_asi()!;
         return;
     }
 
@@ -5160,7 +5181,7 @@ fn void? CompilerContext.export_declaration(&self) {
             bool wants_json = self.parse_with_clause()!;
             uint req_idx = mod_register_req_module(mod, spec_tok.str_value, wants_json);
             mod_register_export(mod, "*", ns_name, true, req_idx);
-            self.match(TokenType.SEMICOLON);
+            self.expect_semicolon_or_asi()!;
             return;
         }
 
@@ -5169,7 +5190,7 @@ fn void? CompilerContext.export_declaration(&self) {
         bool wants_json = self.parse_with_clause()!;
         uint req_idx = mod_register_req_module(mod, spec_tok.str_value, wants_json);
         mod_register_star_export(mod, req_idx);
-        self.match(TokenType.SEMICOLON);
+        self.expect_semicolon_or_asi()!;
         return;
     }
 
@@ -5234,7 +5255,7 @@ fn void? CompilerContext.export_declaration(&self) {
             }
         }
 
-        self.match(TokenType.SEMICOLON);
+        self.expect_semicolon_or_asi()!;
         return;
     }
 

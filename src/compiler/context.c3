@@ -638,6 +638,16 @@ struct CompilerContext {
     // code. It never affects `await`/`arguments` handling.
     bool module_goal;
 
+    /// True only while parsing a statement directly in a Module's top-level
+    /// StatementList. An ImportDeclaration / ExportDeclaration is a
+    /// ModuleItem (ES2024 §16.2.1), a production that exists nowhere else in
+    /// the grammar, so `export` inside a block, a loop or switch body, a
+    /// labelled statement or a try/catch/finally is a SyntaxError. The
+    /// statement dispatcher clears this before parsing any nested statement,
+    /// and nested function/arrow contexts never inherit it (a fresh
+    /// CompilerContext leaves it false).
+    bool module_top_level;
+
     // Inferred function name for the next anonymous function expression parsed.
     // Set by assignment_expr when LHS is a plain identifier (e.g. `var f = function() {}`)
     // or by object literal property parsing (e.g. `o = { method() {} }`).

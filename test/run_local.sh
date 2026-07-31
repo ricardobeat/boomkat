@@ -49,6 +49,12 @@ echo ""
 bash "$DIR/modules/run.sh" "$ENGINE"
 MOD_RC=$?
 
+# Module-syntax early errors — compile-only, so they need their own driver
+# rather than the runnable-fixture sweep above.
+echo ""
+bash "$DIR/modules/syntax_positions.sh" "$ENGINE"
+MODSYN_RC=$?
+
 # Uncaught-exception reporting — asserted from the shell because these cases
 # exit non-zero with diagnostics on stderr by construction, which the flat
 # sweep above would count as failures.
@@ -56,4 +62,4 @@ echo ""
 bash "$DIR/uncaught/run.sh" "$ENGINE"
 UNC_RC=$?
 
-[ "$FAIL" -eq 0 ] && [ "$MOD_RC" -eq 0 ] && [ "$UNC_RC" -eq 0 ]
+[ "$FAIL" -eq 0 ] && [ "$MOD_RC" -eq 0 ] && [ "$MODSYN_RC" -eq 0 ] && [ "$UNC_RC" -eq 0 ]
