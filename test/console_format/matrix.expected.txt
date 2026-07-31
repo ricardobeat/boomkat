@@ -1,0 +1,5607 @@
+ARR int 0 []
+OBJ int 0 {}
+MAP int 0 Map(0) {}
+SET int 0 Set(0) {}
+NEST int 0 { outer: [] }
+SPEC int 0
+ARR int 1 [ 0 ]
+OBJ int 1 { k0: 0 }
+MAP int 1 Map(1) { 'k0' => 0 }
+SET int 1 Set(1) { 0 }
+NEST int 1 { outer: [ 0 ] }
+SPEC int 1
+ARR int 2 [ 0, 1 ]
+OBJ int 2 { k0: 0, k1: 1 }
+MAP int 2 Map(2) { 'k0' => 0, 'k1' => 1 }
+SET int 2 Set(2) { 0, 1 }
+NEST int 2 { outer: [ 0, 1 ] }
+SPEC int 2
+ARR int 3 [ 0, 1, 2 ]
+OBJ int 3 { k0: 0, k1: 1, k2: 2 }
+MAP int 3 Map(3) { 'k0' => 0, 'k1' => 1, 'k2' => 2 }
+SET int 3 Set(3) { 0, 1, 2 }
+NEST int 3 { outer: [ 0, 1, 2 ] }
+SPEC int 3
+ARR int 5 [ 0, 1, 2, 3, 4 ]
+OBJ int 5 { k0: 0, k1: 1, k2: 2, k3: 3, k4: 4 }
+MAP int 5 Map(5) { 'k0' => 0, 'k1' => 1, 'k2' => 2, 'k3' => 3, 'k4' => 4 }
+SET int 5 Set(5) { 0, 1, 2, 3, 4 }
+NEST int 5 { outer: [ 0, 1, 2, 3, 4 ] }
+SPEC int 5
+ARR int 6 [ 0, 1, 2, 3, 4, 5 ]
+OBJ int 6 { k0: 0, k1: 1, k2: 2, k3: 3, k4: 4, k5: 5 }
+MAP int 6 Map(6) {
+  'k0' => 0,
+  'k1' => 1,
+  'k2' => 2,
+  'k3' => 3,
+  'k4' => 4,
+  'k5' => 5
+}
+SET int 6 Set(6) { 0, 1, 2, 3, 4, 5 }
+NEST int 6 { outer: [ 0, 1, 2, 3, 4, 5 ] }
+SPEC int 6
+ARR int 7 [
+  0, 1, 2, 3,
+  4, 5, 6
+]
+OBJ int 7 { k0: 0, k1: 1, k2: 2, k3: 3, k4: 4, k5: 5, k6: 6 }
+MAP int 7 Map(7) {
+  'k0' => 0,
+  'k1' => 1,
+  'k2' => 2,
+  'k3' => 3,
+  'k4' => 4,
+  'k5' => 5,
+  'k6' => 6
+}
+SET int 7 Set(7) { 0, 1, 2, 3, 4, 5, 6 }
+NEST int 7 {
+  outer: [
+    0, 1, 2, 3,
+    4, 5, 6
+  ]
+}
+SPEC int 7
+ARR int 8 [
+  0, 1, 2, 3,
+  4, 5, 6, 7
+]
+OBJ int 8 { k0: 0, k1: 1, k2: 2, k3: 3, k4: 4, k5: 5, k6: 6, k7: 7 }
+MAP int 8 Map(8) {
+  'k0' => 0,
+  'k1' => 1,
+  'k2' => 2,
+  'k3' => 3,
+  'k4' => 4,
+  'k5' => 5,
+  'k6' => 6,
+  'k7' => 7
+}
+SET int 8 Set(8) { 0, 1, 2, 3, 4, 5, 6, 7 }
+NEST int 8 {
+  outer: [
+    0, 1, 2, 3,
+    4, 5, 6, 7
+  ]
+}
+SPEC int 8
+ARR int 12 [
+   0,  1, 2, 3, 4,
+   5,  6, 7, 8, 9,
+  10, 11
+]
+OBJ int 12 {
+  k0: 0,
+  k1: 1,
+  k2: 2,
+  k3: 3,
+  k4: 4,
+  k5: 5,
+  k6: 6,
+  k7: 7,
+  k8: 8,
+  k9: 9,
+  k10: 10,
+  k11: 11
+}
+MAP int 12 Map(12) {
+  'k0' => 0,
+  'k1' => 1,
+  'k2' => 2,
+  'k3' => 3,
+  'k4' => 4,
+  'k5' => 5,
+  'k6' => 6,
+  'k7' => 7,
+  'k8' => 8,
+  'k9' => 9,
+  'k10' => 10,
+  'k11' => 11
+}
+SET int 12 Set(12) { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 }
+NEST int 12 {
+  outer: [
+     0,  1, 2, 3, 4,
+     5,  6, 7, 8, 9,
+    10, 11
+  ]
+}
+SPEC int 12
+ARR int 20 [
+   0,  1,  2,  3,  4,  5,  6,
+   7,  8,  9, 10, 11, 12, 13,
+  14, 15, 16, 17, 18, 19
+]
+OBJ int 20 {
+  k0: 0,
+  k1: 1,
+  k2: 2,
+  k3: 3,
+  k4: 4,
+  k5: 5,
+  k6: 6,
+  k7: 7,
+  k8: 8,
+  k9: 9,
+  k10: 10,
+  k11: 11,
+  k12: 12,
+  k13: 13,
+  k14: 14,
+  k15: 15,
+  k16: 16,
+  k17: 17,
+  k18: 18,
+  k19: 19
+}
+MAP int 20 Map(20) {
+  'k0' => 0,
+  'k1' => 1,
+  'k2' => 2,
+  'k3' => 3,
+  'k4' => 4,
+  'k5' => 5,
+  'k6' => 6,
+  'k7' => 7,
+  'k8' => 8,
+  'k9' => 9,
+  'k10' => 10,
+  'k11' => 11,
+  'k12' => 12,
+  'k13' => 13,
+  'k14' => 14,
+  'k15' => 15,
+  'k16' => 16,
+  'k17' => 17,
+  'k18' => 18,
+  'k19' => 19
+}
+SET int 20 Set(20) {
+  0,
+  1,
+  2,
+  3,
+  4,
+  5,
+  6,
+  7,
+  8,
+  9,
+  10,
+  11,
+  12,
+  13,
+  14,
+  15,
+  16,
+  17,
+  18,
+  19
+}
+NEST int 20 {
+  outer: [
+     0,  1,  2,  3,  4,  5,  6,
+     7,  8,  9, 10, 11, 12, 13,
+    14, 15, 16, 17, 18, 19
+  ]
+}
+SPEC int 20
+ARR neg 0 []
+OBJ neg 0 {}
+MAP neg 0 Map(0) {}
+SET neg 0 Set(0) {}
+NEST neg 0 { outer: [] }
+SPEC neg 0
+ARR neg 1 [ -0 ]
+OBJ neg 1 { k0: -0 }
+MAP neg 1 Map(1) { 'k0' => -0 }
+SET neg 1 Set(1) { 0 }
+NEST neg 1 { outer: [ -0 ] }
+SPEC neg 1
+ARR neg 2 [ -0, -1 ]
+OBJ neg 2 { k0: -0, k1: -1 }
+MAP neg 2 Map(2) { 'k0' => -0, 'k1' => -1 }
+SET neg 2 Set(2) { 0, -1 }
+NEST neg 2 { outer: [ -0, -1 ] }
+SPEC neg 2
+ARR neg 3 [ -0, -1, -2 ]
+OBJ neg 3 { k0: -0, k1: -1, k2: -2 }
+MAP neg 3 Map(3) { 'k0' => -0, 'k1' => -1, 'k2' => -2 }
+SET neg 3 Set(3) { 0, -1, -2 }
+NEST neg 3 { outer: [ -0, -1, -2 ] }
+SPEC neg 3
+ARR neg 5 [ -0, -1, -2, -3, -4 ]
+OBJ neg 5 { k0: -0, k1: -1, k2: -2, k3: -3, k4: -4 }
+MAP neg 5 Map(5) { 'k0' => -0, 'k1' => -1, 'k2' => -2, 'k3' => -3, 'k4' => -4 }
+SET neg 5 Set(5) { 0, -1, -2, -3, -4 }
+NEST neg 5 { outer: [ -0, -1, -2, -3, -4 ] }
+SPEC neg 5
+ARR neg 6 [ -0, -1, -2, -3, -4, -5 ]
+OBJ neg 6 { k0: -0, k1: -1, k2: -2, k3: -3, k4: -4, k5: -5 }
+MAP neg 6 Map(6) {
+  'k0' => -0,
+  'k1' => -1,
+  'k2' => -2,
+  'k3' => -3,
+  'k4' => -4,
+  'k5' => -5
+}
+SET neg 6 Set(6) { 0, -1, -2, -3, -4, -5 }
+NEST neg 6 { outer: [ -0, -1, -2, -3, -4, -5 ] }
+SPEC neg 6
+ARR neg 7 [
+  -0, -1, -2, -3,
+  -4, -5, -6
+]
+OBJ neg 7 { k0: -0, k1: -1, k2: -2, k3: -3, k4: -4, k5: -5, k6: -6 }
+MAP neg 7 Map(7) {
+  'k0' => -0,
+  'k1' => -1,
+  'k2' => -2,
+  'k3' => -3,
+  'k4' => -4,
+  'k5' => -5,
+  'k6' => -6
+}
+SET neg 7 Set(7) { 0, -1, -2, -3, -4, -5, -6 }
+NEST neg 7 {
+  outer: [
+    -0, -1, -2, -3,
+    -4, -5, -6
+  ]
+}
+SPEC neg 7
+ARR neg 8 [
+  -0, -1, -2, -3,
+  -4, -5, -6, -7
+]
+OBJ neg 8 { k0: -0, k1: -1, k2: -2, k3: -3, k4: -4, k5: -5, k6: -6, k7: -7 }
+MAP neg 8 Map(8) {
+  'k0' => -0,
+  'k1' => -1,
+  'k2' => -2,
+  'k3' => -3,
+  'k4' => -4,
+  'k5' => -5,
+  'k6' => -6,
+  'k7' => -7
+}
+SET neg 8 Set(8) { 0, -1, -2, -3, -4, -5, -6, -7 }
+NEST neg 8 {
+  outer: [
+    -0, -1, -2, -3,
+    -4, -5, -6, -7
+  ]
+}
+SPEC neg 8
+ARR neg 12 [
+   -0,  -1, -2, -3, -4,
+   -5,  -6, -7, -8, -9,
+  -10, -11
+]
+OBJ neg 12 {
+  k0: -0,
+  k1: -1,
+  k2: -2,
+  k3: -3,
+  k4: -4,
+  k5: -5,
+  k6: -6,
+  k7: -7,
+  k8: -8,
+  k9: -9,
+  k10: -10,
+  k11: -11
+}
+MAP neg 12 Map(12) {
+  'k0' => -0,
+  'k1' => -1,
+  'k2' => -2,
+  'k3' => -3,
+  'k4' => -4,
+  'k5' => -5,
+  'k6' => -6,
+  'k7' => -7,
+  'k8' => -8,
+  'k9' => -9,
+  'k10' => -10,
+  'k11' => -11
+}
+SET neg 12 Set(12) { 0, -1, -2, -3, -4, -5, -6, -7, -8, -9, -10, -11 }
+NEST neg 12 {
+  outer: [
+     -0,  -1, -2, -3, -4,
+     -5,  -6, -7, -8, -9,
+    -10, -11
+  ]
+}
+SPEC neg 12
+ARR neg 20 [
+   -0,  -1,  -2,  -3,  -4,  -5,
+   -6,  -7,  -8,  -9, -10, -11,
+  -12, -13, -14, -15, -16, -17,
+  -18, -19
+]
+OBJ neg 20 {
+  k0: -0,
+  k1: -1,
+  k2: -2,
+  k3: -3,
+  k4: -4,
+  k5: -5,
+  k6: -6,
+  k7: -7,
+  k8: -8,
+  k9: -9,
+  k10: -10,
+  k11: -11,
+  k12: -12,
+  k13: -13,
+  k14: -14,
+  k15: -15,
+  k16: -16,
+  k17: -17,
+  k18: -18,
+  k19: -19
+}
+MAP neg 20 Map(20) {
+  'k0' => -0,
+  'k1' => -1,
+  'k2' => -2,
+  'k3' => -3,
+  'k4' => -4,
+  'k5' => -5,
+  'k6' => -6,
+  'k7' => -7,
+  'k8' => -8,
+  'k9' => -9,
+  'k10' => -10,
+  'k11' => -11,
+  'k12' => -12,
+  'k13' => -13,
+  'k14' => -14,
+  'k15' => -15,
+  'k16' => -16,
+  'k17' => -17,
+  'k18' => -18,
+  'k19' => -19
+}
+SET neg 20 Set(20) {
+  0,
+  -1,
+  -2,
+  -3,
+  -4,
+  -5,
+  -6,
+  -7,
+  -8,
+  -9,
+  -10,
+  -11,
+  -12,
+  -13,
+  -14,
+  -15,
+  -16,
+  -17,
+  -18,
+  -19
+}
+NEST neg 20 {
+  outer: [
+     -0,  -1,  -2,  -3,  -4,  -5,
+     -6,  -7,  -8,  -9, -10, -11,
+    -12, -13, -14, -15, -16, -17,
+    -18, -19
+  ]
+}
+SPEC neg 20
+ARR flt 0 []
+OBJ flt 0 {}
+MAP flt 0 Map(0) {}
+SET flt 0 Set(0) {}
+NEST flt 0 { outer: [] }
+SPEC flt 0
+ARR flt 1 [ 0.5 ]
+OBJ flt 1 { k0: 0.5 }
+MAP flt 1 Map(1) { 'k0' => 0.5 }
+SET flt 1 Set(1) { 0.5 }
+NEST flt 1 { outer: [ 0.5 ] }
+SPEC flt 1
+ARR flt 2 [ 0.5, 1.5 ]
+OBJ flt 2 { k0: 0.5, k1: 1.5 }
+MAP flt 2 Map(2) { 'k0' => 0.5, 'k1' => 1.5 }
+SET flt 2 Set(2) { 0.5, 1.5 }
+NEST flt 2 { outer: [ 0.5, 1.5 ] }
+SPEC flt 2
+ARR flt 3 [ 0.5, 1.5, 2.5 ]
+OBJ flt 3 { k0: 0.5, k1: 1.5, k2: 2.5 }
+MAP flt 3 Map(3) { 'k0' => 0.5, 'k1' => 1.5, 'k2' => 2.5 }
+SET flt 3 Set(3) { 0.5, 1.5, 2.5 }
+NEST flt 3 { outer: [ 0.5, 1.5, 2.5 ] }
+SPEC flt 3
+ARR flt 5 [ 0.5, 1.5, 2.5, 3.5, 4.5 ]
+OBJ flt 5 { k0: 0.5, k1: 1.5, k2: 2.5, k3: 3.5, k4: 4.5 }
+MAP flt 5 Map(5) {
+  'k0' => 0.5,
+  'k1' => 1.5,
+  'k2' => 2.5,
+  'k3' => 3.5,
+  'k4' => 4.5
+}
+SET flt 5 Set(5) { 0.5, 1.5, 2.5, 3.5, 4.5 }
+NEST flt 5 { outer: [ 0.5, 1.5, 2.5, 3.5, 4.5 ] }
+SPEC flt 5
+ARR flt 6 [ 0.5, 1.5, 2.5, 3.5, 4.5, 5.5 ]
+OBJ flt 6 { k0: 0.5, k1: 1.5, k2: 2.5, k3: 3.5, k4: 4.5, k5: 5.5 }
+MAP flt 6 Map(6) {
+  'k0' => 0.5,
+  'k1' => 1.5,
+  'k2' => 2.5,
+  'k3' => 3.5,
+  'k4' => 4.5,
+  'k5' => 5.5
+}
+SET flt 6 Set(6) { 0.5, 1.5, 2.5, 3.5, 4.5, 5.5 }
+NEST flt 6 { outer: [ 0.5, 1.5, 2.5, 3.5, 4.5, 5.5 ] }
+SPEC flt 6
+ARR flt 7 [
+  0.5, 1.5, 2.5,
+  3.5, 4.5, 5.5,
+  6.5
+]
+OBJ flt 7 { k0: 0.5, k1: 1.5, k2: 2.5, k3: 3.5, k4: 4.5, k5: 5.5, k6: 6.5 }
+MAP flt 7 Map(7) {
+  'k0' => 0.5,
+  'k1' => 1.5,
+  'k2' => 2.5,
+  'k3' => 3.5,
+  'k4' => 4.5,
+  'k5' => 5.5,
+  'k6' => 6.5
+}
+SET flt 7 Set(7) { 0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5 }
+NEST flt 7 {
+  outer: [
+    0.5, 1.5, 2.5,
+    3.5, 4.5, 5.5,
+    6.5
+  ]
+}
+SPEC flt 7
+ARR flt 8 [
+  0.5, 1.5, 2.5,
+  3.5, 4.5, 5.5,
+  6.5, 7.5
+]
+OBJ flt 8 {
+  k0: 0.5,
+  k1: 1.5,
+  k2: 2.5,
+  k3: 3.5,
+  k4: 4.5,
+  k5: 5.5,
+  k6: 6.5,
+  k7: 7.5
+}
+MAP flt 8 Map(8) {
+  'k0' => 0.5,
+  'k1' => 1.5,
+  'k2' => 2.5,
+  'k3' => 3.5,
+  'k4' => 4.5,
+  'k5' => 5.5,
+  'k6' => 6.5,
+  'k7' => 7.5
+}
+SET flt 8 Set(8) { 0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5 }
+NEST flt 8 {
+  outer: [
+    0.5, 1.5, 2.5,
+    3.5, 4.5, 5.5,
+    6.5, 7.5
+  ]
+}
+SPEC flt 8
+ARR flt 12 [
+  0.5, 1.5,  2.5,  3.5,
+  4.5, 5.5,  6.5,  7.5,
+  8.5, 9.5, 10.5, 11.5
+]
+OBJ flt 12 {
+  k0: 0.5,
+  k1: 1.5,
+  k2: 2.5,
+  k3: 3.5,
+  k4: 4.5,
+  k5: 5.5,
+  k6: 6.5,
+  k7: 7.5,
+  k8: 8.5,
+  k9: 9.5,
+  k10: 10.5,
+  k11: 11.5
+}
+MAP flt 12 Map(12) {
+  'k0' => 0.5,
+  'k1' => 1.5,
+  'k2' => 2.5,
+  'k3' => 3.5,
+  'k4' => 4.5,
+  'k5' => 5.5,
+  'k6' => 6.5,
+  'k7' => 7.5,
+  'k8' => 8.5,
+  'k9' => 9.5,
+  'k10' => 10.5,
+  'k11' => 11.5
+}
+SET flt 12 Set(12) {
+  0.5,
+  1.5,
+  2.5,
+  3.5,
+  4.5,
+  5.5,
+  6.5,
+  7.5,
+  8.5,
+  9.5,
+  10.5,
+  11.5
+}
+NEST flt 12 {
+  outer: [
+    0.5, 1.5,  2.5,  3.5,
+    4.5, 5.5,  6.5,  7.5,
+    8.5, 9.5, 10.5, 11.5
+  ]
+}
+SPEC flt 12
+ARR flt 20 [
+   0.5,  1.5,  2.5,  3.5,  4.5,
+   5.5,  6.5,  7.5,  8.5,  9.5,
+  10.5, 11.5, 12.5, 13.5, 14.5,
+  15.5, 16.5, 17.5, 18.5, 19.5
+]
+OBJ flt 20 {
+  k0: 0.5,
+  k1: 1.5,
+  k2: 2.5,
+  k3: 3.5,
+  k4: 4.5,
+  k5: 5.5,
+  k6: 6.5,
+  k7: 7.5,
+  k8: 8.5,
+  k9: 9.5,
+  k10: 10.5,
+  k11: 11.5,
+  k12: 12.5,
+  k13: 13.5,
+  k14: 14.5,
+  k15: 15.5,
+  k16: 16.5,
+  k17: 17.5,
+  k18: 18.5,
+  k19: 19.5
+}
+MAP flt 20 Map(20) {
+  'k0' => 0.5,
+  'k1' => 1.5,
+  'k2' => 2.5,
+  'k3' => 3.5,
+  'k4' => 4.5,
+  'k5' => 5.5,
+  'k6' => 6.5,
+  'k7' => 7.5,
+  'k8' => 8.5,
+  'k9' => 9.5,
+  'k10' => 10.5,
+  'k11' => 11.5,
+  'k12' => 12.5,
+  'k13' => 13.5,
+  'k14' => 14.5,
+  'k15' => 15.5,
+  'k16' => 16.5,
+  'k17' => 17.5,
+  'k18' => 18.5,
+  'k19' => 19.5
+}
+SET flt 20 Set(20) {
+  0.5,
+  1.5,
+  2.5,
+  3.5,
+  4.5,
+  5.5,
+  6.5,
+  7.5,
+  8.5,
+  9.5,
+  10.5,
+  11.5,
+  12.5,
+  13.5,
+  14.5,
+  15.5,
+  16.5,
+  17.5,
+  18.5,
+  19.5
+}
+NEST flt 20 {
+  outer: [
+     0.5,  1.5,  2.5,  3.5,  4.5,
+     5.5,  6.5,  7.5,  8.5,  9.5,
+    10.5, 11.5, 12.5, 13.5, 14.5,
+    15.5, 16.5, 17.5, 18.5, 19.5
+  ]
+}
+SPEC flt 20
+ARR str 0 []
+OBJ str 0 {}
+MAP str 0 Map(0) {}
+SET str 0 Set(0) {}
+NEST str 0 { outer: [] }
+SPEC str 0
+ARR str 1 [ 's0' ]
+OBJ str 1 { k0: 's0' }
+MAP str 1 Map(1) { 'k0' => 's0' }
+SET str 1 Set(1) { 's0' }
+NEST str 1 { outer: [ 's0' ] }
+SPEC str 1
+ARR str 2 [ 's0', 's1' ]
+OBJ str 2 { k0: 's0', k1: 's1' }
+MAP str 2 Map(2) { 'k0' => 's0', 'k1' => 's1' }
+SET str 2 Set(2) { 's0', 's1' }
+NEST str 2 { outer: [ 's0', 's1' ] }
+SPEC str 2
+ARR str 3 [ 's0', 's1', 's2' ]
+OBJ str 3 { k0: 's0', k1: 's1', k2: 's2' }
+MAP str 3 Map(3) { 'k0' => 's0', 'k1' => 's1', 'k2' => 's2' }
+SET str 3 Set(3) { 's0', 's1', 's2' }
+NEST str 3 { outer: [ 's0', 's1', 's2' ] }
+SPEC str 3
+ARR str 5 [ 's0', 's1', 's2', 's3', 's4' ]
+OBJ str 5 { k0: 's0', k1: 's1', k2: 's2', k3: 's3', k4: 's4' }
+MAP str 5 Map(5) {
+  'k0' => 's0',
+  'k1' => 's1',
+  'k2' => 's2',
+  'k3' => 's3',
+  'k4' => 's4'
+}
+SET str 5 Set(5) { 's0', 's1', 's2', 's3', 's4' }
+NEST str 5 { outer: [ 's0', 's1', 's2', 's3', 's4' ] }
+SPEC str 5
+ARR str 6 [ 's0', 's1', 's2', 's3', 's4', 's5' ]
+OBJ str 6 { k0: 's0', k1: 's1', k2: 's2', k3: 's3', k4: 's4', k5: 's5' }
+MAP str 6 Map(6) {
+  'k0' => 's0',
+  'k1' => 's1',
+  'k2' => 's2',
+  'k3' => 's3',
+  'k4' => 's4',
+  'k5' => 's5'
+}
+SET str 6 Set(6) { 's0', 's1', 's2', 's3', 's4', 's5' }
+NEST str 6 { outer: [ 's0', 's1', 's2', 's3', 's4', 's5' ] }
+SPEC str 6
+ARR str 7 [
+  's0', 's1',
+  's2', 's3',
+  's4', 's5',
+  's6'
+]
+OBJ str 7 {
+  k0: 's0',
+  k1: 's1',
+  k2: 's2',
+  k3: 's3',
+  k4: 's4',
+  k5: 's5',
+  k6: 's6'
+}
+MAP str 7 Map(7) {
+  'k0' => 's0',
+  'k1' => 's1',
+  'k2' => 's2',
+  'k3' => 's3',
+  'k4' => 's4',
+  'k5' => 's5',
+  'k6' => 's6'
+}
+SET str 7 Set(7) { 's0', 's1', 's2', 's3', 's4', 's5', 's6' }
+NEST str 7 {
+  outer: [
+    's0', 's1',
+    's2', 's3',
+    's4', 's5',
+    's6'
+  ]
+}
+SPEC str 7
+ARR str 8 [
+  's0', 's1', 's2',
+  's3', 's4', 's5',
+  's6', 's7'
+]
+OBJ str 8 {
+  k0: 's0',
+  k1: 's1',
+  k2: 's2',
+  k3: 's3',
+  k4: 's4',
+  k5: 's5',
+  k6: 's6',
+  k7: 's7'
+}
+MAP str 8 Map(8) {
+  'k0' => 's0',
+  'k1' => 's1',
+  'k2' => 's2',
+  'k3' => 's3',
+  'k4' => 's4',
+  'k5' => 's5',
+  'k6' => 's6',
+  'k7' => 's7'
+}
+SET str 8 Set(8) { 's0', 's1', 's2', 's3', 's4', 's5', 's6', 's7' }
+NEST str 8 {
+  outer: [
+    's0', 's1', 's2',
+    's3', 's4', 's5',
+    's6', 's7'
+  ]
+}
+SPEC str 8
+ARR str 12 [
+  's0', 's1',  's2',
+  's3', 's4',  's5',
+  's6', 's7',  's8',
+  's9', 's10', 's11'
+]
+OBJ str 12 {
+  k0: 's0',
+  k1: 's1',
+  k2: 's2',
+  k3: 's3',
+  k4: 's4',
+  k5: 's5',
+  k6: 's6',
+  k7: 's7',
+  k8: 's8',
+  k9: 's9',
+  k10: 's10',
+  k11: 's11'
+}
+MAP str 12 Map(12) {
+  'k0' => 's0',
+  'k1' => 's1',
+  'k2' => 's2',
+  'k3' => 's3',
+  'k4' => 's4',
+  'k5' => 's5',
+  'k6' => 's6',
+  'k7' => 's7',
+  'k8' => 's8',
+  'k9' => 's9',
+  'k10' => 's10',
+  'k11' => 's11'
+}
+SET str 12 Set(12) {
+  's0',
+  's1',
+  's2',
+  's3',
+  's4',
+  's5',
+  's6',
+  's7',
+  's8',
+  's9',
+  's10',
+  's11'
+}
+NEST str 12 {
+  outer: [
+    's0', 's1',  's2',
+    's3', 's4',  's5',
+    's6', 's7',  's8',
+    's9', 's10', 's11'
+  ]
+}
+SPEC str 12
+ARR str 20 [
+  's0',  's1',  's2',  's3',
+  's4',  's5',  's6',  's7',
+  's8',  's9',  's10', 's11',
+  's12', 's13', 's14', 's15',
+  's16', 's17', 's18', 's19'
+]
+OBJ str 20 {
+  k0: 's0',
+  k1: 's1',
+  k2: 's2',
+  k3: 's3',
+  k4: 's4',
+  k5: 's5',
+  k6: 's6',
+  k7: 's7',
+  k8: 's8',
+  k9: 's9',
+  k10: 's10',
+  k11: 's11',
+  k12: 's12',
+  k13: 's13',
+  k14: 's14',
+  k15: 's15',
+  k16: 's16',
+  k17: 's17',
+  k18: 's18',
+  k19: 's19'
+}
+MAP str 20 Map(20) {
+  'k0' => 's0',
+  'k1' => 's1',
+  'k2' => 's2',
+  'k3' => 's3',
+  'k4' => 's4',
+  'k5' => 's5',
+  'k6' => 's6',
+  'k7' => 's7',
+  'k8' => 's8',
+  'k9' => 's9',
+  'k10' => 's10',
+  'k11' => 's11',
+  'k12' => 's12',
+  'k13' => 's13',
+  'k14' => 's14',
+  'k15' => 's15',
+  'k16' => 's16',
+  'k17' => 's17',
+  'k18' => 's18',
+  'k19' => 's19'
+}
+SET str 20 Set(20) {
+  's0',
+  's1',
+  's2',
+  's3',
+  's4',
+  's5',
+  's6',
+  's7',
+  's8',
+  's9',
+  's10',
+  's11',
+  's12',
+  's13',
+  's14',
+  's15',
+  's16',
+  's17',
+  's18',
+  's19'
+}
+NEST str 20 {
+  outer: [
+    's0',  's1',  's2',  's3',
+    's4',  's5',  's6',  's7',
+    's8',  's9',  's10', 's11',
+    's12', 's13', 's14', 's15',
+    's16', 's17', 's18', 's19'
+  ]
+}
+SPEC str 20
+ARR longstr 0 []
+OBJ longstr 0 {}
+MAP longstr 0 Map(0) {}
+SET longstr 0 Set(0) {}
+NEST longstr 0 { outer: [] }
+SPEC longstr 0
+ARR longstr 1 [ 'long' ]
+OBJ longstr 1 { k0: 'long' }
+MAP longstr 1 Map(1) { 'k0' => 'long' }
+SET longstr 1 Set(1) { 'long' }
+NEST longstr 1 { outer: [ 'long' ] }
+SPEC longstr 1
+ARR longstr 2 [ 'long', 'longlong' ]
+OBJ longstr 2 { k0: 'long', k1: 'longlong' }
+MAP longstr 2 Map(2) { 'k0' => 'long', 'k1' => 'longlong' }
+SET longstr 2 Set(2) { 'long', 'longlong' }
+NEST longstr 2 { outer: [ 'long', 'longlong' ] }
+SPEC longstr 2
+ARR longstr 3 [ 'long', 'longlong', 'longlonglong' ]
+OBJ longstr 3 { k0: 'long', k1: 'longlong', k2: 'longlonglong' }
+MAP longstr 3 Map(3) { 'k0' => 'long', 'k1' => 'longlong', 'k2' => 'longlonglong' }
+SET longstr 3 Set(3) { 'long', 'longlong', 'longlonglong' }
+NEST longstr 3 { outer: [ 'long', 'longlong', 'longlonglong' ] }
+SPEC longstr 3
+ARR longstr 5 [
+  'long',
+  'longlong',
+  'longlonglong',
+  'longlonglonglong',
+  'longlonglonglonglong'
+]
+OBJ longstr 5 {
+  k0: 'long',
+  k1: 'longlong',
+  k2: 'longlonglong',
+  k3: 'longlonglonglong',
+  k4: 'longlonglonglonglong'
+}
+MAP longstr 5 Map(5) {
+  'k0' => 'long',
+  'k1' => 'longlong',
+  'k2' => 'longlonglong',
+  'k3' => 'longlonglonglong',
+  'k4' => 'longlonglonglonglong'
+}
+SET longstr 5 Set(5) {
+  'long',
+  'longlong',
+  'longlonglong',
+  'longlonglonglong',
+  'longlonglonglonglong'
+}
+NEST longstr 5 {
+  outer: [
+    'long',
+    'longlong',
+    'longlonglong',
+    'longlonglonglong',
+    'longlonglonglonglong'
+  ]
+}
+SPEC longstr 5
+ARR longstr 6 [
+  'long',
+  'longlong',
+  'longlonglong',
+  'longlonglonglong',
+  'longlonglonglonglong',
+  'longlonglonglonglonglong'
+]
+OBJ longstr 6 {
+  k0: 'long',
+  k1: 'longlong',
+  k2: 'longlonglong',
+  k3: 'longlonglonglong',
+  k4: 'longlonglonglonglong',
+  k5: 'longlonglonglonglonglong'
+}
+MAP longstr 6 Map(6) {
+  'k0' => 'long',
+  'k1' => 'longlong',
+  'k2' => 'longlonglong',
+  'k3' => 'longlonglonglong',
+  'k4' => 'longlonglonglonglong',
+  'k5' => 'longlonglonglonglonglong'
+}
+SET longstr 6 Set(6) {
+  'long',
+  'longlong',
+  'longlonglong',
+  'longlonglonglong',
+  'longlonglonglonglong',
+  'longlonglonglonglonglong'
+}
+NEST longstr 6 {
+  outer: [
+    'long',
+    'longlong',
+    'longlonglong',
+    'longlonglonglong',
+    'longlonglonglonglong',
+    'longlonglonglonglonglong'
+  ]
+}
+SPEC longstr 6
+ARR longstr 7 [
+  'long',
+  'longlong',
+  'longlonglong',
+  'longlonglonglong',
+  'longlonglonglonglong',
+  'longlonglonglonglonglong',
+  'longlonglonglonglonglonglong'
+]
+OBJ longstr 7 {
+  k0: 'long',
+  k1: 'longlong',
+  k2: 'longlonglong',
+  k3: 'longlonglonglong',
+  k4: 'longlonglonglonglong',
+  k5: 'longlonglonglonglonglong',
+  k6: 'longlonglonglonglonglonglong'
+}
+MAP longstr 7 Map(7) {
+  'k0' => 'long',
+  'k1' => 'longlong',
+  'k2' => 'longlonglong',
+  'k3' => 'longlonglonglong',
+  'k4' => 'longlonglonglonglong',
+  'k5' => 'longlonglonglonglonglong',
+  'k6' => 'longlonglonglonglonglonglong'
+}
+SET longstr 7 Set(7) {
+  'long',
+  'longlong',
+  'longlonglong',
+  'longlonglonglong',
+  'longlonglonglonglong',
+  'longlonglonglonglonglong',
+  'longlonglonglonglonglonglong'
+}
+NEST longstr 7 {
+  outer: [
+    'long',
+    'longlong',
+    'longlonglong',
+    'longlonglonglong',
+    'longlonglonglonglong',
+    'longlonglonglonglonglong',
+    'longlonglonglonglonglonglong'
+  ]
+}
+SPEC longstr 7
+ARR longstr 8 [
+  'long',
+  'longlong',
+  'longlonglong',
+  'longlonglonglong',
+  'longlonglonglonglong',
+  'longlonglonglonglonglong',
+  'longlonglonglonglonglonglong',
+  'longlonglonglonglonglonglonglong'
+]
+OBJ longstr 8 {
+  k0: 'long',
+  k1: 'longlong',
+  k2: 'longlonglong',
+  k3: 'longlonglonglong',
+  k4: 'longlonglonglonglong',
+  k5: 'longlonglonglonglonglong',
+  k6: 'longlonglonglonglonglonglong',
+  k7: 'longlonglonglonglonglonglonglong'
+}
+MAP longstr 8 Map(8) {
+  'k0' => 'long',
+  'k1' => 'longlong',
+  'k2' => 'longlonglong',
+  'k3' => 'longlonglonglong',
+  'k4' => 'longlonglonglonglong',
+  'k5' => 'longlonglonglonglonglong',
+  'k6' => 'longlonglonglonglonglonglong',
+  'k7' => 'longlonglonglonglonglonglonglong'
+}
+SET longstr 8 Set(8) {
+  'long',
+  'longlong',
+  'longlonglong',
+  'longlonglonglong',
+  'longlonglonglonglong',
+  'longlonglonglonglonglong',
+  'longlonglonglonglonglonglong',
+  'longlonglonglonglonglonglonglong'
+}
+NEST longstr 8 {
+  outer: [
+    'long',
+    'longlong',
+    'longlonglong',
+    'longlonglonglong',
+    'longlonglonglonglong',
+    'longlonglonglonglonglong',
+    'longlonglonglonglonglonglong',
+    'longlonglonglonglonglonglonglong'
+  ]
+}
+SPEC longstr 8
+ARR longstr 12 [
+  'long',
+  'longlong',
+  'longlonglong',
+  'longlonglonglong',
+  'longlonglonglonglong',
+  'longlonglonglonglonglong',
+  'longlonglonglonglonglonglong',
+  'longlonglonglonglonglonglonglong',
+  'longlonglonglonglonglonglonglonglong',
+  'longlonglonglonglonglonglonglonglonglong',
+  'longlonglonglonglonglonglonglonglonglonglong',
+  'longlonglonglonglonglonglonglonglonglonglonglong'
+]
+OBJ longstr 12 {
+  k0: 'long',
+  k1: 'longlong',
+  k2: 'longlonglong',
+  k3: 'longlonglonglong',
+  k4: 'longlonglonglonglong',
+  k5: 'longlonglonglonglonglong',
+  k6: 'longlonglonglonglonglonglong',
+  k7: 'longlonglonglonglonglonglonglong',
+  k8: 'longlonglonglonglonglonglonglonglong',
+  k9: 'longlonglonglonglonglonglonglonglonglong',
+  k10: 'longlonglonglonglonglonglonglonglonglonglong',
+  k11: 'longlonglonglonglonglonglonglonglonglonglonglong'
+}
+MAP longstr 12 Map(12) {
+  'k0' => 'long',
+  'k1' => 'longlong',
+  'k2' => 'longlonglong',
+  'k3' => 'longlonglonglong',
+  'k4' => 'longlonglonglonglong',
+  'k5' => 'longlonglonglonglonglong',
+  'k6' => 'longlonglonglonglonglonglong',
+  'k7' => 'longlonglonglonglonglonglonglong',
+  'k8' => 'longlonglonglonglonglonglonglonglong',
+  'k9' => 'longlonglonglonglonglonglonglonglonglong',
+  'k10' => 'longlonglonglonglonglonglonglonglonglonglong',
+  'k11' => 'longlonglonglonglonglonglonglonglonglonglonglong'
+}
+SET longstr 12 Set(12) {
+  'long',
+  'longlong',
+  'longlonglong',
+  'longlonglonglong',
+  'longlonglonglonglong',
+  'longlonglonglonglonglong',
+  'longlonglonglonglonglonglong',
+  'longlonglonglonglonglonglonglong',
+  'longlonglonglonglonglonglonglonglong',
+  'longlonglonglonglonglonglonglonglonglong',
+  'longlonglonglonglonglonglonglonglonglonglong',
+  'longlonglonglonglonglonglonglonglonglonglonglong'
+}
+NEST longstr 12 {
+  outer: [
+    'long',
+    'longlong',
+    'longlonglong',
+    'longlonglonglong',
+    'longlonglonglonglong',
+    'longlonglonglonglonglong',
+    'longlonglonglonglonglonglong',
+    'longlonglonglonglonglonglonglong',
+    'longlonglonglonglonglonglonglonglong',
+    'longlonglonglonglonglonglonglonglonglong',
+    'longlonglonglonglonglonglonglonglonglonglong',
+    'longlonglonglonglonglonglonglonglonglonglonglong'
+  ]
+}
+SPEC longstr 12
+ARR longstr 20 [
+  'long',
+  'longlong',
+  'longlonglong',
+  'longlonglonglong',
+  'longlonglonglonglong',
+  'longlonglonglonglonglong',
+  'longlonglonglonglonglonglong',
+  'longlonglonglonglonglonglonglong',
+  'longlonglonglonglonglonglonglonglong',
+  'longlonglonglonglonglonglonglonglonglong',
+  'longlonglonglonglonglonglonglonglonglonglong',
+  'longlonglonglonglonglonglonglonglonglonglonglong',
+  'longlonglonglonglonglonglonglonglonglonglonglonglong',
+  'longlonglonglonglonglonglonglonglonglonglonglonglonglong',
+  'longlonglonglonglonglonglonglonglonglonglonglonglonglonglong',
+  'longlonglonglonglonglonglonglonglonglonglonglonglonglonglonglong',
+  'longlonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglong',
+  'longlonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglong',
+  'longlonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglong',
+  'longlonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglong'
+]
+OBJ longstr 20 {
+  k0: 'long',
+  k1: 'longlong',
+  k2: 'longlonglong',
+  k3: 'longlonglonglong',
+  k4: 'longlonglonglonglong',
+  k5: 'longlonglonglonglonglong',
+  k6: 'longlonglonglonglonglonglong',
+  k7: 'longlonglonglonglonglonglonglong',
+  k8: 'longlonglonglonglonglonglonglonglong',
+  k9: 'longlonglonglonglonglonglonglonglonglong',
+  k10: 'longlonglonglonglonglonglonglonglonglonglong',
+  k11: 'longlonglonglonglonglonglonglonglonglonglonglong',
+  k12: 'longlonglonglonglonglonglonglonglonglonglonglonglong',
+  k13: 'longlonglonglonglonglonglonglonglonglonglonglonglonglong',
+  k14: 'longlonglonglonglonglonglonglonglonglonglonglonglonglonglong',
+  k15: 'longlonglonglonglonglonglonglonglonglonglonglonglonglonglonglong',
+  k16: 'longlonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglong',
+  k17: 'longlonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglong',
+  k18: 'longlonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglong',
+  k19: 'longlonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglong'
+}
+MAP longstr 20 Map(20) {
+  'k0' => 'long',
+  'k1' => 'longlong',
+  'k2' => 'longlonglong',
+  'k3' => 'longlonglonglong',
+  'k4' => 'longlonglonglonglong',
+  'k5' => 'longlonglonglonglonglong',
+  'k6' => 'longlonglonglonglonglonglong',
+  'k7' => 'longlonglonglonglonglonglonglong',
+  'k8' => 'longlonglonglonglonglonglonglonglong',
+  'k9' => 'longlonglonglonglonglonglonglonglonglong',
+  'k10' => 'longlonglonglonglonglonglonglonglonglonglong',
+  'k11' => 'longlonglonglonglonglonglonglonglonglonglonglong',
+  'k12' => 'longlonglonglonglonglonglonglonglonglonglonglonglong',
+  'k13' => 'longlonglonglonglonglonglonglonglonglonglonglonglonglong',
+  'k14' => 'longlonglonglonglonglonglonglonglonglonglonglonglonglonglong',
+  'k15' => 'longlonglonglonglonglonglonglonglonglonglonglonglonglonglonglong',
+  'k16' => 'longlonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglong',
+  'k17' => 'longlonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglong',
+  'k18' => 'longlonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglong',
+  'k19' => 'longlonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglong'
+}
+SET longstr 20 Set(20) {
+  'long',
+  'longlong',
+  'longlonglong',
+  'longlonglonglong',
+  'longlonglonglonglong',
+  'longlonglonglonglonglong',
+  'longlonglonglonglonglonglong',
+  'longlonglonglonglonglonglonglong',
+  'longlonglonglonglonglonglonglonglong',
+  'longlonglonglonglonglonglonglonglonglong',
+  'longlonglonglonglonglonglonglonglonglonglong',
+  'longlonglonglonglonglonglonglonglonglonglonglong',
+  'longlonglonglonglonglonglonglonglonglonglonglonglong',
+  'longlonglonglonglonglonglonglonglonglonglonglonglonglong',
+  'longlonglonglonglonglonglonglonglonglonglonglonglonglonglong',
+  'longlonglonglonglonglonglonglonglonglonglonglonglonglonglonglong',
+  'longlonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglong',
+  'longlonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglong',
+  'longlonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglong',
+  'longlonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglong'
+}
+NEST longstr 20 {
+  outer: [
+    'long',
+    'longlong',
+    'longlonglong',
+    'longlonglonglong',
+    'longlonglonglonglong',
+    'longlonglonglonglonglong',
+    'longlonglonglonglonglonglong',
+    'longlonglonglonglonglonglonglong',
+    'longlonglonglonglonglonglonglonglong',
+    'longlonglonglonglonglonglonglonglonglong',
+    'longlonglonglonglonglonglonglonglonglonglong',
+    'longlonglonglonglonglonglonglonglonglonglonglong',
+    'longlonglonglonglonglonglonglonglonglonglonglonglong',
+    'longlonglonglonglonglonglonglonglonglonglonglonglonglong',
+    'longlonglonglonglonglonglonglonglonglonglonglonglonglonglong',
+    'longlonglonglonglonglonglonglonglonglonglonglonglonglonglonglong',
+    'longlonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglong',
+    'longlonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglong',
+    'longlonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglong',
+    'longlonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglong'
+  ]
+}
+SPEC longstr 20
+ARR bool 0 []
+OBJ bool 0 {}
+MAP bool 0 Map(0) {}
+SET bool 0 Set(0) {}
+NEST bool 0 { outer: [] }
+SPEC bool 0
+ARR bool 1 [ true ]
+OBJ bool 1 { k0: true }
+MAP bool 1 Map(1) { 'k0' => true }
+SET bool 1 Set(1) { true }
+NEST bool 1 { outer: [ true ] }
+SPEC bool 1
+ARR bool 2 [ true, false ]
+OBJ bool 2 { k0: true, k1: false }
+MAP bool 2 Map(2) { 'k0' => true, 'k1' => false }
+SET bool 2 Set(2) { true, false }
+NEST bool 2 { outer: [ true, false ] }
+SPEC bool 2
+ARR bool 3 [ true, false, true ]
+OBJ bool 3 { k0: true, k1: false, k2: true }
+MAP bool 3 Map(3) { 'k0' => true, 'k1' => false, 'k2' => true }
+SET bool 3 Set(2) { true, false }
+NEST bool 3 { outer: [ true, false, true ] }
+SPEC bool 3
+ARR bool 5 [ true, false, true, false, true ]
+OBJ bool 5 { k0: true, k1: false, k2: true, k3: false, k4: true }
+MAP bool 5 Map(5) {
+  'k0' => true,
+  'k1' => false,
+  'k2' => true,
+  'k3' => false,
+  'k4' => true
+}
+SET bool 5 Set(2) { true, false }
+NEST bool 5 { outer: [ true, false, true, false, true ] }
+SPEC bool 5
+ARR bool 6 [ true, false, true, false, true, false ]
+OBJ bool 6 { k0: true, k1: false, k2: true, k3: false, k4: true, k5: false }
+MAP bool 6 Map(6) {
+  'k0' => true,
+  'k1' => false,
+  'k2' => true,
+  'k3' => false,
+  'k4' => true,
+  'k5' => false
+}
+SET bool 6 Set(2) { true, false }
+NEST bool 6 { outer: [ true, false, true, false, true, false ] }
+SPEC bool 6
+ARR bool 7 [
+  true, false,
+  true, false,
+  true, false,
+  true
+]
+OBJ bool 7 {
+  k0: true,
+  k1: false,
+  k2: true,
+  k3: false,
+  k4: true,
+  k5: false,
+  k6: true
+}
+MAP bool 7 Map(7) {
+  'k0' => true,
+  'k1' => false,
+  'k2' => true,
+  'k3' => false,
+  'k4' => true,
+  'k5' => false,
+  'k6' => true
+}
+SET bool 7 Set(2) { true, false }
+NEST bool 7 {
+  outer: [
+    true, false,
+    true, false,
+    true, false,
+    true
+  ]
+}
+SPEC bool 7
+ARR bool 8 [
+  true, false,
+  true, false,
+  true, false,
+  true, false
+]
+OBJ bool 8 {
+  k0: true,
+  k1: false,
+  k2: true,
+  k3: false,
+  k4: true,
+  k5: false,
+  k6: true,
+  k7: false
+}
+MAP bool 8 Map(8) {
+  'k0' => true,
+  'k1' => false,
+  'k2' => true,
+  'k3' => false,
+  'k4' => true,
+  'k5' => false,
+  'k6' => true,
+  'k7' => false
+}
+SET bool 8 Set(2) { true, false }
+NEST bool 8 {
+  outer: [
+    true, false,
+    true, false,
+    true, false,
+    true, false
+  ]
+}
+SPEC bool 8
+ARR bool 12 [
+  true,  false, true,
+  false, true,  false,
+  true,  false, true,
+  false, true,  false
+]
+OBJ bool 12 {
+  k0: true,
+  k1: false,
+  k2: true,
+  k3: false,
+  k4: true,
+  k5: false,
+  k6: true,
+  k7: false,
+  k8: true,
+  k9: false,
+  k10: true,
+  k11: false
+}
+MAP bool 12 Map(12) {
+  'k0' => true,
+  'k1' => false,
+  'k2' => true,
+  'k3' => false,
+  'k4' => true,
+  'k5' => false,
+  'k6' => true,
+  'k7' => false,
+  'k8' => true,
+  'k9' => false,
+  'k10' => true,
+  'k11' => false
+}
+SET bool 12 Set(2) { true, false }
+NEST bool 12 {
+  outer: [
+    true,  false, true,
+    false, true,  false,
+    true,  false, true,
+    false, true,  false
+  ]
+}
+SPEC bool 12
+ARR bool 20 [
+  true, false, true, false,
+  true, false, true, false,
+  true, false, true, false,
+  true, false, true, false,
+  true, false, true, false
+]
+OBJ bool 20 {
+  k0: true,
+  k1: false,
+  k2: true,
+  k3: false,
+  k4: true,
+  k5: false,
+  k6: true,
+  k7: false,
+  k8: true,
+  k9: false,
+  k10: true,
+  k11: false,
+  k12: true,
+  k13: false,
+  k14: true,
+  k15: false,
+  k16: true,
+  k17: false,
+  k18: true,
+  k19: false
+}
+MAP bool 20 Map(20) {
+  'k0' => true,
+  'k1' => false,
+  'k2' => true,
+  'k3' => false,
+  'k4' => true,
+  'k5' => false,
+  'k6' => true,
+  'k7' => false,
+  'k8' => true,
+  'k9' => false,
+  'k10' => true,
+  'k11' => false,
+  'k12' => true,
+  'k13' => false,
+  'k14' => true,
+  'k15' => false,
+  'k16' => true,
+  'k17' => false,
+  'k18' => true,
+  'k19' => false
+}
+SET bool 20 Set(2) { true, false }
+NEST bool 20 {
+  outer: [
+    true, false, true, false,
+    true, false, true, false,
+    true, false, true, false,
+    true, false, true, false,
+    true, false, true, false
+  ]
+}
+SPEC bool 20
+ARR nul 0 []
+OBJ nul 0 {}
+MAP nul 0 Map(0) {}
+SET nul 0 Set(0) {}
+NEST nul 0 { outer: [] }
+SPEC nul 0
+ARR nul 1 [ null ]
+OBJ nul 1 { k0: null }
+MAP nul 1 Map(1) { 'k0' => null }
+SET nul 1 Set(1) { null }
+NEST nul 1 { outer: [ null ] }
+SPEC nul 1
+ARR nul 2 [ null, null ]
+OBJ nul 2 { k0: null, k1: null }
+MAP nul 2 Map(2) { 'k0' => null, 'k1' => null }
+SET nul 2 Set(1) { null }
+NEST nul 2 { outer: [ null, null ] }
+SPEC nul 2
+ARR nul 3 [ null, null, null ]
+OBJ nul 3 { k0: null, k1: null, k2: null }
+MAP nul 3 Map(3) { 'k0' => null, 'k1' => null, 'k2' => null }
+SET nul 3 Set(1) { null }
+NEST nul 3 { outer: [ null, null, null ] }
+SPEC nul 3
+ARR nul 5 [ null, null, null, null, null ]
+OBJ nul 5 { k0: null, k1: null, k2: null, k3: null, k4: null }
+MAP nul 5 Map(5) {
+  'k0' => null,
+  'k1' => null,
+  'k2' => null,
+  'k3' => null,
+  'k4' => null
+}
+SET nul 5 Set(1) { null }
+NEST nul 5 { outer: [ null, null, null, null, null ] }
+SPEC nul 5
+ARR nul 6 [ null, null, null, null, null, null ]
+OBJ nul 6 { k0: null, k1: null, k2: null, k3: null, k4: null, k5: null }
+MAP nul 6 Map(6) {
+  'k0' => null,
+  'k1' => null,
+  'k2' => null,
+  'k3' => null,
+  'k4' => null,
+  'k5' => null
+}
+SET nul 6 Set(1) { null }
+NEST nul 6 { outer: [ null, null, null, null, null, null ] }
+SPEC nul 6
+ARR nul 7 [
+  null, null,
+  null, null,
+  null, null,
+  null
+]
+OBJ nul 7 {
+  k0: null,
+  k1: null,
+  k2: null,
+  k3: null,
+  k4: null,
+  k5: null,
+  k6: null
+}
+MAP nul 7 Map(7) {
+  'k0' => null,
+  'k1' => null,
+  'k2' => null,
+  'k3' => null,
+  'k4' => null,
+  'k5' => null,
+  'k6' => null
+}
+SET nul 7 Set(1) { null }
+NEST nul 7 {
+  outer: [
+    null, null,
+    null, null,
+    null, null,
+    null
+  ]
+}
+SPEC nul 7
+ARR nul 8 [
+  null, null, null,
+  null, null, null,
+  null, null
+]
+OBJ nul 8 {
+  k0: null,
+  k1: null,
+  k2: null,
+  k3: null,
+  k4: null,
+  k5: null,
+  k6: null,
+  k7: null
+}
+MAP nul 8 Map(8) {
+  'k0' => null,
+  'k1' => null,
+  'k2' => null,
+  'k3' => null,
+  'k4' => null,
+  'k5' => null,
+  'k6' => null,
+  'k7' => null
+}
+SET nul 8 Set(1) { null }
+NEST nul 8 {
+  outer: [
+    null, null, null,
+    null, null, null,
+    null, null
+  ]
+}
+SPEC nul 8
+ARR nul 12 [
+  null, null, null,
+  null, null, null,
+  null, null, null,
+  null, null, null
+]
+OBJ nul 12 {
+  k0: null,
+  k1: null,
+  k2: null,
+  k3: null,
+  k4: null,
+  k5: null,
+  k6: null,
+  k7: null,
+  k8: null,
+  k9: null,
+  k10: null,
+  k11: null
+}
+MAP nul 12 Map(12) {
+  'k0' => null,
+  'k1' => null,
+  'k2' => null,
+  'k3' => null,
+  'k4' => null,
+  'k5' => null,
+  'k6' => null,
+  'k7' => null,
+  'k8' => null,
+  'k9' => null,
+  'k10' => null,
+  'k11' => null
+}
+SET nul 12 Set(1) { null }
+NEST nul 12 {
+  outer: [
+    null, null, null,
+    null, null, null,
+    null, null, null,
+    null, null, null
+  ]
+}
+SPEC nul 12
+ARR nul 20 [
+  null, null, null, null,
+  null, null, null, null,
+  null, null, null, null,
+  null, null, null, null,
+  null, null, null, null
+]
+OBJ nul 20 {
+  k0: null,
+  k1: null,
+  k2: null,
+  k3: null,
+  k4: null,
+  k5: null,
+  k6: null,
+  k7: null,
+  k8: null,
+  k9: null,
+  k10: null,
+  k11: null,
+  k12: null,
+  k13: null,
+  k14: null,
+  k15: null,
+  k16: null,
+  k17: null,
+  k18: null,
+  k19: null
+}
+MAP nul 20 Map(20) {
+  'k0' => null,
+  'k1' => null,
+  'k2' => null,
+  'k3' => null,
+  'k4' => null,
+  'k5' => null,
+  'k6' => null,
+  'k7' => null,
+  'k8' => null,
+  'k9' => null,
+  'k10' => null,
+  'k11' => null,
+  'k12' => null,
+  'k13' => null,
+  'k14' => null,
+  'k15' => null,
+  'k16' => null,
+  'k17' => null,
+  'k18' => null,
+  'k19' => null
+}
+SET nul 20 Set(1) { null }
+NEST nul 20 {
+  outer: [
+    null, null, null, null,
+    null, null, null, null,
+    null, null, null, null,
+    null, null, null, null,
+    null, null, null, null
+  ]
+}
+SPEC nul 20
+ARR undef 0 []
+OBJ undef 0 {}
+MAP undef 0 Map(0) {}
+SET undef 0 Set(0) {}
+NEST undef 0 { outer: [] }
+SPEC undef 0
+ARR undef 1 [ undefined ]
+OBJ undef 1 { k0: undefined }
+MAP undef 1 Map(1) { 'k0' => undefined }
+SET undef 1 Set(1) { undefined }
+NEST undef 1 { outer: [ undefined ] }
+SPEC undef 1
+ARR undef 2 [ undefined, undefined ]
+OBJ undef 2 { k0: undefined, k1: undefined }
+MAP undef 2 Map(2) { 'k0' => undefined, 'k1' => undefined }
+SET undef 2 Set(1) { undefined }
+NEST undef 2 { outer: [ undefined, undefined ] }
+SPEC undef 2
+ARR undef 3 [ undefined, undefined, undefined ]
+OBJ undef 3 { k0: undefined, k1: undefined, k2: undefined }
+MAP undef 3 Map(3) { 'k0' => undefined, 'k1' => undefined, 'k2' => undefined }
+SET undef 3 Set(1) { undefined }
+NEST undef 3 { outer: [ undefined, undefined, undefined ] }
+SPEC undef 3
+ARR undef 5 [ undefined, undefined, undefined, undefined, undefined ]
+OBJ undef 5 {
+  k0: undefined,
+  k1: undefined,
+  k2: undefined,
+  k3: undefined,
+  k4: undefined
+}
+MAP undef 5 Map(5) {
+  'k0' => undefined,
+  'k1' => undefined,
+  'k2' => undefined,
+  'k3' => undefined,
+  'k4' => undefined
+}
+SET undef 5 Set(1) { undefined }
+NEST undef 5 { outer: [ undefined, undefined, undefined, undefined, undefined ] }
+SPEC undef 5
+ARR undef 6 [ undefined, undefined, undefined, undefined, undefined, undefined ]
+OBJ undef 6 {
+  k0: undefined,
+  k1: undefined,
+  k2: undefined,
+  k3: undefined,
+  k4: undefined,
+  k5: undefined
+}
+MAP undef 6 Map(6) {
+  'k0' => undefined,
+  'k1' => undefined,
+  'k2' => undefined,
+  'k3' => undefined,
+  'k4' => undefined,
+  'k5' => undefined
+}
+SET undef 6 Set(1) { undefined }
+NEST undef 6 {
+  outer: [ undefined, undefined, undefined, undefined, undefined, undefined ]
+}
+SPEC undef 6
+ARR undef 7 [
+  undefined,
+  undefined,
+  undefined,
+  undefined,
+  undefined,
+  undefined,
+  undefined
+]
+OBJ undef 7 {
+  k0: undefined,
+  k1: undefined,
+  k2: undefined,
+  k3: undefined,
+  k4: undefined,
+  k5: undefined,
+  k6: undefined
+}
+MAP undef 7 Map(7) {
+  'k0' => undefined,
+  'k1' => undefined,
+  'k2' => undefined,
+  'k3' => undefined,
+  'k4' => undefined,
+  'k5' => undefined,
+  'k6' => undefined
+}
+SET undef 7 Set(1) { undefined }
+NEST undef 7 {
+  outer: [
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined
+  ]
+}
+SPEC undef 7
+ARR undef 8 [
+  undefined, undefined,
+  undefined, undefined,
+  undefined, undefined,
+  undefined, undefined
+]
+OBJ undef 8 {
+  k0: undefined,
+  k1: undefined,
+  k2: undefined,
+  k3: undefined,
+  k4: undefined,
+  k5: undefined,
+  k6: undefined,
+  k7: undefined
+}
+MAP undef 8 Map(8) {
+  'k0' => undefined,
+  'k1' => undefined,
+  'k2' => undefined,
+  'k3' => undefined,
+  'k4' => undefined,
+  'k5' => undefined,
+  'k6' => undefined,
+  'k7' => undefined
+}
+SET undef 8 Set(1) { undefined }
+NEST undef 8 {
+  outer: [
+    undefined, undefined,
+    undefined, undefined,
+    undefined, undefined,
+    undefined, undefined
+  ]
+}
+SPEC undef 8
+ARR undef 12 [
+  undefined, undefined,
+  undefined, undefined,
+  undefined, undefined,
+  undefined, undefined,
+  undefined, undefined,
+  undefined, undefined
+]
+OBJ undef 12 {
+  k0: undefined,
+  k1: undefined,
+  k2: undefined,
+  k3: undefined,
+  k4: undefined,
+  k5: undefined,
+  k6: undefined,
+  k7: undefined,
+  k8: undefined,
+  k9: undefined,
+  k10: undefined,
+  k11: undefined
+}
+MAP undef 12 Map(12) {
+  'k0' => undefined,
+  'k1' => undefined,
+  'k2' => undefined,
+  'k3' => undefined,
+  'k4' => undefined,
+  'k5' => undefined,
+  'k6' => undefined,
+  'k7' => undefined,
+  'k8' => undefined,
+  'k9' => undefined,
+  'k10' => undefined,
+  'k11' => undefined
+}
+SET undef 12 Set(1) { undefined }
+NEST undef 12 {
+  outer: [
+    undefined, undefined,
+    undefined, undefined,
+    undefined, undefined,
+    undefined, undefined,
+    undefined, undefined,
+    undefined, undefined
+  ]
+}
+SPEC undef 12
+ARR undef 20 [
+  undefined, undefined, undefined,
+  undefined, undefined, undefined,
+  undefined, undefined, undefined,
+  undefined, undefined, undefined,
+  undefined, undefined, undefined,
+  undefined, undefined, undefined,
+  undefined, undefined
+]
+OBJ undef 20 {
+  k0: undefined,
+  k1: undefined,
+  k2: undefined,
+  k3: undefined,
+  k4: undefined,
+  k5: undefined,
+  k6: undefined,
+  k7: undefined,
+  k8: undefined,
+  k9: undefined,
+  k10: undefined,
+  k11: undefined,
+  k12: undefined,
+  k13: undefined,
+  k14: undefined,
+  k15: undefined,
+  k16: undefined,
+  k17: undefined,
+  k18: undefined,
+  k19: undefined
+}
+MAP undef 20 Map(20) {
+  'k0' => undefined,
+  'k1' => undefined,
+  'k2' => undefined,
+  'k3' => undefined,
+  'k4' => undefined,
+  'k5' => undefined,
+  'k6' => undefined,
+  'k7' => undefined,
+  'k8' => undefined,
+  'k9' => undefined,
+  'k10' => undefined,
+  'k11' => undefined,
+  'k12' => undefined,
+  'k13' => undefined,
+  'k14' => undefined,
+  'k15' => undefined,
+  'k16' => undefined,
+  'k17' => undefined,
+  'k18' => undefined,
+  'k19' => undefined
+}
+SET undef 20 Set(1) { undefined }
+NEST undef 20 {
+  outer: [
+    undefined, undefined, undefined,
+    undefined, undefined, undefined,
+    undefined, undefined, undefined,
+    undefined, undefined, undefined,
+    undefined, undefined, undefined,
+    undefined, undefined, undefined,
+    undefined, undefined
+  ]
+}
+SPEC undef 20
+ARR obj 0 []
+OBJ obj 0 {}
+MAP obj 0 Map(0) {}
+SET obj 0 Set(0) {}
+NEST obj 0 { outer: [] }
+SPEC obj 0
+ARR obj 1 [ { k: 0 } ]
+OBJ obj 1 { k0: { k: 0 } }
+MAP obj 1 Map(1) { 'k0' => { k: 0 } }
+SET obj 1 Set(1) { { k: 0 } }
+NEST obj 1 { outer: [ { k: 0 } ] }
+SPEC obj 1
+ARR obj 2 [ { k: 0 }, { k: 1 } ]
+OBJ obj 2 { k0: { k: 0 }, k1: { k: 1 } }
+MAP obj 2 Map(2) { 'k0' => { k: 0 }, 'k1' => { k: 1 } }
+SET obj 2 Set(2) { { k: 0 }, { k: 1 } }
+NEST obj 2 { outer: [ { k: 0 }, { k: 1 } ] }
+SPEC obj 2
+ARR obj 3 [ { k: 0 }, { k: 1 }, { k: 2 } ]
+OBJ obj 3 { k0: { k: 0 }, k1: { k: 1 }, k2: { k: 2 } }
+MAP obj 3 Map(3) { 'k0' => { k: 0 }, 'k1' => { k: 1 }, 'k2' => { k: 2 } }
+SET obj 3 Set(3) { { k: 0 }, { k: 1 }, { k: 2 } }
+NEST obj 3 { outer: [ { k: 0 }, { k: 1 }, { k: 2 } ] }
+SPEC obj 3
+ARR obj 5 [ { k: 0 }, { k: 1 }, { k: 2 }, { k: 3 }, { k: 4 } ]
+OBJ obj 5 {
+  k0: { k: 0 },
+  k1: { k: 1 },
+  k2: { k: 2 },
+  k3: { k: 3 },
+  k4: { k: 4 }
+}
+MAP obj 5 Map(5) {
+  'k0' => { k: 0 },
+  'k1' => { k: 1 },
+  'k2' => { k: 2 },
+  'k3' => { k: 3 },
+  'k4' => { k: 4 }
+}
+SET obj 5 Set(5) { { k: 0 }, { k: 1 }, { k: 2 }, { k: 3 }, { k: 4 } }
+NEST obj 5 { outer: [ { k: 0 }, { k: 1 }, { k: 2 }, { k: 3 }, { k: 4 } ] }
+SPEC obj 5
+ARR obj 6 [ { k: 0 }, { k: 1 }, { k: 2 }, { k: 3 }, { k: 4 }, { k: 5 } ]
+OBJ obj 6 {
+  k0: { k: 0 },
+  k1: { k: 1 },
+  k2: { k: 2 },
+  k3: { k: 3 },
+  k4: { k: 4 },
+  k5: { k: 5 }
+}
+MAP obj 6 Map(6) {
+  'k0' => { k: 0 },
+  'k1' => { k: 1 },
+  'k2' => { k: 2 },
+  'k3' => { k: 3 },
+  'k4' => { k: 4 },
+  'k5' => { k: 5 }
+}
+SET obj 6 Set(6) { { k: 0 }, { k: 1 }, { k: 2 }, { k: 3 }, { k: 4 }, { k: 5 } }
+NEST obj 6 {
+  outer: [ { k: 0 }, { k: 1 }, { k: 2 }, { k: 3 }, { k: 4 }, { k: 5 } ]
+}
+SPEC obj 6
+ARR obj 7 [
+  { k: 0 }, { k: 1 },
+  { k: 2 }, { k: 3 },
+  { k: 4 }, { k: 5 },
+  { k: 6 }
+]
+OBJ obj 7 {
+  k0: { k: 0 },
+  k1: { k: 1 },
+  k2: { k: 2 },
+  k3: { k: 3 },
+  k4: { k: 4 },
+  k5: { k: 5 },
+  k6: { k: 6 }
+}
+MAP obj 7 Map(7) {
+  'k0' => { k: 0 },
+  'k1' => { k: 1 },
+  'k2' => { k: 2 },
+  'k3' => { k: 3 },
+  'k4' => { k: 4 },
+  'k5' => { k: 5 },
+  'k6' => { k: 6 }
+}
+SET obj 7 Set(7) {
+  { k: 0 },
+  { k: 1 },
+  { k: 2 },
+  { k: 3 },
+  { k: 4 },
+  { k: 5 },
+  { k: 6 }
+}
+NEST obj 7 {
+  outer: [
+    { k: 0 }, { k: 1 },
+    { k: 2 }, { k: 3 },
+    { k: 4 }, { k: 5 },
+    { k: 6 }
+  ]
+}
+SPEC obj 7
+ARR obj 8 [
+  { k: 0 }, { k: 1 },
+  { k: 2 }, { k: 3 },
+  { k: 4 }, { k: 5 },
+  { k: 6 }, { k: 7 }
+]
+OBJ obj 8 {
+  k0: { k: 0 },
+  k1: { k: 1 },
+  k2: { k: 2 },
+  k3: { k: 3 },
+  k4: { k: 4 },
+  k5: { k: 5 },
+  k6: { k: 6 },
+  k7: { k: 7 }
+}
+MAP obj 8 Map(8) {
+  'k0' => { k: 0 },
+  'k1' => { k: 1 },
+  'k2' => { k: 2 },
+  'k3' => { k: 3 },
+  'k4' => { k: 4 },
+  'k5' => { k: 5 },
+  'k6' => { k: 6 },
+  'k7' => { k: 7 }
+}
+SET obj 8 Set(8) {
+  { k: 0 },
+  { k: 1 },
+  { k: 2 },
+  { k: 3 },
+  { k: 4 },
+  { k: 5 },
+  { k: 6 },
+  { k: 7 }
+}
+NEST obj 8 {
+  outer: [
+    { k: 0 }, { k: 1 },
+    { k: 2 }, { k: 3 },
+    { k: 4 }, { k: 5 },
+    { k: 6 }, { k: 7 }
+  ]
+}
+SPEC obj 8
+ARR obj 12 [
+  { k: 0 },  { k: 1 },
+  { k: 2 },  { k: 3 },
+  { k: 4 },  { k: 5 },
+  { k: 6 },  { k: 7 },
+  { k: 8 },  { k: 9 },
+  { k: 10 }, { k: 11 }
+]
+OBJ obj 12 {
+  k0: { k: 0 },
+  k1: { k: 1 },
+  k2: { k: 2 },
+  k3: { k: 3 },
+  k4: { k: 4 },
+  k5: { k: 5 },
+  k6: { k: 6 },
+  k7: { k: 7 },
+  k8: { k: 8 },
+  k9: { k: 9 },
+  k10: { k: 10 },
+  k11: { k: 11 }
+}
+MAP obj 12 Map(12) {
+  'k0' => { k: 0 },
+  'k1' => { k: 1 },
+  'k2' => { k: 2 },
+  'k3' => { k: 3 },
+  'k4' => { k: 4 },
+  'k5' => { k: 5 },
+  'k6' => { k: 6 },
+  'k7' => { k: 7 },
+  'k8' => { k: 8 },
+  'k9' => { k: 9 },
+  'k10' => { k: 10 },
+  'k11' => { k: 11 }
+}
+SET obj 12 Set(12) {
+  { k: 0 },
+  { k: 1 },
+  { k: 2 },
+  { k: 3 },
+  { k: 4 },
+  { k: 5 },
+  { k: 6 },
+  { k: 7 },
+  { k: 8 },
+  { k: 9 },
+  { k: 10 },
+  { k: 11 }
+}
+NEST obj 12 {
+  outer: [
+    { k: 0 },  { k: 1 },
+    { k: 2 },  { k: 3 },
+    { k: 4 },  { k: 5 },
+    { k: 6 },  { k: 7 },
+    { k: 8 },  { k: 9 },
+    { k: 10 }, { k: 11 }
+  ]
+}
+SPEC obj 12
+ARR obj 20 [
+  { k: 0 },  { k: 1 },  { k: 2 },
+  { k: 3 },  { k: 4 },  { k: 5 },
+  { k: 6 },  { k: 7 },  { k: 8 },
+  { k: 9 },  { k: 10 }, { k: 11 },
+  { k: 12 }, { k: 13 }, { k: 14 },
+  { k: 15 }, { k: 16 }, { k: 17 },
+  { k: 18 }, { k: 19 }
+]
+OBJ obj 20 {
+  k0: { k: 0 },
+  k1: { k: 1 },
+  k2: { k: 2 },
+  k3: { k: 3 },
+  k4: { k: 4 },
+  k5: { k: 5 },
+  k6: { k: 6 },
+  k7: { k: 7 },
+  k8: { k: 8 },
+  k9: { k: 9 },
+  k10: { k: 10 },
+  k11: { k: 11 },
+  k12: { k: 12 },
+  k13: { k: 13 },
+  k14: { k: 14 },
+  k15: { k: 15 },
+  k16: { k: 16 },
+  k17: { k: 17 },
+  k18: { k: 18 },
+  k19: { k: 19 }
+}
+MAP obj 20 Map(20) {
+  'k0' => { k: 0 },
+  'k1' => { k: 1 },
+  'k2' => { k: 2 },
+  'k3' => { k: 3 },
+  'k4' => { k: 4 },
+  'k5' => { k: 5 },
+  'k6' => { k: 6 },
+  'k7' => { k: 7 },
+  'k8' => { k: 8 },
+  'k9' => { k: 9 },
+  'k10' => { k: 10 },
+  'k11' => { k: 11 },
+  'k12' => { k: 12 },
+  'k13' => { k: 13 },
+  'k14' => { k: 14 },
+  'k15' => { k: 15 },
+  'k16' => { k: 16 },
+  'k17' => { k: 17 },
+  'k18' => { k: 18 },
+  'k19' => { k: 19 }
+}
+SET obj 20 Set(20) {
+  { k: 0 },
+  { k: 1 },
+  { k: 2 },
+  { k: 3 },
+  { k: 4 },
+  { k: 5 },
+  { k: 6 },
+  { k: 7 },
+  { k: 8 },
+  { k: 9 },
+  { k: 10 },
+  { k: 11 },
+  { k: 12 },
+  { k: 13 },
+  { k: 14 },
+  { k: 15 },
+  { k: 16 },
+  { k: 17 },
+  { k: 18 },
+  { k: 19 }
+}
+NEST obj 20 {
+  outer: [
+    { k: 0 },  { k: 1 },  { k: 2 },
+    { k: 3 },  { k: 4 },  { k: 5 },
+    { k: 6 },  { k: 7 },  { k: 8 },
+    { k: 9 },  { k: 10 }, { k: 11 },
+    { k: 12 }, { k: 13 }, { k: 14 },
+    { k: 15 }, { k: 16 }, { k: 17 },
+    { k: 18 }, { k: 19 }
+  ]
+}
+SPEC obj 20
+ARR arr 0 []
+OBJ arr 0 {}
+MAP arr 0 Map(0) {}
+SET arr 0 Set(0) {}
+NEST arr 0 { outer: [] }
+SPEC arr 0
+ARR arr 1 [ [ 0 ] ]
+OBJ arr 1 { k0: [ 0 ] }
+MAP arr 1 Map(1) { 'k0' => [ 0 ] }
+SET arr 1 Set(1) { [ 0 ] }
+NEST arr 1 { outer: [ [ 0 ] ] }
+SPEC arr 1
+ARR arr 2 [ [ 0 ], [ 1 ] ]
+OBJ arr 2 { k0: [ 0 ], k1: [ 1 ] }
+MAP arr 2 Map(2) { 'k0' => [ 0 ], 'k1' => [ 1 ] }
+SET arr 2 Set(2) { [ 0 ], [ 1 ] }
+NEST arr 2 { outer: [ [ 0 ], [ 1 ] ] }
+SPEC arr 2
+ARR arr 3 [ [ 0 ], [ 1 ], [ 2 ] ]
+OBJ arr 3 { k0: [ 0 ], k1: [ 1 ], k2: [ 2 ] }
+MAP arr 3 Map(3) { 'k0' => [ 0 ], 'k1' => [ 1 ], 'k2' => [ 2 ] }
+SET arr 3 Set(3) { [ 0 ], [ 1 ], [ 2 ] }
+NEST arr 3 { outer: [ [ 0 ], [ 1 ], [ 2 ] ] }
+SPEC arr 3
+ARR arr 5 [ [ 0 ], [ 1 ], [ 2 ], [ 3 ], [ 4 ] ]
+OBJ arr 5 { k0: [ 0 ], k1: [ 1 ], k2: [ 2 ], k3: [ 3 ], k4: [ 4 ] }
+MAP arr 5 Map(5) {
+  'k0' => [ 0 ],
+  'k1' => [ 1 ],
+  'k2' => [ 2 ],
+  'k3' => [ 3 ],
+  'k4' => [ 4 ]
+}
+SET arr 5 Set(5) { [ 0 ], [ 1 ], [ 2 ], [ 3 ], [ 4 ] }
+NEST arr 5 { outer: [ [ 0 ], [ 1 ], [ 2 ], [ 3 ], [ 4 ] ] }
+SPEC arr 5
+ARR arr 6 [ [ 0 ], [ 1 ], [ 2 ], [ 3 ], [ 4 ], [ 5 ] ]
+OBJ arr 6 { k0: [ 0 ], k1: [ 1 ], k2: [ 2 ], k3: [ 3 ], k4: [ 4 ], k5: [ 5 ] }
+MAP arr 6 Map(6) {
+  'k0' => [ 0 ],
+  'k1' => [ 1 ],
+  'k2' => [ 2 ],
+  'k3' => [ 3 ],
+  'k4' => [ 4 ],
+  'k5' => [ 5 ]
+}
+SET arr 6 Set(6) { [ 0 ], [ 1 ], [ 2 ], [ 3 ], [ 4 ], [ 5 ] }
+NEST arr 6 { outer: [ [ 0 ], [ 1 ], [ 2 ], [ 3 ], [ 4 ], [ 5 ] ] }
+SPEC arr 6
+ARR arr 7 [
+  [ 0 ], [ 1 ],
+  [ 2 ], [ 3 ],
+  [ 4 ], [ 5 ],
+  [ 6 ]
+]
+OBJ arr 7 {
+  k0: [ 0 ],
+  k1: [ 1 ],
+  k2: [ 2 ],
+  k3: [ 3 ],
+  k4: [ 4 ],
+  k5: [ 5 ],
+  k6: [ 6 ]
+}
+MAP arr 7 Map(7) {
+  'k0' => [ 0 ],
+  'k1' => [ 1 ],
+  'k2' => [ 2 ],
+  'k3' => [ 3 ],
+  'k4' => [ 4 ],
+  'k5' => [ 5 ],
+  'k6' => [ 6 ]
+}
+SET arr 7 Set(7) { [ 0 ], [ 1 ], [ 2 ], [ 3 ], [ 4 ], [ 5 ], [ 6 ] }
+NEST arr 7 {
+  outer: [
+    [ 0 ], [ 1 ],
+    [ 2 ], [ 3 ],
+    [ 4 ], [ 5 ],
+    [ 6 ]
+  ]
+}
+SPEC arr 7
+ARR arr 8 [
+  [ 0 ], [ 1 ],
+  [ 2 ], [ 3 ],
+  [ 4 ], [ 5 ],
+  [ 6 ], [ 7 ]
+]
+OBJ arr 8 {
+  k0: [ 0 ],
+  k1: [ 1 ],
+  k2: [ 2 ],
+  k3: [ 3 ],
+  k4: [ 4 ],
+  k5: [ 5 ],
+  k6: [ 6 ],
+  k7: [ 7 ]
+}
+MAP arr 8 Map(8) {
+  'k0' => [ 0 ],
+  'k1' => [ 1 ],
+  'k2' => [ 2 ],
+  'k3' => [ 3 ],
+  'k4' => [ 4 ],
+  'k5' => [ 5 ],
+  'k6' => [ 6 ],
+  'k7' => [ 7 ]
+}
+SET arr 8 Set(8) { [ 0 ], [ 1 ], [ 2 ], [ 3 ], [ 4 ], [ 5 ], [ 6 ], [ 7 ] }
+NEST arr 8 {
+  outer: [
+    [ 0 ], [ 1 ],
+    [ 2 ], [ 3 ],
+    [ 4 ], [ 5 ],
+    [ 6 ], [ 7 ]
+  ]
+}
+SPEC arr 8
+ARR arr 12 [
+  [ 0 ], [ 1 ],  [ 2 ],
+  [ 3 ], [ 4 ],  [ 5 ],
+  [ 6 ], [ 7 ],  [ 8 ],
+  [ 9 ], [ 10 ], [ 11 ]
+]
+OBJ arr 12 {
+  k0: [ 0 ],
+  k1: [ 1 ],
+  k2: [ 2 ],
+  k3: [ 3 ],
+  k4: [ 4 ],
+  k5: [ 5 ],
+  k6: [ 6 ],
+  k7: [ 7 ],
+  k8: [ 8 ],
+  k9: [ 9 ],
+  k10: [ 10 ],
+  k11: [ 11 ]
+}
+MAP arr 12 Map(12) {
+  'k0' => [ 0 ],
+  'k1' => [ 1 ],
+  'k2' => [ 2 ],
+  'k3' => [ 3 ],
+  'k4' => [ 4 ],
+  'k5' => [ 5 ],
+  'k6' => [ 6 ],
+  'k7' => [ 7 ],
+  'k8' => [ 8 ],
+  'k9' => [ 9 ],
+  'k10' => [ 10 ],
+  'k11' => [ 11 ]
+}
+SET arr 12 Set(12) {
+  [ 0 ],
+  [ 1 ],
+  [ 2 ],
+  [ 3 ],
+  [ 4 ],
+  [ 5 ],
+  [ 6 ],
+  [ 7 ],
+  [ 8 ],
+  [ 9 ],
+  [ 10 ],
+  [ 11 ]
+}
+NEST arr 12 {
+  outer: [
+    [ 0 ], [ 1 ],  [ 2 ],
+    [ 3 ], [ 4 ],  [ 5 ],
+    [ 6 ], [ 7 ],  [ 8 ],
+    [ 9 ], [ 10 ], [ 11 ]
+  ]
+}
+SPEC arr 12
+ARR arr 20 [
+  [ 0 ],  [ 1 ],  [ 2 ],
+  [ 3 ],  [ 4 ],  [ 5 ],
+  [ 6 ],  [ 7 ],  [ 8 ],
+  [ 9 ],  [ 10 ], [ 11 ],
+  [ 12 ], [ 13 ], [ 14 ],
+  [ 15 ], [ 16 ], [ 17 ],
+  [ 18 ], [ 19 ]
+]
+OBJ arr 20 {
+  k0: [ 0 ],
+  k1: [ 1 ],
+  k2: [ 2 ],
+  k3: [ 3 ],
+  k4: [ 4 ],
+  k5: [ 5 ],
+  k6: [ 6 ],
+  k7: [ 7 ],
+  k8: [ 8 ],
+  k9: [ 9 ],
+  k10: [ 10 ],
+  k11: [ 11 ],
+  k12: [ 12 ],
+  k13: [ 13 ],
+  k14: [ 14 ],
+  k15: [ 15 ],
+  k16: [ 16 ],
+  k17: [ 17 ],
+  k18: [ 18 ],
+  k19: [ 19 ]
+}
+MAP arr 20 Map(20) {
+  'k0' => [ 0 ],
+  'k1' => [ 1 ],
+  'k2' => [ 2 ],
+  'k3' => [ 3 ],
+  'k4' => [ 4 ],
+  'k5' => [ 5 ],
+  'k6' => [ 6 ],
+  'k7' => [ 7 ],
+  'k8' => [ 8 ],
+  'k9' => [ 9 ],
+  'k10' => [ 10 ],
+  'k11' => [ 11 ],
+  'k12' => [ 12 ],
+  'k13' => [ 13 ],
+  'k14' => [ 14 ],
+  'k15' => [ 15 ],
+  'k16' => [ 16 ],
+  'k17' => [ 17 ],
+  'k18' => [ 18 ],
+  'k19' => [ 19 ]
+}
+SET arr 20 Set(20) {
+  [ 0 ],
+  [ 1 ],
+  [ 2 ],
+  [ 3 ],
+  [ 4 ],
+  [ 5 ],
+  [ 6 ],
+  [ 7 ],
+  [ 8 ],
+  [ 9 ],
+  [ 10 ],
+  [ 11 ],
+  [ 12 ],
+  [ 13 ],
+  [ 14 ],
+  [ 15 ],
+  [ 16 ],
+  [ 17 ],
+  [ 18 ],
+  [ 19 ]
+}
+NEST arr 20 {
+  outer: [
+    [ 0 ],  [ 1 ],  [ 2 ],
+    [ 3 ],  [ 4 ],  [ 5 ],
+    [ 6 ],  [ 7 ],  [ 8 ],
+    [ 9 ],  [ 10 ], [ 11 ],
+    [ 12 ], [ 13 ], [ 14 ],
+    [ 15 ], [ 16 ], [ 17 ],
+    [ 18 ], [ 19 ]
+  ]
+}
+SPEC arr 20
+ARR nested 0 []
+OBJ nested 0 {}
+MAP nested 0 Map(0) {}
+SET nested 0 Set(0) {}
+NEST nested 0 { outer: [] }
+SPEC nested 0
+ARR nested 1 [ { a: { b: 0 } } ]
+OBJ nested 1 { k0: { a: { b: 0 } } }
+MAP nested 1 Map(1) { 'k0' => { a: { b: 0 } } }
+SET nested 1 Set(1) { { a: { b: 0 } } }
+NEST nested 1 { outer: [ { a: [Object] } ] }
+SPEC nested 1
+ARR nested 2 [ { a: { b: 0 } }, { a: { b: 1 } } ]
+OBJ nested 2 { k0: { a: { b: 0 } }, k1: { a: { b: 1 } } }
+MAP nested 2 Map(2) { 'k0' => { a: { b: 0 } }, 'k1' => { a: { b: 1 } } }
+SET nested 2 Set(2) { { a: { b: 0 } }, { a: { b: 1 } } }
+NEST nested 2 { outer: [ { a: [Object] }, { a: [Object] } ] }
+SPEC nested 2
+ARR nested 3 [ { a: { b: 0 } }, { a: { b: 1 } }, { a: { b: 2 } } ]
+OBJ nested 3 { k0: { a: { b: 0 } }, k1: { a: { b: 1 } }, k2: { a: { b: 2 } } }
+MAP nested 3 Map(3) {
+  'k0' => { a: { b: 0 } },
+  'k1' => { a: { b: 1 } },
+  'k2' => { a: { b: 2 } }
+}
+SET nested 3 Set(3) { { a: { b: 0 } }, { a: { b: 1 } }, { a: { b: 2 } } }
+NEST nested 3 { outer: [ { a: [Object] }, { a: [Object] }, { a: [Object] } ] }
+SPEC nested 3
+ARR nested 5 [
+  { a: { b: 0 } },
+  { a: { b: 1 } },
+  { a: { b: 2 } },
+  { a: { b: 3 } },
+  { a: { b: 4 } }
+]
+OBJ nested 5 {
+  k0: { a: { b: 0 } },
+  k1: { a: { b: 1 } },
+  k2: { a: { b: 2 } },
+  k3: { a: { b: 3 } },
+  k4: { a: { b: 4 } }
+}
+MAP nested 5 Map(5) {
+  'k0' => { a: { b: 0 } },
+  'k1' => { a: { b: 1 } },
+  'k2' => { a: { b: 2 } },
+  'k3' => { a: { b: 3 } },
+  'k4' => { a: { b: 4 } }
+}
+SET nested 5 Set(5) {
+  { a: { b: 0 } },
+  { a: { b: 1 } },
+  { a: { b: 2 } },
+  { a: { b: 3 } },
+  { a: { b: 4 } }
+}
+NEST nested 5 {
+  outer: [
+    { a: [Object] },
+    { a: [Object] },
+    { a: [Object] },
+    { a: [Object] },
+    { a: [Object] }
+  ]
+}
+SPEC nested 5
+ARR nested 6 [
+  { a: { b: 0 } },
+  { a: { b: 1 } },
+  { a: { b: 2 } },
+  { a: { b: 3 } },
+  { a: { b: 4 } },
+  { a: { b: 5 } }
+]
+OBJ nested 6 {
+  k0: { a: { b: 0 } },
+  k1: { a: { b: 1 } },
+  k2: { a: { b: 2 } },
+  k3: { a: { b: 3 } },
+  k4: { a: { b: 4 } },
+  k5: { a: { b: 5 } }
+}
+MAP nested 6 Map(6) {
+  'k0' => { a: { b: 0 } },
+  'k1' => { a: { b: 1 } },
+  'k2' => { a: { b: 2 } },
+  'k3' => { a: { b: 3 } },
+  'k4' => { a: { b: 4 } },
+  'k5' => { a: { b: 5 } }
+}
+SET nested 6 Set(6) {
+  { a: { b: 0 } },
+  { a: { b: 1 } },
+  { a: { b: 2 } },
+  { a: { b: 3 } },
+  { a: { b: 4 } },
+  { a: { b: 5 } }
+}
+NEST nested 6 {
+  outer: [
+    { a: [Object] },
+    { a: [Object] },
+    { a: [Object] },
+    { a: [Object] },
+    { a: [Object] },
+    { a: [Object] }
+  ]
+}
+SPEC nested 6
+ARR nested 7 [
+  { a: { b: 0 } },
+  { a: { b: 1 } },
+  { a: { b: 2 } },
+  { a: { b: 3 } },
+  { a: { b: 4 } },
+  { a: { b: 5 } },
+  { a: { b: 6 } }
+]
+OBJ nested 7 {
+  k0: { a: { b: 0 } },
+  k1: { a: { b: 1 } },
+  k2: { a: { b: 2 } },
+  k3: { a: { b: 3 } },
+  k4: { a: { b: 4 } },
+  k5: { a: { b: 5 } },
+  k6: { a: { b: 6 } }
+}
+MAP nested 7 Map(7) {
+  'k0' => { a: { b: 0 } },
+  'k1' => { a: { b: 1 } },
+  'k2' => { a: { b: 2 } },
+  'k3' => { a: { b: 3 } },
+  'k4' => { a: { b: 4 } },
+  'k5' => { a: { b: 5 } },
+  'k6' => { a: { b: 6 } }
+}
+SET nested 7 Set(7) {
+  { a: { b: 0 } },
+  { a: { b: 1 } },
+  { a: { b: 2 } },
+  { a: { b: 3 } },
+  { a: { b: 4 } },
+  { a: { b: 5 } },
+  { a: { b: 6 } }
+}
+NEST nested 7 {
+  outer: [
+    { a: [Object] },
+    { a: [Object] },
+    { a: [Object] },
+    { a: [Object] },
+    { a: [Object] },
+    { a: [Object] },
+    { a: [Object] }
+  ]
+}
+SPEC nested 7
+ARR nested 8 [
+  { a: { b: 0 } },
+  { a: { b: 1 } },
+  { a: { b: 2 } },
+  { a: { b: 3 } },
+  { a: { b: 4 } },
+  { a: { b: 5 } },
+  { a: { b: 6 } },
+  { a: { b: 7 } }
+]
+OBJ nested 8 {
+  k0: { a: { b: 0 } },
+  k1: { a: { b: 1 } },
+  k2: { a: { b: 2 } },
+  k3: { a: { b: 3 } },
+  k4: { a: { b: 4 } },
+  k5: { a: { b: 5 } },
+  k6: { a: { b: 6 } },
+  k7: { a: { b: 7 } }
+}
+MAP nested 8 Map(8) {
+  'k0' => { a: { b: 0 } },
+  'k1' => { a: { b: 1 } },
+  'k2' => { a: { b: 2 } },
+  'k3' => { a: { b: 3 } },
+  'k4' => { a: { b: 4 } },
+  'k5' => { a: { b: 5 } },
+  'k6' => { a: { b: 6 } },
+  'k7' => { a: { b: 7 } }
+}
+SET nested 8 Set(8) {
+  { a: { b: 0 } },
+  { a: { b: 1 } },
+  { a: { b: 2 } },
+  { a: { b: 3 } },
+  { a: { b: 4 } },
+  { a: { b: 5 } },
+  { a: { b: 6 } },
+  { a: { b: 7 } }
+}
+NEST nested 8 {
+  outer: [
+    { a: [Object] },
+    { a: [Object] },
+    { a: [Object] },
+    { a: [Object] },
+    { a: [Object] },
+    { a: [Object] },
+    { a: [Object] },
+    { a: [Object] }
+  ]
+}
+SPEC nested 8
+ARR nested 12 [
+  { a: { b: 0 } },
+  { a: { b: 1 } },
+  { a: { b: 2 } },
+  { a: { b: 3 } },
+  { a: { b: 4 } },
+  { a: { b: 5 } },
+  { a: { b: 6 } },
+  { a: { b: 7 } },
+  { a: { b: 8 } },
+  { a: { b: 9 } },
+  { a: { b: 10 } },
+  { a: { b: 11 } }
+]
+OBJ nested 12 {
+  k0: { a: { b: 0 } },
+  k1: { a: { b: 1 } },
+  k2: { a: { b: 2 } },
+  k3: { a: { b: 3 } },
+  k4: { a: { b: 4 } },
+  k5: { a: { b: 5 } },
+  k6: { a: { b: 6 } },
+  k7: { a: { b: 7 } },
+  k8: { a: { b: 8 } },
+  k9: { a: { b: 9 } },
+  k10: { a: { b: 10 } },
+  k11: { a: { b: 11 } }
+}
+MAP nested 12 Map(12) {
+  'k0' => { a: { b: 0 } },
+  'k1' => { a: { b: 1 } },
+  'k2' => { a: { b: 2 } },
+  'k3' => { a: { b: 3 } },
+  'k4' => { a: { b: 4 } },
+  'k5' => { a: { b: 5 } },
+  'k6' => { a: { b: 6 } },
+  'k7' => { a: { b: 7 } },
+  'k8' => { a: { b: 8 } },
+  'k9' => { a: { b: 9 } },
+  'k10' => { a: { b: 10 } },
+  'k11' => { a: { b: 11 } }
+}
+SET nested 12 Set(12) {
+  { a: { b: 0 } },
+  { a: { b: 1 } },
+  { a: { b: 2 } },
+  { a: { b: 3 } },
+  { a: { b: 4 } },
+  { a: { b: 5 } },
+  { a: { b: 6 } },
+  { a: { b: 7 } },
+  { a: { b: 8 } },
+  { a: { b: 9 } },
+  { a: { b: 10 } },
+  { a: { b: 11 } }
+}
+NEST nested 12 {
+  outer: [
+    { a: [Object] },
+    { a: [Object] },
+    { a: [Object] },
+    { a: [Object] },
+    { a: [Object] },
+    { a: [Object] },
+    { a: [Object] },
+    { a: [Object] },
+    { a: [Object] },
+    { a: [Object] },
+    { a: [Object] },
+    { a: [Object] }
+  ]
+}
+SPEC nested 12
+ARR nested 20 [
+  { a: { b: 0 } },  { a: { b: 1 } },
+  { a: { b: 2 } },  { a: { b: 3 } },
+  { a: { b: 4 } },  { a: { b: 5 } },
+  { a: { b: 6 } },  { a: { b: 7 } },
+  { a: { b: 8 } },  { a: { b: 9 } },
+  { a: { b: 10 } }, { a: { b: 11 } },
+  { a: { b: 12 } }, { a: { b: 13 } },
+  { a: { b: 14 } }, { a: { b: 15 } },
+  { a: { b: 16 } }, { a: { b: 17 } },
+  { a: { b: 18 } }, { a: { b: 19 } }
+]
+OBJ nested 20 {
+  k0: { a: { b: 0 } },
+  k1: { a: { b: 1 } },
+  k2: { a: { b: 2 } },
+  k3: { a: { b: 3 } },
+  k4: { a: { b: 4 } },
+  k5: { a: { b: 5 } },
+  k6: { a: { b: 6 } },
+  k7: { a: { b: 7 } },
+  k8: { a: { b: 8 } },
+  k9: { a: { b: 9 } },
+  k10: { a: { b: 10 } },
+  k11: { a: { b: 11 } },
+  k12: { a: { b: 12 } },
+  k13: { a: { b: 13 } },
+  k14: { a: { b: 14 } },
+  k15: { a: { b: 15 } },
+  k16: { a: { b: 16 } },
+  k17: { a: { b: 17 } },
+  k18: { a: { b: 18 } },
+  k19: { a: { b: 19 } }
+}
+MAP nested 20 Map(20) {
+  'k0' => { a: { b: 0 } },
+  'k1' => { a: { b: 1 } },
+  'k2' => { a: { b: 2 } },
+  'k3' => { a: { b: 3 } },
+  'k4' => { a: { b: 4 } },
+  'k5' => { a: { b: 5 } },
+  'k6' => { a: { b: 6 } },
+  'k7' => { a: { b: 7 } },
+  'k8' => { a: { b: 8 } },
+  'k9' => { a: { b: 9 } },
+  'k10' => { a: { b: 10 } },
+  'k11' => { a: { b: 11 } },
+  'k12' => { a: { b: 12 } },
+  'k13' => { a: { b: 13 } },
+  'k14' => { a: { b: 14 } },
+  'k15' => { a: { b: 15 } },
+  'k16' => { a: { b: 16 } },
+  'k17' => { a: { b: 17 } },
+  'k18' => { a: { b: 18 } },
+  'k19' => { a: { b: 19 } }
+}
+SET nested 20 Set(20) {
+  { a: { b: 0 } },
+  { a: { b: 1 } },
+  { a: { b: 2 } },
+  { a: { b: 3 } },
+  { a: { b: 4 } },
+  { a: { b: 5 } },
+  { a: { b: 6 } },
+  { a: { b: 7 } },
+  { a: { b: 8 } },
+  { a: { b: 9 } },
+  { a: { b: 10 } },
+  { a: { b: 11 } },
+  { a: { b: 12 } },
+  { a: { b: 13 } },
+  { a: { b: 14 } },
+  { a: { b: 15 } },
+  { a: { b: 16 } },
+  { a: { b: 17 } },
+  { a: { b: 18 } },
+  { a: { b: 19 } }
+}
+NEST nested 20 {
+  outer: [
+    { a: [Object] }, { a: [Object] },
+    { a: [Object] }, { a: [Object] },
+    { a: [Object] }, { a: [Object] },
+    { a: [Object] }, { a: [Object] },
+    { a: [Object] }, { a: [Object] },
+    { a: [Object] }, { a: [Object] },
+    { a: [Object] }, { a: [Object] },
+    { a: [Object] }, { a: [Object] },
+    { a: [Object] }, { a: [Object] },
+    { a: [Object] }, { a: [Object] }
+  ]
+}
+SPEC nested 20
+ARR deep 0 []
+OBJ deep 0 {}
+MAP deep 0 Map(0) {}
+SET deep 0 Set(0) {}
+NEST deep 0 { outer: [] }
+SPEC deep 0
+ARR deep 1 [ { a: { b: [Object] } } ]
+OBJ deep 1 { k0: { a: { b: [Object] } } }
+MAP deep 1 Map(1) { 'k0' => { a: { b: [Object] } } }
+SET deep 1 Set(1) { { a: { b: [Object] } } }
+NEST deep 1 { outer: [ { a: [Object] } ] }
+SPEC deep 1
+ARR deep 2 [ { a: { b: [Object] } }, { a: { b: [Object] } } ]
+OBJ deep 2 { k0: { a: { b: [Object] } }, k1: { a: { b: [Object] } } }
+MAP deep 2 Map(2) {
+  'k0' => { a: { b: [Object] } },
+  'k1' => { a: { b: [Object] } }
+}
+SET deep 2 Set(2) { { a: { b: [Object] } }, { a: { b: [Object] } } }
+NEST deep 2 { outer: [ { a: [Object] }, { a: [Object] } ] }
+SPEC deep 2
+ARR deep 3 [
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } }
+]
+OBJ deep 3 {
+  k0: { a: { b: [Object] } },
+  k1: { a: { b: [Object] } },
+  k2: { a: { b: [Object] } }
+}
+MAP deep 3 Map(3) {
+  'k0' => { a: { b: [Object] } },
+  'k1' => { a: { b: [Object] } },
+  'k2' => { a: { b: [Object] } }
+}
+SET deep 3 Set(3) {
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } }
+}
+NEST deep 3 { outer: [ { a: [Object] }, { a: [Object] }, { a: [Object] } ] }
+SPEC deep 3
+ARR deep 5 [
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } }
+]
+OBJ deep 5 {
+  k0: { a: { b: [Object] } },
+  k1: { a: { b: [Object] } },
+  k2: { a: { b: [Object] } },
+  k3: { a: { b: [Object] } },
+  k4: { a: { b: [Object] } }
+}
+MAP deep 5 Map(5) {
+  'k0' => { a: { b: [Object] } },
+  'k1' => { a: { b: [Object] } },
+  'k2' => { a: { b: [Object] } },
+  'k3' => { a: { b: [Object] } },
+  'k4' => { a: { b: [Object] } }
+}
+SET deep 5 Set(5) {
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } }
+}
+NEST deep 5 {
+  outer: [
+    { a: [Object] },
+    { a: [Object] },
+    { a: [Object] },
+    { a: [Object] },
+    { a: [Object] }
+  ]
+}
+SPEC deep 5
+ARR deep 6 [
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } }
+]
+OBJ deep 6 {
+  k0: { a: { b: [Object] } },
+  k1: { a: { b: [Object] } },
+  k2: { a: { b: [Object] } },
+  k3: { a: { b: [Object] } },
+  k4: { a: { b: [Object] } },
+  k5: { a: { b: [Object] } }
+}
+MAP deep 6 Map(6) {
+  'k0' => { a: { b: [Object] } },
+  'k1' => { a: { b: [Object] } },
+  'k2' => { a: { b: [Object] } },
+  'k3' => { a: { b: [Object] } },
+  'k4' => { a: { b: [Object] } },
+  'k5' => { a: { b: [Object] } }
+}
+SET deep 6 Set(6) {
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } }
+}
+NEST deep 6 {
+  outer: [
+    { a: [Object] },
+    { a: [Object] },
+    { a: [Object] },
+    { a: [Object] },
+    { a: [Object] },
+    { a: [Object] }
+  ]
+}
+SPEC deep 6
+ARR deep 7 [
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } }
+]
+OBJ deep 7 {
+  k0: { a: { b: [Object] } },
+  k1: { a: { b: [Object] } },
+  k2: { a: { b: [Object] } },
+  k3: { a: { b: [Object] } },
+  k4: { a: { b: [Object] } },
+  k5: { a: { b: [Object] } },
+  k6: { a: { b: [Object] } }
+}
+MAP deep 7 Map(7) {
+  'k0' => { a: { b: [Object] } },
+  'k1' => { a: { b: [Object] } },
+  'k2' => { a: { b: [Object] } },
+  'k3' => { a: { b: [Object] } },
+  'k4' => { a: { b: [Object] } },
+  'k5' => { a: { b: [Object] } },
+  'k6' => { a: { b: [Object] } }
+}
+SET deep 7 Set(7) {
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } }
+}
+NEST deep 7 {
+  outer: [
+    { a: [Object] },
+    { a: [Object] },
+    { a: [Object] },
+    { a: [Object] },
+    { a: [Object] },
+    { a: [Object] },
+    { a: [Object] }
+  ]
+}
+SPEC deep 7
+ARR deep 8 [
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } }
+]
+OBJ deep 8 {
+  k0: { a: { b: [Object] } },
+  k1: { a: { b: [Object] } },
+  k2: { a: { b: [Object] } },
+  k3: { a: { b: [Object] } },
+  k4: { a: { b: [Object] } },
+  k5: { a: { b: [Object] } },
+  k6: { a: { b: [Object] } },
+  k7: { a: { b: [Object] } }
+}
+MAP deep 8 Map(8) {
+  'k0' => { a: { b: [Object] } },
+  'k1' => { a: { b: [Object] } },
+  'k2' => { a: { b: [Object] } },
+  'k3' => { a: { b: [Object] } },
+  'k4' => { a: { b: [Object] } },
+  'k5' => { a: { b: [Object] } },
+  'k6' => { a: { b: [Object] } },
+  'k7' => { a: { b: [Object] } }
+}
+SET deep 8 Set(8) {
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } }
+}
+NEST deep 8 {
+  outer: [
+    { a: [Object] },
+    { a: [Object] },
+    { a: [Object] },
+    { a: [Object] },
+    { a: [Object] },
+    { a: [Object] },
+    { a: [Object] },
+    { a: [Object] }
+  ]
+}
+SPEC deep 8
+ARR deep 12 [
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } }
+]
+OBJ deep 12 {
+  k0: { a: { b: [Object] } },
+  k1: { a: { b: [Object] } },
+  k2: { a: { b: [Object] } },
+  k3: { a: { b: [Object] } },
+  k4: { a: { b: [Object] } },
+  k5: { a: { b: [Object] } },
+  k6: { a: { b: [Object] } },
+  k7: { a: { b: [Object] } },
+  k8: { a: { b: [Object] } },
+  k9: { a: { b: [Object] } },
+  k10: { a: { b: [Object] } },
+  k11: { a: { b: [Object] } }
+}
+MAP deep 12 Map(12) {
+  'k0' => { a: { b: [Object] } },
+  'k1' => { a: { b: [Object] } },
+  'k2' => { a: { b: [Object] } },
+  'k3' => { a: { b: [Object] } },
+  'k4' => { a: { b: [Object] } },
+  'k5' => { a: { b: [Object] } },
+  'k6' => { a: { b: [Object] } },
+  'k7' => { a: { b: [Object] } },
+  'k8' => { a: { b: [Object] } },
+  'k9' => { a: { b: [Object] } },
+  'k10' => { a: { b: [Object] } },
+  'k11' => { a: { b: [Object] } }
+}
+SET deep 12 Set(12) {
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } }
+}
+NEST deep 12 {
+  outer: [
+    { a: [Object] },
+    { a: [Object] },
+    { a: [Object] },
+    { a: [Object] },
+    { a: [Object] },
+    { a: [Object] },
+    { a: [Object] },
+    { a: [Object] },
+    { a: [Object] },
+    { a: [Object] },
+    { a: [Object] },
+    { a: [Object] }
+  ]
+}
+SPEC deep 12
+ARR deep 20 [
+  { a: { b: [Object] } }, { a: { b: [Object] } },
+  { a: { b: [Object] } }, { a: { b: [Object] } },
+  { a: { b: [Object] } }, { a: { b: [Object] } },
+  { a: { b: [Object] } }, { a: { b: [Object] } },
+  { a: { b: [Object] } }, { a: { b: [Object] } },
+  { a: { b: [Object] } }, { a: { b: [Object] } },
+  { a: { b: [Object] } }, { a: { b: [Object] } },
+  { a: { b: [Object] } }, { a: { b: [Object] } },
+  { a: { b: [Object] } }, { a: { b: [Object] } },
+  { a: { b: [Object] } }, { a: { b: [Object] } }
+]
+OBJ deep 20 {
+  k0: { a: { b: [Object] } },
+  k1: { a: { b: [Object] } },
+  k2: { a: { b: [Object] } },
+  k3: { a: { b: [Object] } },
+  k4: { a: { b: [Object] } },
+  k5: { a: { b: [Object] } },
+  k6: { a: { b: [Object] } },
+  k7: { a: { b: [Object] } },
+  k8: { a: { b: [Object] } },
+  k9: { a: { b: [Object] } },
+  k10: { a: { b: [Object] } },
+  k11: { a: { b: [Object] } },
+  k12: { a: { b: [Object] } },
+  k13: { a: { b: [Object] } },
+  k14: { a: { b: [Object] } },
+  k15: { a: { b: [Object] } },
+  k16: { a: { b: [Object] } },
+  k17: { a: { b: [Object] } },
+  k18: { a: { b: [Object] } },
+  k19: { a: { b: [Object] } }
+}
+MAP deep 20 Map(20) {
+  'k0' => { a: { b: [Object] } },
+  'k1' => { a: { b: [Object] } },
+  'k2' => { a: { b: [Object] } },
+  'k3' => { a: { b: [Object] } },
+  'k4' => { a: { b: [Object] } },
+  'k5' => { a: { b: [Object] } },
+  'k6' => { a: { b: [Object] } },
+  'k7' => { a: { b: [Object] } },
+  'k8' => { a: { b: [Object] } },
+  'k9' => { a: { b: [Object] } },
+  'k10' => { a: { b: [Object] } },
+  'k11' => { a: { b: [Object] } },
+  'k12' => { a: { b: [Object] } },
+  'k13' => { a: { b: [Object] } },
+  'k14' => { a: { b: [Object] } },
+  'k15' => { a: { b: [Object] } },
+  'k16' => { a: { b: [Object] } },
+  'k17' => { a: { b: [Object] } },
+  'k18' => { a: { b: [Object] } },
+  'k19' => { a: { b: [Object] } }
+}
+SET deep 20 Set(20) {
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } },
+  { a: { b: [Object] } }
+}
+NEST deep 20 {
+  outer: [
+    { a: [Object] }, { a: [Object] },
+    { a: [Object] }, { a: [Object] },
+    { a: [Object] }, { a: [Object] },
+    { a: [Object] }, { a: [Object] },
+    { a: [Object] }, { a: [Object] },
+    { a: [Object] }, { a: [Object] },
+    { a: [Object] }, { a: [Object] },
+    { a: [Object] }, { a: [Object] },
+    { a: [Object] }, { a: [Object] },
+    { a: [Object] }, { a: [Object] }
+  ]
+}
+SPEC deep 20
+ARR sym 0 []
+OBJ sym 0 {}
+MAP sym 0 Map(0) {}
+SET sym 0 Set(0) {}
+NEST sym 0 { outer: [] }
+SPEC sym 0
+ARR sym 1 [ Symbol(s0) ]
+OBJ sym 1 { k0: Symbol(s0) }
+MAP sym 1 Map(1) { 'k0' => Symbol(s0) }
+SET sym 1 Set(1) { Symbol(s0) }
+NEST sym 1 { outer: [ Symbol(s0) ] }
+SPEC sym 1
+ARR sym 2 [ Symbol(s0), Symbol(s1) ]
+OBJ sym 2 { k0: Symbol(s0), k1: Symbol(s1) }
+MAP sym 2 Map(2) { 'k0' => Symbol(s0), 'k1' => Symbol(s1) }
+SET sym 2 Set(2) { Symbol(s0), Symbol(s1) }
+NEST sym 2 { outer: [ Symbol(s0), Symbol(s1) ] }
+SPEC sym 2
+ARR sym 3 [ Symbol(s0), Symbol(s1), Symbol(s2) ]
+OBJ sym 3 { k0: Symbol(s0), k1: Symbol(s1), k2: Symbol(s2) }
+MAP sym 3 Map(3) { 'k0' => Symbol(s0), 'k1' => Symbol(s1), 'k2' => Symbol(s2) }
+SET sym 3 Set(3) { Symbol(s0), Symbol(s1), Symbol(s2) }
+NEST sym 3 { outer: [ Symbol(s0), Symbol(s1), Symbol(s2) ] }
+SPEC sym 3
+ARR sym 5 [ Symbol(s0), Symbol(s1), Symbol(s2), Symbol(s3), Symbol(s4) ]
+OBJ sym 5 {
+  k0: Symbol(s0),
+  k1: Symbol(s1),
+  k2: Symbol(s2),
+  k3: Symbol(s3),
+  k4: Symbol(s4)
+}
+MAP sym 5 Map(5) {
+  'k0' => Symbol(s0),
+  'k1' => Symbol(s1),
+  'k2' => Symbol(s2),
+  'k3' => Symbol(s3),
+  'k4' => Symbol(s4)
+}
+SET sym 5 Set(5) { Symbol(s0), Symbol(s1), Symbol(s2), Symbol(s3), Symbol(s4) }
+NEST sym 5 {
+  outer: [ Symbol(s0), Symbol(s1), Symbol(s2), Symbol(s3), Symbol(s4) ]
+}
+SPEC sym 5
+ARR sym 6 [
+  Symbol(s0),
+  Symbol(s1),
+  Symbol(s2),
+  Symbol(s3),
+  Symbol(s4),
+  Symbol(s5)
+]
+OBJ sym 6 {
+  k0: Symbol(s0),
+  k1: Symbol(s1),
+  k2: Symbol(s2),
+  k3: Symbol(s3),
+  k4: Symbol(s4),
+  k5: Symbol(s5)
+}
+MAP sym 6 Map(6) {
+  'k0' => Symbol(s0),
+  'k1' => Symbol(s1),
+  'k2' => Symbol(s2),
+  'k3' => Symbol(s3),
+  'k4' => Symbol(s4),
+  'k5' => Symbol(s5)
+}
+SET sym 6 Set(6) {
+  Symbol(s0),
+  Symbol(s1),
+  Symbol(s2),
+  Symbol(s3),
+  Symbol(s4),
+  Symbol(s5)
+}
+NEST sym 6 {
+  outer: [
+    Symbol(s0),
+    Symbol(s1),
+    Symbol(s2),
+    Symbol(s3),
+    Symbol(s4),
+    Symbol(s5)
+  ]
+}
+SPEC sym 6
+ARR sym 7 [
+  Symbol(s0),
+  Symbol(s1),
+  Symbol(s2),
+  Symbol(s3),
+  Symbol(s4),
+  Symbol(s5),
+  Symbol(s6)
+]
+OBJ sym 7 {
+  k0: Symbol(s0),
+  k1: Symbol(s1),
+  k2: Symbol(s2),
+  k3: Symbol(s3),
+  k4: Symbol(s4),
+  k5: Symbol(s5),
+  k6: Symbol(s6)
+}
+MAP sym 7 Map(7) {
+  'k0' => Symbol(s0),
+  'k1' => Symbol(s1),
+  'k2' => Symbol(s2),
+  'k3' => Symbol(s3),
+  'k4' => Symbol(s4),
+  'k5' => Symbol(s5),
+  'k6' => Symbol(s6)
+}
+SET sym 7 Set(7) {
+  Symbol(s0),
+  Symbol(s1),
+  Symbol(s2),
+  Symbol(s3),
+  Symbol(s4),
+  Symbol(s5),
+  Symbol(s6)
+}
+NEST sym 7 {
+  outer: [
+    Symbol(s0),
+    Symbol(s1),
+    Symbol(s2),
+    Symbol(s3),
+    Symbol(s4),
+    Symbol(s5),
+    Symbol(s6)
+  ]
+}
+SPEC sym 7
+ARR sym 8 [
+  Symbol(s0),
+  Symbol(s1),
+  Symbol(s2),
+  Symbol(s3),
+  Symbol(s4),
+  Symbol(s5),
+  Symbol(s6),
+  Symbol(s7)
+]
+OBJ sym 8 {
+  k0: Symbol(s0),
+  k1: Symbol(s1),
+  k2: Symbol(s2),
+  k3: Symbol(s3),
+  k4: Symbol(s4),
+  k5: Symbol(s5),
+  k6: Symbol(s6),
+  k7: Symbol(s7)
+}
+MAP sym 8 Map(8) {
+  'k0' => Symbol(s0),
+  'k1' => Symbol(s1),
+  'k2' => Symbol(s2),
+  'k3' => Symbol(s3),
+  'k4' => Symbol(s4),
+  'k5' => Symbol(s5),
+  'k6' => Symbol(s6),
+  'k7' => Symbol(s7)
+}
+SET sym 8 Set(8) {
+  Symbol(s0),
+  Symbol(s1),
+  Symbol(s2),
+  Symbol(s3),
+  Symbol(s4),
+  Symbol(s5),
+  Symbol(s6),
+  Symbol(s7)
+}
+NEST sym 8 {
+  outer: [
+    Symbol(s0),
+    Symbol(s1),
+    Symbol(s2),
+    Symbol(s3),
+    Symbol(s4),
+    Symbol(s5),
+    Symbol(s6),
+    Symbol(s7)
+  ]
+}
+SPEC sym 8
+ARR sym 12 [
+  Symbol(s0),  Symbol(s1),
+  Symbol(s2),  Symbol(s3),
+  Symbol(s4),  Symbol(s5),
+  Symbol(s6),  Symbol(s7),
+  Symbol(s8),  Symbol(s9),
+  Symbol(s10), Symbol(s11)
+]
+OBJ sym 12 {
+  k0: Symbol(s0),
+  k1: Symbol(s1),
+  k2: Symbol(s2),
+  k3: Symbol(s3),
+  k4: Symbol(s4),
+  k5: Symbol(s5),
+  k6: Symbol(s6),
+  k7: Symbol(s7),
+  k8: Symbol(s8),
+  k9: Symbol(s9),
+  k10: Symbol(s10),
+  k11: Symbol(s11)
+}
+MAP sym 12 Map(12) {
+  'k0' => Symbol(s0),
+  'k1' => Symbol(s1),
+  'k2' => Symbol(s2),
+  'k3' => Symbol(s3),
+  'k4' => Symbol(s4),
+  'k5' => Symbol(s5),
+  'k6' => Symbol(s6),
+  'k7' => Symbol(s7),
+  'k8' => Symbol(s8),
+  'k9' => Symbol(s9),
+  'k10' => Symbol(s10),
+  'k11' => Symbol(s11)
+}
+SET sym 12 Set(12) {
+  Symbol(s0),
+  Symbol(s1),
+  Symbol(s2),
+  Symbol(s3),
+  Symbol(s4),
+  Symbol(s5),
+  Symbol(s6),
+  Symbol(s7),
+  Symbol(s8),
+  Symbol(s9),
+  Symbol(s10),
+  Symbol(s11)
+}
+NEST sym 12 {
+  outer: [
+    Symbol(s0),  Symbol(s1),
+    Symbol(s2),  Symbol(s3),
+    Symbol(s4),  Symbol(s5),
+    Symbol(s6),  Symbol(s7),
+    Symbol(s8),  Symbol(s9),
+    Symbol(s10), Symbol(s11)
+  ]
+}
+SPEC sym 12
+ARR sym 20 [
+  Symbol(s0),  Symbol(s1),
+  Symbol(s2),  Symbol(s3),
+  Symbol(s4),  Symbol(s5),
+  Symbol(s6),  Symbol(s7),
+  Symbol(s8),  Symbol(s9),
+  Symbol(s10), Symbol(s11),
+  Symbol(s12), Symbol(s13),
+  Symbol(s14), Symbol(s15),
+  Symbol(s16), Symbol(s17),
+  Symbol(s18), Symbol(s19)
+]
+OBJ sym 20 {
+  k0: Symbol(s0),
+  k1: Symbol(s1),
+  k2: Symbol(s2),
+  k3: Symbol(s3),
+  k4: Symbol(s4),
+  k5: Symbol(s5),
+  k6: Symbol(s6),
+  k7: Symbol(s7),
+  k8: Symbol(s8),
+  k9: Symbol(s9),
+  k10: Symbol(s10),
+  k11: Symbol(s11),
+  k12: Symbol(s12),
+  k13: Symbol(s13),
+  k14: Symbol(s14),
+  k15: Symbol(s15),
+  k16: Symbol(s16),
+  k17: Symbol(s17),
+  k18: Symbol(s18),
+  k19: Symbol(s19)
+}
+MAP sym 20 Map(20) {
+  'k0' => Symbol(s0),
+  'k1' => Symbol(s1),
+  'k2' => Symbol(s2),
+  'k3' => Symbol(s3),
+  'k4' => Symbol(s4),
+  'k5' => Symbol(s5),
+  'k6' => Symbol(s6),
+  'k7' => Symbol(s7),
+  'k8' => Symbol(s8),
+  'k9' => Symbol(s9),
+  'k10' => Symbol(s10),
+  'k11' => Symbol(s11),
+  'k12' => Symbol(s12),
+  'k13' => Symbol(s13),
+  'k14' => Symbol(s14),
+  'k15' => Symbol(s15),
+  'k16' => Symbol(s16),
+  'k17' => Symbol(s17),
+  'k18' => Symbol(s18),
+  'k19' => Symbol(s19)
+}
+SET sym 20 Set(20) {
+  Symbol(s0),
+  Symbol(s1),
+  Symbol(s2),
+  Symbol(s3),
+  Symbol(s4),
+  Symbol(s5),
+  Symbol(s6),
+  Symbol(s7),
+  Symbol(s8),
+  Symbol(s9),
+  Symbol(s10),
+  Symbol(s11),
+  Symbol(s12),
+  Symbol(s13),
+  Symbol(s14),
+  Symbol(s15),
+  Symbol(s16),
+  Symbol(s17),
+  Symbol(s18),
+  Symbol(s19)
+}
+NEST sym 20 {
+  outer: [
+    Symbol(s0),  Symbol(s1),
+    Symbol(s2),  Symbol(s3),
+    Symbol(s4),  Symbol(s5),
+    Symbol(s6),  Symbol(s7),
+    Symbol(s8),  Symbol(s9),
+    Symbol(s10), Symbol(s11),
+    Symbol(s12), Symbol(s13),
+    Symbol(s14), Symbol(s15),
+    Symbol(s16), Symbol(s17),
+    Symbol(s18), Symbol(s19)
+  ]
+}
+SPEC sym 20
+ARR big 0 []
+OBJ big 0 {}
+MAP big 0 Map(0) {}
+SET big 0 Set(0) {}
+NEST big 0 { outer: [] }
+SPEC big 0
+ARR big 1 [ 0n ]
+OBJ big 1 { k0: 0n }
+MAP big 1 Map(1) { 'k0' => 0n }
+SET big 1 Set(1) { 0n }
+NEST big 1 { outer: [ 0n ] }
+SPEC big 1
+ARR big 2 [ 0n, 1n ]
+OBJ big 2 { k0: 0n, k1: 1n }
+MAP big 2 Map(2) { 'k0' => 0n, 'k1' => 1n }
+SET big 2 Set(2) { 0n, 1n }
+NEST big 2 { outer: [ 0n, 1n ] }
+SPEC big 2
+ARR big 3 [ 0n, 1n, 2n ]
+OBJ big 3 { k0: 0n, k1: 1n, k2: 2n }
+MAP big 3 Map(3) { 'k0' => 0n, 'k1' => 1n, 'k2' => 2n }
+SET big 3 Set(3) { 0n, 1n, 2n }
+NEST big 3 { outer: [ 0n, 1n, 2n ] }
+SPEC big 3
+ARR big 5 [ 0n, 1n, 2n, 3n, 4n ]
+OBJ big 5 { k0: 0n, k1: 1n, k2: 2n, k3: 3n, k4: 4n }
+MAP big 5 Map(5) { 'k0' => 0n, 'k1' => 1n, 'k2' => 2n, 'k3' => 3n, 'k4' => 4n }
+SET big 5 Set(5) { 0n, 1n, 2n, 3n, 4n }
+NEST big 5 { outer: [ 0n, 1n, 2n, 3n, 4n ] }
+SPEC big 5
+ARR big 6 [ 0n, 1n, 2n, 3n, 4n, 5n ]
+OBJ big 6 { k0: 0n, k1: 1n, k2: 2n, k3: 3n, k4: 4n, k5: 5n }
+MAP big 6 Map(6) {
+  'k0' => 0n,
+  'k1' => 1n,
+  'k2' => 2n,
+  'k3' => 3n,
+  'k4' => 4n,
+  'k5' => 5n
+}
+SET big 6 Set(6) { 0n, 1n, 2n, 3n, 4n, 5n }
+NEST big 6 { outer: [ 0n, 1n, 2n, 3n, 4n, 5n ] }
+SPEC big 6
+ARR big 7 [
+  0n, 1n, 2n, 3n,
+  4n, 5n, 6n
+]
+OBJ big 7 { k0: 0n, k1: 1n, k2: 2n, k3: 3n, k4: 4n, k5: 5n, k6: 6n }
+MAP big 7 Map(7) {
+  'k0' => 0n,
+  'k1' => 1n,
+  'k2' => 2n,
+  'k3' => 3n,
+  'k4' => 4n,
+  'k5' => 5n,
+  'k6' => 6n
+}
+SET big 7 Set(7) { 0n, 1n, 2n, 3n, 4n, 5n, 6n }
+NEST big 7 {
+  outer: [
+    0n, 1n, 2n, 3n,
+    4n, 5n, 6n
+  ]
+}
+SPEC big 7
+ARR big 8 [
+  0n, 1n, 2n, 3n,
+  4n, 5n, 6n, 7n
+]
+OBJ big 8 { k0: 0n, k1: 1n, k2: 2n, k3: 3n, k4: 4n, k5: 5n, k6: 6n, k7: 7n }
+MAP big 8 Map(8) {
+  'k0' => 0n,
+  'k1' => 1n,
+  'k2' => 2n,
+  'k3' => 3n,
+  'k4' => 4n,
+  'k5' => 5n,
+  'k6' => 6n,
+  'k7' => 7n
+}
+SET big 8 Set(8) { 0n, 1n, 2n, 3n, 4n, 5n, 6n, 7n }
+NEST big 8 {
+  outer: [
+    0n, 1n, 2n, 3n,
+    4n, 5n, 6n, 7n
+  ]
+}
+SPEC big 8
+ARR big 12 [
+   0n,  1n, 2n, 3n, 4n,
+   5n,  6n, 7n, 8n, 9n,
+  10n, 11n
+]
+OBJ big 12 {
+  k0: 0n,
+  k1: 1n,
+  k2: 2n,
+  k3: 3n,
+  k4: 4n,
+  k5: 5n,
+  k6: 6n,
+  k7: 7n,
+  k8: 8n,
+  k9: 9n,
+  k10: 10n,
+  k11: 11n
+}
+MAP big 12 Map(12) {
+  'k0' => 0n,
+  'k1' => 1n,
+  'k2' => 2n,
+  'k3' => 3n,
+  'k4' => 4n,
+  'k5' => 5n,
+  'k6' => 6n,
+  'k7' => 7n,
+  'k8' => 8n,
+  'k9' => 9n,
+  'k10' => 10n,
+  'k11' => 11n
+}
+SET big 12 Set(12) { 0n, 1n, 2n, 3n, 4n, 5n, 6n, 7n, 8n, 9n, 10n, 11n }
+NEST big 12 {
+  outer: [
+     0n,  1n, 2n, 3n, 4n,
+     5n,  6n, 7n, 8n, 9n,
+    10n, 11n
+  ]
+}
+SPEC big 12
+ARR big 20 [
+   0n,  1n,  2n,  3n,  4n,  5n,
+   6n,  7n,  8n,  9n, 10n, 11n,
+  12n, 13n, 14n, 15n, 16n, 17n,
+  18n, 19n
+]
+OBJ big 20 {
+  k0: 0n,
+  k1: 1n,
+  k2: 2n,
+  k3: 3n,
+  k4: 4n,
+  k5: 5n,
+  k6: 6n,
+  k7: 7n,
+  k8: 8n,
+  k9: 9n,
+  k10: 10n,
+  k11: 11n,
+  k12: 12n,
+  k13: 13n,
+  k14: 14n,
+  k15: 15n,
+  k16: 16n,
+  k17: 17n,
+  k18: 18n,
+  k19: 19n
+}
+MAP big 20 Map(20) {
+  'k0' => 0n,
+  'k1' => 1n,
+  'k2' => 2n,
+  'k3' => 3n,
+  'k4' => 4n,
+  'k5' => 5n,
+  'k6' => 6n,
+  'k7' => 7n,
+  'k8' => 8n,
+  'k9' => 9n,
+  'k10' => 10n,
+  'k11' => 11n,
+  'k12' => 12n,
+  'k13' => 13n,
+  'k14' => 14n,
+  'k15' => 15n,
+  'k16' => 16n,
+  'k17' => 17n,
+  'k18' => 18n,
+  'k19' => 19n
+}
+SET big 20 Set(20) {
+  0n,
+  1n,
+  2n,
+  3n,
+  4n,
+  5n,
+  6n,
+  7n,
+  8n,
+  9n,
+  10n,
+  11n,
+  12n,
+  13n,
+  14n,
+  15n,
+  16n,
+  17n,
+  18n,
+  19n
+}
+NEST big 20 {
+  outer: [
+     0n,  1n,  2n,  3n,  4n,  5n,
+     6n,  7n,  8n,  9n, 10n, 11n,
+    12n, 13n, 14n, 15n, 16n, 17n,
+    18n, 19n
+  ]
+}
+SPEC big 20
+ARR fn 0 []
+OBJ fn 0 {}
+MAP fn 0 Map(0) {}
+SET fn 0 Set(0) {}
+NEST fn 0 { outer: [] }
+SPEC fn 0
+ARR fn 1 [ [Function: nm] ]
+OBJ fn 1 { k0: [Function: nm] }
+MAP fn 1 Map(1) { 'k0' => [Function: nm] }
+SET fn 1 Set(1) { [Function: nm] }
+NEST fn 1 { outer: [ [Function: nm] ] }
+SPEC fn 1
+ARR fn 2 [ [Function: nm], [Function: nm] ]
+OBJ fn 2 { k0: [Function: nm], k1: [Function: nm] }
+MAP fn 2 Map(2) { 'k0' => [Function: nm], 'k1' => [Function: nm] }
+SET fn 2 Set(2) { [Function: nm], [Function: nm] }
+NEST fn 2 { outer: [ [Function: nm], [Function: nm] ] }
+SPEC fn 2
+ARR fn 3 [ [Function: nm], [Function: nm], [Function: nm] ]
+OBJ fn 3 { k0: [Function: nm], k1: [Function: nm], k2: [Function: nm] }
+MAP fn 3 Map(3) {
+  'k0' => [Function: nm],
+  'k1' => [Function: nm],
+  'k2' => [Function: nm]
+}
+SET fn 3 Set(3) { [Function: nm], [Function: nm], [Function: nm] }
+NEST fn 3 { outer: [ [Function: nm], [Function: nm], [Function: nm] ] }
+SPEC fn 3
+ARR fn 5 [
+  [Function: nm],
+  [Function: nm],
+  [Function: nm],
+  [Function: nm],
+  [Function: nm]
+]
+OBJ fn 5 {
+  k0: [Function: nm],
+  k1: [Function: nm],
+  k2: [Function: nm],
+  k3: [Function: nm],
+  k4: [Function: nm]
+}
+MAP fn 5 Map(5) {
+  'k0' => [Function: nm],
+  'k1' => [Function: nm],
+  'k2' => [Function: nm],
+  'k3' => [Function: nm],
+  'k4' => [Function: nm]
+}
+SET fn 5 Set(5) {
+  [Function: nm],
+  [Function: nm],
+  [Function: nm],
+  [Function: nm],
+  [Function: nm]
+}
+NEST fn 5 {
+  outer: [
+    [Function: nm],
+    [Function: nm],
+    [Function: nm],
+    [Function: nm],
+    [Function: nm]
+  ]
+}
+SPEC fn 5
+ARR fn 6 [
+  [Function: nm],
+  [Function: nm],
+  [Function: nm],
+  [Function: nm],
+  [Function: nm],
+  [Function: nm]
+]
+OBJ fn 6 {
+  k0: [Function: nm],
+  k1: [Function: nm],
+  k2: [Function: nm],
+  k3: [Function: nm],
+  k4: [Function: nm],
+  k5: [Function: nm]
+}
+MAP fn 6 Map(6) {
+  'k0' => [Function: nm],
+  'k1' => [Function: nm],
+  'k2' => [Function: nm],
+  'k3' => [Function: nm],
+  'k4' => [Function: nm],
+  'k5' => [Function: nm]
+}
+SET fn 6 Set(6) {
+  [Function: nm],
+  [Function: nm],
+  [Function: nm],
+  [Function: nm],
+  [Function: nm],
+  [Function: nm]
+}
+NEST fn 6 {
+  outer: [
+    [Function: nm],
+    [Function: nm],
+    [Function: nm],
+    [Function: nm],
+    [Function: nm],
+    [Function: nm]
+  ]
+}
+SPEC fn 6
+ARR fn 7 [
+  [Function: nm],
+  [Function: nm],
+  [Function: nm],
+  [Function: nm],
+  [Function: nm],
+  [Function: nm],
+  [Function: nm]
+]
+OBJ fn 7 {
+  k0: [Function: nm],
+  k1: [Function: nm],
+  k2: [Function: nm],
+  k3: [Function: nm],
+  k4: [Function: nm],
+  k5: [Function: nm],
+  k6: [Function: nm]
+}
+MAP fn 7 Map(7) {
+  'k0' => [Function: nm],
+  'k1' => [Function: nm],
+  'k2' => [Function: nm],
+  'k3' => [Function: nm],
+  'k4' => [Function: nm],
+  'k5' => [Function: nm],
+  'k6' => [Function: nm]
+}
+SET fn 7 Set(7) {
+  [Function: nm],
+  [Function: nm],
+  [Function: nm],
+  [Function: nm],
+  [Function: nm],
+  [Function: nm],
+  [Function: nm]
+}
+NEST fn 7 {
+  outer: [
+    [Function: nm],
+    [Function: nm],
+    [Function: nm],
+    [Function: nm],
+    [Function: nm],
+    [Function: nm],
+    [Function: nm]
+  ]
+}
+SPEC fn 7
+ARR fn 8 [
+  [Function: nm],
+  [Function: nm],
+  [Function: nm],
+  [Function: nm],
+  [Function: nm],
+  [Function: nm],
+  [Function: nm],
+  [Function: nm]
+]
+OBJ fn 8 {
+  k0: [Function: nm],
+  k1: [Function: nm],
+  k2: [Function: nm],
+  k3: [Function: nm],
+  k4: [Function: nm],
+  k5: [Function: nm],
+  k6: [Function: nm],
+  k7: [Function: nm]
+}
+MAP fn 8 Map(8) {
+  'k0' => [Function: nm],
+  'k1' => [Function: nm],
+  'k2' => [Function: nm],
+  'k3' => [Function: nm],
+  'k4' => [Function: nm],
+  'k5' => [Function: nm],
+  'k6' => [Function: nm],
+  'k7' => [Function: nm]
+}
+SET fn 8 Set(8) {
+  [Function: nm],
+  [Function: nm],
+  [Function: nm],
+  [Function: nm],
+  [Function: nm],
+  [Function: nm],
+  [Function: nm],
+  [Function: nm]
+}
+NEST fn 8 {
+  outer: [
+    [Function: nm],
+    [Function: nm],
+    [Function: nm],
+    [Function: nm],
+    [Function: nm],
+    [Function: nm],
+    [Function: nm],
+    [Function: nm]
+  ]
+}
+SPEC fn 8
+ARR fn 12 [
+  [Function: nm], [Function: nm],
+  [Function: nm], [Function: nm],
+  [Function: nm], [Function: nm],
+  [Function: nm], [Function: nm],
+  [Function: nm], [Function: nm],
+  [Function: nm], [Function: nm]
+]
+OBJ fn 12 {
+  k0: [Function: nm],
+  k1: [Function: nm],
+  k2: [Function: nm],
+  k3: [Function: nm],
+  k4: [Function: nm],
+  k5: [Function: nm],
+  k6: [Function: nm],
+  k7: [Function: nm],
+  k8: [Function: nm],
+  k9: [Function: nm],
+  k10: [Function: nm],
+  k11: [Function: nm]
+}
+MAP fn 12 Map(12) {
+  'k0' => [Function: nm],
+  'k1' => [Function: nm],
+  'k2' => [Function: nm],
+  'k3' => [Function: nm],
+  'k4' => [Function: nm],
+  'k5' => [Function: nm],
+  'k6' => [Function: nm],
+  'k7' => [Function: nm],
+  'k8' => [Function: nm],
+  'k9' => [Function: nm],
+  'k10' => [Function: nm],
+  'k11' => [Function: nm]
+}
+SET fn 12 Set(12) {
+  [Function: nm],
+  [Function: nm],
+  [Function: nm],
+  [Function: nm],
+  [Function: nm],
+  [Function: nm],
+  [Function: nm],
+  [Function: nm],
+  [Function: nm],
+  [Function: nm],
+  [Function: nm],
+  [Function: nm]
+}
+NEST fn 12 {
+  outer: [
+    [Function: nm], [Function: nm],
+    [Function: nm], [Function: nm],
+    [Function: nm], [Function: nm],
+    [Function: nm], [Function: nm],
+    [Function: nm], [Function: nm],
+    [Function: nm], [Function: nm]
+  ]
+}
+SPEC fn 12
+ARR fn 20 [
+  [Function: nm], [Function: nm],
+  [Function: nm], [Function: nm],
+  [Function: nm], [Function: nm],
+  [Function: nm], [Function: nm],
+  [Function: nm], [Function: nm],
+  [Function: nm], [Function: nm],
+  [Function: nm], [Function: nm],
+  [Function: nm], [Function: nm],
+  [Function: nm], [Function: nm],
+  [Function: nm], [Function: nm]
+]
+OBJ fn 20 {
+  k0: [Function: nm],
+  k1: [Function: nm],
+  k2: [Function: nm],
+  k3: [Function: nm],
+  k4: [Function: nm],
+  k5: [Function: nm],
+  k6: [Function: nm],
+  k7: [Function: nm],
+  k8: [Function: nm],
+  k9: [Function: nm],
+  k10: [Function: nm],
+  k11: [Function: nm],
+  k12: [Function: nm],
+  k13: [Function: nm],
+  k14: [Function: nm],
+  k15: [Function: nm],
+  k16: [Function: nm],
+  k17: [Function: nm],
+  k18: [Function: nm],
+  k19: [Function: nm]
+}
+MAP fn 20 Map(20) {
+  'k0' => [Function: nm],
+  'k1' => [Function: nm],
+  'k2' => [Function: nm],
+  'k3' => [Function: nm],
+  'k4' => [Function: nm],
+  'k5' => [Function: nm],
+  'k6' => [Function: nm],
+  'k7' => [Function: nm],
+  'k8' => [Function: nm],
+  'k9' => [Function: nm],
+  'k10' => [Function: nm],
+  'k11' => [Function: nm],
+  'k12' => [Function: nm],
+  'k13' => [Function: nm],
+  'k14' => [Function: nm],
+  'k15' => [Function: nm],
+  'k16' => [Function: nm],
+  'k17' => [Function: nm],
+  'k18' => [Function: nm],
+  'k19' => [Function: nm]
+}
+SET fn 20 Set(20) {
+  [Function: nm],
+  [Function: nm],
+  [Function: nm],
+  [Function: nm],
+  [Function: nm],
+  [Function: nm],
+  [Function: nm],
+  [Function: nm],
+  [Function: nm],
+  [Function: nm],
+  [Function: nm],
+  [Function: nm],
+  [Function: nm],
+  [Function: nm],
+  [Function: nm],
+  [Function: nm],
+  [Function: nm],
+  [Function: nm],
+  [Function: nm],
+  [Function: nm]
+}
+NEST fn 20 {
+  outer: [
+    [Function: nm], [Function: nm],
+    [Function: nm], [Function: nm],
+    [Function: nm], [Function: nm],
+    [Function: nm], [Function: nm],
+    [Function: nm], [Function: nm],
+    [Function: nm], [Function: nm],
+    [Function: nm], [Function: nm],
+    [Function: nm], [Function: nm],
+    [Function: nm], [Function: nm],
+    [Function: nm], [Function: nm]
+  ]
+}
+SPEC fn 20
+ARR map 0 []
+OBJ map 0 {}
+MAP map 0 Map(0) {}
+SET map 0 Set(0) {}
+NEST map 0 { outer: [] }
+SPEC map 0
+ARR map 1 [ Map(1) { 0 => 0 } ]
+OBJ map 1 { k0: Map(1) { 0 => 0 } }
+MAP map 1 Map(1) { 'k0' => Map(1) { 0 => 0 } }
+SET map 1 Set(1) { Map(1) { 0 => 0 } }
+NEST map 1 { outer: [ Map(1) { 0 => 0 } ] }
+SPEC map 1
+ARR map 2 [ Map(1) { 0 => 0 }, Map(1) { 1 => 1 } ]
+OBJ map 2 { k0: Map(1) { 0 => 0 }, k1: Map(1) { 1 => 1 } }
+MAP map 2 Map(2) { 'k0' => Map(1) { 0 => 0 }, 'k1' => Map(1) { 1 => 1 } }
+SET map 2 Set(2) { Map(1) { 0 => 0 }, Map(1) { 1 => 1 } }
+NEST map 2 { outer: [ Map(1) { 0 => 0 }, Map(1) { 1 => 1 } ] }
+SPEC map 2
+ARR map 3 [ Map(1) { 0 => 0 }, Map(1) { 1 => 1 }, Map(1) { 2 => 2 } ]
+OBJ map 3 { k0: Map(1) { 0 => 0 }, k1: Map(1) { 1 => 1 }, k2: Map(1) { 2 => 2 } }
+MAP map 3 Map(3) {
+  'k0' => Map(1) { 0 => 0 },
+  'k1' => Map(1) { 1 => 1 },
+  'k2' => Map(1) { 2 => 2 }
+}
+SET map 3 Set(3) { Map(1) { 0 => 0 }, Map(1) { 1 => 1 }, Map(1) { 2 => 2 } }
+NEST map 3 { outer: [ Map(1) { 0 => 0 }, Map(1) { 1 => 1 }, Map(1) { 2 => 2 } ] }
+SPEC map 3
+ARR map 5 [
+  Map(1) { 0 => 0 },
+  Map(1) { 1 => 1 },
+  Map(1) { 2 => 2 },
+  Map(1) { 3 => 3 },
+  Map(1) { 4 => 4 }
+]
+OBJ map 5 {
+  k0: Map(1) { 0 => 0 },
+  k1: Map(1) { 1 => 1 },
+  k2: Map(1) { 2 => 2 },
+  k3: Map(1) { 3 => 3 },
+  k4: Map(1) { 4 => 4 }
+}
+MAP map 5 Map(5) {
+  'k0' => Map(1) { 0 => 0 },
+  'k1' => Map(1) { 1 => 1 },
+  'k2' => Map(1) { 2 => 2 },
+  'k3' => Map(1) { 3 => 3 },
+  'k4' => Map(1) { 4 => 4 }
+}
+SET map 5 Set(5) {
+  Map(1) { 0 => 0 },
+  Map(1) { 1 => 1 },
+  Map(1) { 2 => 2 },
+  Map(1) { 3 => 3 },
+  Map(1) { 4 => 4 }
+}
+NEST map 5 {
+  outer: [
+    Map(1) { 0 => 0 },
+    Map(1) { 1 => 1 },
+    Map(1) { 2 => 2 },
+    Map(1) { 3 => 3 },
+    Map(1) { 4 => 4 }
+  ]
+}
+SPEC map 5
+ARR map 6 [
+  Map(1) { 0 => 0 },
+  Map(1) { 1 => 1 },
+  Map(1) { 2 => 2 },
+  Map(1) { 3 => 3 },
+  Map(1) { 4 => 4 },
+  Map(1) { 5 => 5 }
+]
+OBJ map 6 {
+  k0: Map(1) { 0 => 0 },
+  k1: Map(1) { 1 => 1 },
+  k2: Map(1) { 2 => 2 },
+  k3: Map(1) { 3 => 3 },
+  k4: Map(1) { 4 => 4 },
+  k5: Map(1) { 5 => 5 }
+}
+MAP map 6 Map(6) {
+  'k0' => Map(1) { 0 => 0 },
+  'k1' => Map(1) { 1 => 1 },
+  'k2' => Map(1) { 2 => 2 },
+  'k3' => Map(1) { 3 => 3 },
+  'k4' => Map(1) { 4 => 4 },
+  'k5' => Map(1) { 5 => 5 }
+}
+SET map 6 Set(6) {
+  Map(1) { 0 => 0 },
+  Map(1) { 1 => 1 },
+  Map(1) { 2 => 2 },
+  Map(1) { 3 => 3 },
+  Map(1) { 4 => 4 },
+  Map(1) { 5 => 5 }
+}
+NEST map 6 {
+  outer: [
+    Map(1) { 0 => 0 },
+    Map(1) { 1 => 1 },
+    Map(1) { 2 => 2 },
+    Map(1) { 3 => 3 },
+    Map(1) { 4 => 4 },
+    Map(1) { 5 => 5 }
+  ]
+}
+SPEC map 6
+ARR map 7 [
+  Map(1) { 0 => 0 },
+  Map(1) { 1 => 1 },
+  Map(1) { 2 => 2 },
+  Map(1) { 3 => 3 },
+  Map(1) { 4 => 4 },
+  Map(1) { 5 => 5 },
+  Map(1) { 6 => 6 }
+]
+OBJ map 7 {
+  k0: Map(1) { 0 => 0 },
+  k1: Map(1) { 1 => 1 },
+  k2: Map(1) { 2 => 2 },
+  k3: Map(1) { 3 => 3 },
+  k4: Map(1) { 4 => 4 },
+  k5: Map(1) { 5 => 5 },
+  k6: Map(1) { 6 => 6 }
+}
+MAP map 7 Map(7) {
+  'k0' => Map(1) { 0 => 0 },
+  'k1' => Map(1) { 1 => 1 },
+  'k2' => Map(1) { 2 => 2 },
+  'k3' => Map(1) { 3 => 3 },
+  'k4' => Map(1) { 4 => 4 },
+  'k5' => Map(1) { 5 => 5 },
+  'k6' => Map(1) { 6 => 6 }
+}
+SET map 7 Set(7) {
+  Map(1) { 0 => 0 },
+  Map(1) { 1 => 1 },
+  Map(1) { 2 => 2 },
+  Map(1) { 3 => 3 },
+  Map(1) { 4 => 4 },
+  Map(1) { 5 => 5 },
+  Map(1) { 6 => 6 }
+}
+NEST map 7 {
+  outer: [
+    Map(1) { 0 => 0 },
+    Map(1) { 1 => 1 },
+    Map(1) { 2 => 2 },
+    Map(1) { 3 => 3 },
+    Map(1) { 4 => 4 },
+    Map(1) { 5 => 5 },
+    Map(1) { 6 => 6 }
+  ]
+}
+SPEC map 7
+ARR map 8 [
+  Map(1) { 0 => 0 },
+  Map(1) { 1 => 1 },
+  Map(1) { 2 => 2 },
+  Map(1) { 3 => 3 },
+  Map(1) { 4 => 4 },
+  Map(1) { 5 => 5 },
+  Map(1) { 6 => 6 },
+  Map(1) { 7 => 7 }
+]
+OBJ map 8 {
+  k0: Map(1) { 0 => 0 },
+  k1: Map(1) { 1 => 1 },
+  k2: Map(1) { 2 => 2 },
+  k3: Map(1) { 3 => 3 },
+  k4: Map(1) { 4 => 4 },
+  k5: Map(1) { 5 => 5 },
+  k6: Map(1) { 6 => 6 },
+  k7: Map(1) { 7 => 7 }
+}
+MAP map 8 Map(8) {
+  'k0' => Map(1) { 0 => 0 },
+  'k1' => Map(1) { 1 => 1 },
+  'k2' => Map(1) { 2 => 2 },
+  'k3' => Map(1) { 3 => 3 },
+  'k4' => Map(1) { 4 => 4 },
+  'k5' => Map(1) { 5 => 5 },
+  'k6' => Map(1) { 6 => 6 },
+  'k7' => Map(1) { 7 => 7 }
+}
+SET map 8 Set(8) {
+  Map(1) { 0 => 0 },
+  Map(1) { 1 => 1 },
+  Map(1) { 2 => 2 },
+  Map(1) { 3 => 3 },
+  Map(1) { 4 => 4 },
+  Map(1) { 5 => 5 },
+  Map(1) { 6 => 6 },
+  Map(1) { 7 => 7 }
+}
+NEST map 8 {
+  outer: [
+    Map(1) { 0 => 0 },
+    Map(1) { 1 => 1 },
+    Map(1) { 2 => 2 },
+    Map(1) { 3 => 3 },
+    Map(1) { 4 => 4 },
+    Map(1) { 5 => 5 },
+    Map(1) { 6 => 6 },
+    Map(1) { 7 => 7 }
+  ]
+}
+SPEC map 8
+ARR map 12 [
+  Map(1) { 0 => 0 },
+  Map(1) { 1 => 1 },
+  Map(1) { 2 => 2 },
+  Map(1) { 3 => 3 },
+  Map(1) { 4 => 4 },
+  Map(1) { 5 => 5 },
+  Map(1) { 6 => 6 },
+  Map(1) { 7 => 7 },
+  Map(1) { 8 => 8 },
+  Map(1) { 9 => 9 },
+  Map(1) { 10 => 10 },
+  Map(1) { 11 => 11 }
+]
+OBJ map 12 {
+  k0: Map(1) { 0 => 0 },
+  k1: Map(1) { 1 => 1 },
+  k2: Map(1) { 2 => 2 },
+  k3: Map(1) { 3 => 3 },
+  k4: Map(1) { 4 => 4 },
+  k5: Map(1) { 5 => 5 },
+  k6: Map(1) { 6 => 6 },
+  k7: Map(1) { 7 => 7 },
+  k8: Map(1) { 8 => 8 },
+  k9: Map(1) { 9 => 9 },
+  k10: Map(1) { 10 => 10 },
+  k11: Map(1) { 11 => 11 }
+}
+MAP map 12 Map(12) {
+  'k0' => Map(1) { 0 => 0 },
+  'k1' => Map(1) { 1 => 1 },
+  'k2' => Map(1) { 2 => 2 },
+  'k3' => Map(1) { 3 => 3 },
+  'k4' => Map(1) { 4 => 4 },
+  'k5' => Map(1) { 5 => 5 },
+  'k6' => Map(1) { 6 => 6 },
+  'k7' => Map(1) { 7 => 7 },
+  'k8' => Map(1) { 8 => 8 },
+  'k9' => Map(1) { 9 => 9 },
+  'k10' => Map(1) { 10 => 10 },
+  'k11' => Map(1) { 11 => 11 }
+}
+SET map 12 Set(12) {
+  Map(1) { 0 => 0 },
+  Map(1) { 1 => 1 },
+  Map(1) { 2 => 2 },
+  Map(1) { 3 => 3 },
+  Map(1) { 4 => 4 },
+  Map(1) { 5 => 5 },
+  Map(1) { 6 => 6 },
+  Map(1) { 7 => 7 },
+  Map(1) { 8 => 8 },
+  Map(1) { 9 => 9 },
+  Map(1) { 10 => 10 },
+  Map(1) { 11 => 11 }
+}
+NEST map 12 {
+  outer: [
+    Map(1) { 0 => 0 },
+    Map(1) { 1 => 1 },
+    Map(1) { 2 => 2 },
+    Map(1) { 3 => 3 },
+    Map(1) { 4 => 4 },
+    Map(1) { 5 => 5 },
+    Map(1) { 6 => 6 },
+    Map(1) { 7 => 7 },
+    Map(1) { 8 => 8 },
+    Map(1) { 9 => 9 },
+    Map(1) { 10 => 10 },
+    Map(1) { 11 => 11 }
+  ]
+}
+SPEC map 12
+ARR map 20 [
+  Map(1) { 0 => 0 },   Map(1) { 1 => 1 },
+  Map(1) { 2 => 2 },   Map(1) { 3 => 3 },
+  Map(1) { 4 => 4 },   Map(1) { 5 => 5 },
+  Map(1) { 6 => 6 },   Map(1) { 7 => 7 },
+  Map(1) { 8 => 8 },   Map(1) { 9 => 9 },
+  Map(1) { 10 => 10 }, Map(1) { 11 => 11 },
+  Map(1) { 12 => 12 }, Map(1) { 13 => 13 },
+  Map(1) { 14 => 14 }, Map(1) { 15 => 15 },
+  Map(1) { 16 => 16 }, Map(1) { 17 => 17 },
+  Map(1) { 18 => 18 }, Map(1) { 19 => 19 }
+]
+OBJ map 20 {
+  k0: Map(1) { 0 => 0 },
+  k1: Map(1) { 1 => 1 },
+  k2: Map(1) { 2 => 2 },
+  k3: Map(1) { 3 => 3 },
+  k4: Map(1) { 4 => 4 },
+  k5: Map(1) { 5 => 5 },
+  k6: Map(1) { 6 => 6 },
+  k7: Map(1) { 7 => 7 },
+  k8: Map(1) { 8 => 8 },
+  k9: Map(1) { 9 => 9 },
+  k10: Map(1) { 10 => 10 },
+  k11: Map(1) { 11 => 11 },
+  k12: Map(1) { 12 => 12 },
+  k13: Map(1) { 13 => 13 },
+  k14: Map(1) { 14 => 14 },
+  k15: Map(1) { 15 => 15 },
+  k16: Map(1) { 16 => 16 },
+  k17: Map(1) { 17 => 17 },
+  k18: Map(1) { 18 => 18 },
+  k19: Map(1) { 19 => 19 }
+}
+MAP map 20 Map(20) {
+  'k0' => Map(1) { 0 => 0 },
+  'k1' => Map(1) { 1 => 1 },
+  'k2' => Map(1) { 2 => 2 },
+  'k3' => Map(1) { 3 => 3 },
+  'k4' => Map(1) { 4 => 4 },
+  'k5' => Map(1) { 5 => 5 },
+  'k6' => Map(1) { 6 => 6 },
+  'k7' => Map(1) { 7 => 7 },
+  'k8' => Map(1) { 8 => 8 },
+  'k9' => Map(1) { 9 => 9 },
+  'k10' => Map(1) { 10 => 10 },
+  'k11' => Map(1) { 11 => 11 },
+  'k12' => Map(1) { 12 => 12 },
+  'k13' => Map(1) { 13 => 13 },
+  'k14' => Map(1) { 14 => 14 },
+  'k15' => Map(1) { 15 => 15 },
+  'k16' => Map(1) { 16 => 16 },
+  'k17' => Map(1) { 17 => 17 },
+  'k18' => Map(1) { 18 => 18 },
+  'k19' => Map(1) { 19 => 19 }
+}
+SET map 20 Set(20) {
+  Map(1) { 0 => 0 },
+  Map(1) { 1 => 1 },
+  Map(1) { 2 => 2 },
+  Map(1) { 3 => 3 },
+  Map(1) { 4 => 4 },
+  Map(1) { 5 => 5 },
+  Map(1) { 6 => 6 },
+  Map(1) { 7 => 7 },
+  Map(1) { 8 => 8 },
+  Map(1) { 9 => 9 },
+  Map(1) { 10 => 10 },
+  Map(1) { 11 => 11 },
+  Map(1) { 12 => 12 },
+  Map(1) { 13 => 13 },
+  Map(1) { 14 => 14 },
+  Map(1) { 15 => 15 },
+  Map(1) { 16 => 16 },
+  Map(1) { 17 => 17 },
+  Map(1) { 18 => 18 },
+  Map(1) { 19 => 19 }
+}
+NEST map 20 {
+  outer: [
+    Map(1) { 0 => 0 },   Map(1) { 1 => 1 },
+    Map(1) { 2 => 2 },   Map(1) { 3 => 3 },
+    Map(1) { 4 => 4 },   Map(1) { 5 => 5 },
+    Map(1) { 6 => 6 },   Map(1) { 7 => 7 },
+    Map(1) { 8 => 8 },   Map(1) { 9 => 9 },
+    Map(1) { 10 => 10 }, Map(1) { 11 => 11 },
+    Map(1) { 12 => 12 }, Map(1) { 13 => 13 },
+    Map(1) { 14 => 14 }, Map(1) { 15 => 15 },
+    Map(1) { 16 => 16 }, Map(1) { 17 => 17 },
+    Map(1) { 18 => 18 }, Map(1) { 19 => 19 }
+  ]
+}
+SPEC map 20
+ARR set 0 []
+OBJ set 0 {}
+MAP set 0 Map(0) {}
+SET set 0 Set(0) {}
+NEST set 0 { outer: [] }
+SPEC set 0
+ARR set 1 [ Set(1) { 0 } ]
+OBJ set 1 { k0: Set(1) { 0 } }
+MAP set 1 Map(1) { 'k0' => Set(1) { 0 } }
+SET set 1 Set(1) { Set(1) { 0 } }
+NEST set 1 { outer: [ Set(1) { 0 } ] }
+SPEC set 1
+ARR set 2 [ Set(1) { 0 }, Set(1) { 1 } ]
+OBJ set 2 { k0: Set(1) { 0 }, k1: Set(1) { 1 } }
+MAP set 2 Map(2) { 'k0' => Set(1) { 0 }, 'k1' => Set(1) { 1 } }
+SET set 2 Set(2) { Set(1) { 0 }, Set(1) { 1 } }
+NEST set 2 { outer: [ Set(1) { 0 }, Set(1) { 1 } ] }
+SPEC set 2
+ARR set 3 [ Set(1) { 0 }, Set(1) { 1 }, Set(1) { 2 } ]
+OBJ set 3 { k0: Set(1) { 0 }, k1: Set(1) { 1 }, k2: Set(1) { 2 } }
+MAP set 3 Map(3) {
+  'k0' => Set(1) { 0 },
+  'k1' => Set(1) { 1 },
+  'k2' => Set(1) { 2 }
+}
+SET set 3 Set(3) { Set(1) { 0 }, Set(1) { 1 }, Set(1) { 2 } }
+NEST set 3 { outer: [ Set(1) { 0 }, Set(1) { 1 }, Set(1) { 2 } ] }
+SPEC set 3
+ARR set 5 [
+  Set(1) { 0 },
+  Set(1) { 1 },
+  Set(1) { 2 },
+  Set(1) { 3 },
+  Set(1) { 4 }
+]
+OBJ set 5 {
+  k0: Set(1) { 0 },
+  k1: Set(1) { 1 },
+  k2: Set(1) { 2 },
+  k3: Set(1) { 3 },
+  k4: Set(1) { 4 }
+}
+MAP set 5 Map(5) {
+  'k0' => Set(1) { 0 },
+  'k1' => Set(1) { 1 },
+  'k2' => Set(1) { 2 },
+  'k3' => Set(1) { 3 },
+  'k4' => Set(1) { 4 }
+}
+SET set 5 Set(5) {
+  Set(1) { 0 },
+  Set(1) { 1 },
+  Set(1) { 2 },
+  Set(1) { 3 },
+  Set(1) { 4 }
+}
+NEST set 5 {
+  outer: [
+    Set(1) { 0 },
+    Set(1) { 1 },
+    Set(1) { 2 },
+    Set(1) { 3 },
+    Set(1) { 4 }
+  ]
+}
+SPEC set 5
+ARR set 6 [
+  Set(1) { 0 },
+  Set(1) { 1 },
+  Set(1) { 2 },
+  Set(1) { 3 },
+  Set(1) { 4 },
+  Set(1) { 5 }
+]
+OBJ set 6 {
+  k0: Set(1) { 0 },
+  k1: Set(1) { 1 },
+  k2: Set(1) { 2 },
+  k3: Set(1) { 3 },
+  k4: Set(1) { 4 },
+  k5: Set(1) { 5 }
+}
+MAP set 6 Map(6) {
+  'k0' => Set(1) { 0 },
+  'k1' => Set(1) { 1 },
+  'k2' => Set(1) { 2 },
+  'k3' => Set(1) { 3 },
+  'k4' => Set(1) { 4 },
+  'k5' => Set(1) { 5 }
+}
+SET set 6 Set(6) {
+  Set(1) { 0 },
+  Set(1) { 1 },
+  Set(1) { 2 },
+  Set(1) { 3 },
+  Set(1) { 4 },
+  Set(1) { 5 }
+}
+NEST set 6 {
+  outer: [
+    Set(1) { 0 },
+    Set(1) { 1 },
+    Set(1) { 2 },
+    Set(1) { 3 },
+    Set(1) { 4 },
+    Set(1) { 5 }
+  ]
+}
+SPEC set 6
+ARR set 7 [
+  Set(1) { 0 },
+  Set(1) { 1 },
+  Set(1) { 2 },
+  Set(1) { 3 },
+  Set(1) { 4 },
+  Set(1) { 5 },
+  Set(1) { 6 }
+]
+OBJ set 7 {
+  k0: Set(1) { 0 },
+  k1: Set(1) { 1 },
+  k2: Set(1) { 2 },
+  k3: Set(1) { 3 },
+  k4: Set(1) { 4 },
+  k5: Set(1) { 5 },
+  k6: Set(1) { 6 }
+}
+MAP set 7 Map(7) {
+  'k0' => Set(1) { 0 },
+  'k1' => Set(1) { 1 },
+  'k2' => Set(1) { 2 },
+  'k3' => Set(1) { 3 },
+  'k4' => Set(1) { 4 },
+  'k5' => Set(1) { 5 },
+  'k6' => Set(1) { 6 }
+}
+SET set 7 Set(7) {
+  Set(1) { 0 },
+  Set(1) { 1 },
+  Set(1) { 2 },
+  Set(1) { 3 },
+  Set(1) { 4 },
+  Set(1) { 5 },
+  Set(1) { 6 }
+}
+NEST set 7 {
+  outer: [
+    Set(1) { 0 },
+    Set(1) { 1 },
+    Set(1) { 2 },
+    Set(1) { 3 },
+    Set(1) { 4 },
+    Set(1) { 5 },
+    Set(1) { 6 }
+  ]
+}
+SPEC set 7
+ARR set 8 [
+  Set(1) { 0 },
+  Set(1) { 1 },
+  Set(1) { 2 },
+  Set(1) { 3 },
+  Set(1) { 4 },
+  Set(1) { 5 },
+  Set(1) { 6 },
+  Set(1) { 7 }
+]
+OBJ set 8 {
+  k0: Set(1) { 0 },
+  k1: Set(1) { 1 },
+  k2: Set(1) { 2 },
+  k3: Set(1) { 3 },
+  k4: Set(1) { 4 },
+  k5: Set(1) { 5 },
+  k6: Set(1) { 6 },
+  k7: Set(1) { 7 }
+}
+MAP set 8 Map(8) {
+  'k0' => Set(1) { 0 },
+  'k1' => Set(1) { 1 },
+  'k2' => Set(1) { 2 },
+  'k3' => Set(1) { 3 },
+  'k4' => Set(1) { 4 },
+  'k5' => Set(1) { 5 },
+  'k6' => Set(1) { 6 },
+  'k7' => Set(1) { 7 }
+}
+SET set 8 Set(8) {
+  Set(1) { 0 },
+  Set(1) { 1 },
+  Set(1) { 2 },
+  Set(1) { 3 },
+  Set(1) { 4 },
+  Set(1) { 5 },
+  Set(1) { 6 },
+  Set(1) { 7 }
+}
+NEST set 8 {
+  outer: [
+    Set(1) { 0 },
+    Set(1) { 1 },
+    Set(1) { 2 },
+    Set(1) { 3 },
+    Set(1) { 4 },
+    Set(1) { 5 },
+    Set(1) { 6 },
+    Set(1) { 7 }
+  ]
+}
+SPEC set 8
+ARR set 12 [
+  Set(1) { 0 },  Set(1) { 1 },
+  Set(1) { 2 },  Set(1) { 3 },
+  Set(1) { 4 },  Set(1) { 5 },
+  Set(1) { 6 },  Set(1) { 7 },
+  Set(1) { 8 },  Set(1) { 9 },
+  Set(1) { 10 }, Set(1) { 11 }
+]
+OBJ set 12 {
+  k0: Set(1) { 0 },
+  k1: Set(1) { 1 },
+  k2: Set(1) { 2 },
+  k3: Set(1) { 3 },
+  k4: Set(1) { 4 },
+  k5: Set(1) { 5 },
+  k6: Set(1) { 6 },
+  k7: Set(1) { 7 },
+  k8: Set(1) { 8 },
+  k9: Set(1) { 9 },
+  k10: Set(1) { 10 },
+  k11: Set(1) { 11 }
+}
+MAP set 12 Map(12) {
+  'k0' => Set(1) { 0 },
+  'k1' => Set(1) { 1 },
+  'k2' => Set(1) { 2 },
+  'k3' => Set(1) { 3 },
+  'k4' => Set(1) { 4 },
+  'k5' => Set(1) { 5 },
+  'k6' => Set(1) { 6 },
+  'k7' => Set(1) { 7 },
+  'k8' => Set(1) { 8 },
+  'k9' => Set(1) { 9 },
+  'k10' => Set(1) { 10 },
+  'k11' => Set(1) { 11 }
+}
+SET set 12 Set(12) {
+  Set(1) { 0 },
+  Set(1) { 1 },
+  Set(1) { 2 },
+  Set(1) { 3 },
+  Set(1) { 4 },
+  Set(1) { 5 },
+  Set(1) { 6 },
+  Set(1) { 7 },
+  Set(1) { 8 },
+  Set(1) { 9 },
+  Set(1) { 10 },
+  Set(1) { 11 }
+}
+NEST set 12 {
+  outer: [
+    Set(1) { 0 },  Set(1) { 1 },
+    Set(1) { 2 },  Set(1) { 3 },
+    Set(1) { 4 },  Set(1) { 5 },
+    Set(1) { 6 },  Set(1) { 7 },
+    Set(1) { 8 },  Set(1) { 9 },
+    Set(1) { 10 }, Set(1) { 11 }
+  ]
+}
+SPEC set 12
+ARR set 20 [
+  Set(1) { 0 },  Set(1) { 1 },
+  Set(1) { 2 },  Set(1) { 3 },
+  Set(1) { 4 },  Set(1) { 5 },
+  Set(1) { 6 },  Set(1) { 7 },
+  Set(1) { 8 },  Set(1) { 9 },
+  Set(1) { 10 }, Set(1) { 11 },
+  Set(1) { 12 }, Set(1) { 13 },
+  Set(1) { 14 }, Set(1) { 15 },
+  Set(1) { 16 }, Set(1) { 17 },
+  Set(1) { 18 }, Set(1) { 19 }
+]
+OBJ set 20 {
+  k0: Set(1) { 0 },
+  k1: Set(1) { 1 },
+  k2: Set(1) { 2 },
+  k3: Set(1) { 3 },
+  k4: Set(1) { 4 },
+  k5: Set(1) { 5 },
+  k6: Set(1) { 6 },
+  k7: Set(1) { 7 },
+  k8: Set(1) { 8 },
+  k9: Set(1) { 9 },
+  k10: Set(1) { 10 },
+  k11: Set(1) { 11 },
+  k12: Set(1) { 12 },
+  k13: Set(1) { 13 },
+  k14: Set(1) { 14 },
+  k15: Set(1) { 15 },
+  k16: Set(1) { 16 },
+  k17: Set(1) { 17 },
+  k18: Set(1) { 18 },
+  k19: Set(1) { 19 }
+}
+MAP set 20 Map(20) {
+  'k0' => Set(1) { 0 },
+  'k1' => Set(1) { 1 },
+  'k2' => Set(1) { 2 },
+  'k3' => Set(1) { 3 },
+  'k4' => Set(1) { 4 },
+  'k5' => Set(1) { 5 },
+  'k6' => Set(1) { 6 },
+  'k7' => Set(1) { 7 },
+  'k8' => Set(1) { 8 },
+  'k9' => Set(1) { 9 },
+  'k10' => Set(1) { 10 },
+  'k11' => Set(1) { 11 },
+  'k12' => Set(1) { 12 },
+  'k13' => Set(1) { 13 },
+  'k14' => Set(1) { 14 },
+  'k15' => Set(1) { 15 },
+  'k16' => Set(1) { 16 },
+  'k17' => Set(1) { 17 },
+  'k18' => Set(1) { 18 },
+  'k19' => Set(1) { 19 }
+}
+SET set 20 Set(20) {
+  Set(1) { 0 },
+  Set(1) { 1 },
+  Set(1) { 2 },
+  Set(1) { 3 },
+  Set(1) { 4 },
+  Set(1) { 5 },
+  Set(1) { 6 },
+  Set(1) { 7 },
+  Set(1) { 8 },
+  Set(1) { 9 },
+  Set(1) { 10 },
+  Set(1) { 11 },
+  Set(1) { 12 },
+  Set(1) { 13 },
+  Set(1) { 14 },
+  Set(1) { 15 },
+  Set(1) { 16 },
+  Set(1) { 17 },
+  Set(1) { 18 },
+  Set(1) { 19 }
+}
+NEST set 20 {
+  outer: [
+    Set(1) { 0 },  Set(1) { 1 },
+    Set(1) { 2 },  Set(1) { 3 },
+    Set(1) { 4 },  Set(1) { 5 },
+    Set(1) { 6 },  Set(1) { 7 },
+    Set(1) { 8 },  Set(1) { 9 },
+    Set(1) { 10 }, Set(1) { 11 },
+    Set(1) { 12 }, Set(1) { 13 },
+    Set(1) { 14 }, Set(1) { 15 },
+    Set(1) { 16 }, Set(1) { 17 },
+    Set(1) { 18 }, Set(1) { 19 }
+  ]
+}
+SPEC set 20
+ARR emptyobj 0 []
+OBJ emptyobj 0 {}
+MAP emptyobj 0 Map(0) {}
+SET emptyobj 0 Set(0) {}
+NEST emptyobj 0 { outer: [] }
+SPEC emptyobj 0
+ARR emptyobj 1 [ {} ]
+OBJ emptyobj 1 { k0: {} }
+MAP emptyobj 1 Map(1) { 'k0' => {} }
+SET emptyobj 1 Set(1) { {} }
+NEST emptyobj 1 { outer: [ {} ] }
+SPEC emptyobj 1
+ARR emptyobj 2 [ {}, {} ]
+OBJ emptyobj 2 { k0: {}, k1: {} }
+MAP emptyobj 2 Map(2) { 'k0' => {}, 'k1' => {} }
+SET emptyobj 2 Set(2) { {}, {} }
+NEST emptyobj 2 { outer: [ {}, {} ] }
+SPEC emptyobj 2
+ARR emptyobj 3 [ {}, {}, {} ]
+OBJ emptyobj 3 { k0: {}, k1: {}, k2: {} }
+MAP emptyobj 3 Map(3) { 'k0' => {}, 'k1' => {}, 'k2' => {} }
+SET emptyobj 3 Set(3) { {}, {}, {} }
+NEST emptyobj 3 { outer: [ {}, {}, {} ] }
+SPEC emptyobj 3
+ARR emptyobj 5 [ {}, {}, {}, {}, {} ]
+OBJ emptyobj 5 { k0: {}, k1: {}, k2: {}, k3: {}, k4: {} }
+MAP emptyobj 5 Map(5) { 'k0' => {}, 'k1' => {}, 'k2' => {}, 'k3' => {}, 'k4' => {} }
+SET emptyobj 5 Set(5) { {}, {}, {}, {}, {} }
+NEST emptyobj 5 { outer: [ {}, {}, {}, {}, {} ] }
+SPEC emptyobj 5
+ARR emptyobj 6 [ {}, {}, {}, {}, {}, {} ]
+OBJ emptyobj 6 { k0: {}, k1: {}, k2: {}, k3: {}, k4: {}, k5: {} }
+MAP emptyobj 6 Map(6) {
+  'k0' => {},
+  'k1' => {},
+  'k2' => {},
+  'k3' => {},
+  'k4' => {},
+  'k5' => {}
+}
+SET emptyobj 6 Set(6) { {}, {}, {}, {}, {}, {} }
+NEST emptyobj 6 { outer: [ {}, {}, {}, {}, {}, {} ] }
+SPEC emptyobj 6
+ARR emptyobj 7 [
+  {}, {}, {}, {},
+  {}, {}, {}
+]
+OBJ emptyobj 7 { k0: {}, k1: {}, k2: {}, k3: {}, k4: {}, k5: {}, k6: {} }
+MAP emptyobj 7 Map(7) {
+  'k0' => {},
+  'k1' => {},
+  'k2' => {},
+  'k3' => {},
+  'k4' => {},
+  'k5' => {},
+  'k6' => {}
+}
+SET emptyobj 7 Set(7) { {}, {}, {}, {}, {}, {}, {} }
+NEST emptyobj 7 {
+  outer: [
+    {}, {}, {}, {},
+    {}, {}, {}
+  ]
+}
+SPEC emptyobj 7
+ARR emptyobj 8 [
+  {}, {}, {}, {},
+  {}, {}, {}, {}
+]
+OBJ emptyobj 8 { k0: {}, k1: {}, k2: {}, k3: {}, k4: {}, k5: {}, k6: {}, k7: {} }
+MAP emptyobj 8 Map(8) {
+  'k0' => {},
+  'k1' => {},
+  'k2' => {},
+  'k3' => {},
+  'k4' => {},
+  'k5' => {},
+  'k6' => {},
+  'k7' => {}
+}
+SET emptyobj 8 Set(8) { {}, {}, {}, {}, {}, {}, {}, {} }
+NEST emptyobj 8 {
+  outer: [
+    {}, {}, {}, {},
+    {}, {}, {}, {}
+  ]
+}
+SPEC emptyobj 8
+ARR emptyobj 12 [
+  {}, {}, {}, {}, {},
+  {}, {}, {}, {}, {},
+  {}, {}
+]
+OBJ emptyobj 12 {
+  k0: {},
+  k1: {},
+  k2: {},
+  k3: {},
+  k4: {},
+  k5: {},
+  k6: {},
+  k7: {},
+  k8: {},
+  k9: {},
+  k10: {},
+  k11: {}
+}
+MAP emptyobj 12 Map(12) {
+  'k0' => {},
+  'k1' => {},
+  'k2' => {},
+  'k3' => {},
+  'k4' => {},
+  'k5' => {},
+  'k6' => {},
+  'k7' => {},
+  'k8' => {},
+  'k9' => {},
+  'k10' => {},
+  'k11' => {}
+}
+SET emptyobj 12 Set(12) { {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {} }
+NEST emptyobj 12 {
+  outer: [
+    {}, {}, {}, {}, {},
+    {}, {}, {}, {}, {},
+    {}, {}
+  ]
+}
+SPEC emptyobj 12
+ARR emptyobj 20 [
+  {}, {}, {}, {}, {}, {}, {},
+  {}, {}, {}, {}, {}, {}, {},
+  {}, {}, {}, {}, {}, {}
+]
+OBJ emptyobj 20 {
+  k0: {},
+  k1: {},
+  k2: {},
+  k3: {},
+  k4: {},
+  k5: {},
+  k6: {},
+  k7: {},
+  k8: {},
+  k9: {},
+  k10: {},
+  k11: {},
+  k12: {},
+  k13: {},
+  k14: {},
+  k15: {},
+  k16: {},
+  k17: {},
+  k18: {},
+  k19: {}
+}
+MAP emptyobj 20 Map(20) {
+  'k0' => {},
+  'k1' => {},
+  'k2' => {},
+  'k3' => {},
+  'k4' => {},
+  'k5' => {},
+  'k6' => {},
+  'k7' => {},
+  'k8' => {},
+  'k9' => {},
+  'k10' => {},
+  'k11' => {},
+  'k12' => {},
+  'k13' => {},
+  'k14' => {},
+  'k15' => {},
+  'k16' => {},
+  'k17' => {},
+  'k18' => {},
+  'k19' => {}
+}
+SET emptyobj 20 Set(20) {
+  {},
+  {},
+  {},
+  {},
+  {},
+  {},
+  {},
+  {},
+  {},
+  {},
+  {},
+  {},
+  {},
+  {},
+  {},
+  {},
+  {},
+  {},
+  {},
+  {}
+}
+NEST emptyobj 20 {
+  outer: [
+    {}, {}, {}, {}, {}, {}, {},
+    {}, {}, {}, {}, {}, {}, {},
+    {}, {}, {}, {}, {}, {}
+  ]
+}
+SPEC emptyobj 20
+ARR emptyarr 0 []
+OBJ emptyarr 0 {}
+MAP emptyarr 0 Map(0) {}
+SET emptyarr 0 Set(0) {}
+NEST emptyarr 0 { outer: [] }
+SPEC emptyarr 0
+ARR emptyarr 1 [ [] ]
+OBJ emptyarr 1 { k0: [] }
+MAP emptyarr 1 Map(1) { 'k0' => [] }
+SET emptyarr 1 Set(1) { [] }
+NEST emptyarr 1 { outer: [ [] ] }
+SPEC emptyarr 1
+ARR emptyarr 2 [ [], [] ]
+OBJ emptyarr 2 { k0: [], k1: [] }
+MAP emptyarr 2 Map(2) { 'k0' => [], 'k1' => [] }
+SET emptyarr 2 Set(2) { [], [] }
+NEST emptyarr 2 { outer: [ [], [] ] }
+SPEC emptyarr 2
+ARR emptyarr 3 [ [], [], [] ]
+OBJ emptyarr 3 { k0: [], k1: [], k2: [] }
+MAP emptyarr 3 Map(3) { 'k0' => [], 'k1' => [], 'k2' => [] }
+SET emptyarr 3 Set(3) { [], [], [] }
+NEST emptyarr 3 { outer: [ [], [], [] ] }
+SPEC emptyarr 3
+ARR emptyarr 5 [ [], [], [], [], [] ]
+OBJ emptyarr 5 { k0: [], k1: [], k2: [], k3: [], k4: [] }
+MAP emptyarr 5 Map(5) { 'k0' => [], 'k1' => [], 'k2' => [], 'k3' => [], 'k4' => [] }
+SET emptyarr 5 Set(5) { [], [], [], [], [] }
+NEST emptyarr 5 { outer: [ [], [], [], [], [] ] }
+SPEC emptyarr 5
+ARR emptyarr 6 [ [], [], [], [], [], [] ]
+OBJ emptyarr 6 { k0: [], k1: [], k2: [], k3: [], k4: [], k5: [] }
+MAP emptyarr 6 Map(6) {
+  'k0' => [],
+  'k1' => [],
+  'k2' => [],
+  'k3' => [],
+  'k4' => [],
+  'k5' => []
+}
+SET emptyarr 6 Set(6) { [], [], [], [], [], [] }
+NEST emptyarr 6 { outer: [ [], [], [], [], [], [] ] }
+SPEC emptyarr 6
+ARR emptyarr 7 [
+  [], [], [], [],
+  [], [], []
+]
+OBJ emptyarr 7 { k0: [], k1: [], k2: [], k3: [], k4: [], k5: [], k6: [] }
+MAP emptyarr 7 Map(7) {
+  'k0' => [],
+  'k1' => [],
+  'k2' => [],
+  'k3' => [],
+  'k4' => [],
+  'k5' => [],
+  'k6' => []
+}
+SET emptyarr 7 Set(7) { [], [], [], [], [], [], [] }
+NEST emptyarr 7 {
+  outer: [
+    [], [], [], [],
+    [], [], []
+  ]
+}
+SPEC emptyarr 7
+ARR emptyarr 8 [
+  [], [], [], [],
+  [], [], [], []
+]
+OBJ emptyarr 8 { k0: [], k1: [], k2: [], k3: [], k4: [], k5: [], k6: [], k7: [] }
+MAP emptyarr 8 Map(8) {
+  'k0' => [],
+  'k1' => [],
+  'k2' => [],
+  'k3' => [],
+  'k4' => [],
+  'k5' => [],
+  'k6' => [],
+  'k7' => []
+}
+SET emptyarr 8 Set(8) { [], [], [], [], [], [], [], [] }
+NEST emptyarr 8 {
+  outer: [
+    [], [], [], [],
+    [], [], [], []
+  ]
+}
+SPEC emptyarr 8
+ARR emptyarr 12 [
+  [], [], [], [], [],
+  [], [], [], [], [],
+  [], []
+]
+OBJ emptyarr 12 {
+  k0: [],
+  k1: [],
+  k2: [],
+  k3: [],
+  k4: [],
+  k5: [],
+  k6: [],
+  k7: [],
+  k8: [],
+  k9: [],
+  k10: [],
+  k11: []
+}
+MAP emptyarr 12 Map(12) {
+  'k0' => [],
+  'k1' => [],
+  'k2' => [],
+  'k3' => [],
+  'k4' => [],
+  'k5' => [],
+  'k6' => [],
+  'k7' => [],
+  'k8' => [],
+  'k9' => [],
+  'k10' => [],
+  'k11' => []
+}
+SET emptyarr 12 Set(12) { [], [], [], [], [], [], [], [], [], [], [], [] }
+NEST emptyarr 12 {
+  outer: [
+    [], [], [], [], [],
+    [], [], [], [], [],
+    [], []
+  ]
+}
+SPEC emptyarr 12
+ARR emptyarr 20 [
+  [], [], [], [], [], [], [],
+  [], [], [], [], [], [], [],
+  [], [], [], [], [], []
+]
+OBJ emptyarr 20 {
+  k0: [],
+  k1: [],
+  k2: [],
+  k3: [],
+  k4: [],
+  k5: [],
+  k6: [],
+  k7: [],
+  k8: [],
+  k9: [],
+  k10: [],
+  k11: [],
+  k12: [],
+  k13: [],
+  k14: [],
+  k15: [],
+  k16: [],
+  k17: [],
+  k18: [],
+  k19: []
+}
+MAP emptyarr 20 Map(20) {
+  'k0' => [],
+  'k1' => [],
+  'k2' => [],
+  'k3' => [],
+  'k4' => [],
+  'k5' => [],
+  'k6' => [],
+  'k7' => [],
+  'k8' => [],
+  'k9' => [],
+  'k10' => [],
+  'k11' => [],
+  'k12' => [],
+  'k13' => [],
+  'k14' => [],
+  'k15' => [],
+  'k16' => [],
+  'k17' => [],
+  'k18' => [],
+  'k19' => []
+}
+SET emptyarr 20 Set(20) {
+  [],
+  [],
+  [],
+  [],
+  [],
+  [],
+  [],
+  [],
+  [],
+  [],
+  [],
+  [],
+  [],
+  [],
+  [],
+  [],
+  [],
+  [],
+  [],
+  []
+}
+NEST emptyarr 20 {
+  outer: [
+    [], [], [], [], [], [], [],
+    [], [], [], [], [], [], [],
+    [], [], [], [], [], []
+  ]
+}
+SPEC emptyarr 20
+ARR negzero 0 []
+OBJ negzero 0 {}
+MAP negzero 0 Map(0) {}
+SET negzero 0 Set(0) {}
+NEST negzero 0 { outer: [] }
+SPEC negzero 0
+ARR negzero 1 [ -0 ]
+OBJ negzero 1 { k0: -0 }
+MAP negzero 1 Map(1) { 'k0' => -0 }
+SET negzero 1 Set(1) { 0 }
+NEST negzero 1 { outer: [ -0 ] }
+SPEC negzero 1
+ARR negzero 2 [ -0, -0 ]
+OBJ negzero 2 { k0: -0, k1: -0 }
+MAP negzero 2 Map(2) { 'k0' => -0, 'k1' => -0 }
+SET negzero 2 Set(1) { 0 }
+NEST negzero 2 { outer: [ -0, -0 ] }
+SPEC negzero 2
+ARR negzero 3 [ -0, -0, -0 ]
+OBJ negzero 3 { k0: -0, k1: -0, k2: -0 }
+MAP negzero 3 Map(3) { 'k0' => -0, 'k1' => -0, 'k2' => -0 }
+SET negzero 3 Set(1) { 0 }
+NEST negzero 3 { outer: [ -0, -0, -0 ] }
+SPEC negzero 3
+ARR negzero 5 [ -0, -0, -0, -0, -0 ]
+OBJ negzero 5 { k0: -0, k1: -0, k2: -0, k3: -0, k4: -0 }
+MAP negzero 5 Map(5) { 'k0' => -0, 'k1' => -0, 'k2' => -0, 'k3' => -0, 'k4' => -0 }
+SET negzero 5 Set(1) { 0 }
+NEST negzero 5 { outer: [ -0, -0, -0, -0, -0 ] }
+SPEC negzero 5
+ARR negzero 6 [ -0, -0, -0, -0, -0, -0 ]
+OBJ negzero 6 { k0: -0, k1: -0, k2: -0, k3: -0, k4: -0, k5: -0 }
+MAP negzero 6 Map(6) {
+  'k0' => -0,
+  'k1' => -0,
+  'k2' => -0,
+  'k3' => -0,
+  'k4' => -0,
+  'k5' => -0
+}
+SET negzero 6 Set(1) { 0 }
+NEST negzero 6 { outer: [ -0, -0, -0, -0, -0, -0 ] }
+SPEC negzero 6
+ARR negzero 7 [
+  -0, -0, -0, -0,
+  -0, -0, -0
+]
+OBJ negzero 7 { k0: -0, k1: -0, k2: -0, k3: -0, k4: -0, k5: -0, k6: -0 }
+MAP negzero 7 Map(7) {
+  'k0' => -0,
+  'k1' => -0,
+  'k2' => -0,
+  'k3' => -0,
+  'k4' => -0,
+  'k5' => -0,
+  'k6' => -0
+}
+SET negzero 7 Set(1) { 0 }
+NEST negzero 7 {
+  outer: [
+    -0, -0, -0, -0,
+    -0, -0, -0
+  ]
+}
+SPEC negzero 7
+ARR negzero 8 [
+  -0, -0, -0, -0,
+  -0, -0, -0, -0
+]
+OBJ negzero 8 { k0: -0, k1: -0, k2: -0, k3: -0, k4: -0, k5: -0, k6: -0, k7: -0 }
+MAP negzero 8 Map(8) {
+  'k0' => -0,
+  'k1' => -0,
+  'k2' => -0,
+  'k3' => -0,
+  'k4' => -0,
+  'k5' => -0,
+  'k6' => -0,
+  'k7' => -0
+}
+SET negzero 8 Set(1) { 0 }
+NEST negzero 8 {
+  outer: [
+    -0, -0, -0, -0,
+    -0, -0, -0, -0
+  ]
+}
+SPEC negzero 8
+ARR negzero 12 [
+  -0, -0, -0, -0, -0,
+  -0, -0, -0, -0, -0,
+  -0, -0
+]
+OBJ negzero 12 {
+  k0: -0,
+  k1: -0,
+  k2: -0,
+  k3: -0,
+  k4: -0,
+  k5: -0,
+  k6: -0,
+  k7: -0,
+  k8: -0,
+  k9: -0,
+  k10: -0,
+  k11: -0
+}
+MAP negzero 12 Map(12) {
+  'k0' => -0,
+  'k1' => -0,
+  'k2' => -0,
+  'k3' => -0,
+  'k4' => -0,
+  'k5' => -0,
+  'k6' => -0,
+  'k7' => -0,
+  'k8' => -0,
+  'k9' => -0,
+  'k10' => -0,
+  'k11' => -0
+}
+SET negzero 12 Set(1) { 0 }
+NEST negzero 12 {
+  outer: [
+    -0, -0, -0, -0, -0,
+    -0, -0, -0, -0, -0,
+    -0, -0
+  ]
+}
+SPEC negzero 12
+ARR negzero 20 [
+  -0, -0, -0, -0, -0, -0, -0,
+  -0, -0, -0, -0, -0, -0, -0,
+  -0, -0, -0, -0, -0, -0
+]
+OBJ negzero 20 {
+  k0: -0,
+  k1: -0,
+  k2: -0,
+  k3: -0,
+  k4: -0,
+  k5: -0,
+  k6: -0,
+  k7: -0,
+  k8: -0,
+  k9: -0,
+  k10: -0,
+  k11: -0,
+  k12: -0,
+  k13: -0,
+  k14: -0,
+  k15: -0,
+  k16: -0,
+  k17: -0,
+  k18: -0,
+  k19: -0
+}
+MAP negzero 20 Map(20) {
+  'k0' => -0,
+  'k1' => -0,
+  'k2' => -0,
+  'k3' => -0,
+  'k4' => -0,
+  'k5' => -0,
+  'k6' => -0,
+  'k7' => -0,
+  'k8' => -0,
+  'k9' => -0,
+  'k10' => -0,
+  'k11' => -0,
+  'k12' => -0,
+  'k13' => -0,
+  'k14' => -0,
+  'k15' => -0,
+  'k16' => -0,
+  'k17' => -0,
+  'k18' => -0,
+  'k19' => -0
+}
+SET negzero 20 Set(1) { 0 }
+NEST negzero 20 {
+  outer: [
+    -0, -0, -0, -0, -0, -0, -0,
+    -0, -0, -0, -0, -0, -0, -0,
+    -0, -0, -0, -0, -0, -0
+  ]
+}
+SPEC negzero 20
+done
