@@ -778,6 +778,25 @@ enum Opcode : char {
     /// Used by for-of to validate the .next() result (ES2022 §14.7.5.6 step 3.b).
     CHKOBJ,
 
+    /// GetIterator (ES2022 §7.4.2) step 3: validate the @@iterator method
+    /// fetched from the source before calling it.  A = the fetched method,
+    /// B = the source value it was read from.  Throws a TypeError naming the
+    /// source when the method is not callable, distinguishing the two cases
+    /// the way the spec's own steps do: an absent (undefined/null) method
+    /// means the source is not iterable at all, while a present but
+    /// non-callable one is a bad @@iterator value.  Without this the bare CALL
+    /// that follows reports "undefined is not a function", which describes the
+    /// engine's internal protocol lookup rather than the user's mistake and
+    /// implies something was called.
+    ///
+    /// C selects the mode.  C=1 runs before the @@iterator read, with A = the
+    /// source, and rejects a null or undefined source (which has no properties
+    /// to read, so the read itself would report "Cannot read properties of
+    /// null" and expose the internal key).  C=0 runs after the read, with
+    /// A = the fetched method and B = the source.  C=2 runs after the call, with
+    /// A = the returned iterator, and requires it to be an Object (step 5).
+    CHKITER,
+
     /// IteratorClose: if the value in A is an object and has a callable
     /// `.return` method, call it with this = A and discard the result. Used
     /// after a pattern walk so destructuring of partially-exhausted
@@ -996,6 +1015,7 @@ case PUTLEX:     return A_BC;
         case GET_ITER_ASYNC:   return ABC;
         case ITER_CLOSE_ASYNC: return ABC;
         case CHKOBJ:     return ABC;
+        case CHKITER:    return ABC;
         case CHKCTOR:    return ABC;
         case CHK_PROT:   return ABC;
 

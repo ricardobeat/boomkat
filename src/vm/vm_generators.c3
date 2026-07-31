@@ -1447,7 +1447,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 HString* iter_sym = vm.heap.iterator_symbol;
                 if (iter_sym == null) iter_sym = builtins::ensure_iterator_symbol(vm.heap);
                 if (iter_sym == null) {
-                    HString* tstr = typeof_string(vm, &iterable_val);
+                    HString* tstr = iterable_value_desc(vm, &iterable_val);
                     if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "%s is not iterable", tstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
                         return VM_ERROR~;
                     }
@@ -1492,7 +1492,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     }
                 }
                 if (!has_method) {
-                    HString* tstr2 = typeof_string(vm, &iterable_val);
+                    HString* tstr2 = iterable_value_desc(vm, &iterable_val);
                     if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "%s is not iterable", tstr2.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
                         return VM_ERROR~;
                     }
@@ -1511,7 +1511,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 }
                 // GetIterator step 3: iterator must be an Object (ES7.4.1)
                 if (!itv3.is_object() || itv3.get_heapptr() == null) {
-                    if (!vm_throw_error(vm, vm.heap.type_err_proto, "GetIterator: result is not an object",
+                    if (!vm_throw_error(vm, vm.heap.type_err_proto, "Result of the Symbol.iterator method is not an object",
                                         ds.act, &ds.curr_pc, &ds.needs_restart)) {
                         return VM_ERROR~;
                     }

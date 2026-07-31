@@ -3483,6 +3483,10 @@ fn IterRec? CompilerContext.emit_iter_open(&self, ushort src_reg, bool is_await)
         method_reg = self.alloc_reg();
         self.emit_abc(Opcode.GET_ITER_ASYNC, (uint)method_reg, (uint)src_reg, 0);
     } else {
+        // A null/undefined source is not iterable; reject it before the
+        // @@iterator read, which would otherwise fail as a property access.
+        self.emit_abc(Opcode.CHKITER, (uint)src_reg, 0, 1);
+
         ushort sym_reg = self.alloc_reg();
         self.emit_a_bc(Opcode.GETVAR, (uint)sym_reg, self.add_string_constant("Symbol"));
         ushort iter_key_reg = self.alloc_reg();
@@ -3496,10 +3500,19 @@ fn IterRec? CompilerContext.emit_iter_open(&self, ushort src_reg, bool is_await)
         self.emit_abc(Opcode.GETPROP, (uint)method_reg, (uint)src_reg, (uint)symbol_val_reg);
         self.free_reg(symbol_val_reg);
 
+        // GetIterator step 3, before the call: a non-callable @@iterator must
+        // report that the source is not iterable, not that undefined is not a
+        // function (which the bare CALL below would say).
+        self.emit_abc(Opcode.CHKITER, (uint)method_reg, (uint)src_reg, 0);
+
         ushort this_slot = self.alloc_reg();
         self.emit_abc(Opcode.LDREG, (uint)this_slot, (uint)src_reg, 0);
         self.emit_abc(Opcode.CALL, (uint)method_reg, (uint)method_reg, 0);
         self.free_reg(this_slot);
+
+        // GetIterator step 5: the iterator the method returned must be an
+        // Object, checked before the `.next` read below.
+        self.emit_abc(Opcode.CHKITER, (uint)method_reg, 0, 2);
     }
 
     ushort next_reg = self.alloc_reg();

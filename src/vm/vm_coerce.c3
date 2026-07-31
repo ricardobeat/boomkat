@@ -395,6 +395,15 @@ fn HString* typeof_string(Vm* vm, TVal* val) {
     }
 }
 
+/// How to name a value in a "X is not iterable" TypeError.  This is the
+/// typeof name for everything except null, which typeof reports as "object":
+/// "object is not iterable" would point at the wrong mistake for a value that
+/// is simply absent, so null names itself, as it does in node's message.
+fn HString* iterable_value_desc(Vm* vm, TVal* val) {
+    if (val.is_null()) return (HString*)vm.heap.strs[heap::BuiltinStr.NULL_STR];
+    return typeof_string(vm, val);
+}
+
 // int_to_buf is defined in duktape::hstring and available via the module import.
 
 /// Convert a double to an interned HString* using shortest round-trip formatting.
