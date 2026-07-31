@@ -39,8 +39,15 @@ Controls that are already correct — do not regress:
 | shape | ours | node |
 |---|---|---|
 | `typeof nope123` (undeclared) | `undefined` | `undefined` |
-| `function f(){ return typeof this }` | `object` | `object` |
 | `arguments.length`, `!!arguments` | correct | correct |
+
+**Correction (post-fix).** An earlier draft listed
+`function f(){ return typeof this }` → `"object"` as a control. That is the
+*sloppy-mode* answer and was wrong for this engine. In genuine strict mode an
+unbound call's `this` is undefined, so `"undefined"` is correct — verified
+against node run as an ES module (a plain `.js` is sloppy CommonJS there, which
+is what produced the mistaken expectation). The engine was already right; the
+control was dropped rather than encode a sloppy-mode expectation.
 
 ## Likely mechanism
 
