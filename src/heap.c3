@@ -27,6 +27,20 @@ alias VmCallHandlerFn = fn TVal(void* vm, TVal handler, TVal* arg);
 /// Marks activation-record env bindings during the GC mark phase.
 alias MarkActivationsFn = fn void(void* vm, void* heap);
 
+/// Walks a Catcher chain head, which the heap holds only as an opaque `void*`
+/// (Catcher lives in the vm module, which depends on this one). A suspended
+/// generator's chain needs marking during GC and freeing at teardown, and the
+/// heap can do neither without knowing the layout. Set by vm_create.
+alias CatcherChainFn = fn void(void* heap, void* cat_head, int mode);
+
+/// Mark the chain's values for the GC and leave the chain intact.
+const int CATCHER_CHAIN_MARK             = 0;
+/// Release the owned values and free every node.
+const int CATCHER_CHAIN_FREE             = 1;
+/// Free every node without releasing what it points at, for heap teardown,
+/// where the referents are already gone.
+const int CATCHER_CHAIN_FREE_NODES_ONLY  = 2;
+
 /// Runs after a microtask handler completes, with the handler's return value
 /// and the downstream promise to resolve.
 alias MicrotaskAfterFn = fn void(void* heap, void* vm, TVal result, TVal downstream);
@@ -167,10 +181,38 @@ enum GenSuspendKind : char {
 /// enumeration so the target stays reachable even when the loop body
 /// doesn't reference it, and so NEXTFOR can re-check property existence
 /// at yield time per EnumerateObjectProperties, so a property deleted from
-/// the target before its turn is skipped (plan 062 group N). The pin also
-/// keeps the property table alive, which is what makes the un-incref'd
-/// HString* in `keys` safe: it is released only in forin_state_free, at the
-/// same moment `keys` itself goes away.
+/// the target before its turn is skipped (plan 062 group N).
+///
+/// `keys` holds raw HString* with no incref of its own, and NEXTFOR
+/// dereferences them long after collection. Two things could root them, and
+/// only one actually does:
+///
+///  - Interning does NOT. sweep_strings frees any table entry whose refcount is
+///    1 and which the mark phase did not reach, so the string table is a weak
+///    reference. "The keys are interned" is not a lifetime argument.
+///  - The target's property table DOES, for an ordinary object: the pin keeps
+///    the target alive, the target's live property keys are marked through it,
+///    and every key in the snapshot came from some level of that prototype
+///    chain. This is the real guarantee.
+///
+/// The second argument does not cover a Proxy, whose keys are virtual: they
+/// exist only as [[OwnPropertyKeys]] trap results and appear in no property
+/// table anywhere. What covers them instead is that they are still referenced
+/// by the trap's own result array while it is being partitioned, and
+/// proxy_partitioned_own_keys holds a native frame across that whole window, so
+/// no safepoint inside a [[GetOwnProperty]] trap can clear the array's pin. By
+/// the time the snapshot is handed to the enumeration the keys are ordinary
+/// interned strings whose refcount the surrounding JS values hold above the
+/// sweep threshold; instrumenting the minimum refcount seen at every snapshot
+/// across the proxy and for-in corpus of test262 gave 5, against a sweep
+/// threshold of 1, with zero observations at or below 2.
+///
+/// Marking `keys` here would make that a proof rather than a measurement, but
+/// it is not free: the snapshot is walked on every GC for every live
+/// enumeration, and the strings are already reachable by the argument above.
+/// If a future exotic key source can produce a key that neither a property
+/// table nor a live trap result references, mark the array instead of
+/// extending this comment.
 struct ForInState {
     HString** keys;      /// Array of interned property-name HString* pointers
     HObject* target;     /// Borrowed pointer to the for-in target (NOT owned)
@@ -315,6 +357,20 @@ fn void gs_release(GeneratorState* gs, void* heap_ptr, bool run_decref) {
         fi = fi_parent;
     }
     gs.forin = null;
+    // Same last-chance reasoning for the catcher chain: a generator abandoned
+    // while suspended inside a try (`var it = g(); it.next();` and no more) has
+    // no activation left to run a frame pop, so nothing else will ever free the
+    // Catchers its body allocated, nor the exception a parked finally still
+    // holds in thrown_val. gs.cat is only non-null while the body is suspended
+    // (chains_restore_from_gen clears it on resume, handing ownership back to
+    // the activation), so this cannot double-free a chain a pop already took.
+    // In teardown mode (run_decref false) the thrown_val targets are already
+    // gone, exactly as for the for-in targets above, so the nodes are freed
+    // without releasing what they point at.
+    if (gs.cat != null && h.catcher_chain_fn != null) {
+        h.catcher_chain_fn(h, gs.cat, run_decref ? CATCHER_CHAIN_FREE : CATCHER_CHAIN_FREE_NODES_ONLY);
+    }
+    gs.cat = null;
     h.free_func(h.heap_udata, gs);
 }
 
@@ -541,6 +597,8 @@ struct Heap {
     void*               vm_ptr;
     /// Marks activation-record env bindings during GC.
     MarkActivationsFn   mark_activations_fn;
+    /// Marks or frees a suspended generator's Catcher chain. See CatcherChainFn.
+    CatcherChainFn      catcher_chain_fn;
 
     // Well-known symbols. Each is created on first use and rooted by its field.
     HString*            iterator_symbol;
@@ -1996,6 +2054,15 @@ fn void Heap.mark_generator_state(&self, GeneratorState* gs) {
     while (gfi != null) {
         if (gfi.target != null) { self.mark_hobject(gfi.target); }
         gfi = gfi.parent;
+    }
+    // Same for the catcher chain, for the same reason mark_activation_fields
+    // marks a running frame's. A body suspended inside a finally that is routing
+    // a throw parks the exception in Catcher.thrown_val, where nothing else
+    // references it: the registers are saved but the value is not among them,
+    // and the frame that owned the chain is gone. Without this it is swept while
+    // the generator sleeps.
+    if (gs.cat != null && self.catcher_chain_fn != null) {
+        self.catcher_chain_fn(self, gs.cat, CATCHER_CHAIN_MARK);
     }
     if (gs.delegated_iter != null) {
         self.mark_hobject((HObject*)gs.delegated_iter);

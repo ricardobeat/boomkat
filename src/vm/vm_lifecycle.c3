@@ -52,6 +52,7 @@ fn Vm*? vm_create(Heap* heap) {
     heap.valstack_top_ptr = &vm.valstack_top;
     heap.curr_thread = vm;
     heap.mark_activations_fn = &vm_mark_activations;
+    heap.catcher_chain_fn = &vm_catcher_chain_bridge;
 
     // Create global environment
     EnvRecord*? global = env::env_create(heap, null);
@@ -136,6 +137,10 @@ fn void vm_destroy(Vm* vm) {
 fn bool vm_reset(Vm* vm, Heap* heap) {
     if (vm == null || heap == null) { return false; }
 
+    // Re-arm the chain hook before the activation walk below uses it: heap.reset()
+    // runs first and the bridge must be installed whether or not it survived.
+    vm.heap.catcher_chain_fn = &vm_catcher_chain_bridge;
+
     // Rewind the value stack and clear stale TVal refs. After heap.reset(),
     // all HObject*/HString* are freed, so any lingering TVal heap pointer
     // would cause use-after-free when overwritten.
@@ -147,18 +152,33 @@ fn bool vm_reset(Vm* vm, Heap* heap) {
 
     // Clear stale refs in the activations: every heap object from the
     // previous run are freed, so this_binding, tv_func, etc. are dangling.
-    for (uint i = 0; i < vm.activation_count; i++) {
+    //
+    // The whole pool is walked, not just [0, activation_count). Frames above
+    // the count are normally drained on the way down, so in practice they are
+    // already null, but "normally" is the wrong standard for a leak: the
+    // malloc'd Catcher and ForInState chains hang off the activation array,
+    // which vm_reset is the last owner of, and a single pop path that ever
+    // decrements the count without draining would strand them with nothing left
+    // to notice. MAX_CALLS is a fixed, small array, so the extra iterations cost
+    // nothing measurable and remove the dependence on that invariant entirely.
+    for (uint i = 0; i < MAX_CALLS; i++) {
         vm.activations[i].this_binding.set_undefined();
         vm.activations[i].tv_func.set_undefined();
         vm.activations[i].func = null;
         vm.activations[i].parent = null;
         vm.activations[i].var_env = null;
         vm.activations[i].lex_env = null;
+        // Free any catcher and for-in states the interrupted run left behind.
+        // The heap objects they point at are already gone (heap.reset() ran
+        // before this), so neither the for-in pin nor Catcher.thrown_val may be
+        // released through them; only the malloc'd memory the heap reset does
+        // not own is freed. Clearing `cat` without this leaked every Catcher a
+        // run interrupted inside a try had allocated.
+        if (vm.activations[i].cat != null && vm.heap.catcher_chain_fn != null) {
+            vm.heap.catcher_chain_fn(vm.heap, vm.activations[i].cat,
+                                     heap::CATCHER_CHAIN_FREE_NODES_ONLY);
+        }
         vm.activations[i].cat = null;
-        // Free any for-in states the interrupted run left behind. The target
-        // HObjects are already gone (heap.reset() ran before this), so the
-        // pin must not be cleared through them, so release only the malloc'd
-        // key array and struct, which the heap reset does not own.
         ForInState* fi = (ForInState*)vm.activations[i].forin;
         while (fi != null) {
             ForInState* fi_parent = fi.parent;
@@ -182,6 +202,7 @@ fn bool vm_reset(Vm* vm, Heap* heap) {
     vm.heap.valstack_top_ptr = &vm.valstack_top;
     vm.heap.curr_thread = vm;
     vm.heap.mark_activations_fn = &vm_mark_activations;
+    vm.heap.catcher_chain_fn = &vm_catcher_chain_bridge;
 
     // Fresh global environment on the reset heap
     EnvRecord*? global = env::env_create(heap, null);

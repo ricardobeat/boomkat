@@ -96,12 +96,7 @@ fn void mark_activation_fields(heap::Heap* h, Activation* act) @inline {
     if (act.async_gen_state != null) {
         h.mark_generator_state((heap::GeneratorState*)act.async_gen_state);
     }
-    Catcher* c = (Catcher*)act.cat;
-    while (c != null) {
-        h.mark_tval(&c.thrown_val);
-        h.mark_tval(&c.return_val);
-        c = c.parent;
-    }
+    catcher_chain_walk(h, act.cat, heap::CATCHER_CHAIN_MARK);
     // Walk the for-in chain: each live enumeration holds its target, and the
     // target's temproot pin is not durable, since a safepoint GC clears every
     // temproot in phase 1 (see Heap.mark_and_sweep). Any for-in whose target
@@ -422,22 +417,48 @@ fn void clear_borrowed_callee_slot(Activation* act) @inline {
 /// bookkeeping. Anything else a frame owns outright belongs here too.
 fn void free_catcher_chain(Vm* vm, Activation* act) @inline {
     free_forin_chain(vm, act);
-    Catcher* c = (Catcher*)act.cat;
-    if (c == null) return;
-    do {
-        Catcher* parent = c.parent;
-        vm.heap.decref_tval(&c.thrown_val);
-        vm.heap.free_func(vm.heap.heap_udata, c);
-        c = parent;
-    } while (c != null);
+    catcher_chain_walk(vm.heap, act.cat, heap::CATCHER_CHAIN_FREE);
     act.cat = null;
 }
 
+/// Mark or free a Catcher chain given only its head, with no owning Activation.
+///
+/// The single place that knows what a Catcher owns (`thrown_val`, by
+/// tval_copy_ref) and what it merely borrows (`return_val`, a raw copy from RET,
+/// which is GC-marked but never decref'd). free_catcher_chain and the heap's
+/// suspended-generator hook both route here so the two cannot drift apart.
+///
+/// `mode` is one of heap::CATCHER_CHAIN_MARK / _FREE / _FREE_NODES_ONLY. The
+/// caller clears its own head pointer.
+fn void catcher_chain_walk(heap::Heap* h, void* head, int mode) {
+    Catcher* c = (Catcher*)head;
+    while (c != null) {
+        Catcher* parent = c.parent;
+        switch (mode) {
+            case heap::CATCHER_CHAIN_MARK:
+                h.mark_tval(&c.thrown_val);
+                h.mark_tval(&c.return_val);
+            default:
+                if (mode == heap::CATCHER_CHAIN_FREE) { h.decref_tval(&c.thrown_val); }
+                h.free_func(h.heap_udata, c);
+        }
+        c = parent;
+    }
+}
+
+/// heap::CatcherChainFn binding, so gs_release can drain and mark_generator_state
+/// can mark a suspended body's catcher chain without knowing the Catcher layout.
+fn void vm_catcher_chain_bridge(void* heap_ptr, void* cat_head, int mode) {
+    catcher_chain_walk((heap::Heap*)heap_ptr, cat_head, mode);
+}
+
 /// Release one for-in state: drop the target's temproot pin, free the key
-/// array, free the struct. The pin and `keys` are released together because
-/// the keys are raw interned HString* with no incref of their own, and are
-/// kept alive by the pinned target's property table, so unpinning earlier
-/// than the free would leave `keys` pointing at collectable strings.
+/// array, free the struct. The pin and `keys` are released together because the
+/// keys are raw HString* with no incref of their own, rooted for an ordinary
+/// target by the pinned target's own property table, so unpinning earlier than
+/// the free would leave `keys` pointing at collectable strings. Interning is not
+/// what protects them; see heap::ForInState for why, and for the separate
+/// argument that covers a Proxy's virtual keys.
 fn void forin_state_free(Vm* vm, ForInState* state) @inline {
     if (state == null) return;
     if (state.target != null) {
@@ -499,25 +520,39 @@ fn void free_forin_chain(Vm* vm, Activation* act) @inline {
 /// pooled slot it occupies gets reused by an unrelated later frame whose pop
 /// does run free_catcher_chain, which would free ForInStates that this
 /// generator's saved_regs still points at. Ownership lives on the gs until
-/// either a resume hands it back (forin_restore_from_gen) or the generator is
+/// either a resume hands it back (chains_restore_from_gen) or the generator is
 /// discarded (gs_release).
+///
+/// The asymmetry is only about who may READ the chain, not about who frees it.
+/// A generator abandoned while suspended (`for (...) { var it = g(); it.next(); }`)
+/// is torn down by gs_release with no activation left to run a pop, so gs_release
+/// drains BOTH chains. That makes gs.cat the last owner of a suspended body's
+/// catchers, which is sound only because chains_restore_from_gen clears it: while
+/// the body runs, the activation owns the chain and its pop frees it; while it is
+/// suspended, the gs owns it. Exactly one of the two is non-null at any time.
 ///
 /// Saving both in one call is deliberate: a suspend site that remembered the
 /// catcher chain but not the for-in chain is exactly the omission this whole
 /// change exists to make impossible.
-macro forin_save_to_gen(Activation* act, gs) {
+macro chains_save_to_gen(Activation* act, gs) {
     gs.cat = act.cat;
     gs.forin = act.forin;
     act.forin = null;
 }
 
-/// Inverse of forin_save_to_gen: hand the for-in chain back to the frame that
-/// is resuming the body, leaving the GeneratorState owning nothing (so a later
-/// gs_release cannot free states the live frame is now using). `cat` is
-/// restored by aliasing, matching the save side.
-macro forin_restore_from_gen(Activation* act, gs) {
+/// Inverse of chains_save_to_gen: hand both chains back to the frame that is
+/// resuming the body, leaving the GeneratorState owning nothing (so a later
+/// gs_release cannot free state the live frame is now using).
+///
+/// `cat` is cleared here even though the save side aliased it. The alias is what
+/// lets a .throw()/.return() resume find a catcher in the still-live suspended
+/// activation, but once the body is actually running again the activation is the
+/// sole owner and its pop will free the chain. Leaving gs.cat set would make
+/// gs_release free a chain the pop already freed.
+macro chains_restore_from_gen(Activation* act, gs) {
     act.cat = gs.cat;
     act.forin = gs.forin;
+    gs.cat = null;
     gs.forin = null;
 }
 

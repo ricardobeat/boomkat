@@ -1516,6 +1516,17 @@ fn bool proxy_partitioned_own_keys(void* vm, Heap* heap, HObject* proxy, int mod
     if (buf == null) { proxy_throw_type(heap, "out of memory"); return false; }
     uint out_n = 0;
     uint tail = n;
+    // `arr` is the [[OwnPropertyKeys]] trap's result, reachable only from this
+    // C3 local, and the mode-0 loop below re-enters the VM once per key for the
+    // [[GetOwnProperty]] trap. Those nested runs hit safepoints, where GC clears
+    // every temproot, so the pin the trap result carries is not durable and the
+    // array is collected out from under the `arr.array_part()` read. Marking a
+    // native frame vetoes the temproot clear for the duration, the same guard
+    // builtin_dispatch takes around every handler. The keys read out of the
+    // array are equally exposed: they are strings the trap built and nothing
+    // else names, and sweep_strings frees an interned string that is unreachable
+    // with refcount 1, so interning alone does not root them either.
+    heap.native_frame_depth++;
     for (uint i = 0; i < n; i++) {
         TVal el = arr.array_part()[i];
         if (!el.is_string()) continue;
@@ -1530,6 +1541,7 @@ fn bool proxy_partitioned_own_keys(void* vm, Heap* heap, HObject* proxy, int mod
         if (mode == 0) {
             ProxyDesc d;
             if (!proxy_mop_get_own(vm, heap, proxy, k, &d)) {
+                heap.native_frame_depth--;
                 heap.free_func(heap.heap_udata, buf);
                 return false;
             }
@@ -1538,6 +1550,7 @@ fn bool proxy_partitioned_own_keys(void* vm, Heap* heap, HObject* proxy, int mod
         }
         buf[out_n++] = k;
     }
+    heap.native_frame_depth--;
     // Close the gap between the two groups so the rejected keys sit directly
     // after the enumerable ones.
     uint total = out_n;

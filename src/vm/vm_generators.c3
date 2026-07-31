@@ -39,7 +39,7 @@ fn bool ag_suspend_on_await(Dispatch* ds, GeneratorState* gs, HObject* await_obj
     gs.saved_pc = save_pc;
     gs.var_env = ds.act.var_env;
     gs.lex_env = ds.act.lex_env;
-    forin_save_to_gen(ds.act, gs);
+    chains_save_to_gen(ds.act, gs);
     vm.heap.tval_copy_ref(&gs.this_binding, &ds.act.this_binding);
     TVal* ag_regs_src = ds.act.bottom;
     for (uint i = 0; i < gs.num_regs; i++) {
@@ -164,7 +164,7 @@ fn void ays_save_body(Dispatch* ds, GeneratorState* gs, void* save_pc) {
     gs.saved_pc = save_pc;
     gs.var_env = ds.act.var_env;
     gs.lex_env = ds.act.lex_env;
-    forin_save_to_gen(ds.act, gs);
+    chains_save_to_gen(ds.act, gs);
     vm.heap.tval_copy_ref(&gs.this_binding, &ds.act.this_binding);
     gs.state = GEN_SUSPENDED_YIELD;
 }
@@ -638,7 +638,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 gs.saved_pc = ds.curr_pc; // PC after AWAIT (points to LOAD_RESUME)
                 gs.var_env = ds.act.var_env;
                 gs.lex_env = ds.act.lex_env;
-                forin_save_to_gen(ds.act, gs);
+                chains_save_to_gen(ds.act, gs);
                 vm.heap.tval_copy_ref(&gs.this_binding, &ds.act.this_binding);
                 gs.async_promise = (void*)ds.act.async_promise;
                 usz regs_bytes = (usz)gs.num_regs * TVal::size;
@@ -857,7 +857,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 gs.saved_pc = (gen_act == ds.act) ? ds.curr_pc : gen_act.curr_pc;
                 gs.var_env = gen_act.var_env;
                 gs.lex_env = gen_act.lex_env;
-                forin_save_to_gen(gen_act, gs);
+                chains_save_to_gen(gen_act, gs);
                 vm.heap.tval_copy_ref(&gs.this_binding, &gen_act.this_binding);
                 gs.state = GEN_SUSPENDED_YIELD;
 
@@ -1645,7 +1645,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     vm.heap.tval_copy_ref(&gs.saved_regs[i], &ds.act.bottom[i]);
                 }
                 gs.saved_pc = ds.curr_pc - 1;
-                gs.var_env = ds.act.var_env; gs.lex_env = ds.act.lex_env; forin_save_to_gen(ds.act, gs);
+                gs.var_env = ds.act.var_env; gs.lex_env = ds.act.lex_env; chains_save_to_gen(ds.act, gs);
                 vm.heap.tval_copy_ref(&gs.this_binding, &ds.act.this_binding);
                 gs.state = GEN_SUSPENDED_YIELD;
                 $if $feature(HEAP_VERIFY):
@@ -2010,7 +2010,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
             gs.saved_pc = ds.curr_pc;
             gs.var_env = ds.act.var_env;
             gs.lex_env = ds.act.lex_env;
-            forin_save_to_gen(ds.act, gs);
+            chains_save_to_gen(ds.act, gs);
             vm.heap.tval_copy_ref(&gs.this_binding, &ds.act.this_binding);
             gs.state = GEN_SUSPENDED_START;
             gs.resume_kind = NEXT;

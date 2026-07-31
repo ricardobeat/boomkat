@@ -135,6 +135,13 @@ test-forin-rss:
     @just build duktape_c3
     bash scripts/check_forin_early_exit_rss.sh
 
+# Assert that abandoning a generator suspended inside a try costs no more peak
+# RSS than running the same generator to exhaustion. Same reasoning as
+# test-forin-rss: a stranded Catcher chain is invisible to script assertions.
+test-generator-catcher-rss:
+    @just build duktape_c3
+    bash scripts/check_generator_catcher_rss.sh
+
 # ── Rosetta Code ─────────────────────────────────────────────────────────────
 
 # Run Rosetta Code tests on duktape-c3 (rebuilds first)

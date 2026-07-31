@@ -1528,7 +1528,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                     new_act_r.func = target;
                     new_act_r.var_env = gs.var_env;
                     new_act_r.lex_env = gs.lex_env;
-                    forin_restore_from_gen(new_act_r, gs);
+                    chains_restore_from_gen(new_act_r, gs);
                     new_act_r.curr_pc = gs.saved_pc;
                     new_act_r.bottom = new_bottom_r;
                     new_act_r.retval = ds.regs_base + result_reg;
