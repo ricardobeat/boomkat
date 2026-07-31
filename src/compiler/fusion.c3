@@ -189,6 +189,14 @@ fn bool fusion_reg_live_from(Instruction* code, uint code_count, uint start, uin
 /// pattern where the trigger sits on one arm of a branch and the consumer
 /// is the join point (a ternary's false arm feeding a binary operator is
 /// the canonical case).
+///
+/// Every pc-relative branch form belongs in the switch below, including ones
+/// no in-compiler caller can currently observe. The set is JUMP/BREAK/CONTINUE
+/// (WIDE_SABC), IF_TRUE/IF_FALSE (A_SBX), the JMP_* compare-branch family and
+/// JMP_LT_G (ABC, 8-bit offset in field A), and TRY's catch and finally
+/// offsets. Handler entries reached without an offset need no arm here: a
+/// finally's ENDFINALLY is found by a runtime scan, and its slot always holds
+/// a real ENDFINALLY, which no fusion pass can turn into a data word.
 fn void build_jump_targets(Instruction* code, uint code_count, bool* jump_targets) {
     for (uint i = 0; i < code_count; i++) { jump_targets[i] = false; }
     for (uint i = 0; i < code_count; i++) {
@@ -220,6 +228,19 @@ fn void build_jump_targets(Instruction* code, uint code_count, bool* jump_target
                 // ABC form: signed 8-bit offset in field A.
                 int off = (int)(ichar)ins.a;
                 int tgt = (int)i + 1 + off;
+                if (tgt >= 0 && (uint)tgt < code_count) { jump_targets[tgt] = true; }
+            }
+            case Opcode.JMP_LT_G: {
+                // Two-word ABC form: the offset is applied once both words are
+                // consumed, so the base is i+2 rather than i+1.
+                //
+                // JMP_LT_G is installed after every pass in finish() that reads
+                // this bitset, so within the compiler the arm below never fires.
+                // It is here for peephole_scan, which runs on final code where
+                // JMP_LT_G does exist and whose GETPROPC2 fusion turns a slot
+                // into a data word that a branch must never land on.
+                int off = (int)(ichar)ins.a;
+                int tgt = (int)i + 2 + off;
                 if (tgt >= 0 && (uint)tgt < code_count) { jump_targets[tgt] = true; }
             }
             case Opcode.TRY: {

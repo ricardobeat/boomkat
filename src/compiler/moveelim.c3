@@ -302,71 +302,36 @@ fn bool moveelim_get_def(Instruction ins, uint* out_reg) {
 /// walk does not otherwise model). `in_try` is sized `code_count` and set
 /// true for every instruction inside such a range (inclusive of TRY and its
 /// matching ENDTRY).
+///
+/// The jump-target half is `build_jump_targets`, not a copy of it. This pass
+/// wants the same answer to "can control arrive here from elsewhere" that the
+/// fusion passes want, so a second switch over the branch opcodes would be one
+/// more place to remember when a branch form is added.
 fn void moveelim_mark_jump_targets_and_try_regions(Instruction* code, uint code_count,
                                                     bool* jump_targets, bool* in_try) {
-    for (uint i = 0; i < code_count; i++) { jump_targets[i] = false; in_try[i] = false; }
+    build_jump_targets(code, code_count, jump_targets);
+
+    for (uint i = 0; i < code_count; i++) { in_try[i] = false; }
 
     for (uint i = 0; i < code_count; i++) {
-        Instruction ins = code[i];
-        switch (ins.op) {
-            case Opcode.JUMP:
-            case Opcode.BREAK:
-            case Opcode.CONTINUE: {
-                int off = ins.get_sabc();
-                int tgt = (int)i + 1 + off;
-                if (tgt >= 0 && (uint)tgt < code_count) { jump_targets[tgt] = true; }
+        if (code[i].op != Opcode.TRY) { continue; }
+        // Find the matching ENDTRY by scanning forward for the next ENDTRY at
+        // nesting depth 0 relative to this TRY (TRY/ENDTRY nest the same way
+        // parens do, statements.c3 emits exactly one ENDTRY per TRY at the end
+        // of the protected block).
+        uint depth = 1;
+        uint j = i + 1;
+        uint end_idx = i;
+        while (j < code_count) {
+            if (code[j].op == Opcode.TRY) { depth++; }
+            else if (code[j].op == Opcode.ENDTRY) {
+                depth--;
+                if (depth == 0) { end_idx = j; break; }
             }
-            case Opcode.IF_TRUE:
-            case Opcode.IF_FALSE: {
-                int off = ins.get_sbc();
-                int tgt = (int)i + 1 + off;
-                if (tgt >= 0 && (uint)tgt < code_count) { jump_targets[tgt] = true; }
-            }
-            case Opcode.JMP_NLT:
-            case Opcode.JMP_NLE:
-            case Opcode.JMP_NGT:
-            case Opcode.JMP_NGE:
-            case Opcode.JMP_LT:
-            case Opcode.JMP_LE:
-            case Opcode.JMP_GT:
-            case Opcode.JMP_GE:
-            case Opcode.JMP_SEQ:
-            case Opcode.JMP_SNEQ: {
-                int off = (int)(ichar)ins.a;
-                int tgt = (int)i + 1 + off;
-                if (tgt >= 0 && (uint)tgt < code_count) { jump_targets[tgt] = true; }
-            }
-            case Opcode.TRY: {
-                uint catch_off = ins.get_bc();
-                uint catch_tgt = i + catch_off;
-                if (catch_tgt < code_count) { jump_targets[catch_tgt] = true; }
-                if (i + 1 < code_count) {
-                    uint finally_off = code[i + 1].get_bc();
-                    if (finally_off != 0) {
-                        uint finally_tgt = i + finally_off;
-                        if (finally_tgt < code_count) { jump_targets[finally_tgt] = true; }
-                    }
-                }
-                // Find the matching ENDTRY by scanning forward for the next
-                // ENDTRY at nesting depth 0 relative to this TRY (TRY/ENDTRY
-                // nest the same way parens do, statements.c3 emits exactly
-                // one ENDTRY per TRY at the end of the protected block).
-                uint depth = 1;
-                uint j = i + 1;
-                uint end_idx = i;
-                while (j < code_count) {
-                    if (code[j].op == Opcode.TRY) { depth++; }
-                    else if (code[j].op == Opcode.ENDTRY) {
-                        depth--;
-                        if (depth == 0) { end_idx = j; break; }
-                    }
-                    j++;
-                }
-                if (end_idx == i) { end_idx = code_count > 0 ? code_count - 1 : 0; }
-                for (uint k = i; k <= end_idx && k < code_count; k++) { in_try[k] = true; }
-            }
-            default: {}
+            j++;
         }
+        if (end_idx == i) { end_idx = code_count > 0 ? code_count - 1 : 0; }
+        for (uint k = i; k <= end_idx && k < code_count; k++) { in_try[k] = true; }
     }
 }
 
