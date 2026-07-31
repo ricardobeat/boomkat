@@ -3814,6 +3814,14 @@ fn void? CompilerContext.do_while_statement(&self) {
 /// abandoned. Assumes loop_stack[li].iter_close_reg >= 0.
 fn void CompilerContext.emit_unwind_iter_close(&self, uint li) {
     uint reg = (uint)self.loop_stack[li].iter_close_reg;
+    // Pop the loop body's IteratorClose-on-throw catcher (the TRY emitted
+    // around bind+body). Jumping out of the body bypasses its ENDTRY, which
+    // left that catcher on act.cat: harmless where the next pop happens to
+    // belong to it, but an ENDFINALLY reached afterwards then pops the stale
+    // for-of catcher instead of the finally's own and drops the completion it
+    // was carrying -- `try { throw e } finally { for (v of it) break; }` lost
+    // `e` entirely.
+    self.emit_simple(Opcode.ENDTRY);
     if (self.loop_stack[li].is_await_loop) {
         self.emit_abc(Opcode.ITER_CLOSE_ASYNC, reg, 0, 0);
         self.emit_abc(Opcode.AWAIT, reg, 0, 0);
@@ -4462,7 +4470,7 @@ fn void? CompilerContext.break_statement(&self) {
                         self.emit_unwind_iter_close((uint)li);
                     }
                 }
-                uint jump_addr = self.emit_jump(Opcode.BREAK);
+                uint jump_addr = self.emit_jump(self.loop_jump_op(loop_idx, Opcode.BREAK));
                 self.loop_stack[loop_idx].break_patch_head =
                     self.add_patch(self.loop_stack[loop_idx].break_patch_head, jump_addr);
                 self.expect_semicolon_or_asi()!;
@@ -4493,7 +4501,7 @@ fn void? CompilerContext.break_statement(&self) {
     if (self.loop_stack[loop_idx].iter_close_reg >= 0) {
         self.emit_unwind_iter_close((uint)loop_idx);
     }
-    uint jump_addr = self.emit_jump(Opcode.BREAK);
+    uint jump_addr = self.emit_jump(self.loop_jump_op((uint)loop_idx, Opcode.BREAK));
     self.add_break_patch(jump_addr);
 
     self.expect_semicolon_or_asi()!;
@@ -4533,7 +4541,7 @@ fn void? CompilerContext.continue_statement(&self) {
                 // Use deferred patching so the continue target can be updated
                 // after the body is compiled (needed for rotated for-loops where
                 // continue_target is set to incr_label after body compilation).
-                uint jump_addr = self.emit_jump(Opcode.CONTINUE);
+                uint jump_addr = self.emit_jump(self.loop_jump_op(loop_idx, Opcode.CONTINUE));
                 self.loop_stack[loop_idx].continue_patch_head =
                     self.add_patch(self.loop_stack[loop_idx].continue_patch_head, jump_addr);
                 self.expect_semicolon_or_asi()!;
@@ -4558,7 +4566,7 @@ fn void? CompilerContext.continue_statement(&self) {
             self.cur_lex_depth--;
         }
         // Emit placeholder jump and add to continue_patch_head for deferred patching
-        uint jump_addr = self.emit_jump(Opcode.CONTINUE);
+        uint jump_addr = self.emit_jump(self.loop_jump_op((uint)loop_idx, Opcode.CONTINUE));
         self.loop_stack[loop_idx].continue_patch_head =
             self.add_patch(self.loop_stack[loop_idx].continue_patch_head, jump_addr);
     } else {

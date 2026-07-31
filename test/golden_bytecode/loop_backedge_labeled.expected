@@ -17,7 +17,7 @@
 [  7] LDREG           r3 = r4, r0
 [  8] JUMP            +5
 [  9] IF_FALSE        r3, +1
-[ 10] CONTINUE        +5
+[ 10] JUMP            +5
 [ 11] LDCONST         r4, 5
 [ 12] ADD             r1 = r1, r4
 [ 13] INC             r3
