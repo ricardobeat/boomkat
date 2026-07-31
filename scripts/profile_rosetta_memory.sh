@@ -5,7 +5,7 @@ set -euo pipefail
 
 PROJ_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 RUNNER="$PROJ_DIR/out/duktape_c3"
-ROSETTA_DIR="$PROJ_DIR/test/rosetta"
+ROSETTA_DIR="$PROJ_DIR/test/engine"
 
 if [ ! -f "$RUNNER" ]; then
     echo "ERROR: $RUNNER not found. Run: c3c build duktape_c3"

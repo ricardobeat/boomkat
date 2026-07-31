@@ -145,11 +145,19 @@ test-generator-catcher-rss:
     @just build duktape_c3
     bash scripts/check_generator_catcher_rss.sh
 
-# ── Rosetta Code ─────────────────────────────────────────────────────────────
+# ── JS test suites ───────────────────────────────────────────────────────────
 
-# Run Rosetta Code tests on duktape-c3 (rebuilds first)
-rosetta engine="duktape_c3": 
-   bash test/rosetta/run.sh ./out/{{engine}}
+# Run the engine conformance tests (hand-written assert-based)
+engine-tests engine="duktape_c3":
+   bash test/engine/run.sh ./out/{{engine}}
+
+# Run the verbatim Rosetta Code samples (unmodified third-party code)
+rosetta engine="duktape_c3":
+   bash test/rosetta-verbatim/run.sh ./out/{{engine}}
+
+# Confirm the verbatim samples still match rosettacode.org
+rosetta-check:
+   python3 scripts/fetch_rosetta.py --check test/rosetta-verbatim
 
 # ── Test262 ──────────────────────────────────────────────────────────────────
 
