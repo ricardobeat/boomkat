@@ -5,10 +5,12 @@
 /// as an immediate/index, freeing the register and saving a dispatch. The
 /// first pair (ADDI/SUBI, see fuse_addi_subi below) was written by hand
 /// directly in CompilerContext.finish(); this file factors the error-prone
-/// shared machinery, NOP-skipping to find the real consumer, and the
-/// dead-after-liveness scan that proves the scratch register can be
-/// discarded, into ONE driver (`run_fusion_rule`) so future fusions reuse
-/// it instead of re-deriving subtly different (and subtly buggy) copies.
+/// shared machinery into one driver (`run_fusion_rule`), so future fusions reuse
+/// it instead of re-deriving subtly different, and subtly buggy, copies. That
+/// machinery is the NOP-skipping that finds the real consumer, the jump-target
+/// guard that stops a branch landing on the rewritten consumer without having
+/// run the trigger, and the dead-after-liveness scan proving the scratch
+/// register can be discarded.
 ///
 /// Phase: fusion rules that key off a scratch register produced by LDINT/
 /// LDCONST/etc. must run AFTER copy-propagation. Copy-propagation NOPs out
@@ -35,7 +37,8 @@ import duktape::types;
 ///   3. compare+IF_FALSE/IF_TRUE -> JMP_N*/JMP_*/JMP_SEQ/JMP_SNEQ
 ///      (order-independent and declarative, in this file: run_cmp_branch_fusion,
 ///      a distinct jump-aware driver that owns the whole-function jump-target
-///      bitset, dual-path liveness, and bridge/short-circuit corrections, and
+///      bitset (built by the shared build_jump_targets), dual-path liveness,
+///      and bridge/short-circuit corrections, and
 ///      is table-driven over the compare form (CMP_BRANCH_RULES). Loose
 ///      EQ/NEQ are excluded, they coerce and can throw.)
 ///   4. copy-propagation (LDREG rT=rX substitution), MUST run before any
@@ -77,9 +80,9 @@ alias FusionTriggerFn = fn FusionMatch(Instruction trigger, void* ctx);
 alias FusionConsumerFn = fn FusionMatch(Instruction trigger, Instruction consumer, uint scratch_reg, void* ctx);
 
 /// One declarative fusion rule: {trigger predicate, consumer predicate}.
-/// The shared driver (`run_fusion_rule`) owns NOP-skipping and the
-/// dead-after-liveness scan; the rule only supplies the opcode-specific
-/// matching/rewrite logic.
+/// The shared driver (`run_fusion_rule`) owns NOP-skipping, the jump-target
+/// guard and the dead-after-liveness scan; the rule only supplies the
+/// opcode-specific matching/rewrite logic.
 struct FusionRule {
     FusionTriggerFn  trigger;
     FusionConsumerFn consumer;
@@ -111,6 +114,17 @@ fn bool fusion_abc_reads_reg(Instruction ins, uint reg) {
             // A = dst, B = src register, C = key-constant index.
             return (uint)ins.b == reg;
         default:
+            // KNOWN CONSERVATIVE GAP (deliberately not widened here): plain
+            // CALL and CALL_UNDEF_THIS also decode C as an argument COUNT, not
+            // a register (vm_calls.c3: `nargs = insn.c`), so a scratch register
+            // whose number happens to equal the argc is falsely reported live
+            // and its fusion is skipped. That is the SAFE direction (a missed
+            // optimization, never a miscompile), which is why it is left alone
+            // rather than folded into the carve-out above: adding an opcode
+            // here is a correctness-critical claim about that opcode's operand
+            // encoding, and each one needs its own verification against
+            // vm_calls.c3. CALL_S must never be added, since it genuinely reads C as
+            // a register (`ds.regs_base + insn.c`).
             return (uint)ins.b == reg || (uint)ins.c == reg;
     }
 }
@@ -123,8 +137,17 @@ fn bool fusion_abc_reads_reg(Instruction ins, uint reg) {
 /// write, so they're checked explicitly before the generic write-then-stop
 /// rule. Only ABC-format opcodes have plain register operands in b/c;
 /// A_BC/A_SBX/WIDE_* operands are indices or branch offsets, never register
-/// references, and must not be misread as one, see fusion_abc_reads_reg for
-/// the ABC forms whose b/c are likewise not registers.
+/// references, and must not be misread as one. See fusion_abc_reads_reg for the
+/// ABC forms whose b and c are likewise not registers. The same applies to field
+/// A on the WIDE forms, which the guard below enforces.
+///
+/// The direction of this scan's imprecision is what makes it safe, and every
+/// caller depends on it: this is a linear scan over slots, not a CFG walk, so it
+/// keeps scanning straight through a branch into code that is not the
+/// fall-through successor. That can only report a register live where a real CFG
+/// walk would prove it dead, which suppresses a fusion but never permits an
+/// unsafe one. The opposite error, reporting a live register dead, is the one
+/// that miscompiles, and the WIDE-format guard below is what prevents it.
 fn bool fusion_reg_live_from(Instruction* code, uint code_count, uint start, uint reg) {
     for (uint j = start; j < code_count; j++) {
         Instruction jns = code[j];
@@ -136,29 +159,130 @@ fn bool fusion_reg_live_from(Instruction* code, uint code_count, uint start, uin
         if (bytecode::get_op_format(jop) == OpFormat.ABC) {
             if (fusion_abc_reads_reg(jns, reg)) { return true; }
         }
-        if ((uint)jns.a == reg) { return false; }   // overwritten -> dead from here
+        // Only non-WIDE forms use A as a destination register. WIDE_SABC/
+        // WIDE_ABC (JUMP/BREAK/CONTINUE) pack a 24-bit branch offset across
+        // A/B/C, so their A field is the offset's low byte, and reading it as a
+        // write to register `a` makes any `JUMP +N` look like an overwrite of
+        // register N and ends the scan early, reporting a still-live register
+        // as dead. That is the unsafe direction: it PERMITS a fusion whose
+        // consumer's value is read again at the branch target. Measured on
+        // test262, 212 scans stopped on exactly this alias (211 JUMP, 1 BREAK).
+        // cmp_result_live_from and run_move_gg_fusion's scan already carried
+        // this guard; this shared helper was the copy that omitted it.
+        OpFormat jfmt_w = bytecode::get_op_format(jop);
+        if (jfmt_w != OpFormat.WIDE_SABC && jfmt_w != OpFormat.WIDE_ABC) {
+            if ((uint)jns.a == reg) { return false; }   // overwritten -> dead from here
+        }
     }
     return false;
+}
+
+/// Mark every instruction slot that some branch, loop exit or exception
+/// handler can transfer control to. `jump_targets` is a caller-provided
+/// buffer of at least `code_count` bools; it is fully overwritten (callers
+/// need not pre-clear it).
+///
+/// The single source of truth for "can control arrive here from somewhere
+/// other than the preceding instruction": every fusion pass needs exactly
+/// this predicate, and three of them used to carry byte-identical private
+/// copies. A pass that skips the bitset entirely silently miscompiles any
+/// pattern where the trigger sits on one arm of a branch and the consumer
+/// is the join point (a ternary's false arm feeding a binary operator is
+/// the canonical case).
+fn void build_jump_targets(Instruction* code, uint code_count, bool* jump_targets) {
+    for (uint i = 0; i < code_count; i++) { jump_targets[i] = false; }
+    for (uint i = 0; i < code_count; i++) {
+        Instruction ins = code[i];
+        switch (ins.op) {
+            case Opcode.JUMP:
+            case Opcode.BREAK:
+            case Opcode.CONTINUE: {
+                int off = ins.get_sabc();
+                int tgt = (int)i + 1 + off;
+                if (tgt >= 0 && (uint)tgt < code_count) { jump_targets[tgt] = true; }
+            }
+            case Opcode.IF_TRUE:
+            case Opcode.IF_FALSE: {
+                int off = ins.get_sbc();
+                int tgt = (int)i + 1 + off;
+                if (tgt >= 0 && (uint)tgt < code_count) { jump_targets[tgt] = true; }
+            }
+            case Opcode.JMP_NLT:
+            case Opcode.JMP_NLE:
+            case Opcode.JMP_NGT:
+            case Opcode.JMP_NGE:
+            case Opcode.JMP_LT:
+            case Opcode.JMP_LE:
+            case Opcode.JMP_GT:
+            case Opcode.JMP_GE:
+            case Opcode.JMP_SEQ:
+            case Opcode.JMP_SNEQ: {
+                // ABC form: signed 8-bit offset in field A.
+                int off = (int)(ichar)ins.a;
+                int tgt = (int)i + 1 + off;
+                if (tgt >= 0 && (uint)tgt < code_count) { jump_targets[tgt] = true; }
+            }
+            case Opcode.TRY: {
+                uint catch_off = ins.get_bc();
+                uint catch_tgt = i + catch_off;
+                if (catch_tgt < code_count) { jump_targets[catch_tgt] = true; }
+                if (i + 1 < code_count) {
+                    uint finally_off = code[i + 1].get_bc();
+                    if (finally_off != 0) {
+                        uint finally_tgt = i + finally_off;
+                        if (finally_tgt < code_count) { jump_targets[finally_tgt] = true; }
+                    }
+                }
+            }
+            default: {}
+        }
+    }
 }
 
 /// Run one fusion rule over the whole instruction stream. Owns:
 ///   - NOP-skipping to locate the consumer (copy-prop leaves NOPs between
 ///     a trigger and its now-adjacent-in-spirit consumer)
 ///   - the dead-after-liveness scan on the scratch register
+///   - the jump-target guard on the consumer slot
 ///   - the NOP+rewrite emission
-/// Jump-target safety is NOT re-derived here: NOP-ing the trigger slot is
-/// always safe (a jump landing there falls through into the rewritten
-/// consumer, which no longer depends on the trigger's register), which is
-/// why every trigger-then-consumer fusion (not e.g. a fused *branch*) can
-/// share this driver unconditionally.
-fn void run_fusion_rule(Instruction* code, uint code_count, FusionRule rule, void* ctx = null) {
+///
+/// Jump-target safety, both halves:
+///   - NOP-ing the TRIGGER slot is always safe: a jump landing there falls
+///     through into the rewritten consumer, which no longer depends on the
+///     trigger's register.
+///   - The CONSUMER slot must NOT be a jump target. The rewrite bakes the
+///     trigger's value in as an immediate, which is only the right value on
+///     the fallthrough path that actually executed the trigger. Control
+///     arriving from a branch expected the scratch register to hold *its*
+///     value; the baked-in immediate silently supplies the trigger's
+///     instead. `5 + (c ? 10 : 20)` compiles to
+///     `LDINT r4,10 / JUMP join / LDINT r4,20 / join: ADD r2=r2,r4`, so
+///     without this guard the false arm fuses into `ADDI r2=r2,20` and the
+///     true arm jumps straight onto it, so every condition yields 20.
+///
+/// `jump_targets` is a caller-provided scratch buffer of at least
+/// `code_count` bools (kept out of this module so fusion.c3 stays free of
+/// any heap dependency).
+fn void run_fusion_rule(Instruction* code, uint code_count, bool* jump_targets, FusionRule rule, void* ctx = null) {
+    build_jump_targets(code, code_count, jump_targets);
+
     for (uint i = 0; i < code_count; i++) {
         FusionMatch tm = rule.trigger(code[i], ctx);
         if (!tm.matched) { continue; }
 
+        // Any slot from just after the trigger through the consumer being a
+        // jump target means control can reach the consumer without having
+        // executed the trigger (a NOP in between is fallthrough into the
+        // consumer, so it is exactly as unsafe as the consumer itself).
         uint k = i + 1;
         while (k < code_count && code[k].op == Opcode.NOP) { k++; }
         if (k >= code_count) { continue; }
+
+        bool reachable_without_trigger = false;
+        for (uint j = i + 1; j <= k; j++) {
+            if (jump_targets[j]) { reachable_without_trigger = true; break; }
+        }
+        if (reachable_without_trigger) { continue; }
 
         FusionMatch cm = rule.consumer(code[i], code[k], tm.dest_reg, ctx);
         if (!cm.matched) { continue; }
@@ -233,8 +357,8 @@ const FusionRule FUSION_ADDI_SUBI = {
 /// Run the declarative ADDI/SUBI fusion over `code[0..code_count)`.
 /// Drop-in replacement for the hand-written pass at the same site in
 /// CompilerContext.finish().
-fn void fuse_addi_subi(Instruction* code, uint code_count) {
-    run_fusion_rule(code, code_count, FUSION_ADDI_SUBI);
+fn void fuse_addi_subi(Instruction* code, uint code_count, bool* jump_targets) {
+    run_fusion_rule(code, code_count, jump_targets, FUSION_ADDI_SUBI);
 }
 
 // ============================================================================
@@ -293,8 +417,8 @@ const FusionRule FUSION_GETPROPC = {
 /// Drop-in replacement for the hand-written pass at the same site in
 /// CompilerContext.finish(). `constants` is the function's constant pool,
 /// needed to validate the trigger (string key, index fits GETPROPC.c).
-fn void fuse_getpropc(Instruction* code, uint code_count, TVal* constants) {
-    run_fusion_rule(code, code_count, FUSION_GETPROPC, (void*)constants);
+fn void fuse_getpropc(Instruction* code, uint code_count, bool* jump_targets, TVal* constants) {
+    run_fusion_rule(code, code_count, jump_targets, FUSION_GETPROPC, (void*)constants);
 }
 
 // ============================================================================
@@ -521,38 +645,7 @@ fn void run_cmp_branch_fusion(Instruction* code, uint code_count, bool* jump_tar
     if (code_count < 2) { return; }
 
     // --- Build the jump-target bitset. ---
-    for (uint i = 0; i < code_count; i++) { jump_targets[i] = false; }
-    for (uint i = 0; i < code_count; i++) {
-        Instruction ins = code[i];
-        switch (ins.op) {
-            case Opcode.JUMP:
-            case Opcode.BREAK:
-            case Opcode.CONTINUE: {
-                int off = ins.get_sabc();
-                int tgt = (int)i + 1 + off;
-                if (tgt >= 0 && (uint)tgt < code_count) { jump_targets[tgt] = true; }
-            }
-            case Opcode.IF_TRUE:
-            case Opcode.IF_FALSE: {
-                int off = ins.get_sbc();
-                int tgt = (int)i + 1 + off;
-                if (tgt >= 0 && (uint)tgt < code_count) { jump_targets[tgt] = true; }
-            }
-            case Opcode.TRY: {
-                uint catch_off = ins.get_bc();
-                uint catch_tgt = i + catch_off;
-                if (catch_tgt < code_count) { jump_targets[catch_tgt] = true; }
-                if (i + 1 < code_count) {
-                    uint finally_off = code[i + 1].get_bc();
-                    if (finally_off != 0) {
-                        uint finally_tgt = i + finally_off;
-                        if (finally_tgt < code_count) { jump_targets[finally_tgt] = true; }
-                    }
-                }
-            }
-            default: {}
-        }
-    }
+    build_jump_targets(code, code_count, jump_targets);
 
     // --- Fuse each compare + IF_FALSE/IF_TRUE. ---
     for (uint i = 0; i + 1 < code_count; i++) {
@@ -577,11 +670,32 @@ fn void run_cmp_branch_fusion(Instruction* code, uint code_count, bool* jump_tar
         // Bridge correction (B23/B26/B28): a FORWARD IF_FALSE/IF_TRUE at the
         // branch's target is an `&&`/`||` continuation; extend the fused offset
         // past it. A backward continuation is a loop back-edge, not a bridge.
+        //
+        // The continuation must read rA, the very register this fusion stops
+        // materializing. That is the whole reason the correction exists, since
+        // the bridge would otherwise re-test a stale compare result. A forward
+        // IF_FALSE or IF_TRUE on any other register is an unrelated branch that
+        // merely happens to sit at the target, and skipping past it deletes a
+        // real instruction from the taken path. A backward branch landing on the
+        // first statement of a loop body is exactly that shape: `for (...) { if
+        // (j) ... }` puts an `IF_FALSE rJ` at the back-edge target, and treating
+        // it as a bridge moves the back-edge into the else arm, so every
+        // iteration after the first runs only that arm.
+        //
+        // The negative-target handling is load-bearing and not obvious from the
+        // expression: the target is computed in signed `int` and then cast to
+        // `uint`. A backward branch far enough to run off the front of the
+        // function yields a negative value, which wraps to a huge unsigned
+        // number and fails the `< code_count` bound below, so no explicit `>= 0`
+        // test is needed and adding one would be dead code. The same holds for
+        // `skip_tgt` further down. Do not change either to a signed comparison
+        // without re-deriving both bounds.
         int bridge_sbx = 0;
         uint bridge_slot = (uint)((int)i + 2 + sbx);
         if (bridge_slot < code_count) {
             Opcode bop = code[bridge_slot].op;
-            if (bop == Opcode.IF_FALSE || bop == Opcode.IF_TRUE) {
+            if ((bop == Opcode.IF_FALSE || bop == Opcode.IF_TRUE)
+                && (uint)code[bridge_slot].a == rA) {
                 int cand = code[bridge_slot].get_sbc();
                 if (cand > 0) { bridge_sbx = cand; }
             }
@@ -656,53 +770,7 @@ fn void run_move_gg_fusion(Instruction* code, uint code_count, bool* jump_target
     if (code_count < 2) { return; }
 
     // --- Build the jump-target bitset (all branch/handler forms). ---
-    for (uint i = 0; i < code_count; i++) { jump_targets[i] = false; }
-    for (uint i = 0; i < code_count; i++) {
-        Instruction ins = code[i];
-        switch (ins.op) {
-            case Opcode.JUMP:
-            case Opcode.BREAK:
-            case Opcode.CONTINUE: {
-                int off = ins.get_sabc();
-                int tgt = (int)i + 1 + off;
-                if (tgt >= 0 && (uint)tgt < code_count) { jump_targets[tgt] = true; }
-            }
-            case Opcode.IF_TRUE:
-            case Opcode.IF_FALSE: {
-                int off = ins.get_sbc();
-                int tgt = (int)i + 1 + off;
-                if (tgt >= 0 && (uint)tgt < code_count) { jump_targets[tgt] = true; }
-            }
-            case Opcode.JMP_NLT:
-            case Opcode.JMP_NLE:
-            case Opcode.JMP_NGT:
-            case Opcode.JMP_NGE:
-            case Opcode.JMP_LT:
-            case Opcode.JMP_LE:
-            case Opcode.JMP_GT:
-            case Opcode.JMP_GE:
-            case Opcode.JMP_SEQ:
-            case Opcode.JMP_SNEQ: {
-                // ABC form: signed 8-bit offset in field A.
-                int off = (int)(ichar)ins.a;
-                int tgt = (int)i + 1 + off;
-                if (tgt >= 0 && (uint)tgt < code_count) { jump_targets[tgt] = true; }
-            }
-            case Opcode.TRY: {
-                uint catch_off = ins.get_bc();
-                uint catch_tgt = i + catch_off;
-                if (catch_tgt < code_count) { jump_targets[catch_tgt] = true; }
-                if (i + 1 < code_count) {
-                    uint finally_off = code[i + 1].get_bc();
-                    if (finally_off != 0) {
-                        uint finally_tgt = i + finally_off;
-                        if (finally_tgt < code_count) { jump_targets[finally_tgt] = true; }
-                    }
-                }
-            }
-            default: {}
-        }
-    }
+    build_jump_targets(code, code_count, jump_targets);
 
     // --- Fuse each strictly-adjacent GETGLOBAL_PRIM + PUTGLOBAL_PRIM pair. ---
     for (uint i = 0; i + 1 < code_count; i++) {
@@ -720,26 +788,10 @@ fn void run_move_gg_fusion(Instruction* code, uint code_count, bool* jump_target
 
         // rX must be dead after the pair: PUTGLOBAL_PRIM sets it undefined and
         // the fused op writes no register, so any later read would see garbage.
-        // Scan forward from i+2 until rX is written (dead) or read (live).
-        bool rX_live = false;
-        for (uint j = i + 2; j < code_count; j++) {
-            Instruction jns = code[j];
-            Opcode jop = jns.op;
-            if (jop == Opcode.IF_TRUE || jop == Opcode.IF_FALSE) {
-                if ((uint)jns.a == rX) { rX_live = true; break; }
-                continue;
-            }
-            OpFormat jfmt = bytecode::get_op_format(jop);
-            if (jfmt == OpFormat.ABC) {
-                if (fusion_abc_reads_reg(jns, rX)) { rX_live = true; break; }
-            }
-            // A write to rX in field A (non-wide forms use A as destination)
-            // ends the scan: rX is redefined before any read, hence dead.
-            if (jfmt != OpFormat.WIDE_SABC && jfmt != OpFormat.WIDE_ABC) {
-                if ((uint)jns.a == rX) { break; }
-            }
-        }
-        if (rX_live) { continue; }
+        // Uses the shared scan (which owns the WIDE-format A-is-not-a-register
+        // rule) rather than a private copy, since a hand-copied liveness scan here
+        // is exactly how the shared helper came to be missing that guard.
+        if (fusion_reg_live_from(code, code_count, i + 2, rX)) { continue; }
 
         uint dst_name = code[i + 1].get_bc();   // D, destination global
         uint src_name = code[i].get_bc();        // S, source global
@@ -775,52 +827,7 @@ fn void run_move_gg_fusion(Instruction* code, uint code_count, bool* jump_target
 fn void run_jmp_lt_g_fusion(Instruction* code, uint code_count, bool* jump_targets) {
     if (code_count < 2) { return; }
 
-    for (uint i = 0; i < code_count; i++) { jump_targets[i] = false; }
-    for (uint i = 0; i < code_count; i++) {
-        Instruction ins = code[i];
-        switch (ins.op) {
-            case Opcode.JUMP:
-            case Opcode.BREAK:
-            case Opcode.CONTINUE: {
-                int off = ins.get_sabc();
-                int tgt = (int)i + 1 + off;
-                if (tgt >= 0 && (uint)tgt < code_count) { jump_targets[tgt] = true; }
-            }
-            case Opcode.IF_TRUE:
-            case Opcode.IF_FALSE: {
-                int off = ins.get_sbc();
-                int tgt = (int)i + 1 + off;
-                if (tgt >= 0 && (uint)tgt < code_count) { jump_targets[tgt] = true; }
-            }
-            case Opcode.JMP_NLT:
-            case Opcode.JMP_NLE:
-            case Opcode.JMP_NGT:
-            case Opcode.JMP_NGE:
-            case Opcode.JMP_LT:
-            case Opcode.JMP_LE:
-            case Opcode.JMP_GT:
-            case Opcode.JMP_GE:
-            case Opcode.JMP_SEQ:
-            case Opcode.JMP_SNEQ: {
-                int off = (int)(ichar)ins.a;
-                int tgt = (int)i + 1 + off;
-                if (tgt >= 0 && (uint)tgt < code_count) { jump_targets[tgt] = true; }
-            }
-            case Opcode.TRY: {
-                uint catch_off = ins.get_bc();
-                uint catch_tgt = i + catch_off;
-                if (catch_tgt < code_count) { jump_targets[catch_tgt] = true; }
-                if (i + 1 < code_count) {
-                    uint finally_off = code[i + 1].get_bc();
-                    if (finally_off != 0) {
-                        uint finally_tgt = i + finally_off;
-                        if (finally_tgt < code_count) { jump_targets[finally_tgt] = true; }
-                    }
-                }
-            }
-            default: {}
-        }
-    }
+    build_jump_targets(code, code_count, jump_targets);
 
     for (uint i = 0; i + 1 < code_count; i++) {
         if (code[i].op != Opcode.GETGLOBAL_PRIM) { continue; }

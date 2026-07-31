@@ -484,9 +484,13 @@ struct CompilerContext {
     // the loop's lex_env before jumping.
     int  cur_lex_depth;
 
-    // Strict mode
-    bool is_strict;             // always true (strict-only engine)
+    // Strict mode: the engine is strict-only, so there is no strictness flag.
+    // `saw_use_strict` records only that a (no-op) directive was parsed.
     bool saw_use_strict;        // true only when an actual "use strict" directive was parsed
+    // Set by the dynamic Function/GeneratorFunction/AsyncFunction constructors
+    // so an undefined receiver coerces to globalThis. See
+    // FuncFlags.subst_global_this. Cleared by a "use strict" directive.
+    bool subst_global_this;
 
     // arguments tracking
     bool uses_arguments;        // true when 'arguments' is referenced in function body
@@ -680,8 +684,6 @@ fn void CompilerContext.init(&self, Lexer* lex, void* heap) {
     self.pushback_count = 0;
     self.pending_async_arrow_src = 0xFFFFFFFF;
     self.pending_async_function_src = 0xFFFFFFFF;
-    // Strict-only engine: all code is strict by default.
-    self.is_strict = true;
 
     // Allocate growable buffers
     Heap* h = (Heap*)heap;
@@ -950,15 +952,20 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     // Saves 1 dispatch per property access.  The key constant-pool index is baked into
     // GETPROPC.c, so jumping into the NOP slot (if rK's LDCONST happened to be a jump
     // target) still produces correct results: NOP falls through to GETPROPC which reads
-    // the index from the instruction itself, not from rK.
+    // the index from the instruction itself, not from rK.  Control arriving at the
+    // GETPROPC *itself* from a branch is a different matter and is rejected by the
+    // shared driver's jump-target guard; see run_fusion_rule.
     //
-    // Declarative, see src/compiler/fusion.c3 (FUSION_GETPROPC rule) for the
-    // pattern/guard/rewrite definition and the shared NOP-skip + dead-after-
-    // liveness driver (run_fusion_rule). Ported 1:1 from the original
-    // hand-written pass; equivalence is checked by the golden-bytecode suite
-    // (test/golden_bytecode/, `just test-golden-bytecode`).
+    // Declarative: see src/compiler/fusion.c3 (FUSION_GETPROPC rule) for the
+    // pattern, guard, and rewrite, and for the shared NOP-skip, jump-target, and
+    // dead-after-liveness driver (run_fusion_rule). The jump-target bitset needs
+    // a code_count-sized bool scratch, allocated here so fusion.c3 stays free of
+    // heap dependencies.
     if (!self.disable_optimize && self.code_count >= 2) {
-        fuse_getpropc(self.code, self.code_count, self.constants);
+        bool* gp_jump_targets = (bool*)h.alloc_func(h.heap_udata, (usz)self.code_cap);
+        if (gp_jump_targets == null) { self.cleanup(); return COMPILE_ERROR~; }
+        fuse_getpropc(self.code, self.code_count, gp_jump_targets, self.constants);
+        h.free_func(h.heap_udata, gp_jump_targets);
     }
 
     // --- Peephole: fuse compare (LT/LE/GT/GE/SEQ/SNEQ) + IF_FALSE/IF_TRUE ---
@@ -985,16 +992,37 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     //   LT/LE/GT/GE/ADD/SUB/MUL (b/c = register operands in ABC format).
     // GETPROPC is excluded: its c field is a constant-pool index, not a register.
     //
-    // Jump-target safety:
-    //   - If the LDREG slot is a jump target it becomes a NOP; control falls through
-    //     to the consumer which now reads rS directly, correct.
-    //   - If the consumer slot is a jump target, a jump landing there would have
-    //     expected rT to be loaded.  After substitution the consumer reads rS instead.
-    //     rS is the source register (the actual variable), so it still holds the
-    //     expected value, correct.
-    //   Therefore no jump-target guard is needed for either slot.
+    // Jump-target safety: the consumer slot must not be a jump target.
+    //
+    // A branch landing on the consumer never executed the LDREG, so it set
+    // neither rT nor rS through this pair; it arrived with rT already holding the
+    // value it wants. After substitution the consumer reads rS, which that path
+    // never wrote. A ternary's join is exactly this shape:
+    //
+    //       IF_FALSE cond -> false_arm
+    //       <true arm>  ... writes rT      JUMP -> join
+    //     false_arm:
+    //       <false arm> ... writes rS
+    //       LDREG rT = rS                  <- this pair
+    //     join:
+    //       ADD  rD = rD, rT               <- jump target
+    //
+    // Collapsing that to `ADD rD = rD, rS` makes the true arm's JUMP land on an
+    // ADD reading the false arm's scratch, so `5 + (c ? 10 : 20)` yields 25 for
+    // every condition, silently and with no error.
+    //
+    // The LDREG slot itself being a jump target is allowed: control landing there
+    // falls through into a consumer reading rS, and every branch targeting a
+    // parser-emitted LDREG is a loop back-edge onto a body whose rS is a live
+    // local, re-read each iteration, rather than a per-arm scratch. Guarding it
+    // would cost the `total = total + i` loop-body copy elision for no
+    // correctness gain; golden_bytecode/loop_addi covers that.
     if (!self.disable_optimize && self.code_count >= 2) {
+        bool* cp_jump_targets = (bool*)h.alloc_func(h.heap_udata, (usz)self.code_cap);
+        if (cp_jump_targets == null) { self.cleanup(); return COMPILE_ERROR~; }
+        build_jump_targets(self.code, self.code_count, cp_jump_targets);
         for (uint i = 0; i + 1 < self.code_count; i++) {
+            if (cp_jump_targets[i + 1]) { continue; }
             if (self.code[i].op != Opcode.LDREG) { continue; }
 
             uint rT = (uint)self.code[i].a;
@@ -1053,6 +1081,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
             self.code[i + 1] = bytecode::make_abc(cop, (uint)consumer.a, new_b, new_c);
             self.code[i] = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
         }
+        h.free_func(h.heap_udata, cp_jump_targets);
     }
 
     // --- Peephole: fuse LDINT rK, imm + ADD/SUB rD = …,rK → NOP + ADDI/SUBI rD = rS, imm ---
@@ -1060,13 +1089,18 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     // otherwise sit between an LDINT literal and its arithmetic consumer, so the
     // consumer of rK is now the next NON-NOP instruction.
     //
-    // Declarative, see src/compiler/fusion.c3 (FUSION_ADDI_SUBI rule) for the
-    // pattern/guard/rewrite definition and the shared NOP-skip + dead-after-
-    // liveness driver (run_fusion_rule). Ported 1:1 from the original
-    // hand-written pass; equivalence is checked by the golden-bytecode suite
-    // (test/golden_bytecode/, `just test-golden-bytecode`).
+    // Declarative: see src/compiler/fusion.c3 (FUSION_ADDI_SUBI rule) for the
+    // pattern, guard, and rewrite, and for the shared NOP-skip, jump-target, and
+    // dead-after-liveness driver (run_fusion_rule). The jump-target guard is
+    // load-bearing here, since a ternary's false arm sits physically next to the
+    // join point in `5 + (c ? 10 : 20)`: without it the false arm's literal is
+    // baked into an ADDI the true arm branches straight onto. The bitset needs a
+    // code_count-sized bool scratch.
     if (!self.disable_optimize && self.code_count >= 2) {
-        fuse_addi_subi(self.code, self.code_count);
+        bool* addi_jump_targets = (bool*)h.alloc_func(h.heap_udata, (usz)self.code_cap);
+        if (addi_jump_targets == null) { self.cleanup(); return COMPILE_ERROR~; }
+        fuse_addi_subi(self.code, self.code_count, addi_jump_targets);
+        h.free_func(h.heap_udata, addi_jump_targets);
     }
 
     // --- Liveness-based move elimination: `producer rT=... ; LDREG rDst=rT`
@@ -1209,115 +1243,128 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     // finally_offset.  The VM unconditionally reads and advances past this word,
     // so it must be preserved even after compaction.  We mark those slots in
     // `keep[]` before building the pc_map.
-    if (!self.disable_optimize && self.code_count > 0) {
-        // Step 1: mark TRY jump slots as non-removable.
-        bool* nop_keep = (bool*)h.alloc_func(h.heap_udata, (usz)self.code_cap);
-        if (nop_keep == null) { self.cleanup(); return COMPILE_ERROR~; }
-        mem::clear(nop_keep, (sz)((usz)self.code_count));
-        for (uint i = 0; i < self.code_count; i++) {
-            if (self.code[i].op == Opcode.TRY && i + 1 < self.code_count) {
-                nop_keep[i + 1] = true;
-            }
-            // MOVE_GG's trailing word (a NOP holding the source name index in
-            // its BC) is read by the VM as the second half of the two-word
-            // instruction; keep it through compaction like TRY's finally slot.
-            if (self.code[i].op == Opcode.MOVE_GG && i + 1 < self.code_count) {
-                nop_keep[i + 1] = true;
-            }
-            // JMP_LT_G's trailing word (a NOP holding the global's name index
-            // in its BC) is the second half of the two-word instruction.
-            if (self.code[i].op == Opcode.JMP_LT_G && i + 1 < self.code_count) {
-                nop_keep[i + 1] = true;
-            }
-        }
-
-        // Step 2: build pc_map[old_pc] → new_pc.
-        // NOP slots that are not kept map to the new_pc of the next kept slot.
-        uint* pc_map = (uint*)h.alloc_func(h.heap_udata, (usz)((long)(self.code_cap + 1) * (long)uint::size));
-        if (pc_map == null) { h.free_func(h.heap_udata, nop_keep); self.cleanup(); return COMPILE_ERROR~; }
+    // The guard is on code_count alone, NOT on disable_optimize: Step 4 below
+    // is the only place func.code / func.code_count are ever assigned, so
+    // skipping this block wholesale left every compiled function with a null
+    // code pointer and `--no-optimize` segfaulted on entry to the VM. Steps
+    // 1-3 (which only exist to compact NOPs and remap offsets) are gated
+    // individually instead, and Step 4 already copies verbatim when
+    // disable_optimize is set.
+    if (self.code_count > 0) {
+        bool* nop_keep = null;
+        uint* pc_map = null;
         uint new_count = 0;
-        for (uint i = 0; i < self.code_count; i++) {
-            pc_map[i] = new_count;
-            if (self.code[i].op != Opcode.NOP || nop_keep[i]) {
-                new_count++;
+        if (!self.disable_optimize) {
+            // Step 1: mark TRY jump slots as non-removable.
+            nop_keep = (bool*)h.alloc_func(h.heap_udata, (usz)self.code_cap);
+            if (nop_keep == null) { self.cleanup(); return COMPILE_ERROR~; }
+            mem::clear(nop_keep, (sz)((usz)self.code_count));
+            for (uint i = 0; i < self.code_count; i++) {
+                if (self.code[i].op == Opcode.TRY && i + 1 < self.code_count) {
+                    nop_keep[i + 1] = true;
+                }
+                // MOVE_GG's trailing word (a NOP holding the source name index in
+                // its BC) is read by the VM as the second half of the two-word
+                // instruction; keep it through compaction like TRY's finally slot.
+                if (self.code[i].op == Opcode.MOVE_GG && i + 1 < self.code_count) {
+                    nop_keep[i + 1] = true;
+                }
+                // JMP_LT_G's trailing word (a NOP holding the global's name index
+                // in its BC) is the second half of the two-word instruction.
+                if (self.code[i].op == Opcode.JMP_LT_G && i + 1 < self.code_count) {
+                    nop_keep[i + 1] = true;
+                }
             }
-        }
-        pc_map[self.code_count] = new_count; // sentinel for targets at end
 
-        // Step 3: remap all branch/handler offsets in-place.
-        for (uint i = 0; i < self.code_count; i++) {
-            Opcode cop = self.code[i].op;
-            switch (cop) {
-                case Opcode.JUMP:
-                case Opcode.BREAK:
-                case Opcode.CONTINUE: {
-                    // WIDE_SABC: target = (pc+1) + sabc
-                    int sabc = self.code[i].get_sabc();
-                    int tgt_old = (int)i + 1 + sabc;
-                    int tgt_new = (int)pc_map[(uint)tgt_old];
-                    int new_sabc = tgt_new - ((int)pc_map[i] + 1);
-                    self.code[i] = bytecode::make_sabc(cop, new_sabc);
+            // Step 2: build pc_map[old_pc] → new_pc.
+            // NOP slots that are not kept map to the new_pc of the next kept slot.
+            pc_map = (uint*)h.alloc_func(h.heap_udata, (usz)((long)(self.code_cap + 1) * (long)uint::size));
+            if (pc_map == null) { h.free_func(h.heap_udata, nop_keep); self.cleanup(); return COMPILE_ERROR~; }
+            for (uint i = 0; i < self.code_count; i++) {
+                pc_map[i] = new_count;
+                if (self.code[i].op != Opcode.NOP || nop_keep[i]) {
+                    new_count++;
                 }
-                case Opcode.IF_TRUE:
-                case Opcode.IF_FALSE: {
-                    // A_SBX: target = (pc+1) + sbx
-                    uint ra = (uint)self.code[i].a;
-                    int sbx = self.code[i].get_sbc();
-                    int tgt_old = (int)i + 1 + sbx;
-                    int tgt_new = (int)pc_map[(uint)tgt_old];
-                    int new_sbx = tgt_new - ((int)pc_map[i] + 1);
-                    self.code[i] = bytecode::make_a_sbx(cop, ra, new_sbx);
-                }
-                case Opcode.JMP_NLT:
-                case Opcode.JMP_NLE:
-                case Opcode.JMP_NGT:
-                case Opcode.JMP_NGE:
-                case Opcode.JMP_LT:
-                case Opcode.JMP_LE:
-                case Opcode.JMP_GT:
-                case Opcode.JMP_GE:
-                case Opcode.JMP_SEQ:
-                case Opcode.JMP_SNEQ: {
-                    // ABC: signed 8-bit offset in field A; target = (pc+1) + (int)(char)a
-                    // NOP removal only shrinks distances, so the new offset is <= old.
-                    int off = (int)(ichar)self.code[i].a;
-                    int tgt_old = (int)i + 1 + off;
-                    int tgt_new = (int)pc_map[(uint)tgt_old];
-                    int new_off = tgt_new - ((int)pc_map[i] + 1);
-                    // Offset must still fit in signed 8 bits (removal only shrinks gaps).
-                    $assert $defined(new_off);
-                    self.code[i].a = (uint)(char)new_off;
-                }
-                case Opcode.JMP_LT_G: {
-                    // Two-word ABC: signed 8-bit offset in field A, applied by
-                    // the VM after BOTH words are consumed, so the target is
-                    // (pc + 2) + off, and the new base is likewise the slot
-                    // after the kept trailing word.
-                    int off = (int)(ichar)self.code[i].a;
-                    int tgt_old = (int)i + 2 + off;
-                    int tgt_new = (int)pc_map[(uint)tgt_old];
-                    int new_off = tgt_new - ((int)pc_map[i] + 2);
-                    $assert $defined(new_off);
-                    self.code[i].a = (uint)(char)new_off;
-                }
-                case Opcode.TRY: {
-                    // A_BC: BC = catch_offset (absolute from TRY instruction).
-                    // Adjacent slot i+1 (NOP, kept): BC = finally_offset (same base).
-                    uint try_new = pc_map[i];
-                    uint catch_off_old = self.code[i].get_bc();
-                    uint catch_tgt_old = i + catch_off_old;
-                    uint new_catch_off = pc_map[catch_tgt_old] - try_new;
-                    uint finally_off_old = self.code[i + 1].get_bc();
-                    uint new_finally_off = 0;
-                    if (finally_off_old != 0) {
-                        uint finally_tgt_old = i + finally_off_old;
-                        new_finally_off = pc_map[finally_tgt_old] - try_new;
-                    }
-                    self.code[i] = bytecode::make_a_bc(Opcode.TRY, (uint)self.code[i].a, new_catch_off);
-                    self.code[i + 1] = bytecode::make_a_bc(Opcode.NOP, 0, new_finally_off);
-                }
-                default: {}
+
             }
+            pc_map[self.code_count] = new_count; // sentinel for targets at end
+
+            // Step 3: remap all branch/handler offsets in-place.
+            for (uint i = 0; i < self.code_count; i++) {
+                Opcode cop = self.code[i].op;
+                switch (cop) {
+                    case Opcode.JUMP:
+                    case Opcode.BREAK:
+                    case Opcode.CONTINUE: {
+                        // WIDE_SABC: target = (pc+1) + sabc
+                        int sabc = self.code[i].get_sabc();
+                        int tgt_old = (int)i + 1 + sabc;
+                        int tgt_new = (int)pc_map[(uint)tgt_old];
+                        int new_sabc = tgt_new - ((int)pc_map[i] + 1);
+                        self.code[i] = bytecode::make_sabc(cop, new_sabc);
+                    }
+                    case Opcode.IF_TRUE:
+                    case Opcode.IF_FALSE: {
+                        // A_SBX: target = (pc+1) + sbx
+                        uint ra = (uint)self.code[i].a;
+                        int sbx = self.code[i].get_sbc();
+                        int tgt_old = (int)i + 1 + sbx;
+                        int tgt_new = (int)pc_map[(uint)tgt_old];
+                        int new_sbx = tgt_new - ((int)pc_map[i] + 1);
+                        self.code[i] = bytecode::make_a_sbx(cop, ra, new_sbx);
+                    }
+                    case Opcode.JMP_NLT:
+                    case Opcode.JMP_NLE:
+                    case Opcode.JMP_NGT:
+                    case Opcode.JMP_NGE:
+                    case Opcode.JMP_LT:
+                    case Opcode.JMP_LE:
+                    case Opcode.JMP_GT:
+                    case Opcode.JMP_GE:
+                    case Opcode.JMP_SEQ:
+                    case Opcode.JMP_SNEQ: {
+                        // ABC: signed 8-bit offset in field A; target = (pc+1) + (int)(char)a
+                        // NOP removal only shrinks distances, so the new offset is <= old.
+                        int off = (int)(ichar)self.code[i].a;
+                        int tgt_old = (int)i + 1 + off;
+                        int tgt_new = (int)pc_map[(uint)tgt_old];
+                        int new_off = tgt_new - ((int)pc_map[i] + 1);
+                        // Offset must still fit in signed 8 bits (removal only shrinks gaps).
+                        $assert $defined(new_off);
+                        self.code[i].a = (uint)(char)new_off;
+                    }
+                    case Opcode.JMP_LT_G: {
+                        // Two-word ABC: signed 8-bit offset in field A, applied by
+                        // the VM after BOTH words are consumed, so the target is
+                        // (pc + 2) + off, and the new base is likewise the slot
+                        // after the kept trailing word.
+                        int off = (int)(ichar)self.code[i].a;
+                        int tgt_old = (int)i + 2 + off;
+                        int tgt_new = (int)pc_map[(uint)tgt_old];
+                        int new_off = tgt_new - ((int)pc_map[i] + 2);
+                        $assert $defined(new_off);
+                        self.code[i].a = (uint)(char)new_off;
+                    }
+                    case Opcode.TRY: {
+                        // A_BC: BC = catch_offset (absolute from TRY instruction).
+                        // Adjacent slot i+1 (NOP, kept): BC = finally_offset (same base).
+                        uint try_new = pc_map[i];
+                        uint catch_off_old = self.code[i].get_bc();
+                        uint catch_tgt_old = i + catch_off_old;
+                        uint new_catch_off = pc_map[catch_tgt_old] - try_new;
+                        uint finally_off_old = self.code[i + 1].get_bc();
+                        uint new_finally_off = 0;
+                        if (finally_off_old != 0) {
+                            uint finally_tgt_old = i + finally_off_old;
+                            new_finally_off = pc_map[finally_tgt_old] - try_new;
+                        }
+                        self.code[i] = bytecode::make_a_bc(Opcode.TRY, (uint)self.code[i].a, new_catch_off);
+                        self.code[i + 1] = bytecode::make_a_bc(Opcode.NOP, 0, new_finally_off);
+                    }
+                    default: {}
+                }
+            }
+
         }
 
         // Step 4: copy the (possibly compacted) instruction stream into the
@@ -1400,8 +1447,8 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     func.flags.is_user_generator = self.is_user_generator;
     func.flags.is_async = self.is_async;
     func.flags.is_arrow = self.is_arrow;
-    func.flags.is_strict = self.is_strict;
-    // A direct eval's source is opaque at compile time, it may reference
+    func.flags.subst_global_this = self.subst_global_this;
+    // A direct eval's source is opaque at compile time, so it may reference
     // `arguments` even though the enclosing function's own parsed text never
     // does (ES2022 §15.7.10 PerformEval materializes the caller's arguments
     // binding regardless). Force uses_arguments here for any ordinary

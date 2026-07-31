@@ -303,8 +303,11 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
 
 /// Compile a function expression or declaration.
 /// `is_expr` is true for function expressions, false for declarations.
-fn CompiledFunction*? compile_function(Lexer* lex, void* heap, bool is_expr, bool force_strict = true) {
-    // Reset error state for this compilation, see `compile`'s matching
+/// `dynamic` marks a body built by the Function constructor, whose receiver
+/// coerces to globalThis unless the body carries its own "use strict".
+/// See FuncFlags.subst_global_this.
+fn CompiledFunction*? compile_function(Lexer* lex, void* heap, bool is_expr, bool dynamic = false) {
+    // Reset error state for this compilation; see `compile`'s matching
     // reset. Without it, a stale `g_last_err_msg` left by a PREVIOUS
     // Function()-constructor SyntaxError makes finish()'s choke-point check
     // (context.c3) fail the very next, otherwise-valid compile too, e.g.
@@ -316,13 +319,7 @@ fn CompiledFunction*? compile_function(Lexer* lex, void* heap, bool is_expr, boo
     g_last_err_col  = 0;
     CompilerContext ctx;
     ctx.init(lex, heap);
-    // The dynamic Function constructor (ES2019 §19.2.1.1.1) compiles a body
-    // with no enclosing lexical context to inherit strictness from, it is
-    // sloppy unless its own directive prologue says "use strict" (which
-    // parse_function_body's parse_directives call already detects and
-    // upgrades). Every other caller of this shared entry point (internal
-    // engine-authored prototype methods) keeps the strict-only default.
-    if (!force_strict) ctx.is_strict = false;
+    ctx.subst_global_this = dynamic;
 
     // Parse function body
     ctx.parse_function_body(is_expr)!;
@@ -332,14 +329,14 @@ fn CompiledFunction*? compile_function(Lexer* lex, void* heap, bool is_expr, boo
 
 /// Like compile_function but with generator/async flags set for dynamic
 /// GeneratorFunction / AsyncFunction constructor (ES2019 §19.2.1.1.1).
-fn CompiledFunction*? compile_function_kind(Lexer* lex, void* heap, bool is_expr, bool is_generator, bool is_async, bool force_strict = true) {
-    // See compile_function's matching reset, same stale-flag hazard.
+fn CompiledFunction*? compile_function_kind(Lexer* lex, void* heap, bool is_expr, bool is_generator, bool is_async, bool dynamic = false) {
+    // See compile_function's matching reset, which has the same stale-flag hazard.
     g_last_err_msg[0] = 0;
     g_last_err_line = 0;
     g_last_err_col  = 0;
     CompilerContext ctx;
     ctx.init(lex, heap);
-    if (!force_strict) ctx.is_strict = false;
+    ctx.subst_global_this = dynamic;
     ctx.is_generator = is_generator;
     // Dynamic functions: `is_generator` reflects a syntactic generator here
     // (GeneratorFunction / AsyncGeneratorFunction constructors), so it also

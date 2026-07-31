@@ -121,15 +121,29 @@ struct DeferredTarget {
     uint pushback_count;
 }
 
-/// Check if a candidate param name already exists in the seen-params table.
-/// Used for ES5 §13.1 strict-mode duplicate-parameter rejection (strict-only
-/// engine: always rejects).
-fn bool check_dup_param(char[] name, char[64][] seen, ushort[] seen_lens, uint count) {
-    for (uint i = 0; i < count; i++) {
-        if (seen_lens[i] == name.len) {
+/// The set of BoundNames seen so far in one FormalParameters list, plus the
+/// early-error checks every parameter must pass.
+///
+/// Owned by each parameter-list parser (`parse_function_body`,
+/// `compile_inner_function`, `compile_arrow_inner_reparse`) as a local. The
+/// three used to hand-roll the same restricted-name / duplicate-name /
+/// append-to-table sequence inline; the arrow copy simply omitted it, so
+/// `(a, a) => a` and `(eval) => 1` compiled cleanly. Keeping the table and the
+/// checks together in one type means a prologue cannot record a name without
+/// also validating it.
+struct SeenParams {
+    char[64][MAX_PARAMS] names;
+    ushort[MAX_PARAMS]   lens;
+    uint count;
+}
+
+/// True if `name` is already a BoundName of this parameter list.
+fn bool SeenParams.contains(&self, char[] name) {
+    for (uint i = 0; i < self.count; i++) {
+        if (self.lens[i] == name.len) {
             bool match = true;
             for (usz j = 0; j < name.len; j++) {
-                if (seen[i][j] != name[j]) {
+                if (self.names[i][j] != name[j]) {
                     match = false;
                     break;
                 }
@@ -138,6 +152,48 @@ fn bool check_dup_param(char[] name, char[64][] seen, ushort[] seen_lens, uint c
         }
     }
     return false;
+}
+
+/// Apply the FormalParameters early errors to one bound name and record it.
+///
+/// Rejects ES5 §13.1 restricted names (`eval`, `arguments`, `let`, ...) and
+/// ES2015 §14.1.2 duplicate BoundNames. This engine is strict-only, so both
+/// are unconditional SyntaxErrors. `allow_restricted` is set when the token
+/// was a contextual keyword (`await`/`yield` accepted as an identifier by
+/// `expect_binding_identifier`), where the enclosing-grammar check has already
+/// decided the name is legal here.
+///
+/// Names longer than 63 chars or beyond MAX_PARAMS entries are checked but not
+/// recorded: the table is a fixed-size fast path, and overflow only weakens
+/// duplicate detection for pathological parameter lists, never accepts a
+/// restricted name.
+fn void? SeenParams.declare(&self, char[] name, bool allow_restricted = false) {
+    if (!allow_restricted && is_restricted_name(name)) return COMPILE_ERROR~;
+    if (self.contains(name)) return COMPILE_ERROR~;
+    if (self.count < MAX_PARAMS && name.len < 64) {
+        for (usz k = 0; k < name.len; k++) {
+            self.names[self.count][k] = name[k];
+        }
+        self.lens[self.count] = (ushort)name.len;
+        self.count++;
+    }
+}
+
+/// Apply the same early errors to the BoundNames produced by destructuring
+/// patterns in a parameter list: `([a], {a}) => 1` and `function f([a], {a})`
+/// are duplicate-BoundName SyntaxErrors just like `(a, a)`.
+///
+/// Destructured binds are collected into a flat DestructBind array as the list
+/// is parsed, so they cannot be validated at the point the pattern is consumed
+/// (a later simple parameter may collide with an earlier pattern's leaf, and
+/// vice versa). Instead every prologue calls this once, after the whole list is
+/// parsed, with the same SeenParams the simple parameters populated. Synthetic
+/// binds (intermediate extraction points) and elision holes are not BoundNames.
+fn void? SeenParams.declare_destructured(&self, DestructBind[] binds, uint count) {
+    for (uint i = 0; i < count; i++) {
+        if (binds[i].is_synthetic || binds[i].is_hole || binds[i].is_member_target) continue;
+        self.declare(binds[i].name_buf[:binds[i].name_len])!;
+    }
 }
 
 /// Parse an object destructuring pattern within a function parameter list.
@@ -1896,6 +1952,14 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
                         break;
                     }
                 } else if (sep != TokenType.COMMA) {
+                    // Not a separator, so it belongs to whatever follows the
+                    // `var` statement, so push it back. For an unterminated
+                    // final declarator (`function f(){ return x; var t }`)
+                    // that token is the function body's own `}`; swallowing
+                    // it would leave brace_depth stuck above 0, so the scan
+                    // would run past the end of this body and hoist a
+                    // sibling function's locals into it.
+                    self.lexer.pushback(sep_opt);
                     break;
                 }
             }
@@ -2426,11 +2490,8 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
     uint[MAX_PARAMS] param_name_indices;
     ushort first_default_idx = 0xFFFF;
 
-    // Track seen param names for duplicate-param rejection (strict mode ES5 §13.1,
-    // strict-only engine). Each entry stores name bytes; comparison is byte-wise.
-    char[64][MAX_PARAMS] seen_param_names;
-    ushort[MAX_PARAMS]    seen_param_lens;
-    uint seen_param_count = 0;
+    // BoundNames of this parameter list, with the FormalParameters early errors.
+    SeenParams seen_params;
 
     // Destructured parameter binding tracking
     DestructBind[MAX_DESTRUCT_BINDS] destruct_binds;
@@ -2460,19 +2521,7 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
                 }
 
                 if (rest_param.str_value.len > 0) {
-                    if (is_restricted_name(rest_param.str_value)) {
-                        return COMPILE_ERROR~;
-                    }
-                    if (check_dup_param(rest_param.str_value, seen_param_names[..], seen_param_lens[..], seen_param_count)) {
-                        return COMPILE_ERROR~;
-                    }
-                    if (seen_param_count < MAX_PARAMS && rest_param.str_value.len < 64) {
-                        for (usz k = 0; k < rest_param.str_value.len; k++) {
-                            seen_param_names[seen_param_count][k] = rest_param.str_value[k];
-                        }
-                        seen_param_lens[seen_param_count] = (ushort)rest_param.str_value.len;
-                        seen_param_count++;
-                    }
+                    seen_params.declare(rest_param.str_value)!;
                     // Intern now: rest_param.str_value may borrow the lexer's
                     // shared ident_buf scratch (escaped identifier), which the
                     // body parsed below will overwrite. declare_var stores this
@@ -2521,19 +2570,7 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
             }
 
             Token param = self.expect_binding_identifier()!;
-            if (param.type == TokenType.IDENTIFIER && is_restricted_name(param.str_value)) {
-                return COMPILE_ERROR~;
-            }
-            if (check_dup_param(param.str_value, seen_param_names[..], seen_param_lens[..], seen_param_count)) {
-                return COMPILE_ERROR~;
-            }
-            if (seen_param_count < MAX_PARAMS && param.str_value.len < 64) {
-                for (usz k = 0; k < param.str_value.len; k++) {
-                    seen_param_names[seen_param_count][k] = param.str_value[k];
-                }
-                seen_param_lens[seen_param_count] = (ushort)param.str_value.len;
-                seen_param_count++;
-            }
+            seen_params.declare(param.str_value, param.type != TokenType.IDENTIFIER)!;
             // Intern now: param.str_value may borrow the lexer's shared
             // ident_buf scratch (escaped identifier), which later params, the
             // default expression, or the body will overwrite. declare_var
@@ -2598,6 +2635,11 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
     self.formal_count = formal_count;
 
     self.expect(TokenType.RPAREN)!;
+
+    // Destructured leaves are BoundNames too: `function f([a], {a})` is a
+    // duplicate-parameter SyntaxError. Checked here, once the whole list is
+    // known, so a pattern can collide with a simple param in either order.
+    seen_params.declare_destructured(destruct_binds[..], destruct_count)!;
 
     // Declare destructured bindings as variables.
     // Synthetics don't get variables, they're intermediate extraction points.
@@ -2950,7 +2992,6 @@ fn CompiledFunction*? CompilerContext.compile_static_block(&self) {
     }
 
     CompiledFunction* func = block_ctx.finish()!;
-    func.flags.is_strict = block_ctx.is_strict;
     return func;
 }
 
@@ -2972,8 +3013,9 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
     // (see is_named_func_expr doc in context.c3).
     inner_ctx.is_named_func_expr = is_named_expr && name.len > 0;
 
-    // Propagate strict mode: inner functions inherit enclosing strict context.
-    inner_ctx.is_strict = self.is_strict;
+    // subst_global_this is deliberately NOT propagated: a function nested
+    // inside a dynamic Function body is an ordinary function whose
+    // [[ThisMode]] is strict, so its undefined receiver stays undefined.
 
     // Propagate generator flag: if the caller is compiling a generator,
     // the inner context (which parses the body) needs to know it's in a generator.
@@ -3019,10 +3061,8 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
     uint[MAX_PARAMS] param_name_indices;
     ushort first_default_idx = 0xFFFF;
 
-    // Track seen param names for duplicate-param rejection (strict-only engine).
-    char[64][MAX_PARAMS] inner_seen_names;
-    ushort[MAX_PARAMS]    inner_seen_lens;
-    uint inner_seen_count = 0;
+    // BoundNames of this parameter list, with the FormalParameters early errors.
+    SeenParams inner_seen;
 
     // Destructured parameter binding tracking
     DestructBind[MAX_DESTRUCT_BINDS] inner_destruct_binds;
@@ -3052,19 +3092,7 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
                 }
 
                 if (rest_param.str_value.len > 0) {
-                    if (is_restricted_name(rest_param.str_value)) {
-                        return COMPILE_ERROR~;
-                    }
-                    if (check_dup_param(rest_param.str_value, inner_seen_names[..], inner_seen_lens[..], inner_seen_count)) {
-                        return COMPILE_ERROR~;
-                    }
-                    if (inner_seen_count < MAX_PARAMS && rest_param.str_value.len < 64) {
-                        for (usz k = 0; k < rest_param.str_value.len; k++) {
-                            inner_seen_names[inner_seen_count][k] = rest_param.str_value[k];
-                        }
-                        inner_seen_lens[inner_seen_count] = (ushort)rest_param.str_value.len;
-                        inner_seen_count++;
-                    }
+                    inner_seen.declare(rest_param.str_value)!;
                     // Intern now: rest_param.str_value may borrow the lexer's
                     // shared ident_buf scratch (escaped identifier), which the
                     // body parsed below will overwrite. declare_var stores this
@@ -3135,20 +3163,7 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
             // names for a plain function/method even when the enclosing scope is
             // a class static block, inner_ctx does not inherit forbid_await.
             Token param = inner_ctx.expect_binding_identifier()!;
-            bool param_ctx_keyword = param.type != TokenType.IDENTIFIER;
-            if (!param_ctx_keyword && is_restricted_name(param.str_value)) {
-                return COMPILE_ERROR~;
-            }
-            if (check_dup_param(param.str_value, inner_seen_names[..], inner_seen_lens[..], inner_seen_count)) {
-                return COMPILE_ERROR~;
-            }
-            if (inner_seen_count < MAX_PARAMS && param.str_value.len < 64) {
-                for (usz k = 0; k < param.str_value.len; k++) {
-                    inner_seen_names[inner_seen_count][k] = param.str_value[k];
-                }
-                inner_seen_lens[inner_seen_count] = (ushort)param.str_value.len;
-                inner_seen_count++;
-            }
+            inner_seen.declare(param.str_value, param.type != TokenType.IDENTIFIER)!;
             // Intern now: param.str_value may borrow the lexer's shared
             // ident_buf scratch (escaped identifier), which later params, the
             // default expression, or the body will overwrite. declare_var
@@ -3208,6 +3223,9 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
     inner_ctx.formal_count = formal_count;
 
     inner_ctx.expect(TokenType.RPAREN)!;
+
+    // Destructured leaves are BoundNames too (see parse_function_body).
+    inner_seen.declare_destructured(inner_destruct_binds[..], inner_destruct_count)!;
 
     // Declare destructured bindings as variables (skip synthetics).
     for (uint i = 0; i < inner_destruct_count; i++) {
@@ -3298,8 +3316,6 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
     }
 
     CompiledFunction* func = inner_ctx.finish()!;
-
-    func.flags.is_strict = inner_ctx.is_strict;
 
     // Set function name. The name parameter is a slice into the caller's
     // inferred_name_buf (or a lexer token buffer), which gets reused for
@@ -3650,6 +3666,12 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
     uint[MAX_PARAMS] param_name_indices;
     ushort first_default_idx = 0xFFFF;
 
+    // BoundNames of this parameter list, with the FormalParameters early
+    // errors. ArrowFormalParameters get the same treatment as any other
+    // FormalParameters (ES2015 §14.2.1): `(a, a) => a` and `(eval) => 1` are
+    // SyntaxErrors, and this path used to omit the checks entirely.
+    SeenParams arrow_seen;
+
     // Destructured parameter binding tracking
     DestructBind[MAX_DESTRUCT_BINDS] arrow_destruct_binds;
     uint arrow_destruct_count = 0;
@@ -3678,6 +3700,7 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
                 }
 
                 if (rest_param.str_value.len > 0) {
+                    arrow_seen.declare(rest_param.str_value)!;
                     // Intern now: rest_param.str_value may borrow the lexer's
                     // shared ident_buf scratch (escaped identifier), which the
                     // body parsed below will overwrite. declare_var stores this
@@ -3731,7 +3754,13 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
                 continue;
             }
 
-            Token param = arrow_ctx.expect(TokenType.IDENTIFIER)!;
+            // ArrowParameters inherit the enclosing [Yield]/[Await] (see the
+            // forbid_await/forbid_yield propagation above), which
+            // expect_binding_identifier consults, so `await` and `yield` are
+            // accepted as arrow param names exactly where the enclosing
+            // grammar still allows them as identifiers.
+            Token param = arrow_ctx.expect_binding_identifier()!;
+            arrow_seen.declare(param.str_value, param.type != TokenType.IDENTIFIER)!;
             // Intern now: param.str_value may borrow the lexer's shared
             // ident_buf scratch (escaped identifier), which later params, the
             // default expression, or the body will overwrite. declare_var
@@ -3790,6 +3819,9 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
     arrow_ctx.formal_count = formal_count;
 
     arrow_ctx.expect(TokenType.RPAREN)!;
+
+    // Destructured leaves are BoundNames too (see parse_function_body).
+    arrow_seen.declare_destructured(arrow_destruct_binds[..], arrow_destruct_count)!;
 
     // Declare destructured bindings as variables (skip synthetics).
     for (uint i = 0; i < arrow_destruct_count; i++) {

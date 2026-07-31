@@ -1,0 +1,23 @@
+--- Bytecode ---
+[  0] CHKGLOBALFUNC   r0, 0
+[  1] CLOSURE         r0, 0
+[  2] DECLGLOBALFUNC  r0, 0
+[  3] LDNULL          r2 = r0, r0
+[  4] CALL_GLOBAL     r0, argc=1, K[0]
+[  5] RETUNDEF        
+
+--- Inner function 0 ---
+[  0] LDNULL          r1 = r0, r0
+[  1] JMP_SEQ         r9 = r0, r1
+[  2] LDUNDEF         r1 = r0, r0
+[  3] JMP_SEQ         r7 = r0, r1
+[  4] GETPROPC        r2 = r0, r1
+[  5] LDNULL          r3 = r0, r0
+[  6] JMP_SEQ         r4 = r2, r3
+[  7] LDUNDEF         r3 = r0, r0
+[  8] JMP_SEQ         r2 = r2, r3
+[  9] GETPROPC        r4 = r2, r2
+[ 10] JUMP            +1
+[ 11] LDUNDEF         r4 = r0, r0
+[ 12] RET             r4 = r0, r0
+--- End bytecode ---

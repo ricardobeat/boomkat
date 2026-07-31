@@ -581,17 +581,14 @@ fn ushort? CompilerContext.assignment_expr(&self) {
             // the guard, e.g. `undeclared = (this.undeclared = 5)` must still
             // throw even though the RHS would create the global. A GETGLOBAL_PRIM
             // LHS is by construction a declared primitive-only global, so it is
-            // statically resolvable too, strip its dead read.
-            if (self.is_strict
-                && (lhs_last.op == Opcode.GETGLOBAL_PRIM
-                    || (lhs_last.op == Opcode.GETGLOBAL
-                        && self.is_declared_global(lhs_getvar_name_idx)))) {
+            // statically resolvable too, so strip its dead read.
+            if (lhs_last.op == Opcode.GETGLOBAL_PRIM
+                || (lhs_last.op == Opcode.GETGLOBAL
+                    && self.is_declared_global(lhs_getvar_name_idx))) {
                 self.code_count--;
-            } else if (self.is_strict) {
+            } else {
                 self.code[self.code_count - 1] = bytecode::make_a_bc(Opcode.RESOLVEVAR, (uint)left, lhs_getvar_name_idx);
                 lhs_ref_reg = left;
-            } else {
-                self.code_count--;
             }
         }
     }
@@ -607,6 +604,33 @@ fn ushort? CompilerContext.assignment_expr(&self) {
         for (ushort i = 0; i < lhs_ident_name_len; i++) {
             self.inferred_name_buf[i] = lhs_ident_name_buf[i];
         }
+    }
+
+    // Materialize the compound target's OLD VALUE before the RHS runs.
+    // `g op= rhs` is: resolve the Reference for g, GetValue(g) -> old,
+    // evaluate rhs, then apply op(old, rhs), so the read of g happens
+    // *first*. The compound path below applies `op` to `left` after the RHS
+    // has been compiled, and when `left` is a plain local's home register an
+    // assignment to that same variable inside the RHS overwrites the old
+    // value in place:
+    //
+    //     function f(){ var g = 5; g += (g = 2); return g; }  // 4, node says 7
+    //     function h(){ var g = 5; g -= (g = 2); return g; }  // 0, node says 3
+    //
+    // computing 2 + 2 instead of 5 + 2. Copying the old value to a temp here
+    // restores the specified order. Gated on the same conservative lookahead
+    // as binary_expr's left-operand guard, so a RHS that cannot write a
+    // register leaves the emitted code unchanged.
+    //
+    // Only reached for `op=`; the logical forms (&&=, ||=, ??=) return above
+    // because they must short-circuit and not evaluate the RHS at all.
+    ushort compound_old = left;
+    bool compound_old_copied = false;
+    if (is_compound && !lhs_was_member && !lhs_was_getvar && lhs_was_local_var
+        && self.rhs_may_write_registers()) {
+        compound_old = self.alloc_reg();
+        self.emit_abc(Opcode.LDREG, (uint)compound_old, (uint)left, 0);
+        compound_old_copied = true;
     }
 
     // Compile right-hand side
@@ -717,6 +741,14 @@ fn ushort? CompilerContext.assignment_expr(&self) {
                     self.emit_a_bc(Opcode.PUTVAR_ASSIGN, (uint)left, const_ni);
                     self.free_reg(left);
                     left = tmp;
+                } else {
+                    // `left` IS the target local's home register, and it is
+                    // what this assignment expression evaluates to. Mark it so
+                    // an enclosing operator (`(u = 45) > 0`, `(u = 45) + 1`)
+                    // copies it to a temp instead of using the variable's own
+                    // slot as the result destination and clobbering it.
+                    self.last_was_local_var = true;
+                    return left;
                 }
             }
         }
@@ -738,7 +770,11 @@ fn ushort? CompilerContext.assignment_expr(&self) {
             self.emit_abc(Opcode.LDREG, (uint)tmp, (uint)left, 0);
             result_reg = tmp;
         }
-        self.emit_abc(compound_op, (uint)result_reg, (uint)result_reg, (uint)right);
+        // Read the old value from the temp saved before the RHS ran when the
+        // RHS may have overwritten the variable's home register; otherwise
+        // `compound_old == left` and this is the original in-place form.
+        self.emit_abc(compound_op, (uint)result_reg, (uint)compound_old, (uint)right);
+        if (compound_old_copied) { self.free_reg(compound_old); }
         if (!right_is_local) { self.free_reg(right); }
         if (!lhs_was_getvar && !lhs_was_member && result_reg != left) {
             self.emit_abc(Opcode.LDREG, (uint)left, (uint)result_reg, 0);
@@ -773,6 +809,13 @@ fn ushort? CompilerContext.assignment_expr(&self) {
                 self.emit_a_bc(Opcode.PUTVAR_ASSIGN, (uint)left, const_ni);
                 self.free_reg(left);
                 left = tmp;
+            } else {
+                // As in the simple-assignment path above: `left` IS the
+                // target local's home register and doubles as this
+                // expression's value, so mark it for the enclosing
+                // operator's copy-to-temp guard (`(n *= 0.3) > 0`).
+                self.last_was_local_var = true;
+                return left;
             }
         }
         return left;
@@ -973,6 +1016,34 @@ fn ushort? CompilerContext.binary_expr(&self, int min_prec) {
         int next_prec = prec + 1;
         if (tt == TokenType.STARSTAR) {
             next_prec = prec;  // right-associative
+        }
+
+        // Preserve the LEFT OPERAND'S VALUE across the right operand's
+        // evaluation. `a op b` must use a's value as it was *before* b runs
+        // (the spec's GetValue(lref) precedes b's evaluation), but when `left`
+        // is a live local's home register an assignment to that same variable
+        // inside b overwrites it in place. `(w = 2) * (w = 3)` emitted
+        //     LDINT r0, +2 / LDINT r0, +3 / MUL r1 = r0, r0
+        // and computed 3 * 3 = 9 instead of 6.
+        //
+        // This is a *different* concern from the destination selection below,
+        // which picks a register the RESULT may safely land in. That choice
+        // must stay where it is, after the right operand has been parsed,
+        // because it consumes the register the right operand just released;
+        // hoisting it up here instead reassigns the result register and
+        // destroys parameters (`n - 1` inside `fib` became `SUBI r0 = r0, r1`,
+        // overwriting `n`). Hence two separate copies, gated separately.
+        //
+        // The value copy is emitted only when the right operand can actually
+        // write a register, so ordinary code, meaning every arithmetic
+        // expression in a hot loop, is unaffected and its bytecode is identical.
+        // rhs_may_write_registers over-approximates: a false positive costs
+        // one LDREG in a rare shape, a false negative is a miscompile.
+        if (left_is_local && self.rhs_may_write_registers()) {
+            ushort keep = self.alloc_reg();
+            self.emit_abc(Opcode.LDREG, (uint)keep, (uint)left, 0);
+            left = keep;
+            left_is_local = false;
         }
 
         ushort right = self.binary_expr(next_prec)!;
@@ -1262,12 +1333,16 @@ fn ushort? CompilerContext.unary_expr(&self) {
                 self.last_was_member = false;
                 // op_del is the A register of the patched DELPROP (boolean).
                 return op_del;
-            } else if (self.last_was_getvar) {
+            } else if (self.last_was_getvar || self.last_was_local_var) {
                 // `delete IdentifierReference`, Annex B.3.1 (ES5 11.4.1 step 1):
                 // strict mode rejects this as a SyntaxError. Sloppy mode runs
                 // the deletion against the variable environment. Since this
-                // engine is strict-only, we always reject.
+                // engine is strict-only, we always reject. Both operand shapes
+                // must be caught: a name that resolved to a register
+                // (last_was_local_var) is just as much an IdentifierReference
+                // as one that needs a runtime GETVAR/GETGLOBAL.
                 self.last_was_getvar = false;
+                self.last_was_local_var = false;
                 return self.fail("delete of an unqualified identifier in strict mode")~;
             } else {
                 // Delete of a non-reference (literal, expression result, etc.).

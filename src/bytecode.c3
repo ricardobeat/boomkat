@@ -1198,8 +1198,17 @@ bitstruct FuncFlags : uint {
     /// §14.5.14 step 25, so `class.prototype = ...` must throw a TypeError.
     /// Other functions get a configurable .prototype.
     bool  is_class_ctor    : 21;
-    /// Function body had a "use strict" directive.
-    bool  is_strict        : 22;
+    /// Substitute the global object for an undefined or null `this` receiver
+    /// (ES5 §10.4.3 OrdinaryCallBindThis with [[ThisMode]] of global).
+    ///
+    /// This engine is strict-only, so the flag is not derived from strictness.
+    /// It is set only on bodies built by the dynamic Function,
+    /// GeneratorFunction, and AsyncFunction constructors, whose [[ThisMode]] the
+    /// spec derives from a sloppy enclosing realm rather than from the caller's
+    /// scope. That keeps the common UMD idiom `Function('return this')()`
+    /// yielding globalThis. A `"use strict"` directive in the dynamic body
+    /// clears it.
+    bool  subst_global_this: 22;
     /// A derived class constructor. ES2015 §9.2.2 step 13.c makes returning a
     /// non-object from one a TypeError unless the value is undefined. Set when
     /// has_super_binding held at compile time.
@@ -1212,11 +1221,11 @@ bitstruct FuncFlags : uint {
     /// them non-configurable via CreateGlobalVarBinding(vn, false).
     bool  is_eval          : 24;
     /// The eval source carried its own "use strict" prologue. Everything here
-    /// runs strict, so is_strict is always set, but PerformEval step 12 keys
-    /// declaration leaking off the source's own strictness: a strict eval gets a
-    /// fresh varEnv its declarations cannot escape, while a non-strict indirect
-    /// or global eval installs `var` and `function` bindings on the global
-    /// object. Only meaningful when is_eval is set.
+    /// runs strict, but PerformEval step 12 keys declaration leaking off the
+    /// source's own strictness: a strict eval gets a fresh varEnv its
+    /// declarations cannot escape, while a non-strict indirect or global eval
+    /// installs `var` and `function` bindings on the global object. Only
+    /// meaningful when is_eval is set.
     bool  eval_src_strict  : 25;
     /// Function is a method/accessor with a [[HomeObject]] (enables super.x
     /// syntax).  Set at compile time when super_is_home_object is true.
@@ -1488,9 +1497,10 @@ macro bool CompiledFunction.needs_lex_bridge(&self) {
     return self.flags.needs_lex_bridge;
 }
 
-/// Returns `true` when the function body had a "use strict" directive.
-macro bool CompiledFunction.is_strict(&self) {
-    return self.flags.is_strict;
+/// Returns `true` when an undefined/null `this` receiver must be replaced by
+/// the global object. See FuncFlags.subst_global_this.
+macro bool CompiledFunction.subst_global_this(&self) {
+    return self.flags.subst_global_this;
 }
 
 /// Returns `true` when the function uses `arguments`.

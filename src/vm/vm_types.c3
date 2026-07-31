@@ -74,6 +74,17 @@ struct Activation {
     EnvRecord* lex_env;
     /// Current catcher chain (null if none)
     void* cat;
+    /// Live for-in enumeration states created by this frame (null if none).
+    ///
+    /// Every INITFOR pushes here and the frame owns them until it is popped,
+    /// so no abrupt exit out of a for-in body can strand a state. Head of a
+    /// heap::ForInState chain; typed as void* to match `cat`.
+    ///
+    /// Because vm.activations[] is a pool reused WITHOUT zeroing, every push
+    /// must clear this: a stale chain inherited from a returned frame at the
+    /// same depth would be double-freed on the next pop. Cleared by
+    /// activation_begin(); do not assign the field ad hoc.
+    void* forin;
 
     /// Next instruction to execute, a stable pointer into the bytecode.
     /// Null for native calls.
@@ -86,12 +97,41 @@ struct Activation {
     TVal* retval;
     /// Flags: strict, tailcalled, construct, etc.
     uint flags;
+    /// Highest register index that has ever held a heap reference. 0 means no
+    /// register holds one, so decref_callee_regs can skip the sweep.
+    ///
+    /// It sits next to `flags` so the two uints share one 8-byte slot. Every
+    /// other field here is 8-byte aligned, so a lone uint would cost 8 bytes,
+    /// and that matters: vm.activations is Activation[MAX_CALLS], and three
+    /// re-entrant paths in vm_execute.c3 copy the whole array to a stack local
+    /// the compiler caps at 64 Kb, which is 512 * 128. Adding a field without
+    /// reclaiming padding breaks that limit.
+    uint max_heap_reg;
     /// This activation's `this` binding.
     TVal this_binding;
     /// The `new.target` value: the constructor a `new` expression named, or the
     /// arrow's captured one. Null outside a construct call.
     HObject* new_target;
-    /// An async function's Promise, owned while the activation lives.
+    /// The Promise an async function or module settles on return.
+    ///
+    /// This is a borrow rather than a hold, even though it holds the promise's
+    /// birth reference in practice: no push site increfs into this slot and no
+    /// pop site decrefs out of it. What keeps the promise alive across an AWAIT
+    /// suspension is the caller's result register, which vm_calls.c3 fills with
+    /// an owning set_object, together with the reaction closures on the
+    /// microtask queue. Do not add a release on pop: the RET paths in
+    /// vm_execute.c3 already account for exactly three references, meaning
+    /// birth, the result register, and the returned value.
+    ///
+    /// vm.activations[] is a pool reused without zeroing, so every push must
+    /// write this field. Every functional read is gated on ACT_FLAG_ASYNC, but
+    /// mark_activation_fields() is not: it marks the raw pointer on every GC for
+    /// every activation below activation_count. A stale value inherited from a
+    /// settled async frame at the same depth is a freed HObject*, and marking it
+    /// writes set_reachable() into freed memory and then walks its recycled
+    /// prototype and property words, ending in a "pointer being freed was not
+    /// allocated" abort inside sweep(). Push through activation_begin() rather
+    /// than assigning the field directly.
     HObject* async_promise;
     /// The GeneratorState this activation is running, for a generator or async
     /// body resume, and null on ordinary frames. It lets exception unwinding move
@@ -103,14 +143,13 @@ struct Activation {
     ///
     /// vm.activations[] is a pool reused without zeroing, so every push must
     /// write this field. A stale non-null value makes YIELD's
-    /// `walk.async_gen_state == gs` parent search match the wrong activation.
-    /// Push through activation_begin() rather than setting the field directly.
+    /// `walk.async_gen_state == gs` parent search match the wrong activation,
+    /// and vm_complete_gen_on_unwind writes GEN_COMPLETED through it on a
+    /// non-null check alone. Push through activation_begin() rather than
+    /// setting the field directly.
     void* async_gen_state;
     /// The callee as a TVal, borrowed, which lightfuncs need.
     TVal tv_func;
-    /// Highest register index that has ever held a heap reference.
-    /// 0 means no register holds a heap reference, so decref_callee_regs can skip.
-    uint max_heap_reg;
     /// The caller's valstack_top at CALL time, restored on RET without recomputing.
     TVal* caller_valstack_top;
 }
@@ -178,28 +217,6 @@ struct Catcher {
     /// block's POP_LEX instructions, so CATCH and FINALLY restore this to keep
     /// the chain balanced and give the catch scope a clean base.
     void* saved_lex_env;
-}
-
-// ============================================================================
-// For-in enumeration state
-// ============================================================================
-
-/// One for-in loop's iteration state, created by INITFOR and freed by NEXTFOR.
-///
-/// `keys` is a flat array of interned property names gathered from the object
-/// and its prototype chain, with duplicates omitted. It and the struct are
-/// malloc'd, and both are freed when the loop ends or a catcher unwinds past it.
-///
-/// `target` is borrowed, but temproot-pinned for the whole enumeration. That
-/// keeps it reachable even when the loop body never mentions it, and lets
-/// NEXTFOR re-check each property's existence at yield time, as
-/// EnumerateObjectProperties requires, so a property deleted before its turn is
-/// skipped. Freeing the state clears the temproot.
-struct ForInState {
-    HString** keys;    /// Array of interned property-name HString* pointers
-    HObject* target;   /// Borrowed pointer to the for-in target (NOT owned)
-    uint count;        /// Number of keys in the array
-    uint index;        /// Current position (next key to return)
 }
 
 // ============================================================================

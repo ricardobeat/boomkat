@@ -69,8 +69,11 @@ fn void mark_activation_regs(heap::Heap* h, Activation* act, TVal* frame_end) @i
 ///    An ordinary call's `this` came from a register or env that still roots it,
 ///    so deep non-method recursion skips this mark entirely.
 ///  - `new_target`, the constructor or newTarget object.
-///  - `async_promise`, the outer Promise of an async function or module, owned
-///    while the activation lives and settled only after the body returns.
+///  - `async_promise`, the outer Promise of an async function or module, settled
+///    only after the body returns. This mark is not gated on ACT_FLAG_ASYNC, so
+///    it depends on every push site clearing the field through
+///    activation_begin(). A stale pointer here is a freed HObject*, and marking
+///    it corrupts the heap. See Activation.async_promise.
 ///  - `async_gen_state`, the GeneratorState this frame is resuming, so a
 ///    suspended and resumed async generator is not swept mid-body.
 ///  - Every `Catcher.thrown_val` on the chain. An in-flight exception set by
@@ -78,9 +81,10 @@ fn void mark_activation_regs(heap::Heap* h, Activation* act, TVal* frame_end) @i
 ///    unwinding, such as one triggered by an allocation-heavy finally block,
 ///    would otherwise collect it.
 ///
-/// The last three are defensive: in practice each is co-rooted elsewhere, by the
-/// microtask queue, the owning generator object, or a caller register. Marking
-/// them removes the dependence on that incidental rooting.
+/// Several of these are defensive: in practice the promise is co-rooted by the
+/// caller's result register and the microtask queue, and the generator state by
+/// its owning generator object. Marking them removes the dependence on that
+/// incidental rooting.
 ///
 /// A null or undefined slot marks harmlessly, since every mark helper null-checks.
 fn void mark_activation_fields(heap::Heap* h, Activation* act) @inline {
@@ -97,6 +101,19 @@ fn void mark_activation_fields(heap::Heap* h, Activation* act) @inline {
         h.mark_tval(&c.thrown_val);
         h.mark_tval(&c.return_val);
         c = c.parent;
+    }
+    // Walk the for-in chain: each live enumeration holds its target, and the
+    // target's temproot pin is not durable, since a safepoint GC clears every
+    // temproot in phase 1 (see Heap.mark_and_sweep). Any for-in whose target
+    // is referenced nowhere else, as in `for (k in {a:1}) ...`, or whose only
+    // other reference the loop body overwrote, is therefore collectible
+    // mid-enumeration, after which NEXTFOR's liveness re-check reads freed
+    // memory and the eventual pin release writes to it. Marking here makes the
+    // target a real GC root for exactly as long as the frame owns the state.
+    heap::ForInState* fi = (heap::ForInState*)act.forin;
+    while (fi != null) {
+        if (fi.target != null) { h.mark_hobject(fi.target); }
+        fi = fi.parent;
     }
 }
 
@@ -261,14 +278,11 @@ fn bool invoke_getter(Vm* vm, hobject::AccessorResult* acc,
         return false;
     }
 
-    Activation* new_act = &vm.activations[vm.activation_count];
-    vm.activation_count++;
-    // Pooled activation slots are reused without zeroing; clear the
-    // generator borrow or this frame inherits the stale GeneratorState
-    // of whatever generator body last ran at this depth.
-    new_act.async_gen_state = null;
-    new_act.max_heap_reg = 0;
-    new_act.caller_valstack_top = vm.valstack_top;
+    // Invoking a getter is never async and never a construct call.
+    // activation_begin clears the pooled pointer fields, meaning async_promise,
+    // async_gen_state, and new_target, so new.target reads undefined here
+    // however the property access was reached, super.prop included.
+    Activation* new_act = activation_begin(vm);
 
     EnvRecord* invoke_getter_var_env = (*func_obj.extra_ptr()).func.var_env;
     if (try fv_ig = env::env_create_function_scope(vm.heap, (*func_obj.extra_ptr()).func.var_env)) { invoke_getter_var_env = fv_ig; }
@@ -281,10 +295,6 @@ fn bool invoke_getter(Vm* vm, hobject::AccessorResult* acc,
     new_act.bottom = new_bottom;
     new_act.retval = act.bottom + result_reg;
     new_act.flags = 0;
-    // Invoking a getter is never a construct call, so new.target must read as
-    // undefined inside the getter body, regardless of how the property
-    // access was reached (including via super.prop from a constructor).
-    new_act.new_target = null;
     if (target.has_direct_eval()) {
         new_act.flags |= ACT_FLAG_DIRECT_EVAL;
     }
@@ -323,6 +333,43 @@ fn bool invoke_getter(Vm* vm, hobject::AccessorResult* acc,
 
     *needs_restart = true;
     return true;
+}
+
+/// Push a fresh activation onto vm.activations[] and initialize every field
+/// whose stale value would be READ by a later frame.
+///
+/// vm.activations[] is a pool indexed by depth and reused WITHOUT zeroing, so a
+/// raw pointer field is only sound if EVERY push writes it. Two fields are read
+/// unconditionally, with no flag guard, by code that runs for ordinary
+/// frames:
+///   - async_promise: mark_activation_fields() marks it on every GC for every
+///     activation below activation_count. A stale value left by a settled async
+///     frame at the same depth is a freed HObject*; mark_hobject then writes
+///     set_reachable() into freed memory and drains its (garbage) prototype and
+///     property pointers, which ends in sweep() free()ing a pointer it never
+///     allocated.
+///   - async_gen_state: the unwind walk in vm_throw.c3 and the YIELD parent
+///     search in vm_generators.c3 both dereference it on `!= null` alone.
+///   - forin: free_forin_chain() walks and frees it on every frame pop. A
+///     stale head left by a frame that already drained its chain would be
+///     freed a second time.
+/// new_target is included because NEWTARGET reads it directly and a plain call
+/// must not observe a prior `new` on the same slot.
+///
+/// Callers must still set parent/func/var_env/lex_env/curr_pc/bottom/retval and
+/// OR in their own flags; those are written unconditionally at every site today.
+/// Anything new that a non-async or non-generator frame can read must be
+/// initialized HERE, not at the individual call sites.
+macro Activation* activation_begin(Vm* vm) {
+    Activation* act = &vm.activations[vm.activation_count];
+    vm.activation_count++;
+    act.async_promise = null;
+    act.async_gen_state = null;
+    act.forin = null;
+    act.new_target = null;
+    act.max_heap_reg = 0;
+    act.caller_valstack_top = vm.valstack_top;
+    return act;
 }
 
 /// Track a heap-ref store in the current activation.  Call after any
@@ -367,7 +414,14 @@ fn void clear_borrowed_callee_slot(Activation* act) @inline {
 /// without this, each such frame permanently leaks its Catcher allocation(s).
 /// thrown_val is the one owned reference a parked catcher can hold (written
 /// via tval_copy_ref while routing a throw to a finally); release it too.
+///
+/// Also drains the frame's for-in chain (see free_forin_chain). The two are
+/// deliberately released by ONE function rather than two calls at each of the
+/// seven pop sites: a second call is a second thing to forget, and the whole
+/// point of moving for-in state onto the activation was to remove per-exit
+/// bookkeeping. Anything else a frame owns outright belongs here too.
 fn void free_catcher_chain(Vm* vm, Activation* act) @inline {
+    free_forin_chain(vm, act);
     Catcher* c = (Catcher*)act.cat;
     if (c == null) return;
     do {
@@ -377,6 +431,94 @@ fn void free_catcher_chain(Vm* vm, Activation* act) @inline {
         c = parent;
     } while (c != null);
     act.cat = null;
+}
+
+/// Release one for-in state: drop the target's temproot pin, free the key
+/// array, free the struct. The pin and `keys` are released together because
+/// the keys are raw interned HString* with no incref of their own, and are
+/// kept alive by the pinned target's property table, so unpinning earlier
+/// than the free would leave `keys` pointing at collectable strings.
+fn void forin_state_free(Vm* vm, ForInState* state) @inline {
+    if (state == null) return;
+    if (state.target != null) {
+        state.target.as_header().clear_temproot();
+    }
+    if (state.keys != null) {
+        vm.heap.free_func(vm.heap.heap_udata, state.keys);
+    }
+    vm.heap.free_func(vm.heap.heap_udata, state);
+}
+
+/// Unlink `state` from `*head` and free it. No-op if it is not on the chain
+/// (it may already have been drained by a frame pop).
+fn void forin_chain_remove(Vm* vm, void** head, ForInState* state) @inline {
+    if (state == null) return;
+    ForInState** link = (ForInState**)head;
+    while (*link != null) {
+        if (*link == state) {
+            *link = state.parent;
+            forin_state_free(vm, state);
+            return;
+        }
+        link = &(*link).parent;
+    }
+}
+
+/// Free every for-in state still live on an activation being popped.
+///
+/// This is the catch-all that makes for-in cleanup unforgettable: `break`,
+/// `return`, a propagating `throw`, and a labeled continue out of the loop
+/// all reach a frame pop (or an enclosing INITFOR) without the compiler
+/// emitting anything loop-specific, so none of them can be the site of a
+/// missed free.
+///
+/// Called from free_catcher_chain, so it runs at every ordinary frame pop
+/// without those sites naming it. The one direct caller is
+/// vm_complete_generator_return, whose pop is final but deliberately does not
+/// touch the catcher chain (still aliased by gs.cat).
+fn void free_forin_chain(Vm* vm, Activation* act) @inline {
+    ForInState* s = (ForInState*)act.forin;
+    if (s == null) return;
+    while (s != null) {
+        ForInState* parent = s.parent;
+        forin_state_free(vm, s);
+        s = parent;
+    }
+    act.forin = null;
+}
+
+/// Save an activation's state chains into the GeneratorState that will resume
+/// it, at every point where a generator body suspends.
+///
+/// `cat` is ALIASED, not moved: the .throw()/.return() resume paths re-enter
+/// the still-live activation looking for a catcher, so clearing act.cat here
+/// would break try/catch inside a suspended generator. The pop that follows a
+/// suspend deliberately skips free_catcher_chain for the same reason.
+///
+/// `forin` is MOVED: the activation must stop owning the states, because the
+/// pooled slot it occupies gets reused by an unrelated later frame whose pop
+/// does run free_catcher_chain, which would free ForInStates that this
+/// generator's saved_regs still points at. Ownership lives on the gs until
+/// either a resume hands it back (forin_restore_from_gen) or the generator is
+/// discarded (gs_release).
+///
+/// Saving both in one call is deliberate: a suspend site that remembered the
+/// catcher chain but not the for-in chain is exactly the omission this whole
+/// change exists to make impossible.
+macro forin_save_to_gen(Activation* act, gs) {
+    gs.cat = act.cat;
+    gs.forin = act.forin;
+    act.forin = null;
+}
+
+/// Inverse of forin_save_to_gen: hand the for-in chain back to the frame that
+/// is resuming the body, leaving the GeneratorState owning nothing (so a later
+/// gs_release cannot free states the live frame is now using). `cat` is
+/// restored by aliasing, matching the save side.
+macro forin_restore_from_gen(Activation* act, gs) {
+    act.cat = gs.cat;
+    act.forin = gs.forin;
+    gs.forin = null;
 }
 
 /// Decrement the reference count of every register in the given activation.

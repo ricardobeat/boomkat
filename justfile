@@ -80,6 +80,15 @@ lldb file="test/simple.js":
     c3c -O0 build duktape_c3
     lldb ./out/duktape_c3 -b -o "run {{file}}" -o "bt"
 
+# Build the AddressSanitizer test262 runner (`out/test262_runner_asan`): the
+# `test262_runner_asan` target is -O0 with `"sanitize": "address"`, for chasing
+# use-after-free / heap-overflow bugs the ordinary runner only shows as a
+# sporadic crash. Not part of `just all` (ASAN + -O0 is slow), so build it
+# explicitly — a stale ASAN binary reports clean on code it does not contain.
+# Usage: just build-asan && echo test/simple.js | ./out/test262_runner_asan --worker
+build-asan:
+    @make out/test262_runner_asan
+
 # Build with NaN-boxing disabled (`-D NONANBOX`)
 build-nonanbox t="duktape_c3":
     c3c -D NONANBOX build "{{t}}"
@@ -101,7 +110,7 @@ run file="test/simple.js":
     ./out/duktape_c3 {{file}}
 
 # Run a JS file as an ESM module (import/export) (skips c3c if nothing changed)
-run-module file="test/mod_main.js":
+run-module file="test/modules/t01_named/main.js":
     @make out/duktape_c3
     ./out/duktape_c3 --module {{file}}
 
@@ -109,6 +118,22 @@ run-module file="test/mod_main.js":
 modules:
     @just build duktape_c3
     bash test/modules/run.sh
+
+# Run the local test suite: every test/*.js under the plain runner, then the
+# ESM fixtures under test/modules/ (which need --module, so run.sh owns them).
+# test_async_500k.js is excluded — it passes but takes ~20s, so it is a perf
+# stress test rather than a regression check; run it directly when relevant.
+test-local:
+    @just build duktape_c3
+    bash test/run_local.sh
+
+# Assert that exiting a for-in early (break/return/throw) costs no more peak
+# RSS than running it to exhaustion. Lives outside test-local because it needs
+# /usr/bin/time -l rather than an in-script assertion — the engine exposes no
+# GC trigger, so a stranded enumeration state is only visible as RSS growth.
+test-forin-rss:
+    @just build duktape_c3
+    bash scripts/check_forin_early_exit_rss.sh
 
 # ── Rosetta Code ─────────────────────────────────────────────────────────────
 

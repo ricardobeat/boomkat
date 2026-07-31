@@ -28,6 +28,31 @@ fn bool str_eq(char[] a, char[] b) {
     return true;
 }
 
+/// True for `=` and every compound assignment operator (`+=` … `??=`).
+fn bool token_is_assignment_op(TokenType tt) {
+    switch (tt) {
+        case TokenType.ASSIGN:
+        case TokenType.PLUS_ASSIGN:
+        case TokenType.MINUS_ASSIGN:
+        case TokenType.STAR_ASSIGN:
+        case TokenType.SLASH_ASSIGN:
+        case TokenType.PERCENT_ASSIGN:
+        case TokenType.STARSTAR_ASSIGN:
+        case TokenType.SHL_ASSIGN:
+        case TokenType.SHR_ASSIGN:
+        case TokenType.USHR_ASSIGN:
+        case TokenType.BIT_AND_ASSIGN:
+        case TokenType.BIT_OR_ASSIGN:
+        case TokenType.BIT_XOR_ASSIGN:
+        case TokenType.LOG_AND_ASSIGN:
+        case TokenType.LOG_OR_ASSIGN:
+        case TokenType.NULLISH_ASSIGN:
+            return true;
+        default:
+            return false;
+    }
+}
+
 fn int get_binary_precedence(TokenType tt) {
     switch (tt) {
         case TokenType.LOG_OR:      return PREC_LOGICAL_OR;

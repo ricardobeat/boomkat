@@ -2074,13 +2074,10 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 }
 
                 // Module Namespace Exotic [[Set]] (§10.4.6.11): always returns
-                // false. PutValue turns that into a TypeError for a strict
-                // reference; sloppy code silently no-ops.
+                // false, which PutValue turns into a TypeError (strict-only engine).
                 if (hobj.flags.exotic_module_ns) {
-                    if (vm.current_func != null && vm.current_func.is_strict()) {
-                        if (!vm_throw_error(vm, vm.heap.type_err_proto, "Cannot assign to read only property of module namespace object", ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                            return VM_ERROR~;
-                        }
+                    if (!vm_throw_error(vm, vm.heap.type_err_proto, "Cannot assign to read only property of module namespace object", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                        return VM_ERROR~;
                     }
                     return (TVal){};
                 }
@@ -2306,15 +2303,12 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             // An accessor property invokes its setter.
                             TVal setter_fn = hobject::hobject_access_setter(*entry);
                             // No setter (get-only accessor): §10.1.9.3 / OrdinarySet
-                            // step returns false; PutValue only turns that into a
-                            // TypeError for a strict reference (§13.15.2), and code
-                            // compiled without "use strict" silently no-ops instead.
+                            // returns false, which PutValue turns into a TypeError
+                            // (§13.15.2), always, since this engine is strict-only.
                             if (!setter_fn.is_object() || setter_fn.get_heapptr() == null) {
-                                if (vm.current_func != null && vm.current_func.is_strict()) {
-                                    HString* nm = (HString*)key;
-                                    if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Cannot set property '%s' which has only a getter", nm.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                                        return VM_ERROR~;
-                                    }
+                                HString* nm = (HString*)key;
+                                if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Cannot set property '%s' which has only a getter", nm.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                    return VM_ERROR~;
                                 }
                                 return (TVal){};
                             }
@@ -2422,14 +2416,10 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                         obj_tv.set_object(hobj);
                                         caller_regs[callee_reg + 1] = obj_tv;
 
-                                        Activation* new_act = &vm.activations[vm.activation_count];
-                                        vm.activation_count++;
-                                        // Pooled activation slots are reused without zeroing; clear the
-                                        // generator borrow or this frame inherits the stale GeneratorState
-                                        // of whatever generator body last ran at this depth.
-                                        new_act.async_gen_state = null;
-                                        new_act.max_heap_reg = 0;
-                                        new_act.caller_valstack_top = vm.valstack_top;
+                                        // Setter invocation is never async and never a construct call:
+                                        // activation_begin clears async_promise, async_gen_state and
+                                        // new_target, which the pooled slot would otherwise inherit.
+                                        Activation* new_act = activation_begin(vm);
 
                                         EnvRecord* setter_var_env = (*setter_obj.extra_ptr()).func.var_env;
                                         if (try fv_s = env::env_create_function_scope(vm.heap, (*setter_obj.extra_ptr()).func.var_env)) { setter_var_env = fv_s; }
@@ -2445,8 +2435,6 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                         if (target.has_direct_eval()) {
                                             new_act.flags |= ACT_FLAG_DIRECT_EVAL;
                                         }
-                                        // Setter invocation is never a construct call.
-                                        new_act.new_target = null;
                                         vm.heap.tval_copy_ref(&new_act.this_binding, &obj_tv);
 
                                         TVal* new_regs = new_act.bottom;
@@ -2544,15 +2532,11 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         // find_accessor_proto sets found=true for any accessor property on
                         // the chain, even a get-only one (accessor_fn left as undefined in
                         // that case). ES2024 §10.1.9.2 OrdinarySet step 2 returns false for
-                        // an inherited accessor with no [[Set]]; PutValue only turns that
-                        // into a TypeError for a strict reference (§13.15.2), and code compiled
-                        // without "use strict" silently no-ops instead of creating an own
-                        // property.
+                        // an inherited accessor with no [[Set]], which PutValue turns into a
+                        // TypeError (§13.15.2) rather than creating an own property.
                         if (acc.found && (!acc.accessor_fn.is_object() || acc.accessor_fn.get_heapptr() == null)) {
-                            if (vm.current_func != null && vm.current_func.is_strict()) {
-                                if (!vm_throw_error(vm, vm.heap.type_err_proto, "Cannot set property which has only a getter", ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                                    return VM_ERROR~;
-                                }
+                            if (!vm_throw_error(vm, vm.heap.type_err_proto, "Cannot set property which has only a getter", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                return VM_ERROR~;
                             }
                             return (TVal){};
                         }
@@ -2632,14 +2616,10 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                     obj_tv.set_object(acc.this_obj);
                                     caller_regs[callee_reg + 1] = obj_tv;
 
-                                    Activation* new_act = &vm.activations[vm.activation_count];
-                                    vm.activation_count++;
-                                    // Pooled activation slots are reused without zeroing; clear the
-                                    // generator borrow or this frame inherits the stale GeneratorState
-                                    // of whatever generator body last ran at this depth.
-                                    new_act.async_gen_state = null;
-                                    new_act.max_heap_reg = 0;
-                                    new_act.caller_valstack_top = vm.valstack_top;
+                                    // Setter invocation is never async and never a construct call:
+                                    // activation_begin clears async_promise, async_gen_state and
+                                    // new_target, which the pooled slot would otherwise inherit.
+                                    Activation* new_act = activation_begin(vm);
 
                                     EnvRecord* setter_var_env = (*setter_obj.extra_ptr()).func.var_env;
                                     if (try fv_s = env::env_create_function_scope(vm.heap, (*setter_obj.extra_ptr()).func.var_env)) { setter_var_env = fv_s; }
@@ -2655,8 +2635,6 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                     if (target.has_direct_eval()) {
                                         new_act.flags |= ACT_FLAG_DIRECT_EVAL;
                                     }
-                                    // Setter invocation is never a construct call.
-                                    new_act.new_target = null;
                                     vm.heap.tval_copy_ref(&new_act.this_binding, &obj_tv);
 
                                     TVal* new_regs = new_act.bottom;
@@ -2997,15 +2975,12 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 if (key != null) {
                     // Module Namespace Exotic [[Delete]] (§10.4.6.10): an
                     // existing own key (export or Symbol.toStringTag) is
-                    // non-configurable → false (throws in strict module code);
-                    // an absent key → true.
+                    // non-configurable → false, which throws; an absent key → true.
                     if (hobj.flags.exotic_module_ns) {
                         if (hobj.find_prop_idx(key) >= 0) {
                             ra.set_boolean(false);
-                            if (vm.current_func != null && vm.current_func.is_strict()) {
-                                if (!vm_throw_error(vm, vm.heap.type_err_proto, "Cannot delete property of module namespace object", ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                                    return VM_ERROR~;
-                                }
+                            if (!vm_throw_error(vm, vm.heap.type_err_proto, "Cannot delete property of module namespace object", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                return VM_ERROR~;
                             }
                         } else {
                             ra.set_boolean(true);

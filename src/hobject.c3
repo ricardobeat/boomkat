@@ -49,6 +49,17 @@ fn HObject* env_record_bindings(void* env_ptr) {
     return ((env::EnvRecord*)env_ptr).bindings;
 }
 
+/// Read the `parent` field out of an opaque EnvRecord*, so heap.c3 can walk a
+/// whole scope chain during GC marking. EnvRecords are pool allocated and never
+/// collected, but each one's `bindings` HObject is an ordinary heap node.
+/// Marking only the innermost link leaves every enclosing scope's bindings
+/// unmarked, and a closure reading an outer binding after the sweep would
+/// dereference freed memory. Returns null for a null env_ptr.
+fn void* env_record_parent(void* env_ptr) {
+    if (env_ptr == null) return null;
+    return (void*)((env::EnvRecord*)env_ptr).parent;
+}
+
 /// Clear the active heap before teardown, which stops hobject_free from
 /// refcounting strings while the heap comes apart.
 fn void hobject_clear_active_heap() {

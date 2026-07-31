@@ -138,6 +138,47 @@ enum GenSuspendKind : char {
     AG_SUSPEND_YIELD,  /// body reached a `yield`, so settle the current request with {v, false}
 }
 
+// ============================================================================
+// For-in enumeration state
+// ============================================================================
+
+/// Runtime state for a for-in loop iteration.  Created by INITFOR.
+///
+/// OWNERSHIP: the state is owned by the *activation that created it*, via the
+/// intrusive `parent` chain rooted at `Activation.forin`, exactly like the
+/// Catcher chain hanging off `Activation.cat`. The `iter_state` register that
+/// INITFOR writes holds a BORROWED pointer, read by NEXTFOR to advance the
+/// enumeration; it is never the owner.
+///
+/// The register cannot be the owner because a for-in has many abrupt exits
+/// (break, labeled break, return, throw, labeled continue to an outer loop)
+/// and the compiler frees the register after the loop, so a state left behind
+/// by an early exit becomes unreachable. Making the *frame* the owner means
+/// no exit edge has to remember anything: every one of them either re-runs
+/// INITFOR (which releases the state its own output register still names) or
+/// pops the activation (which drains the whole chain). See free_forin_chain.
+///
+/// `keys` holds a flat array of interned HString* pointers collected from
+/// the object and its prototype chain (omitting duplicates). The array and
+/// the struct itself are plain-malloc'd; forin_state_free releases both.
+///
+/// `target` is the original for-in target (a borrowed pointer to the
+/// heap-allocated HObject). It is temproot-pinned for the lifetime of the
+/// enumeration so the target stays reachable even when the loop body
+/// doesn't reference it, and so NEXTFOR can re-check property existence
+/// at yield time per EnumerateObjectProperties, so a property deleted from
+/// the target before its turn is skipped (plan 062 group N). The pin also
+/// keeps the property table alive, which is what makes the un-incref'd
+/// HString* in `keys` safe: it is released only in forin_state_free, at the
+/// same moment `keys` itself goes away.
+struct ForInState {
+    HString** keys;      /// Array of interned property-name HString* pointers
+    HObject* target;     /// Borrowed pointer to the for-in target (NOT owned)
+    ForInState* parent;  /// Next state on the owning activation's chain
+    uint count;          /// Number of keys in the array
+    uint index;          /// Current position (next key to return)
+}
+
 /// Saved execution context for a generator.
 ///
 /// Calling a generator function saves the initial execution state here and
@@ -161,6 +202,13 @@ struct GeneratorState {
     void* var_env;            // EnvRecord* (opaque)
     void* lex_env;            // EnvRecord* (opaque)
     void* cat;                // Catcher* chain head, opaque; saved across yields
+    /// ForInState* chain head, opaque and saved across yields exactly like
+    /// `cat`. A generator can suspend in the middle of a for-in, and the
+    /// suspend pops the activation, so ownership of the frame's live for-in
+    /// states moves here. Otherwise the pop would free states that saved_regs
+    /// still points at, and resuming would read freed memory. Resume moves them
+    /// back, and gs_release frees them if the generator never resumes.
+    void* forin;
     TVal this_binding;
     TVal resume_value;        // value passed by .next()
     ResumeKind resume_kind;   // how the generator was resumed
@@ -253,6 +301,20 @@ fn void gs_release(GeneratorState* gs, void* heap_ptr, bool run_decref) {
         h.decref_tval(&gs.this_binding);
     }
     if (gs.saved_regs != null) { h.free_func(h.heap_udata, gs.saved_regs); }
+    // A generator abandoned mid-for-in (never resumed to exhaustion, then
+    // collected) still owns the states its body was enumerating, which were
+    // MOVED here when the body suspended. Nothing else can reach them now, so
+    // this is their last chance to be freed. In teardown mode the target
+    // HObjects are already gone, so the pin must not be touched through them.
+    ForInState* fi = (ForInState*)gs.forin;
+    while (fi != null) {
+        ForInState* fi_parent = fi.parent;
+        if (run_decref && fi.target != null) { ((HeapHeader*)fi.target).clear_temproot(); }
+        if (fi.keys != null) { h.free_func(h.heap_udata, fi.keys); }
+        h.free_func(h.heap_udata, fi);
+        fi = fi_parent;
+    }
+    gs.forin = null;
     h.free_func(h.heap_udata, gs);
 }
 
@@ -1878,6 +1940,33 @@ fn void Heap.mark_tval(&self, TVal* v) {
     }
 }
 
+/**
+ * Mark the `bindings` HObject of every EnvRecord in a scope chain.
+ *
+ * An EnvRecord is pool-allocated and never collected itself, but its `bindings`
+ * object is an ordinary heap node. Marking only the innermost link roots one
+ * scope and leaves every enclosing one collectible: a closure suspended over
+ * `outer -> middle -> inner` survives a sweep with `inner.bindings` intact and
+ * `outer.bindings` freed, and the first GETVAR walking past `inner` reads a
+ * recycled pool block, which surfaces as HObject.get_shape under find_prop_idx.
+ *
+ * Whoever roots a scope chain roots the whole chain, so callers must never mark
+ * `env.bindings` directly. mark_activation_envs in vm_core.c3 does this walk for
+ * live frames; this is the counterpart for closures, generator objects, and
+ * suspended GeneratorStates.
+ *
+ * `env_ptr` is an opaque EnvRecord*, since heap.c3 cannot import env.c3, which
+ * imports heap.c3. The typed field reads happen in hobject.c3.
+ */
+fn void Heap.mark_env_chain(&self, void* env_ptr) {
+    void* cur = env_ptr;
+    while (cur != null) {
+        HObject* bindings = hobject::env_record_bindings(cur);
+        if (bindings != null) { self.mark_hobject(bindings); }
+        cur = hobject::env_record_parent(cur);
+    }
+}
+
 /// Mark everything a suspended GeneratorState references. Both generator objects
 /// and the async/await resume and reject builtins go through here.
 fn void Heap.mark_generator_state(&self, GeneratorState* gs) {
@@ -1887,13 +1976,10 @@ fn void Heap.mark_generator_state(&self, GeneratorState* gs) {
             self.mark_tval(&gs.saved_regs[i]);
         }
     }
-    // The suspended body's environments. gs.var_env and gs.lex_env are opaque
-    // here because importing env.c3 would be circular, so hobject.c3 does the
-    // typed EnvRecord* dereference.
-    HObject* gs_var_bindings = hobject::env_record_bindings(gs.var_env);
-    if (gs_var_bindings != null) { self.mark_hobject(gs_var_bindings); }
-    HObject* gs_lex_bindings = hobject::env_record_bindings(gs.lex_env);
-    if (gs_lex_bindings != null) { self.mark_hobject(gs_lex_bindings); }
+    // The suspended body's scope chains in full: it resumes with these as its
+    // environment and will read enclosing scopes.
+    self.mark_env_chain(gs.var_env);
+    self.mark_env_chain(gs.lex_env);
     self.mark_tval(&gs.this_binding);
     self.mark_tval(&gs.resume_value);
     self.mark_tval(&gs.throw_value);
@@ -1901,6 +1987,16 @@ fn void Heap.mark_generator_state(&self, GeneratorState* gs) {
     // Async yield* delegation state, held across suspensions.
     self.mark_tval(&gs.ays_received);
     self.mark_tval(&gs.ays_next_method);
+    // A body suspended inside a for-in owns the enumeration state, which moves
+    // here at every yield, and the target's temproot pin does not survive a
+    // safepoint GC. Marking it here is the same reason mark_activation_fields
+    // marks a running frame's chain: otherwise the object being enumerated is
+    // swept while the generator sleeps, and resuming reads freed memory.
+    ForInState* gfi = (ForInState*)gs.forin;
+    while (gfi != null) {
+        if (gfi.target != null) { self.mark_hobject(gfi.target); }
+        gfi = gfi.parent;
+    }
     if (gs.delegated_iter != null) {
         self.mark_hobject((HObject*)gs.delegated_iter);
     }
@@ -2009,24 +2105,19 @@ fn void Heap.drain_gray(&self) {
                     self.mark_generator_state(gs);
                     break;
                 }
-                if ((*obj.extra_ptr()).func.var_env != null && (*obj.extra_ptr()).func.var_env.bindings != null) {
-                    self.mark_hobject((*obj.extra_ptr()).func.var_env.bindings);
-                }
-                if ((*obj.extra_ptr()).func.lex_env != null && (*obj.extra_ptr()).func.lex_env.bindings != null) {
-                    self.mark_hobject((*obj.extra_ptr()).func.lex_env.bindings);
-                }
+                // A closure's captured scope chain, in full: reading an outer
+                // variable after a sweep that only rooted the innermost link
+                // dereferences a recycled EnvRecord.bindings.
+                self.mark_env_chain((void*)(*obj.extra_ptr()).func.var_env);
+                self.mark_env_chain((void*)(*obj.extra_ptr()).func.lex_env);
                 self.mark_tval(&(*obj.extra_ptr()).func.captured_this);
                 if ((*obj.extra_ptr()).func.captured_new_target != null) {
                     self.mark_hobject((*obj.extra_ptr()).func.captured_new_target);
                 }
                 break;
             case ObjClass.GENERATOR:
-                if ((*obj.extra_ptr()).gen.var_env != null && (*obj.extra_ptr()).gen.var_env.bindings != null) {
-                    self.mark_hobject((*obj.extra_ptr()).gen.var_env.bindings);
-                }
-                if ((*obj.extra_ptr()).gen.lex_env != null && (*obj.extra_ptr()).gen.lex_env.bindings != null) {
-                    self.mark_hobject((*obj.extra_ptr()).gen.lex_env.bindings);
-                }
+                self.mark_env_chain((void*)(*obj.extra_ptr()).gen.var_env);
+                self.mark_env_chain((void*)(*obj.extra_ptr()).gen.lex_env);
                 // Mark GeneratorState fields for suspended generators
                 GeneratorState* gs = (GeneratorState*)(*obj.extra_ptr()).gen.generator_data;
                 self.mark_generator_state(gs);
