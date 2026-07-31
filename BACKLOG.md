@@ -64,6 +64,8 @@ their own regression tests or they will silently persist.
 
 ## Design debt
 
+- [x] **`StrBuf` by-value copy hazard documented** — `data` points into the struct's own `inline_buf` until the first growth, so copying by value dangles the copy's pointer. Silent and size-dependent: corrupts buffers <= 256 bytes, looks correct for grown ones. Audited the tree: `src/builtins/inspect.c3:862` is the ONLY by-value copy and it already re-points `data`; no other site copies one. A do-not-copy warning now sits on the struct definition (`src/builtins/core.c3`) so a future copy does not reintroduce it silently
+
 - [ ] **One remaining hand-rolled copy of the `await` identifier predicate** — `src/compiler/destructuring.c3:45` (`shorthand_key_is_identifier_ref`) re-implements the same `is_module`/`is_async`/`forbid_await` triple as the shared `await_is_identifier`. Currently correct, so this is consolidation rather than a bug fix. Worth doing: this exact pattern — one invariant hand-maintained at N sites, wrong in the copies that omit it — has now been the root cause five times (the four session-302 codegen bugs, plans 063/064/065/066). Plans 064, 065, and 066 each fixed it by *removing* copies
 
 ## Out of scope

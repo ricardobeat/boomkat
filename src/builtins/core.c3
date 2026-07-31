@@ -64,6 +64,12 @@ extern fn double math_cbrt(double x)          @MathLibc("cbrt");
 /// case (short strings, small objects) never touches the allocator.
 const usz STRBUF_INLINE_CAP = 256;
 
+/// Pass this by pointer, not by value. A buffer that has not outgrown its
+/// inline storage points `data` at its own `inline_buf`, so a copy inherits a
+/// pointer into the source's bytes. Copies of a grown buffer look fine, because
+/// `data` then points at heap memory, which is what makes the failure depend on
+/// input size. A copy that cannot be avoided has to rebind `data` afterwards,
+/// the way the console formatter does when it hands composed rows back.
 struct StrBuf {
     Heap*  heap;
     char*  data;      /// Points at `inline_buf` until the first growth.
