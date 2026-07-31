@@ -9,7 +9,7 @@
 The targeted subset is every test the shared skip list does **not** exclude: 41,846 tests
 under the phase directories, minus 12,390 skips (Annex B, intl402, staging, Stage-3
 proposals, Proxy/BigInt/SAB/Atomics, noStrict, unsupported feature flags — rationale in
-`test262_relevance_report.md`). That leaves **29,459 executable tests**; 100% means every
+`docs/engine-scope.md`). That leaves **29,459 executable tests**; 100% means every
 one of them passes (or is an expected-parse CE for `negative: phase: parse` tests).
 
 Two legitimate escape valves, both curation rather than engine work:

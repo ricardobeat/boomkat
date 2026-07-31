@@ -7,7 +7,7 @@ pointers into the vendored sources.
 
 ## Why / scope decision
 
-`test262_relevance_report.md:321` lists TypedArrays/DataView/ArrayBuffer in the
+`docs/engine-scope.md` lists TypedArrays/DataView/ArrayBuffer in the
 required QuickJS-parity API surface, but the directories were never added to the
 `PHASES` list in `scripts/run_test262.py` — they are outside the current 29,459-test
 denominator. Landing this plan **deliberately grows the subset** (per plan 040's

@@ -147,7 +147,8 @@ def sample_worker_rss(workers):
     return rss
 
 # ---------------------------------------------------------------------------
-# Skip list — see test262_relevance_report.md for rationale
+# Skip list. Each entry carries its own count and reason; see
+# docs/engine-scope.md for what the engine does and does not claim.
 # ---------------------------------------------------------------------------
 
 # Directories to skip entirely (relative to test262/test/)
