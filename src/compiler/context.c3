@@ -388,6 +388,12 @@ struct CompilerContext {
     DestructParamDefault[MAX_PARAMS] destruct_defaults;
     ushort destruct_default_count;
 
+    /// Set while parsing FormalParameters when a parameter is a destructuring
+    /// pattern (`function f([a]) {}` / `function f({a}) {}`). Together with
+    /// `has_rest` and `default_count` this is IsSimpleParameterList = false
+    /// (ES §15.1.3) — see `params_are_simple`.
+    bool has_destructured_param;
+
     // Rest parameter tracking
     bool has_rest;
     ushort rest_formal_count;   // number of formals before rest parameter

@@ -505,6 +505,24 @@ fn bool is_restricted_name(char[] name,
     return false;
 }
 
+/// IsSimpleParameterList (ES2024 §15.1.3) for the FormalParameters of the
+/// function currently being compiled.
+///
+/// A list is simple only when every parameter is a plain BindingIdentifier: a
+/// rest element, any initializer (`=`), or a destructuring pattern makes it
+/// non-simple. Each of the three parameter-parsing loops (function, method,
+/// arrow) records those three signals on the context, so this reads them
+/// rather than re-deriving the answer per call site.
+///
+/// Trivially true outside a function body — a program, eval or module has no
+/// formals and leaves all three signals at their zero values.
+fn bool CompilerContext.params_are_simple(&self) {
+    return !self.has_rest
+        && self.default_count == 0
+        && self.destruct_default_count == 0
+        && !self.has_destructured_param;
+}
+
 /// Parse directive prologue statements at the start of a function body or program.
 /// Detects "use strict" and enables strict mode if found (ES5 §14.1).
 fn void? CompilerContext.parse_directives(&self) {
@@ -516,7 +534,11 @@ fn void? CompilerContext.parse_directives(&self) {
         Token str_tok = self.advance()!;
 
         bool has_semicolon = self.check(TokenType.SEMICOLON);
-        bool has_asi = self.lexer.seen_line_term;
+        // ASI ends the ExpressionStatement at a line terminator, and also at
+        // the `}` that closes the enclosing body — so a body whose last
+        // statement is the directive (`function f(a=1) { "use strict" }`, no
+        // trailing semicolon) still has a directive prologue.
+        bool has_asi = self.lexer.seen_line_term || self.check(TokenType.RBRACE);
 
         if (has_semicolon || has_asi) {
             if (has_semicolon) {
@@ -533,6 +555,22 @@ fn void? CompilerContext.parse_directives(&self) {
                     }
                 }
                 if (is_use_strict) {
+                    // ES2024 §15.2.1 / §15.3.1 / §15.4.1 / §15.5.1 / §15.6.1
+                    // / §15.7.1 / §15.8.1: "It is a Syntax Error if
+                    // ContainsUseStrict of FunctionBody is true and
+                    // IsSimpleParameterList of FormalParameters is false."
+                    // The engine is strict-only, so the directive itself is a
+                    // no-op — but the early error still has to fire, because
+                    // the parameter initialisers of a non-simple list would
+                    // otherwise be evaluated in a scope whose strictness the
+                    // directive claims to change.
+                    //
+                    // Only a FUNCTION body can hit this: at program, eval and
+                    // module level there are no formals, so params_are_simple
+                    // is trivially true.
+                    if (!self.params_are_simple()) {
+                        return self.fail("Illegal 'use strict' directive in function with non-simple parameter list")~;
+                    }
                     // Code is already strict; the directive is a no-op except
                     // that it makes a dynamic Function body an ordinary strict
                     // function, whose undefined receiver stays undefined.
