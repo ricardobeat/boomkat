@@ -226,6 +226,31 @@ fn ushort? CompilerContext.find_local_reg(&self, char[] name) {
     return SCOPE_ERROR~;
 }
 
+/// True when `name` is already bound as a formal or catch PARAMETER.
+///
+/// The hoisting pass uses this for the one case where a hoisted `var` must not
+/// create a binding: ES2015 §9.2.10 step 27 initializes a var-declared name to
+/// undefined only when it is NOT already a parameter name, so
+/// `function f(p){ if (false) { var p = 1; } return p; }` must return the
+/// ARGUMENT, not undefined. Leaving the parameter's own binding in place (and
+/// emitting no LDUNDEF) is what keeps that value alive; declaring afresh would
+/// both write undefined and leave reads pointed at a second, empty slot.
+///
+/// Gated on `is_param` rather than plain name presence: at hoist time the only
+/// bindings in scope ARE the parameters (the body has not been parsed), but the
+/// narrower test keeps this correct if that ever stops holding.
+fn bool CompilerContext.is_param_name(&self, char[] name) {
+    uint i = self.scope_depth;
+    while (i > 0) {
+        i--;
+        ScopeEntry* e = &self.scope_stack[i];
+        if (e.is_param && str_eq(e.name, name)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 /// Declare a binding for a for-in/for-of head or a destructuring declarator and
 /// return the register it lives in.
 ///
