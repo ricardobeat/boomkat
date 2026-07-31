@@ -1489,7 +1489,7 @@ fn bool CompilerContext.scan_destruct_param_to_arrow(&self) {
         else if (tt == TokenType.RPAREN) {
             paren_d--;
             if (paren_d == 0) {
-                return self.check(TokenType.ARROW);
+                return self.check_arrow();
             }
         }
         else if (tt == TokenType.TEMPLATE_HEAD) { tscan.on_template_head(); }

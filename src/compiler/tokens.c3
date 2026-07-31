@@ -218,6 +218,20 @@ fn bool CompilerContext.check(&self, TokenType tt) {
     return self.peek_type() == tt;
 }
 
+/// Check for `=>` as an arrow head terminator.
+///
+/// ES2024 §15.3: `ArrowFunction : ArrowParameters [no LineTerminator here] =>
+/// ConciseBody`. A line terminator between the parameters and `=>` is a
+/// SyntaxError, and since ASI cannot insert a semicolon before `=>` (it is
+/// never a valid statement start) the whole construct is rejected. Every
+/// arrow-detection site must use this instead of `check(TokenType.ARROW)`, so
+/// that `x \n => x` fails to parse rather than silently becoming an arrow.
+/// `check` forces the lookahead scan, so `seen_line_term` describes the
+/// whitespace immediately before the `=>` once it has returned true.
+fn bool CompilerContext.check_arrow(&self) {
+    return self.check(TokenType.ARROW) && !self.lexer.seen_line_term;
+}
+
 /// Read the next token as a property name (IdentifierName).
 /// After '.' or other contexts where any keyword can be used as a name,
 /// this returns the string value regardless of whether the token is an
@@ -495,7 +509,7 @@ fn bool CompilerContext.is_async_arrow_lookahead(&self) {
             return false;
         }
         Token second_tok = next_opt;
-        bool is_arrow = self.peek_type() == TokenType.ARROW;
+        bool is_arrow = self.check_arrow();
         self.pushback(second_tok);
         self.pushback(cur);
         return is_arrow;

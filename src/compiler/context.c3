@@ -283,6 +283,16 @@ struct CompilerContext {
     /// UnaryExpression. Cleared by binary_expr once the unary_expr return is
     /// consumed.
     bool last_was_unary_op;
+    /// True when the operand just parsed was a bare `yield` whose operand was
+    /// cut off by a line terminator (ES2024 §15.5: `yield [no LineTerminator
+    /// here] AssignmentExpression` and `yield [no LineTerminator here] *`).
+    /// Such a YieldExpression is complete, and since YieldExpression sits at
+    /// AssignmentExpression level it cannot then become the left operand of a
+    /// binary operator: `yield \n * 1` must be a SyntaxError rather than
+    /// silently reading as `yield` followed by the statement `* 1`. Same
+    /// consume-once discipline as last_was_unary_op — binary_expr reads and
+    /// clears it right after the unary_expr call that produced it.
+    bool last_was_newline_yield;
     /// Code index of the GETVAR instruction that produced the last identifier
     /// reference (valid whenever last_was_getvar is true). Lets call_expr
     /// fuse a bare-identifier callee's GETVAR into CALL_VAR even though other

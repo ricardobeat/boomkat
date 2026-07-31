@@ -2083,7 +2083,7 @@ fn void? CompilerContext.for_statement(&self) {
                 // parameter list. For example, `for (async of => {}; ...)` is a plain
                 // for-loop whose init is the call expression `async(of => {})`.
                 Token of_tok = self.advance()!;
-                bool is_arrow = self.peek_type() == TokenType.ARROW;
+                bool is_arrow = self.check_arrow();
                 self.pushback(of_tok);
                 self.pushback(id_tok);
                 if (!is_arrow) {
@@ -4136,6 +4136,16 @@ fn void? CompilerContext.return_statement(&self) {
 /// Parse throw statement.
 fn void? CompilerContext.throw_statement(&self) {
     self.expect(TokenType.THROW)!;
+
+    // ES2024 §14.14: `throw [no LineTerminator here] Expression ;`. This is a
+    // restricted production, not an ASI opportunity: a line terminator after
+    // `throw` is a SyntaxError, there is no `throw;` form to fall back to.
+    // Force the lookahead scan before reading seen_line_term, which otherwise
+    // still describes the whitespace before `throw` itself.
+    self.peek_type();
+    if (self.lexer.seen_line_term) {
+        return self.fail("no line break is allowed between 'throw' and its expression")~;
+    }
 
     ushort val_reg = self.expression()!;
     self.emit_abc(Opcode.THROW, (uint)val_reg, 0, 0);

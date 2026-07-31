@@ -990,6 +990,8 @@ fn ushort? CompilerContext.binary_expr(&self, int min_prec) {
     // and overwrites the flag with that operand's shape.
     bool left_was_unary_op = self.last_was_unary_op;
     self.last_was_unary_op = false;
+    bool left_was_newline_yield = self.last_was_newline_yield;
+    self.last_was_newline_yield = false;
     bool left_is_local = self.last_was_local_var;
     // Do NOT clear self.last_was_arrow_expr here, the recursive RHS call
     // clears it on its own entry, parses its LHS, and the inner's flag
@@ -1016,6 +1018,15 @@ fn ushort? CompilerContext.binary_expr(&self, int min_prec) {
         int prec = get_binary_precedence(tt);
 
         if (prec < min_prec) {
+            break;
+        }
+        // A bare `yield` closed by a line terminator is a complete
+        // YieldExpression (§15.5), so it cannot become a binary operator's
+        // left operand. Stop the expression here rather than erroring: the
+        // statement level then applies ASI, which is what keeps
+        // `yield \n + 1` legal (a fresh `+1` ExpressionStatement) while
+        // `yield \n * 1` fails, `*` being unable to start a statement.
+        if (left_was_newline_yield) {
             break;
         }
         // Record that at least one binary operator was consumed. The value of
@@ -3506,7 +3517,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 // rejected as an early SyntaxError.
 
                 // Arrow function: IDENTIFIER => ...
-                if (self.check(TokenType.ARROW)) {
+                if (self.check_arrow()) {
                     char[][1] params_arr;
                     params_arr[0] = id_tok.str_value;
                     // Capture byte offset of the IDENTIFIER (just consumed), the
@@ -3584,7 +3595,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
             // Check for empty parens: () => ...
             if (self.check(TokenType.RPAREN)) {
                 self.advance()!;  // consume ')'
-                if (self.check(TokenType.ARROW)) {
+                if (self.check_arrow()) {
                     // No-param arrow: () => ...
                     // Restore lexer to right after '(', parse_arrow_function_reparse
                     // will re-parse from source.
@@ -3663,7 +3674,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
 
                         if (self.check(TokenType.RPAREN)) {
                             self.advance()!;  // consume ')'
-                            if (self.check(TokenType.ARROW)) {
+                            if (self.check_arrow()) {
                                 is_arrow = true;
                             }
                         }
@@ -3698,7 +3709,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
 
                     if (self.check(TokenType.RPAREN)) {
                         self.advance()!;  // consume ')'
-                        if (self.check(TokenType.ARROW)) {
+                        if (self.check_arrow()) {
                             is_arrow = true;
                         }
                         break;
@@ -3711,7 +3722,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                     // Trailing comma: ',)' is valid per ES2017
                     if (self.check(TokenType.RPAREN)) {
                         self.advance()!;  // consume ')'
-                        if (self.check(TokenType.ARROW)) {
+                        if (self.check_arrow()) {
                             is_arrow = true;
                         }
                         break;
@@ -3970,6 +3981,10 @@ fn ushort? CompilerContext.primary_expr(&self) {
                     self.emit_abc(Opcode.LDUNDEF, (uint)result, 0, 0);
                     self.emit_abc(Opcode.YIELD, (uint)result, 0, 0);
                     self.emit_abc(Opcode.LOAD_RESUME, (uint)result, 0, 0);
+                    // Mark a newline-terminated bare `yield` so binary_expr
+                    // refuses to extend it with an operator (see the field
+                    // doc on last_was_newline_yield).
+                    self.last_was_newline_yield = nl_after_yield;
                     return result;
                 }
                 val_reg = self.assignment_expr()!;
@@ -4009,7 +4024,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                     return COMPILE_ERROR~;
                 }
                 Token id_tok = self.advance()!;
-                if (self.check(TokenType.ARROW)) {
+                if (self.check_arrow()) {
                     // `await => ...` could be an arrow function with one
                     // identifier parameter named "await".
                     char[][1] params_arr;
