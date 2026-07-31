@@ -97,5 +97,9 @@ assert(!syntaxError("var async; for (async in {}) ;"), "`async` is fine in a for
 assert(!syntaxError("for (var async of [1]) ;"), "a declared `async` binding is fine");
 assert(!syntaxError("for (let async of [1]) ;"), "a lexical `async` binding is fine");
 assert(!syntaxError("for (async of => 1; false;) ;"), "`async of => …` is a call, not a for-of");
+// The restriction names the literal token `async`, so an escaped spelling is
+// an ordinary IdentifierReference and is not excluded (test262
+// for-of/head-lhs-async-escaped).
+assert(!syntaxError("let async; for (\\u0061sync of [7]);"), "escaped `async` as a for-of target");
 
 print("=== Results:", pass, "pass,", fail, "fail ===");

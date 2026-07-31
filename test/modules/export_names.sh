@@ -188,6 +188,14 @@ check ACCEPT "export of a namespace binding"   'import * as ns from "./names.mjs
 # rather than a syntax one, so the fixture exports it for real.
 check ACCEPT "re-export needs no local"        'export { a } from "./names.mjs";'
 
+# An `export`-PREFIXED declaration binds its own name in the same statement,
+# so it satisfies the rule by construction — including the destructuring forms,
+# whose leaf names no declaration pre-scan reconstructs.
+check ACCEPT "export var with a pattern"       'export var { p1 = 1 } = {};'
+check ACCEPT "export var with an array pattern" 'export var [p2, p3] = [1, 2];'
+check ACCEPT "export let with a pattern"       'export let { p4 } = { p4: 1 };'
+check ACCEPT "export var with top-level await" "$(printf 'var w = 1;\nexport var w1 = await w;\nexport var { w2 = await w } = {};')"
+
 echo ""
 echo "modules/export_names: $PASS passed, $FAIL failed"
 if [ "$FAIL" -gt 0 ]; then
