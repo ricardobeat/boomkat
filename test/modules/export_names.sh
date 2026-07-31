@@ -132,6 +132,70 @@ printf 'export var b = 1;\n' > "$TMP/b.mjs"
 check ACCEPT "star export plus named"          'var x; export { x }; export * from "./m.mjs";'
 check ACCEPT "two star exports"                'export * from "./a.mjs"; export * from "./b.mjs";'
 
+# ---------------------------------------------------------------------------
+# EN3  §16.2.3.1  A ModuleExportName spelled as a StringLiteral must be
+#      well-formed Unicode: a lone surrogate names an export no importer could
+#      ever spell.
+#
+# EN4  §16.2.3.1  `export NamedExports ;` with no `from` clause: it is a Syntax
+#      Error if ReferencedBindings contains a ModuleExportName. Without a
+#      `from`, a specifier's LOCAL half names a binding in this module, and a
+#      string is not an identifier — so `export { "foo" as "bar" }` is rejected
+#      even when a matching `function foo(){}` exists. With a `from`, that half
+#      is a name in the OTHER module and a string is fine.
+# ---------------------------------------------------------------------------
+printf 'export var a = 1;\nvar t = 2;\nexport { t as "\xe2\x98\xbf" };\n' > "$TMP/names.mjs"
+
+check REJECT "lone surrogate as export alias"  'export { Foo as "\uD83D" }
+function Foo() {}'
+check REJECT "lone surrogate in a re-export"   'export { "a" as "\uD83D" } from "./names.mjs";'
+check REJECT "lone surrogate in a star alias"  'export * as "\uD83D" from "./names.mjs";'
+check REJECT "lone surrogate as import alias"  'import { "\uD83D" as bad } from "./names.mjs";'
+check REJECT "string local, no from clause"    'export { "foo" as "bar" }
+function foo() {}'
+check REJECT "string local, bare specifier"    'var foo; export { "foo" };'
+
+check ACCEPT "string local with a from clause" 'export { "☿" as ok } from "./names.mjs";'
+check ACCEPT "string alias with a from clause" 'export { a as "b" } from "./names.mjs";'
+check ACCEPT "string alias on a local binding" 'var q = 1; export { q as "nice name" };'
+check ACCEPT "string import name"              'import { "☿" as m } from "./names.mjs"; export { m };'
+check ACCEPT "string star alias"               'export * as "ns" from "./names.mjs";'
+check ACCEPT "paired surrogates in a name"     'var r = 1; export { r as "😀" };'
+
+# ---------------------------------------------------------------------------
+# EN5  §16.2.1.1  Every element of ExportedBindings must also occur in the
+#      VarDeclaredNames or LexicallyDeclaredNames of the ModuleItemList. Only
+#      a LOCAL export has an ExportedBinding — `export {x} from` names `x` in
+#      the OTHER module, and a star export names nothing here. The rule is
+#      about the item LIST, so the declaration need not precede the export.
+# ---------------------------------------------------------------------------
+check REJECT "export of an undeclared name"    'export { unresolvable };'
+check REJECT "export of a global"              'export { Number };'
+check REJECT "export of an undeclared alias"   'export { missing as alias };'
+check REJECT "export of a block-scoped name"   'export { blk }; { let blk = 1; }'
+check REJECT "export of a name from a function" 'export { deep }; function h() { var deep = 1; }'
+
+check ACCEPT "export declared later"           'export { later }; var later = 1;'
+check ACCEPT "export of a hoisted function"    'export { fn }; function fn() {}'
+check ACCEPT "export of a class"               'export { C }; class C {}'
+check ACCEPT "export of a let"                 'let L = 1; export { L };'
+check ACCEPT "export of a var in a block"      'if (1) { var inner = 1; } export { inner };'
+check ACCEPT "export of a later declarator"    'var c1 = 1, d1 = 2; export { d1 };'
+check ACCEPT "export of an imported binding"   'import { a } from "./names.mjs"; export { a };'
+check ACCEPT "export of a namespace binding"   'import * as ns from "./names.mjs"; export { ns };'
+# A re-export has no ExportedBinding of its own, so EN5 does not apply to it.
+# The name must still RESOLVE in the other module, which is a link-time error
+# rather than a syntax one, so the fixture exports it for real.
+check ACCEPT "re-export needs no local"        'export { a } from "./names.mjs";'
+
+# An `export`-PREFIXED declaration binds its own name in the same statement,
+# so it satisfies the rule by construction — including the destructuring forms,
+# whose leaf names no declaration pre-scan reconstructs.
+check ACCEPT "export var with a pattern"       'export var { p1 = 1 } = {};'
+check ACCEPT "export var with an array pattern" 'export var [p2, p3] = [1, 2];'
+check ACCEPT "export let with a pattern"       'export let { p4 } = { p4: 1 };'
+check ACCEPT "export var with top-level await" "$(printf 'var w = 1;\nexport var w1 = await w;\nexport var { w2 = await w } = {};')"
+
 echo ""
 echo "modules/export_names: $PASS passed, $FAIL failed"
 if [ "$FAIL" -gt 0 ]; then

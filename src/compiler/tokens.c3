@@ -33,6 +33,18 @@ macro fault CompilerContext.fail(&self, char[] msg) {
 /// point at the offending character.
 fn void CompilerContext.record_lex_error(&self) {
     if (g_last_err_msg[0] != 0) return;
+    // An unterminated `/*` comment has no offending character to point at —
+    // the lexer stopped at end-of-input — so name the construct instead of
+    // reporting whatever byte happens to precede `pos`.
+    if (self.lexer.unterminated_comment) {
+        g_last_err_line = self.lexer.line;
+        g_last_err_col  = self.lexer.col;
+        char[] msg = "unterminated multi-line comment";
+        usz copy_len = msg.len < (g_last_err_msg.len - 1) ? msg.len : (g_last_err_msg.len - 1);
+        mem::copy(&g_last_err_msg[0], msg.ptr, (sz)(copy_len));
+        g_last_err_msg[copy_len] = 0;
+        return;
+    }
     g_last_err_line = self.lexer.line;
     g_last_err_col  = self.lexer.col > 0 ? self.lexer.col - 1 : 0;
     uint bad_pos = self.lexer.pos > 0 ? self.lexer.pos - 1 : 0;
@@ -216,6 +228,20 @@ fn TokenType CompilerContext.peek_type(&self) {
 /// Check if the next token is the given type without consuming.
 fn bool CompilerContext.check(&self, TokenType tt) {
     return self.peek_type() == tt;
+}
+
+/// Check for `=>` as an arrow head terminator.
+///
+/// ES2024 §15.3: `ArrowFunction : ArrowParameters [no LineTerminator here] =>
+/// ConciseBody`. A line terminator between the parameters and `=>` is a
+/// SyntaxError, and since ASI cannot insert a semicolon before `=>` (it is
+/// never a valid statement start) the whole construct is rejected. Every
+/// arrow-detection site must use this instead of `check(TokenType.ARROW)`, so
+/// that `x \n => x` fails to parse rather than silently becoming an arrow.
+/// `check` forces the lookahead scan, so `seen_line_term` describes the
+/// whitespace immediately before the `=>` once it has returned true.
+fn bool CompilerContext.check_arrow(&self) {
+    return self.check(TokenType.ARROW) && !self.lexer.seen_line_term;
 }
 
 /// Read the next token as a property name (IdentifierName).
@@ -495,7 +521,7 @@ fn bool CompilerContext.is_async_arrow_lookahead(&self) {
             return false;
         }
         Token second_tok = next_opt;
-        bool is_arrow = self.peek_type() == TokenType.ARROW;
+        bool is_arrow = self.check_arrow();
         self.pushback(second_tok);
         self.pushback(cur);
         return is_arrow;

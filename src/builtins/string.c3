@@ -3332,39 +3332,7 @@ fn void builtin_string_proto_isWellFormed(BuiltinContext* ctx) {
     HString* s_hstr = string_proto_get_this(ctx);
     if (s_hstr == null) { ctx.result.set_undefined(); return; }
 
-    char[] data = s_hstr.get_data();
-    uint len = (uint)data.len;
-    uint i = 0;
-    while (i < len) {
-        uint seq_len = hstring::utf8_seq_len(data[i]);
-        uint cp = hstring::decode_codepoint(data, i);
-        if (hstring::is_high_surrogate(cp)) {
-            // Must be paired with an immediately following low surrogate.
-            uint next_off = i + seq_len;
-            if (next_off >= len) {
-                // High surrogate at end-of-string, lone.
-                ctx.result.set_boolean(false);
-                return;
-            }
-            uint next_cp = hstring::decode_codepoint(data, next_off);
-            if (!hstring::is_low_surrogate(next_cp)) {
-                // High surrogate followed by something that is not a low
-                // surrogate, lone.
-                ctx.result.set_boolean(false);
-                return;
-            }
-            // Valid surrogate pair: skip both code units.
-            uint low_len = hstring::utf8_seq_len(data[next_off]);
-            i = next_off + low_len;
-        } else if (hstring::is_low_surrogate(cp)) {
-            // Low surrogate without a preceding high surrogate, lone.
-            ctx.result.set_boolean(false);
-            return;
-        } else {
-            i += seq_len;
-        }
-    }
-    ctx.result.set_boolean(true);
+    ctx.result.set_boolean(hstring::is_well_formed_unicode(s_hstr.get_data()));
 }
 
 /// String.prototype.toWellFormed(), ES2024 §21.1.3.27

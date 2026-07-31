@@ -429,6 +429,10 @@ fn ModuleDef*? resolve_module(Heap* heap, char[] specifier, char[] base_name, bo
     // 5. Compile
     Lexer lex = lexer::lexer_init(source, heap);
     defer lex.free_arena();
+    // ES2024 §12.5: the HTML-like comment grammar is reachable from Script
+    // only, so in a Module `<!--` and `-->` stay real tokens and the source is
+    // a SyntaxError.
+    lex.html_comments = false;
     lex.skip_hashbang();
     bytecode::CompiledFunction*? func_opt = compiler::compile_module(&lex, heap, normalized, mod);
     if (catch err = func_opt) {

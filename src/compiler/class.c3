@@ -1383,6 +1383,17 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
         self.is_user_generator = saved_is_user_generator;
         self.is_async = saved_is_async;
 
+        // §14.3 accessor arity, same rule as an object literal's accessors
+        // (see AccessorKind): a getter takes no parameter, a setter exactly
+        // one, and a setter's PropertySetParameterList is a FormalParameter,
+        // so a rest parameter is not one of the forms it admits.
+        if (is_getter && inner.num_args != 0) {
+            return self.fail("a getter must have no parameters")~;
+        }
+        if (is_setter && (inner.num_args != 1 || inner.has_rest())) {
+            return self.fail("a setter must have exactly one non-rest parameter")~;
+        }
+
         // Add to inner functions table
         uint inner_idx = self.add_inner_func(inner);
 

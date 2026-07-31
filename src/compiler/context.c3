@@ -283,6 +283,43 @@ struct CompilerContext {
     /// UnaryExpression. Cleared by binary_expr once the unary_expr return is
     /// consumed.
     bool last_was_unary_op;
+    /// True when the operand just parsed was a bare `yield` whose operand was
+    /// cut off by a line terminator (ES2024 §15.5: `yield [no LineTerminator
+    /// here] AssignmentExpression` and `yield [no LineTerminator here] *`).
+    /// Such a YieldExpression is complete, and since YieldExpression sits at
+    /// AssignmentExpression level it cannot then become the left operand of a
+    /// binary operator: `yield \n * 1` must be a SyntaxError rather than
+    /// silently reading as `yield` followed by the statement `* 1`. Same
+    /// consume-once discipline as last_was_unary_op — binary_expr reads and
+    /// clears it right after the unary_expr call that produced it.
+    bool last_was_newline_yield;
+    /// True when the expression just parsed was an AssignmentExpression whose
+    /// top-level operator was `=` or a compound/logical assignment.
+    ///
+    /// §13.15.1: such an expression has AssignmentTargetType ~invalid~, so
+    /// `(a = b) = 1` is a SyntaxError. The ordinary reference markers cannot
+    /// carry that: parentheses deliberately PRESERVE AssignmentTargetType
+    /// (`(a) = 1` is legal), and a compound assignment's result path sets
+    /// last_was_local_var on purpose, to drive the copy-to-temp guard for
+    /// `(n *= 0.3) > 0`. So the fact is tracked separately and read by the
+    /// invalid-LHS test, which runs once the assignment operator is consumed.
+    bool last_was_assignment;
+    /// The grammar's `[~In]` parameter: true while parsing an expression that
+    /// may not contain a top-level `in` operator. Only the head of a C-style
+    /// `for` sets it (`for (Expression[~In] ; ... )`, ES2024 §14.7.4), where an
+    /// unparenthesized `in` would be ambiguous with a for-in head.
+    ///
+    /// `[?In]` propagation is by inheritance: the flag simply stays set down
+    /// the left spine (comma → assignment → conditional → binary), and every
+    /// construct whose grammar re-fixes the parameter to `[+In]` clears it.
+    /// That is every nested grouping — parentheses, brackets, call arguments,
+    /// template substitutions — all of which route through
+    /// CompilerContext.expression(), which saves and clears it; the for head
+    /// itself uses expression_no_in() to enter with it set. The one non-
+    /// grouping site is a conditional's middle operand, which the grammar
+    /// fixes to `[+In]` (`... ? AssignmentExpression[+In] : ...`), so
+    /// `for (a ? b in c : d;;)` is legal while `for (a ? b : c in d;;)` is not.
+    bool forbid_in;
     /// Code index of the GETVAR instruction that produced the last identifier
     /// reference (valid whenever last_was_getvar is true). Lets call_expr
     /// fuse a bare-identifier callee's GETVAR into CALL_VAR even though other

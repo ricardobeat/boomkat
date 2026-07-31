@@ -23,8 +23,30 @@ macro CompilerContext.check_no_arrow_rhs(&self) {
     }
 }
 
-/// Parse a full expression (comma operator at lowest precedence).
+/// Parse a full expression (comma operator at lowest precedence), with the
+/// grammar's `[+In]`: an `in` operator is allowed at every level.
+///
+/// This is the entry point every nested grouping uses — parentheses, brackets,
+/// call arguments, template substitutions — and each of those re-fixes the
+/// grammar's In parameter to `[+In]`, so clearing forbid_in here is what makes
+/// `for ((a in b);;)` and `for (f(a in b);;)` legal inside a `[~In]` head.
+/// The head itself enters through expression_no_in().
 fn ushort? CompilerContext.expression(&self) {
+    bool saved_forbid_in = self.forbid_in;
+    self.forbid_in = false;
+    defer self.forbid_in = saved_forbid_in;
+    return self.expression_inner();
+}
+
+/// Parse a full expression as `Expression[~In]`: a top-level `in` operator is
+/// a SyntaxError. Only a C-style for head uses this (§14.7.4).
+fn ushort? CompilerContext.expression_no_in(&self) {
+    self.forbid_in = true;
+    defer self.forbid_in = false;
+    return self.expression_inner();
+}
+
+fn ushort? CompilerContext.expression_inner(&self) {
     // Reset the arrow-returned marker so each operand of a comma list (and
     // each `(` grouping / conditional / assignment RHS) parses in isolation.
     self.last_was_arrow_expr = false;
@@ -201,6 +223,11 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
     // Parse LHS with lhs_mode enabled, member_expr saves (obj, key) without GETPROP
     self.lhs_mode = true;
     self.last_was_member = false;
+    // Clear before the operand parse so the flag describes THIS operand, not
+    // some earlier assignment (`a = 1, b = 2` must not see `a = 1`'s).
+    // conditional_expr sets it again only if the operand it returns really was
+    // an assignment (through a nested assignment_expr, e.g. inside parens).
+    self.last_was_assignment = false;
     ushort left = self.conditional_expr()!;
     self.lhs_mode = false;
 
@@ -303,6 +330,12 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
         default:
             return left;
     }
+
+    // §13.15.1: an AssignmentExpression has AssignmentTargetType ~invalid~,
+    // so it may not itself be assigned to. Read the LHS's flag before
+    // consuming the operator, then re-arm it for this assignment's own result.
+    bool lhs_was_assignment = self.last_was_assignment;
+    self.last_was_assignment = true;
 
     // Consume the assignment operator
     self.advance()!;
@@ -445,6 +478,9 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
             }
             uint skip_jump = self.emit_cond_jump(Opcode.IF_TRUE, (uint)lor_res);
             ushort right = self.assignment_expr()!;
+            // The RHS parse cleared last_was_assignment (it describes the
+            // operand it just read); re-arm it, this expression IS one.
+            self.last_was_assignment = true;
             bool right_is_local_lor = self.last_was_local_var;
             if (lhs_was_member) {
                 self.emit_abc(member_store_op, (uint)lhs_member_obj, (uint)lhs_member_prop, (uint)right);
@@ -484,6 +520,9 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
             }
             uint skip_jump = self.emit_cond_jump(Opcode.IF_FALSE, (uint)land_res);
             ushort right = self.assignment_expr()!;
+            // The RHS parse cleared last_was_assignment (it describes the
+            // operand it just read); re-arm it, this expression IS one.
+            self.last_was_assignment = true;
             bool right_is_local_land = self.last_was_local_var;
             if (lhs_was_member) {
                 self.emit_abc(member_store_op, (uint)lhs_member_obj, (uint)lhs_member_prop, (uint)right);
@@ -534,6 +573,9 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
             self.patch_jump(undef_jump);
             // Nullish, evaluate RHS and assign
             ushort right = self.assignment_expr()!;
+            // The RHS parse cleared last_was_assignment (it describes the
+            // operand it just read); re-arm it, this expression IS one.
+            self.last_was_assignment = true;
             bool right_is_local_nc = self.last_was_local_var;
             if (lhs_was_member) {
                 self.emit_abc(member_store_op, (uint)lhs_member_obj, (uint)lhs_member_prop, (uint)right);
@@ -691,6 +733,9 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
 
     // Compile right-hand side
     ushort right = self.assignment_expr()!;
+    // The RHS parse cleared last_was_assignment (it describes the operand it
+    // just read); re-arm it, this expression IS one.
+    self.last_was_assignment = true;
     // A bare identifier RHS that resolved to a live local variable's own
     // register (not a temp) must never be freed here, free_reg is LIFO and
     // would hand that exact register back out to the very next alloc_reg
@@ -885,6 +930,12 @@ fn ushort? CompilerContext.conditional_expr(&self) {
     // Reset so an arrow that came in as the condition doesn't trip the binary
     // operator check on the operator that follows the conditional.
     self.last_was_arrow_expr = false;
+    // binary_expr consumes forbid_in (see the no_in capture there), but a
+    // ConditionalExpression's own In parameter still governs its false
+    // branch: `ConditionalExpression[?In] : ShortCircuitExpression[?In] ?
+    // AssignmentExpression[+In] : AssignmentExpression[?In]`. Hold it across
+    // the condition so the branches below see the enclosing value.
+    bool cond_forbid_in = self.forbid_in;
     ushort result = self.binary_expr(PREC_NULLISH)!;
 
     if (self.match(TokenType.QUESTION)) {
@@ -895,7 +946,10 @@ fn ushort? CompilerContext.conditional_expr(&self) {
         uint false_jump = self.emit_cond_jump(Opcode.IF_FALSE, (uint)result);
         self.free_reg(result);
 
-        // True branch
+        // True branch. The grammar fixes this operand to
+        // `AssignmentExpression[+In]` regardless of the enclosing In
+        // parameter, so an `in` here is legal even inside a for head.
+        self.forbid_in = false;
         ushort true_val = self.assignment_expr()!;
         self.emit_abc(Opcode.LDREG, (uint)result_reg, (uint)true_val, 0);
         self.free_reg(true_val);
@@ -905,8 +959,10 @@ fn ushort? CompilerContext.conditional_expr(&self) {
         uint end_jump = self.emit_jump(Opcode.JUMP);
         self.patch_jump(false_jump);
 
-        // False branch
+        // False branch: `AssignmentExpression[?In]`, so it inherits.
+        self.forbid_in = cond_forbid_in;
         ushort false_val = self.assignment_expr()!;
+        self.forbid_in = false;
         self.emit_abc(Opcode.LDREG, (uint)result_reg, (uint)false_val, 0);
         self.free_reg(false_val);
 
@@ -938,14 +994,27 @@ fn ushort? CompilerContext.binary_expr(&self, int min_prec) {
     bool yield_ok = self.yield_ok_here;
     self.yield_ok_here = false;
 
+    // `[~In]` reaches exactly one decision: whether this invocation's operator
+    // loop may consume an `in`. Every operand is parsed with the flag cleared,
+    // so it can never leak into a nested construct — a parenthesized
+    // subexpression, a call argument, an array element, a template
+    // substitution — all of which are `[+In]` by grammar no matter which entry
+    // point they use. This is the same consume-on-entry discipline as
+    // yield_ok_here above, and it is what keeps `for (f(a in b);;)` legal
+    // while `for (a in b;;)` is not.
+    bool no_in = self.forbid_in;
+    self.forbid_in = false;
+
     // ES2022 class-fields-private-in: `[+In] PrivateIdentifier in ShiftExpression`.
     // The grammar gives the PrivateIdentifier as a standalone LHS of the `in`
     // operator, `#x` is not a value expression by itself. If the next token is
     // HASH_IDENT immediately followed by `in`, consume both and emit the
     // HAS_BRAND probe; the result then feeds the normal Pratt loop so lower-
     // precedence continuations (`#x in o && y`, `#x in o === b`) still parse.
+    // The `#x in o` production is itself guarded by `[+In]`, so it is
+    // unavailable in a for head for the same reason a plain `in` is.
     ushort left;
-    if (min_prec <= get_binary_precedence(TokenType.IN)
+    if (min_prec <= get_binary_precedence(TokenType.IN) && !no_in
             && self.peek_type() == TokenType.HASH_IDENT) {
         Token hash_tok = self.advance()!;
         if (self.peek_type() == TokenType.IN) {
@@ -990,6 +1059,8 @@ fn ushort? CompilerContext.binary_expr(&self, int min_prec) {
     // and overwrites the flag with that operand's shape.
     bool left_was_unary_op = self.last_was_unary_op;
     self.last_was_unary_op = false;
+    bool left_was_newline_yield = self.last_was_newline_yield;
+    self.last_was_newline_yield = false;
     bool left_is_local = self.last_was_local_var;
     // Do NOT clear self.last_was_arrow_expr here, the recursive RHS call
     // clears it on its own entry, parses its LHS, and the inner's flag
@@ -1017,6 +1088,23 @@ fn ushort? CompilerContext.binary_expr(&self, int min_prec) {
 
         if (prec < min_prec) {
             break;
+        }
+        // A bare `yield` closed by a line terminator is a complete
+        // YieldExpression (§15.5), so it cannot become a binary operator's
+        // left operand. Stop the expression here rather than erroring: the
+        // statement level then applies ASI, which is what keeps
+        // `yield \n + 1` legal (a fresh `+1` ExpressionStatement) while
+        // `yield \n * 1` fails, `*` being unable to start a statement.
+        if (left_was_newline_yield) {
+            break;
+        }
+        // `[~In]`: inside a C-style for head an unparenthesized `in` would be
+        // ambiguous with a for-in head, so the grammar simply has no
+        // production for it (§14.7.4). Reject rather than break — unlike ASI
+        // there is no shorter parse to fall back to, the next token in the
+        // head must be `;`.
+        if (tt == TokenType.IN && no_in) {
+            return self.fail("'in' is not allowed in a for-statement head")~;
         }
         // Record that at least one binary operator was consumed. The value of
         // this expression is then the operator's result — never a Reference —
@@ -3384,11 +3472,19 @@ fn ushort? CompilerContext.primary_expr(&self) {
             self.last_was_getvar = false;
             Token num_tok = self.advance()!;
 
-            // Legacy octal integer literal (0 followed by octal digit 0-7)
-            // is a SyntaxError (strict mode per ES5 §7.8.3 + B.1.1).
+            // ES2024 §12.9.3.1: both AnnexB decimal-integer forms that start
+            // with `0` are Syntax Errors in strict-mode code, and this engine
+            // is strict-only:
+            //   LegacyOctalIntegerLiteral        `0` followed by 0-7 (`01`)
+            //   NonOctalDecimalIntegerLiteral    `0` followed by 8-9 (`08`),
+            //                                    and any digits after either
+            // A `0` followed by ANY decimal digit is therefore one of the two,
+            // so one test covers both — the previous 0-7 range accepted `08`
+            // and `09` silently. `0x`/`0o`/`0b`/`0.`/`0e` are unaffected: the
+            // second character is not a decimal digit.
             char[] nsrc = num_tok.str_value;
-            if (nsrc.len >= 2 && nsrc[0] == '0' && nsrc[1] >= '0' && nsrc[1] <= '7') {
-                return COMPILE_ERROR~;
+            if (nsrc.len >= 2 && nsrc[0] == '0' && nsrc[1] >= '0' && nsrc[1] <= '9') {
+                return self.fail("a legacy octal or non-octal decimal literal is not allowed")~;
             }
 
             ushort num_reg = self.alloc_reg();
@@ -3506,7 +3602,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 // rejected as an early SyntaxError.
 
                 // Arrow function: IDENTIFIER => ...
-                if (self.check(TokenType.ARROW)) {
+                if (self.check_arrow()) {
                     char[][1] params_arr;
                     params_arr[0] = id_tok.str_value;
                     // Capture byte offset of the IDENTIFIER (just consumed), the
@@ -3584,7 +3680,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
             // Check for empty parens: () => ...
             if (self.check(TokenType.RPAREN)) {
                 self.advance()!;  // consume ')'
-                if (self.check(TokenType.ARROW)) {
+                if (self.check_arrow()) {
                     // No-param arrow: () => ...
                     // Restore lexer to right after '(', parse_arrow_function_reparse
                     // will re-parse from source.
@@ -3663,7 +3759,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
 
                         if (self.check(TokenType.RPAREN)) {
                             self.advance()!;  // consume ')'
-                            if (self.check(TokenType.ARROW)) {
+                            if (self.check_arrow()) {
                                 is_arrow = true;
                             }
                         }
@@ -3698,7 +3794,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
 
                     if (self.check(TokenType.RPAREN)) {
                         self.advance()!;  // consume ')'
-                        if (self.check(TokenType.ARROW)) {
+                        if (self.check_arrow()) {
                             is_arrow = true;
                         }
                         break;
@@ -3711,7 +3807,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                     // Trailing comma: ',)' is valid per ES2017
                     if (self.check(TokenType.RPAREN)) {
                         self.advance()!;  // consume ')'
-                        if (self.check(TokenType.ARROW)) {
+                        if (self.check_arrow()) {
                             is_arrow = true;
                         }
                         break;
@@ -3970,6 +4066,10 @@ fn ushort? CompilerContext.primary_expr(&self) {
                     self.emit_abc(Opcode.LDUNDEF, (uint)result, 0, 0);
                     self.emit_abc(Opcode.YIELD, (uint)result, 0, 0);
                     self.emit_abc(Opcode.LOAD_RESUME, (uint)result, 0, 0);
+                    // Mark a newline-terminated bare `yield` so binary_expr
+                    // refuses to extend it with an operator (see the field
+                    // doc on last_was_newline_yield).
+                    self.last_was_newline_yield = nl_after_yield;
                     return result;
                 }
                 val_reg = self.assignment_expr()!;
@@ -4009,7 +4109,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                     return COMPILE_ERROR~;
                 }
                 Token id_tok = self.advance()!;
-                if (self.check(TokenType.ARROW)) {
+                if (self.check_arrow()) {
                     // `await => ...` could be an arrow function with one
                     // identifier parameter named "await".
                     char[][1] params_arr;
@@ -4819,7 +4919,8 @@ fn ushort? CompilerContext.object_literal(&self) {
                         self.emit_a_bc(Opcode.PUTLEX, (uint)sup_reg, sup_name_idx);
                         super_bound = true;
                     }
-                    ushort accessor_reg = self.function_expr_body(key_src_start)!;
+                    ushort accessor_reg = self.function_expr_body(key_src_start,
+                        is_obj_getter ? AccessorKind.GETTER : AccessorKind.SETTER)!;
                     if (is_obj_getter) {
                         self.emit_abc(Opcode.INITGET, (uint)obj_reg, (uint)key_reg, (uint)accessor_reg);
                     } else {

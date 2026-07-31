@@ -203,6 +203,23 @@ check ACCEPT "plain import alias"                'import {a as b} from "./self.m
 check ACCEPT "bare import specifier"             'import {a} from "./self.mjs";'
 check ACCEPT "string export name aliased"        'import {"a" as c} from "./self.mjs";'
 
+# ---------------------------------------------------------------------------
+# HTML-like comments (ES2024 §12.5) are reachable from Script only. In a
+# Module `<!--` and `-->` stay real tokens, so each of these is a SyntaxError.
+# ---------------------------------------------------------------------------
+check REJECT "SingleLineHTMLOpenComment"         '<!--'
+check REJECT "SingleLineHTMLCloseComment"        '-->'
+check REJECT "MultiLineHTMLCloseComment"         "$(printf '/*\n*/-->')"
+check REJECT "HTML open after a statement"       'var x = 1; <!-- still a comment in a script'
+check REJECT "HTML close after a blank line"     "$(printf 'var x = 1;\n--> trailing')"
+
+# The same character sequences as ordinary operators/strings must still parse:
+# `-->` is `-- >` and `<!--` is `< ! --`, and neither is special inside a
+# string literal.
+check ACCEPT "--> as decrement then compare"     "$(printf 'var a = 1, b = 2;\nvar c = a-->b;\nexport {c};')"
+check ACCEPT "<!-- as compare then not-decrement" "$(printf 'var a = 1, b = 2;\nvar c = a < !--b;\nexport {c};')"
+check ACCEPT "--> inside a string literal"       'var s = "a-->b"; export {s};'
+
 echo ""
 echo "modules/syntax_positions: $PASS passed, $FAIL failed"
 if [ "$FAIL" -gt 0 ]; then

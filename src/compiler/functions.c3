@@ -1489,7 +1489,7 @@ fn bool CompilerContext.scan_destruct_param_to_arrow(&self) {
         else if (tt == TokenType.RPAREN) {
             paren_d--;
             if (paren_d == 0) {
-                return self.check(TokenType.ARROW);
+                return self.check_arrow();
             }
         }
         else if (tt == TokenType.TEMPLATE_HEAD) { tscan.on_template_head(); }
@@ -3749,7 +3749,26 @@ fn ushort? CompilerContext.function_expr(&self, bool is_async_expr = false) {
 
 /// Parse a function expression body (parameters + block) without the `function` keyword.
 /// Used for method shorthand in object literals.
-fn ushort? CompilerContext.function_expr_body(&self, uint src_start = 0xFFFFFFFF) {
+/// The MethodDefinition form being compiled, for the §14.3 accessor arity
+/// rule. A plain method has no restriction; the two accessor forms fix their
+/// parameter list in the grammar itself:
+///
+///   get PropertyName ( ) { FunctionBody }
+///   set PropertyName ( PropertySetParameterList ) { FunctionBody }
+///   PropertySetParameterList : FormalParameter
+///
+/// so a getter takes no parameter at all and a setter takes exactly one, which
+/// (being a FormalParameter, not a FormalParameterList) may not be a rest
+/// parameter. Defaults and destructuring patterns ARE FormalParameters and
+/// stay legal.
+enum AccessorKind : int {
+    NOT_ACCESSOR,
+    GETTER,
+    SETTER,
+}
+
+fn ushort? CompilerContext.function_expr_body(&self, uint src_start = 0xFFFFFFFF,
+                                              AccessorKind accessor = AccessorKind.NOT_ACCESSOR) {
     // ES2015 §14.3: object literal method shorthand `o = { m() {} }`,
     // the function's name is inferred from the property key. Caller
     // (object_literal / class_body parser) sets has_inferred_name before
@@ -3768,6 +3787,16 @@ fn ushort? CompilerContext.function_expr_body(&self, uint src_start = 0xFFFFFFFF
     // opens the parameter list (which is what we have just consumed).
     uint mexpr_src_start = src_start != 0xFFFFFFFF ? src_start : self.lexer.token_start;
     CompiledFunction* inner = self.compile_inner_function(name, false, mexpr_src_start, true)!;
+
+    // §14.3 accessor arity (see AccessorKind). num_args is the count of
+    // declared formals; num_formals is Function.length, which a default value
+    // reduces, so it is the wrong field to test here.
+    if (accessor == AccessorKind.GETTER && inner.num_args != 0) {
+        return self.fail("a getter must have no parameters")~;
+    }
+    if (accessor == AccessorKind.SETTER && (inner.num_args != 1 || inner.has_rest())) {
+        return self.fail("a setter must have exactly one non-rest parameter")~;
+    }
 
     uint inner_idx = self.add_inner_func(inner);
 

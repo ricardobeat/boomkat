@@ -26,6 +26,14 @@ struct CompExportEntry {
     bool   is_indirect;
     uint   req_module_idx;
     bool   is_lexical;      // true for a local `let`/`const`/`class` export
+    /// True when the export came from an `export`-PREFIXED declaration
+    /// (`export var x = 1`, `export function f(){}`, `export class C {}`,
+    /// `export var {a, b} = o`) rather than an `export { x }` clause. Such an
+    /// export declares its own binding in the same statement, so it trivially
+    /// satisfies the §16.2.1.1 ExportedBindings rule and
+    /// check_module_exports_resolvable skips it — the binding may be a
+    /// destructuring leaf that no name pre-scan reconstructs.
+    bool   declares_binding;
 }
 
 struct CompStarExportEntry {
@@ -214,16 +222,18 @@ fn bool mod_has_export_name(CompModuleDef* mod, char[] export_name) {
 /// mod_register_export itself is a plain function with no compiler context to
 /// raise a SyntaxError from.
 fn void? CompilerContext.register_export(&self, CompModuleDef* mod, char[] local_name,
-    char[] export_name, bool is_indirect, uint req_idx, bool is_lexical = false)
+    char[] export_name, bool is_indirect, uint req_idx, bool is_lexical = false,
+    bool declares_binding = false)
 {
     if (mod_has_export_name(mod, export_name)) {
         return self.fail("duplicate export name")~;
     }
-    mod_register_export(mod, local_name, export_name, is_indirect, req_idx, is_lexical);
+    mod_register_export(mod, local_name, export_name, is_indirect, req_idx, is_lexical,
+                        declares_binding);
 }
 
 /// Register an export entry in the module.
-fn void mod_register_export(CompModuleDef* mod, char[] local_name, char[] export_name, bool is_indirect, uint req_idx, bool is_lexical = false) {
+fn void mod_register_export(CompModuleDef* mod, char[] local_name, char[] export_name, bool is_indirect, uint req_idx, bool is_lexical = false, bool declares_binding = false) {
     if (mod.export_count >= COMP_MAX_EXPORTS) return;
     uint idx = mod.export_count;
     mod.exports[idx].local_name = local_name;
@@ -231,6 +241,7 @@ fn void mod_register_export(CompModuleDef* mod, char[] local_name, char[] export
     mod.exports[idx].is_indirect = is_indirect;
     mod.exports[idx].req_module_idx = req_idx;
     mod.exports[idx].is_lexical = is_lexical;
+    mod.exports[idx].declares_binding = declares_binding;
     mod.export_count++;
 }
 
@@ -801,6 +812,79 @@ fn void? CompilerContext.check_module_duplicate_lexical_names(&self) {
     }
 }
 
+/// §16.2.1.1: "It is a Syntax Error if any element of the ExportedBindings of
+/// ModuleItemList does not also occur in either the VarDeclaredNames of
+/// ModuleItemList, or the LexicallyDeclaredNames of ModuleItemList."
+///
+/// So `export { unresolvable };` is a SyntaxError, and so is
+/// `export { Number };` — a global is not a module-level declaration. Only a
+/// LOCAL export has an ExportedBinding: `export { x } from './m'` names `x`
+/// in the OTHER module, and a star export names nothing here.
+///
+/// Runs after the whole body is parsed, because the rule is about the module
+/// item LIST: `export { later }; var later = 1;` is legal, the declaration
+/// need not precede the export. The four sources of a module-level declared
+/// name at that point are:
+///   - top-level `let`/`const`/`class`, still on scope_stack (the caller runs
+///     this before pop_scope_to(0));
+///   - top-level `function`, in hoisted_fn_names, or in the module's
+///     func_decls when the declaration carried its own `export` prefix
+///     (`export function g(){}`), which the hoisting pre-scan does not see;
+///   - top-level `var`, which at module scope is never pushed to scope_stack
+///     (declare_var's is_global path), hence the pre-scan;
+///   - imported bindings, which are LexicallyDeclaredNames of the module.
+/// The pre-scan rewinds and restores the lexer itself, so calling it here,
+/// with the lexer parked at EOF, is safe.
+fn void? CompilerContext.check_module_exports_resolvable(&self) {
+    if (!self.is_module || self.current_module == null) return;
+    CompModuleDef* mod = self.get_module_def();
+
+    NameSpan[MAX_PRESCAN_NAMES] var_spans;
+    uint var_n = 0;
+    // Only pay for the pre-scan if some local export could actually need it.
+    for (uint i = 0; i < mod.export_count; i++) {
+        if (!mod.exports[i].is_indirect) {
+            uint saved_pos = self.lexer.pos;
+            self.lexer.pos = 0;
+            self.lexer.has_lookahead = false;
+            self.lexer.has_pushed_back = false;
+            var_n = self.pre_scan_var_decls(&var_spans, MAX_PRESCAN_NAMES);
+            self.lexer.pos = saved_pos;
+            break;
+        }
+    }
+
+    for (uint i = 0; i < mod.export_count; i++) {
+        if (mod.exports[i].is_indirect) continue;
+        // An `export`-prefixed declaration binds its own name in the same
+        // statement, so it always satisfies the rule. Skipping it also avoids
+        // having to reconstruct the leaf names of `export var {a, b} = o`,
+        // which no name pre-scan recovers.
+        if (mod.exports[i].declares_binding) continue;
+        char[] local = mod.exports[i].local_name;
+
+        bool found = false;
+        for (uint s = 0; s < self.scope_depth && !found; s++) {
+            if (str_eq(self.scope_stack[s].name, local)) found = true;
+        }
+        for (ushort h = 0; h < self.hoisted_fn_count && !found; h++) {
+            if (str_eq(self.hoisted_fn_names[h], local)) found = true;
+        }
+        for (uint d = 0; d < mod.func_decl_count && !found; d++) {
+            if (str_eq(mod.func_decls[d].name, local)) found = true;
+        }
+        for (uint v = 0; v < var_n && !found; v++) {
+            if (str_eq(self.name_span_text(var_spans[v]), local)) found = true;
+        }
+        for (uint m = 0; m < mod.import_count && !found; m++) {
+            if (str_eq(mod.imports[m].local_name, local)) found = true;
+        }
+        if (!found) {
+            return self.fail("export names a binding that is not declared in this module")~;
+        }
+    }
+}
+
 /// Emit the GlobalDeclarationInstantiation lexName collision checks
 /// (ES2015 §15.1.11 step 5) for the top-level `let`/`const`/`class` names.
 /// Part of the check prologue that must precede every binding instantiation,
@@ -1074,7 +1158,37 @@ fn uint CompilerContext.pre_scan_var_decls(&self, NameSpan* spans, uint capacity
                 Token? sep_opt = self.lexer.next_token();
                 if (catch _err3 = sep_opt) break;
                 Token sep = sep_opt;
-                if (sep.type != TokenType.COMMA) break;
+                if (sep.type == TokenType.COMMA) continue;
+                // An Initializer separates this declarator from the next, so
+                // skip it to reach the comma: without this the scan stopped at
+                // the first `=` and `var a = 1, b = 2` reported only `a`.
+                // Track nesting so a `,` inside the initializer's own parens,
+                // brackets or braces (`var a = f(1, 2), b`) is not mistaken
+                // for the declarator separator.
+                if (sep.type != TokenType.ASSIGN) break;
+                int init_depth = 0;
+                bool at_next_declarator = false;
+                for (;;) {
+                    Token? it_opt = self.lexer.next_token();
+                    if (catch _err4 = it_opt) break;
+                    Token it = it_opt;
+                    if (it.type == TokenType.EOF_TOKEN) break;
+                    if (it.type == TokenType.LPAREN || it.type == TokenType.LBRACKET ||
+                        it.type == TokenType.LBRACE) {
+                        init_depth++;
+                    } else if (it.type == TokenType.RPAREN || it.type == TokenType.RBRACKET ||
+                               it.type == TokenType.RBRACE) {
+                        // A closer at depth 0 ends the enclosing construct
+                        // (`{ var a = 1 }`), not the initializer list. Push it
+                        // back so the outer loop's brace bookkeeping sees it.
+                        if (init_depth == 0) { self.lexer.pushback(it); break; }
+                        init_depth--;
+                    } else if (init_depth == 0) {
+                        if (it.type == TokenType.COMMA) { at_next_declarator = true; break; }
+                        if (it.type == TokenType.SEMICOLON) break;
+                    }
+                }
+                if (!at_next_declarator) break;
             }
             continue;
         }
@@ -2083,10 +2197,27 @@ fn void? CompilerContext.for_statement(&self) {
                 // parameter list. For example, `for (async of => {}; ...)` is a plain
                 // for-loop whose init is the call expression `async(of => {})`.
                 Token of_tok = self.advance()!;
-                bool is_arrow = self.peek_type() == TokenType.ARROW;
+                bool is_arrow = self.check_arrow();
                 self.pushback(of_tok);
                 self.pushback(id_tok);
                 if (!is_arrow) {
+                    // §14.7.5: `for ( [lookahead ∉ { let [, async of }]
+                    // LeftHandSideExpression of AssignmentExpression )`. The
+                    // token pair `async of` at the head's start is excluded
+                    // outright, so a variable actually named `async` cannot be
+                    // the loop target of a for-of — `for ((async) of [1])` and
+                    // `for (o.async of [1])` are the spellings that work.
+                    // (`for (async of => 1;;)` is a different parse, handled
+                    // by the arrow test above; `for await` has its own head
+                    // production with no such restriction.)
+                    // The restriction is on the literal TOKEN `async`, so an
+                    // escaped spelling (`async`) is not excluded — it is
+                    // an IdentifierReference that merely denotes the same
+                    // binding (test262 for-of/head-lhs-async-escaped).
+                    if (!for_is_await && !id_tok.has_escape
+                        && str_eq(id_tok.str_value, "async")) {
+                        return self.fail("a for-of head may not begin with the token pair 'async of'")~;
+                    }
                     // consume the tokens we pushed back; tok2/of_tok is already consumed
                     self.advance()!; // id_tok
                     self.advance()!; // of_tok
@@ -2902,7 +3033,14 @@ fn void? CompilerContext.for_statement(&self) {
             }
             if (is_lexical) { self.emit_simple(Opcode.PUSH_LEX); self.cur_lex_depth++; }
             if (self.match(TokenType.ASSIGN)) {
+                // §14.7.4: a C-style for head declares
+                // `VariableDeclarationList[~In]` / `LexicalDeclaration[~In]`,
+                // so a declarator's Initializer is `[~In]` as well —
+                // `for (var x = 1 in {};;)` is a SyntaxError, not a for-in
+                // head. Parenthesizing (`= (1 in {})`) restores `[+In]`.
+                self.forbid_in = true;
                 ushort init_val = self.assignment_expr()!;
+                self.forbid_in = false;
                 if (init_val != var_reg) {
                     self.emit_abc(Opcode.LDREG, (uint)var_reg, (uint)init_val, 0);
                 }
@@ -2943,7 +3081,10 @@ fn void? CompilerContext.for_statement(&self) {
                         extra_reg = self.declare_var(extra_name2, decl_kind);
                     }
                     if (self.match(TokenType.ASSIGN)) {
+                        // `[~In]`, as for the first declarator above.
+                        self.forbid_in = true;
                         ushort extra_val = self.assignment_expr()!;
+                        self.forbid_in = false;
                         if (extra_val != extra_reg) {
                             self.emit_abc(Opcode.LDREG, (uint)extra_reg, (uint)extra_val, 0);
                         }
@@ -2971,7 +3112,10 @@ fn void? CompilerContext.for_statement(&self) {
     } else if (next_tt != TokenType.SEMICOLON) {
         // Expression init (C-style for), no async form.
         if (for_is_await) return self.fail("'for await' requires a 'for await (... of ...)' head")~;
-        ushort init_reg = self.expression()!;
+        // §14.7.4: the head is `Expression[~In]`, so a top-level `in` here is
+        // a SyntaxError rather than being read as a for-in head that then
+        // fails on the `;`.
+        ushort init_reg = self.expression_no_in()!;
         self.free_reg(init_reg);
         // Guard: if the init expression returned a local variable's register
         // (e.g. `i = 0` returning `i`'s reg), free_reg may have dropped
@@ -4137,6 +4281,16 @@ fn void? CompilerContext.return_statement(&self) {
 fn void? CompilerContext.throw_statement(&self) {
     self.expect(TokenType.THROW)!;
 
+    // ES2024 §14.14: `throw [no LineTerminator here] Expression ;`. This is a
+    // restricted production, not an ASI opportunity: a line terminator after
+    // `throw` is a SyntaxError, there is no `throw;` form to fall back to.
+    // Force the lookahead scan before reading seen_line_term, which otherwise
+    // still describes the whitespace before `throw` itself.
+    self.peek_type();
+    if (self.lexer.seen_line_term) {
+        return self.fail("no line break is allowed between 'throw' and its expression")~;
+    }
+
     ushort val_reg = self.expression()!;
     self.emit_abc(Opcode.THROW, (uint)val_reg, 0, 0);
     // Note: do NOT free_reg(val_reg) here, same reason as return_statement.
@@ -5142,9 +5296,25 @@ fn bool? CompilerContext.parse_with_clause(&self) {
     return wants_json;
 }
 
-fn char[]? CompilerContext.parse_module_export_name(&self) {
+/// Parse a `ModuleExportName : IdentifierName | StringLiteral` (§16.2.3).
+///
+/// `was_string`, when non-null, receives whether the StringLiteral form was
+/// taken. Callers need it for the two places the grammar treats the forms
+/// differently: a string ModuleExportName must be well-formed Unicode, and a
+/// `NamedExports` with no `from` clause may not use one at all (both below).
+fn char[]? CompilerContext.parse_module_export_name(&self, bool* was_string = null) {
     Token tok = self.lexer.next_token()!;
-    if (tok.type == TokenType.IDENTIFIER || tok.type == TokenType.STRING) {
+    if (was_string != null) *was_string = (tok.type == TokenType.STRING);
+    if (tok.type == TokenType.STRING) {
+        // §16.2.3.1: "It is a Syntax Error if IsStringWellFormedUnicode of the
+        // StringValue of StringLiteral is false." A lone surrogate could not be
+        // spelled by any importer, so the name would be unusable.
+        if (!hstring::is_well_formed_unicode(tok.str_value)) {
+            return self.fail("a module export name must be well-formed Unicode")~;
+        }
+        return self.intern_slot_name(tok.str_value);
+    }
+    if (tok.type == TokenType.IDENTIFIER) {
         return self.intern_slot_name(tok.str_value);
     }
     char[] kw = lexer::keyword_to_string(tok.type);
@@ -5407,7 +5577,7 @@ fn void? CompilerContext.export_declaration(&self) {
             mod_register_func_decl(mod, local_name, inner_idx);
             self.free_reg(func_reg);
 
-            self.register_export(mod, local_name, "default", false, 0)!;
+            self.register_export(mod, local_name, "default", false, 0, false, true)!;
             self.match(TokenType.SEMICOLON);
             return;
         }
@@ -5428,7 +5598,7 @@ fn void? CompilerContext.export_declaration(&self) {
             // export pre-declaration loop seeding a plain `undefined` instead
             // of the TDZ sentinel, so a same-module self-import of the default
             // binding observed `undefined` instead of throwing ReferenceError.
-            self.register_export(mod, dflt_class_name, "default", false, 0, true)!;
+            self.register_export(mod, dflt_class_name, "default", false, 0, true, true)!;
             self.match(TokenType.SEMICOLON);
             return;
         }
@@ -5452,7 +5622,7 @@ fn void? CompilerContext.export_declaration(&self) {
         // runs it is in TDZ, so a same-module `import * as ns; ns.default`
         // executing above must observe the sentinel and throw ReferenceError,
         // register it lexical so link_module pre-declares the TDZ sentinel.
-        self.register_export(mod, "*default*", "default", false, 0, true)!;
+        self.register_export(mod, "*default*", "default", false, 0, true, true)!;
         // `export default AssignmentExpression ;` — the semicolon is part of
         // the production, so it is required (via ASI), unlike the
         // HoistableDeclaration / ClassDeclaration forms above, which end at
@@ -5492,11 +5662,17 @@ fn void? CompilerContext.export_declaration(&self) {
 
         char[][32] local_names;
         char[][32] export_names;
+        // Whether each specifier's LOCAL half used the StringLiteral form of
+        // ModuleExportName. Only meaningful until the `from` test below, see
+        // the early error there.
+        bool[32] local_is_string;
         uint count = 0;
 
         while (!self.check(TokenType.RBRACE) && !self.is_at_end()) {
             if (count >= 32) return COMPILE_ERROR~;
-            char[] local_str = self.parse_module_export_name()!;
+            bool local_was_string = false;
+            char[] local_str = self.parse_module_export_name(&local_was_string)!;
+            local_is_string[count] = local_was_string;
             if (self.match_as()) {
                 char[] alias_str = self.parse_module_export_name()!;
                 local_names[count] = local_str;
@@ -5528,6 +5704,19 @@ fn void? CompilerContext.export_declaration(&self) {
             // live binding from './x', including its own TDZ state,
             // rather than exporting a same-module local accessor that
             // never observes './x' at all.
+            //
+            // §16.2.3.1: "ExportDeclaration : export NamedExports ; — It is a
+            // Syntax Error if ReferencedBindings of NamedExports contains any
+            // ModuleExportName." Without a `from`, each specifier's local half
+            // names a binding in THIS module, and a StringLiteral cannot be an
+            // identifier, so `export { "foo" as "bar" }` is a SyntaxError even
+            // when a `function foo(){}` exists. With a `from` the same half is
+            // a name looked up in the other module, where a string is fine.
+            for (uint i = 0; i < count; i++) {
+                if (local_is_string[i]) {
+                    return self.fail("a string module export name requires a 'from' clause")~;
+                }
+            }
             for (uint i = 0; i < count; i++) {
                 CompImportEntry* ie = mod_find_import_by_local(mod, local_names[i]);
                 if (ie != null) {
@@ -5595,7 +5784,7 @@ fn void? CompilerContext.export_declaration(&self) {
         mod_register_func_decl(mod, fn_name2, inner_idx);
         self.free_reg(func_reg);
 
-        self.register_export(mod, fn_name2, fn_name2, false, 0)!;
+        self.register_export(mod, fn_name2, fn_name2, false, 0, false, true)!;
         self.match(TokenType.SEMICOLON);
         return;
     }
@@ -5608,7 +5797,7 @@ fn void? CompilerContext.export_declaration(&self) {
         // read-name-then-push-both-back approach corrupted the token stream.)
         char[] class_name;
         self.class_declaration(&class_name)!;
-        self.register_export(mod, class_name, class_name, false, 0, true)!;
+        self.register_export(mod, class_name, class_name, false, 0, true, true)!;
         self.match(TokenType.SEMICOLON);
         return;
     }
@@ -5638,7 +5827,7 @@ fn void? CompilerContext.export_declaration(&self) {
                 self.array_destructure(kind, is_lexical, is_const, &export_names[0], &export_names_count)!;
             }
             for (uint i = 0; i < export_names_count; i++) {
-                self.register_export(mod, export_names[i], export_names[i], false, 0, is_lexical)!;
+                self.register_export(mod, export_names[i], export_names[i], false, 0, is_lexical, true)!;
             }
             self.match(TokenType.SEMICOLON);
             return;
@@ -5682,7 +5871,7 @@ fn void? CompilerContext.export_declaration(&self) {
             self.emit_var_store(reg, name_idx, is_lexical, is_const);
             if (self.is_global) self.free_reg(reg);
 
-            self.register_export(mod, name_tok.str_value, name_tok.str_value, false, 0, is_lexical)!;
+            self.register_export(mod, name_tok.str_value, name_tok.str_value, false, 0, is_lexical, true)!;
 
             if (!self.match(TokenType.COMMA)) break;
         }

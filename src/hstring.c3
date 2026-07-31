@@ -679,6 +679,36 @@ fn uint encode_codepoint_cesu8(uint cp, char[] buf) {
     return 6;
 }
 
+/// ES2024 §6.1.4 `IsStringWellFormedUnicode(string)`: true iff the UTF-16
+/// code-unit sequence contains no lone (unpaired) surrogate. `data` is this
+/// engine's CESU-8 storage, where each code unit — including a surrogate half —
+/// is its own byte sequence.
+///
+/// Shared by String.prototype.isWellFormed and by the ModuleExportName early
+/// error (§16.2.3.1), which rejects a StringLiteral export name that is not
+/// well-formed.
+fn bool is_well_formed_unicode(char[] data) {
+    uint len = (uint)data.len;
+    uint i = 0;
+    while (i < len) {
+        uint seq_len = utf8_seq_len(data[i]);
+        uint cp = decode_codepoint(data, i);
+        if (is_high_surrogate(cp)) {
+            // Must be paired with an immediately following low surrogate.
+            uint next_off = i + seq_len;
+            if (next_off >= len) return false;
+            if (!is_low_surrogate(decode_codepoint(data, next_off))) return false;
+            i = next_off + utf8_seq_len(data[next_off]);
+        } else if (is_low_surrogate(cp)) {
+            // Low surrogate with no preceding high surrogate.
+            return false;
+        } else {
+            i += seq_len;
+        }
+    }
+    return true;
+}
+
 /// Byte length of the UTF-16 code unit starting at `data[offset]` in CESU-8
 /// storage. Every code unit, whether BMP or a surrogate half, is its own 1 to 4
 /// byte sequence, so this does what `utf8_seq_len` does. The separate name lets
