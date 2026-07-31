@@ -48,6 +48,23 @@ Four silent wrong-value or spec bugs, all of the same shape: an invariant hand-m
 - [ ] Two general codegen bugs fixed in `b0fdc49c` are covered only incidentally by the third-party `t11_colord` bundle
 - [x] Engine tests only exercised code we wrote — `test/rosetta-verbatim/` now runs 41 unmodified rosettacode.org samples, cross-checked against qjs and mutation-tested (`just rosetta`). Roughly half the candidate tasks are unusable as verbatim samples; `test/rosetta-verbatim/README.md` records each exclusion reason
 
+## Parser over-rejection (valid code refused)
+
+Found while clearing the parse-negative clusters in session 303. None are
+test262-visible — every phase reports 0 fail / 0 unexpected-CE — so these need
+their own regression tests or they will silently persist.
+
+- [ ] **`await` as an arrow parameter outside async** — `await => 1` and `(await) => 1` are rejected; node accepts both. Verified independently of the escaped-keyword family (the unescaped spelling fails identically, and it reproduces with the escape fix stashed). The async-context control is correct: `async function g(){ var f = await => 1; }` still rejects, matching node
+- [ ] **ClassHeritage rejects valid non-arrow forms** — `class C extends (() => {}) {}` (parenthesized arrow) and `class C extends [] {}` (array literal) are rejected; node accepts both. Confirmed pre-existing against a binary built at `1455e786`. Distinct from the bare `class C extends () => {}` case, which is correctly rejected — ClassHeritage is a LeftHandSideExpression, and a *parenthesized* arrow satisfies that
+
+## Latent runtime bugs
+
+- [ ] **`test/test_async_loops.js` segfaults under aggressive GC** — reproduces on clean `main` with only `mark_and_sweep`'s phase-4 rescale pinned to 1 (collect at every allocation), so it predates session 303 and is unrelated to the async-generator drain fix. Would likely reproduce under ASAN at normal GC settings given enough load. A real lifetime bug, currently invisible to every gate
+
+## Design debt
+
+- [ ] **One remaining hand-rolled copy of the `await` identifier predicate** — `src/compiler/destructuring.c3:45` (`shorthand_key_is_identifier_ref`) re-implements the same `is_module`/`is_async`/`forbid_await` triple as the shared `await_is_identifier`. Currently correct, so this is consolidation rather than a bug fix. Worth doing: this exact pattern — one invariant hand-maintained at N sites, wrong in the copies that omit it — has now been the root cause five times (the four session-302 codegen bugs, plans 063/064/065/066). Plans 064, 065, and 066 each fixed it by *removing* copies
+
 ## Out of scope
 
 - test262: Temporal, `intl402`, `staging`, annexB, `harness`, other Stage 3 proposals
