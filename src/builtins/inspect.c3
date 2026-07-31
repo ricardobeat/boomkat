@@ -1,11 +1,13 @@
-/// util.inspect-style value rendering for console output.
+/// Structured value rendering for console output: the form that prints
+/// `{ a: 1 }` and `[ 1, 2, 3 ]` where plain ToString would give
+/// `[object Object]` and `1,2,3`.
 ///
-/// REFERENCE: node's util.inspect (lib/internal/util/inspect.js), matched
-/// against node v24 rather than assumed. console.log, console.dir and the
-/// %o/%O specifiers all route here; the surrounding format-specifier machinery
-/// in global.c3 owns everything else.
+/// console.log, console.dir and the %o/%O specifiers all route here; the
+/// surrounding format-specifier machinery in global.c3 owns everything else.
+/// The exact output form is the de-facto one shared across JS runtimes, and
+/// test/console_format/ pins every rule below to captured reference output.
 ///
-/// Two rules from node that are easy to get backwards:
+/// Two rules that are easy to get backwards:
 ///
 ///   1. A TOP-LEVEL string renders bare (`console.log("x")` prints `x`), but a
 ///      string nested inside a structure is QUOTED (`{ a: 'x' }`). Only the
@@ -28,11 +30,11 @@ import duktape::heap;
 import duktape::hbigint;
 import std::math;
 
-/// Node's default `depth: 2`. A structure nested deeper renders as the
+/// The default depth limit. A structure nested deeper renders as the
 /// placeholder `[Object]` / `[Array]` rather than being expanded.
 const int INSPECT_MAX_DEPTH = 2;
 
-/// Node's `breakLength: 80`. Entries are joined on one line only while they fit
+/// The line-width budget. Entries are joined on one line only while they fit
 /// inside it; see inspect_fits_one_line for the exact arithmetic.
 const usz INSPECT_BREAK_LENGTH = 80;
 
@@ -54,10 +56,10 @@ struct InspectCtx {
     HObject*[INSPECT_MAX_STACK] stack;
     usz    stack_count;
     /// Set when a cycle was actually hit, which is what makes the root print
-    /// its `<ref *1>` prefix. Node only emits the marker when a back-reference
+    /// its `<ref *1>` prefix. The marker appears only when a back-reference
     /// exists, so `{ a: 1 }` must not gain one.
     bool   saw_circular;
-    /// Current indentation in spaces, mirroring node's `ctx.indentationLvl`.
+    /// Current indentation in spaces.
     usz    indent;
 }
 
@@ -66,8 +68,8 @@ struct InspectCtx {
 // ============================================================================
 
 /// Render `val` the way console.log renders a top-level argument, appending to
-/// `out`. A top-level string is emitted bare; everything else matches
-/// util.inspect.
+/// `out`. A top-level string is emitted bare; everything else takes its
+/// structured form.
 fn bool inspect_root(Heap* heap, void* vm, TVal* val, StrBuf* out) {
     if (val.is_string()) {
         HString* s = (HString*)val.get_heapptr();
@@ -80,17 +82,17 @@ fn bool inspect_root(Heap* heap, void* vm, TVal* val, StrBuf* out) {
     return inspect_nested(heap, vm, val, out);
 }
 
-/// Render `val` as util.inspect does in a NON-root position, where a string is
-/// quoted. This is what %o, %O and console.dir want, since none of them is the
+/// Render `val` as it appears in a NON-root position, where a string is quoted.
+/// This is what %o, %O and console.dir want, since none of them is the
 /// bare-string case.
 fn bool inspect_nested(Heap* heap, void* vm, TVal* val, StrBuf* out) {
     return inspect_at_depth(heap, vm, val, out, 0);
 }
 
-/// As inspect_nested, but starting at `start_depth`, which shortens the effective
-/// depth budget. %s passes 1, since node inspects a %s argument at depth 1 and
-/// so prints `{ a: [Object] }` where a plain argument would expand one level
-/// further.
+/// As inspect_nested, but starting at `start_depth`, which shortens the
+/// effective depth budget by that many levels. %s passes 2, leaving one level,
+/// since %s renders one level shallower than a plain argument
+/// and so prints `{ a: [Object] }` where a plain argument expands the `b`.
 fn bool inspect_at_depth(Heap* heap, void* vm, TVal* val, StrBuf* out, int start_depth) {
     InspectCtx ctx;
     ctx.heap = heap;
@@ -162,7 +164,7 @@ fn bool inspect_append_int(StrBuf* out, long v) {
     return out.append_bytes(buf[:(usz)len]);
 }
 
-/// ToString(Number), except that node prints negative zero as "-0" where
+/// ToString(Number), except that negative zero prints as "-0" where
 /// ToString collapses it to "0". The sign bit is the only way to tell the two
 /// apart, since -0.0 == 0.0.
 fn bool inspect_append_number(StrBuf* out, double d) {
@@ -180,7 +182,7 @@ fn bool inspect_append_symbol(StrBuf* out, HString* sym) {
     return out.append_char(')');
 }
 
-/// Quote a string the way node does: single quotes normally, double quotes when
+/// Quote a string: single quotes normally, double quotes when
 /// the content contains a single quote, backticks when it contains both. The
 /// chosen quote is then the only one that needs escaping.
 fn bool inspect_append_quoted(StrBuf* out, char[] data) {
@@ -234,7 +236,7 @@ fn char inspect_hex_digit(char nibble) @inline {
 // ============================================================================
 
 /// Index of `obj` on the current path, or -1. A hit is a back-reference, which
-/// node renders as [Circular *1].
+/// renders as [Circular *1].
 fn int inspect_stack_find(InspectCtx* ctx, HObject* obj) {
     for (usz i = 0; i < ctx.stack_count; i++) {
         if (ctx.stack[i] == obj) return (int)i;
@@ -405,7 +407,7 @@ fn char[] inspect_typedarray_name(hobject::ObjClass cls) {
     }
 }
 
-/// True for a boxed String/Number/Boolean, which node renders as
+/// True for a boxed String/Number/Boolean, which renders as
 /// [String: 'x'] rather than expanding its properties.
 fn bool inspect_is_boxed_primitive(HObject* obj) {
     return obj.flags.obj_class == hobject::ObjClass.STRING
@@ -423,7 +425,7 @@ struct InspectEntry {
     StrBuf buf;
 }
 
-/// The accumulated entries of one structure. Fixed capacity: node itself stops
+/// The accumulated entries of one structure. Fixed capacity: rendering stops
 /// at 100 entries and prints "... N more items", and that same cap keeps this
 /// walk from allocating without bound.
 const usz INSPECT_MAX_ENTRIES = 100;
@@ -431,7 +433,7 @@ const usz INSPECT_MAX_ENTRIES = 100;
 struct InspectEntries {
     InspectEntry[INSPECT_MAX_ENTRIES] items;
     usz count;
-    /// Entries the cap elided, reported as node's "... N more items".
+    /// Entries the cap elided, reported as "... N more items".
     usz elided;
     /// Cleared as soon as a non-numeric element is collected. Column grouping
     /// right-aligns a purely numeric array and left-aligns everything else.
@@ -460,7 +462,7 @@ fn bool inspect_entries(InspectCtx* ctx, HObject* obj, InspectShape shape, int d
     entries.all_numeric = true;
     defer entries.free();
 
-    // Entries are rendered one indent level deeper, matching node's
+    // Entries are rendered one indent level deeper, matching the
     // ctx.indentationLvl bump around the recursive call.
     ctx.indent += 2;
     bool ok = inspect_collect(ctx, obj, shape, depth, &entries);
@@ -537,7 +539,7 @@ fn uint inspect_typedarray_length(InspectCtx* ctx, HObject* obj) {
     return ta_element_count(obj);
 }
 
-/// Array elements, with runs of holes collapsed into node's
+/// Array elements, with runs of holes collapsed into the
 /// `<N empty items>` marker rather than printed as undefined.
 fn bool inspect_collect_indexed(InspectCtx* ctx, HObject* obj, int depth, InspectEntries* entries) {
     uint len = *obj.array_len_ptr();
@@ -589,7 +591,7 @@ fn bool inspect_array_element(InspectCtx* ctx, HObject* obj, uint i, TVal* out) 
     return true;
 }
 
-/// Named own properties, skipping non-enumerables the way node's default
+/// Named own properties, skipping non-enumerables the way the default
 /// (showHidden: false) does. `skip_indices` is set for arrays, whose index
 /// properties were already emitted by the element walk.
 ///
@@ -675,7 +677,7 @@ fn bool inspect_append_prop_value(InspectCtx* ctx, hobject::PropFlags flags, TVa
 }
 
 /// A key prints bare when it is a valid identifier, and quoted otherwise, so
-/// `{ 'a-b': 1 }` stays unambiguous. Node's test is /^[a-zA-Z_][a-zA-Z_0-9]*$/,
+/// `{ 'a-b': 1 }` stays unambiguous. The test is /^[a-zA-Z_][a-zA-Z_0-9]*$/,
 /// which notably rejects `$` and so quotes `valid_$`.
 fn bool inspect_append_key(StrBuf* b, HString* key) {
     if (key.is_symbol()) {
@@ -710,7 +712,7 @@ fn bool inspect_is_identifier(char[] data) {
 fn bool inspect_layout(InspectCtx* ctx, InspectShape shape, InspectEntries* entries, StrBuf* out) {
     if (!out.append_bytes(shape.prefix())) return false;
 
-    // An empty structure has no inner padding: node prints "{}" and "[]", not
+    // An empty structure has no inner padding: "{}" and "[]", not
     // "{ }". Its prefix still shows, as in "Map(0) {}".
     if (entries.count == 0 && entries.elided == 0) {
         if (!out.append_char(shape.open)) return false;
@@ -728,7 +730,7 @@ fn bool inspect_layout(InspectCtx* ctx, InspectShape shape, InspectEntries* entr
         grouped = entries.count != before;
     }
     // Grouped rows already carry their own ", " separators, so rejoining them
-    // on one line would double them up. Node likewise only reaches the
+    // on one line would double them up. The join is likewise only reached in
     // single-line join when grouping left the entry list alone.
     if (grouped) return inspect_layout_multiline(ctx, shape, entries, out);
 
@@ -770,11 +772,11 @@ fn bool inspect_layout_multiline(InspectCtx* ctx, InspectShape shape,
     return out.append_char(shape.close);
 }
 
-/// node's groupArrayElements: pack a long array of short entries into aligned
+/// Pack a long array of short entries into aligned
 /// columns, so `[1..10]` prints as two rows of five rather than ten lines.
 /// Rewrites `entries` in place, each remaining entry being one composed row.
 ///
-/// The arithmetic is node's own, including the "expect a character to be about
+/// The arithmetic includes the "expect a character to be about
 /// 2.5 times as high as wide" square-area heuristic that picks the column count.
 /// Numeric arrays right-align their columns; anything else left-aligns.
 fn bool inspect_group_array(InspectCtx* ctx, InspectEntries* entries) {
@@ -804,7 +806,7 @@ fn bool inspect_group_array(InspectCtx* ctx, InspectEntries* entries) {
     long columns = (long)math::round(math::sqrt(approx_char_heights * biased_max * (double)n) / biased_max);
     long fit_limit = (long)((INSPECT_BREAK_LENGTH - ctx.indent) / actual_max);
     if (fit_limit < columns) columns = fit_limit;
-    // ctx.compact defaults to 3, so node's `compact * 4` cap is 12.
+    // The compact setting defaults to 3, so the `compact * 4` cap is 12.
     if (columns > 12) columns = 12;
     if (columns > 15) columns = 15;
     if (columns <= 1) return true;
@@ -874,7 +876,7 @@ fn usz inspect_display_width(StrBuf* b) {
     return w;
 }
 
-/// node's "... N more items" tail for a structure past the entry cap.
+/// The "... N more items" tail for a structure past the entry cap.
 fn bool inspect_append_elision(InspectEntries* entries, StrBuf* out, bool need_separator) {
     if (entries.elided == 0) return true;
     if (need_separator && !out.append_bytes(", ")) return false;
@@ -890,20 +892,21 @@ fn bool inspect_append_indent(StrBuf* out, usz spaces) {
     return true;
 }
 
-/// node's reduceToSingleString: a structure stays on one line while it fits the
-/// 80-column break length. The arithmetic is node's own, verified against
-/// util.inspect across a sweep of entry counts, entry widths and nesting depths:
+/// A structure stays on one line while it fits the 80-column break length.
+/// The arithmetic was verified against captured reference output across a sweep
+/// of entry counts, entry widths and nesting depths:
 ///
 ///     start = count + indentationLvl + len(open brace) + len(prefix) + 10
 ///     total = count + start + sum(len(entry))
 ///     one line iff total <= 80
 ///
-/// There is deliberately no entry-count cap here. Node gates this join on
-/// `ctx.currentDepth - recurseTimes < ctx.compact`, i.e. on the HEIGHT of the
-/// value's own subtree rather than on how many entries it has, and the depth
-/// limit already caps that height below the threshold. So a wide-but-shallow
-/// object stays on one line however many entries it has, which is why
-/// `{ k0: 0, ..., k8: 8 }` does not break.
+/// There is deliberately no entry-count cap here. The reference rule gates this
+/// join on the HEIGHT of the value's own subtree rather than on how many entries
+/// it has, and the depth limit already caps that height below the threshold. So
+/// a wide-but-shallow object stays on one line however many entries it has,
+/// which is why `{ k0: 0, ..., k8: 8 }` does not break. An entry-count cap looks
+/// right on hand-picked shapes and is wrong; test/console_format/matrix.js is
+/// what catches that.
 ///
 /// An entry that itself broke onto multiple lines forces the parent to break
 /// too, since a newline inside an entry cannot appear on a single-line join.
@@ -926,7 +929,7 @@ fn bool inspect_fits_one_line(InspectCtx* ctx, InspectShape shape, InspectEntrie
 // ============================================================================
 
 /// [Function: name], [Function (anonymous)], [class C], [class (anonymous)].
-/// A function with extra own properties additionally shows them, as node does
+/// A function with extra own properties additionally shows them, as in
 /// with `[Function: f] { a: 1 }`.
 fn bool inspect_function(InspectCtx* ctx, HObject* obj, int depth, StrBuf* out) {
     bool is_class = inspect_is_class_ctor(obj);
@@ -1022,13 +1025,13 @@ fn bool inspect_append_indented_block(StrBuf* out, char[] data, usz indent) {
 }
 
 /// Shapes whose own string form is their rendering: RegExp (/re/g) and Symbol
-/// objects via toString, Date via toISOString — node prints a Date in ISO form,
+/// objects via toString, Date via toISOString — a Date prints in ISO form,
 /// not the locale-dependent toString form.
 fn bool inspect_via_tostring(InspectCtx* ctx, HObject* obj, StrBuf* out) {
     char[] method = obj.flags.obj_class == hobject::ObjClass.DATE
         ? "toISOString" : "toString";
     HString* s = inspect_call_method(ctx, obj, method);
-    // An invalid Date has no ISO form (toISOString throws), and node falls back
+    // An invalid Date has no ISO form (toISOString throws), so it falls back
     // to the toString form, which reads "Invalid Date".
     if (s == null && obj.flags.obj_class == hobject::ObjClass.DATE) {
         s = inspect_call_method(ctx, obj, "toString");
@@ -1060,14 +1063,14 @@ fn HString* inspect_call_method(InspectCtx* ctx, HObject* obj, char[] name) {
 }
 
 /// True when `obj` reaches a "toString" that is not the one on
-/// Object.prototype. Node's %s renders such an object through it, on the
+/// Object.prototype. %s renders such an object through it, on the
 /// grounds that an author who wrote a toString meant it to be the string form,
 /// while the inherited default would only ever yield "[object Object]".
 ///
 /// The prototype chain is walked rather than the own properties alone, since a
 /// class puts its toString on the prototype, not on the instance.
 ///
-/// A builtin's own toString does not count: node still inspects an Array, a Map
+/// A builtin's own toString does not count: an Array, a Map
 /// and an Error rather than printing "1,2" or "[object Map]", so only a
 /// toString reached before any builtin prototype qualifies.
 fn bool inspect_has_custom_tostring(Heap* heap, HObject* obj) {

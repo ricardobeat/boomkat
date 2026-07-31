@@ -1,9 +1,10 @@
-// Format-specifier cases for console.log. Asserted from the shell (run.sh)
-// against expected.txt, because what is under test is what console WRITES —
+// Format-specifier and value-rendering cases for console.log, one per rule so
+// that a failure names the rule. Asserted from the shell (run.sh) against
+// cases.expected.txt, because what is under test is what console WRITES —
 // a script cannot observe its own stdout.
 //
-// Kept free of anything node cannot run, so `node cases.js` regenerates
-// expected.txt verbatim. See run.sh for the regeneration command.
+// Kept portable and free of engine-specific syntax, so a reference runtime
+// regenerates cases.expected.txt verbatim. See run.sh for the command.
 
 // Substitution is gated on the first argument being a string AND at least one
 // further argument existing. With no extra argument the string is verbatim,
@@ -94,16 +95,16 @@ cyclicArr.push(cyclicArr);
 console.log("%j", cyclicArr);
 
 // ===========================================================================
-// util.inspect rendering
+// structured value rendering
 // ===========================================================================
 //
 // How console renders a value that no specifier claimed. Everything below is
-// node's util.inspect form, so `node cases.js` keeps regenerating expected.txt
-// and every rule here stays checkable against the reference implementation.
+// the structured inspect form, so the fixture keeps regenerating
+// cases.expected.txt and every rule here stays checkable against the reference.
 
 // --- plain objects and nesting -------------------------------------------
 // The inner spaces of "{ a: 1 }" are load-bearing, and an EMPTY object has
-// none: node prints "{}", not "{ }".
+// none: "{}", not "{ }".
 console.log({});
 console.log({ a: 1 });
 console.log({ a: 1, b: 2 });
@@ -152,7 +153,7 @@ console.log(["back\\slash"]);
 
 // --- keys -----------------------------------------------------------------
 // A key prints bare only when it is a valid identifier; note that "$" is NOT
-// one by node's rule, and that integer keys sort ahead of string keys.
+// one by the identifier rule, and that integer keys sort ahead of string keys.
 console.log({ "a-b": 1 });
 console.log({ valid_name: 1 });
 console.log({ valid_$: 1 });
@@ -251,8 +252,8 @@ cyclicSet.add(cyclicSet);
 console.log(cyclicSet);
 
 // --- line breaking --------------------------------------------------------
-// Node keeps a structure on one line only while it has at most six entries AND
-// the whole thing fits the 80-column break length.
+// A structure stays on one line while it fits the 80-column break length; the
+// entry count on its own does not decide it.
 console.log({ aaaaaaaaaa: 1, bbbbbbbbbb: 2, cccccccccc: 3 });
 console.log({ aaaaaaaaaa: 1, bbbbbbbbbb: 2, cccccccccc: 3, dddddddddd: 44444 });
 console.log({ k0: "vvvvv", k1: "vvvvv", k2: "vvvvv", k3: "vvvvv", k4: "vvvvv" });

@@ -7,10 +7,10 @@
 // The one-line/multi-line and column-grouping rules are sensitive to entry
 // count, entry width and nesting height at once, and a rule that looks right
 // across a handful of hand-picked cases can still be wrong; sweeping the sizes
-// below against node's own output is what makes that visible.
+// below against captured reference output is what makes that visible.
 //
-// Asserted from the shell (run.sh) against matrix.expected.txt, which is node's
-// captured output. Kept runnable by node — see run.sh for the regeneration
+// Asserted from the shell (run.sh) against matrix.expected.txt, which is
+// captured reference output. Kept portable — see run.sh for the regeneration
 // command.
 var elems = {
   int: function (i) { return i; },

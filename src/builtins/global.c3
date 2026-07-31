@@ -135,23 +135,25 @@ fn void console_print_args(BuiltinContext* ctx, bool use_stderr) {
 // console format specifiers
 // ============================================================================
 //
-// REFERENCE: Node's util.format (lib/internal/util/inspect.js, formatWithOptions),
-// NOT the bare WHATWG console Formatter. The two disagree on three points and
-// node is the useful target, since real-world code is written against it:
+// The target is the de-facto util.format behaviour shared across JS runtimes,
+// NOT the bare WHATWG console Formatter. The two disagree on three points, and
+// the de-facto form is the useful one since real-world code is written against
+// it:
 //
-//   - %j     WHATWG has no %j at all; node defines it as JSON.stringify with
-//            "[Circular]" substituted for a cyclic structure rather than a throw.
-//   - %o/%O  WHATWG says "optimally useful formatting"; node makes %o an inspect
-//            with showHidden/depth:4 and %O a plain inspect.
-//   - %c     WHATWG applies CSS; node ignores the directive but still CONSUMES
+//   - %j     WHATWG has no %j at all; it is JSON.stringify with "[Circular]"
+//            substituted for a cyclic structure rather than a throw.
+//   - %o/%O  WHATWG says "optimally useful formatting"; %o is an inspect with
+//            showHidden/depth:4 and %O a plain inspect.
+//   - %c     WHATWG applies CSS; the directive is ignored but still CONSUMES
 //            its argument, so it must not fall through to the trailing append.
 //
-// Two gating rules, both verified against node v24 rather than assumed:
+// Two gating rules, both verified against captured reference output rather
+// than assumed:
 //
 //   1. Substitution happens only when the first argument is a STRING and there
 //      is at least one further argument. `console.log("a %s b")` prints
 //      "a %s b" verbatim, and so does `console.log("pct %% end")` — with no
-//      extra args node never enters the formatter, so %% is NOT unescaped.
+//      extra args the formatter is never entered, so %% is NOT unescaped.
 //      Once any extra arg exists, `console.log("pct %% end", 1)` prints
 //      "pct % end 1". %% collapsing is gated on argument count, not on the
 //      console-vs-util distinction.
@@ -175,8 +177,8 @@ fn void ConsoleSink.write(&self, char[] bytes) {
     for (usz i = 0; i < bytes.len; i++) self.put(bytes[i]);
 }
 
-/// Emit one value the way console renders it outside any specifier: node's
-/// util.inspect form, with a top-level string emitted bare.
+/// Emit one value the way console renders it outside any specifier: the
+/// structured inspect form, with a top-level string emitted bare.
 fn void console_emit_value(BuiltinContext* ctx, ConsoleSink sink, TVal* val) {
     StrBuf out;
     out.init(ctx.heap);
@@ -274,16 +276,16 @@ fn void console_emit_specifier(BuiltinContext* ctx, ConsoleSink sink, char spec,
         case 'j':
             console_emit_json_spec(ctx, sink, arg);
         default:
-            // 'o' and 'O', both an inspect. They differ in node only by the
-            // options they pass (%o adds showHidden and depth 4), which this
-            // inspect does not vary, so both render the same form a plain
-            // argument would — except that a string under %o/%O is QUOTED,
-            // since the bare-string rule applies only to a top-level value.
+            // 'o' and 'O', both an inspect. They differ only by the options
+            // they imply (%o adds showHidden and depth 4), which this inspect
+            // does not vary, so both render the same form a plain argument
+            // would — except that a string under %o/%O is QUOTED, since the
+            // bare-string rule applies only to a top-level value.
             console_emit_inspect_spec(ctx, sink, arg);
     }
 }
 
-/// %s. Node uses String(value) semantics, not ToString: a Symbol renders as
+/// %s uses String(value) semantics, not ToString: a Symbol renders as
 /// "Symbol(desc)", where ToString(Symbol) would instead throw a TypeError.
 fn void console_emit_string_spec(BuiltinContext* ctx, ConsoleSink sink, TVal* arg) {
     if (arg.is_string()) {
@@ -299,15 +301,17 @@ fn void console_emit_string_spec(BuiltinContext* ctx, ConsoleSink sink, TVal* ar
     // An object carrying a toString of its own is rendered by it, since that is
     // what the author wrote it for; a function likewise prints its source. An
     // object that merely inherits Object.prototype's toString would stringify
-    // to the useless "[object Object]", so node inspects it instead.
+    // to the useless "[object Object]", so it is inspected instead.
     if (arg.is_object() && arg.get_heapptr() != null) {
         HObject* obj = (HObject*)arg.get_heapptr();
         if (obj.is_callable() || inspect_has_custom_tostring(ctx.heap, obj)) {
             if (sink.use_stderr) { print_tval_err_ctx(ctx, arg); } else { print_tval_ctx(ctx, arg); }
             return;
         }
-        // Node inspects a %s argument at depth 1, one level shallower than a
-        // plain argument, so `{a:{b:{c:1}}}` shows as `{ a: [Object] }`.
+        // A %s argument is inspected one level shallower than a plain
+        // argument, so `{a:{b:{c:1}}}` shows as `{ a: [Object] }` where a plain
+        // argument would expand the `b`. Starting two levels in rather than one
+        // is what leaves that single level of budget.
         StrBuf out;
         out.init(ctx.heap);
         defer out.free();
@@ -343,7 +347,7 @@ fn void console_emit_symbol(ConsoleSink sink, HString* sym) {
     sink.write(")");
 }
 
-/// %d, %i and %f. Node maps these onto three DIFFERENT coercions, not one:
+/// %d, %i and %f map onto three DIFFERENT coercions, not one:
 /// %d is Number(v) (so a valueOf() is honoured), %i is parseInt(v) and %f is
 /// parseFloat(v) (so both go via the STRING form and stop at the first
 /// unparseable character — parseInt(true) is NaN, but Number(true) is 1, and
@@ -444,7 +448,7 @@ fn void console_emit_json_spec(BuiltinContext* ctx, ConsoleSink sink, TVal* arg)
 
     if (jctx.error || ctx.heap.has_error) {
         // The only failure json_serialize_val raises for a well-formed value is
-        // the circular-structure TypeError; swallow it and use node's marker.
+        // the circular-structure TypeError; swallow it and use the marker.
         ctx.heap.has_error = had_error;
         sink.write("[Circular]");
         return;
