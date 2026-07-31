@@ -986,7 +986,13 @@ fn uint CompilerContext.pre_scan_lexical_decls(&self, NameSpan* spans, uint capa
         // Only collect let/const at the top level of this block (depth 0),
         // excluding for-head parens (see paren_depth above).
         if (brace_depth == 0 && paren_depth == 0 && (tt == TokenType.LET || tt == TokenType.CONST)) {
-            // Collect one or more identifier names (comma-separated).
+            // Collect one or more identifier names (comma-separated). The
+            // token that ends the list decides what follows: a `;` (or a
+            // pattern this loop cannot read) leaves us at a statement
+            // boundary, while an `=` leaves us inside an initialiser, where
+            // a following `class` is an EXPRESSION whose name binds nothing
+            // (`let A = class A {}` declares one `A`, not two).
+            TokenType list_end = TokenType.SEMICOLON;
             for (;;) {
                 Token? name_opt = self.lexer.next_token();
                 if (catch _err2 = name_opt) {
@@ -994,6 +1000,7 @@ fn uint CompilerContext.pre_scan_lexical_decls(&self, NameSpan* spans, uint capa
                 }
                 Token name_tok = name_opt;
                 if (name_tok.type != TokenType.IDENTIFIER) {
+                    list_end = name_tok.type;
                     break;
                 }
                 // Store the name's position in the source text.
@@ -1008,11 +1015,12 @@ fn uint CompilerContext.pre_scan_lexical_decls(&self, NameSpan* spans, uint capa
                 }
                 Token sep = sep_opt;
                 if (sep.type != TokenType.COMMA) {
+                    list_end = sep.type;
                     break;
                 }
                 // continue to the next declarator name
             }
-            prev_tt = TokenType.SEMICOLON;
+            prev_tt = list_end;
             continue;
         }
 
