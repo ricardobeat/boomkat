@@ -93,7 +93,11 @@ fn char[]? CompilerContext.destructuring_property_key(&self) {
     // keywords we extract the canonical spelling.
     char[] kw_str = lexer::keyword_to_string(tt);
     if (kw_str.len > 0) {
-        self.advance()!;
+        // A PropertyName is an IdentifierName, so an escaped spelling names
+        // the property (`var { break: x } = o`); in the shorthand form
+        // the key doubles as a BindingIdentifier, which is Identifier grammar
+        // too, so the escape stays legal there as well.
+        self.advance(true)!;
         return kw_str;
     }
     return COMPILE_ERROR~;

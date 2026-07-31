@@ -123,6 +123,55 @@ accepts("plain new.target",            "function f(){ new.target; }");
 accepts("plain label",                 "foo: for(;;) break foo;");
 accepts("class accessor",              "class C { get m(){ return 1; } }");
 
+// --- (a5) `static` and `await`: the same word is a terminal in one position
+// and an IdentifierName in the next, so the escape rule must split on
+// grammatical position rather than on the spelling alone.
+//
+// `static` is the terminal in `ClassElement : static MethodDefinition` and in
+// `static { }`, but is an ordinary member name in `static(){}` / `static;`.
+// The engine used to reject both, because the lookahead that tells them apart
+// consumed `static` through the escaped-keyword gate before it could decide.
+rejects("escaped static modifier",       "class C { st\\u0061tic m(){} }");
+rejects("escaped static before field",   "class C { st\\u0061tic x = 1; }");
+rejects("escaped static before get",     "class C { st\\u0061tic get m(){} }");
+rejects("escaped static block",          "class C { st\\u0061tic { } }");
+rejects("escaped static before name static", "class C { st\\u0061tic static m(){} }");
+accepts("escaped static method name",    "class C { st\\u0061tic(){ return 42; } }");
+accepts("escaped static field name",     "class C { st\\u0061tic; }");
+accepts("escaped static getter name",    "class C { get st\\u0061tic(){ return 7; } }");
+accepts("escaped static object key",     "({ st\\u0061tic: 1 });");
+
+// `await` is the terminal of AwaitExpression, but a BindingIdentifier is an
+// Identifier, so an escaped `await` names a class even where the unescaped
+// one is reserved. The unescaped restriction (an async body / a module) is a
+// property of the enclosing grammar and is unaffected by the escape rule.
+accepts("escaped await class decl",      "class aw\\u0061it {}");
+accepts("escaped await class expr",      "var C = class aw\\u0061it {};");
+accepts("escaped await binding",         "var aw\\u0061it = 1; await;");
+accepts("plain await class decl",        "class await {}");
+rejects("await class decl in async",     "async function f(){ class await {} }");
+rejects("await class expr in async",     "async function f(){ (class await {}); }");
+rejects("await as async generator name", "(async function* await(){});");
+rejects("escaped await operator",        "async function f(){ aw\\u0061it 1; }");
+accepts("escaped await fn decl name",    "function aw\\u0061it(){}");
+accepts("escaped await fn expr name",    "var f = function aw\\u0061it(){};");
+accepts("escaped await generator name",  "function* aw\\u0061it(){}");
+accepts("escaped await label",           "aw\\u0061it: for(;;) break aw\\u0061it;");
+accepts("escaped await dstr shorthand",  "var { aw\\u0061it } = { await: 1 };");
+
+// The same IdentifierName rule reaches positions that a lookahead used to
+// decide before the escape check could apply. These are all plain names.
+accepts("escaped accessor name",         "({ get \\u0062reak(){ return 1; } });");
+accepts("escaped setter name",           "({ set \\u0063lass(v){} });");
+accepts("escaped class accessor name",   "class C { get \\u0062reak(){ return 1; } }");
+accepts("escaped dstr long-form key",    "var { \\u0062reak: x } = { break: 1 };");
+// ...and the reserved words stay rejected in the binding positions they reach.
+rejects("escaped break as fn name",      "function \\u0062reak(){}");
+rejects("escaped class as fn name",      "function \\u0063lass(){}");
+rejects("escaped break as gen name",     "function* \\u0062reak(){}");
+rejects("escaped break as label",        "\\u0062reak: ;");
+rejects("escaped var dstr shorthand",    "var { \\u0076ar } = {};");
+
 // --- (b) legacy octal escapes, including in a directive prologue ---
 rejects("octal escape in prologue",
         '(function() {\n  "asterisk: \\052";\n  "use strict";\n});');

@@ -69,10 +69,14 @@ fn void CompilerContext.record_lex_error(&self) {
 
 /// Advance: consume the next token from the lexer and return it.
 ///
-/// `as_ident_name` marks the few positions whose grammar is IdentifierName
-/// rather than a ReservedWord terminal — an object-literal or class-member
-/// key. Escapes are legal there (`({ break: 1 })`, `class C { break(){} }`),
-/// so the escaped-keyword rejection below is skipped for those callers only.
+/// `as_ident_name` marks the positions whose grammar is an IdentifierName or
+/// a BindingIdentifier rather than a ReservedWord terminal: an object-literal
+/// or class-member key (`({ break: 1 })`, `class C { break(){} }`), a class
+/// name (`class await {}`), and the lookaheads that must consume `static`
+/// before they can tell the modifier from a member name. Escapes are legal in
+/// all of those (§5.1.5), so the rejection below is skipped for them; a
+/// lookahead that then resolves to the terminal re-applies the rule via
+/// reject_escaped_reserved_word.
 fn Token? CompilerContext.advance(&self, bool as_ident_name = false) {
     // Check pushback buffer first
     if (self.pushback_count > 0) {
@@ -159,7 +163,10 @@ fn Token? CompilerContext.expect_binding_identifier(&self) {
         return tok;
     }
     if (self.await_is_identifier(next)) {
-        return self.advance()!;
+        // A BindingIdentifier position wants an Identifier, not the `await`
+        // terminal, so an escaped spelling is a plain name here (§5.1.5) —
+        // the mirror of advance()'s rejection where the terminal is required.
+        return self.advance(true)!;
     }
     return self.expect(TokenType.IDENTIFIER)!;
 }
@@ -614,7 +621,7 @@ fn bool CompilerContext.match_async_method_prefix(&self) {
 fn bool? CompilerContext.match_static_modifier(&self) {
     self.static_elem_src_start = 0xFFFFFFFF;
     if (self.peek_type() != TokenType.STATIC) return false;
-    Token cur = self.advance()!;
+    Token cur = self.advance(true)!;
     // Peek the following token WITHOUT consuming it, on a true result the
     // method name (and everything after) must remain unconsumed so that
     // compile_inner_function, which builds a fresh context reading the shared
@@ -691,8 +698,25 @@ fn bool? CompilerContext.match_static_modifier(&self) {
         self.pushback(cur);
         return false;
     }
+    self.reject_escaped_reserved_word(cur)!;
     self.static_elem_src_start = next_src_start;
     return true;  // `static` stays consumed as modifier
+}
+
+/// Reject a token that has been decided to occupy a *ReservedWord* position
+/// once the lookahead that made the decision is complete.
+///
+/// `advance` gates escaped keywords at the point of consumption, but the two
+/// `static` lookaheads must consume the token before they can tell a
+/// modifier (`static m(){}`, `static { }` — terminal `static`, escapes
+/// illegal) from a member NAME (`static(){}`, `static;` — IdentifierName,
+/// escapes legal). They therefore consume with `as_ident_name` and call this
+/// on the branches that resolved to the terminal, so both directions of
+/// ES2024 §12.7.2 / §5.1.5 hold with one predicate rather than a second copy.
+fn void? CompilerContext.reject_escaped_reserved_word(&self, Token tok) {
+    if (tok.has_escape) {
+        return self.fail("keyword must not contain escaped characters")~;
+    }
 }
 
 /// Detect a class static initialization block (`static { ... }`, ES2022).
@@ -707,7 +731,7 @@ fn bool? CompilerContext.match_static_modifier(&self) {
 /// recovering here would resume mid-token and misparse the element.
 fn bool? CompilerContext.match_static_block_prefix(&self) {
     if (self.peek_type() != TokenType.STATIC) return false;
-    Token cur = self.advance()!;
+    Token cur = self.advance(true)!;
     TokenType next_tt;
     if (self.pushback_count > 0) {
         next_tt = self.pushback_stack[self.pushback_count - 1].type;
@@ -718,6 +742,7 @@ fn bool? CompilerContext.match_static_block_prefix(&self) {
         self.pushback(cur);
         return false;
     }
+    self.reject_escaped_reserved_word(cur)!;
     return true;  // `static` stays consumed as the block prefix
 }
 

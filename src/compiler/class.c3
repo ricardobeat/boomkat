@@ -224,7 +224,9 @@ fn void? CompilerContext.class_declaration(&self, char[]* out_name = null, bool 
         class_name = self.advance()!.str_value;
         class_name = ((Heap*)self.heap).str_intern(class_name).get_data();
     } else if (self.await_is_identifier(name_tt)) {
-        class_name = self.advance()!.str_value;
+        // BindingIdentifier position: an escaped `await` is a plain name, not
+        // the terminal, so it is consumed as an IdentifierName (§5.1.5).
+        class_name = self.advance(true)!.str_value;
         class_name = ((Heap*)self.heap).str_intern(class_name).get_data();
     } else if (allow_anonymous && (name_tt == TokenType.EXTENDS || name_tt == TokenType.LBRACE)) {
         // ES2024 §16.2.3.7: `export default class { ... }`, the class's
@@ -319,7 +321,9 @@ fn ushort? CompilerContext.class_expression(&self) {
     bool is_valid_class_name = (class_name_tt == TokenType.IDENTIFIER) ||
         self.await_is_identifier(class_name_tt);
     if (is_valid_class_name) {
-        Token name_tok = self.advance()!;
+        // BindingIdentifier position: an escaped `await` is a plain name, not
+        // the terminal, so it is consumed as an IdentifierName (§5.1.5).
+        Token name_tok = self.advance(true)!;
         // Intern now: an escaped class name borrows the lexer's shared
         // ident_buf scratch, which the extends clause and class body parsed
         // below will overwrite. declare_var stores this slice into

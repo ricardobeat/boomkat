@@ -4200,7 +4200,11 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 if (self.is_module || self.forbid_await) {
                     return COMPILE_ERROR~;
                 }
-                Token id_tok = self.advance()!;
+                // IdentifierReference (or an arrow's single parameter) rather
+                // than the AwaitExpression terminal, so an escaped spelling is
+                // a plain name here. The [+Await] branch below keeps rejecting
+                // it, where `await` really is the terminal.
+                Token id_tok = self.advance(true)!;
                 if (!reject_arrow_head && self.check_arrow()) {
                     // `await => ...` could be an arrow function with one
                     // identifier parameter named "await".
@@ -4954,7 +4958,10 @@ fn ushort? CompilerContext.object_literal(&self) {
                         Token prop_tok;
                         if (prop_tt == TokenType.IDENTIFIER || prop_tt == TokenType.STRING
                             || lexer::keyword_to_string(prop_tt).len > 0) {
-                            prop_tok = self.advance()!;
+                            // An accessor's PropertyName is an IdentifierName
+                            // like a plain key, so `({ get break(){} })`
+                            // names the accessor rather than being rejected.
+                            prop_tok = self.advance(true)!;
                         } else if (prop_tt == TokenType.NUMBER) {
                             prop_tok = self.advance()!;
                         } else {

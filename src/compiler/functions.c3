@@ -3712,7 +3712,9 @@ fn ushort? CompilerContext.function_expr(&self, bool is_async_expr = false) {
     // never a function name.
     if (self.check(TokenType.IDENTIFIER) ||
         (self.check(TokenType.AWAIT) && !self.is_module && !is_async_expr)) {
-        Token name_tok = self.advance()!;
+        // BindingIdentifier position: an escaped `await` is a plain name, not
+        // the terminal, so it is consumed as an IdentifierName (§5.1.5).
+        Token name_tok = self.advance(true)!;
         // The name is a BindingIdentifier, so §13.1.1's restricted names are
         // rejected. Checked here rather than via expect_binding_identifier
         // because the name is optional and the `await` branch above has

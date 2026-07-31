@@ -447,8 +447,12 @@ fn void? CompilerContext.statement(&self) {
                 // function body and underflow the retained-source span.
                 self.lexer.refresh_token_start();
                 uint id_tok_start = self.lexer.token_start;
-                // Consume the identifier token to check what follows
-                Token id_tok = self.advance()!;
+                // Consume the identifier token to check what follows. The
+                // guard above admits only IDENTIFIER and an `await` that this
+                // context already treats as an identifier, and both a
+                // LabelIdentifier and an IdentifierReference are Identifier
+                // grammar, so an escaped spelling is a plain name here.
+                Token id_tok = self.advance(true)!;
                 if (self.peek_type() == TokenType.COLON) {
                     // A LabelIdentifier is an Identifier (§14.13), so a
                     // ReservedWord may not be one. `true`/`false`/`null` lex
@@ -1731,8 +1735,10 @@ fn void? CompilerContext.var_declaration(&self) {
             bool ctx_keyword_ident = false;
             if (next == TokenType.IDENTIFIER) {
                 name_tok = self.advance()!;
-            } else if (next == TokenType.AWAIT && !self.is_module && !self.is_async && !self.forbid_await) {
-                name_tok = self.advance()!;
+            } else if (self.await_is_identifier(next)) {
+                // BindingIdentifier position: an escaped `await` is a plain
+                // name, not the terminal, so consume it as an IdentifierName.
+                name_tok = self.advance(true)!;
                 ctx_keyword_ident = true;
             } else {
                 return COMPILE_ERROR~;
@@ -4865,8 +4871,10 @@ fn void? CompilerContext.break_statement(&self) {
     self.expect(TokenType.BREAK)!;
 
     if (self.peek_is_label_identifier() && !self.lexer.seen_line_term) {
-        // Labeled break, find the label and add jump to its loop's break chain
-        Token label_tok = self.advance()!;
+        // Labeled break, find the label and add jump to its loop's break chain.
+        // A LabelIdentifier is an Identifier, so an escaped spelling is a
+        // plain name — the same rule that let the label be DEFINED.
+        Token label_tok = self.advance(true)!;
         char[] label_name = label_tok.str_value;
 
         for (uint i = 0; i < self.label_count; i++) {
@@ -4939,8 +4947,9 @@ fn void? CompilerContext.continue_statement(&self) {
     self.expect(TokenType.CONTINUE)!;
 
     if (self.peek_is_label_identifier() && !self.lexer.seen_line_term) {
-        // Labeled continue, find the label and jump to its loop's continue target
-        Token label_tok = self.advance()!;
+        // Labeled continue, find the label and jump to its loop's continue
+        // target. Same Identifier grammar as the labeled break above.
+        Token label_tok = self.advance(true)!;
         char[] label_name = label_tok.str_value;
 
         for (uint i = 0; i < self.label_count; i++) {
@@ -5058,8 +5067,11 @@ fn void? CompilerContext.function_declaration(&self, bool is_async_decl = false,
         // generator declaration fell through to re-compile and re-run
         // CLOSURE+DECLVAR at its own textual position, re-instantiating a
         // fresh closure that link-time hoisting had already installed once.)
-        Token star_opt = self.advance()!;
-        Token name_opt = star_opt.type == TokenType.STAR ? self.advance()! : star_opt;
+        // Pure lookahead: both tokens are pushed back below and re-read by
+        // expect_binding_identifier, which owns the escaped-keyword decision
+        // for this position, so this peek must not pre-empt it.
+        Token star_opt = self.advance(true)!;
+        Token name_opt = star_opt.type == TokenType.STAR ? self.advance(true)! : star_opt;
         if (name_opt.type == TokenType.IDENTIFIER) {
             char[] fn_name = name_opt.str_value;
             if (fn_name.len > 0) {
