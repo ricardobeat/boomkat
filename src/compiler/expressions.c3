@@ -2642,6 +2642,19 @@ fn ushort? CompilerContext.new_expr(&self) {
             return COMPILE_ERROR~;
         }
     } else {
+        // `new`'s callee is a MemberExpression (ES2024 §13.3), and an
+        // ImportCall is a CallExpression, so `new import('')` is a
+        // SyntaxError however deeply it is nested. `import.meta` is a
+        // MemberExpression and stays legal, as does `new (import(''))`,
+        // where the parentheses make the call a PrimaryExpression.
+        if (self.check(TokenType.IMPORT)) {
+            Token import_tok = self.advance()!;
+            TokenType after_import = self.peek_type();
+            self.lexer.pushback(import_tok);
+            if (after_import != TokenType.DOT) {
+                return self.fail("'import' call is not a valid constructor")~;
+            }
+        }
         // Parse the constructor (could be member access)
         ctor_reg = self.member_expr()!;
 
