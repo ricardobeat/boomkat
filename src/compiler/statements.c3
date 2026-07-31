@@ -1305,13 +1305,21 @@ fn void? CompilerContext.check_lexical_var_conflicts(&self, NameSpan* lex_spans,
 
 /// Parse a block: { statement* }
 /// If `check_directives` is true, checks for "use strict" directive prologue at the start.
-fn void? CompilerContext.block(&self, bool check_directives, bool suppress_regex_hint = false) {
+/// `is_param_body` marks a block that is the body scope of an enclosing
+/// parameter list, so a top-level `let`/`const` in it may not redeclare a
+/// parameter name. True for a function body (implied by `check_directives`,
+/// which only the function-body call sites pass) and for a `catch` block,
+/// whose relationship to its CatchParameter is the same one (§14.15.1).
+fn void? CompilerContext.block(&self, bool check_directives, bool suppress_regex_hint = false,
+                               bool is_param_body = false) {
     self.expect(TokenType.LBRACE)!;
     uint saved_depth = self.scope_depth;
     ushort saved_reg = self.next_reg;
 
-    // Push a scope marker so duplicate let/const checks stop at this block boundary.
-    self.push_scope_marker();
+    // Push a scope marker so duplicate let/const checks stop at this block
+    // boundary, transparent to the parameter-redeclaration check when this
+    // block is a parameter list's body scope.
+    self.push_scope_marker(check_directives || is_param_body);
 
     // Pre-scan for let/const declarations at this block level so we can
     // TDZ-initialize them at block entry (before any code in the block runs).
@@ -1349,6 +1357,19 @@ fn void? CompilerContext.block(&self, bool check_directives, bool suppress_regex
     // covered by the declaration-site duplicate check in var_declaration.
     if (lexical_fns) {
         self.check_duplicate_lexical_names(&lex_spans[0], num_lex)!;
+    }
+
+    // §14.15.1: the CatchParameter's BoundNames must not appear in the catch
+    // block's LexicallyDeclaredNames. A block-level FunctionDeclaration is
+    // lexical in strict code, so `catch (e) { function e(){} }` is caught
+    // here, where the pre-scan has already collected it; the declaration-site
+    // walk in var_declaration only ever sees `let`/`const`. The B.3.4
+    // exemption that lets a catch block's `var` reuse the name does not
+    // extend to a lexical declaration.
+    if (is_param_body && !check_directives) {
+        for (uint i = 0; i < num_lex; i++) {
+            self.check_lexical_redeclares_param(self.name_span_text(lex_spans[i]))!;
+        }
     }
 
     // ES2024 §13.2.1 / §15.7.11 BlockDeclarationInstantiation: the
@@ -1531,6 +1552,7 @@ fn void? CompilerContext.var_declaration(&self) {
             } else {
                 // Check for duplicate let/const in the same block scope (ES6 §13.3.1)
                 if (is_lexical) {
+                    self.check_lexical_redeclares_param(name_tok.str_value)!;
                     uint i = self.scope_depth;
                     while (i > 0) {
                         i--;
@@ -2356,6 +2378,12 @@ fn void? CompilerContext.for_statement(&self) {
                 } else {
                     self.collect_obj_param_binds(dbinds[..], &bind_count, 0, 0xFFFF)!;
                 }
+                // A `let`/`const` ForDeclaration's BoundNames must be unique
+                // (§14.7.5.1). A `var` head is exempt: the repeated names all
+                // denote the same var binding.
+                if (is_lexical) {
+                    self.check_pattern_bound_names_unique(dbinds[..], bind_count)!;
+                }
                 for (uint i = 0; i < bind_count; i++) {
                     if (dbinds[i].is_synthetic) continue;
                     HString* hs = (HString*)self.constants[dbinds[i].name_idx].get_heapptr();
@@ -2436,6 +2464,10 @@ fn void? CompilerContext.for_statement(&self) {
                     self.collect_arr_param_binds(fdbinds[..], &fdcount, 0, 0xFFFF)!;
                 } else {
                     self.collect_obj_param_binds(fdbinds[..], &fdcount, 0, 0xFFFF)!;
+                }
+                // §14.7.5.1, as for the for-of head above.
+                if (is_lexical) {
+                    self.check_pattern_bound_names_unique(fdbinds[..], fdcount)!;
                 }
                 ushort[MAX_DESTRUCT_BINDS] fdgroup_regs;
                 ushort[MAX_DESTRUCT_BINDS] fdbinding_regs;
@@ -4136,17 +4168,15 @@ fn void? CompilerContext.try_statement(&self) {
             } else {
                 // CatchParameter's BindingIdentifier is [?Yield, ?Await], so
                 // `await`/`yield` are valid names where the context permits
-                // (e.g. inside a non-async arrow nested in a static block). The
-                // context-blind is_restricted_name check below must not
-                // re-reject a keyword the helper already vetted for this context.
+                // (e.g. inside a non-async arrow nested in a static block).
+                // expect_binding_identifier applies the restricted-name rule
+                // to the plain-identifier path only, exactly matching that.
                 Token catch_param = self.expect_binding_identifier()!;
-                bool catch_ctx_keyword = catch_param.type != TokenType.IDENTIFIER;
-                if (!catch_ctx_keyword && is_restricted_name(catch_param.str_value)) {
-                    return self.fail("reserved word cannot be used as a catch parameter")~;
-                }
                 self.expect(TokenType.RPAREN)!;
 
-                ushort catch_var = self.declare_var(catch_param.str_value, VAR);
+                // Marked as a parameter: the catch body's `let`/`const` may not
+                // redeclare it (§14.15.1), though a body `var` may.
+                ushort catch_var = self.declare_var(catch_param.str_value, VAR, true);
                 // Force the catch variable through the environment (GETVAR/PUTVAR)
                 // instead of direct register access.  PUTVAR clears the source
                 // register after storing to the env (for refcount correctness),
@@ -4175,8 +4205,9 @@ fn void? CompilerContext.try_statement(&self) {
             self.free_reg(discard);
         }
 
-        // Compile catch block
-        self.block(false)!;
+        // Compile catch block. It is the CatchParameter's body scope, so a
+        // top-level `let`/`const` in it may not redeclare the parameter.
+        self.block(false, false, true)!;
 
         // Close the catch-binding scope on the normal exit path (exceptional
         // exits rebalance via the Catcher's saved lex_env; returns tear down
@@ -5554,18 +5585,34 @@ fn void? CompilerContext.compile_catch_array_pattern(&self, ushort catch_val_reg
     DestructBind[MAX_DESTRUCT_BINDS] binds;
     uint count = 0;
     self.collect_arr_param_binds(binds[..], &count, catch_val_reg, 0xFFFF)!;
-    self.emit_catch_pattern(binds[..], count, catch_val_reg);
+    self.emit_catch_pattern(binds[..], count, catch_val_reg)!;
+}
+
+/// The BoundNames of a destructuring pattern must contain no duplicates
+/// wherever the pattern introduces LEXICAL bindings: a CatchParameter
+/// (§14.15.1) and a `let`/`const` ForDeclaration (§14.7.5.1). A `var` pattern
+/// is exempt, its repeated names all denote the same var binding, so
+/// `for (var [x, x] of ...)` is legal.
+///
+/// SeenParams already implements exactly this check for FormalParameters, so
+/// this reuses it rather than growing a second duplicate-name walk.
+fn void? CompilerContext.check_pattern_bound_names_unique(&self, DestructBind[] binds, uint count) {
+    SeenParams seen;
+    seen.declare_destructured(binds, count)!;
 }
 
 /// Shared tail for both catch patterns: declare LET leaves, then emit.
-fn void CompilerContext.emit_catch_pattern(&self, DestructBind[] binds, uint count, ushort src_reg) {
+fn void? CompilerContext.emit_catch_pattern(&self, DestructBind[] binds, uint count, ushort src_reg) {
+    self.check_pattern_bound_names_unique(binds, count)!;
     ushort[MAX_DESTRUCT_BINDS] group_regs;
     ushort[MAX_DESTRUCT_BINDS] binding_regs;
     for (uint i = 0; i < count; i++) { group_regs[i] = 0xFFFF; binding_regs[i] = 0xFFFF; }
     for (uint i = 0; i < count; i++) {
         if (binds[i].is_synthetic) continue;
         HString* hs = (HString*)self.constants[binds[i].name_idx].get_heapptr();
-        binding_regs[i] = self.declare_var(hs.get_data(), ScopeKind.LET);
+        // A destructured leaf is still a CatchParameter BoundName, so the
+        // catch block's lexical declarations may not redeclare it (§14.15.1).
+        binding_regs[i] = self.declare_var(hs.get_data(), ScopeKind.LET, true);
     }
     for (uint i = 0; i < count; i++) {
         if (binds[i].parent_idx == 0xFFFF) binds[i].arg_idx = src_reg;
@@ -5581,5 +5628,5 @@ fn void? CompilerContext.compile_catch_object_pattern(&self, ushort catch_val_re
     DestructBind[MAX_DESTRUCT_BINDS] binds;
     uint count = 0;
     self.collect_obj_param_binds(binds[..], &count, catch_val_reg, 0xFFFF)!;
-    self.emit_catch_pattern(binds[..], count, catch_val_reg);
+    self.emit_catch_pattern(binds[..], count, catch_val_reg)!;
 }

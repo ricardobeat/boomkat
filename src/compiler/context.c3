@@ -99,6 +99,19 @@ struct ScopeEntry {
     /// while the sentinel is still in place.  Cleared by `emit_var_store`
     /// after the binding's `PUTLEX`/`PUTLEX_C` is emitted.
     bool is_tdz;
+    /// True for a formal parameter or a catch parameter, both of which are
+    /// pushed with kind VAR because they share `var`'s register and env
+    /// treatment.  The distinction matters only for the §14.1.2 / §14.15.1
+    /// early error that a body `let`/`const` may not redeclare one: a body
+    /// `var` of the same name is explicitly allowed (it resolves to the same
+    /// binding), so `kind` alone cannot tell the two cases apart.
+    bool is_param;
+    /// SCOPEMARK entries only: true for the marker a function BODY opens, as
+    /// opposed to a nested BlockStatement.  The parameter check above sees
+    /// through this marker (a body's top-level lexical names collide with the
+    /// parameter list) and stops at every other one (a nested block's shadow
+    /// it freely).
+    bool is_body_mark;
 }
 
 struct LoopInfo {

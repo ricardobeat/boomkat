@@ -2556,7 +2556,7 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
                     // slice into scope_stack, which outlives the current token.
                     HString* rest_hstr = ((Heap*)self.heap).str_intern(rest_param.str_value);
                     char[] rest_name2 = rest_hstr.get_data();
-                    ushort rest_reg = self.declare_var(rest_name2, VAR);
+                    ushort rest_reg = self.declare_var(rest_name2, VAR, true);
                     uint rest_name_idx = self.add_string_constant(rest_name2);
                     self.emit_a_bc(Opcode.DECLVAR, (uint)rest_reg, rest_name_idx);
                 }
@@ -2605,7 +2605,7 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
             // stores this slice into scope_stack, which outlives this token.
             HString* param_hstr = ((Heap*)self.heap).str_intern(param.str_value);
             char[] param_name2 = param_hstr.get_data();
-            ushort param_reg = self.declare_var(param_name2, VAR);
+            ushort param_reg = self.declare_var(param_name2, VAR, true);
             uint param_name_idx = self.add_string_constant(param_name2);
             arg_count++;
 
@@ -2678,7 +2678,7 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
         }
         uint ni = destruct_binds[i].name_idx;
         char[] name = destruct_binds[i].name_buf[:destruct_binds[i].name_len];
-        ushort dreg = self.declare_var(name, VAR);
+        ushort dreg = self.declare_var(name, VAR, true);
         destruct_binding_regs[i] = dreg;
         self.emit_a_bc(Opcode.DECLVAR, (uint)dreg, ni);
     }
@@ -3127,7 +3127,7 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
                     // slice into scope_stack, which outlives the current token.
                     HString* rest_hstr = ((Heap*)inner_ctx.heap).str_intern(rest_param.str_value);
                     char[] rest_name2 = rest_hstr.get_data();
-                    ushort rest_reg = inner_ctx.declare_var(rest_name2, VAR);
+                    ushort rest_reg = inner_ctx.declare_var(rest_name2, VAR, true);
                     uint rest_name_idx = inner_ctx.add_string_constant(rest_name2);
                     inner_ctx.emit_a_bc(Opcode.DECLVAR, (uint)rest_reg, rest_name_idx);
                 }
@@ -3198,7 +3198,7 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
             // stores this slice into scope_stack, which outlives this token.
             HString* param_hstr = ((Heap*)inner_ctx.heap).str_intern(param.str_value);
             char[] param_name2 = param_hstr.get_data();
-            ushort param_reg = inner_ctx.declare_var(param_name2, VAR);
+            ushort param_reg = inner_ctx.declare_var(param_name2, VAR, true);
             uint param_name_idx = inner_ctx.add_string_constant(param_name2);
             arg_count++;
             // DECLVAR creates binding in var_env.
@@ -3263,7 +3263,7 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
         }
         uint ni = inner_destruct_binds[i].name_idx;
         char[] bind_name = inner_destruct_binds[i].name_buf[:inner_destruct_binds[i].name_len];
-        ushort dreg = inner_ctx.declare_var(bind_name, VAR);
+        ushort dreg = inner_ctx.declare_var(bind_name, VAR, true);
         inner_destruct_binding_regs[i] = dreg;
         inner_ctx.emit_a_bc(Opcode.DECLVAR, (uint)dreg, ni);
     }
@@ -3741,7 +3741,7 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
                     // slice into scope_stack, which outlives the current token.
                     HString* rest_hstr = ((Heap*)arrow_ctx.heap).str_intern(rest_param.str_value);
                     char[] rest_name2 = rest_hstr.get_data();
-                    ushort rest_reg = arrow_ctx.declare_var(rest_name2, VAR);
+                    ushort rest_reg = arrow_ctx.declare_var(rest_name2, VAR, true);
                     uint rest_name_idx = arrow_ctx.add_string_constant(rest_name2);
                     arrow_ctx.emit_a_bc(Opcode.DECLVAR, (uint)rest_reg, rest_name_idx);
                 }
@@ -3801,7 +3801,7 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
             // stores this slice into scope_stack, which outlives this token.
             HString* param_hstr = ((Heap*)arrow_ctx.heap).str_intern(param.str_value);
             char[] param_name2 = param_hstr.get_data();
-            ushort param_reg = arrow_ctx.declare_var(param_name2, VAR);
+            ushort param_reg = arrow_ctx.declare_var(param_name2, VAR, true);
             uint param_name_idx = arrow_ctx.add_string_constant(param_name2);
             arg_count++;
             // DECLVAR creates binding in var_env.
@@ -3865,7 +3865,7 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
         }
         uint ni = arrow_destruct_binds[i].name_idx;
         char[] bind_name = arrow_destruct_binds[i].name_buf[:arrow_destruct_binds[i].name_len];
-        ushort dreg = arrow_ctx.declare_var(bind_name, VAR);
+        ushort dreg = arrow_ctx.declare_var(bind_name, VAR, true);
         arrow_destruct_binding_regs[i] = dreg;
         arrow_ctx.emit_a_bc(Opcode.DECLVAR, (uint)dreg, ni);
     }
@@ -4189,7 +4189,7 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner(&self, char[]* params,
                 if (match) return COMPILE_ERROR~;
             }
         }
-        ushort param_reg = arrow_ctx.declare_var(name, VAR);
+        ushort param_reg = arrow_ctx.declare_var(name, VAR, true);
         uint param_name_idx = arrow_ctx.add_string_constant(name);
         arrow_ctx.emit_a_bc(Opcode.DECLVAR, (uint)param_reg, param_name_idx);
     }

@@ -257,7 +257,10 @@ fn void? CompilerContext.class_declaration(&self, char[]* out_name = null, bool 
     // binding (so `Foo` resolves to the constructor from the outer scope).
 
     // Outer let-style binding: holds the constructor after the class evaluates.
-    // Same as the existing let/const treatment for class declarations.
+    // Same as the existing let/const treatment for class declarations, which
+    // includes the §14.1.2 rule that a body-level lexical declaration may not
+    // redeclare a parameter name.
+    self.check_lexical_redeclares_param(class_name)!;
     ushort class_reg = self.declare_var(class_name, LET);
     uint class_name_idx = self.add_string_constant(class_name);
 
