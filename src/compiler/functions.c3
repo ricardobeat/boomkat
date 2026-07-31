@@ -233,9 +233,6 @@ fn void? CompilerContext.collect_obj_param_binds(&self,
         // Rest element: {...rest}
         if (self.match(TokenType.ELLIPSIS)) {
             Token rest_tok = self.expect_binding_identifier()!;
-            if (rest_tok.type == TokenType.IDENTIFIER && is_restricted_name(rest_tok.str_value)) {
-                return COMPILE_ERROR~;
-            }
             if (*count < binds.len) {
                 binds[*count].name_idx = self.add_string_constant(rest_tok.str_value);
                 binds[*count].key_idx = 0xFFFF;
@@ -289,7 +286,6 @@ fn void? CompilerContext.collect_obj_param_binds(&self,
                 }
             } else {
                 Token bind = self.expect_binding_identifier()!;
-                if (bind.type == TokenType.IDENTIFIER && is_restricted_name(bind.str_value)) return COMPILE_ERROR~;
                 if (*count < binds.len) {
                     binds[*count].name_idx = self.add_string_constant(bind.str_value);
                     binds[*count].is_computed_key = true;
@@ -341,9 +337,6 @@ fn void? CompilerContext.collect_obj_param_binds(&self,
                 }
             } else {
                 Token bind = self.expect_binding_identifier()!;
-                if (bind.type == TokenType.IDENTIFIER && is_restricted_name(bind.str_value)) {
-                    return COMPILE_ERROR~;
-                }
                 if (*count < binds.len) {
                     binds[*count].name_idx = self.add_string_constant(bind.str_value);
                     binds[*count].key_idx = prop_key_idx;
@@ -485,9 +478,6 @@ fn void? CompilerContext.collect_arr_param_binds(&self,
                 }
             } else {
                 Token rest_tok = self.expect_binding_identifier()!;
-                if (rest_tok.type == TokenType.IDENTIFIER && is_restricted_name(rest_tok.str_value)) {
-                    return COMPILE_ERROR~;
-                }
                 if (*count < binds.len) {
                     binds[*count].name_idx = self.add_string_constant(rest_tok.str_value);
                     binds[*count].key_idx = 0xFFFF;
@@ -531,9 +521,6 @@ fn void? CompilerContext.collect_arr_param_binds(&self,
             }
         } else {
             Token bind = self.expect_binding_identifier()!;
-            if (bind.type == TokenType.IDENTIFIER && is_restricted_name(bind.str_value)) {
-                return COMPILE_ERROR~;
-            }
             if (*count < binds.len) {
                 binds[*count].name_idx = self.add_string_constant(bind.str_value);
                 binds[*count].key_idx = 0;  // use index instead
@@ -2209,6 +2196,16 @@ fn void? CompilerContext.hoist_global_fn_decls(&self, bool checks_only = false) 
             if (catch _err = name_opt) break;
             if (name_opt.type != TokenType.IDENTIFIER) continue;
 
+            // A top-level declaration's name is a BindingIdentifier, so the
+            // §13.1.1 restricted names are rejected. The check has to happen
+            // in the pre-scan and not only in function_declaration: once a
+            // name is recorded as hoisted, the statement pass skips the
+            // declaration outright and never reaches
+            // expect_binding_identifier's own check.
+            if (is_restricted_name(name_opt.str_value)) {
+                return self.fail("reserved word cannot be used as a binding identifier")~;
+            }
+
             char[] fn_name = name_opt.str_value;
             if (fn_name.len == 0) continue;
 
@@ -3492,6 +3489,13 @@ fn ushort? CompilerContext.function_expr(&self, bool is_async_expr = false) {
     if (self.check(TokenType.IDENTIFIER) ||
         (self.check(TokenType.AWAIT) && !self.is_module && !self.is_async)) {
         Token name_tok = self.advance()!;
+        // The name is a BindingIdentifier, so §13.1.1's restricted names are
+        // rejected. Checked here rather than via expect_binding_identifier
+        // because the name is optional and the `await` branch above has
+        // already made its own enclosing-grammar decision.
+        if (name_tok.type == TokenType.IDENTIFIER && is_restricted_name(name_tok.str_value)) {
+            return self.fail("reserved word cannot be used as a binding identifier")~;
+        }
         // Intern now: an escaped function-expression name borrows the
         // lexer's shared ident_buf scratch. compile_inner_function below
         // copies `name` into the CompiledFunction only AFTER compiling the

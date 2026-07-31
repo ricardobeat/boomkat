@@ -2584,7 +2584,10 @@ fn void? CompilerContext.for_statement(&self) {
                 self.expect(TokenType.SEMICOLON)!;
             }
         } else {
-            Token name_tok = self.expect(TokenType.IDENTIFIER)!;
+            // A `for (var|let|const X ...)` head binds a BindingIdentifier, so
+            // the §13.1.1 restricted names are rejected here exactly as they
+            // are for a plain `var X` declaration.
+            Token name_tok = self.expect_binding_identifier()!;
             // Intern now: an escaped for-head binding name borrows the
             // lexer's shared ident_buf scratch, which the head's RHS
             // expression and the loop body parsed below will overwrite.

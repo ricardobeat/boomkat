@@ -128,10 +128,23 @@ fn Token? CompilerContext.expect(&self, TokenType tt) {
 ///
 /// The returned token's str_value carries the name for the keyword token
 /// (the lexer fills it in), so callers use it exactly like a plain IDENTIFIER.
+///
+/// The §13.1.1 restricted names (`eval`, `arguments`, `let`, `static`, the
+/// future reserved words, ...) are rejected here rather than at each call
+/// site: every BindingIdentifier position shares the restriction, so folding
+/// it in is what keeps `function eval(){}` and `for (var eval in o)` from
+/// diverging from the parameter lists that already checked by hand. Only the
+/// plain IDENTIFIER path is checked, an `await` accepted through
+/// await_is_identifier has already had its enclosing-grammar decision made and
+/// must not be re-rejected by the context-blind name test.
 fn Token? CompilerContext.expect_binding_identifier(&self) {
     TokenType next = self.peek_type();
     if (next == TokenType.IDENTIFIER) {
-        return self.advance()!;
+        Token tok = self.advance()!;
+        if (is_restricted_name(tok.str_value)) {
+            return self.fail("reserved word cannot be used as a binding identifier")~;
+        }
+        return tok;
     }
     if (self.await_is_identifier(next)) {
         return self.advance()!;
