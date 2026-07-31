@@ -167,6 +167,62 @@ var q = 0;
 (q) += 5;
 assert(q === 5, "parenthesized compound assignment still works");
 
+// An AssignmentExpression's own result is a value, so it is ~invalid~ as a
+// target in turn: `(x = y) = 1` and `(x ??= y)++` are early SyntaxErrors.
+//
+// This case is separate from the operator cases above because the engine
+// deliberately DOES leave a reference marker set on an assignment result: when
+// the target is a register-cached local, the result IS that local's home
+// register, and an enclosing operator has to know that to copy it to a temp
+// instead of clobbering the variable (`(u = 45) > 0`). That register-aliasing
+// hint and "is a valid assignment target" are different questions, so the
+// verdict is tracked separately; the assertions below pin the split.
+var atgOps = ["=", "+=", "-=", "*=", "/=", "%=", "**=", "<<=", ">>=", ">>>=",
+              "&=", "|=", "^=", "&&=", "||=", "??="];
+for (var ai = 0; ai < atgOps.length; ai++) {
+    var inner = "(av " + atgOps[ai] + " bv)";
+    assert(syntaxError("var av=1,bv=2; " + inner + " = 1"),
+           inner + " = 1 is a SyntaxError");
+    assert(syntaxError("var av=1,bv=2; " + inner + " += 1"),
+           inner + " += 1 is a SyntaxError");
+    assert(syntaxError("var av=1,bv=2; " + inner + "++"),
+           inner + "++ is a SyntaxError");
+    assert(syntaxError("var av=1,bv=2; " + inner + "--"),
+           inner + "-- is a SyntaxError");
+    assert(syntaxError("var av=1,bv=2; ++" + inner),
+           "++" + inner + " is a SyntaxError");
+    assert(syntaxError("var av=1,bv=2; --" + inner),
+           "--" + inner + " is a SyntaxError");
+    assert(syntaxError("var av=1,bv=2; for (" + inner + " in {}) ;"),
+           "for (" + inner + " in {}) is a SyntaxError");
+    assert(syntaxError("var av=1,bv=2; for (" + inner + " of []) ;"),
+           "for (" + inner + " of []) is a SyntaxError");
+}
+
+// The aliasing hint the above must not disturb: an assignment whose value is
+// consumed by an enclosing operator still reads the ASSIGNED value, and the
+// target variable keeps it (b0fdc49c). If the target check were implemented by
+// clearing the reference markers, the operator would write its result into the
+// variable's own register and corrupt it.
+var uu = 0;
+assert(((uu = 45) > 0) === true, "(uu = 45) > 0 evaluates to true");
+assert(uu === 45, "uu survives being an operand of >");
+var nn = 1;
+assert(((nn = 3) + 1) === 4, "(nn = 3) + 1 evaluates to 4");
+assert(nn === 3, "nn survives being an operand of +");
+var mm = 2;
+assert(((mm *= 4) - 1) === 7, "(mm *= 4) - 1 evaluates to 7");
+assert(mm === 8, "mm survives being an operand of -");
+
+// Chained assignment stays legal: `a = b = 1` is AssignmentExpression in the
+// RHS position, not the target position.
+var c1, c2;
+c1 = c2 = 7;
+assert(c1 === 7 && c2 === 7, "chained assignment still works");
+var d1, d2;
+(d1) = (d2) = 8;
+assert(d1 === 8 && d2 === 8, "chained assignment through parens still works");
+
 // delete still deletes.
 var delObj = { y: 1 };
 assert(delete delObj.y === true, "delete returns true");
