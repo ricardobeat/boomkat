@@ -2189,6 +2189,18 @@ fn void? CompilerContext.for_statement(&self) {
                 self.pushback(of_tok);
                 self.pushback(id_tok);
                 if (!is_arrow) {
+                    // §14.7.5: `for ( [lookahead ∉ { let [, async of }]
+                    // LeftHandSideExpression of AssignmentExpression )`. The
+                    // token pair `async of` at the head's start is excluded
+                    // outright, so a variable actually named `async` cannot be
+                    // the loop target of a for-of — `for ((async) of [1])` and
+                    // `for (o.async of [1])` are the spellings that work.
+                    // (`for (async of => 1;;)` is a different parse, handled
+                    // by the arrow test above; `for await` has its own head
+                    // production with no such restriction.)
+                    if (!for_is_await && str_eq(id_tok.str_value, "async")) {
+                        return self.fail("a for-of head may not begin with the token pair 'async of'")~;
+                    }
                     // consume the tokens we pushed back; tok2/of_tok is already consumed
                     self.advance()!; // id_tok
                     self.advance()!; // of_tok

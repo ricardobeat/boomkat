@@ -293,6 +293,17 @@ struct CompilerContext {
     /// consume-once discipline as last_was_unary_op — binary_expr reads and
     /// clears it right after the unary_expr call that produced it.
     bool last_was_newline_yield;
+    /// True when the expression just parsed was an AssignmentExpression whose
+    /// top-level operator was `=` or a compound/logical assignment.
+    ///
+    /// §13.15.1: such an expression has AssignmentTargetType ~invalid~, so
+    /// `(a = b) = 1` is a SyntaxError. The ordinary reference markers cannot
+    /// carry that: parentheses deliberately PRESERVE AssignmentTargetType
+    /// (`(a) = 1` is legal), and a compound assignment's result path sets
+    /// last_was_local_var on purpose, to drive the copy-to-temp guard for
+    /// `(n *= 0.3) > 0`. So the fact is tracked separately and read by the
+    /// invalid-LHS test, which runs once the assignment operator is consumed.
+    bool last_was_assignment;
     /// The grammar's `[~In]` parameter: true while parsing an expression that
     /// may not contain a top-level `in` operator. Only the head of a C-style
     /// `for` sets it (`for (Expression[~In] ; ... )`, ES2024 §14.7.4), where an

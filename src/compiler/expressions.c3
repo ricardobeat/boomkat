@@ -223,6 +223,11 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
     // Parse LHS with lhs_mode enabled, member_expr saves (obj, key) without GETPROP
     self.lhs_mode = true;
     self.last_was_member = false;
+    // Clear before the operand parse so the flag describes THIS operand, not
+    // some earlier assignment (`a = 1, b = 2` must not see `a = 1`'s).
+    // conditional_expr sets it again only if the operand it returns really was
+    // an assignment (through a nested assignment_expr, e.g. inside parens).
+    self.last_was_assignment = false;
     ushort left = self.conditional_expr()!;
     self.lhs_mode = false;
 
@@ -325,6 +330,12 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
         default:
             return left;
     }
+
+    // §13.15.1: an AssignmentExpression has AssignmentTargetType ~invalid~,
+    // so it may not itself be assigned to. Read the LHS's flag before
+    // consuming the operator, then re-arm it for this assignment's own result.
+    bool lhs_was_assignment = self.last_was_assignment;
+    self.last_was_assignment = true;
 
     // Consume the assignment operator
     self.advance()!;
@@ -467,6 +478,9 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
             }
             uint skip_jump = self.emit_cond_jump(Opcode.IF_TRUE, (uint)lor_res);
             ushort right = self.assignment_expr()!;
+            // The RHS parse cleared last_was_assignment (it describes the
+            // operand it just read); re-arm it, this expression IS one.
+            self.last_was_assignment = true;
             bool right_is_local_lor = self.last_was_local_var;
             if (lhs_was_member) {
                 self.emit_abc(member_store_op, (uint)lhs_member_obj, (uint)lhs_member_prop, (uint)right);
@@ -506,6 +520,9 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
             }
             uint skip_jump = self.emit_cond_jump(Opcode.IF_FALSE, (uint)land_res);
             ushort right = self.assignment_expr()!;
+            // The RHS parse cleared last_was_assignment (it describes the
+            // operand it just read); re-arm it, this expression IS one.
+            self.last_was_assignment = true;
             bool right_is_local_land = self.last_was_local_var;
             if (lhs_was_member) {
                 self.emit_abc(member_store_op, (uint)lhs_member_obj, (uint)lhs_member_prop, (uint)right);
@@ -556,6 +573,9 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
             self.patch_jump(undef_jump);
             // Nullish, evaluate RHS and assign
             ushort right = self.assignment_expr()!;
+            // The RHS parse cleared last_was_assignment (it describes the
+            // operand it just read); re-arm it, this expression IS one.
+            self.last_was_assignment = true;
             bool right_is_local_nc = self.last_was_local_var;
             if (lhs_was_member) {
                 self.emit_abc(member_store_op, (uint)lhs_member_obj, (uint)lhs_member_prop, (uint)right);
@@ -713,6 +733,9 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
 
     // Compile right-hand side
     ushort right = self.assignment_expr()!;
+    // The RHS parse cleared last_was_assignment (it describes the operand it
+    // just read); re-arm it, this expression IS one.
+    self.last_was_assignment = true;
     // A bare identifier RHS that resolved to a live local variable's own
     // register (not a temp) must never be freed here, free_reg is LIFO and
     // would hand that exact register back out to the very next alloc_reg
@@ -4896,7 +4919,8 @@ fn ushort? CompilerContext.object_literal(&self) {
                         self.emit_a_bc(Opcode.PUTLEX, (uint)sup_reg, sup_name_idx);
                         super_bound = true;
                     }
-                    ushort accessor_reg = self.function_expr_body(key_src_start)!;
+                    ushort accessor_reg = self.function_expr_body(key_src_start,
+                        is_obj_getter ? AccessorKind.GETTER : AccessorKind.SETTER)!;
                     if (is_obj_getter) {
                         self.emit_abc(Opcode.INITGET, (uint)obj_reg, (uint)key_reg, (uint)accessor_reg);
                     } else {
