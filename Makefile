@@ -12,7 +12,7 @@ target_sources = $(shell jq -r '.["c-sources"][]' project.json) \
                      if [ -d "$$s" ]; then find "$$s" -name '*.c3'; else echo "$$s"; fi; \
                  done)
 
-.PHONY: all lib test262_runner test262_runner_asan duktape_c3 duktape_c3_debug clean
+.PHONY: all lib test262_runner test262_runner_asan duktape_c3 duktape_c3_debug duktape_c3_gc_stress clean
 
 all: lib test262_runner duktape_c3
 
@@ -25,6 +25,10 @@ test262_runner: out/test262_runner
 test262_runner_asan: out/test262_runner_asan
 duktape_c3: out/duktape_c3
 duktape_c3_debug: out/duktape_c3_debug
+# Also deliberately out of `all`: GC_STRESS collects at every allocation, which
+# makes the binary orders of magnitude slower. It is the only build that turns a
+# missed GC root into a deterministic failure instead of a rare field crash.
+duktape_c3_gc_stress: out/duktape_c3_gc_stress
 
 out/lib.a: project.json $(call target_sources,lib)
 	c3c build lib
@@ -40,6 +44,9 @@ out/duktape_c3: project.json $(call target_sources,duktape_c3)
 
 out/duktape_c3_debug: project.json $(call target_sources,duktape_c3_debug)
 	c3c build duktape_c3_debug
+
+out/duktape_c3_gc_stress: project.json $(call target_sources,duktape_c3_gc_stress)
+	c3c build duktape_c3_gc_stress
 
 clean:
 	c3c clean

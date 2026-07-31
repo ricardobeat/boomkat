@@ -130,6 +130,17 @@ test-local:
     @just build duktape_c3
     bash test/run_local.sh
 
+# Run the GC-lifetime tests under a build that collects at every allocation
+# (`duktape_c3_gc_stress`: -D GC_STRESS plus ASAN). Under the normal trigger a
+# value that survives an allocating call without being a real GC root is merely
+# lucky, so a missed root is invisible to every other gate here and only shows up
+# as a field crash on a memory-tight device. This build makes it deterministic.
+# Slow by construction — keep the script's list to the tests that exercise
+# lifetimes across suspension, microtask, and re-entry boundaries.
+test-gc-stress:
+    @make out/duktape_c3_gc_stress
+    bash scripts/run_gc_stress.sh
+
 # Assert that exiting a for-in early (break/return/throw) costs no more peak
 # RSS than running it to exhaustion. Lives outside test-local because it needs
 # /usr/bin/time -l rather than an in-script assertion — the engine exposes no

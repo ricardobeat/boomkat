@@ -70,6 +70,19 @@
       "single-module": true,
       "sanitize": "address"
     },
+    "duktape_c3_gc_stress": {
+      "type": "executable",
+      "sources": [
+        "src",
+        "cli/duktape_c3.c3"
+      ],
+      "opt": "O0",
+      "single-module": true,
+      "sanitize": "address",
+      "features": [
+        "GC_STRESS"
+      ]
+    },
     "duktape_c3_threaded_asan": {
       "type": "executable",
       "sources": [

@@ -378,6 +378,30 @@ fn void track_heap_store(Activation* act, TVal* val, uint reg_idx) @inline {
     }
 }
 
+/// Raise max_heap_reg to cover a whole register window restored in one go, as a
+/// generator or async resume does when it copies gs.saved_regs back onto the
+/// valstack.
+///
+/// Those copies go through tval_copy_ref, so each restored heap value carries a
+/// reference the frame now owns, but they bypass track_heap_store and
+/// activation_begin has just reset max_heap_reg to 0. Any restored register
+/// above the highest index the resumed body happens to write again would then
+/// fall outside decref_callee_regs' [0..max_heap_reg] sweep on the next pop:
+/// its reference leaks, and, worse, the slot keeps the stale pointer bits.
+/// vm_mark_activations scans each frame's span past num_regs, so a later frame
+/// reusing that valstack address hands the mark phase a pointer into memory the
+/// sweep already reclaimed.
+fn void track_restored_regs(Activation* act, TVal* regs, uint nregs) {
+    uint highest = act.max_heap_reg;
+    for (uint i = nregs; i > highest; i--) {
+        uint idx = i - 1;
+        if (regs[idx].is_heap_allocated() && regs[idx].get_heapptr() != null) {
+            act.max_heap_reg = idx;
+            return;
+        }
+    }
+}
+
 /// ES2015 §9.2.2 step 15 / §8.1.1.3.4: an explicit `return;`, `return undefined;`,
 /// or implicit fallthrough from a derived constructor falls through to
 /// GetThisBinding(): if super() was never called, this_binding is still the

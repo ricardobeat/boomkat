@@ -3073,11 +3073,18 @@ fn void Heap.mark_and_sweep(&self, bool safepoint) {
         self.sweep_large_strings();
     }
 
-    // Phase 4: scale the next trigger to the surviving heap.
+    // Phase 4: scale the next trigger to the surviving heap. Under GC_STRESS the
+    // trigger stops scaling, so the next allocation collects again and every
+    // value that survives an allocating call has to be a real GC root rather
+    // than merely lucky. See the gc-stress target and `just test-gc-stress`.
+$if $feature(GC_STRESS):
+    long new_trigger = 1;
+$else
     long new_trigger = (long)self.live_obj_count * GC_TRIGGER_GROW_FACTOR;
     if (new_trigger < GC_INITIAL_TRIGGER) {
         new_trigger = GC_INITIAL_TRIGGER;
     }
+$endif
     self.gc_trigger_counter = new_trigger;
     self.gc_running = false;
 }

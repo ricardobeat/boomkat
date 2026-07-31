@@ -453,6 +453,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
             act.flags = (target.has_direct_eval() ? ACT_FLAG_DIRECT_EVAL : 0)
                       | preserved_flags;
             act.max_heap_reg = 0;
+            if (did_resume) { track_restored_regs(act, frame, nregs); }
             act.caller_valstack_top = frame + nregs;
             // Set this_binding. For generator resumes via call_fn where the initial
             // call was also via call_fn (i.e. cfn_is_gen_initial was true for the
