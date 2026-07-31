@@ -1,0 +1,11 @@
+import { selectionSort } from "./selection_sort.js";
+import { assertEq, assertImported, report } from "./_harness.js";
+assertImported(selectionSort, "selectionSort");
+assertEq(selectionSort([]).join(","), "", "empty array");
+assertEq(selectionSort([1]).join(","), "1", "single element");
+assertEq(selectionSort([3, 1, 2]).join(","), "1,2,3", "three elements");
+assertEq(selectionSort([5, 3, 7, 3, 5]).join(","), "3,3,5,5,7", "duplicates");
+assertEq(selectionSort([9, 8, 7, 6, 5]).join(","), "5,6,7,8,9", "reversed");
+var a = [2, 1];
+assertEq(selectionSort(a), a, "sorts in place, returns the same array");
+report("selection_sort");

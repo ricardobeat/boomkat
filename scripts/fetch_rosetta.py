@@ -31,7 +31,10 @@ def blocks(text):
 def body(path):
     """Sample text with the two-line provenance header removed."""
     lines = path.read_text().splitlines(keepends=True)
-    return "".join(lines[2:]) if len(lines) > 2 and lines[0].startswith("// Verbatim from") else "".join(lines)
+    off = 1 if lines and lines[0].startswith("#!") else 0
+    if len(lines) > off + 1 and lines[off].startswith("// Verbatim from"):
+        return "".join(lines[:off] + lines[off + 2:])
+    return "".join(lines)
 
 def main():
     ap = argparse.ArgumentParser()
@@ -44,7 +47,8 @@ def main():
         for f in sorted(pathlib.Path(a.check).glob("*.js")):
             if f.name.endswith(".check.js") or f.name.startswith("_"):
                 continue
-            head = f.read_text().splitlines()[:1]
+            all_lines = f.read_text().splitlines()
+            head = all_lines[1:2] if all_lines and all_lines[0].startswith("#!") else all_lines[:1]
             m = re.match(r'// Verbatim from https://rosettacode\.org/wiki/(\S+) \(JavaScript block (\d+)\)', head[0] if head else "")
             if not m:
                 print(f"SKIP {f.name}: no provenance header"); continue
@@ -58,10 +62,21 @@ def main():
                 print(f"  ok {f.name}", flush=True)
         return 1 if bad else 0
 
-    bs = blocks(wiki(a.task))
+    try:
+        bs = blocks(wiki(a.task))
+    except Exception as e:
+        print(f"error: fetching {a.task}: {e}", file=sys.stderr)
+        return 1
     if a.idx >= len(bs):
         print(f"error: {a.task} has {len(bs)} JS block(s)", file=sys.stderr); return 1
-    text = HDR.format(task=a.task, idx=a.idx) + bs[a.idx] + "\n"
+    sample = bs[a.idx]
+    hdr = HDR.format(task=a.task, idx=a.idx)
+    if sample.startswith("#!"):
+        # A shebang is only recognized on line 1, so it has to stay there.
+        first, _, rest = sample.partition("\n")
+        text = first + "\n" + hdr + rest + "\n"
+    else:
+        text = hdr + sample + "\n"
     if a.out:
         pathlib.Path(a.out).write_text(text)
         print(f"wrote {a.out} ({len(bs[a.idx].splitlines())} lines)")
