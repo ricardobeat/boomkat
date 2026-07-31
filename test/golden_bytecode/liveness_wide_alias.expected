@@ -10,7 +10,7 @@
 [  8] LDREG           r3 = r4, r0
 [  9] TOPROPKEY       r3 = r0, r0
 [ 10] LDINT           r4, +2
-[ 11] ???             r1 = r3, r4
+[ 11] INITPROP        r1 = r3, r4
 [ 12] LDREG           r0 = r1, r0
 [ 13] PUTLEX          r0, 0
 [ 14] GETGLOBAL       r1, 1

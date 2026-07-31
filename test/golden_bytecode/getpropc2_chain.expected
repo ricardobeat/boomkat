@@ -7,8 +7,8 @@
 [  5] NEWOBJ          r4 = r0, r0
 [  6] LDCONST         r5, 2
 [  7] CLOSURE         r6, 1
-[  8] ???             r4 = r5, r6
-[  9] ???             r2 = r3, r4
+[  8] INITPROP        r4 = r5, r6
+[  9] INITPROP        r2 = r3, r4
 [ 10] CALL_GLOBAL     r0, argc=1, K[0]
 [ 11] RETUNDEF        
 

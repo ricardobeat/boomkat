@@ -5,7 +5,7 @@
 [  3] NEWOBJ          r2 = r0, r0
 [  4] LDCONST         r3, 1
 [  5] LDINT           r4, +42
-[  6] ???             r2 = r3, r4
+[  6] INITPROP        r2 = r3, r4
 [  7] CALL_GLOBAL     r0, argc=1, K[0]
 [  8] RETUNDEF        
 
