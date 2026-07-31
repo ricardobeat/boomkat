@@ -113,6 +113,27 @@ var computedKey = "a";
 function p10() { for (var { [computedKey]: j } of [{ a: 9 }]) {} return j; }
 eq(p10(), 9, "computed key in a var head pattern is an expression, not a binding");
 
+// A property KEY is not a bound name — including when the property carries a
+// default. The pattern walk's default-skipper must stop at the token that ends
+// the default and hand the pattern's own closing bracket back to the walk;
+// using the general expression skipper here consumed that bracket, so the walk
+// ran on into the INITIALIZER and hoisted names out of it (`w` below became a
+// declared binding).
+var keyNotBound = false;
+try { void wkey; } catch (e) { keyNotBound = e instanceof ReferenceError; }
+assert(keyNotBound, "sanity: wkey is undeclared before the pattern below");
+var { wkey: [kx] = [4] } = { wkey: [7] };
+eq(kx, 7, "a property with an array sub-pattern and a default still binds its leaf");
+var keyStillNotBound = false;
+try { void wkey; } catch (e) { keyStillNotBound = e instanceof ReferenceError; }
+assert(keyStillNotBound, "a property key with a default value is not a binding");
+
+var { wkey2: k2 = 4 } = { wkey2: 7 };
+eq(k2, 7, "a shorthand-with-default property binds its value name");
+var key2NotBound = false;
+try { void wkey2; } catch (e) { key2NotBound = e instanceof ReferenceError; }
+assert(key2NotBound, "a property key with a scalar default is not a binding");
+
 // A repeated name in one pattern is ONE binding (`var` heads are exempt from
 // the unique-BoundNames rule), so the later element wins.
 function p11() { for (var [m, m] of [[1, 2]]) {} return m; }

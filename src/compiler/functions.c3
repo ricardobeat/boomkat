@@ -1637,7 +1637,7 @@ fn void? CompilerContext.hoist_var_pattern(&self, bool is_global, bool checks_on
         }
         if (tt == TokenType.ASSIGN) {
             // Default value: identifiers inside it are references.
-            self.skip_expression();
+            self.skip_pattern_default();
             at_prop_start = false;
             continue;
         }
@@ -1680,6 +1680,57 @@ fn void CompilerContext.skip_bracketed_key(&self) {
         if (tt == TokenType.RBRACKET) {
             depth--;
             if (depth == 0) return;
+        }
+    }
+}
+
+/// Consume a pattern element's default value (`= expr`) and STOP at the token
+/// that ends it, pushing that token back for the pattern walk to see.
+///
+/// skip_expression cannot be used here: it stops on a ',' or ';' but treats a
+/// ']' or '}' that closes the ENCLOSING pattern as its own to consume, so the
+/// walk would lose the pattern's closing bracket and run on into the
+/// initializer, hoisting names out of it (`var {w: [x] = [4]} = ...` bound
+/// `w`). The default ends at a ',', ']' or '}' seen at nesting depth 0.
+fn void CompilerContext.skip_pattern_default(&self) {
+    uint paren_depth = 0;
+    uint brace_depth = 0;
+    uint bracket_depth = 0;
+    TemplateScan tscan;
+    for (;;) {
+        Token? tok_opt = self.lexer.next_token();
+        if (catch _err = tok_opt) return;
+        Token tok = tok_opt;
+        TokenType tt = tok.type;
+        if (tt == TokenType.EOF_TOKEN) return;
+        bool at_top = paren_depth == 0 && brace_depth == 0 && bracket_depth == 0
+                   && tscan.depth == 0;
+        switch (tt) {
+            case TokenType.LPAREN:   paren_depth++;
+            case TokenType.LBRACKET: bracket_depth++;
+            case TokenType.TEMPLATE_HEAD: tscan.on_template_head();
+            case TokenType.LBRACE:
+                tscan.on_lbrace();
+                brace_depth++;
+            case TokenType.RPAREN:
+                if (at_top) { self.lexer.pushback(tok); return; }
+                if (paren_depth > 0) paren_depth--;
+            case TokenType.RBRACKET:
+                if (at_top) { self.lexer.pushback(tok); return; }
+                bracket_depth--;
+            case TokenType.RBRACE:
+                TemplateBrace tb = tscan.classify_rbrace(self.lexer);
+                if (tb == TemplateBrace.LEX_ERROR) return;
+                if (tb == TemplateBrace.BLOCK) {
+                    if (at_top) { self.lexer.pushback(tok); return; }
+                    if (brace_depth > 0) brace_depth--;
+                }
+            case TokenType.COMMA:
+                if (at_top) { self.lexer.pushback(tok); return; }
+            case TokenType.SEMICOLON:
+                if (at_top) { self.lexer.pushback(tok); return; }
+            default:
+                break;
         }
     }
 }
