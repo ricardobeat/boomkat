@@ -900,48 +900,160 @@ fn void builtin_date_proto_toString(BuiltinContext* ctx) {
     ctx.result.set_string(result);
 }
 
+/// True when neither argument was passed, or both are undefined.
+///
+/// ES5 §15.9.5.5 leaves the result of the toLocale* methods
+/// implementation-defined, and the strings this engine returns for an
+/// argument-free call predate any options handling. That output is kept
+/// exactly as it was, so a call that names nothing is answered without
+/// building a format at all.
+fn bool date_locale_args_absent(BuiltinContext* ctx) {
+    for (ushort i = 0; i < ctx.argc && i < 2; i++) {
+        if (!ctx.regs[ctx.base_reg + i].is_undefined()) return false;
+    }
+    return true;
+}
+
+/// Read the `locales` and `options` arguments out of the register window,
+/// treating a missing argument as undefined.
+fn void date_locale_args(BuiltinContext* ctx, TVal* locales, TVal* options) {
+    locales.set_undefined();
+    options.set_undefined();
+    if (ctx.argc > 0) *locales = ctx.regs[ctx.base_reg];
+    if (ctx.argc > 1) *options = ctx.regs[ctx.base_reg + 1];
+}
+
+/// Shared body of the three toLocale* methods.
+///
+/// Resolves the arguments into a format per ECMA-402 §11.1.2 (see
+/// date_resolve_options for how much of that is actually honoured), breaks
+/// the time value down in the resolved zone, and renders the components the
+/// format asks for. `required` says which half the calling method is about,
+/// which decides the defaults and which styles it will accept.
+fn void date_locale_format(BuiltinContext* ctx, int required) {
+    TVal this_val = ctx.regs[ctx.base_reg - 1];
+    double time_val = date_this_time_value(ctx, &this_val);
+    if (ctx.should_throw) return;
+
+    // ECMA-402 §20.4.1 step 4 returns "Invalid Date" before it builds a
+    // format, so an invalid Date answers without ever reading the options
+    // bag: a bad option value alongside a NaN time does not throw, and a
+    // getter on the bag does not run.
+    if (math::is_nan(time_val)) {
+        HString* inv = builtin_intern_string(ctx.heap, "Invalid Date");
+        ctx.result.set_string(inv);
+        return;
+    }
+
+    TVal locales, options;
+    date_locale_args(ctx, &locales, &options);
+    DateTimeFormatOpts fmt;
+    date_resolve_options(ctx, &locales, &options, required, &fmt);
+    if (ctx.should_throw) return;
+
+    long year, month, day, wday, hour, minute, second;
+    if (fmt.tz_is_explicit) {
+        civil_from_seconds(date_ms_to_sec(time_val) + fmt.tz_offset_sec,
+            &year, &month, &day, &wday, &hour, &minute, &second);
+    } else {
+        date_break_time_local_fields(time_val, &year, &month, &day, &wday, &hour, &minute, &second);
+        // With no explicit zone the label still has to name one, so it takes
+        // the host offset sampled at this instant.
+        date_write_gmt_offset_label(&fmt, date_tz_offset_seconds((long)(time_val / 1000.0)));
+    }
+
+    // Wider than types::FORMAT_BUF: a full weekday, a spelled-out month, a
+    // six-digit year, an era and a zone label together run past 32 bytes.
+    char[DATE_LOCALE_BUF] buf;
+    usz pos = 0;
+    bool wrote_date = date_render_date_part(&fmt, buf[..], &pos, year, month, day, wday);
+    bool has_time = fmt.hour != DTF_NONE || fmt.minute != DTF_NONE ||
+                    fmt.second != DTF_NONE || fmt.frac_digits > 0 ||
+                    fmt.time_zone_name != DTF_NONE;
+    if (wrote_date && has_time) {
+        // The en-US connector between the two halves. A full month name takes
+        // " at "; a date that is nothing but a weekday runs straight into the
+        // time on a space; everything else takes a comma.
+        bool weekday_only = fmt.weekday != DTF_NONE && fmt.year == DTF_NONE &&
+                            fmt.month == DTF_NONE && fmt.day == DTF_NONE;
+        if (fmt.month == DTF_LONG) {
+            date_buf_append(buf[..], &pos, " at ");
+        } else if (weekday_only) {
+            date_buf_push(buf[..], &pos, ' ');
+        } else {
+            date_buf_append(buf[..], &pos, ", ");
+        }
+    }
+    // Milliseconds are the same in every zone, so they come straight off the
+    // time value rather than out of the zone-shifted breakdown.
+    long ms = date_floor_mod_field(time_val, 1, 1000);
+    (void)date_render_time_part(&fmt, buf[..], &pos, hour, minute, second, ms);
+
+    HString* result = builtin_intern_string(ctx.heap, buf[:pos]);
+    ctx.result.set_string(result);
+}
+
 /// Date.prototype.toLocaleString(), ES5 §15.9.5.5
-/// Falls back to toString() (no locale-specific formatting).
+/// With no arguments this is toString(). With a locales or options argument
+/// it resolves the bag per ECMA-402 §11.1.2 against the engine's one locale.
 fn void builtin_date_proto_toLocaleString(BuiltinContext* ctx) {
-    builtin_date_proto_toString(ctx);
+    if (date_locale_args_absent(ctx)) {
+        builtin_date_proto_toString(ctx);
+        return;
+    }
+    date_locale_format(ctx, DTF_REQ_ANY);
 }
 
 /// Date.prototype.toLocaleDateString(), ES5 §15.9.5.6
-/// Returns the date portion only (YYYY-MM-DD style).
+/// With no arguments this is the date portion in YYYY-MM-DD form. With an
+/// options bag the date components are the ones that default in, but an
+/// explicitly named time component still renders; a timeStyle is a TypeError,
+/// per ECMA-402 §11.1.2.
 fn void builtin_date_proto_toLocaleDateString(BuiltinContext* ctx) {
-    TVal this_val = ctx.regs[ctx.base_reg - 1];
-    double time_val = date_this_time_value(ctx, &this_val);
-    if (ctx.should_throw) return;
-    if (math::is_nan(time_val)) {
-        HString* inv = builtin_intern_string(ctx.heap, "Invalid Date");
-        ctx.result.set_string(inv);
+    if (date_locale_args_absent(ctx)) {
+        TVal this_val = ctx.regs[ctx.base_reg - 1];
+        double time_val = date_this_time_value(ctx, &this_val);
+        if (ctx.should_throw) return;
+        if (math::is_nan(time_val)) {
+            HString* inv = builtin_intern_string(ctx.heap, "Invalid Date");
+            ctx.result.set_string(inv);
+            return;
+        }
+        long year, month, day, wday, hour, min, sec;
+        date_break_time(time_val, &year, &month, &day, &wday, &hour, &min, &sec);
+        char[types::FORMAT_BUF] buf;
+        usz len = (usz)(io::bprintf(&buf, "%04d-%02d-%02d", (int)year, (int)(month + 1), (int)day) ?? buf[:0]).len;
+        HString* result = builtin_intern_string(ctx.heap, buf[:len]);
+        ctx.result.set_string(result);
         return;
     }
-    long year, month, day, wday, hour, min, sec;
-    date_break_time(time_val, &year, &month, &day, &wday, &hour, &min, &sec);
-    char[types::FORMAT_BUF] buf;
-    usz len = (usz)(io::bprintf(&buf, "%04d-%02d-%02d", (int)year, (int)(month + 1), (int)day) ?? buf[:0]).len;
-    HString* result = builtin_intern_string(ctx.heap, buf[:len]);
-    ctx.result.set_string(result);
+    date_locale_format(ctx, DTF_REQ_DATE);
 }
 
 /// Date.prototype.toLocaleTimeString(), ES5 §15.9.5.7
-/// Returns the time portion only (HH:MM:SS style).
+/// With no arguments this is the time portion in HH:MM:SS form. With an
+/// options bag the time components are the ones that default in, but an
+/// explicitly named date component still renders; a dateStyle is a TypeError,
+/// per ECMA-402 §11.1.2.
 fn void builtin_date_proto_toLocaleTimeString(BuiltinContext* ctx) {
-    TVal this_val = ctx.regs[ctx.base_reg - 1];
-    double time_val = date_this_time_value(ctx, &this_val);
-    if (ctx.should_throw) return;
-    if (math::is_nan(time_val)) {
-        HString* inv = builtin_intern_string(ctx.heap, "Invalid Date");
-        ctx.result.set_string(inv);
+    if (date_locale_args_absent(ctx)) {
+        TVal this_val = ctx.regs[ctx.base_reg - 1];
+        double time_val = date_this_time_value(ctx, &this_val);
+        if (ctx.should_throw) return;
+        if (math::is_nan(time_val)) {
+            HString* inv = builtin_intern_string(ctx.heap, "Invalid Date");
+            ctx.result.set_string(inv);
+            return;
+        }
+        long year, month, day, wday, hour, min, sec;
+        date_break_time(time_val, &year, &month, &day, &wday, &hour, &min, &sec);
+        char[types::FORMAT_BUF] buf;
+        usz len = (usz)(io::bprintf(&buf, "%02d:%02d:%02d", (int)hour, (int)min, (int)sec) ?? buf[:0]).len;
+        HString* result = builtin_intern_string(ctx.heap, buf[:len]);
+        ctx.result.set_string(result);
         return;
     }
-    long year, month, day, wday, hour, min, sec;
-    date_break_time(time_val, &year, &month, &day, &wday, &hour, &min, &sec);
-    char[types::FORMAT_BUF] buf;
-    usz len = (usz)(io::bprintf(&buf, "%02d:%02d:%02d", (int)hour, (int)min, (int)sec) ?? buf[:0]).len;
-    HString* result = builtin_intern_string(ctx.heap, buf[:len]);
-    ctx.result.set_string(result);
+    date_locale_format(ctx, DTF_REQ_TIME);
 }
 
 /// Date.prototype.toDateString(), ES5 §15.9.5.3

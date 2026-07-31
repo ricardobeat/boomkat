@@ -1,8 +1,8 @@
 # Verbatim Rosetta Code suite
 
-41 unmodified JavaScript samples from [rosettacode.org](https://rosettacode.org),
+42 unmodified JavaScript samples from [rosettacode.org](https://rosettacode.org),
 run as-is to exercise the engine with third-party code we did not write.
-28 are driven by assertions, 13 by comparing their printed output.
+29 are driven by assertions, 13 by comparing their printed output.
 
 ## Layout
 
@@ -35,10 +35,15 @@ when the first one is unsuitable.
 
 ## Validation
 
-Expected outputs are cross-checked against QuickJS (`qjs`), not just recorded
+Expected outputs are cross-checked against another engine, not just recorded
 from our own engine -- a `.expected` generated only from our output would pass
-even if the engine were wrong. All 14 output files and all 27 assertion files
+even if the engine were wrong. All 13 output files and all 28 assertion files
 agree with QuickJS.
+
+`date_format` is the one exception, cross-checked against Node rather than
+QuickJS: it turns on the `toLocaleString` options bag, which QuickJS ignores
+entirely, so QuickJS is not an oracle for it. Its two formatted values match
+Node byte for byte.
 
 Every sample is also mutation-tested: a fault injected into it must make its
 check fail. That pass has already caught three real coverage holes (a `gcd`
@@ -71,12 +76,19 @@ Skip ones that:
 
 Not worked around here; the affected samples were excluded instead.
 
-- `Date.prototype.toLocaleString` ignores its options bag and `timeZone`,
-  returning a default date string in local time (ECMA-402 gap). This is why
-  the `Date_format` task has no sample here. **Still open.**
-- `console.log` does not inspect objects: `console.log({a: 1})` prints
-  `[object Object]`, and `%o`/`%O` are not substituted. **Still open.**
-  The `%d`/`%s`/`%i`/`%f`/`%j` specifiers now match node and are no longer a gap.
+Both of the gaps this section originally recorded have since been closed, and
+the `Date_format` sample that the first one blocked is now in the suite.
+
+- `Date.prototype.toLocaleString` ignoring its options bag and `timeZone`
+  is **fixed**. The component options, `dateStyle`/`timeStyle`, `hour12` and
+  `timeZone: "UTC"` are honoured against one built-in en-US-like locale. Full
+  ECMA-402 is still out of scope, so a named IANA zone such as
+  `"America/New_York"` is a `RangeError` rather than a silently wrong time,
+  and a request for another locale is formatted in the built-in one. See
+  `src/builtins/date_locale.c3`.
+- `console.log` not inspecting objects is **fixed**: `console.log({a: 1})`
+  now inspects rather than printing `[object Object]`. The
+  `%d`/`%s`/`%i`/`%f`/`%j` specifiers match node.
 
 ## How a check file reaches its sample
 
