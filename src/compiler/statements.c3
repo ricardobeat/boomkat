@@ -362,7 +362,15 @@ fn void? CompilerContext.statement(&self) {
         default:
             // Check for labels: identifier : statement
             // We consume the identifier and check if the next token is ':'
-            if (tt == TokenType.IDENTIFIER) {
+            //
+            // A LabelIdentifier is an Identifier (§14.13), and per §13.1.1
+            // `await` IS one wherever it is not reserved, so `await: ;` is a
+            // valid labelled statement in script code — only the AWAIT token
+            // type keeps it out of the IDENTIFIER branch here. `yield` gets no
+            // such relaxation: §13.1.1 reserves it in all strict-mode code,
+            // and this engine is strict-only. break/continue gate their label
+            // REFERENCE on the same predicate.
+            if (tt == TokenType.IDENTIFIER || self.await_is_identifier(tt)) {
                 // Save token_start before consuming, in case this is an async function
                 // `token_start` may be stale here (it reflects the most
                 // recently *consumed* token, but the identifier we're about to
@@ -4464,7 +4472,7 @@ fn void? CompilerContext.labeled_statement(&self, char[] name) {
 fn void? CompilerContext.break_statement(&self) {
     self.expect(TokenType.BREAK)!;
 
-    if (self.peek_type() == TokenType.IDENTIFIER && !self.lexer.seen_line_term) {
+    if (self.peek_is_label_identifier() && !self.lexer.seen_line_term) {
         // Labeled break, find the label and add jump to its loop's break chain
         Token label_tok = self.advance()!;
         char[] label_name = label_tok.str_value;
@@ -4538,7 +4546,7 @@ fn void? CompilerContext.break_statement(&self) {
 fn void? CompilerContext.continue_statement(&self) {
     self.expect(TokenType.CONTINUE)!;
 
-    if (self.peek_type() == TokenType.IDENTIFIER && !self.lexer.seen_line_term) {
+    if (self.peek_is_label_identifier() && !self.lexer.seen_line_term) {
         // Labeled continue, find the label and jump to its loop's continue target
         Token label_tok = self.advance()!;
         char[] label_name = label_tok.str_value;
