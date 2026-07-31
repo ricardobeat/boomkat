@@ -241,6 +241,16 @@ fn void mod_register_star_export(CompModuleDef* mod, uint req_idx) {
 /// `let` as an identifier reference (`if (x) let;`) is rejected either way,
 /// `statement()` routes every LET token to var_declaration(), so this engine
 /// does not support `let` as an IdentifierReference at all.
+///
+/// `async function` cannot be recognised from the leading token: `async` is a
+/// contextual keyword that lexes as a plain IDENTIFIER, and distinguishing the
+/// declaration from an `async` identifier reference needs the two-token
+/// lookahead that statement() already performs. Rather than duplicate that
+/// lookahead here (doing it before statement() runs desynchronises
+/// `lexer.token_start`, which statement() refreshes to fix the
+/// Function.prototype.toString span of exactly this declaration form), the
+/// flag below tells statement() that it is parsing a Statement position, and
+/// it raises the error once it has classified the tokens.
 fn void? CompilerContext.statement_body(&self) {
     switch (self.peek_type()) {
         case TokenType.CONST:
@@ -256,6 +266,9 @@ fn void? CompilerContext.statement_body(&self) {
         default:
             break;
     }
+    // Consumed by statement() exactly once, into a local, so it cannot leak
+    // into any nested statement parsed below this one.
+    self.stmt_position_only = true;
     return self.statement();
 }
 
@@ -288,6 +301,12 @@ fn void? CompilerContext.statement(&self) {
     // an Import/ExportDeclaration.
     bool at_module_top = self.module_top_level;
     self.module_top_level = false;
+
+    // Likewise consume the Statement-position marker exactly once. See
+    // statement_body(): it flags the one Declaration form its own leading-token
+    // switch cannot see, `async function` / `async function*`.
+    bool stmt_position_only = self.stmt_position_only;
+    self.stmt_position_only = false;
 
     switch (tt) {
         case TokenType.LBRACE:
@@ -426,6 +445,15 @@ fn void? CompilerContext.statement(&self) {
                         next_tok = peek_opt;
                     }
                     if (next_tok.type == TokenType.FUNCTION && next_tok.line == id_tok.line) {
+                        // An AsyncFunctionDeclaration / AsyncGeneratorDeclaration
+                        // is a Declaration, so it is not a Statement and cannot
+                        // be an if/else arm, a loop body or a labelled
+                        // statement (§14.4-§14.7, §14.13). Only reachable once
+                        // the tokens above have confirmed the contextual
+                        // keyword, which is why statement_body() defers to here.
+                        if (stmt_position_only) {
+                            return self.fail("declaration not allowed as a single-statement body")~;
+                        }
                         // id_tok was `async`; next token is `function` on
                         // the same line. Consume was the `async`; the next
                         // advance() in function_declaration returns `function`.

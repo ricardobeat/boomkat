@@ -655,6 +655,17 @@ struct CompilerContext {
     /// CompilerContext leaves it false).
     bool module_top_level;
 
+    /// Set by statement_body() to mark that the statement about to be parsed
+    /// sits where the grammar admits a `Statement` but not a
+    /// `StatementListItem` — an if/else arm, a loop body or a labelled
+    /// statement. Only a Declaration is affected, and every form except
+    /// `async function` is already rejected by statement_body()'s own switch
+    /// on the leading token; this flag exists for that one form, whose `async`
+    /// is a contextual keyword indistinguishable from an identifier until the
+    /// statement dispatcher has looked ahead. Consumed exactly once, into a
+    /// local, so it cannot leak into a nested statement.
+    bool stmt_position_only;
+
     // Inferred function name for the next anonymous function expression parsed.
     // Set by assignment_expr when LHS is a plain identifier (e.g. `var f = function() {}`)
     // or by object literal property parsing (e.g. `o = { method() {} }`).
