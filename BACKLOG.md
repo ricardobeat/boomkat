@@ -54,8 +54,9 @@ Found while clearing the parse-negative clusters in session 303. None are
 test262-visible — every phase reports 0 fail / 0 unexpected-CE — so these need
 their own regression tests or they will silently persist.
 
-- [ ] **`await` as an arrow parameter outside async** — `await => 1` and `(await) => 1` are rejected; node accepts both. Verified independently of the escaped-keyword family (the unescaped spelling fails identically, and it reproduces with the escape fix stashed). The async-context control is correct: `async function g(){ var f = await => 1; }` still rejects, matching node
-- [ ] **ClassHeritage rejects valid non-arrow forms** — `class C extends (() => {}) {}` (parenthesized arrow) and `class C extends [] {}` (array literal) are rejected; node accepts both. Confirmed pre-existing against a binary built at `1455e786`. Distinct from the bare `class C extends () => {}` case, which is correctly rejected — ClassHeritage is a LeftHandSideExpression, and a *parenthesized* arrow satisfies that
+- [ ] **`await` as an arrow parameter outside async** — `await => 1` and `(await) => 1` are rejected with a SyntaxError; node executes both and prints `1`. Verified with node *executing*, not `--check`. Independent of the escaped-keyword family (the unescaped spelling fails identically, and it reproduces with the escape fix stashed). The async-context control is correct: `async function g(){ var f = await => 1; }` still rejects, matching node
+
+  ~~**ClassHeritage rejects valid non-arrow forms**~~ — **withdrawn, this was never a bug.** `class C extends (() => {}) {}`, `extends []`, `extends ({})`, `extends 1` and `` extends `t` `` all throw `TypeError: class extends value is not a constructor or null` — a *runtime* error, and exactly what node does. The valid cases (`extends null`, `extends (B)`) evaluate fine in both. The original entry came from probing with `node --check`, which only parses and never evaluates the class, so a correct runtime TypeError read as a parse over-rejection. **Methodology note: `node --check` is the wrong oracle for anything whose error is thrown at evaluation time — run node for real.**
 
 ## Latent runtime bugs
 
