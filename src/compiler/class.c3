@@ -670,7 +670,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
         // lex scope, unlike static field initializers which all share
         // __static_init__), then CLOSURE+CALL'd right here so it interleaves
         // with static field installs in source order (static-init-sequence).
-        if (self.match_static_block_prefix()) {
+        if (self.match_static_block_prefix()!) {
             if (!has_static_init) {
                 has_static_init = true;
                 self.ensure_field_init_ctx(&static_init_ctx, true);
@@ -691,7 +691,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
         // a method name (identifier, keyword, string, number, `[`, `*`, get/set).
         // When followed by `(`, `static` IS the method name, not a modifier.
         bool is_static = false;
-        if (self.match_static_modifier()) {
+        if (self.match_static_modifier()!) {
             is_static = true;
             // Refresh so the source-start captured below is after `static`.
             self.lexer.refresh_token_start();

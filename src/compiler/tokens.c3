@@ -608,12 +608,13 @@ fn bool CompilerContext.match_async_method_prefix(&self) {
 /// itself, NOT a modifier.
 /// Returns true and consumes the `static` token if it is a modifier;
 /// otherwise leaves the input untouched and returns false.
-fn bool CompilerContext.match_static_modifier(&self) {
+/// A lexer failure while looking ahead is a hard syntax error, not a
+/// "`static` is the member name" signal: reinterpreting it that way would
+/// silently accept unlexable member names such as `static # x;`.
+fn bool? CompilerContext.match_static_modifier(&self) {
     self.static_elem_src_start = 0xFFFFFFFF;
     if (self.peek_type() != TokenType.STATIC) return false;
-    Token? cur_opt = self.advance();
-    if (catch _e = cur_opt) return false;
-    Token cur = cur_opt;
+    Token cur = self.advance()!;
     // Peek the following token WITHOUT consuming it, on a true result the
     // method name (and everything after) must remain unconsumed so that
     // compile_inner_function, which builds a fresh context reading the shared
@@ -624,12 +625,7 @@ fn bool CompilerContext.match_static_modifier(&self) {
     if (self.pushback_count > 0) {
         next_tok = self.pushback_stack[self.pushback_count - 1];
     } else {
-        Token? peek_opt = self.lexer.peek();
-        if (catch _e = peek_opt) {
-            self.pushback(cur);
-            return false;
-        }
-        next_tok = peek_opt;
+        next_tok = self.lexer.peek()!;
         // The peek stored the element's source start, record it so the
         // class compiler can retain source text that begins at the method
         // (excluding `static`, per §14.6/§19.2.3.5 method source retention).
@@ -664,25 +660,17 @@ fn bool CompilerContext.match_static_modifier(&self) {
                 after_accessor = self.pushback_stack[self.pushback_count - 2];
             } else {
                 // Advance past the `get`/`set` token in the lexer to peek further.
-                Token? acc_opt = self.advance();
-                if (catch _e = acc_opt) {
-                    self.pushback(cur);
-                    return false;
-                }
-                Token acc_tok = acc_opt;
+                Token acc_tok = self.advance()!;
                 Token? peek2_opt;
                 if (self.pushback_count > 0) {
                     peek2_opt = self.pushback_stack[self.pushback_count - 1];
                 } else {
                     peek2_opt = self.lexer.peek();
                 }
-                // Put back the `get`/`set` token
+                // Put back the `get`/`set` token before propagating, so a
+                // failing lookahead still leaves the lexer well-formed.
                 self.pushback(acc_tok);
-                if (catch _e = peek2_opt) {
-                    self.pushback(cur);
-                    return false;
-                }
-                after_accessor = peek2_opt;
+                after_accessor = peek2_opt!;
             }
             // Whether `get`/`set` turns out to be an accessor prefix
             // (`static get foo()`) or a plain method name (`static get()`),
@@ -714,21 +702,17 @@ fn bool CompilerContext.match_static_modifier(&self) {
 /// never `static` used as a field/method name. Returns true and consumes the
 /// `static` token if this is a static block; otherwise leaves the input
 /// untouched and returns false.
-fn bool CompilerContext.match_static_block_prefix(&self) {
+/// As in match_static_modifier, a lookahead lexer failure propagates: the
+/// failed peek has already advanced past the offending character, so
+/// recovering here would resume mid-token and misparse the element.
+fn bool? CompilerContext.match_static_block_prefix(&self) {
     if (self.peek_type() != TokenType.STATIC) return false;
-    Token? cur_opt = self.advance();
-    if (catch _e = cur_opt) return false;
-    Token cur = cur_opt;
+    Token cur = self.advance()!;
     TokenType next_tt;
     if (self.pushback_count > 0) {
         next_tt = self.pushback_stack[self.pushback_count - 1].type;
     } else {
-        Token? peek_opt = self.lexer.peek();
-        if (catch _e = peek_opt) {
-            self.pushback(cur);
-            return false;
-        }
-        next_tt = peek_opt.type;
+        next_tt = self.lexer.peek()!.type;
     }
     if (next_tt != TokenType.LBRACE) {
         self.pushback(cur);

@@ -4451,6 +4451,9 @@ fn ushort? CompilerContext.primary_expr(&self) {
                     // `super[expr]` correctly for syntax errors, but the emitted
                     // bytecode is dead code (unreachable after THROW_REF).
                     if (self.match(TokenType.DOT)) {
+                        // `super.#x` is not a SuperProperty (see below), so the
+                        // grammar error outranks the delete ReferenceError.
+                        if (self.check(TokenType.HASH_IDENT)) return COMPILE_ERROR~;
                         char[] prop_str = self.read_property_name()!;
                     } else if (self.match(TokenType.LBRACKET)) {
                         // Save register state, the inner expression's emitted
@@ -4491,6 +4494,11 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 ushort result;
                 ushort super_key_reg;
                 if (self.match(TokenType.DOT)) {
+                    // ES2022 §13.3.7 SuperProperty accepts only
+                    // `super.IdentifierName` / `super[Expression]`, a PrivateName
+                    // is not an IdentifierName, so `super.#x` is an early
+                    // SyntaxError rather than a private-field access.
+                    if (self.check(TokenType.HASH_IDENT)) return COMPILE_ERROR~;
                     // DOT: compute super base first, then emit constant key.
                     super_proto_reg = self.emit_super_base();
                     char[] prop_str = self.read_property_name()!;
