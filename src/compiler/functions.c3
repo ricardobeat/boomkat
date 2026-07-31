@@ -1568,6 +1568,16 @@ fn void CompilerContext.hoist_one_var_name(&self, char[] raw_name, bool is_globa
     // declare_var stores this slice into scope_stack, which outlives the token.
     HString* var_hstr = ((Heap*)self.heap).str_intern(raw_name);
     char[] var_name = var_hstr.get_data();
+    // A var whose name is already a parameter is NOT re-initialized: per
+    // ES2015 §9.2.10 step 27, only var names absent from parameterNames get
+    // the `undefined` initialization, so the argument value must survive
+    // `function f(p){ if (false) { var p = 1; } return p; }`. The parameter's
+    // own binding already is the var binding, so emit neither LDUNDEF nor a
+    // declaration and leave every read pointing at it.
+    if (self.is_param_name(var_name)) {
+        self.has_local_bindings = true;
+        return;
+    }
     ushort var_reg = self.declare_var(var_name, VAR);
     self.has_local_bindings = true;
     self.emit_abc(Opcode.LDUNDEF, (uint)var_reg, 0, 0);
@@ -4157,7 +4167,10 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
     if (arrow_ctx.check(TokenType.LBRACE)) {
         // Collect names captured by nested callables (plan 045).
         arrow_ctx.pre_scan_captures();
-        // Params are allocated, pin them for the body.
+        // Same FunctionBody hoist as compile_arrow_inner: a block ConciseBody
+        // has VarDeclaredNames and they must exist before any statement runs.
+        arrow_ctx.hoist_decls(false)!;
+        // Params and hoisted slots are allocated, pin them for the body.
         arrow_ctx.reserved_regs = arrow_ctx.next_reg;
         // Block body: { ... }
         arrow_ctx.advance()!;
@@ -4458,7 +4471,16 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner(&self, char[]* params,
     if (arrow_ctx.check(TokenType.LBRACE)) {
         // Collect names captured by nested callables (plan 045).
         arrow_ctx.pre_scan_captures();
-        // Params are allocated, pin them for the body.
+        // An arrow's ConciseBody with a block is a FunctionBody, so its
+        // VarDeclaredNames hoist exactly like an ordinary function's: a `var`
+        // in an unreached branch must read `undefined`, not throw. Mirrors
+        // parse_function_body's ordering (pre-scan, hoist, then pin), and
+        // relies on the lexer sitting on the body's own '{' — the
+        // is_global=false brace-depth convention hoist_decls documents.
+        // is_global is false unconditionally: an arrow body's `var`s are
+        // never global, they belong to the arrow's own PUSH_VAR scope.
+        arrow_ctx.hoist_decls(false)!;
+        // Params and hoisted slots are allocated, pin them for the body.
         arrow_ctx.reserved_regs = arrow_ctx.next_reg;
         // Block body: { ... }
         arrow_ctx.advance()!;
@@ -4492,6 +4514,8 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner(&self, char[]* params,
         // Expression body: implicitly return the expression value.
         // Pre-scan in expression mode: nested arrows/functions inside the
         // expression can capture this arrow's params (plan 045).
+        // No hoist here: an AssignmentExpression ConciseBody has no
+        // statement-level declarations, so its VarDeclaredNames is empty.
         arrow_ctx.pre_scan_captures(true);
         ushort expr_reg = arrow_ctx.assignment_expr()!;
         arrow_ctx.emit_a_bc(Opcode.RET, (uint)expr_reg, 0);
