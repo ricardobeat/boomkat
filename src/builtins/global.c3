@@ -88,11 +88,12 @@ fn void builtin_console_error(BuiltinContext* ctx) {
 fn void builtin_console_dir(BuiltinContext* ctx) {
     // console.dir(obj) renders its FIRST argument only and, unlike the other
     // console methods, applies no specifier substitution: console.dir("%s", x)
-    // prints the format string verbatim and drops x. Rendering is still the
-    // plain ToString form rather than util.inspect, which this engine lacks.
+    // prints the format string verbatim and drops x. It is also not the
+    // bare-string case, so console.dir("x") prints 'x' quoted where
+    // console.log("x") prints it bare.
     if (ctx.argc > 0) {
         ConsoleSink sink = { false };
-        console_emit_value(ctx, sink, &ctx.regs[ctx.base_reg]);
+        console_emit_inspect_spec(ctx, sink, &ctx.regs[ctx.base_reg]);
     }
     io::printf("\n");
     ctx.result.set_undefined();
@@ -174,9 +175,18 @@ fn void ConsoleSink.write(&self, char[] bytes) {
     for (usz i = 0; i < bytes.len; i++) self.put(bytes[i]);
 }
 
-/// Emit one value the way console renders it outside any specifier, i.e. the
-/// pre-existing ToString-based rendering, routed through the sink.
+/// Emit one value the way console renders it outside any specifier: node's
+/// util.inspect form, with a top-level string emitted bare.
 fn void console_emit_value(BuiltinContext* ctx, ConsoleSink sink, TVal* val) {
+    StrBuf out;
+    out.init(ctx.heap);
+    defer out.free();
+    if (inspect_root(ctx.heap, ctx.vm, val, &out)) {
+        sink.write(out.data[:out.len]);
+        return;
+    }
+    // Out of memory mid-render: fall back to the plain ToString form rather
+    // than emitting the half-built buffer.
     if (sink.use_stderr) {
         print_tval_err_ctx(ctx, val);
     } else {
@@ -264,10 +274,12 @@ fn void console_emit_specifier(BuiltinContext* ctx, ConsoleSink sink, char spec,
         case 'j':
             console_emit_json_spec(ctx, sink, arg);
         default:
-            // 'o' and 'O'. No util.inspect in this engine, so these render the
-            // same as %s rather than inventing a third rendering that would
-            // match neither node nor the existing plain-argument output.
-            console_emit_string_spec(ctx, sink, arg);
+            // 'o' and 'O', both an inspect. They differ in node only by the
+            // options they pass (%o adds showHidden and depth 4), which this
+            // inspect does not vary, so both render the same form a plain
+            // argument would — except that a string under %o/%O is QUOTED,
+            // since the bare-string rule applies only to a top-level value.
+            console_emit_inspect_spec(ctx, sink, arg);
     }
 }
 
@@ -282,6 +294,19 @@ fn void console_emit_string_spec(BuiltinContext* ctx, ConsoleSink sink, TVal* ar
             return;
         }
         hstring::write_cesu8_as_utf8(s.get_data(), sink.use_stderr ? &eputc : &io::putchar);
+        return;
+    }
+    console_emit_value(ctx, sink, arg);
+}
+
+/// %o and %O, and console.dir's single argument. Unlike a plain argument these
+/// are NOT at the root of a console call, so a string renders quoted.
+fn void console_emit_inspect_spec(BuiltinContext* ctx, ConsoleSink sink, TVal* arg) {
+    StrBuf out;
+    out.init(ctx.heap);
+    defer out.free();
+    if (inspect_nested(ctx.heap, ctx.vm, arg, &out)) {
+        sink.write(out.data[:out.len]);
         return;
     }
     console_emit_value(ctx, sink, arg);
