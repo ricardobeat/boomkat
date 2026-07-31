@@ -55,6 +55,11 @@ echo ""
 bash "$DIR/modules/syntax_positions.sh" "$ENGINE"
 MODSYN_RC=$?
 
+# Module export-name early errors — likewise compile-only.
+echo ""
+bash "$DIR/modules/export_names.sh" "$ENGINE"
+MODEXP_RC=$?
+
 # Uncaught-exception reporting — asserted from the shell because these cases
 # exit non-zero with diagnostics on stderr by construction, which the flat
 # sweep above would count as failures.
@@ -68,5 +73,6 @@ echo ""
 bash "$DIR/console_format/run.sh" "$ENGINE"
 CFMT_RC=$?
 
-[ "$FAIL" -eq 0 ] && [ "$MOD_RC" -eq 0 ] && [ "$MODSYN_RC" -eq 0 ] && [ "$UNC_RC" -eq 0 ] \
+[ "$FAIL" -eq 0 ] && [ "$MOD_RC" -eq 0 ] && [ "$MODSYN_RC" -eq 0 ] \
+  && [ "$MODEXP_RC" -eq 0 ] && [ "$UNC_RC" -eq 0 ] \
   && [ "$CFMT_RC" -eq 0 ]

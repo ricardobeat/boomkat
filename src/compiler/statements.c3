@@ -187,6 +187,41 @@ fn void mod_register_import(CompModuleDef* mod, char[] local_name, char[] import
     mod.import_count++;
 }
 
+/// True when `export_name` is already an ExportedName of this module.
+///
+/// ES2024 §16.2.3.1: "It is a Syntax Error if the ExportedNames of ModuleItemList
+/// contains any duplicate entries." Every named export funnels through
+/// mod_register_export, so testing here catches all the spellings that can
+/// collide -- `export {x}` twice, two `as z` aliases, an `export default` paired
+/// with `{y as default}`, two same-named `export function` declarations, and
+/// `export * as z` against a local `{x as z}`.
+///
+/// `export * from` is exempt: it contributes no ExportedName of its own (a name
+/// it would have re-exported is instead dropped when ambiguous), which is why
+/// star exports are registered through mod_register_star_export and never reach
+/// this path.
+fn bool mod_has_export_name(CompModuleDef* mod, char[] export_name) {
+    for (uint i = 0; i < mod.export_count; i++) {
+        if (str_eq(mod.exports[i].export_name, export_name)) return true;
+    }
+    return false;
+}
+
+/// Register a named export, rejecting a duplicate ExportedName (§16.2.3.1).
+///
+/// Wraps mod_register_export at the one point every named export passes
+/// through, so the duplicate rule cannot be missed by a new export form:
+/// mod_register_export itself is a plain function with no compiler context to
+/// raise a SyntaxError from.
+fn void? CompilerContext.register_export(&self, CompModuleDef* mod, char[] local_name,
+    char[] export_name, bool is_indirect, uint req_idx, bool is_lexical = false)
+{
+    if (mod_has_export_name(mod, export_name)) {
+        return self.fail("duplicate export name")~;
+    }
+    mod_register_export(mod, local_name, export_name, is_indirect, req_idx, is_lexical);
+}
+
 /// Register an export entry in the module.
 fn void mod_register_export(CompModuleDef* mod, char[] local_name, char[] export_name, bool is_indirect, uint req_idx, bool is_lexical = false) {
     if (mod.export_count >= COMP_MAX_EXPORTS) return;
@@ -721,6 +756,48 @@ fn void CompilerContext.hoist_lexical_tdz(&self) {
         char[] name = self.name_span_text(spans[i]);
         uint name_idx = self.add_string_constant(name);
         self.emit_a_bc(Opcode.INITTZ, 0, name_idx);
+    }
+}
+
+/// Reject a module-scope lexical binding named `name` that already exists, for
+/// the one declaration form check_module_duplicate_lexical_names cannot
+/// pre-scan: `export default function F(){}`, whose `F` is not in statement
+/// position and so is never recorded by hoist_global_fn_decls. By the time the
+/// declaration is parsed, any colliding `class`/`let`/`const` is already on
+/// scope_stack.
+fn void? CompilerContext.check_module_lexical_collision(&self, char[] name) {
+    if (!self.is_module) return;
+    for (uint i = 0; i < self.scope_depth; i++) {
+        ScopeEntry* e = &self.scope_stack[i];
+        if ((e.kind == LET || e.kind == CONST) && str_eq(e.name, name)) {
+            return self.fail("Identifier has already been declared")~;
+        }
+    }
+}
+
+/// ES2024 §16.2.1.1: a MODULE body's LexicallyDeclaredNames must contain no
+/// duplicates. Unlike a Script's, a module's top-level FunctionDeclarations are
+/// lexical, so `class F {} function F(){}` is a SyntaxError where the same pair
+/// is legal at Script top level (there the function is var-scoped and simply
+/// wins).
+///
+/// Runs over the two name sets the module prologue has already collected: the
+/// let/const/class spans from pre_scan_lexical_decls, and the function names
+/// hoist_global_fn_decls recorded in hoisted_fn_names. Function-vs-function
+/// duplicates are already rejected inside that pre-scan, so this adds the
+/// lex-vs-lex and lex-vs-function pairings.
+fn void? CompilerContext.check_module_duplicate_lexical_names(&self) {
+    if (!self.is_module) return;
+    NameSpan[MAX_PRESCAN_NAMES] spans;
+    uint n = self.pre_scan_lexical_decls(&spans, MAX_PRESCAN_NAMES);
+    self.check_duplicate_lexical_names(&spans[0], n)!;
+    for (uint i = 0; i < n; i++) {
+        char[] name = self.name_span_text(spans[i]);
+        for (ushort h = 0; h < self.hoisted_fn_count; h++) {
+            if (str_eq(self.hoisted_fn_names[h], name)) {
+                return self.fail("Identifier has already been declared")~;
+            }
+        }
     }
 }
 
@@ -5272,11 +5349,19 @@ fn void? CompilerContext.export_declaration(&self) {
             // the internal "*default*" symbol so it can't collide with a
             // user-declared `default` identifier.
             char[] local_name = is_named ? fn_name : "*default*";
+            // A module's top-level function declarations are lexical
+            // (§16.2.1.1), and `export default function F(){}` binds `F` in
+            // module scope just like a plain declaration, so it must not
+            // collide with an existing lexical name.
+            // check_module_duplicate_lexical_names cannot see this one: the
+            // name is not in statement position, so hoist_global_fn_decls's
+            // pre-scan never records it.
+            if (is_named) self.check_module_lexical_collision(local_name)!;
             ushort func_reg = self.declare_var(local_name, VAR);
             mod_register_func_decl(mod, local_name, inner_idx);
             self.free_reg(func_reg);
 
-            mod_register_export(mod, local_name, "default", false, 0);
+            self.register_export(mod, local_name, "default", false, 0)!;
             self.match(TokenType.SEMICOLON);
             return;
         }
@@ -5297,7 +5382,7 @@ fn void? CompilerContext.export_declaration(&self) {
             // export pre-declaration loop seeding a plain `undefined` instead
             // of the TDZ sentinel, so a same-module self-import of the default
             // binding observed `undefined` instead of throwing ReferenceError.
-            mod_register_export(mod, dflt_class_name, "default", false, 0, true);
+            self.register_export(mod, dflt_class_name, "default", false, 0, true)!;
             self.match(TokenType.SEMICOLON);
             return;
         }
@@ -5321,7 +5406,7 @@ fn void? CompilerContext.export_declaration(&self) {
         // runs it is in TDZ, so a same-module `import * as ns; ns.default`
         // executing above must observe the sentinel and throw ReferenceError,
         // register it lexical so link_module pre-declares the TDZ sentinel.
-        mod_register_export(mod, "*default*", "default", false, 0, true);
+        self.register_export(mod, "*default*", "default", false, 0, true)!;
         // `export default AssignmentExpression ;` — the semicolon is part of
         // the production, so it is required (via ASI), unlike the
         // HoistableDeclaration / ClassDeclaration forms above, which end at
@@ -5341,7 +5426,7 @@ fn void? CompilerContext.export_declaration(&self) {
             Token spec_tok = self.expect(TokenType.STRING)!;
             bool wants_json = self.parse_with_clause()!;
             uint req_idx = mod_register_req_module(mod, spec_tok.str_value, wants_json);
-            mod_register_export(mod, "*", ns_name, true, req_idx);
+            self.register_export(mod, "*", ns_name, true, req_idx)!;
             self.expect_semicolon_or_asi()!;
             return;
         }
@@ -5385,7 +5470,7 @@ fn void? CompilerContext.export_declaration(&self) {
             bool wants_json = self.parse_with_clause()!;
             uint req_idx = mod_register_req_module(mod, spec_tok.str_value, wants_json);
             for (uint i = 0; i < count; i++) {
-                mod_register_export(mod, local_names[i], export_names[i], true, req_idx);
+                self.register_export(mod, local_names[i], export_names[i], true, req_idx)!;
             }
         } else {
             // `export { a, b as c };`, a, b are local bindings UNLESS one
@@ -5401,7 +5486,7 @@ fn void? CompilerContext.export_declaration(&self) {
                 CompImportEntry* ie = mod_find_import_by_local(mod, local_names[i]);
                 if (ie != null) {
                     char[] indirect_local = ie.is_star ? "*" : ie.import_name;
-                    mod_register_export(mod, indirect_local, export_names[i], true, ie.req_module_idx);
+                    self.register_export(mod, indirect_local, export_names[i], true, ie.req_module_idx)!;
                     continue;
                 }
                 // Local export: look up the name's declared kind so a
@@ -5412,7 +5497,7 @@ fn void? CompilerContext.export_declaration(&self) {
                 // func_decls (by hoist_global_fn_decls) and bound at link
                 // time, and this export simply aliases that local binding.
                 bool lex = self.is_name_lexical(local_names[i]);
-                mod_register_export(mod, local_names[i], export_names[i], false, 0, lex);
+                self.register_export(mod, local_names[i], export_names[i], false, 0, lex)!;
             }
         }
 
@@ -5464,7 +5549,7 @@ fn void? CompilerContext.export_declaration(&self) {
         mod_register_func_decl(mod, fn_name2, inner_idx);
         self.free_reg(func_reg);
 
-        mod_register_export(mod, fn_name2, fn_name2, false, 0);
+        self.register_export(mod, fn_name2, fn_name2, false, 0)!;
         self.match(TokenType.SEMICOLON);
         return;
     }
@@ -5477,7 +5562,7 @@ fn void? CompilerContext.export_declaration(&self) {
         // read-name-then-push-both-back approach corrupted the token stream.)
         char[] class_name;
         self.class_declaration(&class_name)!;
-        mod_register_export(mod, class_name, class_name, false, 0, true);
+        self.register_export(mod, class_name, class_name, false, 0, true)!;
         self.match(TokenType.SEMICOLON);
         return;
     }
@@ -5507,7 +5592,7 @@ fn void? CompilerContext.export_declaration(&self) {
                 self.array_destructure(kind, is_lexical, is_const, &export_names[0], &export_names_count)!;
             }
             for (uint i = 0; i < export_names_count; i++) {
-                mod_register_export(mod, export_names[i], export_names[i], false, 0, is_lexical);
+                self.register_export(mod, export_names[i], export_names[i], false, 0, is_lexical)!;
             }
             self.match(TokenType.SEMICOLON);
             return;
@@ -5551,7 +5636,7 @@ fn void? CompilerContext.export_declaration(&self) {
             self.emit_var_store(reg, name_idx, is_lexical, is_const);
             if (self.is_global) self.free_reg(reg);
 
-            mod_register_export(mod, name_tok.str_value, name_tok.str_value, false, 0, is_lexical);
+            self.register_export(mod, name_tok.str_value, name_tok.str_value, false, 0, is_lexical)!;
 
             if (!self.match(TokenType.COMMA)) break;
         }
