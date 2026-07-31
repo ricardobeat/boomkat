@@ -468,6 +468,17 @@ struct CompilerContext {
     /// function/arrow body (fresh CompilerContext).
     bool forbid_yield;
 
+    /// True while the parser sits exactly at the start of an
+    /// AssignmentExpression. A YieldExpression *is* an AssignmentExpression
+    /// (ES2024 §13.15), so it is only legal in that position: `x = yield` and
+    /// `f(yield)` parse, but `!yield`, `1 + yield` and `yield ? a : b` are
+    /// SyntaxErrors because there the operand grammar is Unary/Conditional,
+    /// which does not derive YieldExpression. assignment_expr sets this and
+    /// every tighter-binding level (conditional/binary/unary/postfix) clears
+    /// it before recursing, so primary_expr sees it set only when `yield`
+    /// really did begin an AssignmentExpression.
+    bool yield_ok_here;
+
     /// True while parsing the enclosing function's FormalParameters. Parameter
     /// defaults must reject yield/await EXPRESSIONS (FormalParameters may not
     /// Contain them, §14.1.2/§14.7), but destructuring defaults in the BODY of
@@ -626,6 +637,16 @@ struct CompilerContext {
     // module code while remaining an early SyntaxError in Script/eval/Function
     // code. It never affects `await`/`arguments` handling.
     bool module_goal;
+
+    /// True only while parsing a statement directly in a Module's top-level
+    /// StatementList. An ImportDeclaration / ExportDeclaration is a
+    /// ModuleItem (ES2024 §16.2.1), a production that exists nowhere else in
+    /// the grammar, so `export` inside a block, a loop or switch body, a
+    /// labelled statement or a try/catch/finally is a SyntaxError. The
+    /// statement dispatcher clears this before parsing any nested statement,
+    /// and nested function/arrow contexts never inherit it (a fresh
+    /// CompilerContext leaves it false).
+    bool module_top_level;
 
     // Inferred function name for the next anonymous function expression parsed.
     // Set by assignment_expr when LHS is a plain identifier (e.g. `var f = function() {}`)

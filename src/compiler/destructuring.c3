@@ -470,12 +470,13 @@ fn void? CompilerContext.collect_assign_target(&self, DestructBind* bind)
     bool is_member = is_member_res;
 
     // AssignmentElement's target must be a valid simple assignment target
-    // (ES2022 §13.15.1): in strict code `eval` and `arguments` are not, so
-    // `[eval] = v` / `[arguments] = v` are early SyntaxErrors exactly as the
-    // non-pattern `eval = v` already is. Only identifier targets can offend —
-    // a member expression (`o.eval`) is always a valid target. This is the one
-    // point every leaf assignment target passes through, so array elements,
-    // object properties, rest targets and nested patterns are all covered.
+    // (ES2024 §13.15.1): in strict code `eval`, `arguments` and the reserved
+    // words are not, so `[eval] = v` / `[yield] = v` are early SyntaxErrors
+    // exactly as the non-pattern `eval = v` already is. Only identifier
+    // targets can offend — a member expression (`o.eval`) is always valid.
+    // This is the one point every leaf assignment target passes through, so
+    // array elements, object properties, rest targets and nested patterns are
+    // all covered here rather than at N call sites.
     if (!is_member) {
         HString* nhs = (HString*)self.constants[tgt_name].get_heapptr();
         if (is_restricted_name(nhs.get_data(),
@@ -961,8 +962,7 @@ fn void? CompilerContext.collect_obj_assign_binds(&self,
             if (!is_member) {
                 HString* hs = (HString*)self.constants[tgt_name].get_heapptr();
                 if (is_restricted_name(hs.get_data(),
-                                       self.is_async || self.is_module || self.forbid_await,
-                                       self.is_generator || self.forbid_yield)) return COMPILE_ERROR~;
+                                       self.is_async || self.is_module || self.forbid_await)) return COMPILE_ERROR~;
             }
             if (*count < binds.len) {
                 binds[*count].name_idx         = tgt_name;
@@ -1030,8 +1030,7 @@ fn void? CompilerContext.collect_obj_assign_binds(&self,
             if (!self.shorthand_key_is_identifier_ref(key_tt)) return COMPILE_ERROR~;
             HString* hs = (HString*)self.constants[key_idx].get_heapptr();
             if (is_restricted_name(hs.get_data(),
-                                   self.is_async || self.is_module || self.forbid_await,
-                                   self.is_generator || self.forbid_yield)) return COMPILE_ERROR~;
+                                   self.is_async || self.is_module || self.forbid_await)) return COMPILE_ERROR~;
             if (*count < binds.len) {
                 binds[*count].name_idx    = key_idx;
                 binds[*count].key_idx     = key_idx;
@@ -1100,8 +1099,7 @@ fn void? CompilerContext.collect_obj_assign_binds(&self,
             if (!is_member) {
                 HString* hs = (HString*)self.constants[tgt_name].get_heapptr();
                 if (is_restricted_name(hs.get_data(),
-                                       self.is_async || self.is_module || self.forbid_await,
-                                       self.is_generator || self.forbid_yield)) {
+                                       self.is_async || self.is_module || self.forbid_await)) {
                     if (deferred_key != null) mem::free(deferred_key);
                     return COMPILE_ERROR~;
                 }

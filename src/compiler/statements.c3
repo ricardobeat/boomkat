@@ -282,6 +282,13 @@ fn void? CompilerContext.statement(&self) {
     ushort stmt_base = self.next_reg;
     TokenType tt = self.peek_type();
 
+    // Consume the ModuleItem permission exactly once, into a local, and clear
+    // the field so it cannot leak into any nested statement parsed below. Only
+    // a statement dispatched directly from the module body's own loop may be
+    // an Import/ExportDeclaration.
+    bool at_module_top = self.module_top_level;
+    self.module_top_level = false;
+
     switch (tt) {
         case TokenType.LBRACE:
             self.block(false)!;
@@ -330,10 +337,20 @@ fn void? CompilerContext.statement(&self) {
             if (is_expr) {
                 self.expression_statement()!;
             } else {
+                // An ImportDeclaration is a ModuleItem, legal only in a
+                // Module's top-level StatementList (ES2024 §16.2.1).
+                if (!at_module_top) {
+                    return self.fail("'import' declarations may only appear at the top level of a module")~;
+                }
                 self.import_declaration()!;
             }
         }
         case TokenType.EXPORT:
+            // Likewise an ExportDeclaration is a ModuleItem: never valid
+            // inside a block, loop/switch body, label or try/catch/finally.
+            if (!at_module_top) {
+                return self.fail("'export' declarations may only appear at the top level of a module")~;
+            }
             self.export_declaration()!;
         case TokenType.SEMICOLON:
             // Empty statement
@@ -360,6 +377,18 @@ fn void? CompilerContext.statement(&self) {
                 // Consume the identifier token to check what follows
                 Token id_tok = self.advance()!;
                 if (self.peek_type() == TokenType.COLON) {
+                    // A LabelIdentifier is an Identifier (§14.13), so a
+                    // ReservedWord may not be one. `true`/`false`/`null` lex
+                    // as IDENTIFIER here (they are matched by name in
+                    // primary_expr rather than living in the keyword table),
+                    // so they have to be excluded explicitly, escaped or not.
+                    // `eval`/`arguments` are NOT reserved and remain valid
+                    // label names.
+                    if (str_eq(id_tok.str_value, "true")
+                            || str_eq(id_tok.str_value, "false")
+                            || str_eq(id_tok.str_value, "null")) {
+                        return self.fail("reserved word cannot be used as a label")~;
+                    }
                     self.advance()!; // consume ':'
                     self.labeled_statement(id_tok.str_value)!;
                     break;
@@ -532,6 +561,15 @@ fn void? CompilerContext.parse_directives(&self) {
         }
 
         Token str_tok = self.advance()!;
+
+        // A directive's string is never evaluated as an expression, so it
+        // never reaches primary_expr's octal check. The early error still
+        // applies (ES2024 §12.9.4.1: a LegacyOctalEscapeSequence is a Syntax
+        // Error in strict code, and a DirectivePrologue member is strict code
+        // here because the engine is strict-only), so check it directly.
+        if (str_tok.has_octal_escape) {
+            return self.fail("octal escape sequences are not allowed in strict mode")~;
+        }
 
         bool has_semicolon = self.check(TokenType.SEMICOLON);
         // ASI ends the ExpressionStatement at a line terminator, and also at
@@ -1397,21 +1435,19 @@ fn void? CompilerContext.var_declaration(&self) {
             self.advance()!; // consume '{'
             self.object_destructure(kind, is_lexical, is_const)!;
         } else {
-            // Per ES2024 §13.3.1, BindingIdentifier is an Identifier or one of
-            // `yield`/`await` in non-generator / non-module contexts. We're
-            // strict-only but still support script-level `await`/`yield`.
+            // Per ES2024 §13.3.1, BindingIdentifier is an Identifier or
+            // `await` in a non-module, non-async context. We're strict-only,
+            // so `yield` is always reserved and never a binding name.
             Token name_tok;
-            // `await`/`yield` reach here only when the context already permits
-            // them as identifiers, so the context-blind is_restricted_name
-            // check below must not re-reject them, it applies to the plain
-            // Identifier path only. `await` is an identifier only outside a
-            // module AND outside an async function/arrow (§13.1.1); `yield`
-            // only outside a generator.
+            // `await` reaches here only when the context already permits it as
+            // an identifier, so the context-blind is_restricted_name check
+            // below must not re-reject it, it applies to the plain Identifier
+            // path only. `await` is an identifier only outside a module AND
+            // outside an async function/arrow (§13.1.1).
             bool ctx_keyword_ident = false;
             if (next == TokenType.IDENTIFIER) {
                 name_tok = self.advance()!;
-            } else if ((next == TokenType.AWAIT && !self.is_module && !self.is_async && !self.forbid_await) ||
-                       (next == TokenType.YIELD && !self.is_generator)) {
+            } else if (next == TokenType.AWAIT && !self.is_module && !self.is_async && !self.forbid_await) {
                 name_tok = self.advance()!;
                 ctx_keyword_ident = true;
             } else {
@@ -3568,10 +3604,15 @@ fn void? CompilerContext.emit_bare_forof_destruct_loop(&self, bool is_array_patt
 
 /// Emit a for-in loop with a bare destructuring pattern LHS:
 /// `for ([a, b] in obj) { ... }` or `for ({x, y} in obj) { ... }`.
-/// Bindings are VAR-scoped. The '[' or '{' has NOT been consumed.
+/// The '[' or '{' has NOT been consumed.
 fn void? CompilerContext.emit_bare_forin_destruct_loop(&self, bool is_array_pattern, uint saved_scope, ushort saved_reg) {
-    // Collect the pattern via the shared param collectors (VAR-declared leaves),
-    // then extract each enumerated key through emit_destruct_bindings below.
+    // A bare pattern in a for-in head is an AssignmentPattern (ES2024
+    // §14.7.5.1, same as the for-of form): it assigns to existing lvalues
+    // rather than declaring, so member-expression targets like
+    // `for ({length: obj.p} in o)` are legal and the restricted-name early
+    // errors (`yield`, `eval`, `arguments`) apply to its identifier leaves.
+    // Use the assignment collectors and the ASSIGN_TARGET store mode, exactly
+    // as emit_bare_forof_destruct_loop does.
     //
     // The pattern's default values are AssignmentExpressions, not
     // FormalParameter defaults, so the in_formal_params await/yield gate must
@@ -3584,18 +3625,26 @@ fn void? CompilerContext.emit_bare_forin_destruct_loop(&self, bool is_array_patt
     uint dcount = 0;
     self.advance()!; // consume '[' or '{'
     if (is_array_pattern) {
-        self.collect_arr_param_binds(dbinds[..], &dcount, 0, 0xFFFF)!;
+        self.collect_arr_assign_binds(dbinds[..], &dcount)!;
     } else {
-        self.collect_obj_param_binds(dbinds[..], &dcount, 0, 0xFFFF)!;
+        self.collect_obj_assign_binds(dbinds[..], &dcount)!;
     }
     ushort[MAX_DESTRUCT_BINDS] dgroup_regs;
     ushort[MAX_DESTRUCT_BINDS] dbinding_regs;
     for (uint i = 0; i < dcount; i++) { dgroup_regs[i] = 0xFFFF; dbinding_regs[i] = 0xFFFF; }
+    // Allocate a binding register per leaf: member targets and unresolvable
+    // identifiers get a fresh temp; resolvable locals reuse their slot.
     for (uint i = 0; i < dcount; i++) {
         if (dbinds[i].is_synthetic) continue;
+        if (dbinds[i].is_member_target) { dbinding_regs[i] = self.alloc_reg(); continue; }
         HString* hs = (HString*)self.constants[dbinds[i].name_idx].get_heapptr();
-        self.check_var_lex_conflict(hs.get_data(), ScopeKind.VAR)!;
-        dbinding_regs[i] = self.declare_var(hs.get_data(), ScopeKind.VAR);
+        char[] name = hs.get_data();
+        if (!self.is_global) {
+            if (try existing = self.resolve_var(name)) { dbinding_regs[i] = existing; continue; }
+        }
+        // Env-resident target: temp + forced PUTVAR so const-assignment throws.
+        dbinding_regs[i] = self.alloc_reg();
+        dbinds[i].assign_needs_putvar = true;
     }
 
     self.expect(TokenType.IN)!;
@@ -3618,7 +3667,8 @@ fn void? CompilerContext.emit_bare_forin_destruct_loop(&self, bool is_array_patt
     uint exit_jump = self.emit_cond_jump(Opcode.IF_FALSE, (uint)has_next);
     self.free_reg(has_next);
 
-    // Destructure each enumerated key via the shared emitter (DECLARE, VAR).
+    // Destructure each enumerated key via the shared emitter. The head is an
+    // AssignmentPattern, so the leaves store through ASSIGN_TARGET.
     if (!is_array_pattern) {
         self.emit_abc(Opcode.REQUIRE_OBJ, (uint)key_reg, 0, 0);
     }
@@ -3627,7 +3677,7 @@ fn void? CompilerContext.emit_bare_forin_destruct_loop(&self, bool is_array_patt
     }
     if (dcount > 0) {
         self.emit_destruct_bindings(dbinds[..], dcount, dgroup_regs[..], dbinding_regs[..],
-                                    DestructStoreMode.DECLARE, false, false);
+                                    DestructStoreMode.ASSIGN_TARGET, false, false);
     }
 
     self.statement_body()!;
@@ -5111,7 +5161,11 @@ fn void? CompilerContext.export_declaration(&self) {
         // executing above must observe the sentinel and throw ReferenceError,
         // register it lexical so link_module pre-declares the TDZ sentinel.
         mod_register_export(mod, "*default*", "default", false, 0, true);
-        self.match(TokenType.SEMICOLON);
+        // `export default AssignmentExpression ;` — the semicolon is part of
+        // the production, so it is required (via ASI), unlike the
+        // HoistableDeclaration / ClassDeclaration forms above, which end at
+        // their own closing brace and take no semicolon.
+        self.expect_semicolon_or_asi()!;
         return;
     }
 
@@ -5127,7 +5181,7 @@ fn void? CompilerContext.export_declaration(&self) {
             bool wants_json = self.parse_with_clause()!;
             uint req_idx = mod_register_req_module(mod, spec_tok.str_value, wants_json);
             mod_register_export(mod, "*", ns_name, true, req_idx);
-            self.match(TokenType.SEMICOLON);
+            self.expect_semicolon_or_asi()!;
             return;
         }
 
@@ -5136,7 +5190,7 @@ fn void? CompilerContext.export_declaration(&self) {
         bool wants_json = self.parse_with_clause()!;
         uint req_idx = mod_register_req_module(mod, spec_tok.str_value, wants_json);
         mod_register_star_export(mod, req_idx);
-        self.match(TokenType.SEMICOLON);
+        self.expect_semicolon_or_asi()!;
         return;
     }
 
@@ -5201,7 +5255,7 @@ fn void? CompilerContext.export_declaration(&self) {
             }
         }
 
-        self.match(TokenType.SEMICOLON);
+        self.expect_semicolon_or_asi()!;
         return;
     }
 

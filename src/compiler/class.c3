@@ -223,8 +223,7 @@ fn void? CompilerContext.class_declaration(&self, char[]* out_name = null, bool 
     if (name_tt == TokenType.IDENTIFIER) {
         class_name = self.advance()!.str_value;
         class_name = ((Heap*)self.heap).str_intern(class_name).get_data();
-    } else if ((name_tt == TokenType.AWAIT && !self.is_module && !self.forbid_await) ||
-               (name_tt == TokenType.YIELD && !self.is_generator)) {
+    } else if (name_tt == TokenType.AWAIT && !self.is_module && !self.forbid_await) {
         class_name = self.advance()!.str_value;
         class_name = ((Heap*)self.heap).str_intern(class_name).get_data();
     } else if (allow_anonymous && (name_tt == TokenType.EXTENDS || name_tt == TokenType.LBRACE)) {
@@ -307,9 +306,10 @@ fn ushort? CompilerContext.class_expression(&self) {
     ushort name_reg = MAX_REGISTERS;
     bool has_name = false;
     TokenType class_name_tt = self.peek_type();
+    // `yield` is not a valid class name: it is reserved in all strict code
+    // and this engine is strict-only.
     bool is_valid_class_name = (class_name_tt == TokenType.IDENTIFIER) ||
-        (class_name_tt == TokenType.AWAIT && !self.is_module && !self.forbid_await) ||
-        (class_name_tt == TokenType.YIELD && !self.is_generator);
+        (class_name_tt == TokenType.AWAIT && !self.is_module && !self.forbid_await);
     if (is_valid_class_name) {
         Token name_tok = self.advance()!;
         // Intern now: an escaped class name borrows the lexer's shared
@@ -893,7 +893,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
         } else if (self.check(TokenType.IDENTIFIER)
                || lexer::keyword_to_string(self.peek_type()).len > 0) {
             // IDENTIFIER or any keyword (extends, class, if, return, etc.) as method name
-            method_name = self.advance()!;
+            method_name = self.advance(true)!;
             // Check for getter/setter: `get prop() {}` / `set prop(v) {}`
             // Skip when this is a generator-method shorthand, `*get` / `*set` is a SyntaxError.
             if (!is_generator_method && (method_name.str_value.len == 3
@@ -942,7 +942,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
                         method_name = lexer::make_token(TokenType.IDENTIFIER, 0, 0);
                     } else if (self.check(TokenType.IDENTIFIER) || self.check(TokenType.STRING)
                                || lexer::keyword_to_string(self.peek_type()).len > 0) {
-                        method_name = self.advance()!;
+                        method_name = self.advance(true)!;
                     } else if (self.check(TokenType.NUMBER)) {
                         method_name = self.advance()!;
                         method_name_is_number = true;

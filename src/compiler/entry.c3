@@ -411,6 +411,10 @@ fn CompiledFunction*? compile_module(Lexer* lex, void* heap, char[] module_name,
     ctx.hoist_lexical_tdz();
     ctx.reserved_regs = ctx.next_reg;
     while (!ctx.is_at_end()) {
+        // Only a statement dispatched from here is a ModuleItem, so this is
+        // the one place an Import/ExportDeclaration may appear. statement()
+        // consumes and clears the flag, so nested statements never see it.
+        ctx.module_top_level = true;
         ctx.statement()!;
     }
 

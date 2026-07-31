@@ -56,7 +56,12 @@ fn void CompilerContext.record_lex_error(&self) {
 // ============================================================================
 
 /// Advance: consume the next token from the lexer and return it.
-fn Token? CompilerContext.advance(&self) {
+///
+/// `as_ident_name` marks the few positions whose grammar is IdentifierName
+/// rather than a ReservedWord terminal — an object-literal or class-member
+/// key. Escapes are legal there (`({ break: 1 })`, `class C { break(){} }`),
+/// so the escaped-keyword rejection below is skipped for those callers only.
+fn Token? CompilerContext.advance(&self, bool as_ident_name = false) {
     // Check pushback buffer first
     if (self.pushback_count > 0) {
         self.pushback_count--;
@@ -67,7 +72,20 @@ fn Token? CompilerContext.advance(&self) {
         self.record_lex_error();
         return COMPILE_ERROR~;
     }
-    return tok_opt;
+    Token tok = tok_opt;
+    // ES2024 §12.7.2: a ReservedWord is a terminal symbol and must appear
+    // literally, so a spelling that uses a Unicode escape (`var`,
+    // `break`) is neither the keyword nor a usable Identifier — it is
+    // always a SyntaxError. The lexer resolves such a token to its keyword
+    // type with has_escape set; reject it here, the one gate every
+    // keyword-consuming parse path shares.
+    //
+    // Member-access names (`o.break`) are unaffected: read_property_name
+    // reads straight off the lexer rather than through this function.
+    if (tok.has_escape && tok.type != TokenType.IDENTIFIER && !as_ident_name) {
+        return self.fail("keyword must not contain escaped characters")~;
+    }
+    return tok;
 }
 
 /// Expect the next token to be of the given type; consume and return it.
@@ -95,25 +113,27 @@ fn Token? CompilerContext.expect(&self, TokenType tt) {
 
 /// Consume the next token as a BindingIdentifier and return it.
 ///
-/// Per ES2024 §13.1 a BindingIdentifier is an Identifier, or `yield`/`await`
-/// in contexts where they are not reserved: `await` is a plain identifier
-/// outside a module and outside an async function/arrow (§13.1.1), and `yield`
-/// outside a generator. A class static block additionally forbids either as a
-/// binding name at its own top level (forbid_await/forbid_yield); those flags
-/// reset in any nested function/arrow body, matching how the spec's [Await]/
-/// [Yield] grammar parameters are re-fixed at each function boundary. So the
-/// same `await`/`yield` that is a SyntaxError directly in a static block is a
-/// valid identifier inside a non-async function/arrow nested in that block.
+/// Per ES2024 §13.1 a BindingIdentifier is an Identifier, or `await` in a
+/// context where it is not reserved: outside a module and outside an async
+/// function/arrow (§13.1.1). A class static block additionally forbids it as a
+/// binding name at its own top level (forbid_await); that flag resets in any
+/// nested function/arrow body, matching how the spec's [Await] grammar
+/// parameter is re-fixed at each function boundary. So the same `await` that
+/// is a SyntaxError directly in a static block is a valid identifier inside a
+/// non-async function/arrow nested in that block.
 ///
-/// The returned token's str_value carries the name for both keyword tokens
+/// `yield` is never a BindingIdentifier here: §13.1.1 reserves it in all
+/// strict-mode code, and this engine is strict-only (see AGENTS.md), so the
+/// non-generator relaxation the spec grants to sloppy code never applies.
+///
+/// The returned token's str_value carries the name for the keyword token
 /// (the lexer fills it in), so callers use it exactly like a plain IDENTIFIER.
 fn Token? CompilerContext.expect_binding_identifier(&self) {
     TokenType next = self.peek_type();
     if (next == TokenType.IDENTIFIER) {
         return self.advance()!;
     }
-    if ((next == TokenType.AWAIT && !self.is_module && !self.is_async && !self.forbid_await) ||
-        (next == TokenType.YIELD && !self.is_generator && !self.forbid_yield)) {
+    if (next == TokenType.AWAIT && !self.is_module && !self.is_async && !self.forbid_await) {
         return self.advance()!;
     }
     return self.expect(TokenType.IDENTIFIER)!;
@@ -469,6 +489,14 @@ fn bool CompilerContext.match_async_method_prefix(&self) {
         cur.str_value[0] != 'a' || cur.str_value[1] != 's' ||
         cur.str_value[2] != 'y' || cur.str_value[3] != 'n' ||
         cur.str_value[4] != 'c') {
+        self.pushback(cur);
+        return false;
+    }
+    // Escaped `async` (`async m(){}`) is a plain IdentifierName, never
+    // the contextual keyword (ES2024 §5.1.5), so it does not introduce an
+    // async method — same rule as match_async_function_prefix and
+    // is_async_arrow_lookahead.
+    if (cur.has_escape) {
         self.pushback(cur);
         return false;
     }

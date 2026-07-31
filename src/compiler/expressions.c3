@@ -104,6 +104,11 @@ fn ushort? CompilerContext.assignment_expr(&self) {
     bool void_ctx = self.void_ctx;
     self.void_ctx = false;
 
+    // We are at the head of an AssignmentExpression, the one position where a
+    // YieldExpression may start. conditional_expr and everything below clear
+    // this again before descending, so `!yield` / `1 + yield` still fail.
+    self.yield_ok_here = true;
+
     // Check for destructuring assignment: [a, b] = expr or {x, y} = expr
     TokenType first_tt = self.peek_type();
     if (first_tt == TokenType.LBRACKET || first_tt == TokenType.LBRACE) {
@@ -302,15 +307,14 @@ fn ushort? CompilerContext.assignment_expr(&self) {
     // SyntaxError. Only fires for a bare identifier target, member
     // expressions never reach here with last_lhs_name_len set
     // (save_lhs_ident_name is called only from identifier resolution).
-    // `await` and `yield` are reserved in this position only when the
-    // [Await]/[Yield] grammar parameters say so, i.e. inside an async
-    // function/arrow/method, a module, a class static block (for await) or
-    // any generator (for yield). Outside those scopes `await = 1` /
-    // `yield = 1` are perfectly legal simple assignments.
+    // `await` is reserved in this position only when the [Await] grammar
+    // parameter says so, i.e. inside an async function/arrow/method, a
+    // module, or a class static block; outside those scopes `await = 1` is a
+    // legal simple assignment. `yield` is reserved unconditionally (strict-
+    // only engine), which is the helper's default.
     if (!self.last_was_member && self.last_lhs_name_len > 0
         && is_restricted_name(self.last_lhs_name_buf[:self.last_lhs_name_len],
-                              self.is_async || self.is_module || self.forbid_await,
-                              self.is_generator || self.forbid_yield)) {
+                              self.is_async || self.is_module || self.forbid_await)) {
         return self.fail("Assignment to eval or arguments is not allowed in strict mode")~;
     }
 
@@ -877,6 +881,15 @@ fn ushort? CompilerContext.binary_expr(&self, int min_prec) {
     // LHS capture below is authoritative.
     self.last_was_arrow_expr = false;
 
+    // A YieldExpression may only appear where an AssignmentExpression is
+    // expected. binary_expr's operands are Unary/Shift/etc, so consume the
+    // permission left by assignment_expr: the leftmost operand keeps it (a
+    // bare `yield` reaching here IS still at the head of the
+    // AssignmentExpression), but every operand parsed after an operator sees
+    // it cleared, which is what rejects `1 + yield` and `a || yield`.
+    bool yield_ok = self.yield_ok_here;
+    self.yield_ok_here = false;
+
     // ES2022 class-fields-private-in: `[+In] PrivateIdentifier in ShiftExpression`.
     // The grammar gives the PrivateIdentifier as a standalone LHS of the `in`
     // operator, `#x` is not a value expression by itself. If the next token is
@@ -915,11 +928,16 @@ fn ushort? CompilerContext.binary_expr(&self, int min_prec) {
             // Not followed by `in`, `#x` alone is not a valid expression.
             // Push the HASH_IDENT back so unary_expr surfaces a real error.
             self.lexer.pushback(hash_tok);
+            self.yield_ok_here = yield_ok;
             left = self.unary_expr()!;
         }
     } else {
+        // The leftmost operand is still at the head of the enclosing
+        // AssignmentExpression, so `yield + 1` and `yield, 1` stay legal.
+        self.yield_ok_here = yield_ok;
         left = self.unary_expr()!;
     }
+    self.yield_ok_here = false;
     bool left_is_local = self.last_was_local_var;
     // Do NOT clear self.last_was_arrow_expr here, the recursive RHS call
     // clears it on its own entry, parses its LHS, and the inner's flag
@@ -1122,6 +1140,14 @@ fn void CompilerContext.clear_ref_markers(&self) {
 /// Parse a unary expression.
 fn ushort? CompilerContext.unary_expr(&self) {
     TokenType tt = self.peek_type();
+
+    // A unary operator's operand is a UnaryExpression, which does not derive
+    // YieldExpression, so `!yield` / `void yield` / `typeof yield` are
+    // SyntaxErrors. Drop the permission for every operator case below; the
+    // fall-through (no unary operator, so this IS still the head of the
+    // enclosing AssignmentExpression) restores it before postfix_expr.
+    bool yield_ok = self.yield_ok_here;
+    self.yield_ok_here = false;
 
     switch (tt) {
         // ES §13.5: a UnaryExpression's value is the operator's result, never
@@ -1419,8 +1445,7 @@ fn ushort? CompilerContext.unary_expr(&self) {
             // generator contexts; see the matching check in assignment_expr.
             if (!self.last_was_member && self.last_lhs_name_len > 0
                 && is_restricted_name(self.last_lhs_name_buf[:self.last_lhs_name_len],
-                                      self.is_async || self.is_module || self.forbid_await,
-                                      self.is_generator || self.forbid_yield)) {
+                                      self.is_async || self.is_module || self.forbid_await)) {
                 return self.fail("Assignment to eval or arguments is not allowed in strict mode")~;
             }
             // postfix_expr leaves self.last_was_getvar / self.last_was_member
@@ -1496,8 +1521,7 @@ fn ushort? CompilerContext.unary_expr(&self) {
             // generator contexts; see the matching check in assignment_expr.
             if (!self.last_was_member && self.last_lhs_name_len > 0
                 && is_restricted_name(self.last_lhs_name_buf[:self.last_lhs_name_len],
-                                      self.is_async || self.is_module || self.forbid_await,
-                                      self.is_generator || self.forbid_yield)) {
+                                      self.is_async || self.is_module || self.forbid_await)) {
                 return self.fail("Assignment to eval or arguments is not allowed in strict mode")~;
             }
             // See INC case above for why member takes priority over getvar.
@@ -1550,6 +1574,10 @@ fn ushort? CompilerContext.unary_expr(&self) {
             return self.new_expr()!;
 
         default:
+            // No unary operator was consumed, so this is still the head of the
+            // enclosing AssignmentExpression and a YieldExpression may start
+            // here.
+            self.yield_ok_here = yield_ok;
             return self.postfix_expr()!;
     }
 }
@@ -1622,8 +1650,7 @@ fn ushort? CompilerContext.postfix_expr(&self) {
         // generator contexts; see the matching check in assignment_expr.
         if (!self.last_was_member && self.last_lhs_name_len > 0
             && is_restricted_name(self.last_lhs_name_buf[:self.last_lhs_name_len],
-                                  self.is_async || self.is_module || self.forbid_await,
-                                  self.is_generator || self.forbid_yield)) {
+                                  self.is_async || self.is_module || self.forbid_await)) {
             return self.fail("Assignment to eval or arguments is not allowed in strict mode")~;
         }
     }
@@ -2561,6 +2588,13 @@ fn ushort? CompilerContext.new_expr(&self) {
         if (target_name.len == 0) {
             target_name = lexer::keyword_to_string(target_tok.type);
         }
+        // `new.target` is a NewTarget meta-property, and both halves are
+        // terminal symbols: `new.target` is a SyntaxError, not a
+        // property read (ES2024 §13.3.12 / §5.1.5). The `new` half is already
+        // covered by advance()'s escaped-keyword gate.
+        if (target_tok.has_escape) {
+            return self.fail("keyword must not contain escaped characters")~;
+        }
         if (target_name.len == 6
             && target_name[0] == 't'
             && target_name[1] == 'a'
@@ -2608,6 +2642,19 @@ fn ushort? CompilerContext.new_expr(&self) {
             return COMPILE_ERROR~;
         }
     } else {
+        // `new`'s callee is a MemberExpression (ES2024 §13.3), and an
+        // ImportCall is a CallExpression, so `new import('')` is a
+        // SyntaxError however deeply it is nested. `import.meta` is a
+        // MemberExpression and stays legal, as does `new (import(''))`,
+        // where the parentheses make the call a PrimaryExpression.
+        if (self.check(TokenType.IMPORT)) {
+            Token import_tok = self.advance()!;
+            TokenType after_import = self.peek_type();
+            self.lexer.pushback(import_tok);
+            if (after_import != TokenType.DOT) {
+                return self.fail("'import' call is not a valid constructor")~;
+            }
+        }
         // Parse the constructor (could be member access)
         ctor_reg = self.member_expr()!;
 
@@ -3243,7 +3290,16 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 }
                 Token id_tok = self.advance()!;
 
-                // Check for literal keywords tokenized as identifiers
+                // Check for literal keywords tokenized as identifiers.
+                // `true`/`false`/`null` are ReservedWords, not contextual
+                // keywords: an escaped spelling is NOT the literal AND is not
+                // a usable identifier either (ES2024 §12.7.2 / §5.1.5), so
+                // `true` is a SyntaxError rather than a variable read.
+                if (id_tok.has_escape && (str_eq(id_tok.str_value, "true")
+                        || str_eq(id_tok.str_value, "false")
+                        || str_eq(id_tok.str_value, "null"))) {
+                    return self.fail("keyword must not contain escaped characters")~;
+                }
                 if (str_eq(id_tok.str_value, "true")) {
                     self.last_was_getvar = false;
                     ushort reg = self.alloc_reg();
@@ -3616,46 +3672,12 @@ fn ushort? CompilerContext.primary_expr(&self) {
         case TokenType.YIELD:
         {
             if (!self.is_generator) {
-                // Outside generators, `yield` is just an identifier per
-                // ES2024 §13.1.1. Handle it via the standard identifier
-                // path, same pattern as the AWAIT case when !is_async.
-                // A class static block's own statement list is [~Yield]
-                // (ES2022 §15.7.11): `yield` there is a SyntaxError instead,
-                // regardless of the enclosing generator-ness.
-                if (self.forbid_yield) {
-                    return COMPILE_ERROR~;
-                }
-                Token id_tok = self.advance()!;
-                if (self.check(TokenType.ARROW)) {
-                    char[][1] params_arr;
-                    params_arr[0] = id_tok.str_value;
-                    uint ident_arrow_src = self.lexer.token_start;
-                    return self.parse_arrow_function(&params_arr[0], 1, false, ident_arrow_src)!;
-                }
-                self.callee_is_eval = str_eq(id_tok.str_value, "eval");
-                if (!self.is_global) {
-                    if (try var_reg = self.resolve_var(id_tok.str_value)) {
-                        self.last_was_getvar = false;
-                        self.last_was_local_var = true;
-                        self.last_local_var_reg = var_reg;
-                        self.save_lhs_ident_name(id_tok.str_value);
-                        return var_reg;
-                    }
-                }
-                if (str_eq(id_tok.str_value, "arguments")
-                        && (!self.is_global || self.forbid_arguments)) {
-                    if (self.forbid_arguments) {
-                        return self.fail("'arguments' is not allowed in class field initializer")~;
-                    }
-                    self.uses_arguments = true;
-                }
-                uint name_idx = self.add_string_constant(id_tok.str_value);
-                ushort id_reg = self.alloc_reg();
-                self.last_getvar_code_pos = self.emit_ident_read((uint)id_reg, name_idx);
-                self.last_was_getvar = true;
-                self.last_getvar_name_idx = name_idx;
-                self.save_lhs_ident_name(id_tok.str_value);
-                return id_reg;
+                // `yield` is reserved in all strict-mode code (ES2024
+                // §13.1.1) and this engine is strict-only, so outside a
+                // generator it is never an IdentifierReference: it can only
+                // be the start of a YieldExpression, which is not available
+                // here. Either way a SyntaxError.
+                return self.fail("'yield' is a reserved word")~;
             }
             // Even inside a generator, a YieldExpression is a Syntax Error in
             // the FormalParameters (ES2015 §14.1.2 / §15.5.1: "It is a Syntax
@@ -3666,6 +3688,15 @@ fn ushort? CompilerContext.primary_expr(&self) {
             // word rather than an identifier.
             if (self.forbid_yield) {
                 return COMPILE_ERROR~;
+            }
+            // A YieldExpression is an AssignmentExpression (§13.15) and
+            // derives from nothing tighter, so it is only legal where the
+            // grammar expects an AssignmentExpression. assignment_expr marks
+            // that position; a `yield` reached as a unary operand or as a
+            // non-leftmost binary operand (`!yield`, `1 + yield`) has had the
+            // mark cleared on the way down and is a SyntaxError.
+            if (!self.yield_ok_here) {
+                return self.fail("'yield' is only allowed where an AssignmentExpression is expected")~;
             }
             self.advance()!;  // consume 'yield'
             // ES2015 §14.4 YieldExpression: `yield [no LineTerminator here] *`
@@ -4436,7 +4467,9 @@ fn ushort? CompilerContext.object_literal(&self) {
             TokenType key_tt = self.peek_type();
             if (key_tt == TokenType.IDENTIFIER || key_tt == TokenType.STRING
                 || lexer::keyword_to_string(key_tt).len > 0) {
-                Token key_tok = self.advance()!;
+                // A PropertyName is an IdentifierName, so an escaped reserved
+                // word is a legal key (`({ break: 1 })`).
+                Token key_tok = self.advance(true)!;
                 // ES2015 §12.2.6.8: shorthand is only legal for a plain
                 // IdentifierReference, string-literal keys and reserved
                 // words used as keys must not be treated as shorthand.
@@ -4455,8 +4488,10 @@ fn ushort? CompilerContext.object_literal(&self) {
                         && !str_eq(key_tok.str_value, "true")
                         && !str_eq(key_tok.str_value, "false")
                         && !str_eq(key_tok.str_value, "null"))
-                    || (key_tt == TokenType.AWAIT && !self.is_module && !self.is_async && !self.forbid_await)
-                    || (key_tt == TokenType.YIELD && !self.is_generator && !self.forbid_yield);
+                    || (key_tt == TokenType.AWAIT && !self.is_module && !self.is_async && !self.forbid_await);
+                // `yield` is absent: it is reserved in all strict code, so
+                // `{ yield }` shorthand is a SyntaxError. `{ yield: v }` and
+                // `{ yield(){} }` use the property-name path, not this one.
 
                 // Check for getter/setter: `get prop() {}` / `set prop(v) {}`
                 // If key is "get" or "set" AND next token is a property key (not `:` or `(`)
@@ -4465,7 +4500,13 @@ fn ushort? CompilerContext.object_literal(&self) {
                 // so we disable the detection entirely when a star was consumed.
                 bool is_obj_getter = false;
                 bool is_obj_setter = false;
-                if (!is_generator_method && key_tt == TokenType.IDENTIFIER && !self.check(TokenType.COLON) && !self.check(TokenType.LPAREN)) {
+                // Escaped `get`/`set` (`get m(){}`) is a plain
+                // IdentifierName, never the contextual accessor keyword
+                // (ES2024 §5.1.5), so it does not open an accessor. It then
+                // fails as `get m(){}` — two names with no separator — which
+                // is the SyntaxError the spec requires.
+                if (!is_generator_method && key_tt == TokenType.IDENTIFIER && !key_tok.has_escape
+                        && !self.check(TokenType.COLON) && !self.check(TokenType.LPAREN)) {
                     if (key_tok.str_value.len == 3
                         && key_tok.str_value[0] == 'g'
                         && key_tok.str_value[1] == 'e'

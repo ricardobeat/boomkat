@@ -3479,19 +3479,18 @@ fn ushort? CompilerContext.function_expr(&self, bool is_async_expr = false) {
     char[] name;
     bool has_name = false;
     bool name_is_explicit = false;
-    // A function-expression name's [Yield]/[Await] grammar params are FIXED by
-    // the kind of expression, not inherited from the enclosing context, so an
-    // enclosing static block's forbid_await/forbid_yield do NOT apply here:
-    //   FunctionExpression        name is [~Yield, ~Await], both allowed
-    //   GeneratorExpression       name is [+Yield, ~Await], `yield` reserved
-    //   AsyncFunctionExpression   name is [~Yield, +Await], `await` reserved
-    // self.is_generator/self.is_async already reflect this expression's own
-    // generator/async-ness (set just above from the `function*`/`async`
-    // prefixes), so `(function* await(){})` and `function await(){}` are valid
-    // even inside a class static block, but `async function await(){}` is not.
+    // A function-expression name's [Await] grammar param is FIXED by the kind
+    // of expression, not inherited from the enclosing context, so an enclosing
+    // static block's forbid_await does NOT apply here:
+    //   FunctionExpression        name is [~Await], `await` allowed
+    //   AsyncFunctionExpression   name is [+Await], `await` reserved
+    // self.is_async already reflects this expression's own async-ness (set
+    // just above from the `async` prefix), so `(function* await(){})` and
+    // `function await(){}` are valid even inside a class static block, but
+    // `async function await(){}` is not. `yield` is reserved in all strict
+    // code and this engine is strict-only, so it is never a function name.
     if (self.check(TokenType.IDENTIFIER) ||
-        (self.check(TokenType.AWAIT) && !self.is_module && !self.is_async) ||
-        (self.check(TokenType.YIELD) && !self.is_generator)) {
+        (self.check(TokenType.AWAIT) && !self.is_module && !self.is_async)) {
         Token name_tok = self.advance()!;
         // Intern now: an escaped function-expression name borrows the
         // lexer's shared ident_buf scratch. compile_inner_function below
