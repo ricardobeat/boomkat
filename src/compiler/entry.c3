@@ -423,6 +423,11 @@ fn CompiledFunction*? compile_module(Lexer* lex, void* heap, char[] module_name,
         ctx.statement()!;
     }
 
+    // §16.2.1.1: every ExportedBinding must also be declared in this module.
+    // Must run before pop_scope_to below, which discards the top-level
+    // lexical names it reads.
+    ctx.check_module_exports_resolvable()!;
+
     // Free any remaining scope_stack entries (top-level lexical declarations)
     ctx.pop_scope_to(0);
 

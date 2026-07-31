@@ -162,6 +162,32 @@ check ACCEPT "string import name"              'import { "☿" as m } from "./na
 check ACCEPT "string star alias"               'export * as "ns" from "./names.mjs";'
 check ACCEPT "paired surrogates in a name"     'var r = 1; export { r as "😀" };'
 
+# ---------------------------------------------------------------------------
+# EN5  §16.2.1.1  Every element of ExportedBindings must also occur in the
+#      VarDeclaredNames or LexicallyDeclaredNames of the ModuleItemList. Only
+#      a LOCAL export has an ExportedBinding — `export {x} from` names `x` in
+#      the OTHER module, and a star export names nothing here. The rule is
+#      about the item LIST, so the declaration need not precede the export.
+# ---------------------------------------------------------------------------
+check REJECT "export of an undeclared name"    'export { unresolvable };'
+check REJECT "export of a global"              'export { Number };'
+check REJECT "export of an undeclared alias"   'export { missing as alias };'
+check REJECT "export of a block-scoped name"   'export { blk }; { let blk = 1; }'
+check REJECT "export of a name from a function" 'export { deep }; function h() { var deep = 1; }'
+
+check ACCEPT "export declared later"           'export { later }; var later = 1;'
+check ACCEPT "export of a hoisted function"    'export { fn }; function fn() {}'
+check ACCEPT "export of a class"               'export { C }; class C {}'
+check ACCEPT "export of a let"                 'let L = 1; export { L };'
+check ACCEPT "export of a var in a block"      'if (1) { var inner = 1; } export { inner };'
+check ACCEPT "export of a later declarator"    'var c1 = 1, d1 = 2; export { d1 };'
+check ACCEPT "export of an imported binding"   'import { a } from "./names.mjs"; export { a };'
+check ACCEPT "export of a namespace binding"   'import * as ns from "./names.mjs"; export { ns };'
+# A re-export has no ExportedBinding of its own, so EN5 does not apply to it.
+# The name must still RESOLVE in the other module, which is a link-time error
+# rather than a syntax one, so the fixture exports it for real.
+check ACCEPT "re-export needs no local"        'export { a } from "./names.mjs";'
+
 echo ""
 echo "modules/export_names: $PASS passed, $FAIL failed"
 if [ "$FAIL" -gt 0 ]; then

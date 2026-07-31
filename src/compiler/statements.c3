@@ -801,6 +801,78 @@ fn void? CompilerContext.check_module_duplicate_lexical_names(&self) {
     }
 }
 
+/// §16.2.1.1: "It is a Syntax Error if any element of the ExportedBindings of
+/// ModuleItemList does not also occur in either the VarDeclaredNames of
+/// ModuleItemList, or the LexicallyDeclaredNames of ModuleItemList."
+///
+/// So `export { unresolvable };` is a SyntaxError, and so is
+/// `export { Number };` — a global is not a module-level declaration. Only a
+/// LOCAL export has an ExportedBinding: `export { x } from './m'` names `x`
+/// in the OTHER module, and a star export names nothing here.
+///
+/// Runs after the whole body is parsed, because the rule is about the module
+/// item LIST: `export { later }; var later = 1;` is legal, the declaration
+/// need not precede the export. The four sources of a module-level declared
+/// name at that point are:
+///   - top-level `let`/`const`/`class`, still on scope_stack (the caller runs
+///     this before pop_scope_to(0));
+///   - top-level `function`, in hoisted_fn_names, or in the module's
+///     func_decls when the declaration carried its own `export` prefix
+///     (`export function g(){}`), which the hoisting pre-scan does not see;
+///   - top-level `var`, which at module scope is never pushed to scope_stack
+///     (declare_var's is_global path), hence the pre-scan;
+///   - imported bindings, which are LexicallyDeclaredNames of the module.
+/// The pre-scan rewinds and restores the lexer itself, so calling it here,
+/// with the lexer parked at EOF, is safe.
+fn void? CompilerContext.check_module_exports_resolvable(&self) {
+    if (!self.is_module || self.current_module == null) return;
+    CompModuleDef* mod = self.get_module_def();
+
+    NameSpan[MAX_PRESCAN_NAMES] var_spans;
+    uint var_n = 0;
+    // Only pay for the pre-scan if some local export could actually need it.
+    for (uint i = 0; i < mod.export_count; i++) {
+        if (!mod.exports[i].is_indirect) {
+            uint saved_pos = self.lexer.pos;
+            self.lexer.pos = 0;
+            self.lexer.has_lookahead = false;
+            self.lexer.has_pushed_back = false;
+            var_n = self.pre_scan_var_decls(&var_spans, MAX_PRESCAN_NAMES);
+            self.lexer.pos = saved_pos;
+            break;
+        }
+    }
+
+    for (uint i = 0; i < mod.export_count; i++) {
+        if (mod.exports[i].is_indirect) continue;
+        char[] local = mod.exports[i].local_name;
+        // `export default <expr>` and an anonymous `export default class/
+        // function` bind the synthetic *default* slot, which is a declaration
+        // by construction and never appears in source.
+        if (str_eq(local, "*default*")) continue;
+
+        bool found = false;
+        for (uint s = 0; s < self.scope_depth && !found; s++) {
+            if (str_eq(self.scope_stack[s].name, local)) found = true;
+        }
+        for (ushort h = 0; h < self.hoisted_fn_count && !found; h++) {
+            if (str_eq(self.hoisted_fn_names[h], local)) found = true;
+        }
+        for (uint d = 0; d < mod.func_decl_count && !found; d++) {
+            if (str_eq(mod.func_decls[d].name, local)) found = true;
+        }
+        for (uint v = 0; v < var_n && !found; v++) {
+            if (str_eq(self.name_span_text(var_spans[v]), local)) found = true;
+        }
+        for (uint m = 0; m < mod.import_count && !found; m++) {
+            if (str_eq(mod.imports[m].local_name, local)) found = true;
+        }
+        if (!found) {
+            return self.fail("export names a binding that is not declared in this module")~;
+        }
+    }
+}
+
 /// Emit the GlobalDeclarationInstantiation lexName collision checks
 /// (ES2015 §15.1.11 step 5) for the top-level `let`/`const`/`class` names.
 /// Part of the check prologue that must precede every binding instantiation,
@@ -1074,7 +1146,37 @@ fn uint CompilerContext.pre_scan_var_decls(&self, NameSpan* spans, uint capacity
                 Token? sep_opt = self.lexer.next_token();
                 if (catch _err3 = sep_opt) break;
                 Token sep = sep_opt;
-                if (sep.type != TokenType.COMMA) break;
+                if (sep.type == TokenType.COMMA) continue;
+                // An Initializer separates this declarator from the next, so
+                // skip it to reach the comma: without this the scan stopped at
+                // the first `=` and `var a = 1, b = 2` reported only `a`.
+                // Track nesting so a `,` inside the initializer's own parens,
+                // brackets or braces (`var a = f(1, 2), b`) is not mistaken
+                // for the declarator separator.
+                if (sep.type != TokenType.ASSIGN) break;
+                int init_depth = 0;
+                bool at_next_declarator = false;
+                for (;;) {
+                    Token? it_opt = self.lexer.next_token();
+                    if (catch _err4 = it_opt) break;
+                    Token it = it_opt;
+                    if (it.type == TokenType.EOF_TOKEN) break;
+                    if (it.type == TokenType.LPAREN || it.type == TokenType.LBRACKET ||
+                        it.type == TokenType.LBRACE) {
+                        init_depth++;
+                    } else if (it.type == TokenType.RPAREN || it.type == TokenType.RBRACKET ||
+                               it.type == TokenType.RBRACE) {
+                        // A closer at depth 0 ends the enclosing construct
+                        // (`{ var a = 1 }`), not the initializer list. Push it
+                        // back so the outer loop's brace bookkeeping sees it.
+                        if (init_depth == 0) { self.lexer.pushback(it); break; }
+                        init_depth--;
+                    } else if (init_depth == 0) {
+                        if (it.type == TokenType.COMMA) { at_next_declarator = true; break; }
+                        if (it.type == TokenType.SEMICOLON) break;
+                    }
+                }
+                if (!at_next_declarator) break;
             }
             continue;
         }
