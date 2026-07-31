@@ -187,6 +187,41 @@ fn void mod_register_import(CompModuleDef* mod, char[] local_name, char[] import
     mod.import_count++;
 }
 
+/// True when `export_name` is already an ExportedName of this module.
+///
+/// ES2024 §16.2.3.1: "It is a Syntax Error if the ExportedNames of ModuleItemList
+/// contains any duplicate entries." Every named export funnels through
+/// mod_register_export, so testing here catches all the spellings that can
+/// collide -- `export {x}` twice, two `as z` aliases, an `export default` paired
+/// with `{y as default}`, two same-named `export function` declarations, and
+/// `export * as z` against a local `{x as z}`.
+///
+/// `export * from` is exempt: it contributes no ExportedName of its own (a name
+/// it would have re-exported is instead dropped when ambiguous), which is why
+/// star exports are registered through mod_register_star_export and never reach
+/// this path.
+fn bool mod_has_export_name(CompModuleDef* mod, char[] export_name) {
+    for (uint i = 0; i < mod.export_count; i++) {
+        if (str_eq(mod.exports[i].export_name, export_name)) return true;
+    }
+    return false;
+}
+
+/// Register a named export, rejecting a duplicate ExportedName (§16.2.3.1).
+///
+/// Wraps mod_register_export at the one point every named export passes
+/// through, so the duplicate rule cannot be missed by a new export form:
+/// mod_register_export itself is a plain function with no compiler context to
+/// raise a SyntaxError from.
+fn void? CompilerContext.register_export(&self, CompModuleDef* mod, char[] local_name,
+    char[] export_name, bool is_indirect, uint req_idx, bool is_lexical = false)
+{
+    if (mod_has_export_name(mod, export_name)) {
+        return self.fail("duplicate export name")~;
+    }
+    mod_register_export(mod, local_name, export_name, is_indirect, req_idx, is_lexical);
+}
+
 /// Register an export entry in the module.
 fn void mod_register_export(CompModuleDef* mod, char[] local_name, char[] export_name, bool is_indirect, uint req_idx, bool is_lexical = false) {
     if (mod.export_count >= COMP_MAX_EXPORTS) return;
@@ -721,6 +756,48 @@ fn void CompilerContext.hoist_lexical_tdz(&self) {
         char[] name = self.name_span_text(spans[i]);
         uint name_idx = self.add_string_constant(name);
         self.emit_a_bc(Opcode.INITTZ, 0, name_idx);
+    }
+}
+
+/// Reject a module-scope lexical binding named `name` that already exists, for
+/// the one declaration form check_module_duplicate_lexical_names cannot
+/// pre-scan: `export default function F(){}`, whose `F` is not in statement
+/// position and so is never recorded by hoist_global_fn_decls. By the time the
+/// declaration is parsed, any colliding `class`/`let`/`const` is already on
+/// scope_stack.
+fn void? CompilerContext.check_module_lexical_collision(&self, char[] name) {
+    if (!self.is_module) return;
+    for (uint i = 0; i < self.scope_depth; i++) {
+        ScopeEntry* e = &self.scope_stack[i];
+        if ((e.kind == LET || e.kind == CONST) && str_eq(e.name, name)) {
+            return self.fail("Identifier has already been declared")~;
+        }
+    }
+}
+
+/// ES2024 §16.2.1.1: a MODULE body's LexicallyDeclaredNames must contain no
+/// duplicates. Unlike a Script's, a module's top-level FunctionDeclarations are
+/// lexical, so `class F {} function F(){}` is a SyntaxError where the same pair
+/// is legal at Script top level (there the function is var-scoped and simply
+/// wins).
+///
+/// Runs over the two name sets the module prologue has already collected: the
+/// let/const/class spans from pre_scan_lexical_decls, and the function names
+/// hoist_global_fn_decls recorded in hoisted_fn_names. Function-vs-function
+/// duplicates are already rejected inside that pre-scan, so this adds the
+/// lex-vs-lex and lex-vs-function pairings.
+fn void? CompilerContext.check_module_duplicate_lexical_names(&self) {
+    if (!self.is_module) return;
+    NameSpan[MAX_PRESCAN_NAMES] spans;
+    uint n = self.pre_scan_lexical_decls(&spans, MAX_PRESCAN_NAMES);
+    self.check_duplicate_lexical_names(&spans[0], n)!;
+    for (uint i = 0; i < n; i++) {
+        char[] name = self.name_span_text(spans[i]);
+        for (ushort h = 0; h < self.hoisted_fn_count; h++) {
+            if (str_eq(self.hoisted_fn_names[h], name)) {
+                return self.fail("Identifier has already been declared")~;
+            }
+        }
     }
 }
 
@@ -1305,13 +1382,21 @@ fn void? CompilerContext.check_lexical_var_conflicts(&self, NameSpan* lex_spans,
 
 /// Parse a block: { statement* }
 /// If `check_directives` is true, checks for "use strict" directive prologue at the start.
-fn void? CompilerContext.block(&self, bool check_directives, bool suppress_regex_hint = false) {
+/// `is_param_body` marks a block that is the body scope of an enclosing
+/// parameter list, so a top-level `let`/`const` in it may not redeclare a
+/// parameter name. True for a function body (implied by `check_directives`,
+/// which only the function-body call sites pass) and for a `catch` block,
+/// whose relationship to its CatchParameter is the same one (§14.15.1).
+fn void? CompilerContext.block(&self, bool check_directives, bool suppress_regex_hint = false,
+                               bool is_param_body = false) {
     self.expect(TokenType.LBRACE)!;
     uint saved_depth = self.scope_depth;
     ushort saved_reg = self.next_reg;
 
-    // Push a scope marker so duplicate let/const checks stop at this block boundary.
-    self.push_scope_marker();
+    // Push a scope marker so duplicate let/const checks stop at this block
+    // boundary, transparent to the parameter-redeclaration check when this
+    // block is a parameter list's body scope.
+    self.push_scope_marker(check_directives || is_param_body);
 
     // Pre-scan for let/const declarations at this block level so we can
     // TDZ-initialize them at block entry (before any code in the block runs).
@@ -1349,6 +1434,19 @@ fn void? CompilerContext.block(&self, bool check_directives, bool suppress_regex
     // covered by the declaration-site duplicate check in var_declaration.
     if (lexical_fns) {
         self.check_duplicate_lexical_names(&lex_spans[0], num_lex)!;
+    }
+
+    // §14.15.1: the CatchParameter's BoundNames must not appear in the catch
+    // block's LexicallyDeclaredNames. A block-level FunctionDeclaration is
+    // lexical in strict code, so `catch (e) { function e(){} }` is caught
+    // here, where the pre-scan has already collected it; the declaration-site
+    // walk in var_declaration only ever sees `let`/`const`. The B.3.4
+    // exemption that lets a catch block's `var` reuse the name does not
+    // extend to a lexical declaration.
+    if (is_param_body && !check_directives) {
+        for (uint i = 0; i < num_lex; i++) {
+            self.check_lexical_redeclares_param(self.name_span_text(lex_spans[i]))!;
+        }
     }
 
     // ES2024 §13.2.1 / §15.7.11 BlockDeclarationInstantiation: the
@@ -1531,6 +1629,7 @@ fn void? CompilerContext.var_declaration(&self) {
             } else {
                 // Check for duplicate let/const in the same block scope (ES6 §13.3.1)
                 if (is_lexical) {
+                    self.check_lexical_redeclares_param(name_tok.str_value)!;
                     uint i = self.scope_depth;
                     while (i > 0) {
                         i--;
@@ -1979,7 +2078,7 @@ fn void? CompilerContext.for_statement(&self) {
     if (next_tt == TokenType.IDENTIFIER) {
         Token id_tok = self.advance()!;
         if (try tok2 = self.lexer.peek()) {
-            if (tok2.type == TokenType.IDENTIFIER && str_eq(tok2.str_value, "of")) {
+            if (token_is_of(tok2)) {
                 // `of` is only a for-of keyword when it is not part of an arrow-function
                 // parameter list. For example, `for (async of => {}; ...)` is a plain
                 // for-loop whose init is the call expression `async(of => {})`.
@@ -1991,7 +2090,7 @@ fn void? CompilerContext.for_statement(&self) {
                     // consume the tokens we pushed back; tok2/of_tok is already consumed
                     self.advance()!; // id_tok
                     self.advance()!; // of_tok
-                    ushort iter_reg = self.expression()!;
+                    ushort iter_reg = self.assignment_expr()!;
                     self.expect(TokenType.RPAREN)!;
                     self.emit_forof_loop(id_tok.str_value, iter_reg, saved_scope, saved_reg, false, false, true, for_is_await)!;
                     return;
@@ -2038,7 +2137,7 @@ fn void? CompilerContext.for_statement(&self) {
             Token inner_tok = self.advance()!;
             if (self.match(TokenType.RPAREN)) {
                 if (try pt = self.lexer.peek()) {
-                    if (pt.type == TokenType.IDENTIFIER && str_eq(pt.str_value, "of")) {
+                    if (token_is_of(pt)) {
                         paren_is_forof = true;
                         paren_id_name = inner_tok.str_value;
                     } else if (pt.type == TokenType.IN) {
@@ -2066,7 +2165,7 @@ fn void? CompilerContext.for_statement(&self) {
             self.advance()!; // consume identifier
             self.advance()!; // consume ')'
             self.advance()!; // consume 'of'
-            ushort iter_reg = self.expression()!;
+            ushort iter_reg = self.assignment_expr()!;
             self.expect(TokenType.RPAREN)!;
             self.emit_forof_loop(paren_id_name, iter_reg, saved_scope, saved_reg, false, false, true, for_is_await)!;
             return;
@@ -2127,7 +2226,7 @@ fn void? CompilerContext.for_statement(&self) {
                 self.free_reg(self.last_member_obj_reg);
                 self.free_reg(mreg);
                 if (try tok3 = self.lexer.peek()) {
-                    if (tok3.type == TokenType.IDENTIFIER && str_eq(tok3.str_value, "of")) {
+                    if (token_is_of(tok3)) {
                         is_member_head = true;
                         head_is_of = true;
                     } else if (tok3.type == TokenType.IN) {
@@ -2167,7 +2266,7 @@ fn void? CompilerContext.for_statement(&self) {
             self.advance()!;  // consume "of" or "in"
 
             if (head_is_of) {
-                ushort iter_reg = self.expression()!;
+                ushort iter_reg = self.assignment_expr()!;
                 self.expect(TokenType.RPAREN)!;
                 self.emit_forof_loop_member(lhs_snap, iter_reg, saved_scope, saved_reg, for_is_await)!;
             } else {
@@ -2226,7 +2325,7 @@ fn void? CompilerContext.for_statement(&self) {
 
         Token? peek_tok = self.lexer.peek();
         if (try pt = peek_tok) {
-            if (pt.type == TokenType.IDENTIFIER && str_eq(pt.str_value, "of")) {
+            if (token_is_of(pt)) {
                 is_bare_destr = true;
                 bare_is_of = true;
             } else if (pt.type == TokenType.IN) {
@@ -2310,7 +2409,7 @@ fn void? CompilerContext.for_statement(&self) {
             // Now check what follows the pattern
             Token? peek_tok = self.lexer.peek();
             if (try pt = peek_tok) {
-                if (pt.type == TokenType.IDENTIFIER && str_eq(pt.str_value, "of")) {
+                if (token_is_of(pt)) {
                     is_forof_destr = true;
                 } else if (pt.type == TokenType.IN) {
                     is_forin_destr = true;
@@ -2356,6 +2455,12 @@ fn void? CompilerContext.for_statement(&self) {
                 } else {
                     self.collect_obj_param_binds(dbinds[..], &bind_count, 0, 0xFFFF)!;
                 }
+                // A `let`/`const` ForDeclaration's BoundNames must be unique
+                // (§14.7.5.1). A `var` head is exempt: the repeated names all
+                // denote the same var binding.
+                if (is_lexical) {
+                    self.check_pattern_bound_names_unique(dbinds[..], bind_count)!;
+                }
                 for (uint i = 0; i < bind_count; i++) {
                     if (dbinds[i].is_synthetic) continue;
                     HString* hs = (HString*)self.constants[dbinds[i].name_idx].get_heapptr();
@@ -2367,7 +2472,7 @@ fn void? CompilerContext.for_statement(&self) {
                 // Consume "of" (contextual keyword - lexed as IDENTIFIER)
                 {
                     Token of_tok = self.expect(TokenType.IDENTIFIER)!;
-                    if (!str_eq(of_tok.str_value, "of")) {
+                    if (!token_is_of(of_tok)) {
                         return COMPILE_ERROR~;
                     }
                 }
@@ -2399,7 +2504,7 @@ fn void? CompilerContext.for_statement(&self) {
                     }
                 }
 
-                iter_reg = self.expression()!;
+                iter_reg = self.assignment_expr()!;
 
                 // Pop the TDZ scope, the head binding references are now
                 // resolved against the outer scope for the iterator protocol.
@@ -2436,6 +2541,10 @@ fn void? CompilerContext.for_statement(&self) {
                     self.collect_arr_param_binds(fdbinds[..], &fdcount, 0, 0xFFFF)!;
                 } else {
                     self.collect_obj_param_binds(fdbinds[..], &fdcount, 0, 0xFFFF)!;
+                }
+                // §14.7.5.1, as for the for-of head above.
+                if (is_lexical) {
+                    self.check_pattern_bound_names_unique(fdbinds[..], fdcount)!;
                 }
                 ushort[MAX_DESTRUCT_BINDS] fdgroup_regs;
                 ushort[MAX_DESTRUCT_BINDS] fdbinding_regs;
@@ -2584,7 +2693,10 @@ fn void? CompilerContext.for_statement(&self) {
                 self.expect(TokenType.SEMICOLON)!;
             }
         } else {
-            Token name_tok = self.expect(TokenType.IDENTIFIER)!;
+            // A `for (var|let|const X ...)` head binds a BindingIdentifier, so
+            // the §13.1.1 restricted names are rejected here exactly as they
+            // are for a plain `var X` declaration.
+            Token name_tok = self.expect_binding_identifier()!;
             // Intern now: an escaped for-head binding name borrows the
             // lexer's shared ident_buf scratch, which the head's RHS
             // expression and the loop body parsed below will overwrite.
@@ -2708,7 +2820,7 @@ fn void? CompilerContext.for_statement(&self) {
             }
             // Check for "of" (for-of), contextual keyword, not a reserved word
             if (try tok = self.lexer.peek()) {
-                if (tok.type == TokenType.IDENTIFIER && str_eq(tok.str_value, "of")) {
+                if (token_is_of(tok)) {
                     self.advance()!;  // consume "of"
                     // TDZ scope for the head binding (§13.7.5.12).
                     // Before evaluating the RHS, a TDZ environment is created
@@ -2730,7 +2842,7 @@ fn void? CompilerContext.for_statement(&self) {
                             }
                         }
                     }
-                    ushort iter_reg = self.expression()!;
+                    ushort iter_reg = self.assignment_expr()!;
                     // Pop the TDZ scope after RHS evaluation.
                     if (is_lexical) {
                         self.emit_simple(Opcode.POP_LEX);
@@ -3686,12 +3798,12 @@ fn void? CompilerContext.emit_bare_forof_destruct_loop(&self, bool is_array_patt
     // Consume "of" (lexed as IDENTIFIER)
     {
         Token of_tok = self.expect(TokenType.IDENTIFIER)!;
-        if (!str_eq(of_tok.str_value, "of")) {
+        if (!token_is_of(of_tok)) {
             return COMPILE_ERROR~;
         }
     }
 
-    ushort iter_reg = self.expression()!;
+    ushort iter_reg = self.assignment_expr()!;
     self.expect(TokenType.RPAREN)!;
 
     // Bare assignment pattern: VAR-scoped (no per-iter env), ASSIGN_TARGET store.
@@ -4133,17 +4245,15 @@ fn void? CompilerContext.try_statement(&self) {
             } else {
                 // CatchParameter's BindingIdentifier is [?Yield, ?Await], so
                 // `await`/`yield` are valid names where the context permits
-                // (e.g. inside a non-async arrow nested in a static block). The
-                // context-blind is_restricted_name check below must not
-                // re-reject a keyword the helper already vetted for this context.
+                // (e.g. inside a non-async arrow nested in a static block).
+                // expect_binding_identifier applies the restricted-name rule
+                // to the plain-identifier path only, exactly matching that.
                 Token catch_param = self.expect_binding_identifier()!;
-                bool catch_ctx_keyword = catch_param.type != TokenType.IDENTIFIER;
-                if (!catch_ctx_keyword && is_restricted_name(catch_param.str_value)) {
-                    return self.fail("reserved word cannot be used as a catch parameter")~;
-                }
                 self.expect(TokenType.RPAREN)!;
 
-                ushort catch_var = self.declare_var(catch_param.str_value, VAR);
+                // Marked as a parameter: the catch body's `let`/`const` may not
+                // redeclare it (§14.15.1), though a body `var` may.
+                ushort catch_var = self.declare_var(catch_param.str_value, VAR, true);
                 // Force the catch variable through the environment (GETVAR/PUTVAR)
                 // instead of direct register access.  PUTVAR clears the source
                 // register after storing to the env (for refcount correctness),
@@ -4172,8 +4282,9 @@ fn void? CompilerContext.try_statement(&self) {
             self.free_reg(discard);
         }
 
-        // Compile catch block
-        self.block(false)!;
+        // Compile catch block. It is the CatchParameter's body scope, so a
+        // top-level `let`/`const` in it may not redeclare the parameter.
+        self.block(false, false, true)!;
 
         // Close the catch-binding scope on the normal exit path (exceptional
         // exits rebalance via the Catcher's saved lex_env; returns tear down
@@ -4879,6 +4990,16 @@ fn void? CompilerContext.function_declaration(&self, bool is_async_decl = false,
 // ESM Import/Export declarations
 // ============================================================================
 
+/// True when `tok` is the contextual keyword `of` that heads a for-of loop.
+///
+/// `of` is not a reserved word, so it arrives as a plain IDENTIFIER and has to
+/// be matched on its text. An escaped spelling is never the keyword (ES2024
+/// §12.6.1), so `for (var x of [])` is a SyntaxError rather than a for-of
+/// loop -- the same rule expect_as / expect_from apply to `as` and `from`.
+fn bool token_is_of(Token tok) {
+    return tok.type == TokenType.IDENTIFIER && !tok.has_escape && str_eq(tok.str_value, "of");
+}
+
 /// Get the CompModuleDef* from the opaque current_module pointer.
 /// Returns null if not in module mode.
 fn CompModuleDef* CompilerContext.get_module_def(&self) {
@@ -4887,9 +5008,13 @@ fn CompModuleDef* CompilerContext.get_module_def(&self) {
 
 /// Expect the contextual keyword `from` (not a reserved word, must be
 /// checked as an identifier with value "from").
+///
+/// An escaped spelling is never the keyword (ES2024 §12.6.1: a
+/// ReservedWord/contextual keyword must be written with no UnicodeEscape-
+/// Sequence), so `\u0066rom` is a plain identifier here and a SyntaxError.
 fn void? CompilerContext.expect_from(&self) {
     Token tok = self.expect(TokenType.IDENTIFIER)!;
-    if (!str_eq(tok.str_value, "from")) {
+    if (tok.has_escape || !str_eq(tok.str_value, "from")) {
         return COMPILE_ERROR~;
     }
 }
@@ -4902,18 +5027,20 @@ fn bool CompilerContext.match_from(&self) {
     Token? tok_opt = self.lexer.next_token();
     if (catch _err = tok_opt) return false;
     Token tok = tok_opt;
-    if (str_eq(tok.str_value, "from")) {
+    if (!tok.has_escape && str_eq(tok.str_value, "from")) {
         return true;
     }
-    // Not 'from', push back
+    // Not 'from' (or an escaped spelling, which §12.6.1 makes a plain
+    // identifier rather than the keyword), push back
     self.lexer.pushback(tok);
     return false;
 }
 
-/// Expect the contextual keyword `as`.
+/// Expect the contextual keyword `as`. An escaped spelling is never the
+/// keyword (§12.6.1), so `\u0061s` is a SyntaxError here.
 fn void? CompilerContext.expect_as(&self) {
     Token tok = self.expect(TokenType.IDENTIFIER)!;
-    if (!str_eq(tok.str_value, "as")) {
+    if (tok.has_escape || !str_eq(tok.str_value, "as")) {
         return COMPILE_ERROR~;
     }
 }
@@ -4924,7 +5051,7 @@ fn bool CompilerContext.match_as(&self) {
     Token? tok_opt = self.lexer.next_token();
     if (catch _err = tok_opt) return false;
     Token tok = tok_opt;
-    if (str_eq(tok.str_value, "as")) {
+    if (!tok.has_escape && str_eq(tok.str_value, "as")) {
         return true;
     }
     self.lexer.pushback(tok);
@@ -5071,7 +5198,9 @@ fn void? CompilerContext.import_declaration(&self) {
     if (tt == TokenType.STAR) {
         self.advance()!; // consume '*'
         self.expect_as()!;
-        Token ns_tok = self.expect(TokenType.IDENTIFIER)!;
+        // NameSpaceImport's `as` is followed by an ImportedBinding, i.e. a
+        // BindingIdentifier, so `import * as eval from ...` is a SyntaxError.
+        Token ns_tok = self.expect_binding_identifier()!;
         // Intern now: stored in the module's import table and read back at
         // link time, long after the rest of the module has been lexed.
         char[] ns_local = self.intern_slot_name(ns_tok.str_value);
@@ -5104,10 +5233,19 @@ fn void? CompilerContext.import_declaration(&self) {
             // The import name (before 'as') is a ModuleExportName (IdentifierName or StringLiteral).
             char[] import_name_str = self.parse_module_export_name()!;
             if (self.match_as()) {
-                Token alias_tok = self.expect(TokenType.IDENTIFIER)!;
+                // `ModuleExportName as ImportedBinding`: the alias is a
+                // BindingIdentifier, so `import { x as eval }` is a
+                // SyntaxError even though `eval` is a fine export name.
+                Token alias_tok = self.expect_binding_identifier()!;
                 local_names[binding_count] = self.intern_slot_name(alias_tok.str_value);
                 import_names[binding_count] = import_name_str;
             } else {
+                // Without `as` the ImportSpecifier is a bare ImportedBinding,
+                // so the one name is both the export name and a binding and
+                // has to satisfy the BindingIdentifier restrictions too.
+                if (is_restricted_name(import_name_str)) {
+                    return self.fail("reserved word cannot be used as a binding identifier")~;
+                }
                 local_names[binding_count] = import_name_str;
                 import_names[binding_count] = import_name_str;
             }
@@ -5238,11 +5376,19 @@ fn void? CompilerContext.export_declaration(&self) {
             // the internal "*default*" symbol so it can't collide with a
             // user-declared `default` identifier.
             char[] local_name = is_named ? fn_name : "*default*";
+            // A module's top-level function declarations are lexical
+            // (§16.2.1.1), and `export default function F(){}` binds `F` in
+            // module scope just like a plain declaration, so it must not
+            // collide with an existing lexical name.
+            // check_module_duplicate_lexical_names cannot see this one: the
+            // name is not in statement position, so hoist_global_fn_decls's
+            // pre-scan never records it.
+            if (is_named) self.check_module_lexical_collision(local_name)!;
             ushort func_reg = self.declare_var(local_name, VAR);
             mod_register_func_decl(mod, local_name, inner_idx);
             self.free_reg(func_reg);
 
-            mod_register_export(mod, local_name, "default", false, 0);
+            self.register_export(mod, local_name, "default", false, 0)!;
             self.match(TokenType.SEMICOLON);
             return;
         }
@@ -5263,7 +5409,7 @@ fn void? CompilerContext.export_declaration(&self) {
             // export pre-declaration loop seeding a plain `undefined` instead
             // of the TDZ sentinel, so a same-module self-import of the default
             // binding observed `undefined` instead of throwing ReferenceError.
-            mod_register_export(mod, dflt_class_name, "default", false, 0, true);
+            self.register_export(mod, dflt_class_name, "default", false, 0, true)!;
             self.match(TokenType.SEMICOLON);
             return;
         }
@@ -5287,7 +5433,7 @@ fn void? CompilerContext.export_declaration(&self) {
         // runs it is in TDZ, so a same-module `import * as ns; ns.default`
         // executing above must observe the sentinel and throw ReferenceError,
         // register it lexical so link_module pre-declares the TDZ sentinel.
-        mod_register_export(mod, "*default*", "default", false, 0, true);
+        self.register_export(mod, "*default*", "default", false, 0, true)!;
         // `export default AssignmentExpression ;` — the semicolon is part of
         // the production, so it is required (via ASI), unlike the
         // HoistableDeclaration / ClassDeclaration forms above, which end at
@@ -5307,7 +5453,7 @@ fn void? CompilerContext.export_declaration(&self) {
             Token spec_tok = self.expect(TokenType.STRING)!;
             bool wants_json = self.parse_with_clause()!;
             uint req_idx = mod_register_req_module(mod, spec_tok.str_value, wants_json);
-            mod_register_export(mod, "*", ns_name, true, req_idx);
+            self.register_export(mod, "*", ns_name, true, req_idx)!;
             self.expect_semicolon_or_asi()!;
             return;
         }
@@ -5351,7 +5497,7 @@ fn void? CompilerContext.export_declaration(&self) {
             bool wants_json = self.parse_with_clause()!;
             uint req_idx = mod_register_req_module(mod, spec_tok.str_value, wants_json);
             for (uint i = 0; i < count; i++) {
-                mod_register_export(mod, local_names[i], export_names[i], true, req_idx);
+                self.register_export(mod, local_names[i], export_names[i], true, req_idx)!;
             }
         } else {
             // `export { a, b as c };`, a, b are local bindings UNLESS one
@@ -5367,7 +5513,7 @@ fn void? CompilerContext.export_declaration(&self) {
                 CompImportEntry* ie = mod_find_import_by_local(mod, local_names[i]);
                 if (ie != null) {
                     char[] indirect_local = ie.is_star ? "*" : ie.import_name;
-                    mod_register_export(mod, indirect_local, export_names[i], true, ie.req_module_idx);
+                    self.register_export(mod, indirect_local, export_names[i], true, ie.req_module_idx)!;
                     continue;
                 }
                 // Local export: look up the name's declared kind so a
@@ -5378,7 +5524,7 @@ fn void? CompilerContext.export_declaration(&self) {
                 // func_decls (by hoist_global_fn_decls) and bound at link
                 // time, and this export simply aliases that local binding.
                 bool lex = self.is_name_lexical(local_names[i]);
-                mod_register_export(mod, local_names[i], export_names[i], false, 0, lex);
+                self.register_export(mod, local_names[i], export_names[i], false, 0, lex)!;
             }
         }
 
@@ -5430,7 +5576,7 @@ fn void? CompilerContext.export_declaration(&self) {
         mod_register_func_decl(mod, fn_name2, inner_idx);
         self.free_reg(func_reg);
 
-        mod_register_export(mod, fn_name2, fn_name2, false, 0);
+        self.register_export(mod, fn_name2, fn_name2, false, 0)!;
         self.match(TokenType.SEMICOLON);
         return;
     }
@@ -5443,7 +5589,7 @@ fn void? CompilerContext.export_declaration(&self) {
         // read-name-then-push-both-back approach corrupted the token stream.)
         char[] class_name;
         self.class_declaration(&class_name)!;
-        mod_register_export(mod, class_name, class_name, false, 0, true);
+        self.register_export(mod, class_name, class_name, false, 0, true)!;
         self.match(TokenType.SEMICOLON);
         return;
     }
@@ -5473,7 +5619,7 @@ fn void? CompilerContext.export_declaration(&self) {
                 self.array_destructure(kind, is_lexical, is_const, &export_names[0], &export_names_count)!;
             }
             for (uint i = 0; i < export_names_count; i++) {
-                mod_register_export(mod, export_names[i], export_names[i], false, 0, is_lexical);
+                self.register_export(mod, export_names[i], export_names[i], false, 0, is_lexical)!;
             }
             self.match(TokenType.SEMICOLON);
             return;
@@ -5517,7 +5663,7 @@ fn void? CompilerContext.export_declaration(&self) {
             self.emit_var_store(reg, name_idx, is_lexical, is_const);
             if (self.is_global) self.free_reg(reg);
 
-            mod_register_export(mod, name_tok.str_value, name_tok.str_value, false, 0, is_lexical);
+            self.register_export(mod, name_tok.str_value, name_tok.str_value, false, 0, is_lexical)!;
 
             if (!self.match(TokenType.COMMA)) break;
         }
@@ -5551,18 +5697,34 @@ fn void? CompilerContext.compile_catch_array_pattern(&self, ushort catch_val_reg
     DestructBind[MAX_DESTRUCT_BINDS] binds;
     uint count = 0;
     self.collect_arr_param_binds(binds[..], &count, catch_val_reg, 0xFFFF)!;
-    self.emit_catch_pattern(binds[..], count, catch_val_reg);
+    self.emit_catch_pattern(binds[..], count, catch_val_reg)!;
+}
+
+/// The BoundNames of a destructuring pattern must contain no duplicates
+/// wherever the pattern introduces LEXICAL bindings: a CatchParameter
+/// (§14.15.1) and a `let`/`const` ForDeclaration (§14.7.5.1). A `var` pattern
+/// is exempt, its repeated names all denote the same var binding, so
+/// `for (var [x, x] of ...)` is legal.
+///
+/// SeenParams already implements exactly this check for FormalParameters, so
+/// this reuses it rather than growing a second duplicate-name walk.
+fn void? CompilerContext.check_pattern_bound_names_unique(&self, DestructBind[] binds, uint count) {
+    SeenParams seen;
+    seen.declare_destructured(binds, count)!;
 }
 
 /// Shared tail for both catch patterns: declare LET leaves, then emit.
-fn void CompilerContext.emit_catch_pattern(&self, DestructBind[] binds, uint count, ushort src_reg) {
+fn void? CompilerContext.emit_catch_pattern(&self, DestructBind[] binds, uint count, ushort src_reg) {
+    self.check_pattern_bound_names_unique(binds, count)!;
     ushort[MAX_DESTRUCT_BINDS] group_regs;
     ushort[MAX_DESTRUCT_BINDS] binding_regs;
     for (uint i = 0; i < count; i++) { group_regs[i] = 0xFFFF; binding_regs[i] = 0xFFFF; }
     for (uint i = 0; i < count; i++) {
         if (binds[i].is_synthetic) continue;
         HString* hs = (HString*)self.constants[binds[i].name_idx].get_heapptr();
-        binding_regs[i] = self.declare_var(hs.get_data(), ScopeKind.LET);
+        // A destructured leaf is still a CatchParameter BoundName, so the
+        // catch block's lexical declarations may not redeclare it (§14.15.1).
+        binding_regs[i] = self.declare_var(hs.get_data(), ScopeKind.LET, true);
     }
     for (uint i = 0; i < count; i++) {
         if (binds[i].parent_idx == 0xFFFF) binds[i].arg_idx = src_reg;
@@ -5578,5 +5740,5 @@ fn void? CompilerContext.compile_catch_object_pattern(&self, ushort catch_val_re
     DestructBind[MAX_DESTRUCT_BINDS] binds;
     uint count = 0;
     self.collect_obj_param_binds(binds[..], &count, catch_val_reg, 0xFFFF)!;
-    self.emit_catch_pattern(binds[..], count, catch_val_reg);
+    self.emit_catch_pattern(binds[..], count, catch_val_reg)!;
 }

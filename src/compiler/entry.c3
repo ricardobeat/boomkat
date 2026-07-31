@@ -392,6 +392,11 @@ fn CompiledFunction*? compile_module(Lexer* lex, void* heap, char[] module_name,
     // Hoist var declarations at the module level.
     ctx.hoist_decls(true)!;
 
+    // §16.2.1.1: the module body's LexicallyDeclaredNames must be unique.
+    // Runs after hoist_global_fn_decls so the top-level function names it
+    // collected are available to pair against the let/const/class names.
+    ctx.check_module_duplicate_lexical_names()!;
+
     // Restore lexer to beginning for statement parsing.
     lex.pos             = saved_pos;
     lex.line            = saved_line;

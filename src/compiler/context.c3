@@ -99,6 +99,19 @@ struct ScopeEntry {
     /// while the sentinel is still in place.  Cleared by `emit_var_store`
     /// after the binding's `PUTLEX`/`PUTLEX_C` is emitted.
     bool is_tdz;
+    /// True for a formal parameter or a catch parameter, both of which are
+    /// pushed with kind VAR because they share `var`'s register and env
+    /// treatment.  The distinction matters only for the §14.1.2 / §14.15.1
+    /// early error that a body `let`/`const` may not redeclare one: a body
+    /// `var` of the same name is explicitly allowed (it resolves to the same
+    /// binding), so `kind` alone cannot tell the two cases apart.
+    bool is_param;
+    /// SCOPEMARK entries only: true for the marker a function BODY opens, as
+    /// opposed to a nested BlockStatement.  The parameter check above sees
+    /// through this marker (a body's top-level lexical names collide with the
+    /// parameter list) and stops at every other one (a nested block's shadow
+    /// it freely).
+    bool is_body_mark;
 }
 
 struct LoopInfo {
@@ -642,6 +655,15 @@ struct CompilerContext {
     // Arrow/async tracking, needed for needs_env computation in finish().
     bool is_arrow;
     bool is_async;
+
+    /// True inside an ArrowFunction whose enclosing code has no [[NewTarget]],
+    /// i.e. one written directly in global or module code (or nested in such an
+    /// arrow).  An arrow inherits new.target from its enclosing function, so
+    /// with no enclosing function `new.target` is a SyntaxError there
+    /// (§16.1.1), exactly as it is at the top level itself.  A separate flag
+    /// rather than propagating is_global, which also governs where declarations
+    /// are registered and would wrongly make the arrow body's own `var`s global.
+    bool no_new_target;
 
     // Source offset of the `async` keyword when parsing an async arrow function
     // (`async x => ...` / `async (params) => ...`).  Set by primary_expr before

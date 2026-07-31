@@ -120,6 +120,7 @@ modules:
     @just build duktape_c3
     bash test/modules/run.sh
     bash test/modules/syntax_positions.sh
+    bash test/modules/export_names.sh
 
 # Run the local test suite: every test/*.js under the plain runner, then the
 # ESM fixtures under test/modules/ (which need --module, so run.sh owns them).

@@ -45,12 +45,20 @@ fn void CompilerContext.pop_scope_to(&self, uint saved_depth) {
 
 /// Push a scope marker to delimit block scope boundaries for duplicate
 /// let/const detection.  The marker has no name and no register.
-fn void CompilerContext.push_scope_marker(&self) {
+///
+/// `is_body` marks the marker a FUNCTION BODY opens, as opposed to a nested
+/// BlockStatement. The body's top-level lexical names must not collide with
+/// the parameter list (§14.1.2), while a nested block's freely shadow it, so
+/// the parameter check has to see through this one marker and stop at any
+/// other.
+fn void CompilerContext.push_scope_marker(&self, bool is_body = false) {
     if (self.scope_depth < MAX_SCOPE_DEPTH) {
         self.scope_stack[self.scope_depth].name = (char[]){};
         self.scope_stack[self.scope_depth].reg = 0;
         self.scope_stack[self.scope_depth].kind = SCOPEMARK;
         self.scope_stack[self.scope_depth].is_captured = false;
+        self.scope_stack[self.scope_depth].is_param = false;
+        self.scope_stack[self.scope_depth].is_body_mark = is_body;
         self.scope_depth++;
     }
 }
@@ -81,8 +89,45 @@ fn void? CompilerContext.check_var_lex_conflict(&self, char[] name, ScopeKind ki
     }
 }
 
+/// ES2024 §14.1.2 / §14.15.1 early error: a lexical declaration at the top
+/// level of a parameter list's body scope may not redeclare a BoundName of
+/// that parameter list. `function f(p) { let p; }` and
+/// `try {} catch (e) { let e; }` are both SyntaxErrors, while a body `var` of
+/// the same name stays legal (it resolves to the very same binding), which is
+/// why the parameter flag, not `kind`, is what this keys off.
+///
+/// The walk stops at the first real block boundary: a nested block's lexical
+/// names shadow the parameters freely (`function f(p) { { let p; } }` is
+/// fine). It crosses AT MOST ONE body marker -- the one belonging to the
+/// scope this declaration is in, whose parameters sit immediately below it.
+/// Crossing a second would reach an enclosing function's parameter list, which
+/// this declaration is free to shadow: in
+/// `function outer(e) { try {} catch (x) { function e(){} } }` the inner `e`
+/// shadows outer's parameter and is perfectly legal.
+fn void? CompilerContext.check_lexical_redeclares_param(&self, char[] name) {
+    bool crossed_body_mark = false;
+    uint i = self.scope_depth;
+    while (i > 0) {
+        i--;
+        ScopeEntry* e = &self.scope_stack[i];
+        if (e.kind == SCOPEMARK) {
+            if (!e.is_body_mark || crossed_body_mark) return;
+            crossed_body_mark = true;
+            continue;
+        }
+        if (e.is_param && str_eq(e.name, name)) {
+            return self.fail("lexical declaration cannot redeclare a parameter")~;
+        }
+    }
+}
+
 /// Declare a variable in the current scope.
-fn ushort CompilerContext.declare_var(&self, char[] name, ScopeKind kind) {    ushort reg = self.alloc_reg();
+///
+/// `is_param` marks a formal or catch parameter. Such a binding is pushed with
+/// kind VAR (it shares `var`'s register and env treatment) but a body
+/// `let`/`const` may not redeclare it, so the flag is what lets the
+/// duplicate-lexical walk tell it apart from a real `var`.
+fn ushort CompilerContext.declare_var(&self, char[] name, ScopeKind kind, bool is_param = false) {    ushort reg = self.alloc_reg();
     // Lexical bindings must survive env-elision when a closure can read them
     // through the env chain (see has_lexical_bindings in the elide/needs_env
     // gates).
@@ -91,8 +136,10 @@ fn ushort CompilerContext.declare_var(&self, char[] name, ScopeKind kind) {    u
     }
     // Push to scope_stack for all lexical declarations (even at global scope)
     // so duplicate let/const can be detected.  Var at global scope is still
-    // hoisted to the function-scoped environment and doesn't need scope tracking.
-    bool push_scope = !self.is_global || kind != VAR;
+    // hoisted to the function-scoped environment and doesn't need scope
+    // tracking; a PARAMETER at global scope (a top-level `catch` clause's) does
+    // need it, or the body `let` that may not redeclare it has nothing to see.
+    bool push_scope = !self.is_global || kind != VAR || is_param;
     if (push_scope && self.scope_depth < MAX_SCOPE_DEPTH) {
         // Locals referenced inside nested callable bodies (or reachable by
         // direct eval) must be env-resident: force every access through
@@ -112,6 +159,7 @@ fn ushort CompilerContext.declare_var(&self, char[] name, ScopeKind kind) {    u
         self.scope_stack[self.scope_depth].kind = kind;
         self.scope_stack[self.scope_depth].is_captured = captured;
         self.scope_stack[self.scope_depth].is_tdz = is_tdz;
+        self.scope_stack[self.scope_depth].is_param = is_param;
         if (captured) { self.has_captured_local = true; }
         self.scope_depth++;
     }

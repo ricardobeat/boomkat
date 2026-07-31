@@ -233,9 +233,6 @@ fn void? CompilerContext.collect_obj_param_binds(&self,
         // Rest element: {...rest}
         if (self.match(TokenType.ELLIPSIS)) {
             Token rest_tok = self.expect_binding_identifier()!;
-            if (rest_tok.type == TokenType.IDENTIFIER && is_restricted_name(rest_tok.str_value)) {
-                return COMPILE_ERROR~;
-            }
             if (*count < binds.len) {
                 binds[*count].name_idx = self.add_string_constant(rest_tok.str_value);
                 binds[*count].key_idx = 0xFFFF;
@@ -289,7 +286,6 @@ fn void? CompilerContext.collect_obj_param_binds(&self,
                 }
             } else {
                 Token bind = self.expect_binding_identifier()!;
-                if (bind.type == TokenType.IDENTIFIER && is_restricted_name(bind.str_value)) return COMPILE_ERROR~;
                 if (*count < binds.len) {
                     binds[*count].name_idx = self.add_string_constant(bind.str_value);
                     binds[*count].is_computed_key = true;
@@ -341,9 +337,6 @@ fn void? CompilerContext.collect_obj_param_binds(&self,
                 }
             } else {
                 Token bind = self.expect_binding_identifier()!;
-                if (bind.type == TokenType.IDENTIFIER && is_restricted_name(bind.str_value)) {
-                    return COMPILE_ERROR~;
-                }
                 if (*count < binds.len) {
                     binds[*count].name_idx = self.add_string_constant(bind.str_value);
                     binds[*count].key_idx = prop_key_idx;
@@ -485,9 +478,6 @@ fn void? CompilerContext.collect_arr_param_binds(&self,
                 }
             } else {
                 Token rest_tok = self.expect_binding_identifier()!;
-                if (rest_tok.type == TokenType.IDENTIFIER && is_restricted_name(rest_tok.str_value)) {
-                    return COMPILE_ERROR~;
-                }
                 if (*count < binds.len) {
                     binds[*count].name_idx = self.add_string_constant(rest_tok.str_value);
                     binds[*count].key_idx = 0xFFFF;
@@ -531,9 +521,6 @@ fn void? CompilerContext.collect_arr_param_binds(&self,
             }
         } else {
             Token bind = self.expect_binding_identifier()!;
-            if (bind.type == TokenType.IDENTIFIER && is_restricted_name(bind.str_value)) {
-                return COMPILE_ERROR~;
-            }
             if (*count < binds.len) {
                 binds[*count].name_idx = self.add_string_constant(bind.str_value);
                 binds[*count].key_idx = 0;  // use index instead
@@ -2209,6 +2196,16 @@ fn void? CompilerContext.hoist_global_fn_decls(&self, bool checks_only = false) 
             if (catch _err = name_opt) break;
             if (name_opt.type != TokenType.IDENTIFIER) continue;
 
+            // A top-level declaration's name is a BindingIdentifier, so the
+            // §13.1.1 restricted names are rejected. The check has to happen
+            // in the pre-scan and not only in function_declaration: once a
+            // name is recorded as hoisted, the statement pass skips the
+            // declaration outright and never reaches
+            // expect_binding_identifier's own check.
+            if (is_restricted_name(name_opt.str_value)) {
+                return self.fail("reserved word cannot be used as a binding identifier")~;
+            }
+
             char[] fn_name = name_opt.str_value;
             if (fn_name.len == 0) continue;
 
@@ -2559,7 +2556,7 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
                     // slice into scope_stack, which outlives the current token.
                     HString* rest_hstr = ((Heap*)self.heap).str_intern(rest_param.str_value);
                     char[] rest_name2 = rest_hstr.get_data();
-                    ushort rest_reg = self.declare_var(rest_name2, VAR);
+                    ushort rest_reg = self.declare_var(rest_name2, VAR, true);
                     uint rest_name_idx = self.add_string_constant(rest_name2);
                     self.emit_a_bc(Opcode.DECLVAR, (uint)rest_reg, rest_name_idx);
                 }
@@ -2608,7 +2605,7 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
             // stores this slice into scope_stack, which outlives this token.
             HString* param_hstr = ((Heap*)self.heap).str_intern(param.str_value);
             char[] param_name2 = param_hstr.get_data();
-            ushort param_reg = self.declare_var(param_name2, VAR);
+            ushort param_reg = self.declare_var(param_name2, VAR, true);
             uint param_name_idx = self.add_string_constant(param_name2);
             arg_count++;
 
@@ -2681,7 +2678,7 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
         }
         uint ni = destruct_binds[i].name_idx;
         char[] name = destruct_binds[i].name_buf[:destruct_binds[i].name_len];
-        ushort dreg = self.declare_var(name, VAR);
+        ushort dreg = self.declare_var(name, VAR, true);
         destruct_binding_regs[i] = dreg;
         self.emit_a_bc(Opcode.DECLVAR, (uint)dreg, ni);
     }
@@ -3130,7 +3127,7 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
                     // slice into scope_stack, which outlives the current token.
                     HString* rest_hstr = ((Heap*)inner_ctx.heap).str_intern(rest_param.str_value);
                     char[] rest_name2 = rest_hstr.get_data();
-                    ushort rest_reg = inner_ctx.declare_var(rest_name2, VAR);
+                    ushort rest_reg = inner_ctx.declare_var(rest_name2, VAR, true);
                     uint rest_name_idx = inner_ctx.add_string_constant(rest_name2);
                     inner_ctx.emit_a_bc(Opcode.DECLVAR, (uint)rest_reg, rest_name_idx);
                 }
@@ -3201,7 +3198,7 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
             // stores this slice into scope_stack, which outlives this token.
             HString* param_hstr = ((Heap*)inner_ctx.heap).str_intern(param.str_value);
             char[] param_name2 = param_hstr.get_data();
-            ushort param_reg = inner_ctx.declare_var(param_name2, VAR);
+            ushort param_reg = inner_ctx.declare_var(param_name2, VAR, true);
             uint param_name_idx = inner_ctx.add_string_constant(param_name2);
             arg_count++;
             // DECLVAR creates binding in var_env.
@@ -3266,7 +3263,7 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
         }
         uint ni = inner_destruct_binds[i].name_idx;
         char[] bind_name = inner_destruct_binds[i].name_buf[:inner_destruct_binds[i].name_len];
-        ushort dreg = inner_ctx.declare_var(bind_name, VAR);
+        ushort dreg = inner_ctx.declare_var(bind_name, VAR, true);
         inner_destruct_binding_regs[i] = dreg;
         inner_ctx.emit_a_bc(Opcode.DECLVAR, (uint)dreg, ni);
     }
@@ -3492,6 +3489,13 @@ fn ushort? CompilerContext.function_expr(&self, bool is_async_expr = false) {
     if (self.check(TokenType.IDENTIFIER) ||
         (self.check(TokenType.AWAIT) && !self.is_module && !self.is_async)) {
         Token name_tok = self.advance()!;
+        // The name is a BindingIdentifier, so §13.1.1's restricted names are
+        // rejected. Checked here rather than via expect_binding_identifier
+        // because the name is optional and the `await` branch above has
+        // already made its own enclosing-grammar decision.
+        if (name_tok.type == TokenType.IDENTIFIER && is_restricted_name(name_tok.str_value)) {
+            return self.fail("reserved word cannot be used as a binding identifier")~;
+        }
         // Intern now: an escaped function-expression name borrows the
         // lexer's shared ident_buf scratch. compile_inner_function below
         // copies `name` into the CompiledFunction only AFTER compiling the
@@ -3652,6 +3656,13 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
     // is a SyntaxError even though the arrow doesn't have its own [[NewTarget]].
     arrow_ctx.eval_mode = self.eval_mode;
     arrow_ctx.eval_direct_in_function = self.eval_direct_in_function;
+    // Same reasoning for top-level code: an arrow has no [[NewTarget]] of its
+    // own and inherits the enclosing code's, so an arrow written directly in
+    // global/module code is still code where `new.target` is a SyntaxError
+    // (§16.1.1). This is a dedicated flag rather than propagating is_global,
+    // which additionally governs where declarations are registered and would
+    // wrongly make the arrow body's own `var`s global.
+    arrow_ctx.no_new_target = self.is_global || self.no_new_target;
 
     // Unlike a regular function/method (whose [Yield]/[Await] grammar params
     // are re-fixed at the boundary), an ArrowFunction's ArrowParameters inherit
@@ -3737,7 +3748,7 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
                     // slice into scope_stack, which outlives the current token.
                     HString* rest_hstr = ((Heap*)arrow_ctx.heap).str_intern(rest_param.str_value);
                     char[] rest_name2 = rest_hstr.get_data();
-                    ushort rest_reg = arrow_ctx.declare_var(rest_name2, VAR);
+                    ushort rest_reg = arrow_ctx.declare_var(rest_name2, VAR, true);
                     uint rest_name_idx = arrow_ctx.add_string_constant(rest_name2);
                     arrow_ctx.emit_a_bc(Opcode.DECLVAR, (uint)rest_reg, rest_name_idx);
                 }
@@ -3797,7 +3808,7 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
             // stores this slice into scope_stack, which outlives this token.
             HString* param_hstr = ((Heap*)arrow_ctx.heap).str_intern(param.str_value);
             char[] param_name2 = param_hstr.get_data();
-            ushort param_reg = arrow_ctx.declare_var(param_name2, VAR);
+            ushort param_reg = arrow_ctx.declare_var(param_name2, VAR, true);
             uint param_name_idx = arrow_ctx.add_string_constant(param_name2);
             arg_count++;
             // DECLVAR creates binding in var_env.
@@ -3861,7 +3872,7 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
         }
         uint ni = arrow_destruct_binds[i].name_idx;
         char[] bind_name = arrow_destruct_binds[i].name_buf[:arrow_destruct_binds[i].name_len];
-        ushort dreg = arrow_ctx.declare_var(bind_name, VAR);
+        ushort dreg = arrow_ctx.declare_var(bind_name, VAR, true);
         arrow_destruct_binding_regs[i] = dreg;
         arrow_ctx.emit_a_bc(Opcode.DECLVAR, (uint)dreg, ni);
     }
@@ -4152,6 +4163,13 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner(&self, char[]* params,
     // is a SyntaxError even though the arrow doesn't have its own [[NewTarget]].
     arrow_ctx.eval_mode = self.eval_mode;
     arrow_ctx.eval_direct_in_function = self.eval_direct_in_function;
+    // Same reasoning for top-level code: an arrow has no [[NewTarget]] of its
+    // own and inherits the enclosing code's, so an arrow written directly in
+    // global/module code is still code where `new.target` is a SyntaxError
+    // (§16.1.1). This is a dedicated flag rather than propagating is_global,
+    // which additionally governs where declarations are registered and would
+    // wrongly make the arrow body's own `var`s global.
+    arrow_ctx.no_new_target = self.is_global || self.no_new_target;
 
     // Register parameters
     ushort formal_count = param_count;
@@ -4185,7 +4203,7 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner(&self, char[]* params,
                 if (match) return COMPILE_ERROR~;
             }
         }
-        ushort param_reg = arrow_ctx.declare_var(name, VAR);
+        ushort param_reg = arrow_ctx.declare_var(name, VAR, true);
         uint param_name_idx = arrow_ctx.add_string_constant(name);
         arrow_ctx.emit_a_bc(Opcode.DECLVAR, (uint)param_reg, param_name_idx);
     }

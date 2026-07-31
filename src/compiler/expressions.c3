@@ -2743,6 +2743,15 @@ fn ushort? CompilerContext.new_expr(&self) {
                 }
                 return COMPILE_ERROR~;
             }
+            // §16.1.1 (Script) and §16.2.1.1 (Module): it is a Syntax Error
+            // for a StatementList to Contain NewTarget at all, the sole
+            // exception being the direct-eval-inside-a-non-arrow-function case
+            // handled just above. Top-level code has no [[NewTarget]], and
+            // neither does an arrow written there: an arrow inherits
+            // new.target from its enclosing function, and there is none.
+            if ((self.is_global || self.no_new_target) && !self.eval_mode) {
+                return self.fail("new.target is only allowed in function code")~;
+            }
             ushort result_reg = self.alloc_reg();
             self.emit_abc(Opcode.NEWTARGET, (uint)result_reg, 0, 0);
             ctor_reg = result_reg;
