@@ -376,6 +376,13 @@ struct CompilerContext {
     /// Separate from lhs_mode because expression() inside [bracket] calls
     /// assignment_expr which resets lhs_mode.
     bool del_mode;
+    /// Set while parsing a `class ... extends` heritage expression, whose
+    /// grammar is LeftHandSideExpression and therefore admits no arrow
+    /// function. check_arrow() reports false under this flag so `=>` is left
+    /// unconsumed and surfaces as a SyntaxError. Cleared as soon as the
+    /// heritage expression is parsed, so arrows nested inside it (e.g. in a
+    /// call argument, `extends f(() => 1)`) are unaffected.
+    bool no_arrow_head;
     bool last_was_member;
     ushort last_member_obj_reg;
     ushort last_member_prop_reg;

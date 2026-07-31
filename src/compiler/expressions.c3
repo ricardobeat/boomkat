@@ -3519,6 +3519,14 @@ fn ushort CompilerContext.emit_super_base(&self) {
 fn ushort? CompilerContext.primary_expr(&self) {
     TokenType tt = self.peek_type();
 
+    // A class heritage expression is a LeftHandSideExpression, so an arrow
+    // function is not a legal head for it. Consume the flag here: only THIS
+    // invocation is the outermost head, and every nested expression parsed
+    // below (call arguments, parenthesised sub-expressions) recurses into a
+    // fresh primary_expr that must accept arrows as usual.
+    bool reject_arrow_head = self.no_arrow_head;
+    self.no_arrow_head = false;
+
     switch (tt) {
         case TokenType.NUMBER:
             self.last_was_getvar = false;
@@ -3606,6 +3614,9 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 // further tokens and clobber token_start, so we save it first.
                 uint pre_check_src = self.lexer.token_start;
                 if (self.check(TokenType.IDENTIFIER) && self.is_async_arrow_lookahead()) {
+                    // ClassHeritage is a LeftHandSideExpression: an async
+                    // arrow is no more legal a head than a plain one.
+                    if (reject_arrow_head) return COMPILE_ERROR~;
                     uint async_src = pre_check_src;
                     self.advance()!;  // consume 'async'
                     // The arrow parsers read pending_async_arrow_src as the
@@ -3654,7 +3665,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 // rejected as an early SyntaxError.
 
                 // Arrow function: IDENTIFIER => ...
-                if (self.check_arrow()) {
+                if (!reject_arrow_head && self.check_arrow()) {
                     char[][1] params_arr;
                     params_arr[0] = id_tok.str_value;
                     // Capture byte offset of the IDENTIFIER (just consumed), the
@@ -3732,7 +3743,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
             // Check for empty parens: () => ...
             if (self.check(TokenType.RPAREN)) {
                 self.advance()!;  // consume ')'
-                if (self.check_arrow()) {
+                if (!reject_arrow_head && self.check_arrow()) {
                     // No-param arrow: () => ...
                     // Restore lexer to right after '(', parse_arrow_function_reparse
                     // will re-parse from source.
@@ -3866,6 +3877,12 @@ fn ushort? CompilerContext.primary_expr(&self) {
                     }
                 }
 
+                if (is_arrow && reject_arrow_head) {
+                    // `class C extends (a, b) => {}`: the speculative scan
+                    // confirmed an arrow, but ClassHeritage is a
+                    // LeftHandSideExpression and admits none.
+                    return COMPILE_ERROR~;
+                }
                 if (is_arrow) {
                     // Restore lexer to right after '(', compile_arrow_inner
                     // will re-parse params from source (handling defaults).
@@ -4168,7 +4185,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                     return COMPILE_ERROR~;
                 }
                 Token id_tok = self.advance()!;
-                if (self.check_arrow()) {
+                if (!reject_arrow_head && self.check_arrow()) {
                     // `await => ...` could be an arrow function with one
                     // identifier parameter named "await".
                     char[][1] params_arr;

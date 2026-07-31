@@ -435,7 +435,12 @@ fn void? CompilerContext.declare_or_merge_private_accessor(&self, char[] name, b
     for (uint i = scope_begin; i < t.count; i++) {
         if (str_eq(t.entries[i].name, name)) {
             PrivateNameEntry* e = &t.entries[i];
+            // ES2022 §15.7.1: the two halves of a private accessor pair
+            // must agree on static-ness. `get #f(){}` + `static set #f(v){}`
+            // declares the same private name in two different homes, which
+            // is an early SyntaxError, not a mergeable pair.
             bool mergeable = e.is_method
+                && e.is_static == is_static_decl
                 && ((is_getter && e.has_getter == false && e.has_setter)
                     || (is_setter && e.has_setter == false && e.has_getter));
             if (!mergeable) return COMPILE_ERROR~;

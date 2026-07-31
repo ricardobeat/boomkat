@@ -426,7 +426,14 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
     // Parse optional extends clause
     ushort base_reg = MAX_REGISTERS;
     if (self.match(TokenType.EXTENDS)) {
-        base_reg = self.assignment_expr()!;
+        // ES2022 §15.7: `ClassHeritage : extends LeftHandSideExpression`.
+        // Parsing this as an AssignmentExpression would accept productions
+        // the grammar excludes, notably arrow and async-arrow functions
+        // (`class C extends () => {} {}`), which must be early SyntaxErrors.
+        self.no_arrow_head = true;
+        ushort? heritage_reg = self.call_expr();
+        self.no_arrow_head = false;
+        base_reg = heritage_reg!;
         // ES2022 §15.7.14 step 5.f: if superclass is not null and not a
         // constructor, throw TypeError BEFORE accessing .prototype.
         self.emit_abc(Opcode.CHKCTOR, (uint)base_reg, 0, 0);
