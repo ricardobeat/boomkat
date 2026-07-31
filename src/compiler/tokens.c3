@@ -56,7 +56,12 @@ fn void CompilerContext.record_lex_error(&self) {
 // ============================================================================
 
 /// Advance: consume the next token from the lexer and return it.
-fn Token? CompilerContext.advance(&self) {
+///
+/// `as_ident_name` marks the few positions whose grammar is IdentifierName
+/// rather than a ReservedWord terminal — an object-literal or class-member
+/// key. Escapes are legal there (`({ break: 1 })`, `class C { break(){} }`),
+/// so the escaped-keyword rejection below is skipped for those callers only.
+fn Token? CompilerContext.advance(&self, bool as_ident_name = false) {
     // Check pushback buffer first
     if (self.pushback_count > 0) {
         self.pushback_count--;
@@ -67,7 +72,20 @@ fn Token? CompilerContext.advance(&self) {
         self.record_lex_error();
         return COMPILE_ERROR~;
     }
-    return tok_opt;
+    Token tok = tok_opt;
+    // ES2024 §12.7.2: a ReservedWord is a terminal symbol and must appear
+    // literally, so a spelling that uses a Unicode escape (`var`,
+    // `break`) is neither the keyword nor a usable Identifier — it is
+    // always a SyntaxError. The lexer resolves such a token to its keyword
+    // type with has_escape set; reject it here, the one gate every
+    // keyword-consuming parse path shares.
+    //
+    // Member-access names (`o.break`) are unaffected: read_property_name
+    // reads straight off the lexer rather than through this function.
+    if (tok.has_escape && tok.type != TokenType.IDENTIFIER && !as_ident_name) {
+        return self.fail("keyword must not contain escaped characters")~;
+    }
+    return tok;
 }
 
 /// Expect the next token to be of the given type; consume and return it.
@@ -471,6 +489,14 @@ fn bool CompilerContext.match_async_method_prefix(&self) {
         cur.str_value[0] != 'a' || cur.str_value[1] != 's' ||
         cur.str_value[2] != 'y' || cur.str_value[3] != 'n' ||
         cur.str_value[4] != 'c') {
+        self.pushback(cur);
+        return false;
+    }
+    // Escaped `async` (`async m(){}`) is a plain IdentifierName, never
+    // the contextual keyword (ES2024 §5.1.5), so it does not introduce an
+    // async method — same rule as match_async_function_prefix and
+    // is_async_arrow_lookahead.
+    if (cur.has_escape) {
         self.pushback(cur);
         return false;
     }

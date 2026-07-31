@@ -2588,6 +2588,13 @@ fn ushort? CompilerContext.new_expr(&self) {
         if (target_name.len == 0) {
             target_name = lexer::keyword_to_string(target_tok.type);
         }
+        // `new.target` is a NewTarget meta-property, and both halves are
+        // terminal symbols: `new.target` is a SyntaxError, not a
+        // property read (ES2024 §13.3.12 / §5.1.5). The `new` half is already
+        // covered by advance()'s escaped-keyword gate.
+        if (target_tok.has_escape) {
+            return self.fail("keyword must not contain escaped characters")~;
+        }
         if (target_name.len == 6
             && target_name[0] == 't'
             && target_name[1] == 'a'
@@ -3270,7 +3277,16 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 }
                 Token id_tok = self.advance()!;
 
-                // Check for literal keywords tokenized as identifiers
+                // Check for literal keywords tokenized as identifiers.
+                // `true`/`false`/`null` are ReservedWords, not contextual
+                // keywords: an escaped spelling is NOT the literal AND is not
+                // a usable identifier either (ES2024 §12.7.2 / §5.1.5), so
+                // `true` is a SyntaxError rather than a variable read.
+                if (id_tok.has_escape && (str_eq(id_tok.str_value, "true")
+                        || str_eq(id_tok.str_value, "false")
+                        || str_eq(id_tok.str_value, "null"))) {
+                    return self.fail("keyword must not contain escaped characters")~;
+                }
                 if (str_eq(id_tok.str_value, "true")) {
                     self.last_was_getvar = false;
                     ushort reg = self.alloc_reg();
@@ -4438,7 +4454,9 @@ fn ushort? CompilerContext.object_literal(&self) {
             TokenType key_tt = self.peek_type();
             if (key_tt == TokenType.IDENTIFIER || key_tt == TokenType.STRING
                 || lexer::keyword_to_string(key_tt).len > 0) {
-                Token key_tok = self.advance()!;
+                // A PropertyName is an IdentifierName, so an escaped reserved
+                // word is a legal key (`({ break: 1 })`).
+                Token key_tok = self.advance(true)!;
                 // ES2015 §12.2.6.8: shorthand is only legal for a plain
                 // IdentifierReference, string-literal keys and reserved
                 // words used as keys must not be treated as shorthand.
@@ -4469,7 +4487,13 @@ fn ushort? CompilerContext.object_literal(&self) {
                 // so we disable the detection entirely when a star was consumed.
                 bool is_obj_getter = false;
                 bool is_obj_setter = false;
-                if (!is_generator_method && key_tt == TokenType.IDENTIFIER && !self.check(TokenType.COLON) && !self.check(TokenType.LPAREN)) {
+                // Escaped `get`/`set` (`get m(){}`) is a plain
+                // IdentifierName, never the contextual accessor keyword
+                // (ES2024 §5.1.5), so it does not open an accessor. It then
+                // fails as `get m(){}` — two names with no separator — which
+                // is the SyntaxError the spec requires.
+                if (!is_generator_method && key_tt == TokenType.IDENTIFIER && !key_tok.has_escape
+                        && !self.check(TokenType.COLON) && !self.check(TokenType.LPAREN)) {
                     if (key_tok.str_value.len == 3
                         && key_tok.str_value[0] == 'g'
                         && key_tok.str_value[1] == 'e'

@@ -893,7 +893,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
         } else if (self.check(TokenType.IDENTIFIER)
                || lexer::keyword_to_string(self.peek_type()).len > 0) {
             // IDENTIFIER or any keyword (extends, class, if, return, etc.) as method name
-            method_name = self.advance()!;
+            method_name = self.advance(true)!;
             // Check for getter/setter: `get prop() {}` / `set prop(v) {}`
             // Skip when this is a generator-method shorthand, `*get` / `*set` is a SyntaxError.
             if (!is_generator_method && (method_name.str_value.len == 3
@@ -942,7 +942,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
                         method_name = lexer::make_token(TokenType.IDENTIFIER, 0, 0);
                     } else if (self.check(TokenType.IDENTIFIER) || self.check(TokenType.STRING)
                                || lexer::keyword_to_string(self.peek_type()).len > 0) {
-                        method_name = self.advance()!;
+                        method_name = self.advance(true)!;
                     } else if (self.check(TokenType.NUMBER)) {
                         method_name = self.advance()!;
                         method_name_is_number = true;

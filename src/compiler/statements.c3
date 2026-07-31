@@ -360,6 +360,18 @@ fn void? CompilerContext.statement(&self) {
                 // Consume the identifier token to check what follows
                 Token id_tok = self.advance()!;
                 if (self.peek_type() == TokenType.COLON) {
+                    // A LabelIdentifier is an Identifier (§14.13), so a
+                    // ReservedWord may not be one. `true`/`false`/`null` lex
+                    // as IDENTIFIER here (they are matched by name in
+                    // primary_expr rather than living in the keyword table),
+                    // so they have to be excluded explicitly, escaped or not.
+                    // `eval`/`arguments` are NOT reserved and remain valid
+                    // label names.
+                    if (str_eq(id_tok.str_value, "true")
+                            || str_eq(id_tok.str_value, "false")
+                            || str_eq(id_tok.str_value, "null")) {
+                        return self.fail("reserved word cannot be used as a label")~;
+                    }
                     self.advance()!; // consume ':'
                     self.labeled_statement(id_tok.str_value)!;
                     break;
@@ -532,6 +544,15 @@ fn void? CompilerContext.parse_directives(&self) {
         }
 
         Token str_tok = self.advance()!;
+
+        // A directive's string is never evaluated as an expression, so it
+        // never reaches primary_expr's octal check. The early error still
+        // applies (ES2024 §12.9.4.1: a LegacyOctalEscapeSequence is a Syntax
+        // Error in strict code, and a DirectivePrologue member is strict code
+        // here because the engine is strict-only), so check it directly.
+        if (str_tok.has_octal_escape) {
+            return self.fail("octal escape sequences are not allowed in strict mode")~;
+        }
 
         bool has_semicolon = self.check(TokenType.SEMICOLON);
         // ASI ends the ExpressionStatement at a line terminator, and also at
