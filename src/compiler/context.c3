@@ -299,6 +299,20 @@ struct CompilerContext {
     /// Set when the last primary_expr returned a live local variable register directly.
     bool last_was_local_var;
     ushort last_local_var_reg;
+    /// Set when the expression just parsed has AssignmentTargetType ~invalid~
+    /// (ES §13.15.1) even though it left a reference marker behind.
+    ///
+    /// last_was_local_var carries two independent meanings: "this is a valid
+    /// SimpleAssignmentTarget" and "the result lives in a local's home
+    /// register, so an enclosing operator must copy it before overwriting"
+    /// (the aliasing hint b0fdc49c added for `(u = 45) > 0`). An
+    /// AssignmentExpression / UpdateExpression result needs the second but
+    /// must not get the first: `(x = y) = 1` and `(x ??= y)++` are early
+    /// SyntaxErrors. Clearing the shared flag would silently disable the
+    /// copy-to-temp guard and corrupt the target variable's register, so
+    /// target-validity is tracked here separately instead. Only the four
+    /// SimpleAssignmentTarget checks read it; no codegen path does.
+    bool last_target_invalid;
     /// Raw text of the identifier last resolved by primary_expr (getvar or
     /// local var alike). Used by assignment_expr for SetFunctionName
     /// (ES2015 §12.15.4): `x = function(){}` names the RHS "x" when the LHS
