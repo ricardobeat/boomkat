@@ -9,13 +9,16 @@ Full ECMAScript spec compliance is NOT the goal. The goal is: run real-world JS 
 
 ## Executive Summary
 
-**~60% of test262 is irrelevant** for a clean-slate engine. You can safely skip ~32,000 tests
-and focus on the ~21,000 that test behavior real code actually depends on.
+Roughly 60% of test262 falls outside this engine's scope. The skip list in
+`scripts/run_test262.py` is the authority on what is actually excluded; the
+tiers below record the reasoning. Tier 2 has largely emptied out as features
+moved from "later" to implemented, so read the counts here as history rather
+than as the current state.
 
 The irrelevant tests fall into three buckets:
 1. **Non-standard/legacy** (Annex B, Intl, engine quirks) — 4,470 tests
 2. **Unstandardized proposals** (Temporal, decorators, etc.) — ~5,000 tests
-3. **Platform-dependent or out-of-scope features** (SharedArrayBuffer, Atomics, cross-realm) — ~2,400 tests
+3. **Out-of-scope behavior** (cross-realm, multi-agent coordination, tail calls) — ~250 tests
 
 ---
 
@@ -92,37 +95,44 @@ Implementing them now means chasing a moving target.
 
 ## Tier 2: Skip For Now (Advanced Features)
 
-These test **real, standardized ES features** that are either platform or
-security dependent (SharedArrayBuffer, Atomics) or not required by the targeted
-subset (tail-call optimization).
+These test **real, standardized ES features** that are not required by the
+targeted subset.
 
 ### Tier 2A: Complex / Platform-Dependent
 
-| Category | Tests | Why Skip |
-|---|---|---|
-| **SharedArrayBuffer** | 104 (dir) + 463 (flag) | Requires multi-threading, Spectre mitigations, platform headers. Out of scope for a single-threaded engine. |
-| **Atomics** | 390 | Same as SAB. Low-level concurrency primitives. |
-| **resizable-arraybuffer** | 462 | ES2024, complex ArrayBuffer internals. |
+This tier is now empty. Every entry that was here has been implemented.
 
-Four entries that sat in this tier have since been implemented and now pass their
-phases in full, so they are no longer skipped: **Proxy** (311, phase 23),
-**BigInt** (77, fixed-width int128 rather than arbitrary precision),
-**WeakRef** (29) and **FinalizationRegistry** (47, both phase 17-20).
+**Atomics and SharedArrayBuffer are implemented**, not skipped wholesale. Atomics
+is well defined on a single agent: `load`, `store`, `add`, `compareExchange` and
+the rest operate on an `Int32Array` with no second thread involved, and
+`src/builtins/atomics.c3` implements them. Only the coordination surface needs
+threads, so the skip is drawn per file at exactly that line: a test is excluded
+when it drives a second agent through the `$262.agent` host hooks
+(`agent.start` / `broadcast` / `receiveBroadcast`), which this engine has no
+worker threads to satisfy. `CanBlockIsFalse` tests are excluded for the opposite
+reason, since this engine's single agent *can* suspend. Both rules live in
+`skip_reason` in `scripts/run_test262.py`.
 
-**Subtotal: ~1,419 tests** (with overlap), down from ~1,983 as the four above moved into the implemented set.
+Everything else that sat in this tier is implemented and passing: **Proxy** (311,
+phase 23), **BigInt** (77, fixed-width int128 rather than arbitrary precision),
+**WeakRef** (29), **FinalizationRegistry** (47, both phase 17-20), and
+**resizable-arraybuffer** (462, `new ArrayBuffer(8, {maxByteLength: 16})` with a
+working `resize`).
 
 ### Tier 2B: Obscure / Edge-Case
 
 | Category | Tests | Why Skip |
 |---|---|---|
-| `tail-call-optimization` | 35 | Only Safari implements PTC. V8 and SpiderMonkey don't. No real code depends on it. |
-| `host-gc-required` | 15 | Tests requiring explicit GC invocation. Platform-specific. |
-| `change-array-by-copy` | 132 | ES2023, but `toSorted`/`toReversed` etc. are low-priority. |
-| `symbols-as-weakmap-keys` | 28 | ES2023 edge case. |
+| `tail-call-optimization` | 35 | Proper tail calls are not implemented, by design. |
+| `host-gc-required` | 15 | Needs a host hook to force a collection. |
 
-**Subtotal: ~210 tests**
+`change-array-by-copy` (132) and `symbols-as-weakmap-keys` (28) were listed here
+but are implemented, and neither appears in the skip list: `toSorted`,
+`toReversed`, `with`, and a Symbol as a WeakMap key all work.
 
-### Tier 2 Total: ~2,193 tests
+**Subtotal: ~50 tests**
+
+### Tier 2 Total: ~50 tests
 
 ---
 
