@@ -247,7 +247,9 @@ fn void? CompilerContext.collect_obj_param_binds(&self,
                 for (int j = 0; j < nl; j++) { binds[*count].name_buf[j] = rest_tok.str_value[j]; }
                 (*count)++;
             }
-            while (self.match(TokenType.COMMA)) {}
+            // BindingRestProperty must be last (ES2018 §13.3.3): no trailing
+            // comma may follow, so `{...a,}` is an early SyntaxError.
+            if (self.check(TokenType.COMMA)) return COMPILE_ERROR~;
             break;
         }
 
@@ -364,6 +366,22 @@ fn void? CompilerContext.collect_obj_param_binds(&self,
             // dstr variants use {await} directly, not {await: x}).
             if (prop_key_tt == TokenType.AWAIT && self.forbid_await) {
                 return self.fail("'await' is not allowed as a binding identifier in a class static block")~;
+            }
+            // The key doubles as the BindingIdentifier here, so a reserved
+            // word that is legal as a key in the `{key: target}` form is an
+            // early SyntaxError in the shorthand form.
+            if (!self.shorthand_key_is_identifier_ref(prop_key_tt)) {
+                return self.fail("reserved word cannot be a shorthand binding identifier")~;
+            }
+            // ...and the strict-mode restrictions on a BindingIdentifier
+            // (`eval`, `arguments`, ...) apply to it too, exactly as they do
+            // to the explicit target in the `{key: target}` branch above.
+            // Restricted to IDENTIFIER keys for the same reason as there: an
+            // AWAIT/YIELD key that reached this point was already cleared as a
+            // legal identifier by shorthand_key_is_identifier_ref, and the
+            // context-blind is_restricted_name would wrongly reject it.
+            if (prop_key_tt == TokenType.IDENTIFIER && is_restricted_name(prop_key)) {
+                return COMPILE_ERROR~;
             }
             if (*count < binds.len) {
                 binds[*count].name_idx = prop_key_idx;
@@ -483,7 +501,10 @@ fn void? CompilerContext.collect_arr_param_binds(&self,
                     (*count)++;
                 }
             }
-            while (self.match(TokenType.COMMA)) {}
+            // BindingRestElement must be last (ES2022 §13.3.3): no element and
+            // no trailing comma/elision may follow, so `[...a,]` is an early
+            // SyntaxError. (A trailing comma without a rest is fine: `[a,]`.)
+            if (self.check(TokenType.COMMA)) return COMPILE_ERROR~;
             break;
         }
 
