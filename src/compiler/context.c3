@@ -294,6 +294,18 @@ struct CompilerContext {
     /// assignment LHS.
     char[128] last_lhs_name_buf;
     ushort last_lhs_name_len;
+    /// True when the name in last_lhs_name_buf reached us through a
+    /// CoverParenthesizedExpression, as in `(fn) = function(){}`.
+    ///
+    /// Parentheses change only ONE of the two things the saved name feeds.
+    /// NamedEvaluation (§13.15.2 step 1.c) tests IsIdentifierRef, which a
+    /// CoverParenthesizedExpression never satisfies, so `(fn) = function(){}`
+    /// must not name the function. The strict-mode early error for assigning
+    /// to `eval` / `arguments` (§13.15.1) is the opposite: it keys off
+    /// AssignmentTargetType, which parentheses PRESERVE, so `(eval) = 1` and
+    /// `(eval)++` stay SyntaxErrors. Clearing last_lhs_name_len for the first
+    /// rule silently disabled the second, so the two are tracked separately.
+    bool last_lhs_name_parenthesized;
     /// LHS mode: when true, member_expr saves obj/key without emitting GETPROP
     bool lhs_mode;
     /// Delete mode: when true, member_expr saves obj/key for delete.

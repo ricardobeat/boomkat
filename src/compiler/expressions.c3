@@ -85,6 +85,10 @@ fn ushort? CompilerContext.expression(&self) {
 /// inference (assignment_expr reads this when the LHS is a simple
 /// IdentifierReference). Truncates (clears) if the name doesn't fit.
 fn void CompilerContext.save_lhs_ident_name(&self, char[] name) {
+    // A freshly resolved identifier is a bare IdentifierReference until a
+    // CoverParenthesizedExpression closes around it, so clear the marker here
+    // rather than leaving a stale one from an earlier `(x)`.
+    self.last_lhs_name_parenthesized = false;
     if (name.len < 128) {
         for (ushort i = 0; i < name.len; i++) self.last_lhs_name_buf[i] = name[i];
         self.last_lhs_name_len = (ushort)name.len;
@@ -338,7 +342,12 @@ fn ushort? CompilerContext.assignment_expr(&self) {
     // Save the LHS identifier text for SetFunctionName (below) before it
     // gets clobbered by RHS parsing.
     char[128] lhs_ident_name_buf = self.last_lhs_name_buf;
-    ushort lhs_ident_name_len = self.last_lhs_name_len;
+    // A parenthesized LHS keeps its AssignmentTargetType (so the eval /
+    // arguments check above still ran) but is not an IsIdentifierRef, so it
+    // must not drive NamedEvaluation: `(fn) = function(){}` leaves the
+    // function anonymous.
+    ushort lhs_ident_name_len = self.last_lhs_name_parenthesized
+        ? 0 : self.last_lhs_name_len;
 
     // Peek for a literal-1 RHS: `<var> -= 1` → DEC.
     // The `+= 1` optimization (INC) was removed because it bypasses ADD's
@@ -612,6 +621,15 @@ fn ushort? CompilerContext.assignment_expr(&self) {
         for (ushort i = 0; i < lhs_ident_name_len; i++) {
             self.inferred_name_buf[i] = lhs_ident_name_buf[i];
         }
+    } else {
+        // This assignment supplies no inferred name, so clear any left by an
+        // EARLIER one. The name is consumed lazily by whichever anonymous
+        // function/class/arrow the RHS turns out to contain, and a
+        // non-contributing assignment in between would otherwise donate its
+        // predecessor's name: `(w = 2) * (w = 3); (fn) = function(){}` named
+        // the function "w".
+        self.has_inferred_name = false;
+        self.inferred_name_len = 0;
     }
 
     // Materialize the compound target's OLD VALUE before the RHS runs.
@@ -1487,7 +1505,15 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
                 // Free saved registers (prop before obj).
                 self.free_reg(self.last_member_prop_reg);
                 self.free_reg(self.last_member_obj_reg);
-                self.last_was_member = false;
+                // Like every other UnaryExpression (§13.5), a `delete` yields
+                // the operator's boolean result, never a Reference, so its
+                // AssignmentTargetType is ~invalid~ and `delete x.y = 1` is a
+                // SyntaxError. Only last_was_member was being cleared here —
+                // enough to stop the member store path, but the getvar/local
+                // markers left over from the operand still made it look like a
+                // valid assignment target.
+                self.clear_ref_markers();
+                self.last_lhs_name_len = 0;
                 // op_del is the A register of the patched DELPROP (boolean).
                 return op_del;
             } else if (self.last_was_getvar || self.last_was_local_var) {
@@ -3544,10 +3570,19 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 // NamedEvaluation purposes (ES2015 §12.15.4 step 1.c uses
                 // static IsIdentifierRef, which CoverParenthesizedExpression
                 // never satisfies): `(fn) = function(){}` must NOT name the
-                // function. Clear the saved LHS name so assignment_expr's
-                // SetFunctionName check (which also requires !lhs_was_member)
-                // doesn't fire for a grouped identifier.
-                self.last_lhs_name_len = 0;
+                // function. Flag the name rather than dropping it — parens
+                // preserve AssignmentTargetType, so the saved name is still
+                // needed for the `(eval) = 1` early error.
+                //
+                // The name only describes THIS expression when the group was a
+                // bare identifier reference. Otherwise it is a leftover from
+                // some inner operand (`(w = 2) * (w = 3)` leaves "w" behind),
+                // so drop it: keeping it named an anonymous function "w".
+                if (self.last_was_getvar || self.last_was_local_var) {
+                    self.last_lhs_name_parenthesized = true;
+                } else {
+                    self.last_lhs_name_len = 0;
+                }
                 // A parenthesized arrow is a CoverParenthesizedExpression,
                 // a PrimaryExpression, so it IS legal as a binary operand
                 // (`"x" in (() => {})`). Clear the marker the inner arrow set;
@@ -3669,10 +3704,19 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 // NamedEvaluation purposes (ES2015 §12.15.4 step 1.c uses
                 // static IsIdentifierRef, which CoverParenthesizedExpression
                 // never satisfies): `(fn) = function(){}` must NOT name the
-                // function. Clear the saved LHS name so assignment_expr's
-                // SetFunctionName check (which also requires !lhs_was_member)
-                // doesn't fire for a grouped identifier.
-                self.last_lhs_name_len = 0;
+                // function. Flag the name rather than dropping it — parens
+                // preserve AssignmentTargetType, so the saved name is still
+                // needed for the `(eval) = 1` early error.
+                //
+                // The name only describes THIS expression when the group was a
+                // bare identifier reference. Otherwise it is a leftover from
+                // some inner operand (`(w = 2) * (w = 3)` leaves "w" behind),
+                // so drop it: keeping it named an anonymous function "w".
+                if (self.last_was_getvar || self.last_was_local_var) {
+                    self.last_lhs_name_parenthesized = true;
+                } else {
+                    self.last_lhs_name_len = 0;
+                }
                 // A parenthesized arrow is a CoverParenthesizedExpression,
                 // a PrimaryExpression, so it IS legal as a binary operand
                 // (`"x" in (() => {})`). Clear the marker the inner arrow set;
@@ -3723,10 +3767,19 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 // NamedEvaluation purposes (ES2015 §12.15.4 step 1.c uses
                 // static IsIdentifierRef, which CoverParenthesizedExpression
                 // never satisfies): `(fn) = function(){}` must NOT name the
-                // function. Clear the saved LHS name so assignment_expr's
-                // SetFunctionName check (which also requires !lhs_was_member)
-                // doesn't fire for a grouped identifier.
-                self.last_lhs_name_len = 0;
+                // function. Flag the name rather than dropping it — parens
+                // preserve AssignmentTargetType, so the saved name is still
+                // needed for the `(eval) = 1` early error.
+                //
+                // The name only describes THIS expression when the group was a
+                // bare identifier reference. Otherwise it is a leftover from
+                // some inner operand (`(w = 2) * (w = 3)` leaves "w" behind),
+                // so drop it: keeping it named an anonymous function "w".
+                if (self.last_was_getvar || self.last_was_local_var) {
+                    self.last_lhs_name_parenthesized = true;
+                } else {
+                    self.last_lhs_name_len = 0;
+                }
                 // A parenthesized arrow is a CoverParenthesizedExpression,
                 // a PrimaryExpression, so it IS legal as a binary operand
                 // (`"x" in (() => {})`). Clear the marker the inner arrow set;
@@ -3748,10 +3801,19 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 // NamedEvaluation purposes (ES2015 §12.15.4 step 1.c uses
                 // static IsIdentifierRef, which CoverParenthesizedExpression
                 // never satisfies): `(fn) = function(){}` must NOT name the
-                // function. Clear the saved LHS name so assignment_expr's
-                // SetFunctionName check (which also requires !lhs_was_member)
-                // doesn't fire for a grouped identifier.
-                self.last_lhs_name_len = 0;
+                // function. Flag the name rather than dropping it — parens
+                // preserve AssignmentTargetType, so the saved name is still
+                // needed for the `(eval) = 1` early error.
+                //
+                // The name only describes THIS expression when the group was a
+                // bare identifier reference. Otherwise it is a leftover from
+                // some inner operand (`(w = 2) * (w = 3)` leaves "w" behind),
+                // so drop it: keeping it named an anonymous function "w".
+                if (self.last_was_getvar || self.last_was_local_var) {
+                    self.last_lhs_name_parenthesized = true;
+                } else {
+                    self.last_lhs_name_len = 0;
+                }
                 // A parenthesized arrow is a CoverParenthesizedExpression,
                 // a PrimaryExpression, so it IS legal as a binary operand
                 // (`"x" in (() => {})`). Clear the marker the inner arrow set;
