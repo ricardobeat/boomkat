@@ -468,6 +468,17 @@ struct CompilerContext {
     /// function/arrow body (fresh CompilerContext).
     bool forbid_yield;
 
+    /// True while the parser sits exactly at the start of an
+    /// AssignmentExpression. A YieldExpression *is* an AssignmentExpression
+    /// (ES2024 §13.15), so it is only legal in that position: `x = yield` and
+    /// `f(yield)` parse, but `!yield`, `1 + yield` and `yield ? a : b` are
+    /// SyntaxErrors because there the operand grammar is Unary/Conditional,
+    /// which does not derive YieldExpression. assignment_expr sets this and
+    /// every tighter-binding level (conditional/binary/unary/postfix) clears
+    /// it before recursing, so primary_expr sees it set only when `yield`
+    /// really did begin an AssignmentExpression.
+    bool yield_ok_here;
+
     /// True while parsing the enclosing function's FormalParameters. Parameter
     /// defaults must reject yield/await EXPRESSIONS (FormalParameters may not
     /// Contain them, §14.1.2/§14.7), but destructuring defaults in the BODY of

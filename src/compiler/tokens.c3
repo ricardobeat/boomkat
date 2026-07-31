@@ -95,25 +95,27 @@ fn Token? CompilerContext.expect(&self, TokenType tt) {
 
 /// Consume the next token as a BindingIdentifier and return it.
 ///
-/// Per ES2024 §13.1 a BindingIdentifier is an Identifier, or `yield`/`await`
-/// in contexts where they are not reserved: `await` is a plain identifier
-/// outside a module and outside an async function/arrow (§13.1.1), and `yield`
-/// outside a generator. A class static block additionally forbids either as a
-/// binding name at its own top level (forbid_await/forbid_yield); those flags
-/// reset in any nested function/arrow body, matching how the spec's [Await]/
-/// [Yield] grammar parameters are re-fixed at each function boundary. So the
-/// same `await`/`yield` that is a SyntaxError directly in a static block is a
-/// valid identifier inside a non-async function/arrow nested in that block.
+/// Per ES2024 §13.1 a BindingIdentifier is an Identifier, or `await` in a
+/// context where it is not reserved: outside a module and outside an async
+/// function/arrow (§13.1.1). A class static block additionally forbids it as a
+/// binding name at its own top level (forbid_await); that flag resets in any
+/// nested function/arrow body, matching how the spec's [Await] grammar
+/// parameter is re-fixed at each function boundary. So the same `await` that
+/// is a SyntaxError directly in a static block is a valid identifier inside a
+/// non-async function/arrow nested in that block.
 ///
-/// The returned token's str_value carries the name for both keyword tokens
+/// `yield` is never a BindingIdentifier here: §13.1.1 reserves it in all
+/// strict-mode code, and this engine is strict-only (see AGENTS.md), so the
+/// non-generator relaxation the spec grants to sloppy code never applies.
+///
+/// The returned token's str_value carries the name for the keyword token
 /// (the lexer fills it in), so callers use it exactly like a plain IDENTIFIER.
 fn Token? CompilerContext.expect_binding_identifier(&self) {
     TokenType next = self.peek_type();
     if (next == TokenType.IDENTIFIER) {
         return self.advance()!;
     }
-    if ((next == TokenType.AWAIT && !self.is_module && !self.is_async && !self.forbid_await) ||
-        (next == TokenType.YIELD && !self.is_generator && !self.forbid_yield)) {
+    if (next == TokenType.AWAIT && !self.is_module && !self.is_async && !self.forbid_await) {
         return self.advance()!;
     }
     return self.expect(TokenType.IDENTIFIER)!;
