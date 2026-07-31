@@ -352,6 +352,53 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
         return COMPILE_ERROR~;
     }
 
+    // ES2024 §13.15.1: "It is a Syntax Error if the AssignmentTargetType of
+    // LeftHandSideExpression is invalid." A CallExpression target such as
+    // `f() = 1` reaches here with none of the reference markers set, so it is
+    // rejected at parse time, matching QuickJS. V8/node instead parse it and
+    // throw a ReferenceError at runtime; that leniency is NOT copied, and the
+    // reason is worth recording because — unlike the other node divergences —
+    // the spec does sanction a deferral here.
+    //
+    // AssignmentTargetType (ES2025 §8.6.4) returns simple, web-compat or
+    // invalid, and the CallExpression clause is a Normative Optional:
+    //
+    //     CallExpression : CoverCallExpressionAndAsyncArrowHead
+    //     CallExpression : CallExpression Arguments
+    //       1. If the host is a web browser or otherwise supports Runtime
+    //          Errors for Function Call Assignment Targets, and
+    //          IsStrict(this CallExpression) is false, then return web-compat.
+    //       2. Return invalid.
+    //
+    // Annex B.3.9 "Runtime Errors for Function Call Assignment Targets": "When
+    // a function call (13.3.6) is used as an assignment target in non-strict
+    // code, instead of producing an early error, a ReferenceError exception is
+    // thrown during evaluation of the assignment."
+    //
+    // The allowance is real but unreachable here: it is gated on
+    // IsStrict(this CallExpression) being false, and this engine is
+    // strict-only, so IsStrict is always true and step 1 never fires. Step 2
+    // returns invalid and §13.15.1's early error applies. The early
+    // SyntaxError is therefore the only spec-conforming outcome for this
+    // engine, not merely the stricter of two permitted readings.
+    //
+    // The early errors quoted above key off invalid specifically, so web-compat
+    // suppresses them; the corresponding runtime clauses (e.g. §13.4.2.1 step 2)
+    // throw the ReferenceError instead. B.3.9's Note further restricts the
+    // allowance to `=` and AssignmentOperator: it never applies to `&&=`, `||=`
+    // or `??=`, whose §13.15.1 clause tests "is not simple" rather than
+    // "is invalid" and so rejects web-compat too.
+    //
+    // test262 agrees and covers this directly: all ten
+    // language/expressions/assignmenttargettype/*callexpression* tests that
+    // cite the web-compat clause expect `phase: parse, type: SyntaxError`, and
+    // every one whose operator is deferrable is flagged onlyStrict. The two
+    // logical-assignment cases carry no strictness flag, exactly as B.3.9's
+    // Note requires. All ten pass. node fits the same shape — it defers for
+    // `=`, `+=` and `++` but keeps a SyntaxError for `&&=`/`??=` — so it is
+    // implementing B.3.9; it just also applies it to genuinely strict code
+    // (a `.mjs` module still yields ReferenceError), which B.3.9 does not
+    // permit.
     if (self.last_target_invalid || (!self.last_was_member && !self.last_was_getvar && !self.last_was_local_var)) {
         if (g_last_err_msg[0] == 0) {
             g_last_err_line = self.lexer.line;
@@ -1873,6 +1920,11 @@ fn ushort? CompilerContext.postfix_expr(&self) {
     // SimpleAssignmentTarget. Calls (`f()`), dynamic imports (`import(x)`),
     // and other non-reference results are not, reject as an early
     // SyntaxError rather than silently discarding the increment/decrement.
+    // §13.4.1 words it as "It is an early Syntax Error if the
+    // AssignmentTargetType of LeftHandSideExpression is invalid", the same
+    // test the assignment path uses; see the Annex B.3.9 / web-compat note in
+    // assignment_expr_inner for why `f()++` is an early error here even though
+    // node defers it to a runtime ReferenceError.
     if ((tt == TokenType.INC || tt == TokenType.DEC) && !nl_before_postfix_op) {
         if (self.last_target_invalid || (!self.last_was_member && !lhs_was_getvar && !self.last_was_local_var)) {
             return COMPILE_ERROR~;
