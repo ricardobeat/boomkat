@@ -281,7 +281,7 @@ fn void async_gen_enqueue(BuiltinContext* ctx, GeneratorState* gs, ResumeKind ki
 /// data by value.
 ///
 /// The returned struct lives in a C3 local, which the mark phase cannot see, so
-/// the promise is parked in gs.ag_current_request (marked by
+/// the promise is parked in gs.ag_root_promise (marked by
 /// mark_generator_state) before this returns. Without that hand-off the promise
 /// is unrooted from the moment it leaves the queue, and the first allocation the
 /// caller makes can sweep the very promise it is about to settle.
@@ -292,24 +292,52 @@ fn AsyncGenRequest async_gen_dequeue(Heap* heap, GeneratorState* gs) {
     if (gs.agr_head == null) gs.agr_tail = null;
     out.next = null;
     heap.free_func(heap.heap_udata, head);
-    gs.ag_current_request = (void*)out.capability;
+    gs.ag_root_promise = (void*)out.capability;
     gs.ag_current_value = out.value;
     return out;
 }
 
-/// Settle a request's promise with an IteratorResult `{value, done}`.
-fn void async_gen_settle_result(Heap* heap, void* vm, HObject* promise, TVal value, bool done) {
-    HObject* r = async_gen_iter_result(heap, value, done);
-    if (r == null) return;
-    TVal r_tv; r_tv.set_object(r);
-    promise_settle(promise, PROMISE_FULFILLED, &r_tv, heap);
-    promise_trigger_reactions(promise, heap, vm);
+/// Release the in-flight request: drop the re-entrancy guard so a reaction may
+/// start the next request, then hand the promise back with gs.ag_root_promise
+/// still rooting it. The caller settles and only then calls
+/// async_gen_release_root, so the promise stays marked across the allocating
+/// settle and its synchronous reactions.
+fn HObject* async_gen_release_guard(GeneratorState* gs) {
+    gs.ag_body_in_flight = false;
+    return (HObject*)gs.ag_root_promise;
 }
 
-/// Reject a request's promise with `reason`.
-fn void async_gen_settle_reject(Heap* heap, void* vm, HObject* promise, TVal reason) {
-    promise_settle(promise, PROMISE_REJECTED, &reason, heap);
-    promise_trigger_reactions(promise, heap, vm);
+/// Drop the request's GC roots, once its promise has settled and the reactions
+/// it triggered have returned.
+fn void async_gen_release_root(GeneratorState* gs) {
+    gs.ag_root_promise = null;
+    gs.ag_current_value.set_undefined();
+}
+
+/// Settle the in-flight request's promise with an IteratorResult `{value, done}`.
+/// Owns the guard/root lifetimes for every settle site in this module.
+fn void async_gen_settle_result(Heap* heap, void* vm, GeneratorState* gs, TVal value, bool done) {
+    HObject* promise = async_gen_release_guard(gs);
+    if (promise != null) {
+        HObject* r = async_gen_iter_result(heap, value, done);
+        if (r != null) {
+            TVal r_tv; r_tv.set_object(r);
+            promise_settle(promise, PROMISE_FULFILLED, &r_tv, heap);
+            promise_trigger_reactions(promise, heap, vm);
+        }
+    }
+    async_gen_release_root(gs);
+}
+
+/// Reject the in-flight request's promise with `reason`. Same lifetime rules as
+/// async_gen_settle_result.
+fn void async_gen_settle_reject(Heap* heap, void* vm, GeneratorState* gs, TVal reason) {
+    HObject* promise = async_gen_release_guard(gs);
+    if (promise != null) {
+        promise_settle(promise, PROMISE_REJECTED, &reason, heap);
+        promise_trigger_reactions(promise, heap, vm);
+    }
+    async_gen_release_root(gs);
 }
 
 /// AsyncGeneratorDrainQueue / AsyncGeneratorResume (§27.6.3.3/.4).
@@ -320,9 +348,9 @@ fn void async_gen_drain(BuiltinContext* ctx, GeneratorState* gs) {
     Heap* heap = ctx.heap;
     void* vm = ctx.vm;
 
-    // If a request is already in flight (an internal await is outstanding),
-    // don't start a new one, the await reaction will re-drive.
-    if (gs.ag_current_request != null) return;
+    // If a body resume is already outstanding (an internal await or an awaited
+    // `.return()` value), don't start a new one, the reaction will re-drive.
+    if (gs.ag_body_in_flight) return;
 
     while (gs.agr_head != null) {
         // COMPLETED-state fast answers (§27.6.3.7 AsyncGeneratorResume-style):
@@ -331,18 +359,17 @@ fn void async_gen_drain(BuiltinContext* ctx, GeneratorState* gs) {
         //   throw  → reject(value)
         if (gs.state == GEN_COMPLETED) {
             AsyncGenRequest req = async_gen_dequeue(heap, gs);
-            HObject* promise = (HObject*)req.capability;
             switch (req.completion_kind) {
                 case NEXT: {
                     TVal undef; undef.set_undefined();
-                    async_gen_settle_result(heap, vm, promise, undef, true);
+                    async_gen_settle_result(heap, vm, gs, undef, true);
                 }
                 case RETURN:
                     // §27.6.3.8: await the value before settling {value, done}.
-                    if (async_gen_await_return(ctx, gs, promise, req.value)) return;
-                    async_gen_settle_result(heap, vm, promise, req.value, true);
+                    if (async_gen_await_return(ctx, gs, req.value)) return;
+                    async_gen_settle_result(heap, vm, gs, req.value, true);
                 case THROW:
-                    async_gen_settle_reject(heap, vm, promise, req.value);
+                    async_gen_settle_reject(heap, vm, gs, req.value);
             }
             continue;
         }
@@ -352,21 +379,20 @@ fn void async_gen_drain(BuiltinContext* ctx, GeneratorState* gs) {
         // returns the body's {value, done} IteratorResult (or sets
         // heap.has_error on an uncaught throw).
         AsyncGenRequest req = async_gen_dequeue(heap, gs);
-        HObject* promise = (HObject*)req.capability;
 
         // A `.throw()` on SUSPENDED_START completes the generator without
         // running any body code (§27.6.3.7-style): reject and mark COMPLETED.
         if (gs.state == GEN_SUSPENDED_START && req.completion_kind == THROW) {
             gs.state = GEN_COMPLETED;
-            async_gen_settle_reject(heap, vm, promise, req.value);
+            async_gen_settle_reject(heap, vm, gs, req.value);
             continue;
         }
         // A `.return()` on SUSPENDED_START closes the generator without running
         // any body code, but first awaits the value (§27.6.3.8 AwaitReturn).
         if (gs.state == GEN_SUSPENDED_START && req.completion_kind == RETURN) {
-            if (async_gen_await_return(ctx, gs, promise, req.value)) return;
+            if (async_gen_await_return(ctx, gs, req.value)) return;
             gs.state = GEN_COMPLETED;
-            async_gen_settle_result(heap, vm, promise, req.value, true);
+            async_gen_settle_result(heap, vm, gs, req.value, true);
             continue;
         }
 
@@ -375,11 +401,11 @@ fn void async_gen_drain(BuiltinContext* ctx, GeneratorState* gs) {
         // AsyncGeneratorUnwrapYieldResumption). The eventual body resume happens
         // in the YRET fulfill/reject reaction.
         if (gs.state == GEN_SUSPENDED_YIELD && req.completion_kind == RETURN) {
-            if (async_gen_yield_return_await(ctx, gs, promise, req.value)) return;
+            if (async_gen_yield_return_await(ctx, gs, req.value)) return;
         }
 
         // Hold the request across a possible internal await, then resume.
-        gs.ag_current_request = (void*)promise;
+        gs.ag_body_in_flight = true;
         heap.ag_did_await = false;
         gs.ag_suspend_kind = AG_SUSPEND_NONE;
         TVal result = async_gen_resume_body(ctx, gs, req.completion_kind, req.value);
@@ -391,21 +417,17 @@ fn void async_gen_drain(BuiltinContext* ctx, GeneratorState* gs) {
             return;
         }
 
-        // Body settled (yield / return / throw), service the outcome.
-        // Clear the in-flight marker BEFORE settling: settling runs the
-        // downstream reactions, which may re-enter this drain for a request a
-        // handler queued. That re-entry must see an idle generator, not a stale
-        // in-flight promise, or it refuses to start the new request.
-        gs.ag_current_request = null;
-        gs.ag_current_value.set_undefined();
-        if (!async_gen_finish_body(ctx, gs, promise, result)) break;
+        // Body settled (yield / return / throw), service the outcome. The
+        // settle helpers release the guard before running the downstream
+        // reactions and the roots after.
+        if (!async_gen_finish_body(ctx, gs, result)) break;
     }
 }
 
 /// Service the outcome of a body resume that did NOT suspend on an internal
 /// await: settle the current request's promise. Returns true to keep draining
 /// (completed request), false to stop (the body yielded and is now suspended).
-fn bool async_gen_finish_body(BuiltinContext* ctx, GeneratorState* gs, HObject* promise, TVal result) {
+fn bool async_gen_finish_body(BuiltinContext* ctx, GeneratorState* gs, TVal result) {
     Heap* heap = ctx.heap;
     void* vm = ctx.vm;
 
@@ -413,7 +435,7 @@ fn bool async_gen_finish_body(BuiltinContext* ctx, GeneratorState* gs, HObject* 
         TVal thrown = heap.error_value;
         heap.has_error = false;
         gs.state = GEN_COMPLETED;
-        async_gen_settle_reject(heap, vm, promise, thrown);
+        async_gen_settle_reject(heap, vm, gs, thrown);
         return true;
     }
 
@@ -426,7 +448,7 @@ fn bool async_gen_finish_body(BuiltinContext* ctx, GeneratorState* gs, HObject* 
         HString* value_key = (HString*)heap.strs[heap::BuiltinStr.VALUE];
         if (try vv = robj.get_prop(value_key)) { value = vv; }
     }
-    async_gen_settle_result(heap, vm, promise, value, done);
+    async_gen_settle_result(heap, vm, gs, value, done);
     // Continue draining regardless of done: AsyncGeneratorDrainQueue
     // (§27.6.3.4) resumes one queued request per step, so after a yield settles
     // the next queued request resumes the body again. The while-loop's
@@ -442,7 +464,7 @@ fn bool async_gen_finish_body(BuiltinContext* ctx, GeneratorState* gs, HObject* 
 /// generator stays GEN_AWAITING_RETURN (draining paused) until the await settles.
 /// Returns true if the await was scheduled (drain must pause), false on an
 /// allocation failure (caller falls back to immediate settle).
-fn bool async_gen_await_return(BuiltinContext* ctx, GeneratorState* gs, HObject* promise, TVal value) {
+fn bool async_gen_await_return(BuiltinContext* ctx, GeneratorState* gs, TVal value) {
     Heap* heap = ctx.heap;
 
     HObject*? resolved_raw = promise_resolve_default_ctor(heap, ctx.vm, value);
@@ -456,7 +478,7 @@ fn bool async_gen_await_return(BuiltinContext* ctx, GeneratorState* gs, HObject*
             TVal thrown = heap.error_value;
             heap.has_error = false;
             gs.state = GEN_COMPLETED;
-            async_gen_settle_reject(heap, ctx.vm, promise, thrown);
+            async_gen_settle_reject(heap, ctx.vm, gs, thrown);
             return true;
         }
         return false;
@@ -493,9 +515,10 @@ fn bool async_gen_await_return(BuiltinContext* ctx, GeneratorState* gs, HObject*
     if (ff_key != null) rxn.put_prop(ff_key, ff_tv, hobject::PROP_FLAGS_WEC);
     if (rj_key != null) rxn.put_prop(rj_key, rj_tv, hobject::PROP_FLAGS_WEC);
 
-    // Hold the request across the await and pause draining.
+    // Hold the request across the await and pause draining. ag_root_promise
+    // already points at it from the dequeue.
     gs.state = GEN_AWAITING_RETURN;
-    gs.ag_current_request = (void*)promise;
+    gs.ag_body_in_flight = true;
 
     promise_add_reaction(resolved, rxn, heap);
     if (promise_get_state(resolved, PROMISE_PENDING) != PROMISE_PENDING) {
@@ -512,10 +535,8 @@ fn void builtin_async_gen_return_fulfill(BuiltinContext* ctx) {
     if (gs == null) { ctx.result.set_undefined(); return; }
     TVal arg; arg.set_undefined();
     if (ctx.argc >= 1) arg = ctx.regs[ctx.base_reg];
-    HObject* promise = (HObject*)gs.ag_current_request;
-    gs.ag_current_request = null;
     gs.state = GEN_COMPLETED;
-    if (promise != null) async_gen_settle_result(ctx.heap, ctx.vm, promise, arg, true);
+    async_gen_settle_result(ctx.heap, ctx.vm, gs, arg, true);
     async_gen_drain(ctx, gs);
     ctx.result.set_undefined();
 }
@@ -527,10 +548,8 @@ fn void builtin_async_gen_return_reject(BuiltinContext* ctx) {
     if (gs == null) { ctx.result.set_undefined(); return; }
     TVal arg; arg.set_undefined();
     if (ctx.argc >= 1) arg = ctx.regs[ctx.base_reg];
-    HObject* promise = (HObject*)gs.ag_current_request;
-    gs.ag_current_request = null;
     gs.state = GEN_COMPLETED;
-    if (promise != null) async_gen_settle_reject(ctx.heap, ctx.vm, promise, arg);
+    async_gen_settle_reject(ctx.heap, ctx.vm, gs, arg);
     async_gen_drain(ctx, gs);
     ctx.result.set_undefined();
 }
@@ -543,7 +562,7 @@ fn void builtin_async_gen_return_reject(BuiltinContext* ctx) {
 /// The generator is held in GEN_AWAITING_RETURN across the await. Returns true
 /// when the await was scheduled (drain must pause); false on allocation failure
 /// (caller falls back to a direct resume).
-fn bool async_gen_yield_return_await(BuiltinContext* ctx, GeneratorState* gs, HObject* promise, TVal value) {
+fn bool async_gen_yield_return_await(BuiltinContext* ctx, GeneratorState* gs, TVal value) {
     Heap* heap = ctx.heap;
 
     HObject*? resolved_raw = promise_resolve_default_ctor(heap, ctx.vm, value);
@@ -555,7 +574,7 @@ fn bool async_gen_yield_return_await(BuiltinContext* ctx, GeneratorState* gs, HO
         if (heap.has_error) {
             TVal thrown = heap.error_value;
             heap.has_error = false;
-            gs.ag_current_request = (void*)promise;
+            gs.ag_body_in_flight = true;
             gs.state = GEN_EXECUTING;
             // yret_resume writes ctx.result (undefined). In this synchronous
             // path ctx is the live `.return()` call's context whose result is
@@ -598,7 +617,7 @@ fn bool async_gen_yield_return_await(BuiltinContext* ctx, GeneratorState* gs, HO
     if (rj_key != null) rxn.put_prop(rj_key, rj_tv, hobject::PROP_FLAGS_WEC);
 
     gs.state = GEN_AWAITING_RETURN;
-    gs.ag_current_request = (void*)promise;
+    gs.ag_body_in_flight = true;
 
     promise_add_reaction(resolved, rxn, heap);
     if (promise_get_state(resolved, PROMISE_PENDING) != PROMISE_PENDING) {
@@ -612,8 +631,8 @@ fn bool async_gen_yield_return_await(BuiltinContext* ctx, GeneratorState* gs, HO
 /// draining. Shared by the YRET fulfill/reject reactions.
 fn void async_gen_yret_resume(BuiltinContext* ctx, GeneratorState* gs, ResumeKind kind, TVal completion) {
     Heap* heap = ctx.heap;
-    HObject* promise = (HObject*)gs.ag_current_request;
 
+    gs.ag_body_in_flight = true;
     heap.ag_did_await = false;
     gs.ag_suspend_kind = AG_SUSPEND_NONE;
     TVal result = async_gen_resume_body(ctx, gs, kind, completion);
@@ -626,11 +645,8 @@ fn void async_gen_yret_resume(BuiltinContext* ctx, GeneratorState* gs, ResumeKin
         return;
     }
 
-    gs.ag_current_request = null;
-    if (promise != null) {
-        if (async_gen_finish_body(ctx, gs, promise, result)) {
-            async_gen_drain(ctx, gs);
-        }
+    if (async_gen_finish_body(ctx, gs, result)) {
+        async_gen_drain(ctx, gs);
     }
     ctx.result.set_undefined();
 }
@@ -682,8 +698,8 @@ fn void builtin_async_gen_await_reject(BuiltinContext* ctx) {
 /// resume draining. Shared by the fulfill/reject reactions.
 fn void async_gen_await_reenter(BuiltinContext* ctx, GeneratorState* gs, ResumeKind kind, TVal completion) {
     Heap* heap = ctx.heap;
-    HObject* promise = (HObject*)gs.ag_current_request;
 
+    gs.ag_body_in_flight = true;
     heap.ag_did_await = false;
     gs.ag_suspend_kind = AG_SUSPEND_NONE;
     TVal result = async_gen_resume_body(ctx, gs, kind, completion);
@@ -696,11 +712,8 @@ fn void async_gen_await_reenter(BuiltinContext* ctx, GeneratorState* gs, ResumeK
     }
 
     // The body settled. Finish the in-flight request, then drain the rest.
-    gs.ag_current_request = null;
-    if (promise != null) {
-        if (async_gen_finish_body(ctx, gs, promise, result)) {
-            async_gen_drain(ctx, gs);
-        }
+    if (async_gen_finish_body(ctx, gs, result)) {
+        async_gen_drain(ctx, gs);
     }
     ctx.result.set_undefined();
 }

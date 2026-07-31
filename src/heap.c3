@@ -277,14 +277,22 @@ struct GeneratorState {
     bool  is_async_gen;
     AsyncGenRequest* agr_head; // FIFO queue head (current in-flight request)
     AsyncGenRequest* agr_tail; // FIFO queue tail
-    // The request being serviced right now, dequeued from agr_head when the
-    // resume starts and held here across internal `await` suspensions so the
-    // eventual yield/return/throw settles the right promise. Null when idle.
-    void* ag_current_request;  // HObject* of the promise the in-flight request settles
+    // The promise of the request being serviced right now, dequeued from
+    // agr_head when the resume starts. This is a GC root only: the settle
+    // allocates an IteratorResult and triggers reactions, so the promise must
+    // stay marked all the way through that. It cannot double as the
+    // re-entrancy guard, which has to be released *before* the settle.
+    void* ag_root_promise;     // HObject* of the promise the in-flight request settles
     // The in-flight request's completion value. It lives here, rather than only
     // in the caller's copy of the dequeued struct, so the mark phase can see it
     // for as long as the request is being serviced.
     TVal ag_current_value;
+    // True while a body resume is outstanding: the body suspended on an
+    // internal await, or a `.return()` value is being awaited. This is the
+    // re-entrancy guard only, so async_gen_drain refuses to start a second
+    // request. It is cleared before a settle runs its reactions, since a
+    // reaction may legitimately queue and drain a new request.
+    bool ag_body_in_flight;
     // Cached callable wrapper that re-enters this suspended body (see
     // builtins::async_resume_wrapper). Resuming drops native_frame_depth to 0,
     // re-enabling temproot clearing, so a bare local would be swept mid-call.
@@ -2138,8 +2146,8 @@ fn void Heap.mark_generator_state(&self, GeneratorState* gs) {
     // The in-flight request is already off the queue, so the loop below misses
     // it. Between the dequeue and the settle this field is its only root apart
     // from a C3 local, and losing it frees the promise about to be settled.
-    if (gs.ag_current_request != null) {
-        self.mark_hobject((HObject*)gs.ag_current_request);
+    if (gs.ag_root_promise != null) {
+        self.mark_hobject((HObject*)gs.ag_root_promise);
     }
     self.mark_tval(&gs.ag_current_value);
     if (gs.resume_wrapper != null) {
