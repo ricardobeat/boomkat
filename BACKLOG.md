@@ -33,7 +33,7 @@ Four silent wrong-value or spec bugs, all of the same shape: an invariant hand-m
 - [x] Ternary as the right operand of a binary op took the false branch (`5 + (true?10:20)` → 25). Two jump-blind peepholes; three fusion passes already carried a jump-target bitset and were correct, the two without one were the two that were buggy — `073aa16b`
 - [x] Bare truthiness test on a loop counter read a stale value (`for(…){if(j)…}` → "333"). The `&&`/`||` bridge correction matched on opcode and offset sign alone, never register identity. Predates `69e65f84` — `4f486724`
 - [x] `(u=45)>0` emitted the comparison into `u`'s own home register; `hoist_decls` swallowed a function's closing brace and hoisted a sibling's locals — `b0fdc49c`
-- [ ] Arrow functions skip duplicate-param and restricted-name checks — `(a, a) => a` parses clean, node throws SyntaxError. Third parameter prologue, missing the invariant (plan 061 B1)
+- [x] Arrow functions skip duplicate-param and restricted-name checks — `(a, a) => a` now correctly throws SyntaxError (verified session 303; the entry was stale)
 - [ ] Audit the remaining fusions (`run_move_gg_fusion`, `run_jmp_lt_g_fusion`) for positional-only reasoning; prefer one shared adjacency guard over per-site checks
 
 ## Host / console
@@ -43,7 +43,7 @@ Four silent wrong-value or spec bugs, all of the same shape: an invariant hand-m
 
 ## Test coverage gaps
 
-- [ ] **4604 `$DONOTEVALUATE` tests are skipped wholesale**, ~95% of them `negative: phase: parse` — the tests that verify the engine *rejects* bad syntax. The suite validates what we accept and never what we must refuse. This is why the arrow duplicate-param bug survived: `arrow-function/params-duplicate.js` exists, `--single` reports FAIL, and the suite reads 0 fails. A `phase: parse` test is trivially checkable — compile and assert SyntaxError, never execute
+- [x] **`$DONOTEVALUATE` parse-negative tests are no longer skipped wholesale** — `scripts/run_test262.py:851` compiles `negative: phase: parse` tests and scores rejection as a pass. Un-skipping them surfaced 35 real failures (all cleared in session 303). Only `phase: resolution` module-linking negatives remain skipped, correctly: they need the loader, not the parser
 - [ ] Golden bytecode has no case for control-flow-carrying expressions (ternary, `&&`/`||`, `?.`) — the shapes behind both codegen bugs above. Pair every new golden with a behavioural assertion, or regenerating goldens silently destroys the coverage
 - [ ] Two general codegen bugs fixed in `b0fdc49c` are covered only incidentally by the third-party `t11_colord` bundle
 - [x] Engine tests only exercised code we wrote — `test/rosetta-verbatim/` now runs 41 unmodified rosettacode.org samples, cross-checked against qjs and mutation-tested (`just rosetta`). Roughly half the candidate tasks are unusable as verbatim samples; `test/rosetta-verbatim/README.md` records each exclusion reason
