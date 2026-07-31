@@ -2090,7 +2090,7 @@ fn void? CompilerContext.for_statement(&self) {
                     // consume the tokens we pushed back; tok2/of_tok is already consumed
                     self.advance()!; // id_tok
                     self.advance()!; // of_tok
-                    ushort iter_reg = self.expression()!;
+                    ushort iter_reg = self.assignment_expr()!;
                     self.expect(TokenType.RPAREN)!;
                     self.emit_forof_loop(id_tok.str_value, iter_reg, saved_scope, saved_reg, false, false, true, for_is_await)!;
                     return;
@@ -2165,7 +2165,7 @@ fn void? CompilerContext.for_statement(&self) {
             self.advance()!; // consume identifier
             self.advance()!; // consume ')'
             self.advance()!; // consume 'of'
-            ushort iter_reg = self.expression()!;
+            ushort iter_reg = self.assignment_expr()!;
             self.expect(TokenType.RPAREN)!;
             self.emit_forof_loop(paren_id_name, iter_reg, saved_scope, saved_reg, false, false, true, for_is_await)!;
             return;
@@ -2266,7 +2266,7 @@ fn void? CompilerContext.for_statement(&self) {
             self.advance()!;  // consume "of" or "in"
 
             if (head_is_of) {
-                ushort iter_reg = self.expression()!;
+                ushort iter_reg = self.assignment_expr()!;
                 self.expect(TokenType.RPAREN)!;
                 self.emit_forof_loop_member(lhs_snap, iter_reg, saved_scope, saved_reg, for_is_await)!;
             } else {
@@ -2504,7 +2504,7 @@ fn void? CompilerContext.for_statement(&self) {
                     }
                 }
 
-                iter_reg = self.expression()!;
+                iter_reg = self.assignment_expr()!;
 
                 // Pop the TDZ scope, the head binding references are now
                 // resolved against the outer scope for the iterator protocol.
@@ -2842,7 +2842,7 @@ fn void? CompilerContext.for_statement(&self) {
                             }
                         }
                     }
-                    ushort iter_reg = self.expression()!;
+                    ushort iter_reg = self.assignment_expr()!;
                     // Pop the TDZ scope after RHS evaluation.
                     if (is_lexical) {
                         self.emit_simple(Opcode.POP_LEX);
@@ -3803,7 +3803,7 @@ fn void? CompilerContext.emit_bare_forof_destruct_loop(&self, bool is_array_patt
         }
     }
 
-    ushort iter_reg = self.expression()!;
+    ushort iter_reg = self.assignment_expr()!;
     self.expect(TokenType.RPAREN)!;
 
     // Bare assignment pattern: VAR-scoped (no per-iter env), ASSIGN_TARGET store.
