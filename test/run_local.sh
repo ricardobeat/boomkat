@@ -60,6 +60,12 @@ echo ""
 bash "$DIR/modules/export_names.sh" "$ENGINE"
 MODEXP_RC=$?
 
+# Top-level-only early errors — these cannot be expressed with eval() (the
+# direct-eval exception would make them legal), so they need whole files.
+echo ""
+bash "$DIR/toplevel_syntax/run.sh" "$ENGINE"
+TOPLVL_RC=$?
+
 # Uncaught-exception reporting — asserted from the shell because these cases
 # exit non-zero with diagnostics on stderr by construction, which the flat
 # sweep above would count as failures.
@@ -74,5 +80,5 @@ bash "$DIR/console_format/run.sh" "$ENGINE"
 CFMT_RC=$?
 
 [ "$FAIL" -eq 0 ] && [ "$MOD_RC" -eq 0 ] && [ "$MODSYN_RC" -eq 0 ] \
-  && [ "$MODEXP_RC" -eq 0 ] && [ "$UNC_RC" -eq 0 ] \
+  && [ "$MODEXP_RC" -eq 0 ] && [ "$TOPLVL_RC" -eq 0 ] && [ "$UNC_RC" -eq 0 ] \
   && [ "$CFMT_RC" -eq 0 ]

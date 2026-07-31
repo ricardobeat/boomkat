@@ -656,6 +656,15 @@ struct CompilerContext {
     bool is_arrow;
     bool is_async;
 
+    /// True inside an ArrowFunction whose enclosing code has no [[NewTarget]],
+    /// i.e. one written directly in global or module code (or nested in such an
+    /// arrow).  An arrow inherits new.target from its enclosing function, so
+    /// with no enclosing function `new.target` is a SyntaxError there
+    /// (§16.1.1), exactly as it is at the top level itself.  A separate flag
+    /// rather than propagating is_global, which also governs where declarations
+    /// are registered and would wrongly make the arrow body's own `var`s global.
+    bool no_new_target;
+
     // Source offset of the `async` keyword when parsing an async arrow function
     // (`async x => ...` / `async (params) => ...`).  Set by primary_expr before
     // it consumes `async` and re-enters itself; read by parse_arrow_function /

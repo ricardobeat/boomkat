@@ -3656,6 +3656,13 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
     // is a SyntaxError even though the arrow doesn't have its own [[NewTarget]].
     arrow_ctx.eval_mode = self.eval_mode;
     arrow_ctx.eval_direct_in_function = self.eval_direct_in_function;
+    // Same reasoning for top-level code: an arrow has no [[NewTarget]] of its
+    // own and inherits the enclosing code's, so an arrow written directly in
+    // global/module code is still code where `new.target` is a SyntaxError
+    // (§16.1.1). This is a dedicated flag rather than propagating is_global,
+    // which additionally governs where declarations are registered and would
+    // wrongly make the arrow body's own `var`s global.
+    arrow_ctx.no_new_target = self.is_global || self.no_new_target;
 
     // Unlike a regular function/method (whose [Yield]/[Await] grammar params
     // are re-fixed at the boundary), an ArrowFunction's ArrowParameters inherit
@@ -4156,6 +4163,13 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner(&self, char[]* params,
     // is a SyntaxError even though the arrow doesn't have its own [[NewTarget]].
     arrow_ctx.eval_mode = self.eval_mode;
     arrow_ctx.eval_direct_in_function = self.eval_direct_in_function;
+    // Same reasoning for top-level code: an arrow has no [[NewTarget]] of its
+    // own and inherits the enclosing code's, so an arrow written directly in
+    // global/module code is still code where `new.target` is a SyntaxError
+    // (§16.1.1). This is a dedicated flag rather than propagating is_global,
+    // which additionally governs where declarations are registered and would
+    // wrongly make the arrow body's own `var`s global.
+    arrow_ctx.no_new_target = self.is_global || self.no_new_target;
 
     // Register parameters
     ushort formal_count = param_count;
