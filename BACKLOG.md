@@ -71,7 +71,7 @@ their own regression tests or they will silently persist.
 
 ## Performance
 
-- [ ] **`run_cmp_branch_fusion` declines pairs whose compare result aliases its own operand** — `LT r0 = r0, r1` at a loop head blocks the fusion, and with it the downstream `JMP_LT_G`. In a two-sequential-loop probe only one of the two loops fused. A missed optimization rather than a correctness bug, but `JMP_LT_G` is the hottest loop shape in the suite, so recovering the aliased case is worth measuring
+- [ ] **A `JMP_LT_G` miss was reported for aliased compare results but does not reproduce** — the claim was that `LT r0 = r0, r1` at a loop head blocks `run_cmp_branch_fusion` and with it the downstream fusion, with one of two sequential loops failing to fuse. Re-probed on five shapes (two sequential top-level loops, a nested `if` reusing the bound, a `while` whose condition variable is also the counter, a ternary in the body): **every one fused, and no plain `LT` survived**. Whatever the original probe did differently was not captured. Left open only as a pointer: if a real miss turns up, the shape is what to record, since `JMP_LT_G` is the hottest loop shape in the suite. Note that a loop bound read from an enclosing function compiles to `GETVAR` rather than `GETGLOBAL_PRIM` and so is outside this fusion by construction, not by a missed case
 
 ## Design debt
 

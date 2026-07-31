@@ -399,6 +399,12 @@ fn void track_heap_store(Activation* act, TVal* val, uint reg_idx) @inline {
 /// vm_mark_activations scans each frame's span past num_regs, so a later frame
 /// reusing that valstack address hands the mark phase a pointer into memory the
 /// sweep already reclaimed.
+///
+/// Any code that bulk-copies heap values into a frame's registers owes this
+/// call. Today that is the two gs.saved_regs restores, in vm_call_fn_impl and
+/// dispatch_calls; every other use of saved_regs writes into it rather than out
+/// of it. A third restore added without this call reproduces the use-after-free
+/// above, and no gate outside just test-gc-stress would show it.
 fn void track_restored_regs(Activation* act, TVal* regs, uint nregs) {
     for (uint i = nregs; i > act.heap_reg_count; i--) {
         uint idx = i - 1;
