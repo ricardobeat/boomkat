@@ -1111,6 +1111,21 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         }
                         vm.heap.tval_copy_ref(ra2, &pout2);
                         track_heap_store(ds.act, ra2, dst2_reg);
+                        // Write the hop-1 result back into the temp before
+                        // returning. The chain-fusion pass does not check
+                        // whether the temp is live after the pair, and it often
+                        // is — `o.m.z()` reloads it as the call's `this` — so
+                        // every path out of this handler owes it the value the
+                        // unfused GETPROPC pair would have left there. Skipping
+                        // it here made a proxied `o.m` invoke `z` with whatever
+                        // the register happened to hold. See
+                        // test/getpropc2_proxy_chain.js.
+                        if (mid_val.is_heap_allocated()) {
+                            vm.heap.tval_copy_ref(ra, &mid_val);
+                            track_heap_store(ds.act, ra, (uint)insn.a);
+                        } else {
+                            *ra = mid_val;
+                        }
                         return (TVal){};
                     }
 
