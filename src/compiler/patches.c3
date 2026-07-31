@@ -50,17 +50,37 @@ fn void CompilerContext.push_loop(&self, uint continue_target, bool is_loop) {
         // the break/continue must pop those extras before jumping.
         self.loop_stack[self.loop_depth].saved_lex_depth = self.cur_lex_depth;
         self.loop_stack[self.loop_depth].iter_close_reg = -1;
+        self.loop_stack[self.loop_depth].saved_try_depth = self.try_depth;
         self.loop_depth++;
     }
 }
 
+/// The jump opcode a break/continue targeting `loop_idx` must use.
+///
+/// BREAK/CONTINUE are the "may cross a finally" forms: the VM parks the jump
+/// target on the innermost catcher and diverts to its finally block. That is
+/// only correct when the jump actually leaves the try/catch/finally region it
+/// is written in. When the target loop was entered at the current try_depth
+/// the whole loop lives inside that region, and asking the VM to route the
+/// jump through the enclosing finally makes it pop and free the catcher,
+/// silently dropping the completion parked there -- so `try { throw e }
+/// finally { while (1) break; }` swallowed `e` instead of rethrowing it.
+fn Opcode CompilerContext.loop_jump_op(&self, uint loop_idx, Opcode crossing_op) {
+    if (loop_idx < self.loop_depth && self.loop_stack[loop_idx].saved_try_depth >= self.try_depth) {
+        return Opcode.JUMP;
+    }
+    return crossing_op;
+}
+
 /// Patch all pending continue jumps for a loop entry to the given target address.
+/// Preserves each site's opcode: loop_jump_op may have emitted a plain JUMP.
 fn void CompilerContext.patch_continue_chain(&self, uint head, uint target) {
     uint current = head;
     while (current != NO_PATCH) {
         uint next = self.patches[current].next;
-        int offset = (int)target - (int)self.patches[current].addr - 1;
-        self.code[self.patches[current].addr] = bytecode::make_sabc(Opcode.CONTINUE, offset);
+        uint addr = self.patches[current].addr;
+        int offset = (int)target - (int)addr - 1;
+        self.code[addr] = bytecode::make_sabc(self.code[addr].op, offset);
         current = next;
     }
 }

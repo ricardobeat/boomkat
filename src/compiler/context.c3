@@ -109,6 +109,13 @@ struct LoopInfo {
     int  saved_lex_depth;     ///< cur_lex_depth at loop entry, break/continue POP_LEX back to this
     int  iter_close_reg;      ///< >= 0: for-of iterator reg, emit ITER_CLOSE on break/return; -1 = none
     bool is_await_loop;       ///< for-await-of: break/return unwind uses ITER_CLOSE_ASYNC (plan 057)
+    /// try_depth at loop entry. A break/continue whose target loop was entered
+    /// at the same try_depth as the jump site crosses no try/catch/finally
+    /// boundary, so it must compile to a plain JUMP: BREAK/CONTINUE ask the VM
+    /// to route through the innermost active finally, which for a jump that
+    /// stays inside that same finally discards the completion it is carrying
+    /// (including a parked exception).
+    uint saved_try_depth;
 }
 
 struct TryInfo {
