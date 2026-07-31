@@ -122,6 +122,24 @@ fn void CompilerContext.save_lhs_ident_name(&self, char[] name) {
     }
 }
 
+/// Bookkeeping for a resolved-by-name identifier that turned out to be
+/// `arguments`. Two effects, both required at every site that reads an
+/// identifier without going through `primary_expr`:
+///
+///  - ES2022 §15.7.1 forbids `arguments` anywhere in a class field
+///    initializer, including under `typeof`.
+///  - Inside a non-arrow function body the reference makes the function need
+///    an arguments object, which the VM only builds when `uses_arguments` is
+///    set at call entry. Missing this is silent: the name simply doesn't
+///    resolve, so `typeof arguments` reads back `"undefined"`.
+fn void? CompilerContext.note_arguments_reference(&self, char[] name) {
+    if (!str_eq(name, "arguments")) return;
+    if (self.forbid_arguments) {
+        return self.fail("'arguments' is not allowed in class field initializer")~;
+    }
+    if (!self.is_global) self.uses_arguments = true;
+}
+
 /// Parse an assignment expression.
 ///
 /// Thin wrapper over assignment_expr_inner that stamps the AssignmentTargetType
@@ -1510,13 +1528,6 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
 
                 if (matched) {
                     Token idTok2 = matched_id;
-                    // The bare-identifier fast paths below bypass primary_expr,
-                    // so they must repeat its class-field-initializer check:
-                    // ES2022 §15.7.1 forbids `arguments` anywhere in an
-                    // initializer, including under `typeof`.
-                    if (self.forbid_arguments && str_eq(idTok2.str_value, "arguments")) {
-                        return self.fail("'arguments' is not allowed in class field initializer")~;
-                    }
                     if (!self.is_global) {
                         if (try local_reg = self.resolve_var(idTok2.str_value)) {
                             ushort res_typeof = self.alloc_reg();
@@ -1524,6 +1535,9 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
                             return res_typeof;
                         }
                     }
+                    // The bare-identifier fast paths here bypass primary_expr,
+                    // so they must repeat its `arguments` bookkeeping.
+                    self.note_arguments_reference(idTok2.str_value)!;
                     uint name_idx = self.add_string_constant(idTok2.str_value);
                     ushort res_typeof = self.alloc_reg();
                     self.emit(bytecode::make_a_bc(Opcode.TYPEOFIDENT, (uint)res_typeof, name_idx));
@@ -1564,9 +1578,6 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
                             // to normal typeof expr (will parse the member expr)
                             self.pushback(idTok);
                         } else {
-                            if (self.forbid_arguments && str_eq(idTok.str_value, "arguments")) {
-                                return self.fail("'arguments' is not allowed in class field initializer")~;
-                            }
                             // If the identifier resolves to a non-captured local
                             // register, the reference is always resolvable, so use
                             // the register-based TYPEOF instead of the env-walking
@@ -1581,6 +1592,9 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
                                     return res_typeof;
                                 }
                             }
+                            // This fast path bypasses primary_expr, so it must
+                            // repeat its `arguments` bookkeeping.
+                            self.note_arguments_reference(idTok.str_value)!;
                             uint name_idx = self.add_string_constant(idTok.str_value);
                             ushort res_typeof = self.alloc_reg();
                             self.emit(bytecode::make_a_bc(Opcode.TYPEOFIDENT, (uint)res_typeof, name_idx));
@@ -3700,15 +3714,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                     }
                 }
 
-                // When 'arguments' is referenced inside a non-arrow function body,
-                // set the uses_arguments flag so the VM creates the arguments object.
-                if (str_eq(id_tok.str_value, "arguments")
-                        && (!self.is_global || self.forbid_arguments)) {
-                    if (self.forbid_arguments) {
-                        return self.fail("'arguments' is not allowed in class field initializer")~;
-                    }
-                    self.uses_arguments = true;
-                }
+                self.note_arguments_reference(id_tok.str_value)!;
 
                 // Not found locally: emit GETVAR/GETGLOBAL to look up by name at runtime
                 uint name_idx = self.add_string_constant(id_tok.str_value);
@@ -4215,13 +4221,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                         return var_reg;
                     }
                 }
-                if (str_eq(id_tok.str_value, "arguments")
-                        && (!self.is_global || self.forbid_arguments)) {
-                    if (self.forbid_arguments) {
-                        return self.fail("'arguments' is not allowed in class field initializer")~;
-                    }
-                    self.uses_arguments = true;
-                }
+                self.note_arguments_reference(id_tok.str_value)!;
                 uint name_idx = self.add_string_constant(id_tok.str_value);
                 ushort id_reg = self.alloc_reg();
                 self.last_getvar_code_pos = self.emit_ident_read((uint)id_reg, name_idx);
