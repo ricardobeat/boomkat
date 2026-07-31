@@ -174,6 +174,35 @@ check ACCEPT "plain as in export * as"           'export * as ns from "./self.mj
 check ACCEPT "as and from as variable names"     'var as = 1, from = 2; as + from;'
 check ACCEPT "as and from as property names"     'var o = { as: 1, from: 2 }; o.as + o.from;'
 
+# ---------------------------------------------------------------------------
+# ImportedBinding is a BindingIdentifier (§13.1.1, §16.2.2)
+# ---------------------------------------------------------------------------
+#
+# The LOCAL name an import introduces is a binding, so the restricted names
+# (`eval`, `arguments`, `let`, `yield`, ...) are illegal there -- even though
+# the same word is a perfectly good EXPORT name on the other side of `as`.
+# self.mjs (created above) exports `a`, so these are syntax decisions and not
+# unresolvable-binding link errors.
+
+check REJECT "eval as namespace binding"         'import * as eval from "./self.mjs";'
+check REJECT "arguments as namespace binding"    'import * as arguments from "./self.mjs";'
+check REJECT "eval as import alias"              'import {a as eval} from "./self.mjs";'
+check REJECT "arguments as import alias"         'import {a as arguments} from "./self.mjs";'
+check REJECT "let as import alias"               'import {a as let} from "./self.mjs";'
+check REJECT "yield as import alias"             'import {a as yield} from "./self.mjs";'
+check REJECT "eval as default binding"           'import eval from "./self.mjs";'
+
+# The bare form binds the export name itself, so it is restricted too.
+printf 'var x;%sexport {x as eval};%s' "$(printf '\n')" "$(printf '\n')" > "$TMP/haseval.mjs"
+check REJECT "bare eval import specifier"        'import {eval} from "./haseval.mjs";'
+
+# An export NAME may be anything; only the local binding is restricted.
+check ACCEPT "eval as export name, aliased"      'import {a as evaluate} from "./self.mjs";'
+check ACCEPT "plain namespace binding"           'import * as ns from "./self.mjs";'
+check ACCEPT "plain import alias"                'import {a as b} from "./self.mjs";'
+check ACCEPT "bare import specifier"             'import {a} from "./self.mjs";'
+check ACCEPT "string export name aliased"        'import {"a" as c} from "./self.mjs";'
+
 echo ""
 echo "modules/syntax_positions: $PASS passed, $FAIL failed"
 if [ "$FAIL" -gt 0 ]; then

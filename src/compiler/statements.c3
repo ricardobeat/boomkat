@@ -5198,7 +5198,9 @@ fn void? CompilerContext.import_declaration(&self) {
     if (tt == TokenType.STAR) {
         self.advance()!; // consume '*'
         self.expect_as()!;
-        Token ns_tok = self.expect(TokenType.IDENTIFIER)!;
+        // NameSpaceImport's `as` is followed by an ImportedBinding, i.e. a
+        // BindingIdentifier, so `import * as eval from ...` is a SyntaxError.
+        Token ns_tok = self.expect_binding_identifier()!;
         // Intern now: stored in the module's import table and read back at
         // link time, long after the rest of the module has been lexed.
         char[] ns_local = self.intern_slot_name(ns_tok.str_value);
@@ -5231,10 +5233,19 @@ fn void? CompilerContext.import_declaration(&self) {
             // The import name (before 'as') is a ModuleExportName (IdentifierName or StringLiteral).
             char[] import_name_str = self.parse_module_export_name()!;
             if (self.match_as()) {
-                Token alias_tok = self.expect(TokenType.IDENTIFIER)!;
+                // `ModuleExportName as ImportedBinding`: the alias is a
+                // BindingIdentifier, so `import { x as eval }` is a
+                // SyntaxError even though `eval` is a fine export name.
+                Token alias_tok = self.expect_binding_identifier()!;
                 local_names[binding_count] = self.intern_slot_name(alias_tok.str_value);
                 import_names[binding_count] = import_name_str;
             } else {
+                // Without `as` the ImportSpecifier is a bare ImportedBinding,
+                // so the one name is both the export name and a binding and
+                // has to satisfy the BindingIdentifier restrictions too.
+                if (is_restricted_name(import_name_str)) {
+                    return self.fail("reserved word cannot be used as a binding identifier")~;
+                }
                 local_names[binding_count] = import_name_str;
                 import_names[binding_count] = import_name_str;
             }
