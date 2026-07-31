@@ -1,6 +1,4 @@
-import { sum } from "./sum_series.js";
-import { assert, assertEq, assertImported, report } from "./_harness.js";
-assertImported(sum, "sum");
+// Drives sum_series.js -- uses: sum
 assertEq(sum(1, 5, function (x) { return x; }), 15, "1..5 identity");
 assertEq(sum(1, 3, function (x) { return x * x; }), 14, "1..3 squares");
 assertEq(sum(2, 1, function (x) { return x; }), 0, "empty range sums to 0");

@@ -1,5 +1,4 @@
-import { data, sample, json_string } from "./json.js";
-import { assertEq, report } from "./_harness.js";
+// Drives json.js -- uses: data sample json_string
 assertEq(data.foo, 1, "parsed number member");
 assertEq(data.bar.length, 2, "parsed array length");
 assertEq(data.bar[0], 10, "parsed array number");

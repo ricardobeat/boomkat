@@ -1,7 +1,5 @@
-import { factorial } from "./factorial.js";
-import { assert, assertEq, assertImported, report } from "./_harness.js";
+// Drives factorial.js -- uses: factorial
 
-assertImported(factorial, "factorial");
 assertEq(factorial(0), 1, "0!");
 assertEq(factorial(1), 1, "1!");
 assertEq(factorial(5), 120, "5!");

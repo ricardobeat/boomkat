@@ -1,6 +1,4 @@
-import { compose } from "./function_composition.js";
-import { assertEq, assertImported, report } from "./_harness.js";
-assertImported(compose, "compose");
+// Drives function_composition.js -- uses: compose
 function inc(x) { return x + 1; }
 function dbl(x) { return x * 2; }
 assertEq(compose(inc, dbl)(5), 11, "inc after dbl");

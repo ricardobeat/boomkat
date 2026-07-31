@@ -1,7 +1,6 @@
+// Drives regexp.js -- uses: subject isMatch matches
 // The sample matches /Hello (World)/i against "Hello world!", so the capture
 // group picks up the lowercase "world".
-import { subject, isMatch, matches } from "./regexp.js";
-import { assert, assertEq, report } from "./_harness.js";
 assertEq(subject, "Hello world!", "subject");
 assert(isMatch === true, "case-insensitive literal matches");
 assert(matches !== null, "exec returned a match");

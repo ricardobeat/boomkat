@@ -1,7 +1,5 @@
-import { sort } from "./quicksort.js";
-import { assertEq, assertImported, report } from "./_harness.js";
+// Drives quicksort.js -- uses: sort
 
-assertImported(sort, "sort");
 function asc(a, b) { return a < b; }
 
 assertEq(sort([], asc).join(","), "", "empty array");

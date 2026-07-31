@@ -1,5 +1,4 @@
-import { roman } from "./roman_encode.js";
-import { assert, assertEq, report } from "./_harness.js";
+// Drives roman_encode.js -- uses: roman
 
 assert(typeof roman === "object" && roman !== null, "sample did not export roman");
 assertEq(roman.int_to_roman(1), "I", "1");

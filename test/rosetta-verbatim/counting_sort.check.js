@@ -1,6 +1,4 @@
-import { countSort } from "./counting_sort.js";
-import { assertEq, assertImported, report } from "./_harness.js";
-assertImported(countSort, "countSort");
+// Drives counting_sort.js -- uses: countSort
 // countSort sorts in place and returns undefined; the caller supplies the range.
 var a = [3, 1, 2, 3, 1];
 countSort(a, 1, 3);

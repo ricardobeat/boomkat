@@ -1,6 +1,4 @@
-import { selectionSort } from "./selection_sort.js";
-import { assertEq, assertImported, report } from "./_harness.js";
-assertImported(selectionSort, "selectionSort");
+// Drives selection_sort.js -- uses: selectionSort
 assertEq(selectionSort([]).join(","), "", "empty array");
 assertEq(selectionSort([1]).join(","), "1", "single element");
 assertEq(selectionSort([3, 1, 2]).join(","), "1,2,3", "three elements");

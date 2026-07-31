@@ -1,6 +1,4 @@
-import { doStuff } from "./exceptions.js";
-import { assert, assertEq, assertImported, report } from "./_harness.js";
-assertImported(doStuff, "doStuff");
+// Drives exceptions.js -- uses: doStuff
 var caught = null;
 try { doStuff(); } catch (e) { caught = e; }
 assert(caught !== null, "doStuff throws");

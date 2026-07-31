@@ -1,9 +1,7 @@
+// Drives fizzbuzz.js -- uses: fizzBuzz
 // The sample defines fizzBuzz and prints via console.log rather than returning,
 // so capture what it actually prints instead of restating its rules here.
-import { fizzBuzz } from "./fizzbuzz.js";
-import { assert, assertEq, assertImported, report } from "./_harness.js";
 
-assertImported(fizzBuzz, "fizzBuzz");
 
 var lines = [];
 var realLog = console.log;

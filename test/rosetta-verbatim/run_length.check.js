@@ -1,6 +1,4 @@
-import { encode } from "./run_length.js";
-import { assertEq, assertImported, report } from "./_harness.js";
-assertImported(encode, "encode");
+// Drives run_length.js -- uses: encode
 // encode returns [[count, char], ...].
 function flat(s) { return encode(s).map(function (p) { return p[0] + p[1]; }).join(""); }
 assertEq(flat("aaabbc"), "3a2b1c", "runs of decreasing length");

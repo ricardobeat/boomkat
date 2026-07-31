@@ -1,7 +1,5 @@
-import { binary_search_recursive } from "./binary_search.js";
-import { assertEq, assertImported, report } from "./_harness.js";
+// Drives binary_search.js -- uses: binary_search_recursive
 
-assertImported(binary_search_recursive, "binary_search_recursive");
 var a = [1, 3, 5, 7, 9, 11];
 function find(v) { return binary_search_recursive(a, v, 0, a.length - 1); }
 

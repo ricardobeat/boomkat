@@ -1,7 +1,5 @@
-import { ack } from "./ackermann.js";
-import { assertEq, assertImported, report } from "./_harness.js";
+// Drives ackermann.js -- uses: ack
 
-assertImported(ack, "ack");
 assertEq(ack(0, 0), 1, "ack(0,0)");
 assertEq(ack(0, 5), 6, "ack(0,5)");
 assertEq(ack(1, 1), 3, "ack(1,1)");

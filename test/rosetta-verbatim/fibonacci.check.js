@@ -1,7 +1,5 @@
-import { fib } from "./fibonacci.js";
-import { assertEq, assertImported, report } from "./_harness.js";
+// Drives fibonacci.js -- uses: fib
 
-assertImported(fib, "fib");
 assertEq(fib(0), 0, "fib(0)");
 assertEq(fib(1), 1, "fib(1)");
 assertEq(fib(10), 55, "fib(10)");

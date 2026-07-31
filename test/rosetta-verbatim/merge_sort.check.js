@@ -1,6 +1,4 @@
-import { mergeSort } from "./merge_sort.js";
-import { assertEq, assertImported, report } from "./_harness.js";
-assertImported(mergeSort, "mergeSort");
+// Drives merge_sort.js -- uses: mergeSort
 // mergeSort sorts in place and returns undefined.
 function sorted(a) { mergeSort(a); return a.join(","); }
 assertEq(sorted([1]), "1", "single element");

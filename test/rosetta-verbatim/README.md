@@ -9,9 +9,9 @@ run as-is to exercise the engine with third-party code we did not write.
 | File | Role |
 |---|---|
 | `<name>.js` | The sample, **byte-identical to the wiki**. Never edit. |
-| `<name>.check.js` | Assertions. Imports the sample and states expectations. |
+| `<name>.check.js` | Assertions against the sample. |
 | `<name>.expected` | For samples whose behavior is what they print: expected stdout. |
-| `_harness.js` | Shared `assert` / `assertEq` / `assertImported` / `report`. |
+| `_harness.js` | Shared `assert` / `assertEq` / `report`. |
 
 Each sample carries a two-line provenance header naming its task and the index
 of the JavaScript block it came from.
@@ -69,25 +69,29 @@ Skip ones that:
 
 ## Engine gaps found while building this suite
 
-Neither is worked around here; the affected samples were excluded instead.
+Not worked around here; the affected samples were excluded instead.
 
 - `Date.prototype.toLocaleString` ignores its options bag and `timeZone`,
   returning a default date string in local time (ECMA-402 gap). This is why
-  the `Date_format` task has no sample here.
-- `console.log` does not inspect objects.
+  the `Date_format` task has no sample here. **Still open.**
+- `console.log` does not inspect objects: `console.log({a: 1})` prints
+  `[object Object]`, and `%o`/`%O` are not substituted. **Still open.**
+  The `%d`/`%s`/`%i`/`%f`/`%j` specifiers now match node and are no longer a gap.
 
-## Note on the import mechanism
+## How a check file reaches its sample
 
-`<name>.check.js` runs through the ESM pipeline (`--module`) so it can import the
-sample. Two engine behaviors matter here:
+`run.sh` concatenates `_harness.js` + the sample + the check file into one
+script and runs that. It does **not** use ESM.
 
-- Top-level `var`/`function` bindings are importable **without** an `export`
-  statement. Real ESM requires explicit exports; this is a permissive deviation,
-  and it is what lets an unmodified sample be imported at all.
-- An unresolvable import name yields `undefined` rather than failing to link, so
-  a renamed sample function would silently assert against `undefined` and pass.
-  Every check file calls `assertImported(...)` first to turn that into a loud
-  failure.
+That is deliberate. These samples are plain scripts: they have no `export`
+statements, and adding any would break byte-identity with the wiki. A module
+only exposes what it explicitly exports, so an unmodified sample cannot be
+imported at all. Concatenation is how the samples were written to run, with
+every top-level declaration sharing one scope.
 
-The second is a genuine conformance gap (ES2015 §15.2.1.16.3 `ResolveExport`
-should make it an early SyntaxError) and is worth fixing independently.
+An earlier version of this suite did use `--module`, relying on the engine
+exposing unexported top-level bindings. That was a conformance gap, fixed in
+`f7fd26ce` (ECMA-262 16.2.1.6.3, `ResolveExport` at link time), which broke 27
+of these tests until the runner switched to concatenation. No guard function is
+needed now: a sample whose expected binding is missing raises a plain
+`ReferenceError` on first use, which is louder than the old silent `undefined`.

@@ -1,7 +1,5 @@
-import { gcd } from "./gcd.js";
-import { assertEq, assertImported, report } from "./_harness.js";
+// Drives gcd.js -- uses: gcd
 
-assertImported(gcd, "gcd");
 assertEq(gcd(12, 8), 4, "gcd(12,8)");
 assertEq(gcd(8, 12), 4, "gcd(8,12) argument order");
 assertEq(gcd(-12, 8), 4, "negative input uses abs");

@@ -1,7 +1,5 @@
-import { eratosthenes } from "./sieve.js";
-import { assertEq, assertImported, report } from "./_harness.js";
+// Drives sieve.js -- uses: eratosthenes
 
-assertImported(eratosthenes, "eratosthenes");
 assertEq(eratosthenes(1).length, 0, "no primes below 2");
 // limit == 2 is the boundary of the sample's `limit >= 2` guard.
 assertEq(eratosthenes(2).join(","), "2", "limit exactly 2 yields [2]");
