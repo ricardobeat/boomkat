@@ -601,6 +601,10 @@ fn void? CompilerContext.parse_directives(&self) {
 /// buffer whose contents don't survive the next token, so its bytes are
 /// interned to stable storage and kept directly in the span instead.
 fn void CompilerContext.record_name_span(&self, NameSpan* span, Token name_tok, char* source_base) {
+    // Default: not a plain FunctionDeclaration. Only the FUNCTION branch of a
+    // pre-scan overrides this, so every other declaration form (let, const,
+    // class, generator, async) collides with a same-named sibling.
+    span.redeclarable_fn = false;
     char* end = &self.lexer.source[self.lexer.source.len - 1];
     if (name_tok.str_value.ptr >= source_base && name_tok.str_value.ptr <= end) {
         span.pos = (uint)((usz)name_tok.str_value.ptr - (usz)source_base);
@@ -1050,6 +1054,10 @@ fn uint CompilerContext.pre_scan_switch_lexical_decls(&self, NameSpan* spans, ui
         // for-head LexicalDeclaration, scoped to the for statement, see
         // pre_scan_lexical_decls).
         if (paren_depth == 0 && (tt == TokenType.LET || tt == TokenType.CONST)) {
+            // Token that ended the declarator list, used as prev_tt when the
+            // main loop resumes. Defaults to SEMICOLON so a list that runs to
+            // a parse error still leaves the scanner at statement position.
+            TokenType last_sep_tt = TokenType.SEMICOLON;
             for (;;) {
                 Token? name_opt = self.lexer.next_token();
                 if (catch _err2 = name_opt) {
@@ -1069,10 +1077,19 @@ fn uint CompilerContext.pre_scan_switch_lexical_decls(&self, NameSpan* spans, ui
                 }
                 Token sep = sep_opt;
                 if (sep.type != TokenType.COMMA) {
+                    // The declarator has an initializer (`=`) or the statement
+                    // ended. Carry the separator out as prev_tt: resuming with
+                    // a hard-coded SEMICOLON would put the initializer at
+                    // statement position, so `let x = class x {}` /
+                    // `let y = function y() {}` would take the class/function
+                    // DECLARATION branch below and collect the expression's own
+                    // name as a second block-level binding — a spurious
+                    // duplicate against the `let` name just recorded.
+                    last_sep_tt = sep.type;
                     break;
                 }
             }
-            prev_tt = TokenType.SEMICOLON;
+            prev_tt = last_sep_tt;
             continue;
         }
 
@@ -1100,6 +1117,7 @@ fn uint CompilerContext.pre_scan_switch_lexical_decls(&self, NameSpan* spans, ui
 
         // async function [*] Name (...) { ... }, only when "async" is
         // immediately followed by "function" (contextual keyword check).
+        bool fn_is_async = false;
         if (tt == TokenType.IDENTIFIER &&
             tok.str_value.len == 5 &&
             tok.str_value[0] == 'a' && tok.str_value[1] == 's' &&
@@ -1118,6 +1136,7 @@ fn uint CompilerContext.pre_scan_switch_lexical_decls(&self, NameSpan* spans, ui
             }
             // Fall through to the FUNCTION handling below via tok=peek_tok.
             tt = TokenType.FUNCTION;
+            fn_is_async = true;
         } else if (tt != TokenType.FUNCTION) {
             prev_tt = tt;
             continue;
@@ -1137,7 +1156,8 @@ fn uint CompilerContext.pre_scan_switch_lexical_decls(&self, NameSpan* spans, ui
             }
             Token star_tok = star_opt;
             Token name_tok;
-            if (star_tok.type == TokenType.STAR) {
+            bool fn_is_generator = star_tok.type == TokenType.STAR;
+            if (fn_is_generator) {
                 Token? name_opt = self.lexer.next_token();
                 if (catch _err7 = name_opt) {
                     break;
@@ -1148,6 +1168,10 @@ fn uint CompilerContext.pre_scan_switch_lexical_decls(&self, NameSpan* spans, ui
             }
             if (name_tok.type == TokenType.IDENTIFIER && count < capacity) {
                 self.record_name_span(&spans[count], name_tok, source_base);
+                // Only a PLAIN FunctionDeclaration may be redeclared by another
+                // one of the same name (§B.3.2.1); `function*` and
+                // `async function` do not qualify.
+                spans[count].redeclarable_fn = !fn_is_async && !fn_is_generator;
                 count++;
             }
         }
@@ -1193,6 +1217,37 @@ fn void? CompilerContext.block(&self, bool check_directives, bool suppress_regex
         num_lex = self.pre_scan_switch_lexical_decls(&lex_spans, MAX_PRESCAN_NAMES);
     } else {
         num_lex = self.pre_scan_lexical_decls(&lex_spans, MAX_PRESCAN_NAMES);
+    }
+
+    // ES2024 §13.2.1: "It is a Syntax Error if the LexicallyDeclaredNames of
+    // StatementList contains any duplicate entries." `{ let x; class x {} }`,
+    // `{ function f(){} class f{} }` and `{ function f(){} let f; }` are all
+    // SyntaxErrors.
+    //
+    // The single exception is §B.3.2.1, which permits two plain
+    // FunctionDeclarations to share a name in the same block —
+    // `{ function f(){} function f(){} }` is legal, but pairing `function`
+    // with `function*`, `async function`, `class` or `let` is not.
+    // `redeclarable_fn` marks the plain-FunctionDeclaration case so only that
+    // one pair is let through.
+    //
+    // Only a genuine BlockStatement is checked. In a function BODY
+    // (check_directives == true, so lexical_fns == false) the top-level
+    // FunctionDeclarations are var-scoped, not lexical, and redeclaring them
+    // is allowed; that scan collects let/const only, so its names are already
+    // covered by the declaration-site duplicate check in var_declaration.
+    if (lexical_fns) {
+        for (uint ai = 0; ai < num_lex; ai++) {
+            for (uint bi = ai + 1; bi < num_lex; bi++) {
+                if (lex_spans[ai].redeclarable_fn && lex_spans[bi].redeclarable_fn) {
+                    continue;
+                }
+                if (str_eq(self.name_span_text(lex_spans[ai]),
+                           self.name_span_text(lex_spans[bi]))) {
+                    return self.fail("Identifier has already been declared")~;
+                }
+            }
+        }
     }
 
     // ES2024 §13.2.1 / §15.7.11 BlockDeclarationInstantiation: the
