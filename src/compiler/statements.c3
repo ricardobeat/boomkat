@@ -894,13 +894,9 @@ fn void? CompilerContext.check_module_exports_resolvable(&self) {
 /// Script/eval only.
 fn void? CompilerContext.hoist_lexical_tdz_checks(&self) {
     if (self.is_module) return;
+    self.check_script_duplicate_lexical_names()!;
     NameSpan[MAX_PRESCAN_NAMES] spans;
     uint n = self.pre_scan_lexical_decls(&spans, MAX_PRESCAN_NAMES);
-    // ES2024 §16.1.1: a ScriptBody's LexicallyDeclaredNames must contain no
-    // duplicates. `let`/`const` collisions are caught at their declaration
-    // site by declare_var's scope walk, but two top-level `class` bindings
-    // never meet there, so the whole set is compared up front.
-    self.check_duplicate_lexical_names(&spans[0], n)!;
     for (uint i = 0; i < n; i++) {
         char[] name = self.name_span_text(spans[i]);
         uint chk_idx = self.add_string_constant(name);
@@ -1486,6 +1482,19 @@ fn void? CompilerContext.check_duplicate_lexical_names(&self, NameSpan* spans, u
             }
         }
     }
+}
+
+/// ES2024 §16.1.1: a ScriptBody's LexicallyDeclaredNames must contain no
+/// duplicates, and §19.2.1.1 applies the same rule to an eval body. Colliding
+/// `let`/`const` are already caught at their declaration site by declare_var's
+/// scope walk, but two top-level `class` bindings never meet there, so the
+/// whole pre-scanned set is compared up front. Modules have their own,
+/// stricter check (check_module_duplicate_lexical_names).
+fn void? CompilerContext.check_script_duplicate_lexical_names(&self) {
+    if (self.is_module) return;
+    NameSpan[MAX_PRESCAN_NAMES] spans;
+    uint n = self.pre_scan_lexical_decls(&spans, MAX_PRESCAN_NAMES);
+    self.check_duplicate_lexical_names(&spans[0], n)!;
 }
 
 /// ES2024 §13.2.1 / §14.12.1: the LexicallyDeclaredNames and VarDeclaredNames

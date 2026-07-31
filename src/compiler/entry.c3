@@ -251,6 +251,11 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
     // Check for "use strict" directive prologue at eval level
     ctx.parse_directives()!;
 
+    // ES2024 §19.2.1.1: an eval's body is a Script, so its
+    // LexicallyDeclaredNames must contain no duplicates. Checked here, before
+    // any hoisting, so the SyntaxError is atomic like the ones below.
+    ctx.check_script_duplicate_lexical_names()!;
+
     // EvalDeclarationInstantiation must validate every global function/var
     // declaration before creating any binding (ES2015 §18.2.1.2 steps 8/10).
     // Only non-strict indirect eval uses the global Environment Record as its
