@@ -113,21 +113,37 @@ var d3 = 0;
 for (const cx of [1, 2]) { d3 += cx; }
 assert(d3 === 3, 'for (const x of a) must still work');
 
-// Member and computed-member targets. NOTE: these are each isolated in their
-// own function because a member-target for-in preceded by any other for-in/
-// for-of in the same compilation unit hits a separate, pre-existing codegen
-// bug ("string is not a function") unrelated to the assignment-target fix.
-function memberTargetIn() { var o = {}; for (o.p in { a: 1 }) {} return o.p; }
-assert(memberTargetIn() === 'a', 'for (o.p in x) must still work');
+// Member and computed-member targets, in the same scope and following other
+// for-in/for-of loops. A discarded member head used to leave the compiler's
+// method-call receiver state set, so the next call in the same function was
+// compiled as a method call and dispatched on a register nothing wrote
+// ("string is not a function"); the loops below therefore share one scope on
+// purpose, and each is followed by a call.
+var mo = {};
+for (mo.p in { a: 1 }) {}
+assert(mo.p === 'a', 'for (o.p in x) must still work');
 
-function memberTargetOf() { var o = {}; for (o.p of [4]) {} return o.p; }
-assert(memberTargetOf() === 4, 'for (o.p of a) must still work');
+for (mo.q of [4]) {}
+assert(mo.q === 4, 'for (o.p of a) after another member loop must work');
 
-function idxTargetIn() { var a = []; for (a[0] in { q: 1 }) {} return a[0]; }
-assert(idxTargetIn() === 'q', 'for (a[0] in x) must still work');
+var ma = [];
+for (ma[0] in { q: 1 }) {}
+assert(ma[0] === 'q', 'for (a[0] in x) must still work');
 
-function idxTargetOf() { var a = [], i = 1; for (a[i] of [5]) {} return a[1]; }
-assert(idxTargetOf() === 5, 'for (a[i] of x) must still work');
+var mi = 1;
+for (ma[mi] of [5]) {}
+assert(ma[1] === 5, 'for (a[i] of x) must still work');
+
+// Nested member target, and a call immediately after the loop.
+var mn = { a: {} };
+for (mn.a.b in { z: 1 }) {}
+assert(mn.a.b === 'z', 'for (o.a.b in x) must work');
+
+// The member head must be re-evaluated each iteration.
+var reArr = [{}, {}], reIdx = 0;
+for (reArr[reIdx++].k in { x: 1, y: 1 }) {}
+assert(reArr[0].k === 'x' && reArr[1].k === 'y',
+  'a member head must be re-evaluated every iteration');
 
 // Declared destructuring targets.
 var dp, dq;
