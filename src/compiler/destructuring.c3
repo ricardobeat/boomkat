@@ -13,6 +13,39 @@ import std::io;
 // Destructuring patterns (array and object)
 // ============================================================================
 
+/// True when a property-key token may also serve as the *target* of an object
+/// pattern's shorthand form (`{a}` / `{a = d}`), where the key doubles as an
+/// IdentifierReference (assignment patterns) or BindingIdentifier (binding
+/// patterns).
+///
+/// Per ES2015 §13.15.5.1 / §13.3.3, the shorthand's target is an
+/// `Identifier: IdentifierName but not ReservedWord`, so `{ extends }`,
+/// `{ var }` and `{ default }` are early SyntaxErrors even though those same
+/// words are perfectly legal as *keys* in the `{ extends: t }` long form.
+/// Escaped spellings (`{ var }`) are covered for free: ES2024 §12.6.1
+/// makes the lexer resolve an escaped reserved word to its keyword token, so
+/// they arrive here under the same TokenType as the literal spelling.
+///
+/// `await` is reserved only inside a module / async function ([Await] scope);
+/// outside those it is a plain identifier and the shorthand is legal.
+///
+/// `yield`, by contrast, is *always* rejected here: this engine is strict-only
+/// (the lexer pins `strict_mode = true`), and in strict code `yield` is a
+/// reserved word regardless of generator context, so `{ yield } = v` is an
+/// early SyntaxError everywhere. The `!is_generator && !forbid_yield` idiom
+/// used elsewhere in the compiler encodes the *sloppy*-mode allowance, which
+/// this engine can never reach.
+///
+/// This mirrors the object-*literal* shorthand gate in `object_literal`
+/// (expressions.c3), which already rejects the reserved-word forms; the
+/// pattern collectors below route reserved words through
+/// `destructuring_property_key` and so need this check to match it.
+fn bool CompilerContext.shorthand_key_is_identifier_ref(&self, TokenType tt) {
+    if (tt == TokenType.IDENTIFIER) return true;
+    if (tt == TokenType.AWAIT) return !self.is_module && !self.is_async && !self.forbid_await;
+    return false;
+}
+
 /// Parse a property key in a destructuring binding pattern.
 /// Per ES2015 §13.3.3.7 the property key can be an IdentifierName, a string
 /// literal, a numeric literal, or a computed key. Reserved words are
@@ -436,6 +469,23 @@ fn void? CompilerContext.collect_assign_target(&self, DestructBind* bind)
     }
     bool is_member = is_member_res;
 
+    // AssignmentElement's target must be a valid simple assignment target
+    // (ES2022 §13.15.1): in strict code `eval` and `arguments` are not, so
+    // `[eval] = v` / `[arguments] = v` are early SyntaxErrors exactly as the
+    // non-pattern `eval = v` already is. Only identifier targets can offend —
+    // a member expression (`o.eval`) is always a valid target. This is the one
+    // point every leaf assignment target passes through, so array elements,
+    // object properties, rest targets and nested patterns are all covered.
+    if (!is_member) {
+        HString* nhs = (HString*)self.constants[tgt_name].get_heapptr();
+        if (is_restricted_name(nhs.get_data(),
+                               self.is_async || self.is_module || self.forbid_await,
+                               self.is_generator || self.forbid_yield)) {
+            mem::free(snap);
+            return COMPILE_ERROR~;
+        }
+    }
+
     bind.name_idx         = tgt_name;
     bind.is_member_target = is_member;
     bind.member_obj_reg   = tgt_obj;
@@ -609,7 +659,6 @@ fn void? CompilerContext.collect_arr_assign_binds(&self,
     DestructBind[] binds = binds_arg;
     uint count = *count_ptr;
     ushort elem_idx = 0;
-    bool in_rest = false;
 
     for (;;) {
         if (self.check(TokenType.RBRACKET)) break;
@@ -634,8 +683,6 @@ fn void? CompilerContext.collect_arr_assign_binds(&self,
 
         // Rest element: `...target`
         if (self.match(TokenType.ELLIPSIS)) {
-            in_rest = true;
-
             // Nested rest pattern: `...[a, b]` or `...{a}`, but only when
             // the `{`/`[` is not a MemberExpression primary like `...{}.x`.
             // Delegates to the assign-bind collectors (not the param-only
@@ -680,8 +727,12 @@ fn void? CompilerContext.collect_arr_assign_binds(&self,
                 }
             }
 
-            // Optional default for rest is not valid ES syntax; stop here.
-            while (self.match(TokenType.COMMA)) {}
+            // AssignmentRestElement must be the last element of an
+            // ArrayAssignmentPattern (ES2022 §13.15.5): neither a further
+            // element nor a trailing comma/elision may follow it, so
+            // `[...x,] = v` and `[...x, y] = v` are early SyntaxErrors.
+            // (A trailing comma IS legal without a rest: `[a,] = v`.)
+            if (self.check(TokenType.COMMA)) return COMPILE_ERROR~;
             break;
         }
 
@@ -938,6 +989,7 @@ fn void? CompilerContext.collect_obj_assign_binds(&self,
         bool is_computed = false;
         ushort computed_key_reg = 0xFFFF;
         uint key_idx = 0xFFFFFFFF;
+        TokenType key_tt = TokenType.IDENTIFIER;
         DeferredTarget* deferred_key = null;
         if (self.check(TokenType.LBRACKET)) {
             self.advance()!; // consume '['
@@ -959,6 +1011,7 @@ fn void? CompilerContext.collect_obj_assign_binds(&self,
             self.expect(TokenType.COLON)!;
             is_computed = true;
         } else {
+            key_tt = self.peek_type();
             char[] key = self.destructuring_property_key()!;
             key_idx = self.add_string_constant(key);
         }
@@ -970,7 +1023,11 @@ fn void? CompilerContext.collect_obj_assign_binds(&self,
         }
 
         if (shorthand) {
-            // `{a}` or `{a = d}`, identifier target named by the key.
+            // `{a}` or `{a = d}`, identifier target named by the key. The key
+            // doubles as the IdentifierReference, so a reserved word that is
+            // legal as a key in the `{key: target}` form is an early
+            // SyntaxError here.
+            if (!self.shorthand_key_is_identifier_ref(key_tt)) return COMPILE_ERROR~;
             HString* hs = (HString*)self.constants[key_idx].get_heapptr();
             if (is_restricted_name(hs.get_data(),
                                    self.is_async || self.is_module || self.forbid_await,
