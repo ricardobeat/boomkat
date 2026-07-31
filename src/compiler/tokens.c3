@@ -180,14 +180,28 @@ fn Token? CompilerContext.expect_binding_identifier(&self) {
 /// Callers pass the already-peeked token type so this stays usable from a
 /// dispatch switch that has the type in hand.
 fn bool CompilerContext.await_is_identifier(&self, TokenType tt) {
-    return tt == TokenType.AWAIT && !self.is_module && !self.is_async && !self.forbid_await;
+    return tt == TokenType.AWAIT && self.await_reserved_here() == false;
 }
 
-/// True when the next token can be a LabelIdentifier: a plain Identifier, or
-/// `await` in a context where it is not reserved (§13.1.1 / §14.13). Used both
-/// where a label is DEFINED (`await: ;`) and where one is REFERENCED
-/// (`break await;`), so the two sides cannot drift apart.
-fn bool CompilerContext.peek_is_label_identifier(&self) {
+/// True when this context reserves `await`, i.e. when the [Await] grammar
+/// parameter is set: module code, an async function/arrow/method, or a class
+/// static block's own top level (forbid_await).
+///
+/// This is the context half of await_is_identifier, split out for the callers
+/// that test a name rather than a token type. is_restricted_name takes the
+/// reservation as its `in_async_or_module` argument, so those call sites pass
+/// this instead of respelling the three flags — the by-name and by-token-type
+/// answers cannot then drift apart.
+fn bool CompilerContext.await_reserved_here(&self) {
+    return self.is_async || self.is_module || self.forbid_await;
+}
+
+/// True when the next token can start an Identifier: a plain IDENTIFIER, or
+/// `await` in a context where it is not reserved (§13.1.1). LabelIdentifier
+/// (§14.13) and BindingIdentifier (§13.1) both reduce to Identifier, so the
+/// label sites (`await: ;` defining it, `break await;` referencing it) and the
+/// arrow-head detection scan share this one test and cannot drift apart.
+fn bool CompilerContext.peek_is_binding_identifier(&self) {
     TokenType tt = self.peek_type();
     return tt == TokenType.IDENTIFIER || self.await_is_identifier(tt);
 }

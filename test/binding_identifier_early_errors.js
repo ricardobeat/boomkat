@@ -220,5 +220,51 @@ accepts('var n = 0; for (const [a, b] of [[1, 2]]) { n = a + b; } if (n !== 3) t
 // but any ordinary variable must still work.
 accepts('var t, n = 0; for (t in { a: 1 }) { n++; } if (n !== 1) throw new Error("x");');
 
+// BI3  ArrowParameters are BindingIdentifier positions, so `await` is a legal
+//      parameter name exactly where the [Await] grammar parameter is unset:
+//      script code, outside any async function/arrow, outside a module. Both
+//      the bare form (`await => 1`) and the parenthesized form
+//      (`(await) => 1`) were rejected outright — the parenthesized one never
+//      even reached the arrow parser, because the speculative head scan only
+//      admitted the IDENTIFIER token type.
+//
+//      Over-rejection here is worse than under-rejection: it breaks working
+//      programs. The rejects() cases below pin the other half, `await` must
+//      stay reserved wherever plan 064 made it so.
+accepts('var f = await => 1; if (f(5) !== 1) throw new Error("x");');
+accepts('var f = (await) => 1; if (f(5) !== 1) throw new Error("x");');
+accepts('var f = await => await * 2; if (f(21) !== 42) throw new Error("x");');
+accepts('var f = (a, await) => a + await; if (f(1, 2) !== 3) throw new Error("x");');
+accepts('var f = (...await) => await.length; if (f(1, 2, 3) !== 3) throw new Error("x");');
+accepts('var f = (await = 7) => await; if (f() !== 7) throw new Error("x");');
+accepts('var f = await => { return await + 1; }; if (f(1) !== 2) throw new Error("x");');
+accepts('var f = await => (b => await + b); if (f(1)(2) !== 3) throw new Error("x");');
+accepts('function h() { var f = await => 1; return f(0); } if (h() !== 1) throw new Error("x");');
+
+// Inside an async function `await` is the AwaitExpression terminal, never a
+// BindingIdentifier, so every one of those arrow-head spellings is an early
+// error again (plan 064). A plain arrow nested in an async function inherits
+// the enclosing [Await] for its PARAMETERS, so it rejects too.
+rejects('async function g() { var f = await => 1; return f; }');
+rejects('async function g() { var f = (await) => 1; return f; }');
+rejects('async function g() { var f = (a, await) => 1; return f; }');
+rejects('async function g() { var f = (...await) => 1; return f; }');
+rejects('async function g() { return (await => 1); }');
+rejects('var o = async () => { var f = await => 1; return f; };');
+
+// The other restricted names get no such context relaxation in an arrow head.
+rejects('var f = yield => 1;');
+rejects('var f = eval => 1;');
+rejects('var f = arguments => 1;');
+rejects('var f = let => 1;');
+rejects('var f = (await, await) => 1;');
+
+// §15.3: no LineTerminator between ArrowParameters and `=>`.
+rejects('var f = await\n => 1;');
+
+// A non-async function nested inside an async one is a fresh [Await]
+// boundary, so `await` is a binding name again in its own arrow params.
+accepts('async function g() { function h() { var f = await => 1; return f(0); } return h(); }');
+
 print('binding_identifier_early_errors: ' + pass + ' passed, ' + fail + ' failed');
 if (fail > 0) { print('SOME TESTS FAILED'); throw new Error('FAIL'); }

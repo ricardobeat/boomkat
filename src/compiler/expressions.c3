@@ -3819,7 +3819,14 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 return inner2;
             }
             // Check for arrow with params: (id) => or (id, id, ...) => ...
-            else if (self.check(TokenType.IDENTIFIER) || self.check(TokenType.ELLIPSIS)) {
+            // `await` is a BindingIdentifier wherever it is not reserved
+            // (§13.1.1), so `(await) => 1` is an arrow head in script code and
+            // must enter this scan; await_is_identifier makes that decision.
+            // This is only DETECTION — parse_arrow_function_reparse re-parses
+            // the head through expect_binding_identifier, which re-applies the
+            // reservation, so admitting the token here cannot accept anything
+            // the real parse would reject.
+            else if (self.peek_is_binding_identifier() || self.check(TokenType.ELLIPSIS)) {
                 char[][8] param_names;
                 ushort pc = 0;
                 bool has_rest = false;
@@ -3829,8 +3836,11 @@ fn ushort? CompilerContext.primary_expr(&self) {
                     // Check for rest parameter
                     if (self.check(TokenType.ELLIPSIS)) {
                         self.advance()!;  // consume '...'
+                        // `(...await) => 1` binds a rest param named "await"
+                        // wherever the word is not reserved.
+                        bool rest_is_ident = self.peek_is_binding_identifier();
                         Token t = self.advance()!;
-                        if (t.type != TokenType.IDENTIFIER) {
+                        if (!rest_is_ident) {
                             break;  // not a valid rest param, can't be arrow
                         }
                         param_names[pc++] = t.str_value;
@@ -3857,8 +3867,11 @@ fn ushort? CompilerContext.primary_expr(&self) {
                         self.advance()!;
                         self.skip_destructure_pattern();
                     } else {
+                        // An unreserved `await` is a param name here too, so
+                        // `(a, await) => 1` scans as an arrow head.
+                        bool t_is_ident = self.peek_is_binding_identifier();
                         Token t = self.advance()!;
-                        if (t.type != TokenType.IDENTIFIER) {
+                        if (!t_is_ident) {
                             break;  // not a param name, can't be arrow
                         }
                         param_names[pc++] = t.str_value;

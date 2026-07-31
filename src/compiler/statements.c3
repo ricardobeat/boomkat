@@ -4870,7 +4870,7 @@ fn void? CompilerContext.labeled_statement(&self, char[] name) {
 fn void? CompilerContext.break_statement(&self) {
     self.expect(TokenType.BREAK)!;
 
-    if (self.peek_is_label_identifier() && !self.lexer.seen_line_term) {
+    if (self.peek_is_binding_identifier() && !self.lexer.seen_line_term) {
         // Labeled break, find the label and add jump to its loop's break chain.
         // A LabelIdentifier is an Identifier, so an escaped spelling is a
         // plain name — the same rule that let the label be DEFINED.
@@ -4946,7 +4946,7 @@ fn void? CompilerContext.break_statement(&self) {
 fn void? CompilerContext.continue_statement(&self) {
     self.expect(TokenType.CONTINUE)!;
 
-    if (self.peek_is_label_identifier() && !self.lexer.seen_line_term) {
+    if (self.peek_is_binding_identifier() && !self.lexer.seen_line_term) {
         // Labeled continue, find the label and jump to its loop's continue
         // target. Same Identifier grammar as the labeled break above.
         Token label_tok = self.advance(true)!;

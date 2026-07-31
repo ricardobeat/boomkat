@@ -41,9 +41,7 @@ import std::io;
 /// pattern collectors below route reserved words through
 /// `destructuring_property_key` and so need this check to match it.
 fn bool CompilerContext.shorthand_key_is_identifier_ref(&self, TokenType tt) {
-    if (tt == TokenType.IDENTIFIER) return true;
-    if (tt == TokenType.AWAIT) return !self.is_module && !self.is_async && !self.forbid_await;
-    return false;
+    return tt == TokenType.IDENTIFIER || self.await_is_identifier(tt);
 }
 
 /// Parse a property key in a destructuring binding pattern.

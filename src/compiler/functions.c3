@@ -3992,11 +3992,23 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
                     arrow_ctx.collect_arr_param_binds(arrow_destruct_binds[..], &arrow_destruct_count, (ushort)arg_count, 0xFFFF)!;
                     rest_param.str_value = {};
                 } else {
-                    rest_param = arrow_ctx.expect(TokenType.IDENTIFIER)!;
+                    // A BindingRestElement's binding is a BindingIdentifier,
+                    // exactly like the non-rest params below, so it goes
+                    // through the same helper: `(...await) => 1` is legal
+                    // wherever `(await) => 1` is, and reserved in the same
+                    // contexts (arrow_ctx.forbid_await carries the enclosing
+                    // [Await] in, see the propagation above).
+                    rest_param = arrow_ctx.expect_binding_identifier()!;
                 }
 
                 if (rest_param.str_value.len > 0) {
-                    arrow_seen.declare(rest_param.str_value)!;
+                    // expect_binding_identifier already made the enclosing
+                    // -grammar decision for a non-IDENTIFIER token (`await`
+                    // where it is not reserved), so the context-blind
+                    // restricted-name test must not re-reject it — same
+                    // convention as the simple parameters below.
+                    arrow_seen.declare(rest_param.str_value,
+                                       rest_param.type != TokenType.IDENTIFIER)!;
                     // Intern now: rest_param.str_value may borrow the lexer's
                     // shared ident_buf scratch (escaped identifier), which the
                     // body parsed below will overwrite. declare_var stores this
@@ -4448,7 +4460,13 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner(&self, char[]* params,
         // the current token.
         HString* param_hstr = ((Heap*)arrow_ctx.heap).str_intern(params[i]);
         char[] name = param_hstr.get_data();
-        if (is_restricted_name(name)) {
+        // ArrowParameters inherit the ENCLOSING [Await], so the reservation is
+        // read off `self`, not the fresh arrow_ctx (whose is_async is the
+        // arrow's own flag). `await => 1` in script code binds a parameter
+        // named "await"; `async function g(){ await => 1 }` still rejects.
+        // The reparse path reaches the same answer via
+        // expect_binding_identifier and arrow_ctx.forbid_await.
+        if (is_restricted_name(name, self.await_reserved_here())) {
             return COMPILE_ERROR~;
         }
         for (ushort j = 0; j < i; j++) {
