@@ -938,11 +938,29 @@ fn ushort? CompilerContext.binary_expr(&self, int min_prec) {
         left = self.unary_expr()!;
     }
     self.yield_ok_here = false;
+    // Capture immediately: parsing any right operand below re-runs unary_expr
+    // and overwrites the flag with that operand's shape.
+    bool left_was_unary_op = self.last_was_unary_op;
+    self.last_was_unary_op = false;
     bool left_is_local = self.last_was_local_var;
     // Do NOT clear self.last_was_arrow_expr here, the recursive RHS call
     // clears it on its own entry, parses its LHS, and the inner's flag
     // survives to the post-RHS check_no_arrow_rhs() in the outer for-loop.
     bool saw_binary_op = false;
+
+    // ES2021 §13.13: `??` is not just another precedence level, it is a
+    // separate production whose operands may not be an unparenthesized
+    // `&&` / `||`:
+    //   CoalesceExpression : CoalesceExpressionHead ?? BitwiseORExpression
+    //   ShortCircuitExpression : LogicalORExpression | CoalesceExpression
+    // so `a && b ?? c` and `a ?? b || c` are both SyntaxErrors, in either
+    // order, and parentheses are required to disambiguate. `??` and `||` sit
+    // on adjacent precedence levels here, which would silently accept the mix,
+    // so the two are tracked separately within one binary_expr invocation. A
+    // parenthesized operand is parsed by a nested invocation with its own
+    // flags, which is exactly why `(a && b) ?? c` stays legal.
+    bool saw_logical_and_or = false;
+    bool saw_nullish = false;
 
     for (;;) {
         self.last_was_local_var = false;
@@ -960,6 +978,41 @@ fn ushort? CompilerContext.binary_expr(&self, int min_prec) {
         // operand afterwards, and that parse sets the flags again from its own
         // last operand (`a + b = 1` would inherit `b`'s getvar state).
         saw_binary_op = true;
+
+        // ES2024 §13.6:
+        //   ExponentiationExpression :
+        //       UnaryExpression
+        //       UpdateExpression ** ExponentiationExpression
+        // The left operand of `**` is an UpdateExpression, so a UnaryExpression
+        // there is a SyntaxError — the grammar refuses to guess between
+        // `(-a) ** b` and `-(a ** b)`. Parenthesising either way makes the
+        // operand a PrimaryExpression and is the documented workaround.
+        // `a ** -b` is unaffected: the RIGHT operand is a full
+        // ExponentiationExpression, which does derive UnaryExpression, and
+        // `++a ** b` / `a++ ** b` are UpdateExpressions, so unary_expr does
+        // not flag them.
+        if (tt == TokenType.STARSTAR && left_was_unary_op) {
+            return self.fail("unary operator not allowed on the left of '**'")~;
+        }
+        // From here on `left` is this operator's result, not the bare unary
+        // expression the loop started with, so the guard must not fire on a
+        // later iteration: `1 - 2 ** 2` parses as `1 - (2 ** 2)`.
+        left_was_unary_op = false;
+
+        // Enforce the CoalesceExpression / LogicalORExpression split described
+        // above, before either operator form consumes its token.
+        if (tt == TokenType.LOG_AND || tt == TokenType.LOG_OR) {
+            if (saw_nullish) {
+                return self.fail("'??' cannot be mixed with '&&' or '||' without parentheses")~;
+            }
+            saw_logical_and_or = true;
+        } else if (tt == TokenType.NULLISH) {
+            if (saw_logical_and_or) {
+                return self.fail("'??' cannot be mixed with '&&' or '||' without parentheses")~;
+            }
+            saw_nullish = true;
+        }
+
         // Handle short-circuit operators specially
         if (tt == TokenType.LOG_AND) {
             self.advance()!;
@@ -1035,7 +1088,14 @@ fn ushort? CompilerContext.binary_expr(&self, int min_prec) {
             self.patch_jump(null_jump);
             self.patch_jump(undef_jump);
 
-            ushort right = self.binary_expr(prec + 1)!;
+            // `CoalesceExpression : CoalesceExpressionHead ?? BitwiseORExpression`
+            // (§13.13), so the right operand stops BELOW `&&` / `||` rather
+            // than at `prec + 1`, which is PREC_LOGICAL_OR and would swallow
+            // them. That makes `a ?? b || c` fail: the `||` is left unconsumed
+            // and surfaces at this loop's next iteration, where the
+            // saw_nullish guard rejects it. `a ?? (b || c)` is unaffected —
+            // the parentheses make the operand a PrimaryExpression.
+            ushort right = self.binary_expr(PREC_BITWISE_OR)!;
             self.check_no_arrow_rhs();
             self.emit_abc(Opcode.LDREG, (uint)left, (uint)right, 0);
             self.free_reg(right);
@@ -1149,6 +1209,29 @@ fn ushort? CompilerContext.unary_expr(&self) {
     bool yield_ok = self.yield_ok_here;
     self.yield_ok_here = false;
 
+    // Whether a unary OPERATOR is about to be consumed, so binary_expr can
+    // reject `-a ** b`: `**`'s left operand is an UpdateExpression, not a
+    // UnaryExpression (§13.6). `++a ** b` and `a++ ** b` stay legal — they ARE
+    // UpdateExpressions — hence the explicit operator list rather than "did we
+    // take a non-default branch".
+    //
+    // Applied to self.last_was_unary_op by the wrapper below rather than here:
+    // every operator case recurses into unary_expr for its operand, and that
+    // inner call would overwrite the field with the OPERAND's shape
+    // (`-3`'s inner `3` clearing the flag the outer `-` had just set).
+    bool is_unary_op = tt == TokenType.MINUS || tt == TokenType.PLUS
+            || tt == TokenType.LOG_NOT || tt == TokenType.BIT_NOT
+            || tt == TokenType.TYPEOF || tt == TokenType.VOID
+            || tt == TokenType.DELETE || tt == TokenType.AWAIT;
+    ushort result_reg = self.unary_expr_inner(tt, yield_ok)!;
+    self.last_was_unary_op = is_unary_op;
+    return result_reg;
+}
+
+/// The body of unary_expr: dispatches on the already-peeked leading token.
+/// Split out so unary_expr can set last_was_unary_op AFTER the recursive
+/// operand parse, which would otherwise clobber it.
+fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) {
     switch (tt) {
         // ES §13.5: a UnaryExpression's value is the operator's result, never
         // a Reference (AssignmentTargetType ~invalid~). clear_ref_markers drops

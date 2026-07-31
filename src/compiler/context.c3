@@ -256,6 +256,20 @@ struct CompilerContext {
     /// binary operand without parentheses (ES §13.16, §13.15). Cleared by
     /// binary_expr once the unary_expr return is consumed.
     bool last_was_arrow_expr;
+
+    /// Set by unary_expr when it consumed a unary OPERATOR (`-`, `+`, `!`,
+    /// `~`, `typeof`, `void`, `delete`, `await`), so the expression it just
+    /// returned is a UnaryExpression rather than an UpdateExpression.
+    ///
+    /// `ExponentiationExpression : UpdateExpression ** ExponentiationExpression`
+    /// (ES2024 §13.6) admits only an UpdateExpression on the left, so
+    /// `-a ** b` is a SyntaxError: the grammar deliberately refuses to guess
+    /// whether `(-a) ** b` or `-(a ** b)` was meant. Parenthesising either way
+    /// makes it a PrimaryExpression and so legal again. `a ** -b` is fine —
+    /// the RIGHT operand is a full ExponentiationExpression, which does derive
+    /// UnaryExpression. Cleared by binary_expr once the unary_expr return is
+    /// consumed.
+    bool last_was_unary_op;
     /// Code index of the GETVAR instruction that produced the last identifier
     /// reference (valid whenever last_was_getvar is true). Lets call_expr
     /// fuse a bare-identifier callee's GETVAR into CALL_VAR even though other
