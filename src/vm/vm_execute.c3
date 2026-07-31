@@ -1665,6 +1665,10 @@ fn TVal? Vm.run(Vm* vm) {
         }
         $endif
 
+        $if $feature(OP_PROFILE):
+            opprof_record(op);
+        $endif
+
         switch (op) @jump {
 
         // === LOAD / STORE ===

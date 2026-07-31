@@ -42,6 +42,9 @@ fn void print_usage(String argv0) {
 
 fn int main(String[] args) {
     vm::test262_host_enabled = true;
+    $if $feature(OP_PROFILE):
+        defer vm::opprof_dump();
+    $endif
     if (args.len < 2) {
         print_usage(args.len > 0 ? args[0] : "duktape_c3");
         return 1;
