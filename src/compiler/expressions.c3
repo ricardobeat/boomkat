@@ -85,6 +85,10 @@ fn ushort? CompilerContext.expression(&self) {
 /// inference (assignment_expr reads this when the LHS is a simple
 /// IdentifierReference). Truncates (clears) if the name doesn't fit.
 fn void CompilerContext.save_lhs_ident_name(&self, char[] name) {
+    // A freshly resolved identifier is a bare IdentifierReference until a
+    // CoverParenthesizedExpression closes around it, so clear the marker here
+    // rather than leaving a stale one from an earlier `(x)`.
+    self.last_lhs_name_parenthesized = false;
     if (name.len < 128) {
         for (ushort i = 0; i < name.len; i++) self.last_lhs_name_buf[i] = name[i];
         self.last_lhs_name_len = (ushort)name.len;
@@ -338,7 +342,12 @@ fn ushort? CompilerContext.assignment_expr(&self) {
     // Save the LHS identifier text for SetFunctionName (below) before it
     // gets clobbered by RHS parsing.
     char[128] lhs_ident_name_buf = self.last_lhs_name_buf;
-    ushort lhs_ident_name_len = self.last_lhs_name_len;
+    // A parenthesized LHS keeps its AssignmentTargetType (so the eval /
+    // arguments check above still ran) but is not an IsIdentifierRef, so it
+    // must not drive NamedEvaluation: `(fn) = function(){}` leaves the
+    // function anonymous.
+    ushort lhs_ident_name_len = self.last_lhs_name_parenthesized
+        ? 0 : self.last_lhs_name_len;
 
     // Peek for a literal-1 RHS: `<var> -= 1` → DEC.
     // The `+= 1` optimization (INC) was removed because it bypasses ADD's
@@ -612,6 +621,15 @@ fn ushort? CompilerContext.assignment_expr(&self) {
         for (ushort i = 0; i < lhs_ident_name_len; i++) {
             self.inferred_name_buf[i] = lhs_ident_name_buf[i];
         }
+    } else {
+        // This assignment supplies no inferred name, so clear any left by an
+        // EARLIER one. The name is consumed lazily by whichever anonymous
+        // function/class/arrow the RHS turns out to contain, and a
+        // non-contributing assignment in between would otherwise donate its
+        // predecessor's name: `(w = 2) * (w = 3); (fn) = function(){}` named
+        // the function "w".
+        self.has_inferred_name = false;
+        self.inferred_name_len = 0;
     }
 
     // Materialize the compound target's OLD VALUE before the RHS runs.
@@ -938,11 +956,29 @@ fn ushort? CompilerContext.binary_expr(&self, int min_prec) {
         left = self.unary_expr()!;
     }
     self.yield_ok_here = false;
+    // Capture immediately: parsing any right operand below re-runs unary_expr
+    // and overwrites the flag with that operand's shape.
+    bool left_was_unary_op = self.last_was_unary_op;
+    self.last_was_unary_op = false;
     bool left_is_local = self.last_was_local_var;
     // Do NOT clear self.last_was_arrow_expr here, the recursive RHS call
     // clears it on its own entry, parses its LHS, and the inner's flag
     // survives to the post-RHS check_no_arrow_rhs() in the outer for-loop.
     bool saw_binary_op = false;
+
+    // ES2021 §13.13: `??` is not just another precedence level, it is a
+    // separate production whose operands may not be an unparenthesized
+    // `&&` / `||`:
+    //   CoalesceExpression : CoalesceExpressionHead ?? BitwiseORExpression
+    //   ShortCircuitExpression : LogicalORExpression | CoalesceExpression
+    // so `a && b ?? c` and `a ?? b || c` are both SyntaxErrors, in either
+    // order, and parentheses are required to disambiguate. `??` and `||` sit
+    // on adjacent precedence levels here, which would silently accept the mix,
+    // so the two are tracked separately within one binary_expr invocation. A
+    // parenthesized operand is parsed by a nested invocation with its own
+    // flags, which is exactly why `(a && b) ?? c` stays legal.
+    bool saw_logical_and_or = false;
+    bool saw_nullish = false;
 
     for (;;) {
         self.last_was_local_var = false;
@@ -960,6 +996,41 @@ fn ushort? CompilerContext.binary_expr(&self, int min_prec) {
         // operand afterwards, and that parse sets the flags again from its own
         // last operand (`a + b = 1` would inherit `b`'s getvar state).
         saw_binary_op = true;
+
+        // ES2024 §13.6:
+        //   ExponentiationExpression :
+        //       UnaryExpression
+        //       UpdateExpression ** ExponentiationExpression
+        // The left operand of `**` is an UpdateExpression, so a UnaryExpression
+        // there is a SyntaxError — the grammar refuses to guess between
+        // `(-a) ** b` and `-(a ** b)`. Parenthesising either way makes the
+        // operand a PrimaryExpression and is the documented workaround.
+        // `a ** -b` is unaffected: the RIGHT operand is a full
+        // ExponentiationExpression, which does derive UnaryExpression, and
+        // `++a ** b` / `a++ ** b` are UpdateExpressions, so unary_expr does
+        // not flag them.
+        if (tt == TokenType.STARSTAR && left_was_unary_op) {
+            return self.fail("unary operator not allowed on the left of '**'")~;
+        }
+        // From here on `left` is this operator's result, not the bare unary
+        // expression the loop started with, so the guard must not fire on a
+        // later iteration: `1 - 2 ** 2` parses as `1 - (2 ** 2)`.
+        left_was_unary_op = false;
+
+        // Enforce the CoalesceExpression / LogicalORExpression split described
+        // above, before either operator form consumes its token.
+        if (tt == TokenType.LOG_AND || tt == TokenType.LOG_OR) {
+            if (saw_nullish) {
+                return self.fail("'??' cannot be mixed with '&&' or '||' without parentheses")~;
+            }
+            saw_logical_and_or = true;
+        } else if (tt == TokenType.NULLISH) {
+            if (saw_logical_and_or) {
+                return self.fail("'??' cannot be mixed with '&&' or '||' without parentheses")~;
+            }
+            saw_nullish = true;
+        }
+
         // Handle short-circuit operators specially
         if (tt == TokenType.LOG_AND) {
             self.advance()!;
@@ -1035,7 +1106,14 @@ fn ushort? CompilerContext.binary_expr(&self, int min_prec) {
             self.patch_jump(null_jump);
             self.patch_jump(undef_jump);
 
-            ushort right = self.binary_expr(prec + 1)!;
+            // `CoalesceExpression : CoalesceExpressionHead ?? BitwiseORExpression`
+            // (§13.13), so the right operand stops BELOW `&&` / `||` rather
+            // than at `prec + 1`, which is PREC_LOGICAL_OR and would swallow
+            // them. That makes `a ?? b || c` fail: the `||` is left unconsumed
+            // and surfaces at this loop's next iteration, where the
+            // saw_nullish guard rejects it. `a ?? (b || c)` is unaffected —
+            // the parentheses make the operand a PrimaryExpression.
+            ushort right = self.binary_expr(PREC_BITWISE_OR)!;
             self.check_no_arrow_rhs();
             self.emit_abc(Opcode.LDREG, (uint)left, (uint)right, 0);
             self.free_reg(right);
@@ -1149,6 +1227,29 @@ fn ushort? CompilerContext.unary_expr(&self) {
     bool yield_ok = self.yield_ok_here;
     self.yield_ok_here = false;
 
+    // Whether a unary OPERATOR is about to be consumed, so binary_expr can
+    // reject `-a ** b`: `**`'s left operand is an UpdateExpression, not a
+    // UnaryExpression (§13.6). `++a ** b` and `a++ ** b` stay legal — they ARE
+    // UpdateExpressions — hence the explicit operator list rather than "did we
+    // take a non-default branch".
+    //
+    // Applied to self.last_was_unary_op by the wrapper below rather than here:
+    // every operator case recurses into unary_expr for its operand, and that
+    // inner call would overwrite the field with the OPERAND's shape
+    // (`-3`'s inner `3` clearing the flag the outer `-` had just set).
+    bool is_unary_op = tt == TokenType.MINUS || tt == TokenType.PLUS
+            || tt == TokenType.LOG_NOT || tt == TokenType.BIT_NOT
+            || tt == TokenType.TYPEOF || tt == TokenType.VOID
+            || tt == TokenType.DELETE || tt == TokenType.AWAIT;
+    ushort result_reg = self.unary_expr_inner(tt, yield_ok)!;
+    self.last_was_unary_op = is_unary_op;
+    return result_reg;
+}
+
+/// The body of unary_expr: dispatches on the already-peeked leading token.
+/// Split out so unary_expr can set last_was_unary_op AFTER the recursive
+/// operand parse, which would otherwise clobber it.
+fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) {
     switch (tt) {
         // ES §13.5: a UnaryExpression's value is the operator's result, never
         // a Reference (AssignmentTargetType ~invalid~). clear_ref_markers drops
@@ -1404,7 +1505,15 @@ fn ushort? CompilerContext.unary_expr(&self) {
                 // Free saved registers (prop before obj).
                 self.free_reg(self.last_member_prop_reg);
                 self.free_reg(self.last_member_obj_reg);
-                self.last_was_member = false;
+                // Like every other UnaryExpression (§13.5), a `delete` yields
+                // the operator's boolean result, never a Reference, so its
+                // AssignmentTargetType is ~invalid~ and `delete x.y = 1` is a
+                // SyntaxError. Only last_was_member was being cleared here —
+                // enough to stop the member store path, but the getvar/local
+                // markers left over from the operand still made it look like a
+                // valid assignment target.
+                self.clear_ref_markers();
+                self.last_lhs_name_len = 0;
                 // op_del is the A register of the patched DELPROP (boolean).
                 return op_del;
             } else if (self.last_was_getvar || self.last_was_local_var) {
@@ -2642,11 +2751,29 @@ fn ushort? CompilerContext.new_expr(&self) {
             return COMPILE_ERROR~;
         }
     } else {
-        // `new`'s callee is a MemberExpression (ES2024 §13.3), and an
-        // ImportCall is a CallExpression, so `new import('')` is a
-        // SyntaxError however deeply it is nested. `import.meta` is a
-        // MemberExpression and stays legal, as does `new (import(''))`,
-        // where the parentheses make the call a PrimaryExpression.
+        // `new`'s callee is a MemberExpression (ES2024 §13.3): both
+        // `MemberExpression : new MemberExpression Arguments` and
+        // `NewExpression : new NewExpression` bottom out there. ImportCall is
+        // listed only under CallExpression, and there is no
+        // `MemberExpression : CallExpression` production, so no `new` callee
+        // can ever contain a bare ImportCall — `new import('')` is a
+        // SyntaxError, and so is a property access chained onto it
+        // (`new import('').then`), because the chain would have to be
+        // `CallExpression . IdentifierName`, which is still a CallExpression.
+        //
+        // MetaProperty IS a MemberExpression production, so `new import.meta`
+        // and `new import.meta.foo` parse fine and fail at RUNTIME with a
+        // "not a constructor" TypeError; that is why only a non-DOT follower
+        // is rejected here.
+        //
+        // Parenthesising escapes both rules: `new (import(''))` makes the call
+        // a PrimaryExpression, hence a MemberExpression.
+        //
+        // test262 has no case either way. QuickJS matches this reading exactly
+        // (it rejects `new import('').then` with "invalid use of 'import()'"
+        // and accepts `new import.meta`). V8/node accept
+        // `new import('').then`, which the grammar above does not derive, so
+        // that leniency is deliberately not copied.
         if (self.check(TokenType.IMPORT)) {
             Token import_tok = self.advance()!;
             TokenType after_import = self.peek_type();
@@ -3443,10 +3570,19 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 // NamedEvaluation purposes (ES2015 §12.15.4 step 1.c uses
                 // static IsIdentifierRef, which CoverParenthesizedExpression
                 // never satisfies): `(fn) = function(){}` must NOT name the
-                // function. Clear the saved LHS name so assignment_expr's
-                // SetFunctionName check (which also requires !lhs_was_member)
-                // doesn't fire for a grouped identifier.
-                self.last_lhs_name_len = 0;
+                // function. Flag the name rather than dropping it — parens
+                // preserve AssignmentTargetType, so the saved name is still
+                // needed for the `(eval) = 1` early error.
+                //
+                // The name only describes THIS expression when the group was a
+                // bare identifier reference. Otherwise it is a leftover from
+                // some inner operand (`(w = 2) * (w = 3)` leaves "w" behind),
+                // so drop it: keeping it named an anonymous function "w".
+                if (self.last_was_getvar || self.last_was_local_var) {
+                    self.last_lhs_name_parenthesized = true;
+                } else {
+                    self.last_lhs_name_len = 0;
+                }
                 // A parenthesized arrow is a CoverParenthesizedExpression,
                 // a PrimaryExpression, so it IS legal as a binary operand
                 // (`"x" in (() => {})`). Clear the marker the inner arrow set;
@@ -3568,10 +3704,19 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 // NamedEvaluation purposes (ES2015 §12.15.4 step 1.c uses
                 // static IsIdentifierRef, which CoverParenthesizedExpression
                 // never satisfies): `(fn) = function(){}` must NOT name the
-                // function. Clear the saved LHS name so assignment_expr's
-                // SetFunctionName check (which also requires !lhs_was_member)
-                // doesn't fire for a grouped identifier.
-                self.last_lhs_name_len = 0;
+                // function. Flag the name rather than dropping it — parens
+                // preserve AssignmentTargetType, so the saved name is still
+                // needed for the `(eval) = 1` early error.
+                //
+                // The name only describes THIS expression when the group was a
+                // bare identifier reference. Otherwise it is a leftover from
+                // some inner operand (`(w = 2) * (w = 3)` leaves "w" behind),
+                // so drop it: keeping it named an anonymous function "w".
+                if (self.last_was_getvar || self.last_was_local_var) {
+                    self.last_lhs_name_parenthesized = true;
+                } else {
+                    self.last_lhs_name_len = 0;
+                }
                 // A parenthesized arrow is a CoverParenthesizedExpression,
                 // a PrimaryExpression, so it IS legal as a binary operand
                 // (`"x" in (() => {})`). Clear the marker the inner arrow set;
@@ -3622,10 +3767,19 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 // NamedEvaluation purposes (ES2015 §12.15.4 step 1.c uses
                 // static IsIdentifierRef, which CoverParenthesizedExpression
                 // never satisfies): `(fn) = function(){}` must NOT name the
-                // function. Clear the saved LHS name so assignment_expr's
-                // SetFunctionName check (which also requires !lhs_was_member)
-                // doesn't fire for a grouped identifier.
-                self.last_lhs_name_len = 0;
+                // function. Flag the name rather than dropping it — parens
+                // preserve AssignmentTargetType, so the saved name is still
+                // needed for the `(eval) = 1` early error.
+                //
+                // The name only describes THIS expression when the group was a
+                // bare identifier reference. Otherwise it is a leftover from
+                // some inner operand (`(w = 2) * (w = 3)` leaves "w" behind),
+                // so drop it: keeping it named an anonymous function "w".
+                if (self.last_was_getvar || self.last_was_local_var) {
+                    self.last_lhs_name_parenthesized = true;
+                } else {
+                    self.last_lhs_name_len = 0;
+                }
                 // A parenthesized arrow is a CoverParenthesizedExpression,
                 // a PrimaryExpression, so it IS legal as a binary operand
                 // (`"x" in (() => {})`). Clear the marker the inner arrow set;
@@ -3647,10 +3801,19 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 // NamedEvaluation purposes (ES2015 §12.15.4 step 1.c uses
                 // static IsIdentifierRef, which CoverParenthesizedExpression
                 // never satisfies): `(fn) = function(){}` must NOT name the
-                // function. Clear the saved LHS name so assignment_expr's
-                // SetFunctionName check (which also requires !lhs_was_member)
-                // doesn't fire for a grouped identifier.
-                self.last_lhs_name_len = 0;
+                // function. Flag the name rather than dropping it — parens
+                // preserve AssignmentTargetType, so the saved name is still
+                // needed for the `(eval) = 1` early error.
+                //
+                // The name only describes THIS expression when the group was a
+                // bare identifier reference. Otherwise it is a leftover from
+                // some inner operand (`(w = 2) * (w = 3)` leaves "w" behind),
+                // so drop it: keeping it named an anonymous function "w".
+                if (self.last_was_getvar || self.last_was_local_var) {
+                    self.last_lhs_name_parenthesized = true;
+                } else {
+                    self.last_lhs_name_len = 0;
+                }
                 // A parenthesized arrow is a CoverParenthesizedExpression,
                 // a PrimaryExpression, so it IS legal as a binary operand
                 // (`"x" in (() => {})`). Clear the marker the inner arrow set;

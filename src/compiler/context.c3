@@ -256,6 +256,20 @@ struct CompilerContext {
     /// binary operand without parentheses (ES §13.16, §13.15). Cleared by
     /// binary_expr once the unary_expr return is consumed.
     bool last_was_arrow_expr;
+
+    /// Set by unary_expr when it consumed a unary OPERATOR (`-`, `+`, `!`,
+    /// `~`, `typeof`, `void`, `delete`, `await`), so the expression it just
+    /// returned is a UnaryExpression rather than an UpdateExpression.
+    ///
+    /// `ExponentiationExpression : UpdateExpression ** ExponentiationExpression`
+    /// (ES2024 §13.6) admits only an UpdateExpression on the left, so
+    /// `-a ** b` is a SyntaxError: the grammar deliberately refuses to guess
+    /// whether `(-a) ** b` or `-(a ** b)` was meant. Parenthesising either way
+    /// makes it a PrimaryExpression and so legal again. `a ** -b` is fine —
+    /// the RIGHT operand is a full ExponentiationExpression, which does derive
+    /// UnaryExpression. Cleared by binary_expr once the unary_expr return is
+    /// consumed.
+    bool last_was_unary_op;
     /// Code index of the GETVAR instruction that produced the last identifier
     /// reference (valid whenever last_was_getvar is true). Lets call_expr
     /// fuse a bare-identifier callee's GETVAR into CALL_VAR even though other
@@ -280,6 +294,18 @@ struct CompilerContext {
     /// assignment LHS.
     char[128] last_lhs_name_buf;
     ushort last_lhs_name_len;
+    /// True when the name in last_lhs_name_buf reached us through a
+    /// CoverParenthesizedExpression, as in `(fn) = function(){}`.
+    ///
+    /// Parentheses change only ONE of the two things the saved name feeds.
+    /// NamedEvaluation (§13.15.2 step 1.c) tests IsIdentifierRef, which a
+    /// CoverParenthesizedExpression never satisfies, so `(fn) = function(){}`
+    /// must not name the function. The strict-mode early error for assigning
+    /// to `eval` / `arguments` (§13.15.1) is the opposite: it keys off
+    /// AssignmentTargetType, which parentheses PRESERVE, so `(eval) = 1` and
+    /// `(eval)++` stay SyntaxErrors. Clearing last_lhs_name_len for the first
+    /// rule silently disabled the second, so the two are tracked separately.
+    bool last_lhs_name_parenthesized;
     /// LHS mode: when true, member_expr saves obj/key without emitting GETPROP
     bool lhs_mode;
     /// Delete mode: when true, member_expr saves obj/key for delete.
@@ -654,6 +680,17 @@ struct CompilerContext {
     /// and nested function/arrow contexts never inherit it (a fresh
     /// CompilerContext leaves it false).
     bool module_top_level;
+
+    /// Set by statement_body() to mark that the statement about to be parsed
+    /// sits where the grammar admits a `Statement` but not a
+    /// `StatementListItem` — an if/else arm, a loop body or a labelled
+    /// statement. Only a Declaration is affected, and every form except
+    /// `async function` is already rejected by statement_body()'s own switch
+    /// on the leading token; this flag exists for that one form, whose `async`
+    /// is a contextual keyword indistinguishable from an identifier until the
+    /// statement dispatcher has looked ahead. Consumed exactly once, into a
+    /// local, so it cannot leak into a nested statement.
+    bool stmt_position_only;
 
     // Inferred function name for the next anonymous function expression parsed.
     // Set by assignment_expr when LHS is a plain identifier (e.g. `var f = function() {}`)
@@ -1636,16 +1673,6 @@ struct NameSpan {
     // names into a reused scratch buffer, so str_value points neither into
     // the source nor at stable storage. Empty for plain (unescaped) names.
     char[] name;
-    /// True when this name was bound by a plain FunctionDeclaration — not a
-    /// generator, not async, not a class, not let/const.
-    ///
-    /// Two such declarations may share a name in the same block (ES2024
-    /// §B.3.2.1 relaxes the LexicallyDeclaredNames duplicate-entries early
-    /// error for exactly that pair, and only that pair). Every other
-    /// combination — including `function` with `function*`, `async function`,
-    /// `class` or `let` — stays a SyntaxError, so the duplicate check needs
-    /// this bit to tell them apart.
-    bool redeclarable_fn;
 }
 
 const uint MAX_CLASS_METHODS = 32;

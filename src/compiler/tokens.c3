@@ -133,10 +133,31 @@ fn Token? CompilerContext.expect_binding_identifier(&self) {
     if (next == TokenType.IDENTIFIER) {
         return self.advance()!;
     }
-    if (next == TokenType.AWAIT && !self.is_module && !self.is_async && !self.forbid_await) {
+    if (self.await_is_identifier(next)) {
         return self.advance()!;
     }
     return self.expect(TokenType.IDENTIFIER)!;
+}
+
+/// True when an AWAIT token in this context is a plain IdentifierName rather
+/// than the start of an AwaitExpression, per the §13.1.1 rule spelled out on
+/// expect_binding_identifier: `await` is reserved in a module, in an async
+/// function/arrow, and at a class static block's own top level (forbid_await),
+/// and is an ordinary identifier everywhere else.
+///
+/// Callers pass the already-peeked token type so this stays usable from a
+/// dispatch switch that has the type in hand.
+fn bool CompilerContext.await_is_identifier(&self, TokenType tt) {
+    return tt == TokenType.AWAIT && !self.is_module && !self.is_async && !self.forbid_await;
+}
+
+/// True when the next token can be a LabelIdentifier: a plain Identifier, or
+/// `await` in a context where it is not reserved (§13.1.1 / §14.13). Used both
+/// where a label is DEFINED (`await: ;`) and where one is REFERENCED
+/// (`break await;`), so the two sides cannot drift apart.
+fn bool CompilerContext.peek_is_label_identifier(&self) {
+    TokenType tt = self.peek_type();
+    return tt == TokenType.IDENTIFIER || self.await_is_identifier(tt);
 }
 
 /// If the next token matches `tt`, consume it and return true.

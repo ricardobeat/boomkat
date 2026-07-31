@@ -241,6 +241,16 @@ fn void mod_register_star_export(CompModuleDef* mod, uint req_idx) {
 /// `let` as an identifier reference (`if (x) let;`) is rejected either way,
 /// `statement()` routes every LET token to var_declaration(), so this engine
 /// does not support `let` as an IdentifierReference at all.
+///
+/// `async function` cannot be recognised from the leading token: `async` is a
+/// contextual keyword that lexes as a plain IDENTIFIER, and distinguishing the
+/// declaration from an `async` identifier reference needs the two-token
+/// lookahead that statement() already performs. Rather than duplicate that
+/// lookahead here (doing it before statement() runs desynchronises
+/// `lexer.token_start`, which statement() refreshes to fix the
+/// Function.prototype.toString span of exactly this declaration form), the
+/// flag below tells statement() that it is parsing a Statement position, and
+/// it raises the error once it has classified the tokens.
 fn void? CompilerContext.statement_body(&self) {
     switch (self.peek_type()) {
         case TokenType.CONST:
@@ -256,6 +266,9 @@ fn void? CompilerContext.statement_body(&self) {
         default:
             break;
     }
+    // Consumed by statement() exactly once, into a local, so it cannot leak
+    // into any nested statement parsed below this one.
+    self.stmt_position_only = true;
     return self.statement();
 }
 
@@ -288,6 +301,12 @@ fn void? CompilerContext.statement(&self) {
     // an Import/ExportDeclaration.
     bool at_module_top = self.module_top_level;
     self.module_top_level = false;
+
+    // Likewise consume the Statement-position marker exactly once. See
+    // statement_body(): it flags the one Declaration form its own leading-token
+    // switch cannot see, `async function` / `async function*`.
+    bool stmt_position_only = self.stmt_position_only;
+    self.stmt_position_only = false;
 
     switch (tt) {
         case TokenType.LBRACE:
@@ -362,7 +381,15 @@ fn void? CompilerContext.statement(&self) {
         default:
             // Check for labels: identifier : statement
             // We consume the identifier and check if the next token is ':'
-            if (tt == TokenType.IDENTIFIER) {
+            //
+            // A LabelIdentifier is an Identifier (§14.13), and per §13.1.1
+            // `await` IS one wherever it is not reserved, so `await: ;` is a
+            // valid labelled statement in script code — only the AWAIT token
+            // type keeps it out of the IDENTIFIER branch here. `yield` gets no
+            // such relaxation: §13.1.1 reserves it in all strict-mode code,
+            // and this engine is strict-only. break/continue gate their label
+            // REFERENCE on the same predicate.
+            if (tt == TokenType.IDENTIFIER || self.await_is_identifier(tt)) {
                 // Save token_start before consuming, in case this is an async function
                 // `token_start` may be stale here (it reflects the most
                 // recently *consumed* token, but the identifier we're about to
@@ -418,6 +445,15 @@ fn void? CompilerContext.statement(&self) {
                         next_tok = peek_opt;
                     }
                     if (next_tok.type == TokenType.FUNCTION && next_tok.line == id_tok.line) {
+                        // An AsyncFunctionDeclaration / AsyncGeneratorDeclaration
+                        // is a Declaration, so it is not a Statement and cannot
+                        // be an if/else arm, a loop body or a labelled
+                        // statement (§14.4-§14.7, §14.13). Only reachable once
+                        // the tokens above have confirmed the contextual
+                        // keyword, which is why statement_body() defers to here.
+                        if (stmt_position_only) {
+                            return self.fail("declaration not allowed as a single-statement body")~;
+                        }
                         // id_tok was `async`; next token is `function` on
                         // the same line. Consume was the `async`; the next
                         // advance() in function_declaration returns `function`.
@@ -639,10 +675,6 @@ fn void? CompilerContext.parse_directives(&self) {
 /// buffer whose contents don't survive the next token, so its bytes are
 /// interned to stable storage and kept directly in the span instead.
 fn void CompilerContext.record_name_span(&self, NameSpan* span, Token name_tok, char* source_base) {
-    // Default: not a plain FunctionDeclaration. Only the FUNCTION branch of a
-    // pre-scan overrides this, so every other declaration form (let, const,
-    // class, generator, async) collides with a same-named sibling.
-    span.redeclarable_fn = false;
     char* end = &self.lexer.source[self.lexer.source.len - 1];
     if (name_tok.str_value.ptr >= source_base && name_tok.str_value.ptr <= end) {
         span.pos = (uint)((usz)name_tok.str_value.ptr - (usz)source_base);
@@ -1155,7 +1187,6 @@ fn uint CompilerContext.pre_scan_switch_lexical_decls(&self, NameSpan* spans, ui
 
         // async function [*] Name (...) { ... }, only when "async" is
         // immediately followed by "function" (contextual keyword check).
-        bool fn_is_async = false;
         if (tt == TokenType.IDENTIFIER &&
             tok.str_value.len == 5 &&
             tok.str_value[0] == 'a' && tok.str_value[1] == 's' &&
@@ -1174,7 +1205,6 @@ fn uint CompilerContext.pre_scan_switch_lexical_decls(&self, NameSpan* spans, ui
             }
             // Fall through to the FUNCTION handling below via tok=peek_tok.
             tt = TokenType.FUNCTION;
-            fn_is_async = true;
         } else if (tt != TokenType.FUNCTION) {
             prev_tt = tt;
             continue;
@@ -1206,10 +1236,6 @@ fn uint CompilerContext.pre_scan_switch_lexical_decls(&self, NameSpan* spans, ui
             }
             if (name_tok.type == TokenType.IDENTIFIER && count < capacity) {
                 self.record_name_span(&spans[count], name_tok, source_base);
-                // Only a PLAIN FunctionDeclaration may be redeclared by another
-                // one of the same name (§B.3.2.1); `function*` and
-                // `async function` do not qualify.
-                spans[count].redeclarable_fn = !fn_is_async && !fn_is_generator;
                 count++;
             }
         }
@@ -1228,6 +1254,53 @@ fn uint CompilerContext.pre_scan_switch_lexical_decls(&self, NameSpan* spans, ui
     self.lexer.seen_line_term  = saved_slt;
 
     return count;
+}
+
+/// ES2024 §13.2.1: "It is a Syntax Error if the LexicallyDeclaredNames of
+/// StatementList contains any duplicate entries." `{ let x; class x {} }`,
+/// `{ function f(){} class f{} }` and `{ function f(){} let f; }` are all
+/// SyntaxErrors. The same rule is §14.12.1 for a switch's CaseBlock, whose
+/// clauses share one StatementList, so both call sites use this.
+///
+/// Annex B's relaxation for two plain FunctionDeclarations sharing a name in
+/// one block is sloppy-mode only, so it never applies here: this engine is
+/// strict-only (see AGENTS.md). test262 states the split directly — the
+/// generated pair for `{ function f(){} function f(){} }` and its switch
+/// counterpart come from the `redeclare-allow-sloppy-function` templates and
+/// carry `flags: [onlyStrict]` with `negative: phase: parse`, i.e. strict code
+/// must reject exactly what sloppy code accepts.
+///
+/// This applies only to a genuine BlockStatement or CaseBlock. A function
+/// BODY's top-level FunctionDeclarations are var-scoped rather than lexical,
+/// so they are not LexicallyDeclaredNames at all and never reach this check.
+fn void? CompilerContext.check_duplicate_lexical_names(&self, NameSpan* spans, uint count) {
+    for (uint ai = 0; ai < count; ai++) {
+        for (uint bi = ai + 1; bi < count; bi++) {
+            if (str_eq(self.name_span_text(spans[ai]),
+                       self.name_span_text(spans[bi]))) {
+                return self.fail("Identifier has already been declared")~;
+            }
+        }
+    }
+}
+
+/// ES2024 §13.2.1 / §14.12.1: the LexicallyDeclaredNames and VarDeclaredNames
+/// of a StatementList must not intersect, so `let x; var x;` (either order) at
+/// the same level is a SyntaxError. Scans forward from the current lexer
+/// position for the `var` names, so it must be called with the lexer parked
+/// just inside the body's opening brace, like the lexical pre-scans.
+fn void? CompilerContext.check_lexical_var_conflicts(&self, NameSpan* lex_spans, uint num_lex) {
+    if (num_lex == 0) return;
+    NameSpan[MAX_PRESCAN_NAMES] var_spans;
+    uint num_var = self.pre_scan_var_decls(&var_spans, MAX_PRESCAN_NAMES);
+    for (uint li = 0; li < num_lex; li++) {
+        char[] lname = self.name_span_text(lex_spans[li]);
+        for (uint vi = 0; vi < num_var; vi++) {
+            if (str_eq(lname, self.name_span_text(var_spans[vi]))) {
+                return self.fail("lexical declaration cannot share a name with a var declaration")~;
+            }
+        }
+    }
 }
 
 /// Parse a block: { statement* }
@@ -1275,38 +1348,15 @@ fn void? CompilerContext.block(&self, bool check_directives, bool suppress_regex
     // is allowed; that scan collects let/const only, so its names are already
     // covered by the declaration-site duplicate check in var_declaration.
     if (lexical_fns) {
-        for (uint ai = 0; ai < num_lex; ai++) {
-            for (uint bi = ai + 1; bi < num_lex; bi++) {
-                if (lex_spans[ai].redeclarable_fn && lex_spans[bi].redeclarable_fn) {
-                    continue;
-                }
-                if (str_eq(self.name_span_text(lex_spans[ai]),
-                           self.name_span_text(lex_spans[bi]))) {
-                    return self.fail("Identifier has already been declared")~;
-                }
-            }
-        }
+        self.check_duplicate_lexical_names(&lex_spans[0], num_lex)!;
     }
 
     // ES2024 §13.2.1 / §15.7.11 BlockDeclarationInstantiation: the
     // LexicallyDeclaredNames and VarDeclaredNames of this block must not
     // intersect. A `let x; var x;` (or vice versa) at the same block level
     // is a SyntaxError. Function bodies inherit the same rule (the body is
-    // itself a block per §14.1). Switch blocks' ClassStaticBlock-style
-    // early-error check is delegated to a separate call site.
-    if (num_lex > 0) {
-        NameSpan[MAX_PRESCAN_NAMES] var_spans;
-        uint num_var = self.pre_scan_var_decls(&var_spans, MAX_PRESCAN_NAMES);
-        for (uint li = 0; li < num_lex; li++) {
-            char[] lname = self.name_span_text(lex_spans[li]);
-            for (uint vi = 0; vi < num_var; vi++) {
-                char[] vname = self.name_span_text(var_spans[vi]);
-                if (str_eq(lname, vname)) {
-                    return self.fail("lexical declaration cannot share a name with a var declaration")~;
-                }
-            }
-        }
-    }
+    // itself a block per §14.1).
+    self.check_lexical_var_conflicts(&lex_spans[0], num_lex)!;
 
     // Push a new lexical scope for let/const/class/function declarations inside
     // this block. Skip when the block has none, saves an allocation on every
@@ -4212,6 +4262,15 @@ fn void? CompilerContext.switch_statement(&self) {
     NameSpan[MAX_PRESCAN_NAMES] switch_lex_spans;
     uint num_switch_lex = self.pre_scan_switch_lexical_decls(&switch_lex_spans, MAX_PRESCAN_NAMES);
 
+    // ES2024 §14.12.1 Static Semantics: Early Errors for
+    // `SwitchStatement : switch ( Expression ) CaseBlock`. The whole CaseBlock
+    // is one StatementList, so its clauses share a single lexical scope and get
+    // the same two duplicate-name rules a BlockStatement does: no duplicate
+    // LexicallyDeclaredNames, and no name in both LexicallyDeclaredNames and
+    // VarDeclaredNames.
+    self.check_duplicate_lexical_names(&switch_lex_spans[0], num_switch_lex)!;
+    self.check_lexical_var_conflicts(&switch_lex_spans[0], num_switch_lex)!;
+
     bool switch_has_lex = num_switch_lex > 0;
     if (switch_has_lex) {
         self.emit_simple(Opcode.PUSH_LEX);
@@ -4464,7 +4523,7 @@ fn void? CompilerContext.labeled_statement(&self, char[] name) {
 fn void? CompilerContext.break_statement(&self) {
     self.expect(TokenType.BREAK)!;
 
-    if (self.peek_type() == TokenType.IDENTIFIER && !self.lexer.seen_line_term) {
+    if (self.peek_is_label_identifier() && !self.lexer.seen_line_term) {
         // Labeled break, find the label and add jump to its loop's break chain
         Token label_tok = self.advance()!;
         char[] label_name = label_tok.str_value;
@@ -4538,7 +4597,7 @@ fn void? CompilerContext.break_statement(&self) {
 fn void? CompilerContext.continue_statement(&self) {
     self.expect(TokenType.CONTINUE)!;
 
-    if (self.peek_type() == TokenType.IDENTIFIER && !self.lexer.seen_line_term) {
+    if (self.peek_is_label_identifier() && !self.lexer.seen_line_term) {
         // Labeled continue, find the label and jump to its loop's continue target
         Token label_tok = self.advance()!;
         char[] label_name = label_tok.str_value;
