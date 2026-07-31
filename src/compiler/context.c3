@@ -1636,16 +1636,6 @@ struct NameSpan {
     // names into a reused scratch buffer, so str_value points neither into
     // the source nor at stable storage. Empty for plain (unescaped) names.
     char[] name;
-    /// True when this name was bound by a plain FunctionDeclaration — not a
-    /// generator, not async, not a class, not let/const.
-    ///
-    /// Two such declarations may share a name in the same block (ES2024
-    /// §B.3.2.1 relaxes the LexicallyDeclaredNames duplicate-entries early
-    /// error for exactly that pair, and only that pair). Every other
-    /// combination — including `function` with `function*`, `async function`,
-    /// `class` or `let` — stays a SyntaxError, so the duplicate check needs
-    /// this bit to tell them apart.
-    bool redeclarable_fn;
 }
 
 const uint MAX_CLASS_METHODS = 32;

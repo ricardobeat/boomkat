@@ -1,5 +1,11 @@
+"use strict";
 // Early error: the LexicallyDeclaredNames of a BlockStatement must not contain
 // duplicate entries (ES2024 §13.2.1).
+//
+// The explicit directive is for portability only: this engine is strict-only,
+// but a direct `eval` in node inherits the CALLER's strictness, and node does
+// not make a CommonJS entry point strict without it. Without the directive the
+// eval'd probes below would be sloppy under node and Annex B would apply.
 //
 // let, const, class and FunctionDeclaration all contribute lexical names to the
 // enclosing block, so any two of them sharing a name in the SAME block is a
@@ -7,11 +13,18 @@
 // declaration site, but function declarations never reached that path, so
 // `{ function f(){} class f{} }` and `{ let x; function x(){} }` were accepted.
 //
-// The one exception is §B.3.2.1: two PLAIN FunctionDeclarations may share a
-// name in a block. That relaxation covers only that pair — `function` with
-// `function*`, with `async function`, with `class` or with `let` all remain
-// errors, so the check has to distinguish a plain function from the others
-// rather than exempting "anything declared with the function keyword".
+// Annex B relaxes this for a pair of plain FunctionDeclarations, but only in
+// sloppy-mode code. This engine is strict-only, so that relaxation never
+// applies and `{ function f(){} function f(){} }` is a SyntaxError like every
+// other pairing — matching test262's onlyStrict parse-negatives generated from
+// the `redeclare-allow-sloppy-function` templates.
+//
+// Runs unmodified under node (`node test/test_block_lexical_redeclaration.js`)
+// with the same counts; a `print` shim is defined below when absent.
+
+if (typeof print === "undefined") {
+    var print = function (s) { console.log(s); };
+}
 
 function syntaxError(source) {
     try {
@@ -33,29 +46,49 @@ function assert(cond, msg) {
     }
 }
 
-// Every declaration form that binds a lexical name in a block. The second
-// element says whether the form is a plain FunctionDeclaration (the only form
-// that may legally pair with another of its own kind).
+// Every declaration form that binds a lexical name in a block. In a block, ALL
+// of these are LexicallyDeclaredNames, so any two sharing a name is a
+// SyntaxError with no exceptions. Annex B's relaxation for a pair of plain
+// FunctionDeclarations is sloppy-mode only and this engine is strict-only, so
+// `{ function x(){} function x(){} }` is rejected here too — which is what
+// test262's onlyStrict redeclare-allow-sloppy-function tests require.
 var forms = [
-    ["let x;",                 false],
-    ["const x = 1;",           false],
-    ["class x {}",             false],
-    ["function x() {}",        true],
-    ["function* x() {}",       false],
-    ["async function x() {}",  false],
-    ["async function* x() {}", false]
+    "let x;",
+    "const x = 1;",
+    "class x {}",
+    "function x() {}",
+    "function* x() {}",
+    "async function x() {}",
+    "async function* x() {}"
 ];
 
 for (var i = 0; i < forms.length; i++) {
     for (var j = 0; j < forms.length; j++) {
-        var a = forms[i], b = forms[j];
-        var src = "{ " + a[0] + " " + b[0] + " }";
-        // Legal only when BOTH are plain FunctionDeclarations.
-        var bothPlainFunctions = a[1] && b[1];
-        assert(syntaxError(src) !== bothPlainFunctions,
-               (bothPlainFunctions ? "must accept " : "must reject ") + src);
+        var src = "{ " + forms[i] + " " + forms[j] + " }";
+        assert(syntaxError(src), "must reject " + src);
     }
 }
+
+// A function BODY is not a block for this rule: its top-level function
+// declarations are var-scoped, so duplicates there stay legal even in strict
+// code. Only a genuine BlockStatement/CaseBlock applies the lexical rule.
+assert(!syntaxError("function fb() { function x() {} function x() {} }"),
+       "duplicate functions at function-body top level");
+assert(syntaxError("function fb() { { function x() {} function x() {} } }"),
+       "duplicate functions in a block nested in a function body");
+
+// A switch CaseBlock is a single StatementList spanning all clauses
+// (ES2024 §14.12.1), so the same two rules apply across case/default.
+assert(syntaxError("switch (0) { case 1: let x; default: class x {} }"),
+       "switch CaseBlock duplicate lexical names across clauses");
+assert(syntaxError("switch (0) { case 1: var x; default: let x; }"),
+       "switch CaseBlock lexical name colliding with a var name");
+assert(syntaxError("switch (0) { case 1: function x() {} default: function x() {} }"),
+       "switch CaseBlock duplicate function declarations");
+assert(!syntaxError("switch (0) { case 1: { let x; } default: { let x; } }"),
+       "switch clauses' own nested blocks are separate scopes");
+assert(!syntaxError("switch (0) { case 1: var x; default: var x; }"),
+       "duplicate var names in a CaseBlock are legal");
 
 // `var` colliding with a lexical binding in the same block, both orders.
 assert(syntaxError("{ let x; var x; }"), "{ let x; var x; }");
