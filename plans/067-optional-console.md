@@ -3,9 +3,12 @@
 Goal: the CLI binary ships `console` as it does today; the `lib` static-lib
 target omits it, and an embedder can opt back in with one call.
 
-**Sequencing: land this only after the `util.inspect` work merges.** That work
-is rewriting `src/builtins/global.c3`, which is exactly where the console
-methods and the formatter live. Doing both at once guarantees a conflict.
+**Status: unblocked.** The `util.inspect` work has landed (`e234d4df`), and it
+made this plan simpler than when first written. The formatter is no longer
+tangled into `global.c3` — it is a standalone `src/builtins/inspect.c3` (1106
+lines) behind a two-function interface, `inspect_root` and `inspect_nested`,
+called from `global.c3:186` and `:332`. So step 3 gates one self-contained file
+at its two call sites rather than carving machinery out of a shared one.
 
 ## Decisions (settled with the user)
 
@@ -89,11 +92,19 @@ it.
 
 ### 3. Gate the formatter
 
-Wrap the inspect/format machinery in `src/builtins/global.c3` in the same
-`$if HAS_CONSOLE:`. Keep `HAS_CONSOLE` defined in ONE place and import it;
-do not re-derive `!$feature(NOCONSOLE)` per file — that is the N-copies pattern
-that has been the root cause five times in this repo (BACKLOG session 302;
-plans 063-066).
+`src/builtins/inspect.c3` is self-contained and reached only through
+`inspect_root` / `inspect_nested` (called at `global.c3:186` and `:332`). Gate
+the module and those two call sites under the same `$if HAS_CONSOLE:`.
+
+Since the only callers are the console paths already gated in step 2, confirm
+whether an explicit `$if` around `inspect.c3` is even needed — with no
+references, `--gc-sections` should drop all 1106 lines on its own. **Measure
+before adding the guard**: if the linker already removes it, the `$if` is dead
+weight and should be left out. Report the measured size either way.
+
+Keep `HAS_CONSOLE` defined in ONE place and import it; do not re-derive
+`!$feature(NOCONSOLE)` per file — that is the N-copies pattern that has been the
+root cause five times in this repo (BACKLOG session 302; plans 063-066).
 
 ### 4. Keep the opt-in path public
 
@@ -107,9 +118,11 @@ Same function the CLI calls — one code path, no drift between the two.
 
 ## Validation
 
-1. **Default build unchanged**: `just all`, then `just test-local` green
-   (the console-format corpus must still pass — it is the real console test),
-   `just rosetta` 41/41, `just test-golden-bytecode` 28/28.
+1. **Default build unchanged**: `just all`, then `just test-local` green — the
+   console-format corpus is now **5796 lines** of captured expectation and is
+   the real console test; it must pass unchanged. Plus `just rosetta` 41/41
+   (two `.expected` files there encode inspect output, so a console regression
+   shows up here too) and `just test-golden-bytecode` 28/28.
 2. **`-D NOCONSOLE` builds and runs**: build an executable with the flag and
    confirm `console.log("x")` raises `ReferenceError: console is not defined`,
    while ordinary JS still evaluates. Add this as a scripted check — a build
