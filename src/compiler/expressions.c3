@@ -3449,11 +3449,19 @@ fn ushort? CompilerContext.primary_expr(&self) {
             self.last_was_getvar = false;
             Token num_tok = self.advance()!;
 
-            // Legacy octal integer literal (0 followed by octal digit 0-7)
-            // is a SyntaxError (strict mode per ES5 §7.8.3 + B.1.1).
+            // ES2024 §12.9.3.1: both AnnexB decimal-integer forms that start
+            // with `0` are Syntax Errors in strict-mode code, and this engine
+            // is strict-only:
+            //   LegacyOctalIntegerLiteral        `0` followed by 0-7 (`01`)
+            //   NonOctalDecimalIntegerLiteral    `0` followed by 8-9 (`08`),
+            //                                    and any digits after either
+            // A `0` followed by ANY decimal digit is therefore one of the two,
+            // so one test covers both — the previous 0-7 range accepted `08`
+            // and `09` silently. `0x`/`0o`/`0b`/`0.`/`0e` are unaffected: the
+            // second character is not a decimal digit.
             char[] nsrc = num_tok.str_value;
-            if (nsrc.len >= 2 && nsrc[0] == '0' && nsrc[1] >= '0' && nsrc[1] <= '7') {
-                return COMPILE_ERROR~;
+            if (nsrc.len >= 2 && nsrc[0] == '0' && nsrc[1] >= '0' && nsrc[1] <= '9') {
+                return self.fail("a legacy octal or non-octal decimal literal is not allowed")~;
             }
 
             ushort num_reg = self.alloc_reg();

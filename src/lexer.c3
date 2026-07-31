@@ -478,6 +478,13 @@ struct Lexer {
     /// compilation; there is nothing to gate at runtime, `eval` in a module is
     /// still eval of a Script.
     bool html_comments;
+    /// Set when a `/*` comment ran to end-of-input with no closing `*/`.
+    /// ES2024 §12.4 gives no production for an unterminated MultiLineComment,
+    /// so it is a SyntaxError; without this the trailing text was silently
+    /// swallowed and the source compiled as if it ended before the `/*`.
+    /// skip_whitespace_and_comments cannot fail (it returns void and runs from
+    /// several non-failing paths), so it latches this and next_token raises.
+    bool unterminated_comment;
     void* heap;
 
     /// Shared decoded-string arena holder (see LexArena). Allocated lazily on
@@ -509,6 +516,7 @@ fn Lexer lexer_init(char[] source, void* heap) {
     lex.seen_line_term = false;
     lex.at_line_start = true;
     lex.html_comments = true;
+    lex.unterminated_comment = false;
     lex.heap = heap;
     // Allocate the shared arena holder eagerly (tiny, one pointer) so that
     // every speculative lexer copy made during parsing shares the SAME non-null
@@ -885,10 +893,12 @@ fn void Lexer.skip_whitespace_and_comments(&self) {
             self.pos += 2;
             self.col += 2;
             bool comment_had_newline = false;
+            bool closed = false;
             while (!self.at_end()) {
                 if (self.peek_char() == '*' && self.peek_char_at(1) == '/') {
                     self.pos += 2;
                     self.col += 2;
+                    closed = true;
                     break;
                 }
                 char bc = self.peek_char();
@@ -911,6 +921,9 @@ fn void Lexer.skip_whitespace_and_comments(&self) {
                 self.seen_line_term = true;
                 self.at_line_start = true;
             }
+            // No closing `*/` before end of input: there is no production for
+            // that, so latch the error for next_token to raise.
+            if (!closed) self.unterminated_comment = true;
             continue;
         }
 
@@ -1252,6 +1265,21 @@ fn Token? Lexer.scan_number(&self) {
         Token tok = make_token(TokenType.BIGINT, start_line, start_col);
         tok.str_value = self.source[start_pos..self.pos-2]; // exclude 'n'
         return tok;
+    }
+
+    // ES2024 §12.9.3: "The SourceCharacter immediately following a
+    // NumericLiteral must not be an IdentifierStart or DecimalDigit." Every
+    // digit is already consumed above, so only IdentifierStart can appear
+    // here. `3in []` used to lex as `3` then the `in` keyword and parse
+    // happily; `3if` only failed because `if` cannot continue an expression.
+    // A `\` here is the start of a unicode-escaped identifier, which
+    // is_identifier_start cannot see (next_token pairs the two tests the same
+    // way).
+    if (!self.at_end()) {
+        uint follow_cp = self.peek_codepoint();
+        if (is_identifier_start(follow_cp) || follow_cp == '\\') {
+            return LEX_ERROR~;
+        }
     }
 
     Token tok = make_token(TokenType.NUMBER, start_line, start_col);
@@ -2339,6 +2367,7 @@ fn Token? Lexer.next_token(&self) {
     }
 
     self.skip_whitespace_and_comments();
+    if (self.unterminated_comment) return LEX_ERROR~;
 
     // Capture the start of the upcoming token so callers can recover the source
     // span after consumption (Function.prototype.toString retention).

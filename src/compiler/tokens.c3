@@ -33,6 +33,18 @@ macro fault CompilerContext.fail(&self, char[] msg) {
 /// point at the offending character.
 fn void CompilerContext.record_lex_error(&self) {
     if (g_last_err_msg[0] != 0) return;
+    // An unterminated `/*` comment has no offending character to point at —
+    // the lexer stopped at end-of-input — so name the construct instead of
+    // reporting whatever byte happens to precede `pos`.
+    if (self.lexer.unterminated_comment) {
+        g_last_err_line = self.lexer.line;
+        g_last_err_col  = self.lexer.col;
+        char[] msg = "unterminated multi-line comment";
+        usz copy_len = msg.len < (g_last_err_msg.len - 1) ? msg.len : (g_last_err_msg.len - 1);
+        mem::copy(&g_last_err_msg[0], msg.ptr, (sz)(copy_len));
+        g_last_err_msg[copy_len] = 0;
+        return;
+    }
     g_last_err_line = self.lexer.line;
     g_last_err_col  = self.lexer.col > 0 ? self.lexer.col - 1 : 0;
     uint bad_pos = self.lexer.pos > 0 ? self.lexer.pos - 1 : 0;
