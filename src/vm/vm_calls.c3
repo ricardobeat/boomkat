@@ -902,7 +902,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, Instruction insn, bool*
                     new_act.new_target = target_fast.is_arrow()
                         ? (*hobj_fast.extra_ptr()).func.captured_new_target
                         : (target_fast.is_eval_fn() ? ds.act.new_target : null);
-                    new_act.max_heap_reg = 0;
+                    new_act.heap_reg_count = 0;
                     new_act.caller_valstack_top = vm.valstack_top;
                     // Arrow functions use a lexical `this`, captured once at
                     // CLOSURE-creation time (§9.2.1 [[ThisMode]]=lexical), not
@@ -1118,7 +1118,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
 
                 // Local result slot: builtins write pass-through results as
                 // borrowed references (no incref). Written directly into a
-                // register, a borrowed value below the frame's max_heap_reg
+                // register, a borrowed value below the frame's heap_reg_count
                 // high-water mark is over-decrefed by decref_callee_regs at
                 // RET and freed prematurely. The local + tval_copy_ref makes
                 // the register reference owned (and survives a valstack

@@ -452,7 +452,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
             uint preserved_flags = act.flags;
             act.flags = (target.has_direct_eval() ? ACT_FLAG_DIRECT_EVAL : 0)
                       | preserved_flags;
-            act.max_heap_reg = 0;
+            act.heap_reg_count = 0;
             if (did_resume) { track_restored_regs(act, frame, nregs); }
             act.caller_valstack_top = frame + nregs;
             // Set this_binding. For generator resumes via call_fn where the initial
@@ -1013,7 +1013,7 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
     act.flags = ACT_FLAG_CONSTRUCT
               | (target.has_direct_eval() ? ACT_FLAG_DIRECT_EVAL : 0)
               | (is_derived_target ? ACT_FLAG_DERIVED : 0);
-    act.max_heap_reg = 0;
+    act.heap_reg_count = 0;
     act.caller_valstack_top = frame + nregs;
     act.this_binding = this_tv;
     act.new_target = new_target_obj;
@@ -1485,7 +1485,7 @@ fn bool? Vm.execute_module_nested(Vm* vm, CompiledFunction* func, EnvRecord* env
     act.async_gen_state = null;
     act.bottom = frame;
     act.retval = null;
-    act.max_heap_reg = 0;
+    act.heap_reg_count = 0;
     act.caller_valstack_top = frame + nregs;
     act.flags = (func.has_direct_eval() ? ACT_FLAG_DIRECT_EVAL : 0);
     if (is_async_body) {
@@ -1817,7 +1817,7 @@ fn TVal? Vm.run(Vm* vm) {
                         vm.heap.set_reg_string(ra, interned);
                         // A concat result can be a large NON-interned string
                         // (len > MAX_INTERN_BYTES): a pure refcounted leaf with
-                        // no string-table/GC backstop. Raise max_heap_reg so
+                        // no string-table/GC backstop. Raise heap_reg_count so
                         // decref_callee_regs releases the register's reference
                         // at frame teardown instead of leaking it.
                         track_heap_store(ds.act, ra, (uint)insn.a);
@@ -1977,7 +1977,7 @@ fn TVal? Vm.run(Vm* vm) {
                         vm.heap.set_reg_string(ra, interned);
                         // A concat result can be a large NON-interned string
                         // (len > MAX_INTERN_BYTES): a pure refcounted leaf with
-                        // no string-table/GC backstop. Raise max_heap_reg so
+                        // no string-table/GC backstop. Raise heap_reg_count so
                         // decref_callee_regs releases the register's reference
                         // at frame teardown instead of leaking it.
                         track_heap_store(ds.act, ra, (uint)insn.a);
@@ -3425,7 +3425,7 @@ fn TVal? Vm.run(Vm* vm) {
             // The write-back above may have parked a heap reference (e.g. a
             // large non-interned string transferred via the pin) in a caller
             // register the caller itself never tracked. Raise the caller's
-            // max_heap_reg so its eventual decref_callee_regs sweep releases
+            // heap_reg_count so its eventual decref_callee_regs sweep releases
             // the reference instead of leaking it. Gated on val/construct so
             // the dominant primitive-return path (deep numeric recursion)
             // skips the slot reload: a heap value can only have landed in the

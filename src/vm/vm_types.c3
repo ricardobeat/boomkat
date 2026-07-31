@@ -106,7 +106,12 @@ struct Activation {
     /// re-entrant paths in vm_execute.c3 copy the whole array to a stack local
     /// the compiler caps at 64 Kb, which is 512 * 128. Adding a field without
     /// reclaiming padding breaks that limit.
-    uint max_heap_reg;
+    /// One past the highest register index that ever held a heap reference, so
+    /// 0 means "none" and register 0 is expressible as 1. A plain highest-index
+    /// would make the empty case and register 0 the same value, and
+    /// decref_callee_regs' early-out would then skip a frame whose only heap
+    /// value sits in register 0.
+    uint heap_reg_count;
     /// This activation's `this` binding.
     TVal this_binding;
     /// The `new.target` value: the constructor a `new` expression named, or the

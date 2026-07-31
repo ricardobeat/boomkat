@@ -155,7 +155,7 @@ fn void vm_mark_activations(void* vm_ptr, void* heap_ptr) {
         //
         // This over-scan reads slots no frame currently owns, so it is only
         // sound while every pop leaves its registers cleared. decref_callee_regs
-        // does that over [0..max_heap_reg], which is why a path that writes heap
+        // does that over [0..heap_reg_count], which is why a path that writes heap
         // values into a frame without raising that watermark is a
         // use-after-free here rather than a mere leak: a later frame at a
         // different bottom reads the stale pointer bits as one of its own
@@ -370,41 +370,40 @@ macro Activation* activation_begin(Vm* vm) {
     act.async_gen_state = null;
     act.forin = null;
     act.new_target = null;
-    act.max_heap_reg = 0;
+    act.heap_reg_count = 0;
     act.caller_valstack_top = vm.valstack_top;
     return act;
 }
 
 /// Track a heap-ref store in the current activation.  Call after any
 /// instruction that writes an object or buffer TVal into a register.
-/// Updates max_heap_reg so decref_callee_regs can skip non-heap registers.
+/// Updates heap_reg_count so decref_callee_regs can skip non-heap registers.
 fn void track_heap_store(Activation* act, TVal* val, uint reg_idx) @inline {
     if (val.is_heap_allocated()) {
-        if (val.get_heapptr() != null && reg_idx > act.max_heap_reg) {
-            act.max_heap_reg = reg_idx;
+        if (val.get_heapptr() != null && reg_idx + 1 > act.heap_reg_count) {
+            act.heap_reg_count = reg_idx + 1;
         }
     }
 }
 
-/// Raise max_heap_reg to cover a whole register window restored in one go, as a
+/// Raise heap_reg_count to cover a whole register window restored in one go, as a
 /// generator or async resume does when it copies gs.saved_regs back onto the
 /// valstack.
 ///
 /// Those copies go through tval_copy_ref, so each restored heap value carries a
 /// reference the frame now owns, but they bypass track_heap_store and
-/// activation_begin has just reset max_heap_reg to 0. Any restored register
+/// activation_begin has just reset heap_reg_count to 0. Any restored register
 /// above the highest index the resumed body happens to write again would then
-/// fall outside decref_callee_regs' [0..max_heap_reg] sweep on the next pop:
+/// fall outside decref_callee_regs' [0..heap_reg_count] sweep on the next pop:
 /// its reference leaks, and, worse, the slot keeps the stale pointer bits.
 /// vm_mark_activations scans each frame's span past num_regs, so a later frame
 /// reusing that valstack address hands the mark phase a pointer into memory the
 /// sweep already reclaimed.
 fn void track_restored_regs(Activation* act, TVal* regs, uint nregs) {
-    uint highest = act.max_heap_reg;
-    for (uint i = nregs; i > highest; i--) {
+    for (uint i = nregs; i > act.heap_reg_count; i--) {
         uint idx = i - 1;
         if (regs[idx].is_heap_allocated() && regs[idx].get_heapptr() != null) {
-            act.max_heap_reg = idx;
+            act.heap_reg_count = idx + 1;
             return;
         }
     }
@@ -425,7 +424,7 @@ fn bool derived_ctor_returns_undefined_uninitialized(Activation* callee_act) @in
 /// unwound abnormally (exception), its retval slot in the surviving caller
 /// still holds the borrowed, non-owned callee value. A later decref_callee_regs
 /// sweep of that caller frame would decref a reference the caller never owned
-/// (the callee register is inside the caller's [0..max_heap_reg] range whenever
+/// (the callee register is inside the caller's [0..heap_reg_count] range whenever
 /// a heap argument was passed). Neutralize the borrowed bits with a raw
 /// overwrite so the sweep skips over harmless undefined. No decref: borrowed.
 fn void clear_borrowed_callee_slot(Activation* act) @inline {
@@ -591,15 +590,17 @@ macro chains_restore_from_gen(Activation* act, gs) {
 /// Decrement the reference count of every register in the given activation.
 /// Must be called BEFORE the activation is popped, while the register range
 /// is still valid.  Safe to call on activations with null func (no registers).
-/// A max_heap_reg of 0 means no register ever held a heap reference.
+/// A heap_reg_count of 0 means no register ever held a heap reference. The
+/// count is one-based, so a frame whose only heap value is in register 0 has
+/// count 1 and is swept rather than mistaken for the empty case.
 fn void decref_callee_regs(Vm* vm, Activation* callee_act) {
     if (callee_act.func == null) return;
-    if (callee_act.max_heap_reg == 0) return;  // fast path: no heap refs
+    if (callee_act.heap_reg_count == 0) return;  // fast path: no heap refs
     CompiledFunction* callee_func = (CompiledFunction*)callee_act.func;
     uint nregs = callee_func.num_regs;
     if (nregs == 0) return;  // no registers to decref
     TVal* regs = callee_act.bottom;
-    uint limit = callee_act.max_heap_reg;
+    uint limit = callee_act.heap_reg_count - 1;
     if (limit >= nregs) limit = nregs - 1;
     for (uint i = 0; i <= limit; i++) {
         // Clear the slot after releasing the ref: callee frames overlap the
@@ -701,7 +702,7 @@ fn TVal handle_return(Vm* vm, TVal val) @inline {
         }
         // A heap result (e.g. a large non-interned string) now lives in a
         // caller register the caller may never have tracked. Raise the
-        // caller's max_heap_reg so its decref_callee_regs sweep releases the
+        // caller's heap_reg_count so its decref_callee_regs sweep releases the
         // reference instead of leaking it.
         if (result_slot >= caller_act.bottom && result_slot.is_heap_allocated()) {
             track_heap_store(caller_act, result_slot, (uint)(result_slot - caller_act.bottom));
