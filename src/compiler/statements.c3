@@ -2116,6 +2116,7 @@ fn void? CompilerContext.for_statement(&self) {
         // when LHS opens with `[` or `{`.
         ForLhsSnapshot lhs_snap = self.save_lhs_snapshot();
         ushort saved_next_reg = self.next_reg;
+        uint saved_code_count = self.code_count;
 
         bool is_member_head = false;
         bool head_is_of = false;
@@ -2137,20 +2138,32 @@ fn void? CompilerContext.for_statement(&self) {
             }
         }
 
-        // Restore lexer + register state; the LHS is re-parsed from
+        // Restore lexer + register + code state; the LHS is re-parsed from
         // source once per iteration (see emit_forof_loop_member/
         // emit_forin_loop_member), so nothing from this speculative
-        // parse should be kept.
+        // parse should be kept. The code buffer must be rewound too:
+        // member_expr() emits GETPROP/GETPROPC into it, and leaving those
+        // behind executes the LHS once before the loop, clobbering whichever
+        // live local happens to own the scratch register.
         self.restore_lhs_snapshot(lhs_snap);
         self.next_reg = saved_next_reg;
+        self.code_count = saved_code_count;
+        self.discard_member_head_state();
 
         if (is_member_head) {
-            // Re-consume the LHS for real (the speculative parse above was
-            // fully unwound). member_expr() naturally stops right before
-            // `of`/`in` since neither token continues a member expression.
+            // Re-consume the LHS only to advance the lexer past it; the store
+            // itself is re-parsed from lhs_snap once per iteration (see
+            // emit_member_lhs_store), so this parse's code and registers are
+            // dead. Discard both: the emitted GETPROP/LDCONST would otherwise
+            // run once before the loop and clobber a live local's home
+            // register (the scratch regs are allocated from next_reg, which
+            // at this point still overlaps the enclosing function's locals).
+            uint pre_code = self.code_count;
+            ushort pre_reg = self.next_reg;
             self.member_expr()!;
-            self.free_reg(self.last_member_prop_reg);
-            self.free_reg(self.last_member_obj_reg);
+            self.code_count = pre_code;
+            self.free_regs_to(pre_reg);
+            self.discard_member_head_state();
             self.advance()!;  // consume "of" or "in"
 
             if (head_is_of) {
@@ -3240,6 +3253,24 @@ fn void CompilerContext.restore_lhs_snapshot(&self, ForLhsSnapshot s) {
     self.pushback_stack        = s.pbs;
 }
 
+/// Drop the compiler side effects of a for-in/of member head parse whose
+/// code has just been rewound. member_expr() leaves behind state that later
+/// expressions consult as if it described the most recent instruction:
+///
+///  - call_prop_obj_reg records the receiver of a method call. A discarded
+///    `o.p` head leaves it set, which makes the next call in the function
+///    take the method-call path: `undef_this` is false, so the callee's
+///    speculatively stripped GETVAR/GETGLOBAL is never restored and the call
+///    dispatches on a register nothing ever wrote ("X is not a function").
+///  - last_was_getvar/last_was_getglobal anchor the CALL_VAR/CALL_GLOBAL
+///    fusion to `last_getvar_code_pos + 1 == code_count`. After a rewind that
+///    equality can hold for an unrelated instruction.
+fn void CompilerContext.discard_member_head_state(&self) {
+    self.call_prop_obj_reg = MAX_REGISTERS;
+    self.last_was_getvar = false;
+    self.last_was_getglobal = false;
+}
+
 /// Emit a bare for-in loop whose LHS is a plain identifier with no
 /// declaration keyword: `for (x in obj) { ... }`. Mirrors the
 /// `var`/`let`/`const` for-in path but stores each key via PUTVAR
@@ -3840,6 +3871,10 @@ fn void? CompilerContext.emit_member_lhs_store(&self, ForLhsSnapshot lhs_snap, u
     }
 
     self.restore_lhs_snapshot(resume_snap);
+    // The re-parsed head is a store target, never a call receiver: clear the
+    // state it left so the code following the loop is not compiled as though
+    // a method call were in progress.
+    self.discard_member_head_state();
 }
 
 /// Parse do-while statement.
