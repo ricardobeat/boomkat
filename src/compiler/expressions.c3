@@ -2642,11 +2642,29 @@ fn ushort? CompilerContext.new_expr(&self) {
             return COMPILE_ERROR~;
         }
     } else {
-        // `new`'s callee is a MemberExpression (ES2024 §13.3), and an
-        // ImportCall is a CallExpression, so `new import('')` is a
-        // SyntaxError however deeply it is nested. `import.meta` is a
-        // MemberExpression and stays legal, as does `new (import(''))`,
-        // where the parentheses make the call a PrimaryExpression.
+        // `new`'s callee is a MemberExpression (ES2024 §13.3): both
+        // `MemberExpression : new MemberExpression Arguments` and
+        // `NewExpression : new NewExpression` bottom out there. ImportCall is
+        // listed only under CallExpression, and there is no
+        // `MemberExpression : CallExpression` production, so no `new` callee
+        // can ever contain a bare ImportCall — `new import('')` is a
+        // SyntaxError, and so is a property access chained onto it
+        // (`new import('').then`), because the chain would have to be
+        // `CallExpression . IdentifierName`, which is still a CallExpression.
+        //
+        // MetaProperty IS a MemberExpression production, so `new import.meta`
+        // and `new import.meta.foo` parse fine and fail at RUNTIME with a
+        // "not a constructor" TypeError; that is why only a non-DOT follower
+        // is rejected here.
+        //
+        // Parenthesising escapes both rules: `new (import(''))` makes the call
+        // a PrimaryExpression, hence a MemberExpression.
+        //
+        // test262 has no case either way. QuickJS matches this reading exactly
+        // (it rejects `new import('').then` with "invalid use of 'import()'"
+        // and accepts `new import.meta`). V8/node accept
+        // `new import('').then`, which the grammar above does not derive, so
+        // that leniency is deliberately not copied.
         if (self.check(TokenType.IMPORT)) {
             Token import_tok = self.advance()!;
             TokenType after_import = self.peek_type();
