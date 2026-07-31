@@ -86,9 +86,16 @@ fn void builtin_console_error(BuiltinContext* ctx) {
 }
 
 fn void builtin_console_dir(BuiltinContext* ctx) {
-    // console.dir(obj), for now identical output to console.log (no util.inspect
-    // formatting). Spec only requires this be callable and return undefined.
-    console_print_args(ctx, false);
+    // console.dir(obj) renders its FIRST argument only and, unlike the other
+    // console methods, applies no specifier substitution: console.dir("%s", x)
+    // prints the format string verbatim and drops x. Rendering is still the
+    // plain ToString form rather than util.inspect, which this engine lacks.
+    if (ctx.argc > 0) {
+        ConsoleSink sink = { false };
+        console_emit_value(ctx, sink, &ctx.regs[ctx.base_reg]);
+    }
+    io::printf("\n");
+    ctx.result.set_undefined();
 }
 
 /// console.assert(expr, ...msg), if expr is falsy, emit "Assertion failed:" and
@@ -104,38 +111,305 @@ fn void builtin_console_assert(BuiltinContext* ctx) {
         return;
     }
     io::eprintfn("Assertion failed:");
-    for (ushort i = 1; i < ctx.argc; i++) {
-        if (i > 1) {
-            io::eprintf(" ");
-        }
-        print_tval_err_ctx(ctx, &ctx.regs[ctx.base_reg + i]);
-    }
+    // The message arguments are a Formatter input in their own right: the first
+    // of them is the format string, so console.assert(false, "x %s", v) prints
+    // the substituted form, matching console.log's treatment of its own args.
+    console_format_args(ctx, true, 1);
     io::eprintf("\n");
     ctx.result.set_undefined();
 }
 
 /// Shared body for console.log/info/debug/trace (stdout) and console.warn/error (stderr).
 fn void console_print_args(BuiltinContext* ctx, bool use_stderr) {
-    for (ushort i = 0; i < ctx.argc; i++) {
-        if (i > 0) {
-            if (use_stderr) {
-                io::eprintf(" ");
-            } else {
-                io::printf(" ");
-            }
-        }
-        if (use_stderr) {
-            print_tval_err_ctx(ctx, &ctx.regs[ctx.base_reg + i]);
-        } else {
-            print_tval_ctx(ctx, &ctx.regs[ctx.base_reg + i]);
-        }
-    }
+    console_format_args(ctx, use_stderr, 0);
     if (use_stderr) {
         io::eprintf("\n");
     } else {
         io::printf("\n");
     }
     ctx.result.set_undefined();
+}
+
+// ============================================================================
+// console format specifiers
+// ============================================================================
+//
+// REFERENCE: Node's util.format (lib/internal/util/inspect.js, formatWithOptions),
+// NOT the bare WHATWG console Formatter. The two disagree on three points and
+// node is the useful target, since real-world code is written against it:
+//
+//   - %j     WHATWG has no %j at all; node defines it as JSON.stringify with
+//            "[Circular]" substituted for a cyclic structure rather than a throw.
+//   - %o/%O  WHATWG says "optimally useful formatting"; node makes %o an inspect
+//            with showHidden/depth:4 and %O a plain inspect.
+//   - %c     WHATWG applies CSS; node ignores the directive but still CONSUMES
+//            its argument, so it must not fall through to the trailing append.
+//
+// Two gating rules, both verified against node v24 rather than assumed:
+//
+//   1. Substitution happens only when the first argument is a STRING and there
+//      is at least one further argument. `console.log("a %s b")` prints
+//      "a %s b" verbatim, and so does `console.log("pct %% end")` — with no
+//      extra args node never enters the formatter, so %% is NOT unescaped.
+//      Once any extra arg exists, `console.log("pct %% end", 1)` prints
+//      "pct % end 1". %% collapsing is gated on argument count, not on the
+//      console-vs-util distinction.
+//   2. A specifier with no argument left to consume stays literal:
+//      `console.log("%s %s", "A")` prints "A %s".
+//
+// Arguments not consumed by a specifier are appended space-separated.
+
+/// Byte sink pair for the formatter, so a single implementation serves both the
+/// stdout methods (log/info/debug/trace/dir) and the stderr ones (warn/error/
+/// assert) instead of the two near-identical mirrors this file used to carry.
+struct ConsoleSink {
+    bool use_stderr;
+}
+
+fn void ConsoleSink.put(&self, char c) {
+    if (self.use_stderr) { eputc(c); } else { io::putchar(c); }
+}
+
+fn void ConsoleSink.write(&self, char[] bytes) {
+    for (usz i = 0; i < bytes.len; i++) self.put(bytes[i]);
+}
+
+/// Emit one value the way console renders it outside any specifier, i.e. the
+/// pre-existing ToString-based rendering, routed through the sink.
+fn void console_emit_value(BuiltinContext* ctx, ConsoleSink sink, TVal* val) {
+    if (sink.use_stderr) {
+        print_tval_err_ctx(ctx, val);
+    } else {
+        print_tval_ctx(ctx, val);
+    }
+}
+
+/// Format `ctx`'s arguments starting at `first`, applying specifier
+/// substitution when argument `first` is a string. Does not emit a trailing
+/// newline; callers own that.
+fn void console_format_args(BuiltinContext* ctx, bool use_stderr, ushort first) {
+    ConsoleSink sink = { use_stderr };
+    if (first >= ctx.argc) return;
+
+    TVal* fmt_val = &ctx.regs[ctx.base_reg + first];
+    // Gate 1: a non-string first argument disables substitution entirely, and so
+    // does a lone string with nothing to substitute into it.
+    bool substituting = false;
+    if (fmt_val.is_string() && (ushort)(first + 1) < ctx.argc) {
+        HString* fs = (HString*)fmt_val.get_heapptr();
+        // A Symbol is tagged STRING but is not a format string.
+        if (fs != null && !fs.is_symbol()) substituting = true;
+    }
+
+    ushort next = (ushort)(first + 1);
+    if (substituting) {
+        HString* fs = (HString*)fmt_val.get_heapptr();
+        char[] f = fs.get_data();
+        usz i = 0;
+        // Run of literal bytes pending emission, flushed as CESU-8 so that
+        // non-ASCII in the format string survives unmangled.
+        usz lit_start = 0;
+        while (i < f.len) {
+            if (f[i] != '%' || i + 1 >= f.len) { i++; continue; }
+            char spec = f[i + 1];
+            if (spec == '%') {
+                // Collapse "%%" to a single "%": flush through the first one and
+                // resume past the second.
+                hstring::write_cesu8_as_utf8(f[lit_start:i + 1 - lit_start], sink.use_stderr ? &eputc : &io::putchar);
+                i += 2;
+                lit_start = i;
+                continue;
+            }
+            bool known = spec == 's' || spec == 'd' || spec == 'i' || spec == 'f'
+                      || spec == 'o' || spec == 'O' || spec == 'j' || spec == 'c';
+            // Gate 2: an exhausted argument list leaves the specifier literal.
+            if (!known || next >= ctx.argc) { i++; continue; }
+
+            hstring::write_cesu8_as_utf8(f[lit_start:i - lit_start], sink.use_stderr ? &eputc : &io::putchar);
+            TVal* arg = &ctx.regs[ctx.base_reg + next];
+            next++;
+            console_emit_specifier(ctx, sink, spec, arg);
+            if (ctx.should_throw) return;
+            i += 2;
+            lit_start = i;
+        }
+        if (lit_start < f.len) {
+            hstring::write_cesu8_as_utf8(f[lit_start:f.len - lit_start], sink.use_stderr ? &eputc : &io::putchar);
+        }
+    } else {
+        console_emit_value(ctx, sink, fmt_val);
+        if (ctx.should_throw) return;
+    }
+
+    // Whatever no specifier claimed is appended space-separated.
+    for (ushort a = next; a < ctx.argc; a++) {
+        sink.put(' ');
+        console_emit_value(ctx, sink, &ctx.regs[ctx.base_reg + a]);
+        if (ctx.should_throw) return;
+    }
+}
+
+/// Render a single argument under one specifier.
+fn void console_emit_specifier(BuiltinContext* ctx, ConsoleSink sink, char spec, TVal* arg) {
+    switch (spec) {
+        case 'c':
+            // CSS directive: consumed above, renders as nothing.
+            return;
+        case 's':
+            console_emit_string_spec(ctx, sink, arg);
+        case 'd':
+        case 'i':
+        case 'f':
+            console_emit_number_spec(ctx, sink, spec, arg);
+        case 'j':
+            console_emit_json_spec(ctx, sink, arg);
+        default:
+            // 'o' and 'O'. No util.inspect in this engine, so these render the
+            // same as %s rather than inventing a third rendering that would
+            // match neither node nor the existing plain-argument output.
+            console_emit_string_spec(ctx, sink, arg);
+    }
+}
+
+/// %s. Node uses String(value) semantics, not ToString: a Symbol renders as
+/// "Symbol(desc)", where ToString(Symbol) would instead throw a TypeError.
+fn void console_emit_string_spec(BuiltinContext* ctx, ConsoleSink sink, TVal* arg) {
+    if (arg.is_string()) {
+        HString* s = (HString*)arg.get_heapptr();
+        if (s == null) return;
+        if (s.is_symbol()) {
+            console_emit_symbol(sink, s);
+            return;
+        }
+        hstring::write_cesu8_as_utf8(s.get_data(), sink.use_stderr ? &eputc : &io::putchar);
+        return;
+    }
+    console_emit_value(ctx, sink, arg);
+}
+
+/// Render a Symbol as "Symbol(desc)". The raw HString bytes carry the 0xFF
+/// prefix and description marker, so emitting them directly (as the generic
+/// primitive path does) would write the marker bytes into the output.
+fn void console_emit_symbol(ConsoleSink sink, HString* sym) {
+    sink.write("Symbol(");
+    if (symbol_has_description(sym)) {
+        hstring::write_cesu8_as_utf8(symbol_description(sym), sink.use_stderr ? &eputc : &io::putchar);
+    }
+    sink.write(")");
+}
+
+/// %d, %i and %f. Node maps these onto three DIFFERENT coercions, not one:
+/// %d is Number(v) (so a valueOf() is honoured), %i is parseInt(v) and %f is
+/// parseFloat(v) (so both go via the STRING form and stop at the first
+/// unparseable character — parseInt(true) is NaN, but Number(true) is 1, and
+/// parseFloat([1,2]) is 1 because the array stringifies to "1,2"). A Symbol is
+/// NaN under all three rather than the TypeError ToNumber/ToString would raise,
+/// and a BigInt keeps its own rendering.
+fn void console_emit_number_spec(BuiltinContext* ctx, ConsoleSink sink, char spec, TVal* arg) {
+    if (arg.is_bigint()) {
+        console_emit_value(ctx, sink, arg);
+        return;
+    }
+    if (arg.is_string()) {
+        HString* s = (HString*)arg.get_heapptr();
+        if (s != null && s.is_symbol()) {
+            sink.write("NaN");
+            return;
+        }
+    }
+
+    TVal num;
+    if (spec == 'd') {
+        double d = builtin_to_number_vm(ctx, arg);
+        if (ctx.should_throw) {
+            // A throwing valueOf() must not abort the whole console call.
+            ctx.should_throw = false;
+            ctx.heap.has_error = false;
+            sink.write("NaN");
+            return;
+        }
+        num.set_number(d);
+    } else {
+        // Delegate to the real parseInt/parseFloat rather than reimplementing
+        // the StrDecimalLiteral prefix grammar. They read their argument out of
+        // regs[base_reg], so hand them a one-argument view of this value.
+        TVal arg_copy = *arg;
+        BuiltinContext sub = *ctx;
+        sub.regs = &arg_copy;
+        sub.base_reg = 0;
+        sub.argc = 1;
+        sub.result = &num;
+        sub.should_throw = false;
+        if (spec == 'i') {
+            builtin_parse_int(&sub);
+        } else {
+            builtin_parse_float(&sub);
+        }
+        if (sub.should_throw) {
+            ctx.heap.has_error = false;
+            sink.write("NaN");
+            return;
+        }
+    }
+    console_emit_value(ctx, sink, &num);
+}
+
+/// %j: JSON.stringify, with a cyclic structure rendering as "[Circular]"
+/// instead of the TypeError JSON.stringify itself raises. An undefined result
+/// (undefined, a function, a symbol) prints "undefined".
+fn void console_emit_json_spec(BuiltinContext* ctx, ConsoleSink sink, TVal* arg) {
+    // json_serialize_val implements the rule for a value nested inside a
+    // structure, where undefined, a function and a Symbol all become "null" (or,
+    // for a Symbol, its raw marker bytes, since JSON.stringify filters Symbols
+    // out one level up in json_check_property and this path never sees one).
+    // At the ROOT, JSON.stringify instead yields undefined for all three.
+    if (arg.is_undefined()) { sink.write("undefined"); return; }
+    if (arg.is_string()) {
+        HString* s = (HString*)arg.get_heapptr();
+        if (s != null && s.is_symbol()) { sink.write("undefined"); return; }
+    }
+    if (arg.is_lightfunc()) { sink.write("undefined"); return; }
+    if (arg.is_object() && arg.get_heapptr() != null) {
+        HObject* o = (HObject*)arg.get_heapptr();
+        if (o.is_callable()) { sink.write("undefined"); return; }
+    }
+    // Same fixed buffer size JSON.stringify uses. Both silently truncate a
+    // larger structure rather than reporting the overflow — a pre-existing
+    // limitation of json_serialize_val, which returns success after running out
+    // of room, not something specific to %j.
+    char[16384] buf;
+    JsonSerializeCtx jctx;
+    jctx.heap = ctx.heap;
+    jctx.vm = ctx.vm;
+    jctx.buf = &buf;
+    jctx.buf_size = 16384;
+    jctx.offset = 0;
+    jctx.indent_level = 0;
+    jctx.gap = null;
+    jctx.gap_len = 0;
+    jctx.depth = 0;
+    jctx.replacer_func.set_undefined();
+    jctx.prop_keys = null;
+    jctx.prop_key_count = 0;
+    jctx.has_replacer_array = false;
+    jctx.error = false;
+    jctx.visited_count = 0;
+
+    bool had_error = ctx.heap.has_error;
+    int rc = json_serialize_val(&jctx, arg);
+
+    if (jctx.error || ctx.heap.has_error) {
+        // The only failure json_serialize_val raises for a well-formed value is
+        // the circular-structure TypeError; swallow it and use node's marker.
+        ctx.heap.has_error = had_error;
+        sink.write("[Circular]");
+        return;
+    }
+    if (rc != 0) {
+        sink.write("undefined");
+        return;
+    }
+    sink.write(buf[:jctx.offset]);
 }
 
 /// Stderr byte sink used by write_cesu8_as_utf8.

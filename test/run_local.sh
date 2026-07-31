@@ -62,4 +62,11 @@ echo ""
 bash "$DIR/uncaught/run.sh" "$ENGINE"
 UNC_RC=$?
 
-[ "$FAIL" -eq 0 ] && [ "$MOD_RC" -eq 0 ] && [ "$MODSYN_RC" -eq 0 ] && [ "$UNC_RC" -eq 0 ]
+# console format specifiers — asserted by diffing stdout against node's captured
+# output, which the self-asserting flat sweep cannot express.
+echo ""
+bash "$DIR/console_format/run.sh" "$ENGINE"
+CFMT_RC=$?
+
+[ "$FAIL" -eq 0 ] && [ "$MOD_RC" -eq 0 ] && [ "$MODSYN_RC" -eq 0 ] && [ "$UNC_RC" -eq 0 ] \
+  && [ "$CFMT_RC" -eq 0 ]

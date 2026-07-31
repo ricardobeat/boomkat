@@ -1,0 +1,59 @@
+a %s b
+a %% b
+a %d b
+a % b 1
+1 %s x
+true %s x
+null %s x
+A %s %s
+A B C
+a %q b X
+a % X
+a %s b X
+a %X b
+123
+50% tail
+end
+%s
+a  b rest
+a %c b
+abc
+42
+1.5
+true
+null
+undefined
+Symbol(s)
+Symbol()
+CUSTOM
+42
+1.5
+1
+0
+NaN
+NaN
+16
+NaN
+7
+1
+-1
+42
+NaN
+1
+1.5
+3.9
+NaN
+1
+"abc"
+1.5
+true
+null
+{"a":1}
+[1,2]
+{"a":{"b":{"c":{"d":{"e":1}}}}}
+undefined
+undefined
+undefined
+[Circular]
+[Circular]
+done
