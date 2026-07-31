@@ -42,7 +42,7 @@ def main():
     if a.check:
         bad = 0
         for f in sorted(pathlib.Path(a.check).glob("*.js")):
-            if f.name.endswith(".check.js"):
+            if f.name.endswith(".check.js") or f.name.startswith("_"):
                 continue
             head = f.read_text().splitlines()[:1]
             m = re.match(r'// Verbatim from https://rosettacode\.org/wiki/(\S+) \(JavaScript block (\d+)\)', head[0] if head else "")
@@ -53,9 +53,9 @@ def main():
             if idx >= len(bs):
                 print(f"DRIFT {f.name}: block {idx} no longer exists ({len(bs)} blocks)"); bad += 1; continue
             if bs[idx].strip() != body(f).strip():
-                print(f"DRIFT {f.name}: wiki text differs from local copy"); bad += 1
+                print(f"DRIFT {f.name}: wiki text differs from local copy", flush=True); bad += 1
             else:
-                print(f"  ok {f.name}")
+                print(f"  ok {f.name}", flush=True)
         return 1 if bad else 0
 
     bs = blocks(wiki(a.task))
