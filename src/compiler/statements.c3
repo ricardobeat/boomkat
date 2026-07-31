@@ -5165,9 +5165,25 @@ fn bool? CompilerContext.parse_with_clause(&self) {
     return wants_json;
 }
 
-fn char[]? CompilerContext.parse_module_export_name(&self) {
+/// Parse a `ModuleExportName : IdentifierName | StringLiteral` (§16.2.3).
+///
+/// `was_string`, when non-null, receives whether the StringLiteral form was
+/// taken. Callers need it for the two places the grammar treats the forms
+/// differently: a string ModuleExportName must be well-formed Unicode, and a
+/// `NamedExports` with no `from` clause may not use one at all (both below).
+fn char[]? CompilerContext.parse_module_export_name(&self, bool* was_string = null) {
     Token tok = self.lexer.next_token()!;
-    if (tok.type == TokenType.IDENTIFIER || tok.type == TokenType.STRING) {
+    if (was_string != null) *was_string = (tok.type == TokenType.STRING);
+    if (tok.type == TokenType.STRING) {
+        // §16.2.3.1: "It is a Syntax Error if IsStringWellFormedUnicode of the
+        // StringValue of StringLiteral is false." A lone surrogate could not be
+        // spelled by any importer, so the name would be unusable.
+        if (!hstring::is_well_formed_unicode(tok.str_value)) {
+            return self.fail("a module export name must be well-formed Unicode")~;
+        }
+        return self.intern_slot_name(tok.str_value);
+    }
+    if (tok.type == TokenType.IDENTIFIER) {
         return self.intern_slot_name(tok.str_value);
     }
     char[] kw = lexer::keyword_to_string(tok.type);
@@ -5515,11 +5531,17 @@ fn void? CompilerContext.export_declaration(&self) {
 
         char[][32] local_names;
         char[][32] export_names;
+        // Whether each specifier's LOCAL half used the StringLiteral form of
+        // ModuleExportName. Only meaningful until the `from` test below, see
+        // the early error there.
+        bool[32] local_is_string;
         uint count = 0;
 
         while (!self.check(TokenType.RBRACE) && !self.is_at_end()) {
             if (count >= 32) return COMPILE_ERROR~;
-            char[] local_str = self.parse_module_export_name()!;
+            bool local_was_string = false;
+            char[] local_str = self.parse_module_export_name(&local_was_string)!;
+            local_is_string[count] = local_was_string;
             if (self.match_as()) {
                 char[] alias_str = self.parse_module_export_name()!;
                 local_names[count] = local_str;
@@ -5551,6 +5573,19 @@ fn void? CompilerContext.export_declaration(&self) {
             // live binding from './x', including its own TDZ state,
             // rather than exporting a same-module local accessor that
             // never observes './x' at all.
+            //
+            // §16.2.3.1: "ExportDeclaration : export NamedExports ; — It is a
+            // Syntax Error if ReferencedBindings of NamedExports contains any
+            // ModuleExportName." Without a `from`, each specifier's local half
+            // names a binding in THIS module, and a StringLiteral cannot be an
+            // identifier, so `export { "foo" as "bar" }` is a SyntaxError even
+            // when a `function foo(){}` exists. With a `from` the same half is
+            // a name looked up in the other module, where a string is fine.
+            for (uint i = 0; i < count; i++) {
+                if (local_is_string[i]) {
+                    return self.fail("a string module export name requires a 'from' clause")~;
+                }
+            }
             for (uint i = 0; i < count; i++) {
                 CompImportEntry* ie = mod_find_import_by_local(mod, local_names[i]);
                 if (ie != null) {
