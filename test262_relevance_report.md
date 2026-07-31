@@ -1,6 +1,6 @@
 # test262 Irrelevance Report — Clean-Slate JS Engine
 
-**Context**: Duktape C3 port targeting Node/Bun/browser code compatibility.
+**Context**: Duktape C3 port, a strict-only ES5/ES6 engine. Scope is ECMA-262 core; a host embeds the engine and supplies its own runtime surface.
 Full ECMAScript spec compliance is NOT the goal. The goal is: run real-world JS code.
 
 **Total test262 tests**: 53,568
@@ -15,7 +15,7 @@ and focus on the ~21,000 that test behavior real code actually depends on.
 The irrelevant tests fall into three buckets:
 1. **Non-standard/legacy** (Annex B, Intl, engine quirks) — 4,470 tests
 2. **Unstandardized proposals** (Temporal, decorators, etc.) — ~5,000 tests
-3. **Advanced features with zero practical impact** (Proxy, SAB, cross-realm) — ~2,400 tests
+3. **Platform-dependent or out-of-scope features** (SharedArrayBuffer, Atomics, cross-realm) — ~2,400 tests
 
 ---
 
@@ -92,27 +92,24 @@ Implementing them now means chasing a moving target.
 
 ## Tier 2: Skip For Now (Advanced Features)
 
-These test **real, standardized ES features**, but are either:
-- Extremely complex to implement (Proxy, generators, async generators)
-- Platform/security-dependent (SharedArrayBuffer, Atomics)
-- Rarely used in everyday code (BigInt, WeakRef)
-- Not needed for "compatible with Node/Bun/browser" (tail-call optimization)
-
-Implement these later, one at a time, based on actual user demand.
+These test **real, standardized ES features** that are either platform or
+security dependent (SharedArrayBuffer, Atomics) or not required by the targeted
+subset (tail-call optimization).
 
 ### Tier 2A: Complex / Platform-Dependent
 
 | Category | Tests | Why Skip |
 |---|---|---|
-| **SharedArrayBuffer** | 104 (dir) + 463 (flag) | Requires multi-threading, Spectre mitigations, platform headers. Node requires special flags. Not needed for single-threaded engine. |
+| **SharedArrayBuffer** | 104 (dir) + 463 (flag) | Requires multi-threading, Spectre mitigations, platform headers. Out of scope for a single-threaded engine. |
 | **Atomics** | 390 | Same as SAB. Low-level concurrency primitives. |
-| **Proxy** | 311 | Extremely complex (13 trap types, invariant enforcement). V8/SpiderMonkey/JSC all have subtle Proxy bugs. High effort, low return for embedded engine. |
-| **WeakRef** | 29 | GC-dependent semantics. Platform-specific behavior. |
-| **FinalizationRegistry** | 47 | GC-dependent. Non-deterministic by spec. |
-| **BigInt** | 77 | Adds a whole new primitive type. V8/SpiderMonkey support it, but many Node scripts don't use it. Can add later. |
 | **resizable-arraybuffer** | 462 | ES2024, complex ArrayBuffer internals. |
 
-**Subtotal: ~1,983 tests** (with overlap)
+Four entries that sat in this tier have since been implemented and now pass their
+phases in full, so they are no longer skipped: **Proxy** (311, phase 23),
+**BigInt** (77, fixed-width int128 rather than arbitrary precision),
+**WeakRef** (29) and **FinalizationRegistry** (47, both phase 17-20).
+
+**Subtotal: ~1,419 tests** (with overlap), down from ~1,983 as the four above moved into the implemented set.
 
 ### Tier 2B: Obscure / Edge-Case
 
@@ -150,7 +147,7 @@ These test behavior that real-world JavaScript code depends on:
 | Map/Set/WeakMap/WeakSet | ES6 | Standard data structures |
 | Symbol (toStringTag, toPrimitive, species, etc.) | ES6 | Used by libraries |
 | Promise | ES6 | Foundation of async JS |
-| async/await | ES2017 | Used in every Node/Bun server |
+| async/await | ES2017 | Foundation of modern async code |
 | Async generators/iteration | ES2018 | Used in streaming patterns |
 | Optional chaining (`?.`) | ES2020 | Used everywhere |
 | Nullish coalescing (`??`) | ES2020 | Used everywhere |
@@ -313,13 +310,13 @@ regexp-duplicate-named-groups
 
 ---
 
-## What "Compatible with Node/Bun/Browsers" Actually Means
+## What the targeted subset covers
 
-You don't need to match V8/SpiderMonkey/JSC edge cases. You need:
+The engine implements ES5/ES6 core in a single strict mode. That means:
 
-1. **Parse the same syntax** — arrow functions, classes, destructuring, async/await, template literals, optional chaining, etc.
-2. **Same built-in API surface** — Array, Object, String, Number, Map, Set, Promise, Date, RegExp, JSON, Math, Error, Symbol, generators, async iterators, TypedArrays, DataView, ArrayBuffer, Reflect
-3. **Same semantics for common patterns** — prototype chain, property access, function calls, closures, block scoping, strict mode
-4. **NOT required**: matching every spec edge case, Annex B legacy, Intl, Proxy traps, cross-realm behavior, tail-call optimization, WeakRef finalization timing, SharedArrayBuffer atomics, BigInt (unless needed)
+1. **The syntax**: arrow functions, classes, destructuring, async/await, template literals, optional chaining.
+2. **The built-in API surface**: Array, Object, String, Number, Map, Set, Promise, Date, RegExp, JSON, Math, Error, Symbol, generators, async iterators, TypedArrays, DataView, ArrayBuffer, Reflect, Proxy.
+3. **The semantics behind them**: prototype chain, property access, function calls, closures, block scoping.
+4. **Out of scope**: Annex B legacy, ECMA-402, cross-realm behavior, tail-call optimization, SharedArrayBuffer atomics, and the host-provided surface a runtime supplies (module loaders, timers, I/O). A host embeds this engine and provides those itself.
 
-The 38,000 core tests cover all of the above. The remaining 15,000+ tests are noise for your use case.
+The ~38,000 in-scope tests cover the above. The rest are for behavior this engine does not claim.
