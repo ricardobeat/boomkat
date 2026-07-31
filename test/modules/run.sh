@@ -24,6 +24,8 @@ TESTS=(
   "t10_smoke:smoke — module with no imports/exports"
   "t11_colord:colord — ESM color manipulation library"
   "t12_tinycolor:tinycolor — ESM color manipulation library"
+  "t13_unresolvable:unresolvable import is a link-time SyntaxError"
+  "t14_resolve_accept:resolvable import forms must not be over-rejected"
 )
 
 for entry in "${TESTS[@]}"; do
