@@ -177,6 +177,9 @@ JSE_API int jse_get_string(jse_runtime rt, jse_value v, char *buf, size_t cap,
  * including the readers (jse_get_number / jse_get_bool / jse_get_string), so a
  * host may log it unconditionally on failure. Those readers also clear it on
  * entry, so a message never survives from an unrelated earlier call.
+ *
+ * The one exception is a NULL rt or NULL out-parameter: that returns
+ * JSE_ERR_INVALID with no runtime to record the message in.
  */
 JSE_API const char *jse_last_error(jse_runtime rt);
 

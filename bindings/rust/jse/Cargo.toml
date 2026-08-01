@@ -1,0 +1,14 @@
+[package]
+name = "jse"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.70"
+description = "Safe Rust bindings for the duktape-c3 JavaScript engine"
+publish = false
+
+[dependencies]
+jse-sys = { path = "../jse-sys", version = "0.1.0" }
+
+[[example]]
+name = "hello_js"
+path = "examples/hello_js.rs"
