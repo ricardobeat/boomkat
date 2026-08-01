@@ -16,6 +16,17 @@
  *     panics, or longjmps across this boundary.
  *   - NOT thread-safe, and single-runtime per process (see jse_open).
  *
+ * LINKING
+ *   - The static archive is only safe when the final link is driven by a C
+ *     toolchain (cc/clang/gcc). The C3 runtime locates its startup
+ *     constructors by walking the init sections of the running image, and that
+ *     walk needs the image header resolved correctly. Some foreign linkers
+ *     defeat it: Zig's emits a second, bogus __mh_execute_header in
+ *     __DATA,__bss, which the walk latches onto, faulting before main().
+ *   - Link the SHARED library from any other toolchain (Zig, Rust, Go, ...).
+ *     It is linked by c3c itself, so its constructors run under dyld/ld.so
+ *     against the library's own header and resolve correctly.
+ *
  * MEMORY / LIFETIME
  *   - Handles from jse_eval stay valid until jse_value_free or jse_close.
  *     They survive garbage collection: the registry is a GC root.

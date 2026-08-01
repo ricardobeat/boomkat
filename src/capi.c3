@@ -1,5 +1,6 @@
 module duktape::capi;
 
+import duktape::builtins;
 import duktape::compiler;
 import duktape::vm;
 import duktape::heap;
@@ -53,6 +54,10 @@ struct Runtime {
 
 Runtime* g_rt = null;
 
+// Set once the engine's compile-time-populated tables are known good; see
+// ensure_engine_init. Never cleared, since the tables outlive any runtime.
+bool g_engine_ready = false;
+
 fn void set_err(Runtime* rt, int code, char[] msg) {
     rt.errcode = code;
     usz n = msg.len < ERRBUF - 1 ? msg.len : ERRBUF - 1;
@@ -65,10 +70,30 @@ fn void clear_err(Runtime* rt) {
     rt.errmsg[0] = 0;
 }
 
+// The engine's one @init function (builtins::init_builtin_dispatch_table)
+// normally runs from the C3 runtime's startup walk of the Mach-O/ELF init
+// sections. That walk is only reliable when c3c also drives the final link:
+// when this archive is linked by a foreign toolchain the C3 startup can bind
+// to the wrong image header and either fault or silently skip the section, so
+// the dispatch table stays all-null and the first builtin call misbehaves.
+// Observed concretely with the Zig linker, which emits a second, bogus
+// __mh_execute_header in __DATA,__bss that the walk latches onto.
+//
+// Running the initializer explicitly here removes the ABI's dependence on that
+// walk entirely. It is idempotent -- it just re-stores compile-time constants
+// into a fixed-size table -- so double execution with the startup path is
+// harmless, and this is the only place a host can reach the engine first.
+fn void ensure_engine_init() {
+    if (g_engine_ready) return;
+    g_engine_ready = true;
+    builtins::init_builtin_dispatch_table();
+}
+
 fn int jse_open(void** out_rt) @export("jse_open") {
     if (out_rt == null) return JSE_ERR_INVALID;
     *out_rt = null;
     if (g_rt != null) return JSE_ERR_INVALID;   // single-runtime rule
+    ensure_engine_init();
 
     Heap*? hpr = heap::create(null, null, null, null, null);
     if (catch hpr) return JSE_ERR_NOMEM;
