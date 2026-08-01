@@ -10,6 +10,8 @@ Details for the open items: `plans/062-core-language-coverage.md`.
 
 ## Core language bugs
 
+- [ ] **Arrow parameters clobbered by a void-context call in the body, eval path only.** `((x)=>{Math.max(1,2); return x+100})(7)` yields **102 instead of 107**, and `((x,y)=>{Math.max(1,2); return x+y})(3,4)` yields 6 instead of 7. Silent wrong answer, no error. Reproduces through `eval()` and `jse_eval` (both `compile_eval`) but NOT through a top-level script (`compile`), so every C-ABI embedder hits it while the CLI does not. Controls that work: no call in the body; the same body in a `function` expression; binding the call's result (`let q = Math.max(1,2)`). That last one localises it to register allocation for a **discarded** call result overlapping the arrow's parameter registers in eval context. Pre-existing — reproduced at `51c4ccaf`, before host-function work. Found independently by the Python and Ruby binding agents.
+
 - [x] `for (let y in/of ...)` falsely rejected as duplicate when an enclosing function has `var y` (the head's lexical scope must not conflict with function-level var names; no test262 coverage — gate is green)
 - [x] `return` inside `finally` in an async function raises a VM error and allocates without bound
 - [x] `await` as a plain identifier rejected as an invalid assignment target
