@@ -1536,48 +1536,6 @@ fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags) {
     return true;
 }
 
-/// Rebuild this object's shape by replaying its surviving property keys from
-/// the root shape through the transition table, skipping index `deleted_idx`.
-///
-/// Objects that reach the same layout converge on one shared shape, so a
-/// delete/insert cycle reuses shapes instead of minting a private one per
-/// delete. Returns false if any step could not be taken, leaving the object's
-/// shape untouched so the caller can fall back to a private shape.
-fn bool HObject.try_rebuild_shape(&self, uint deleted_idx, uint new_count) @local {
-    heap::Heap* h = (heap::Heap*)_active_heap;
-    uint old_slot = (uint)self.shape_id;
-    if (!self.rebuild_shape_by_transition(deleted_idx, new_count)) return false;
-    // The replay increfed every key it kept, so releasing the old shape's own
-    // references is balanced -- including the deleted key's, which the new
-    // chain does not hold. free_shape_slot ignores shared shapes, so this only
-    // reclaims a private shape the object alone was holding.
-    if (old_slot != (uint)self.shape_id) h.free_shape_slot(old_slot);
-    return true;
-}
-
-fn bool HObject.rebuild_shape_by_transition(&self, uint deleted_idx, uint new_count) @local {
-    heap::Heap* h = (heap::Heap*)_active_heap;
-    Shape* old_shape = self.get_shape();
-    if (old_shape == null) return false;
-
-    // Replay from the root. The keys are read from the shape the object still
-    // holds, so nothing here depends on the values already having been shifted.
-    uint sid = 0;
-    for (uint i = 0; i < new_count; i++) {
-        uint src_idx = i < deleted_idx ? i : i + 1;
-        void* k = self.prop_key_at(src_idx);
-        if (k == null) return false;
-        PropFlags f = self.prop_flags_at(src_idx);
-        uint next = h.transition_shape_new_flags(sid, k, f);
-        if (next == heap::SHAPE_NONE || next == sid) return false;
-        sid = next;
-    }
-
-    self.shape_id = sid;
-    self.set_shape(h.get_shape(sid));
-    return true;
-}
-
 /// Delete an own property by interned key. The surviving values shift down to
 /// close the gap, and the object gets a fresh private shape so its hash table
 /// matches the new layout.
@@ -1631,12 +1589,6 @@ fn bool HObject.delete_prop(&self, void* key) {
         } else {
             self.set_shape(null);
         }
-    } else if (_active_heap != null && self.try_rebuild_shape(ui, new_count)) {
-        // Replayed the surviving keys through the transition table, so the
-        // object shares a shape with every other object of the same layout and
-        // consumed no permanent slot. This is the common case: without it, each
-        // delete mints a private shape that the next insert transitions off and
-        // orphans, and a delete/insert loop exhausts the 65534-slot pool.
     } else {
         // Build a flat private shape holding every surviving property. It stays
         // out of the transition table, since it belongs to this object alone.
