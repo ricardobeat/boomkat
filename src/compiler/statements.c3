@@ -2092,6 +2092,8 @@ fn void? CompilerContext.while_statement(&self) {
         self.expect(TokenType.RPAREN)!;      // consume ')'
 
         ushort lhs_reg = self.alloc_reg();
+        // At global scope read through emit_ident_read, so a proven primitive-only
+        // global gets the guard-free GETGLOBAL_PRIM rather than a guarded GETVAR.
         if (!self.is_global) {
             if (try reg = self.resolve_var(ident_tok.str_value)) {
                 if (reg != lhs_reg) {
@@ -2103,7 +2105,7 @@ fn void? CompilerContext.while_statement(&self) {
             }
         } else {
             uint name_idx2 = self.add_string_constant(ident_tok.str_value);
-            self.emit_a_bc(Opcode.GETVAR, (uint)lhs_reg, name_idx2);
+            self.emit_ident_read((uint)lhs_reg, name_idx2);
         }
         ushort cmp_res = self.alloc_reg();
         self.emit_abc(simple_cond_op, (uint)cmp_res, (uint)lhs_reg, (uint)pinned_rhs_reg);
@@ -3435,9 +3437,13 @@ fn void? CompilerContext.for_statement(&self) {
             self.expect(TokenType.SEMICOLON)!;  // consume `;`
 
             ushort lhs_reg = self.alloc_reg();
-            // Mirror primary_expr: at global scope, all identifiers go through GETVAR
-            // (registers are not kept in sync with the env by the body). resolve_var is
-            // only safe when the body also uses the register directly (non-global scope).
+            // Mirror primary_expr: at global scope the identifier is read from the
+            // environment (registers are not kept in sync with the env by the body),
+            // via emit_ident_read so a proven primitive-only global gets the
+            // guard-free GETGLOBAL_PRIM instead of a guarded GETVAR. This read runs
+            // every iteration, so it was the one place the prim-slot proof was
+            // being skipped on the hottest top-level shape. resolve_var is only safe
+            // when the body also uses the register directly (non-global scope).
             if (!self.is_global) {
                 if (try reg = self.resolve_var(ident_tok.str_value)) {
                     if (reg != lhs_reg) {
@@ -3449,7 +3455,7 @@ fn void? CompilerContext.for_statement(&self) {
                 }
             } else {
                 uint name_idx2 = self.add_string_constant(ident_tok.str_value);
-                self.emit_a_bc(Opcode.GETVAR, (uint)lhs_reg, name_idx2);
+                self.emit_ident_read((uint)lhs_reg, name_idx2);
             }
             ushort cmp_res = self.alloc_reg();
             self.emit_abc(simple_cond_op, (uint)cmp_res, (uint)lhs_reg, (uint)pinned_rhs_reg);

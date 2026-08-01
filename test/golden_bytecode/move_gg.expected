@@ -28,7 +28,7 @@
 [ 26] MOVE_GG         g[2] <- g[3]
 [ 27]   (src-word)
 [ 28] INC_GLOBAL      r2, 3
-[ 29] GETVAR          r2, 3
+[ 29] GETGLOBAL_PRIM  r2, 3
 [ 30] JMP_LT          -9, r2, r1
 [ 31] GETGLOBAL_PRIM  r2, 0
 [ 32] GETGLOBAL_PRIM  r3, 1
