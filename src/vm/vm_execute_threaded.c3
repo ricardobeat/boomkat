@@ -7,9 +7,9 @@ import duktape::hobject;
 import duktape::env;
 
 // ============================================================================
-// Direct-threaded dispatch spike (feature THREADED_DISPATCH; NOT wired into
-// the default build). Ported onto the op-count-consolidated perf-all binary,
-// whose hot loops are now dispatch-bound (many trivial slot ops):
+// Direct-threaded dispatch (feature THREADED_DISPATCH, on by default). The hot
+// loops are dispatch-bound after op-count consolidation, with many trivial
+// slot ops:
 //
 //   assign60 body: 4x(GETGLOBAL + PUTGLOBAL) + INC_GLOBAL + GETVAR + JMP_LT
 //   fib34   body:  LDINT/SUBI/ADD + JMP_NLE compare-branch (CALL/RET on switch)
@@ -75,6 +75,7 @@ fn void init_threaded_handlers() {
     g_threaded_handlers[Opcode.GETGLOBAL_PRIM.ordinal] = &th_getglobal_prim;
     g_threaded_handlers[Opcode.PUTGLOBAL_PRIM.ordinal] = &th_putglobal_prim;
     g_threaded_handlers[Opcode.MOVE_GG.ordinal] = &th_move_gg;
+    g_threaded_handlers[Opcode.JMP_LT_G.ordinal] = &th_jmp_lt_g;
     g_threaded_handlers[Opcode.INC_GLOBAL.ordinal] = &th_inc_global;
     g_threaded_handlers[Opcode.DEC_GLOBAL.ordinal] = &th_dec_global;
 
@@ -240,6 +241,49 @@ fn Instruction* th_cmp_branch(Instruction* pc, Instruction* code_end, TVal* regs
     }
     pc++;
     if (cmp_result == branch_on) {
+        if ((ichar)insn.a < 0) {
+            if (--cold.vm.heap.bwd_gc_budget == 0) {
+                if (cold.vm.heap.gc_pending) { cold.vm.heap.safepoint_gc(); }
+                cold.vm.heap.bwd_gc_budget = heap::BWD_GC_INTERVAL;
+            }
+        }
+        pc += (int)(ichar)insn.a;
+    }
+    return th_next(pc, code_end, regs, cold);
+}
+
+// Fused `GETGLOBAL_PRIM rX, S` + `JMP_LT off, rB, rX`. Two-word: pc holds the
+// jump offset in A and the surviving register operand in B; pc+1 (a NOP) holds
+// the global's name index. The IC slot sits at the trailing word's offset, one
+// past this handler's own, which is where the switch populates it: it computes
+// the index after advancing past both words.
+//
+// A guard miss returns pc unconsumed, leaving the switch to resolve the global
+// by env walk, fill the IC, and advance pc itself.
+fn Instruction* th_jmp_lt_g(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    Instruction insn = *pc;
+    Vm* vm = cold.vm;
+    hobject::VarICEntry* vic_base = (hobject::VarICEntry*)vm.current_func.var_ic_entries;
+    if (vic_base == null) return pc;
+    uint name_off = (uint)(pc + 1 - cold.code_base);
+    hobject::VarICEntry* gic = vic_base + name_off;
+    HObject* gb = (HObject*)gic.bindings;
+    if (gb == null || gic.search_head != (void*)cold.act.lex_env || gb.shape_id != gic.shape_id) return pc;
+    TVal* gval = &gb.prop_values()[gic.prop_idx];
+    if (env::is_tdz_sentinel(gval)) return pc;
+
+    TVal* rb = regs + insn.b;
+    bool cmp_lt;
+    if (types::both_fastint(rb, gval)) {
+        cmp_lt = rb.get_fastint() < gval.get_fastint();
+    } else if ((rb.is_fastint() || rb.is_number()) && (gval.is_fastint() || gval.is_number())) {
+        cmp_lt = tval_numeric_to_double(rb) < tval_numeric_to_double(gval);
+    } else {
+        return pc; // relational coercion may call user code / throw -> switch
+    }
+    // Consume both words first: the fused offset is based on that resume point.
+    pc += 2;
+    if (cmp_lt) {
         if ((ichar)insn.a < 0) {
             if (--cold.vm.heap.bwd_gc_budget == 0) {
                 if (cold.vm.heap.gc_pending) { cold.vm.heap.safepoint_gc(); }
