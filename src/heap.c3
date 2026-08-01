@@ -712,6 +712,15 @@ struct Heap {
     uint                shape_count;
     uint                shape_capacity;
     uint                shape_gen;
+    // Head of the reclaimed-slot list, or SHAPE_NONE when empty. Only private
+    // shapes are ever freed, so a slot on this list has no live referent. The
+    // link is threaded through the shapes array itself: a free slot holds
+    // (next_free + 1) cast to a pointer, which is never a valid shape address.
+    uint                shape_free_head;
+    // Generation the next shape stored in the just-allocated slot must start
+    // at, so a recycled id never re-presents an (id, generation) pair that a
+    // live inline cache still matches. Set by alloc_shape_slot.
+    uint                shape_reuse_gen;
 
     // Maps (parent_shape_id, key_pointer) to child_shape_id, so objects that add
     // properties in the same order share one Shape.
@@ -1012,6 +1021,19 @@ const uint SHAPE_TRANS_LOAD    = 70;   // percent load that triggers a grow
 /// Sentinel shape ID, which caps valid IDs at 65534.
 const ushort SHAPE_ID_NONE     = 0xFFFF;
 
+/// Set on a shapes[] entry that is a free-list link rather than a shape
+/// pointer. The top address bit is never set on a real allocation.
+const uptr SHAPE_FREE_TAG      = (uptr)1 << (uptr)(uptr::size * 8 - 1);
+/// A free-list link packs the next free id in the low bits and the retired
+/// generation above it, so reuse can resume past the generation that inline
+/// caches may still hold. Ids stop at 0xFFFE, so 16 bits cover them.
+const uint SHAPE_FREE_LINK_BITS = 16;
+const uint SHAPE_FREE_LINK_MASK = 0xFFFF;
+const uint SHAPE_FREE_GEN_MASK  = 0x7FFF;
+/// End-of-list marker inside a link. Slot ids stop at 0xFFFE, so 0xFFFF is free
+/// to mean "no next".
+const uint SHAPE_FREE_END       = 0xFFFF;
+
 struct TransitionEntry {
     uint parent_id;
     void* key;
@@ -1099,6 +1121,7 @@ fn void Heap.init_shapes(&self) {
     self.shape_capacity = SHAPE_INITIAL_CAP;
     self.shape_count    = 1;  // slot 0 holds the root shape
     self.shape_gen      = 0;
+    self.shape_free_head = SHAPE_FREE_END;
     usz bytes = (usz)SHAPE_INITIAL_CAP * (void*::size);
     self.shapes = (hobject::Shape**)self.alloc_func(self.heap_udata, bytes);
     mem::clear(self.shapes, (sz)(bytes));
@@ -1110,6 +1133,23 @@ fn void Heap.init_shapes(&self) {
 /// Reserve a slot in the shapes array and return its ID. The caller is
 /// responsible for storing the shape at shapes[id].
 fn uint Heap.alloc_shape_slot(&self) {
+    // Reuse a reclaimed slot before growing. Without this the pool is a pure
+    // bump allocator and a delete/insert loop exhausts all 65534 ids.
+    //
+    // Inline caches key on (shape_id, shape.generation), so a recycled id must
+    // never come back with a generation an existing cache entry still matches:
+    // that entry would then read properties at the previous shape's offsets.
+    // The reclaimed generation is carried in the free-list link and handed to
+    // the next shape stored here, so the pair is never reused.
+    if (self.shape_free_head != SHAPE_FREE_END) {
+        uint id = self.shape_free_head;
+        uint link = (uint)((uptr)self.shapes[id] & ~SHAPE_FREE_TAG);
+        self.shape_free_head = link & SHAPE_FREE_LINK_MASK;
+        self.shape_reuse_gen = (link >> SHAPE_FREE_LINK_BITS) + 1;
+        self.shapes[id] = null;
+        return id;
+    }
+    self.shape_reuse_gen = 0;
     if (self.shape_count >= self.shape_capacity) {
         uint new_cap = self.shape_capacity * 2;
         void* new_raw = self.realloc_func(self.heap_udata, self.shapes, (usz)new_cap * (void*::size));
@@ -1124,6 +1164,51 @@ fn uint Heap.alloc_shape_slot(&self) {
     self.shape_count++;
     if (id >= 0xFFFE) return SHAPE_NONE;
     return id;
+}
+
+/// Release a slot holding a *private* shape, freeing the shape and putting the
+/// id back on the free list.
+///
+/// Only private shapes may be passed here. A private shape has
+/// parent == PRIVATE_SHAPE_PARENT, is absent from the transition table, and is
+/// referenced by exactly one object -- the one replacing it right now. Freeing
+/// a transition-table shape instead would be a use-after-free, since other
+/// objects and cached transitions still point at it, so that case is rejected
+/// rather than trusted to the caller.
+/// Store a freshly created shape in a slot just returned by alloc_shape_slot,
+/// stamping the generation that keeps recycled ids from colliding with live
+/// inline-cache entries.
+fn void Heap.store_new_shape(&self, uint id, hobject::Shape* sh) {
+    sh.generation = self.shape_reuse_gen;
+    self.shapes[id] = sh;
+}
+
+/// True when shapes[id] holds a real shape rather than a free-list link.
+/// Free slots store SHAPE_FREE_TAG | next_free; the tag is bit 63 (bit 31 on a
+/// 32-bit host), which no live allocation carries, so teardown can skip those
+/// entries instead of freeing an integer as a pointer.
+fn bool Heap.shape_slot_live(&self, uint id) {
+    hobject::Shape* sh = self.shapes[id];
+    if (sh == null) return false;
+    return ((uptr)sh & SHAPE_FREE_TAG) == 0;
+}
+
+/// `release_keys` must be false when the replacement shape copied this shape's
+/// key pointers without increfing them: the references move to the new shape,
+/// so decrefing here would leave it holding freed keys.
+fn void Heap.free_shape_slot(&self, uint id, bool release_keys = true) {
+    if (id == 0 || id >= self.shape_count) return;
+    if (self.shape_free_head == id) return;         // already free
+    hobject::Shape* sh = self.shapes[id];
+    if (sh == null) return;
+    if (sh.parent != hobject::PRIVATE_SHAPE_PARENT) return;   // shared: not ours to free
+    // Carry the dead shape's generation in the link so the next occupant of
+    // this slot starts past it and no live inline-cache entry can match.
+    uint gen = sh.generation & SHAPE_FREE_GEN_MASK;
+    hobject::shape_free(sh, release_keys ? (void*)self : null);
+    uint link = (gen << SHAPE_FREE_LINK_BITS) | (self.shape_free_head & SHAPE_FREE_LINK_MASK);
+    self.shapes[id] = (hobject::Shape*)(SHAPE_FREE_TAG | (uptr)link);
+    self.shape_free_head = id;
 }
 
 
@@ -1144,8 +1229,11 @@ fn ushort Heap.transition_shape_new(&self, ushort cur_shape_id, void* key) {
 /// on one shape. That holds for non-default flags too, such as every instance of
 /// a class installing the same private field. Differing flags for the same key
 /// produce separate shapes.
+/// Returns SHAPE_ID_NONE when no shape could be produced. The caller must treat
+/// that as a hard failure: continuing with the unchanged shape would store a
+/// value the shape does not describe, which reads back as a missing property.
 fn ushort Heap.transition_shape_new_flags(&self, ushort cur_shape_id, void* key, hobject::PropFlags flags) {
-    if (cur_shape_id >= self.shape_count || self.shapes[cur_shape_id] == null) {
+    if (cur_shape_id >= self.shape_count || !self.shape_slot_live((uint)cur_shape_id)) {
         return cur_shape_id;
     }
 
@@ -1159,29 +1247,30 @@ fn ushort Heap.transition_shape_new_flags(&self, ushort cur_shape_id, void* key,
     }
 
     hobject::Shape* ns = hobject::shape_extend(cur, cur_shape_id, key, flags);
-    if (ns == null) return cur_shape_id;
+    if (ns == null) return SHAPE_ID_NONE;
 
     uint new_id = self.alloc_shape_slot();
     if (new_id == SHAPE_NONE) {
         hobject::shape_free(ns, (void*)self);
-        return cur_shape_id;
+        return SHAPE_ID_NONE;
     }
 
-    self.shapes[new_id] = ns;
+    self.store_new_shape(new_id, ns);
     self.insert_transition(cur_shape_id, key, raw_flags, (ushort)new_id);
     return (ushort)new_id;
 }
 
 fn void Heap.bump_shape_gen(&self, ushort shape_id) {
-    if (shape_id < self.shape_count && self.shapes[shape_id] != null) {
+    if (shape_id < self.shape_count && self.shape_slot_live((uint)shape_id)) {
         self.shapes[shape_id].generation++;
         self.shape_gen++;
     }
 }
 
-/// Get a shape pointer by ID. Returns null if invalid.
+/// Get a shape pointer by ID. Returns null if invalid or reclaimed.
 fn hobject::Shape* Heap.get_shape(&self, ushort shape_id) {
     if (shape_id >= self.shape_count) return null;
+    if (!self.shape_slot_live((uint)shape_id)) return null;
     return self.shapes[shape_id];
 }
 
@@ -1327,7 +1416,7 @@ fn void Heap.destroy(&self) {
     }
     if (self.shapes != null) {
         for (uint i = 0; i < self.shape_count; i++) {
-            if (self.shapes[i] != null) {
+            if (self.shape_slot_live(i)) {
                 hobject::shape_free(self.shapes[i], null);
             }
         }
@@ -1628,7 +1717,7 @@ fn void Heap.reset(&self) {
     }
     if (self.shapes != null) {
         for (uint i = 0; i < self.shape_count; i++) {
-            if (self.shapes[i] != null) {
+            if (self.shape_slot_live(i)) {
                 hobject::shape_free(self.shapes[i], null);
             }
         }
@@ -1637,6 +1726,7 @@ fn void Heap.reset(&self) {
     }
     self.shape_count = 1;
     self.shape_gen   = 0;
+    self.shape_free_head = SHAPE_FREE_END;
     self.shapes[0]   = hobject::shape_create(0, 0, SHAPE_NONE, null);
     self.init_transition_table();
 
