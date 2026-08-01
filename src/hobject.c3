@@ -109,6 +109,10 @@ const uint HASH_LOAD_DEN = 10;
 /// Sentinel value in the hash table: slot has never been used.
 const uint HASH_UNUSED   = 0xFFFF_FFFF;
 
+/// Marks a flat shape owned by exactly one object and kept out of the
+/// transition table. Only such a shape may be reclaimed via free_shape_slot.
+const uint PRIVATE_SHAPE_PARENT = 0xFFFF_FFFF;
+
 /// Sentinel value in the hash table: slot was deleted (tombstone).
 const uint HASH_DELETED  = 0xFFFF_FFFE;
 
@@ -1101,6 +1105,20 @@ fn void* HObject.prop_key_at(&self, uint idx) @inline {
     return null;
 }
 
+/// The flags recorded in the shape chain at `idx`, read without the
+/// has_nondefault_flags short circuit that get_prop_flags() uses. Callers
+/// reconstructing a shape need the stored value verbatim.
+fn PropFlags HObject.prop_flags_at(&self, uint idx) @inline {
+    hobject::Shape* sh = self.get_shape();
+    while (sh != null) {
+        if (idx >= sh.offset && idx < sh.offset + sh.own_count) {
+            return sh.props()[idx - sh.offset].flags;
+        }
+        sh = sh.parent_shape;
+    }
+    return PROP_FLAGS_WEC;
+}
+
 /// The property flags at `idx`. The ShapeProperty holds the authoritative copy,
 /// which writes keep in sync.
 fn PropFlags HObject.get_prop_flags(&self, uint idx) @inline {
@@ -1123,7 +1141,7 @@ fn PropFlags HObject.get_prop_flags(&self, uint idx) @inline {
 /// it and per-object flag edits cannot leak.
 fn void HObject.make_shape_private(&self) {
     if (_active_heap == null || self.get_shape() == null) return;
-    hobject::Shape* ns = shape_create(self.prop_count, 0, heap::SHAPE_NONE, null);
+    hobject::Shape* ns = shape_create(self.prop_count, 0, PRIVATE_SHAPE_PARENT, null);
     if (ns == null) return;
 
     hobject::ShapeProperty* new_sp = ns.props();
@@ -1139,11 +1157,18 @@ fn void HObject.make_shape_private(&self) {
     }
 
     heap::Heap* h = (heap::Heap*)_active_heap;
+    // The shape being replaced is dead once the swap lands. Reclaim it first so
+    // a long-running privatise loop reuses one slot instead of leaking one per
+    // call; free_shape_slot ignores shared transition-table shapes.
+    uint old_slot = (uint)self.shape_id;
     uint slot = h.alloc_shape_slot();
     if (slot != heap::SHAPE_NONE) {
-        h.shapes[slot] = ns;
+        h.store_new_shape(slot, ns);
         self.shape_id = slot;
         self.set_shape(ns);
+        // The new shape borrowed the old shape's key pointers verbatim, so the
+        // old slot must not decref them on the way out.
+        if (old_slot != slot) h.free_shape_slot(old_slot, false);
     } else {
         // The keys were copied without an incref, so shape_free must not decref.
         shape_free(ns, null);
@@ -1455,19 +1480,22 @@ fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags) {
     if (_active_heap != null) {
         heap::Heap* h = (heap::Heap*)_active_heap;
         uint new_shape_id = h.transition_shape_new_flags(self.shape_id, key, pflags);
-        if (new_shape_id == self.shape_id) {
+        if (new_shape_id == heap::SHAPE_NONE) {
+            // The shape pool is exhausted. Storing the value anyway would leave
+            // a property the shape never records, so it would read back as
+            // missing -- a silent wrong answer. Undo the append and report the
+            // failure so the caller can raise instead.
             self.prop_count--;
             if (val.is_heap_allocated()) {
-                void* ptr = val.get_heapptr();
-                if (ptr != null) {
-                    h.decref((types::HeapHeader*)ptr);
-                }
+                h.decref_tval(&self.prop_values()[new_idx]);
             }
             mem::clear(&self.prop_values()[new_idx], (sz)(PropValue::size));
             return false;
         }
-        self.shape_id = new_shape_id;
-        self.set_shape(h.get_shape(new_shape_id));
+        if (new_shape_id != self.shape_id) {
+            self.shape_id = new_shape_id;
+            self.set_shape(h.get_shape(new_shape_id));
+        }
     }
 
     // Insert into the per-object hash table directly, which avoids the malloc
@@ -1505,6 +1533,48 @@ fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags) {
         }
     }
 
+    return true;
+}
+
+/// Rebuild this object's shape by replaying its surviving property keys from
+/// the root shape through the transition table, skipping index `deleted_idx`.
+///
+/// Objects that reach the same layout converge on one shared shape, so a
+/// delete/insert cycle reuses shapes instead of minting a private one per
+/// delete. Returns false if any step could not be taken, leaving the object's
+/// shape untouched so the caller can fall back to a private shape.
+fn bool HObject.try_rebuild_shape(&self, uint deleted_idx, uint new_count) @local {
+    heap::Heap* h = (heap::Heap*)_active_heap;
+    uint old_slot = (uint)self.shape_id;
+    if (!self.rebuild_shape_by_transition(deleted_idx, new_count)) return false;
+    // The replay increfed every key it kept, so releasing the old shape's own
+    // references is balanced -- including the deleted key's, which the new
+    // chain does not hold. free_shape_slot ignores shared shapes, so this only
+    // reclaims a private shape the object alone was holding.
+    if (old_slot != (uint)self.shape_id) h.free_shape_slot(old_slot);
+    return true;
+}
+
+fn bool HObject.rebuild_shape_by_transition(&self, uint deleted_idx, uint new_count) @local {
+    heap::Heap* h = (heap::Heap*)_active_heap;
+    Shape* old_shape = self.get_shape();
+    if (old_shape == null) return false;
+
+    // Replay from the root. The keys are read from the shape the object still
+    // holds, so nothing here depends on the values already having been shifted.
+    uint sid = 0;
+    for (uint i = 0; i < new_count; i++) {
+        uint src_idx = i < deleted_idx ? i : i + 1;
+        void* k = self.prop_key_at(src_idx);
+        if (k == null) return false;
+        PropFlags f = self.prop_flags_at(src_idx);
+        uint next = h.transition_shape_new_flags(sid, k, f);
+        if (next == heap::SHAPE_NONE || next == sid) return false;
+        sid = next;
+    }
+
+    self.shape_id = sid;
+    self.set_shape(h.get_shape(sid));
     return true;
 }
 
@@ -1554,15 +1624,23 @@ fn bool HObject.delete_prop(&self, void* key) {
     if (new_count == 0) {
         if (_active_heap != null) {
             heap::Heap* h = (heap::Heap*)_active_heap;
+            uint old_slot = (uint)self.shape_id;
             self.shape_id = 0;
             self.set_shape(h.shapes[0]);
+            h.free_shape_slot(old_slot);
         } else {
             self.set_shape(null);
         }
+    } else if (_active_heap != null && self.try_rebuild_shape(ui, new_count)) {
+        // Replayed the surviving keys through the transition table, so the
+        // object shares a shape with every other object of the same layout and
+        // consumed no permanent slot. This is the common case: without it, each
+        // delete mints a private shape that the next insert transitions off and
+        // orphans, and a delete/insert loop exhausts the 65534-slot pool.
     } else {
         // Build a flat private shape holding every surviving property. It stays
         // out of the transition table, since it belongs to this object alone.
-        Shape* ns = shape_create(new_count, 0, heap::SHAPE_NONE, null);
+        Shape* ns = shape_create(new_count, 0, PRIVATE_SHAPE_PARENT, null);
         if (ns != null) {
             // Collect surviving property names by walking the old shape chain.
             // The walk visits the newest shape first, so place each key at its
@@ -1589,11 +1667,23 @@ fn bool HObject.delete_prop(&self, void* key) {
 
             if (_active_heap != null) {
                 heap::Heap* h = (heap::Heap*)_active_heap;
+                uint old_slot = (uint)self.shape_id;
+                bool old_was_private = self.get_shape() != null
+                                    && self.get_shape().parent == PRIVATE_SHAPE_PARENT;
                 uint slot = h.alloc_shape_slot();
                 if (slot != heap::SHAPE_NONE) {
-                    h.shapes[slot] = ns;
+                    h.store_new_shape(slot, ns);
                     self.shape_id = slot;
                     self.set_shape(ns);
+                    // The surviving keys moved to `ns` uncounted, so the old
+                    // slot must not decref them. Only the deleted key's own
+                    // reference is dropped, and only when the old shape was
+                    // private -- a shared shape keeps its keys for its other
+                    // objects and is left untouched.
+                    if (old_was_private && old_slot != slot) {
+                        if (key != null) h.decref((HeapHeader*)key);
+                        h.free_shape_slot(old_slot, false);
+                    }
                 } else {
                     // Keys were copied without incref; pass null so shape_free skips decref.
                     shape_free(ns, null);
@@ -2212,7 +2302,8 @@ struct PropLookupResult {
 struct Shape {
     /// Bumped by delete, seal, and freeze to invalidate inline caches.
     uint      generation;
-    /// Parent shape index, or 0xFFFF_FFFF at the root.
+    /// Parent shape index, or PRIVATE_SHAPE_PARENT when the shape is flat and
+    /// belongs to a single object.
     uint      parent;
     /// How many properties this shape adds, not counting its ancestors'.
     uint      own_count;
