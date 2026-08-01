@@ -467,9 +467,22 @@ struct CompilerContext {
     bool is_global;
 
     // Eval mode: when true, expression statements save their last result
-    // to eval_acc_reg for eval's implicit return value.
+    // to eval_acc_reg for eval's implicit return value. Set ONLY on the
+    // context compiling the eval source's own top-level statement list,
+    // which is also the only context that allocates eval_acc_reg. A nested
+    // function or arrow body inside that source has its own completion
+    // semantics (its `return`) and must never accumulate into eval_acc_reg,
+    // whose register number is meaningless in the nested context's frame.
     bool   eval_mode;
     ushort eval_acc_reg;
+    /// True for the eval source's top-level context AND for every arrow body
+    /// lexically nested inside it. An arrow has no [[NewTarget]] of its own
+    /// and inherits the eval code's, so `new.target`'s eval-context rules
+    /// (see new_expr in expressions.c3) must keep applying inside the arrow
+    /// even though the arrow body must NOT accumulate a completion value.
+    /// This is the "am I lexically inside eval code" half of what eval_mode
+    /// previously conflated with completion-value accumulation.
+    bool   in_eval_code;
     /// True iff this is direct-eval code being processed from a
     /// non-ArrowFunction's FunctionBody (ES2015 Annex B / §14.2.1):
     /// the ONLY context in which `new.target` is a permitted syntax inside
@@ -1651,7 +1664,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     // Record whether this eval body may itself reference new.target, so a
     // nested direct eval inside it can inherit the permission (see
     // FuncFlags.eval_allows_new_target).
-    func.flags.eval_allows_new_target = self.eval_mode && self.eval_direct_in_function;
+    func.flags.eval_allows_new_target = self.in_eval_code && self.eval_direct_in_function;
     func.num_args = self.num_args;
     if (self.has_rest) {
         func.num_formals = self.rest_formal_count;

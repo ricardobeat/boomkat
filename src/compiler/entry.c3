@@ -152,6 +152,7 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
     ctx.init(lex, heap);
     ctx.is_global = true;
     ctx.eval_mode = true;
+    ctx.in_eval_code = true;
     ctx.has_super_binding = allow_super;
     ctx.super_is_home_object = parent_super_is_home_object;
     // A direct eval inside a derived-class constructor may contain a `super()`

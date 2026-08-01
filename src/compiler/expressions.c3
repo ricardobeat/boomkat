@@ -2921,10 +2921,13 @@ fn ushort? CompilerContext.new_expr(&self) {
             // and is only permitted inside an eval source that is being
             // processed by direct eval whose call site sits inside a
             // non-ArrowFunction's FunctionBody. compile_eval sets
-            // eval_mode=true and eval_direct_in_function=true ONLY in
+            // in_eval_code=true and eval_direct_in_function=true ONLY in
             // that last case, so a missing flag means we must reject.
+            // in_eval_code (not eval_mode) is the right test here: it also
+            // holds inside an arrow nested in the eval source, which is
+            // exactly where the arrow inherits the eval code's [[NewTarget]].
             //
-            // We also reject when not in eval mode AND not otherwise in
+            // We also reject when not in eval code AND not otherwise in
             // a constructable context (e.g. class constructor), global
             // / module / function code outside a constructor body has no
             // [[NewTarget]] either (ES2015 §13.3.1.1 step 1 / step 5).
@@ -2932,7 +2935,7 @@ fn ushort? CompilerContext.new_expr(&self) {
             // but inside a class constructor the NEWTARGET opcode is the
             // correct implementation of `new.target` (returns the
             // constructor itself).
-            if (self.eval_mode && !self.eval_direct_in_function) {
+            if (self.in_eval_code && !self.eval_direct_in_function) {
                 // Indirect eval, global eval, or eval from arrow:
                 // new.target is a SyntaxError per spec.
                 if (g_last_err_msg[0] == 0) {
@@ -2951,7 +2954,7 @@ fn ushort? CompilerContext.new_expr(&self) {
             // handled just above. Top-level code has no [[NewTarget]], and
             // neither does an arrow written there: an arrow inherits
             // new.target from its enclosing function, and there is none.
-            if ((self.is_global || self.no_new_target) && !self.eval_mode) {
+            if ((self.is_global || self.no_new_target) && !self.in_eval_code) {
                 return self.fail("new.target is only allowed in function code")~;
             }
             ushort result_reg = self.alloc_reg();
