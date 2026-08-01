@@ -6,10 +6,14 @@ module duktape::re_bindings;
 extern fn void* re_compile(char* pattern, usz pattern_len,
                            int flags, char* error_msg, int error_msg_size);
 
-extern fn int re_exec(void* re, char* input, int input_len,
-                      int start_offset, int input_is_ascii,
-                      int* out_start, int* out_end, int* out_num_captures,
-                      int* caps_start, int* caps_end, int max_captures);
+/* Named re_run rather than re_exec: glibc exports its own legacy `re_exec`,
+ * and since the shared library exports every engine symbol, an ELF loader
+ * bound this call to libc's unrelated function and every JS regexp segfaulted
+ * inside libc. macOS two-level namespaces hid the clash. */
+extern fn int re_run(void* re, char* input, int input_len,
+                     int start_offset, int input_is_ascii,
+                     int* out_start, int* out_end, int* out_num_captures,
+                     int* caps_start, int* caps_end, int max_captures);
 
 extern fn void re_free(void* re);
 
@@ -31,5 +35,5 @@ const int RE_FLAG_UNICODE_SETS = 128;
 const int RE_MATCH    = 1;
 
 /* Must match libregexp/re_wrapper.h. The 256-slot stack buffer covers
- * realistic patterns; regexps with more captures heap-allocate in re_exec. */
+ * realistic patterns; regexps with more captures heap-allocate in re_run. */
 const int RE_MAX_CAPTURES = 256;

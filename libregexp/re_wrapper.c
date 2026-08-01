@@ -210,10 +210,10 @@ static int unit_offset_to_byte_offset(const int* byte_offsets, int unit_count, i
     return byte_offsets[unit_offset];
 }
 
-int re_exec(ReCompiled* re, const char* input, int input_len,
-            int start_offset, int input_is_ascii,
-            int* out_start, int* out_end, int* out_num_captures,
-            int* caps_start, int* caps_end, int max_captures)
+int re_run(ReCompiled* re, const char* input, int input_len,
+           int start_offset, int input_is_ascii,
+           int* out_start, int* out_end, int* out_num_captures,
+           int* caps_start, int* caps_end, int max_captures)
 {
     if (!re || !re->bc) return RE_ERROR;
 

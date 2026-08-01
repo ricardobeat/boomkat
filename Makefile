@@ -24,6 +24,28 @@ else
   JSE_LDLIBS := -lm -ldl
 endif
 
+# The BigInt path multiplies int128 values, which LLVM lowers to the
+# overflow-checked builtin __muloti4. Apple's libSystem carries it, but GNU
+# libgcc does not -- it lives only in LLVM's compiler-rt -- so on Linux the
+# link fails with "undefined reference to `__muloti4'" unless that archive is
+# named explicitly. This bites twice: once when c3c links the engine (c3c's -z
+# forwards the path to the linker) and again when a *consumer* links the static
+# archive, since the archive carries the undefined reference outward. It does
+# not affect the shared library, which resolves it at its own link.
+# Override C3C_RT_LIB to point at a different compiler-rt build.
+ifneq ($(UNAME_S),Darwin)
+  C3C_RT_LIB ?= $(firstword $(wildcard \
+      /usr/lib/llvm-*/lib/clang/*/lib/linux/libclang_rt.builtins-$(shell uname -m).a))
+  ifneq ($(C3C_RT_LIB),)
+    C3C_LDFLAGS := -z $(C3C_RT_LIB)
+    JSE_LDLIBS += $(C3C_RT_LIB)
+  endif
+endif
+
+# C3C_LDFLAGS trails the target name: c3c rejects -z before it.
+C3C ?= c3c
+C3C_BUILD = $(C3C) build
+
 PREFIX ?= /usr/local
 
 .PHONY: all lib lib-full test262_runner test262_runner_asan duktape_c3 duktape_c3_debug duktape_c3_gc_stress clean \
@@ -48,22 +70,22 @@ duktape_c3_debug: out/duktape_c3_debug
 duktape_c3_gc_stress: out/duktape_c3_gc_stress
 
 out/lib.a: project.json $(call target_sources,lib)
-	c3c build lib
+	$(C3C_BUILD) lib $(C3C_LDFLAGS)
 
 out/test262_runner: project.json $(call target_sources,test262_runner)
-	c3c build test262_runner
+	$(C3C_BUILD) test262_runner $(C3C_LDFLAGS)
 
 out/test262_runner_asan: project.json $(call target_sources,test262_runner_asan)
-	c3c build test262_runner_asan
+	$(C3C_BUILD) test262_runner_asan $(C3C_LDFLAGS)
 
 out/duktape_c3: project.json $(call target_sources,duktape_c3)
-	c3c build duktape_c3
+	$(C3C_BUILD) duktape_c3 $(C3C_LDFLAGS)
 
 out/duktape_c3_debug: project.json $(call target_sources,duktape_c3_debug)
-	c3c build duktape_c3_debug
+	$(C3C_BUILD) duktape_c3_debug $(C3C_LDFLAGS)
 
 out/duktape_c3_gc_stress: project.json $(call target_sources,duktape_c3_gc_stress)
-	c3c build duktape_c3_gc_stress
+	$(C3C_BUILD) duktape_c3_gc_stress $(C3C_LDFLAGS)
 
 # ---- C embedding ABI targets ------------------------------------------------
 
@@ -71,7 +93,7 @@ out/duktape_c3_gc_stress: project.json $(call target_sources,duktape_c3_gc_stres
 # shipped executables so an embedder gets the engine the test suite exercised.
 lib: out/jse_static.a
 out/jse_static.a: project.json include/jse.h $(call target_sources,jse_static)
-	c3c build jse_static
+	$(C3C_BUILD) jse_static $(C3C_LDFLAGS)
 
 # Shared library. c3c stamps a *relative* install name ("out/jse.dylib"), so a
 # consumer launched from any other directory fails to resolve it in dyld; the
@@ -79,7 +101,7 @@ out/jse_static.a: project.json include/jse.h $(call target_sources,jse_static)
 # exists so `-ljse` and ctypes/fiddle find_library lookups both work.
 shared jse: out/libjse.$(SHLIB_EXT)
 out/libjse.$(SHLIB_EXT): project.json include/jse.h $(call target_sources,jse)
-	c3c build jse
+	$(C3C_BUILD) jse $(C3C_LDFLAGS)
 ifeq ($(UNAME_S),Darwin)
 	install_name_tool -id "@rpath/libjse.dylib" out/jse.dylib
 endif
@@ -88,7 +110,7 @@ endif
 # GC_STRESS + ASan shared build: collects at every allocation, which is what
 # turns a missing GC root in the slot registry into a deterministic failure.
 jse-stress:
-	c3c build jse_stress
+	$(C3C_BUILD) jse_stress $(C3C_LDFLAGS)
 
 # Smoke test: links the STATIC archive, so it validates the archive path rather
 # than only the dylib. Vendored C (libregexp, cutils, dtoa) is already inside
@@ -123,6 +145,51 @@ install: out/jse_static.a out/libjse.$(SHLIB_EXT)
 	install -m 644 include/jse.h $(DESTDIR)$(PREFIX)/include/jse.h
 	install -m 644 out/jse_static.a $(DESTDIR)$(PREFIX)/lib/libjse.a
 	install -m 755 out/libjse.$(SHLIB_EXT) $(DESTDIR)$(PREFIX)/lib/libjse.$(SHLIB_EXT)
+
+# ---- Linux CI ---------------------------------------------------------------
+# Build the Linux image and run the whole build/test/link-validation suite in
+# it. Uses Apple's `container` CLI (not docker). See ci/linux/README.md.
+#
+# quickjs/ is gitignored and is usually a symlink into another checkout. It is
+# bind-mounted separately because the container needs real files there, and the
+# symlink must be out of the way first: mounting onto an existing symlink fails
+# with "errno 17: failed to create directory 'quickjs'". The symlink is removed
+# before the run and restored after, so host builds keep working either way.
+LINUX_IMAGE ?= jse-linux-ci
+LINUX_ARCH  ?= arm64
+QUICKJS_DIR ?= $(realpath quickjs)
+
+# The default 2 GB container is not enough: `zig build` gets OOM-killed
+# (SIGKILL, reported only as "process terminated with signal KILL") and the
+# c3c/LLVM builds are slow. Raise both explicitly.
+LINUX_MEMORY ?= 8g
+LINUX_CPUS   ?= 6
+
+CONTAINER_RUN = container run --rm --arch $(LINUX_ARCH) \
+	    --memory $(LINUX_MEMORY) --cpus $(LINUX_CPUS) \
+	    -v "$(CURDIR):/work" -v "$(QUICKJS_DIR):/work/quickjs" $(LINUX_IMAGE)
+
+# Drop a quickjs symlink for the duration of the run, then put it back.
+define with_quickjs_unlinked
+	@if [ -L quickjs ]; then mv quickjs .quickjs.link; fi
+	$(1); rc=$$?; \
+	if [ -e .quickjs.link ]; then rmdir quickjs 2>/dev/null || true; mv .quickjs.link quickjs; fi; \
+	exit $$rc
+endef
+
+.PHONY: linux-ci linux-ci-image linux-ci-shell
+
+linux-ci-image:
+	container build --arch $(LINUX_ARCH) -t $(LINUX_IMAGE) -f ci/linux/Dockerfile ci/linux
+
+linux-ci:
+	$(call with_quickjs_unlinked,$(CONTAINER_RUN) bash ci/linux/run.sh $(PHASES))
+
+# Interactive shell in the same environment, for debugging a failing phase.
+linux-ci-shell:
+	$(call with_quickjs_unlinked,container run --rm -it --arch $(LINUX_ARCH) \
+	    --memory $(LINUX_MEMORY) --cpus $(LINUX_CPUS) \
+	    -v "$(CURDIR):/work" -v "$(QUICKJS_DIR):/work/quickjs" $(LINUX_IMAGE) bash)
 
 clean:
 	c3c clean
