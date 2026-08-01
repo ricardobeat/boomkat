@@ -77,7 +77,8 @@
       "debug-info": "line-tables",
       "features": [
         "TRACE_VM",
-        "OP_PROFILE"
+        "OP_PROFILE",
+        "THREADED_DISPATCH"
       ]
     },
     "duktape_c3_asan": {
