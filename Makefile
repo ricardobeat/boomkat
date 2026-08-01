@@ -122,6 +122,16 @@ out/smoke: examples/c/smoke.c include/jse.h out/jse_static.a
 smoke: out/smoke
 	./out/smoke
 
+# Host-function ABI tests: registration, argument access, throwing, and
+# calling JS from a callback, all through include/jse.h only.
+out/host_fn_abi: test/capi/host_fn_abi.c include/jse.h out/jse_static.a
+	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/host_fn_abi.c \
+	   out/jse_static.a $(JSE_LDLIBS) -o out/host_fn_abi
+
+.PHONY: test-host-abi
+test-host-abi: out/host_fn_abi
+	./out/host_fn_abi
+
 # Larger example, linked against the shared library via rpath.
 out/hello: examples/c/hello.c include/jse.h out/libjse.$(SHLIB_EXT)
 	cc -std=c99 -Wall -Wextra -pedantic -Iinclude examples/c/hello.c \

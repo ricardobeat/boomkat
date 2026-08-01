@@ -60,6 +60,12 @@ typedef void *jse_runtime;
 typedef unsigned int jse_value;
 #define JSE_INVALID_VALUE ((jse_value)0)
 
+/*
+ * Opaque per-call context handed to a host function. Valid only for the
+ * duration of that call; never store one.
+ */
+typedef void *jse_call_ctx;
+
 /* Status codes. 0 is success; all errors are negative. */
 typedef enum {
     JSE_OK           =  0,
@@ -200,27 +206,117 @@ JSE_API int jse_last_error_code(jse_runtime rt);
  */
 JSE_API void jse_drain_microtasks(jse_runtime rt);
 
+/* ----------------------------------------------------------- host functions */
+
 /*
- * NOT IN v1 — host native function registration, and calling a JS function
- * from C.
+ * A host function is a C callback JS can invoke by name.
  *
- * Native registration is impossible without engine changes. Built-ins live in
- * a compile-time C3 enum (~800 members); both the metadata table and
- * builtin_dispatch_table are generated from it at compile time, and the array
- * is sized [Builtin.LAST.ordinal] and filled at @init. A JS function value
- * stores an ordinal (builtin_fn_index), and dispatch is always
- * builtin_dispatch_table[ordinal] -- an index, never a host pointer. Even the
- * "lightfunc" value tag holds an ordinal cast to a pointer, not a code
- * address. There is no runtime table to append to, so no amount of shim code
- * can register a C callback.
+ * Engine-side, a host function is an ordinary JS function object whose
+ * internal dispatch index lives in a reserved range, so it behaves like a
+ * built-in everywhere: plain calls, methods, .call/.apply/.bind, accessors,
+ * `new`, `super()`, and callbacks passed to built-ins such as Array.sort.
  *
- * Calling a JS function (jse_call) was omitted deliberately, not for lack of a
- * mechanism: vm_call_fn_impl works and was verified. It returns a bare value
- * and signals failure through a heap flag rather than a status, and argument
- * arrays must be GC-visible, so a safe wrapper needs argument marshalling and
- * error-state plumbing beyond a minimal v1. Until then, wrap the call in JS
- * source and use jse_eval.
+ * The callback receives an opaque context. Values reached through it
+ * (jse_arg, jse_this, jse_new_target) are SCOPE handles, valid only until the
+ * callback returns. To keep one past that, promote it with jse_value_persist,
+ * which yields a runtime-owned handle the caller must jse_value_free. Scope
+ * handles passed to jse_value_free are ignored rather than treated as an
+ * error.
+ *
+ * Errors never unwind through C: jse_throw_error and jse_throw record the
+ * throw and return normally, and the callback must also return normally. A
+ * recorded throw beats any return value set in the same callback.
  */
+typedef void (*jse_host_fn)(jse_call_ctx ctx, void *udata);
+
+/* Error kinds for jse_throw_error. */
+typedef enum {
+    JSE_ERROR           = 0,
+    JSE_ERROR_TYPE      = 1,
+    JSE_ERROR_RANGE     = 2,
+    JSE_ERROR_REFERENCE = 3,
+    JSE_ERROR_SYNTAX    = 4
+} jse_error_kind;
+
+/*
+ * Bind `cfn` as a global function named `name` (`name_len` bytes, UTF-8).
+ *
+ * `udata` is passed back to every invocation untouched and is never
+ * dereferenced by the engine. `arity` becomes the function's .length, and
+ * `constructable` non-zero allows `new`; a zero value makes `new fn()` throw a
+ * TypeError, matching ES2015 §10.3 where built-ins construct only when
+ * specified.
+ *
+ * Registration is permanent for the runtime's lifetime. Returns JSE_OK,
+ * JSE_ERR_INVALID, JSE_ERR_NOMEM, or JSE_ERR_INTERNAL.
+ */
+JSE_API int jse_register_fn(jse_runtime rt, const char *name, size_t name_len,
+                            jse_host_fn cfn, void *udata,
+                            int arity, int constructable);
+
+/* Number of arguments this call was made with. */
+JSE_API unsigned int jse_argc(jse_call_ctx ctx);
+
+/*
+ * Handle to argument `i`. An index at or past jse_argc yields a handle to
+ * undefined rather than an invalid handle, matching JS semantics for missing
+ * arguments.
+ */
+JSE_API jse_value jse_arg(jse_call_ctx ctx, unsigned int i);
+
+/* The `this` receiver. Strict semantics: an undefined receiver stays undefined. */
+JSE_API jse_value jse_this(jse_call_ctx ctx);
+
+/* new.target, or a handle to undefined on a plain call. */
+JSE_API jse_value jse_new_target(jse_call_ctx ctx);
+
+/* Non-zero when invoked through `new` or `super()`. */
+JSE_API int jse_is_construct(jse_call_ctx ctx);
+
+/*
+ * Set the return value. A callback that sets none yields undefined.
+ *
+ * On a constructor call the engine has already created the instance and
+ * jse_this sees it; returning nothing keeps that object, and returning an
+ * object replaces it, per ES2015 §9.2.2.
+ */
+JSE_API void jse_return(jse_call_ctx ctx, jse_value v);
+JSE_API void jse_return_number(jse_call_ctx ctx, double d);
+JSE_API void jse_return_bool(jse_call_ctx ctx, int b);
+JSE_API void jse_return_null(jse_call_ctx ctx);
+
+/* Return a fresh JS string built from `len` bytes of UTF-8. */
+JSE_API void jse_return_string(jse_call_ctx ctx, const char *utf8, size_t len);
+
+/* Record a throw of a fresh Error of `kind` carrying NUL-terminated `msg`. */
+JSE_API void jse_throw_error(jse_call_ctx ctx, int kind, const char *msg);
+
+/* Record a throw of an arbitrary value. */
+JSE_API void jse_throw(jse_call_ctx ctx, jse_value v);
+
+/*
+ * Copy a value into the runtime's global registry and return a handle that
+ * outlives the callback. The caller owns it and must jse_value_free it. This
+ * is the only supported way to retain a value past the call.
+ */
+JSE_API jse_value jse_value_persist(jse_call_ctx ctx, jse_value v);
+
+/*
+ * Call a JS function from inside a host callback.
+ *
+ * `argv` is an array of `argc` handles; pass NULL/0 for no arguments. Pass 0
+ * for `this_val` to call with undefined. On JSE_OK, *out_val (when non-NULL)
+ * receives a runtime-owned handle the caller must jse_value_free.
+ *
+ * If the callee throws, the exception is recorded on this callback's context
+ * and JSE_ERR_THROW is returned; the host should return promptly and let the
+ * engine propagate it. Calling a non-function records a TypeError.
+ *
+ * Host recursion is bounded: a host -> JS -> host chain that nests too deeply
+ * throws a RangeError rather than exhausting the native stack.
+ */
+JSE_API int jse_call(jse_call_ctx ctx, jse_value func, const jse_value *argv,
+                     unsigned int argc, jse_value this_val, jse_value *out_val);
 
 #ifdef __cplusplus
 }

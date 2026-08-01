@@ -50,6 +50,10 @@ struct Runtime {
     uint     live;
     char[ERRBUF] errmsg;
     int      errcode;
+    /// Innermost host-call context, or null outside a host callback. Lets the
+    /// readers resolve a scope handle without the host threading the context
+    /// through every call.
+    void*    active_ctx;
 }
 
 Runtime* g_rt = null;
@@ -116,6 +120,7 @@ fn int jse_open(void** out_rt) @export("jse_open") {
     Runtime* rt = (Runtime*)raw;
     rt.heap = hp; rt.vm = v; rt.slots = slots;
     rt.next_slot = 1; rt.live = 0;
+    rt.active_ctx = null;
     clear_err(rt);
 
     g_rt = rt;
@@ -148,6 +153,18 @@ fn uint slot_alloc(Runtime* rt, TVal v) {
     if (!rt.slots.put_prop(key, v, hobject::PROP_FLAGS_WEC)) return 0;
     rt.live++;
     return id;
+}
+
+/// Resolve any handle: a scope handle against the innermost host call, a
+/// global slot id against the registry. Readers go through this so a host can
+/// pass jse_arg() straight into jse_get_number and friends.
+fn bool any_get(Runtime* rt, uint id, TVal* out) {
+    if ((id & SCOPE_HANDLE_BIT) != 0) {
+        if (rt == null || rt.active_ctx == null) return false;
+        return resolve_handle(rt, rt.active_ctx, id, out);
+    }
+    if (rt == null) return false;
+    return slot_get(rt, id, out);
 }
 
 fn bool slot_get(Runtime* rt, uint id, TVal* out) {
@@ -314,7 +331,7 @@ fn int jse_type_of(void* rtp, uint id) @export("jse_type_of") {
     if (rtp == null) return JSE_TYPE_OTHER;
     Runtime* rt = (Runtime*)rtp;
     TVal v;
-    if (!slot_get(rt, id, &v)) return JSE_TYPE_UNDEFINED;
+    if (!any_get(rt, id, &v)) return JSE_TYPE_UNDEFINED;
     if (v.is_undefined()) return JSE_TYPE_UNDEFINED;
     if (v.is_null()) return JSE_TYPE_NULL;
     if (v.is_boolean()) return JSE_TYPE_BOOLEAN;
@@ -344,23 +361,25 @@ fn int reader_fail(Runtime* rt, int code, String msg) {
     return code;
 }
 
-fn int jse_get_number(void* rtp, uint id, double* out) @export("jse_get_number") {
-    if (rtp == null || out == null) return JSE_ERR_INVALID;
-    Runtime* rt = (Runtime*)rtp;
+fn int jse_get_number(void* rtp_in, uint id, double* out) @export("jse_get_number") {
+    if (out == null) return JSE_ERR_INVALID;
+    Runtime* rt = rtp_in != null ? (Runtime*)rtp_in : g_rt;
+    if (rt == null) return JSE_ERR_INVALID;
     clear_err(rt);
     TVal v;
-    if (!slot_get(rt, id, &v)) return reader_fail(rt, JSE_ERR_INVALID, "invalid or freed value handle");
+    if (!any_get(rt, id, &v)) return reader_fail(rt, JSE_ERR_INVALID, "invalid or freed value handle");
     if (!v.is_numeric()) return reader_fail(rt, JSE_ERR_TYPE, "value is not a number");
     *out = v.get_number_or_fastint();
     return JSE_OK;
 }
 
-fn int jse_get_bool(void* rtp, uint id, int* out) @export("jse_get_bool") {
-    if (rtp == null || out == null) return JSE_ERR_INVALID;
-    Runtime* rt = (Runtime*)rtp;
+fn int jse_get_bool(void* rtp_in, uint id, int* out) @export("jse_get_bool") {
+    if (out == null) return JSE_ERR_INVALID;
+    Runtime* rt = rtp_in != null ? (Runtime*)rtp_in : g_rt;
+    if (rt == null) return JSE_ERR_INVALID;
     clear_err(rt);
     TVal v;
-    if (!slot_get(rt, id, &v)) return reader_fail(rt, JSE_ERR_INVALID, "invalid or freed value handle");
+    if (!any_get(rt, id, &v)) return reader_fail(rt, JSE_ERR_INVALID, "invalid or freed value handle");
     if (!v.is_boolean()) return reader_fail(rt, JSE_ERR_TYPE, "value is not a boolean");
     *out = v.get_boolean() ? 1 : 0;
     return JSE_OK;
@@ -379,12 +398,12 @@ fn void sink_put(char c) {
 
 /// Copy a JS string out as NUL-terminated UTF-8. Two-call protocol: pass
 /// buf==null to learn the required size (excluding NUL).
-fn int jse_get_string(void* rtp, uint id, char* buf, usz cap, usz* out_len) @export("jse_get_string") {
-    if (rtp == null) return JSE_ERR_INVALID;
-    Runtime* rt = (Runtime*)rtp;
+fn int jse_get_string(void* rtp_in, uint id, char* buf, usz cap, usz* out_len) @export("jse_get_string") {
+    Runtime* rt = rtp_in != null ? (Runtime*)rtp_in : g_rt;
+    if (rt == null) return JSE_ERR_INVALID;
     clear_err(rt);
     TVal v;
-    if (!slot_get(rt, id, &v)) return reader_fail(rt, JSE_ERR_INVALID, "invalid or freed value handle");
+    if (!any_get(rt, id, &v)) return reader_fail(rt, JSE_ERR_INVALID, "invalid or freed value handle");
     if (!v.is_string()) return reader_fail(rt, JSE_ERR_TYPE, "value is not a string");
     HString* s = (HString*)v.get_heapptr();
     // Symbols share the string tag but carry no meaningful text; copying their
@@ -424,4 +443,236 @@ fn void jse_drain_microtasks(void* rtp) @export("jse_drain_microtasks") {
 
 fn char* jse_version() @export("jse_version") {
     return "0.1.0";
+}
+
+// ============================================================================
+// Host functions
+//
+// A host callback is a C function the engine calls when JS invokes the
+// corresponding function value. The engine side (builtins::dispatch_host)
+// stages a per-call scope; everything here is the opaque-handle layer over it.
+//
+// Handles inside a callback are SCOPE handles: they carry the high bit and are
+// valid only for the duration of that call. jse_value_persist copies one into
+// the global slot registry when the host needs it to outlive the callback.
+// ============================================================================
+
+const uint SCOPE_HANDLE_BIT = 0x8000_0000;
+
+/// The C-facing callback signature: (ctx, udata).
+alias JseHostFn = fn void(void*, void*);
+
+/// Encode a scope handle for argument/this/new_target index `idx`.
+///
+/// Scope handles are distinguished from global slot ids by the high bit, so
+/// jse_type_of and the readers accept both kinds without separate entry points.
+fn uint scope_handle(uint idx) @inline {
+    return SCOPE_HANDLE_BIT | idx;
+}
+
+/// Resolve any handle to a TVal. Global slot ids go to the slot registry;
+/// scope handles read the innermost host call scope through the context.
+fn bool resolve_handle(Runtime* rt, void* ctxp, uint id, TVal* out) {
+    if ((id & SCOPE_HANDLE_BIT) != 0) {
+        if (ctxp == null) return false;
+        builtins::BuiltinContext* ctx = (builtins::BuiltinContext*)ctxp;
+        uint idx = id & ~SCOPE_HANDLE_BIT;
+        if (idx == heap::HOST_SCOPE_THIS)       { *out = builtins::host_this(ctx); return true; }
+        if (idx == heap::HOST_SCOPE_NEW_TARGET) { *out = builtins::host_new_target(ctx); return true; }
+        *out = builtins::host_arg(ctx, idx - heap::HOST_SCOPE_ARG0);
+        return true;
+    }
+    return slot_get(rt, id, out);
+}
+
+/// Trampoline: every registered host function enters the engine through this
+/// one C3 function, which forwards to the C callback with the context as an
+/// opaque pointer. The udata the engine stored is a HostReg* holding the real
+/// C function pointer and the host's own udata.
+struct HostReg {
+    void* cfn;
+    void* udata;
+}
+
+fn void host_trampoline(builtins::BuiltinContext* ctx, void* udata) {
+    if (udata == null) return;
+    HostReg* reg = (HostReg*)udata;
+    if (reg.cfn == null) return;
+    JseHostFn cfn = (JseHostFn)reg.cfn;
+    // Publish this call's context so the readers can resolve scope handles
+    // without the host threading it through. Saved and restored rather than
+    // cleared: a host -> JS -> host chain must leave the outer call's context
+    // in place when the inner one returns.
+    void* prev = null;
+    if (g_rt != null) { prev = g_rt.active_ctx; g_rt.active_ctx = (void*)ctx; }
+    cfn((void*)ctx, reg.udata);
+    if (g_rt != null) { g_rt.active_ctx = prev; }
+}
+
+/// Register `cfn` as a global function named `name`.
+///
+/// Returns JSE_OK, or JSE_ERR_INVALID / JSE_ERR_NOMEM. The binding is created
+/// on the global environment, so JS reaches it by bare name.
+fn int jse_register_fn(void* rtp, char* name, usz name_len, void* cfn, void* udata,
+                       int arity, int constructable) @export("jse_register_fn") {
+    if (rtp == null || name == null || cfn == null) return JSE_ERR_INVALID;
+    Runtime* rt = (Runtime*)rtp;
+    clear_err(rt);
+
+    HString* nm = rt.heap.str_intern(name[:name_len]);
+    if (nm == null) { set_err(rt, JSE_ERR_NOMEM, "could not intern function name"); return JSE_ERR_NOMEM; }
+
+    // The registration record outlives the call, so it is heap-allocated and
+    // owned by the runtime; the host function table keeps the only pointer.
+    void* raw = rt.heap.alloc_func(rt.heap.heap_udata, HostReg::size);
+    if (raw == null) { set_err(rt, JSE_ERR_NOMEM, "out of memory"); return JSE_ERR_NOMEM; }
+    HostReg* reg = (HostReg*)raw;
+    reg.cfn = cfn;
+    reg.udata = udata;
+
+    long slot = rt.heap.register_host_fn((void*)&host_trampoline, (void*)reg, (void*)nm,
+                                         arity, constructable != 0);
+    if (slot < 0) {
+        rt.heap.free_func(rt.heap.heap_udata, raw);
+        set_err(rt, JSE_ERR_NOMEM, "host function table full");
+        return JSE_ERR_NOMEM;
+    }
+
+    HObject*? fo = builtins::make_host_function(rt.heap, (uint)slot);
+    if (catch fo) { set_err(rt, JSE_ERR_NOMEM, "could not create function object"); return JSE_ERR_NOMEM; }
+    TVal fv;
+    fv.set_object(fo);
+    if (!env::env_declare(rt.vm.global_env, (void*)nm, fv)) {
+        set_err(rt, JSE_ERR_INTERNAL, "could not bind function name");
+        return JSE_ERR_INTERNAL;
+    }
+    return JSE_OK;
+}
+
+// --- inside a callback ------------------------------------------------------
+
+fn uint jse_argc(void* ctxp) @export("jse_argc") {
+    if (ctxp == null) return 0;
+    return builtins::host_argc((builtins::BuiltinContext*)ctxp);
+}
+
+/// Handle to argument `i`. Out-of-range yields a handle to undefined, matching
+/// JS semantics and sparing every host an arity check.
+fn uint jse_arg(void* ctxp, uint i) @export("jse_arg") {
+    return scope_handle(heap::HOST_SCOPE_ARG0 + i);
+}
+
+fn uint jse_this(void* ctxp) @export("jse_this") {
+    return scope_handle(heap::HOST_SCOPE_THIS);
+}
+
+fn uint jse_new_target(void* ctxp) @export("jse_new_target") {
+    return scope_handle(heap::HOST_SCOPE_NEW_TARGET);
+}
+
+fn int jse_is_construct(void* ctxp) @export("jse_is_construct") {
+    if (ctxp == null) return 0;
+    return builtins::host_is_construct((builtins::BuiltinContext*)ctxp) ? 1 : 0;
+}
+
+/// Set the callback's return value from a handle.
+fn void jse_return(void* ctxp, uint id) @export("jse_return") {
+    if (ctxp == null || g_rt == null) return;
+    builtins::BuiltinContext* ctx = (builtins::BuiltinContext*)ctxp;
+    TVal v;
+    if (!resolve_handle(g_rt, ctxp, id, &v)) return;
+    builtins::host_return(ctx, v);
+}
+
+fn void jse_return_number(void* ctxp, double d) @export("jse_return_number") {
+    if (ctxp == null) return;
+    TVal v;
+    v.set_number(d);
+    builtins::host_return((builtins::BuiltinContext*)ctxp, v);
+}
+
+fn void jse_return_bool(void* ctxp, int b) @export("jse_return_bool") {
+    if (ctxp == null) return;
+    TVal v;
+    v.set_boolean(b != 0);
+    builtins::host_return((builtins::BuiltinContext*)ctxp, v);
+}
+
+fn void jse_return_null(void* ctxp) @export("jse_return_null") {
+    if (ctxp == null) return;
+    TVal v;
+    v.set_null();
+    builtins::host_return((builtins::BuiltinContext*)ctxp, v);
+}
+
+/// Set the return value to a fresh JS string built from UTF-8 bytes.
+fn void jse_return_string(void* ctxp, char* utf8, usz len) @export("jse_return_string") {
+    if (ctxp == null || utf8 == null) return;
+    builtins::BuiltinContext* ctx = (builtins::BuiltinContext*)ctxp;
+    builtins::host_return(ctx, builtins::host_new_string(ctx, utf8[:len]));
+}
+
+/// Throw a fresh Error of `kind` with `msg`. Does not unwind: the callback
+/// must still return normally, and the throw beats any return value set.
+fn void jse_throw_error(void* ctxp, int kind, char* msg) @export("jse_throw_error") {
+    if (ctxp == null || msg == null) return;
+    usz n = 0;
+    while (msg[n] != 0) n++;
+    builtins::host_throw_error((builtins::BuiltinContext*)ctxp, kind, msg[:n]);
+}
+
+/// Throw an arbitrary value by handle.
+fn void jse_throw(void* ctxp, uint id) @export("jse_throw") {
+    if (ctxp == null || g_rt == null) return;
+    TVal v;
+    if (!resolve_handle(g_rt, ctxp, id, &v)) return;
+    builtins::host_throw((builtins::BuiltinContext*)ctxp, v);
+}
+
+/// Promote a scope handle to a runtime-owned global handle the host may keep
+/// past the callback. The caller then owns it and must jse_value_free it.
+fn uint jse_value_persist(void* ctxp, uint id) @export("jse_value_persist") {
+    if (g_rt == null) return 0;
+    TVal v;
+    if (!resolve_handle(g_rt, ctxp, id, &v)) return 0;
+    return slot_alloc(g_rt, v);
+}
+
+/// Call a JS function from host code.
+///
+/// `argv` is an array of `argc` handles. On success stores a scope-independent
+/// global handle in *out_val (caller owns it) and returns JSE_OK. On an
+/// exception in the callee the throw is staged on the context, so the host
+/// should return promptly; the status is JSE_ERR_THROW.
+fn int jse_call(void* ctxp, uint func_id, uint* argv, uint argc, uint this_id,
+                uint* out_val) @export("jse_call") {
+    if (ctxp == null || g_rt == null) return JSE_ERR_INVALID;
+    builtins::BuiltinContext* ctx = (builtins::BuiltinContext*)ctxp;
+    Runtime* rt = g_rt;
+    if (out_val != null) *out_val = 0;
+
+    TVal fv;
+    if (!resolve_handle(rt, ctxp, func_id, &fv)) return JSE_ERR_INVALID;
+    TVal tv;
+    if (this_id == 0) { tv.set_undefined(); } else if (!resolve_handle(rt, ctxp, this_id, &tv)) { tv.set_undefined(); }
+
+    // Bounded stack array: the engine's own call paths cap staged arguments
+    // the same way, and a host needing more can build an array in JS.
+    TVal[16] args;
+    uint n = argc > 16 ? 16 : argc;
+    for (uint i = 0; i < n; i++) {
+        TVal a;
+        if (argv == null || !resolve_handle(rt, ctxp, argv[i], &a)) a.set_undefined();
+        args[i] = a;
+    }
+
+    bool ok = false;
+    TVal res = builtins::host_call(ctx, fv, &args[0], n, tv, &ok);
+    if (!ok) return JSE_ERR_THROW;
+    if (out_val != null) {
+        uint id = slot_alloc(rt, res);
+        if (id == 0 && res.is_heap_allocated()) return JSE_ERR_FULL;
+        *out_val = id;
+    }
+    return JSE_OK;
 }
