@@ -1,0 +1,84 @@
+// Behavioural test for liveness-based dead-destination elimination
+// (src/compiler/moveelim.c3). The pass NOPs an `LDREG rDst=rT` whose rDst is
+// not live-out of the copy; these cases pin the LIVE side: every copy whose
+// destination is later read must survive, or the observable value changes.
+// The dead side (an expression-statement `sum += v` whose result is thrown
+// away) is exercised too, since a wrong elimination there corrupts `sum`.
+
+var pass = 0, fail = 0;
+
+function assert(cond, msg) {
+  if (cond) { pass++; }
+  else { fail++; print("FAIL: " + msg); }
+}
+
+function eq(actual, expected, msg) {
+  assert(actual === expected, msg + " (expected " + expected + ", got " + actual + ")");
+}
+
+// ── Dead destination: expression-statement accumulate ────────────────────
+// The `A += 2` result is discarded; only A is live. The copy of the ADD
+// result into the statement-value register is dead and must be removable
+// WITHOUT disturbing A's accumulation.
+var A = 0;
+for (var i = 0; i < 10; i++) { A += 2; }
+eq(A, 20, "dead expression-statement accumulate");
+
+// ── Live destination via assignment: the value is captured each pass ─────
+var B = 0, bx = 0;
+for (var i = 0; i < 10; i++) { bx = (B += 2); }
+eq(B, 20, "assigned accumulate, source");
+eq(bx, 20, "assigned accumulate, captured value");
+
+// ── Live destination as a branch condition ───────────────────────────────
+var C = 0, cT = 0, cF = 0;
+for (var i = 0; i < 4; i++) {
+  if ((C += 1) % 2) { cT++; } else { cF++; }
+}
+eq(C, 4, "condition accumulate, source");
+eq(cT, 2, "condition accumulate, odd passes");
+eq(cF, 2, "condition accumulate, even passes");
+
+// ── Live destination as a call argument ──────────────────────────────────
+var D = 0;
+function capt(x) { return x; }
+var dR = capt(D += 5);
+eq(D, 5, "call-argument accumulate, source");
+eq(dR, 5, "call-argument accumulate, passed value");
+
+// ── Converging branch: post-join copy is a jump target ───────────────────
+// Both arms write r, then a single copy feeds the return. A branch lands on
+// the copy slot itself, so it must run for whichever arm took control.
+function pick(c) {
+  var r;
+  if (c) { r = 11; } else { r = 22; }
+  return r;
+}
+eq(pick(true), 11, "converging branch copy, true arm");
+eq(pick(false), 22, "converging branch copy, false arm");
+
+// ── Loop sum read after the loop: destination live across the back-edge ──
+var s = 0;
+for (var i = 0; i < 3; i++) { s = s + i; }
+eq(s, 3, "loop sum read after loop");
+
+// ── Returned copy: the LDREG feeds RET directly ──────────────────────────
+function add(a, b) { var r = a + b; return r; }
+eq(add(2, 3), 5, "returned copy");
+
+// ── Spread tail: trailing non-spread arg after a large spread ────────────
+// The call-window liveness must keep the argument slots live while the
+// producer-retarget liveness still collapses the literal write below
+// first_arg. Regression for the `f(1,...a,99)` shape. Kept function-scoped
+// so the low register pressure lets the retarget fire (at top level, where
+// many globals push the trailing-arg temp into the spread's dest window,
+// the codegen's temp reuse is a pre-existing compiler bug).
+function spreadTest() {
+  var arr = [2, 3, 4, 5];
+  function spreadArgs() { return arguments.length + ":" + arguments[4] + ":" + arguments[5]; }
+  return spreadArgs(1, ...arr, 99);
+}
+eq(spreadTest(), "6:5:99", "spread tail arg after large spread");
+
+print('codegen_dead_dest: ' + pass + ' passed, ' + fail + ' failed');
+if (fail > 0) { print('SOME TESTS FAILED'); throw new Error('FAIL'); }
