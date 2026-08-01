@@ -184,6 +184,37 @@ static void test_stale_handle_rejected(jse_runtime rt) {
     for (i = 0; i < 64; i++) if (reuse[i]) jse_value_free(rt, reuse[i]);
 }
 
+/* A handle freed once must stay rejected no matter how many alloc/free cycles
+ * follow. The generation counter is finite, so a slot that runs out of distinct
+ * generations has to be retired rather than recycled: without that, the counter
+ * returns to a value the stale handle still carries and the two become
+ * bit-identical, which resolves silently to an unrelated value.
+ *
+ * The loop must run well past the generation space (32767) to prove anything.
+ * A shorter run passes even when the counter does wrap. */
+static void test_stale_handle_never_resolves(jse_runtime rt) {
+    jse_value stale;
+    long i, cycles = 200000;
+    int leaked = 0;
+
+    if (jse_eval(rt, "111", 3, &stale) != JSE_OK) {
+        check("stale handle never resolves", 0);
+        return;
+    }
+    jse_value_free(rt, stale);
+
+    for (i = 0; i < cycles; i++) {
+        jse_value t;
+        double g;
+        char s[32];
+        snprintf(s, sizeof s, "%ld", 1000000 + i);
+        if (jse_eval(rt, s, strlen(s), &t) != JSE_OK) { leaked = -1; break; }
+        if (jse_get_number(rt, stale, &g) == JSE_OK) { leaked = 1; jse_value_free(rt, t); break; }
+        jse_value_free(rt, t);
+    }
+    check("stale handle never resolves across generation wrap", leaked == 0);
+}
+
 static void test_churn(jse_runtime rt) {
     int i, bad = 0;
     /* Allocate and free far past the old 1024 cap and past the point where a
@@ -305,6 +336,7 @@ int main(void) {
     test_many_live_handles(rt);
     test_stale_handle_rejected(rt);
     test_churn(rt);
+    test_stale_handle_never_resolves(rt);
     test_handles_survive_gc(rt);
 
     printf("\nhost callbacks dispatched: %d\n", host_calls);
