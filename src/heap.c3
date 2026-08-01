@@ -1136,7 +1136,7 @@ fn void Heap.init_shapes(&self) {
     self.shapes = (hobject::Shape**)self.alloc_func(self.heap_udata, bytes);
     mem::clear(self.shapes, (sz)(bytes));
     // Root shape: no properties, smallest hash (mask 0, so 2 slots).
-    self.shapes[0] = hobject::shape_create(0, 0, SHAPE_NONE, null);
+    self.shapes[0] = hobject::shape_create(0, 0, SHAPE_NONE, null, self);
     self.init_transition_table();
 }
 
@@ -1256,7 +1256,7 @@ fn ushort Heap.transition_shape_new_flags(&self, ushort cur_shape_id, void* key,
         return existing;
     }
 
-    hobject::Shape* ns = hobject::shape_extend(cur, cur_shape_id, key, flags);
+    hobject::Shape* ns = hobject::shape_extend(cur, cur_shape_id, key, flags, self);
     if (ns == null) return SHAPE_ID_NONE;
 
     uint new_id = self.alloc_shape_slot();
@@ -1739,7 +1739,7 @@ fn void Heap.reset(&self) {
     self.shape_count = 1;
     self.shape_gen   = 0;
     self.shape_free_head = SHAPE_FREE_END;
-    self.shapes[0]   = hobject::shape_create(0, 0, SHAPE_NONE, null);
+    self.shapes[0]   = hobject::shape_create(0, 0, SHAPE_NONE, null, self);
     self.init_transition_table();
 
     self.free_module_cache();
@@ -1854,7 +1854,7 @@ fn bool Heap.host_scope_set(&self, uint depth, uint index, TVal v) {
     if (arr == null) return false;
     HString* key = self.int_to_hstring((long)index);
     if (key == null) return false;
-    return arr.put_prop(key, v, hobject::PROP_FLAGS_WEC);
+    return arr.put_prop(key, v, hobject::PROP_FLAGS_WEC, self);
 }
 
 /// Read the value at `index` in scope `depth`. Returns false when the scope is

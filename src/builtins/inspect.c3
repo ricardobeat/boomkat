@@ -1048,7 +1048,7 @@ fn HString* inspect_call_method(InspectCtx* ctx, HObject* obj, char[] name) {
     if (ctx.vm == null || ctx.heap.call_fn == null) return null;
     HString* key = builtin_intern_string(ctx.heap, name);
     if (key == null) return null;
-    TVal? found = obj.get_prop_proto(key);
+    TVal? found = obj.get_prop_proto(key, ctx.heap);
     if (catch found) return null;
     if (!found.is_object() && !found.is_lightfunc()) return null;
 

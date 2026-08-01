@@ -50,7 +50,7 @@ fn EnvRecord*? setup_named_function_expr_env(Vm* vm, EnvRecord* parent,
     EnvRecord* name_env = name_env_raw;
     TVal func_tv; func_tv.set_object(func_obj);
     // Non-writable, enumerable, configurable: the flags PUTLEX_C uses for const.
-    name_env.bindings.put_prop((void*)name_hstr, func_tv, hobject::PROP_FLAGS_EC);
+    name_env.bindings.put_prop((void*)name_hstr, func_tv, hobject::PROP_FLAGS_EC, vm.heap);
     return name_env;
 }
 
@@ -199,7 +199,7 @@ fn bool vm_run_depth_exceeded(Vm* vm) {
         if (msg_str != null && msg_key != null) {
             TVal msg_val;
             msg_val.set_string(msg_str);
-            eo.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WEC);
+            eo.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WEC, vm.heap);
         }
         err.set_object(eo);
     }
@@ -642,12 +642,12 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                     if (try arr = arr_raw) {
                         arr.prototype = vm.heap.array_proto;
                         for (uint i = 0; i < overflow; i++) {
-                            arr.set_array_idx(i, args[copy_count + i]);
+                            arr.set_array_idx(i, args[copy_count + i], ((Vm*)vm_ptr).heap);
                         }
                         HString* len_str = (HString*)vm.heap.strs[heap::BuiltinStr.LENGTH];
                         TVal len_tv;
                         len_tv.set_fastint((long)overflow);
-                        if (len_str != null) arr.put_prop(len_str, len_tv, hobject::PROP_FLAGS_WEC);
+                        if (len_str != null) arr.put_prop(len_str, len_tv, hobject::PROP_FLAGS_WEC, ((Vm*)vm_ptr).heap);
                         frame[rest_idx].set_object(arr);
                     }
                 } else {
@@ -676,7 +676,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                     // Read from the original args[] array (not frame[]) so arguments
                     // beyond num_regs are included when nargs > nregs.
                     for (uint ai = 0; ai < nargs; ai++) {
-                        args_obj.set_array_idx(ai, args[ai]);
+                        args_obj.set_array_idx(ai, args[ai], ((Vm*)vm_ptr).heap);
                     }
                     // ES5 §10.6: [[Prototype]] is Object.prototype
                     args_obj.prototype = vm.heap.object_proto;
@@ -691,7 +691,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                     if (args_name != null) {
                         TVal args_tv;
                         args_tv.set_object(args_obj);
-                        env::env_declare(act.var_env, args_name, args_tv);
+                        env::env_declare(act.var_env, args_name, args_tv, ((Vm*)vm_ptr).heap);
                     }
                 }
             }
@@ -842,7 +842,7 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
         if (args_arr != null) {
             HString* len_key = builtins::builtin_intern_string(heap, "length");
             if (len_key != null) {
-                TVal? lv = args_arr.get_prop_proto(len_key);
+                TVal? lv = args_arr.get_prop_proto(len_key, ((Vm*)vm_ptr).heap);
                 if (try l = lv) {
                     if (l.is_fastint()) {
                         bound_argc = (uint)l.get_fastint();
@@ -874,7 +874,7 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
                 if (n > 0 && n < 20) {
                     HString* ek = builtins::builtin_intern_string(heap, buf[:n]);
                     if (ek != null) {
-                        TVal? e = args_arr.get_prop_proto(ek);
+                        TVal? e = args_arr.get_prop_proto(ek, ((Vm*)vm_ptr).heap);
                         if (try got = e) ev = got;
                     }
                 }
@@ -908,7 +908,7 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
     new_this.prototype = heap.object_proto;
     HString* ctor_proto_key = (HString*)heap.strs[heap::BuiltinStr.PROTOTYPE];
     if (ctor_proto_key != null) {
-        if (try proto_tv = new_target_obj.get_prop_proto(ctor_proto_key)) {
+        if (try proto_tv = new_target_obj.get_prop_proto(ctor_proto_key, ((Vm*)vm_ptr).heap)) {
             if (proto_tv.is_object() && proto_tv.get_heapptr() != null) {
                 new_this.prototype = (HObject*)proto_tv.get_heapptr();
             }
@@ -1092,13 +1092,13 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
                     if (rest_idx + ri < nregs) {
                         HString* rkey = vm.heap.int_to_hstring((long)ri);
                         if (rkey != null) {
-                            rest_arr.put_prop(rkey, frame[rest_idx + ri], hobject::PROP_FLAGS_WEC);
+                            rest_arr.put_prop(rkey, frame[rest_idx + ri], hobject::PROP_FLAGS_WEC, ((Vm*)vm_ptr).heap);
                         }
                     }
                 }
                 HString* len_str = (HString*)vm.heap.strs[heap::BuiltinStr.LENGTH];
                 TVal len_val; len_val.set_fastint((long)overflow);
-                rest_arr.put_prop(len_str, len_val, hobject::PROP_FLAGS_WEC);
+                rest_arr.put_prop(len_str, len_val, hobject::PROP_FLAGS_WEC, ((Vm*)vm_ptr).heap);
                 frame[rest_idx].set_object(rest_arr);
             } else {
                 frame[rest_idx].set_undefined();
@@ -1109,7 +1109,7 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
         HObject*? args_obj_raw = vm.heap.alloc_object(hobject::ObjClass.ARGUMENTS);
         if (try args_obj = args_obj_raw) {
             for (uint ai = 0; ai < nargs; ai++) {
-                args_obj.set_array_idx(ai, frame[ai]);
+                args_obj.set_array_idx(ai, frame[ai], ((Vm*)vm_ptr).heap);
             }
             args_obj.prototype = vm.heap.object_proto;
             // Install length, callee, and @@iterator (= %Array.prototype.values%)
@@ -1122,7 +1122,7 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
             if (args_name != null) {
                 TVal args_tv;
                 args_tv.set_object(args_obj);
-                env::env_declare(cfn_var_env, args_name, args_tv);
+                env::env_declare(cfn_var_env, args_name, args_tv, ((Vm*)vm_ptr).heap);
             }
         }
     }
@@ -2760,7 +2760,7 @@ fn TVal? Vm.run(Vm* vm) {
                 } else {
                     // Data property (or not present). Read raw value via the
                     // prototype chain; fall back to undefined if missing.
-                    TVal? raw = rfunc.get_prop_proto(hasinst_key);
+                    TVal? raw = rfunc.get_prop_proto(hasinst_key, vm.heap);
                     if (try raw_v = raw) {
                         hasinst_val = raw_v;
                         have_value = true;
@@ -2850,7 +2850,7 @@ fn TVal? Vm.run(Vm* vm) {
                             continue;
                         }
             } else {
-                proto_val = get_prop_with_proto(rfunc, proto_key_str);
+                proto_val = get_prop_with_proto(rfunc, proto_key_str, vm.heap);
             }
             if (!proto_val.is_object()) {
                 // ES6 §7.3.19 OrdinaryHasInstance step 6: If Type(P) is not
@@ -2946,7 +2946,7 @@ fn TVal? Vm.run(Vm* vm) {
                     // An out-of-bounds index checks only the prototype.
                     void* key = get_prop_key(vm, rb);
                     if (key != null) {
-                        ra.set_boolean(obj.prototype != null && obj.prototype.has_prop_proto(key));
+                        ra.set_boolean(obj.prototype != null && obj.prototype.has_prop_proto(key, vm.heap));
                     } else {
                         ra.set_boolean(false);
                     }
@@ -2980,7 +2980,7 @@ fn TVal? Vm.run(Vm* vm) {
                         }
                     }
                 }
-                ra.set_boolean(obj.has_prop_proto(key));
+                ra.set_boolean(obj.has_prop_proto(key, vm.heap));
             } else {
                 ra.set_boolean(false);
             }
@@ -3545,7 +3545,7 @@ fn TVal? Vm.run(Vm* vm) {
                     HString* super_called_key = builtins::builtin_intern_string(vm.heap, "@@__derived_super_called__");
                     TVal true_tv; true_tv.set_boolean(true);
                     HObject* this_hobj = (HObject*)super_bound_act.this_binding.get_heapptr();
-                    this_hobj.put_prop(super_called_key, true_tv, hobject::PROP_FLAGS_NNC);
+                    this_hobj.put_prop(super_called_key, true_tv, hobject::PROP_FLAGS_NNC, vm.heap);
                 }
             }
 
@@ -3731,7 +3731,7 @@ fn TVal? Vm.run(Vm* vm) {
                     HString* super_called_key = builtins::builtin_intern_string(vm.heap, "@@__derived_super_called__");
                     TVal true_tv; true_tv.set_boolean(true);
                     HObject* this_hobj = (HObject*)su_bound_act.this_binding.get_heapptr();
-                    this_hobj.put_prop(super_called_key, true_tv, hobject::PROP_FLAGS_NNC);
+                    this_hobj.put_prop(super_called_key, true_tv, hobject::PROP_FLAGS_NNC, vm.heap);
                 }
                 // §8.1.1.3.1 BindThisValue step 3, a second super() call: the
                 // superclass constructor already ran (side effects above), but
@@ -4582,7 +4582,7 @@ fn TVal? Vm.run(Vm* vm) {
                         }
                     }
 
-                    int put_result = env::env_try_put_lex(ds.act.lex_env, key, *ra, true);
+                    int put_result = env::env_try_put_lex(ds.act.lex_env, key, *ra, ds.vm.heap, true);
                     if (put_result == -1) {
                         HString* name_hstr = (HString*)key;
                         if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
@@ -4606,7 +4606,7 @@ fn TVal? Vm.run(Vm* vm) {
                             }
                             break;
                         }
-                        env::env_put(ds.act.var_env, key, *ra);
+                        env::env_put(ds.act.var_env, key, *ra, ds.vm.heap);
                     }
                     vm.heap.decref_tval(ra);
                     ra.set_undefined();
@@ -4840,7 +4840,7 @@ fn TVal? Vm.run(Vm* vm) {
                     // ENV_STRICT TODO: own-vs-parent check for lex_env and var_env walks.
                     // Would need to introspect env_try_put_lex or rewrite walk here.
                     // Combined single-walk: check lex_env, writability, and update in one pass
-                    int put_result = env::env_try_put_lex(ds.act.lex_env, key, *ra);
+                    int put_result = env::env_try_put_lex(ds.act.lex_env, key, *ra, ds.vm.heap);
                     if (put_result == -1) {
                         // A const violation throws a TypeError.
                         HString* name_hstr = (HString*)key;
@@ -4850,7 +4850,7 @@ fn TVal? Vm.run(Vm* vm) {
                         break;
                     } else if (put_result == 0) {
                         // Not in lex_env, so fall through to var_env.
-                        env::env_put(ds.act.var_env, key, *ra);
+                        env::env_put(ds.act.var_env, key, *ra, ds.vm.heap);
                     }
                     // put_result == 1: already updated in lex_env
                     // Release ra's reference, since the binding now owns one.
@@ -4903,7 +4903,7 @@ fn TVal? Vm.run(Vm* vm) {
                         }
                     }
 
-                    int put_result = env::env_try_put_lex(ds.act.lex_env, key, *ra, true);
+                    int put_result = env::env_try_put_lex(ds.act.lex_env, key, *ra, ds.vm.heap, true);
                     if (put_result == -1) {
                         HString* name_hstr = (HString*)key;
                         if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
@@ -4927,7 +4927,7 @@ fn TVal? Vm.run(Vm* vm) {
                             }
                             break;
                         }
-                        env::env_put(ds.act.var_env, key, *ra);
+                        env::env_put(ds.act.var_env, key, *ra, ds.vm.heap);
                     }
                     vm.heap.decref_tval(ra);
                     ra.set_undefined();
@@ -4989,7 +4989,7 @@ fn TVal? Vm.run(Vm* vm) {
                     $endif
                     env::env_declare_global_func(ds.act.var_env, fdecl_name.get_heapptr(), *ra,
                         ds.act.var_env == vm.global_env,
-                        ((CompiledFunction*)ds.act.func).is_eval_fn());
+                        ((CompiledFunction*)ds.act.func).is_eval_fn(), ds.vm.heap);
                 }
             }
             break;
@@ -5009,7 +5009,7 @@ fn TVal? Vm.run(Vm* vm) {
                     void* key = name_val.get_heapptr();
                     env::env_declare_var(ds.act.var_env, key, *ra,
                         ds.act.var_env == vm.global_env,
-                        ((CompiledFunction*)ds.act.func).is_eval_fn(), true);
+                        ((CompiledFunction*)ds.act.func).is_eval_fn(), ds.vm.heap, true);
                 }
             }
             break;
@@ -5058,7 +5058,7 @@ fn TVal? Vm.run(Vm* vm) {
                     // (ES2015 §8.1.1.4.15/.17, §15.1.11 vs §18.2.1.2).
                     env::env_declare_var(ds.act.var_env, key, *ra,
                         ds.act.var_env == vm.global_env,
-                        ((CompiledFunction*)ds.act.func).is_eval_fn());
+                        ((CompiledFunction*)ds.act.func).is_eval_fn(), ds.vm.heap);
 
                     // Populate VarIC for next time
                     if (ds.var_ic_base != null) {
@@ -5094,7 +5094,7 @@ fn TVal? Vm.run(Vm* vm) {
                     if (vm.current_func.needs_env() == false) { unreachable("ENV_STRICT: needs_env=false fn touched own env: PUTLEX"); }
                     $endif
 
-                    env::env_declare_lex(ds.act.lex_env, key, *ra);
+                    env::env_declare_lex(ds.act.lex_env, key, *ra, vm.heap);
                 }
             }
             continue;
@@ -5111,7 +5111,7 @@ fn TVal? Vm.run(Vm* vm) {
                     if (vm.current_func.needs_env() == false) { unreachable("ENV_STRICT: needs_env=false fn touched own env: PUTLEX_C"); }
                     $endif
 
-                    ds.act.lex_env.bindings.put_prop(key, *ra, hobject::PROP_FLAGS_EC);
+                    ds.act.lex_env.bindings.put_prop(key, *ra, hobject::PROP_FLAGS_EC, vm.heap);
                 }
             }
             continue;
@@ -5134,7 +5134,7 @@ fn TVal? Vm.run(Vm* vm) {
                     // sentinel alive when a TYPEOFIDENT references its name.
 
                     TVal tdz = env::tdz_sentinel();
-                    ds.act.lex_env.bindings.put_prop(key, tdz, hobject::PROP_FLAGS_WEC);
+                    ds.act.lex_env.bindings.put_prop(key, tdz, hobject::PROP_FLAGS_WEC, vm.heap);
                 }
             }
             continue;

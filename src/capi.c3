@@ -701,7 +701,7 @@ fn int jse_register_fn(void* rtp, char* name, usz name_len, void* cfn, void* uda
     if (catch fo) { set_err(rt, JSE_ERR_NOMEM, "could not create function object"); return JSE_ERR_NOMEM; }
     TVal fv;
     fv.set_object(fo);
-    if (!env::env_declare(rt.vm.global_env, (void*)nm, fv)) {
+    if (!env::env_declare(rt.vm.global_env, (void*)nm, fv, rt.heap)) {
         set_err(rt, JSE_ERR_INTERNAL, "could not bind function name");
         return JSE_ERR_INTERNAL;
     }

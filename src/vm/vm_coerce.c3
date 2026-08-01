@@ -358,8 +358,8 @@ fn bool builtin_fn_is_constructor(Vm* vm, uint fn_idx) {
     }
 }
 
-fn TVal get_prop_with_proto(HObject* obj, void* key) {
-    TVal? result = obj.get_prop_proto(key);
+fn TVal get_prop_with_proto(HObject* obj, void* key, heap::Heap* h) {
+    TVal? result = obj.get_prop_proto(key, h);
     if (try v = result) {
         return v;
     }
@@ -666,7 +666,7 @@ fn void vm_set_toprimitive_error(Vm* vm) {
             msg_val.set_string(msg_str);
             HString* msg_key = intern_string(vm, "message");
             if (msg_key != null) {
-                err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WEC);
+                err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WEC, vm.heap);
             }
         }
         TVal err_val;
@@ -687,7 +687,7 @@ fn void vm_set_type_error(Vm* vm, char[] msg) {
             msg_val.set_string(msg_str);
             HString* msg_key = intern_string(vm, "message");
             if (msg_key != null) {
-                err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WEC);
+                err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WEC, vm.heap);
             }
         }
         TVal err_val;
@@ -708,7 +708,7 @@ fn void vm_set_range_error(Vm* vm, char[] msg) {
             msg_val.set_string(msg_str);
             HString* msg_key = intern_string(vm, "message");
             if (msg_key != null) {
-                err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WEC);
+                err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WEC, vm.heap);
             }
         }
         TVal err_val;
@@ -822,7 +822,7 @@ fn TVal to_primitive_value(Vm* vm, TVal* val, int hint = 0) {
                 if (vm_check_call_fn_error(vm)) return *val;
             } else {
                 // Data property: try get_prop_proto as fallback
-                TVal? toprim_val = obj.get_prop_proto(toprim_key);
+                TVal? toprim_val = obj.get_prop_proto(toprim_key, vm.heap);
                 if (try tv = toprim_val) {
                     toprim_fn = tv;
                 } else {
@@ -879,7 +879,7 @@ fn TVal to_primitive_value(Vm* vm, TVal* val, int hint = 0) {
             if (first_key != null) {
                 TVal first_fn;
                 bool first_found = false;
-                hobject::PropLookupResult first_res = obj.get_prop_or_accessor_proto((void*)first_key, true);
+                hobject::PropLookupResult first_res = obj.get_prop_or_accessor_proto((void*)first_key, true, vm.heap);
                 if (first_res.kind == hobject::PropLookupKind.PROP_DATA) {
                     first_fn = first_res.data_val;
                     first_found = true;
@@ -901,7 +901,7 @@ fn TVal to_primitive_value(Vm* vm, TVal* val, int hint = 0) {
             if (second_key != null) {
                 TVal second_fn;
                 bool second_found = false;
-                hobject::PropLookupResult second_res = obj.get_prop_or_accessor_proto((void*)second_key, true);
+                hobject::PropLookupResult second_res = obj.get_prop_or_accessor_proto((void*)second_key, true, vm.heap);
                 if (second_res.kind == hobject::PropLookupKind.PROP_DATA) {
                     second_fn = second_res.data_val;
                     second_found = true;

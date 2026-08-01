@@ -177,14 +177,13 @@ fn bool env_has(EnvRecord* env, void* key) @inline {
 /// Assign to a binding. An existing one is updated wherever in the chain it
 /// lives; if the name is bound nowhere, a new binding appears in the immediate
 /// environment.
-fn bool env_put(EnvRecord* env, void* key, TVal val) {
+fn bool env_put(EnvRecord* env, void* key, TVal val, Heap* h) {
     EnvRecord* cur = env;
     while (cur != null) {
         int idx = cur.bindings.find_prop_idx(key);
         if (idx >= 0) {
             TVal* pv = &cur.bindings.prop_values()[idx];
-            if (hobject::_active_heap != null) {
-                heap::Heap* h = (heap::Heap*)hobject::_active_heap;
+            if (h != null) {
                 if (pv.is_string() || pv.is_bigint()) { h.decref_tval(pv); }
                 *pv = val;
                 if (val.is_string() || val.is_bigint()) { void* p = val.get_heapptr(); if (p != null) ((types::HeapHeader*)p).incref(); }
@@ -197,20 +196,20 @@ fn bool env_put(EnvRecord* env, void* key, TVal val) {
     }
     // Unbound everywhere, so create it here.
     EnvRecord* target = env;
-    return target.bindings.put_prop(key, val, hobject::PROP_FLAGS_WEC);
+    return target.bindings.put_prop(key, val, hobject::PROP_FLAGS_WEC, h);
 }
 
 /// Declare a binding in the given environment only (no chain walk).
-fn bool env_declare(EnvRecord* env, void* key, TVal val) @inline {
-    return env.bindings.put_prop(key, val, hobject::PROP_FLAGS_WEC);
+fn bool env_declare(EnvRecord* env, void* key, TVal val, Heap* h) @inline {
+    return env.bindings.put_prop(key, val, hobject::PROP_FLAGS_WEC, h);
 }
 
 /// Declare a non-writable, enumerable binding (CreateImmutableBinding, ES2015
 /// §8.1.1.1.3). `import * as ns` uses this (§16.2.1.6.2 step 8.b.ii): the
 /// namespace object is bound once, and assigning to the local name afterwards
 /// must throw a TypeError, as it would for a `const`.
-fn bool env_declare_const(EnvRecord* env, void* key, TVal val) @inline {
-    return env.bindings.put_prop(key, val, hobject::PROP_FLAGS_EC);
+fn bool env_declare_const(EnvRecord* env, void* key, TVal val, Heap* h) @inline {
+    return env.bindings.put_prop(key, val, hobject::PROP_FLAGS_EC, h);
 }
 
 /// Declare a `var` binding in this environment alone, with no chain walk.
@@ -234,13 +233,13 @@ fn bool env_declare_const(EnvRecord* env, void* key, TVal val) @inline {
 ///
 /// FunctionDeclaration hoisting uses `env_declare_global_func` instead, since
 /// CreateGlobalFunctionBinding treats an existing property differently.
-fn bool env_declare_var(EnvRecord* env, void* key, TVal val, bool is_global, bool is_eval_code, bool is_bare = false) @inline {
+fn bool env_declare_var(EnvRecord* env, void* key, TVal val, bool is_global, bool is_eval_code, Heap* h, bool is_bare = false) @inline {
     if (is_global && is_bare && env.bindings.has_prop(key)) {
         return true;
     }
     hobject::PropFlags flags = !is_global ? hobject::PROP_FLAGS_WEC
         : (is_eval_code ? hobject::PROP_FLAGS_WEC : hobject::PROP_FLAGS_WE);
-    return env.bindings.put_prop(key, val, flags);
+    return env.bindings.put_prop(key, val, flags, h);
 }
 
 /// Instantiate a top-level FunctionDeclaration binding
@@ -259,9 +258,9 @@ fn bool env_declare_var(EnvRecord* env, void* key, TVal val, bool is_global, boo
 ///     CanDeclareGlobalFunction, emitted as CHKGLOBALFUNC, has already rejected
 ///     the illegal redefinitions, so anything arriving here is writable and
 ///     enumerable.
-fn bool env_declare_global_func(EnvRecord* env, void* key, TVal val, bool is_global, bool is_eval_code) @inline {
+fn bool env_declare_global_func(EnvRecord* env, void* key, TVal val, bool is_global, bool is_eval_code, Heap* h) @inline {
     if (!is_global) {
-        return env.bindings.put_prop(key, val, hobject::PROP_FLAGS_WEC);
+        return env.bindings.put_prop(key, val, hobject::PROP_FLAGS_WEC, h);
     }
     int idx = env.bindings.find_prop_idx(key);
     hobject::PropFlags flags = is_eval_code ? hobject::PROP_FLAGS_WEC : hobject::PROP_FLAGS_WE;
@@ -269,27 +268,27 @@ fn bool env_declare_global_func(EnvRecord* env, void* key, TVal val, bool is_glo
         hobject::PropFlags existing = env.bindings.get_prop_flags((uint)idx);
         if (!existing.configurable) { flags = existing; }
     }
-    return env.bindings.put_prop(key, val, flags);
+    return env.bindings.put_prop(key, val, flags, h);
 }
 
 /// Declare a built-in global, which ES §17 requires to be
 /// { writable: true, enumerable: false, configurable: true }.
-fn bool env_declare_nonenum(EnvRecord* env, void* key, TVal val) @inline {
-    return env.bindings.put_prop(key, val, hobject::PROP_FLAGS_WC);
+fn bool env_declare_nonenum(EnvRecord* env, void* key, TVal val, Heap* h) @inline {
+    return env.bindings.put_prop(key, val, hobject::PROP_FLAGS_WC, h);
 }
 
 /// Declare an immutable global: `undefined`, `NaN`, and `Infinity` (ES5 §15.1).
-fn bool env_declare_immutable(EnvRecord* env, void* key, TVal val) @inline {
-    return env.bindings.put_prop(key, val, hobject::PROP_FLAGS_NNC);
+fn bool env_declare_immutable(EnvRecord* env, void* key, TVal val, Heap* h) @inline {
+    return env.bindings.put_prop(key, val, hobject::PROP_FLAGS_NNC, h);
 }
 
 /// Declare an accessor binding in this environment alone. `accessor_value` must
 /// be a boxed getter and setter pair from `hobject::hobject_create_accessors` or
 /// the module-binding helper above it. Live module imports use this so a read
 /// reaches the exporting module's current value rather than a snapshot.
-fn bool env_declare_accessor(EnvRecord* env, void* key, TVal accessor_value) @inline {
+fn bool env_declare_accessor(EnvRecord* env, void* key, TVal accessor_value, Heap* h) @inline {
     hobject::PropFlags flags = { .writable = false, .enumerable = true, .configurable = false, .is_accessor = true };
-    return env.bindings.put_prop(key, accessor_value, flags);
+    return env.bindings.put_prop(key, accessor_value, flags, h);
 }
 
 // ============================================================================
@@ -328,8 +327,8 @@ $endif
 
 /// Bind a name in this lexical record alone, leaving the parent chain untouched.
 /// PUTLEX uses this for `let` and `const` declarations in the current block.
-fn bool env_declare_lex(EnvRecord* lex_env, void* key, TVal val) @inline {
-    return lex_env.bindings.put_prop(key, val, hobject::PROP_FLAGS_WEC);
+fn bool env_declare_lex(EnvRecord* lex_env, void* key, TVal val, Heap* h) @inline {
+    return lex_env.bindings.put_prop(key, val, hobject::PROP_FLAGS_WEC, h);
 }
 
 /// Check if a binding exists in the lexical environment chain.
@@ -386,7 +385,7 @@ fn bool env_is_lex_writable(EnvRecord* lex_env, void* key) {
 /// -2 only happens under `check_tdz`, which PUTVAR_ASSIGN passes for a user
 /// assignment. Ordinary PUTVAR leaves it false so it can initialize a binding
 /// still holding the sentinel.
-fn int env_try_put_lex(EnvRecord* lex_env, void* key, TVal val, bool check_tdz = false) {
+fn int env_try_put_lex(EnvRecord* lex_env, void* key, TVal val, Heap* h, bool check_tdz = false) {
     EnvRecord* cur = lex_env;
     while (cur != null) {
         int idx = cur.bindings.find_prop_idx(key);
@@ -399,8 +398,7 @@ fn int env_try_put_lex(EnvRecord* lex_env, void* key, TVal val, bool check_tdz =
                 return -1;
             }
             TVal* pv = &cur.bindings.prop_values()[idx];
-            if (hobject::_active_heap != null) {
-                heap::Heap* h = (heap::Heap*)hobject::_active_heap;
+            if (h != null) {
                 // Strings and BigInts are refcounted, so the old value is
                 // released and the new one taken.
                 if (pv.is_string() || pv.is_bigint()) { h.decref_tval(pv); }

@@ -352,7 +352,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                             if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
                             new_val.set_number(d + (is_inc ? 1.0 : -1.0));
                         }
-                        env::env_put(ds.act.var_env, key, new_val);
+                        env::env_put(ds.act.var_env, key, new_val, ds.vm.heap);
                         vm.heap.tval_copy_ref(ra, &new_val);
                         found = true;
                     }

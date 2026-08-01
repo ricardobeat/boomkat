@@ -234,10 +234,10 @@ fn bool forin_mark_seen(Heap* h, ForInSeen* seen, HString* key) {
 /// entirely, since their keys are virtual, added and removed through traps, and re-
 /// invoking [[HasProperty]] could yield inconsistent results, matching
 /// Duktape's `check_existence = !IS_PROXY(enum_target)` bypass.
-fn bool forin_key_still_exists(HObject* target, HString* key) {
+fn bool forin_key_still_exists(HObject* target, HString* key, heap::Heap* h) {
     if (target == null || key == null) return false;
     if (target.flags.exotic_proxyobj) return true;
-    if (target.has_prop_proto((void*)key)) return true;
+    if (target.has_prop_proto((void*)key, h)) return true;
 
     // TypedArray exotic: integer-indexed elements are accessible via the
     // exotic [[Get]] handler, not find_prop_idx / dense_arridx_lookup.  An
