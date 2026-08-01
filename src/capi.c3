@@ -51,20 +51,32 @@ const usz ERRBUF = 512;
 // Index is stored biased by one, which keeps 0 reserved as "no value" and lets
 // jse_call/jse_eval keep treating a zero out-param as failure.
 //
-// 19 index bits cap the registry at 524287 simultaneously live handles. That is
+// 16 index bits cap the registry at 65535 simultaneously live handles. That is
 // a real ceiling reported as JSE_ERR_FULL, not a silent wrap: the array itself
 // grows on demand and never reserves that much.
 //
-// 12 generation bits retire a slot on free. A stale handle to a freed slot
+// 15 generation bits retire a slot on free. A stale handle to a freed slot
 // mismatches the slot's current generation and is rejected, so it can never
-// resolve to whatever value later occupies that index. On wrap (4096 alloc/free
-// cycles on the SAME index while a stale handle to it is still held) a stale
-// handle could alias again; the `used` flag catches every stale handle whose
-// slot is merely free, which is the reachable case.
-const uint SLOT_INDEX_BITS = 19;
-const uint SLOT_INDEX_MASK = (1u << SLOT_INDEX_BITS) - 1;   // 524287
-const uint SLOT_GEN_BITS   = 12;
-const uint SLOT_GEN_MASK   = (1u << SLOT_GEN_BITS) - 1;     // 4095
+// resolve to whatever value later occupies that index.
+//
+// The generation counter is finite, so it is not allowed to wrap. A slot whose
+// generation reaches SLOT_GEN_MAX has exhausted its supply of distinct handles
+// and is permanently retired instead of being returned to the free list: every
+// handle ever issued for that index stays rejectable forever. Without that, the
+// counter would return to a value a stale handle still carries and the two
+// would become bit-identical, which no check downstream could separate.
+//
+// Retirement is permanent for the life of the runtime. It cannot be undone by
+// waiting for the registry to empty: a handle freed long ago is still held by
+// the host, and resetting the generation would make it resolve again. One index
+// is spent per 32767 alloc/free cycles on it, so exhausting all 65535 indexes
+// takes over two billion cycles, and the result is a clean JSE_ERR_FULL rather
+// than a stale handle resolving.
+const uint SLOT_INDEX_BITS = 16;
+const uint SLOT_INDEX_MASK = (1u << SLOT_INDEX_BITS) - 1;   // 65535
+const uint SLOT_GEN_BITS   = 15;
+const uint SLOT_GEN_MASK   = (1u << SLOT_GEN_BITS) - 1;     // 32767
+const uint SLOT_GEN_MAX    = SLOT_GEN_MASK;
 const uint SLOT_FREE_END   = 0xFFFF_FFFF;
 const uint SLOT_INITIAL_CAP = 64;
 
@@ -96,6 +108,7 @@ struct Runtime {
     uint     slot_count;     // high-water index, not the live count
     uint     free_head;
     uint     live;
+    uint     retired;        // slots withheld from reuse at generation max
     char[ERRBUF] errmsg;
     int      errcode;
     /// Innermost host-call context, or null outside a host callback. Lets the
@@ -160,7 +173,7 @@ fn int jse_open(void** out_rt) @export("jse_open") {
     Runtime* rt = (Runtime*)raw;
     rt.heap = hp; rt.vm = v;
     rt.slots = null; rt.slot_cap = 0; rt.slot_count = 0;
-    rt.free_head = SLOT_FREE_END; rt.live = 0;
+    rt.free_head = SLOT_FREE_END; rt.live = 0; rt.retired = 0;
     rt.active_ctx = null;
     clear_err(rt);
 
@@ -305,15 +318,26 @@ fn void jse_value_free(void* rtp, uint id) @export("jse_value_free") {
     if (e.v.is_heap_allocated()) rt.heap.decref_tval(&e.v);
     e.v.set_undefined();
     e.used = false;
-    // Retire the slot: every handle still naming this index is now stale and
-    // slot_entry will reject it, so a later occupant is never resolved through
-    // an old handle.
-    e.gen = (e.gen + 1) & SLOT_GEN_MASK;
-    if (e.gen == 0) e.gen = 1;
+    if (rt.live > 0) rt.live--;
+
+    // Advance the generation so every handle naming this index is now stale and
+    // slot_entry rejects it, keeping a later occupant unreachable through an old
+    // handle.
+    //
+    // At SLOT_GEN_MAX the counter has no unused value left: bumping it would
+    // return to a generation some outstanding handle still carries, making the
+    // two handles bit-identical. Such a slot is permanently retired instead of
+    // being relisted, so it is never allocated again and every handle for it
+    // stays rejected.
+    if (e.gen >= SLOT_GEN_MAX) {
+        rt.retired++;
+        return;
+    }
+    e.gen++;
+
     uint idx = (id & SLOT_INDEX_MASK) - 1;
     e.next_free = rt.free_head;
     rt.free_head = idx;
-    if (rt.live > 0) rt.live--;
 }
 
 // ============================================================================
