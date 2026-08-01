@@ -161,6 +161,11 @@ JSE_API int jse_get_string(jse_runtime rt, jse_value v, char *buf, size_t cap,
  * UTF-8 string owned by the runtime. Never NULL; empty when no error. Valid
  * until the next jse_* call. Formatted without re-entering the VM, so a
  * throwing user toString cannot recurse here.
+ *
+ * Every jse_ call that can fail sets this before returning a non-zero status,
+ * including the readers (jse_get_number / jse_get_bool / jse_get_string), so a
+ * host may log it unconditionally on failure. Those readers also clear it on
+ * entry, so a message never survives from an unrelated earlier call.
  */
 JSE_API const char *jse_last_error(jse_runtime rt);
 
