@@ -1,12 +1,13 @@
 # Embedding the jse engine from C99
 
-A complete, self-contained example of driving the JavaScript engine from plain
-C99: evaluate JS for a value, read that value out, surface errors, shut down.
-No build system beyond `make` and `cc`.
+Complete, self-contained examples of using the JavaScript engine from plain C99,
+in both directions: driving JS from C, and exposing C functions to JS. No build
+system beyond `make` and `cc`.
 
 | File | What it is |
 |---|---|
-| `main.c` | The example. Read this first — it is meant as documentation. |
+| `main.c` | Driving JS from C: evaluate for a value, read it out, surface errors, shut down. Read this first — it is meant as documentation. |
+| `host_fn.c` | The other direction: registering C callbacks as JS globals, with udata, arguments, throwing, and calling back into JS. |
 | `jse_util.h` / `jse_util.c` | Optional conveniences over the raw ABI (mainly the two-call string protocol). Copy them into your own project if useful. |
 | `Makefile` | Static and shared link recipes. |
 
@@ -40,14 +41,23 @@ Shared link — resolves `libjse` at run time through an rpath:
 make PREFIX=/usr/local run-shared
 ```
 
+The host-function example, `host_fn.c`, is a separate static binary:
+
+```sh
+make PREFIX=/usr/local run-host-fn
+```
+
 To build straight from the engine's `out/` directory without installing at all:
 
 ```sh
 make JSE_INCDIR=../../include JSE_LIBDIR=../../out \
      JSE_STATIC_LIB=../../out/jse_static.a run
+
+make JSE_INCDIR=../../include JSE_LIBDIR=../../out \
+     JSE_STATIC_LIB=../../out/jse_static.a run-host-fn
 ```
 
-`make clean` removes both binaries.
+`make clean` removes all three binaries.
 
 ## Expected output
 
@@ -74,6 +84,34 @@ CESU-8 internally, and `jse_get_string` converts to real UTF-8, so an astral
 character arrives as a proper 4-byte sequence rather than a mangled surrogate
 pair.
 
+`make run-host-fn` prints:
+
+```
+jse version 0.1.0
+
+host functions called from JS:
+  greet          = hello world, from c99-example
+  via map        = hello ada, from c99-example / hello alan, from c99-example
+  divide         = 42
+  .length        = 1, 2
+
+errors thrown by C, caught by JS:
+  by zero        = RangeError: division by zero
+  wrong type     = TypeError: greet() wants a string
+  not a ctor     = TypeError
+
+C calling JS back through jse_call:
+  double         = 20
+  arrow          = go!!
+  builtin        = 3
+  callee throws  = EvalError: nope
+
+greet() reached host state 4 times
+```
+
+`greet` is called four times, not three: `['ada', 'alan'].map(greet)` accounts
+for two, and the count is read from host memory through the `udata` pointer.
+
 ## What to take away
 
 **Handles, not pointers.** `jse_value` is an integer index into a GC-rooted slot
@@ -97,16 +135,56 @@ measure-then-fill protocol, so the ABI never hands back memory you must free.
 **Link the archive alone.** The vendored C (libregexp, cutils, dtoa) is already
 inside `libjse.a` and the dylib. Compiling it separately gives duplicate symbols.
 
+## Host functions (`host_fn.c`)
+
+`jse_register_fn` binds a C callback as a JS global. The callback is
+`void (*)(jse_call_ctx ctx, void *udata)` — the context is opaque and the
+`udata` pointer is handed back untouched on every call, which is how a callback
+reaches host state without a file-scope global.
+
+**Throws do not unwind.** `jse_throw_error` records the exception and returns
+normally; the callback must still return under its own power. There is no
+`longjmp` across the boundary, so C++ destructors and cleanup code are never
+skipped. A recorded throw beats any return value set in the same call, but
+returning early keeps the intent obvious. JS then catches a real `Error` with
+the right constructor, as the `RangeError` / `TypeError` lines above show.
+
+**Argument handles are scope handles.** Values from `jse_arg`, `jse_this`, and
+`jse_new_target` are valid only until the callback returns and must not be
+stored. To keep one, promote it with `jse_value_persist`, which yields a
+runtime-owned handle you must later `jse_value_free`. Handles that come back
+from `jse_call` are runtime-owned already and do need freeing.
+
+**Readers work with a NULL runtime.** Inside a callback, `jse_get_number` and
+friends accept `NULL` for the runtime, so a binding need not thread the
+`jse_runtime` through to every callback just to read an argument.
+
+**Registered functions are ordinary function objects.** They have a `.name` and
+`.length`, and work as methods, accessors, `.call`/`.apply`/`.bind` targets, and
+callbacks to built-ins — `['ada', 'alan'].map(greet)` above is a real
+`Array.prototype.map` call. Like any `map` callback, `greet` receives
+`(element, index, array)`; it simply ignores the arguments it does not want.
+Constructability is opt-in: the final `jse_register_fn` argument is 0 in this
+example, so `new greet()` throws a `TypeError`.
+
+**`jse_call` runs JS from C.** If the callee throws, it returns `JSE_ERR_THROW`
+with the exception already recorded on the context — return promptly and let the
+engine propagate it, as `mapTwice` does. Host recursion is bounded, so a
+callback that re-enters JS without end raises a `RangeError` rather than
+exhausting the native stack.
+
 ## Limitations in v1
 
 - **One runtime per process.** A second `jse_open` returns `JSE_ERR_INVALID`.
 - **Not thread-safe**, and this is documented rather than enforced.
-- **No native function registration.** Built-ins dispatch through a
-  compile-time ordinal table with no host-pointer path, so registering a C
-  callback needs engine changes, not a shim. See the note at the bottom of
-  `jse.h`.
-- **No `jse_call`.** To call a JS function from C, wrap the call in JS source
-  and use `jse_eval`.
+- **Host functions are globals.** `jse_register_fn` binds a name on the global
+  object; there is no API for installing a C callback as a property of an
+  arbitrary object. Do that from JS, by moving the global onto the object.
+- **Registration is permanent.** A host function lives for the runtime's
+  lifetime; there is no unregister call.
+- **`jse_call` is callback-only.** It takes a `jse_call_ctx`, so JS functions
+  can be called from inside a host callback but not directly from `main`. To
+  call one from the top level, wrap the call in JS source and use `jse_eval`.
 
 On Linux, link with `-lm -ldl`; the Makefile adds these automatically on
 non-Darwin platforms.

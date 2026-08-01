@@ -4,6 +4,7 @@
 #   make shared          # shared link, resolved at run time via rpath
 #   make run             # build and run the static binary
 #   make run-shared      # build and run the shared binary
+#   make run-host-fn     # build and run the host-function example
 #   make clean
 #
 # PREFIX points at the tree `make install` produced in the engine repo:
@@ -48,10 +49,14 @@ endif
 
 SRCS := main.c jse_util.c
 
-.PHONY: all static shared run run-shared clean
-all: static
+# The host-function example: C callbacks registered as JS globals.
+HOST_FN_SRCS := host_fn.c jse_util.c
+
+.PHONY: all static shared host-fn run run-shared run-host-fn clean
+all: static host-fn
 static: jse-example
 shared: jse-example-shared
+host-fn: jse-host-fn
 
 # --- static link -------------------------------------------------------------
 # The archive already contains the vendored C (libregexp, cutils, dtoa), so it
@@ -68,11 +73,21 @@ jse-example-shared: $(SRCS) jse_util.h
 	    -L$(JSE_LIBDIR) -ljse -Wl,-rpath,$(abspath $(JSE_LIBDIR)) \
 	    $(LDLIBS_EXTRA) -o $@
 
+# --- host functions ----------------------------------------------------------
+# Statically linked like jse-example; nothing extra is needed to expose C
+# callbacks to JS, since jse_register_fn is part of the same ABI.
+jse-host-fn: $(HOST_FN_SRCS) jse_util.h
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(HOST_FN_SRCS) $(JSE_STATIC_LIB) $(LDLIBS_EXTRA) \
+	    $(LDLIBS_STATIC_EXTRA) -o $@
+
 run: jse-example
 	./jse-example
 
 run-shared: jse-example-shared
 	./jse-example-shared
 
+run-host-fn: jse-host-fn
+	./jse-host-fn
+
 clean:
-	rm -f jse-example jse-example-shared
+	rm -f jse-example jse-example-shared jse-host-fn

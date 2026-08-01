@@ -1,0 +1,237 @@
+/*
+ * host_fn.c — exposing C functions to JavaScript from plain C99.
+ *
+ * Where main.c drives JS from C, this goes the other way: it registers C
+ * callbacks as JS globals and lets a script call them. It covers the four
+ * things a real embedder needs:
+ *
+ *   1. udata          — reaching host state from a callback without globals
+ *   2. arguments      — reading them out, returning a host-built string
+ *   3. throwing       — a C callback raising a TypeError that JS catches
+ *   4. jse_call       — a C callback invoking a JS function passed to it
+ *
+ * Build and run with `make run-host-fn` (see README.md).
+ */
+
+#include "jse_util.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+/*
+ * Host state. The engine passes `udata` back to every invocation untouched and
+ * never dereferences it, so this is how a callback reaches its embedder
+ * without a file-scope global.
+ */
+typedef struct {
+    const char *app_name;
+    int         calls;
+} host_state;
+
+/*
+ * greet(name) -> string
+ *
+ * Reads one argument and returns a string the host built.
+ *
+ * Two details worth copying. First, jse_get_string uses the same two-call
+ * measure-then-fill protocol as everywhere else in the ABI, so the engine
+ * never hands back memory to free. Second, the readers accept a NULL runtime
+ * inside a callback — a binding does not have to thread the jse_runtime
+ * through to its callbacks just to read an argument.
+ */
+static void h_greet(jse_call_ctx ctx, void *udata)
+{
+    host_state *st = (host_state *)udata;
+    char        name[64];
+    char        out[128];
+    size_t      len = 0;
+
+    st->calls++;
+
+    /* Missing arguments arrive as undefined, not as an invalid handle. */
+    if (jse_argc(ctx) < 1) {
+        jse_throw_error(ctx, JSE_ERROR_TYPE, "greet() needs a name");
+        return;
+    }
+
+    /* Strict readers: a non-string argument is a type error, not a coercion. */
+    if (jse_get_string(NULL, jse_arg(ctx, 0), name, sizeof(name), &len) != JSE_OK) {
+        jse_throw_error(ctx, JSE_ERROR_TYPE, "greet() wants a string");
+        return;
+    }
+
+    snprintf(out, sizeof(out), "hello %s, from %s", name, st->app_name);
+    jse_return_string(ctx, out, strlen(out));
+}
+
+/*
+ * divide(a, b) -> number
+ *
+ * Throws when asked to divide by zero. jse_throw_error does NOT unwind: it
+ * records the throw and returns normally, so the callback must return under
+ * its own power. A recorded throw beats any return value set in the same call,
+ * but returning early keeps the intent obvious.
+ */
+static void h_divide(jse_call_ctx ctx, void *udata)
+{
+    double a = 0.0, b = 0.0;
+
+    (void)udata;
+
+    if (jse_get_number(NULL, jse_arg(ctx, 0), &a) != JSE_OK ||
+        jse_get_number(NULL, jse_arg(ctx, 1), &b) != JSE_OK) {
+        jse_throw_error(ctx, JSE_ERROR_TYPE, "divide() wants two numbers");
+        return;
+    }
+    if (b == 0.0) {
+        jse_throw_error(ctx, JSE_ERROR_RANGE, "division by zero");
+        return;
+    }
+    jse_return_number(ctx, a / b);
+}
+
+/*
+ * mapTwice(fn, x) -> fn(fn(x))
+ *
+ * The host calling back into JS. jse_call runs a JS function from inside a
+ * callback; the handle it writes to out_val is runtime-owned and must be
+ * freed, unlike the scope handles from jse_arg.
+ *
+ * If the callee throws, jse_call returns JSE_ERR_THROW with the exception
+ * already recorded on this context. The right move is to return promptly and
+ * let the engine propagate it — which is what the early returns below do.
+ *
+ * Host recursion is bounded, so a callback that re-enters JS forever gets a
+ * RangeError rather than a smashed native stack.
+ */
+static void h_map_twice(jse_call_ctx ctx, void *udata)
+{
+    jse_value fn   = jse_arg(ctx, 0);
+    jse_value once = 0;
+    jse_value twice = 0;
+    jse_value args[1];
+
+    (void)udata;
+
+    args[0] = jse_arg(ctx, 1);
+    if (jse_call(ctx, fn, args, 1, 0, &once) != JSE_OK) {
+        return; /* the callee's exception is already recorded */
+    }
+
+    args[0] = once;
+    if (jse_call(ctx, fn, args, 1, 0, &twice) != JSE_OK) {
+        jse_value_free(NULL, once);
+        return;
+    }
+
+    jse_return(ctx, twice);
+
+    /*
+     * Both handles came from jse_call, so both are ours to release. Freeing
+     * `twice` after handing it to jse_return is safe: the return value has
+     * already been recorded on the context by then.
+     */
+    jse_value_free(NULL, once);
+    jse_value_free(NULL, twice);
+}
+
+/* Evaluate `src`, print `label = result`, and report any failure. */
+static int show(jse_runtime rt, const char *label, const char *src)
+{
+    char *text = jseu_eval_to_string(rt, src);
+
+    if (text == NULL) {
+        printf("%-16s ! %s\n", label, jse_last_error(rt));
+        free(text);
+        return 0;
+    }
+    printf("%-16s = %s\n", label, text);
+    free(text);
+    return 1;
+}
+
+int main(void)
+{
+    jse_runtime rt = NULL;
+    host_state  st;
+    int         status;
+
+    st.app_name = "c99-example";
+    st.calls    = 0;
+
+    status = jse_open(&rt);
+    if (status != JSE_OK) {
+        fprintf(stderr, "jse_open failed: %s\n", jseu_status_name(status));
+        return EXIT_FAILURE;
+    }
+    printf("jse version %s\n\n", jse_version());
+
+    /*
+     * ------------------------------------------------------ 1. registration
+     *
+     * Each call binds a C function as a JS global. `arity` becomes the
+     * function's .length; the trailing 0 means it is not constructable, so
+     * `new greet()` throws a TypeError. Registration lasts the runtime's
+     * lifetime. Note the explicit name lengths — the ABI takes UTF-8 bytes
+     * plus a length rather than assuming NUL termination.
+     */
+    if (jse_register_fn(rt, "greet", 5, h_greet, &st, 1, 0) != JSE_OK ||
+        jse_register_fn(rt, "divide", 6, h_divide, NULL, 2, 0) != JSE_OK ||
+        jse_register_fn(rt, "mapTwice", 8, h_map_twice, NULL, 2, 0) != JSE_OK) {
+        fprintf(stderr, "registration failed: %s\n", jse_last_error(rt));
+        jse_close(rt);
+        return EXIT_FAILURE;
+    }
+
+    /*
+     * -------------------------------------------- 2. arguments and returns
+     *
+     * A host function is an ordinary JS function object, so it works
+     * everywhere one does: called directly, or handed to a built-in.
+     */
+    printf("host functions called from JS:\n");
+    show(rt, "  greet", "greet('world')");
+    show(rt, "  via map", "['ada', 'alan'].map(greet).join(' / ')");
+    show(rt, "  divide", "divide(84, 2)");
+    show(rt, "  .length", "greet.length + ', ' + divide.length");
+
+    /*
+     * ------------------------------------------------ 3. throwing from C
+     *
+     * The throw crosses into JS as a real Error object, so an ordinary
+     * try/catch sees it with the right constructor and message.
+     */
+    printf("\nerrors thrown by C, caught by JS:\n");
+    show(rt, "  by zero",
+         "(function () { try { divide(1, 0); }"
+         " catch (e) { return e.constructor.name + ': ' + e.message; } })()");
+    show(rt, "  wrong type",
+         "(function () { try { greet(42); }"
+         " catch (e) { return e.constructor.name + ': ' + e.message; } })()");
+    show(rt, "  not a ctor",
+         "(function () { try { new greet('x'); }"
+         " catch (e) { return e.constructor.name; } })()");
+
+    /*
+     * ------------------------------------------- 4. C calling back into JS
+     */
+    printf("\nC calling JS back through jse_call:\n");
+    show(rt, "  double", "mapTwice(function (x) { return x * 2; }, 5)");
+    show(rt, "  arrow", "mapTwice(x => x + '!', 'go')");
+    show(rt, "  builtin", "mapTwice(Math.sqrt, 81)");
+    show(rt, "  callee throws",
+         "(function () { try { mapTwice(function () { throw new EvalError('nope'); }, 1); }"
+         " catch (e) { return e.constructor.name + ': ' + e.message; } })()");
+
+    /*
+     * --------------------------------------------------- 5. host state
+     *
+     * `calls` was incremented through the udata pointer on every greet(),
+     * proving the passthrough reached host memory rather than a copy.
+     */
+    printf("\ngreet() reached host state %d times\n", st.calls);
+
+    jse_close(rt);
+    return EXIT_SUCCESS;
+}
