@@ -24,8 +24,11 @@ faultdef CONST_OVERFLOW;
 // Constants
 // ============================================================================
 
-const uint MAX_REGISTERS  = 512;
+const uint MAX_REGISTERS  = 65535;
 const uint MAX_PARAMS     = 32;
+/// Sentinel for "no register" (used by local variables and fields that
+/// track an optional register index, e.g. call_prop_obj_reg).
+const ushort REG_NONE = 0xFFFF;
 // Initial capacities for growable compiler arrays.
 // These are the starting sizes; the arrays double when full.
 const uint INITIAL_CODE        = 512;
@@ -455,7 +458,7 @@ struct CompilerContext {
     ushort deferred_brand_reg_hint;
 
     /// Property call: the object register to use as 'this' in emit_call.
-    /// Set to MAX_REGISTERS when not in a property call.
+    /// Set to REG_NONE when not in a property call.
     ushort call_prop_obj_reg;
 
     /// Spread call: a scratch register (below first_arg) that a plain argument
@@ -843,7 +846,7 @@ fn void CompilerContext.init(&self, Lexer* lex, void* heap) {
     self.label_count = 0;
     self.patch_count = 0;
     self.const_hash_count = 0;
-    self.call_prop_obj_reg = MAX_REGISTERS;
+    self.call_prop_obj_reg = REG_NONE;
     self.deferred_brand_reg_hint = 0xFFFF;
     self.pushback_count = 0;
     self.pending_async_arrow_src = 0xFFFFFFFF;

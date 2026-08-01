@@ -31,8 +31,8 @@ import duktape::bytecode;
 /// Number of uint words needed to hold a MAX_REGISTERS-sized bitset.
 /// MAX_REGISTERS is defined in context.c3; this pass is only ever invoked
 /// with `code_count` bounded reg indices that fit in a register file no
-/// larger than that, so 512 bits (16 words) is always sufficient headroom.
-const uint MOVEELIM_BITSET_WORDS = (512 + 31) / 32;
+/// larger than that, so this many words is always sufficient headroom.
+const uint MOVEELIM_BITSET_WORDS = (MAX_REGISTERS + 31) / 32;
 
 struct RegSet {
     uint[MOVEELIM_BITSET_WORDS] words;

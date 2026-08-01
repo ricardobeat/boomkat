@@ -308,7 +308,7 @@ fn ushort? CompilerContext.class_expression(&self) {
     // Optional class name (only visible inside the class body).
     char[] name;
     uint class_name_idx = 0;
-    ushort name_reg = MAX_REGISTERS;
+    ushort name_reg = REG_NONE;
     bool has_name = false;
     TokenType class_name_tt = self.peek_type();
     // A class name is BindingIdentifier[?Yield, ?Await] in both the
@@ -370,10 +370,10 @@ fn ushort? CompilerContext.class_expression(&self) {
     // so its POP_LEX also happens inside the call and outer binding
     // initialization must NOT be repeated here.  Pass name_reg/idx for the
     // named case (so PUTLEX_C + POP_LEX are emitted internally) and
-    // MAX_REGISTERS/0 for the anonymous case (so neither runs).
+    // REG_NONE/0 for the anonymous case (so neither runs).
     ushort ctor_reg = self.parse_class_tail_with_name(
         name, class_expr_src_start, true,
-        has_name ? name_reg : MAX_REGISTERS,
+        has_name ? name_reg : REG_NONE,
         has_name ? class_name_idx : 0
     )!;
 
@@ -397,7 +397,7 @@ fn ushort? CompilerContext.class_expression(&self) {
 /// `export default class { ... }`. The runtime-visible `.name` must be the
 /// literal string "default" (ES2024 §16.2.3.7), distinct from the binding
 /// name "*default*" the compiler uses for the declared-export machinery.
-fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, uint class_src_start = 0xFFFFFFFF, bool is_expr = false, ushort class_name_reg = MAX_REGISTERS, uint class_name_str_idx = 0, bool is_default_export = false) {
+fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, uint class_src_start = 0xFFFFFFFF, bool is_expr = false, ushort class_name_reg = REG_NONE, uint class_name_str_idx = 0, bool is_default_export = false) {
     // Save state for restoration after class body
     bool saved_in_class_body = self.in_class_body;
     bool saved_has_super = self.has_super_binding;
@@ -428,7 +428,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
     char[] ctor_runtime_name = is_default_export ? "default" : class_name;
 
     // Parse optional extends clause
-    ushort base_reg = MAX_REGISTERS;
+    ushort base_reg = REG_NONE;
     if (self.match(TokenType.EXTENDS)) {
         // ES2022 §15.7: `ClassHeritage : extends LeftHandSideExpression`.
         // Parsing this as an AssignmentExpression would accept productions
@@ -1562,7 +1562,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
     // For classes without extends, bind __super__ = proto_reg (C.prototype).
     // Methods use super_is_home_object=true so GetSuperBase = GETPROTO(C.prototype)
     // = Object.prototype, matching the spec (HomeObject = C.prototype, super = Object.prototype).
-    if (base_reg == MAX_REGISTERS) {
+    if (base_reg == REG_NONE) {
         self.emit_abc(Opcode.LDREG, (uint)super_reg, (uint)proto_reg, 0);
         self.emit_a_bc(Opcode.PUTLEX, (uint)super_reg, super_name_idx);
     }
@@ -1591,7 +1591,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
     // If extends, set proto.__proto__ = Base.prototype (or null for `extends null`).
     // ES2015 §15.7.14 step 5.e: if superclass is null, protoParent=null,
     // constructorParent=%FunctionPrototype% (constructor already inherits it by default).
-    if (base_reg != MAX_REGISTERS) {
+    if (base_reg != REG_NONE) {
         ushort base_proto_reg = self.alloc_reg();
         // Emit a runtime null check: if (base === null) goto null_branch
         ushort null_cond_reg = self.alloc_reg();
@@ -1748,11 +1748,11 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
         // MUST be emitted as a block right before the CALL, CLOSURE must
         // come first (so it captures classScope), and the CALL must come
         // last (so className has been initialized in static_init's view of
-        // the scope).  When `class_name_reg == MAX_REGISTERS`, the class
+        // the scope).  When `class_name_reg == REG_NONE`, the class
         // had no name (anonymous class expression) and neither LDREG nor
         // PUTLEX_C nor POP_LEX are emitted; the caller never pushed a
         // classScope for the anonymous case so there is nothing to pop.
-        if (class_name_reg != MAX_REGISTERS) {
+        if (class_name_reg != REG_NONE) {
             self.emit_abc(Opcode.LDREG, (uint)class_name_reg, (uint)ctor_reg, 0);
             self.emit_a_bc(Opcode.PUTLEX_C, (uint)class_name_reg, class_name_str_idx);
             self.emit_simple(Opcode.POP_LEX);
@@ -1762,7 +1762,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
         self.emit_abc(Opcode.CALL, (uint)si_reg, (uint)si_reg, 0);
         self.free_reg(si_this_slot);
         self.free_reg(si_reg);
-    } else if (class_name_reg != MAX_REGISTERS) {
+    } else if (class_name_reg != REG_NONE) {
         // No static initializer, but the classScope className binding still
         // needs to be initialized with the constructor (so e.g. methods
         // referenced via `this.constructor` after a `super()`-without-extends

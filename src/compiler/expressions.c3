@@ -72,9 +72,9 @@ fn ushort? CompilerContext.expression_inner(&self) {
     while (self.match(TokenType.COMMA)) {
         self.free_reg(result);
         // Discard left operand's reference
-        if (self.call_prop_obj_reg != MAX_REGISTERS) {
+        if (self.call_prop_obj_reg != REG_NONE) {
             self.free_reg(self.call_prop_obj_reg);
-            self.call_prop_obj_reg = MAX_REGISTERS;
+            self.call_prop_obj_reg = REG_NONE;
         }
         self.has_inferred_name = false;
         self.inferred_name_len = 0;
@@ -90,9 +90,9 @@ fn ushort? CompilerContext.expression_inner(&self) {
         self.void_ctx = outer_void;
         result = self.assignment_expr()!;
         // Discard rightmost operand's reference too
-        if (self.call_prop_obj_reg != MAX_REGISTERS) {
+        if (self.call_prop_obj_reg != REG_NONE) {
             self.free_reg(self.call_prop_obj_reg);
-            self.call_prop_obj_reg = MAX_REGISTERS;
+            self.call_prop_obj_reg = REG_NONE;
         }
         // ES §13.16.1: an Expression built with `,` has AssignmentTargetType
         // ~invalid~, so `(a, b) = 1` is a SyntaxError even though the final
@@ -454,7 +454,7 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
     // (mirrors GETGLOBAL), else PUTVAR_ASSIGN.
     Opcode ident_store_op = lhs_was_getglobal_prim ? Opcode.PUTGLOBAL_PRIM
         : (lhs_was_getglobal ? Opcode.PUTGLOBAL : Opcode.PUTVAR_ASSIGN);
-    ushort lhs_ref_reg = MAX_REGISTERS;
+    ushort lhs_ref_reg = REG_NONE;
     bool lhs_was_member = self.last_was_member;
     ushort lhs_member_obj = self.last_member_obj_reg;
     ushort lhs_member_prop = self.last_member_prop_reg;
@@ -705,7 +705,7 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
                     && (ushort)maybe_getpropsuper.c == lhs_member_prop) {
                     if (self.call_prop_obj_reg == (ushort)lhs_last.a) {
                         self.free_reg(self.call_prop_obj_reg);
-                        self.call_prop_obj_reg = MAX_REGISTERS;
+                        self.call_prop_obj_reg = REG_NONE;
                     }
                     self.code_count -= 2;
                 }
@@ -831,7 +831,7 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
             if (!right_is_local) { self.free_reg(right); }
             left = assign_result;
         } else {
-            if (lhs_ref_reg != MAX_REGISTERS) {
+            if (lhs_ref_reg != REG_NONE) {
                 self.emit_a_bc(Opcode.THROW_UNRESOLVED, (uint)lhs_ref_reg, lhs_getvar_name_idx);
             }
             if (void_ctx && lhs_was_getvar) {
@@ -2149,9 +2149,9 @@ fn ushort? CompilerContext.postfix_expr(&self) {
 fn void CompilerContext.drop_paren_receiver_unless_ref(&self) {
     TokenType next_tt = self.peek_type();
     bool call_follows = next_tt == TokenType.LPAREN || next_tt == TokenType.OPT_CHAIN;
-    if (!call_follows && self.call_prop_obj_reg != MAX_REGISTERS) {
+    if (!call_follows && self.call_prop_obj_reg != REG_NONE) {
         self.free_reg(self.call_prop_obj_reg);
-        self.call_prop_obj_reg = MAX_REGISTERS;
+        self.call_prop_obj_reg = REG_NONE;
     }
 }
 
@@ -2163,13 +2163,13 @@ fn ushort? CompilerContext.call_expr(&self) {
     // If member_expr saved a property object but next token is not a call,
     // free the object register now. Inside parenthesized expressions, defer
     // this decision to the paren handler (which sees what follows the parens).
-    if (self.call_prop_obj_reg != MAX_REGISTERS
+    if (self.call_prop_obj_reg != REG_NONE
         && !self.inside_parens
         && !self.check(TokenType.LPAREN)
         && !self.check(TokenType.OPT_CHAIN)
         && !self.is_next_template()) {
         self.free_reg(self.call_prop_obj_reg);
-        self.call_prop_obj_reg = MAX_REGISTERS;
+        self.call_prop_obj_reg = REG_NONE;
     }
 
     // Optional chaining short-circuit jump tracking
@@ -2193,9 +2193,9 @@ fn ushort? CompilerContext.call_expr(&self) {
             self.last_was_member = false;
             self.last_was_getvar = false;
             // Free the property object used as 'this' (if any)
-            if (self.call_prop_obj_reg != MAX_REGISTERS) {
+            if (self.call_prop_obj_reg != REG_NONE) {
                 self.free_reg(self.call_prop_obj_reg);
-                self.call_prop_obj_reg = MAX_REGISTERS;
+                self.call_prop_obj_reg = REG_NONE;
             }
         } else if (self.is_next_template()) {
             // Template literal after optional chain is a SyntaxError (early error)
@@ -2208,9 +2208,9 @@ fn ushort? CompilerContext.call_expr(&self) {
             self.last_was_member = false;
             self.last_was_getvar = false;
             // Free the property object used as 'this' (if any)
-            if (self.call_prop_obj_reg != MAX_REGISTERS) {
+            if (self.call_prop_obj_reg != REG_NONE) {
                 self.free_reg(self.call_prop_obj_reg);
-                self.call_prop_obj_reg = MAX_REGISTERS;
+                self.call_prop_obj_reg = REG_NONE;
             }
         } else if (self.match(TokenType.DOT)) {
             if (self.check(TokenType.HASH_IDENT)) {
@@ -2347,7 +2347,7 @@ fn ushort? CompilerContext.call_expr(&self) {
                 self.last_was_member = false;
                 self.last_was_getvar = false;
                 // Save object for potential this binding (inner or outer call)
-                if (self.call_prop_obj_reg != MAX_REGISTERS) {
+                if (self.call_prop_obj_reg != REG_NONE) {
                     self.free_reg(self.call_prop_obj_reg);
                 }
                 self.call_prop_obj_reg = callee;
@@ -2368,7 +2368,7 @@ fn ushort? CompilerContext.call_expr(&self) {
 
                 self.last_was_member = false;
                 self.last_was_getvar = false;
-                if (self.call_prop_obj_reg != MAX_REGISTERS) {
+                if (self.call_prop_obj_reg != REG_NONE) {
                     self.free_reg(self.call_prop_obj_reg);
                 }
                 self.call_prop_obj_reg = callee;
@@ -2388,7 +2388,7 @@ fn ushort? CompilerContext.call_expr(&self) {
                 self.last_was_member = false;
                 self.last_was_getvar = false;
                 // Save object for potential this binding (inner or outer call)
-                if (self.call_prop_obj_reg != MAX_REGISTERS) {
+                if (self.call_prop_obj_reg != REG_NONE) {
                     self.free_reg(self.call_prop_obj_reg);
                 }
                 self.call_prop_obj_reg = callee;
@@ -2445,12 +2445,12 @@ fn ushort? CompilerContext.emit_call(&self, ushort callee_reg) {
     // via GETGLOBAL's varref IC and calls in one dispatch.
     // last_was_getglobal (unlike last_was_getvar) is only cleared inside
     // emit_ident_read, so it can stay stale-true through a member-access
-    // callee (a method call). Require call_prop_obj_reg == MAX_REGISTERS so
+    // callee (a method call). Require call_prop_obj_reg == REG_NONE so
     // this fires only for a plain bare-global call, the same non-method
     // precondition that makes the CALL_GLOBAL emission below reachable.
     bool getglobal_callee = self.last_was_getvar
         && self.last_was_getglobal
-        && self.call_prop_obj_reg == MAX_REGISTERS
+        && self.call_prop_obj_reg == REG_NONE
         && self.last_getvar_code_pos + 1 == self.code_count
         && self.code[self.last_getvar_code_pos].op == Opcode.GETGLOBAL
         && self.code[self.last_getvar_code_pos].a == callee_reg
@@ -2462,7 +2462,7 @@ fn ushort? CompilerContext.emit_call(&self, ushort callee_reg) {
 
     // Detect direct eval: callee was the identifier `eval` (set by primary_expr)
     // and this is not a property call (obj.eval()).
-    if (self.callee_is_eval && self.call_prop_obj_reg == MAX_REGISTERS) {
+    if (self.callee_is_eval && self.call_prop_obj_reg == REG_NONE) {
         self.has_direct_eval = true;
     }
     // Consume the flag so it doesn't leak to subsequent calls.
@@ -2513,10 +2513,10 @@ fn ushort? CompilerContext.emit_call(&self, ushort callee_reg) {
     // this-slot register is still reserved (not written) so argument
     // allocation and the callee-relocation logic above stay correct.
     bool undef_this = false;
-    if (self.call_prop_obj_reg != MAX_REGISTERS) {
+    if (self.call_prop_obj_reg != REG_NONE) {
         self.emit_abc(Opcode.LDREG, (uint)(callee_reg + 1), (uint)self.call_prop_obj_reg, 0);
         self.free_reg(self.call_prop_obj_reg);
-        self.call_prop_obj_reg = MAX_REGISTERS;
+        self.call_prop_obj_reg = REG_NONE;
     } else {
         undef_this = true;
         // Reserve the this-slot without writing it (the VM clears it): keep
@@ -2532,7 +2532,7 @@ fn ushort? CompilerContext.emit_call(&self, ushort callee_reg) {
     // Compile arguments into consecutive registers starting at first_arg
     ushort arg_count = 0;
     bool has_spread = false;
-    ushort total_count_reg = MAX_REGISTERS;
+    ushort total_count_reg = REG_NONE;
 
     if (!self.check(TokenType.RPAREN)) {
         for (;;) {
@@ -2683,10 +2683,10 @@ fn ushort? CompilerContext.emit_call(&self, ushort callee_reg) {
 ///   ...
 fn ushort? CompilerContext.emit_tagged_template(&self, ushort callee_reg) {
     // Save the member expression object (if any) for 'this' binding
-    ushort obj_reg = MAX_REGISTERS;
-    if (self.call_prop_obj_reg != MAX_REGISTERS) {
+    ushort obj_reg = REG_NONE;
+    if (self.call_prop_obj_reg != REG_NONE) {
         obj_reg = self.call_prop_obj_reg;
-        self.call_prop_obj_reg = MAX_REGISTERS;
+        self.call_prop_obj_reg = REG_NONE;
     }
 
     // Maximum number of template parts (head + middle*s + tail)
@@ -2847,7 +2847,7 @@ fn ushort? CompilerContext.emit_tagged_template(&self, ushort callee_reg) {
     }
 
     // Place 'this' slot
-    if (obj_reg != MAX_REGISTERS) {
+    if (obj_reg != REG_NONE) {
         self.emit_abc(Opcode.LDREG, (uint)(callee_reg + 1), (uint)obj_reg, 0);
         self.free_reg(obj_reg);
     } else {
@@ -3017,7 +3017,7 @@ fn ushort? CompilerContext.new_expr(&self) {
         }
         ushort arg_count = 0;
         bool has_spread = false;
-        ushort total_count_reg = MAX_REGISTERS;
+        ushort total_count_reg = REG_NONE;
 
         if (self.match(TokenType.LPAREN)) {
             if (!self.check(TokenType.RPAREN)) {
@@ -3123,7 +3123,7 @@ fn ushort? CompilerContext.new_expr(&self) {
             if (self.check(TokenType.LPAREN)) {
                 // new X()?.()
                 self.callee_is_eval = false;
-                self.call_prop_obj_reg = MAX_REGISTERS;
+                self.call_prop_obj_reg = REG_NONE;
                 ctor_reg = self.emit_call(ctor_reg)!;
                 self.last_was_member = false;
                 self.last_was_getvar = false;
@@ -3136,7 +3136,7 @@ fn ushort? CompilerContext.new_expr(&self) {
                 self.free_reg(idx_reg);
                 self.last_was_member = false;
                 self.last_was_getvar = false;
-                if (self.call_prop_obj_reg != MAX_REGISTERS) {
+                if (self.call_prop_obj_reg != REG_NONE) {
                     self.free_reg(self.call_prop_obj_reg);
                 }
                 self.call_prop_obj_reg = ctor_reg;
@@ -3152,7 +3152,7 @@ fn ushort? CompilerContext.new_expr(&self) {
                 self.free_reg(prop_reg);
                 self.last_was_member = false;
                 self.last_was_getvar = false;
-                if (self.call_prop_obj_reg != MAX_REGISTERS) {
+                if (self.call_prop_obj_reg != REG_NONE) {
                     self.free_reg(self.call_prop_obj_reg);
                 }
                 self.call_prop_obj_reg = ctor_reg;
@@ -3267,7 +3267,7 @@ fn ushort? CompilerContext.new_expr(&self) {
         } else if (self.check(TokenType.LPAREN)) {
             // Trailing call on the freshly constructed object: `new X()(args)`.
             // Throws TypeError at runtime if X isn't callable (ES §13.3.1.1 step 10).
-            self.call_prop_obj_reg = MAX_REGISTERS;
+            self.call_prop_obj_reg = REG_NONE;
             ctor_reg = self.emit_call(ctor_reg)!;
             self.last_was_member = false;
             self.last_was_getvar = false;
@@ -3323,7 +3323,7 @@ fn ushort? CompilerContext.member_expr(&self) {
                 self.last_member_obj_is_local = obj_is_base_local;
 
                 if (self.lhs_mode) {
-                    if (self.call_prop_obj_reg != MAX_REGISTERS) {
+                    if (self.call_prop_obj_reg != REG_NONE) {
                         self.free_reg(self.call_prop_obj_reg);
                     }
                     self.call_prop_obj_reg = obj;
@@ -3333,10 +3333,10 @@ fn ushort? CompilerContext.member_expr(&self) {
                     if (!priv_is_postfix) {
                         self.free_reg(prop_reg);
                     }
-                    if (self.call_prop_obj_reg != MAX_REGISTERS) {
+                    if (self.call_prop_obj_reg != REG_NONE) {
                         self.free_reg(self.call_prop_obj_reg);
                     }
-                    self.call_prop_obj_reg = priv_is_postfix ? MAX_REGISTERS : obj;
+                    self.call_prop_obj_reg = priv_is_postfix ? REG_NONE : obj;
                 }
 
                 obj = result;
@@ -3387,7 +3387,7 @@ fn ushort? CompilerContext.member_expr(&self) {
                 // if no call follows, or consumed by emit_call/emit_tagged_template.
                 TokenType next_tt = self.peek_type();
                 // Free old call_prop_obj_reg before overwriting
-                if (self.call_prop_obj_reg != MAX_REGISTERS) {
+                if (self.call_prop_obj_reg != REG_NONE) {
                     self.free_reg(self.call_prop_obj_reg);
                 }
                 if (next_tt == TokenType.LPAREN || next_tt == TokenType.OPT_CHAIN || self.is_next_template()) {
@@ -3410,12 +3410,12 @@ fn ushort? CompilerContext.member_expr(&self) {
                     self.free_reg(prop_reg);
                 }
                 // Free old call_prop_obj_reg before overwriting
-                if (self.call_prop_obj_reg != MAX_REGISTERS) {
+                if (self.call_prop_obj_reg != REG_NONE) {
                     self.free_reg(self.call_prop_obj_reg);
                 }
                 if (is_postfix) {
                     // Postfix: keep obj alive for postfix_expr (via last_member_obj_reg)
-                    self.call_prop_obj_reg = MAX_REGISTERS;
+                    self.call_prop_obj_reg = REG_NONE;
                 } else {
                     // Non-postfix: save obj for potential this-binding.
                     // It will be freed when consumed (emit_call / emit_tagged_template)
@@ -3461,7 +3461,7 @@ fn ushort? CompilerContext.member_expr(&self) {
                 // LHS / delete mode: keep obj/idx alive for possible PUTPROP/DELPROP
                 // Always save obj for this-binding as well.
                 TokenType next_tt2 = self.peek_type();
-                if (self.call_prop_obj_reg != MAX_REGISTERS) {
+                if (self.call_prop_obj_reg != REG_NONE) {
                     self.free_reg(self.call_prop_obj_reg);
                 }
                 if (next_tt2 == TokenType.LPAREN || next_tt2 == TokenType.OPT_CHAIN || self.is_next_template()) {
@@ -3480,11 +3480,11 @@ fn ushort? CompilerContext.member_expr(&self) {
                     self.free_reg(idx_reg);
                 }
                 // Free old call_prop_obj_reg before overwriting
-                if (self.call_prop_obj_reg != MAX_REGISTERS) {
+                if (self.call_prop_obj_reg != REG_NONE) {
                     self.free_reg(self.call_prop_obj_reg);
                 }
                 if (is_postfix) {
-                    self.call_prop_obj_reg = MAX_REGISTERS;
+                    self.call_prop_obj_reg = REG_NONE;
                 } else {
                     self.call_prop_obj_reg = obj;
                 }
@@ -3497,9 +3497,9 @@ fn ushort? CompilerContext.member_expr(&self) {
             // expression's `Arguments`), so `new tag\`...\`` evaluates the
             // tagged template first and applies `new` to its result.
             obj = self.emit_tagged_template(obj)!;
-            if (self.call_prop_obj_reg != MAX_REGISTERS) {
+            if (self.call_prop_obj_reg != REG_NONE) {
                 self.free_reg(self.call_prop_obj_reg);
-                self.call_prop_obj_reg = MAX_REGISTERS;
+                self.call_prop_obj_reg = REG_NONE;
             }
             self.last_was_member = false;
             obj_is_base_local = false;
@@ -4388,7 +4388,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 }
                 ushort arg_count = 0;
                 bool has_spread = false;
-                ushort total_count_reg = MAX_REGISTERS;
+                ushort total_count_reg = REG_NONE;
                 if (!self.check(TokenType.RPAREN)) {
                     for (;;) {
                         // Spread argument: super(...iterable), same lowering
@@ -4524,7 +4524,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                     self.last_member_is_private = false;
                     self.last_was_local_var = false;
                     self.last_was_optional_chain = false;
-                    self.call_prop_obj_reg = MAX_REGISTERS;
+                    self.call_prop_obj_reg = REG_NONE;
                     return throw_reg;
                 }
 
@@ -4532,7 +4532,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 // Defined here so both DOT and LBRACKET branches can call it after
                 // key evaluation (important for super[expr]: key must be evaluated
                 // BEFORE GetSuperBase per §13.5.3 Runtime Semantics).
-                ushort super_proto_reg = MAX_REGISTERS;
+                ushort super_proto_reg = REG_NONE;
 
                 // For super.x (DOT), the key is compile-time constant so we can
                 // compute the super base first (no observable ordering difference).
@@ -4585,7 +4585,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 // must be the current instance, not the prototype. Emit LDTHIS into a
                 // fresh register and store it in call_prop_obj_reg so emit_call picks
                 // it up. call_expr will free the register if no call follows.
-                if (self.call_prop_obj_reg != MAX_REGISTERS) {
+                if (self.call_prop_obj_reg != REG_NONE) {
                     self.free_reg(self.call_prop_obj_reg);
                 }
                 ushort this_reg = self.alloc_reg();
@@ -5300,7 +5300,7 @@ fn ushort? CompilerContext.array_literal(&self) {
     // Track index: compile-time uint for normal arrays,
     // register-based when spread is used
     uint index = 0;
-    ushort idx_reg = MAX_REGISTERS;
+    ushort idx_reg = REG_NONE;
     bool has_spread = false;
 
     if (!self.check(TokenType.RBRACKET)) {

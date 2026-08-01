@@ -24,8 +24,8 @@ fn ushort CompilerContext.alloc_reg(&self) {
         // as a COMPILE_ERROR; compilation continues only to keep the parser
         // in sync, since the emitted code is never run.
         self.reg_overflow = true;
-        self.next_reg = (ushort)MAX_REGISTERS;
-        self.max_reg  = (ushort)MAX_REGISTERS;
+        self.next_reg = (ushort)(MAX_REGISTERS - 1);
+        self.max_reg  = (ushort)(MAX_REGISTERS - 1);
         return (ushort)(MAX_REGISTERS - 1);
     }
     return reg;
@@ -40,8 +40,8 @@ fn ushort CompilerContext.alloc_regs(&self, ushort count) {
     }
     if (self.next_reg > MAX_REGISTERS) {
         self.reg_overflow = true;
-        self.next_reg = (ushort)MAX_REGISTERS;
-        self.max_reg  = (ushort)MAX_REGISTERS;
+        self.next_reg = (ushort)(MAX_REGISTERS - 1);
+        self.max_reg  = (ushort)(MAX_REGISTERS - 1);
         return (ushort)(MAX_REGISTERS - 1);
     }
     return first;

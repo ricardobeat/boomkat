@@ -3562,7 +3562,7 @@ fn void CompilerContext.restore_lhs_snapshot(&self, ForLhsSnapshot s) {
 ///    fusion to `last_getvar_code_pos + 1 == code_count`. After a rewind that
 ///    equality can hold for an unrelated instruction.
 fn void CompilerContext.discard_member_head_state(&self) {
-    self.call_prop_obj_reg = MAX_REGISTERS;
+    self.call_prop_obj_reg = REG_NONE;
     self.last_was_getvar = false;
     self.last_was_getglobal = false;
 }
@@ -3580,7 +3580,7 @@ fn void? CompilerContext.emit_bare_forin_loop(&self, char[] var_name, ushort obj
     // register read sees it (PUTVAR alone updates only the env slot and then
     // clears the source, desyncing the local — same hazard the bare for-of path
     // handles in emit_head_bind).
-    ushort home_reg = MAX_REGISTERS;
+    ushort home_reg = REG_NONE;
     if (!self.is_global) {
         if (try home = self.resolve_var(var_name)) { home_reg = home; }
     }
@@ -3602,7 +3602,7 @@ fn void? CompilerContext.emit_bare_forin_loop(&self, char[] var_name, ushort obj
     uint exit_jump = self.emit_cond_jump(Opcode.IF_FALSE, (uint)has_next);
     self.free_reg(has_next);
 
-    if (home_reg != MAX_REGISTERS) {
+    if (home_reg != REG_NONE) {
         self.emit_abc(Opcode.LDREG, (uint)home_reg, (uint)iter_var, 0);
     } else {
         // PUTVAR_ASSIGN, not PUTVAR: an undeclared target must throw

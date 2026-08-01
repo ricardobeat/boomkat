@@ -429,7 +429,7 @@ fn bool? CompilerContext.parse_assign_target_lhs(&self,
         *out_obj_reg  = self.last_member_obj_reg;
         *out_key_reg  = self.last_member_prop_reg;
         self.last_was_member   = false;
-        self.call_prop_obj_reg = MAX_REGISTERS;
+        self.call_prop_obj_reg = REG_NONE;
         return true;
     }
 
