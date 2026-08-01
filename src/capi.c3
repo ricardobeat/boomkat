@@ -234,8 +234,11 @@ fn int jse_eval(void* rtp, char* src, usz len, uint* out_val) @export("jse_eval"
 
     if (out_val != null) {
         TVal v = res;
+        // As in jse_call: a failed slot_alloc must surface even for a
+        // primitive, since handle 0 reads back as undefined and would
+        // otherwise look like a successful result.
         uint id = slot_alloc(rt, v);
-        if (id == 0 && v.is_heap_allocated()) {
+        if (id == 0 && !v.is_undefined()) {
             set_err(rt, JSE_ERR_FULL, "value slot table full");
             return JSE_ERR_FULL;
         }
@@ -670,8 +673,12 @@ fn int jse_call(void* ctxp, uint func_id, uint* argv, uint argc, uint this_id,
     TVal res = builtins::host_call(ctx, fv, &args[0], n, tv, &ok);
     if (!ok) return JSE_ERR_THROW;
     if (out_val != null) {
+        // Report exhaustion for every value kind. Guarding on
+        // is_heap_allocated would hand back handle 0 for an exhausted
+        // primitive, and handle 0 reads as undefined -- a silent wrong
+        // answer rather than an error.
         uint id = slot_alloc(rt, res);
-        if (id == 0 && res.is_heap_allocated()) return JSE_ERR_FULL;
+        if (id == 0 && !res.is_undefined()) return JSE_ERR_FULL;
         *out_val = id;
     }
     return JSE_OK;
