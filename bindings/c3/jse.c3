@@ -28,9 +28,11 @@
 ///     values and then reports `JsError.VALUE_TABLE_FULL`.
 module jse;
 
+import duktape::builtins;
 import duktape::compiler;
 import duktape::vm;
 import duktape::heap;
+import duktape::env;
 import duktape::hobject;
 import duktape::hstring;
 import duktape::lexer;
@@ -54,7 +56,9 @@ faultdef
     INTERNAL_ERROR,       // VM fault with no JS error attached
     WRONG_TYPE,           // as_number() on a string, etc.
     STALE_VALUE,          // value was released, or belongs to a closed runtime
-    VALUE_TABLE_FULL;     // more than MAX_ROOTED_VALUES live values
+    VALUE_TABLE_FULL,     // more than MAX_ROOTED_VALUES live values
+    NOT_CALLABLE,         // call() on something that is not a function
+    REGISTER_FAILED;      // register_fn could not install the binding
 
 /// The JS type of a value, as `typeof` would broadly classify it.
 enum JsType : int {
@@ -391,3 +395,326 @@ fn String utf8_of(HString* s, Allocator allocator) @local {
     utf8_sink = null;
     return buf.copy_str(allocator);
 }
+
+// ============================================================================
+// Host functions
+// ============================================================================
+
+/// A value seen from inside a host callback.
+///
+/// Deliberately a different type from `JsValue`: a `JsValue` is a registry slot
+/// that stays rooted until `release`, while a `JsArg` is scoped to the call and
+/// dies with it. Keeping them apart means the compiler rejects the mistake that
+/// would otherwise be a use-after-free -- stashing an argument in a global and
+/// reading it after the callback returned.
+///
+/// Copyable and cheap; it wraps the engine's raw value directly.
+struct JsArg {
+    TVal tv;
+}
+
+/// What a host callback is: it receives the call context and the `udata`
+/// pointer that was handed to `register_fn`.
+///
+/// It returns nothing. A result is produced with `ctx.ret*`, a failure with
+/// `ctx.throw_error`, exactly as the engine's own builtins do -- see the note
+/// on `JsCtx.throw_error` for why throwing does not unwind.
+alias JsHostFn = fn void(JsCtx ctx, void* udata);
+
+/// The error constructor a host callback can throw. Ordinals match the engine's
+/// builtins::HOST_ERR_* codes, asserted below rather than spelled twice.
+enum JsErrorKind : int {
+    ERROR,
+    TYPE,
+    RANGE,
+    REFERENCE,
+    SYNTAX,
+}
+
+$assert JsErrorKind.ERROR.ordinal     == builtins::HOST_ERR_ERROR;
+$assert JsErrorKind.TYPE.ordinal      == builtins::HOST_ERR_TYPE;
+$assert JsErrorKind.RANGE.ordinal     == builtins::HOST_ERR_RANGE;
+$assert JsErrorKind.REFERENCE.ordinal == builtins::HOST_ERR_REFERENCE;
+$assert JsErrorKind.SYNTAX.ordinal    == builtins::HOST_ERR_SYNTAX;
+
+/// One host call in progress. Valid only for the body of the callback; do not
+/// store it.
+///
+/// It is a thin wrapper over the context the VM already staged, so `ctx.arg(0)`
+/// costs a scope read and nothing else -- no marshalling, no handle table.
+struct JsCtx {
+    builtins::BuiltinContext* ctx;
+}
+
+/// Registration record: the C3 callback plus the host's udata. Allocated
+/// through the heap allocator so it lives exactly as long as the heap does.
+struct HostReg {
+    JsHostFn handler;
+    void*    udata;
+}
+
+/// The engine calls a `fn void(BuiltinContext*, void*)`, so this adapts the
+/// shape. The C3 callback travels as udata alongside the host's own, which is
+/// why HostReg exists rather than casting the callback straight into the table.
+fn void host_trampoline(builtins::BuiltinContext* bctx, void* udata) {
+    if (udata == null) return;
+    HostReg* reg = (HostReg*)udata;
+    if (reg.handler == null) return;
+    JsCtx ctx = { .ctx = bctx };
+    reg.handler(ctx, reg.udata);
+}
+
+/// Bind `handler` as a global function named `name`.
+///
+/// `arity` becomes the function's `.length` and is advisory: JS may call with
+/// any number of arguments, so the callback must consult `ctx.argc()`.
+/// `constructable` decides whether `new name()` works; without it `new` throws
+/// a TypeError, matching ES2015 section 10.3 where built-ins are constructors
+/// only when specified.
+///
+/// `udata` is stored verbatim and handed back on every call. The engine never
+/// dereferences or frees it, so keeping the pointed-to storage alive for the
+/// runtime's lifetime is the caller's job. Registrations last until `close` and
+/// cannot be removed.
+///
+/// Faults: NOT_OPEN, OUT_OF_MEMORY, REGISTER_FAILED
+fn void? JsRuntime.register_fn(&self, String name, JsHostFn handler, void* udata = null,
+                               int arity = 0, bool constructable = false) {
+    if (self.heap == null) return NOT_OPEN~;
+    if (handler == null) return REGISTER_FAILED~;
+
+    HString* nm = self.heap.str_intern((char[])name);
+    if (nm == null) return OUT_OF_MEMORY~;
+
+    void* raw = self.heap.alloc_func(self.heap.heap_udata, HostReg::size);
+    if (raw == null) return OUT_OF_MEMORY~;
+    HostReg* reg = (HostReg*)raw;
+    reg.handler = handler;
+    reg.udata = udata;
+
+    long slot = self.heap.register_host_fn((void*)&host_trampoline, raw, (void*)nm,
+                                           arity, constructable);
+    if (slot < 0) {
+        self.heap.free_func(self.heap.heap_udata, raw);
+        return OUT_OF_MEMORY~;
+    }
+
+    HObject*? fo = builtins::make_host_function(self.heap, (uint)slot);
+    if (catch fo) return OUT_OF_MEMORY~;
+    TVal fv;
+    fv.set_object(fo);
+    if (!env::env_declare(self.vm.global_env, (void*)nm, fv)) return REGISTER_FAILED~;
+}
+
+// --- reading the call -------------------------------------------------------
+
+/// Number of arguments actually passed, which may differ from the declared
+/// arity in either direction.
+fn uint JsCtx.argc(self) => builtins::host_argc(self.ctx);
+
+/// Argument `i`, or undefined when `i >= argc()`. No arity check needed.
+fn JsArg JsCtx.arg(self, uint i) {
+    JsArg a = { .tv = builtins::host_arg(self.ctx, i) };
+    return a;
+}
+
+/// The receiver. In this strict-only engine an undefined receiver stays
+/// undefined; it is never coerced to the global object.
+fn JsArg JsCtx.this_value(self) {
+    JsArg a = { .tv = builtins::host_this(self.ctx) };
+    return a;
+}
+
+/// `new.target`, or undefined on a plain call.
+fn JsArg JsCtx.new_target(self) {
+    JsArg a = { .tv = builtins::host_new_target(self.ctx) };
+    return a;
+}
+
+/// True when invoked through `new` or `super()`.
+fn bool JsCtx.is_construct(self) => builtins::host_is_construct(self.ctx);
+
+// --- inspecting a JsArg -----------------------------------------------------
+
+fn JsType JsArg.type_of(self) {
+    if (self.tv.is_undefined()) return JsType.UNDEFINED;
+    if (self.tv.is_null()) return JsType.NULL;
+    if (self.tv.is_boolean()) return JsType.BOOLEAN;
+    if (self.tv.is_numeric()) return JsType.NUMBER;
+    if (self.tv.is_string()) return JsType.STRING;
+    if (self.tv.is_object()) {
+        HObject* obj = (HObject*)self.tv.get_heapptr();
+        if (obj != null && obj.flags.callable) return JsType.FUNCTION;
+        return JsType.OBJECT;
+    }
+    return JsType.OTHER;
+}
+
+fn bool JsArg.is_undefined(self) => self.tv.is_undefined();
+fn bool JsArg.is_number(self)    => self.tv.is_numeric();
+fn bool JsArg.is_string(self)    => self.tv.is_string();
+
+/// Faults: WRONG_TYPE : if the argument is not a number
+fn double? JsArg.as_number(self) {
+    if (!self.tv.is_numeric()) return WRONG_TYPE~;
+    return self.tv.get_number_or_fastint();
+}
+
+/// Faults: WRONG_TYPE : if the argument is not a boolean
+fn bool? JsArg.as_bool(self) {
+    if (!self.tv.is_boolean()) return WRONG_TYPE~;
+    return self.tv.get_boolean();
+}
+
+/// Copy the string out as UTF-8. The engine stores CESU-8, so this transcodes;
+/// astral characters come back as proper 4-byte UTF-8.
+///
+/// The default `tmem` allocator suits the common case -- read the string, use
+/// it, return -- since a callback runs inside one temp scope.
+///
+/// Faults: WRONG_TYPE : if the argument is not a string
+fn String? JsArg.as_string(self, Allocator allocator = tmem) {
+    if (!self.tv.is_string()) return WRONG_TYPE~;
+    return utf8_of((HString*)self.tv.get_heapptr(), allocator);
+}
+
+// --- producing a result -----------------------------------------------------
+
+/// Build a JS string from UTF-8 bytes. Interned like every other engine string,
+/// so `===` against an equal literal is true.
+fn JsArg JsCtx.string(self, String s) {
+    JsArg a = { .tv = builtins::host_new_string(self.ctx, (char[])s) };
+    return a;
+}
+
+fn JsArg JsCtx.number(self, double d) {
+    JsArg a;
+    a.tv.set_number(d);
+    return a;
+}
+
+fn JsArg JsCtx.boolean(self, bool b) {
+    JsArg a;
+    a.tv.set_boolean(b);
+    return a;
+}
+
+fn JsArg JsCtx.null_value(self) {
+    JsArg a;
+    a.tv.set_null();
+    return a;
+}
+
+fn JsArg JsCtx.undefined_value(self) {
+    JsArg a;
+    a.tv.set_undefined();
+    return a;
+}
+
+/// Set the return value. Calling it more than once keeps the last value; not
+/// calling it at all returns undefined.
+fn void JsCtx.ret(self, JsArg v) => builtins::host_return(self.ctx, v.tv);
+
+fn void JsCtx.ret_number(self, double d) => self.ret(self.number(d));
+fn void JsCtx.ret_bool(self, bool b) => self.ret(self.boolean(b));
+fn void JsCtx.ret_string(self, String s) => self.ret(self.string(s));
+fn void JsCtx.ret_null(self) => self.ret(self.null_value());
+
+// --- object properties ------------------------------------------------------
+//
+// Enough to populate `this` in a constructor and to read a field off an
+// options object, which is what host callbacks actually need. Anything richer
+// is better expressed in JS and reached through `call`.
+
+/// Read `obj.key`, or undefined when it is absent.
+///
+/// Own and inherited data properties only: this does not run getters, so it
+/// cannot re-enter the VM and cannot throw.
+///
+/// Faults: WRONG_TYPE : if `obj` is not an object
+fn JsArg? JsCtx.get_prop(self, JsArg obj, String key) {
+    if (!obj.tv.is_object() || self.ctx == null || self.ctx.heap == null) return WRONG_TYPE~;
+    HObject* o = (HObject*)obj.tv.get_heapptr();
+    HString* k = self.ctx.heap.str_intern((char[])key);
+    if (o == null || k == null) return WRONG_TYPE~;
+    JsArg out = { .tv = {} };
+    out.tv.set_undefined();
+    TVal? v = o.get_prop(k);
+    if (try got = v) out.tv = got;
+    return out;
+}
+
+/// Write `obj.key = value` as a plain writable/enumerable/configurable data
+/// property. Returns false when the write did not happen.
+///
+/// Faults: WRONG_TYPE : if `obj` is not an object
+fn bool? JsCtx.set_prop(self, JsArg obj, String key, JsArg value) {
+    if (!obj.tv.is_object() || self.ctx == null || self.ctx.heap == null) return WRONG_TYPE~;
+    HObject* o = (HObject*)obj.tv.get_heapptr();
+    HString* k = self.ctx.heap.str_intern((char[])key);
+    if (o == null || k == null) return WRONG_TYPE~;
+    return o.put_prop(k, value.tv, hobject::PROP_FLAGS_WEC);
+}
+
+// --- failing ----------------------------------------------------------------
+
+/// Throw a fresh error of `kind` carrying `msg`.
+///
+/// This does NOT unwind. It records the exception and returns normally, so the
+/// callback keeps running and must return under its own control -- mirroring
+/// how the engine's builtins report failure, which is what every dispatch site
+/// is written against. `return` immediately after it unless you mean to keep
+/// working. If `ret` is also called, the throw wins.
+fn void JsCtx.throw_error(self, JsErrorKind kind, String msg) {
+    builtins::host_throw_error(self.ctx, kind.ordinal, (char[])msg);
+}
+
+/// Throw `v` as-is, so a non-Error value round-trips to JS unchanged. Same
+/// non-unwinding contract as `throw_error`.
+fn void JsCtx.throw_value(self, JsArg v) => builtins::host_throw(self.ctx, v.tv);
+
+// --- calling back into JS ---------------------------------------------------
+
+/// Call a JS function from inside the callback.
+///
+/// This is what makes host functions composable rather than leaf-only: without
+/// it there is no `setTimeout`, no event emitter, no async I/O. It routes
+/// through the same entry point builtins use for user callbacks, so the
+/// re-entry guard bounds it -- a runaway host -> JS -> host chain gets a
+/// RangeError rather than a faulted stack.
+///
+/// If the callee throws, the exception is transferred onto this call and this
+/// reports JS_EXCEPTION. Returning immediately then propagates it to JS. The
+/// pending throw is already recorded, so a `ret` after a failed `call` is
+/// ignored rather than silently swallowing the exception.
+///
+/// Faults: NOT_CALLABLE, JS_EXCEPTION
+fn JsArg? JsCtx.call(self, JsArg func, JsArg[] args = {}, JsArg this_value = {}) {
+    if (func.type_of() != JsType.FUNCTION) return NOT_CALLABLE~;
+
+    // host_call wants a contiguous TVal array. Copying rather than casting the
+    // JsArg slice keeps the single-field layout an implementation detail.
+    TVal[MAX_INLINE_CALL_ARGS] inline_args;
+    TVal* argv = null;
+    TVal[] spill;
+    if (args.len > 0) {
+        if (args.len <= MAX_INLINE_CALL_ARGS) {
+            argv = &inline_args[0];
+        } else {
+            spill = mem::new_array(TVal, args.len);
+            argv = spill.ptr;
+        }
+        for (usz i = 0; i < args.len; i++) argv[i] = args[i].tv;
+    }
+    defer if (spill.len > 0) free(spill);
+
+    bool ok = false;
+    TVal r = builtins::host_call(self.ctx, func.tv, argv, (uint)args.len, this_value.tv, &ok);
+    if (!ok) return JS_EXCEPTION~;
+    JsArg out = { .tv = r };
+    return out;
+}
+
+/// Argument counts up to this are staged on the C3 stack; beyond it `call`
+/// allocates. Sized to cover every realistic callback signature.
+const usz MAX_INLINE_CALL_ARGS = 8;
