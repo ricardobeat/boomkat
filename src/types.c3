@@ -427,8 +427,7 @@ $endif
 /// True when either value is heap-allocated, in one branch.
 /// Overwriting a property or array slot with a number or boolean, which is the
 /// common case, needs neither an incref nor a decref. One test covers both
-/// sides, and callers can also skip the `_active_heap != null` load. The two tag
-/// extractions still happen, but they feed a single branch.
+/// sides. The two tag extractions still happen, but they feed a single branch.
 macro bool either_heap_allocated(TVal* b, TVal* c) {
     return b.is_heap_allocated() || c.is_heap_allocated();
 }
