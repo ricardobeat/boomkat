@@ -1701,7 +1701,12 @@ fn TVal? Vm.run(Vm* vm) {
                 cold.vm = vm;
                 cold.act = ds.act;
                 cold.code_base = ds.code_base;
+                cold.ds = &ds;
                 ds.curr_pc = run_threaded_burst(ds.curr_pc, ds.code_end, ds.regs_base, &cold);
+                // A threaded call switched the active function, so the frame
+                // fields the loop caches below are stale.
+                if (ds.halt) { return ds.halt_value; }
+                if (ds.needs_restart) { continue; }
             }
         $endif
 

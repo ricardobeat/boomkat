@@ -35,6 +35,11 @@ struct ColdCtx {
     Vm* vm;
     Activation* act;
     Instruction* code_base;
+    // The call and return handlers switch the active function, which moves
+    // code_base, constants, ic_base, var_ic_base, nregs and regs_base all at
+    // once. They reuse the switch's own helpers through this pointer and then
+    // reload the hot scalars from it, so the burst continues in the new frame.
+    Dispatch* ds;
 }
 
 alias ThreadedHandlerFn = fn Instruction*(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold);
@@ -65,6 +70,7 @@ fn void init_threaded_handlers() {
     g_threaded_handlers[Opcode.JMP_LE.ordinal]  = &th_cmp_branch;
     g_threaded_handlers[Opcode.JMP_GT.ordinal]  = &th_cmp_branch;
     g_threaded_handlers[Opcode.JMP_GE.ordinal]  = &th_cmp_branch;
+    g_threaded_handlers[Opcode.CALL_GLOBAL.ordinal] = &th_call_global;
     // CALL_VAR / CALL_UNDEF_THIS / RET / RETUNDEF stay on the switch: their
     // handler bodies (activation push/pop, valstack, refcount) are too large
     // to thread cheaply. They bail via th_bailout automatically.
@@ -543,6 +549,43 @@ fn Instruction* th_tonumeric(Instruction* pc, Instruction* code_end, TVal* regs,
     ra.set_fastint(rb.get_fastint());
     pc++;
     return th_next(pc, code_end, regs, cold);
+}
+
+// CALL_GLOBAL through the switch's own try_fast_compiled_call. The helper
+// updates every Dispatch field the frame switch touches, so the work here is
+// publishing the resume pc before the call and reloading the hot scalars from
+// the new frame after it. Anything the helper declines (generators, class
+// ctors called without new, bound/builtin/lightfunc callees, non-callables)
+// leaves the pc unconsumed for the switch.
+fn Instruction* th_call_global(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    Dispatch* ds = cold.ds;
+    Vm* vm = cold.vm;
+    // A pending GC would run inside the helper as a safepoint. Bail so the
+    // switch takes it with fully published state.
+    if (vm.heap.gc_pending) return pc;
+    // An active catcher makes a fault unwind to a handler in another frame,
+    // which this burst cannot follow.
+    if (ds.act.cat != null) return pc;
+
+    Instruction insn = *pc;
+    // The helper reads the caller resume point from ds.curr_pc when it saves
+    // the frame, so it must already point past this instruction.
+    ds.curr_pc = pc + 1;
+
+    bool fast_handled = false;
+    TVal? fast_result = try_fast_compiled_call(ds, insn.op, insn, &fast_handled);
+    if (!fast_handled) {
+        ds.curr_pc = pc;
+        return pc;
+    }
+    // A fault, a caught throw that relocated the frame, or a halt all need the
+    // switch loop's own handling.
+    if (catch fast_result) { return ds.curr_pc; }
+    if (ds.needs_restart || ds.halt) { return ds.curr_pc; }
+
+    cold.act = ds.act;
+    cold.code_base = ds.code_base;
+    return th_next(ds.curr_pc, ds.code_end, ds.regs_base, cold);
 }
 
 // Entry point from Vm.run's inner loop. Runs a burst starting at pc; returns

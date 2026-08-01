@@ -80,6 +80,23 @@
         "OP_PROFILE"
       ]
     },
+    "duktape_c3_opprofile_threaded": {
+      "type": "executable",
+      "sources": [
+        "src",
+        "cli/duktape_c3_debug.c3"
+      ],
+      "opt": "O2",
+      "single-module": true,
+      "fp-math": "relaxed",
+      "panic-msg": false,
+      "debug-info": "line-tables",
+      "features": [
+        "TRACE_VM",
+        "OP_PROFILE",
+        "THREADED_DISPATCH"
+      ]
+    },
     "duktape_c3_asan": {
       "type": "executable",
       "sources": [
