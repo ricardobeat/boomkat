@@ -7,7 +7,9 @@ are C3 faults, and nothing is passed as an opaque integer handle.
 | File | Purpose |
 |---|---|
 | `jse.c3` | the binding — `module jse` |
-| `example/hello.c3` | the runnable example below |
+| `example/hello.c3` | evaluating source and reading values back |
+| `example/host_functions.c3` | JS calling into C3, and C3 calling back into JS |
+| `example/project.json` | standalone build for `host_functions` (see below) |
 
 ## Prerequisites
 
@@ -52,6 +54,131 @@ undefined   = jse::JS_EXCEPTION: notDefinedAnywhere is not defined
 still alive = 400
 ```
 
+## Host functions
+
+JS can call C3. Register a `fn void(JsCtx, void*)` as a global and the engine
+dispatches straight into it — plain calls, methods, `.call`/`.apply`/`.bind`,
+getters and setters, `new` and `super()` all work, because a host function is
+indistinguishable from a built-in at every dispatch site.
+
+```c3
+fn void host_hypot(JsCtx ctx, void* udata) {
+    double? a = ctx.arg(0).as_number();
+    double? b = ctx.arg(1).as_number();
+    if (catch a) { ctx.throw_error(TYPE, "hypot: expected a number"); return; }
+    if (catch b) { ctx.throw_error(TYPE, "hypot: expected a number"); return; }
+    ctx.ret_number(math::sqrt(a * a + b * b));
+}
+
+rt.register_fn("hypot", &host_hypot, arity: 2)!!;
+rt.eval("hypot(3, 4)")!!;   // 5
+```
+
+Three rules carry all the weight:
+
+- **`throw_error` does not unwind.** It records the exception and returns, so
+  the callback keeps running. `return` right after it unless you mean to. If
+  `ret` is also called, the throw wins. This mirrors how the engine's own
+  builtins report failure, which is what every dispatch site is written
+  against.
+- **A `JsArg` is scoped to the call**, and is a different type from `JsValue`
+  for exactly that reason. `JsValue` is a registry slot rooted until `release`;
+  `JsArg` dies when the callback returns. The compiler rejects the mix-up that
+  would otherwise be a use-after-free.
+- **C3 function pointers cannot capture.** Mutable host state reaches a
+  callback through the `udata` pointer given to `register_fn`, which the engine
+  stores verbatim and never frees. It must outlive the runtime.
+
+`ctx.call(fn, args)` invokes a JS function from host code — the thing that makes
+host functions composable rather than leaf-only. If the callee throws, `call`
+reports `JS_EXCEPTION` and the exception is already pending on this call, so
+returning propagates it to JS unchanged.
+
+Arguments are copied into a GC-rooted call scope rather than read from VM
+registers, so they stay valid across a nested `ctx.call` that reallocates the
+value stack. Verified: the example produces byte-identical output under the
+`GC_STRESS` + AddressSanitizer target, where a collection happens at every
+allocation.
+
+### Host API
+
+| Call | Notes |
+|---|---|
+| `rt.register_fn(name, handler, udata:, arity:, constructable:)` | binds a global; lasts until `close` |
+| `ctx.argc()` / `ctx.arg(i)` | out-of-range `arg` is undefined, so no arity check |
+| `ctx.this_value()` / `ctx.new_target()` / `ctx.is_construct()` | strict-only: an undefined receiver stays undefined |
+| `arg.type_of()` / `as_number()` / `as_bool()` / `as_string()` | strict, `WRONG_TYPE` on mismatch |
+| `ctx.number/string/boolean/null_value/undefined_value(v)` | build a `JsArg` |
+| `ctx.ret(v)` / `ret_number` / `ret_string` / `ret_bool` / `ret_null` | never calling one yields undefined |
+| `ctx.get_prop(obj, key)` / `ctx.set_prop(obj, key, v)` | data properties only; `get_prop` does not run getters |
+| `ctx.throw_error(kind, msg)` / `ctx.throw_value(v)` | does **not** unwind |
+| `ctx.call(fn, args, this_value)` | calls JS; faults `NOT_CALLABLE`, `JS_EXCEPTION` |
+
+`JsErrorKind` is `ERROR`, `TYPE`, `RANGE`, `REFERENCE`, `SYNTAX`.
+
+Nesting `js -> host -> js -> host` is bounded: past the limit the engine throws
+a `RangeError` rather than faulting the stack.
+
+### Building the host-functions example
+
+It needs its own target, and the repo's `project.json` does not have one, so
+`example/project.json` is a standalone build run from the example directory:
+
+```sh
+cd bindings/c3/example
+c3c build host_functions
+./out/host_functions
+```
+
+Expected output:
+
+```
+-- arguments and return values --
+hypot(3, 4)          = 5
+greet('world')       = hello, world
+hypot.length         = 2
+hypot.name           = hypot
+
+-- host state via udata --
+counter() x3         = 3
+C3 side saw   = 3 hits
+
+-- throwing, caught by JS --
+caught RangeError    = RangeError: insufficient funds
+no throw             = 70
+wrong arg type       = hypot: first argument must be a number
+
+-- calling a JS callback from C3 --
+applyTwice(double, 5) = 20
+callback throws      = from JS
+not a function       = applyTwice: first argument must be a function
+
+-- new --
+new Point(3, 4).r    = 5
+instance shape       = {"x":1,"y":2,"r":2.23606797749979} true
+Point without new    = Point requires 'new'
+
+-- bounded recursion --
+1000 deep            = RangeError: Maximum call stack size exceeded
+```
+
+`c3c build host_functions_stress && ./out/host_functions_stress` builds the same
+example with `GC_STRESS` and AddressSanitizer; it must print the same thing.
+
+To fold this into the repo's own `project.json` instead, add:
+
+```json
+"jse_example_host_c3": {
+  "type": "executable",
+  "sources": ["src", "bindings/c3/jse.c3", "bindings/c3/example/host_functions.c3"],
+  "opt": "O2",
+  "single-module": true,
+  "fp-math": "relaxed",
+  "debug-info": "none",
+  "features": ["THREADED_DISPATCH"]
+}
+```
+
 ## Using it in your own target
 
 Add `bindings/c3/jse.c3` to a target's `sources` next to `src`, then
@@ -93,7 +220,7 @@ rt.release(v);
 
 Faults: `NOT_OPEN`, `ALREADY_OPEN`, `RUNTIME_EXISTS`, `OUT_OF_MEMORY`,
 `SYNTAX_ERROR`, `JS_EXCEPTION`, `INTERNAL_ERROR`, `WRONG_TYPE`, `STALE_VALUE`,
-`VALUE_TABLE_FULL`.
+`VALUE_TABLE_FULL`, `NOT_CALLABLE`, `REGISTER_FAILED`.
 
 Allocating accessors (`as_string`, `to_display_string`) take an optional
 `Allocator`, defaulting to `tmem`. Pass `mem` (and free it) to keep a string
@@ -128,6 +255,15 @@ global state (the compiler's error buffer, the active-heap pointer), so a second
 Use this native binding whenever the host is C3. It is faster (no marshalling),
 safer (typed values, no handle bookkeeping), and gives real strings and faults.
 
+For host functions specifically the gap is wider than for `eval`. The C ABI
+hands a callback opaque `unsigned int` handles that must be resolved one at a
+time, and its readers return status codes; here a callback gets `JsArg` values
+with typed accessors, a scope-vs-registry distinction the compiler enforces,
+and errors as ordinary C3 faults. Both paths run the same engine machinery —
+the C ABI's `jse_register_fn` calls exactly the `Heap.register_host_fn` and
+`builtins::make_host_function` this binding calls — so there is no capability
+the C ABI has and this does not.
+
 Reach for the C ABI (`include/jse.h`, `src/capi.c3`, built via `make lib` /
 `make shared`) when:
 
@@ -148,13 +284,12 @@ benefit.
 
 ### Known limitations (shared by both paths)
 
-- **Native function registration is not supported.** Built-in dispatch is
-  `builtin_dispatch_table[ordinal]`, a table sized and filled at compile time,
-  never a host pointer. There is no runtime table to append to. Expose host
-  behaviour by computing values in C3 and injecting them as JS source, or by
-  driving the engine from the host side.
-- **No direct call API.** There is no `rt.call(fn, args)` yet; wrap the call in
-  JS source and `eval` it.
+- **No top-level call API.** There is no `rt.call(fn, args)` from outside a
+  callback; wrap the call in JS source and `eval` it. Inside a host callback,
+  `ctx.call` covers it.
+- **Registrations cannot be removed.** `register_fn` lasts until `close`.
+  Registering the same name twice replaces the global binding; a function
+  object JS already holds keeps working.
 - **Engine bug, unrelated to the binding:** an arrow function inside *eval-mode*
   code that contains a `for (let ...)` loop mis-resolves its enclosing `let`
   bindings, which read back as `undefined`. Reproduces through the engine's own
