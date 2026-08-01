@@ -1,7 +1,8 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# Embedding the JS engine in Ruby: evaluate, read values back, handle errors.
+# Embedding the JS engine in Ruby: evaluate, read values back, handle errors,
+# and expose Ruby code to JS as host functions.
 #
 #   ruby bindings/ruby/examples/example.rb
 
@@ -74,6 +75,75 @@ JS.open do |vm|
     })()
   JS
   puts recovered
+
+  # --- host functions --------------------------------------------------------
+  # #register binds a Ruby block as a JS global. Arguments arrive converted to
+  # Ruby and the return value is converted back.
+  puts
+
+  vm.register('hostAdd') { |a, b| a + b }
+  puts "hostAdd(40, 2): #{vm.eval('hostAdd(40, 2)')}"
+
+  # It is a real function value, so it works everywhere a function does.
+  vm.register('shout') { |s| "#{s.to_s.upcase}!" }
+  puts "as a callback: #{vm.eval(%q{['a', 'b'].map(shout).join(' ')})}"
+
+  # The block is a closure, so Ruby state persists across calls.
+  hits = 0
+  vm.register('tally', arity: 0) { hits += 1 }
+  vm.exec('tally(); tally(); tally()')
+  puts "tally called #{hits} times from JS"
+
+  # A Ruby exception never crosses into C: it is rescued in the trampoline and
+  # converted to a JS throw, which JS catches like any other error. The Ruby
+  # class picks the JS class -- ArgumentError becomes TypeError.
+  vm.register('divide') do |a, b|
+    raise ArgumentError, 'division by zero' if b.to_f.zero?
+
+    a / b
+  end
+  puts "divide(10, 4): #{vm.eval('divide(10, 4)')}"
+  puts vm.eval(<<~JS)
+    (() => {
+      try { divide(1, 0) }
+      catch (e) { return 'JS caught ' + e.name + ': ' + e.message }
+    })()
+  JS
+
+  # Raise JS::HostThrow to choose the JS error class explicitly. JS numbers are
+  # doubles, so they arrive as Float -- #to_i keeps the message tidy.
+  vm.register('percent') do |n|
+    raise JS::HostThrow.new("#{n.to_i} is out of range", :range) unless (0..100).cover?(n.to_f)
+
+    "#{n.to_i}%"
+  end
+  puts "percent(80): #{vm.eval('percent(80)')}"
+  puts vm.eval(<<~JS)
+    (() => {
+      try { percent(140) }
+      catch (e) { return 'JS caught ' + e.name + ': ' + e.message }
+    })()
+  JS
+
+  # A host function can call back into JS. A JS function argument arrives as a
+  # JS::Callback; #call runs it through jse_call and converts the result.
+  vm.register('twice') { |f, x| f.call(f.call(x)) }
+  puts "twice(x => x * 3, 5): #{vm.eval('twice(x => x * 3, 5)')}"
+
+  # Values passed to a callback must be ones the engine already holds -- an
+  # argument this call received, or a result a previous call returned. The v1
+  # ABI has no value constructors, so a fresh Ruby object cannot become a JS
+  # value here.
+  vm.register('mapPair') { |f, a, b| "#{f.call(a)} / #{f.call(b)}" }
+  puts "mapPair: #{vm.eval('mapPair(s => s.toUpperCase(), "left", "right")')}"
+
+  # If the JS callback throws, the original error propagates back to JS.
+  puts vm.eval(<<~JS)
+    (() => {
+      try { twice(() => { throw new RangeError('from JS') }, 1) }
+      catch (e) { return 'propagated ' + e.name + ': ' + e.message }
+    })()
+  JS
 end
 
 # Leaving the block closed the runtime, so another can be opened.
