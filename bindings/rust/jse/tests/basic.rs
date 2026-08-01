@@ -3,7 +3,7 @@
 //! ONE test function: opening a second runtime concurrently would fail by
 //! design, and the failure would be an artefact of the harness, not a bug.
 
-use jse::{Kind, Runtime, Type};
+use jse::{Error, Kind, Runtime, Type};
 
 #[test]
 fn engine_round_trips() {
@@ -220,7 +220,7 @@ fn host_functions(rt: &Runtime) {
     rt.register_fn("twice", 2, |ctx| {
         let f = ctx.arg(0);
         let once = ctx.call(f, &[ctx.arg(1)], None)?;
-        ctx.call(f, &[once], None)
+        Ok(ctx.call(f, &[*once], None)?.keep())
     })
     .unwrap();
     assert_eq!(rt.eval("twice(x => x * 3, 5)").unwrap().as_number().unwrap(), 45.0);
@@ -241,7 +241,7 @@ fn host_functions(rt: &Runtime) {
     // rather than handing the engine a meaningless one.
     rt.register_fn("pass_built", 1, |ctx| {
         let built = ctx.number(1.0);
-        ctx.call(ctx.arg(0), &[built], None)
+        Ok(ctx.call(ctx.arg(0), &[built], None)?.keep())
     })
     .unwrap();
     assert!(rt
@@ -282,13 +282,94 @@ fn host_functions(rt: &Runtime) {
     .unwrap();
     assert_eq!(rt.eval("typeof new Thing()").unwrap().as_string().unwrap(), "object");
 
-    // Many host calls in a row: `Ctx::call` results are runtime-owned handles
-    // freed by the trampoline, so the 1024-slot registry must not fill up.
+    // Many separate host calls, two `Ctx::call` results each. Every result is
+    // freed as its guard drops, so nothing survives from one host call to the
+    // next and the 1024-slot registry never fills.
     assert_eq!(
         rt.eval("let t = 0; for (let i = 0; i < 3000; i++) t = twice(x => x, i); t")
             .unwrap()
             .as_number()
             .unwrap(),
         2999.0
+    );
+
+    // The case the loop above does *not* cover: many `Ctx::call` invocations
+    // inside a SINGLE host call. Results used to accumulate until the host
+    // call returned, so the 1025th failed with the registry full. The guard
+    // frees each one as the loop turns, so the count is bounded only by time.
+    const SPIN: u32 = 20_000;
+    rt.register_fn("spin", 1, |ctx| {
+        let f = ctx.arg(0);
+        let mut last = 0.0;
+        for i in 0..SPIN {
+            // Each result drops at the end of this iteration, releasing its
+            // slot. Holding them all would exceed 1024 on iteration 1025.
+            let r = ctx.call(f, &[], None).map_err(|e| {
+                Error::throw(format!("call {i} failed: {e}"))
+            })?;
+            last = r.as_number()?;
+        }
+        Ok(ctx.number(last))
+    })
+    .unwrap();
+    assert_eq!(
+        rt.eval("var n = 0; spin(function () { return ++n; })")
+            .unwrap()
+            .as_number()
+            .unwrap(),
+        f64::from(SPIN)
+    );
+
+    // Exhausting the registry is an ABI failure, not a JS exception: the
+    // engine returns JSE_ERR_FULL without staging a throw. It must arrive as
+    // `Kind::Full` with a real message, rather than being mistaken for a
+    // callee throw and silently suppressed.
+    rt.register_fn("exhaust", 1, |ctx| {
+        let f = ctx.arg(0);
+        let mut kept = Vec::new();
+        loop {
+            match ctx.call(f, &[], None) {
+                // Held deliberately, to drive the registry to its limit.
+                Ok(r) => kept.push(r.keep()),
+                Err(e) => {
+                    assert_eq!(e.kind(), Kind::Full, "expected registry exhaustion");
+                    assert!(
+                        e.message().contains("registry is full"),
+                        "exhaustion must carry a message, got {:?}",
+                        e.message()
+                    );
+                    return Ok(ctx.number(kept.len() as f64));
+                }
+            }
+        }
+    })
+    .unwrap();
+    let held = rt
+        .eval("exhaust(function () { return 1; })")
+        .unwrap()
+        .as_number()
+        .unwrap();
+    // The limit is the registry's, and it is reached rather than exceeded.
+    assert!(held > 0.0 && held <= 1024.0, "held {held} slots");
+
+    // A `keep()` result, by contrast, is charged to the enclosing host call
+    // and only freed when it returns -- so it is the bounded resource, and
+    // 1024 of them in one call is the documented limit rather than a leak.
+    rt.register_fn("keep_many", 1, |ctx| {
+        let f = ctx.arg(0);
+        let mut kept = Vec::new();
+        for _ in 0..64 {
+            kept.push(ctx.call(f, &[], None)?.keep());
+        }
+        // Read one back to prove the kept handles are still live.
+        Ok(ctx.number(kept[0].as_number()?))
+    })
+    .unwrap();
+    assert_eq!(
+        rt.eval("var m = 0; keep_many(function () { return ++m; })")
+            .unwrap()
+            .as_number()
+            .unwrap(),
+        1.0
     );
 }

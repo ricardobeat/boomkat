@@ -544,8 +544,8 @@ impl fmt::Debug for Value<'_> {
 /// closure — the mistake the C ABI can only warn about in prose.
 ///
 /// A `HostValue` does not free anything on drop. Scope handles have nothing to
-/// free, and [`Ctx::call`] results are released by the trampoline when the call
-/// ends.
+/// free; a [`Ctx::call`] result is owned by its [`Retained`] guard, which frees
+/// the slot when it drops, or by the call itself after [`Retained::keep`].
 #[derive(Clone, Copy)]
 pub struct HostValue<'a> {
     repr: Repr,
@@ -661,22 +661,26 @@ impl fmt::Debug for HostValue<'_> {
 /// escaping into a longer-lived place.
 pub struct Ctx<'a> {
     raw: sys::jse_call_ctx,
-    /// Handles this call owns and must release when it ends: results of
-    /// [`Ctx::call`], which the ABI hands back runtime-owned.
-    owned: std::cell::RefCell<Vec<sys::jse_value>>,
+    /// The runtime this call belongs to. [`jse_value_free`] needs it, and it is
+    /// not reachable from a call context, so it rides in from the registration.
+    rt: sys::jse_runtime,
     /// Values the host built, parked until one of them is returned. See
     /// [`Repr::Built`].
     built: std::cell::RefCell<Vec<Built>>,
+    /// Slots handed to the call by [`Retained::keep`], freed when it returns.
+    /// A [`Ctx::call`] result that is dropped normally never lands here.
+    kept: std::cell::RefCell<Vec<sys::jse_value>>,
     /// Invariant in `'a`, for the same reason as [`HostValue`].
     _call: PhantomData<*mut &'a ()>,
 }
 
 impl<'a> Ctx<'a> {
-    fn new(raw: sys::jse_call_ctx) -> Self {
+    fn new(raw: sys::jse_call_ctx, rt: sys::jse_runtime) -> Self {
         Ctx {
             raw,
-            owned: std::cell::RefCell::new(Vec::new()),
+            rt,
             built: std::cell::RefCell::new(Vec::new()),
+            kept: std::cell::RefCell::new(Vec::new()),
             _call: PhantomData,
         }
     }
@@ -759,12 +763,19 @@ impl<'a> Ctx<'a> {
     /// the ABI has no way to construct one except as a return value, so they
     /// have no handle to hand over. Arguments, `this`, and earlier `call`
     /// results all work.
+    ///
+    /// The result is a [`Retained`] guard that releases its registry slot on
+    /// drop. The registry holds 1024 slots, so a loop that calls JS must not
+    /// hold every result at once — dropping each one as the loop turns is what
+    /// keeps an unbounded number of calls inside a single callback working.
+    /// Deref to use it as a [`HostValue`], or [`Retained::keep`] to hold it for
+    /// the rest of the call.
     pub fn call(
         &self,
         func: HostValue<'a>,
         args: &[HostValue<'a>],
         this_val: Option<HostValue<'a>>,
-    ) -> Result<HostValue<'a>, Error> {
+    ) -> Result<Retained<'a, '_>, Error> {
         let not_passable = || Error::new(Kind::Type, "a host-built value cannot be passed to call");
 
         let func_handle = func.raw().ok_or_else(not_passable)?;
@@ -796,17 +807,102 @@ impl<'a> Ctx<'a> {
             )
         };
 
+        // Only JSE_ERR_THROW means the callee raised a JS exception, and only
+        // then has the engine staged it on this context. JSE_ERR_FULL and
+        // JSE_ERR_INVALID come back with nothing staged, so tagging them as an
+        // already-recorded throw would make the trampoline suppress a message
+        // that was never recorded -- the failure would vanish.
+        if status == sys::JSE_ERR_THROW {
+            return Err(Error::new(Kind::Throw, CALLEE_THREW));
+        }
         if status != sys::JSE_OK {
-            // The throw is already recorded on this context, so returning Err
-            // here only needs to stop the closure; the trampoline must not
-            // record a second one over it.
-            return Err(Error::new(Kind::from_status(status), CALLEE_THREW));
+            let kind = Kind::from_status(status);
+            return Err(Error::new(kind, match kind {
+                Kind::Full => "the value registry is full; release earlier call \
+                               results before making more calls",
+                Kind::Invalid => "jse_call rejected its arguments",
+                _ => kind.describe(),
+            }));
         }
 
-        // The result is a runtime-owned handle. Register it for release when
-        // the call ends, so the closure never has to think about freeing.
-        self.owned.borrow_mut().push(out);
-        Ok(HostValue::handle(out))
+        // The result is a runtime-owned registry slot. The guard frees it on
+        // drop rather than letting it accumulate until the call returns.
+        Ok(Retained {
+            value: HostValue::handle(out),
+            ctx: self,
+        })
+    }
+
+    /// Free a runtime-owned handle produced by [`Ctx::call`].
+    fn release(&self, handle: sys::jse_value) {
+        // SAFETY: `handle` came from a successful `jse_call` on this context,
+        // so it names a runtime-owned slot in `self.rt`. `Retained` frees it
+        // exactly once, on drop.
+        unsafe { sys::jse_value_free(self.rt, handle) };
+    }
+}
+
+/// A [`Ctx::call`] result, holding one of the runtime's 1024 registry slots.
+///
+/// Dropping it frees the slot. That is what lets a host callback call JS an
+/// unbounded number of times: without it, every result would be held until the
+/// callback returned and the 1025th call would fail with [`Kind::Full`].
+///
+/// Deref gives the underlying [`HostValue`], so a result reads and passes on
+/// like any other value:
+///
+/// ```ignore
+/// let r = ctx.call(f, &[], None)?;
+/// let n = r.as_number()?;      // read through the deref
+/// let s = ctx.call(g, &[*r], None)?;  // pass it along while `r` is alive
+/// ```
+///
+/// To keep a result past the statement that made it, either bind it to a
+/// variable — it lives as long as the binding — or call [`Retained::keep`] to
+/// hand ownership to the call, which frees it when the callback returns.
+pub struct Retained<'a, 'c> {
+    value: HostValue<'a>,
+    ctx: &'c Ctx<'a>,
+}
+
+impl<'a> Retained<'a, '_> {
+    /// Give up the guard and let the enclosing host call free the slot when it
+    /// returns.
+    ///
+    /// Use this for the value a closure is about to return, or for a handful of
+    /// results that must outlive their statements. It costs one of the 1024
+    /// slots until the callback ends, so it does not belong in a loop.
+    pub fn keep(self) -> HostValue<'a> {
+        let value = self.value;
+        if let Some(h) = value.raw() {
+            self.ctx.kept.borrow_mut().push(h);
+        }
+        // The slot is the call's responsibility now, so skip the drop that
+        // would otherwise free it here.
+        std::mem::forget(self);
+        value
+    }
+}
+
+impl<'a> std::ops::Deref for Retained<'a, '_> {
+    type Target = HostValue<'a>;
+
+    fn deref(&self) -> &HostValue<'a> {
+        &self.value
+    }
+}
+
+impl Drop for Retained<'_, '_> {
+    fn drop(&mut self) {
+        if let Some(h) = self.value.raw() {
+            self.ctx.release(h);
+        }
+    }
+}
+
+impl fmt::Debug for Retained<'_, '_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Retained({:?})", self.value)
     }
 }
 
@@ -913,8 +1009,9 @@ struct Registration<F> {
 /// 3. **The returned value is the one applied.** Host-built values are held as
 ///    data until here, because the `jse_return_*` setters are last-write-wins
 ///    and would otherwise let a discarded value win. See [`Built`].
-/// 4. **Owned handles are released.** Results of [`Ctx::call`] are
-///    runtime-owned and freed here, once, whatever the closure did.
+/// 4. **Kept handles are released.** A [`Ctx::call`] result frees its slot when
+///    its [`Retained`] guard drops, so most never reach here; the ones handed
+///    over by [`Retained::keep`] are freed here, once, whatever the closure did.
 ///
 /// # Safety
 ///
@@ -934,7 +1031,7 @@ where
     // (host -> JS -> same host) are fine.
     let reg: &Registration<F> = unsafe { &*(udata as *const Registration<F>) };
 
-    let ctx = Ctx::new(raw);
+    let ctx = Ctx::new(raw, reg.rt);
 
     // AssertUnwindSafe: on a panic we touch `ctx` only to record a throw and
     // free handles, neither of which reads closure state that a panic could
@@ -970,13 +1067,14 @@ where
         }
     }
 
-    // Release everything `Ctx::call` returned. Scope handles are not in here;
-    // the engine reclaims those when the call frame goes. Without this a host
-    // function that calls JS in a loop would exhaust the 1024-slot registry.
-    for handle in ctx.owned.borrow().iter() {
+    // Release the slots `Retained::keep` handed to the call. Results dropped
+    // normally are already gone, which is what lets a callback call JS more
+    // than 1024 times. Scope handles are not in here; the engine reclaims
+    // those when the call frame goes.
+    for handle in ctx.kept.borrow().iter() {
         // SAFETY: each handle came from a successful `jse_call` on this
-        // context, is runtime-owned, and is freed exactly once because it was
-        // pushed exactly once and `ctx` dies at the end of this call.
+        // context, is runtime-owned, and is freed exactly once: `keep` forgets
+        // the guard that would otherwise free it, and pushes it here once.
         unsafe { sys::jse_value_free(reg.rt, *handle) };
     }
 }

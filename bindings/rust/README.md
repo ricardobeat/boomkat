@@ -124,8 +124,25 @@ ordinary `Err`.
 
 **`ctx.call` calls JS back from Rust.** A throw from the callee propagates as
 itself, so `?` re-raises the original exception rather than replacing it with a
-generic host error. Host → JS → host recursion is bounded by the engine with a
-`RangeError` instead of exhausting the native stack.
+generic host error. A failure of the call itself — an exhausted value registry,
+say — is reported separately, as `Kind::Full` or `Kind::Invalid` with a message,
+so it can never be mistaken for a JS exception. Host → JS → host recursion is
+bounded by the engine with a `RangeError` instead of exhausting the native
+stack.
+
+The result is a `Retained` guard owning one registry slot. Deref reads it as an
+ordinary `HostValue`, and it frees its slot on drop:
+
+```rust,ignore
+rt.register_fn("mapTwice", 2, |ctx| {
+    let f = ctx.arg(0);
+    let once = ctx.call(f, &[ctx.arg(1)], None)?;   // freed as the closure ends
+    Ok(ctx.call(f, &[*once], None)?.keep())          // handed to the call
+})?;
+```
+
+`keep()` gives the slot to the enclosing host call, which frees it on return —
+right for the value being returned, wrong inside a loop.
 
 Three things this layer handles that the raw ABI leaves to the caller:
 
@@ -137,9 +154,10 @@ Three things this layer handles that the raw ABI leaves to the caller:
   until the callback returns. `Ctx` and `HostValue` are invariant over a
   lifetime tied to the call, so stashing one in a `static` is a compile error
   (`borrowed data escapes outside of closure`) rather than a use-after-free.
-- **`ctx.call` results are freed for you.** Those come back runtime-owned, and
-  the trampoline releases them when the call ends. Without that, a host
-  function calling JS in a loop would exhaust the 1024-slot registry.
+- **`ctx.call` results are freed for you.** Each comes back runtime-owned,
+  holding one of the 1024 registry slots, and its `Retained` guard releases it
+  on drop. That is what lets a host function call JS in a loop: the slot goes
+  back as the loop turns, rather than piling up until the callback returns.
 
 **The closure is leaked, deliberately.** It is boxed and its pointer handed to
 the engine as `udata`; the engine holds it for as long as the runtime lives and

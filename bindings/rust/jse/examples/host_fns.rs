@@ -87,10 +87,14 @@ fn main() -> Result<(), Error> {
     // `ctx.call` invokes a JS function from inside the callback. A throw from
     // the callee propagates as itself, so `?` here re-raises the original
     // exception rather than replacing it with a host error.
+    //
+    // Each result is a `Retained` guard owning one registry slot. `*once`
+    // passes it on while it is alive, and `keep()` hands the final one to the
+    // call, which frees it on return. `once` is freed as this closure ends.
     rt.register_fn("mapTwice", 2, |ctx| {
         let f = ctx.arg(0);
         let once = ctx.call(f, &[ctx.arg(1)], None)?;
-        ctx.call(f, &[once], None)
+        Ok(ctx.call(f, &[*once], None)?.keep())
     })?;
 
     println!("mapTwice(x*3, 5)  = {}", rt.eval("mapTwice(x => x * 3, 5)")?.as_number()?);
