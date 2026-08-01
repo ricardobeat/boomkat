@@ -70,7 +70,10 @@ module JS
     attr_reader :js_class
 
     def initialize(message, status = Status::THROW)
-      @js_class = message[/\A([A-Z]\w*Error)(?::|\z)/, 1]
+      # Matches the bare "Error" name and any "*Error" suffix convention
+      # (TypeError, RangeError, a user-defined FooError, ...), so a name
+      # that merely starts with "Error" (e.g. "Errorish") is rejected.
+      @js_class = message[/\A(Error|[A-Z]\w*Error)(?::|\z)/, 1]
       super(message, status)
     end
   end
