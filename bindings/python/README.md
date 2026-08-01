@@ -35,7 +35,15 @@ engine version: 0.1.0
 sum of squares: 30.0
 greeting: hello 😀
 counter: 5.0
-caught throw: [uncaught exception] Cannot read properties of null (reading 'oops')
+hostAdd(40, 2): 42.0
+via .apply: 10.0
+shout('hi'): HI 😀
+checkAge(21): True
+caught in JS: RangeError: age must not be negative
+describe(x => x * 3, 5): 5.0 -> 15.0
+describe with a builtin: 81.0 -> 9.0
+callback throw: RangeError: nope
+caught throw: [uncaught exception] TypeError: Cannot read properties of null (reading 'oops')
 caught syntax: [syntax error] expected '<identifier>', got '('
 still alive: yes
 runtime closed
@@ -70,15 +78,91 @@ Objects and functions cannot cross the boundary as data. Serialize them in JS fi
 Errors raise `JsError`, carrying `.code` (the raw `jse_status` integer) and `.kind`
 (a readable name such as `syntax error` or `uncaught exception`).
 
+## Host functions
+
+`@rt.function` binds a Python callable as a JS global. It receives a single `Call`
+and its return value becomes the JS result; `None` yields `undefined`.
+
+```python
+@rt.function("hostAdd", arity=2)
+def host_add(call):
+    return sum(call.args)
+
+rt.eval("hostAdd(40, 2)")        # 42.0
+rt.eval("hostAdd.length")        # 2 — from arity=
+```
+
+The JS name defaults to the Python one (`@rt.function()`), and `rt.register(name, fn)`
+is the non-decorator form. `constructable=True` allows `new fn()`; without it, `new`
+throws a `TypeError`, matching how JS built-ins behave.
+
+The `Call` carries `args` (arguments as plain Python values), `raw` (the same
+arguments as live `JsValue` references), `this`, and `is_construct`.
+
+### Throwing
+
+Raising inside a host function converts to a JS throw — a Python exception never
+escapes into C. The exception class maps by name, so a Python `TypeError` becomes a
+JS `TypeError`; anything unrecognised becomes a plain `Error`. Raise `JsThrow` to
+choose a class explicitly:
+
+```python
+@rt.function("checkAge", arity=1)
+def check_age(call):
+    if call.args[0] < 0:
+        raise JsThrow("age must not be negative", "RangeError")
+    return call.args[0] >= 18
+```
+
+The original Python exception object stays on `rt._last_host_exception`, so its
+traceback survives for logging even though JS only ever sees the message text.
+
+### Calling JS back
+
+Function arguments arrive as callables. Invoking one runs it through `jse_call`, and
+a throw from the callee propagates out with its class intact:
+
+```python
+@rt.function("describe", arity=2)
+def describe(call):
+    fn, value = call.args
+    return "%s -> %s" % (value, fn(value))
+
+rt.eval("describe(Math.sqrt, 81)")     # '81.0 -> 9.0'
+```
+
+Host recursion is bounded by the engine: a runaway host → JS → host chain throws a
+`RangeError` rather than exhausting the native stack.
+
+### What a host function can pass and return
+
+Returns may be `float`/`int`, `str`, `bool`, `None`, or a `JsValue` from `call.raw`.
+
+Arguments to a JS callback must be values *this call received* — either a `JsValue`
+from `call.raw`, or a `call.args` entry passed through unchanged. `fn(x)` works;
+`fn(x + 1)` raises `JsError`, because this ABI version exposes no way to construct a
+JS value inside a callback (`jse_return_*` writes the return slot rather than
+producing a handle, and `jse_eval` must not be re-entered from a callback). Do the
+arithmetic on the Python side of the result, or return data and let JS assemble the
+call. Returning a `dict` or `list` raises for the same reason; return
+`json.dumps(...)` and `JSON.parse` it in JS.
+
 ## Limitations
 
 These come from the C ABI, not the binding:
 
 - **One runtime per process.** The engine holds process-global state; a second
   `Runtime()` raises `JsError` with code `-5` rather than corrupting the first.
-- **Not thread-safe.** Confine a runtime to a single thread.
-- **No Python callbacks into JS.** Built-in dispatch is a compile-time ordinal table
-  with no slot for host function pointers, so registering a native callback is
-  impossible without engine changes.
-- **No direct function calls** (`jse_call` is not in v1). Wrap the call in JS source and
-  pass it to `eval` instead.
+- **Not thread-safe.** Confine a runtime to a single thread. CPython's ctypes
+  callbacks take the GIL automatically, so host functions are safe on the single
+  thread the ABI already requires — that is a throughput ceiling, not a correctness
+  problem.
+- **Registration is permanent.** The ABI offers no way to unbind a host function, and
+  its ctypes trampoline is held on the `Runtime` for the process lifetime. (It must
+  be: ctypes keeps no reference of its own, and a collected trampoline would leave the
+  engine calling freed memory.)
+- **No value construction inside a host function.** See the section above — callbacks
+  can forward the arguments they were given, not build new ones.
+- **`jse_eval` is not re-entrant.** Do not call `rt.eval()` from inside a host
+  function; it is a top-level entry point and re-entering it crashes the engine. Use a
+  JS callback argument instead.

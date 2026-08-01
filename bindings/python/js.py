@@ -1,7 +1,7 @@
 """Pure-Python ctypes binding for the jse_ embedding ABI (see include/jse.h).
 
 No C extension, no build step: this module dlopen()s the shared library built
-by `make shared` and talks to the twelve exported C symbols directly.
+by `make shared` and talks to its exported C symbols directly.
 
     from js import Runtime, JsError
 
@@ -13,15 +13,24 @@ booleans as bool, null/undefined as None. Objects and functions have no Python
 equivalent, so they surface as an opaque JsObject; stringify them in JS
 (JSON.stringify, String(x)) if you need their contents.
 
+Python functions go the other way with @rt.function, which makes them callable
+from JS:
+
+    @rt.function("now")
+    def now(call):
+        return time.time() * 1000
+
 Only one Runtime may exist per process -- the engine keeps process-global
 state. Opening a second one raises JsError. The engine is not thread-safe.
 """
 
 import ctypes
+import json
 import os
 import sys
 
-__all__ = ["Runtime", "JsError", "JsObject", "version"]
+__all__ = ["Runtime", "JsError", "JsObject", "JsThrow", "JsValue",
+           "JsFunction", "Call", "version"]
 
 # Status codes from jse.h. 0 is success; every error is negative.
 _OK = 0
@@ -50,6 +59,19 @@ _TYPE_NAMES = {
 }
 
 
+# Error kinds for jse_throw_error, keyed by the Python exception the host
+# function raised. Anything unlisted becomes a plain Error.
+_ERROR, _ERROR_TYPE, _ERROR_RANGE, _ERROR_REFERENCE, _ERROR_SYNTAX = range(5)
+
+_ERROR_KINDS = {
+    "Error": _ERROR,
+    "TypeError": _ERROR_TYPE,
+    "RangeError": _ERROR_RANGE,
+    "ReferenceError": _ERROR_REFERENCE,
+    "SyntaxError": _ERROR_SYNTAX,
+}
+
+
 class JsError(Exception):
     """A JS-side failure: syntax error, uncaught throw, or engine fault.
 
@@ -61,6 +83,24 @@ class JsError(Exception):
         super().__init__(message or _STATUS_NAMES.get(code, "error"))
         self.code = code
         self.kind = _STATUS_NAMES.get(code, "error")
+
+
+class JsThrow(Exception):
+    """Raise this inside a host function to throw a chosen Error class in JS.
+
+    Any other Python exception also becomes a JS throw -- a TypeError becomes a
+    JS TypeError, everything else a plain Error -- so this is only needed to
+    pick a class that does not match the Python one, such as RangeError.
+
+        raise JsThrow("index out of range", "RangeError")
+    """
+
+    def __init__(self, message, kind="Error"):
+        super().__init__(message)
+        if kind not in _ERROR_KINDS:
+            raise ValueError("unknown JS error class %r; expected one of %s"
+                             % (kind, ", ".join(sorted(_ERROR_KINDS))))
+        self.kind = kind
 
 
 class JsObject:
@@ -87,6 +127,12 @@ def default_library_path():
     return os.path.join(root, "out", name)
 
 
+# The host callback signature: void (*)(jse_call_ctx ctx, void *udata).
+# CFUNCTYPE (not PYFUNCTYPE) is right here -- it still acquires the GIL around
+# the Python callback, which is what keeps this safe under CPython.
+_HOST_FN = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p)
+
+
 def _declare(lib):
     """Pin argtypes/restype on every symbol.
 
@@ -94,6 +140,7 @@ def _declare(lib):
     arguments to 32-bit int on some platforms and truncates the runtime handle.
     """
     rt, u32 = ctypes.c_void_p, ctypes.c_uint
+    ctx = ctypes.c_void_p
     signatures = [
         ("jse_open", [ctypes.POINTER(ctypes.c_void_p)], ctypes.c_int),
         ("jse_close", [rt], None),
@@ -109,6 +156,25 @@ def _declare(lib):
         ("jse_last_error", [rt], ctypes.c_char_p),
         ("jse_last_error_code", [rt], ctypes.c_int),
         ("jse_drain_microtasks", [rt], None),
+        # Host functions.
+        ("jse_register_fn", [rt, ctypes.c_char_p, ctypes.c_size_t, _HOST_FN,
+                             ctypes.c_void_p, ctypes.c_int, ctypes.c_int],
+         ctypes.c_int),
+        ("jse_argc", [ctx], ctypes.c_uint),
+        ("jse_arg", [ctx, u32], u32),
+        ("jse_this", [ctx], u32),
+        ("jse_new_target", [ctx], u32),
+        ("jse_is_construct", [ctx], ctypes.c_int),
+        ("jse_return", [ctx, u32], None),
+        ("jse_return_number", [ctx, ctypes.c_double], None),
+        ("jse_return_bool", [ctx, ctypes.c_int], None),
+        ("jse_return_null", [ctx], None),
+        ("jse_return_string", [ctx, ctypes.c_char_p, ctypes.c_size_t], None),
+        ("jse_throw_error", [ctx, ctypes.c_int, ctypes.c_char_p], None),
+        ("jse_throw", [ctx, u32], None),
+        ("jse_value_persist", [ctx, u32], u32),
+        ("jse_call", [ctx, u32, ctypes.POINTER(u32), ctypes.c_uint, u32,
+                      ctypes.POINTER(u32)], ctypes.c_int),
     ]
     for name, argtypes, restype in signatures:
         fn = getattr(lib, name)
@@ -131,6 +197,200 @@ def version(path=None):
     return _load(path).jse_version().decode("utf-8")
 
 
+class JsValue:
+    """A live reference to one argument of an in-flight host call.
+
+    Handles reached through a call context are scope handles: the engine
+    invalidates them when the host function returns. These are therefore
+    deliberately not storable, and using one after its call returned raises
+    JsError rather than dereferencing a dead handle. Their purpose is to let a
+    host function forward an argument it received into a JS callback.
+    """
+
+    __slots__ = ("_call", "_handle", "_type")
+
+    def __init__(self, call, handle, type_id):
+        self._call = call
+        self._handle = handle
+        self._type = type_id
+
+    @property
+    def type_name(self):
+        return _TYPE_NAMES.get(self._type, "value")
+
+    def to_python(self):
+        """Convert to a plain Python value, as call.args already did."""
+        return _read_value(self._call._lib, self._call._runtime._rt,
+                           self._handle, self._type)
+
+    def __repr__(self):
+        return "<js %s>" % self.type_name
+
+
+class JsFunction(JsValue):
+    """A JS function argument, callable from Python while its host call runs."""
+
+    __slots__ = ()
+
+    def __call__(self, *args):
+        return self._call._invoke(self._handle, args)
+
+    def __repr__(self):
+        return "<js function>"
+
+
+class Call:
+    """One in-flight invocation of a Python host function.
+
+    Arguments are already converted to Python values in `args`; the raw context
+    is only used for the things conversion cannot express -- calling a JS
+    function back, or asking whether this was a `new` call.
+    """
+
+    __slots__ = ("_lib", "_ctx", "_runtime", "args", "raw", "_live")
+
+    def __init__(self, lib, ctx, runtime):
+        self._lib = lib
+        self._ctx = ctx
+        self._runtime = runtime
+        self._live = True
+        rt = runtime._rt
+        handles = tuple(lib.jse_arg(ctx, i) for i in range(lib.jse_argc(ctx)))
+        # `raw` keeps the live references, which is what a JS callback can be
+        # handed back; `args` is the convenient plain-Python view of the same
+        # arguments. A function argument appears in both, since calling one is
+        # the common case and needs no ceremony.
+        self.raw = tuple(self._wrap(h, lib.jse_type_of(rt, h)) for h in handles)
+        # A callable stays callable in `args` so `call.args[0](x)` just works;
+        # everything else becomes a plain Python value.
+        self.args = tuple(v if isinstance(v, JsFunction) else v.to_python()
+                          for v in self.raw)
+
+    @property
+    def this(self):
+        """The `this` receiver. Strict semantics: undefined stays undefined."""
+        handle = self._lib.jse_this(self._ctx)
+        type_id = self._lib.jse_type_of(self._runtime._rt, handle)
+        value = self._wrap(handle, type_id)
+        return value if isinstance(value, JsFunction) else value.to_python()
+
+    @property
+    def is_construct(self):
+        """True when invoked through `new` or `super()`."""
+        return bool(self._lib.jse_is_construct(self._ctx))
+
+    def _wrap(self, handle, type_id):
+        # The runtime pointer is required for jse_type_of, not optional: it
+        # reports OTHER for a NULL runtime, and scope handles resolve through
+        # the runtime's active context.
+        #
+        # OTHER is treated as callable alongside FUNCTION because jse_type_of
+        # has no lightfunc case: engine built-ins such as Math.abs are stored
+        # as a tagged ordinal rather than an HObject, so they fall through to
+        # OTHER even though `typeof` says "function" and jse_call invokes them
+        # fine. Symbols and bigints also land in OTHER, and calling one throws
+        # a TypeError from JS -- the correct outcome anyway.
+        cls = JsFunction if type_id in (_FUNCTION, _OTHER) else JsValue
+        return cls(self, handle, type_id)
+
+    def _invoke(self, func, args):
+        """Call a JS function from inside this host function, via jse_call."""
+        if not self._live:
+            raise JsError(-5, "this JS function outlived the host call it came "
+                              "from; scope handles die when the callback returns")
+        argv = (ctypes.c_uint * max(len(args), 1))()
+        for i, arg in enumerate(args):
+            argv[i] = self._to_js(arg)
+        out = ctypes.c_uint(0)
+        rc = self._lib.jse_call(self._ctx, func, argv, len(args), 0,
+                                ctypes.byref(out))
+        if rc != _OK:
+            # The throw is already recorded on this context. Signal it to the
+            # trampoline, which returns promptly and lets the engine propagate
+            # the original JS exception rather than a new one.
+            raise _Propagate()
+        rt = self._runtime._rt
+        try:
+            return _read_value(self._lib, rt, out.value,
+                               self._lib.jse_type_of(rt, out.value))
+        finally:
+            # jse_call hands back a runtime-owned handle, so release it.
+            self._lib.jse_value_free(rt, out.value)
+
+    def _to_js(self, value):
+        """Handle for a Python value passed as a jse_call argument.
+
+        This ABI gives a callback no way to mint a value: jse_return_* write
+        the return slot rather than yielding a handle, jse_call only resolves
+        handles that already exist, and jse_eval is a top-level entry point
+        that must not be re-entered from inside a callback. So the arguments a
+        host function can forward are the ones it was handed, identified by
+        position via JsValue.
+
+        Passing a fresh Python value is reported rather than silently coerced.
+        Build it in JS instead -- have the callback take a factory function, or
+        return the data and let JS assemble the call.
+        """
+        if isinstance(value, JsValue):
+            if value._call is not self:
+                raise JsError(-5, "that JS value belongs to a different host call")
+            return value._handle
+        # A plain Python value is forwardable when it is one of this call's own
+        # arguments unchanged -- the overwhelmingly common case, `f(x)` where x
+        # came out of call.args. Match on type and equality so 1.0 and True
+        # stay distinct, and take the handle that produced it.
+        for js_value, converted in zip(self.raw, self.args):
+            if isinstance(js_value, JsFunction):
+                continue
+            if type(converted) is type(value) and converted == value:
+                return js_value._handle
+        raise JsError(-6, "cannot pass a new %s to a JS callback: this ABI "
+                          "cannot construct JS values inside a host function, "
+                          "so only this call's own arguments can be forwarded"
+                          % (type(value).__name__,))
+
+
+class _Propagate(Exception):
+    """Internal: a JS exception is already recorded; unwind Python quietly."""
+
+
+def _count_parameters(pyfunc):
+    """Default for the JS .length of a host function.
+
+    A host function's Python signature is always f(call) -- the JS arguments
+    arrive inside the Call, not as separate parameters -- so there is nothing
+    to count. JS built-ins whose length is unspecified report 0, and that is
+    the honest default here too; pass arity= to declare a real one.
+    """
+    return 0
+
+
+def _read_value(lib, rt, handle, type_id):
+    """Convert a handle to a Python value. `rt` may be None inside a callback."""
+    if type_id in (_UNDEFINED, _NULL):
+        return None
+    if type_id == _BOOLEAN:
+        out = ctypes.c_int()
+        if lib.jse_get_bool(rt, handle, ctypes.byref(out)) != _OK:
+            return JsObject(type_id)
+        return bool(out.value)
+    if type_id == _NUMBER:
+        out = ctypes.c_double()
+        if lib.jse_get_number(rt, handle, ctypes.byref(out)) != _OK:
+            return JsObject(type_id)
+        return out.value
+    if type_id == _STRING:
+        size = ctypes.c_size_t(0)
+        if lib.jse_get_string(rt, handle, None, 0, ctypes.byref(size)) != _OK:
+            return JsObject(type_id)
+        buffer = ctypes.create_string_buffer(size.value + 1)
+        if lib.jse_get_string(rt, handle, buffer, size.value + 1,
+                              ctypes.byref(size)) != _OK:
+            return JsObject(type_id)
+        return buffer.raw[:size.value].decode("utf-8")
+    return JsObject(type_id)
+
+
 class Runtime:
     """One JavaScript engine instance, usable as a context manager.
 
@@ -141,6 +401,16 @@ class Runtime:
     def __init__(self, library_path=None):
         self._lib = _load(library_path)
         self._rt = ctypes.c_void_p()
+        # Every CFUNCTYPE trampoline handed to C lives here for the runtime's
+        # lifetime. ctypes does NOT keep one alive on its own: drop the last
+        # Python reference and the object is collected, leaving the engine
+        # holding a pointer to freed memory that it will happily call. Since
+        # jse_register_fn is permanent for the runtime, so is this list.
+        self._trampolines = []
+        # The most recent Python exception a host function raised. JS only ever
+        # sees its text, so keeping the object here preserves the traceback for
+        # an embedder that wants to re-raise or log it after eval() returns.
+        self._last_host_exception = None
         rc = self._lib.jse_open(ctypes.byref(self._rt))
         if rc != _OK:
             raise JsError(rc, "jse_open failed (is another Runtime already open? "
@@ -168,6 +438,118 @@ class Runtime:
             # The handle occupies a slot in a fixed-size registry, so release
             # it even if conversion raised.
             self._lib.jse_value_free(self._rt, handle.value)
+
+    def register(self, name, pyfunc, arity=None, constructable=False):
+        """Bind a Python callable as the JS global `name`.
+
+        The callable receives one Call argument and returns a Python value,
+        which becomes the JS return value; returning None yields undefined.
+        Raising converts to a JS throw -- see JsThrow for choosing the class.
+
+        `arity` becomes the function's .length, defaulting to the number of
+        positional parameters the callable declares. Registration is permanent:
+        the ABI offers no way to unbind.
+        """
+        self._check_open()
+        if arity is None:
+            arity = _count_parameters(pyfunc)
+        trampoline = _HOST_FN(self._make_trampoline(pyfunc))
+        # Append BEFORE registering: once C holds the pointer, a collection
+        # between the two statements would already be fatal.
+        self._trampolines.append(trampoline)
+        encoded = name.encode("utf-8")
+        rc = self._lib.jse_register_fn(self._rt, encoded, len(encoded),
+                                       trampoline, None, arity,
+                                       1 if constructable else 0)
+        if rc != _OK:
+            self._trampolines.pop()
+            raise JsError(rc, self._error_message())
+        return pyfunc
+
+    def function(self, name=None, arity=None, constructable=False):
+        """Decorator form of register(). Defaults the JS name to the Python one.
+
+            @rt.function()
+            def greet(call):
+                return "hello " + call.args[0]
+        """
+        def decorate(pyfunc):
+            self.register(name or pyfunc.__name__, pyfunc, arity, constructable)
+            return pyfunc
+        return decorate
+
+    def _make_trampoline(self, pyfunc):
+        """Wrap `pyfunc` in the C-callable shim the engine invokes.
+
+        Nothing may escape this function as a Python exception: it is called
+        from C, which has no notion of one. ctypes would merely print a
+        traceback and return, leaving JS to carry on with a bogus undefined. So
+        every path is caught and converted into a recorded JS throw.
+        """
+        lib = self._lib
+
+        def trampoline(ctx, _udata):
+            call = None
+            try:
+                call = Call(lib, ctx, self)
+                result = pyfunc(call)
+            except _Propagate:
+                # jse_call already recorded the callee's throw on this context.
+                # Returning now lets the engine propagate that exception intact.
+                return
+            except JsThrow as exc:
+                lib.jse_throw_error(ctx, _ERROR_KINDS[exc.kind],
+                                    str(exc).encode("utf-8"))
+                return
+            except BaseException as exc:
+                # Stash the original so the embedder can inspect the Python
+                # traceback after eval() returns; JS only ever sees the text.
+                self._last_host_exception = exc
+                kind = _ERROR_KINDS.get(type(exc).__name__, _ERROR)
+                message = "%s: %s" % (type(exc).__name__, exc)
+                lib.jse_throw_error(ctx, kind, message.encode("utf-8"))
+                return
+            finally:
+                if call is not None:
+                    # Scope handles die with the call; make the JsFunction
+                    # objects that wrap them refuse to be used afterwards.
+                    call._live = False
+            try:
+                self._set_return(ctx, result)
+            except BaseException as exc:
+                lib.jse_throw_error(ctx, _ERROR,
+                                    ("cannot return %r to JS: %s"
+                                     % (type(result).__name__, exc)).encode("utf-8"))
+
+        return trampoline
+
+    def _set_return(self, ctx, result):
+        """Store a Python value as the call's JS return value."""
+        lib = self._lib
+        if result is None:
+            return  # A callback that sets no return value yields undefined.
+        if isinstance(result, bool):
+            # Checked before int: bool is a subclass of int in Python.
+            lib.jse_return_bool(ctx, 1 if result else 0)
+        elif isinstance(result, (int, float)):
+            lib.jse_return_number(ctx, float(result))
+        elif isinstance(result, str):
+            encoded = result.encode("utf-8")
+            lib.jse_return_string(ctx, encoded, len(encoded))
+        elif isinstance(result, JsValue):
+            # Returning an argument straight back, or the result of a callback.
+            lib.jse_return(ctx, result._handle)
+        elif isinstance(result, (list, dict, tuple)):
+            # No ABI constructor builds an object or array inside a callback,
+            # and jse_eval must not be re-entered from one. Returning JSON text
+            # silently would make a dict arrive as a string, so say so instead:
+            # the host stringifies deliberately and JS calls JSON.parse.
+            raise TypeError("returning a %s would have to cross as JSON text; "
+                            "return json.dumps(...) and JSON.parse it in JS"
+                            % type(result).__name__)
+        else:
+            raise TypeError("no JS equivalent; return a number, string, bool, "
+                            "None, or a value from call.raw")
 
     def drain_microtasks(self):
         """Run pending promise jobs. eval() already does this on its own."""
@@ -197,33 +579,8 @@ class Runtime:
         return raw.decode("utf-8", "replace") if raw else ""
 
     def _to_python(self, handle):
+        # Shared with the host-function path, which reads the same way against
+        # a NULL runtime. Strings emerge as real UTF-8: the engine converts its
+        # internal CESU-8, so astral characters arrive as 4-byte sequences.
         type_id = self._lib.jse_type_of(self._rt, handle)
-        if type_id in (_UNDEFINED, _NULL):
-            return None
-        if type_id == _BOOLEAN:
-            out = ctypes.c_int()
-            self._expect(self._lib.jse_get_bool(self._rt, handle, ctypes.byref(out)))
-            return bool(out.value)
-        if type_id == _NUMBER:
-            out = ctypes.c_double()
-            self._expect(self._lib.jse_get_number(self._rt, handle, ctypes.byref(out)))
-            return out.value
-        if type_id == _STRING:
-            return self._read_string(handle)
-        return JsObject(type_id)
-
-    def _read_string(self, handle):
-        # Two-call protocol: a NULL buffer measures, then we allocate and fill.
-        size = ctypes.c_size_t(0)
-        self._expect(self._lib.jse_get_string(self._rt, handle, None, 0,
-                                              ctypes.byref(size)))
-        buffer = ctypes.create_string_buffer(size.value + 1)
-        self._expect(self._lib.jse_get_string(self._rt, handle, buffer,
-                                              size.value + 1, ctypes.byref(size)))
-        # The engine emits real UTF-8 here, converting its internal CESU-8, so
-        # astral characters arrive as proper 4-byte sequences.
-        return buffer.raw[:size.value].decode("utf-8")
-
-    def _expect(self, rc):
-        if rc != _OK:
-            raise JsError(rc, self._error_message())
+        return _read_value(self._lib, self._rt, handle, type_id)
