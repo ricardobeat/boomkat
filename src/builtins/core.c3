@@ -170,6 +170,15 @@ struct BuiltinContext {
     /// invocation.  Set to the subclass constructor when called via super(); set to
     /// the callee itself for a plain `new Builtin()`.  Null for non-constructor calls.
     HObject* new_target;
+    /// Host functions only: 1 + the index of this call's scope in
+    /// Heap.host_scopes, or 0 when this is not a host call.
+    ///
+    /// Biased by one so a zero-initialised context is unambiguously "no
+    /// scope". It must be recorded per call rather than read as "the
+    /// innermost scope": a host function that calls back into JS which calls
+    /// another host function leaves a deeper scope on top, and the outer
+    /// handler must keep addressing its own.
+    uint host_scope_slot;
 }
 
 alias BuiltinFunc = fn void(BuiltinContext*);
@@ -2958,6 +2967,21 @@ const uint HOST_FN_BASE = 0x4000_0000;
 /// udata alongside the context the VM already staged.
 alias HostFunc = fn void(BuiltinContext*, void*);
 
+/// Cap on nested host-function dispatches.
+///
+/// A host -> JS -> host chain never pushes a VM activation and never re-enters
+/// Vm.run, so neither MAX_CALLS nor MAX_RUN_DEPTH counts it, yet every level
+/// consumes native stack for the dispatch frame and the host's own frame.
+/// Without this bound a recursive host function faults the stack instead of
+/// throwing.
+///
+/// The limit is native stack, not any engine structure, so it is set per build
+/// profile: an unoptimised sanitizer build spends roughly 500 KB of stack per
+/// level (measured: 16 levels overflow an 8 MB stack, 8 levels survive), while
+/// an optimised build spends a small fraction of that.
+const uint MAX_HOST_DEPTH @if($feature(GC_STRESS)) = 8;
+const uint MAX_HOST_DEPTH @if(!$feature(GC_STRESS)) = 32;
+
 /// Invoke the host function registered in `slot`.
 ///
 /// An unregistered slot yields undefined rather than faulting, so a forged or
@@ -2975,6 +2999,15 @@ fn void dispatch_host(uint slot, BuiltinContext* ctx) {
     }
     HostFunc handler = (HostFunc)entry.handler;
     ctx.result.set_undefined();
+
+    // Bound host nesting before touching any VM state, so the caller sees an
+    // unmodified engine alongside the pending throw. host_scope_depth is
+    // exactly the count of host frames currently on the C3 stack.
+    if (heap.host_scope_depth >= MAX_HOST_DEPTH) {
+        host_throw_error(ctx, HOST_ERR_RANGE, "Maximum call stack size exceeded");
+        return;
+    }
+
     heap.native_frame_depth++;
 
     // ES2015 §9.2.2 OrdinaryCreateFromConstructor. Builtin constructors
@@ -3024,6 +3057,7 @@ fn void dispatch_host(uint slot, BuiltinContext* ctx) {
         return;
     }
     uint depth = (uint)scope;
+    ctx.host_scope_slot = depth + 1;
     heap.host_scope_set(depth, heap::HOST_SCOPE_THIS, ctx.this_val);
     TVal nt;
     if (ctx.new_target != null) { nt.set_object(ctx.new_target); } else { nt.set_undefined(); }
@@ -3041,6 +3075,7 @@ fn void dispatch_host(uint slot, BuiltinContext* ctx) {
     }
 
     heap.host_scope_pop();
+    ctx.host_scope_slot = 0;
     heap.native_frame_depth--;
 }
 
@@ -3067,9 +3102,8 @@ fn TVal host_arg(BuiltinContext* ctx, uint i) {
     out.set_undefined();
     if (ctx == null || ctx.heap == null) return out;
     if (i >= (uint)ctx.argc) return out;
-    uint depth = ctx.heap.host_scope_depth;
-    if (depth == 0) return out;
-    ctx.heap.host_scope_get(depth - 1, heap::HOST_SCOPE_ARG0 + i, &out);
+    if (ctx.host_scope_slot == 0) return out;
+    ctx.heap.host_scope_get(ctx.host_scope_slot - 1, heap::HOST_SCOPE_ARG0 + i, &out);
     return out;
 }
 
@@ -3079,9 +3113,8 @@ fn TVal host_this(BuiltinContext* ctx) {
     TVal out;
     out.set_undefined();
     if (ctx == null || ctx.heap == null) return out;
-    uint depth = ctx.heap.host_scope_depth;
-    if (depth == 0) return out;
-    ctx.heap.host_scope_get(depth - 1, heap::HOST_SCOPE_THIS, &out);
+    if (ctx.host_scope_slot == 0) return out;
+    ctx.heap.host_scope_get(ctx.host_scope_slot - 1, heap::HOST_SCOPE_THIS, &out);
     return out;
 }
 
@@ -3090,9 +3123,8 @@ fn TVal host_new_target(BuiltinContext* ctx) {
     TVal out;
     out.set_undefined();
     if (ctx == null || ctx.heap == null) return out;
-    uint depth = ctx.heap.host_scope_depth;
-    if (depth == 0) return out;
-    ctx.heap.host_scope_get(depth - 1, heap::HOST_SCOPE_NEW_TARGET, &out);
+    if (ctx.host_scope_slot == 0) return out;
+    ctx.heap.host_scope_get(ctx.host_scope_slot - 1, heap::HOST_SCOPE_NEW_TARGET, &out);
     return out;
 }
 
@@ -3154,6 +3186,55 @@ fn void host_throw_error(BuiltinContext* ctx, int kind, char[] msg) {
         ctx.throw_value.set_undefined();
     }
     ctx.should_throw = true;
+}
+
+/// Call a JS function from host code.
+///
+/// This is what makes host functions composable rather than leaf-only: without
+/// it there is no setTimeout, no event emitter, no async I/O. Routes through
+/// heap.call_fn (vm_call_fn_impl), the same entry point builtins use for user
+/// callbacks, so the run-depth guard added for native re-entry bounds this too.
+///
+/// Arguments are read from the caller's storage and handed straight through;
+/// vm_call_fn_impl copies them into its own register window. On an exception
+/// inside the callee, `ok` is set false and the pending error is transferred to
+/// the context as a throw, so the host can return immediately and let the
+/// engine propagate it.
+fn TVal host_call(BuiltinContext* ctx, TVal func, TVal* args, uint nargs, TVal this_val, bool* ok) {
+    TVal out;
+    out.set_undefined();
+    if (ok != null) *ok = false;
+    if (ctx == null || ctx.heap == null || ctx.vm == null) return out;
+    Heap* heap = ctx.heap;
+    if (heap.call_fn == null) return out;
+
+    // A non-callable target would otherwise fall through to an undefined
+    // result that the host cannot distinguish from a successful call.
+    if (!func.is_lightfunc()) {
+        if (!func.is_object()) {
+            host_throw_error(ctx, HOST_ERR_TYPE, "host_call target is not a function");
+            return out;
+        }
+        HObject* fo = (HObject*)func.get_heapptr();
+        if (fo == null || !fo.is_callable()) {
+            host_throw_error(ctx, HOST_ERR_TYPE, "host_call target is not a function");
+            return out;
+        }
+    }
+
+    heap.has_error = false;
+    TVal res = heap.call_fn(ctx.vm, func, args, nargs, this_val);
+
+    // The callee threw. Move the pending error onto the context so it
+    // propagates as this host function's own throw once the handler returns.
+    if (heap.has_error) {
+        ctx.throw_value = heap.error_value;
+        ctx.should_throw = true;
+        heap.has_error = false;
+        return out;
+    }
+    if (ok != null) *ok = true;
+    return res;
 }
 
 /// Build a JS string from UTF-8 bytes, interned like every other engine string.
@@ -3242,6 +3323,12 @@ fn void init_builtin_dispatch_table() @init
 }
 
 fn void dispatch_builtin(uint fn_index, BuiltinContext* ctx) {
+    // Every dispatch site declares its BuiltinContext uninitialised and fills
+    // only the fields builtins read, so this one is stack garbage until set.
+    // Clearing it here rather than at the 11 staging sites keeps the invariant
+    // at the single chokepoint every call already passes through; a missed
+    // site would otherwise read an arbitrary scope index.
+    ctx.host_scope_slot = 0;
     if (fn_index >= Builtin.LAST.ordinal) {
         // Host functions live at HOST_FN_BASE and above, so they arrive here
         // rather than at any of the callable_kind() sites: to those a host

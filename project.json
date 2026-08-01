@@ -284,6 +284,31 @@
       "features": [
         "GC_STRESS"
       ]
+    },
+    "host_fn_phase4": {
+      "type": "executable",
+      "sources": [
+        "src",
+        "test/capi/host_fn_phase4.c3"
+      ],
+      "opt": "O2",
+      "single-module": true,
+      "features": [
+        "THREADED_DISPATCH"
+      ]
+    },
+    "host_fn_phase4_gc_stress": {
+      "type": "executable",
+      "sources": [
+        "src",
+        "test/capi/host_fn_phase4.c3"
+      ],
+      "opt": "O0",
+      "single-module": true,
+      "sanitize": "address",
+      "features": [
+        "GC_STRESS"
+      ]
     }
   }
 }
