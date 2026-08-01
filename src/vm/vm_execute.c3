@@ -3816,7 +3816,7 @@ fn TVal? Vm.run(Vm* vm) {
                         vic.bindings = (void*)owner.bindings;
                         vic.shape_id = owner.bindings.shape_id;
                         vic.generation = vm.heap.shapes[owner.bindings.shape_id].generation;
-                        vic.prop_idx = (ushort)owner_idx;
+                        vic.prop_idx = (uint)owner_idx;
                         if (vic.key != null) { vm.heap.decref((types::HeapHeader*)vic.key); }
                         vic.key = key;
                         if (key != null) { ((types::HeapHeader*)key).incref(); }
@@ -4016,7 +4016,7 @@ fn TVal? Vm.run(Vm* vm) {
                             vic.bindings = ic_env.bindings;
                             vic.shape_id = ic_env.bindings.shape_id;
                             vic.generation = vm.heap.shapes[ic_env.bindings.shape_id].generation;
-                            vic.prop_idx = (ushort)ic_prop_idx;
+                            vic.prop_idx = (uint)ic_prop_idx;
                             if (vic.key != null) { vm.heap.decref((types::HeapHeader*)vic.key); }
                             vic.key = key;
                             if (key != null) { ((types::HeapHeader*)key).incref(); }
@@ -4102,7 +4102,7 @@ fn TVal? Vm.run(Vm* vm) {
                             gic.env = (void*)ic_env;
                             gic.bindings = (void*)ic_env.bindings;
                             gic.shape_id = ic_env.bindings.shape_id;
-                            gic.prop_idx = (ushort)ic_prop_idx;
+                            gic.prop_idx = (uint)ic_prop_idx;
                             gic.search_head = (void*)ds.act.lex_env;
                         }
                     } else {
@@ -4168,7 +4168,7 @@ fn TVal? Vm.run(Vm* vm) {
                                 gic.env = (void*)owner;
                                 gic.bindings = (void*)owner.bindings;
                                 gic.shape_id = owner.bindings.shape_id;
-                                gic.prop_idx = (ushort)owner_idx;
+                                gic.prop_idx = (uint)owner_idx;
                                 gic.varref_store_ok = !fl.configurable;
                                 gic.search_head = (void*)ds.act.lex_env;
                             }
@@ -4269,7 +4269,7 @@ fn TVal? Vm.run(Vm* vm) {
                         sic.env = (void*)senv;
                         sic.bindings = (void*)senv.bindings;
                         sic.shape_id = senv.bindings.shape_id;
-                        sic.prop_idx = (ushort)sidx;
+                        sic.prop_idx = (uint)sidx;
                         sic.search_head = (void*)ds.act.lex_env;
                         // Populate the destination write IC (only when the slot
                         // is a writable, non-configurable data binding, the same
@@ -4279,7 +4279,7 @@ fn TVal? Vm.run(Vm* vm) {
                             dic.env = (void*)denv;
                             dic.bindings = (void*)denv.bindings;
                             dic.shape_id = denv.bindings.shape_id;
-                            dic.prop_idx = (ushort)didx;
+                            dic.prop_idx = (uint)didx;
                             dic.varref_store_ok = !dfl.configurable;
                             dic.search_head = (void*)ds.act.lex_env;
                         }
@@ -4350,7 +4350,7 @@ fn TVal? Vm.run(Vm* vm) {
                             gic.env = (void*)genv;
                             gic.bindings = (void*)genv.bindings;
                             gic.shape_id = genv.bindings.shape_id;
-                            gic.prop_idx = (ushort)gidx;
+                            gic.prop_idx = (uint)gidx;
                             gic.search_head = (void*)ds.act.lex_env;
                         }
                     }
@@ -4534,7 +4534,7 @@ fn TVal? Vm.run(Vm* vm) {
                             gic.env = (void*)ic_env;
                             gic.bindings = (void*)ic_env.bindings;
                             gic.shape_id = ic_env.bindings.shape_id;
-                            gic.prop_idx = (ushort)ic_prop_idx;
+                            gic.prop_idx = (uint)ic_prop_idx;
                             gic.search_head = (void*)ds.act.lex_env;
                         }
                     } else {
@@ -4634,7 +4634,7 @@ fn TVal? Vm.run(Vm* vm) {
                                 gic.env = (void*)owner;
                                 gic.bindings = (void*)owner.bindings;
                                 gic.shape_id = owner.bindings.shape_id;
-                                gic.prop_idx = (ushort)owner_idx;
+                                gic.prop_idx = (uint)owner_idx;
                                 // Only a writable, non-configurable data global
                                 // has an immutable descriptor safe for the
                                 // re-check-free store path.
@@ -4816,7 +4816,7 @@ fn TVal? Vm.run(Vm* vm) {
                         vic.bindings = ic_env.bindings;
                         vic.shape_id = ic_env.bindings.shape_id;
                         vic.generation = vm.heap.shapes[ic_env.bindings.shape_id].generation;
-                        vic.prop_idx = (ushort)ic_prop_idx;
+                        vic.prop_idx = (uint)ic_prop_idx;
                         if (vic.key != null) { vm.heap.decref((types::HeapHeader*)vic.key); }
                         vic.key = key;
                         if (key != null) { ((types::HeapHeader*)key).incref(); }
@@ -4961,7 +4961,7 @@ fn TVal? Vm.run(Vm* vm) {
                                 vic.bindings = (void*)owner.bindings;
                                 vic.shape_id = owner.bindings.shape_id;
                                 vic.generation = vm.heap.shapes[owner.bindings.shape_id].generation;
-                                vic.prop_idx = (ushort)owner_idx;
+                                vic.prop_idx = (uint)owner_idx;
                                 if (vic.key != null) { vm.heap.decref((types::HeapHeader*)vic.key); }
                                 vic.key = key;
                                 if (key != null) { ((types::HeapHeader*)key).incref(); }
@@ -5072,7 +5072,7 @@ fn TVal? Vm.run(Vm* vm) {
                                 vic.bindings = (void*)b;
                                 vic.shape_id = b.shape_id;
                                 vic.generation = vm.heap.shapes[b.shape_id].generation;
-                                vic.prop_idx = (ushort)idx;
+                                vic.prop_idx = (uint)idx;
                                 vic.key = key;
                                 vic.search_head = null;
                             }

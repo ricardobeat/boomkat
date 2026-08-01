@@ -374,7 +374,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                 vic.bindings = ic_env.bindings;
                 vic.shape_id = ic_env.bindings.shape_id;
                 vic.generation = vm.heap.shapes[ic_env.bindings.shape_id].generation;
-                vic.prop_idx = (ushort)ic_prop_idx;
+                vic.prop_idx = (uint)ic_prop_idx;
                 if (vic.key != null) { vm.heap.decref((types::HeapHeader*)vic.key); }
                 vic.key = key;
                 if (key != null) { ((types::HeapHeader*)key).incref(); }
@@ -553,7 +553,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                 gic.env = (void*)ic_env;
                 gic.bindings = (void*)ic_env.bindings;
                 gic.shape_id = ic_env.bindings.shape_id;
-                gic.prop_idx = (ushort)ic_prop_idx;
+                gic.prop_idx = (uint)ic_prop_idx;
                 gic.varref_store_ok = ic_store_ok;
                 gic.search_head = (void*)ds.act.lex_env;
             }

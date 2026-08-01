@@ -349,7 +349,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                     ic.shape_id = hobj.shape_id;
                                     ic.proto = null;  // own property
                                     ic.chain_len = 0;
-                                    ic.prop_idx = (ushort)owner_idx;
+                                    ic.prop_idx = (uint)owner_idx;
                                     ic.prop_flags = res.owner.get_prop_flags((uint)owner_idx);
                                     // incref the new key before decref-ing the old one: when the
                                     // same string is re-cached at this slot (ic.key == key) whose
@@ -746,7 +746,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                 // shape instead of searching the chain again.
                                 uint chain_len = 0;
                                 void*[hobject::IC_MAX_CHAIN] chain_protos;
-                                ushort[hobject::IC_MAX_CHAIN] chain_shapes;
+                                uint[hobject::IC_MAX_CHAIN] chain_shapes;
                                 if (!is_own) {
                                     HObject* walk = hobj;
                                     while (chain_len < hobject::IC_MAX_CHAIN) {
@@ -776,7 +776,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                             ic.chain_protos[ci] = chain_protos[ci];
                                             ic.chain_shapes[ci] = chain_shapes[ci];
                                         }
-                                        ic.prop_idx = (ushort)owner_idx;
+                                        ic.prop_idx = (uint)owner_idx;
                                         ic.prop_flags = res.owner.get_prop_flags((uint)owner_idx);
                                         // incref the new key before decref-ing the old one: when the
                                         // same string is re-cached at this slot (ic.key == key) whose
@@ -1071,7 +1071,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                     ic1.shape_id = hobj1.shape_id;
                                     ic1.proto = null;  // own property
                                     ic1.chain_len = 0;
-                                    ic1.prop_idx = (ushort)idx1;
+                                    ic1.prop_idx = (uint)idx1;
                                     if (ic1.key != null) { vm.heap.decref((types::HeapHeader*)ic1.key); }
                                     ic1.key = key1;
                                     if (key1 != null) { ((types::HeapHeader*)key1).incref(); }
@@ -1194,7 +1194,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                         ic2.shape_id = hobj2.shape_id;
                                         ic2.proto = null;  // own property
                                         ic2.chain_len = 0;
-                                        ic2.prop_idx = (ushort)idx2;
+                                        ic2.prop_idx = (uint)idx2;
                                         if (ic2.key != null) { vm.heap.decref((types::HeapHeader*)ic2.key); }
                                         ic2.key = key2;
                                         if (key2 != null) { ((types::HeapHeader*)key2).incref(); }
@@ -1627,7 +1627,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                         ic2.shape_id = hobj2.shape_id;
                                         ic2.proto = null;  // own property
                                         ic2.chain_len = 0;
-                                        ic2.prop_idx = (ushort)idx2;
+                                        ic2.prop_idx = (uint)idx2;
                                         if (ic2.key != null) { vm.heap.decref((types::HeapHeader*)ic2.key); }
                                         ic2.key = key2;
                                         if (key2 != null) { ((types::HeapHeader*)key2).incref(); }
