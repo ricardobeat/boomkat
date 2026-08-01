@@ -248,6 +248,15 @@ chain into that state and returns to the caller. `.next()`, `.throw()`, and
 `.return()` restore them and resume, with `ResumeKind` telling `YIELD` whether to
 return a value, inject an exception, or inject a return.
 
+Restoring the registers takes a reference per heap value, and the copy bypasses
+the usual `track_heap_store` accounting while `activation_begin` has just reset
+`heap_reg_count`. Both restore sites, in `vm_call_fn_impl` and
+`dispatch_calls`, therefore call `track_restored_regs()` to raise the watermark
+over the restored window, which keeps the `decref_callee_regs` sweep and the
+`vm_mark_activations` scan sound. A bulk register restore added later owes the
+same call, or it leaks the references and leaves stale pointer bits for a frame
+that reuses that valstack address.
+
 Async functions reuse the same machinery: `AWAIT` is a suspension whose
 continuation is a promise reaction, so an async function is a generator whose
 resumptions are driven by the microtask queue rather than by user calls.
