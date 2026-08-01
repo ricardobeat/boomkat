@@ -256,12 +256,22 @@ fn int jse_type_of(void* rtp, uint id) @export("jse_type_of") {
     return JSE_TYPE_OTHER;
 }
 
+// A reader that fails must leave a message behind: jse_last_error is documented
+// as describing "the most recent failure", and a host that logs it on a bad
+// status would otherwise print an empty string (or, worse, a stale message from
+// an unrelated earlier call).
+fn int reader_fail(Runtime* rt, int code, String msg) {
+    set_err(rt, code, msg);
+    return code;
+}
+
 fn int jse_get_number(void* rtp, uint id, double* out) @export("jse_get_number") {
     if (rtp == null || out == null) return JSE_ERR_INVALID;
     Runtime* rt = (Runtime*)rtp;
+    clear_err(rt);
     TVal v;
-    if (!slot_get(rt, id, &v)) return JSE_ERR_INVALID;
-    if (!v.is_numeric()) return JSE_ERR_TYPE;
+    if (!slot_get(rt, id, &v)) return reader_fail(rt, JSE_ERR_INVALID, "invalid or freed value handle");
+    if (!v.is_numeric()) return reader_fail(rt, JSE_ERR_TYPE, "value is not a number");
     *out = v.get_number_or_fastint();
     return JSE_OK;
 }
@@ -269,9 +279,10 @@ fn int jse_get_number(void* rtp, uint id, double* out) @export("jse_get_number")
 fn int jse_get_bool(void* rtp, uint id, int* out) @export("jse_get_bool") {
     if (rtp == null || out == null) return JSE_ERR_INVALID;
     Runtime* rt = (Runtime*)rtp;
+    clear_err(rt);
     TVal v;
-    if (!slot_get(rt, id, &v)) return JSE_ERR_INVALID;
-    if (!v.is_boolean()) return JSE_ERR_TYPE;
+    if (!slot_get(rt, id, &v)) return reader_fail(rt, JSE_ERR_INVALID, "invalid or freed value handle");
+    if (!v.is_boolean()) return reader_fail(rt, JSE_ERR_TYPE, "value is not a boolean");
     *out = v.get_boolean() ? 1 : 0;
     return JSE_OK;
 }
@@ -292,9 +303,10 @@ fn void sink_put(char c) {
 fn int jse_get_string(void* rtp, uint id, char* buf, usz cap, usz* out_len) @export("jse_get_string") {
     if (rtp == null) return JSE_ERR_INVALID;
     Runtime* rt = (Runtime*)rtp;
+    clear_err(rt);
     TVal v;
-    if (!slot_get(rt, id, &v)) return JSE_ERR_INVALID;
-    if (!v.is_string()) return JSE_ERR_TYPE;
+    if (!slot_get(rt, id, &v)) return reader_fail(rt, JSE_ERR_INVALID, "invalid or freed value handle");
+    if (!v.is_string()) return reader_fail(rt, JSE_ERR_TYPE, "value is not a string");
     HString* s = (HString*)v.get_heapptr();
     // Symbols share the string tag but carry no meaningful text; copying their
     // bytes out would yield invalid UTF-8. JS forbids implicit conversion too.
@@ -305,7 +317,7 @@ fn int jse_get_string(void* rtp, uint id, char* buf, usz cap, usz* out_len) @exp
     usz need = g_sink_len;
     if (out_len != null) *out_len = need;
     if (buf == null) return JSE_OK;
-    if (need + 1 > cap) return JSE_ERR_FULL;
+    if (need + 1 > cap) return reader_fail(rt, JSE_ERR_FULL, "buffer too small for string");
     buf[need] = 0;
     return JSE_OK;
 }
