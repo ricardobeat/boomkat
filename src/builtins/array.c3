@@ -1726,6 +1726,14 @@ fn int array_sort_compare(BuiltinContext* ctx, TVal comparefn, bool has_comparef
 // ============================================================================
 // Array.prototype.sort (ES2022 §23.1.3.30), with comparefn support
 // ============================================================================
+
+/// Elements sorted in the inline buffers before spilling to the temp allocator.
+/// Two of these buffers are live at once, and the comparefn can re-enter the VM
+/// and sort again, so the frame is paid once per level of comparator recursion.
+/// A larger buffer bought nothing measurable and cost 128 Kb of native stack per
+/// level, which was enough to fault before the run-depth guard could throw.
+const usz SORT_INLINE_ELEMS = 64;
+
 fn void builtin_array_proto_sort(BuiltinContext* ctx) {
     HObject* obj = array_proto_get_this(ctx);
     if (obj == null) { ctx.result.set_undefined(); return; }
@@ -1759,9 +1767,9 @@ fn void builtin_array_proto_sort(BuiltinContext* ctx) {
     // restored as deletions at the end, which avoids the dense/named-property
     // mismatch that occurs when writing "undefined" into a slot that still has
     // a named property.
-    TVal[4096] stack_items;
+    TVal[SORT_INLINE_ELEMS] stack_items;
     TVal[] items;
-    if (len > 4096) {
+    if (len > SORT_INLINE_ELEMS) {
         uint heap_len = len > 0x7FFFFFFF ? 0x7FFFFFFF : (uint)len;
         items = mem::temp_array(TVal, heap_len);
     } else {
@@ -1791,9 +1799,9 @@ fn void builtin_array_proto_sort(BuiltinContext* ctx) {
 
     // Stable bottom-up merge sort on the collected items.
     if (present_count > 1) {
-        TVal[4096] stack_temp;
+        TVal[SORT_INLINE_ELEMS] stack_temp;
         TVal[] temp;
-        if (present_count > 4096) {
+        if (present_count > SORT_INLINE_ELEMS) {
             uint heap_count = present_count > 0x7FFFFFFF ? 0x7FFFFFFF : (uint)present_count;
             temp = mem::temp_array(TVal, heap_count);
         } else {
