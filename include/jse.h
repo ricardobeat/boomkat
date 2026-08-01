@@ -161,6 +161,14 @@ JSE_API int jse_get_string(jse_runtime rt, jse_value v, char *buf, size_t cap,
  * UTF-8 string owned by the runtime. Never NULL; empty when no error. Valid
  * until the next jse_* call. Formatted without re-entering the VM, so a
  * throwing user toString cannot recurse here.
+ *
+ * For a thrown Error the text is "Name: message" ("TypeError: x is not a
+ * function"), which lets a host map it onto its own exception classes; `name`
+ * is read off the prototype chain. A thrown primitive formats as its value, so
+ * `throw 42` reports "42" and `throw null` reports "null". A thrown object with
+ * neither `name` nor `message` reports "uncaught exception (object)". The
+ * prototype walk stops at a Proxy and ignores accessors rather than invoking a
+ * trap or getter, since this runs on the unwind path.
  */
 JSE_API const char *jse_last_error(jse_runtime rt);
 
