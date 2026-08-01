@@ -133,6 +133,46 @@
         "src"
       ]
     },
+    "jse": {
+      "type": "dynamic-lib",
+      "sources": [
+        "src"
+      ],
+      "opt": "O2",
+      "single-module": true,
+      "fp-math": "relaxed",
+      "panic-msg": false,
+      "debug-info": "none",
+      "features": [
+        "THREADED_DISPATCH"
+      ]
+    },
+    "jse_static": {
+      "type": "static-lib",
+      "sources": [
+        "src"
+      ],
+      "opt": "O2",
+      "single-module": true,
+      "fp-math": "relaxed",
+      "panic-msg": false,
+      "debug-info": "none",
+      "features": [
+        "THREADED_DISPATCH"
+      ]
+    },
+    "jse_stress": {
+      "type": "dynamic-lib",
+      "sources": [
+        "src"
+      ],
+      "opt": "O0",
+      "single-module": true,
+      "sanitize": "address",
+      "features": [
+        "GC_STRESS"
+      ]
+    },
     "test262_runner": {
       "type": "executable",
       "sources": [
