@@ -719,10 +719,10 @@ struct HObjectBase {
     HeapHeader*   next;
     HeapHeader*   prev;
     HObject*      prototype;
-    ushort        shape_id;
+    uint          shape_id;
     Shape*        shape @if(USE_SHAPE_CACHE);
-    ushort        prop_capacity;
-    ushort        prop_count;
+    uint          prop_capacity;
+    uint          prop_count;
     uint          array_size;
     uint          array_used;
     void*         prop_alloc;
@@ -1123,7 +1123,7 @@ fn PropFlags HObject.get_prop_flags(&self, uint idx) @inline {
 /// it and per-object flag edits cannot leak.
 fn void HObject.make_shape_private(&self) {
     if (_active_heap == null || self.get_shape() == null) return;
-    hobject::Shape* ns = shape_create(self.prop_count, 0, 0xFFFF_FFFF, null);
+    hobject::Shape* ns = shape_create(self.prop_count, 0, heap::SHAPE_NONE, null);
     if (ns == null) return;
 
     hobject::ShapeProperty* new_sp = ns.props();
@@ -1142,7 +1142,7 @@ fn void HObject.make_shape_private(&self) {
     uint slot = h.alloc_shape_slot();
     if (slot != heap::SHAPE_NONE) {
         h.shapes[slot] = ns;
-        self.shape_id = (ushort)slot;
+        self.shape_id = slot;
         self.set_shape(ns);
     } else {
         // The keys were copied without an incref, so shape_free must not decref.
@@ -1446,13 +1446,28 @@ fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags) {
     // skip its chain walk. Keying the transition on (parent, key, flags) lets
     // every instance of a class installing the same private field share one
     // shape, where set_prop_flags() would give each a private, uncacheable one.
+    //
+    // The shape chain is the authoritative key list that ensure_prop_hash()
+    // rebuilds from, so an object whose shape does not name this key has not
+    // really stored it. transition_shape_new_flags() returns the current ID
+    // unchanged when it cannot allocate, so that case unwinds the append and
+    // reports failure rather than claiming a write that later reads cannot see.
     if (_active_heap != null) {
         heap::Heap* h = (heap::Heap*)_active_heap;
-        ushort new_shape_id = h.transition_shape_new_flags(self.shape_id, key, pflags);
-        if (new_shape_id != self.shape_id) {
-            self.shape_id = new_shape_id;
-            self.set_shape(h.get_shape(new_shape_id));
+        uint new_shape_id = h.transition_shape_new_flags(self.shape_id, key, pflags);
+        if (new_shape_id == self.shape_id) {
+            self.prop_count--;
+            if (val.is_heap_allocated()) {
+                void* ptr = val.get_heapptr();
+                if (ptr != null) {
+                    h.decref((types::HeapHeader*)ptr);
+                }
+            }
+            mem::clear(&self.prop_values()[new_idx], (sz)(PropValue::size));
+            return false;
         }
+        self.shape_id = new_shape_id;
+        self.set_shape(h.get_shape(new_shape_id));
     }
 
     // Insert into the per-object hash table directly, which avoids the malloc
@@ -1517,7 +1532,7 @@ fn bool HObject.delete_prop(&self, void* key) {
     }
 
     uint ui = (uint)idx;
-    ushort new_count = (ushort)(self.prop_count - 1);
+    uint new_count = self.prop_count - 1;
 
     // Release the deleted slot's own reference before it is overwritten by
     // the compaction shift below.
@@ -1533,8 +1548,9 @@ fn bool HObject.delete_prop(&self, void* key) {
     mem::clear(&self.prop_values()[new_count], (sz)(PropValue::size));
     self.prop_count = new_count;
 
-    // An emptied object returns to the root shape in slot 0. Allocating a fresh
-    // private shape on every delete would exhaust the 65534 shape slots.
+    // An emptied object returns to the root shape in slot 0, which describes it
+    // exactly. Allocating a fresh private shape on every delete would grow the
+    // shapes array without bound for no benefit.
     if (new_count == 0) {
         if (_active_heap != null) {
             heap::Heap* h = (heap::Heap*)_active_heap;
@@ -1546,7 +1562,7 @@ fn bool HObject.delete_prop(&self, void* key) {
     } else {
         // Build a flat private shape holding every surviving property. It stays
         // out of the transition table, since it belongs to this object alone.
-        Shape* ns = shape_create(new_count, 0, 0xFFFF_FFFF, null);
+        Shape* ns = shape_create(new_count, 0, heap::SHAPE_NONE, null);
         if (ns != null) {
             // Collect surviving property names by walking the old shape chain.
             // The walk visits the newest shape first, so place each key at its
@@ -1576,7 +1592,7 @@ fn bool HObject.delete_prop(&self, void* key) {
                 uint slot = h.alloc_shape_slot();
                 if (slot != heap::SHAPE_NONE) {
                     h.shapes[slot] = ns;
-                    self.shape_id = (ushort)slot;
+                    self.shape_id = slot;
                     self.set_shape(ns);
                 } else {
                     // Keys were copied without incref; pass null so shape_free skips decref.
@@ -1692,9 +1708,6 @@ fn void HObject.grow_props(&self) {
             new_cap = self.prop_capacity + 4;
         }
     }
-    // prop_count is a ushort, so the table cannot exceed 65535 entries.
-    if (new_cap > 65535) new_cap = 65535;
-
     usz new_prop_bytes = (usz)new_cap * PropValue::size;
     usz new_size = new_prop_bytes + (usz)self.array_size * TVal::size;
 
@@ -1724,8 +1737,8 @@ fn void HObject.grow_props(&self) {
     if (new_raw == null) return;
 
     self.prop_alloc = new_raw;
-    ushort old_prop_capacity = self.prop_capacity;
-    self.prop_capacity = (ushort)new_cap;
+    uint old_prop_capacity = self.prop_capacity;
+    self.prop_capacity = new_cap;
 
     // prop_alloc may have moved, so inline caches holding prop_value pointers
     // must be invalidated. shape_id is unchanged, so the generation bump is what
@@ -2293,7 +2306,7 @@ fn void shape_free(Shape* sh, void* heap_ptr) {
 // ============================================================================
 
 /// Longest prototype chain an ICEntry can validate. Each level costs a pointer
-/// and a ushort in every entry, and entries are allocated one per instruction,
+/// and a uint in every entry, and entries are allocated one per instruction,
 /// so this trades code memory for depth. Four covers the common library shape
 /// of an instance reaching a method a few subclasses up.
 const uint IC_MAX_CHAIN = 4;
@@ -2305,13 +2318,13 @@ const uint IC_MAX_CHAIN = 4;
 /// chain. Serving a deep hit is only sound while no intermediate object has
 /// gained a shadowing property and no link has been repointed, so the entry
 /// snapshots each intermediate's identity and shape and the hit path replays
-/// that walk. The walk is pointer and ushort comparisons with no property
+/// that walk. The walk is pointer and shape-ID comparisons with no property
 /// lookup, which is what makes it cheaper than the real chain search.
 struct ICEntry {
     /// Shape ID of the object when this entry was populated.
-    ushort shape_id;
+    uint   shape_id;
     /// Property index within the owner's prop_values[].
-    ushort prop_idx;
+    uint   prop_idx;
     /// The property's flags, so a cache hit needs no shape walk.
     PropFlags prop_flags;
     /// Number of prototype links from the receiver to the owner, so the last
@@ -2319,7 +2332,7 @@ struct ICEntry {
     char   chain_len;
     /// Shape of each object stepped onto, ending with the owner, so a property
     /// added or deleted anywhere along the walk invalidates this entry.
-    ushort[IC_MAX_CHAIN] chain_shapes;
+    uint[IC_MAX_CHAIN] chain_shapes;
     /// Each object stepped onto, ending with the owner, held as a weak pointer
     /// compared only for identity against the live chain.
     void*[IC_MAX_CHAIN] chain_protos;
@@ -2362,16 +2375,16 @@ fn HObject* ic_resolve_owner(ICEntry* ic, HObject* hobj) @inline {
 /// prototype-chain walks.
 struct MegamorphicEntry {
     void*   key;           // interned key pointer (null = empty slot)
-    ushort  shape_id;      // object shape ID at lookup time
-    ushort  prop_idx;      // property index in owner.prop_values[]
+    uint    shape_id;      // object shape ID at lookup time
+    uint    prop_idx;      // property index in owner.prop_values[]
     void*   proto;         // owning object (null = own property)
     TVal*   prop_value_ptr; // direct pointer to value slot
     void*   cached_prop_alloc; // owner.prop_values() snapshot for invalidation
 }
 
 /// Hash function for megamorphic cache lookup.
-fn uint mega_hash(ushort shape_id, void* key) @inline {
-    return ((uint)(uptr)key ^ ((uint)shape_id * 2654435761u)) & (heap::MEGA_CACHE_SIZE - 1);
+fn uint mega_hash(uint shape_id, void* key) @inline {
+    return ((uint)(uptr)key ^ (shape_id * 2654435761u)) & (heap::MEGA_CACHE_SIZE - 1);
 }
 
 /// Probe the megamorphic cache, returning the entry on a hit and null on a miss.
@@ -2398,7 +2411,7 @@ fn void mega_cache_store(heap::Heap* h, HObject* hobj, void* key, HObject* owner
     MegamorphicEntry* e = h.mega_cache + slot;
     e.key = key;
     e.shape_id = hobj.shape_id;
-    e.prop_idx = (ushort)prop_idx;
+    e.prop_idx = (uint)prop_idx;
     e.proto = null;  // own property
     e.prop_value_ptr = &owner.prop_values()[prop_idx];
     e.cached_prop_alloc = (void*)owner.prop_values();
@@ -2413,11 +2426,11 @@ struct VarICEntry {
     /// The env's bindings object, whose shape the hit check compares.
     void*   bindings;
     /// Shape ID of the bindings object when this entry was populated.
-    ushort  shape_id;
+    uint    shape_id;
     /// Generation of the shape at population time.
     uint    generation;
     /// Property index within bindings.props[].
-    ushort  prop_idx;
+    uint    prop_idx;
     /// The interned key this entry was filled for.
     void*   key;
     /// act.lex_env at population time; a hit requires the same chain head

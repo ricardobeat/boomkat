@@ -830,9 +830,9 @@ fn void array_set_length(HObject* obj, uint len_val, Heap* heap) {
             // table (shifting higher entries down), so scanning backward is safe.
             // Per ES5 §15.4.5.1 step 3.l: if a non-configurable element is found,
             // stop deletion and set the length to one above it (sloppy mode).
-            ushort pc = obj.prop_count;
+            uint pc = obj.prop_count;
             if (pc > 0) {
-                ushort pi = pc;
+                uint pi = pc;
                 while (pi > 0) {
                     pi--;
                     void* pk = obj.prop_key_at((uint)pi);

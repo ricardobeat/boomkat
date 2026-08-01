@@ -957,9 +957,9 @@ fn bool array_set_length_desc(void* vm, Heap* heap, HObject* obj, ProxyDesc* des
     bool threw_type_error = false;
     if (arr_has_new_len && arr_new_len < old_len) {
         uint delete_floor = arr_new_len;
-        ushort pc = obj.prop_count;
-        for (ushort pi = 0; pi < pc; pi++) {
-            void* pk = obj.prop_key_at((uint)pi);
+        uint pc = obj.prop_count;
+        for (uint pi = 0; pi < pc; pi++) {
+            void* pk = obj.prop_key_at(pi);
             if (pk != null) {
                 HString* pks = (HString*)pk;
                 if (pks.is_arridx()) {
@@ -978,10 +978,10 @@ fn bool array_set_length_desc(void* vm, Heap* heap, HObject* obj, ProxyDesc* des
         // Walk backward so delete_prop's slot-compaction never invalidates
         // an index we haven't visited yet.
         pc = obj.prop_count;
-        ushort pi = pc;
+        uint pi = pc;
         while (pi > 0) {
             pi--;
-            void* pk = obj.prop_key_at((uint)pi);
+            void* pk = obj.prop_key_at(pi);
             if (pk != null) {
                 HString* pks = (HString*)pk;
                 if (pks.is_arridx()) {
