@@ -259,6 +259,31 @@
       ],
       "opt": "O2",
       "single-module": true
+    },
+    "host_fn_phase2": {
+      "type": "executable",
+      "sources": [
+        "src",
+        "test/capi/host_fn_phase2.c3"
+      ],
+      "opt": "O2",
+      "single-module": true,
+      "features": [
+        "THREADED_DISPATCH"
+      ]
+    },
+    "host_fn_phase2_gc_stress": {
+      "type": "executable",
+      "sources": [
+        "src",
+        "test/capi/host_fn_phase2.c3"
+      ],
+      "opt": "O0",
+      "single-module": true,
+      "sanitize": "address",
+      "features": [
+        "GC_STRESS"
+      ]
     }
   }
 }

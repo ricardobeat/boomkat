@@ -408,6 +408,21 @@ struct HostFnEntry {
     bool  constructable;
 }
 
+/// One host-call scope: the values a single host callback can address.
+///
+/// `values` is a real JS Array allocated through alloc_object, so it carries a
+/// temproot flag and its elements are marked transitively. That is what keeps
+/// arguments alive without spending one of the 64 GC_MAX_ROOTS entries, and
+/// without referencing ctx.regs — a nested jse_call can realloc the valstack
+/// and leave a register pointer dangling (see vm_calls.c3:1331).
+///
+/// `generation` is bumped every time a scope is popped, so a handle used after
+/// its callback returned fails the check and reads no freed memory.
+struct HostScope {
+    hobject::HObject* values;
+    uint              generation;
+}
+
 // --- Heap struct ---
 
 struct Heap {
@@ -465,6 +480,16 @@ struct Heap {
     HostFnEntry* host_fns;
     uint         host_fn_count;
     uint         host_fn_capacity;
+
+    /// Stack of live host-call scopes; index host_scope_depth-1 is the
+    /// innermost. Scopes nest exactly as the C3 call stack does, so a
+    /// host -> JS -> host chain pushes one per level.
+    HostScope* host_scopes;
+    uint       host_scope_depth;
+    uint       host_scope_capacity;
+    /// Monotonic counter stamped into each handle. Never reset, so a handle
+    /// from a popped scope can never collide with a live one.
+    uint       host_scope_generation;
 
     // Sweeping the string table is only safe when no raw HString* pointers sit
     // in C3 locals (see mark_and_sweep phase 3b). Off by default; callers at a
@@ -851,6 +876,10 @@ fn Heap*? create(
     h.host_fns              = null;
     h.host_fn_count         = 0;
     h.host_fn_capacity      = 0;
+    h.host_scopes           = null;
+    h.host_scope_depth      = 0;
+    h.host_scope_capacity   = 0;
+    h.host_scope_generation = 0;
 
     // Allocate gray object stack
     void* gray_raw = afn(udata, void*::size * GRAY_STACK_INITIAL_CAP);
@@ -1239,6 +1268,15 @@ fn void Heap.destroy(&self) {
         self.host_fns = null;
         self.host_fn_count = 0;
         self.host_fn_capacity = 0;
+    }
+
+    // The scope array objects themselves are ordinary heap objects, already
+    // freed by the sweep above; only the stack that pointed at them is ours.
+    if (self.host_scopes != null) {
+        self.free_func(self.heap_udata, (void*)self.host_scopes);
+        self.host_scopes = null;
+        self.host_scope_depth = 0;
+        self.host_scope_capacity = 0;
     }
 
     // Interned HStrings are refcounted in normal operation; teardown frees them
@@ -1659,6 +1697,82 @@ fn long Heap.register_host_fn(&self, void* handler, void* udata, void* name, int
 fn HostFnEntry* Heap.host_fn_at(&self, uint slot) {
     if (slot >= self.host_fn_count) return null;
     return &self.host_fns[slot];
+}
+
+// ============================================================================
+// Host call scopes
+// ============================================================================
+
+/// Slot 0 of every scope holds `this`; slot 1 holds new.target; arguments
+/// start at HOST_SCOPE_ARG0. Fixed offsets keep jse_this/jse_arg branch-free.
+const uint HOST_SCOPE_THIS = 0;
+const uint HOST_SCOPE_NEW_TARGET = 1;
+const uint HOST_SCOPE_ARG0 = 2;
+
+/// Push a scope for one host callback and return its depth index, or -1.
+///
+/// The backing store is an ARRAY object, which alloc_object temproot-pins for
+/// the duration of the surrounding native frame, so its elements survive any
+/// collection the host triggers without consuming a GC root.
+fn long Heap.host_scope_push(&self) {
+    if (self.host_scope_depth >= self.host_scope_capacity) {
+        uint new_cap = self.host_scope_capacity == 0 ? 4 : self.host_scope_capacity * 2;
+        usz new_bytes = (usz)new_cap * HostScope::size;
+        void* grown = self.realloc_func(self.heap_udata, (void*)self.host_scopes, new_bytes);
+        if (grown == null) return -1;
+        self.host_scopes = (HostScope*)grown;
+        self.host_scope_capacity = new_cap;
+    }
+    HObject*? arr_raw = self.alloc_object(hobject::ObjClass.ARRAY);
+    if (catch arr_raw) return -1;
+    HObject* arr = arr_raw;
+    arr.prototype = self.array_proto;
+
+    uint depth = self.host_scope_depth;
+    self.host_scope_generation++;
+    self.host_scopes[depth].values = arr;
+    self.host_scopes[depth].generation = self.host_scope_generation;
+    self.host_scope_depth++;
+    return (long)depth;
+}
+
+/// Pop the innermost scope. Its values become unreachable and its generation
+/// is retired, so any handle still held by the host now fails validation.
+fn void Heap.host_scope_pop(&self) {
+    if (self.host_scope_depth == 0) return;
+    self.host_scope_depth--;
+    self.host_scopes[self.host_scope_depth].values = null;
+    self.host_scopes[self.host_scope_depth].generation = 0;
+}
+
+/// Store `v` in the innermost scope at `index`, returning success.
+fn bool Heap.host_scope_set(&self, uint depth, uint index, TVal v) {
+    if (depth >= self.host_scope_depth) return false;
+    HObject* arr = self.host_scopes[depth].values;
+    if (arr == null) return false;
+    HString* key = self.int_to_hstring((long)index);
+    if (key == null) return false;
+    return arr.put_prop(key, v, hobject::PROP_FLAGS_WEC);
+}
+
+/// Read the value at `index` in scope `depth`. Returns false when the scope is
+/// gone or the index was never populated.
+fn bool Heap.host_scope_get(&self, uint depth, uint index, TVal* out) {
+    if (depth >= self.host_scope_depth) return false;
+    HObject* arr = self.host_scopes[depth].values;
+    if (arr == null) return false;
+    HString* key = self.int_to_hstring((long)index);
+    if (key == null) return false;
+    TVal? v = arr.get_prop(key);
+    if (catch v) return false;
+    *out = v;
+    return true;
+}
+
+/// Generation stamp of scope `depth`, or 0 when that depth is not live.
+fn uint Heap.host_scope_generation_at(&self, uint depth) {
+    if (depth >= self.host_scope_depth) return 0;
+    return self.host_scopes[depth].generation;
 }
 
 // ============================================================================

@@ -3010,6 +3010,28 @@ fn void dispatch_host(uint slot, BuiltinContext* ctx) {
         made_this = true;
     }
 
+    // Copy this/new.target/arguments into a scope the host addresses by
+    // handle. Copies rather than register references: a jse_call from inside
+    // the handler can grow and realloc the valstack, which would leave
+    // ctx.regs dangling (vm_calls.c3:1331 documents the same hazard for
+    // builtins, which cope by refreshing — a host holding an opaque handle
+    // cannot).
+    long scope = heap.host_scope_push();
+    if (scope < 0) {
+        heap.native_frame_depth--;
+        ctx.should_throw = true;
+        ctx.throw_value.set_undefined();
+        return;
+    }
+    uint depth = (uint)scope;
+    heap.host_scope_set(depth, heap::HOST_SCOPE_THIS, ctx.this_val);
+    TVal nt;
+    if (ctx.new_target != null) { nt.set_object(ctx.new_target); } else { nt.set_undefined(); }
+    heap.host_scope_set(depth, heap::HOST_SCOPE_NEW_TARGET, nt);
+    for (ushort i = 0; i < ctx.argc; i++) {
+        heap.host_scope_set(depth, heap::HOST_SCOPE_ARG0 + i, ctx.regs[ctx.base_reg + i]);
+    }
+
     handler(ctx, entry.udata);
 
     // ES2015 §9.2.2 step 13: a [[Construct]] call evaluates to the created
@@ -3018,7 +3040,131 @@ fn void dispatch_host(uint slot, BuiltinContext* ctx) {
         *ctx.result = ctx.this_val;
     }
 
+    heap.host_scope_pop();
     heap.native_frame_depth--;
+}
+
+// ----------------------------------------------------------------------------
+// Host accessor API
+//
+// The surface a host callback uses to read its arguments and produce a result.
+// Everything is expressed in TVal here; the C ABI layers opaque handles on top
+// (Phase 3). Each function tolerates a null or exhausted context by returning
+// undefined rather than faulting, so a misbehaving host cannot corrupt the VM.
+// ----------------------------------------------------------------------------
+
+/// Number of arguments the call was made with.
+fn uint host_argc(BuiltinContext* ctx) {
+    return ctx == null ? 0 : (uint)ctx.argc;
+}
+
+/// Argument `i`, or undefined when `i >= argc`.
+///
+/// Reads from the call scope rather than ctx.regs, so the value stays valid
+/// across a nested jse_call that reallocates the valstack.
+fn TVal host_arg(BuiltinContext* ctx, uint i) {
+    TVal out;
+    out.set_undefined();
+    if (ctx == null || ctx.heap == null) return out;
+    if (i >= (uint)ctx.argc) return out;
+    uint depth = ctx.heap.host_scope_depth;
+    if (depth == 0) return out;
+    ctx.heap.host_scope_get(depth - 1, heap::HOST_SCOPE_ARG0 + i, &out);
+    return out;
+}
+
+/// The `this` receiver. Undefined stays undefined: the engine is strict-only,
+/// so there is no coercion to the global object.
+fn TVal host_this(BuiltinContext* ctx) {
+    TVal out;
+    out.set_undefined();
+    if (ctx == null || ctx.heap == null) return out;
+    uint depth = ctx.heap.host_scope_depth;
+    if (depth == 0) return out;
+    ctx.heap.host_scope_get(depth - 1, heap::HOST_SCOPE_THIS, &out);
+    return out;
+}
+
+/// new.target, or undefined on a plain call.
+fn TVal host_new_target(BuiltinContext* ctx) {
+    TVal out;
+    out.set_undefined();
+    if (ctx == null || ctx.heap == null) return out;
+    uint depth = ctx.heap.host_scope_depth;
+    if (depth == 0) return out;
+    ctx.heap.host_scope_get(depth - 1, heap::HOST_SCOPE_NEW_TARGET, &out);
+    return out;
+}
+
+/// True when invoked through `new` or `super()`.
+fn bool host_is_construct(BuiltinContext* ctx) {
+    return ctx != null && ctx.is_constructor;
+}
+
+/// Set the return value. A host that never calls this yields undefined,
+/// since every dispatch site initialises its result slot that way.
+fn void host_return(BuiltinContext* ctx, TVal v) {
+    if (ctx == null || ctx.result == null) return;
+    *ctx.result = v;
+}
+
+/// Throw `v` as-is. Does not unwind: control returns to the host, which must
+/// then return normally. The dispatch sites check should_throw before result,
+/// so a throw beats a return.
+fn void host_throw(BuiltinContext* ctx, TVal v) {
+    if (ctx == null) return;
+    ctx.throw_value = v;
+    ctx.should_throw = true;
+}
+
+/// Error kinds selectable by host_throw_error. Mirrors the JSE_ERROR_* values
+/// the C ABI exposes.
+const int HOST_ERR_ERROR     = 0;
+const int HOST_ERR_TYPE      = 1;
+const int HOST_ERR_RANGE     = 2;
+const int HOST_ERR_REFERENCE = 3;
+const int HOST_ERR_SYNTAX    = 4;
+
+/// Throw a fresh Error of `kind` carrying `msg`. The ergonomic path, and the
+/// one bindings use: it spares the host from building an Error through the
+/// value API.
+fn void host_throw_error(BuiltinContext* ctx, int kind, char[] msg) {
+    if (ctx == null || ctx.heap == null) return;
+    Heap* heap = ctx.heap;
+    HObject* proto = heap.err_proto;
+    switch (kind) {
+        case HOST_ERR_TYPE:      proto = heap.type_err_proto;
+        case HOST_ERR_RANGE:     proto = heap.range_err_proto;
+        case HOST_ERR_REFERENCE: proto = heap.ref_err_proto;
+        case HOST_ERR_SYNTAX:    proto = heap.syntax_err_proto;
+        default:                 proto = heap.err_proto;
+    }
+    HObject*? err_raw = heap.alloc_object(hobject::ObjClass.ERROR);
+    if (try err = err_raw) {
+        err.prototype = proto;
+        HString* msg_str = builtin_intern_string(heap, msg);
+        HString* msg_key = builtin_intern_string(heap, "message");
+        if (msg_str != null && msg_key != null) {
+            TVal msg_tv;
+            msg_tv.set_string(msg_str);
+            err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
+        }
+        ctx.throw_value.set_object(err);
+    } else {
+        ctx.throw_value.set_undefined();
+    }
+    ctx.should_throw = true;
+}
+
+/// Build a JS string from UTF-8 bytes, interned like every other engine string.
+fn TVal host_new_string(BuiltinContext* ctx, char[] utf8) {
+    TVal out;
+    out.set_undefined();
+    if (ctx == null || ctx.heap == null) return out;
+    HString* s = builtin_intern_string(ctx.heap, utf8);
+    if (s == null) return out;
+    out.set_string(s);
+    return out;
 }
 
 /// Build a callable FUNCTION object for the host function in `slot`.
