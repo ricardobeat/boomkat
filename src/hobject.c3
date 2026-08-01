@@ -2292,8 +2292,21 @@ fn void shape_free(Shape* sh, void* heap_ptr) {
 // ICEntry, one monomorphic inline cache entry per site
 // ============================================================================
 
+/// Longest prototype chain an ICEntry can validate. Each level costs a pointer
+/// and a ushort in every entry, and entries are allocated one per instruction,
+/// so this trades code memory for depth. Four covers the common library shape
+/// of an instance reaching a method a few subclasses up.
+const uint IC_MAX_CHAIN = 4;
+
 /// One inline cache entry per GETPROP or PUTPROP site, holding the last lookup's
 /// result so a later access on the same shape can skip the prototype-chain walk.
+///
+/// An entry covers a property found up to IC_MAX_CHAIN links up the prototype
+/// chain. Serving a deep hit is only sound while no intermediate object has
+/// gained a shadowing property and no link has been repointed, so the entry
+/// snapshots each intermediate's identity and shape and the hit path replays
+/// that walk. The walk is pointer and ushort comparisons with no property
+/// lookup, which is what makes it cheaper than the real chain search.
 struct ICEntry {
     /// Shape ID of the object when this entry was populated.
     ushort shape_id;
@@ -2301,6 +2314,15 @@ struct ICEntry {
     ushort prop_idx;
     /// The property's flags, so a cache hit needs no shape walk.
     PropFlags prop_flags;
+    /// Number of prototype links from the receiver to the owner, so the last
+    /// link lands on the owner itself. Zero marks an own property.
+    char   chain_len;
+    /// Shape of each object stepped onto, ending with the owner, so a property
+    /// added or deleted anywhere along the walk invalidates this entry.
+    ushort[IC_MAX_CHAIN] chain_shapes;
+    /// Each object stepped onto, ending with the owner, held as a weak pointer
+    /// compared only for identity against the live chain.
+    void*[IC_MAX_CHAIN] chain_protos;
     /// Where the property was found, or null when it is an own property.
     void*  proto;
     /// The interned key this entry was filled for, compared by pointer.
@@ -2311,6 +2333,28 @@ struct ICEntry {
     /// The owner's prop_alloc when this entry was filled. A hit requires it to
     /// still match, which is one pointer comparison.
     void*  cached_prop_alloc;
+}
+
+/// Resolve the owner an ICEntry points at, or null when the entry no longer
+/// describes the live object graph.
+///
+/// The receiver's own shape_id is checked by the caller. This replays the
+/// recorded prototype walk, requiring every object from the first prototype
+/// through the owner to still be the same object at the same shape. That
+/// rejects a repointed link, a shadowing property added on an intermediate,
+/// and a delete on the owner, which moves the owner's shape while leaving its
+/// prop_values allocation in place and so is invisible to the caller's
+/// prop_alloc check.
+fn HObject* ic_resolve_owner(ICEntry* ic, HObject* hobj) @inline {
+    if (ic.proto == null) return hobj;
+    HObject* cur = hobj;
+    uint links = (uint)ic.chain_len;
+    for (uint i = 0; i < links; i++) {
+        cur = cur.prototype;
+        if (cur != (HObject*)ic.chain_protos[i]) return null;
+        if (cur.shape_id != ic.chain_shapes[i]) return null;
+    }
+    return (HObject*)ic.proto;
 }
 
 /// One entry in the global megamorphic cache, keyed by (shape_id, key) and

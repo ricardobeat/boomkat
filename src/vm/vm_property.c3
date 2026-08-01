@@ -94,8 +94,8 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     if (rc.is_string()) lookup_key = rc.get_heapptr();
                     // Check shape_id first: most likely to differ on polymorphic sites.
                     if (lookup_key != null && ic.shape_id == hobj.shape_id && ic.key == lookup_key) {
-                        HObject* ic_owner = ic.proto == null ? hobj : (HObject*)ic.proto;
-                        if (ic.cached_prop_alloc == (void*)ic_owner.prop_values()) {
+                        HObject* ic_owner = hobject::ic_resolve_owner(ic, hobj);
+                        if (ic_owner != null && ic.cached_prop_alloc == (void*)ic_owner.prop_values()) {
                             // Ultra-fast path: when the IC value is not a heap
                             // pointer (common for fastint/number results), skip
                             // decref/incref/track_heap_store entirely.
@@ -348,6 +348,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                 if (owner_idx >= 0) {
                                     ic.shape_id = hobj.shape_id;
                                     ic.proto = null;  // own property
+                                    ic.chain_len = 0;
                                     ic.prop_idx = (ushort)owner_idx;
                                     ic.prop_flags = res.owner.get_prop_flags((uint)owner_idx);
                                     // incref the new key before decref-ing the old one: when the
@@ -616,14 +617,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                         hobject::ICEntry* ic = ds.ic_base + pc_off;
                         if (ic.key == (void*)key_hstr && ic.shape_id == hobj.shape_id) {
-                            HObject* ic_owner;
-                            if (ic.proto == null) {
-                                ic_owner = hobj;
-                            } else if (hobj.prototype == (HObject*)ic.proto) {
-                                ic_owner = (HObject*)ic.proto;
-                            } else {
-                                ic_owner = null;
-                            }
+                            HObject* ic_owner = hobject::ic_resolve_owner(ic, hobj);
                             if (ic_owner != null && ic.cached_prop_alloc == (void*)ic_owner.prop_values()) {
                                 TVal ic_val = *ic.prop_value_ptr;
                                 if (!ic_val.is_heap_allocated()) {
@@ -742,20 +736,46 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         } else if (res.kind == hobject::PropLookupKind.PROP_DATA) {
                             vm.heap.tval_copy_ref(ra, &res.data_val);
                             track_heap_store(ds.act, ra, (uint)insn.a);
-                            // Populate IC for this site.
-                            // Cache own-property lookups and single-level prototype lookups.
-                            // For proto: ic.proto stores the owning prototype; the IC hit path
-                            // validates hobj.prototype == ic.proto to guard setPrototypeOf.
+                            // Populate the IC for this site, caching own
+                            // properties and anything found within
+                            // IC_MAX_CHAIN prototype links.
                             if (res.owner != null && ds.ic_base != null) {
                                 bool is_own = res.owner == hobj;
-                                bool is_direct_proto = !is_own && hobj.prototype == res.owner;
-                                if (is_own || is_direct_proto) {
+                                // Record the objects stepped onto so the hit
+                                // path can revalidate the walk by identity and
+                                // shape instead of searching the chain again.
+                                uint chain_len = 0;
+                                void*[hobject::IC_MAX_CHAIN] chain_protos;
+                                ushort[hobject::IC_MAX_CHAIN] chain_shapes;
+                                if (!is_own) {
+                                    HObject* walk = hobj;
+                                    while (chain_len < hobject::IC_MAX_CHAIN) {
+                                        HObject* nxt = walk.prototype;
+                                        if (nxt == null) { chain_len = 0; break; }
+                                        chain_protos[chain_len] = (void*)nxt;
+                                        chain_shapes[chain_len] = nxt.shape_id;
+                                        chain_len++;
+                                        if (nxt == res.owner) break;
+                                        walk = nxt;
+                                    }
+                                    // Owner sits deeper than the snapshot can
+                                    // describe, so leave the site uncached.
+                                    if (chain_len > 0 && chain_protos[chain_len - 1] != (void*)res.owner) {
+                                        chain_len = 0;
+                                    }
+                                }
+                                if (is_own || chain_len > 0) {
                                     uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                                     hobject::ICEntry* ic = ds.ic_base + pc_off;
                                     int owner_idx = res.owner.find_prop_idx(key);
                                     if (owner_idx >= 0) {
                                         ic.shape_id = hobj.shape_id;
                                         ic.proto = is_own ? null : (void*)res.owner;
+                                        ic.chain_len = (char)chain_len;
+                                        for (uint ci = 0; ci < chain_len; ci++) {
+                                            ic.chain_protos[ci] = chain_protos[ci];
+                                            ic.chain_shapes[ci] = chain_shapes[ci];
+                                        }
                                         ic.prop_idx = (ushort)owner_idx;
                                         ic.prop_flags = res.owner.get_prop_flags((uint)owner_idx);
                                         // incref the new key before decref-ing the old one: when the
@@ -969,14 +989,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                 hobject::ICEntry* ic = ds.ic_base + pc_off;
                 if (ic.shape_id == hobj.shape_id) {
-                    HObject* ic_owner;
-                    if (ic.proto == null) {
-                        ic_owner = hobj;
-                    } else if (hobj.prototype == (HObject*)ic.proto) {
-                        ic_owner = (HObject*)ic.proto;
-                    } else {
-                        ic_owner = null;
-                    }
+                    HObject* ic_owner = hobject::ic_resolve_owner(ic, hobj);
                     if (ic_owner != null && ic.cached_prop_alloc == (void*)ic_owner.prop_values()) {
                         TVal ic_val = *ic.prop_value_ptr;
                         if (!ic_val.is_heap_allocated()) {
@@ -1032,14 +1045,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 if (!hop1_proxy && ds.ic_base != null) {
                     hobject::ICEntry* ic1 = ds.ic_base + pc1;
                     if (ic1.key == (void*)key1_hstr && ic1.shape_id == hobj1.shape_id) {
-                        HObject* owner1;
-                        if (ic1.proto == null) {
-                            owner1 = hobj1;
-                        } else if (hobj1.prototype == (HObject*)ic1.proto) {
-                            owner1 = (HObject*)ic1.proto;
-                        } else {
-                            owner1 = null;
-                        }
+                        HObject* owner1 = hobject::ic_resolve_owner(ic1, hobj1);
                         if (owner1 != null && ic1.cached_prop_alloc == (void*)owner1.prop_values()) {
                             mid_val = *ic1.prop_value_ptr;
                         }
@@ -1064,6 +1070,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                 if (idx1 >= 0) {
                                     ic1.shape_id = hobj1.shape_id;
                                     ic1.proto = null;  // own property
+                                    ic1.chain_len = 0;
                                     ic1.prop_idx = (ushort)idx1;
                                     if (ic1.key != null) { vm.heap.decref((types::HeapHeader*)ic1.key); }
                                     ic1.key = key1;
@@ -1146,14 +1153,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     if (ds.ic_base != null && key2_hstr != null) {
                         hobject::ICEntry* ic2 = ds.ic_base + pc2;
                         if (ic2.key == (void*)key2_hstr && ic2.shape_id == hobj2.shape_id) {
-                            HObject* owner2;
-                            if (ic2.proto == null) {
-                                owner2 = hobj2;
-                            } else if (hobj2.prototype == (HObject*)ic2.proto) {
-                                owner2 = (HObject*)ic2.proto;
-                            } else {
-                                owner2 = null;
-                            }
+                            HObject* owner2 = hobject::ic_resolve_owner(ic2, hobj2);
                             if (owner2 != null && ic2.cached_prop_alloc == (void*)owner2.prop_values()) {
                                 TVal ic2_val = *ic2.prop_value_ptr;
                                 if (!ic2_val.is_heap_allocated()) {
@@ -1193,6 +1193,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                     if (idx2 >= 0) {
                                         ic2.shape_id = hobj2.shape_id;
                                         ic2.proto = null;  // own property
+                                        ic2.chain_len = 0;
                                         ic2.prop_idx = (ushort)idx2;
                                         if (ic2.key != null) { vm.heap.decref((types::HeapHeader*)ic2.key); }
                                         ic2.key = key2;
@@ -1585,14 +1586,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     if (ds.ic_base != null && key2_hstr != null) {
                         hobject::ICEntry* ic2 = ds.ic_base + pc2;
                         if (ic2.key == (void*)key2_hstr && ic2.shape_id == hobj2.shape_id) {
-                            HObject* owner2;
-                            if (ic2.proto == null) {
-                                owner2 = hobj2;
-                            } else if (hobj2.prototype == (HObject*)ic2.proto) {
-                                owner2 = (HObject*)ic2.proto;
-                            } else {
-                                owner2 = null;
-                            }
+                            HObject* owner2 = hobject::ic_resolve_owner(ic2, hobj2);
                             if (owner2 != null && ic2.cached_prop_alloc == (void*)owner2.prop_values()) {
                                 TVal ic2_val = *ic2.prop_value_ptr;
                                 if (!ic2_val.is_heap_allocated()) {
@@ -1632,6 +1626,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                     if (idx2 >= 0) {
                                         ic2.shape_id = hobj2.shape_id;
                                         ic2.proto = null;  // own property
+                                        ic2.chain_len = 0;
                                         ic2.prop_idx = (ushort)idx2;
                                         if (ic2.key != null) { vm.heap.decref((types::HeapHeader*)ic2.key); }
                                         ic2.key = key2;

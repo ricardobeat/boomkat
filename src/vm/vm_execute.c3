@@ -3027,17 +3027,10 @@ fn TVal? Vm.run(Vm* vm) {
                 uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                 hobject::ICEntry* ic = ds.ic_base + pc_off;
                 if (ic.shape_id == hobj.shape_id) {
-                    HObject* ic_owner;
-                    if (ic.proto == null) {
-                        // Own-property IC: owner is the receiver itself.
-                        ic_owner = hobj;
-                    } else if (hobj.prototype == (HObject*)ic.proto) {
-                        // Proto IC: receiver's prototype still points to the cached owner.
-                        // setPrototypeOf does not change shape_id, so we check explicitly.
-                        ic_owner = (HObject*)ic.proto;
-                    } else {
-                        ic_owner = null;
-                    }
+                    // Own properties resolve to the receiver; a proto hit
+                    // replays the recorded chain, since neither setPrototypeOf
+                    // nor a shadowing property upstream moves shape_id here.
+                    HObject* ic_owner = hobject::ic_resolve_owner(ic, hobj);
                     if (ic_owner != null && ic.cached_prop_alloc == (void*)ic_owner.prop_values()) {
                         TVal ic_val = *ic.prop_value_ptr;
                         if (!ic_val.is_heap_allocated()) {
