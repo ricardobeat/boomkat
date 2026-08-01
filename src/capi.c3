@@ -240,7 +240,14 @@ fn int jse_type_of(void* rtp, uint id) @export("jse_type_of") {
     if (v.is_null()) return JSE_TYPE_NULL;
     if (v.is_boolean()) return JSE_TYPE_BOOLEAN;
     if (v.is_numeric()) return JSE_TYPE_NUMBER;
-    if (v.is_string()) return JSE_TYPE_STRING;
+    // A Symbol is a STRING-tagged HString with is_symbol set, so is_string()
+    // alone would misreport it as a string and let jse_get_string hand back
+    // the symbol's raw internal bytes.
+    if (v.is_string()) {
+        HString* s = (HString*)v.get_heapptr();
+        if (s != null && s.is_symbol()) return JSE_TYPE_OTHER;
+        return JSE_TYPE_STRING;
+    }
     if (v.is_object()) {
         HObject* o = (HObject*)v.get_heapptr();
         if (o != null && o.flags.callable) return JSE_TYPE_FUNCTION;
@@ -289,6 +296,9 @@ fn int jse_get_string(void* rtp, uint id, char* buf, usz cap, usz* out_len) @exp
     if (!slot_get(rt, id, &v)) return JSE_ERR_INVALID;
     if (!v.is_string()) return JSE_ERR_TYPE;
     HString* s = (HString*)v.get_heapptr();
+    // Symbols share the string tag but carry no meaningful text; copying their
+    // bytes out would yield invalid UTF-8. JS forbids implicit conversion too.
+    if (s != null && s.is_symbol()) return JSE_ERR_TYPE;
 
     g_sink = buf; g_sink_len = 0; g_sink_cap = (buf == null) ? 0 : cap;
     hstring::write_cesu8_as_utf8(s.get_data(), &sink_put);
