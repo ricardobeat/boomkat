@@ -79,7 +79,7 @@ fn void init_threaded_handlers() {
     g_threaded_handlers[Opcode.INC_GLOBAL.ordinal] = &th_inc_global;
     g_threaded_handlers[Opcode.DEC_GLOBAL.ordinal] = &th_dec_global;
 
-    // --- Variable access (VarIC shape/generation path) ---
+    // --- Variable access (VarIC shape and recycle-epoch path) ---
     g_threaded_handlers[Opcode.GETVAR.ordinal]        = &th_getvar;
     g_threaded_handlers[Opcode.PUTVAR_ASSIGN.ordinal] = &th_putvar_assign;
     g_threaded_handlers[Opcode.INC_VAR.ordinal]       = &th_inc_var;
@@ -445,7 +445,7 @@ fn Instruction* th_dec_global(Instruction* pc, Instruction* code_end, TVal* regs
     return th_inc_global_impl(pc, code_end, regs, cold, false);
 }
 
-// --- Variable access: VarIC (shape/generation) hit path only. ---
+// --- Variable access: VarIC (shape and recycle-epoch) hit path only. ---
 
 fn Instruction* th_getvar(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
@@ -463,7 +463,7 @@ fn Instruction* th_getvar(Instruction* pc, Instruction* code_end, TVal* regs, Co
     if (vic.env == null || vic.key != key || vic.search_head != (void*)act.lex_env) return pc;
     HObject* b = (HObject*)vic.bindings;
     if (b.shape_id != vic.shape_id
-        || vm.heap.shapes[b.shape_id].generation != vic.generation) return pc;
+        || vm.heap.shape_recycle_epoch != vic.recycle_epoch) return pc;
     if (b.get_prop_flags(vic.prop_idx).is_accessor) return pc; // getter -> switch
     TVal v = b.prop_values()[vic.prop_idx];
     if (env::is_tdz_sentinel(&v)) return pc; // TDZ error -> switch
@@ -490,7 +490,7 @@ fn Instruction* th_putvar_assign(Instruction* pc, Instruction* code_end, TVal* r
     if (vic.env == null || vic.key != key || vic.search_head != (void*)act.lex_env) return pc;
     HObject* b = (HObject*)vic.bindings;
     if (b.shape_id != vic.shape_id
-        || vm.heap.shapes[b.shape_id].generation != vic.generation) return pc;
+        || vm.heap.shape_recycle_epoch != vic.recycle_epoch) return pc;
     TVal* pv = &b.prop_values()[vic.prop_idx];
     hobject::PropFlags fl = b.get_prop_flags(vic.prop_idx);
     if (env::is_tdz_sentinel(pv) || !fl.writable || fl.is_accessor) return pc;
@@ -518,7 +518,7 @@ fn Instruction* th_inc_var(Instruction* pc, Instruction* code_end, TVal* regs, C
     if (vic.env == null || vic.key != key || vic.search_head != (void*)act.lex_env) return pc;
     HObject* b = (HObject*)vic.bindings;
     if (b.shape_id != vic.shape_id
-        || vm.heap.shapes[b.shape_id].generation != vic.generation) return pc;
+        || vm.heap.shape_recycle_epoch != vic.recycle_epoch) return pc;
     TVal old_val = b.prop_values()[vic.prop_idx];
     if (env::is_tdz_sentinel(&old_val) || !b.get_prop_flags(vic.prop_idx).writable) return pc;
     if (!old_val.is_fastint()) return pc;

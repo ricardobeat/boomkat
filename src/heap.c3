@@ -721,7 +721,14 @@ struct Heap {
     hobject::Shape**    shapes;    // each element points to one shape allocation
     uint                shape_count;
     uint                shape_capacity;
-    uint                shape_gen;
+    // Counts how many times a shape id has been handed back out for reuse.
+    // A variable inline cache stores the value it saw and compares it instead
+    // of loading the per-shape generation, which lets it skip a dependent load
+    // into the shapes table on every access. Property storage growing is the
+    // other reason a shape generation moves, and that one a variable cache does
+    // not care about, because it addresses values by index and re-reads the
+    // base pointer every time.
+    uint                shape_recycle_epoch;
     // Head of the reclaimed-slot list, or SHAPE_NONE when empty. Only private
     // shapes are ever freed, so a slot on this list has no live referent. The
     // link is threaded through the shapes array itself: a free slot holds
@@ -1131,7 +1138,7 @@ fn void Heap.insert_transition(&self, uint parent_id, void* key, char flags, uin
 fn void Heap.init_shapes(&self) {
     self.shape_capacity = SHAPE_INITIAL_CAP;
     self.shape_count    = 1;  // slot 0 holds the root shape
-    self.shape_gen      = 0;
+    self.shape_recycle_epoch = 0;
     self.shape_free_head = SHAPE_FREE_END;
     usz bytes = (usz)SHAPE_INITIAL_CAP * (void*::size);
     self.shapes = (hobject::Shape**)self.alloc_func(self.heap_udata, bytes);
@@ -1160,6 +1167,9 @@ fn uint Heap.alloc_shape_slot(&self) {
         self.shape_free_head = link & SHAPE_FREE_LINK_MASK;
         self.shape_reuse_gen = (link >> SHAPE_FREE_LINK_BITS) + 1;
         self.shapes[id] = null;
+        // This id is about to name a different shape, so every variable cache
+        // holding it is now stale even though the id itself is unchanged.
+        self.shape_recycle_epoch++;
         return id;
     }
     self.shape_reuse_gen = 0;
@@ -1277,7 +1287,6 @@ fn uint Heap.transition_shape_new_flags(&self, uint cur_shape_id, void* key, hob
 fn void Heap.bump_shape_gen(&self, uint shape_id) {
     if (shape_id < self.shape_count && self.shape_slot_live(shape_id)) {
         self.shapes[shape_id].generation++;
-        self.shape_gen++;
     }
 }
 
@@ -1741,7 +1750,7 @@ fn void Heap.reset(&self) {
         mem::clear(self.shapes, (sz)((usz)self.shape_capacity * (void*::size)));
     }
     self.shape_count = 1;
-    self.shape_gen   = 0;
+    self.shape_recycle_epoch = 0;
     self.shape_free_head = SHAPE_FREE_END;
     self.shapes[0]   = hobject::shape_create(0, 0, SHAPE_NONE, null);
     self.init_transition_table();

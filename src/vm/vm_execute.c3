@@ -3772,16 +3772,16 @@ fn TVal? Vm.run(Vm* vm) {
                     // resolutions (hot strict-mode global-assignment loops).
                     // Only existence is captured here, since TDZ, const, and
                     // accessor state are PUTVAR_ASSIGN's business, so a hit
-                    // needs no flag checks, only the shape/generation guard
-                    // (a delete anywhere in the bindings object bumps the
-                    // generation and falls back to the walk).
+                    // needs no flag checks, only the shape and recycle-epoch
+                    // guard (a delete moves the bindings object to a different
+                    // shape id, so the walk runs again).
                     if (ds.var_ic_base != null) {
                         uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                         hobject::VarICEntry* vic = ds.var_ic_base + pc_off;
                         if (vic.env != null && vic.key == key && vic.search_head == (void*)ds.act.lex_env) {
                             HObject* b = (HObject*)vic.bindings;
                             if (b.shape_id == vic.shape_id
-                                && vm.heap.shapes[b.shape_id].generation == vic.generation) {
+                                && vm.heap.shape_recycle_epoch == vic.recycle_epoch) {
                                 ra.set_boolean(true);
                                 track_heap_store(ds.act, ra, (uint)insn.a);
                                 break;
@@ -3815,7 +3815,7 @@ fn TVal? Vm.run(Vm* vm) {
                         vic.env = (void*)owner;
                         vic.bindings = (void*)owner.bindings;
                         vic.shape_id = owner.bindings.shape_id;
-                        vic.generation = vm.heap.shapes[owner.bindings.shape_id].generation;
+                        vic.recycle_epoch = vm.heap.shape_recycle_epoch;
                         vic.prop_idx = (uint)owner_idx;
                         if (vic.key != null) { vm.heap.decref((types::HeapHeader*)vic.key); }
                         vic.key = key;
@@ -3866,7 +3866,7 @@ fn TVal? Vm.run(Vm* vm) {
                         if (vic.env != null && vic.key == key && vic.search_head == (void*)ds.act.lex_env) {
                             HObject* b = (HObject*)vic.bindings;
                             if (b.shape_id == vic.shape_id
-                                && vm.heap.shapes[b.shape_id].generation == vic.generation) {
+                                && vm.heap.shape_recycle_epoch == vic.recycle_epoch) {
                                 if (b.get_prop_flags(vic.prop_idx).is_accessor) {
                                     // Accessor property: fall through to slow path which invokes getter
                                 } else {
@@ -4015,7 +4015,7 @@ fn TVal? Vm.run(Vm* vm) {
                             vic.env = ic_env;
                             vic.bindings = ic_env.bindings;
                             vic.shape_id = ic_env.bindings.shape_id;
-                            vic.generation = vm.heap.shapes[ic_env.bindings.shape_id].generation;
+                            vic.recycle_epoch = vm.heap.shape_recycle_epoch;
                             vic.prop_idx = (uint)ic_prop_idx;
                             if (vic.key != null) { vm.heap.decref((types::HeapHeader*)vic.key); }
                             vic.key = key;
@@ -4665,7 +4665,7 @@ fn TVal? Vm.run(Vm* vm) {
                         if (vic.env != null && vic.key == key && vic.search_head == (void*)ds.act.lex_env) {
                             HObject* b = (HObject*)vic.bindings;
                             if (b.shape_id == vic.shape_id
-                                && vm.heap.shapes[b.shape_id].generation == vic.generation) {
+                                && vm.heap.shape_recycle_epoch == vic.recycle_epoch) {
                                 // Accessor properties store a getter/setter pair, not the
                                 // actual value.  Fall through to slow path which invokes the getter.
                                 if (b.get_prop_flags(vic.prop_idx).is_accessor) {
@@ -4815,7 +4815,7 @@ fn TVal? Vm.run(Vm* vm) {
                         vic.env = ic_env;
                         vic.bindings = ic_env.bindings;
                         vic.shape_id = ic_env.bindings.shape_id;
-                        vic.generation = vm.heap.shapes[ic_env.bindings.shape_id].generation;
+                        vic.recycle_epoch = vm.heap.shape_recycle_epoch;
                         vic.prop_idx = (uint)ic_prop_idx;
                         if (vic.key != null) { vm.heap.decref((types::HeapHeader*)vic.key); }
                         vic.key = key;
@@ -4885,7 +4885,7 @@ fn TVal? Vm.run(Vm* vm) {
                         if (vic.env != null && vic.key == key && vic.search_head == (void*)ds.act.lex_env) {
                             HObject* b = (HObject*)vic.bindings;
                             if (b.shape_id == vic.shape_id
-                                && vm.heap.shapes[b.shape_id].generation == vic.generation) {
+                                && vm.heap.shape_recycle_epoch == vic.recycle_epoch) {
                                 TVal* pv = &b.prop_values()[vic.prop_idx];
                                 hobject::PropFlags fl = b.get_prop_flags(vic.prop_idx);
                                 if (!env::is_tdz_sentinel(pv) && fl.writable && !fl.is_accessor) {
@@ -4960,7 +4960,7 @@ fn TVal? Vm.run(Vm* vm) {
                                 vic.env = (void*)owner;
                                 vic.bindings = (void*)owner.bindings;
                                 vic.shape_id = owner.bindings.shape_id;
-                                vic.generation = vm.heap.shapes[owner.bindings.shape_id].generation;
+                                vic.recycle_epoch = vm.heap.shape_recycle_epoch;
                                 vic.prop_idx = (uint)owner_idx;
                                 if (vic.key != null) { vm.heap.decref((types::HeapHeader*)vic.key); }
                                 vic.key = key;
@@ -5034,7 +5034,7 @@ fn TVal? Vm.run(Vm* vm) {
                         if (vic.env == (void*)ds.act.var_env && vic.key == key) {
                             HObject* b = (HObject*)vic.bindings;
                             if (b != null && b.shape_id == vic.shape_id
-                                && vm.heap.shapes[b.shape_id].generation == vic.generation) {
+                                && vm.heap.shape_recycle_epoch == vic.recycle_epoch) {
                                 // A direct write skips find_prop_idx and put_prop.
                                 TVal* pv = &b.prop_values()[vic.prop_idx];
                                 if (hobject::_active_heap != null && pv.is_string()) {
@@ -5071,7 +5071,7 @@ fn TVal? Vm.run(Vm* vm) {
                                 vic.env = (void*)ds.act.var_env;
                                 vic.bindings = (void*)b;
                                 vic.shape_id = b.shape_id;
-                                vic.generation = vm.heap.shapes[b.shape_id].generation;
+                                vic.recycle_epoch = vm.heap.shape_recycle_epoch;
                                 vic.prop_idx = (uint)idx;
                                 vic.key = key;
                                 vic.search_head = null;

@@ -2252,7 +2252,9 @@ struct PropLookupResult {
 /// and flags live there and are shared; the values live per object in
 /// PropValue[].
 struct Shape {
-    /// Bumped by delete, seal, and freeze to invalidate inline caches.
+    /// Bumped when the object's property storage is reallocated, which moves
+    /// the values without changing the shape id. Caches that hold a pointer
+    /// into that storage compare it so they notice the move.
     uint      generation;
     /// Parent shape index, or PRIVATE_SHAPE_PARENT when the shape is flat and
     /// belongs to a single object.
@@ -2470,8 +2472,12 @@ struct VarICEntry {
     void*   bindings;
     /// Shape ID of the bindings object when this entry was populated.
     uint    shape_id;
-    /// Generation of the shape at population time.
-    uint    generation;
+    /// The heap's shape-recycle epoch at population time. Shape ids are handed
+    /// back out after a shape is freed, so an id on its own cannot say whether
+    /// it still names the shape this entry was filled for. Comparing the epoch
+    /// closes that gap with a load the hit path already has in cache, rather
+    /// than reaching into the shapes table for the shape's own generation.
+    uint    recycle_epoch;
     /// Property index within bindings.props[].
     uint    prop_idx;
     /// The interned key this entry was filled for.
