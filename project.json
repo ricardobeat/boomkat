@@ -29,7 +29,10 @@
       "single-module": true,
       "fp-math": "relaxed",
       "panic-msg": false,
-      "debug-info": "none"
+      "debug-info": "none",
+      "features": [
+        "THREADED_DISPATCH"
+      ]
     },
     "duktape_c3_threaded": {
       "type": "executable",
@@ -137,7 +140,10 @@
         "cli/test262_runner.c3"
       ],
       "opt": "O2",
-      "single-module": true
+      "single-module": true,
+      "features": [
+        "THREADED_DISPATCH"
+      ]
     },
     "test262_runner_asan": {
       "type": "executable",
