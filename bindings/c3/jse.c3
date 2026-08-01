@@ -24,8 +24,9 @@
 ///     resets and may *relocate* the value stack on every execution, so a raw
 ///     `TVal` captured from a previous run is a dangling reference.
 ///   * `release` is optional for short programs (`close` frees everything), but
-///     required in a loop: the registry holds at most `MAX_ROOTED_VALUES` live
-///     values and then reports `JsError.VALUE_TABLE_FULL`.
+///     required in a loop, since an unreleased value holds its slot until
+///     `close`. The registry grows on demand; only when 65535 values are live
+///     at once does `root` report `JsError.VALUE_TABLE_FULL`.
 module jse;
 
 import duktape::builtins;
@@ -56,7 +57,7 @@ faultdef
     INTERNAL_ERROR,       // VM fault with no JS error attached
     WRONG_TYPE,           // as_number() on a string, etc.
     STALE_VALUE,          // value was released, or belongs to a closed runtime
-    VALUE_TABLE_FULL,     // more than MAX_ROOTED_VALUES live values
+    VALUE_TABLE_FULL,     // 65535 values already live
     NOT_CALLABLE,         // call() on something that is not a function
     REGISTER_FAILED;      // register_fn could not install the binding
 
@@ -72,8 +73,41 @@ enum JsType : int {
     OTHER,        // symbol, bigint, and other non-classified tags
 }
 
-const usz MAX_ROOTED_VALUES = 1024;
 const usz ERROR_BUF = 512;
+
+// A handle packs a slot index and a generation into one word:
+//
+//    31..16          15..0
+//   [ generation ]  [ index+1 ]
+//
+// The index is biased by one so 0 stays reserved for "no value", which is what
+// UNDEFINED_VALUE and every released handle compare against.
+//
+// 16 index bits allow 65535 simultaneously live values. That ceiling is
+// reported as VALUE_TABLE_FULL; the slot array itself grows on demand and never
+// reserves that much.
+//
+// 16 generation bits retire a slot on release. Reusing an index without one
+// would let a stale handle resolve to whatever value landed there next, which
+// reads as a plausible wrong answer rather than an error. The counter is finite,
+// so a slot that exhausts it is withdrawn from reuse for the life of the runtime
+// rather than wrapping: a wrapped generation makes a stale handle bit-identical
+// to a live one, and no check downstream can separate the two.
+const uint SLOT_INDEX_BITS = 16;
+const uint SLOT_INDEX_MASK = (1u << SLOT_INDEX_BITS) - 1;   // 65535
+const uint SLOT_GEN_MASK   = 0xFFFF;
+const uint SLOT_GEN_MAX    = SLOT_GEN_MASK;
+const uint SLOT_FREE_END   = 0xFFFF_FFFF;
+const usz  SLOT_INITIAL_CAP = 16;
+
+/// One registry entry. `used` separates a live slot from one on the free list,
+/// so an ordinary stale handle is rejected without depending on the generation
+/// having advanced.
+struct SlotEntry {
+    uint gen;
+    uint next_free;
+    bool used;
+}
 
 // ============================================================================
 // Values
@@ -101,13 +135,16 @@ fn bool JsValue.is_empty(self) => self.slot == 0;
 /// runtime would corrupt the first. `open` reports RUNTIME_EXISTS rather than
 /// letting that happen. Not thread-safe.
 struct JsRuntime {
-    Heap*    heap;
-    Vm*      vm;
-    HObject* registry;      // GC root anchoring every live JsValue
-    uint     next_slot;
-    usz      live;
+    Heap*       heap;
+    Vm*         vm;
+    HObject*    registry;   // GC root anchoring every live JsValue
+    SlotEntry*  slots;      // generation bookkeeping, parallel to registry keys
+    usz         slot_cap;
+    uint        slot_count; // high-water index, not the live count
+    uint        free_head;
+    usz         live;
     char[ERROR_BUF] errbuf;
-    usz      errlen;
+    usz         errlen;
 }
 
 // Process-wide open-runtime guard. See the struct doc for why.
@@ -137,7 +174,10 @@ fn void? JsRuntime.open(&self) {
     self.heap = hp;
     self.vm = vmr;
     self.registry = regr;
-    self.next_slot = 1;
+    self.slots = null;
+    self.slot_cap = 0;
+    self.slot_count = 0;
+    self.free_head = SLOT_FREE_END;
     self.live = 0;
     self.errlen = 0;
     self.errbuf[0] = 0;
@@ -149,12 +189,20 @@ fn void? JsRuntime.open(&self) {
 fn void JsRuntime.close(&self) {
     if (self.heap == null) return;
     Heap* hp = self.heap;
-    // Order matters: vm_destroy frees through heap.free_func.
+    // Order matters: the slot array came from this heap's allocator, and
+    // vm_destroy frees through heap.free_func, so both must go before destroy.
+    if (self.slots != null) {
+        hp.free_func(hp.heap_udata, self.slots);
+        self.slots = null;
+    }
     vm::vm_destroy(self.vm);
     hp.destroy();
     self.heap = null;
     self.vm = null;
     self.registry = null;
+    self.slot_cap = 0;
+    self.slot_count = 0;
+    self.free_head = SLOT_FREE_END;
     self.live = 0;
     if (active_runtime == self) active_runtime = null;
 }
@@ -300,12 +348,55 @@ fn String? JsRuntime.to_display_string(&self, JsValue v, Allocator allocator = t
 // Rooting
 // ============================================================================
 
+/// Resolve a handle to its entry, or null when the handle is stale: released,
+/// never issued, or naming a slot whose generation has since moved on.
+fn SlotEntry* JsRuntime.slot_entry(&self, JsValue v) {
+    uint biased = v.slot & SLOT_INDEX_MASK;
+    if (biased == 0) return null;
+    uint idx = biased - 1;
+    if (idx >= self.slot_count) return null;
+    SlotEntry* e = &self.slots[idx];
+    if (!e.used) return null;
+    if ((v.slot >> SLOT_INDEX_BITS) != (e.gen & SLOT_GEN_MASK)) return null;
+    return e;
+}
+
+/// Grow the slot array. The registry object holds the values; this tracks only
+/// the generation bookkeeping, so growth is a plain realloc with no rehashing.
+fn bool JsRuntime.slots_grow(&self) {
+    usz new_cap = self.slot_cap == 0 ? SLOT_INITIAL_CAP : self.slot_cap * 2;
+    void* raw = self.heap.realloc_func(self.heap.heap_udata, self.slots, new_cap * SlotEntry::size);
+    if (raw == null) return false;
+    self.slots = (SlotEntry*)raw;
+    for (usz i = self.slot_cap; i < new_cap; i++) {
+        self.slots[i].gen = 1;
+        self.slots[i].next_free = SLOT_FREE_END;
+        self.slots[i].used = false;
+    }
+    self.slot_cap = new_cap;
+    return true;
+}
+
 /// Drop a value's root. Idempotent; the handle is stale afterwards.
 fn void JsRuntime.release(&self, JsValue v) {
-    if (self.heap == null || v.slot == 0) return;
-    HString* key = self.heap.int_to_hstring((long)v.slot);
+    if (self.heap == null) return;
+    SlotEntry* e = self.slot_entry(v);
+    if (e == null) return;
+
+    uint idx = (v.slot & SLOT_INDEX_MASK) - 1;
+    HString* key = self.heap.int_to_hstring((long)idx);
     if (key == null) return;
-    if (self.registry.delete_prop(key) && self.live > 0) self.live--;
+    self.registry.delete_prop(key);
+    e.used = false;
+    if (self.live > 0) self.live--;
+
+    // At the generation ceiling the slot has no unused handle left, so it is
+    // retired rather than relisted: every handle naming this index stays
+    // rejected instead of colliding with a future occupant.
+    if (e.gen >= SLOT_GEN_MAX) return;
+    e.gen++;
+    e.next_free = self.free_head;
+    self.free_head = idx;
 }
 
 /// Anchor a raw engine value in the registry and hand back a stable handle.
@@ -313,21 +404,35 @@ fn JsValue? JsRuntime.root(&self, TVal tv) {
     // Immediates (undefined, null, small ints, ...) carry no heap pointer, so
     // there is nothing for the collector to lose; storing them still costs a
     // slot, which is what keeps type_of/as_number uniform across all values.
-    if (self.live >= MAX_ROOTED_VALUES) return VALUE_TABLE_FULL~;
-    uint id = self.next_slot;
-    self.next_slot++;
-    if (self.next_slot == 0) self.next_slot = 1;
-    HString* key = self.heap.int_to_hstring((long)id);
+    uint idx;
+    if (self.free_head != SLOT_FREE_END) {
+        idx = self.free_head;
+        self.free_head = self.slots[idx].next_free;
+    } else {
+        // slot_count indexes from 0 and the handle stores index+1, so the last
+        // usable index is one below the mask.
+        if ((usz)self.slot_count >= (usz)SLOT_INDEX_MASK) return VALUE_TABLE_FULL~;
+        if ((usz)self.slot_count == self.slot_cap && !self.slots_grow()) return OUT_OF_MEMORY~;
+        idx = self.slot_count;
+        self.slot_count++;
+    }
+
+    HString* key = self.heap.int_to_hstring((long)idx);
     if (key == null) return OUT_OF_MEMORY~;
     if (!self.registry.put_prop(key, tv, hobject::PROP_FLAGS_WEC)) return OUT_OF_MEMORY~;
+
+    SlotEntry* e = &self.slots[idx];
+    e.used = true;
     self.live++;
-    JsValue handle = { .slot = id };
+    JsValue handle = { .slot = ((e.gen & SLOT_GEN_MASK) << SLOT_INDEX_BITS) | (idx + 1) };
     return handle;
 }
 
 fn bool JsRuntime.load(&self, JsValue v, TVal* out) {
-    if (self.heap == null || v.slot == 0) return false;
-    HString* key = self.heap.int_to_hstring((long)v.slot);
+    if (self.heap == null) return false;
+    if (self.slot_entry(v) == null) return false;
+    uint idx = (v.slot & SLOT_INDEX_MASK) - 1;
+    HString* key = self.heap.int_to_hstring((long)idx);
     if (key == null) return false;
     TVal? tv = self.registry.get_prop(key);
     if (catch tv) return false;

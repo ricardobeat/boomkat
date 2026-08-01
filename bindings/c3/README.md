@@ -240,8 +240,15 @@ the value stack, so a `TVal` captured from an earlier run is a dangling
 reference. The binding is designed to make that mistake impossible.
 
 `release` is optional for a short program, since `close` frees everything, but
-required in a loop: at most 1024 values may be live at once, after which `eval`
-reports `VALUE_TABLE_FULL`.
+required in a loop, since an unreleased value holds its slot until `close`. The
+registry grows on demand and reuses released slots; only with 65535 values live
+at once does `eval` report `VALUE_TABLE_FULL`.
+
+A released handle is retired rather than blindly recycled. Each slot carries a
+generation that advances on release, so reusing a handle after `release` reports
+`STALE_VALUE` instead of resolving to whatever value later occupies that slot. A
+slot that exhausts its generation counter is withdrawn from reuse for the life of
+the runtime, so that holds for any number of cycles.
 
 Under `GC_STRESS` with AddressSanitizer, a held string survived 50,000 object
 allocations, 3,000 alloc/release cycles leaked no slots, and the runtime
