@@ -44,7 +44,21 @@ endif
 
 # C3C_LDFLAGS trails the target name: c3c rejects -z before it.
 C3C ?= c3c
-C3C_BUILD = $(C3C) build
+
+# Every target compiles the c-sources into <build-dir>/obj/<arch>/tmp_c_compile
+# and deletes them once the link is done. With the default build dir that path
+# is shared, so two builds in the same checkout race: one removes the objects
+# the other is about to link, and the link fails with "no such file or
+# directory: .../libregexp.o". Each recipe therefore gets its own build dir.
+#
+# The directory is created inside the recipe's shell rather than by a $(shell)
+# assignment: the latter runs once at parse time, on every make invocation,
+# including the no-op runs the mtime gate above is there to make free.
+#
+# --build-dir has to trail the target name for the same reason C3C_LDFLAGS does,
+# so recipes read `$(C3C_BUILD) <target> $(C3C_BUILDFLAGS) $(C3C_LDFLAGS)`.
+C3C_BUILD = d=$$(mktemp -d "$${TMPDIR:-/tmp}/duk-c3-build.XXXXXX"); trap 'rm -rf "$$d"' EXIT; $(C3C) build
+C3C_BUILDFLAGS = --build-dir "$$d"
 
 PREFIX ?= /usr/local
 
@@ -70,22 +84,22 @@ duktape_c3_debug: out/duktape_c3_debug
 duktape_c3_gc_stress: out/duktape_c3_gc_stress
 
 out/lib.a: project.json $(call target_sources,lib)
-	$(C3C_BUILD) lib $(C3C_LDFLAGS)
+	$(C3C_BUILD) lib $(C3C_BUILDFLAGS) $(C3C_LDFLAGS)
 
 out/test262_runner: project.json $(call target_sources,test262_runner)
-	$(C3C_BUILD) test262_runner $(C3C_LDFLAGS)
+	$(C3C_BUILD) test262_runner $(C3C_BUILDFLAGS) $(C3C_LDFLAGS)
 
 out/test262_runner_asan: project.json $(call target_sources,test262_runner_asan)
-	$(C3C_BUILD) test262_runner_asan $(C3C_LDFLAGS)
+	$(C3C_BUILD) test262_runner_asan $(C3C_BUILDFLAGS) $(C3C_LDFLAGS)
 
 out/duktape_c3: project.json $(call target_sources,duktape_c3)
-	$(C3C_BUILD) duktape_c3 $(C3C_LDFLAGS)
+	$(C3C_BUILD) duktape_c3 $(C3C_BUILDFLAGS) $(C3C_LDFLAGS)
 
 out/duktape_c3_debug: project.json $(call target_sources,duktape_c3_debug)
-	$(C3C_BUILD) duktape_c3_debug $(C3C_LDFLAGS)
+	$(C3C_BUILD) duktape_c3_debug $(C3C_BUILDFLAGS) $(C3C_LDFLAGS)
 
 out/duktape_c3_gc_stress: project.json $(call target_sources,duktape_c3_gc_stress)
-	$(C3C_BUILD) duktape_c3_gc_stress $(C3C_LDFLAGS)
+	$(C3C_BUILD) duktape_c3_gc_stress $(C3C_BUILDFLAGS) $(C3C_LDFLAGS)
 
 # ---- C embedding ABI targets ------------------------------------------------
 
@@ -93,7 +107,7 @@ out/duktape_c3_gc_stress: project.json $(call target_sources,duktape_c3_gc_stres
 # shipped executables so an embedder gets the engine the test suite exercised.
 lib: out/jse_static.a
 out/jse_static.a: project.json include/jse.h $(call target_sources,jse_static)
-	$(C3C_BUILD) jse_static $(C3C_LDFLAGS)
+	$(C3C_BUILD) jse_static $(C3C_BUILDFLAGS) $(C3C_LDFLAGS)
 
 # Shared library. c3c stamps a *relative* install name ("out/jse.dylib"), so a
 # consumer launched from any other directory fails to resolve it in dyld; the
@@ -101,7 +115,7 @@ out/jse_static.a: project.json include/jse.h $(call target_sources,jse_static)
 # exists so `-ljse` and ctypes/fiddle find_library lookups both work.
 shared jse: out/libjse.$(SHLIB_EXT)
 out/libjse.$(SHLIB_EXT): project.json include/jse.h $(call target_sources,jse)
-	$(C3C_BUILD) jse $(C3C_LDFLAGS)
+	$(C3C_BUILD) jse $(C3C_BUILDFLAGS) $(C3C_LDFLAGS)
 ifeq ($(UNAME_S),Darwin)
 	install_name_tool -id "@rpath/libjse.dylib" out/jse.dylib
 endif
@@ -110,7 +124,7 @@ endif
 # GC_STRESS + ASan shared build: collects at every allocation, which is what
 # turns a missing GC root in the slot registry into a deterministic failure.
 jse-stress:
-	$(C3C_BUILD) jse_stress $(C3C_LDFLAGS)
+	$(C3C_BUILD) jse_stress $(C3C_BUILDFLAGS) $(C3C_LDFLAGS)
 
 # Smoke test: links the STATIC archive, so it validates the archive path rather
 # than only the dylib. Vendored C (libregexp, cutils, dtoa) is already inside
@@ -203,3 +217,4 @@ linux-ci-shell:
 
 clean:
 	c3c clean
+	@rm -rf "$${TMPDIR:-/tmp}"/duk-c3-build.*
