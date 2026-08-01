@@ -6,3 +6,4 @@ quickjs/
 .worktrees/
 worktrees/
 ctest2
+dist/
