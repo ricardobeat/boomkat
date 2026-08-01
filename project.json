@@ -161,6 +161,21 @@
         "THREADED_DISPATCH"
       ]
     },
+    "jse_example_c3": {
+      "type": "executable",
+      "sources": [
+        "src",
+        "bindings/c3/jse.c3",
+        "bindings/c3/example/hello.c3"
+      ],
+      "opt": "O2",
+      "single-module": true,
+      "fp-math": "relaxed",
+      "debug-info": "none",
+      "features": [
+        "THREADED_DISPATCH"
+      ]
+    },
     "jse_stress": {
       "type": "dynamic-lib",
       "sources": [
