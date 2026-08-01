@@ -10,7 +10,6 @@ import duktape::hstring;
 import duktape::lexer;
 import duktape::types;
 import duktape::bytecode;
-import duktape::builtins;
 
 // ============================================================================
 // Status codes (must mirror include/jse.h)
