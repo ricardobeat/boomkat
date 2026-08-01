@@ -6,23 +6,23 @@ are C3 faults, and nothing is passed as an opaque integer handle.
 
 | File | Purpose |
 |---|---|
-| `jse.c3` | the binding — `module jse` |
+| `jse.c3` | the binding (`module jse`) |
 | `example/hello.c3` | evaluating source and reading values back |
 | `example/host_functions.c3` | JS calling into C3, and C3 calling back into JS |
 | `example/project.json` | standalone build for `host_functions` (see below) |
 
 ## Prerequisites
 
-- **c3c 0.8.2** (the version this was written and tested against). Newer 0.8.x
-  should work; the syntax used here is version-sensitive in two places — fault
-  returns are `return FAULT~` (not `?`) and `@return!` doc contracts are not
-  accepted — so a much older or much newer compiler may need adjusting.
+- c3c 0.8.2, the version this was written and tested against. Newer 0.8.x
+  should work. The syntax used here is version-sensitive in two places: fault
+  returns are `return FAULT~` (not `?`), and `@return!` doc contracts are not
+  accepted. A much older or much newer compiler may need adjusting.
 - The vendored C sources the engine already depends on (`quickjs/`,
   `libregexp/`). In a git worktree these are not copied automatically; run
   `wt setup`, or symlink `quickjs/` from the main checkout.
 - No prebuilt library is needed. The example target compiles the engine from
-  `src/` alongside the binding, so `make lib` / `make shared` are irrelevant
-  here — those exist for the C ABI.
+  `src/` alongside the binding, so `make lib` and `make shared` are irrelevant
+  here. Those exist for the C ABI.
 
 ## Build
 
@@ -57,7 +57,7 @@ still alive = 400
 ## Host functions
 
 JS can call C3. Register a `fn void(JsCtx, void*)` as a global and the engine
-dispatches straight into it — plain calls, methods, `.call`/`.apply`/`.bind`,
+dispatches straight into it. Plain calls, methods, `.call`/`.apply`/`.bind`,
 getters and setters, `new` and `super()` all work, because a host function is
 indistinguishable from a built-in at every dispatch site.
 
@@ -74,31 +74,32 @@ rt.register_fn("hypot", &host_hypot, arity: 2)!!;
 rt.eval("hypot(3, 4)")!!;   // 5
 ```
 
-Three rules carry all the weight:
+Three rules govern how callbacks behave:
 
-- **`throw_error` does not unwind.** It records the exception and returns, so
-  the callback keeps running. `return` right after it unless you mean to. If
-  `ret` is also called, the throw wins. This mirrors how the engine's own
-  builtins report failure, which is what every dispatch site is written
-  against.
-- **A `JsArg` is scoped to the call**, and is a different type from `JsValue`
-  for exactly that reason. `JsValue` is a registry slot rooted until `release`;
-  `JsArg` dies when the callback returns. The compiler rejects the mix-up that
-  would otherwise be a use-after-free.
-- **C3 function pointers cannot capture.** Mutable host state reaches a
-  callback through the `udata` pointer given to `register_fn`, which the engine
-  stores verbatim and never frees. It must outlive the runtime.
+`throw_error` does not unwind. It records the exception and returns, so the
+callback keeps running. Put a `return` right after it unless you mean to
+continue. If `ret` is also called, the throw wins. This mirrors how the engine's
+own builtins report failure, which is what every dispatch site is written
+against.
 
-`ctx.call(fn, args)` invokes a JS function from host code — the thing that makes
-host functions composable rather than leaf-only. If the callee throws, `call`
+A `JsArg` is scoped to the call, and is a different type from `JsValue` for
+exactly that reason. `JsValue` is a registry slot rooted until `release`;
+`JsArg` dies when the callback returns. The compiler rejects the mix-up that
+would otherwise be a use-after-free.
+
+C3 function pointers cannot capture. Mutable host state reaches a callback
+through the `udata` pointer given to `register_fn`, which the engine stores
+verbatim and never frees. It must outlive the runtime.
+
+`ctx.call(fn, args)` invokes a JS function from host code, so host functions can
+call back into JS instead of being leaf-only. If the callee throws, `call`
 reports `JS_EXCEPTION` and the exception is already pending on this call, so
 returning propagates it to JS unchanged.
 
 Arguments are copied into a GC-rooted call scope rather than read from VM
 registers, so they stay valid across a nested `ctx.call` that reallocates the
-value stack. Verified: the example produces byte-identical output under the
-`GC_STRESS` + AddressSanitizer target, where a collection happens at every
-allocation.
+value stack. The example produces byte-identical output under the `GC_STRESS`
+plus AddressSanitizer target, where a collection happens at every allocation.
 
 ### Host API
 
@@ -111,7 +112,7 @@ allocation.
 | `ctx.number/string/boolean/null_value/undefined_value(v)` | build a `JsArg` |
 | `ctx.ret(v)` / `ret_number` / `ret_string` / `ret_bool` / `ret_null` | never calling one yields undefined |
 | `ctx.get_prop(obj, key)` / `ctx.set_prop(obj, key, v)` | data properties only; `get_prop` does not run getters |
-| `ctx.throw_error(kind, msg)` / `ctx.throw_value(v)` | does **not** unwind |
+| `ctx.throw_error(kind, msg)` / `ctx.throw_value(v)` | does not unwind |
 | `ctx.call(fn, args, this_value)` | calls JS; faults `NOT_CALLABLE`, `JS_EXCEPTION` |
 
 `JsErrorKind` is `ERROR`, `TYPE`, `RANGE`, `REFERENCE`, `SYNTAX`.
@@ -163,7 +164,7 @@ Point without new    = Point requires 'new'
 ```
 
 `c3c build host_functions_stress && ./out/host_functions_stress` builds the same
-example with `GC_STRESS` and AddressSanitizer; it must print the same thing.
+example with `GC_STRESS` and AddressSanitizer. It must print the same thing.
 
 To fold this into the repo's own `project.json` instead, add:
 
@@ -209,10 +210,10 @@ rt.release(v);
 | Call | Notes |
 |---|---|
 | `rt.open()` / `rt.close()` | `close` is idempotent; `defer` it |
-| `rt.eval(src)` | eval semantics — a trailing expression *is* the result |
+| `rt.eval(src)` | eval semantics: a trailing expression *is* the result |
 | `rt.exec(src)` | run for side effects, discard the value |
 | `rt.type_of(v)` | `JsType`; never fails |
-| `rt.as_number/as_bool/as_string(v)` | strict — no coercion, `WRONG_TYPE` on mismatch |
+| `rt.as_number/as_bool/as_string(v)` | strict: no coercion, `WRONG_TYPE` on mismatch |
 | `rt.to_display_string(v)` | coerces like `String(v)`; runs JS, so it can throw |
 | `rt.release(v)` | drop one value's root |
 | `rt.last_error()` | message for the most recent failure |
@@ -233,67 +234,68 @@ GC-rooted by being stored as properties of a single registry object that is
 itself a GC root, so the mark phase reaches them and refcounting is handled by
 the engine's own `put_prop`/`delete_prop`.
 
-This matters because **no raw engine value is safe to hold across an `eval`**:
-the VM resets its register window on every execution and can *relocate* the
-value stack, so a `TVal` captured from an earlier run is a dangling reference.
-The binding exists largely to make that impossible to get wrong.
+The registry matters because no raw engine value is safe to hold across an
+`eval`: the VM resets its register window on every execution and can *relocate*
+the value stack, so a `TVal` captured from an earlier run is a dangling
+reference. The binding is designed to make that mistake impossible.
 
-`release` is optional for a short program — `close` frees everything — but
-required in a loop: at most **1024** values may be live at once, after which
-`eval` reports `VALUE_TABLE_FULL`.
+`release` is optional for a short program, since `close` frees everything, but
+required in a loop: at most 1024 values may be live at once, after which `eval`
+reports `VALUE_TABLE_FULL`.
 
-Verified under `GC_STRESS` + AddressSanitizer: a held string survived 50,000
-object allocations, 3,000 alloc/release cycles leaked no slots, and the cap was
-enforced cleanly, with no use-after-free reported.
+Under `GC_STRESS` with AddressSanitizer, a held string survived 50,000 object
+allocations, 3,000 alloc/release cycles leaked no slots, and the runtime
+enforced the cap cleanly with no use-after-free reported.
 
-**One runtime per process, and not thread-safe.** The engine keeps process-
-global state (the compiler's error buffer, the active-heap pointer), so a second
-`open` reports `RUNTIME_EXISTS` instead of corrupting the first.
+One runtime per process, and not thread safe. The engine keeps process-global
+state (the compiler's error buffer, the active-heap pointer), so a second `open`
+reports `RUNTIME_EXISTS` instead of corrupting the first.
 
 ## When to use the C ABI instead
 
-Use this native binding whenever the host is C3. It is faster (no marshalling),
-safer (typed values, no handle bookkeeping), and gives real strings and faults.
+Use this native binding whenever the host is C3. It avoids marshalling, keeps
+values typed without handle bookkeeping, and reports errors as real strings and
+faults.
 
 For host functions specifically the gap is wider than for `eval`. The C ABI
 hands a callback opaque `unsigned int` handles that must be resolved one at a
-time, and its readers return status codes; here a callback gets `JsArg` values
+time, and its readers return status codes. Here a callback gets `JsArg` values
 with typed accessors, a scope-vs-registry distinction the compiler enforces,
-and errors as ordinary C3 faults. Both paths run the same engine machinery —
-the C ABI's `jse_register_fn` calls exactly the `Heap.register_host_fn` and
-`builtins::make_host_function` this binding calls — so there is no capability
-the C ABI has and this does not.
+and errors as ordinary C3 faults. Both paths run the same engine machinery: the
+C ABI's `jse_register_fn` calls exactly the `Heap.register_host_fn` and
+`builtins::make_host_function` this binding calls, so there is no capability the
+C ABI has and this does not.
 
-Reach for the C ABI (`include/jse.h`, `src/capi.c3`, built via `make lib` /
+Reach for the C ABI (`include/jse.h`, `src/capi.c3`, built via `make lib` or
 `make shared`) when:
 
-- **The host is not C3** — C, Rust, Zig, Python/ctypes, Ruby/fiddle. That is
-  what it is for; see `examples/python`, `examples/ruby`.
-- **You need a shared library with a stable, versioned symbol surface.** The
-  native binding has no ABI guarantee: it recompiles against engine internals,
-  so anything built from it must be rebuilt with the engine. The 12 `jse_*`
-  symbols are the contract that does not move.
-- **You are `dlopen`-ing the engine at runtime**, or want the engine behind a
-  process/plugin boundary rather than statically linked in.
-- **You want a smaller build.** The C ABI dylib is ~2 MB self-contained;
+- The host is not C3, such as C, Rust, Zig, Python/ctypes, or Ruby/fiddle. That
+  is what it is for; see `examples/python`, `examples/ruby`.
+- You need a shared library with a stable, versioned symbol surface. The native
+  binding has no ABI guarantee: it recompiles against engine internals, so
+  anything built from it must be rebuilt with the engine. Only the 12 `jse_*`
+  symbols are stable across engine changes.
+- You are `dlopen`-ing the engine at runtime, or want the engine behind a
+  process or plugin boundary rather than statically linked in.
+- You want a smaller build. The C ABI dylib is ~2 MB self-contained, while
   linking the engine's C3 sources into your target pulls in the whole engine.
 
-Do *not* use the C ABI from C3 just to "go through the supported path" — it
-costs a copy on every string and turns typed values back into integers, for no
+Do *not* use the C ABI from C3 just to "go through the supported path". It costs
+a copy on every string and turns typed values back into integers, for no
 benefit.
 
 ### Known limitations (shared by both paths)
 
-- **No top-level call API.** There is no `rt.call(fn, args)` from outside a
-  callback; wrap the call in JS source and `eval` it. Inside a host callback,
-  `ctx.call` covers it.
-- **Registrations cannot be removed.** `register_fn` lasts until `close`.
+- There is no top-level call API. You cannot use `rt.call(fn, args)` from
+  outside a callback; wrap the call in JS source and `eval` it. Inside a host
+  callback, `ctx.call` covers it.
+- Registrations cannot be removed. `register_fn` lasts until `close`.
   Registering the same name twice replaces the global binding; a function
   object JS already holds keeps working.
-- **Engine bug, unrelated to the binding:** an arrow function inside *eval-mode*
+- An engine bug unrelated to the binding: an arrow function inside *eval-mode*
   code that contains a `for (let ...)` loop mis-resolves its enclosing `let`
-  bindings, which read back as `undefined`. Reproduces through the engine's own
-  `eval()` builtin with no binding involved:
+  bindings, which read back as `undefined`. This reproduces through the engine's
+  own `eval()` builtin with no binding involved:
   `eval("(()=>{ let s=0; for(let j=0;j<3;j++) s+=j; return s; })()")` → `NaN`.
   Since `eval`/`exec` here compile in eval mode, the same snippet is affected.
   Use `function(){...}` or `for (var ...)` until it is fixed.

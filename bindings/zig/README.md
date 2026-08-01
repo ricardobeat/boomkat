@@ -29,11 +29,11 @@ try rt.register("hypot", hypot, .{ .arity = 2 });
 
 ## Prerequisites
 
-- **Zig 0.16.0.** The build script uses the 0.16 API (`b.createModule` +
+- Zig 0.16.0. The build script uses the 0.16 API (`b.createModule` +
   `.root_module`) and the example uses the 0.16 `main(init: std.process.Init)`
   signature with `std.Io.File.Writer`. It will not compile on 0.15 or earlier.
-- **`c3c` 0.8.2**, to build the engine itself.
-- The engine's **shared library**, built from the repo root:
+- `c3c` 0.8.2, to build the engine itself.
+- The engine's shared library, built from the repo root:
 
 ```sh
 make shared          # produces out/libjse.dylib (macOS) or out/libjse.so (Linux)
@@ -51,7 +51,7 @@ zig build run
 the example to `zig-out/bin/jse-example`.
 
 By default the build looks for `../../include` and `../../out/libjse.dylib`.
-Point it somewhere else — an installed prefix, say — with:
+To point it at an installed prefix or any other location:
 
 ```sh
 zig build run \
@@ -77,10 +77,10 @@ bump() called 3 times, counter = 3
 
 Lines 4-5 show a thrown exception and a syntax error arriving as distinct Zig
 errors (`error.Throw`, `error.Syntax`), with the engine's message available
-from `rt.lastError()`. The rest is the host-function tour: a Zig function
-called from JS with arguments, one throwing a `RangeError` that JS catches, one
-calling a JS callback back through `jse_call`, and one carrying host state
-through `udata`.
+from `rt.lastError()`. The remaining lines come from host functions: a Zig
+function called from JS with arguments, one throwing a `RangeError` that JS
+catches, one calling a JS callback back through `jse_call`, and one carrying
+host state through `udata`.
 
 ## Host functions
 
@@ -101,54 +101,57 @@ fn checkAge(ctx: js.Ctx) !void {
 try rt.register("checkAge", checkAge, .{ .arity = 1 });
 ```
 
-`Ctx` covers the whole call: `argc`, `arg(i)`, `this`, `newTarget`,
+`Ctx` reaches the whole call: `argc`, `arg(i)`, `this`, `newTarget`,
 `isConstruct`, the `ret*` setters, `throwError`/`throwValue`, `persist`, and
 `call`.
 
-- **Errors become throws.** Zig errors cannot unwind through C, so an error
-  returned by your function becomes `throw new Error("<error name>")` —
-  `error.WrongType` arrives in JS as `Error: WrongType`. For a specific kind or
-  message, call `ctx.throwError(.type, "...")` and return.
-- **`error.Throw` passes through.** It means a nested `ctx.call` already
-  recorded the callee's exception, so the trampoline leaves it alone and a JS
-  `TypeError` propagates as a `TypeError` rather than being flattened into a
-  generic `Error`.
-- **Throwing does not unwind.** `throwError` records the throw and returns
-  normally; your callback must return normally too. A recorded throw beats any
-  return value set alongside it.
-- **Host state travels through `udata`.** A Zig closure is not
-  C-ABI-compatible, so state goes through a pointer, exactly as in C. Use
-  `registerWith(name, func, ptr, .{})` with a function taking `(Ctx, *T)`. The
-  pointer must outlive the runtime.
-- **Handles from `Ctx` are scope handles**, valid only until the callback
-  returns. `deinit` on one is a no-op, so `defer v.deinit()` is always safe.
-  To keep a value past the call, promote it with `ctx.persist(&rt, v)` and
-  `deinit` the result.
-- **Calling back into JS** with `ctx.call(func, args, this)` is bounded: a
-  runaway host → JS → host chain raises a `RangeError` instead of exhausting
-  the native stack. It takes up to 8 arguments and returns `error.Full` beyond
-  that.
-- **Registration is permanent** for the runtime's lifetime, and
-  `constructable: true` is what allows `new fn()`; otherwise `new` throws a
-  `TypeError`, matching how built-ins behave.
+Zig errors cannot unwind through C, so an error returned by your function
+becomes `throw new Error("<error name>")`. `error.WrongType` arrives in JS as
+`Error: WrongType`. For a specific kind or message, call
+`ctx.throwError(.type, "...")` and return.
+
+`error.Throw` is the exception. It means a nested `ctx.call` already recorded
+the callee's exception, so the trampoline leaves it alone and a JS `TypeError`
+propagates as a `TypeError` instead of being flattened into a generic `Error`.
+
+Throwing does not unwind. `throwError` records the throw and returns normally,
+and your callback must return normally too. A recorded throw beats any return
+value set alongside it.
+
+Host state travels through `udata`. A Zig closure is not C-ABI-compatible, so
+state goes through a pointer, exactly as in C. Use
+`registerWith(name, func, ptr, .{})` with a function taking `(Ctx, *T)`. The
+pointer must outlive the runtime.
+
+Handles obtained from `Ctx` are scope handles, valid only until the callback
+returns. `deinit` on one is a no-op, so `defer v.deinit()` is always safe. To
+keep a value past the call, promote it with `ctx.persist(&rt, v)` and `deinit`
+the result.
+
+Calling back into JS with `ctx.call(func, args, this)` is bounded: a runaway
+host to JS to host chain raises a `RangeError` instead of exhausting the native
+stack. It takes up to 8 arguments and returns `error.Full` beyond that.
+
+Registration lasts for the runtime's lifetime. `constructable: true` is what
+allows `new fn()`; otherwise `new` throws a `TypeError`, as built-ins do.
 
 ## Why the shared library, not the static archive
 
 `make lib` also produces `out/jse_static.a`, but linking it into a Zig-built
-executable **crashes before `main`**. The C3 runtime finds its `@init`
-constructors by walking the init sections of the running image at startup, and
-that walk depends on resolving the image header correctly. Zig's linker emits a
-second, bogus `__mh_execute_header` in `__DATA,__bss`; the walk binds to that
-one, reads garbage, and faults with `EXC_BAD_ACCESS`.
+executable crashes before `main`. The C3 runtime finds its `@init` constructors
+by walking the init sections of the running image at startup, and that walk
+depends on resolving the image header correctly. Zig's linker emits a second,
+bogus `__mh_execute_header` in `__DATA,__bss`; the walk binds to that one,
+reads garbage, and faults with `EXC_BAD_ACCESS`.
 
 The dylib is linked by `c3c` itself, so dyld runs its constructors against the
 library's own header and everything resolves. Static linking of this archive
-into a binary that `c3c` did not link is not currently supported — the fix
+into a binary that `c3c` did not link is not currently supported. The fix
 belongs in the C3 compiler's startup code, not in this binding.
 
 ## API surface
 
-The binding covers the whole ABI:
+The binding wraps every ABI entry point:
 
 | Zig | C |
 |---|---|
@@ -170,12 +173,13 @@ The binding covers the whole ABI:
 
 Notes carried over from the ABI:
 
-- **Readers are strict.** `toNumber`/`toBool`/`toString` never coerce; wrap the
+- The readers are strict. `toNumber`/`toBool`/`toString` never coerce; wrap the
   value in `String(x)` or `Number(x)` in JS if you want conversion.
-- **One runtime per process.** A second `Runtime.init` returns `error.Invalid`.
-  Not thread-safe.
-- **`toString` allocates** through the allocator you pass; free the result.
+- One runtime per process. A second `Runtime.init` returns `error.Invalid`. The
+  runtime is not thread-safe.
+- `toString` allocates through the allocator you pass, and you free the result.
   Everything else copies into caller memory, so there is nothing else to free.
-- **Handles leak if never freed** — hence `defer v.deinit()`. The table holds
-  1024 live values and then returns `error.Full`. Scope handles reaching a host
-  callback are exempt: the engine reclaims them when the callback returns.
+- Handles leak if they are never freed, which is what `defer v.deinit()` is
+  for. The table holds 65535 live values and then returns `error.Full`. Scope
+  handles reaching a host callback are exempt: the engine reclaims them when
+  the callback returns.

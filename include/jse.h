@@ -31,10 +31,12 @@
  *   - Handles from jse_eval stay valid until jse_value_free or jse_close.
  *     They survive garbage collection: the registry is a GC root.
  *   - Handles leak if never freed. The registry grows on demand and reuses
- *     freed slots; its ceiling is 524287 simultaneously live handles, and
+ *     freed slots; its ceiling is 65535 simultaneously live handles, and
  *     exceeding that returns JSE_ERR_FULL rather than misbehaving.
  *   - A freed handle is retired, not recycled blindly: reading one fails
- *     rather than resolving to whatever value later occupies that slot.
+ *     rather than resolving to whatever value later occupies that slot. A
+ *     slot that exhausts its generation counter is withdrawn from reuse for
+ *     the life of the runtime, so this holds for any number of cycles.
  *   - Strings are copied into caller-owned buffers. The ABI never hands out a
  *     pointer the caller must free, so there is no jse_free_string.
  *   - const char* from jse_last_error / jse_version point to storage owned by

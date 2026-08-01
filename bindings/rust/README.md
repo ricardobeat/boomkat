@@ -9,9 +9,9 @@ Two crates over the `jse_` C ABI (`include/jse.h`):
 
 ## Prerequisites
 
-- **Rust 1.70+** (developed and tested against `cargo 1.95.0` / `rustc 1.95.0`).
-- **A C toolchain** for the final link step — `cc` on the `PATH`.
-- **The engine's static archive.** Build it from the repo root:
+- Rust 1.70+ (developed and tested against `cargo 1.95.0` / `rustc 1.95.0`).
+- A C toolchain for the final link step, meaning `cc` on the `PATH`.
+- The engine's static archive. Build it from the repo root:
 
   ```sh
   make lib          # produces out/jse_static.a
@@ -113,22 +113,22 @@ assert_eq!(rt.eval("add(40, 2)")?.as_number()?, 42.0);
 
 The second argument is the reported `.length`; JS may still pass any number of
 arguments, and `ctx.arg` past the end reads as `undefined`. Registered
-functions behave like built-ins everywhere — methods, `.call`/`.apply`/`.bind`,
-accessors, and callbacks handed to `Array.map`. `register_ctor` is the same but
-also allows `new`.
+functions behave like built-ins everywhere: as methods, under
+`.call`/`.apply`/`.bind`, as accessors, and as callbacks handed to `Array.map`.
+`register_ctor` is the same but also allows `new`.
 
-**Returning `Err` throws into JS.** The error's `Kind` picks the constructor:
+Returning `Err` throws into JS. The error's `Kind` picks the constructor:
 `Error::throw(msg)` becomes a plain `Error`, and a failed reader (`as_number`
 on a string) becomes a `TypeError`. Uncaught, it comes back out of `eval` as an
 ordinary `Err`.
 
-**`ctx.call` calls JS back from Rust.** A throw from the callee propagates as
+`ctx.call` calls JS back from Rust. A throw from the callee propagates as
 itself, so `?` re-raises the original exception rather than replacing it with a
-generic host error. A failure of the call itself — an exhausted value registry,
-say — is reported separately, as `Kind::Full` or `Kind::Invalid` with a message,
-so it can never be mistaken for a JS exception. Host → JS → host recursion is
-bounded by the engine with a `RangeError` instead of exhausting the native
-stack.
+generic host error. A failure of the call itself, such as an exhausted value
+registry, is reported separately, as `Kind::Full` or `Kind::Invalid` with a
+message, so it can never be mistaken for a JS exception. Host to JS to host
+recursion is bounded by the engine with a `RangeError` instead of exhausting
+the native stack.
 
 The result is a `Retained` guard owning one registry slot. Deref reads it as an
 ordinary `HostValue`, and it frees its slot on drop:
@@ -141,29 +141,29 @@ rt.register_fn("mapTwice", 2, |ctx| {
 })?;
 ```
 
-`keep()` gives the slot to the enclosing host call, which frees it on return —
-right for the value being returned, wrong inside a loop.
+`keep()` gives the slot to the enclosing host call, which frees it on return.
+That is what you want for the value being returned, but not inside a loop.
 
 Three things this layer handles that the raw ABI leaves to the caller:
 
-- **Panics never unwind into C**, which would be undefined behaviour. Every
+- Panics never unwind into C, which would be undefined behaviour. Every
   callback runs inside `catch_unwind`, and a caught panic becomes a JS `Error`
   reading `host panic: <message>` that the script can catch. The engine stays
   consistent and the panic does not propagate out of `eval`.
-- **Scope handles cannot escape the call.** Arguments and `this` are valid only
+- Scope handles cannot escape the call. Arguments and `this` are valid only
   until the callback returns. `Ctx` and `HostValue` are invariant over a
   lifetime tied to the call, so stashing one in a `static` is a compile error
   (`borrowed data escapes outside of closure`) rather than a use-after-free.
-- **`ctx.call` results are freed for you.** Each comes back runtime-owned,
-  holding one of the 1024 registry slots, and its `Retained` guard releases it
+- `ctx.call` results are freed for you. Each comes back runtime-owned,
+  holding one of the registry's 65535 slots, and its `Retained` guard releases it
   on drop. That is what lets a host function call JS in a loop: the slot goes
   back as the loop turns, rather than piling up until the callback returns.
 
-**The closure is leaked, deliberately.** It is boxed and its pointer handed to
+The closure is leaked deliberately. It is boxed and its pointer handed to
 the engine as `udata`; the engine holds it for as long as the runtime lives and
 offers no way to unregister, so there is no later moment at which dropping it
 would be sound. This is bounded by the number of `register_fn` calls, never per
-JS call. It is also why the closure must be `'static` — it can run at any point
+JS call. It is also why the closure must be `'static`: it can run at any point
 up to `Runtime` drop, so it cannot borrow anything shorter-lived. Captured state
 therefore uses `move`, and mutable state a `Cell`/`RefCell`, since the closure
 is `Fn` (the engine may re-enter it) rather than `FnMut`.
@@ -171,11 +171,11 @@ is `Fn` (the engine may re-enter it) rather than `FnMut`.
 ## What the safe layer adds
 
 - A `Value` borrows its `Runtime`, so the borrow checker rejects a value
-  outliving the engine that owns it — the one case the C ABI leaves to
-  discipline.
-- Slots are released on `Drop`, so the 1024-entry registry cannot be leaked
-  into exhaustion by ordinary use.
-- Error messages are **copied** out of the engine's buffer immediately, since
+  outliving the engine that owns it. The C ABI leaves that case to the
+  caller's discipline.
+- Slots are released on `Drop`, so the registry cannot be leaked into
+  exhaustion by ordinary use.
+- Error messages are copied out of the engine's buffer immediately, since
   that buffer is only valid until the next `jse_*` call.
 - `Runtime` is neither `Send` nor `Sync`. The ABI is documented as not
   thread-safe and does not lock, so this is a compile-time error rather than a
@@ -185,27 +185,27 @@ is `Fn` (the engine may re-enter it) rather than `FnMut`.
 
 These come from the C ABI, not from this binding.
 
-- **One runtime per process.** The engine keeps process-global state. A second
+- One runtime per process. The engine keeps process-global state. A second
   `Runtime::new()` returns `Kind::AlreadyOpen` instead of racing. This is why
-  `tests/basic.rs` is a single test function — `cargo test` would otherwise
+  `tests/basic.rs` is a single test function: `cargo test` would otherwise
   open runtimes on parallel threads.
-- **Registration is permanent.** There is no `unregister`, which is what makes
-  leaking the closure the honest encoding of its lifetime.
-- **No calling a JS function from outside a callback.** `ctx.call` needs a live
-  call context, so from plain Rust code wrap the call in a JS snippet and use
-  `eval`.
-- **Readers do not coerce.** `as_number` on a string is `Kind::Type`, not a
+- Registration is permanent. There is no `unregister`, which is why leaking
+  the closure matches its actual lifetime.
+- A JS function cannot be called from outside a callback. `ctx.call` needs a
+  live call context, so from plain Rust code wrap the call in a JS snippet and
+  use `eval`.
+- Readers do not coerce. `as_number` on a string is `Kind::Type`, not a
   parse. Call `String(x)` or `Number(x)` in JS first.
-- **No ABI entry point for building objects or arrays.** A host function can
-  return numbers, booleans, strings, `null`, `undefined`, or a value it was
+- The ABI has no entry point for building objects or arrays. A host function
+  can return numbers, booleans, strings, `null`, `undefined`, or a value it was
   handed; anything structured has to be assembled in JS.
 
 ## ABI fix made while writing this
 
 `jse_get_number`, `jse_get_bool`, and `jse_get_string` returned `JSE_ERR_TYPE`
 and `JSE_ERR_FULL` without ever touching the runtime's error state, so
-`jse_last_error` reported whatever the *previous* failure had left there —
-a stale message, sometimes from an unrelated call. They now set a specific
+`jse_last_error` reported whatever the *previous* failure had left there: a
+stale message, sometimes from an unrelated call. They now set a specific
 message on failure and clear it on success, matching what the header promises
 of every other entry point. Fixed in `src/capi.c3`; the contract is now spelled
 out in `include/jse.h` under `jse_last_error`.
