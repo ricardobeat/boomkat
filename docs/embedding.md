@@ -8,9 +8,8 @@ supported boundary for non-C3 hosts, and the language bindings built on top of
 it.
 
 Everything stated here about the ABI was verified by building and running the
-code. Claims that come from work not on `main` are labelled as such. Read
-[Status of the bindings](#status-of-the-bindings) before relying on any of the
-per-language sections.
+code. Read [Status of the bindings](#status-of-the-bindings) before relying on
+any of the per-language sections.
 
 ## Contents
 
@@ -349,19 +348,10 @@ if (jse_eval(rt, src, len, &v) != JSE_OK) {
 error buffer is process-global and is clobbered by the next failing compile, so
 the shim copies the message immediately.
 
-> **Defect on `main`: the readers do not set an error message.**
-> `jse_get_number`, `jse_get_bool` and `jse_get_string` return `JSE_ERR_TYPE`,
-> `JSE_ERR_INVALID` or `JSE_ERR_FULL` without recording anything. Calling
-> `jse_last_error` after one of them returns either an empty string or, worse, a
-> stale message from an unrelated earlier call. Verified on `main`:
->
-> ```
-> primed      = [STALE-SENTINEL]
-> str<-number = rc=-6 err=[]
-> ```
->
-> Branch on the status code, never on the message text, after a reader call.
-> A fix exists on the binding branches (see below) but is not merged.
+Every failing reader records the reason: `jse_get_number`, `jse_get_bool`, and
+`jse_get_string` return `JSE_ERR_TYPE`, `JSE_ERR_INVALID`, or `JSE_ERR_FULL`
+and leave a message that `jse_last_error` returns. Branch on the status code,
+never on the message text, after a reader call.
 
 One syntax-error input, `"var = = ="`, leaves the global compile buffer empty,
 which is an engine gap. The shim substitutes `"SyntaxError"` so the ABI never
@@ -481,48 +471,20 @@ integer keys. Refcounting then comes free from the existing `put_prop`/
 
 ## Status of the bindings
 
-Read this before the per-language sections.
+The five language bindings in `bindings/` are all on `main`, each with its own
+README and example. They were written and verified against the C ABI, and
+driving the ABI from those languages surfaced four defects in `src/capi.c3`,
+all now fixed on `main`:
 
-Only the C ABI itself is on `main`. The six language bindings were each built and
-independently verified on their own branch, and none of those branches are
-merged. On `main` today you get:
-
-```
-include/jse.h            src/capi.c3
-examples/c/{smoke,hello}.c
-examples/python/jse.py   examples/ruby/jse.rb   (small pre-existing wrappers)
-```
-
-There is no `bindings/` directory on `main`. Every path under `bindings/` below
-exists only on the branch named in the table.
-
-| Language | Branch / commit | Verifier verdict |
+| Defect | Observed before the fix | Now |
 |---|---|---|
-| C99 | `worktree-wf_dcfbb957-d0e-6` / `794e6bb6` | Not refuted |
-| Zig | `worktree-wf_dcfbb957-d0e-7` / `5743c35f` | Not refuted |
-| Rust | `worktree-wf_dcfbb957-d0e-8` / `460f3a78` | Not refuted |
-| C3 | `worktree-wf_dcfbb957-d0e-9` / `b5ae2df8` | Not refuted |
-| Ruby | `worktree-wf_dcfbb957-d0e-10` / `7542996d` | Not refuted, one real defect found |
-| Python | `worktree-wf_dcfbb957-d0e-11` / `dcc01402` | Not refuted |
+| Readers set no error message; `jse_last_error` returned stale text | `str<-number = rc=-6 err=[]` after priming a sentinel | every failing reader leaves a message |
+| `Symbol` misreported as `JSE_TYPE_STRING`; `jse_get_string` emitted invalid UTF-8 | `Symbol type = 4`, bytes `ff 01 78` | symbols report `JSE_TYPE_OTHER` |
+| Thrown primitives lost their value | `throw 42` → `[uncaught exception]` | `throw 42` reports `42` |
+| An `Error`'s `name` was never found (own-property lookup only) | `throw new TypeError('tt')` → `[tt]`, not `TypeError: tt` | `name` resolves through the prototype |
 
-Each binding branch also carries a fix to `src/capi.c3` found by driving the ABI
-from that language. None of these fixes are on `main`, and each was re-confirmed
-still broken there:
-
-| Defect (still present on `main`) | Observed on `main` | Fixed on |
-|---|---|---|
-| Readers set no error message; `jse_last_error` returns stale text | `str<-number = rc=-6 err=[]` after priming a sentinel | C99, Rust branches |
-| `Symbol` misreported as `JSE_TYPE_STRING`; `jse_get_string` then emits invalid UTF-8 | `Symbol type = 4`, bytes `ff 01 78` | Python branch |
-| Thrown primitives lose their value | `throw 42` → `[uncaught exception]` | Ruby branch |
-| An `Error`'s `name` is never found (own-property lookup only) | `throw new TypeError('tt')` → `[tt]`, not `TypeError: tt` | Ruby branch |
-
-The last two mean that on `main`, error messages are less informative than the
-per-language expected outputs below show. Those outputs were produced on their
-own branches, with the fixes applied. Expect different error text if you run a
-binding against an unpatched `main`.
-
-Merging the branches requires reconciling four independent edits to
-`src/capi.c3`; that work has not been done.
+Each language section below carries its own build commands, expected output,
+and any remaining limitations.
 
 ## Per-language guides
 
@@ -560,8 +522,9 @@ caller source into `String((...))`. That is JS source injection if the input is
 ever untrusted. Safe for the literals in the example; do not copy it into a path
 where the JS comes from elsewhere.
 
-On `main` today, `make example-c` builds `examples/c/hello.c` instead and prints
-`jse 0.1.0 / squares: 1,4,9,16 / caught: nope` (verified).
+On `main`, `make example-c` builds `examples/c/hello.c` and prints
+`jse 0.1.0 / squares: 1,4,9,16 / caught: nope` (verified); the fuller
+`examples/c99/` project above is built with `make -C examples/c99`.
 
 ### Zig: `bindings/zig/`
 
@@ -637,8 +600,8 @@ overrides for an installed copy. A missing archive panics with the exact
 `cargo test` parallelises across threads in one process and the ABI is
 one-runtime-per-process. Correct, but it means coarse failure reporting.
 
-The `wrong type = ...: value is not a string` line is only informative with that
-branch's `capi.c3` fix; on `main` it would be empty.
+The `wrong type = ...: value is not a string` line exercises the
+reader-failure message path fixed on `main`.
 
 ### C3: `bindings/c3/`
 
@@ -670,22 +633,6 @@ than the C ABI when the host is itself C3, since it avoids a marshalling
 round-trip. Use the C ABI when the host is anything else, or when you want a
 stable binary boundary.
 
-This binding exposes a pre-existing engine bug, which is not fixed and is not
-the binding's fault. An arrow function inside eval-mode code containing a
-`for (let ...)` loop mis-resolves its enclosing `let` bindings, which read back
-as `undefined`:
-
-```js
-eval("(()=>{ let s=0; for(let j=0;j<3;j++) s+=j; return s; })()")   // NaN, want 3
-```
-
-It reproduces through the engine's own `eval()` builtin with no binding
-involved, so it is upstream in the compiler's eval-mode scope resolution. Both
-`jse.eval` and `jse_eval` compile in eval mode (deliberately, for completion
-values), so C-ABI embedders hit this too. Rewriting the arrow as
-`function(){...}` works. The verifier checked the other suggested workaround and
-found it wrong: `for (var ...)` inside an arrow still returns 0, not 3.
-
 ### Ruby: `bindings/ruby/`
 
 ```sh
@@ -715,21 +662,8 @@ for Ruby 2.6.10 (macOS system Ruby): no endless methods, no rightward
 assignment. Library lookup is `$JSE_LIBRARY`, then `out/libjse.{dylib,so}`
 relative to the repo root, then the bare soname.
 
-> Known defect, found by the verifier and not yet fixed.
-> In `bindings/ruby/lib/js.rb`, the `js_class` regex is
-> `/\A([A-Z]\w*Error)(?::|\z)/`. Because `\w*` sits between a required `[A-Z]`
-> and a literal `Error`, the base class `Error` can never match:
-> `throw new Error("boom")` gives the message `"Error: boom"` but
-> `js_class == nil`. All five subclasses (`TypeError`, `RangeError`, `EvalError`,
-> `URIError`, `ReferenceError`) resolve correctly, so the damage is confined to
-> the base class, but the README wrongly documents `js_class` as `nil` only for
-> non-`Error` throws like `throw 42`. Suggested fix: `/\A([A-Z]\w*)(?::|\z)/`.
-
-The `TypeError: ...` prefixes above depend on that branch's `capi.c3` fixes; on
-`main` the same throws report the bare message.
-
-Also unchanged: `throw {code:7}`, with neither `name` nor `message`, still
-reports `uncaught exception (object)`. That is the honest floor without
+`throw {code:7}`, with neither `name` nor `message`, still reports
+`uncaught exception (object)`. That is the honest floor without
 re-entering the VM to stringify.
 
 ### Python: `bindings/python/`
@@ -758,15 +692,11 @@ Type mapping: number → `float`, string → `str`, bool → `bool`, `null`/`und
 → `None`, object → `<js object>`, function → `<js function>`, symbol/bigint →
 `<js other>`.
 
-This branch carries the `Symbol` fix. On `main`, `Symbol()` raises
-`UnicodeDecodeError: invalid start byte 0xff`, reproduced directly.
-`jse_type_of` reports a `Symbol` as `JSE_TYPE_STRING` because a symbol is a
-STRING-tagged `HString` with `is_symbol` set, and `jse_get_string` then copies
-raw internal bytes.
-
-On `main` today the smaller pre-existing wrapper `examples/python/jse.py` works
-and prints `version: 0.1.0 / 40 + 2 = 42.0 / string: 'hi 😀' / array: 1,4,9 /
-caught: -3 boom` (verified). `examples/ruby/jse.rb` is its Ruby counterpart.
+The `Symbol` fix the Python binding drove is on `main`: `jse_type_of` reports a
+`Symbol` as `JSE_TYPE_OTHER` instead of `JSE_TYPE_STRING` (a symbol is a
+STRING-tagged `HString` with `is_symbol` set, and `jse_get_string` would
+otherwise copy raw internal bytes). Before the fix, `Symbol()` raised
+`UnicodeDecodeError: invalid start byte 0xff`.
 
 ## Known limitations of v1
 

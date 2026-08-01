@@ -1,132 +1,129 @@
-# Duktape-C3
+# Duktape C3
 
-A port of the [Duktape JavaScript engine](https://duktape.org/) from C to [C3](https://c3-lang.org/).
+A strict-only ECMAScript engine written in [C3](https://c3-lang.org/).
+Duktape v2.7.0 and QuickJS are the architectural references; the engine is a
+native C3 implementation that leans on the language's memory safety and its
+stdlib. The goal is 100% of a targeted test262 subset, better performance than
+Duktape, low memory, and small-device portability.
 
 ## Status
 
-**Work in Progress.** A functional JavaScript engine running real workloads.
+The gate is green: **49,814 pass / 0 fail / 0 unexpected compile error** across
+all 25 test262 phases (3,010 skips of 52,824 total, `test262_results/latest.json`,
+refreshed session 303). The targeted subset is ES5/ES6 core in a single strict
+mode; the skip list and its reasoning live in `scripts/run_test262.py`, and
+`docs/engine-scope.md` explains what is out of scope and why. Progress is
+tracked per session in `progress.md`, the roadmap to 100% in
+`plans/040-test262-100-percent.md`.
 
-- **71.8% test262 pass rate** on the targeted subset (21,121 of 29,459 executable tests, session 250); roadmap to 100% in `plans/040-test262-100-percent.md`
-- **100/100 Rosetta Code tests** pass
-- **Benchmarks competitive** with original Duktape v2.7.0 and QuickJS on most workloads
-- **Memory usage on par** with Duktape/QuickJS for light workloads; remaining gap on heavy object/array workloads is tracked in `plans/033-memory-next-steps.md`
+Other gates:
 
-### Completed Modules ✅
+- `just rosetta`: 41/41 unmodified rosettacode.org samples, cross-checked
+  against qjs (`test/rosetta-verbatim/`)
+- `just test-local`: every `test/*.js` plus the ESM fixtures under
+  `test/modules/`
+- `just test-golden-bytecode`: golden disassembly and the fusion-free
+  `--no-optimize` invariant
+- `just test-gc-stress`: an ASAN GC-stress suite, 20-30 minutes, nightly
+  material
 
-- **`src/types.c3`**: Tagged value representation (`TVal`), NaN-boxing, heap headers, reference counting
-- **`src/heap.c3`**: Heap allocation, string interning, mark-and-sweep GC, GC safe points
-- **`src/hstring.c3`**: Interned UTF-8 strings, hashing, iteration, operations
-- **`src/hobject.c3`**: JavaScript objects, shapes, property storage, dense arrays, prototypes
-- **`src/env.c3`**: Lexical and variable environment records
-- **`src/bytecode.c3`**: Instruction formats, opcodes, constant pools, disassembler
-- **`src/lexer.c3`**: Full ES2015+ tokenizer (numbers, strings, templates, punctuators, strict mode)
-- **`src/compiler/`**: Single-pass parser and bytecode generator: register allocation, scope management, control flow, classes, destructuring
-- **`src/vm/`**: Register-based bytecode interpreter, call stack, inline caches, exception handling
-- **`src/builtins/`**: Built-in objects and functions: Object, Array, Function, String, Number, Boolean, Date, RegExp, JSON, Math, Error, Map, Set, WeakMap, WeakSet, Symbol, Promise, Generator, Iterator, Global
-- **`src/re_bindings.c3`**: RegExp engine bindings (libregexp)
+## Design
 
-### Build
+- **Strict-only, single mode.** There is no sloppy mode and no `is_strict` flag
+  to branch on. Non-strict and Annex B features are rejected at parse time;
+  `"use strict"` is accepted and ignored.
+- **One-pass compiler.** No AST: the parser emits register bytecode as it
+  recognizes each construct, then `finish()` runs the fusion and
+  move-elimination passes.
+- **Register VM.** Fixed 32-bit instructions, threaded dispatch, inline caches
+  for property and variable access, hidden classes behind those caches, fused
+  opcodes on the hot paths.
+- **NaN-boxed values.** The default build packs every `TVal` into 8 bytes;
+  `-D NONANBOX` switches to a 16-byte tagged union.
+- **Hybrid collector.** Refcounting reclaims most values; mark-and-sweep runs
+  at safepoints to collect the cycles it cannot.
+- **The ES5/ES6 core, plus what ordinary code assumes:** classes with private
+  fields and static blocks, generators and async/await, async generators,
+  `Promise`, `Map`/`Set`/`WeakMap`/`WeakSet`,
+  `WeakRef`/`FinalizationRegistry`, `Symbol`, `Proxy`/`Reflect`, TypedArrays
+  and resizable `ArrayBuffer`, `Atomics` and `SharedArrayBuffer` on a single
+  agent, ES modules with top-level `await`, and `BigInt` as fixed-width
+  int128. The full in-scope list is `docs/engine-scope.md`.
 
-**Runtime:** [C3 v0.8.0+](https://c3-lang.org/): the only requirement to build and run the engine itself.
+## Build and run
 
-**Dev tooling** (only needed for the test262 conformance suite, benchmarks, and `just` recipes):
-- [`just`](https://github.com/casey/just): task runner wrapping the commands below
-- Python 3.6+: orchestrates `scripts/run_test262.py` (parallel workers, RSS sampling, skip list, retry passes); stdlib only, no `pip install`
-- `jq`: Makefile parses `project.json` for target sources
-- `bash`: shell recipes under `scripts/` and the `justfile`
-- `cc`: builds the vendored Duktape v2.7.0 CLI used for benchmark comparisons
+`just list` shows every task. The only requirements are C3 (`c3c`), `just`,
+and Python 3.
 
-```bash
-# Default build (NaN-boxing)
-c3c build
-
-# Plain JS runner
-c3c build duktape_c3
-./out/duktape_c3 test/simple.js
-
-# Inspection build (bytecode disassembly, tracing): duktape_c3_debug
-c3c build duktape_c3_debug
-./out/duktape_c3_debug -c test/simple.js       # disassemble, don't run
-
-# test262 conformance suite
-c3c build test262_runner
-python3 scripts/run_test262.py                 # full suite
-python3 scripts/run_test262.py --phase 2       # single phase (~1 min)
-
-# Benchmark CLI
-c3c build duktape_c3
-just bench-memory
-```
-
-### Useful Commands
-
-See `justfile` for all tasks. Common ones:
-
-| Command | Description |
+| Task | Command |
 |---|---|
-| `just build` | Build static library |
-| `just test262` | Run full test262 suite |
-| `just test262-phase 2` | Run a single test262 phase |
-| `just bench-memory` | Peak RSS comparison vs Duktape/QuickJS |
-| `just bench` | Speed benchmarks vs Duktape/QuickJS |
-| `just rosetta` | Rosetta Code tests |
+| Build a target | `just build <target>` (e.g. `duktape_c3`, `duktape_c3_debug`, `test262_runner`) |
+| Run one JS file | `just run <file>` |
+| Run one JS file as ESM | `just run-module <file>` |
+| Inspect bytecode | `just build-trace`, then `./out/duktape_c3_debug -c <file>` |
+| Local suite | `just test-local` |
+| Rosetta suite | `just rosetta` |
+| One test262 phase | `just test262-phase <n>` |
+| Full test262 | `just test262` |
+| ASAN test262 runner | `just build-asan` |
+| lldb on a crash | `just lldb <file>` |
 
-### Build Flags
+`duktape_c3` is the plain runner. `duktape_c3_debug` carries the inspection
+flags (`-c` disassembles, `-t` traces the VM). To reproduce one test262 test
+through the worker path:
 
-- `-D NONANBOX`: Disable NaN-boxing; use 16-byte tagged union `TVal`. Useful for 16-bit ESP32 targets.
-- `-D NOSHAPECACHE`: Disable the per-object 8-byte shape pointer cache to save memory.
-
-## Project Structure
-
-```
-duktape-c3/
-├── src/              # Core engine
-│   ├── types.c3          # Value representation and heap headers
-│   ├── heap.c3           # Memory management and GC
-│   ├── hstring.c3        # String interning
-│   ├── hobject.c3        # Objects, shapes, properties, arrays
-│   ├── env.c3            # Environment records
-│   ├── bytecode.c3       # VM instructions
-│   ├── lexer.c3          # Tokenizer
-│   ├── compiler/         # Single-pass parser and bytecode generator
-│   ├── builtins/         # Built-in objects and functions
-│   ├── vm/               # Bytecode interpreter
-│   └── re_bindings.c3    # RegExp bindings
-├── cli/              # CLI frontends: duktape_c3 (plain JS) + duktape_c3_debug (inspect) + test262_runner (test262 harness)
-├── benchmarks/       # Performance and memory benchmarks
-├── test/             # Unit tests and JS test scripts
-├── scripts/          # Automation scripts
-├── plans/            # Design and optimization plans
-├── progress.md       # test262 conformance tracker
-└── project.json      # C3 project config
+```sh
+python3 scripts/run_test262.py --single test262/test/<path>.js
 ```
 
-## Design Notes
+## Embedding
 
-[docs/architecture.md](docs/architecture.md) is the full guide: how a script
-gets from source to running code, and how the compiler, VM, object model, and
-collector fit together. The short version:
+The engine ships a `jse_` C ABI (`include/jse.h`, static `libjse.a` and a
+shared library) plus first-party bindings in C3, Rust, Python, Ruby, and Zig
+(`bindings/`). `docs/embedding.md` covers packaging, the ABI reference, the
+lifetime and GC rules, and each binding's status and known limitations.
 
-**Tagged values.** The default build NaN-boxes every value into 8 bytes, using
-the unused payload space in IEEE 754 NaNs for undefined, null, booleans,
-pointers, and 48-bit fast integers. Pass `-D NONANBOX` for a 16-byte tagged
-union with the same semantics.
+## Build flags
 
-**Memory.** Reference counting reclaims most values immediately, and
-mark-and-sweep collects the cycles it cannot. Strings are interned so equality
-is pointer identity, with long strings deliberately left out to avoid concat
-bloat. Object headers come from fixed-block pools.
+- `-D NONANBOX`: disable NaN-boxing, 16-byte tagged union `TVal`
+  (`just build-nonanbox`)
+- `-D NOSHAPECACHE`: drop the per-object shape pointer cache
+  (`just build-noshape`)
+- `-D HEAP_VERIFY`: validate GC roots at yield/resume (`just build-verify`)
+- `-D GC_STRESS`: pin the collector trigger for stress runs
+- `-D ENV_STRICT`: compile-time environment-handling checks
+  (`duktape_c3_envstrict` target)
 
-**Bytecode VM.** Register-based, with fixed 32-bit instructions in five operand
-formats, inline caches for property and variable access, hidden classes behind
-those caches, and fused opcodes on the hot paths.
+## Project layout
+
+```
+src/            engine: types, heap, hstring, hobject, env, bytecode, lexer,
+                compiler/, vm/, builtins/, capi, module, hbigint, re_bindings
+cli/            duktape_c3, duktape_c3_debug, test262_runner
+docs/           architecture.md, engine-scope.md, embedding.md,
+                string-representation-survey.md
+include/        jse.h, the public C ABI
+bindings/       C3, Rust, Python, Ruby, Zig
+test/           JS tests, golden bytecode, rosetta-verbatim, ESM modules,
+                capi host-function tests
+test262/        the conformance suite (skip list in scripts/run_test262.py)
+benchmarks/     speed and memory benchmarks (`just bench`, `just bench-memory`)
+plans/          design and roadmap plans
+progress.md     per-session test262 tracker
+```
+
+## Documentation
+
+- `AGENTS.md` is the operating manual: build and test commands, the
+  strict-only rules, compiler and VM invariants.
+- `docs/architecture.md` is the design guide: how a script runs, the compiler,
+  the VM, values and objects, the heap and both collectors, builtins and
+  modules.
+- `docs/engine-scope.md` is what is in scope, what is not, and the notes for
+  anyone editing the test262 skip list.
+- `docs/string-representation-survey.md` is the survey behind the string
+  encoding: CESU-8 storage, the char-index cache, interning.
 
 ## License
 
-MIT (following original Duktape license)
-
-## References
-
-- [Duktape](https://duktape.org/): Original C implementation
-- [C3 Language](https://c3-lang.org/): C3 docs and spec
-- [ECMAScript 2015+](https://262.ecma-international.org/): JavaScript spec
+MIT, following the original Duktape license.

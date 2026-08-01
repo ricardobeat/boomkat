@@ -1333,7 +1333,7 @@ Six independent, parallelisable sub-tasks in dependency order of risk: C3 and
 Zig first (direct), Rust next (panic handling), Python and Ruby last (managed
 closures). Each lands with its own example and README section.
 
-Documentation (`docs/EMBEDDING.md`) lands with Phase 3 for the ABI and is
+Documentation (`docs/embedding.md`) lands with Phase 3 for the ABI and is
 amended per binding in Phase 5.
 
 ### Must land together vs. can follow

@@ -38,8 +38,10 @@ The ES5/ES6 core, plus the later additions that ordinary code now assumes:
 
 - **Sloppy mode and Annex B.** `with`, legacy octal, implicit globals,
   `arguments.callee`, `__defineGetter__`, HTML-like comments. Single-mode engine.
-- **ECMA-402.** A separate specification. `Date.prototype.toLocaleString`
-  ignores its options bag, which ES5 §15.9.5.5 permits.
+- **ECMA-402.** A separate specification. `Date.prototype.toLocaleString` is
+  ES5-conformant: with a locales or options argument it resolves the bag per
+  ECMA-402 §11.1.2 against the engine's single locale, with no full locale
+  data.
 - **Stage 3 proposals.** Temporal, decorators, ShadowRealm, explicit resource
   management, import attributes, iterator helpers. These still move.
 - **Cross-realm behavior.** No second realm to be cross to.

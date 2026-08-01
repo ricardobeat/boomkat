@@ -1043,7 +1043,7 @@ shared target (`project.json:181`).
 value paragraph.
 
 **Files.** `src/capi.c3`, `bindings/c3/jse.c3`, `include/jse.h`,
-`docs/EMBEDDING.md`.
+`docs/embedding.md`.
 
 **Verification.** The entire new multi-runtime test suite (below). This is the
 phase where those tests first *can* run.
