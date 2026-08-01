@@ -371,6 +371,71 @@ One syntax-error input, `"var = = ="`, leaves the global compile buffer empty �
 an engine gap. The shim substitutes `"SyntaxError"` so the ABI never returns an
 empty message for a syntax failure.
 
+## Host functions
+
+A host function is a C callback that JS invokes by name. This is what makes the
+engine embeddable rather than a calculator: it is how JS reaches your I/O,
+timers, logging, and application logic.
+
+```c
+static void greet(jse_call_ctx ctx, void *udata) {
+    char buf[128];
+    size_t n = 0;
+    if (jse_get_string(NULL, jse_arg(ctx, 0), buf, sizeof buf, &n) != JSE_OK) {
+        jse_throw_error(ctx, JSE_ERROR_TYPE, "greet() wants a string");
+        return;
+    }
+    printf("host sees: %s\n", buf);
+    jse_return_number(ctx, (double)n);
+}
+
+jse_register_fn(rt, "greet", 5, greet, NULL, /*arity*/1, /*constructable*/0);
+jse_eval(rt, "greet('world')", 14, NULL);
+```
+
+**The call protocol.** The callback receives an opaque `jse_call_ctx` and the
+`udata` pointer given at registration, passed through untouched. Read arguments
+with `jse_argc` and `jse_arg`; an index past the end yields a handle to
+`undefined` rather than an error, matching JS. `jse_this`, `jse_new_target`, and
+`jse_is_construct` cover method and constructor calls.
+
+**Returning.** `jse_return` takes a handle; `jse_return_number`, `_bool`,
+`_null`, and `_string` are the direct forms. A callback that returns nothing
+yields `undefined`.
+
+**Throwing never unwinds.** `jse_throw_error(ctx, kind, msg)` and
+`jse_throw(ctx, handle)` *record* a throw and return normally — the callback
+must then return normally too. There is no `longjmp` across the boundary, which
+is what lets every dispatch site in the engine remain unchanged. A recorded
+throw beats any return value set in the same callback.
+
+**Constructors.** Pass `constructable` non-zero to allow `new`. The engine
+creates the instance and `jse_this` sees it; return nothing to keep that object,
+or return an object to replace it (ES2015 §9.2.2). A zero value makes `new fn()`
+throw a `TypeError`, matching ES2015 §10.3 where built-ins construct only when
+specified. Constructable host functions get an own `.prototype` with a
+`.constructor` back-reference, so `class D extends HostCtor` works.
+
+**Handle lifetime is the one rule to internalise.** Handles from `jse_arg`,
+`jse_this`, and `jse_new_target` are *scope handles*: valid only until the
+callback returns. To keep one, promote it with `jse_value_persist`, which
+returns a runtime-owned handle the caller must `jse_value_free`. Scope handles
+passed to `jse_value_free` are ignored rather than treated as an error. The
+readers accept both handle kinds and tolerate a `NULL` runtime inside a
+callback, so `jse_get_number(NULL, jse_arg(ctx, 0), &d)` is valid.
+
+**Calling JS back.** `jse_call(ctx, func, argv, argc, this_val, out_val)` invokes
+a JS function from inside a callback. On `JSE_OK`, `*out_val` is a runtime-owned
+handle you must free. If the callee throws, the exception is recorded on your
+context and `JSE_ERR_THROW` is returned — return promptly and let the engine
+propagate it.
+
+**Arguments are copied, not referenced.** The engine stages each call's
+`this`, `new.target`, and arguments into a GC-rooted per-call scope rather than
+pointing into VM registers. This matters because `jse_call` can grow and
+reallocate the value stack; a register pointer would dangle, and a host holding
+an opaque handle has no way to refresh it.
+
 ## Lifetime and GC rules
 
 The rules an embedder must obey, and why they exist.
@@ -702,24 +767,39 @@ caught: -3 boom` (verified). `examples/ruby/jse.rb` is its Ruby counterpart.
 
 ## Known limitations of v1
 
-**No host native functions. This is impossible without engine changes, not
-merely unimplemented.** Built-ins live in a compile-time C3 enum of ~800
-members. `builtin_dispatch_table` is declared `BuiltinFunc[Builtin.LAST.ordinal]`
-and filled at `@init`, and dispatch is always `builtin_dispatch_table[ordinal]`
-— an index, never a host pointer. Even the `TAG_LIGHTFUNC` value tag stores an
-ordinal cast to a pointer, not a code address. There is no runtime table to
-append to, so no shim can register a C callback. Supporting this requires a new
-value representation for host functions inside the engine.
+**Host functions are supported** as of the `jse_register_fn` / `jse_call` work;
+see [Host functions](#host-functions) above. Earlier revisions of this document
+said native registration was impossible without engine changes. That was true of
+the engine as it stood: dispatch went through `builtin_dispatch_table[ordinal]`,
+a compile-time array, with no runtime table to append to. The engine changed. A
+host function is now an ordinary function object whose dispatch index sits in a
+reserved range above every compile-time ordinal, so it reaches
+`dispatch_builtin`'s previously-dead out-of-range branch and routes to a
+per-heap host table. Every call shape works unchanged — plain calls, methods,
+`.call`/`.apply`/`.bind`, accessors, `new`, `super()`, and built-in callbacks
+such as an `Array.prototype.sort` comparator.
 
-**No `jse_call`.** Omitted by choice, not blocked: `vm_call_fn_impl` works and
-was verified. It returns a bare `TVal` and signals failure through a heap flag
-rather than a status, and argument arrays must be GC-visible, so a safe wrapper
-needs marshalling plus error plumbing beyond a minimal v1. Workaround: wrap the
-call in JS source and use `jse_eval`.
+**Registration binds globals only.** `jse_register_fn` creates a binding on the
+global environment. There is no API to install a host function as a property of
+an existing object from C; do it in JS (`ns.fn = hostFn`) after registering.
 
-**No property access from the host.** Without `jse_call` there is no
-`jse_get_prop`. Objects are opaque handles; reach into them from JS and return a
-primitive, or serialise with `JSON.stringify`.
+**Registration is permanent.** A host function lives for the runtime's
+lifetime; there is no unregister. Slots are never reused, so an index captured
+in a function object can never come to mean a different function.
+
+**No property access from the host.** There is no `jse_get_prop`. Objects are
+opaque handles; read them from a JS callback and return a primitive, or
+serialise with `JSON.stringify`.
+
+**`jse_call` is callback-only.** It takes a `jse_call_ctx`, so it works from
+inside a host function but not from `main`. Use `jse_eval` at the top level.
+
+**Host recursion is bounded.** A host → JS → host chain never pushes a VM
+activation, so neither `MAX_CALLS` nor `MAX_RUN_DEPTH` counts it. `dispatch_host`
+caps nesting and throws a `RangeError` rather than faulting the native stack.
+The cap is set per build profile because the limit is native stack: an
+unoptimised sanitizer build overflows an 8 MB stack around 16 levels, while an
+optimised build is far cheaper.
 
 **No coercion in the readers.** `jse_get_string` on a number returns
 `JSE_ERR_TYPE`. Call `String(x)` in JS first.
