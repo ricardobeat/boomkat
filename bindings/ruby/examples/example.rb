@@ -57,6 +57,15 @@ JS.open do |vm|
     puts "caught JS::Error (status #{e.status}): #{e.message}"
   end
 
+  # The base Error class is a case of its own: js_class must come back
+  # "Error", not nil, when nothing more specific was thrown.
+  begin
+    vm.eval('throw new Error("boom")')
+  rescue JS::ThrowError => e
+    puts "caught: #{e.message}"
+    puts "  js_class was #{e.js_class.inspect}"
+  end
+
   # JS can of course catch its own exceptions; only what escapes reaches Ruby.
   recovered = vm.eval(<<~JS)
     (() => {
