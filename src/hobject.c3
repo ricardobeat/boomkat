@@ -30,15 +30,6 @@ import std::io;
 faultdef PROP_NOT_FOUND;
 faultdef OBJ_ALLOC_FAULT;
 
-/// The active heap, set at heap init and nulled at teardown. Holding it here
-/// rather than per object saves 8 bytes on every allocation.
-void* _active_heap;
-
-/// Record the active heap, which refcounting and shape transitions both need.
-fn void hobject_set_active_heap(void* heap) {
-    _active_heap = heap;
-}
-
 /// Read the `bindings` field out of an opaque EnvRecord*, returning null for a
 /// null pointer. This exists for heap.c3, which marks a GeneratorState's saved
 /// var_env and lex_env but cannot import env.c3, since env.c3 imports heap.c3.
@@ -58,12 +49,6 @@ fn HObject* env_record_bindings(void* env_ptr) {
 fn void* env_record_parent(void* env_ptr) {
     if (env_ptr == null) return null;
     return (void*)((env::EnvRecord*)env_ptr).parent;
-}
-
-/// Clear the active heap before teardown, which stops hobject_free from
-/// refcounting strings while the heap comes apart.
-fn void hobject_clear_active_heap() {
-    _active_heap = null;
 }
 
 // ============================================================================
@@ -724,6 +709,10 @@ struct HObjectBase {
     HeapHeader*   prev;
     HObject*      prototype;
     ushort        shape_id;
+    /// The heap that allocated this object. Refcounting, shape transitions and
+    /// property-table growth all reach the heap through it, so those paths need
+    /// no ambient state and objects from different heaps never mix.
+    void*         owner_heap;
     Shape*        shape @if(USE_SHAPE_CACHE);
     ushort        prop_capacity;
     ushort        prop_count;
@@ -868,7 +857,7 @@ fn Shape* HObject.get_shape(&self) @inline {
 $if USE_SHAPE_CACHE:
     return self.shape;
 $else
-    heap::Heap* h = (heap::Heap*)_active_heap;
+    heap::Heap* h = (heap::Heap*)self.owner_heap;
     if (h == null) return null;
     if (self.shape_id >= h.shape_count) return null;
     return h.shapes[self.shape_id];
@@ -920,8 +909,8 @@ fn void HObject.seal(&self) {
     self.flags.extensible = false;
 
     // Move dense elements into the named table so each can carry its own flags.
-    if (self.array_part() != null && self.array_used > 0 && _active_heap != null) {
-        heap::Heap* h = (heap::Heap*)_active_heap;
+    if (self.array_part() != null && self.array_used > 0 && self.owner_heap != null) {
+        heap::Heap* h = (heap::Heap*)self.owner_heap;
         char[12] digit_buf;
         for (uint i = 0; i < self.array_size; i++) {
             TVal v = self.array_part()[i];
@@ -1028,8 +1017,8 @@ fn void HObject.ensure_prop_hash(&self) {
 
     usz new_bytes = (usz)(new_mask + 1) * 16;
     void* new_table;
-    if (_active_heap != null) {
-        heap::Heap* h = (heap::Heap*)_active_heap;
+    if (self.owner_heap != null) {
+        heap::Heap* h = (heap::Heap*)self.owner_heap;
         new_table = h.alloc_func(h.heap_udata, new_bytes);
     } else {
         new_table = alloc::malloc_try(mem, (sz)(new_bytes)) ?? null;
@@ -1059,8 +1048,8 @@ fn void HObject.ensure_prop_hash(&self) {
     }
 
     if (self.prop_hash != null) {
-        if (_active_heap != null) {
-            heap::Heap* h = (heap::Heap*)_active_heap;
+        if (self.owner_heap != null) {
+            heap::Heap* h = (heap::Heap*)self.owner_heap;
             h.free_func(h.heap_udata, self.prop_hash.table);
         } else {
             mem::free(self.prop_hash.table);
@@ -1070,15 +1059,15 @@ fn void HObject.ensure_prop_hash(&self) {
         self.prop_hash.table = new_table;
     } else {
         PropHashInfo* phi;
-        if (_active_heap != null) {
-            heap::Heap* h = (heap::Heap*)_active_heap;
+        if (self.owner_heap != null) {
+            heap::Heap* h = (heap::Heap*)self.owner_heap;
             phi = (PropHashInfo*)h.alloc_func(h.heap_udata, PropHashInfo::size);
         } else {
             phi = (PropHashInfo*)alloc::malloc_try(mem, (sz)(PropHashInfo::size)) ?? null;
         }
         if (phi == null) {
-            if (_active_heap != null) {
-                heap::Heap* h = (heap::Heap*)_active_heap;
+            if (self.owner_heap != null) {
+                heap::Heap* h = (heap::Heap*)self.owner_heap;
                 h.free_func(h.heap_udata, new_table);
             } else {
                 mem::free(new_table);
@@ -1140,8 +1129,8 @@ fn PropFlags HObject.get_prop_flags(&self, uint idx) @inline {
 /// The result stays out of the transition table, so no other object can reach
 /// it and per-object flag edits cannot leak.
 fn void HObject.make_shape_private(&self) {
-    if (_active_heap == null || self.get_shape() == null) return;
-    hobject::Shape* ns = shape_create(self.prop_count, 0, PRIVATE_SHAPE_PARENT, null);
+    if (self.owner_heap == null || self.get_shape() == null) return;
+    hobject::Shape* ns = shape_create(self.owner_heap, self.prop_count, 0, PRIVATE_SHAPE_PARENT, null);
     if (ns == null) return;
 
     hobject::ShapeProperty* new_sp = ns.props();
@@ -1156,7 +1145,7 @@ fn void HObject.make_shape_private(&self) {
         walk = walk.parent_shape;
     }
 
-    heap::Heap* h = (heap::Heap*)_active_heap;
+    heap::Heap* h = (heap::Heap*)self.owner_heap;
     // The shape being replaced is dead once the swap lands. Reclaim it first so
     // a long-running privatise loop reuses one slot instead of leaking one per
     // call; free_shape_slot ignores shared transition-table shapes.
@@ -1171,7 +1160,7 @@ fn void HObject.make_shape_private(&self) {
         if (old_slot != slot) h.free_shape_slot(old_slot, false);
     } else {
         // The keys were copied without an incref, so shape_free must not decref.
-        shape_free(ns, null);
+        shape_free(ns, self.owner_heap, false);
     }
 }
 
@@ -1359,7 +1348,7 @@ fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags) {
         // self-assignment where val aliases *pv cannot free it early. This
         // mirrors Heap.tval_copy_ref. One combined test skips both sides for a
         // numeric or boolean overwrite, where neither value is heap-allocated.
-        if (_active_heap != null && types::either_heap_allocated(&val, pv)) {
+        if (self.owner_heap != null && types::either_heap_allocated(&val, pv)) {
             if (val.is_heap_allocated()) {
                 void* ptr = val.get_heapptr();
                 if (ptr != null) {
@@ -1367,7 +1356,7 @@ fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags) {
                 }
             }
             if (pv.is_heap_allocated()) {
-                ((heap::Heap*)_active_heap).decref_tval(pv);
+                ((heap::Heap*)self.owner_heap).decref_tval(pv);
             }
         }
         *pv = val;
@@ -1436,7 +1425,7 @@ fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags) {
     self.prop_values()[new_idx] = val;
     // Strings, objects, buffers, and BigInts are reference-counted heap
     // values held by properties, so the new value needs its own reference.
-    if (_active_heap != null && val.is_heap_allocated()) {
+    if (self.owner_heap != null && val.is_heap_allocated()) {
         void* ptr = val.get_heapptr();
         if (ptr != null) {
             ((types::HeapHeader*)ptr).incref();
@@ -1471,8 +1460,8 @@ fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags) {
     // skip its chain walk. Keying the transition on (parent, key, flags) lets
     // every instance of a class installing the same private field share one
     // shape, where set_prop_flags() would give each a private, uncacheable one.
-    if (_active_heap != null) {
-        heap::Heap* h = (heap::Heap*)_active_heap;
+    if (self.owner_heap != null) {
+        heap::Heap* h = (heap::Heap*)self.owner_heap;
         ushort new_shape_id = h.transition_shape_new_flags(self.shape_id, key, pflags);
         if (new_shape_id == heap::SHAPE_ID_NONE) {
             // The shape pool is exhausted. Storing the value anyway would leave
@@ -1538,7 +1527,7 @@ fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags) {
 /// delete. Returns false if any step could not be taken, leaving the object's
 /// shape untouched so the caller can fall back to a private shape.
 fn bool HObject.try_rebuild_shape(&self, uint deleted_idx, uint new_count) @local {
-    heap::Heap* h = (heap::Heap*)_active_heap;
+    heap::Heap* h = (heap::Heap*)self.owner_heap;
     uint old_slot = (uint)self.shape_id;
     if (!self.rebuild_shape_by_transition(deleted_idx, new_count)) return false;
     // The replay increfed every key it kept, so releasing the old shape's own
@@ -1550,7 +1539,7 @@ fn bool HObject.try_rebuild_shape(&self, uint deleted_idx, uint new_count) @loca
 }
 
 fn bool HObject.rebuild_shape_by_transition(&self, uint deleted_idx, uint new_count) @local {
-    heap::Heap* h = (heap::Heap*)_active_heap;
+    heap::Heap* h = (heap::Heap*)self.owner_heap;
     Shape* old_shape = self.get_shape();
     if (old_shape == null) return false;
 
@@ -1600,8 +1589,8 @@ fn bool HObject.delete_prop(&self, void* key) {
 
     // Release the deleted slot's own reference before it is overwritten by
     // the compaction shift below.
-    if (_active_heap != null) {
-        heap::Heap* h = (heap::Heap*)_active_heap;
+    if (self.owner_heap != null) {
+        heap::Heap* h = (heap::Heap*)self.owner_heap;
         h.decref_tval(&self.prop_values()[ui]);
     }
 
@@ -1615,8 +1604,8 @@ fn bool HObject.delete_prop(&self, void* key) {
     // An emptied object returns to the root shape in slot 0. Allocating a fresh
     // private shape on every delete would exhaust the 65534 shape slots.
     if (new_count == 0) {
-        if (_active_heap != null) {
-            heap::Heap* h = (heap::Heap*)_active_heap;
+        if (self.owner_heap != null) {
+            heap::Heap* h = (heap::Heap*)self.owner_heap;
             uint old_slot = (uint)self.shape_id;
             self.shape_id = 0;
             self.set_shape(h.shapes[0]);
@@ -1624,7 +1613,7 @@ fn bool HObject.delete_prop(&self, void* key) {
         } else {
             self.set_shape(null);
         }
-    } else if (_active_heap != null && self.try_rebuild_shape(ui, new_count)) {
+    } else if (self.owner_heap != null && self.try_rebuild_shape(ui, new_count)) {
         // Replayed the surviving keys through the transition table, so the
         // object shares a shape with every other object of the same layout and
         // consumed no permanent slot. This is the common case: without it, each
@@ -1633,7 +1622,7 @@ fn bool HObject.delete_prop(&self, void* key) {
     } else {
         // Build a flat private shape holding every surviving property. It stays
         // out of the transition table, since it belongs to this object alone.
-        Shape* ns = shape_create(new_count, 0, PRIVATE_SHAPE_PARENT, null);
+        Shape* ns = shape_create(self.owner_heap, new_count, 0, PRIVATE_SHAPE_PARENT, null);
         if (ns != null) {
             // Collect surviving property names by walking the old shape chain.
             // The walk visits the newest shape first, so place each key at its
@@ -1658,8 +1647,8 @@ fn bool HObject.delete_prop(&self, void* key) {
                 }
             }
 
-            if (_active_heap != null) {
-                heap::Heap* h = (heap::Heap*)_active_heap;
+            if (self.owner_heap != null) {
+                heap::Heap* h = (heap::Heap*)self.owner_heap;
                 uint old_slot = (uint)self.shape_id;
                 bool old_was_private = self.get_shape() != null
                                     && self.get_shape().parent == PRIVATE_SHAPE_PARENT;
@@ -1678,12 +1667,12 @@ fn bool HObject.delete_prop(&self, void* key) {
                         h.free_shape_slot(old_slot, false);
                     }
                 } else {
-                    // Keys were copied without incref; pass null so shape_free skips decref.
-                    shape_free(ns, null);
+                    // Keys were copied without incref, so shape_free must not decref.
+                    shape_free(ns, self.owner_heap, false);
                     self.set_shape(null);
                 }
             } else {
-                shape_free(ns, null);
+                shape_free(ns, self.owner_heap, false);
                 self.set_shape(null);
             }
         } else {
@@ -1694,8 +1683,8 @@ fn bool HObject.delete_prop(&self, void* key) {
     // Every index after the deleted slot shifted down, so the hash table has to
     // be rebuilt from the new shape.
     if (self.prop_hash != null) {
-        if (_active_heap != null) {
-            heap::Heap* h = (heap::Heap*)_active_heap;
+        if (self.owner_heap != null) {
+            heap::Heap* h = (heap::Heap*)self.owner_heap;
             h.free_func(h.heap_udata, self.prop_hash.table);
             h.free_func(h.heap_udata, self.prop_hash);
         } else {
@@ -1759,7 +1748,7 @@ fn bool HObject.set_array_idx(&self, uint idx, TVal val) {
 
     // Incref before decref, for the reason given in put_prop.
     TVal* slot = &self.array_part()[idx];
-    if (_active_heap != null && types::either_heap_allocated(&val, slot)) {
+    if (self.owner_heap != null && types::either_heap_allocated(&val, slot)) {
         if (val.is_heap_allocated()) {
             void* ptr = val.get_heapptr();
             if (ptr != null) {
@@ -1767,7 +1756,7 @@ fn bool HObject.set_array_idx(&self, uint idx, TVal val) {
             }
         }
         if (slot.is_heap_allocated()) {
-            ((heap::Heap*)_active_heap).decref_tval(slot);
+            ((heap::Heap*)self.owner_heap).decref_tval(slot);
         }
     }
     *slot = val;
@@ -1800,8 +1789,8 @@ fn void HObject.grow_props(&self) {
     void* new_raw;
     if (self.prop_alloc == null) {
         // Leaving inline storage: allocate, then copy the inline data across.
-        if (_active_heap != null) {
-            heap::Heap* h = (heap::Heap*)_active_heap;
+        if (self.owner_heap != null) {
+            heap::Heap* h = (heap::Heap*)self.owner_heap;
             new_raw = h.alloc_func(h.heap_udata, new_size);
         } else {
             new_raw = alloc::malloc_try(mem, (sz)(new_size)) ?? null;
@@ -1813,8 +1802,8 @@ fn void HObject.grow_props(&self) {
         usz old_size = self.prop_alloc_size();
         usz old_prop_bytes = (usz)self.prop_capacity * PropValue::size;
         new_size = old_size - old_prop_bytes + new_prop_bytes;
-        if (_active_heap != null) {
-            heap::Heap* h = (heap::Heap*)_active_heap;
+        if (self.owner_heap != null) {
+            heap::Heap* h = (heap::Heap*)self.owner_heap;
             new_raw = h.realloc_func(h.heap_udata, self.prop_alloc, new_size);
         } else {
             new_raw = alloc::realloc_try(mem, self.prop_alloc, (sz)(new_size)) ?? null;
@@ -1829,8 +1818,8 @@ fn void HObject.grow_props(&self) {
     // prop_alloc may have moved, so inline caches holding prop_value pointers
     // must be invalidated. shape_id is unchanged, so the generation bump is what
     // does it.
-    if (_active_heap != null) {
-        ((heap::Heap*)_active_heap).bump_shape_gen(self.shape_id);
+    if (self.owner_heap != null) {
+        ((heap::Heap*)self.owner_heap).bump_shape_gen(self.shape_id);
     }
 
     // The dense array part follows the property values, so a larger capacity
@@ -1864,8 +1853,8 @@ fn void HObject.grow_array(&self, uint new_size) {
     void* new_raw;
     if (self.prop_alloc == null) {
         // Transition from inline to heap: allocate and copy inline props.
-        if (_active_heap != null) {
-            heap::Heap* h = (heap::Heap*)_active_heap;
+        if (self.owner_heap != null) {
+            heap::Heap* h = (heap::Heap*)self.owner_heap;
             new_raw = h.alloc_func(h.heap_udata, new_bytes);
         } else {
             new_raw = alloc::malloc_try(mem, (sz)(new_bytes)) ?? null;
@@ -1874,8 +1863,8 @@ fn void HObject.grow_array(&self, uint new_size) {
         PropValue* inline_src = self.inline_props_ptr();
         mem::copy(new_raw, inline_src, (sz)((usz)self.prop_count * PropValue::size));
     } else {
-        if (_active_heap != null) {
-            heap::Heap* h = (heap::Heap*)_active_heap;
+        if (self.owner_heap != null) {
+            heap::Heap* h = (heap::Heap*)self.owner_heap;
             new_raw = h.realloc_func(h.heap_udata, self.prop_alloc, new_bytes);
         } else {
             new_raw = alloc::realloc_try(mem, self.prop_alloc, (sz)(new_bytes)) ?? null;
@@ -1901,8 +1890,8 @@ fn void HObject.grow_array(&self, uint new_size) {
 ///
 /// `heap_ptr` is an opaque Heap pointer. The caller must insert the object into
 /// the heap's GC list, which this does not do; Heap.alloc_object wraps both.
-/// Elsewhere the heap is reached through the module-level `_active_heap`, which
-/// keeps 8 bytes off every object.
+/// It is also stored in the object's owner_heap, which is how every later
+/// operation on the object reaches its heap.
 ///
 /// Attempts pool allocation first (O(1) bump or freelist pop). Falls back
 /// to malloc when the pool is exhausted; the pool_fallback flag is set so
@@ -1953,6 +1942,7 @@ fn HObject*? hobject_alloc(void* heap_ptr, ObjClass cls) {
     obj.flags.obj_class    = cls;
     obj.flags.pool_fallback = !from_pool;
     obj.refcount           = 1;
+    obj.owner_heap         = heap_ptr;
 
     if (cls == ObjClass.FUNCTION) {
         obj.flags.callable      = true;
@@ -1997,16 +1987,16 @@ fn void hobject_free(HObject* obj, void* heap_ptr, bool free_header = true) {
 
     // Release the promise's settled value. The reactions are HObjects the
     // collector owns, so they are dropped rather than freed.
-    if (obj.flags.obj_class == ObjClass.PROMISE && _active_heap != null) {
-        heap::Heap* h = (heap::Heap*)_active_heap;
+    if (obj.flags.obj_class == ObjClass.PROMISE && !((heap::Heap*)heap_ptr).tearing_down) {
+        heap::Heap* h = (heap::Heap*)heap_ptr;
         h.decref_tval(&(*obj.extra_ptr()).promise.result);
         (*obj.extra_ptr()).promise.reactions_head = null;
         (*obj.extra_ptr()).promise.reactions_tail = null;
     }
 
     // A detached buffer has already released its backing store.
-    if (obj.flags.obj_class == ObjClass.ARRAYBUFFER && _active_heap != null) {
-        heap::Heap* h = (heap::Heap*)_active_heap;
+    if (obj.flags.obj_class == ObjClass.ARRAYBUFFER && !((heap::Heap*)heap_ptr).tearing_down) {
+        heap::Heap* h = (heap::Heap*)heap_ptr;
         if ((*obj.extra_ptr()).ab.data != null) {
             h.free_func(h.heap_udata, (*obj.extra_ptr()).ab.data);
             (*obj.extra_ptr()).ab.data = null;
@@ -2015,19 +2005,14 @@ fn void hobject_free(HObject* obj, void* heap_ptr, bool free_header = true) {
 
     // Free the per-object property hash table.
     if (obj.prop_hash != null) {
-        if (_active_heap != null) {
-            heap::Heap* h = (heap::Heap*)_active_heap;
-            h.free_func(h.heap_udata, obj.prop_hash.table);
-            h.free_func(h.heap_udata, obj.prop_hash);
-        } else {
-            mem::free(obj.prop_hash.table);
-            mem::free(obj.prop_hash);
-        }
+        heap::Heap* h = (heap::Heap*)heap_ptr;
+        h.free_func(h.heap_udata, obj.prop_hash.table);
+        h.free_func(h.heap_udata, obj.prop_hash);
     }
 
     // Decref getter/setter inside GetterSetter cells.
-    if (obj.flags.obj_class == ObjClass.GETTER_SETTER && _active_heap != null) {
-        heap::Heap* h = (heap::Heap*)_active_heap;
+    if (obj.flags.obj_class == ObjClass.GETTER_SETTER && !((heap::Heap*)heap_ptr).tearing_down) {
+        heap::Heap* h = (heap::Heap*)heap_ptr;
         h.decref_tval(&(*obj.extra_ptr()).gs.getter);
         h.decref_tval(&(*obj.extra_ptr()).gs.setter);
     }
@@ -2035,22 +2020,22 @@ fn void hobject_free(HObject* obj, void* heap_ptr, bool free_header = true) {
     // Release [[BoundTargetFunction]], [[BoundThis]], and [[BoundArguments]].
     // A bound function never sets captured_this, so this cannot overlap with the
     // arrow-capture release below.
-    if (obj.flags.obj_class == ObjClass.FUNCTION && obj.flags.is_bound && _active_heap != null) {
-        heap::Heap* h = (heap::Heap*)_active_heap;
+    if (obj.flags.obj_class == ObjClass.FUNCTION && obj.flags.is_bound && !((heap::Heap*)heap_ptr).tearing_down) {
+        heap::Heap* h = (heap::Heap*)heap_ptr;
         h.decref_tval(&(*obj.extra_ptr()).func.bound_target);
         h.decref_tval(&(*obj.extra_ptr()).func.bound_this);
         if ((*obj.extra_ptr()).func.bound_args != null) {
             h.decref((types::HeapHeader*)(*obj.extra_ptr()).func.bound_args);
         }
-    } else if (obj.flags.obj_class == ObjClass.FUNCTION && _active_heap != null) {
+    } else if (obj.flags.obj_class == ObjClass.FUNCTION && !((heap::Heap*)heap_ptr).tearing_down) {
         // Decref an arrow function's captured lexical `this`.
-        heap::Heap* h = (heap::Heap*)_active_heap;
+        heap::Heap* h = (heap::Heap*)heap_ptr;
         h.decref_tval(&(*obj.extra_ptr()).func.captured_this);
     }
 
     // Decref the stack string captured at Error construction time.
-    if (obj.flags.obj_class == ObjClass.ERROR && _active_heap != null) {
-        heap::Heap* h = (heap::Heap*)_active_heap;
+    if (obj.flags.obj_class == ObjClass.ERROR && !((heap::Heap*)heap_ptr).tearing_down) {
+        heap::Heap* h = (heap::Heap*)heap_ptr;
         h.decref_tval(&(*obj.extra_ptr()).err.captured_stack);
     }
 
@@ -2058,8 +2043,8 @@ fn void hobject_free(HObject* obj, void* heap_ptr, bool free_header = true) {
     if ((obj.flags.obj_class == ObjClass.ARRAY_ITERATOR
         || obj.flags.obj_class == ObjClass.MAP_ITERATOR
         || obj.flags.obj_class == ObjClass.SET_ITERATOR)
-        && _active_heap != null && (*obj.extra_ptr()).iter.target != null) {
-        heap::Heap* h = (heap::Heap*)_active_heap;
+        && !((heap::Heap*)heap_ptr).tearing_down && (*obj.extra_ptr()).iter.target != null) {
+        heap::Heap* h = (heap::Heap*)heap_ptr;
         h.decref((types::HeapHeader*)(*obj.extra_ptr()).iter.target);
         (*obj.extra_ptr()).iter.target = null;
     }
@@ -2072,17 +2057,17 @@ fn void hobject_free(HObject* obj, void* heap_ptr, bool free_header = true) {
     // through heap::gs_acquire, so the last one torn down performs the free.
     // See heap::gs_release for why the count, and not any gs field, decides.
     //
-    // The allocator comes from `heap_ptr` rather than `_active_heap`, which
-    // teardown clears before this walk. `_active_heap` still says whether the
+    // The allocator comes from `heap_ptr`, which stays valid through teardown.
+    // The heap's tearing_down flag says whether the
     // decref pass runs.
     if (obj.flags.obj_class == ObjClass.GENERATOR) {
         heap::GeneratorState* gs = (heap::GeneratorState*)(*obj.extra_ptr()).gen.generator_data;
         (*obj.extra_ptr()).gen.generator_data = null;
-        heap::gs_release(gs, heap_ptr, _active_heap != null);
+        heap::gs_release(gs, heap_ptr, !((heap::Heap*)heap_ptr).tearing_down);
     } else if (obj.flags.obj_class == ObjClass.FUNCTION && obj.flags.is_async_state) {
         heap::GeneratorState* gs = (heap::GeneratorState*)(*obj.extra_ptr()).func.var_env;
         (*obj.extra_ptr()).func.var_env = null;
-        heap::gs_release(gs, heap_ptr, _active_heap != null);
+        heap::gs_release(gs, heap_ptr, !((heap::Heap*)heap_ptr).tearing_down);
     }
 
     // Release the values held in property slots and array elements. A neighbour
@@ -2090,8 +2075,8 @@ fn void hobject_free(HObject* obj, void* heap_ptr, bool free_header = true) {
     // so these go through Heap.decref and its sweep guard, which skips any
     // unmarked non-temproot target. Mark-and-sweep reclaims cycles; this pass
     // never does.
-    if (obj.prop_alloc != null && _active_heap != null) {
-        heap::Heap* h = (heap::Heap*)_active_heap;
+    if (obj.prop_alloc != null && !((heap::Heap*)heap_ptr).tearing_down) {
+        heap::Heap* h = (heap::Heap*)heap_ptr;
         PropValue* pvs = obj.prop_values();
         for (uint i = 0; i < obj.prop_count; i++) {
             if (pvs[i].is_heap_allocated()) {
@@ -2111,12 +2096,8 @@ fn void hobject_free(HObject* obj, void* heap_ptr, bool free_header = true) {
     // Free the block holding prop_values and array_part. The shape is shared and
     // owned by the heap, so it stays.
     if (obj.prop_alloc != null) {
-        if (_active_heap != null) {
-            heap::Heap* h = (heap::Heap*)_active_heap;
-            h.free_func(h.heap_udata, obj.prop_alloc);
-        } else {
-            mem::free(obj.prop_alloc);
-        }
+        heap::Heap* h = (heap::Heap*)heap_ptr;
+        h.free_func(h.heap_udata, obj.prop_alloc);
         obj.prop_alloc = null;
     }
 
@@ -2133,24 +2114,15 @@ fn void hobject_free(HObject* obj, void* heap_ptr, bool free_header = true) {
 /// will be read again.
 fn void hobject_free_header(HObject* obj, void* heap_ptr) {
     if (obj == null) { return; }
+    heap::Heap* h = (heap::Heap*)heap_ptr;
     if (obj.flags.pool_fallback) {
-        if (_active_heap != null) {
-            heap::Heap* h = (heap::Heap*)_active_heap;
-            h.free_func(h.heap_udata, obj);
-        } else {
-            mem::free(obj);
-        }
+        h.free_func(h.heap_udata, obj);
     } else {
         void* pool = pool_for_class(heap_ptr, obj.flags.obj_class);
         if (pool != null) {
             ((mem::mempool::FixedBlockPool*)pool).dealloc(obj);
         } else {
-            if (_active_heap != null) {
-                heap::Heap* h = (heap::Heap*)_active_heap;
-                h.free_func(h.heap_udata, obj);
-            } else {
-                mem::free(obj);
-            }
+            h.free_func(h.heap_udata, obj);
         }
     }
 }
@@ -2196,8 +2168,8 @@ fn TVal? HObject.get_prop_proto(&self, void* key) {
     while (cur != null && depth < MAX_PROTO_DEPTH) {
         // Proxy exotic anywhere on the chain: route the whole [[Get]] through
         // the trap machinery (receiver = the original object).
-        if (cur.flags.exotic_proxyobj && _active_heap != null) {
-            heap::Heap* h = (heap::Heap*)_active_heap;
+        if (cur.flags.exotic_proxyobj && self.owner_heap != null) {
+            heap::Heap* h = (heap::Heap*)self.owner_heap;
             if (h.proxy_get_fn != null && h.vm_ptr != null) {
                 TVal recv = types::make_object(self);
                 TVal out;
@@ -2327,15 +2299,10 @@ fn usz shape_alloc_size(uint own_count) {
 /// it adds to its parent chain. `offset` is where they start in the object's
 /// prop_values. `parent_id` and `parent_shape` identify the parent, and are
 /// SHAPE_NONE and null at the root.
-fn Shape* shape_create(uint own_count, uint offset, uint parent_id, Shape* parent_shape) {
+fn Shape* shape_create(void* heap_ptr, uint own_count, uint offset, uint parent_id, Shape* parent_shape) {
     usz bytes = shape_alloc_size(own_count);
-    void* raw;
-    if (_active_heap != null) {
-        heap::Heap* h = (heap::Heap*)_active_heap;
-        raw = h.alloc_func(h.heap_udata, bytes);
-    } else {
-        raw = alloc::malloc_try(mem, (sz)(bytes)) ?? null;
-    }
+    heap::Heap* h = (heap::Heap*)heap_ptr;
+    void* raw = h.alloc_func(h.heap_udata, bytes);
     if (raw == null) return null;
     mem::clear(raw, (sz)(bytes));
 
@@ -2351,9 +2318,9 @@ fn Shape* shape_create(uint own_count, uint offset, uint parent_id, Shape* paren
 
 /// Extend `parent` with one more property, storing only that property. Returns
 /// null if allocation fails.
-fn Shape* shape_extend(Shape* parent, uint parent_id, void* new_key, PropFlags flags) {
+fn Shape* shape_extend(void* heap_ptr, Shape* parent, uint parent_id, void* new_key, PropFlags flags) {
     uint offset = parent.offset + parent.own_count;
-    Shape* ns = shape_create(1, offset, parent_id, parent);
+    Shape* ns = shape_create(heap_ptr, 1, offset, parent_id, parent);
     if (ns == null) return null;
 
     ns.props()[0].key   = new_key;
@@ -2367,25 +2334,23 @@ fn Shape* shape_extend(Shape* parent, uint parent_id, void* new_key, PropFlags f
     return ns;
 }
 
-/// Free a shape. A non-null `heap_ptr` also releases the property keys it
-/// holds; pass null during teardown, when the string table is already going.
-fn void shape_free(Shape* sh, void* heap_ptr) {
+/// Free a shape through `heap_ptr`, which is always required so the allocation
+/// goes back to the allocator it came from.
+///
+/// `release_keys` is false during teardown, when the string table is already
+/// coming apart and decrefing into it would corrupt the sweep.
+fn void shape_free(Shape* sh, void* heap_ptr, bool release_keys) {
     if (sh == null) return;
-    if (heap_ptr != null) {
+    heap::Heap* h = (heap::Heap*)heap_ptr;
+    if (release_keys) {
         ShapeProperty* sp = sh.props();
-        heap::Heap* h = (heap::Heap*)heap_ptr;
         for (uint i = 0; i < sh.own_count; i++) {
             if (sp[i].key != null) {
                 h.decref((HeapHeader*)sp[i].key);
             }
         }
     }
-    if (_active_heap != null) {
-        heap::Heap* h = (heap::Heap*)_active_heap;
-        h.free_func(h.heap_udata, sh);
-    } else {
-        mem::free(sh);
-    }
+    h.free_func(h.heap_udata, sh);
 }
 
 // ============================================================================
@@ -2545,8 +2510,8 @@ fn PropLookupResult HObject.get_prop_or_accessor_proto(&self, void* key, bool wa
         // and reports the result as a data property with no owner, which keeps
         // inline caches from being populated. A setter search returns
         // PROP_NOT_FOUND, since PUTPROP's own proxy check handles [[Set]].
-        if (cur.flags.exotic_proxyobj && want_getter && _active_heap != null) {
-            heap::Heap* h = (heap::Heap*)_active_heap;
+        if (cur.flags.exotic_proxyobj && want_getter && self.owner_heap != null) {
+            heap::Heap* h = (heap::Heap*)self.owner_heap;
             if (h.proxy_get_fn != null && h.vm_ptr != null) {
                 TVal recv = types::make_object(self);
                 TVal out;
@@ -2592,8 +2557,8 @@ fn PropLookupResult HObject.get_prop_or_accessor_proto(&self, void* key, bool wa
             };
         }
         // ARRAY exotic: "length" lives in array_len_ptr, not props table.
-        if (cur.get_class() == ObjClass.ARRAY && _active_heap != null) {
-            heap::Heap* h = (heap::Heap*)_active_heap;
+        if (cur.get_class() == ObjClass.ARRAY && self.owner_heap != null) {
+            heap::Heap* h = (heap::Heap*)self.owner_heap;
             if (key == (void*)h.strs[heap::BuiltinStr.LENGTH]) {
                 return {
                     .kind = PropLookupKind.PROP_DATA,
@@ -2616,8 +2581,8 @@ fn bool HObject.has_prop_proto(&self, void* key) {
 
     while (cur != null && depth < MAX_PROTO_DEPTH) {
         // Proxy exotic on the chain: route through the [[Has]] trap.
-        if (cur.flags.exotic_proxyobj && _active_heap != null) {
-            heap::Heap* h = (heap::Heap*)_active_heap;
+        if (cur.flags.exotic_proxyobj && self.owner_heap != null) {
+            heap::Heap* h = (heap::Heap*)self.owner_heap;
             if (h.proxy_has_fn != null && h.vm_ptr != null) {
                 bool has;
                 if (h.proxy_has_fn(h.vm_ptr, h, cur, key, &has)) {
@@ -2630,8 +2595,8 @@ fn bool HObject.has_prop_proto(&self, void* key) {
             return true;
         }
         // ARRAY exotic: "length" lives in array_len_ptr.
-        if (cur.get_class() == ObjClass.ARRAY && _active_heap != null) {
-            heap::Heap* h = (heap::Heap*)_active_heap;
+        if (cur.get_class() == ObjClass.ARRAY && self.owner_heap != null) {
+            heap::Heap* h = (heap::Heap*)self.owner_heap;
             if (key == (void*)h.strs[heap::BuiltinStr.LENGTH]) {
                 return true;
             }

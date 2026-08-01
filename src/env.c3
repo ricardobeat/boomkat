@@ -183,14 +183,10 @@ fn bool env_put(EnvRecord* env, void* key, TVal val) {
         int idx = cur.bindings.find_prop_idx(key);
         if (idx >= 0) {
             TVal* pv = &cur.bindings.prop_values()[idx];
-            if (hobject::_active_heap != null) {
-                heap::Heap* h = (heap::Heap*)hobject::_active_heap;
-                if (pv.is_string() || pv.is_bigint()) { h.decref_tval(pv); }
-                *pv = val;
-                if (val.is_string() || val.is_bigint()) { void* p = val.get_heapptr(); if (p != null) ((types::HeapHeader*)p).incref(); }
-            } else {
-                *pv = val;
-            }
+            heap::Heap* h = (heap::Heap*)cur.bindings.owner_heap;
+            if (pv.is_string() || pv.is_bigint()) { h.decref_tval(pv); }
+            *pv = val;
+            if (val.is_string() || val.is_bigint()) { void* p = val.get_heapptr(); if (p != null) ((types::HeapHeader*)p).incref(); }
             return true;
         }
         cur = cur.parent;
@@ -399,16 +395,12 @@ fn int env_try_put_lex(EnvRecord* lex_env, void* key, TVal val, bool check_tdz =
                 return -1;
             }
             TVal* pv = &cur.bindings.prop_values()[idx];
-            if (hobject::_active_heap != null) {
-                heap::Heap* h = (heap::Heap*)hobject::_active_heap;
-                // Strings and BigInts are refcounted, so the old value is
-                // released and the new one taken.
-                if (pv.is_string() || pv.is_bigint()) { h.decref_tval(pv); }
-                *pv = val;
-                if (val.is_string() || val.is_bigint()) { void* p = val.get_heapptr(); if (p != null) ((types::HeapHeader*)p).incref(); }
-            } else {
-                *pv = val;
-            }
+            // Strings and BigInts are refcounted, so the old value is released
+            // and the new one taken.
+            heap::Heap* h = (heap::Heap*)cur.bindings.owner_heap;
+            if (pv.is_string() || pv.is_bigint()) { h.decref_tval(pv); }
+            *pv = val;
+            if (val.is_string() || val.is_bigint()) { void* p = val.get_heapptr(); if (p != null) ((types::HeapHeader*)p).incref(); }
             return 1;
         }
         cur = cur.parent;

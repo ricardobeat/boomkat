@@ -5037,11 +5037,11 @@ fn TVal? Vm.run(Vm* vm) {
                                 && vm.heap.shapes[b.shape_id].generation == vic.generation) {
                                 // A direct write skips find_prop_idx and put_prop.
                                 TVal* pv = &b.prop_values()[vic.prop_idx];
-                                if (hobject::_active_heap != null && pv.is_string()) {
-                                    ((heap::Heap*)hobject::_active_heap).decref_tval(pv);
+                                if (pv.is_string()) {
+                                    vm.heap.decref_tval(pv);
                                 }
                                 *pv = *ra;
-                                if (hobject::_active_heap != null && ra.is_string()) {
+                                if (ra.is_string()) {
                                     void* ptr = ra.get_heapptr();
                                     if (ptr != null) ((types::HeapHeader*)ptr).incref();
                                 }

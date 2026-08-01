@@ -332,9 +332,8 @@ fn void gs_acquire(GeneratorState* gs) {
 /// whatever landed there.
 ///
 /// `heap_ptr` is always required, including during full-heap teardown, which
-/// clears the `_active_heap` global but still frees through the heap's own
-/// allocator. With an embedder allocator, freeing to libc instead would be a
-/// cross-allocator free.
+/// still frees through the heap's own allocator. With an embedder allocator,
+/// freeing to libc instead would be a cross-allocator free.
 ///
 /// `run_decref` is false during teardown, where the heap is already coming apart.
 fn void gs_release(GeneratorState* gs, void* heap_ptr, bool run_decref) {
@@ -711,6 +710,12 @@ struct Heap {
     uint      microtask_capacity;
     bool      microtask_draining;  // re-entrancy guard
 
+    // Set once teardown starts walking the object list. hobject_free reads it
+    // to skip its refcount decref loop: teardown frees every object directly,
+    // and mixing decref with the str_table backshift-delete would corrupt the
+    // table for the sweep that follows.
+    bool      tearing_down;
+
     // Parked Atomics.waitAsync waiters. Each holds a pending Promise against a
     // SharedArrayBuffer and byte index, and Atomics.notify resolves matching
     // waiters with "ok" in FIFO order. Active waiters act as GC roots.
@@ -958,7 +963,6 @@ fn Heap*? create(
     }
 
     // Activate this heap for RC operations and shape transitions.
-    hobject::hobject_set_active_heap((void*)h);
 
     return h;
 }
@@ -1136,7 +1140,7 @@ fn void Heap.init_shapes(&self) {
     self.shapes = (hobject::Shape**)self.alloc_func(self.heap_udata, bytes);
     mem::clear(self.shapes, (sz)(bytes));
     // Root shape: no properties, smallest hash (mask 0, so 2 slots).
-    self.shapes[0] = hobject::shape_create(0, 0, SHAPE_NONE, null);
+    self.shapes[0] = hobject::shape_create((void*)self, 0, 0, SHAPE_NONE, null);
     self.init_transition_table();
 }
 
@@ -1215,7 +1219,7 @@ fn void Heap.free_shape_slot(&self, uint id, bool release_keys = true) {
     // Carry the dead shape's generation in the link so the next occupant of
     // this slot starts past it and no live inline-cache entry can match.
     uint gen = sh.generation & SHAPE_FREE_GEN_MASK;
-    hobject::shape_free(sh, release_keys ? (void*)self : null);
+    hobject::shape_free(sh, (void*)self, release_keys);
     uint link = (gen << SHAPE_FREE_LINK_BITS) | (self.shape_free_head & SHAPE_FREE_LINK_MASK);
     self.shapes[id] = (hobject::Shape*)(SHAPE_FREE_TAG | (uptr)link);
     self.shape_free_head = id;
@@ -1256,12 +1260,12 @@ fn ushort Heap.transition_shape_new_flags(&self, ushort cur_shape_id, void* key,
         return existing;
     }
 
-    hobject::Shape* ns = hobject::shape_extend(cur, cur_shape_id, key, flags);
+    hobject::Shape* ns = hobject::shape_extend((void*)self, cur, cur_shape_id, key, flags);
     if (ns == null) return SHAPE_ID_NONE;
 
     uint new_id = self.alloc_shape_slot();
     if (new_id == SHAPE_NONE) {
-        hobject::shape_free(ns, (void*)self);
+        hobject::shape_free(ns, (void*)self, true);
         return SHAPE_ID_NONE;
     }
 
@@ -1324,10 +1328,10 @@ fn void Heap.free_compiled_funcs(&self) {
  * Release every managed object, then free the heap struct itself.
  */
 fn void Heap.destroy(&self) {
-    // Clearing the active heap makes hobject_free skip its RC decref loop.
     // Teardown frees everything directly, and mixing decref with the
-    // str_table backshift-delete would corrupt the table for the sweep below.
-    hobject::hobject_clear_active_heap();
+    // str_table backshift-delete would corrupt the table for the sweep below,
+    // so tell hobject_free to skip its RC decref loop.
+    self.tearing_down = true;
 
     HeapHeader* cur = self.heap_allocated;
     while (cur != null) {
@@ -1427,7 +1431,7 @@ fn void Heap.destroy(&self) {
     if (self.shapes != null) {
         for (uint i = 0; i < self.shape_count; i++) {
             if (self.shape_slot_live(i)) {
-                hobject::shape_free(self.shapes[i], null);
+                hobject::shape_free(self.shapes[i], (void*)self, false);
             }
         }
         self.free_func(self.heap_udata, self.shapes);
@@ -1498,9 +1502,9 @@ fn void Heap.reset(&self) {
         }
     }
 
-    // Same teardown-mode guard as destroy(): with no active heap, hobject_free
-    // skips its RC decref loop.
-    hobject::hobject_clear_active_heap();
+    // Same teardown-mode guard as destroy(): hobject_free skips its RC decref
+    // loop while this is set.
+    self.tearing_down = true;
 
     HeapHeader* cur = self.heap_allocated;
     while (cur != null) {
@@ -1730,7 +1734,7 @@ fn void Heap.reset(&self) {
     if (self.shapes != null) {
         for (uint i = 0; i < self.shape_count; i++) {
             if (self.shape_slot_live(i)) {
-                hobject::shape_free(self.shapes[i], null);
+                hobject::shape_free(self.shapes[i], (void*)self, false);
             }
         }
         // The pointer array is reused, so zeroing it is enough.
@@ -1739,7 +1743,7 @@ fn void Heap.reset(&self) {
     self.shape_count = 1;
     self.shape_gen   = 0;
     self.shape_free_head = SHAPE_FREE_END;
-    self.shapes[0]   = hobject::shape_create(0, 0, SHAPE_NONE, null);
+    self.shapes[0]   = hobject::shape_create((void*)self, 0, 0, SHAPE_NONE, null);
     self.init_transition_table();
 
     self.free_module_cache();
@@ -1759,7 +1763,9 @@ fn void Heap.reset(&self) {
 
     self.init_builtin_strs();
 
-    hobject::hobject_set_active_heap((void*)self);
+    // The wholesale free above ran in teardown mode; the heap is live again.
+    self.tearing_down = false;
+
 }
 
 // ============================================================================
