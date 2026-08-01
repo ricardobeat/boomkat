@@ -673,7 +673,7 @@ fn void builtin_regexp_proto_exec(BuiltinContext* ctx) {
         if (li_d < 0.0) li_d = 0.0;
         if (global_flag || sticky_flag) {
             // lastIndex is a UTF-16 code unit count; convert to CESU-8 byte
-            // offset for re_exec (which takes byte offsets). Spec step 7:
+            // offset for re_run (which takes byte offsets). Spec step 7:
             // if lastIndex > length (char-unit length), reset and return null.
             long li_charunit = (long)li_d;
             uint str_charlen = input_hstr != null ? input_hstr.char_length() : 0;
@@ -700,7 +700,7 @@ fn void builtin_regexp_proto_exec(BuiltinContext* ctx) {
     mem::clear(&caps_start, (sz)(re_bindings::RE_MAX_CAPTURES * int::size));
     mem::clear(&caps_end, (sz)(re_bindings::RE_MAX_CAPTURES * int::size));
 
-    int result = re_bindings::re_exec(
+    int result = re_bindings::re_run(
         (*obj.extra_ptr()).regexp.regexp_data, input, input_len, start_pos,
         (int)(input_hstr == null || input_hstr.is_ascii()),
         &out_start, &out_end, &out_num_captures,
@@ -859,7 +859,7 @@ fn void builtin_regexp_proto_symbol_match(BuiltinContext* ctx) {
         if (!regexp_exec_call(ctx, rx, &s_hstr_tv)) return;
         TVal result = *ctx.result;
         if (result.is_null()) break;
-        // Skip our internal hstring wrapping when handing off, re_exec
+        // Skip our internal hstring wrapping when handing off, re_run
         // returns a TVal containing an Array object pointer.
         // `regexp_exec_call` set ctx.result; mirror it locally so we
         // don't re-run the function on the next iteration.
@@ -2131,7 +2131,7 @@ fn bool regexp_set_with_setter(BuiltinContext* ctx, HObject* obj, HString* key, 
 /// RegExpExec abstract operation (ES2017 §21.2.5.2.1), sets ctx.result:
 ///   - Calls `Get(rx, "exec")`, invokes it as a function if callable
 ///   - Validates the returned value (must be Object or null)
-///   - Falls back to RegExpBuiltinExec (re_exec) for built-in regexps
+///   - Falls back to RegExpBuiltinExec (re_run) for built-in regexps
 ///   - Sets ctx.should_throw on error; returns false in that case
 fn bool regexp_exec_call(BuiltinContext* ctx, HObject* rx, TVal* input_str_tv) {
     // 3. Let exec be ? Get(R, "exec").
@@ -2208,7 +2208,7 @@ fn bool regexp_exec_call(BuiltinContext* ctx, HObject* rx, TVal* input_str_tv) {
         if (li_d < 0.0) li_d = 0.0;
         if (global_flag || sticky_flag) {
             // lastIndex is a UTF-16 code unit count; convert to CESU-8 byte
-            // offset for re_exec. Bounds-check against char-unit length.
+            // offset for re_run. Bounds-check against char-unit length.
             long li_charunit = (long)li_d;
             uint str_charlen = s_hstr.char_length();
             if (li_charunit < 0 || (ulong)li_charunit > (ulong)str_charlen) {
@@ -2230,7 +2230,7 @@ fn bool regexp_exec_call(BuiltinContext* ctx, HObject* rx, TVal* input_str_tv) {
     mem::clear(&caps_start, (sz)(re_bindings::RE_MAX_CAPTURES * int::size));
     mem::clear(&caps_end, (sz)(re_bindings::RE_MAX_CAPTURES * int::size));
 
-    int result = re_bindings::re_exec(
+    int result = re_bindings::re_run(
         re_data, input, input_len, start_pos,
         (int)s_hstr.is_ascii(),
         &out_start, &out_end, &out_num_captures,

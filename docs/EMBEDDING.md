@@ -37,14 +37,23 @@ Both libraries are self-contained: the vendored C sources (`libregexp`,
 `cutils`, `dtoa`) are **already inside** them. Compiling those separately into
 your program produces duplicate symbols.
 
-The shared library exports exactly 12 symbols, all `jse_`-prefixed, with no
-other undotted symbols leaking out:
+The shared library exports the 12 documented `jse_` entry points:
 
 ```
 jse_close  jse_drain_microtasks  jse_eval    jse_get_bool  jse_get_number
 jse_get_string  jse_last_error  jse_last_error_code  jse_open  jse_type_of
 jse_value_free  jse_version
 ```
+
+They are **not** the only exported symbols. `c3c` has no visibility control and
+emits no version script, so the entire module graph is exported alongside them
+— 2460 symbols on the macOS dylib, 2272 on the Linux `.so` (measured). Treat the
+12 above as the supported surface and everything else as private, but be aware
+that on ELF the extra exports participate in global symbol interposition. That
+is not hypothetical: a wrapper function named `re_exec` collided with glibc's
+legacy `re_exec`, and every JS regexp segfaulted inside libc until it was
+renamed to `re_run`. If you add a C helper to the engine, check the name against
+`nm -D /lib/*/libc.so.6`.
 
 ### Installing
 
@@ -82,6 +91,30 @@ cc -std=c99 -I$PREFIX/include app.c -L$PREFIX/lib -ljse \
 On Linux add `-lm -ldl`. On macOS nothing extra is needed. The Makefile applies
 this automatically via `JSE_LDLIBS`.
 
+**On Linux the static archive also needs LLVM's compiler-rt.** The BigInt path
+multiplies `int128` values, which LLVM lowers to the overflow-checked builtin
+`__muloti4`. Apple's libSystem carries it; GNU `libgcc` and `libgcc_s` do not —
+it exists only in compiler-rt (verified: `nm` finds it in neither libgcc). A
+GCC-driven static link therefore fails with:
+
+```
+/usr/bin/ld: libjse.a(duktape.esm.o): in function `duktape.hbigint.bigint_mul':
+duktape::esm:(.text+0xee228): undefined reference to `__muloti4'
+```
+
+Pass the archive explicitly (Debian: `apt install libclang-rt-19-dev`):
+
+```sh
+cc -std=c99 -I$PREFIX/include app.c $PREFIX/lib/libjse.a -lm -ldl \
+   /usr/lib/llvm-19/lib/clang/19/lib/linux/libclang_rt.builtins-$(uname -m).a -o app
+```
+
+The Makefile and `examples/c99/Makefile` locate it automatically and append it
+to `JSE_LDLIBS`; override `C3C_RT_LIB` / `JSE_RT_LIB` to point elsewhere. The
+**shared** library is unaffected — it resolved the symbol at its own link. The
+same flag is needed when `c3c` links the engine itself, which the Makefile
+passes via `c3c build <target> -z <archive>`.
+
 ### Build configuration
 
 The `jse` and `jse_static` targets in `project.json` are built at `-O2`,
@@ -94,9 +127,82 @@ The `jse` and `jse_static` targets in `project.json` are built at `-O2`,
   (`c3slice_t`, `std_core__usz`) and is not a usable public interface. That is
   why `include/jse.h` is hand-written.
 
-Toolchain used for every result in this document: `c3c` 0.8.2 (LLVM 22.1.8),
-Apple clang 21, macOS 27 arm64. **The Linux `.so` path is written but was never
-executed** — no result here was produced on Linux.
+Toolchain used for the macOS results in this document: `c3c` 0.8.2
+(LLVM 22.1.8), Apple clang 21, macOS 27 arm64.
+
+### Linux
+
+Linux is **verified**, on linux/arm64 (Debian trixie, `c3c` 0.8.2 built from
+source against LLVM 19.1.7, GCC 14.2). Run it with `make linux-ci`; see
+[`ci/linux/README.md`](../ci/linux/README.md).
+
+What was established by running it:
+
+| Area | Result |
+|---|---|
+| `c3c build duktape_c3` | Builds, once `__muloti4` is supplied (see above) |
+| `bash test/run_local.sh` | **Fully green**, identical counts to macOS: 302 scripts, 14 module fixtures, 101 + 63 syntax/export checks, 24 top-level, 12 uncaught, 5796 console lines |
+| `make lib` / `make shared` | Both build; `out/libjse.so` is produced |
+| `make smoke` | Prints `42` |
+| `ldd` | No unresolved deps on `libjse.so` or on an executable linked against it |
+| `nm -D` | All 12 `jse_` symbols exported |
+| `make install PREFIX=…` | Header and both libraries install; static and `-ljse` shared builds compile and run against the prefix |
+| rpath | `-Wl,-rpath,$PREFIX/lib` is load-bearing — without it the loader fails and `LD_LIBRARY_PATH` is required |
+
+Two Linux-specific defects were found and fixed while verifying:
+
+- **`re_exec` collided with glibc.** The vendored regexp wrapper exported a
+  function named `re_exec`; glibc exports a legacy BSD `re_exec` too. Because
+  the shared library exports every engine symbol, ELF interposition bound the
+  engine's own call sites to *libc's* unrelated function and every JS regexp
+  segfaulted inside `regexec`. Confirmed by backtrace and by the crash vanishing
+  under `LD_PRELOAD=out/libjse.so`. Renamed to `re_run`. macOS's two-level
+  namespace hid this completely.
+- **`__muloti4` is not in libgcc**, so every link of the engine and of the
+  static archive failed. See the linking section above.
+
+The `.so` suffix selection in every loader (`bindings/python/js.py`,
+`bindings/ruby/lib/js.rb`, `bindings/zig/build.zig`, `bindings/rust`'s
+`build.rs`, `examples/c99/Makefile`) was already correct and needed no change.
+
+#### The static-link init hazard does not reproduce on Linux
+
+The Zig section below documents that on macOS, linking `out/jse_static.a` into a
+Zig-built executable segfaults in `__c3_runtime_startup` before `main`, because
+Zig emits a second bogus `__mh_execute_header` and the C3 runtime's constructor
+walk binds to it. The natural worry is that ELF `.init_array` has the same
+problem.
+
+**It does not.** Tested directly by building the same program from both foreign
+linkers against the static archive:
+
+```
+Zig  0.16.0 : rc=0, printed "zig static: 42"
+rustc 1.97.1: rc=0, printed "rust static: 42"
+```
+
+For contrast, the macOS failure was re-confirmed on the same host with the same
+Zig 0.16.0 and the same source: `RUN_RC=139` (SIGSEGV) with zero output. So the
+hazard is specific to Mach-O image-header discovery, and **static linking from
+Zig and Rust is supported on Linux**. Two caveats, both mechanical:
+
+- `rustc` passes `-nodefaultlibs`, so the C3 runtime's `atexit` hook is
+  unresolved unless you add `-C link-arg=-lc`.
+- Both need the compiler-rt archive for `__muloti4`.
+
+#### Binding status on Linux
+
+All seven binding surfaces were run in-container and produce correct output.
+
+| Binding | Linux | Notes |
+|---|---|---|
+| C99 static | pass | needs compiler-rt; `examples/c99/Makefile` adds it |
+| C99 shared | pass | |
+| Python (ctypes) | pass | |
+| Ruby (fiddle) | pass | only after the `re_exec` → `re_run` fix; every regexp crashed before it |
+| Zig (shared) | pass | needs > 2 GB of container memory or `zig build` is OOM-killed |
+| Rust | pass | |
+| C3 (native) | pass | |
 
 ## Hello world in C99
 
@@ -410,13 +516,17 @@ Syntax: expected '<identifier>', got '('
 signature with `std.Io.File.Writer`. It will not compile on 0.15 or earlier,
 which excludes most currently-deployed Zig versions.
 
-**The static archive is unusable from Zig.** Linking `out/jse_static.a` into a
-Zig-built executable segfaults in `__c3_runtime_startup` *before* `main`
+**The static archive is unusable from Zig on macOS.** Linking `out/jse_static.a`
+into a Zig-built executable segfaults in `__c3_runtime_startup` *before* `main`
 (reproduced: `SIGSEGV`, zero output). Zig's linker emits a second, bogus
 `__mh_execute_header` in `__DATA,__bss`; the C3 runtime's constructor walk binds
 to that instead of the real header and reads garbage. **Link the dylib**, which
 `build.zig` does by default. This is a C3 runtime issue, not a Zig-binding one —
-any future Go binding will hit the same wall.
+any future Go binding will hit the same wall on macOS.
+
+**This is macOS-only.** On Linux the same static archive links and runs
+correctly from both Zig and `rustc`; ELF `.init_array` has no equivalent
+failure. See [Linux](#linux) for the measurements.
 
 **Footgun:** `Value` holds a raw `*Runtime` while `Runtime.init` returns by
 value, so copying or moving a `Runtime` after creating `Value`s dangles. It is
@@ -626,8 +736,15 @@ surface — see `engine-scope.md`. Supply your own from the host.
 
 Stated so nobody mistakes silence for coverage:
 
-- **Linux.** Every result in this document is macOS arm64. The `.so` branch,
-  `-lm -ldl`, and the `SHLIB_EXT=so` paths are written but were never executed.
+- **Linux x86-64.** Linux is verified, but only on **arm64** — see the Linux
+  section above. The x86-64 path was not exercised: `container`'s amd64
+  emulation breaks `c3c`'s `posix_spawn` of the C compiler, so no build could be
+  produced there. Nothing found on arm64 was architecture-specific (the
+  `re_exec` collision and the `__muloti4` gap are both ELF/glibc properties, not
+  instruction-set ones), so x86-64 is expected to behave the same, but that is
+  an inference and not a measurement.
+- **musl / non-glibc Linux.** Only glibc was tested. The `re_exec` collision is
+  a glibc symbol; musl may differ in either direction.
 - **Cross-compilation.** Not attempted for any binding.
 - **`describe_error` against exotic throws.** Throwing a bare object or a Proxy
   with a throwing getter returns `-3` cleanly rather than crashing, but the

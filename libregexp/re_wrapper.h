@@ -34,7 +34,7 @@ typedef struct ReCompiled ReCompiled;
 /* Maximum number of capture groups we support. The 256-slot stack buffer
  * covers realistic patterns including deep nesting (the 200-group test
  * S15.10.2.8_A3_T15). Regexps with more captures heap-allocate a
- * capture[] buffer in re_exec(). */
+ * capture[] buffer in re_run(). */
 #define RE_MAX_CAPTURES 256
 
 /*
@@ -48,6 +48,12 @@ ReCompiled* re_compile(const char* pattern, size_t pattern_len,
  * Execute a compiled regexp against input.
  * Returns RE_MATCH, RE_NO_MATCH, or RE_ERROR.
  *
+ * Named re_run, not re_exec: glibc exports a legacy BSD `re_exec` of its own,
+ * and the shared library exports every engine symbol, so on ELF the dynamic
+ * loader resolved this function's internal call sites to glibc's unrelated
+ * one -- any JS regexp then segfaulted inside libc. macOS two-level namespaces
+ * hid the clash entirely.
+ *
  * If RE_MATCH:
  *   *out_start = byte offset of match start
  *   *out_end   = byte offset of match end (exclusive)
@@ -55,10 +61,10 @@ ReCompiled* re_compile(const char* pattern, size_t pattern_len,
  *   caps_start[i] = start of capture i (or -1 if unmatched)
  *   caps_end[i]   = end of capture i (or -1 if unmatched)
  */
-int re_exec(ReCompiled* re, const char* input, int input_len,
-            int start_offset, int input_is_ascii,
-            int* out_start, int* out_end, int* out_num_captures,
-            int* caps_start, int* caps_end, int max_captures);
+int re_run(ReCompiled* re, const char* input, int input_len,
+           int start_offset, int input_is_ascii,
+           int* out_start, int* out_end, int* out_num_captures,
+           int* caps_start, int* caps_end, int max_captures);
 
 /*
  * Free a compiled regexp (decrements its refcount; frees at zero).

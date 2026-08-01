@@ -1455,7 +1455,7 @@ fn void builtin_string_proto_split(BuiltinContext* ctx) {
             mem::clear(&caps_start, (sz)(re_bindings::RE_MAX_CAPTURES * int::size));
             mem::clear(&caps_end, (sz)(re_bindings::RE_MAX_CAPTURES * int::size));
 
-            int result = re_bindings::re_exec(
+            int result = re_bindings::re_run(
                 (*rx.extra_ptr()).regexp.regexp_data, input, input_len, search_pos,
                 (int)s_hstr.is_ascii(),
                 &out_start, &out_end, &out_num_captures,
@@ -1854,7 +1854,7 @@ fn void builtin_string_proto_replace(BuiltinContext* ctx) {
             mem::clear(&caps_start, (sz)(re_bindings::RE_MAX_CAPTURES * int::size));
             mem::clear(&caps_end, (sz)(re_bindings::RE_MAX_CAPTURES * int::size));
 
-            int result = re_bindings::re_exec(
+            int result = re_bindings::re_run(
                 (*rx.extra_ptr()).regexp.regexp_data, input, input_len, 0,
                 (int)s_hstr.is_ascii(),
                 &out_start, &out_end, &out_num_captures,
@@ -1944,7 +1944,7 @@ fn void builtin_string_proto_replace(BuiltinContext* ctx) {
                 mem::clear(&caps_start, (sz)(re_bindings::RE_MAX_CAPTURES * int::size));
                 mem::clear(&caps_end, (sz)(re_bindings::RE_MAX_CAPTURES * int::size));
 
-                int result = re_bindings::re_exec(
+                int result = re_bindings::re_run(
                     (*rx.extra_ptr()).regexp.regexp_data, input, input_len, search_pos,
                     (int)s_hstr.is_ascii(),
                     &out_start, &out_end, &out_num_captures,

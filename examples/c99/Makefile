@@ -37,6 +37,13 @@ ifeq ($(UNAME_S),Darwin)
 else
   SHLIB_EXT := so
   LDLIBS_EXTRA := -lm -ldl
+  # The engine's BigInt path needs __muloti4, which lives in LLVM's compiler-rt
+  # and not in libgcc, so a GCC-driven static link of the archive fails without
+  # it. Only the static link is affected: the shared library resolved it at its
+  # own link. Override JSE_RT_LIB for a different compiler-rt location.
+  JSE_RT_LIB ?= $(firstword $(wildcard \
+      /usr/lib/llvm-*/lib/clang/*/lib/linux/libclang_rt.builtins-$(shell uname -m).a))
+  LDLIBS_STATIC_EXTRA := $(JSE_RT_LIB)
 endif
 
 SRCS := main.c jse_util.c
@@ -50,7 +57,8 @@ shared: jse-example-shared
 # The archive already contains the vendored C (libregexp, cutils, dtoa), so it
 # must not be compiled or linked separately -- doing so gives duplicate symbols.
 jse-example: $(SRCS) jse_util.h
-	$(CC) $(CFLAGS) $(CPPFLAGS) $(SRCS) $(JSE_STATIC_LIB) $(LDLIBS_EXTRA) -o $@
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(SRCS) $(JSE_STATIC_LIB) $(LDLIBS_EXTRA) \
+	    $(LDLIBS_STATIC_EXTRA) -o $@
 
 # --- shared link -------------------------------------------------------------
 # The dylib carries an @rpath install name, so the consumer supplies the rpath.
