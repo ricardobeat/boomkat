@@ -3909,7 +3909,12 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
     // Arrow functions must respect the parent eval context's restrictions
     // on new.target, if the arrow is in an indirect/global eval, new.target
     // is a SyntaxError even though the arrow doesn't have its own [[NewTarget]].
-    arrow_ctx.eval_mode = self.eval_mode;
+    // Only the lexical "inside eval source" flag propagates: eval_mode drives
+    // completion-value accumulation into eval_acc_reg, which belongs to the
+    // eval top-level frame alone. The arrow has its own frame where that
+    // register number is a parameter or local, so inheriting eval_mode would
+    // make every expression statement in the body overwrite it.
+    arrow_ctx.in_eval_code = self.in_eval_code;
     arrow_ctx.eval_direct_in_function = self.eval_direct_in_function;
     // Same reasoning for top-level code: an arrow has no [[NewTarget]] of its
     // own and inherits the enclosing code's, so an arrow written directly in
@@ -4431,7 +4436,12 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner(&self, char[]* params,
     // Arrow functions must respect the parent eval context's restrictions
     // on new.target, if the arrow is in an indirect/global eval, new.target
     // is a SyntaxError even though the arrow doesn't have its own [[NewTarget]].
-    arrow_ctx.eval_mode = self.eval_mode;
+    // Only the lexical "inside eval source" flag propagates: eval_mode drives
+    // completion-value accumulation into eval_acc_reg, which belongs to the
+    // eval top-level frame alone. The arrow has its own frame where that
+    // register number is a parameter or local, so inheriting eval_mode would
+    // make every expression statement in the body overwrite it.
+    arrow_ctx.in_eval_code = self.in_eval_code;
     arrow_ctx.eval_direct_in_function = self.eval_direct_in_function;
     // Same reasoning for top-level code: an arrow has no [[NewTarget]] of its
     // own and inherits the enclosing code's, so an arrow written directly in
