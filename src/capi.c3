@@ -253,8 +253,15 @@ fn int jse_get_number(void* rtp, uint id, double* out) @export("jse_get_number")
     if (rtp == null || out == null) return JSE_ERR_INVALID;
     Runtime* rt = (Runtime*)rtp;
     TVal v;
-    if (!slot_get(rt, id, &v)) return JSE_ERR_INVALID;
-    if (!v.is_numeric()) return JSE_ERR_TYPE;
+    if (!slot_get(rt, id, &v)) {
+        set_err(rt, JSE_ERR_INVALID, "no such value handle");
+        return JSE_ERR_INVALID;
+    }
+    if (!v.is_numeric()) {
+        set_err(rt, JSE_ERR_TYPE, "value is not a number");
+        return JSE_ERR_TYPE;
+    }
+    clear_err(rt);
     *out = v.get_number_or_fastint();
     return JSE_OK;
 }
@@ -263,8 +270,15 @@ fn int jse_get_bool(void* rtp, uint id, int* out) @export("jse_get_bool") {
     if (rtp == null || out == null) return JSE_ERR_INVALID;
     Runtime* rt = (Runtime*)rtp;
     TVal v;
-    if (!slot_get(rt, id, &v)) return JSE_ERR_INVALID;
-    if (!v.is_boolean()) return JSE_ERR_TYPE;
+    if (!slot_get(rt, id, &v)) {
+        set_err(rt, JSE_ERR_INVALID, "no such value handle");
+        return JSE_ERR_INVALID;
+    }
+    if (!v.is_boolean()) {
+        set_err(rt, JSE_ERR_TYPE, "value is not a boolean");
+        return JSE_ERR_TYPE;
+    }
+    clear_err(rt);
     *out = v.get_boolean() ? 1 : 0;
     return JSE_OK;
 }
@@ -286,17 +300,27 @@ fn int jse_get_string(void* rtp, uint id, char* buf, usz cap, usz* out_len) @exp
     if (rtp == null) return JSE_ERR_INVALID;
     Runtime* rt = (Runtime*)rtp;
     TVal v;
-    if (!slot_get(rt, id, &v)) return JSE_ERR_INVALID;
-    if (!v.is_string()) return JSE_ERR_TYPE;
+    if (!slot_get(rt, id, &v)) {
+        set_err(rt, JSE_ERR_INVALID, "no such value handle");
+        return JSE_ERR_INVALID;
+    }
+    if (!v.is_string()) {
+        set_err(rt, JSE_ERR_TYPE, "value is not a string");
+        return JSE_ERR_TYPE;
+    }
     HString* s = (HString*)v.get_heapptr();
 
     g_sink = buf; g_sink_len = 0; g_sink_cap = (buf == null) ? 0 : cap;
     hstring::write_cesu8_as_utf8(s.get_data(), &sink_put);
     usz need = g_sink_len;
     if (out_len != null) *out_len = need;
-    if (buf == null) return JSE_OK;
-    if (need + 1 > cap) return JSE_ERR_FULL;
+    if (buf == null) { clear_err(rt); return JSE_OK; }
+    if (need + 1 > cap) {
+        set_err(rt, JSE_ERR_FULL, "destination buffer too small");
+        return JSE_ERR_FULL;
+    }
     buf[need] = 0;
+    clear_err(rt);
     return JSE_OK;
 }
 

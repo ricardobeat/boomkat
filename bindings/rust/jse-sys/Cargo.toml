@@ -1,0 +1,10 @@
+[package]
+name = "jse-sys"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.70"
+description = "Raw FFI declarations for the jse_ C ABI of the duktape-c3 JavaScript engine"
+links = "jse"
+publish = false
+
+[dependencies]
