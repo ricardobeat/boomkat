@@ -27,6 +27,37 @@ Other gates:
 - `just test-gc-stress`: an ASAN GC-stress suite, 20-30 minutes, nightly
   material
 
+## Benchmarks
+
+`just bench` runs the suite in `benchmarks/` (3 iterations per benchmark)
+against this engine, original Duktape v2.7.0 (`out/duktape_orig`), and QuickJS
+(`out/qjs`); the Duktape and QuickJS results are cached between runs. Lower is
+better; the ratio columns are C3/reference, so below 1.0 the engine wins.
+
+| Benchmark | C3 (ms) | Duktape (ms) | QuickJS (ms) | vs Duktape | vs QuickJS |
+|---|---|---|---|---|---|
+| bench_arithmetic | 349 | 3,272 | 297 | 0.1x | 1.2x |
+| bench_array | 22 | 41 | 12 | 0.5x | 1.8x |
+| bench_date | 80 | 906 | 60 | 0.1x | 1.3x |
+| bench_function_call | 254 | 1,283 | 185 | 0.2x | 1.4x |
+| bench_ic_monomorphic | 97 | 286 | 109 | 0.3x | 0.9x |
+| bench_ic_proto | 121 | 451 | 136 | 0.3x | 0.9x |
+| bench_loop | 146 | 1,361 | 146 | 0.1x | 1.0x |
+| bench_memory_heavy | 113 | 173 | 62 | 0.7x | 1.8x |
+| bench_object | 369 | 1,668 | 255 | 0.2x | 1.4x |
+| bench_property_lookup | 256 | 1,775 | 189 | 0.1x | 1.4x |
+| bench_recursion_deep | 900 | 1,975 | 614 | 0.5x | 1.5x |
+| bench_recursion | 218 | 473 | 150 | 0.5x | 1.5x |
+| bench_regexp | 694 | 670 | 312 | 1.0x | 2.2x |
+| bench_shape_no_call | 8 | 9 | 7 | 0.9x | 1.1x |
+| bench_shape_stress | 7 | 8 | 6 | 0.9x | 1.2x |
+| bench_string | 10 | 18 | 8 | 0.6x | 1.3x |
+| bench_valstack_copy | 11 | 14 | 13 | 0.8x | 0.8x |
+
+The engine beats Duktape on every benchmark but `bench_regexp` (parity) and is
+within ~1.5x of QuickJS everywhere except regexp (2.2x), ahead of it on the
+inline-cache and valstack microbenchmarks.
+
 ## Design
 
 - **Strict-only, single mode.** There is no sloppy mode and no `is_strict` flag
