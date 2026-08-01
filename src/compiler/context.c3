@@ -1282,21 +1282,32 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         bool* me_jump_targets = (bool*)h.alloc_func(h.heap_udata, bufsz);
         bool* me_in_try       = (bool*)h.alloc_func(h.heap_udata, bufsz);
         usz regsetsz = (usz)self.code_cap * RegSet::size;
+        // live_out/live_in carry the call-window-inclusive liveness for the
+        // dead-destination check; ret_out/ret_in the window-free liveness
+        // that drives the producer-retarget decisions (see moveelim.c3).
         RegSet* me_live_out = (RegSet*)h.alloc_func(h.heap_udata, regsetsz);
         RegSet* me_live_in  = (RegSet*)h.alloc_func(h.heap_udata, regsetsz);
-        if (me_jump_targets == null || me_in_try == null || me_live_out == null || me_live_in == null) {
+        RegSet* me_ret_out  = (RegSet*)h.alloc_func(h.heap_udata, regsetsz);
+        RegSet* me_ret_in   = (RegSet*)h.alloc_func(h.heap_udata, regsetsz);
+        if (me_jump_targets == null || me_in_try == null || me_live_out == null || me_live_in == null
+            || me_ret_out == null || me_ret_in == null) {
             if (me_jump_targets != null) { h.free_func(h.heap_udata, me_jump_targets); }
             if (me_in_try != null) { h.free_func(h.heap_udata, me_in_try); }
             if (me_live_out != null) { h.free_func(h.heap_udata, me_live_out); }
             if (me_live_in != null) { h.free_func(h.heap_udata, me_live_in); }
+            if (me_ret_out != null) { h.free_func(h.heap_udata, me_ret_out); }
+            if (me_ret_in != null) { h.free_func(h.heap_udata, me_ret_in); }
             self.cleanup();
             return COMPILE_ERROR~;
         }
-        run_move_elimination(self.code, self.code_count, me_jump_targets, me_in_try, me_live_out, me_live_in);
+        run_move_elimination(self.code, self.code_count, me_jump_targets, me_in_try, me_live_out, me_live_in,
+                             me_ret_out, me_ret_in);
         h.free_func(h.heap_udata, me_jump_targets);
         h.free_func(h.heap_udata, me_in_try);
         h.free_func(h.heap_udata, me_live_out);
         h.free_func(h.heap_udata, me_live_in);
+        h.free_func(h.heap_udata, me_ret_out);
+        h.free_func(h.heap_udata, me_ret_in);
     }
 
     // --- Register-resident locals: elide dead env ops when no scope is needed ---
