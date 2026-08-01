@@ -80,8 +80,9 @@ fn engine_round_trips() {
     // A second runtime is refused rather than corrupting the first.
     assert_eq!(Runtime::new().unwrap_err().kind(), Kind::AlreadyOpen);
 
-    // Dropping values releases slots; the registry holds 1024, so this would
-    // exhaust it if Drop were not wired up.
+    // Dropping values releases slots. The registry grows on demand, so this
+    // does not prove a fixed cap -- it proves Drop is wired up, since a leak
+    // would grow the array without bound instead of reusing freed slots.
     for i in 0..3000 {
         let v = rt.eval("'slot'").unwrap();
         assert_eq!(v.as_string().unwrap(), "slot", "iteration {i}");
@@ -284,7 +285,7 @@ fn host_functions(rt: &Runtime) {
 
     // Many separate host calls, two `Ctx::call` results each. Every result is
     // freed as its guard drops, so nothing survives from one host call to the
-    // next and the 1024-slot registry never fills.
+    // next and the registry stays small.
     assert_eq!(
         rt.eval("let t = 0; for (let i = 0; i < 3000; i++) t = twice(x => x, i); t")
             .unwrap()
@@ -303,7 +304,8 @@ fn host_functions(rt: &Runtime) {
         let mut last = 0.0;
         for i in 0..SPIN {
             // Each result drops at the end of this iteration, releasing its
-            // slot. Holding them all would exceed 1024 on iteration 1025.
+            // slot for reuse, so the registry never grows past a handful of
+            // entries no matter how long the loop runs.
             let r = ctx.call(f, &[], None).map_err(|e| {
                 Error::throw(format!("call {i} failed: {e}"))
             })?;
@@ -349,12 +351,15 @@ fn host_functions(rt: &Runtime) {
         .unwrap()
         .as_number()
         .unwrap();
-    // The limit is the registry's, and it is reached rather than exceeded.
-    assert!(held > 0.0 && held <= 1024.0, "held {held} slots");
+    // The limit is the registry's own ceiling (2^19 - 1 handles), and it is
+    // reached rather than exceeded. The point is that exhaustion arrives as a
+    // clean Kind::Full, not that the ceiling sits at any particular value.
+    assert!(held > 1024.0, "registry should grow past the old fixed cap, held {held}");
+    assert!(held <= 524_287.0, "held {held} slots");
 
     // A `keep()` result, by contrast, is charged to the enclosing host call
-    // and only freed when it returns -- so it is the bounded resource, and
-    // 1024 of them in one call is the documented limit rather than a leak.
+    // and only freed when it returns -- so it is the resource that accumulates,
+    // bounded by the registry ceiling rather than by a fixed 1024.
     rt.register_fn("keep_many", 1, |ctx| {
         let f = ctx.arg(0);
         let mut kept = Vec::new();
