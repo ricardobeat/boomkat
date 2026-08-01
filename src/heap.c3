@@ -394,6 +394,20 @@ struct AtomicsWaiter {
     bool              active;
 }
 
+/// One registered host function.
+///
+/// `handler` is the host trampoline; it is called with the BuiltinContext the
+/// VM already staged, so no argument copying happens at the boundary itself.
+/// `udata` is opaque and passed through untouched. `name` is an interned
+/// HString backing Function.prototype.name, and `arity` backs .length.
+struct HostFnEntry {
+    void* handler;
+    void* udata;
+    void* name;          // HString*, interned
+    int   arity;
+    bool  constructable;
+}
+
 // --- Heap struct ---
 
 struct Heap {
@@ -438,6 +452,19 @@ struct Heap {
     uint  native_frame_depth;
     uint  live_obj_count;
     uint  peak_live_obj_count;   /// High-water mark for live objects
+
+    /// Host function registry. A host function is an ordinary FUNCTION object
+    /// whose builtin_fn_index is HOST_FN_BASE + slot, so every existing call
+    /// site treats it as a builtin and dispatch_builtin's out-of-range branch
+    /// routes it here. See builtins::HOST_FN_BASE.
+    ///
+    /// Not a GC root and does not need to be: the only heap pointer stored is
+    /// an interned HString for the name, which the intern table already keeps
+    /// alive for the heap's lifetime. No TVal lives here, so the 64-root
+    /// budget is untouched.
+    HostFnEntry* host_fns;
+    uint         host_fn_count;
+    uint         host_fn_capacity;
 
     // Sweeping the string table is only safe when no raw HString* pointers sit
     // in C3 locals (see mark_and_sweep phase 3b). Off by default; callers at a
@@ -821,6 +848,9 @@ fn Heap*? create(
     h.gc_pending            = false;
     h.bwd_gc_budget         = BWD_GC_INTERVAL;
     h.native_frame_depth    = 0;
+    h.host_fns              = null;
+    h.host_fn_count         = 0;
+    h.host_fn_capacity      = 0;
 
     // Allocate gray object stack
     void* gray_raw = afn(udata, void*::size * GRAY_STACK_INITIAL_CAP);
@@ -1202,6 +1232,15 @@ fn void Heap.destroy(&self) {
         self.compiled_funcs = null;
     }
 
+    // The entries hold no owned allocations: `name` is an interned HString
+    // freed by the string-table sweep below, and `udata` belongs to the host.
+    if (self.host_fns != null) {
+        self.free_func(self.heap_udata, (void*)self.host_fns);
+        self.host_fns = null;
+        self.host_fn_count = 0;
+        self.host_fn_capacity = 0;
+    }
+
     // Interned HStrings are refcounted in normal operation; teardown frees them
     // directly through the table.
     if (self.str_table != null) {
@@ -1581,6 +1620,45 @@ fn void Heap.reset(&self) {
     self.init_builtin_strs();
 
     hobject::hobject_set_active_heap((void*)self);
+}
+
+// ============================================================================
+// Host function registry
+// ============================================================================
+
+/// Record a host function and return its slot, or -1 if the table cannot grow.
+///
+/// The slot is an index into host_fns; callers turn it into a callable object
+/// through builtins::make_host_function, which adds HOST_FN_BASE. Slots are
+/// never reused: a registration is permanent for the heap's lifetime, so an
+/// index captured in a function object can never come to mean a different
+/// function.
+fn long Heap.register_host_fn(&self, void* handler, void* udata, void* name, int arity, bool constructable) {
+    if (handler == null) return -1;
+    if (self.host_fn_count >= self.host_fn_capacity) {
+        uint new_cap = self.host_fn_capacity == 0 ? 8 : self.host_fn_capacity * 2;
+        usz new_bytes = (usz)new_cap * HostFnEntry::size;
+        void* grown = self.realloc_func(self.heap_udata, (void*)self.host_fns, new_bytes);
+        if (grown == null) return -1;
+        self.host_fns = (HostFnEntry*)grown;
+        self.host_fn_capacity = new_cap;
+    }
+    uint slot = self.host_fn_count;
+    self.host_fns[slot].handler       = handler;
+    self.host_fns[slot].udata         = udata;
+    self.host_fns[slot].name          = name;
+    self.host_fns[slot].arity         = arity;
+    self.host_fns[slot].constructable = constructable;
+    self.host_fn_count++;
+    return (long)slot;
+}
+
+/// Entry for `slot`, or null when the slot was never registered. Every caller
+/// treats null as "not a host function" rather than faulting, so a stale or
+/// forged index degrades to a TypeError instead of a wild jump.
+fn HostFnEntry* Heap.host_fn_at(&self, uint slot) {
+    if (slot >= self.host_fn_count) return null;
+    return &self.host_fns[slot];
 }
 
 // ============================================================================

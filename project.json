@@ -226,6 +226,31 @@
       ],
       "opt": "O0"
     },
+    "host_fn_phase1": {
+      "type": "executable",
+      "sources": [
+        "src",
+        "test/capi/host_fn_phase1.c3"
+      ],
+      "opt": "O2",
+      "single-module": true,
+      "features": [
+        "THREADED_DISPATCH"
+      ]
+    },
+    "host_fn_phase1_gc_stress": {
+      "type": "executable",
+      "sources": [
+        "src",
+        "test/capi/host_fn_phase1.c3"
+      ],
+      "opt": "O0",
+      "single-module": true,
+      "sanitize": "address",
+      "features": [
+        "GC_STRESS"
+      ]
+    },
     "leak_tester": {
       "type": "executable",
       "sources": [

@@ -2935,6 +2935,157 @@ fn bool module_ns_get_binding_value(void* vm, Heap* heap, HObject* ns, HString* 
 // rejected the same way a missing switch arm used to be.
 BuiltinFunc[Builtin.LAST.ordinal] builtin_dispatch_table;
 
+// ============================================================================
+// Host functions
+// ============================================================================
+
+/// Base of the host function index range.
+///
+/// A host function is an ordinary FUNCTION object whose builtin_fn_index is
+/// HOST_FN_BASE + slot, where slot indexes Heap.host_fns. Two properties make
+/// this work:
+///
+///   - It is >= Builtin.LAST.ordinal, so dispatch_builtin's out-of-range
+///     branch catches it and routes to dispatch_host.
+///   - It is positive as an int, so HObject.callable_kind() reports BUILTIN_FN
+///     and every existing dispatch site handles it unchanged.
+///
+/// 2^30 rather than Builtin.LAST.ordinal + 1 so a host index is obvious on
+/// sight in a debugger, and so adding builtins can never collide with one.
+const uint HOST_FN_BASE = 0x4000_0000;
+
+/// The host trampoline signature. Mirrors BuiltinFunc, with the host's opaque
+/// udata alongside the context the VM already staged.
+alias HostFunc = fn void(BuiltinContext*, void*);
+
+/// Invoke the host function registered in `slot`.
+///
+/// An unregistered slot yields undefined rather than faulting, so a forged or
+/// stale index degrades safely. The native_frame_depth bracket matches the one
+/// dispatch_builtin puts around builtin handlers: host code allocates and can
+/// re-enter the VM, so temproot flags must survive a safepoint for the whole
+/// call.
+fn void dispatch_host(uint slot, BuiltinContext* ctx) {
+    Heap* heap = ctx.heap;
+    if (heap == null) { ctx.result.set_undefined(); return; }
+    heap::HostFnEntry* entry = heap.host_fn_at(slot);
+    if (entry == null || entry.handler == null) {
+        ctx.result.set_undefined();
+        return;
+    }
+    HostFunc handler = (HostFunc)entry.handler;
+    ctx.result.set_undefined();
+    heap.native_frame_depth++;
+
+    // ES2015 §9.2.2 OrdinaryCreateFromConstructor. Builtin constructors
+    // allocate their own instance and are handed an undefined this_val
+    // (vm_calls.c3:2874); a host function has no way to do that itself, so the
+    // instance is created here from new.target's .prototype. Done inside the
+    // native_frame_depth bracket so the fresh object's temproot survives any
+    // collection the host triggers.
+    bool made_this = false;
+    if (ctx.is_constructor && !ctx.this_val.is_object()) {
+        HObject*? inst_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
+        if (catch inst_raw) {
+            heap.native_frame_depth--;
+            ctx.should_throw = true;
+            ctx.throw_value.set_undefined();
+            return;
+        }
+        HObject* inst = inst_raw;
+        inst.prototype = heap.object_proto;
+        HObject* src = ctx.new_target != null ? ctx.new_target : ctx.callee_obj;
+        if (src != null) {
+            HString* proto_key = (HString*)heap.strs[heap::BuiltinStr.PROTOTYPE];
+            if (proto_key != null) {
+                TVal? pv = src.get_prop_proto(proto_key);
+                if (try p = pv) {
+                    if (p.is_object() && p.get_heapptr() != null) {
+                        inst.prototype = (HObject*)p.get_heapptr();
+                    }
+                }
+            }
+        }
+        ctx.this_val.set_object(inst);
+        made_this = true;
+    }
+
+    handler(ctx, entry.udata);
+
+    // ES2015 §9.2.2 step 13: a [[Construct]] call evaluates to the created
+    // object unless the host explicitly returned an object of its own.
+    if (made_this && !ctx.should_throw && !ctx.result.is_object()) {
+        *ctx.result = ctx.this_val;
+    }
+
+    heap.native_frame_depth--;
+}
+
+/// Build a callable FUNCTION object for the host function in `slot`.
+///
+/// Mirrors register_array_proto_method: .length then .name, both as real own
+/// properties (ES2015 §17). Setting them here rather than teaching
+/// builtin_get_metadata about host indices keeps that function pure and its 19
+/// call sites untouched; those call sites read metadata only as a fallback for
+/// a missing own property.
+fn HObject*? make_host_function(Heap* heap, uint slot) {
+    heap::HostFnEntry* entry = heap.host_fn_at(slot);
+    if (entry == null) return heap::HEAP_ALLOC_FAULT~;
+
+    HObject*? func_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
+    if (catch err = func_raw) return err~;
+    HObject* func_obj = func_raw;
+
+    (*func_obj.extra_ptr()).func.builtin_fn_index = (int)(HOST_FN_BASE + slot);
+    // callable_kind() settles on BUILTIN_FN before it reads comp_func, but
+    // vm_execute.c3 reads comp_func directly on some paths, so null is the
+    // invariant to hold rather than to rely on alloc_object's zeroing for.
+    (*func_obj.extra_ptr()).func.comp_func = null;
+    func_obj.flags.callable = true;
+    func_obj.flags.constructable = entry.constructable;
+    func_obj.prototype = heap.function_proto;
+
+    HString* length_str = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
+    if (length_str != null) {
+        TVal len_tv;
+        len_tv.set_fastint((long)(entry.arity >= 0 ? entry.arity : 0));
+        func_obj.put_prop(length_str, len_tv, hobject::PROP_FLAGS_NWC);
+    }
+
+    HString* name_key = builtin_intern_string(heap, "name");
+    if (name_key != null && entry.name != null) {
+        TVal name_tv;
+        name_tv.set_string((HString*)entry.name);
+        func_obj.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC);
+    }
+
+    // A constructor needs an own .prototype with a .constructor back-reference
+    // (ES2015 §17): `new` derives the instance prototype from it, `class D
+    // extends HostCtor` rejects a constructor whose .prototype is not an
+    // object, and `instanceof` walks it. Non-constructors get none, matching
+    // builtin methods and arrow functions.
+    if (entry.constructable) {
+        HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
+        if (try proto_obj = proto_raw) {
+            proto_obj.prototype = heap.object_proto;
+            HString* ctor_key = builtin_intern_string(heap, "constructor");
+            if (ctor_key != null) {
+                TVal ctor_tv;
+                ctor_tv.set_object(func_obj);
+                proto_obj.put_prop(ctor_key, ctor_tv, hobject::PROP_FLAGS_WC);
+            }
+            HString* proto_key = (HString*)heap.strs[heap::BuiltinStr.PROTOTYPE];
+            if (proto_key != null) {
+                TVal proto_tv;
+                proto_tv.set_object(proto_obj);
+                func_obj.put_prop(proto_key, proto_tv, hobject::PROP_FLAGS_NNC);
+            }
+        }
+    }
+
+    return func_obj;
+}
+
 fn void init_builtin_dispatch_table() @init
 {
     $foreach $b : Builtin::values:
@@ -2946,6 +3097,14 @@ fn void init_builtin_dispatch_table() @init
 
 fn void dispatch_builtin(uint fn_index, BuiltinContext* ctx) {
     if (fn_index >= Builtin.LAST.ordinal) {
+        // Host functions live at HOST_FN_BASE and above, so they arrive here
+        // rather than at any of the callable_kind() sites: to those a host
+        // function is an ordinary BUILTIN_FN, which is what makes new, super(),
+        // accessors and bind work with no changes there.
+        if (fn_index >= HOST_FN_BASE) {
+            dispatch_host(fn_index - HOST_FN_BASE, ctx);
+            return;
+        }
         ctx.result.set_undefined();
         return;
     }

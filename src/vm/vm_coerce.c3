@@ -316,6 +316,15 @@ fn HObject* lightfunc_get_proto(Vm* vm, uint fn_idx) {
 /// constructors installed as full HObjects (typed arrays, ArrayBuffer,
 /// DataView, Proxy).
 fn bool builtin_fn_is_constructor(Vm* vm, uint fn_idx) {
+    // Host functions carry their own constructable flag. Tested before
+    // lightfunc_get_proto, which would index its table with a host index.
+    // An unregistered slot answers false, so `new` on it throws a TypeError
+    // rather than dispatching to nothing.
+    if (fn_idx >= builtins::HOST_FN_BASE) {
+        if (vm == null || vm.heap == null) return false;
+        heap::HostFnEntry* entry = vm.heap.host_fn_at(fn_idx - builtins::HOST_FN_BASE);
+        return entry != null && entry.constructable;
+    }
     if (lightfunc_get_proto(vm, fn_idx) != null) return true;
     switch (fn_idx) {
         case builtins::Builtin.INT8ARRAY.ordinal:
