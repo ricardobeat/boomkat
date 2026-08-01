@@ -146,6 +146,14 @@ out/host_fn_abi: test/capi/host_fn_abi.c include/jse.h out/jse_static.a
 test-host-abi: out/host_fn_abi
 	./out/host_fn_abi
 
+# Value-registry GC tests under GC_STRESS + ASan: a collection at every
+# allocation, so a registry the mark phase does not walk fails deterministically
+# instead of rarely.
+.PHONY: test-registry-gc
+test-registry-gc:
+	$(C3C_BUILD) value_registry_gc_stress $(C3C_LDFLAGS)
+	./out/value_registry_gc_stress
+
 # Larger example, linked against the shared library via rpath.
 out/hello: examples/c/hello.c include/jse.h out/libjse.$(SHLIB_EXT)
 	cc -std=c99 -Wall -Wextra -pedantic -Iinclude examples/c/hello.c \

@@ -23,7 +23,7 @@
 //! - No raw pointer or raw handle is ever handed to the caller. A [`Value`]
 //!   borrows its [`Runtime`], so the borrow checker rejects a value outliving
 //!   the runtime that owns it — the case the C ABI leaves to discipline.
-//! - Slots are released on [`Drop`], so the 1024-slot registry cannot be leaked
+//! - Slots are released on [`Drop`], so the value registry cannot be leaked
 //!   into exhaustion by ordinary use.
 //! - Every fallible call returns [`Result`], with the engine's message
 //!   captured (copied, not borrowed) into [`Error`].
@@ -82,7 +82,7 @@ pub enum Kind {
     Invalid,
     /// The value is not of the requested type. No coercion is performed.
     Type,
-    /// The 1024-slot value registry is exhausted.
+    /// The value registry is exhausted (524287 live handles).
     Full,
     /// A runtime already exists in this process.
     AlreadyOpen,
@@ -765,7 +765,7 @@ impl<'a> Ctx<'a> {
     /// results all work.
     ///
     /// The result is a [`Retained`] guard that releases its registry slot on
-    /// drop. The registry holds 1024 slots, so a loop that calls JS must not
+    /// drop. The registry is finite, so a loop that calls JS must not
     /// hold every result at once — dropping each one as the loop turns is what
     /// keeps an unbounded number of calls inside a single callback working.
     /// Deref to use it as a [`HostValue`], or [`Retained::keep`] to hold it for
@@ -842,7 +842,7 @@ impl<'a> Ctx<'a> {
     }
 }
 
-/// A [`Ctx::call`] result, holding one of the runtime's 1024 registry slots.
+/// A [`Ctx::call`] result, holding one of the runtime's registry slots.
 ///
 /// Dropping it frees the slot. That is what lets a host callback call JS an
 /// unbounded number of times: without it, every result would be held until the
@@ -870,7 +870,7 @@ impl<'a> Retained<'a, '_> {
     /// returns.
     ///
     /// Use this for the value a closure is about to return, or for a handful of
-    /// results that must outlive their statements. It costs one of the 1024
+    /// results that must outlive their statements. It costs one of the
     /// slots until the callback ends, so it does not belong in a loop.
     pub fn keep(self) -> HostValue<'a> {
         let value = self.value;
@@ -1069,7 +1069,7 @@ where
 
     // Release the slots `Retained::keep` handed to the call. Results dropped
     // normally are already gone, which is what lets a callback call JS more
-    // than 1024 times. Scope handles are not in here; the engine reclaims
+    // than the registry ceiling. Scope handles are not in here; the engine reclaims
     // those when the call frame goes.
     for handle in ctx.kept.borrow().iter() {
         // SAFETY: each handle came from a successful `jse_call` on this

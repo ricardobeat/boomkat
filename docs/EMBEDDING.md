@@ -289,7 +289,7 @@ with no linkable symbol, so it can never cross the boundary.
 | `JSE_ERR_FULL` | -7 | Buffer too small, **or** slot table exhausted. |
 
 `JSE_ERR_FULL` is overloaded. Disambiguate by which call returned it:
-`jse_get_string` means the buffer was too small, `jse_eval` means the 1024-slot
+`jse_get_string` means the buffer was too small, `jse_eval` means the value
 registry is full.
 
 ### Value types
@@ -447,10 +447,16 @@ phase. Verified: a held string survived 200,000 object allocations, and the
 design passes under `GC_STRESS` + AddressSanitizer with no use-after-free and no
 invalid reads.
 
-**Handles leak if you never free them.** The registry holds **1024** live
-handles; the 1025th `jse_eval` returns `JSE_ERR_FULL` (verified: exhaustion at
-exactly 1024, reported cleanly rather than misbehaving). Free eagerly in loops.
-Slots are recycled — thousands of alloc/free cycles show no aliasing.
+**Handles leak if you never free them.** The registry grows on demand and
+reuses freed slots, so there is no small fixed cap; its ceiling is **524287**
+simultaneously live handles, and exceeding that returns `JSE_ERR_FULL`
+(verified: exhaustion at exactly 524287, reported cleanly rather than
+misbehaving). Free eagerly in loops.
+
+**A freed handle is retired, not blindly recycled.** Each slot carries a
+generation that advances on free, so reading a stale handle fails instead of
+resolving to whatever value later lands in that slot (verified: 200k alloc/free
+cycles with no aliasing).
 
 **Never dereference a `jse_value`.** It is an index, not an address.
 
@@ -807,7 +813,8 @@ optimised build is far cheaper.
 **One runtime per process, not thread-safe, unenforced across threads.** See
 [Lifetime and GC rules](#lifetime-and-gc-rules).
 
-**1024 live handles.** Not configurable at runtime.
+**524287 live handles.** The registry grows on demand up to that ceiling and is
+not configurable at runtime.
 
 **No modules, timers, or I/O.** The engine deliberately ships no host runtime
 surface — see `engine-scope.md`. Supply your own from the host.

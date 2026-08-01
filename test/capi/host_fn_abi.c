@@ -110,6 +110,123 @@ static void eval_num(jse_runtime rt, const char *label, const char *src, double 
     jse_value_free(rt, v);
 }
 
+/* --- value registry ------------------------------------------------------
+ *
+ * The registry grows on demand; there is no fixed slot cap. These cover the
+ * three properties a host depends on: many handles live at once, each keeps
+ * its OWN value, and a handle to a freed slot is rejected rather than
+ * silently resolved to whatever landed there next.
+ */
+
+#define MANY 5000
+
+static void test_many_live_handles(jse_runtime rt) {
+    static jse_value h[MANY];
+    int i, made = 0, wrong = 0, scope_bit = 0;
+
+    for (i = 0; i < MANY; i++) {
+        char src[64];
+        snprintf(src, sizeof src, "%d", i);
+        if (jse_eval(rt, src, strlen(src), &h[i]) != JSE_OK) break;
+        /* Bit 31 is reserved for scope handles; a global id must never set it. */
+        if (h[i] & 0x80000000u) scope_bit++;
+        made++;
+    }
+    check("5000 live handles allocated", made == MANY);
+    check("no global id collides with the scope bit", scope_bit == 0);
+
+    /* Each handle must still read back its own distinct value. */
+    for (i = 0; i < made; i++) {
+        double d = -1;
+        if (jse_get_number(rt, h[i], &d) != JSE_OK || d != (double)i) wrong++;
+    }
+    check("each of 5000 handles reads back its own value", wrong == 0);
+
+    for (i = 0; i < made; i++) jse_value_free(rt, h[i]);
+}
+
+static void test_stale_handle_rejected(jse_runtime rt) {
+    jse_value a, b;
+    double d;
+    int i, resolved = 0;
+    jse_value reuse[64];
+
+    if (jse_eval(rt, "111", 3, &a) != JSE_OK) { check("stale: setup", 0); return; }
+    jse_value_free(rt, a);
+
+    /* Force the freed index to be handed out again. */
+    for (i = 0; i < 64; i++) {
+        char src[32];
+        snprintf(src, sizeof src, "%d", 900 + i);
+        if (jse_eval(rt, src, strlen(src), &reuse[i]) != JSE_OK) reuse[i] = 0;
+    }
+
+    /* The stale handle must be rejected -- never resolved to a new occupant. */
+    d = -1;
+    check("stale handle is rejected", jse_get_number(rt, a, &d) != JSE_OK);
+    check("stale handle yields no value", d == -1);
+    check("stale handle reports invalid", jse_type_of(rt, a) == JSE_TYPE_UNDEFINED);
+
+    for (i = 0; i < 64; i++) {
+        if (reuse[i] && jse_get_number(rt, reuse[i], &d) == JSE_OK && d == (double)(900 + i)) resolved++;
+    }
+    check("reused slots resolve to their own new values", resolved == 64);
+
+    /* Double free must not corrupt the free list. */
+    jse_value_free(rt, a);
+    jse_value_free(rt, a);
+    if (jse_eval(rt, "222", 3, &b) == JSE_OK) {
+        check("registry usable after double free", jse_get_number(rt, b, &d) == JSE_OK && d == 222);
+        jse_value_free(rt, b);
+    } else {
+        check("registry usable after double free", 0);
+    }
+    for (i = 0; i < 64; i++) if (reuse[i]) jse_value_free(rt, reuse[i]);
+}
+
+static void test_churn(jse_runtime rt) {
+    int i, bad = 0;
+    /* Allocate and free far past the old 1024 cap and past the point where a
+     * leaked shape slot per free used to exhaust the engine. */
+    for (i = 0; i < 200000; i++) {
+        jse_value v;
+        double d;
+        if (jse_eval(rt, "7", 1, &v) != JSE_OK) { bad = 1; break; }
+        if (jse_get_number(rt, v, &d) != JSE_OK || d != 7) { bad = 1; break; }
+        jse_value_free(rt, v);
+    }
+    check("200k alloc/free cycles stay correct", bad == 0);
+}
+
+static void test_handles_survive_gc(jse_runtime rt) {
+    jse_value held[256];
+    jse_value junk;
+    int i, wrong = 0;
+    char buf[64];
+    static const char *CHURN =
+        "var s = 0; for (var i = 0; i < 20000; i++) { s += ({ x: i }).x; } s";
+
+    /* Strings, not primitives: these are heap values, so only a real GC root
+     * keeps them alive across a collection. */
+    for (i = 0; i < 256; i++) {
+        snprintf(buf, sizeof buf, "'held-%d'", i);
+        if (jse_eval(rt, buf, strlen(buf), &held[i]) != JSE_OK) held[i] = 0;
+    }
+    /* Churn the heap so a collection runs with the handles outstanding. */
+    if (jse_eval(rt, CHURN, strlen(CHURN), &junk) == JSE_OK) jse_value_free(rt, junk);
+
+    for (i = 0; i < 256; i++) {
+        char got[64];
+        size_t n = 0;
+        snprintf(buf, sizeof buf, "held-%d", i);
+        if (!held[i]) { wrong++; continue; }
+        if (jse_get_string(rt, held[i], got, sizeof got, &n) != JSE_OK) { wrong++; continue; }
+        if (strcmp(got, buf) != 0) wrong++;
+    }
+    check("host-held values survive GC", wrong == 0);
+    for (i = 0; i < 256; i++) if (held[i]) jse_value_free(rt, held[i]);
+}
+
 int main(void) {
     jse_runtime rt = NULL;
     int udata_val = 99;
@@ -183,6 +300,12 @@ int main(void) {
              "var k = 0; try { hostApply(function f(n) { return hostApply(f, n); }, 1); }"
              " catch (e) { k = 1; } k", 1);
     eval_num(rt, "engine usable after recursion", "hostAdd(21, 21)", 42);
+
+    /* value registry */
+    test_many_live_handles(rt);
+    test_stale_handle_rejected(rt);
+    test_churn(rt);
+    test_handles_survive_gc(rt);
 
     printf("\nhost callbacks dispatched: %d\n", host_calls);
     jse_close(rt);

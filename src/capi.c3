@@ -4,8 +4,8 @@ import duktape::builtins;
 import duktape::compiler;
 import duktape::vm;
 import duktape::heap;
-import duktape::env;
 import duktape::hobject;
+import duktape::env;
 import duktape::hstring;
 import duktape::lexer;
 import duktape::types;
@@ -33,8 +33,50 @@ const int JSE_TYPE_OBJECT    = 5;
 const int JSE_TYPE_FUNCTION  = 6;
 const int JSE_TYPE_OTHER     = 7;
 
-const uint MAX_SLOTS = 1024;
 const usz ERRBUF = 512;
+
+// ============================================================================
+// Value handle encoding
+// ============================================================================
+//
+// A handle is one 32-bit word:
+//
+//    31          30..19            18..0
+//   [scope]  [ generation ]     [ index+1 ]
+//
+// Bit 31 is SCOPE_HANDLE_BIT, reserved for per-call scope handles, so a global
+// slot id must never set it -- the encoding below cannot, since index and
+// generation together occupy only bits 0..30.
+//
+// Index is stored biased by one, which keeps 0 reserved as "no value" and lets
+// jse_call/jse_eval keep treating a zero out-param as failure.
+//
+// 19 index bits cap the registry at 524287 simultaneously live handles. That is
+// a real ceiling reported as JSE_ERR_FULL, not a silent wrap: the array itself
+// grows on demand and never reserves that much.
+//
+// 12 generation bits retire a slot on free. A stale handle to a freed slot
+// mismatches the slot's current generation and is rejected, so it can never
+// resolve to whatever value later occupies that index. On wrap (4096 alloc/free
+// cycles on the SAME index while a stale handle to it is still held) a stale
+// handle could alias again; the `used` flag catches every stale handle whose
+// slot is merely free, which is the reachable case.
+const uint SLOT_INDEX_BITS = 19;
+const uint SLOT_INDEX_MASK = (1u << SLOT_INDEX_BITS) - 1;   // 524287
+const uint SLOT_GEN_BITS   = 12;
+const uint SLOT_GEN_MASK   = (1u << SLOT_GEN_BITS) - 1;     // 4095
+const uint SLOT_FREE_END   = 0xFFFF_FFFF;
+const uint SLOT_INITIAL_CAP = 64;
+
+/// One registry entry. `used` distinguishes a live slot from one on the free
+/// list, so the common stale-handle case is caught without relying on the
+/// generation having advanced.
+struct SlotEntry {
+    TVal v;
+    uint gen;
+    uint next_free;
+    bool used;
+}
 
 // ============================================================================
 // Runtime
@@ -45,8 +87,14 @@ const usz ERRBUF = 512;
 struct Runtime {
     Heap*    heap;
     Vm*      vm;
-    HObject* slots;          // GC root: anchors every host-held value
-    uint     next_slot;
+    // Host-held values. A dedicated growable array rather than an HObject: the
+    // object registry was bounded by the ushort prop_count and burned a shape
+    // slot per delete, and it hashed an integer key into a string on every
+    // access. The GC walks this array directly (see Heap.capi_roots).
+    SlotEntry* slots;
+    uint     slot_cap;
+    uint     slot_count;     // high-water index, not the live count
+    uint     free_head;
     uint     live;
     char[ERRBUF] errmsg;
     int      errcode;
@@ -107,31 +155,55 @@ fn int jse_open(void** out_rt) @export("jse_open") {
     if (catch vr) { hp.destroy(); return JSE_ERR_NOMEM; }
     Vm* v = vr;
 
-    // Slot registry: a plain object registered ONCE as a GC root. Values live
-    // as ordinary properties, so put_prop/delete_prop do the increfs and the
-    // mark phase reaches them transitively. Costs 1 of the 64 root entries.
-    HObject*? sr = hp.alloc_object(hobject::ObjClass.OBJECT);
-    if (catch sr) { vm::vm_destroy(v); hp.destroy(); return JSE_ERR_NOMEM; }
-    HObject* slots = sr;
-    hp.register_gc_root((types::HeapHeader*)slots);
-
     void* raw = hp.alloc_func(hp.heap_udata, Runtime::size);
     if (raw == null) { vm::vm_destroy(v); hp.destroy(); return JSE_ERR_NOMEM; }
     Runtime* rt = (Runtime*)raw;
-    rt.heap = hp; rt.vm = v; rt.slots = slots;
-    rt.next_slot = 1; rt.live = 0;
+    rt.heap = hp; rt.vm = v;
+    rt.slots = null; rt.slot_cap = 0; rt.slot_count = 0;
+    rt.free_head = SLOT_FREE_END; rt.live = 0;
     rt.active_ctx = null;
     clear_err(rt);
+
+    // The slot array is not an HObject, so the mark phase cannot reach it
+    // transitively. Hand the heap a direct view of it instead; mark_roots walks
+    // every live entry from there.
+    hp.capi_roots = (void*)rt;
+    hp.capi_mark = (heap::CapiMarkFn)&mark_slots;
 
     g_rt = rt;
     *out_rt = (void*)rt;
     return JSE_OK;
 }
 
+/// GC root walk for the value registry. Every live host handle keeps its value
+/// reachable for as long as the host holds it; freed slots hold undefined and
+/// mark nothing.
+fn void mark_slots(void* rtp) {
+    if (rtp == null) return;
+    Runtime* rt = (Runtime*)rtp;
+    if (rt.slots == null) return;
+    for (uint i = 0; i < rt.slot_count; i++) {
+        if (!rt.slots[i].used) continue;
+        rt.heap.mark_tval(&rt.slots[i].v);
+    }
+}
+
 fn void jse_close(void* rtp) @export("jse_close") {
     if (rtp == null) return;
     Runtime* rt = (Runtime*)rtp;
     Heap* hp = rt.heap;
+    // Stop the GC walking the registry before any of it is torn down.
+    hp.capi_roots = null;
+    hp.capi_mark = null;
+    if (rt.slots != null) {
+        for (uint i = 0; i < rt.slot_count; i++) {
+            if (rt.slots[i].used && rt.slots[i].v.is_heap_allocated()) {
+                hp.decref_tval(&rt.slots[i].v);
+            }
+        }
+        hp.free_func(hp.heap_udata, (void*)rt.slots);
+        rt.slots = null;
+    }
     // Teardown order is load-bearing: vm_destroy uses heap.free_func.
     vm::vm_destroy(rt.vm);
     hp.free_func(hp.heap_udata, (void*)rt);
@@ -143,16 +215,64 @@ fn void jse_close(void* rtp) @export("jse_close") {
 // Slot registry
 // ============================================================================
 
+/// Grow the slot array. Returns false on allocation failure, leaving the
+/// registry usable at its current size.
+fn bool slot_grow(Runtime* rt) {
+    uint new_cap = rt.slot_cap == 0 ? SLOT_INITIAL_CAP : rt.slot_cap * 2;
+    if (new_cap > SLOT_INDEX_MASK) new_cap = SLOT_INDEX_MASK;
+    if (new_cap <= rt.slot_cap) return false;
+    usz bytes = (usz)new_cap * SlotEntry::size;
+    void* raw = rt.heap.realloc_func(rt.heap.heap_udata, (void*)rt.slots, bytes);
+    if (raw == null) return false;
+    usz old_bytes = (usz)rt.slot_cap * SlotEntry::size;
+    mem::clear((char*)raw + old_bytes, (sz)(bytes - old_bytes));
+    rt.slots = (SlotEntry*)raw;
+    rt.slot_cap = new_cap;
+    return true;
+}
+
+/// Register a value and return its handle, or 0 if none could be issued.
+///
+/// Returning 0 is the ONLY failure signal, and every caller turns it into an
+/// explicit error: a handle is never handed back for a value that was not
+/// stored.
 fn uint slot_alloc(Runtime* rt, TVal v) {
-    if (rt.live >= MAX_SLOTS) return 0;
-    uint id = rt.next_slot;
-    rt.next_slot++;
-    if (rt.next_slot == 0) rt.next_slot = 1;
-    HString* key = rt.heap.int_to_hstring((long)id);
-    if (key == null) return 0;
-    if (!rt.slots.put_prop(key, v, hobject::PROP_FLAGS_WEC)) return 0;
+    uint idx;
+    if (rt.free_head != SLOT_FREE_END) {
+        idx = rt.free_head;
+        rt.free_head = rt.slots[idx].next_free;
+    } else {
+        // slot_count indexes from 0 and the handle stores index+1, so the last
+        // usable index is SLOT_INDEX_MASK - 1.
+        if (rt.slot_count >= SLOT_INDEX_MASK) return 0;
+        if (rt.slot_count == rt.slot_cap && !slot_grow(rt)) return 0;
+        idx = rt.slot_count;
+        rt.slot_count++;
+        rt.slots[idx].gen = 1;
+    }
+    if (v.is_heap_allocated()) {
+        void* ptr = v.get_heapptr();
+        if (ptr != null) ((types::HeapHeader*)ptr).incref();
+    }
+    rt.slots[idx].v = v;
+    rt.slots[idx].used = true;
     rt.live++;
-    return id;
+    return ((rt.slots[idx].gen & SLOT_GEN_MASK) << SLOT_INDEX_BITS) | (idx + 1);
+}
+
+/// Resolve a handle to its entry, or null if the handle is stale, freed, out of
+/// range, or a scope handle. This is the single validation point.
+fn SlotEntry* slot_entry(Runtime* rt, uint id) {
+    if (rt == null || id == 0) return null;
+    if ((id & SCOPE_HANDLE_BIT) != 0) return null;
+    uint biased = id & SLOT_INDEX_MASK;
+    if (biased == 0) return null;
+    uint idx = biased - 1;
+    if (idx >= rt.slot_count) return null;
+    SlotEntry* e = &rt.slots[idx];
+    if (!e.used) return null;
+    if (((id >> SLOT_INDEX_BITS) & SLOT_GEN_MASK) != (e.gen & SLOT_GEN_MASK)) return null;
+    return e;
 }
 
 /// Resolve any handle: a scope handle against the innermost host call, a
@@ -168,21 +288,32 @@ fn bool any_get(Runtime* rt, uint id, TVal* out) {
 }
 
 fn bool slot_get(Runtime* rt, uint id, TVal* out) {
-    if (id == 0) return false;
-    HString* key = rt.heap.int_to_hstring((long)id);
-    if (key == null) return false;
-    TVal? tv = rt.slots.get_prop(key);
-    if (catch tv) return false;
-    *out = tv;
+    SlotEntry* e = slot_entry(rt, id);
+    if (e == null) return false;
+    *out = e.v;
     return true;
 }
 
 fn void jse_value_free(void* rtp, uint id) @export("jse_value_free") {
-    if (rtp == null || id == 0) return;
+    if (rtp == null) return;
     Runtime* rt = (Runtime*)rtp;
-    HString* key = rt.heap.int_to_hstring((long)id);
-    if (key == null) return;
-    if (rt.slots.delete_prop(key)) { if (rt.live > 0) rt.live--; }
+    // Scope handles are owned by the call that issued them, so freeing one is
+    // ignored rather than treated as an error.
+    SlotEntry* e = slot_entry(rt, id);
+    if (e == null) return;
+
+    if (e.v.is_heap_allocated()) rt.heap.decref_tval(&e.v);
+    e.v.set_undefined();
+    e.used = false;
+    // Retire the slot: every handle still naming this index is now stale and
+    // slot_entry will reject it, so a later occupant is never resolved through
+    // an old handle.
+    e.gen = (e.gen + 1) & SLOT_GEN_MASK;
+    if (e.gen == 0) e.gen = 1;
+    uint idx = (id & SLOT_INDEX_MASK) - 1;
+    e.next_free = rt.free_head;
+    rt.free_head = idx;
+    if (rt.live > 0) rt.live--;
 }
 
 // ============================================================================
@@ -234,11 +365,12 @@ fn int jse_eval(void* rtp, char* src, usz len, uint* out_val) @export("jse_eval"
 
     if (out_val != null) {
         TVal v = res;
-        // As in jse_call: a failed slot_alloc must surface even for a
-        // primitive, since handle 0 reads back as undefined and would
-        // otherwise look like a successful result.
+        // slot_alloc returns 0 only on genuine exhaustion or OOM, so report it
+        // for every value kind. Letting an undefined result through as handle 0
+        // would turn a failed registration into an ordinary undefined -- a
+        // silent wrong answer rather than an error.
         uint id = slot_alloc(rt, v);
-        if (id == 0 && !v.is_undefined()) {
+        if (id == 0) {
             set_err(rt, JSE_ERR_FULL, "value slot table full");
             return JSE_ERR_FULL;
         }
@@ -673,12 +805,14 @@ fn int jse_call(void* ctxp, uint func_id, uint* argv, uint argc, uint this_id,
     TVal res = builtins::host_call(ctx, fv, &args[0], n, tv, &ok);
     if (!ok) return JSE_ERR_THROW;
     if (out_val != null) {
-        // Report exhaustion for every value kind. Guarding on
-        // is_heap_allocated would hand back handle 0 for an exhausted
-        // primitive, and handle 0 reads as undefined -- a silent wrong
-        // answer rather than an error.
+        // Report exhaustion for every value kind, undefined included: handle 0
+        // reads back as undefined, so returning it on a failed registration
+        // would be a silent wrong answer rather than an error.
         uint id = slot_alloc(rt, res);
-        if (id == 0 && !res.is_undefined()) return JSE_ERR_FULL;
+        if (id == 0) {
+            set_err(rt, JSE_ERR_FULL, "value slot table full");
+            return JSE_ERR_FULL;
+        }
         *out_val = id;
     }
     return JSE_OK;

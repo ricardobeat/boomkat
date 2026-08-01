@@ -77,6 +77,10 @@ const uint  GRAY_STACK_INITIAL_CAP  = 64;
 const uint  JOIN_VISITED_INITIAL_CAP = 16;
 const usz   STRS_CACHE_SIZE         = 256;
 const uint  GC_MAX_ROOTS            = 64;
+
+/// Marks an embedder-owned root set that is not an HObject. Called during
+/// mark_roots with the pointer stored in Heap.capi_roots.
+alias CapiMarkFn = fn void(void*);
 /// How many backward jumps between GC checks. Spacing them out stops loops
 /// from thrashing the collector.
 const uint  BWD_GC_INTERVAL        = 1024;
@@ -645,6 +649,12 @@ struct Heap {
     // Registered GC roots: HeapHeader* that are always reachable.
     void*[GC_MAX_ROOTS] gc_roots;
     uint                gc_root_count;
+
+    // The C ABI's value registry is a plain array rather than an HObject, so
+    // the mark phase cannot reach it transitively. capi_mark, when set, is
+    // called with capi_roots during mark_roots to mark every host-held value.
+    void*               capi_roots;
+    CapiMarkFn          capi_mark;
 
     // Valstack window the GC scans for roots. valstack_base is refreshed on VM
     // create and resize. valstack_top_ptr points at vm.valstack_top so the GC
@@ -1602,6 +1612,8 @@ fn void Heap.reset(&self) {
     self.did_yield        = false;
     self.ag_did_await     = false;
     self.gc_root_count    = 0;
+    self.capi_roots       = null;
+    self.capi_mark        = null;
     self.gc_running       = false;
     self.gc_trigger_counter = GC_INITIAL_TRIGGER;
     self.gc_pending       = false;
@@ -2666,6 +2678,9 @@ fn void Heap.mark_roots(&self) {
             }
         }
     }
+
+    // Values the C ABI's host holds handles to.
+    if (self.capi_mark != null) self.capi_mark(self.capi_roots);
 
     // Built-in error prototypes.
     if (self.err_proto != null) { self.mark_hobject(self.err_proto); }

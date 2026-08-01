@@ -273,6 +273,19 @@
         "THREADED_DISPATCH"
       ]
     },
+    "value_registry_gc_stress": {
+      "type": "executable",
+      "sources": [
+        "src",
+        "test/capi/value_registry_gc.c3"
+      ],
+      "opt": "O0",
+      "single-module": true,
+      "sanitize": "address",
+      "features": [
+        "GC_STRESS"
+      ]
+    },
     "host_fn_phase2_gc_stress": {
       "type": "executable",
       "sources": [
