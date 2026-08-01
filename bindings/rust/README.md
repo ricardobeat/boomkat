@@ -5,7 +5,7 @@ Two crates over the `jse_` C ABI (`include/jse.h`):
 | Crate | What it is |
 |---|---|
 | `jse-sys` | Raw `extern "C"` declarations, one per header symbol. A `build.rs` finds and links the static archive. Everything is `unsafe`. |
-| `jse` | The safe wrapper: `Runtime`, `Value`, `Result<_, Error>`, `Drop`. No raw pointer or handle is exposed. |
+| `jse` | The safe wrapper: `Runtime`, `Value`, `Ctx`, `Result<_, Error>`, `Drop`. No raw pointer or handle is exposed. |
 
 ## Prerequisites
 
@@ -38,10 +38,13 @@ From this directory (`bindings/rust`):
 ```sh
 cargo build
 cargo run --example hello_js
+cargo run --example host_fns
 cargo test
 ```
 
 ## Expected output
+
+`cargo run --example hello_js`:
 
 ```
 jse 0.1.0
@@ -51,12 +54,31 @@ its type   = String
 wrong type = wrong type: value is not a string
 counter    = 10
 syntax     = syntax error: SyntaxError
-throw      = uncaught exception: nope
+throw      = uncaught exception: TypeError: nope
 recovered  = TypeError
 before job = pending
 after job  = done
 Null Undefined Boolean Number String Object Function 
 second rt  = a runtime is already open in this process
+ok
+```
+
+`cargo run --example host_fns`:
+
+```
+add(40, 2)        = 42
+add(1,2,3,4)      = 10
+[1,2,3].map(...)  = 11,12,13
+nextId() x3       = id-1,id-2,id-3
+checkedSqrt(81)   = 9
+caught in JS      = Error: cannot sqrt -1
+bad argument type = TypeError
+uncaught in Rust  = Error: cannot sqrt -4 (Throw)
+panic became      = host panic: something went wrong
+mapTwice(x*3, 5)  = 45
+mapTwice(abs, -7) = 7
+callee throw      = RangeError: from JS
+runaway recursion = RangeError
 ok
 ```
 
@@ -76,6 +98,75 @@ match rt.eval("throw new TypeError('nope')") {
 }
 // `rt` and every Value drop here.
 ```
+
+## Host functions
+
+`register_fn` binds a Rust closure as a JS global:
+
+```rust
+rt.register_fn("add", 2, |ctx| {
+    Ok(ctx.number(ctx.arg(0).as_number()? + ctx.arg(1).as_number()?))
+})?;
+
+assert_eq!(rt.eval("add(40, 2)")?.as_number()?, 42.0);
+```
+
+The second argument is the reported `.length`; JS may still pass any number of
+arguments, and `ctx.arg` past the end reads as `undefined`. Registered
+functions behave like built-ins everywhere — methods, `.call`/`.apply`/`.bind`,
+accessors, and callbacks handed to `Array.map`. `register_ctor` is the same but
+also allows `new`.
+
+**Returning `Err` throws into JS.** The error's `Kind` picks the constructor:
+`Error::throw(msg)` becomes a plain `Error`, and a failed reader (`as_number`
+on a string) becomes a `TypeError`. Uncaught, it comes back out of `eval` as an
+ordinary `Err`.
+
+**`ctx.call` calls JS back from Rust.** A throw from the callee propagates as
+itself, so `?` re-raises the original exception rather than replacing it with a
+generic host error. A failure of the call itself — an exhausted value registry,
+say — is reported separately, as `Kind::Full` or `Kind::Invalid` with a message,
+so it can never be mistaken for a JS exception. Host → JS → host recursion is
+bounded by the engine with a `RangeError` instead of exhausting the native
+stack.
+
+The result is a `Retained` guard owning one registry slot. Deref reads it as an
+ordinary `HostValue`, and it frees its slot on drop:
+
+```rust,ignore
+rt.register_fn("mapTwice", 2, |ctx| {
+    let f = ctx.arg(0);
+    let once = ctx.call(f, &[ctx.arg(1)], None)?;   // freed as the closure ends
+    Ok(ctx.call(f, &[*once], None)?.keep())          // handed to the call
+})?;
+```
+
+`keep()` gives the slot to the enclosing host call, which frees it on return —
+right for the value being returned, wrong inside a loop.
+
+Three things this layer handles that the raw ABI leaves to the caller:
+
+- **Panics never unwind into C**, which would be undefined behaviour. Every
+  callback runs inside `catch_unwind`, and a caught panic becomes a JS `Error`
+  reading `host panic: <message>` that the script can catch. The engine stays
+  consistent and the panic does not propagate out of `eval`.
+- **Scope handles cannot escape the call.** Arguments and `this` are valid only
+  until the callback returns. `Ctx` and `HostValue` are invariant over a
+  lifetime tied to the call, so stashing one in a `static` is a compile error
+  (`borrowed data escapes outside of closure`) rather than a use-after-free.
+- **`ctx.call` results are freed for you.** Each comes back runtime-owned,
+  holding one of the 1024 registry slots, and its `Retained` guard releases it
+  on drop. That is what lets a host function call JS in a loop: the slot goes
+  back as the loop turns, rather than piling up until the callback returns.
+
+**The closure is leaked, deliberately.** It is boxed and its pointer handed to
+the engine as `udata`; the engine holds it for as long as the runtime lives and
+offers no way to unregister, so there is no later moment at which dropping it
+would be sound. This is bounded by the number of `register_fn` calls, never per
+JS call. It is also why the closure must be `'static` — it can run at any point
+up to `Runtime` drop, so it cannot borrow anything shorter-lived. Captured state
+therefore uses `move`, and mutable state a `Cell`/`RefCell`, since the closure
+is `Fn` (the engine may re-enter it) rather than `FnMut`.
 
 ## What the safe layer adds
 
@@ -98,13 +189,16 @@ These come from the C ABI, not from this binding.
   `Runtime::new()` returns `Kind::AlreadyOpen` instead of racing. This is why
   `tests/basic.rs` is a single test function — `cargo test` would otherwise
   open runtimes on parallel threads.
-- **No Rust callbacks into JS.** Built-in dispatch is an index into a table
-  sized and filled at compile time, never a host pointer, so there is nothing
-  to register against without engine changes.
-- **No direct `call` of a JS function.** Absent from the v1 ABI. Wrap the call
-  in a JS snippet and use `eval`.
+- **Registration is permanent.** There is no `unregister`, which is what makes
+  leaking the closure the honest encoding of its lifetime.
+- **No calling a JS function from outside a callback.** `ctx.call` needs a live
+  call context, so from plain Rust code wrap the call in a JS snippet and use
+  `eval`.
 - **Readers do not coerce.** `as_number` on a string is `Kind::Type`, not a
   parse. Call `String(x)` or `Number(x)` in JS first.
+- **No ABI entry point for building objects or arrays.** A host function can
+  return numbers, booleans, strings, `null`, `undefined`, or a value it was
+  handed; anything structured has to be assembled in JS.
 
 ## ABI fix made while writing this
 

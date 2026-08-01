@@ -11,7 +11,9 @@
 //! - Only one runtime may exist per process; a second [`jse_open`] returns
 //!   [`JSE_ERR_INVALID`].
 //! - The ABI is not thread-safe and does not enforce that with a lock.
-//! - Nothing here aborts, panics, or unwinds across the boundary.
+//! - Nothing here aborts, panics, or unwinds across the boundary. That runs the
+//!   other way too: a [`jse_host_fn`] the engine calls back into must not
+//!   unwind, so any Rust panic inside one has to be caught before it returns.
 
 #![allow(non_camel_case_types)]
 
@@ -22,6 +24,17 @@ pub type jse_runtime = *mut c_void;
 
 /// Opaque value handle. Not a pointer.
 pub type jse_value = c_uint;
+
+/// Opaque per-call context handed to a host function. Valid only for the
+/// duration of that call; never store one.
+pub type jse_call_ctx = *mut c_void;
+
+/// A host callback JS can invoke by name.
+///
+/// It must return normally in every case: `jse_throw_error` and `jse_throw`
+/// record a throw rather than unwinding, and nothing may unwind across this
+/// boundary.
+pub type jse_host_fn = unsafe extern "C" fn(ctx: jse_call_ctx, udata: *mut c_void);
 
 /// The handle value that is never valid.
 pub const JSE_INVALID_VALUE: jse_value = 0;
@@ -53,6 +66,13 @@ pub const JSE_TYPE_OBJECT: c_int = 5;
 pub const JSE_TYPE_FUNCTION: c_int = 6;
 /// Symbol, bigint, etc.
 pub const JSE_TYPE_OTHER: c_int = 7;
+
+// Error kinds for `jse_throw_error`.
+pub const JSE_ERROR: c_int = 0;
+pub const JSE_ERROR_TYPE: c_int = 1;
+pub const JSE_ERROR_RANGE: c_int = 2;
+pub const JSE_ERROR_REFERENCE: c_int = 3;
+pub const JSE_ERROR_SYNTAX: c_int = 4;
 
 extern "C" {
     /// Create the runtime. One per process; a second call returns
@@ -108,4 +128,70 @@ extern "C" {
 
     /// Run pending promise jobs. `jse_eval` already drains before returning.
     pub fn jse_drain_microtasks(rt: jse_runtime);
+
+    // ------------------------------------------------------- host functions
+
+    /// Bind `cfn` as a global function named `name` (`name_len` bytes of
+    /// UTF-8). `udata` is passed back to every invocation untouched and is
+    /// never dereferenced by the engine. `arity` becomes `.length`; a zero
+    /// `constructable` makes `new fn()` throw a TypeError. Registration is
+    /// permanent for the runtime's lifetime.
+    pub fn jse_register_fn(
+        rt: jse_runtime,
+        name: *const c_char,
+        name_len: usize,
+        cfn: jse_host_fn,
+        udata: *mut c_void,
+        arity: c_int,
+        constructable: c_int,
+    ) -> c_int;
+
+    /// Number of arguments this call was made with.
+    pub fn jse_argc(ctx: jse_call_ctx) -> c_uint;
+
+    /// Handle to argument `i`; at or past `jse_argc` this is undefined, not an
+    /// invalid handle.
+    pub fn jse_arg(ctx: jse_call_ctx, i: c_uint) -> jse_value;
+
+    /// The `this` receiver. Strict semantics: undefined stays undefined.
+    pub fn jse_this(ctx: jse_call_ctx) -> jse_value;
+
+    /// `new.target`, or undefined on a plain call.
+    pub fn jse_new_target(ctx: jse_call_ctx) -> jse_value;
+
+    /// Non-zero when invoked through `new` or `super()`.
+    pub fn jse_is_construct(ctx: jse_call_ctx) -> c_int;
+
+    /// Set the return value. A callback that sets none yields undefined.
+    pub fn jse_return(ctx: jse_call_ctx, v: jse_value);
+    pub fn jse_return_number(ctx: jse_call_ctx, d: c_double);
+    pub fn jse_return_bool(ctx: jse_call_ctx, b: c_int);
+    pub fn jse_return_null(ctx: jse_call_ctx);
+
+    /// Return a fresh JS string built from `len` bytes of UTF-8.
+    pub fn jse_return_string(ctx: jse_call_ctx, utf8: *const c_char, len: usize);
+
+    /// Record a throw of a fresh Error of `kind` carrying NUL-terminated
+    /// `msg`. Does not unwind; the callback must still return.
+    pub fn jse_throw_error(ctx: jse_call_ctx, kind: c_int, msg: *const c_char);
+
+    /// Record a throw of an arbitrary value. Does not unwind.
+    pub fn jse_throw(ctx: jse_call_ctx, v: jse_value);
+
+    /// Copy a scope value into the runtime's global registry, yielding a handle
+    /// that outlives the callback and must be freed with `jse_value_free`.
+    pub fn jse_value_persist(ctx: jse_call_ctx, v: jse_value) -> jse_value;
+
+    /// Call a JS function from inside a host callback. On [`JSE_OK`],
+    /// `*out_val` (when non-null) receives a runtime-owned handle the caller
+    /// must free. A callee throw is recorded on `ctx` and reported as
+    /// [`JSE_ERR_THROW`]; host recursion is bounded by a RangeError.
+    pub fn jse_call(
+        ctx: jse_call_ctx,
+        func: jse_value,
+        argv: *const jse_value,
+        argc: c_uint,
+        this_val: jse_value,
+        out_val: *mut jse_value,
+    ) -> c_int;
 }
