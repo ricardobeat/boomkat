@@ -985,8 +985,6 @@ fn void Heap.init_builtin_strs(&self) {
             ((HeapHeader*)self.strs[i]).set_pinned();
         }
     }
-    // Cache the "length" pointer for HObject.put_prop array_length sync.
-    hobject::builtin_length_key = self.strs[BuiltinStr.LENGTH];
 }
 
 /// Convert an integer to an interned HString*. Values from 0 to 255 come from

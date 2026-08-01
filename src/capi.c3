@@ -94,8 +94,10 @@ struct SlotEntry {
 // Runtime
 // ============================================================================
 
-// The engine keeps process-global state (compiler error buffer, hobject active
-// heap), so exactly one runtime may exist at a time. Enforced, not documented.
+// Each Runtime owns its Heap and Vm outright, and the engine threads that Heap
+// explicitly rather than reaching for a global, so runtimes may coexist. They
+// cannot exchange values: a TVal is only meaningful to the heap that interned
+// its strings and allocated its objects.
 struct Runtime {
     Heap*    heap;
     Vm*      vm;
@@ -157,7 +159,6 @@ fn void ensure_engine_init() {
 fn int jse_open(void** out_rt) @export("jse_open") {
     if (out_rt == null) return JSE_ERR_INVALID;
     *out_rt = null;
-    if (g_rt != null) return JSE_ERR_INVALID;   // single-runtime rule
     ensure_engine_init();
 
     Heap*? hpr = heap::create(null, null, null, null, null);

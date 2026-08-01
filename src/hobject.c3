@@ -60,10 +60,6 @@ fn void* env_record_parent(void* env_ptr) {
 // Constants
 // ============================================================================
 
-/// The interned "length" string, set at heap init, so put_prop can recognise a
-/// length write and sync array_length.
-void* builtin_length_key = null;
-
 /// The interned "\xFFpromise_reaction_next" string, set at heap init, which lets
 /// heap.c3's mark phase walk a Promise's pending reaction chain without
 /// importing builtins/promise.c3, since that imports heap.
@@ -1333,6 +1329,9 @@ fn bool dense_index_ok(uint cur_size, uint idx) {
 /// transition to the caller, through Heap.transition_shape.
 fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags, heap::Heap* h) {
     if (pflags != PROP_FLAGS_WEC) self.flags.has_nondefault_flags = true;
+    // This heap's interned "length", which an exotic array compares by pointer
+    // identity to recognise a length write.
+    void* length_key = h != null ? h.strs[heap::BuiltinStr.LENGTH] : null;
 
     // Existing property: update in place.
     int idx = self.find_prop_idx(key);
@@ -1356,7 +1355,7 @@ fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags, heap::Hea
         *pv = val;
         self.set_prop_flags((uint)idx, pflags, h);
         // A length write on an ARRAY exotic updates the shadow copy.
-        if (self.flags.exotic_array && key == builtin_length_key) {
+        if (self.flags.exotic_array && key == length_key) {
             if (val.is_fastint()) {
                 *self.array_len_ptr() = (uint)val.get_fastint();
             } else if (val.is_number()) {
@@ -1386,7 +1385,7 @@ fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags, heap::Hea
     // rather than the named table. That table counts entries in a ushort, so
     // large indexed writes would silently truncate a long array past 2^16.
     // set_array_idx grows a uint-sized dense backing instead.
-    if (self.flags.exotic_array && key != builtin_length_key) {
+    if (self.flags.exotic_array && key != length_key) {
         HString* ks = (HString*)key;
         // The dense part marks holes with `undefined`, so it cannot tell a
         // stored `undefined` from an absent index. Those writes fall through to
@@ -1428,7 +1427,7 @@ fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags, heap::Hea
     self.prop_count++;
 
     // Same length and dense-part syncing as the update path above.
-    if (self.flags.exotic_array && key == builtin_length_key) {
+    if (self.flags.exotic_array && key == length_key) {
         if (val.is_fastint()) {
             *self.array_len_ptr() = (uint)val.get_fastint();
         } else if (val.is_number()) {
