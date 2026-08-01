@@ -10,6 +10,7 @@ import duktape::hstring;
 import duktape::lexer;
 import duktape::types;
 import duktape::bytecode;
+import duktape::builtins;
 
 // ============================================================================
 // Status codes (must mirror include/jse.h)
@@ -227,26 +228,80 @@ fn int jse_eval(void* rtp, char* src, usz len, uint* out_val) @export("jse_eval"
     return JSE_OK;
 }
 
+/// Read property `key` off `o` or its prototype chain, returning it only if it
+/// holds a string. Needed for the `name`/`message` pair on a thrown Error: an
+/// engine-thrown TypeError owns only `message`, and `name` lives on
+/// Error.prototype.
+///
+/// This walks the chain by hand instead of calling get_prop_proto because that
+/// routes a Proxy anywhere on the chain back through the trap machinery and
+/// into the VM. describe_error runs on the unwind path, where re-entering the
+/// VM could throw again; a proxy link simply ends the search instead.
+fn HString* str_prop(HObject* o, HString* key) {
+    HObject* cur = o;
+    uint depth = 0;
+    while (cur != null && depth < 64) {
+        if (cur.flags.exotic_proxyobj) return null;
+        int idx = cur.find_prop_idx((void*)key);
+        if (idx >= 0) {
+            // An accessor slot holds a getter/setter pair, not a value. Reading
+            // it would mean calling into the VM, so treat it as absent.
+            if (cur.get_prop_flags((uint)idx).is_accessor) return null;
+            TVal got = cur.prop_values()[idx];
+            if (got.is_string()) return (HString*)got.get_heapptr();
+            return null;
+        }
+        cur = cur.prototype;
+        depth++;
+    }
+    return null;
+}
+
 /// Format a thrown value into the runtime error buffer without re-entering
-/// the VM (a user toString could throw again on the unwind path).
+/// the VM (a user toString could throw again on the unwind path). Every JS
+/// value reaches a useful message: `throw 42` reports "42", not a placeholder.
 fn void describe_error(Runtime* rt, TVal* ev) {
     if (ev.is_string()) {
         HString* s = (HString*)ev.get_heapptr();
         set_err(rt, JSE_ERR_THROW, s.get_data());
         return;
     }
+    if (ev.is_undefined()) { set_err(rt, JSE_ERR_THROW, "undefined"); return; }
+    if (ev.is_null())      { set_err(rt, JSE_ERR_THROW, "null"); return; }
+    if (ev.is_boolean())   {
+        set_err(rt, JSE_ERR_THROW, ev.get_boolean() ? "true" : "false");
+        return;
+    }
+    if (ev.is_numeric()) {
+        // Same shortest-roundtrip formatter the engine uses for Number->String,
+        // and it is a pure buffer write: no VM re-entry, no allocation.
+        char[64] nbuf;
+        usz n = builtins::json_number_to_string(ev.get_number_or_fastint(), &nbuf[0], 64);
+        set_err(rt, JSE_ERR_THROW, nbuf[:n]);
+        return;
+    }
     if (ev.is_object()) {
         HObject* o = (HObject*)ev.get_heapptr();
-        HString* mk = rt.heap.strs[heap::BuiltinStr.MESSAGE];
-        TVal? mv = o.get_prop(mk);
-        if (try m = mv) {
-            if (m.is_string()) {
-                HString* s = (HString*)m.get_heapptr();
-                set_err(rt, JSE_ERR_THROW, s.get_data());
-                return;
-            }
+        HString* msg  = str_prop(o, rt.heap.strs[heap::BuiltinStr.MESSAGE]);
+        HString* name = str_prop(o, rt.heap.strs[heap::BuiltinStr.NAME]);
+
+        // "TypeError: x is not a function" -- name comes off the prototype, so
+        // this reads like the message a JS host would print.
+        if (name != null && msg != null && msg.blen != 0) {
+            char[ERRBUF] buf;
+            usz pos = 0;
+            char[] np = name.get_data();
+            char[] mp = msg.get_data();
+            for (usz i = 0; i < np.len && pos < ERRBUF - 3; i++) buf[pos++] = np[i];
+            buf[pos++] = ':';
+            buf[pos++] = ' ';
+            for (usz i = 0; i < mp.len && pos < ERRBUF - 1; i++) buf[pos++] = mp[i];
+            set_err(rt, JSE_ERR_THROW, buf[:pos]);
+            return;
         }
-        set_err(rt, JSE_ERR_THROW, "uncaught exception");
+        if (msg != null && msg.blen != 0) { set_err(rt, JSE_ERR_THROW, msg.get_data()); return; }
+        if (name != null && name.blen != 0) { set_err(rt, JSE_ERR_THROW, name.get_data()); return; }
+        set_err(rt, JSE_ERR_THROW, "uncaught exception (object)");
         return;
     }
     set_err(rt, JSE_ERR_THROW, "uncaught exception");

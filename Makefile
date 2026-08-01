@@ -27,7 +27,7 @@ endif
 PREFIX ?= /usr/local
 
 .PHONY: all lib lib-full test262_runner test262_runner_asan duktape_c3 duktape_c3_debug duktape_c3_gc_stress clean \
-        shared jse jse-stress example-c smoke install
+        shared jse jse-stress example-c example-ruby smoke install
 
 all: lib-full test262_runner duktape_c3
 
@@ -107,6 +107,11 @@ out/hello: examples/c/hello.c include/jse.h out/libjse.$(SHLIB_EXT)
 
 example-c: out/hello
 	./out/hello
+
+# Ruby binding example. Pure stdlib fiddle -- nothing to compile, so this only
+# needs the shared library and any ruby >= 2.6 (the macOS system ruby is 2.6).
+example-ruby: out/libjse.$(SHLIB_EXT)
+	ruby bindings/ruby/examples/example.rb
 
 # make install PREFIX=/usr/local -- header + both libraries.
 # The dylib keeps its @rpath install name rather than being restamped with an
