@@ -44,6 +44,33 @@ faultdef STACK_OVERFLOW;
 const uint MAX_CALLS        = 512;
 const uint INITIAL_VALSTACK = 1024;
 
+/// Activations kept in the nested-run save area before it spills to the temp
+/// allocator. Sized from the local suite, where the deepest save across ~300
+/// scripts is 4 frames; a whole Activation[MAX_CALLS] on the native stack cost
+/// 64 Kb per re-entry to hold a few hundred bytes of live data.
+const uint INLINE_SAVED_ACTS = 8;
+
+/// Cap on nested Vm.run invocations, counted by Vm.run_depth.
+///
+/// MAX_CALLS bounds activations within one Vm.run, but a native builtin that
+/// calls back into JS (a Proxy trap, a sort comparator, a map callback, a
+/// Symbol.toPrimitive) re-enters through vm_call_fn_impl, which resets
+/// activation_count to 1. Recursion that bounces through native code therefore
+/// never reaches MAX_CALLS and consumes native stack that the engine cannot
+/// grow or measure, so it faults instead of throwing.
+///
+/// The depth reachable before the native stack faults depends on how much of it
+/// the builtin between two re-entries claims, so the save area here and the sort
+/// buffers in array.c3 are both sized to what they actually hold instead of to a
+/// worst case. With those bounded, a proxy trap, a sort comparator, a map
+/// callback and a Symbol.toPrimitive all reach 511 on an 8 Mb main-thread stack,
+/// where sort alone used to fault at 64.
+///
+/// 128 keeps a wide margin under that measured ceiling, since a host embedding
+/// may run the engine on a smaller stack, and still admits recursion far deeper
+/// than any of these builtins is used for in practice.
+const uint MAX_RUN_DEPTH    = 128;
+
 // ============================================================================
 // Shadow activation frames keep outer activations visible to the GC while a
 // nested Vm.run() executes. vm_call_fn_impl allocates them on the C stack and
@@ -53,7 +80,9 @@ const uint INITIAL_VALSTACK = 1024;
 struct ShadowActFrame {
     /// Previous frame in the linked list (null = end of list).
     void* prev;
-    /// Pointer to the C-stack saved_acts array in vm_call_fn_impl.
+    /// Pointer to the saved_acts array in vm_call_fn_impl, which is either an
+    /// inline buffer on the native stack or a temp allocation when the saved
+    /// frame count exceeds INLINE_SAVED_ACTS.
     Activation* acts;
     /// Number of activations saved in acts[0..count-1].
     uint count;
@@ -97,15 +126,12 @@ struct Activation {
     TVal* retval;
     /// Flags: strict, tailcalled, construct, etc.
     uint flags;
-    /// Highest register index that has ever held a heap reference. 0 means no
-    /// register holds one, so decref_callee_regs can skip the sweep.
-    ///
     /// It sits next to `flags` so the two uints share one 8-byte slot. Every
     /// other field here is 8-byte aligned, so a lone uint would cost 8 bytes,
-    /// and that matters: vm.activations is Activation[MAX_CALLS], and three
-    /// re-entrant paths in vm_execute.c3 copy the whole array to a stack local
-    /// the compiler caps at 64 Kb, which is 512 * 128. Adding a field without
-    /// reclaiming padding breaks that limit.
+    /// and that matters: vm.activations is Activation[MAX_CALLS], and the three
+    /// re-entrant paths in vm_execute.c3 each save a copy of the live prefix, so
+    /// the struct's width is paid once per level of native re-entry.
+    ///
     /// One past the highest register index that ever held a heap reference, so
     /// 0 means "none" and register 0 is expressible as 1. A plain highest-index
     /// would make the empty case and register 0 the same value, and

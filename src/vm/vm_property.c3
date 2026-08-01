@@ -2877,6 +2877,28 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 return (TVal){};
             }
             HObject* super_base = (HObject*)rb.get_heapptr();
+
+            // A proxy anywhere on the super base's prototype chain needs the
+            // full [[Get]], which hands this_binding to the get trap as the
+            // receiver. get_prop_or_accessor_proto is an ordinary lookup and
+            // would call the trap with the holder instead, so `super.prop`
+            // would report the wrong receiver. This mirrors what PUTPROP_SUPER
+            // already does with js_set_with_receiver.
+            bool proxy_on_chain = false;
+            for (HObject* pc = super_base; pc != null; pc = pc.prototype) {
+                if (pc.flags.exotic_proxyobj) { proxy_on_chain = true; break; }
+            }
+            if (proxy_on_chain) {
+                TVal gout;
+                if (!builtins::js_get_with_receiver(vm, vm.heap, super_base, (HString*)gkey,
+                                                    ds.act.this_binding, &gout)) {
+                    return vm_proxy_rethrow(vm, ds);
+                }
+                vm.heap.tval_copy_ref(ra, &gout);
+                track_heap_store(ds.act, ra, (uint)insn.a);
+                return (TVal){};
+            }
+
             hobject::PropLookupResult gres = super_base.get_prop_or_accessor_proto(gkey, true);
             if (gres.kind == hobject::PropLookupKind.PROP_ACCESSOR) {
                 // Use this_binding as receiver for the getter call.
