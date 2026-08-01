@@ -22,20 +22,18 @@
 [ 20] INC_GLOBAL      r2, 1
 [ 21] GETGLOBAL_PRIM  r2, 1
 [ 22] JMP_LT          -8, r2, r1
-[ 23] LDINT           r1, 0
-[ 24] LDREG           r0 = r1, r0
-[ 25] PUTVAR          r0, 2
-[ 26] LDINT           r0, +4
-[ 27] JUMP            +6
-[ 28] GETGLOBAL_PRIM  r1, 0
-[ 29] GETGLOBAL_PRIM  r2, 2
-[ 30] ADD             r1 = r1, r2
-[ 31] LDREG           r2 = r1, r0
-[ 32] PUTGLOBAL_PRIM  r1, 0
-[ 33] INC_GLOBAL      r1, 2
-[ 34] GETGLOBAL_PRIM  r1, 2
-[ 35] JMP_LT          -8, r1, r0
-[ 36] GETGLOBAL_PRIM  r2, 0
-[ 37] CALL_GLOBAL     r0, argc=1, K[3]
-[ 38] RETUNDEF        
+[ 23] LDINT           r0, 0
+[ 24] PUTVAR          r0, 2
+[ 25] LDINT           r0, +4
+[ 26] JUMP            +5
+[ 27] GETGLOBAL_PRIM  r1, 0
+[ 28] GETGLOBAL_PRIM  r2, 2
+[ 29] ADD             r1 = r1, r2
+[ 30] PUTGLOBAL_PRIM  r1, 0
+[ 31] INC_GLOBAL      r1, 2
+[ 32] GETGLOBAL_PRIM  r1, 2
+[ 33] JMP_LT          -7, r1, r0
+[ 34] GETGLOBAL_PRIM  r2, 0
+[ 35] CALL_GLOBAL     r0, argc=1, K[3]
+[ 36] RETUNDEF        
 --- End bytecode ---

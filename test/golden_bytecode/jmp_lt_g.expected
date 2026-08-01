@@ -22,32 +22,31 @@
 [ 20] PUTVAR          r0, 2
 [ 21] LDINT           r0, 0
 [ 22] PUTVAR          r0, 3
-[ 23] LDINT           r1, 0
-[ 24] LDREG           r0 = r1, r0
-[ 25] PUTVAR          r0, 4
-[ 26] JUMP            +16
-[ 27] LDINT           r1, 0
-[ 28] PUTGLOBAL_PRIM  r1, 3
-[ 29] JUMP            +6
-[ 30] GETGLOBAL_PRIM  r1, 4
-[ 31] ADDI            r1 = r1, r1
-[ 32] PUTGLOBAL_PRIM  r1, 4
-[ 33] GETGLOBAL_PRIM  r1, 3
-[ 34] ADDI            r1 = r1, r1
-[ 35] PUTGLOBAL_PRIM  r1, 3
-[ 36] GETGLOBAL_PRIM  r0, 3
-[ 37] GETGLOBAL_PRIM  r1, 1
-[ 38] LT              r0 = r0, r1
-[ 39] IF_TRUE         r0, -10
-[ 40] GETGLOBAL_PRIM  r1, 2
-[ 41] ADDI            r1 = r1, r1
-[ 42] PUTGLOBAL_PRIM  r1, 2
-[ 43] GETGLOBAL_PRIM  r0, 2
-[ 44] JMP_LT_G        -19, r0, g[..]
-[ 45] NOP             
-[ 46] GETGLOBAL_PRIM  r2, 4
-[ 47] GETGLOBAL_PRIM  r3, 2
-[ 48] GETGLOBAL_PRIM  r4, 3
-[ 49] CALL_GLOBAL     r0, argc=3, K[5]
-[ 50] RETUNDEF        
+[ 23] LDINT           r0, 0
+[ 24] PUTVAR          r0, 4
+[ 25] JUMP            +16
+[ 26] LDINT           r1, 0
+[ 27] PUTGLOBAL_PRIM  r1, 3
+[ 28] JUMP            +6
+[ 29] GETGLOBAL_PRIM  r1, 4
+[ 30] ADDI            r1 = r1, r1
+[ 31] PUTGLOBAL_PRIM  r1, 4
+[ 32] GETGLOBAL_PRIM  r1, 3
+[ 33] ADDI            r1 = r1, r1
+[ 34] PUTGLOBAL_PRIM  r1, 3
+[ 35] GETGLOBAL_PRIM  r0, 3
+[ 36] GETGLOBAL_PRIM  r1, 1
+[ 37] LT              r0 = r0, r1
+[ 38] IF_TRUE         r0, -10
+[ 39] GETGLOBAL_PRIM  r1, 2
+[ 40] ADDI            r1 = r1, r1
+[ 41] PUTGLOBAL_PRIM  r1, 2
+[ 42] GETGLOBAL_PRIM  r0, 2
+[ 43] JMP_LT_G        -19, r0, g[..]
+[ 44] NOP             
+[ 45] GETGLOBAL_PRIM  r2, 4
+[ 46] GETGLOBAL_PRIM  r3, 2
+[ 47] GETGLOBAL_PRIM  r4, 3
+[ 48] CALL_GLOBAL     r0, argc=3, K[5]
+[ 49] RETUNDEF        
 --- End bytecode ---
