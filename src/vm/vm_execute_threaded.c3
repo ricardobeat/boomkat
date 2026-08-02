@@ -104,6 +104,21 @@ macro Instruction* th_next(Instruction* pc, Instruction* code_end, TVal* regs, C
     return g_threaded_handlers[next.op.ordinal](pc, code_end, regs, cold);
 }
 
+/// Charge one backward jump against the GC safepoint budget, reporting whether
+/// the caller must bail to the switch.
+///
+/// Running the safepoint here instead would put a call in every branch handler,
+/// which is what makes them non-leaf: LLVM then wraps each one in a four-pair
+/// stp/ldp frame that every taken back-edge pays, on handlers whose fast path
+/// is a compare and a pc add. The budget expires once per BWD_GC_INTERVAL
+/// back-edges, so handing that iteration to the switch (which charges the
+/// budget itself and runs the safepoint) is far cheaper than framing the
+/// common case. The budget is left untouched on a bail so the switch's own
+/// decrement is the one that fires.
+macro bool th_bwd_edge_needs_safepoint(ColdCtx* cold) {
+    return cold.vm.heap.bwd_gc_budget <= 1;
+}
+
 fn Instruction* th_addi(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     TVal* rb = regs + insn.b;
@@ -142,16 +157,15 @@ fn Instruction* th_jmp_lt(Instruction* pc, Instruction* code_end, TVal* regs, Co
     } else {
         return pc; // may call user code / throw -- bail
     }
-    pc++;
     // JMP_LT branches when TRUE (loop back-edge).
     if (cmp_lt) {
         if ((ichar)insn.a < 0) {
-            if (--cold.vm.heap.bwd_gc_budget == 0) {
-                if (cold.vm.heap.gc_pending) { cold.vm.heap.safepoint_gc(); }
-                cold.vm.heap.bwd_gc_budget = heap::BWD_GC_INTERVAL;
-            }
+            if (th_bwd_edge_needs_safepoint(cold)) return pc;
+            cold.vm.heap.bwd_gc_budget--;
         }
-        pc += (int)(ichar)insn.a;
+        pc += (sz)(1 + (int)(ichar)insn.a);
+    } else {
+        pc++;
     }
     return th_next(pc, code_end, regs, cold);
 }
@@ -196,15 +210,13 @@ fn Instruction* th_add(Instruction* pc, Instruction* code_end, TVal* regs, ColdC
 fn Instruction* th_jump(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     // Unconditional relative jump (sABC). No try-finally interception (that is
-    // BREAK/CONTINUE, not JUMP). Backward jumps run the GC safepoint budget.
+    // BREAK/CONTINUE, not JUMP). Backward jumps charge the GC safepoint budget.
     int off = insn.get_sabc();
-    pc++;
     if (off < 0) {
-        if (--cold.vm.heap.bwd_gc_budget == 0) {
-            if (cold.vm.heap.gc_pending) { cold.vm.heap.safepoint_gc(); }
-            cold.vm.heap.bwd_gc_budget = heap::BWD_GC_INTERVAL;
-        }
+        if (th_bwd_edge_needs_safepoint(cold)) return pc;
+        cold.vm.heap.bwd_gc_budget--;
     }
+    pc++;
     pc += off;
     return th_next(pc, code_end, regs, cold);
 }
@@ -243,15 +255,14 @@ fn Instruction* th_cmp_branch(Instruction* pc, Instruction* code_end, TVal* regs
         case Opcode.JMP_GT:  cmp_result = !cmp_le; branch_on = true;
         default:             cmp_result = !cmp_lt; branch_on = true;   // JMP_GE
     }
-    pc++;
     if (cmp_result == branch_on) {
         if ((ichar)insn.a < 0) {
-            if (--cold.vm.heap.bwd_gc_budget == 0) {
-                if (cold.vm.heap.gc_pending) { cold.vm.heap.safepoint_gc(); }
-                cold.vm.heap.bwd_gc_budget = heap::BWD_GC_INTERVAL;
-            }
+            if (th_bwd_edge_needs_safepoint(cold)) return pc;
+            cold.vm.heap.bwd_gc_budget--;
         }
-        pc += (int)(ichar)insn.a;
+        pc += (sz)(1 + (int)(ichar)insn.a);
+    } else {
+        pc++;
     }
     return th_next(pc, code_end, regs, cold);
 }
@@ -285,16 +296,15 @@ fn Instruction* th_jmp_lt_g(Instruction* pc, Instruction* code_end, TVal* regs, 
     } else {
         return pc; // relational coercion may call user code / throw -> switch
     }
-    // Consume both words first: the fused offset is based on that resume point.
-    pc += 2;
+    // The fused offset is based on the resume point past BOTH words.
     if (cmp_lt) {
         if ((ichar)insn.a < 0) {
-            if (--cold.vm.heap.bwd_gc_budget == 0) {
-                if (cold.vm.heap.gc_pending) { cold.vm.heap.safepoint_gc(); }
-                cold.vm.heap.bwd_gc_budget = heap::BWD_GC_INTERVAL;
-            }
+            if (th_bwd_edge_needs_safepoint(cold)) return pc;
+            cold.vm.heap.bwd_gc_budget--;
         }
-        pc += (int)(ichar)insn.a;
+        pc += (sz)(2 + (int)(ichar)insn.a);
+    } else {
+        pc += 2;
     }
     return th_next(pc, code_end, regs, cold);
 }
@@ -317,12 +327,17 @@ fn Instruction* th_getglobal(Instruction* pc, Instruction* code_end, TVal* regs,
     TVal* pv = &gb.prop_values()[gic.prop_idx];
     if (env::is_tdz_sentinel(pv)) return pc; // TDZ -> switch throws
     TVal* ra = regs + insn.a;
-    // prim -> prim only: no refcount, no heap ref lands in the register, so no
-    // track_heap_store. Either side being heap needs tval_copy_ref /
-    // track_heap_store, both real calls, which would make this handler
-    // non-leaf and cost every hit a register save/restore, so it bails.
-    if (pv.is_heap_allocated() || ra.is_heap_allocated()) return pc;
-    *ra = *pv;
+    if (!pv.is_heap_allocated() && !ra.is_heap_allocated()) {
+        // prim -> prim: no refcount, no heap ref lands in the register, so no
+        // track_heap_store.
+        *ra = *pv;
+    } else {
+        // A heap operand is common here (object-valued globals), so this stays
+        // inline rather than bailing: the refcount call frames the handler, but
+        // routing every such read through the switch costs more.
+        cold.vm.heap.tval_copy_ref(ra, pv);
+        track_heap_store(cold.act, ra, (uint)insn.a);
+    }
     pc++;
     return th_next(pc, code_end, regs, cold);
 }
