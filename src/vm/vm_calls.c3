@@ -830,20 +830,33 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, Instruction insn, bool*
                     // binding (ES2015 §14.1.20), shared with every other call
                     // path; see resolve_call_lex_env.
                     //
-                    // Inline the common case: resolve_call_lex_env does real
-                    // work ONLY when the callee captured a distinct declarative
-                    // lex scope (cap_lex != null && cap_lex != var_env &&
-                    // cap_lex.is_declarative) or is a named function expression
-                    // (is_namebinding). For a plain global/leaf function (fib,
-                    // g) neither holds, with cap_lex null or equal to var_env, so the
-                    // function just returns var_env. Skipping the call here
-                    // removes a per-call function call on the hot recursion/call
-                    // path (~8% on call40); byte-identical result in this case.
+                    // Inline both outcomes resolve_call_lex_env can produce
+                    // without allocating or walking, so the hot call path never
+                    // leaves this function. A named function expression
+                    // (is_namebinding) always goes out-of-line; otherwise:
+                    //
+                    //  - No distinct declarative captured scope (cap_lex null,
+                    //    equal to var_env, or non-declarative): the helper
+                    //    returns var_env unchanged.
+                    //  - A distinct declarative cap_lex, but this call reused
+                    //    the captured var_env rather than allocating a fresh
+                    //    function scope (needs_env()==false, so fast_var_env is
+                    //    exactly func.var_env): the helper's splice guard
+                    //    (var_env != own_var_env) is false, so it skips the
+                    //    parent-chain walk and returns cap_lex.
+                    //
+                    // The second case is the one that matters: a plain global
+                    // function such as fib captures the global declarative
+                    // record, so cap_lex IS distinct and declarative, and every
+                    // one of its calls took the out-of-line path.
                     EnvRecord* cap_lex_fast = (*hobj_fast.extra_ptr()).func.lex_env;
-                    if ((cap_lex_fast == null || cap_lex_fast == fast_var_env
-                            || !cap_lex_fast.is_declarative)
-                        && !target_fast.is_namebinding()) {
+                    if (target_fast.is_namebinding()) {
+                        new_act.lex_env = resolve_call_lex_env(vm, hobj_fast, target_fast, fast_var_env);
+                    } else if (cap_lex_fast == null || cap_lex_fast == fast_var_env
+                            || !cap_lex_fast.is_declarative) {
                         new_act.lex_env = fast_var_env;
+                    } else if (fast_var_env == (*hobj_fast.extra_ptr()).func.var_env) {
+                        new_act.lex_env = cap_lex_fast;
                     } else {
                         new_act.lex_env = resolve_call_lex_env(vm, hobj_fast, target_fast, fast_var_env);
                     }
