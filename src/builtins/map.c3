@@ -26,7 +26,12 @@ fn bool same_value_impl(TVal a, TVal b, bool zero_signs_distinct) {
                 }
                 return a.get_number() == b.get_number();
             case FASTINT:   return a.get_fastint() == b.get_fastint();
-            case STRING:    return a.get_heapptr() == b.get_heapptr();
+            // Strings over MAX_INTERN_BYTES are left un-interned, so two equal
+            // strings can be distinct pointers. equals_hstring keeps the
+            // interned-vs-interned case a single pointer compare and only falls
+            // back to bytes when one side is un-interned.
+            case STRING:    return ((hstring::HString*)a.get_heapptr()).equals_hstring(
+                                       (hstring::HString*)b.get_heapptr());
             case OBJECT:    return a.get_heapptr() == b.get_heapptr();
             case BIGINT:    return a.get_bigint() == b.get_bigint();
             default: return false;

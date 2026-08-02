@@ -1009,7 +1009,11 @@ fn bool array_strict_equals(TVal a, TVal b) {
                 if (math::is_nan(a.get_number()) || math::is_nan(b.get_number())) return false;
                 return a.get_number() == b.get_number();
             case FASTINT:   return a.get_fastint() == b.get_fastint();
-            case STRING:    return a.get_heapptr() == b.get_heapptr();
+            // Strings over MAX_INTERN_BYTES are left un-interned, so distinct
+            // pointers can hold equal content. equals_hstring keeps the
+            // interned-vs-interned case a single pointer compare.
+            case STRING:    return ((hstring::HString*)a.get_heapptr()).equals_hstring(
+                                       (hstring::HString*)b.get_heapptr());
             case BIGINT: {
                 // BigInts are boxed: distinct boxes can hold equal values, so
                 // strict equality (and indexOf/includes SameValueZero) must
