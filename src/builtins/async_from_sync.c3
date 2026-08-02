@@ -282,7 +282,7 @@ fn TVal async_from_sync_type_error(Heap* heap, char[] msg) {
         HString* msg_str = builtin_intern_string(heap, msg);
         if (msg_str != null) {
             TVal msg_tv; msg_tv.set_string(msg_str);
-            HString* msg_key = builtin_intern_string(heap, "message");
+            HString* msg_key = heap.str(heap::BuiltinStr.MESSAGE);
             if (msg_key != null) err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
         }
         out.set_object(err);

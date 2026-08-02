@@ -266,7 +266,7 @@ fn TVal json_parse_array(JsonParseCtx* jctx, JsonParseRecord** out_rec = null) {
     JsonParseRecord** elems = null;
     uint elem_cap = 0;
 
-    HString* len_key = builtin_intern_string(jctx.heap, "length");
+    HString* len_key = jctx.heap.str(heap::BuiltinStr.LENGTH);
     uint idx = 0;
 
     if (jctx.pos < jctx.len && jctx.src[jctx.pos] != ']') {
@@ -775,7 +775,7 @@ fn TVal json_walk(void* vm, Heap* heap, TVal reviver, TVal holder, HString* name
                     if (source_str != null) {
                         TVal src_tv;
                         src_tv.set_string(source_str);
-                        HString* source_key = builtin_intern_string(heap, "source");
+                        HString* source_key = heap.str(heap::BuiltinStr.SOURCE);
                         ctx_obj.put_prop(source_key, src_tv, hobject::PROP_FLAGS_WEC);
                     }
                 }
@@ -802,7 +802,7 @@ fn void json_throw_syntax_error(BuiltinContext* ctx, char[] msg) {
         HString* msg_str = builtin_intern_string(ctx.heap, msg);
         TVal msg_tv;
         msg_tv.set_string(msg_str);
-        HString* msg_key = builtin_intern_string(ctx.heap, "message");
+        HString* msg_key = ctx.heap.str(heap::BuiltinStr.MESSAGE);
         err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
         ctx.throw_value.set_object(err);
     } else {
@@ -953,7 +953,7 @@ fn void builtin_json_parse(BuiltinContext* ctx) {
             HObject*? holder_raw = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
             if (try holder = holder_raw) {
                 holder.prototype = ctx.heap.object_proto;
-                HString* empty_key = builtin_intern_string(ctx.heap, "");
+                HString* empty_key = ctx.heap.str(heap::BuiltinStr.EMPTY);
                 // Use [[DefineOwnProperty]] WEC (CreateDataPropertyOrThrow per spec).
                 holder.put_prop(empty_key, result, hobject::PROP_FLAGS_WEC);
 
@@ -1157,7 +1157,7 @@ fn void json_throw_type_error(JsonSerializeCtx* jctx, char[] msg) {
         if (msg_str != null) {
             TVal msg_val;
             msg_val.set_string(msg_str);
-            HString* msg_key = builtin_intern_string(jctx.heap, "message");
+            HString* msg_key = jctx.heap.str(heap::BuiltinStr.MESSAGE);
             err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WC);
         }
         jctx.heap.has_error = true;
@@ -1703,7 +1703,7 @@ fn int json_serialize_array(JsonSerializeCtx* jctx, HObject* arr) {
     bool is_dense = (arr.get_class() == ObjClass.ARRAY || arr.get_class() == ObjClass.ARGUMENTS)
                     && arr.array_part() != null;
 
-    HString* len_key = builtin_intern_string(jctx.heap, "length");
+    HString* len_key = jctx.heap.str(heap::BuiltinStr.LENGTH);
     uint len = 0;
     if (arr.flags.exotic_proxyobj) {
         // LengthOfArrayLike via full [[Get]] (Proxy "get" trap), then
@@ -1988,7 +1988,7 @@ fn void builtin_json_stringify(BuiltinContext* ctx) {
 
                 // Get length via full [[Get]] (Proxy "get" trap, accessors),
                 // then ToLength-coerce (may invoke valueOf/toString and throw).
-                HString* len_key = builtin_intern_string(ctx.heap, "length");
+                HString* len_key = ctx.heap.str(heap::BuiltinStr.LENGTH);
                 uint arr_len = 0;
                 {
                     TVal len_val;
@@ -2285,7 +2285,7 @@ fn void builtin_json_stringify(BuiltinContext* ctx) {
     wrapper_tv.set_object(wrapper);
 
     // Set wrapper[""] = value
-    HString* empty_key = builtin_intern_string(ctx.heap, "");
+    HString* empty_key = ctx.heap.str(heap::BuiltinStr.EMPTY);
     wrapper.put_prop(empty_key, value, hobject::PROP_FLAGS_WEC);
 
     // Initialize serialization context. The output buffer grows to fit, so the

@@ -426,7 +426,7 @@ fn HObject*? promise_resolve_default_ctor(Heap* heap, void* vm, TVal value) {
     if (value.is_object() && value.get_heapptr() != null) {
         HObject* value_obj = (HObject*)value.get_heapptr();
         if (value_obj.flags.obj_class == hobject::ObjClass.PROMISE) {
-            HString* constructor_key = builtin_intern_string(heap, "constructor");
+            HString* constructor_key = heap.str(heap::BuiltinStr.CONSTRUCTOR);
             if (constructor_key == null) return null;
             TVal value_ctor;
             if (!promise_object_get(heap, vm, value_obj, constructor_key, &value_ctor)) {
@@ -604,15 +604,15 @@ fn PromiseCapability promise_new_capability(Heap* heap, HObject* promise) {
     (*resolve_func.extra_ptr()).func.builtin_fn_index = (int)Builtin.PROMISE_RESOLVE_CALLBACK.ordinal;
     (*reject_func.extra_ptr()).func.builtin_fn_index = (int)Builtin.PROMISE_REJECT_CALLBACK.ordinal;
 
-    HString* len_key = builtin_intern_string(heap, "length");
+    HString* len_key = heap.str(heap::BuiltinStr.LENGTH);
     if (len_key != null) {
         TVal len_tv; len_tv.set_fastint(1);
         resolve_func.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NWC);
         reject_func.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NWC);
     }
-    HString* name_key = builtin_intern_string(heap, "name");
+    HString* name_key = heap.str(heap::BuiltinStr.NAME);
     if (name_key != null) {
-        TVal name_tv; name_tv.set_string(builtin_intern_string(heap, ""));
+        TVal name_tv; name_tv.set_string(heap.str(heap::BuiltinStr.EMPTY));
         resolve_func.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC);
         reject_func.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC);
     }
@@ -656,14 +656,14 @@ fn HObject*? promise_create_synthetic_executor(Heap* heap, HObject* hole) {
     fn_obj.flags.constructable = false;
     fn_obj.prototype = heap.function_proto;
 
-    HString* len_key = builtin_intern_string(heap, "length");
+    HString* len_key = heap.str(heap::BuiltinStr.LENGTH);
     if (len_key != null) {
         TVal len_tv; len_tv.set_fastint(2);
         fn_obj.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NWC);
     }
-    HString* name_key = builtin_intern_string(heap, "name");
+    HString* name_key = heap.str(heap::BuiltinStr.NAME);
     if (name_key != null) {
-        TVal name_tv; name_tv.set_string(builtin_intern_string(heap, ""));
+        TVal name_tv; name_tv.set_string(heap.str(heap::BuiltinStr.EMPTY));
         fn_obj.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC);
     }
     HString* hole_key = builtin_intern_string(heap, "\xFFhole");
@@ -951,7 +951,7 @@ fn void species_throw_typeerror(Heap* heap, char[] msg) {
         HString* msg_str = builtin_intern_string(heap, msg);
         if (msg_str != null) {
             TVal msg_tv; msg_tv.set_string(msg_str);
-            HString* msg_key = builtin_intern_string(heap, "message");
+            HString* msg_key = heap.str(heap::BuiltinStr.MESSAGE);
             if (msg_key != null) err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
         }
         heap.has_error = true;
@@ -969,7 +969,7 @@ fn HObject*? species_constructor(Heap* heap, void* vm, TVal o, HObject* fallback
     //    "constructor" property (e.g. via Object.defineProperty) must have
     //    its getter invoked, and a throwing getter must propagate as an
     //    abrupt completion here, not be silently misread as a data property.
-    HString* ctor_key = builtin_intern_string(heap, "constructor");
+    HString* ctor_key = heap.str(heap::BuiltinStr.CONSTRUCTOR);
     if (ctor_key == null) return fallback_ctor;
     HObject* obj = (HObject*)o.get_heapptr();
     if (obj == null) return fallback_ctor;
@@ -1040,7 +1040,7 @@ fn void promise_throw_typeerror(BuiltinContext* ctx, String msg) {
     HString* msg_str = builtin_intern_string(ctx.heap, msg);
     if (msg_str != null) {
         TVal msg_tv; msg_tv.set_string(msg_str);
-        err.put_prop(builtin_intern_string(ctx.heap, "message"), msg_tv, hobject::PROP_FLAGS_WC);
+        err.put_prop(ctx.heap.str(heap::BuiltinStr.MESSAGE), msg_tv, hobject::PROP_FLAGS_WC);
     }
     ctx.should_throw = true;
     ctx.throw_value.set_object(err);
@@ -1327,7 +1327,7 @@ fn HObject*? promise_make_finally_wrapper(Heap* heap, uint builtin_index, TVal o
     wrap_fn.flags.constructable = false;
     wrap_fn.prototype = heap.function_proto;
     (*wrap_fn.extra_ptr()).func.builtin_fn_index = (int)builtin_index;
-    HString* len_key = builtin_intern_string(heap, "length");
+    HString* len_key = heap.str(heap::BuiltinStr.LENGTH);
     if (len_key != null) {
         TVal len_tv; len_tv.set_fastint(1);
         wrap_fn.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NWC);
@@ -1356,7 +1356,7 @@ fn bool promise_resolve_abstract(BuiltinContext* ctx, HObject* ctor, TVal value,
     if (value.is_object() && value.get_heapptr() != null) {
         HObject* value_obj = (HObject*)value.get_heapptr();
         if (value_obj.flags.obj_class == hobject::ObjClass.PROMISE) {
-            HString* constructor_key = builtin_intern_string(heap, "constructor");
+            HString* constructor_key = heap.str(heap::BuiltinStr.CONSTRUCTOR);
             if (constructor_key == null) return false;
             TVal value_ctor;
             if (!promise_object_get(heap, ctx.vm, value_obj, constructor_key, &value_ctor)) {
@@ -1666,7 +1666,7 @@ fn void builtin_promise_resolve(BuiltinContext* ctx) {
                 if (val.is_object() && val.get_heapptr() != null) {
                     HObject* obj = (HObject*)val.get_heapptr();
                     if (obj.flags.obj_class == hobject::ObjClass.PROMISE) {
-                        HString* ctor_key = builtin_intern_string(ctx.heap, "constructor");
+                        HString* ctor_key = ctx.heap.str(heap::BuiltinStr.CONSTRUCTOR);
                         TVal xctor;
                         xctor.set_undefined();
                         if (ctor_key != null) {
@@ -1721,7 +1721,7 @@ fn void builtin_promise_resolve(BuiltinContext* ctx) {
     if (val.is_object() && val.get_heapptr() != null) {
         HObject* obj = (HObject*)val.get_heapptr();
         if (obj.flags.obj_class == hobject::ObjClass.PROMISE) {
-            HString* ctor_key = builtin_intern_string(ctx.heap, "constructor");
+            HString* ctor_key = ctx.heap.str(heap::BuiltinStr.CONSTRUCTOR);
             TVal xctor;
             xctor.set_undefined();
             if (ctor_key != null) {
@@ -2188,14 +2188,14 @@ fn HObject*? promise_create_element_callback(Heap* heap, uint builtin_index, HOb
     cb.flags.constructable = false;
     cb.prototype = heap.function_proto;
 
-    HString* len_key = builtin_intern_string(heap, "length");
+    HString* len_key = heap.str(heap::BuiltinStr.LENGTH);
     if (len_key != null) {
         TVal len_tv; len_tv.set_fastint(1);
         cb.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NWC);
     }
-    HString* name_key = builtin_intern_string(heap, "name");
+    HString* name_key = heap.str(heap::BuiltinStr.NAME);
     if (name_key != null) {
-        TVal name_tv; name_tv.set_string(builtin_intern_string(heap, ""));
+        TVal name_tv; name_tv.set_string(heap.str(heap::BuiltinStr.EMPTY));
         cb.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC);
     }
     HString* state_key = builtin_intern_string(heap, "\xFFstate");
@@ -2478,7 +2478,7 @@ fn void builtin_promise_allsettled_resolve_element(BuiltinContext* ctx) {
     if (try result_obj = result_obj_raw) {
         result_obj.prototype = heap.object_proto;
         HString* status_key = builtin_intern_string(heap, "status");
-        HString* value_key = builtin_intern_string(heap, "value");
+        HString* value_key = heap.str(heap::BuiltinStr.VALUE);
         TVal fulfilled_status;
         fulfilled_status.set_string(builtin_intern_string(heap, "fulfilled"));
         if (status_key != null) result_obj.put_prop(status_key, fulfilled_status, hobject::PROP_FLAGS_WEC);
@@ -2822,7 +2822,7 @@ fn void builtin_promise_any_reject_element(BuiltinContext* ctx) {
                     if (errors_prop_key != null) {
                         agg.put_prop(errors_prop_key, errors_val, hobject::PROP_FLAGS_WEC);
                     }
-                    HString* msg_key = builtin_intern_string(heap, "message");
+                    HString* msg_key = heap.str(heap::BuiltinStr.MESSAGE);
                     if (msg_key != null) {
                         agg.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
                     }
@@ -3179,7 +3179,7 @@ fn void builtin_promise_all(BuiltinContext* ctx) {
         TVal err_tv; err_tv.set_undefined();
         if (try err_obj = err_raw) {
             err_obj.prototype = heap.type_err_proto;
-            HString* msg_key = builtin_intern_string(heap, "message");
+            HString* msg_key = heap.str(heap::BuiltinStr.MESSAGE);
             HString* msg_str = builtin_intern_string(heap, "Promise.resolve is not a function");
             if (msg_key != null && msg_str != null) {
                 TVal msg_tv; msg_tv.set_string(msg_str);
@@ -3248,8 +3248,8 @@ fn void builtin_promise_all(BuiltinContext* ctx) {
             return;
         }
         HObject* step_obj = (HObject*)step_result.get_heapptr();
-        HString* done_key = builtin_intern_string(heap, "done");
-        HString* value_key = builtin_intern_string(heap, "value");
+        HString* done_key = heap.str(heap::BuiltinStr.DONE);
+        HString* value_key = heap.str(heap::BuiltinStr.VALUE);
         // IteratorComplete: Get(result, "done"), full Get with accessor invocation.
         bool done = false;
         if (done_key != null) {
@@ -3432,7 +3432,7 @@ fn void builtin_promise_allsettled(BuiltinContext* ctx) {
         TVal err_tv; err_tv.set_undefined();
         if (try err_obj = err_raw) {
             err_obj.prototype = heap.type_err_proto;
-            HString* msg_key = builtin_intern_string(heap, "message");
+            HString* msg_key = heap.str(heap::BuiltinStr.MESSAGE);
             HString* msg_str = builtin_intern_string(heap, "Promise.resolve is not a function");
             if (msg_key != null && msg_str != null) {
                 TVal mt; mt.set_string(msg_str); err_obj.put_prop(msg_key, mt, hobject::PROP_FLAGS_WC);
@@ -3481,8 +3481,8 @@ fn void builtin_promise_allsettled(BuiltinContext* ctx) {
             if (cap_promise_tv.is_object()) { *ctx.result = cap_promise_tv; } else { ctx.result.set_undefined(); } return;
         }
         HObject* step_obj = (HObject*)step_result.get_heapptr();
-        HString* done_key = builtin_intern_string(heap, "done");
-        HString* value_key = builtin_intern_string(heap, "value");
+        HString* done_key = heap.str(heap::BuiltinStr.DONE);
+        HString* value_key = heap.str(heap::BuiltinStr.VALUE);
         // IteratorComplete: Get(result, "done"), full Get with accessor invocation.
         bool done = false;
         if (done_key != null) {
@@ -3643,7 +3643,7 @@ fn void builtin_promise_any(BuiltinContext* ctx) {
         TVal err_tv; err_tv.set_undefined();
         if (try err_obj = err_raw) {
             err_obj.prototype = heap.type_err_proto;
-            HString* msg_key = builtin_intern_string(heap, "message");
+            HString* msg_key = heap.str(heap::BuiltinStr.MESSAGE);
             HString* msg_str = builtin_intern_string(heap, "Promise.resolve is not a function");
             if (msg_key != null && msg_str != null) {
                 TVal mt; mt.set_string(msg_str); err_obj.put_prop(msg_key, mt, hobject::PROP_FLAGS_WC);
@@ -3723,8 +3723,8 @@ fn void builtin_promise_any(BuiltinContext* ctx) {
             if (cap_promise_tv.is_object()) { *ctx.result = cap_promise_tv; } else { ctx.result.set_undefined(); } return;
         }
         HObject* step_obj = (HObject*)step_result.get_heapptr();
-        HString* done_key = builtin_intern_string(heap, "done");
-        HString* value_key = builtin_intern_string(heap, "value");
+        HString* done_key = heap.str(heap::BuiltinStr.DONE);
+        HString* value_key = heap.str(heap::BuiltinStr.VALUE);
         // IteratorComplete: Get(result, "done"), full Get with accessor invocation.
         bool done = false;
         if (done_key != null) {
@@ -3835,7 +3835,7 @@ fn void builtin_promise_any(BuiltinContext* ctx) {
             TVal errors_tv; errors_tv.set_undefined();
             if (errors_arr != null) errors_tv.set_object(errors_arr);
             if (errors_prop_key != null) agg.put_prop(errors_prop_key, errors_tv, hobject::PROP_FLAGS_WEC);
-            HString* msg_key = builtin_intern_string(heap, "message");
+            HString* msg_key = heap.str(heap::BuiltinStr.MESSAGE);
             if (msg_key != null) agg.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
             agg_tv.set_object(agg);
         }
@@ -3900,7 +3900,7 @@ fn void builtin_promise_race(BuiltinContext* ctx) {
         TVal err_tv; err_tv.set_undefined();
         if (try err_obj = err_raw) {
             err_obj.prototype = heap.type_err_proto;
-            HString* msg_key = builtin_intern_string(heap, "message");
+            HString* msg_key = heap.str(heap::BuiltinStr.MESSAGE);
             HString* msg_str = builtin_intern_string(heap, "Promise.resolve is not a function");
             if (msg_key != null && msg_str != null) {
                 TVal mt; mt.set_string(msg_str); err_obj.put_prop(msg_key, mt, hobject::PROP_FLAGS_WC);
@@ -3945,8 +3945,8 @@ fn void builtin_promise_race(BuiltinContext* ctx) {
             if (cap_promise_tv.is_object()) { *ctx.result = cap_promise_tv; } else { ctx.result.set_undefined(); } return;
         }
         HObject* step_obj = (HObject*)step_result.get_heapptr();
-        HString* done_key = builtin_intern_string(heap, "done");
-        HString* value_key = builtin_intern_string(heap, "value");
+        HString* done_key = heap.str(heap::BuiltinStr.DONE);
+        HString* value_key = heap.str(heap::BuiltinStr.VALUE);
         // IteratorComplete: Get(result, "done"), full Get with accessor invocation.
         bool done = false;
         if (done_key != null) {
@@ -4061,7 +4061,7 @@ fn bool register_promise_constructor(EnvRecord* global_env, Heap* heap) {
         length_tv2.set_fastint(1);
         ctor.put_prop(length_key, length_tv2, hobject::PROP_FLAGS_NWC);
 
-        HString* name_key = builtin_intern_string(heap, "name");
+        HString* name_key = heap.str(heap::BuiltinStr.NAME);
         HString* name_hstr = builtin_intern_string(heap, "Promise");
         TVal name_tv; name_tv.set_string(name_hstr);
         ctor.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC);
@@ -4077,7 +4077,7 @@ fn bool register_promise_constructor(EnvRecord* global_env, Heap* heap) {
                 getter.flags.constructable = false;
                 getter.prototype = heap.function_proto;
                 (*getter.extra_ptr()).func.builtin_fn_index = (int)Builtin.PROMISE_SPECIES_GETTER.ordinal;
-                HString* getter_name_key = builtin_intern_string(heap, "name");
+                HString* getter_name_key = heap.str(heap::BuiltinStr.NAME);
                 if (getter_name_key != null) {
                     HString* getter_name_str = builtin_intern_string(heap, "get [Symbol.species]");
                     if (getter_name_str != null) {
@@ -4085,7 +4085,7 @@ fn bool register_promise_constructor(EnvRecord* global_env, Heap* heap) {
                         getter.put_prop(getter_name_key, gn_tv, hobject::PROP_FLAGS_NWC);
                     }
                 }
-                HString* getter_len_key = builtin_intern_string(heap, "length");
+                HString* getter_len_key = heap.str(heap::BuiltinStr.LENGTH);
                 if (getter_len_key != null) {
                     TVal gl_tv; gl_tv.set_fastint(0);
                     getter.put_prop(getter_len_key, gl_tv, hobject::PROP_FLAGS_NWC);

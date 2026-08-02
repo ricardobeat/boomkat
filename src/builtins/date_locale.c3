@@ -271,7 +271,7 @@ fn void date_canonicalize_locale_list(BuiltinContext* ctx, TVal* locales) {
     }
 
     HObject* obj = (HObject*)locales.get_heapptr();
-    HString* len_key = builtin_intern_string(ctx.heap, "length");
+    HString* len_key = ctx.heap.str(heap::BuiltinStr.LENGTH);
     TVal? len_prop = builtins_generic_get(obj, len_key, ctx);
     if (ctx.should_throw) return;
     double len_num = 0.0;

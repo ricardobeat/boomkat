@@ -474,7 +474,7 @@ fn bool register_dataview_accessor(HObject* proto, Heap* heap, char[] name, uint
     if (fn_name != null) {
         TVal name_tv;
         name_tv.set_string(fn_name);
-        HString* name_prop_key = builtin_intern_string(heap, "name");
+        HString* name_prop_key = heap.str(heap::BuiltinStr.NAME);
         func_obj.put_prop(name_prop_key, name_tv, hobject::PROP_FLAGS_NWC);
     }
     HString* length_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];

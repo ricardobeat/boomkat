@@ -868,7 +868,7 @@ fn bool register_arraybuffer_accessor(HObject* proto, Heap* heap, char[] name, u
     if (fn_name != null) {
         TVal name_tv;
         name_tv.set_string(fn_name);
-        HString* name_prop_key = builtin_intern_string(heap, "name");
+        HString* name_prop_key = heap.str(heap::BuiltinStr.NAME);
         func_obj.put_prop(name_prop_key, name_tv, hobject::PROP_FLAGS_NWC);
     }
     HString* length_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
@@ -958,7 +958,7 @@ fn bool register_arraybuffer(EnvRecord* global_env, Heap* heap) {
             HString* getter_name = builtin_intern_string(heap, "get [Symbol.species]");
             if (getter_name != null) {
                 TVal name_tv; name_tv.set_string(getter_name);
-                getter.put_prop((void*)builtin_intern_string(heap, "name"), name_tv, hobject::PROP_FLAGS_NWC);
+                getter.put_prop((void*)heap.str(heap::BuiltinStr.NAME), name_tv, hobject::PROP_FLAGS_NWC);
             }
             HString* len_key_sp = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
             TVal zero_tv; zero_tv.set_fastint(0);
@@ -1049,7 +1049,7 @@ fn bool register_sharedarraybuffer(EnvRecord* global_env, Heap* heap) {
             HString* getter_name = builtin_intern_string(heap, "get [Symbol.species]");
             if (getter_name != null) {
                 TVal name_tv; name_tv.set_string(getter_name);
-                getter.put_prop((void*)builtin_intern_string(heap, "name"), name_tv, hobject::PROP_FLAGS_NWC);
+                getter.put_prop((void*)heap.str(heap::BuiltinStr.NAME), name_tv, hobject::PROP_FLAGS_NWC);
             }
             HString* len_key_sp = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
             TVal zero_tv; zero_tv.set_fastint(0);

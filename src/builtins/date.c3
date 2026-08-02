@@ -116,7 +116,7 @@ fn double date_this_time_value(BuiltinContext* ctx, TVal* val) {
     err.prototype = ctx.heap.type_err_proto;
     HString* msg_str = builtin_intern_string(ctx.heap, "this is not a Date");
     TVal msg_tv; msg_tv.set_string(msg_str);
-    err.put_prop(builtin_intern_string(ctx.heap, "message"), msg_tv, hobject::PROP_FLAGS_WC);
+    err.put_prop(ctx.heap.str(heap::BuiltinStr.MESSAGE), msg_tv, hobject::PROP_FLAGS_WC);
     ctx.should_throw = true;
     ctx.throw_value.set_object(err);
     return double::nan;  // caller should return after this

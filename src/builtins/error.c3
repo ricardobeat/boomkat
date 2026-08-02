@@ -46,7 +46,7 @@ fn void builtin_error_constructor_shared(BuiltinContext* ctx, HObject* proto) {
             if (msg_str != null) {
                 TVal msg_val;
                 msg_val.set_string(msg_str);
-                HString* msg_key = builtin_intern_string(ctx.heap, "message");
+                HString* msg_key = ctx.heap.str(heap::BuiltinStr.MESSAGE);
                 err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WC);
             }
         }
@@ -238,9 +238,9 @@ fn HObject* aggregate_error_iterable_to_list(BuiltinContext* ctx, TVal items) {
     HObject* iter_obj = (HObject*)iterator.get_heapptr();
 
     HString* next_key = builtin_intern_string(heap, "next");
-    HString* done_key = builtin_intern_string(heap, "done");
-    HString* value_key = builtin_intern_string(heap, "value");
-    HString* len_key = builtin_intern_string(heap, "length");
+    HString* done_key = heap.str(heap::BuiltinStr.DONE);
+    HString* value_key = heap.str(heap::BuiltinStr.VALUE);
+    HString* len_key = heap.str(heap::BuiltinStr.LENGTH);
 
     uint k = 0;
     while (true) {
@@ -326,7 +326,7 @@ fn void builtin_aggregate_error(BuiltinContext* ctx) {
         if (msg_str != null) {
             TVal msg_prop;
             msg_prop.set_string(msg_str);
-            HString* msg_key = builtin_intern_string(ctx.heap, "message");
+            HString* msg_key = ctx.heap.str(heap::BuiltinStr.MESSAGE);
             err.put_prop(msg_key, msg_prop, hobject::PROP_FLAGS_WC);
         }
     }
@@ -409,7 +409,7 @@ fn void builtin_error_prototype_to_string(BuiltinContext* ctx) {
 
     // Default name is "Error"
     HString* name_str = builtin_intern_string(ctx.heap, "Error");
-    HString* msg_str  = builtin_intern_string(ctx.heap, "");
+    HString* msg_str  = ctx.heap.str(heap::BuiltinStr.EMPTY);
 
     {
         HObject* obj = (HObject*)this_val.get_heapptr();
@@ -418,7 +418,7 @@ fn void builtin_error_prototype_to_string(BuiltinContext* ctx) {
         // full [[Get]] (not get_prop_proto) so accessor getters on the
         // prototype chain are invoked, and so their throws propagate via
         // ctx.should_throw per ES2017 §25.4.1.5 step 7 (test262 get-throws).
-        HString* name_key = builtin_intern_string(ctx.heap, "name");
+        HString* name_key = ctx.heap.str(heap::BuiltinStr.NAME);
         TVal? name_prop = builtins_generic_get(obj, name_key, ctx);
         if (ctx.should_throw) return;
         if (try nv = name_prop) {
@@ -435,7 +435,7 @@ fn void builtin_error_prototype_to_string(BuiltinContext* ctx) {
         }
 
         // ES2015 §19.5.3.4 step 5: let msg be ? Get(O, "message"); step 6: ? ToString(msg)
-        HString* msg_key = builtin_intern_string(ctx.heap, "message");
+        HString* msg_key = ctx.heap.str(heap::BuiltinStr.MESSAGE);
         TVal? msg_prop = builtins_generic_get(obj, msg_key, ctx);
         if (ctx.should_throw) return;
         if (try mv = msg_prop) {
@@ -480,8 +480,8 @@ fn void builtin_error_captureStackTrace(BuiltinContext* ctx) {
     }
     HObject* target = (HObject*)ctx.regs[ctx.base_reg].get_heapptr();
     // Set target.stack = "" (empty string stub)
-    HString* stack_key = builtin_intern_string(ctx.heap, "stack");
-    HString* empty = builtin_intern_string(ctx.heap, "");
+    HString* stack_key = ctx.heap.str(heap::BuiltinStr.STACK);
+    HString* empty = ctx.heap.str(heap::BuiltinStr.EMPTY);
     TVal stack_tv;
     stack_tv.set_string(empty);
     target.put_prop(stack_key, stack_tv, hobject::PROP_FLAGS_WC);
@@ -652,7 +652,7 @@ fn HObject* register_error_prototype(Heap* heap, HObject* proto_parent, char[] n
     proto.prototype = proto_parent;
 
     // Set .name property
-    HString* name_key = builtin_intern_string(heap, "name");
+    HString* name_key = heap.str(heap::BuiltinStr.NAME);
     HString* name_hstr = builtin_intern_string(heap, name_str);
     TVal name_tv;
     name_tv.set_string(name_hstr);
@@ -660,7 +660,7 @@ fn HObject* register_error_prototype(Heap* heap, HObject* proto_parent, char[] n
 
     // Set .message property (empty string)
     HString* msg_key = (HString*)heap.strs[heap::BuiltinStr.MESSAGE];
-    HString* msg_hstr = builtin_intern_string(heap, "");
+    HString* msg_hstr = heap.str(heap::BuiltinStr.EMPTY);
     TVal msg_tv;
     msg_tv.set_string(msg_hstr);
     proto.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);

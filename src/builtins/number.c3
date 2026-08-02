@@ -546,8 +546,8 @@ fn bool register_number_constructor(EnvRecord* global_env, Heap* heap) {
     tostring_obj.flags.callable = true;
     tostring_obj.flags.constructable = false;
     tostring_obj.prototype = heap.function_proto;
-    HString* tostring_name_key = builtin_intern_string(heap, "name");
-    HString* tostring_name_val = builtin_intern_string(heap, "toString");
+    HString* tostring_name_key = heap.str(heap::BuiltinStr.NAME);
+    HString* tostring_name_val = heap.str(heap::BuiltinStr.TO_STRING);
     if (tostring_name_key != null && tostring_name_val != null) {
         TVal name_tv; name_tv.set_string(tostring_name_val);
         tostring_obj.put_prop(tostring_name_key, name_tv, hobject::PROP_FLAGS_NWC);

@@ -329,7 +329,7 @@ fn void builtin_map_proto_forEach(BuiltinContext* ctx) {
         if (msg_str != null) {
             TVal msg_val;
             msg_val.set_string(msg_str);
-            HString* msg_key = builtin_intern_string(ctx.heap, "message");
+            HString* msg_key = ctx.heap.str(heap::BuiltinStr.MESSAGE);
             err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WC);
         }
         ctx.should_throw = true;
@@ -462,7 +462,7 @@ fn bool register_map_constructor(EnvRecord* global_env, Heap* heap) {
             if (name_str != null) {
                 TVal name_tv;
                 name_tv.set_string(name_str);
-                HString* name_key = builtin_intern_string(heap, "name");
+                HString* name_key = heap.str(heap::BuiltinStr.NAME);
                 fn_obj.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC);
             }
             HString* length_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
@@ -524,7 +524,7 @@ fn bool register_map_constructor(EnvRecord* global_env, Heap* heap) {
                 getter.flags.constructable = false;
                 getter.prototype = heap.function_proto;
                 (*getter.extra_ptr()).func.builtin_fn_index = (int)Builtin.MAP_SPECIES_GETTER.ordinal;
-                HString* getter_name_key = builtin_intern_string(heap, "name");
+                HString* getter_name_key = heap.str(heap::BuiltinStr.NAME);
                 HString* getter_name_str = builtin_intern_string(heap, "get [Symbol.species]");
                 if (getter_name_key != null && getter_name_str != null) {
                     TVal gn_tv; gn_tv.set_string(getter_name_str);

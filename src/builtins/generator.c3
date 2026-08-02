@@ -117,7 +117,7 @@ fn void builtin_dynamic_gen_function(BuiltinContext* ctx, bool is_gen, bool is_a
         // %AsyncGeneratorPrototype%; sync generators to %GeneratorPrototype%.
         gen_proto.prototype = (is_async && is_gen && ctx.heap.async_generator_proto != null)
             ? ctx.heap.async_generator_proto : ctx.heap.generator_proto;
-        HString* proto_key = builtin_intern_string(ctx.heap, "prototype");
+        HString* proto_key = ctx.heap.str(heap::BuiltinStr.PROTOTYPE);
         TVal proto_tv;
         proto_tv.set_object(gen_proto);
         func_obj.put_prop(proto_key, proto_tv, hobject::PROP_FLAGS_WENC);
@@ -125,12 +125,12 @@ fn void builtin_dynamic_gen_function(BuiltinContext* ctx, bool is_gen, bool is_a
 
     // .length (25.2.4.1) and .name (25.2.4.2): non-writable, non-enumerable,
     // configurable, same as CreateDynamicFunction for plain Function.
-    HString* len_key = builtin_intern_string(ctx.heap, "length");
+    HString* len_key = ctx.heap.str(heap::BuiltinStr.LENGTH);
     TVal len_tv;
     len_tv.set_fastint((long)func.num_formals);
     func_obj.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NWC);
 
-    HString* name_key = builtin_intern_string(ctx.heap, "name");
+    HString* name_key = ctx.heap.str(heap::BuiltinStr.NAME);
     TVal name_tv;
     name_tv.set_string(builtin_intern_string(ctx.heap, "anonymous"));
     func_obj.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC);
@@ -183,12 +183,12 @@ fn void builtin_generator_proto_next(BuiltinContext* ctx) {
         HObject*? result_raw = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
         if (try r = result_raw) {
             r.prototype = ctx.heap.object_proto;
-            HString* value_key = builtin_intern_string(ctx.heap, "value");
+            HString* value_key = ctx.heap.str(heap::BuiltinStr.VALUE);
             TVal undef_val;
             undef_val.set_undefined();
             r.put_prop(value_key, undef_val, hobject::PROP_FLAGS_WEC);
 
-            HString* done_key = builtin_intern_string(ctx.heap, "done");
+            HString* done_key = ctx.heap.str(heap::BuiltinStr.DONE);
             TVal done_val;
             done_val.set_boolean(true);
             r.put_prop(done_key, done_val, hobject::PROP_FLAGS_WEC);
@@ -342,7 +342,7 @@ fn void builtin_generator_proto_return(BuiltinContext* ctx) {
         HObject*? result_raw = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
         if (try r = result_raw) {
             r.prototype = ctx.heap.object_proto;
-            HString* value_key = builtin_intern_string(ctx.heap, "value");
+            HString* value_key = ctx.heap.str(heap::BuiltinStr.VALUE);
             TVal arg_val;
             if (ctx.argc >= 1) {
                 arg_val = ctx.regs[ctx.base_reg];
@@ -351,7 +351,7 @@ fn void builtin_generator_proto_return(BuiltinContext* ctx) {
             }
             r.put_prop(value_key, arg_val, hobject::PROP_FLAGS_WEC);
 
-            HString* done_key = builtin_intern_string(ctx.heap, "done");
+            HString* done_key = ctx.heap.str(heap::BuiltinStr.DONE);
             TVal done_val;
             done_val.set_boolean(true);
             r.put_prop(done_key, done_val, hobject::PROP_FLAGS_WEC);
@@ -380,9 +380,9 @@ fn void builtin_generator_proto_return(BuiltinContext* ctx) {
         HObject*? result_raw = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
         if (try r = result_raw) {
             r.prototype = ctx.heap.object_proto;
-            HString* value_key = builtin_intern_string(ctx.heap, "value");
+            HString* value_key = ctx.heap.str(heap::BuiltinStr.VALUE);
             r.put_prop(value_key, arg_val, hobject::PROP_FLAGS_WEC);
-            HString* done_key = builtin_intern_string(ctx.heap, "done");
+            HString* done_key = ctx.heap.str(heap::BuiltinStr.DONE);
             TVal done_val;
             done_val.set_boolean(true);
             r.put_prop(done_key, done_val, hobject::PROP_FLAGS_WEC);

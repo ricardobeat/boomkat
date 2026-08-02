@@ -22,7 +22,7 @@ fn void print_tval_ctx(BuiltinContext* ctx, TVal* val) {
     if (val.is_object() && val.get_heapptr() != null && ctx.vm != null && ctx.heap.call_fn != null) {
         HObject* obj = (HObject*)val.get_heapptr();
         // Look up toString on the object (searches prototype chain)
-        HString* tostr_key = builtin_intern_string(ctx.heap, "toString");
+        HString* tostr_key = ctx.heap.str(heap::BuiltinStr.TO_STRING);
         if (tostr_key != null) {
             if (try method_val = obj.get_prop_proto(tostr_key)) {
                 if (method_val.is_object() || method_val.is_lightfunc()) {
@@ -475,7 +475,7 @@ fn void eputc(char c, void* udata) {
 fn void print_tval_err_ctx(BuiltinContext* ctx, TVal* val) {
     if (val.is_object() && val.get_heapptr() != null && ctx.vm != null && ctx.heap.call_fn != null) {
         HObject* obj = (HObject*)val.get_heapptr();
-        HString* tostr_key = builtin_intern_string(ctx.heap, "toString");
+        HString* tostr_key = ctx.heap.str(heap::BuiltinStr.TO_STRING);
         if (tostr_key != null) {
             if (try method_val = obj.get_prop_proto(tostr_key)) {
                 if (method_val.is_object() || method_val.is_lightfunc()) {
@@ -936,7 +936,7 @@ fn void builtin_eval(BuiltinContext* ctx) {
         HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
         if (try err = err_raw) {
             err.prototype = ctx.heap.syntax_err_proto;
-            HString* msg_key = builtin_intern_string(ctx.heap, "message");
+            HString* msg_key = ctx.heap.str(heap::BuiltinStr.MESSAGE);
             HString* msg_str = builtin_intern_string(ctx.heap, "SyntaxError in eval code");
             TVal msg_tv;
             msg_tv.set_string(msg_str);
@@ -1095,7 +1095,7 @@ fn void builtin_eval_script(BuiltinContext* ctx) {
         HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
         if (try err = err_raw) {
             err.prototype = ctx.heap.syntax_err_proto;
-            HString* msg_key = builtin_intern_string(ctx.heap, "message");
+            HString* msg_key = ctx.heap.str(heap::BuiltinStr.MESSAGE);
             HString* msg_str = builtin_intern_string(ctx.heap, "SyntaxError in eval code");
             TVal msg_tv;
             msg_tv.set_string(msg_str);
@@ -1229,13 +1229,13 @@ fn bool uri_extra_none(char c) {
 /// encodeURI (ES §19.2.6.5)
 fn void builtin_encode_uri(BuiltinContext* ctx) {
     if (ctx.argc < 1) {
-        ctx.result.set_string(builtin_intern_string(ctx.heap, "undefined"));
+        ctx.result.set_string(ctx.heap.str(heap::BuiltinStr.UNDEFINED));
         return;
     }
     HString* str = builtin_to_string_vm(ctx, &ctx.regs[ctx.base_reg]);
     if (ctx.should_throw) return;
     if (str == null) {
-        ctx.result.set_string(builtin_intern_string(ctx.heap, ""));
+        ctx.result.set_string(ctx.heap.str(heap::BuiltinStr.EMPTY));
         return;
     }
     uri_encode(ctx, str, &uri_extra_reserved);
@@ -1244,13 +1244,13 @@ fn void builtin_encode_uri(BuiltinContext* ctx) {
 /// encodeURIComponent (ES §19.2.6.5)
 fn void builtin_encode_uri_component(BuiltinContext* ctx) {
     if (ctx.argc < 1) {
-        ctx.result.set_string(builtin_intern_string(ctx.heap, "undefined"));
+        ctx.result.set_string(ctx.heap.str(heap::BuiltinStr.UNDEFINED));
         return;
     }
     HString* str = builtin_to_string_vm(ctx, &ctx.regs[ctx.base_reg]);
     if (ctx.should_throw) return;
     if (str == null) {
-        ctx.result.set_string(builtin_intern_string(ctx.heap, ""));
+        ctx.result.set_string(ctx.heap.str(heap::BuiltinStr.EMPTY));
         return;
     }
     uri_encode(ctx, str, &uri_extra_none);
@@ -1372,13 +1372,13 @@ fn void uri_decode(BuiltinContext* ctx, HString* str, bool preserve_reserved) {
 /// decodeURI (ES §19.2.6.6)
 fn void builtin_decode_uri(BuiltinContext* ctx) {
     if (ctx.argc < 1) {
-        ctx.result.set_string(builtin_intern_string(ctx.heap, "undefined"));
+        ctx.result.set_string(ctx.heap.str(heap::BuiltinStr.UNDEFINED));
         return;
     }
     HString* str = builtin_to_string_vm(ctx, &ctx.regs[ctx.base_reg]);
     if (ctx.should_throw) return;
     if (str == null) {
-        ctx.result.set_string(builtin_intern_string(ctx.heap, ""));
+        ctx.result.set_string(ctx.heap.str(heap::BuiltinStr.EMPTY));
         return;
     }
     uri_decode(ctx, str, true);
@@ -1387,13 +1387,13 @@ fn void builtin_decode_uri(BuiltinContext* ctx) {
 /// decodeURIComponent (ES §19.2.6.6)
 fn void builtin_decode_uri_component(BuiltinContext* ctx) {
     if (ctx.argc < 1) {
-        ctx.result.set_string(builtin_intern_string(ctx.heap, "undefined"));
+        ctx.result.set_string(ctx.heap.str(heap::BuiltinStr.UNDEFINED));
         return;
     }
     HString* str = builtin_to_string_vm(ctx, &ctx.regs[ctx.base_reg]);
     if (ctx.should_throw) return;
     if (str == null) {
-        ctx.result.set_string(builtin_intern_string(ctx.heap, ""));
+        ctx.result.set_string(ctx.heap.str(heap::BuiltinStr.EMPTY));
         return;
     }
     uri_decode(ctx, str, false);

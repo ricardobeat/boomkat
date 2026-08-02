@@ -82,7 +82,7 @@ fn void builtin_regexp(BuiltinContext* ctx) {
                 // ES2022 §22.2.3.1 step 6: regexp-like non-RegExp object, extract source and flags.
                 is_regexp = true;
                 // Step 6a: P = Get(pattern, "source")
-                HString* source_key = builtin_intern_string(ctx.heap, "source");
+                HString* source_key = ctx.heap.str(heap::BuiltinStr.SOURCE);
                 TVal? src_opt = builtins_generic_get(obj, source_key, ctx);
                 if (ctx.should_throw) return;
                 if (try sv = src_opt) {
@@ -102,7 +102,7 @@ fn void builtin_regexp(BuiltinContext* ctx) {
                 // Step 6c: If flags argument is undefined, F = Get(pattern, "flags")
                 bool flags_arg_provided = ctx.argc > 1 && !ctx.regs[ctx.base_reg + 1].is_undefined();
                 if (!flags_arg_provided) {
-                    HString* flags_key = builtin_intern_string(ctx.heap, "flags");
+                    HString* flags_key = ctx.heap.str(heap::BuiltinStr.FLAGS);
                     TVal? fl_opt = builtins_generic_get(obj, flags_key, ctx);
                     if (ctx.should_throw) return;
                     if (try fv = fl_opt) {
@@ -195,7 +195,7 @@ fn void builtin_regexp(BuiltinContext* ctx) {
         }
         if (ctor_check_obj != null) {
             // Check if the pattern's constructor is the RegExp constructor itself
-            HString* ctor_key = builtin_intern_string(ctx.heap, "constructor");
+            HString* ctor_key = ctx.heap.str(heap::BuiltinStr.CONSTRUCTOR);
             TVal? ctor_opt = builtins_generic_get(ctor_check_obj, ctor_key, ctx);
             if (ctx.should_throw) return;
             if (try cv = ctor_opt) {
@@ -316,7 +316,7 @@ fn bool regexp_initialize(BuiltinContext* ctx, HObject* obj,
     // non-configurable own data property. RegExpInitialize step 12 is
     // Set(obj, "lastIndex", 0, true): throws TypeError when an existing
     // lastIndex is non-writable (the internals above stay updated).
-    HString* lastindex_key = builtin_intern_string(ctx.heap, "lastIndex");
+    HString* lastindex_key = ctx.heap.str(heap::BuiltinStr.LAST_INDEX);
     if (!obj.is_prop_writable((void*)lastindex_key)) {
         builtin_throw_no_result_change(ctx, ctx.heap.type_err_proto, "Cannot assign to read only property 'lastIndex'");
         return false;
@@ -421,10 +421,10 @@ fn void builtin_regexp_proto_test(BuiltinContext* ctx) {
         } else {
             s_hstr = builtin_to_string_vm(ctx, arg);
             if (ctx.should_throw) return;
-            if (s_hstr == null) s_hstr = builtin_intern_string(ctx.heap, "undefined");
+            if (s_hstr == null) s_hstr = ctx.heap.str(heap::BuiltinStr.UNDEFINED);
         }
     } else {
-        s_hstr = builtin_intern_string(ctx.heap, "undefined");
+        s_hstr = ctx.heap.str(heap::BuiltinStr.UNDEFINED);
     }
 
     // Step 4: Let match be ? RegExpExec(R, S).
@@ -450,7 +450,7 @@ fn HObject* regexp_build_match_result(BuiltinContext* ctx, void* re_data, HStrin
     // Element 0: full match string
     usz match_len = (usz)(out_end - out_start);
     HString* match_str = match_len == 0
-        ? builtin_intern_string(ctx.heap, "")
+        ? ctx.heap.str(heap::BuiltinStr.EMPTY)
         : builtin_intern_string(ctx.heap, input[out_start : match_len]);
     // Elements go straight into the dense part: the index is already known, so
     // put_prop's int -> key string -> array_index round-trip buys nothing. A
@@ -467,7 +467,7 @@ fn HObject* regexp_build_match_result(BuiltinContext* ctx, void* re_data, HStrin
             usz cap_len = (usz)(caps_end[i] - caps_start[i]);
             TVal cap_elem;
             cap_elem.set_string(cap_len == 0
-                ? builtin_intern_string(ctx.heap, "")
+                ? ctx.heap.str(heap::BuiltinStr.EMPTY)
                 : builtin_intern_string(ctx.heap, input[caps_start[i] : cap_len]));
             arr.set_array_idx((uint)(i + 1), cap_elem);
         } else {
@@ -479,11 +479,11 @@ fn HObject* regexp_build_match_result(BuiltinContext* ctx, void* re_data, HStrin
     // index property, convert byte offset to character (UTF-16 code unit) index
     long char_index = (long)input_str.byte_offset_to_char_offset((uint)out_start);
     TVal idx_tv; idx_tv.set_fastint(char_index);
-    arr.put_prop(builtin_intern_string(ctx.heap, "index"), idx_tv, hobject::PROP_FLAGS_WEC);
+    arr.put_prop(ctx.heap.str(heap::BuiltinStr.INDEX), idx_tv, hobject::PROP_FLAGS_WEC);
 
     // input property
     TVal input_tv; input_tv.set_string(input_str);
-    arr.put_prop(builtin_intern_string(ctx.heap, "input"), input_tv, hobject::PROP_FLAGS_WEC);
+    arr.put_prop(ctx.heap.str(heap::BuiltinStr.INPUT), input_tv, hobject::PROP_FLAGS_WEC);
 
     // groups property
     char* group_names = re_bindings::re_get_groupnames(re_data);
@@ -501,7 +501,7 @@ fn HObject* regexp_build_match_result(BuiltinContext* ctx, void* re_data, HStrin
                     if (gi < num_caps && caps_start[gi] >= 0 && caps_end[gi] >= 0) {
                         usz cap_len = (usz)(caps_end[gi] - caps_start[gi]);
                         cap_val.set_string(cap_len == 0
-                            ? builtin_intern_string(ctx.heap, "")
+                            ? ctx.heap.str(heap::BuiltinStr.EMPTY)
                             : builtin_intern_string(ctx.heap, input[caps_start[gi] : cap_len]));
                     } else {
                         cap_val.set_undefined();
@@ -517,11 +517,11 @@ fn HObject* regexp_build_match_result(BuiltinContext* ctx, void* re_data, HStrin
                 p += (long)(name_len + 2);
             }
             TVal groups_val; groups_val.set_object(groups);
-            arr.put_prop(builtin_intern_string(ctx.heap, "groups"), groups_val, hobject::PROP_FLAGS_WEC);
+            arr.put_prop(ctx.heap.str(heap::BuiltinStr.GROUPS), groups_val, hobject::PROP_FLAGS_WEC);
         }
     } else {
         TVal groups_undef; groups_undef.set_undefined();
-        arr.put_prop(builtin_intern_string(ctx.heap, "groups"), groups_undef, hobject::PROP_FLAGS_WEC);
+        arr.put_prop(ctx.heap.str(heap::BuiltinStr.GROUPS), groups_undef, hobject::PROP_FLAGS_WEC);
     }
 
     // indices property (ES2022 d-flag)
@@ -598,23 +598,23 @@ fn HObject* regexp_build_match_result(BuiltinContext* ctx, void* re_data, HStrin
                         p += (long)(name_len + 2);
                     }
                     TVal igroups_tv; igroups_tv.set_object(igroups);
-                    indices_arr.put_prop(builtin_intern_string(ctx.heap, "groups"), igroups_tv, hobject::PROP_FLAGS_WEC);
+                    indices_arr.put_prop(ctx.heap.str(heap::BuiltinStr.GROUPS), igroups_tv, hobject::PROP_FLAGS_WEC);
                 }
             } else {
                 TVal igroups_undef; igroups_undef.set_undefined();
-                indices_arr.put_prop(builtin_intern_string(ctx.heap, "groups"), igroups_undef, hobject::PROP_FLAGS_WEC);
+                indices_arr.put_prop(ctx.heap.str(heap::BuiltinStr.GROUPS), igroups_undef, hobject::PROP_FLAGS_WEC);
             }
 
             TVal indices_len; indices_len.set_fastint((long)total_captures);
-            indices_arr.put_prop(builtin_intern_string(ctx.heap, "length"), indices_len, hobject::PROP_FLAGS_WEC);
+            indices_arr.put_prop(ctx.heap.str(heap::BuiltinStr.LENGTH), indices_len, hobject::PROP_FLAGS_WEC);
 
             TVal indices_tv; indices_tv.set_object(indices_arr);
-            arr.put_prop(builtin_intern_string(ctx.heap, "indices"), indices_tv, hobject::PROP_FLAGS_WEC);
+            arr.put_prop(ctx.heap.str(heap::BuiltinStr.INDICES), indices_tv, hobject::PROP_FLAGS_WEC);
         }
     }
 
     TVal len_tv; len_tv.set_fastint((long)total_captures);
-    arr.put_prop(builtin_intern_string(ctx.heap, "length"), len_tv, hobject::PROP_FLAGS_WEC);
+    arr.put_prop(ctx.heap.str(heap::BuiltinStr.LENGTH), len_tv, hobject::PROP_FLAGS_WEC);
 
     return arr;
 }
@@ -665,7 +665,7 @@ fn void builtin_regexp_proto_exec(BuiltinContext* ctx) {
     //   ToLength always runs (so valueOf on an object lastIndex is called).
     // Step 8: If global and sticky are both false, let lastIndex be 0.
     //   (The property is NOT modified in this case.)
-    HString* li_key = builtin_intern_string(ctx.heap, "lastIndex");
+    HString* li_key = ctx.heap.str(heap::BuiltinStr.LAST_INDEX);
     int start_pos = 0;
     {
         TVal? li_opt = builtins_generic_get(obj, li_key, ctx);
@@ -809,20 +809,20 @@ fn void builtin_regexp_proto_symbol_match(BuiltinContext* ctx) {
     } else {
         s_hstr = builtin_to_string_vm(ctx, &s_tv);
         if (ctx.should_throw) return;
-        if (s_hstr == null) s_hstr = builtin_intern_string(ctx.heap, "undefined");
+        if (s_hstr == null) s_hstr = ctx.heap.str(heap::BuiltinStr.UNDEFINED);
     }
 
     // 4. Let flags be ? ToString(? Get(rx, "flags")).
     // 5. Parse "g" and "u"/"v" from flags (spec steps 5-6).
     // Reading "flags" once avoids triggering "global"/"unicode" getters (which tests poison).
-    HString* flags_key_m = builtin_intern_string(ctx.heap, "flags");
+    HString* flags_key_m = ctx.heap.str(heap::BuiltinStr.FLAGS);
     TVal? flags_opt_m = builtins_generic_get(rx, flags_key_m, ctx);
     if (ctx.should_throw) return;
     TVal flags_tv_m; flags_tv_m.set_undefined();
     if (try fvm = flags_opt_m) { flags_tv_m = fvm; }
     HString* flags_hstr_m = builtin_to_string_vm(ctx, &flags_tv_m);
     if (ctx.should_throw) return;
-    if (flags_hstr_m == null) { flags_hstr_m = builtin_intern_string(ctx.heap, ""); }
+    if (flags_hstr_m == null) { flags_hstr_m = ctx.heap.str(heap::BuiltinStr.EMPTY); }
     bool global_flag = false;
     bool full_unicode = false;
     {
@@ -847,7 +847,7 @@ fn void builtin_regexp_proto_symbol_match(BuiltinContext* ctx) {
 
     // 8. global === true
     // 8.a. Perform ? Set(rx, "lastIndex", 0, true), throws TypeError if non-writable.
-    HString* li_key = builtin_intern_string(ctx.heap, "lastIndex");
+    HString* li_key = ctx.heap.str(heap::BuiltinStr.LAST_INDEX);
     TVal zero_tv; zero_tv.set_fastint(0);
     if (!regexp_set_with_setter(ctx, rx, li_key, zero_tv)) return;
 
@@ -884,7 +884,7 @@ fn void builtin_regexp_proto_symbol_match(BuiltinContext* ctx) {
         if (try mv = ms_opt) { ms_tv = mv; }
         HString* match_str = builtin_to_string_vm(ctx, &ms_tv);
         if (ctx.should_throw) return;
-        if (match_str == null) match_str = builtin_intern_string(ctx.heap, "undefined");
+        if (match_str == null) match_str = ctx.heap.str(heap::BuiltinStr.UNDEFINED);
 
         // 8.f. Perform ! CreateDataProperty(A, ! ToString(n), matchStr).
         TVal elem; elem.set_string(match_str);
@@ -938,7 +938,7 @@ fn void builtin_regexp_proto_symbol_match(BuiltinContext* ctx) {
     }
 
     TVal len_tv; len_tv.set_fastint((long)arr_idx);
-    HString* len_key = builtin_intern_string(ctx.heap, "length");
+    HString* len_key = ctx.heap.str(heap::BuiltinStr.LENGTH);
     arr.put_prop(len_key, len_tv, hobject::PROP_FLAGS_WEC);
 
     ctx.result.set_object(arr);
@@ -961,10 +961,10 @@ fn void builtin_regexp_proto_symbol_search(BuiltinContext* ctx) {
     } else {
         s_hstr = builtin_to_string_vm(ctx, &s_tv);
         if (ctx.should_throw) return;
-        if (s_hstr == null) s_hstr = builtin_intern_string(ctx.heap, "undefined");
+        if (s_hstr == null) s_hstr = ctx.heap.str(heap::BuiltinStr.UNDEFINED);
     }
 
-    HString* li_key = builtin_intern_string(ctx.heap, "lastIndex");
+    HString* li_key = ctx.heap.str(heap::BuiltinStr.LAST_INDEX);
 
     // 4. Let previousLastIndex be ? Get(rx, "lastIndex").
     TVal? prev_opt = builtins_generic_get(rx, li_key, ctx);
@@ -1005,7 +1005,7 @@ fn void builtin_regexp_proto_symbol_search(BuiltinContext* ctx) {
 
     // 14. Return Get(result, "index").
     HObject* match_arr = (HObject*)result.get_heapptr();
-    HString* index_key = builtin_intern_string(ctx.heap, "index");
+    HString* index_key = ctx.heap.str(heap::BuiltinStr.INDEX);
     TVal? idx_opt = builtins_generic_get(match_arr, index_key, ctx);
     if (ctx.should_throw) return;
     if (catch err = idx_opt) {
@@ -1175,9 +1175,9 @@ fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
             if (ctx.should_throw) return;
         }
     } else {
-        s_hstr = builtin_intern_string(heap, "undefined");
+        s_hstr = heap.str(heap::BuiltinStr.UNDEFINED);
     }
-    if (s_hstr == null) { ctx.result.set_string(builtin_intern_string(heap, "")); return; }
+    if (s_hstr == null) { ctx.result.set_string(heap.str(heap::BuiltinStr.EMPTY)); return; }
 
     char* input = s_hstr.get_cstr();
     int input_len = (int)s_hstr.blen;
@@ -1199,21 +1199,21 @@ fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
         if (ctx.argc > 1) {
             replace_str_hstr = builtin_to_string_vm(ctx, &replace_val);
         } else {
-            replace_str_hstr = builtin_intern_string(heap, "undefined");
+            replace_str_hstr = heap.str(heap::BuiltinStr.UNDEFINED);
         }
         if (ctx.should_throw) return;
-        if (replace_str_hstr == null) replace_str_hstr = builtin_intern_string(heap, "undefined");
+        if (replace_str_hstr == null) replace_str_hstr = heap.str(heap::BuiltinStr.UNDEFINED);
     }
 
     // Step 8: flags = ? ToString(? Get(rx, "flags")).
-    HString* flags_key = builtin_intern_string(heap, "flags");
+    HString* flags_key = heap.str(heap::BuiltinStr.FLAGS);
     TVal? flags_opt = builtins_generic_get(rx, flags_key, ctx);
     if (ctx.should_throw) return;
     TVal flags_tv; flags_tv.set_undefined();
     if (try fv = flags_opt) { flags_tv = fv; }
     HString* flags_hstr = builtin_to_string_vm(ctx, &flags_tv);
     if (ctx.should_throw) return;
-    if (flags_hstr == null) flags_hstr = builtin_intern_string(heap, "");
+    if (flags_hstr == null) flags_hstr = heap.str(heap::BuiltinStr.EMPTY);
 
     // Parse flags for global, sticky, fullUnicode.
     bool global_flag = false;
@@ -1228,7 +1228,7 @@ fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
         }
     }
 
-    HString* li_key = builtin_intern_string(heap, "lastIndex");
+    HString* li_key = heap.str(heap::BuiltinStr.LAST_INDEX);
 
     // Step 11: if global → Set(rx, "lastIndex", 0, true), throws if non-writable.
     if (global_flag) {
@@ -1265,7 +1265,7 @@ fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
                     if (try msv = ms_opt2) { ms_raw2 = msv; }
                     HString* ms_hstr2 = builtin_to_string_vm(ctx, &ms_raw2);
                     if (ctx.should_throw) return;
-                    if (ms_hstr2 == null) ms_hstr2 = builtin_intern_string(heap, "undefined");
+                    if (ms_hstr2 == null) ms_hstr2 = heap.str(heap::BuiltinStr.UNDEFINED);
                     if (ms_hstr2.blen == 0) {
                         // Empty match: AdvanceStringIndex(S, ToLength(lastIndex), fullUnicode).
                         TVal? li_opt2 = builtins_generic_get(rx, li_key, ctx);
@@ -1315,7 +1315,7 @@ fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
         HObject* m = (HObject*)m_tv.get_heapptr();
 
         // Step 14.a: nCaptures = ToLength(Get(result,"length")) - 1.
-        HString* len_key = builtin_intern_string(heap, "length");
+        HString* len_key = heap.str(heap::BuiltinStr.LENGTH);
         TVal? len_opt = builtins_generic_get(m, len_key, ctx);
         if (ctx.should_throw) return;
         TVal len_raw; len_raw.set_fastint(0);
@@ -1338,13 +1338,13 @@ fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
         if (try zv = z_opt) { z_raw = zv; }
         HString* matched_hstr = builtin_to_string_vm(ctx, &z_raw);
         if (ctx.should_throw) return;
-        if (matched_hstr == null) matched_hstr = builtin_intern_string(heap, "undefined");
+        if (matched_hstr == null) matched_hstr = heap.str(heap::BuiltinStr.UNDEFINED);
 
         // Step 14.e: position = ? ToInteger(? Get(result, "index")), clamped
         // [0,|S|], |S| is the UTF-16 code-unit length, since "index" is a
         // code-unit index. Convert to a CESU-8 byte offset before using it
         // to slice `input` (which is the raw CESU-8 byte buffer).
-        HString* idx_key = builtin_intern_string(heap, "index");
+        HString* idx_key = heap.str(heap::BuiltinStr.INDEX);
         TVal? idx_opt = builtins_generic_get(m, idx_key, ctx);
         if (ctx.should_throw) return;
         TVal idx_raw; idx_raw.set_fastint(0);
@@ -1371,12 +1371,12 @@ fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
             } else {
                 HString* cs = builtin_to_string_vm(ctx, &cap_tv);
                 if (ctx.should_throw) return;
-                cap_strs[ci] = cs != null ? cs : builtin_intern_string(heap, "undefined");
+                cap_strs[ci] = cs != null ? cs : heap.str(heap::BuiltinStr.UNDEFINED);
             }
         }
 
         // Step 14.j: namedCaptures = ? Get(result, "groups").
-        HString* groups_key = builtin_intern_string(heap, "groups");
+        HString* groups_key = heap.str(heap::BuiltinStr.GROUPS);
         TVal? groups_opt = builtins_generic_get(m, groups_key, ctx);
         if (ctx.should_throw) return;
         TVal named_captures_tv; named_captures_tv.set_undefined();
@@ -1419,7 +1419,7 @@ fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
             }
             HString* rep_hs = builtin_to_string_vm(ctx, &res);
             if (ctx.should_throw) return;
-            if (rep_hs == null) rep_hs = builtin_intern_string(heap, "undefined");
+            if (rep_hs == null) rep_hs = heap.str(heap::BuiltinStr.UNDEFINED);
 
             if (out_start >= last_end) {
                 for (int j = last_end; j < out_start && out_off < 8192; j++) out_buf[out_off++] = input[j];
@@ -1479,7 +1479,7 @@ fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
                 replace_str_hstr
             );
             if (ctx.should_throw) return;
-            if (rep_hs == null) rep_hs = builtin_intern_string(heap, "");
+            if (rep_hs == null) rep_hs = heap.str(heap::BuiltinStr.EMPTY);
 
             if (out_start >= last_end) {
                 for (int j = last_end; j < out_start && out_off < 8192; j++) out_buf[out_off++] = input[j];
@@ -1504,8 +1504,8 @@ fn void builtin_regexp_proto_symbol_split(BuiltinContext* ctx) {
     if (rx == null) return;
 
     Heap* heap = ctx.heap;
-    HString* li_key   = builtin_intern_string(heap, "lastIndex");
-    HString* len_key  = builtin_intern_string(heap, "length");
+    HString* li_key   = heap.str(heap::BuiltinStr.LAST_INDEX);
+    HString* len_key  = heap.str(heap::BuiltinStr.LENGTH);
 
     // Step 3: Let S be ? ToString(string).
     TVal s_tv; s_tv.set_undefined();
@@ -1524,7 +1524,7 @@ fn void builtin_regexp_proto_symbol_split(BuiltinContext* ctx) {
     } else {
         s_hstr = builtin_to_string_vm(ctx, &s_tv);
         if (ctx.should_throw) return;
-        if (s_hstr == null) { s_hstr = builtin_intern_string(heap, "undefined"); }
+        if (s_hstr == null) { s_hstr = heap.str(heap::BuiltinStr.UNDEFINED); }
     }
 
     // Step 4: Let C be ? SpeciesConstructor(rx, %RegExp%).
@@ -1557,7 +1557,7 @@ fn void builtin_regexp_proto_symbol_split(BuiltinContext* ctx) {
             }
         }
 
-        HString* ctor_key = builtin_intern_string(heap, "constructor");
+        HString* ctor_key = heap.str(heap::BuiltinStr.CONSTRUCTOR);
         TVal? ctor_opt = builtins_generic_get(rx, ctor_key, ctx);
         if (ctx.should_throw) return;
         TVal ctor_tv; ctor_tv.set_undefined();
@@ -1596,14 +1596,14 @@ fn void builtin_regexp_proto_symbol_split(BuiltinContext* ctx) {
     }
 
     // Step 7: Let flags be ? ToString(? Get(rx, "flags")).
-    HString* flags_key = builtin_intern_string(heap, "flags");
+    HString* flags_key = heap.str(heap::BuiltinStr.FLAGS);
     TVal? flags_opt = builtins_generic_get(rx, flags_key, ctx);
     if (ctx.should_throw) return;
     TVal flags_tv; flags_tv.set_undefined();
     if (try fv = flags_opt) { flags_tv = fv; }
     HString* flags_str = builtin_to_string_vm(ctx, &flags_tv);
     if (ctx.should_throw) return;
-    if (flags_str == null) { flags_str = builtin_intern_string(heap, ""); }
+    if (flags_str == null) { flags_str = heap.str(heap::BuiltinStr.EMPTY); }
 
     // Step 8: newFlags = flags; if 'y' not in flags, append 'y'.
     bool has_y = false;
@@ -1789,7 +1789,7 @@ fn void builtin_regexp_proto_symbol_split(BuiltinContext* ctx) {
             int sub_len = q - p;
             HString* substr;
             if (sub_len <= 0) {
-                substr = builtin_intern_string(heap, "");
+                substr = heap.str(heap::BuiltinStr.EMPTY);
             } else {
                 substr = builtin_intern_string(heap, input[p : (usz)sub_len]);
             }
@@ -1842,7 +1842,7 @@ fn void builtin_regexp_proto_symbol_split(BuiltinContext* ctx) {
         int tail_len = input_len - p;
         HString* tail_str;
         if (tail_len <= 0) {
-            tail_str = builtin_intern_string(heap, "");
+            tail_str = heap.str(heap::BuiltinStr.EMPTY);
         } else {
             tail_str = builtin_intern_string(heap, input[p : (usz)tail_len]);
         }
@@ -1894,7 +1894,7 @@ fn void builtin_regexp_proto_symbol_matchAll(BuiltinContext* ctx) {
     } else {
         s_hstr = builtin_to_string_vm(ctx, &s_tv);
         if (ctx.should_throw) return;
-        if (s_hstr == null) s_hstr = builtin_intern_string(heap, "undefined");
+        if (s_hstr == null) s_hstr = heap.str(heap::BuiltinStr.UNDEFINED);
     }
     s_tv.set_string(s_hstr);
 
@@ -1919,7 +1919,7 @@ fn void builtin_regexp_proto_symbol_matchAll(BuiltinContext* ctx) {
             }
         }
 
-        HString* ctor_key = builtin_intern_string(heap, "constructor");
+        HString* ctor_key = heap.str(heap::BuiltinStr.CONSTRUCTOR);
         TVal? ctor_opt = builtins_generic_get(rx, ctor_key, ctx);
         if (ctx.should_throw) return;
         TVal ctor_tv; ctor_tv.set_undefined();
@@ -1954,10 +1954,10 @@ fn void builtin_regexp_proto_symbol_matchAll(BuiltinContext* ctx) {
     }
 
     // 4. Let flags be ? ToString(? Get(R, "flags")).
-    HString* flags_key = builtin_intern_string(heap, "flags");
+    HString* flags_key = heap.str(heap::BuiltinStr.FLAGS);
     TVal? flags_opt = builtins_generic_get(rx, flags_key, ctx);
     if (ctx.should_throw) return;
-    HString* flags_str = builtin_intern_string(heap, "");
+    HString* flags_str = heap.str(heap::BuiltinStr.EMPTY);
     if (try fv = flags_opt) {
         if (fv.is_string() && fv.get_heapptr() != null) {
             flags_str = (HString*)fv.get_heapptr();
@@ -1995,7 +1995,7 @@ fn void builtin_regexp_proto_symbol_matchAll(BuiltinContext* ctx) {
     if (matcher == null) { matcher = rx; }
 
     // 6. Let lastIndex be ? ToLength(? Get(R, "lastIndex")).
-    HString* li_key = builtin_intern_string(heap, "lastIndex");
+    HString* li_key = heap.str(heap::BuiltinStr.LAST_INDEX);
     TVal li_raw; li_raw.set_fastint(0);
     {
         TVal? li_opt = builtins_generic_get(rx, li_key, ctx);
@@ -2140,7 +2140,7 @@ fn bool regexp_set_with_setter(BuiltinContext* ctx, HObject* obj, HString* key, 
 ///   - Sets ctx.should_throw on error; returns false in that case
 fn bool regexp_exec_call(BuiltinContext* ctx, HObject* rx, TVal* input_str_tv) {
     // 3. Let exec be ? Get(R, "exec").
-    HString* exec_key = builtin_intern_string(ctx.heap, "exec");
+    HString* exec_key = ctx.heap.str(heap::BuiltinStr.EXEC);
     TVal? exec_opt = builtins_generic_get(rx, exec_key, ctx);
     if (ctx.should_throw) return false;
     TVal exec_tv;
@@ -2195,13 +2195,13 @@ fn bool regexp_exec_call(BuiltinContext* ctx, HObject* rx, TVal* input_str_tv) {
     } else {
         s_hstr = builtin_to_string_vm(ctx, input_str_tv);
         if (ctx.should_throw) return false;
-        if (s_hstr == null) s_hstr = builtin_intern_string(ctx.heap, "undefined");
+        if (s_hstr == null) s_hstr = ctx.heap.str(heap::BuiltinStr.UNDEFINED);
     }
     char* input = s_hstr.get_cstr();
     int input_len = (int)s_hstr.blen;
 
     int start_pos = 0;
-    HString* li_key = builtin_intern_string(ctx.heap, "lastIndex");
+    HString* li_key = ctx.heap.str(heap::BuiltinStr.LAST_INDEX);
     {
         // Always ToLength(Get(R, "lastIndex")), spec step 4 (triggers valueOf).
         TVal? li_opt = builtins_generic_get(rx, li_key, ctx);
@@ -2287,56 +2287,56 @@ fn void builtin_regexp_proto_get_flags(BuiltinContext* ctx) {
     char[8] buf;
     int pos = 0;
     // hasIndices
-    HString* hi_key = builtin_intern_string(ctx.heap, "hasIndices");
+    HString* hi_key = ctx.heap.str(heap::BuiltinStr.HAS_INDICES);
     TVal? hi_opt = builtins_generic_get(rx, hi_key, ctx);
     if (ctx.should_throw) return;
     if (try hv = hi_opt) {
         if (builtin_to_boolean(&hv)) buf[pos++] = 'd';
     }
     // global
-    HString* g_key = builtin_intern_string(ctx.heap, "global");
+    HString* g_key = ctx.heap.str(heap::BuiltinStr.GLOBAL);
     TVal? g_opt = builtins_generic_get(rx, g_key, ctx);
     if (ctx.should_throw) return;
     if (try gv = g_opt) {
         if (builtin_to_boolean(&gv)) buf[pos++] = 'g';
     }
     // ignoreCase
-    HString* i_key = builtin_intern_string(ctx.heap, "ignoreCase");
+    HString* i_key = ctx.heap.str(heap::BuiltinStr.IGNORE_CASE);
     TVal? i_opt = builtins_generic_get(rx, i_key, ctx);
     if (ctx.should_throw) return;
     if (try iv = i_opt) {
         if (builtin_to_boolean(&iv)) buf[pos++] = 'i';
     }
     // multiline
-    HString* m_key = builtin_intern_string(ctx.heap, "multiline");
+    HString* m_key = ctx.heap.str(heap::BuiltinStr.MULTILINE);
     TVal? m_opt = builtins_generic_get(rx, m_key, ctx);
     if (ctx.should_throw) return;
     if (try mv = m_opt) {
         if (builtin_to_boolean(&mv)) buf[pos++] = 'm';
     }
     // dotAll
-    HString* s_key = builtin_intern_string(ctx.heap, "dotAll");
+    HString* s_key = ctx.heap.str(heap::BuiltinStr.DOT_ALL);
     TVal? s_opt = builtins_generic_get(rx, s_key, ctx);
     if (ctx.should_throw) return;
     if (try sv = s_opt) {
         if (builtin_to_boolean(&sv)) buf[pos++] = 's';
     }
     // unicode
-    HString* u_key = builtin_intern_string(ctx.heap, "unicode");
+    HString* u_key = ctx.heap.str(heap::BuiltinStr.UNICODE);
     TVal? u_opt = builtins_generic_get(rx, u_key, ctx);
     if (ctx.should_throw) return;
     if (try uv = u_opt) {
         if (builtin_to_boolean(&uv)) buf[pos++] = 'u';
     }
     // unicodeSets
-    HString* v_key = builtin_intern_string(ctx.heap, "unicodeSets");
+    HString* v_key = ctx.heap.str(heap::BuiltinStr.UNICODE_SETS);
     TVal? v_opt = builtins_generic_get(rx, v_key, ctx);
     if (ctx.should_throw) return;
     if (try vv = v_opt) {
         if (builtin_to_boolean(&vv)) buf[pos++] = 'v';
     }
     // sticky
-    HString* y_key = builtin_intern_string(ctx.heap, "sticky");
+    HString* y_key = ctx.heap.str(heap::BuiltinStr.STICKY);
     TVal? y_opt = builtins_generic_get(rx, y_key, ctx);
     if (ctx.should_throw) return;
     if (try yv = y_opt) {
@@ -2524,7 +2524,7 @@ fn bool register_proto_accessor(HObject* proto, Heap* heap, char[] name, uint ge
     if (fn_name != null) {
         TVal name_tv;
         name_tv.set_string(fn_name);
-        HString* name_prop_key = builtin_intern_string(heap, "name");
+        HString* name_prop_key = heap.str(heap::BuiltinStr.NAME);
         func_obj.put_prop(name_prop_key, name_tv, hobject::PROP_FLAGS_NWC);
     }
     // Set .length = 0
@@ -2826,7 +2826,7 @@ fn bool register_regexp_constructor(EnvRecord* global_env, Heap* heap) {
             HString* getter_name = builtin_intern_string(heap, "get [Symbol.species]");
             if (getter_name != null) {
                 TVal name_tv; name_tv.set_string(getter_name);
-                getter_fn.put_prop((void*)builtin_intern_string(heap, "name"), name_tv, hobject::PROP_FLAGS_NWC);
+                getter_fn.put_prop((void*)heap.str(heap::BuiltinStr.NAME), name_tv, hobject::PROP_FLAGS_NWC);
             }
             // Set .length = 0
             TVal zero_tv; zero_tv.set_fastint(0);

@@ -60,7 +60,7 @@ fn bool register_async_generator(EnvRecord* global_env, Heap* heap) {
                 HString* length_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
                 TVal len_tv; len_tv.set_fastint(0);
                 fn_obj.put_prop(length_key, len_tv, hobject::PROP_FLAGS_NWC);
-                HString* name_key = builtin_intern_string(heap, "name");
+                HString* name_key = heap.str(heap::BuiltinStr.NAME);
                 HString* name_val = builtin_intern_string(heap, "[Symbol.asyncIterator]");
                 if (name_key != null && name_val != null) {
                     TVal name_tv; name_tv.set_string(name_val);
@@ -219,7 +219,7 @@ fn TVal async_gen_type_error(Heap* heap, char[] msg) {
         HString* msg_str = builtin_intern_string(heap, msg);
         if (msg_str != null) {
             TVal msg_tv; msg_tv.set_string(msg_str);
-            HString* msg_key = builtin_intern_string(heap, "message");
+            HString* msg_key = heap.str(heap::BuiltinStr.MESSAGE);
             if (msg_key != null) err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
         }
         out.set_object(err);

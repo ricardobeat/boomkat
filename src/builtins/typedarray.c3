@@ -719,8 +719,8 @@ fn void typed_array_construct(BuiltinContext* ctx, hobject::ObjClass obj_class) 
                 uint count = 0;
 
                 HString* next_key = builtin_intern_string(heap, "next");
-                HString* done_key = builtin_intern_string(heap, "done");
-                HString* value_key = builtin_intern_string(heap, "value");
+                HString* done_key = heap.str(heap::BuiltinStr.DONE);
+                HString* value_key = heap.str(heap::BuiltinStr.VALUE);
 
                 while (true) {
                     if (!iterator.is_object() || iterator.get_heapptr() == null) break;
@@ -3295,8 +3295,8 @@ fn void builtin_ta_from(BuiltinContext* ctx) @noinline {
 
         // Collect all values from the iterator into a temporary list (IteratorToList).
         HString* next_key  = builtin_intern_string(heap, "next");
-        HString* done_key  = builtin_intern_string(heap, "done");
-        HString* value_key = builtin_intern_string(heap, "value");
+        HString* done_key  = heap.str(heap::BuiltinStr.DONE);
+        HString* value_key = heap.str(heap::BuiltinStr.VALUE);
 
         uint cap = 8;
         TVal* items = (TVal*)heap.alloc_func(heap.heap_udata, (usz)cap * TVal::size);
@@ -4020,7 +4020,7 @@ fn bool register_typedarray_accessor(HObject* proto, Heap* heap, char[] name, ui
     if (fn_name != null) {
         TVal name_tv;
         name_tv.set_string(fn_name);
-        HString* name_prop_key = builtin_intern_string(heap, "name");
+        HString* name_prop_key = heap.str(heap::BuiltinStr.NAME);
         func_obj.put_prop(name_prop_key, name_tv, hobject::PROP_FLAGS_NWC);
     }
     HString* length_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
@@ -4059,7 +4059,7 @@ fn bool register_typedarray_symbol_accessor(HObject* proto, Heap* heap, HString*
         TVal len_tv; len_tv.set_fastint(0);
         func_obj.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NWC);
     }
-    HString* name_key2 = builtin_intern_string(heap, "name");
+    HString* name_key2 = heap.str(heap::BuiltinStr.NAME);
     HString* name_val2 = builtin_intern_string(heap, "get [Symbol.toStringTag]");
     if (name_key2 != null && name_val2 != null) {
         TVal name_tv2; name_tv2.set_string(name_val2);
@@ -4092,7 +4092,7 @@ fn bool register_ta_ctor(EnvRecord* global_env, Heap* heap, char[] name, uint fn
     ctor.prototype = heap.typedarray_intrinsic != null ? heap.typedarray_intrinsic : heap.function_proto;
 
     // Set .name
-    HString* name_key = builtin_intern_string(heap, "name");
+    HString* name_key = heap.str(heap::BuiltinStr.NAME);
     HString* name_val = builtin_intern_string(heap, name);
     if (name_key != null && name_val != null) {
         TVal name_tv;
@@ -4259,7 +4259,7 @@ fn bool register_typed_array_constructors(EnvRecord* global_env, Heap* heap) {
     if (!register_string_proto_method(proto, heap, "with",            Builtin.TA_PROTO_WITH.ordinal))            return false;
     // toString must be the same function object as Array.prototype.toString (§22.2.3.28).
     {
-        HString* tostr_key = builtin_intern_string(heap, "toString");
+        HString* tostr_key = heap.str(heap::BuiltinStr.TO_STRING);
         if (tostr_key != null && heap.array_proto != null) {
             TVal? arr_tostr = heap.array_proto.get_prop(tostr_key);
             if (try atv = arr_tostr) {
@@ -4318,7 +4318,7 @@ fn bool register_typed_array_constructors(EnvRecord* global_env, Heap* heap) {
                 getter.prototype = heap.function_proto;
                 (*getter.extra_ptr()).func.builtin_fn_index = (int)Builtin.TA_SPECIES_GET.ordinal;
                 // Set getter.name = "get [Symbol.species]"
-                HString* gname_key = builtin_intern_string(heap, "name");
+                HString* gname_key = heap.str(heap::BuiltinStr.NAME);
                 HString* gname_val = builtin_intern_string(heap, "get [Symbol.species]");
                 if (gname_key != null && gname_val != null) {
                     TVal gname_tv; gname_tv.set_string(gname_val);

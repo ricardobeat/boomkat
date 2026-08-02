@@ -1349,7 +1349,7 @@ fn HObject* check_collection_class(BuiltinContext* ctx, hobject::ObjClass want, 
         if (msg_str != null) {
             TVal msg_val;
             msg_val.set_string(msg_str);
-            HString* msg_key = builtin_intern_string(ctx.heap, "message");
+            HString* msg_key = ctx.heap.str(heap::BuiltinStr.MESSAGE);
             err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WC);
         }
         TVal err_val;
@@ -1410,7 +1410,7 @@ fn void builtin_throw_no_result_change(BuiltinContext* ctx, HObject* proto, char
         HString* msg_str = builtin_intern_string(ctx.heap, msg);
         if (msg_str != null) {
             TVal msg_val; msg_val.set_string(msg_str);
-            err.put_prop(builtin_intern_string(ctx.heap, "message"), msg_val, hobject::PROP_FLAGS_WC);
+            err.put_prop(ctx.heap.str(heap::BuiltinStr.MESSAGE), msg_val, hobject::PROP_FLAGS_WC);
         }
         ctx.should_throw = true;
         ctx.throw_value.set_object(err);
@@ -1610,7 +1610,7 @@ fn void coll_construct(BuiltinContext* ctx, hobject::ObjClass obj_class, HObject
                     // Use accessor-aware reads for IteratorResult fields (ES2022 §7.4.4).
                     // get_prop_proto bypasses accessor getters; builtins_generic_get
                     // invokes [[Get]] so a throwing getter is caught.
-                    HString* done_key = builtin_intern_string(ctx.heap, "done");
+                    HString* done_key = ctx.heap.str(heap::BuiltinStr.DONE);
                     TVal done_val;
                     done_val.set_undefined();
                     if (done_key != null) {
@@ -1624,7 +1624,7 @@ fn void coll_construct(BuiltinContext* ctx, hobject::ObjClass obj_class, HObject
                     }
                     if (done_val.is_boolean() && done_val.get_boolean()) break;
 
-                    HString* value_key = builtin_intern_string(ctx.heap, "value");
+                    HString* value_key = ctx.heap.str(heap::BuiltinStr.VALUE);
                     TVal val_tv;
                     val_tv.set_undefined();
                     if (value_key != null) {
@@ -2091,8 +2091,8 @@ fn HObject* group_by_shared(BuiltinContext* ctx, bool into_map) {
     }
 
     HString* next_key = builtin_intern_string(heap, "next");
-    HString* done_key = builtin_intern_string(heap, "done");
-    HString* value_key = builtin_intern_string(heap, "value");
+    HString* done_key = heap.str(heap::BuiltinStr.DONE);
+    HString* value_key = heap.str(heap::BuiltinStr.VALUE);
 
     ulong k = 0;
     while (true) {
@@ -2465,7 +2465,7 @@ fn double builtin_to_number_vm(BuiltinContext* ctx, TVal* val) {
                 if (msg_str != null) {
                     TVal msg_val;
                     msg_val.set_string(msg_str);
-                    HString* msg_key = builtin_intern_string(ctx.heap, "message");
+                    HString* msg_key = ctx.heap.str(heap::BuiltinStr.MESSAGE);
                     if (msg_key != null) {
                         err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WEC);
                     }
@@ -2611,7 +2611,7 @@ fn bool register_array_proto_method(HObject* proto, Heap* heap, char[] name, uin
         }
     }
     // Set .name (non-writable, non-enumerable, configurable)
-    HString* name_prop_key = builtin_intern_string(heap, "name");
+    HString* name_prop_key = heap.str(heap::BuiltinStr.NAME);
     HString* name_val = builtin_intern_string(heap, name);
     if (name_prop_key != null && name_val != null) {
         TVal name_tv;
@@ -2649,7 +2649,7 @@ fn bool register_compiled_proto_method(HObject* proto, Heap* heap, EnvRecord* gl
     func_obj.prototype = heap.function_proto;
     func_obj.flags.callable = true;
     func_obj.flags.constructable = false;
-    HString* name_str = builtin_intern_string(heap, "name");
+    HString* name_str = heap.str(heap::BuiltinStr.NAME);
     if (name_str != null) {
         HString* fname = builtin_intern_string(heap, name);
         if (fname != null) {
@@ -2695,7 +2695,7 @@ fn bool register_string_proto_method(HObject* proto, Heap* heap, char[] name, ui
         }
     }
     // Set .name (non-writable, non-enumerable, configurable)
-    HString* name_prop_key = builtin_intern_string(heap, "name");
+    HString* name_prop_key = heap.str(heap::BuiltinStr.NAME);
     HString* name_val = builtin_intern_string(heap, name);
     if (name_prop_key != null && name_val != null) {
         TVal name_tv;
@@ -2764,11 +2764,11 @@ fn bool register_simple_builtin(EnvRecord* global_env, Heap* heap, char[] name, 
 fn void set_func_ctor_name_length(HObject* func_obj, Heap* heap, char[] name, int length) {
     // ES2015 §17: built-in function objects have "length" before "name" in
     // own property insertion order.
-    HString* length_key = builtin_intern_string(heap, "length");
+    HString* length_key = heap.str(heap::BuiltinStr.LENGTH);
     TVal length_tv; length_tv.set_fastint((long)length);
     func_obj.put_prop(length_key, length_tv, hobject::PROP_FLAGS_NWC);
 
-    HString* name_key = builtin_intern_string(heap, "name");
+    HString* name_key = heap.str(heap::BuiltinStr.NAME);
     HString* name_hstr = builtin_intern_string(heap, name);
     TVal name_tv; name_tv.set_string(name_hstr);
     func_obj.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC);
@@ -2776,7 +2776,7 @@ fn void set_func_ctor_name_length(HObject* func_obj, Heap* heap, char[] name, in
 
 /// Set .name on a built-in constructor HObject (when .length is already set).
 fn void set_func_ctor_name(HObject* func_obj, Heap* heap, char[] name) {
-    HString* name_key = builtin_intern_string(heap, "name");
+    HString* name_key = heap.str(heap::BuiltinStr.NAME);
     HString* name_hstr = builtin_intern_string(heap, name);
     TVal name_tv; name_tv.set_string(name_hstr);
     func_obj.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC);
@@ -2814,7 +2814,7 @@ fn void module_binding_throw_tdz(BuiltinContext* ctx, HString* name) {
         if (msg_str != null) {
             TVal msg_val;
             msg_val.set_string(msg_str);
-            HString* msg_key = builtin_intern_string(ctx.heap, "message");
+            HString* msg_key = ctx.heap.str(heap::BuiltinStr.MESSAGE);
             err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WC);
         }
         ctx.should_throw = true;
@@ -3181,7 +3181,7 @@ fn void host_throw_error(BuiltinContext* ctx, int kind, char[] msg) {
     if (try err = err_raw) {
         err.prototype = proto;
         HString* msg_str = builtin_intern_string(heap, msg);
-        HString* msg_key = builtin_intern_string(heap, "message");
+        HString* msg_key = heap.str(heap::BuiltinStr.MESSAGE);
         if (msg_str != null && msg_key != null) {
             TVal msg_tv;
             msg_tv.set_string(msg_str);
@@ -3285,7 +3285,7 @@ fn HObject*? make_host_function(Heap* heap, uint slot) {
         func_obj.put_prop(length_str, len_tv, hobject::PROP_FLAGS_NWC);
     }
 
-    HString* name_key = builtin_intern_string(heap, "name");
+    HString* name_key = heap.str(heap::BuiltinStr.NAME);
     if (name_key != null && entry.name != null) {
         TVal name_tv;
         name_tv.set_string((HString*)entry.name);
@@ -3301,7 +3301,7 @@ fn HObject*? make_host_function(Heap* heap, uint slot) {
         HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
         if (try proto_obj = proto_raw) {
             proto_obj.prototype = heap.object_proto;
-            HString* ctor_key = builtin_intern_string(heap, "constructor");
+            HString* ctor_key = heap.str(heap::BuiltinStr.CONSTRUCTOR);
             if (ctor_key != null) {
                 TVal ctor_tv;
                 ctor_tv.set_object(func_obj);
@@ -3794,7 +3794,7 @@ fn bool register_test262_host(EnvRecord* global_env, Heap* heap) {
     HString* h262_key = builtin_intern_string(heap, "$262");
     HString* d_key = builtin_intern_string(heap, "detachArrayBuffer");
     HString* e_key = builtin_intern_string(heap, "evalScript");
-    HString* g_key = builtin_intern_string(heap, "global");
+    HString* g_key = heap.str(heap::BuiltinStr.GLOBAL);
     if (es_key == null || d_hidden_key == null || h262_key == null
         || d_key == null || e_key == null || g_key == null) return false;
 

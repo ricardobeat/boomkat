@@ -982,7 +982,7 @@ fn bool inspect_is_class_ctor(HObject* obj) {
 /// The function's own "name" property, or "" when absent or empty. Read as a
 /// plain own data property so an exotic "name" accessor is not invoked.
 fn char[] inspect_function_name(InspectCtx* ctx, HObject* obj) {
-    HString* name_key = builtin_intern_string(ctx.heap, "name");
+    HString* name_key = ctx.heap.str(heap::BuiltinStr.NAME);
     if (name_key == null) return "";
     int idx = obj.find_prop_idx(name_key);
     if (idx < 0) return "";
@@ -997,7 +997,7 @@ fn char[] inspect_function_name(InspectCtx* ctx, HObject* obj) {
 /// An Error prints its stack, which already carries the "Type: message" header.
 /// With no stack it falls back to that header alone.
 fn bool inspect_error(InspectCtx* ctx, HObject* obj, StrBuf* out) {
-    HString* stack_key = builtin_intern_string(ctx.heap, "stack");
+    HString* stack_key = ctx.heap.str(heap::BuiltinStr.STACK);
     if (stack_key != null) {
         int idx = obj.find_prop_idx(stack_key);
         if (idx >= 0 && !obj.get_prop_flags((uint)idx).is_accessor) {
@@ -1074,7 +1074,7 @@ fn HString* inspect_call_method(InspectCtx* ctx, HObject* obj, char[] name) {
 /// and an Error rather than printing "1,2" or "[object Map]", so only a
 /// toString reached before any builtin prototype qualifies.
 fn bool inspect_has_custom_tostring(Heap* heap, HObject* obj) {
-    HString* key = builtin_intern_string(heap, "toString");
+    HString* key = heap.str(heap::BuiltinStr.TO_STRING);
     if (key == null) return false;
     HObject* cur = obj;
     while (cur != null) {

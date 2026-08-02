@@ -190,12 +190,12 @@ fn void builtin_function(BuiltinContext* ctx) {
     if (try proto = proto_raw) {
         proto.prototype = ctx.heap.object_proto;
         // ES5 §13.2.2 step 17: .constructor is {writable:true, enumerable:false, configurable:true}
-        HString* constr_key = builtin_intern_string(ctx.heap, "constructor");
+        HString* constr_key = ctx.heap.str(heap::BuiltinStr.CONSTRUCTOR);
         TVal constr_tv;
         constr_tv.set_object(func_obj);
         proto.put_prop(constr_key, constr_tv, hobject::PROP_FLAGS_WC);
 
-        HString* proto_key = builtin_intern_string(ctx.heap, "prototype");
+        HString* proto_key = ctx.heap.str(heap::BuiltinStr.PROTOTYPE);
         TVal proto_tv;
         proto_tv.set_object(proto);
         // ES5 §15.3.2.1 step 12: .prototype is {writable:true, enumerable:false, configurable:false}
@@ -206,14 +206,14 @@ fn void builtin_function(BuiltinContext* ctx) {
 
     // Set function length from the compiled function's formal parameter count.
     // The compiler correctly counts comma-separated params (e.g. "a,b,c" → 3).
-    HString* len_key = builtin_intern_string(ctx.heap, "length");
+    HString* len_key = ctx.heap.str(heap::BuiltinStr.LENGTH);
     TVal len_tv;
     len_tv.set_fastint((long)func.num_formals);
     func_obj.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NWC);
 
     // ES2019 §19.2.1.1.1 CreateDynamicFunction step 29: SetFunctionName(F, "anonymous").
     // {writable:false, enumerable:false, configurable:true}
-    HString* name_key = builtin_intern_string(ctx.heap, "name");
+    HString* name_key = ctx.heap.str(heap::BuiltinStr.NAME);
     TVal name_tv;
     name_tv.set_string(builtin_intern_string(ctx.heap, "anonymous"));
     func_obj.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC);
@@ -735,7 +735,7 @@ fn void builtin_function_proto_bind(BuiltinContext* ctx) {
         args_arr = a;
         args_arr.prototype = ctx.heap.array_proto;
         // Set length
-        HString* len_key = builtin_intern_string(ctx.heap, "length");
+        HString* len_key = ctx.heap.str(heap::BuiltinStr.LENGTH);
         TVal len_tv;
         len_tv.set_fastint(bound_argc);
         args_arr.put_prop(len_key, len_tv, hobject::PROP_FLAGS_WEC);
@@ -772,7 +772,7 @@ fn void builtin_function_proto_bind(BuiltinContext* ctx) {
     if (downstream.is_object()) {
         HObject* tobj = (HObject*)downstream.get_heapptr();
         if (tobj != null) {
-            HString* tlen_key = builtin_intern_string(ctx.heap, "length");
+            HString* tlen_key = ctx.heap.str(heap::BuiltinStr.LENGTH);
             // HasOwnProperty: check own properties only
             int own_idx = tobj.find_prop_idx(tlen_key);
             if (own_idx >= 0) {
@@ -806,7 +806,7 @@ fn void builtin_function_proto_bind(BuiltinContext* ctx) {
         }
     }
 
-    HString* len_key = builtin_intern_string(ctx.heap, "length");
+    HString* len_key = ctx.heap.str(heap::BuiltinStr.LENGTH);
     TVal len_tv;
     // Store as fastint when the value fits (0..2^31-2), otherwise as double.
     // This matches how native function length properties are set elsewhere.
@@ -825,7 +825,7 @@ fn void builtin_function_proto_bind(BuiltinContext* ctx) {
     // Set .name: "bound " + targetName (ES6 §19.2.3.3).
     // Per spec: Get(target, "name"), must invoke accessor getters and
     // propagate any abrupt completion (throw) before creating the bound fn.
-    HString* name_key = builtin_intern_string(ctx.heap, "name");
+    HString* name_key = ctx.heap.str(heap::BuiltinStr.NAME);
     char[128] name_buf;
     int name_pos = 0;
     // Copy "bound " prefix
@@ -933,7 +933,7 @@ fn void builtin_function_proto_toString(BuiltinContext* ctx) {
             }
 
             // For function objects, try to get the name from the function's .name property
-            HString* name_key = builtin_intern_string(ctx.heap, "name");
+            HString* name_key = ctx.heap.str(heap::BuiltinStr.NAME);
             char* name_ptr = "anonymous";
             usz name_len = 9;
 
@@ -1098,7 +1098,7 @@ fn void builtin_bound_call(BuiltinContext* ctx) {
     // Extract bound args array
     uint bound_argc = 0;
     if (args_arr != null) {
-        HString* len_key = builtin_intern_string(ctx.heap, "length");
+        HString* len_key = ctx.heap.str(heap::BuiltinStr.LENGTH);
         TVal? lv = args_arr.get_prop_proto(len_key);
         if (try l = lv) {
             if (l.is_fastint()) {
@@ -1306,7 +1306,7 @@ fn bool register_function_constructor(EnvRecord* global_env, Heap* heap) {
     proto.put_prop(bind_key, bind_tv, hobject::PROP_FLAGS_WC);
 
     // Add .toString method
-    HString* tostring_key = builtin_intern_string(heap, "toString");
+    HString* tostring_key = heap.str(heap::BuiltinStr.TO_STRING);
     TVal tostring_tv;
     tostring_tv.set_lightfunc((void*)(usz)Builtin.FUNCTION_PROTO_TOSTRING.ordinal);
     proto.put_prop(tostring_key, tostring_tv, hobject::PROP_FLAGS_WC);
@@ -1370,7 +1370,7 @@ fn bool register_function_constructor(EnvRecord* global_env, Heap* heap) {
             HString* get_name = builtin_intern_string(heap, "get caller");
             if (get_name != null) {
                 TVal ntv; ntv.set_string(get_name);
-                HString* nkey = builtin_intern_string(heap, "name");
+                HString* nkey = heap.str(heap::BuiltinStr.NAME);
                 if (nkey != null) get_fn.put_prop(nkey, ntv, hobject::PROP_FLAGS_NWC);
             }
             HString* len_str = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
@@ -1396,7 +1396,7 @@ fn bool register_function_constructor(EnvRecord* global_env, Heap* heap) {
                 proto.put_prop(caller_key, gs_caller, restricted_flags);
             }
 
-            HString* args_key = builtin_intern_string(heap, "arguments");
+            HString* args_key = heap.str(heap::BuiltinStr.ARGUMENTS);
             if (args_key != null) {
                 TVal gs_args = hobject::hobject_create_accessors(heap,
                     shared_thrower, shared_setter);

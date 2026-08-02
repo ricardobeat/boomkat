@@ -663,7 +663,7 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
             if (tp_name != null) {
                 TVal name_tv;
                 name_tv.set_string(tp_name);
-                HString* name_key = builtin_intern_string(heap, "name");
+                HString* name_key = heap.str(heap::BuiltinStr.NAME);
                 fn_obj.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC);
             }
             HString* length_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
@@ -706,7 +706,7 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
             if (name_str != null) {
                 TVal name_tv;
                 name_tv.set_string(name_str);
-                HString* name_key = builtin_intern_string(heap, "name");
+                HString* name_key = heap.str(heap::BuiltinStr.NAME);
                 fn_obj.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC);
             }
             // Set .length = 0

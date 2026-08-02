@@ -478,12 +478,12 @@ fn void builtin_regexp_string_iterator_next(BuiltinContext* ctx) {
         }
         HString* match_str = builtin_to_string_vm(ctx, &ms_tv);
         if (ctx.should_throw) return;
-        if (match_str == null) match_str = builtin_intern_string(heap, "undefined");
+        if (match_str == null) match_str = heap.str(heap::BuiltinStr.UNDEFINED);
 
         // a.ii. If matchStr is the empty String, then
         if (match_str.blen == 0) {
             // 1. Let thisIndex be ? ToLength(? Get(R, "lastIndex")).
-            HString* li_key = builtin_intern_string(heap, "lastIndex");
+            HString* li_key = heap.str(heap::BuiltinStr.LAST_INDEX);
             TVal? li_opt = builtins_generic_get(rx, li_key, ctx);
             if (ctx.should_throw) return;
             TVal li_raw; li_raw.set_fastint(0);
@@ -563,7 +563,7 @@ fn bool register_iterator_prototype(Heap* heap) {
         fn_obj.flags.callable = true;
         fn_obj.prototype = heap.function_proto;
         // Set .name
-        HString* name_key = builtin_intern_string(heap, "name");
+        HString* name_key = heap.str(heap::BuiltinStr.NAME);
         HString* name_val = builtin_intern_string(heap, "[Symbol.iterator]");
         if (name_key != null && name_val != null) {
             TVal name_tv;

@@ -841,7 +841,42 @@ enum BuiltinStr : uint {
     STACK,         // "stack"
     CALLEE,        // "callee"
     BIGINT,        // "bigint"
+    // Keys the RegExp builtins rebuild on every exec, match, replace and split.
+    LAST_INDEX,    // "lastIndex"
+    EXEC,          // "exec"
+    INDEX,         // "index"
+    INPUT,         // "input"
+    GROUPS,        // "groups"
+    SOURCE,        // "source"
+    FLAGS,         // "flags"
+    GLOBAL,        // "global"
+    IGNORE_CASE,   // "ignoreCase"
+    MULTILINE,     // "multiline"
+    DOT_ALL,       // "dotAll"
+    UNICODE,       // "unicode"
+    UNICODE_SETS,  // "unicodeSets"
+    STICKY,        // "sticky"
+    HAS_INDICES,   // "hasIndices"
+    INDICES,       // "indices"
 }
+
+/// The literal for each `BuiltinStr`, in enum order. `init_builtin_strs`
+/// interns entry `i` into `Heap.strs[i]`, so the two must stay aligned.
+const String[] BUILTIN_STR_LITERALS = {
+    "undefined", "object", "boolean", "number", "string", "function",
+    "true", "false", "null", "message", "prototype", "constructor",
+    "length", "value", "done", "arguments", "symbol", "name", "",
+    "NaN", "Infinity", "-Infinity",
+    "toString", "valueOf", "[object Object]", "[function]",
+    "stack", "callee", "bigint",
+    "lastIndex", "exec", "index", "input", "groups",
+    "source", "flags", "global", "ignoreCase", "multiline", "dotAll",
+    "unicode", "unicodeSets", "sticky", "hasIndices", "indices",
+};
+
+$assert BUILTIN_STR_LITERALS.len == BuiltinStr::len :
+    "BUILTIN_STR_LITERALS must have one literal per BuiltinStr, in enum order";
+$assert BUILTIN_STR_LITERALS.len <= STRS_CACHE_SIZE : "Heap.strs is too small for BUILTIN_STR_LITERALS";
 
 // ============================================================================
 // Default allocator functions
@@ -994,30 +1029,23 @@ fn Heap*? create(
     return h;
 }
 
+/// The pre-interned, pinned HString for a builtin literal. Using this instead of
+/// re-interning the literal skips a hash and a string-table probe, and yields the
+/// same pointer the table holds, so pointer-identity equality is unaffected.
+fn HString* Heap.str(&self, BuiltinStr which) @inline {
+    return (HString*)self.strs[which.ordinal];
+}
+
 /// Pre-intern frequently-used strings into Heap.strs[], once at heap creation.
 /// Each string is allocated only if the table does not already hold it, so
 /// repeat calls are harmless.
 fn void Heap.init_builtin_strs(&self) {
-    // Each entry: (ZString literal, byte length)
-    ZString[29] literals = {
-        "undefined", "object", "boolean", "number", "string", "function",
-        "true", "false", "null", "message", "prototype", "constructor",
-        "length", "value", "done", "arguments", "symbol", "name", "",
-        "NaN", "Infinity", "-Infinity",
-        "toString", "valueOf", "[object Object]", "[function]",
-        "stack", "callee", "bigint"
-    };
-    uint[29] lengths = { 9, 6, 7, 6, 6, 8, 4, 5, 4, 7, 9, 11, 6, 5, 4, 9, 6, 4, 0, 3, 8, 9, 8, 7, 15, 10, 5, 6, 6 };
-    for (uint i = 0; i < 29; i++) {
-        char* ptr = (char*)literals[i];
-        self.strs[i] = self.str_intern(ptr[:lengths[i]]);
-    }
-    // Pinning keeps these alive through refcounting and sweep, and makes every
-    // incref and decref against them a no-op. See HeapHeader.set_pinned.
-    for (uint i = 0; i < 29; i++) {
-        if (self.strs[i] != null) {
-            ((HeapHeader*)self.strs[i]).set_pinned();
-        }
+    foreach (i, lit : BUILTIN_STR_LITERALS) {
+        HString* s = self.str_intern((char[])lit);
+        self.strs[i] = s;
+        // Pinning keeps these alive through refcounting and sweep, and makes
+        // every incref and decref against them a no-op. See HeapHeader.set_pinned.
+        if (s != null) { ((HeapHeader*)s).set_pinned(); }
     }
     // Cache the "length" pointer for HObject.put_prop array_length sync.
 }

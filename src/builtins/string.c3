@@ -54,7 +54,7 @@ fn void builtin_string(BuiltinContext* ctx) {
             }
         }
     } else {
-        s = builtin_intern_string(ctx.heap, "");
+        s = ctx.heap.str(heap::BuiltinStr.EMPTY);
     }
 
     if (ctx.is_constructor) {
@@ -106,7 +106,7 @@ fn uint to_uint16(BuiltinContext* ctx, TVal* val) {
 /// String.fromCharCode (ES5 §15.5.3.2)
 fn void builtin_string_fromcharcode(BuiltinContext* ctx) {
     if (ctx.argc == 0) {
-        HString* empty = builtin_intern_string(ctx.heap, "");
+        HString* empty = ctx.heap.str(heap::BuiltinStr.EMPTY);
         ctx.result.set_string(empty);
         return;
     }
@@ -138,7 +138,7 @@ fn void builtin_string_fromcharcode(BuiltinContext* ctx) {
 /// String.fromCodePoint(...codePoints), ES6 §21.1.2.2
 fn void builtin_string_fromcodepoint(BuiltinContext* ctx) {
     if (ctx.argc == 0) {
-        HString* empty = builtin_intern_string(ctx.heap, "");
+        HString* empty = ctx.heap.str(heap::BuiltinStr.EMPTY);
         ctx.result.set_string(empty);
         return;
     }
@@ -275,7 +275,7 @@ fn void builtin_string_raw(BuiltinContext* ctx) {
 
     // Step 6: If literalSegments ≤ 0, return "".
     if (literal_segments <= 0) {
-        HString* empty = builtin_intern_string(heap, "");
+        HString* empty = heap.str(heap::BuiltinStr.EMPTY);
         ctx.result.set_string(empty);
         return;
     }
@@ -494,7 +494,7 @@ fn void builtin_string_proto_charAt(BuiltinContext* ctx) {
     if (ctx.should_throw) { ctx.result.set_undefined(); return; }
     if (pos < 0 || pos >= (double)clen) {
         // Return empty string
-        ctx.result.set_string(builtin_intern_string(ctx.heap, ""));
+        ctx.result.set_string(ctx.heap.str(heap::BuiltinStr.EMPTY));
         return;
     }
     uint idx = (uint)(long)pos;
@@ -546,7 +546,7 @@ fn void builtin_string_proto_indexOf(BuiltinContext* ctx) {
         search_hstr = builtin_to_string_vm(ctx, &ctx.regs[ctx.base_reg]);
         if (ctx.should_throw) { ctx.result.set_undefined(); return; }
     } else {
-        search_hstr = builtin_intern_string(ctx.heap, "undefined");
+        search_hstr = ctx.heap.str(heap::BuiltinStr.UNDEFINED);
     }
     if (search_hstr == null) {
         ctx.result.set_fastint(-1);
@@ -658,7 +658,7 @@ fn void builtin_string_proto_slice(BuiltinContext* ctx) {
     }
 
     if (start_i >= end_i) {
-        ctx.result.set_string(builtin_intern_string(ctx.heap, ""));
+        ctx.result.set_string(ctx.heap.str(heap::BuiltinStr.EMPTY));
         return;
     }
 
@@ -702,7 +702,7 @@ fn void builtin_string_proto_substring(BuiltinContext* ctx) {
     uint to = start < end ? end : start;
 
     if (from >= to) {
-        ctx.result.set_string(builtin_intern_string(ctx.heap, ""));
+        ctx.result.set_string(ctx.heap.str(heap::BuiltinStr.EMPTY));
         return;
     }
 
@@ -747,7 +747,7 @@ fn void builtin_string_proto_substr(BuiltinContext* ctx) {
 
     int length_i;
     if (math::is_nan(length_d) || length_d <= 0) {
-        ctx.result.set_string(builtin_intern_string(ctx.heap, ""));
+        ctx.result.set_string(ctx.heap.str(heap::BuiltinStr.EMPTY));
         return;
     }
     length_i = (int)(long)length_d;
@@ -755,7 +755,7 @@ fn void builtin_string_proto_substr(BuiltinContext* ctx) {
         length_i = (int)len - start_i;
     }
     if (length_i <= 0) {
-        ctx.result.set_string(builtin_intern_string(ctx.heap, ""));
+        ctx.result.set_string(ctx.heap.str(heap::BuiltinStr.EMPTY));
         return;
     }
 
@@ -950,7 +950,7 @@ fn uint sigma_lower_form(uint* cps, uint n, uint idx) {
 /// Returns a newly interned HString*, or null on OOM.
 fn HString* unicode_case_convert_str(Heap* heap, char* data, uint blen, int conv_type) {
     if (blen == 0) {
-        return builtin_intern_string(heap, "");
+        return heap.str(heap::BuiltinStr.EMPTY);
     }
 
     // Fast path: ASCII-only string
@@ -1096,7 +1096,7 @@ fn void builtin_string_proto_localeCompare(BuiltinContext* ctx) {
         that_hstr = builtin_to_string_vm(ctx, &ctx.regs[ctx.base_reg]);
         if (ctx.should_throw) { ctx.result.set_undefined(); return; }
     } else {
-        that_hstr = builtin_intern_string(ctx.heap, "undefined");
+        that_hstr = ctx.heap.str(heap::BuiltinStr.UNDEFINED);
     }
     if (that_hstr == null) {
         ctx.result.set_undefined();
@@ -1261,7 +1261,7 @@ fn void builtin_string_proto_trim(BuiltinContext* ctx) {
 
     // All whitespace
     if (start >= len) {
-        ctx.result.set_string(builtin_intern_string(ctx.heap, ""));
+        ctx.result.set_string(ctx.heap.str(heap::BuiltinStr.EMPTY));
         return;
     }
 
@@ -1381,7 +1381,7 @@ fn void builtin_string_proto_split(BuiltinContext* ctx) {
                 }
             }
         }
-        HString* len_key = builtin_intern_string(ctx.heap, "length");
+        HString* len_key = ctx.heap.str(heap::BuiltinStr.LENGTH);
         if (undef_limit_zero) {
             TVal len_val0; len_val0.set_fastint(0);
             arr.put_prop(len_key, len_val0, hobject::PROP_FLAGS_WEC);
@@ -1429,7 +1429,7 @@ fn void builtin_string_proto_split(BuiltinContext* ctx) {
     if (is_regexp_object(sep_val)) {
         if (limit == 0) {
             TVal lv0; lv0.set_fastint(0);
-            HString* lk0 = builtin_intern_string(ctx.heap, "length");
+            HString* lk0 = ctx.heap.str(heap::BuiltinStr.LENGTH);
             arr.put_prop(lk0, lv0, hobject::PROP_FLAGS_WEC);
             ctx.result.set_object(arr);
             return;
@@ -1438,13 +1438,13 @@ fn void builtin_string_proto_split(BuiltinContext* ctx) {
         char* input = data;
         int input_len = (int)len;
 
-        HString* li_key = builtin_intern_string(ctx.heap, "lastIndex");
+        HString* li_key = ctx.heap.str(heap::BuiltinStr.LAST_INDEX);
         TVal zero_tv; zero_tv.set_fastint(0);
         rx.put_prop(li_key, zero_tv, hobject::PROP_FLAGS_WEC);
 
         uint arr_idx = 0;
         int search_pos = 0;
-        HString* len_key = builtin_intern_string(ctx.heap, "length");
+        HString* len_key = ctx.heap.str(heap::BuiltinStr.LENGTH);
 
         while (search_pos <= input_len && arr_idx < limit) {
             int out_start = 0;
@@ -1465,7 +1465,7 @@ fn void builtin_string_proto_split(BuiltinContext* ctx) {
             uint substr_len = (uint)out_start - (uint)search_pos;
             HString* substr;
             if (substr_len == 0) {
-                substr = builtin_intern_string(ctx.heap, "");
+                substr = ctx.heap.str(heap::BuiltinStr.EMPTY);
             } else if (substr_len < 256) {
                 char[256] buf;
                 for (usz i = 0; i < (usz)substr_len; i++) buf[i] = input[(usz)search_pos + i];
@@ -1486,7 +1486,7 @@ fn void builtin_string_proto_split(BuiltinContext* ctx) {
                 if (caps_start[i] >= 0 && caps_end[i] >= 0) {
                     usz cap_len = (usz)(caps_end[i] - caps_start[i]);
                     if (cap_len == 0) {
-                        cap_elem.set_string(builtin_intern_string(ctx.heap, ""));
+                        cap_elem.set_string(ctx.heap.str(heap::BuiltinStr.EMPTY));
                     } else if (cap_len < 256) {
                         char[256] cap_buf;
                         for (usz j = 0; j < cap_len; j++) cap_buf[j] = input[(usz)caps_start[i] + j];
@@ -1516,7 +1516,7 @@ fn void builtin_string_proto_split(BuiltinContext* ctx) {
             uint substr_len = len - (uint)search_pos;
             HString* substr;
             if (substr_len == 0) {
-                substr = builtin_intern_string(ctx.heap, "");
+                substr = ctx.heap.str(heap::BuiltinStr.EMPTY);
             } else if (substr_len < 256) {
                 char[256] buf;
                 for (usz i = 0; i < (usz)substr_len; i++) buf[i] = input[(usz)search_pos + i];
@@ -1547,7 +1547,7 @@ fn void builtin_string_proto_split(BuiltinContext* ctx) {
     // limit=0 check after separator is stringified
     if (limit == 0) {
         TVal len_val; len_val.set_fastint(0);
-        HString* len_key0 = builtin_intern_string(ctx.heap, "length");
+        HString* len_key0 = ctx.heap.str(heap::BuiltinStr.LENGTH);
         arr.put_prop(len_key0, len_val, hobject::PROP_FLAGS_WEC);
         ctx.result.set_object(arr);
         return;
@@ -1562,7 +1562,7 @@ fn void builtin_string_proto_split(BuiltinContext* ctx) {
     if (sep_len == 0) {
         uint clen = s_hstr.char_length();
         uint count = clen < limit ? clen : limit;
-        HString* len_key = builtin_intern_string(ctx.heap, "length");
+        HString* len_key = ctx.heap.str(heap::BuiltinStr.LENGTH);
         TVal len_val;
         len_val.set_fastint((long)count);
         arr.put_prop(len_key, len_val, hobject::PROP_FLAGS_WEC);
@@ -1583,7 +1583,7 @@ fn void builtin_string_proto_split(BuiltinContext* ctx) {
     // Non-empty separator: split by separator
     uint arr_idx = 0;
     uint search_pos = 0;
-    HString* len_key = builtin_intern_string(ctx.heap, "length");
+    HString* len_key = ctx.heap.str(heap::BuiltinStr.LENGTH);
 
     while (search_pos + sep_len <= len && arr_idx < limit) {
         int found_pos = -1;
@@ -1603,7 +1603,7 @@ fn void builtin_string_proto_split(BuiltinContext* ctx) {
         uint substr_len = (uint)found_pos - search_pos;
         HString* substr;
         if (substr_len == 0) {
-            substr = builtin_intern_string(ctx.heap, "");
+            substr = ctx.heap.str(heap::BuiltinStr.EMPTY);
         } else {
             char[256] buf;
             usz copy_len = substr_len < 256 ? (usz)substr_len : 256;
@@ -1624,7 +1624,7 @@ fn void builtin_string_proto_split(BuiltinContext* ctx) {
         uint substr_len = len - search_pos;
         HString* substr;
         if (substr_len == 0) {
-            substr = builtin_intern_string(ctx.heap, "");
+            substr = ctx.heap.str(heap::BuiltinStr.EMPTY);
         } else {
             char[256] buf;
             usz copy_len = substr_len < 256 ? (usz)substr_len : 256;
@@ -1870,14 +1870,14 @@ fn void builtin_string_proto_replace(BuiltinContext* ctx) {
                 int arg_count = 0;
                 usz m_len = (usz)(out_end - out_start);
                 fn_args[arg_count].set_string(
-                    m_len == 0 ? builtin_intern_string(ctx.heap, "")
+                    m_len == 0 ? ctx.heap.str(heap::BuiltinStr.EMPTY)
                                : builtin_intern_string(ctx.heap, input[out_start : m_len]));
                 arg_count++;
                 for (int i = 0; i < num_caps; i++) {
                     if (caps_start[i] >= 0 && caps_end[i] >= 0) {
                         usz cap_len = (usz)(caps_end[i] - caps_start[i]);
                         fn_args[arg_count].set_string(
-                            cap_len == 0 ? builtin_intern_string(ctx.heap, "")
+                            cap_len == 0 ? ctx.heap.str(heap::BuiltinStr.EMPTY)
                                          : builtin_intern_string(ctx.heap, input[caps_start[i] : cap_len]));
                     } else {
                         fn_args[arg_count].set_undefined();
@@ -1899,11 +1899,11 @@ fn void builtin_string_proto_replace(BuiltinContext* ctx) {
                 }
                 replace_str = builtin_to_string_vm(ctx, &res);
                 if (ctx.should_throw) return;
-                if (replace_str == null) replace_str = builtin_intern_string(ctx.heap, "undefined");
+                if (replace_str == null) replace_str = ctx.heap.str(heap::BuiltinStr.UNDEFINED);
             } else {
                 HString* raw_replace = ctx.argc > 1
                     ? builtin_to_string_vm(ctx, &ctx.regs[ctx.base_reg + 1])
-                    : builtin_intern_string(ctx.heap, "undefined");
+                    : ctx.heap.str(heap::BuiltinStr.UNDEFINED);
                 if (ctx.should_throw) return;
                 if (raw_replace == null) { ctx.result.set_string(s_hstr); return; }
                 replace_str = builtin_replace_substitute(ctx.heap, raw_replace,
@@ -1923,7 +1923,7 @@ fn void builtin_string_proto_replace(BuiltinContext* ctx) {
             return;
         } else {
             // Global: replace all matches.
-            HString* li_key = builtin_intern_string(ctx.heap, "lastIndex");
+            HString* li_key = ctx.heap.str(heap::BuiltinStr.LAST_INDEX);
             TVal zero_tv; zero_tv.set_fastint(0);
             rx.put_prop(li_key, zero_tv, hobject::PROP_FLAGS_WEC);
 
@@ -1956,14 +1956,14 @@ fn void builtin_string_proto_replace(BuiltinContext* ctx) {
                     int arg_count = 0;
                     usz m_len = (usz)(out_end - out_start);
                     fn_args[arg_count].set_string(
-                        m_len == 0 ? builtin_intern_string(ctx.heap, "")
+                        m_len == 0 ? ctx.heap.str(heap::BuiltinStr.EMPTY)
                                    : builtin_intern_string(ctx.heap, input[out_start : m_len]));
                     arg_count++;
                     for (int i = 0; i < num_caps; i++) {
                         if (caps_start[i] >= 0 && caps_end[i] >= 0) {
                             usz cap_len = (usz)(caps_end[i] - caps_start[i]);
                             fn_args[arg_count].set_string(
-                                cap_len == 0 ? builtin_intern_string(ctx.heap, "")
+                                cap_len == 0 ? ctx.heap.str(heap::BuiltinStr.EMPTY)
                                              : builtin_intern_string(ctx.heap, input[caps_start[i] : cap_len]));
                         } else {
                             fn_args[arg_count].set_undefined();
@@ -1985,11 +1985,11 @@ fn void builtin_string_proto_replace(BuiltinContext* ctx) {
                     }
                     replace_str = builtin_to_string_vm(ctx, &res);
                     if (ctx.should_throw) return;
-                    if (replace_str == null) replace_str = builtin_intern_string(ctx.heap, "undefined");
+                    if (replace_str == null) replace_str = ctx.heap.str(heap::BuiltinStr.UNDEFINED);
                 } else {
                     HString* raw_replace = ctx.argc > 1
                         ? builtin_to_string_vm(ctx, &ctx.regs[ctx.base_reg + 1])
-                        : builtin_intern_string(ctx.heap, "undefined");
+                        : ctx.heap.str(heap::BuiltinStr.UNDEFINED);
                     if (ctx.should_throw) return;
                     if (raw_replace == null) break;
                     replace_str = builtin_replace_substitute(ctx.heap, raw_replace,
@@ -2048,7 +2048,7 @@ fn void builtin_string_proto_replace(BuiltinContext* ctx) {
     if (!str_replace_is_fn) {
         replace_str_precomp = builtin_to_string_vm(ctx, &replace_val_str);
         if (ctx.should_throw) return;
-        if (replace_str_precomp == null) replace_str_precomp = builtin_intern_string(ctx.heap, "undefined");
+        if (replace_str_precomp == null) replace_str_precomp = ctx.heap.str(heap::BuiltinStr.UNDEFINED);
     }
 
     // Step 8: Search for first occurrence of searchString.
@@ -2073,7 +2073,7 @@ fn void builtin_string_proto_replace(BuiltinContext* ctx) {
     if (str_replace_is_fn && ctx.heap.call_fn != null && ctx.vm != null) {
         TVal[3] fn_args;
         HString* match_str = builtin_intern_string(ctx.heap, input[found_pos : (usz)search_len]);
-        if (match_str == null) match_str = builtin_intern_string(ctx.heap, "");
+        if (match_str == null) match_str = ctx.heap.str(heap::BuiltinStr.EMPTY);
         fn_args[0].set_string(match_str);
         // position argument is the UTF-16 code-unit index, not the CESU-8
         // byte offset (found_pos) used for slicing `input`.
@@ -2089,11 +2089,11 @@ fn void builtin_string_proto_replace(BuiltinContext* ctx) {
         }
         replace_str = builtin_to_string_vm(ctx, &res);
         if (ctx.should_throw) return;
-        if (replace_str == null) replace_str = builtin_intern_string(ctx.heap, "undefined");
+        if (replace_str == null) replace_str = ctx.heap.str(heap::BuiltinStr.UNDEFINED);
         replace_str = builtin_replace_substitute(ctx.heap, replace_str,
             input, input_len, found_pos, found_pos + (int)search_len,
             null, null, 0);
-        if (replace_str == null) replace_str = builtin_intern_string(ctx.heap, "");
+        if (replace_str == null) replace_str = ctx.heap.str(heap::BuiltinStr.EMPTY);
     } else {
         replace_str = builtin_replace_substitute(ctx.heap, replace_str_precomp,
             input, input_len, found_pos, found_pos + (int)search_len,
@@ -2168,7 +2168,7 @@ fn void builtin_string_proto_replaceAll(BuiltinContext* ctx) {
         if (is_regexp_like) {
             HObject* rx = (HObject*)search_val.get_heapptr();
             // Step 2.b.i: Get(searchValue, "flags").
-            TVal? flags_tv_opt = builtins_generic_get(rx, builtin_intern_string(ctx.heap, "flags"), ctx);
+            TVal? flags_tv_opt = builtins_generic_get(rx, ctx.heap.str(heap::BuiltinStr.FLAGS), ctx);
             if (ctx.should_throw) return;
             HString* flags_hstr = null;
             if (try fv = flags_tv_opt) {
@@ -2375,7 +2375,7 @@ fn void builtin_string_proto_includes(BuiltinContext* ctx) {
         search_hstr = builtin_to_string_vm(ctx, &ctx.regs[ctx.base_reg]);
         if (ctx.should_throw) { ctx.result.set_undefined(); return; }
     } else {
-        search_hstr = builtin_intern_string(ctx.heap, "undefined");
+        search_hstr = ctx.heap.str(heap::BuiltinStr.UNDEFINED);
     }
     if (search_hstr == null) { ctx.result.set_boolean(false); return; }
 
@@ -2431,7 +2431,7 @@ fn void builtin_string_proto_startsWith(BuiltinContext* ctx) {
         search_hstr = builtin_to_string_vm(ctx, &ctx.regs[ctx.base_reg]);
         if (ctx.should_throw) { ctx.result.set_undefined(); return; }
     } else {
-        search_hstr = builtin_intern_string(ctx.heap, "undefined");
+        search_hstr = ctx.heap.str(heap::BuiltinStr.UNDEFINED);
     }
     if (search_hstr == null) { ctx.result.set_boolean(false); return; }
 
@@ -2481,7 +2481,7 @@ fn void builtin_string_proto_endsWith(BuiltinContext* ctx) {
         search_hstr = builtin_to_string_vm(ctx, &ctx.regs[ctx.base_reg]);
         if (ctx.should_throw) { ctx.result.set_undefined(); return; }
     } else {
-        search_hstr = builtin_intern_string(ctx.heap, "undefined");
+        search_hstr = ctx.heap.str(heap::BuiltinStr.UNDEFINED);
     }
     if (search_hstr == null) { ctx.result.set_boolean(false); return; }
 
@@ -2530,7 +2530,7 @@ fn void builtin_string_proto_repeat(BuiltinContext* ctx) {
     uint count = (uint)(long)count_d;
 
     if (count == 0 || s_hstr.blen == 0) {
-        HString* empty = builtin_intern_string(ctx.heap, "");
+        HString* empty = ctx.heap.str(heap::BuiltinStr.EMPTY);
         ctx.result.set_string(empty);
         return;
     }
@@ -2781,7 +2781,7 @@ fn void builtin_string_proto_lastIndexOf(BuiltinContext* ctx) {
         search_hstr = builtin_to_string_vm(ctx, &ctx.regs[ctx.base_reg]);
         if (ctx.should_throw) { ctx.result.set_undefined(); return; }
     } else {
-        search_hstr = builtin_intern_string(ctx.heap, "undefined");
+        search_hstr = ctx.heap.str(heap::BuiltinStr.UNDEFINED);
     }
     if (search_hstr == null) { ctx.result.set_fastint(-1); return; }
 
@@ -2991,7 +2991,7 @@ fn HObject* create_regexp_from_string(Heap* heap, char[] pattern, int js_flags) 
     }
 
     // Set lastIndex to 0
-    HString* li_key = builtin_intern_string(heap, "lastIndex");
+    HString* li_key = heap.str(heap::BuiltinStr.LAST_INDEX);
     TVal zero_tv; zero_tv.set_fastint(0);
     obj.put_prop(li_key, zero_tv, hobject::PROP_FLAGS_WEC);
 
@@ -3071,7 +3071,7 @@ fn void builtin_string_proto_matchAll(BuiltinContext* ctx) {
 
         // Step 2b: If isRegExp, Get("flags") and verify it contains "g".
         if (is_regexp_like) {
-            HString* flags_key = builtin_intern_string(heap, "flags");
+            HString* flags_key = heap.str(heap::BuiltinStr.FLAGS);
             TVal? flags_tv_opt = builtins_generic_get(arg_obj, flags_key, ctx);
             if (ctx.should_throw) { ctx.result.set_undefined(); return; }
             HString* flags_hstr = null;
@@ -3269,7 +3269,7 @@ fn void builtin_string_proto_normalize(BuiltinContext* ctx) {
     // Handle empty result
     if (out_len == 0) {
         mem::free(result_cps);
-        ctx.result.set_string(builtin_intern_string(ctx.heap, ""));
+        ctx.result.set_string(ctx.heap.str(heap::BuiltinStr.EMPTY));
         return;
     }
 
@@ -3515,7 +3515,7 @@ fn bool register_string_constructor(EnvRecord* global_env, Heap* heap) {
     HObject* proto = proto_raw;
     proto.prototype = null;  // Will be Object.prototype in later phases
     // Set [[StringData]] to "" so valueOf/toString work on String.prototype itself.
-    HString* empty_str = builtin_intern_string(heap, "");
+    HString* empty_str = heap.str(heap::BuiltinStr.EMPTY);
     if (empty_str != null) {
         (*proto.extra_ptr()).prim.primitive_value.set_string(empty_str);
     }
@@ -3586,7 +3586,7 @@ fn bool register_string_constructor(EnvRecord* global_env, Heap* heap) {
             fn_obj.flags.callable = true;
             fn_obj.flags.constructable = false;
             fn_obj.prototype = heap.function_proto;
-            HString* name_key = builtin_intern_string(heap, "name");
+            HString* name_key = heap.str(heap::BuiltinStr.NAME);
             HString* name_val = builtin_intern_string(heap, "[Symbol.iterator]");
             if (name_key != null && name_val != null) {
                 TVal name_tv;

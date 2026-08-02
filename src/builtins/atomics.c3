@@ -840,7 +840,7 @@ fn bool register_atomics_method(HObject* atomics, Heap* heap, char[] name, uint 
     HString* fn_name = builtin_intern_string(heap, name);
     if (fn_name != null) {
         TVal name_tv; name_tv.set_string(fn_name);
-        func_obj.put_prop((void*)builtin_intern_string(heap, "name"), name_tv, hobject::PROP_FLAGS_NWC);
+        func_obj.put_prop((void*)heap.str(heap::BuiltinStr.NAME), name_tv, hobject::PROP_FLAGS_NWC);
     }
     HString* length_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
     if (length_key != null) {

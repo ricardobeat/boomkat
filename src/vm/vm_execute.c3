@@ -840,7 +840,7 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
         // ES2015 §9.4.1.2: Extract bound arguments and prepend them.
         uint bound_argc = 0;
         if (args_arr != null) {
-            HString* len_key = builtins::builtin_intern_string(heap, "length");
+            HString* len_key = heap.str(heap::BuiltinStr.LENGTH);
             if (len_key != null) {
                 TVal? lv = args_arr.get_prop_proto(len_key);
                 if (try l = lv) {

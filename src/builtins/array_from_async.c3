@@ -193,7 +193,7 @@ fn TVal afa_range_error(Heap* heap, char[] msg) {
         HString* msg_str = builtin_intern_string(heap, msg);
         if (msg_str != null) {
             TVal msg_tv; msg_tv.set_string(msg_str);
-            HString* msg_key = builtin_intern_string(heap, "message");
+            HString* msg_key = heap.str(heap::BuiltinStr.MESSAGE);
             if (msg_key != null) err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
         }
         out.set_object(err);
@@ -437,7 +437,7 @@ fn void builtin_array_from_async(BuiltinContext* ctx) {
     afa_put_bool(state, heap, AFA_ISASYNC_SLOT, false);
 
     // LengthOfArrayLike(arrayLike).
-    HString* len_key = builtin_intern_string(heap, "length");
+    HString* len_key = heap.str(heap::BuiltinStr.LENGTH);
     ulong len = 0;
     if (len_key != null) {
         TVal? len_opt = builtins_generic_get(array_like, len_key, ctx);
@@ -722,7 +722,7 @@ fn void afa_finalize(Heap* heap, void* vm, HObject* state) {
     lctx.vm = vm;
     lctx.heap = heap;
     lctx.should_throw = false;
-    HString* len_key = builtin_intern_string(heap, "length");
+    HString* len_key = heap.str(heap::BuiltinStr.LENGTH);
     if (len_key != null) {
         if (!arr_set_length_or_throw(&lctx, arr, len_key, (ulong)k)) {
             afa_close_and_reject_ctx(&lctx, state);
@@ -749,7 +749,7 @@ fn void afa_arraylike_step(Heap* heap, void* vm, HObject* state) {
         if (arr == null) { afa_reject_outer_alloc(heap, vm, state); return; }
         BuiltinContext lctx;
         lctx.vm = vm; lctx.heap = heap; lctx.should_throw = false;
-        HString* len_key = builtin_intern_string(heap, "length");
+        HString* len_key = heap.str(heap::BuiltinStr.LENGTH);
         if (len_key != null) {
             if (!arr_set_length_or_throw(&lctx, arr, len_key, (ulong)len)) {
                 afa_flush_ctx_throw_to_outer(&lctx, afa_get_obj(state, heap, AFA_OUTER_SLOT));

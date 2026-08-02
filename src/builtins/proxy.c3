@@ -54,7 +54,7 @@ fn void proxy_throw_error(Heap* heap, HObject* proto, char[] msg) {
     HString* msg_str = builtin_intern_string(heap, msg);
     if (msg_str != null) {
         TVal msg_val; msg_val.set_string(msg_str);
-        err.put_prop(builtin_intern_string(heap, "message"), msg_val, hobject::PROP_FLAGS_WC);
+        err.put_prop(heap.str(heap::BuiltinStr.MESSAGE), msg_val, hobject::PROP_FLAGS_WC);
     }
     TVal err_tv; err_tv.set_object(err);
     heap.tval_copy_ref(&heap.error_value, &err_tv);
@@ -729,7 +729,7 @@ fn HObject* proxy_desc_to_object(Heap* heap, ProxyDesc* d) {
     obj.prototype = heap.object_proto;
     TVal b;
     if (d.has_value) {
-        obj.put_prop(builtin_intern_string(heap, "value"), d.value, hobject::PROP_FLAGS_WEC);
+        obj.put_prop(heap.str(heap::BuiltinStr.VALUE), d.value, hobject::PROP_FLAGS_WEC);
     }
     if (d.has_writable) {
         b.set_boolean(d.writable);
@@ -772,7 +772,7 @@ fn bool proxy_object_to_desc(void* vm, Heap* heap, HObject* obj, ProxyDesc* out)
         if (!js_get(vm, heap, obj, k, &v)) return false;
         out.has_configurable = true; out.configurable = builtin_to_boolean(&v);
     }
-    k = builtin_intern_string(heap, "value");
+    k = heap.str(heap::BuiltinStr.VALUE);
     if (!js_has_property(vm, heap, obj, k, &present)) return false;
     if (present) {
         if (!js_get(vm, heap, obj, k, &v)) return false;
@@ -862,7 +862,7 @@ fn bool proxy_desc_compatible(bool extensible, ProxyDesc* desc, ProxyDesc* curre
 fn bool array_set_length_desc(void* vm, Heap* heap, HObject* obj, ProxyDesc* desc, bool* res) {
     *res = false;
     uint old_len = array_get_length(obj, heap);
-    HString* len_key_intern = builtin_intern_string(heap, "length");
+    HString* len_key_intern = heap.str(heap::BuiltinStr.LENGTH);
 
     uint arr_new_len = old_len;
     bool arr_has_new_len = false;
@@ -1891,9 +1891,9 @@ fn void builtin_proxy_revocable(BuiltinContext* ctx) {
     // Own props in spec order: length (0), then name ("").
     TVal rl; rl.set_fastint(0);
     revoker.put_prop((void*)(HString*)ctx.heap.strs[heap::BuiltinStr.LENGTH], rl, hobject::PROP_FLAGS_NWC);
-    HString* empty_name = builtin_intern_string(ctx.heap, "");
+    HString* empty_name = ctx.heap.str(heap::BuiltinStr.EMPTY);
     TVal rn; rn.set_string(empty_name);
-    revoker.put_prop(builtin_intern_string(ctx.heap, "name"), rn, hobject::PROP_FLAGS_NWC);
+    revoker.put_prop(ctx.heap.str(heap::BuiltinStr.NAME), rn, hobject::PROP_FLAGS_NWC);
     HString* slot_key = ctx.heap.str_intern(PROXY_REVOKE_SLOT);
     TVal p_tv; p_tv.set_object(p);
     revoker.put_prop(slot_key, p_tv, hobject::PROP_FLAGS_NWC);
@@ -1961,7 +1961,7 @@ fn void builtin_proxy_call(BuiltinContext* ctx) {
             // proxy's [[Get]] trap, if that trap revokes p, the subsequent
             // GetFunctionRealm(p) would throw (revoked proxy). We replicate that
             // check explicitly:
-            HString* proto_key_str = builtin_intern_string(heap, "prototype");
+            HString* proto_key_str = heap.str(heap::BuiltinStr.PROTOTYPE);
             if (proto_key_str != null) {
                 TVal proto_val; proto_val.set_undefined();
                 if (!js_get(ctx.vm, heap, p, proto_key_str, &proto_val)) {
@@ -2059,7 +2059,7 @@ fn bool register_proxy_constructor(EnvRecord* global_env, Heap* heap) {
     ctor.put_prop((void*)(HString*)heap.strs[heap::BuiltinStr.LENGTH], len_tv, hobject::PROP_FLAGS_NWC);
     HString* name_str = builtin_intern_string(heap, "Proxy");
     TVal name_tv; name_tv.set_string(name_str);
-    ctor.put_prop(builtin_intern_string(heap, "name"), name_tv, hobject::PROP_FLAGS_NWC);
+    ctor.put_prop(heap.str(heap::BuiltinStr.NAME), name_tv, hobject::PROP_FLAGS_NWC);
 
     HString* revocable_key = builtin_intern_string(heap, "revocable");
     TVal rev_tv;

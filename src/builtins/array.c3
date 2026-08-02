@@ -68,7 +68,7 @@ fn void builtin_array_of(BuiltinContext* ctx) {
     // (including proxy results and user-defined constructors), use the
     // arr_set_length_or_throw helper which handles proxy [[Set]], own
     // accessors, inherited accessors, and writable/non-writable data props.
-    HString* len_key = builtin_intern_string(ctx.heap, "length");
+    HString* len_key = ctx.heap.str(heap::BuiltinStr.LENGTH);
     if (arr.get_class() == hobject::ObjClass.ARRAY) {
         array_set_length(arr, len, ctx.heap);
     } else {
@@ -580,7 +580,7 @@ fn HObject* array_proto_get_this(BuiltinContext* ctx) {
             if (msg_str != null) {
                 TVal msg_val;
                 msg_val.set_string(msg_str);
-                HString* msg_key = builtin_intern_string(ctx.heap, "message");
+                HString* msg_key = ctx.heap.str(heap::BuiltinStr.MESSAGE);
                 err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WC);
             }
             TVal err_tv;
@@ -1175,7 +1175,7 @@ fn void builtin_array_proto_join(BuiltinContext* ctx) {
     // Empty array-like returns ""
     if (raw_len == 0) {
         if (sep_str != null) ctx.heap.decref((types::HeapHeader*)sep_str);
-        HString* result = builtin_intern_string(ctx.heap, "");
+        HString* result = ctx.heap.str(heap::BuiltinStr.EMPTY);
         if (result == null) { ctx.result.set_undefined(); return; }
         ctx.result.set_string(result);
         return;
@@ -3204,9 +3204,9 @@ fn void builtin_array_from(BuiltinContext* ctx) {
         }
 
         HString* next_key = builtin_intern_string(heap, "next");
-        HString* done_key = builtin_intern_string(heap, "done");
-        HString* value_key = builtin_intern_string(heap, "value");
-        HString* len_key = builtin_intern_string(heap, "length");
+        HString* done_key = heap.str(heap::BuiltinStr.DONE);
+        HString* value_key = heap.str(heap::BuiltinStr.VALUE);
+        HString* len_key = heap.str(heap::BuiltinStr.LENGTH);
         HObject* iter_obj = (HObject*)iterator.get_heapptr();
 
         if (arr != null) arr.set_temproot();
@@ -3335,7 +3335,7 @@ fn void builtin_array_from(BuiltinContext* ctx) {
     }
 
     // Get .length, Get(arrayLike, "length") then ToLength.
-    HString* len_key = builtin_intern_string(heap, "length");
+    HString* len_key = heap.str(heap::BuiltinStr.LENGTH);
     ulong len = 0;
     if (is_string_prim) {
         len = str_val.char_length();
@@ -5028,7 +5028,7 @@ fn bool register_array_constructor(EnvRecord* global_env, Heap* heap) {
             HString* getter_name = builtin_intern_string(heap, "get [Symbol.species]");
             if (getter_name != null) {
                 TVal name_tv; name_tv.set_string(getter_name);
-                getter_fn.put_prop((void*)builtin_intern_string(heap, "name"), name_tv, hobject::PROP_FLAGS_NWC);
+                getter_fn.put_prop((void*)heap.str(heap::BuiltinStr.NAME), name_tv, hobject::PROP_FLAGS_NWC);
             }
             HString* len_key_sp = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
             TVal zero_tv; zero_tv.set_fastint(0);

@@ -211,7 +211,7 @@ fn bool set_iter_step(BuiltinContext* ctx, TVal iterator, TVal next_fn, TVal* ou
         return false;
     }
     HObject* step_obj = (HObject*)step.get_heapptr();
-    HString* done_key = builtin_intern_string(ctx.heap, "done");
+    HString* done_key = ctx.heap.str(heap::BuiltinStr.DONE);
     TVal done_val;
     done_val.set_undefined();
     if (done_key != null) {
@@ -221,7 +221,7 @@ fn bool set_iter_step(BuiltinContext* ctx, TVal iterator, TVal next_fn, TVal* ou
     if (tval_to_boolean(done_val)) { *out_done = true; return true; }
     *out_done = false;
 
-    HString* value_key = builtin_intern_string(ctx.heap, "value");
+    HString* value_key = ctx.heap.str(heap::BuiltinStr.VALUE);
     TVal value_val;
     value_val.set_undefined();
     if (value_key != null) {
@@ -1003,7 +1003,7 @@ fn bool register_set_constructor(EnvRecord* global_env, Heap* heap) {
             if (name_str != null) {
                 TVal name_tv;
                 name_tv.set_string(name_str);
-                HString* name_key = builtin_intern_string(heap, "name");
+                HString* name_key = heap.str(heap::BuiltinStr.NAME);
                 fn_obj.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC);
             }
             HString* length_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
@@ -1065,7 +1065,7 @@ fn bool register_set_constructor(EnvRecord* global_env, Heap* heap) {
                 getter.flags.constructable = false;
                 getter.prototype = heap.function_proto;
                 (*getter.extra_ptr()).func.builtin_fn_index = (int)Builtin.SET_SPECIES_GETTER.ordinal;
-                HString* getter_name_key = builtin_intern_string(heap, "name");
+                HString* getter_name_key = heap.str(heap::BuiltinStr.NAME);
                 HString* getter_name_str = builtin_intern_string(heap, "get [Symbol.species]");
                 if (getter_name_key != null && getter_name_str != null) {
                     TVal gn_tv; gn_tv.set_string(getter_name_str);
