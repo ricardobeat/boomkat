@@ -335,9 +335,21 @@ byte, letting the data pointer go straight to a C API.
 The invariant that matters most: **string equality is pointer identity**.
 Interning is what makes that true, so any path that produces an `HString` which
 escapes without interning will silently break strict equality, `indexOf`, and
-property-key lookup. The exception is deliberate: strings over
-`MAX_INTERN_BYTES` are left un-interned and compared by content, which
-`equals_hstring` handles by falling back when either side is not interned.
+property-key lookup. There is one deliberate exception: strings over
+`MAX_INTERN_BYTES` are left un-interned. `equals_hstring` covers that case by
+falling back to a content compare when either side is not interned, so `===`
+and `indexOf` stay correct.
+
+The fallback is *not* universal, though, and the gap is a live correctness bug
+rather than a design choice. `HObject.find_prop_idx` matches property keys with
+a bare `e.key == key`, and `same_value_impl` compares strings with a bare
+`a.get_heapptr() == b.get_heapptr()`. Both are wrong for a pair of equal strings
+over the cap: `Map.get`, `Set.has`, `Array.prototype.includes`, `Object.is` and
+a JSON round-trip of such a key all report a mismatch where QuickJS reports a
+match. `get_prop_key` calls `Heap.ensure_interned` to close the hole for direct
+property access, and it is the only caller; the collection and SameValue paths
+have no equivalent. Interning cannot be relaxed any further until every one of
+these sites either interns its operands or falls back to content.
 
 Internally the bytes are **CESU-8**, not standard UTF-8. An ECMAScript string is
 a sequence of UTF-16 code units, so every astral codepoint is split into its two
