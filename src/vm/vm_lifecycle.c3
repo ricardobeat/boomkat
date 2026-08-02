@@ -29,6 +29,10 @@ fn Vm*? vm_create(Heap* heap) {
     Vm* vm = (Vm*)raw;
     vm.heap = heap;
 
+$if $feature(THREADED_DISPATCH):
+    init_threaded_handlers();
+$endif
+
     // Allocate value stack. Must be zeroed: register/valstack slots are only
     // ever safe to tval_copy_ref/decref_tval when they hold a genuine TVal
     // (0 means undefined). malloc reuse of a just-freed valstack, such as the

@@ -312,10 +312,19 @@ struct Vm {
 // extracted into separate files without threading 12 parameters.
 // ============================================================================
 
-struct Dispatch {
+// The cold half of the frame state, kept as the leading sub-struct of
+// Dispatch so the threaded handlers can take `&ds.cold` once per frame
+// instead of rebuilding an argument bundle per instruction. `inline` keeps
+// the three fields addressable as ds.vm / ds.act / ds.code_base, so the
+// existing frame-change assignments throughout the switch keep it current.
+struct ColdCtx {
     Vm* vm;
     Activation* act;
     Instruction* code_base;
+}
+
+struct Dispatch {
+    inline ColdCtx cold;
     uint code_count;
     Instruction* code_end;
     TVal* constants;

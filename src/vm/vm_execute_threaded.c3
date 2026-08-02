@@ -26,16 +26,15 @@ import duktape::env;
 // hot fields behind a struct pointer reloads them from memory every handler
 // and regresses ~2x.
 //
+// That ColdCtx is the leading sub-struct of Dispatch, so the burst entry
+// passes `&ds.cold` -- a fixed address the switch's own frame-change
+// assignments keep current -- rather than materialising a bundle per
+// instruction.
+//
 // Each handler ends in a TAIL CALL through g_threaded_handlers[...], which at
 // -O2 LLVM lowers to an indirect tail JUMP (br xN) -- computed-goto-style
 // threading with no goto/musttail (which C3 lacks).
 // ============================================================================
-
-struct ColdCtx {
-    Vm* vm;
-    Activation* act;
-    Instruction* code_base;
-}
 
 alias ThreadedHandlerFn = fn Instruction*(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold);
 
