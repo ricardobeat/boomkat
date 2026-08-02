@@ -544,15 +544,22 @@ fn int jse_get_bool(void* rtp_in, uint id, int* out) @export("jse_get_bool") {
     return JSE_OK;
 }
 
-// UTF-8 conversion sink. write_cesu8_as_utf8's callback takes no udata, so a
-// module-global sink is the only option; single-runtime + no threads make it safe.
-char* g_sink;
-usz   g_sink_len;
-usz   g_sink_cap;
+// UTF-8 conversion sink. The state is per-call and lives on jse_get_string's
+// stack, reached through the udata pointer write_cesu8_as_utf8 passes back.
+//
+// `len` counts every byte the conversion produces, including those past `cap`,
+// because the two-call protocol needs the full required size even when the
+// buffer is too small or absent.
+struct StringSink {
+    char* buf;
+    usz   len;
+    usz   cap;
+}
 
-fn void sink_put(char c) {
-    if (g_sink_len + 1 < g_sink_cap) { g_sink[g_sink_len] = c; }
-    g_sink_len++;
+fn void sink_put(char c, void* udata) {
+    StringSink* sink = (StringSink*)udata;
+    if (sink.len + 1 < sink.cap) { sink.buf[sink.len] = c; }
+    sink.len++;
 }
 
 /// Copy a JS string out as NUL-terminated UTF-8. Two-call protocol: pass
@@ -569,9 +576,9 @@ fn int jse_get_string(void* rtp_in, uint id, char* buf, usz cap, usz* out_len) @
     // bytes out would yield invalid UTF-8. JS forbids implicit conversion too.
     if (s != null && s.is_symbol()) return JSE_ERR_TYPE;
 
-    g_sink = buf; g_sink_len = 0; g_sink_cap = (buf == null) ? 0 : cap;
-    hstring::write_cesu8_as_utf8(s.get_data(), &sink_put);
-    usz need = g_sink_len;
+    StringSink sink = { .buf = buf, .len = 0, .cap = (buf == null) ? 0 : cap };
+    hstring::write_cesu8_as_utf8(s.get_data(), &sink_put, &sink);
+    usz need = sink.len;
     if (out_len != null) *out_len = need;
     if (buf == null) return JSE_OK;
     if (need + 1 > cap) return reader_fail(rt, JSE_ERR_FULL, "buffer too small for string");

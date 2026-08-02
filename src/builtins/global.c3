@@ -31,7 +31,7 @@ fn void print_tval_ctx(BuiltinContext* ctx, TVal* val) {
                     if (str_result.is_string()) {
                         HString* s = (HString*)str_result.get_heapptr();
                         if (s != null) {
-                            hstring::write_cesu8_as_utf8(s.get_data(), &io::putchar);
+                            hstring::write_cesu8_as_utf8(s.get_data(), &putc_out);
                             return;
                         }
                     }
@@ -170,7 +170,7 @@ struct ConsoleSink {
 }
 
 fn void ConsoleSink.put(&self, char c) {
-    if (self.use_stderr) { eputc(c); } else { io::putchar(c); }
+    if (self.use_stderr) { eputc(c, null); } else { io::putchar(c); }
 }
 
 fn void ConsoleSink.write(&self, char[] bytes) {
@@ -227,7 +227,7 @@ fn void console_format_args(BuiltinContext* ctx, bool use_stderr, ushort first) 
             if (spec == '%') {
                 // Collapse "%%" to a single "%": flush through the first one and
                 // resume past the second.
-                hstring::write_cesu8_as_utf8(f[lit_start:i + 1 - lit_start], sink.use_stderr ? &eputc : &io::putchar);
+                hstring::write_cesu8_as_utf8(f[lit_start:i + 1 - lit_start], sink.use_stderr ? &eputc : &putc_out);
                 i += 2;
                 lit_start = i;
                 continue;
@@ -237,7 +237,7 @@ fn void console_format_args(BuiltinContext* ctx, bool use_stderr, ushort first) 
             // Gate 2: an exhausted argument list leaves the specifier literal.
             if (!known || next >= ctx.argc) { i++; continue; }
 
-            hstring::write_cesu8_as_utf8(f[lit_start:i - lit_start], sink.use_stderr ? &eputc : &io::putchar);
+            hstring::write_cesu8_as_utf8(f[lit_start:i - lit_start], sink.use_stderr ? &eputc : &putc_out);
             TVal* arg = &ctx.regs[ctx.base_reg + next];
             next++;
             console_emit_specifier(ctx, sink, spec, arg);
@@ -246,7 +246,7 @@ fn void console_format_args(BuiltinContext* ctx, bool use_stderr, ushort first) 
             lit_start = i;
         }
         if (lit_start < f.len) {
-            hstring::write_cesu8_as_utf8(f[lit_start:f.len - lit_start], sink.use_stderr ? &eputc : &io::putchar);
+            hstring::write_cesu8_as_utf8(f[lit_start:f.len - lit_start], sink.use_stderr ? &eputc : &putc_out);
         }
     } else {
         console_emit_value(ctx, sink, fmt_val);
@@ -295,7 +295,7 @@ fn void console_emit_string_spec(BuiltinContext* ctx, ConsoleSink sink, TVal* ar
             console_emit_symbol(sink, s);
             return;
         }
-        hstring::write_cesu8_as_utf8(s.get_data(), sink.use_stderr ? &eputc : &io::putchar);
+        hstring::write_cesu8_as_utf8(s.get_data(), sink.use_stderr ? &eputc : &putc_out);
         return;
     }
     // An object carrying a toString of its own is rendered by it, since that is
@@ -342,7 +342,7 @@ fn void console_emit_inspect_spec(BuiltinContext* ctx, ConsoleSink sink, TVal* a
 fn void console_emit_symbol(ConsoleSink sink, HString* sym) {
     sink.write("Symbol(");
     if (symbol_has_description(sym)) {
-        hstring::write_cesu8_as_utf8(symbol_description(sym), sink.use_stderr ? &eputc : &io::putchar);
+        hstring::write_cesu8_as_utf8(symbol_description(sym), sink.use_stderr ? &eputc : &putc_out);
     }
     sink.write(")");
 }
@@ -460,8 +460,14 @@ fn void console_emit_json_spec(BuiltinContext* ctx, ConsoleSink sink, TVal* arg)
     sink.write(out.bytes());
 }
 
+/// Stdout byte sink for write_cesu8_as_utf8. The udata a PutByteFn must accept
+/// is unused here: the destination is a fixed stream, not a caller-owned buffer.
+fn void putc_out(char c, void* udata) {
+    io::putchar(c);
+}
+
 /// Stderr byte sink used by write_cesu8_as_utf8.
-fn void eputc(char c) {
+fn void eputc(char c, void* udata) {
     io::eprintf("%c", c);
 }
 

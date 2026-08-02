@@ -861,8 +861,9 @@ fn uint normalize_to_cesu8(char[] data, char[] out) {
 }
 
 /// Function pointer type for a single-byte output sink, used by
-/// `write_cesu8_as_utf8`.
-alias PutByteFn = fn void(char);
+/// `write_cesu8_as_utf8`. The `udata` pointer is passed through untouched, so a
+/// sink that accumulates into a caller-owned buffer needs no global to find it.
+alias PutByteFn = fn void(char, void*);
 
 /// Write CESU-8-canonical `data` to a byte sink as standard UTF-8, inverting
 /// `normalize_to_cesu8`. Surrogate pairs recombine into their astral codepoint
@@ -873,7 +874,7 @@ alias PutByteFn = fn void(char);
 /// Every host-visible text boundary goes through here, including print,
 /// console.log, and file I/O, so nothing outside the engine sees a raw
 /// surrogate-half sequence.
-fn void write_cesu8_as_utf8(char[] data, PutByteFn put_byte_fn) {
+fn void write_cesu8_as_utf8(char[] data, PutByteFn put_byte_fn, void* udata = null) {
     uint len = (uint)data.len;
     uint i = 0;
     while (i < len) {
@@ -886,7 +887,7 @@ fn void write_cesu8_as_utf8(char[] data, PutByteFn put_byte_fn) {
                 uint astral = surrogates_to_codepoint(cp, low);
                 char[4] obuf;
                 uint n = encode_codepoint(astral, obuf[:4]);
-                for (uint k = 0; k < n; k++) put_byte_fn(obuf[k]);
+                for (uint k = 0; k < n; k++) put_byte_fn(obuf[k], udata);
                 i += seq_len + next_len;
                 continue;
             }
@@ -894,12 +895,12 @@ fn void write_cesu8_as_utf8(char[] data, PutByteFn put_byte_fn) {
         if (is_surrogate(cp)) {
             char[4] obuf;
             uint n = encode_codepoint(UNICODE_REPLACEMENT, obuf[:4]);
-            for (uint k = 0; k < n; k++) put_byte_fn(obuf[k]);
+            for (uint k = 0; k < n; k++) put_byte_fn(obuf[k], udata);
             i += seq_len;
             continue;
         }
         for (uint k = 0; k < seq_len && i + k < len; k++) {
-            put_byte_fn(data[i + k]);
+            put_byte_fn(data[i + k], udata);
         }
         i += seq_len;
     }

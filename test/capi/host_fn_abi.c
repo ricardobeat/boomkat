@@ -215,6 +215,37 @@ static void test_stale_handle_never_resolves(jse_runtime rt) {
     check("stale handle never resolves across generation wrap", leaked == 0);
 }
 
+/* jse_get_string's two-call protocol. The conversion sink counts every byte it
+ * produces, including those past the buffer, so a short buffer still reports the
+ * true size. The sink state is per-call and lives on jse_get_string's stack, so
+ * one call cannot disturb another. */
+static void test_string_sink(jse_runtime rt) {
+    jse_value v, v2;
+    size_t need = 0, need2 = 0, got = 0, n2 = 0;
+    char small[4], big[256], b2[64];
+    const char *src = "'hi \\u{1F600} there'";
+    const char *s2 = "'second'";
+
+    if (jse_eval(rt, src, strlen(src), &v) != JSE_OK) {
+        check("string sink: eval", 0);
+        return;
+    }
+    check("sizing call reports a length",
+          jse_get_string(rt, v, NULL, 0, &need) == JSE_OK && need > 0);
+    check("short buffer fails but reports the true size",
+          jse_get_string(rt, v, small, sizeof small, &need2) != JSE_OK && need2 == need);
+    check("full copy matches the sized length",
+          jse_get_string(rt, v, big, sizeof big, &got) == JSE_OK && got == need);
+
+    if (jse_eval(rt, s2, strlen(s2), &v2) == JSE_OK) {
+        jse_get_string(rt, v2, b2, sizeof b2, &n2);
+        check("a later call is not disturbed by an earlier one",
+              n2 == 6 && strcmp(b2, "second") == 0);
+        jse_value_free(rt, v2);
+    }
+    jse_value_free(rt, v);
+}
+
 static void test_churn(jse_runtime rt) {
     int i, bad = 0;
     /* Allocate and free far past the old 1024 cap and past the point where a
@@ -335,6 +366,7 @@ int main(void) {
     /* value registry */
     test_many_live_handles(rt);
     test_stale_handle_rejected(rt);
+    test_string_sink(rt);
     test_churn(rt);
     test_stale_handle_never_resolves(rt);
     test_handles_survive_gc(rt);

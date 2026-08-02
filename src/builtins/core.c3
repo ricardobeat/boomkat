@@ -888,6 +888,12 @@ fn HObject* to_object_for_lookup(Heap* heap, TVal value) {
     return obj;
 }
 
+/// Stdout byte sink for write_cesu8_as_utf8. A PutByteFn must accept a udata
+/// pointer; this destination is a fixed stream, so it is unused.
+fn void putc_stdout(char c, void* udata) {
+    io::putchar(c);
+}
+
 fn void print_tval(TVal* val) {
     switch (val.get_tag()) {
         case UNDEFINED:
@@ -929,7 +935,7 @@ fn void print_tval(TVal* val) {
         case STRING:
             HString* s = (HString*)val.get_heapptr();
             if (s != null) {
-                hstring::write_cesu8_as_utf8(s.get_data(), &io::putchar);
+                hstring::write_cesu8_as_utf8(s.get_data(), &putc_stdout);
             } else {
                 io::printf("[null string]");
             }
