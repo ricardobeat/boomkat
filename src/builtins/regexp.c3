@@ -452,23 +452,28 @@ fn HObject* regexp_build_match_result(BuiltinContext* ctx, void* re_data, HStrin
     HString* match_str = match_len == 0
         ? builtin_intern_string(ctx.heap, "")
         : builtin_intern_string(ctx.heap, input[out_start : match_len]);
+    // Elements go straight into the dense part: the index is already known, so
+    // put_prop's int -> key string -> array_index round-trip buys nothing. A
+    // non-participating capture is `undefined`, which the dense part cannot
+    // tell from a hole, so those keep the named-table path that records
+    // presence (`n in m` must hold for every index below `length`).
     TVal elem; elem.set_string(match_str);
-    HString* zero_key = builtin_intern_string(ctx.heap, "0");
-    arr.put_prop(zero_key, elem, hobject::PROP_FLAGS_WEC);
+    arr.set_array_idx(0, elem);
 
     // Capture groups 1..N
     int total_captures = 1 + num_caps;
     for (int i = 0; i < num_caps; i++) {
-        TVal cap_elem;
         if (caps_start[i] >= 0 && caps_end[i] >= 0) {
             usz cap_len = (usz)(caps_end[i] - caps_start[i]);
+            TVal cap_elem;
             cap_elem.set_string(cap_len == 0
                 ? builtin_intern_string(ctx.heap, "")
                 : builtin_intern_string(ctx.heap, input[caps_start[i] : cap_len]));
+            arr.set_array_idx((uint)(i + 1), cap_elem);
         } else {
-            cap_elem.set_undefined();
+            TVal cap_elem; cap_elem.set_undefined();
+            arr.put_prop(ctx.heap.int_to_hstring((long)(i + 1)), cap_elem, hobject::PROP_FLAGS_WEC);
         }
-        arr.put_prop(ctx.heap.int_to_hstring((long)(i + 1)), cap_elem, hobject::PROP_FLAGS_WEC);
     }
 
     // index property, convert byte offset to character (UTF-16 code unit) index
