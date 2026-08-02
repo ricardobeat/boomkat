@@ -1060,6 +1060,46 @@ heap, the guard is *still in place*, and multi-runtime is not yet claimed.
 That is a genuinely useful intermediate state: it is the whole correctness win
 with none of the ABI risk, and it bisects cleanly.
 
+### Phase 4 outcome
+
+Landed as `0e135315` + `80670e34`. 37 signatures, 1483 call sites across 52 files.
+`_active_heap`, both accessors, the shape pointer cache, `USE_SHAPE_CACHE`,
+`NOSHAPECACHE` and the `build-noshape` recipe are gone; `HObjectBase` is 72 bytes
+(was 80) and `OBJ_SIZE_PLAIN` 104 (was 112).
+
+The purpose is achieved. With the guard temporarily lifted, two runtimes hold
+independent globals, objects, prototype patches and interned strings, survive 20k-object
+churn on both heaps, and one stays fully usable after the other closes: 15 checks, all
+passing. The guard was restored and re-confirmed to reject.
+
+**It costs performance, and the plan's prediction of neutrality was wrong.** Measured
+interleaved with a duplicate-baseline noise control:
+
+| benchmark | noise floor | delta |
+|---|---|---|
+| `bench_recursion_deep` | 0.0% | **+3.5%** |
+| `bench_arithmetic` | 0.0% | **+10%** |
+| `bench_ic_monomorphic` | | 0% |
+
+The earlier neutrality claim came from measuring the shape-cache removal *alone*, on a
+tree that still had the process-global. Combined with threading it does not hold.
+
+Two hypotheses were tested and refuted rather than assumed:
+
+- **Not `EnvRecord`.** Storing the heap on the record (rather than threading it through
+  the env API) was adopted from the first attempt, where a parameter there cost ~7%.
+  `fib` takes the register-resident-locals path and allocates no `EnvRecord` per call,
+  so it is off this benchmark entirely. Note the record does grow 24 to 32 bytes: the
+  padding after its two bools is 6, not the 8 this plan claimed.
+- **Not the lost shape cache.** Restoring `HObject.shape` as an unconditional field,
+  keeping the threading, made things *worse*: +18.8% on arithmetic against +12.5%
+  without it. The probe was reverted.
+
+The residue is the extra `Heap*` argument on `find_prop_idx` / `get_prop_flags`, which
+every path funnels through. It is filed as a follow-up rather than fixed here: the
+threading is what multi-runtime requires, and clawing back the argument cost is a
+separate optimisation with its own design space.
+
 ### Phase 5 — make `capi.c3` per-runtime (guard still in place)
 
 **Scope.** Add `void* runtime_ptr` to `Heap`; set it in `jse_open`; convert
