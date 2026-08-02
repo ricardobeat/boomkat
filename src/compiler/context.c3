@@ -461,10 +461,18 @@ struct CompilerContext {
     /// Set to REG_NONE when not in a property call.
     ushort call_prop_obj_reg;
 
-    /// Spread call: a scratch register (below first_arg) that a plain argument
-    /// following a spread is copied into before its PUTARG, so the value survives
-    /// an unbounded spread. Set by begin_spread_args, consumed by PUTARG emission.
-    ushort spread_val_reg;
+    /// Spread call: base of the evaluation region below first_arg that a plain
+    /// argument following a spread is compiled into, so its temps can never land
+    /// inside the spread's runtime dest window. Set by begin_spread_args, used
+    /// by the PUTARG emission sites.
+    ushort spread_eval_base;
+
+    /// Register allocation ceiling (0xFFFF = no cap). alloc_reg/alloc_regs
+    /// clamp at it and flag reg_overflow instead of handing out a register at
+    /// or above it. Holds a spread call's trailing-argument evaluation below
+    /// first_arg; an expression needing more registers than the reserved
+    /// region is a compile error, never a corrupted argument list.
+    ushort reg_cap;
 
     // Global scope flag: when true, all var decls use environment only (no register cache)
     bool is_global;
@@ -837,6 +845,7 @@ fn void CompilerContext.init(&self, Lexer* lex, void* heap) {
     self.disable_optimize = g_disable_optimize;
     self.next_reg = 0;
     self.max_reg = 0;
+    self.reg_cap = 0xFFFF;
     self.const_count = 0;
     self.code_count = 0;
     self.inner_func_count = 0;

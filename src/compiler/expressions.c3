@@ -2549,13 +2549,11 @@ fn ushort? CompilerContext.emit_call(&self, ushort callee_reg) {
                     self.emit(bytecode::make_a_sbx(Opcode.LDINT, (uint)total_count_reg, (int)arg_count));
                 }
 
-                // Ensure the destination area doesn't overlap with the
-                // register that will hold the spread expression result.
+                // The spread source can live anywhere: SPREAD_ARG reads it
+                // before writing the window, so no reservation is needed and
+                // a previous trailing-arg evaluation may have left next_reg
+                // in the below-first_arg region.
                 ushort dest_start = first_arg + arg_count;
-                if (self.next_reg <= dest_start + 1) {
-                    self.next_reg = dest_start + 2;
-                }
-
                 ushort spread_reg = self.assignment_expr()!;
 
                 // Move spread source away from the dest area if it overlaps
@@ -2573,26 +2571,27 @@ fn ushort? CompilerContext.emit_call(&self, ushort callee_reg) {
                 // PUTARG args) in argument order.
                 self.emit_abc(Opcode.SPREAD_ARG, (uint)first_arg, (uint)total_count_reg, (uint)spread_reg);
                 self.free_reg(spread_reg);
-
-                // Adjust next_reg past the worst-case spread area
-                // (conservatively reserve space; actual count is only known at runtime)
-                if (self.next_reg <= dest_start + 1) {
-                    self.next_reg = dest_start + 2;
-                }
             } else {
-                ushort arg_reg = self.assignment_expr()!;
+                ushort arg_reg;
                 if (has_spread) {
-                    // Non-spread arg following a spread, destination
-                    // slot depends on the runtime spread count held in
-                    // total_count_reg. The new PUTARG opcode writes the
-                    // value at regs[first_arg + total_count] and
-                    // increments total_count. Copy the value into the
-                    // below-first_arg scratch so a large spread cannot
-                    // overwrite it before PUTARG reads it.
-                    self.emit_abc(Opcode.LDREG, (uint)self.spread_val_reg, (uint)arg_reg, 0);
+                    // Non-spread arg following a spread, destination slot
+                    // depends on the runtime spread count held in
+                    // total_count_reg. PUTARG writes the value at
+                    // regs[first_arg + total_count] and increments
+                    // total_count. The spread has already run, so any
+                    // register at or above first_arg may hold a real
+                    // argument; compile the value into the reserved
+                    // below-first_arg region instead, where the spread
+                    // cannot reach it.
+                    ushort saved_cap = self.reg_cap;
+                    self.next_reg = self.spread_eval_base;
+                    self.reg_cap = first_arg;
+                    arg_reg = self.assignment_expr()!;
+                    self.reg_cap = saved_cap;
+                    self.emit_abc(Opcode.PUTARG, (uint)first_arg, (uint)total_count_reg, (uint)arg_reg);
                     self.free_reg(arg_reg);
-                    self.emit_abc(Opcode.PUTARG, (uint)first_arg, (uint)total_count_reg, (uint)self.spread_val_reg);
                 } else {
+                    arg_reg = self.assignment_expr()!;
                     // Ensure the argument is in the expected consecutive register
                     ushort expected = first_arg + arg_count;
                     if (arg_reg != expected) {
@@ -3031,10 +3030,12 @@ fn ushort? CompilerContext.new_expr(&self) {
                             total_count_reg = self.begin_spread_args(&ctor_reg, &first_arg, arg_count);
                             self.emit(bytecode::make_a_sbx(Opcode.LDINT, (uint)total_count_reg, (int)arg_count));
                         }
+                        // The spread source can live anywhere: SPREAD_ARG
+                        // reads it before writing the window, so no
+                        // reservation is needed and a previous trailing-arg
+                        // evaluation may have left next_reg in the
+                        // below-first_arg region.
                         ushort dest_start = first_arg + arg_count;
-                        if (self.next_reg <= dest_start + 1) {
-                            self.next_reg = dest_start + 2;
-                        }
                         ushort spread_reg = self.assignment_expr()!;
                         if (spread_reg >= dest_start) {
                             ushort safe_reg = self.alloc_reg();
@@ -3044,18 +3045,21 @@ fn ushort? CompilerContext.new_expr(&self) {
                         }
                         self.emit_abc(Opcode.SPREAD_ARG, (uint)first_arg, (uint)total_count_reg, (uint)spread_reg);
                         self.free_reg(spread_reg);
-                        if (self.next_reg <= dest_start + 1) {
-                            self.next_reg = dest_start + 2;
-                        }
                     } else {
-                        ushort arg_reg = self.assignment_expr()!;
+                        ushort arg_reg;
                         if (has_spread) {
-                            // Copy into the below-first_arg scratch so a large
-                            // spread cannot overwrite the value before PUTARG.
-                            self.emit_abc(Opcode.LDREG, (uint)self.spread_val_reg, (uint)arg_reg, 0);
+                            // See emit_call: evaluate into the reserved
+                            // below-first_arg region, outside the spread's
+                            // runtime dest window, then PUTARG directly.
+                            ushort saved_cap = self.reg_cap;
+                            self.next_reg = self.spread_eval_base;
+                            self.reg_cap = first_arg;
+                            arg_reg = self.assignment_expr()!;
+                            self.reg_cap = saved_cap;
+                            self.emit_abc(Opcode.PUTARG, (uint)first_arg, (uint)total_count_reg, (uint)arg_reg);
                             self.free_reg(arg_reg);
-                            self.emit_abc(Opcode.PUTARG, (uint)first_arg, (uint)total_count_reg, (uint)self.spread_val_reg);
                         } else {
+                            arg_reg = self.assignment_expr()!;
                             ushort expected = first_arg + arg_count;
                             if (arg_reg != expected) {
                                 self.emit_abc(Opcode.LDREG, (uint)expected, (uint)arg_reg, 0);
@@ -4402,10 +4406,12 @@ fn ushort? CompilerContext.primary_expr(&self) {
                                 total_count_reg = self.begin_spread_args(&super_reg, &first_arg, arg_count);
                                 self.emit(bytecode::make_a_sbx(Opcode.LDINT, (uint)total_count_reg, (int)arg_count));
                             }
+                            // The spread source can live anywhere: SPREAD_ARG
+                            // reads it before writing the window, so no
+                            // reservation is needed and a previous
+                            // trailing-arg evaluation may have left next_reg
+                            // in the below-first_arg region.
                             ushort dest_start = first_arg + arg_count;
-                            if (self.next_reg <= dest_start + 1) {
-                                self.next_reg = dest_start + 2;
-                            }
                             ushort spread_reg = self.assignment_expr()!;
                             if (spread_reg >= dest_start && spread_reg <= dest_start + 10) {
                                 ushort safe_reg = self.alloc_reg();
@@ -4415,19 +4421,21 @@ fn ushort? CompilerContext.primary_expr(&self) {
                             }
                             self.emit_abc(Opcode.SPREAD_ARG, (uint)first_arg, (uint)total_count_reg, (uint)spread_reg);
                             self.free_reg(spread_reg);
-                            if (self.next_reg <= dest_start + 1) {
-                                self.next_reg = dest_start + 2;
-                            }
                         } else {
-                            ushort arg_reg = self.assignment_expr()!;
+                            ushort arg_reg;
                             if (has_spread) {
-                                // Slot depends on the runtime spread count; copy
-                                // the value into the below-first_arg scratch so a
-                                // large spread cannot overwrite it before PUTARG.
-                                self.emit_abc(Opcode.LDREG, (uint)self.spread_val_reg, (uint)arg_reg, 0);
+                                // See emit_call: evaluate into the reserved
+                                // below-first_arg region, outside the spread's
+                                // runtime dest window, then PUTARG directly.
+                                ushort saved_cap = self.reg_cap;
+                                self.next_reg = self.spread_eval_base;
+                                self.reg_cap = first_arg;
+                                arg_reg = self.assignment_expr()!;
+                                self.reg_cap = saved_cap;
+                                self.emit_abc(Opcode.PUTARG, (uint)first_arg, (uint)total_count_reg, (uint)arg_reg);
                                 self.free_reg(arg_reg);
-                                self.emit_abc(Opcode.PUTARG, (uint)first_arg, (uint)total_count_reg, (uint)self.spread_val_reg);
                             } else {
+                                arg_reg = self.assignment_expr()!;
                                 ushort expected = first_arg + arg_count;
                                 if (arg_reg != expected) {
                                     self.emit_abc(Opcode.LDREG, (uint)expected, (uint)arg_reg, 0);
