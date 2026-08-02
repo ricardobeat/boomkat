@@ -50,7 +50,7 @@ fn EnvRecord*? setup_named_function_expr_env(Vm* vm, EnvRecord* parent,
     EnvRecord* name_env = name_env_raw;
     TVal func_tv; func_tv.set_object(func_obj);
     // Non-writable, enumerable, configurable: the flags PUTLEX_C uses for const.
-    name_env.bindings.put_prop((void*)name_hstr, func_tv, hobject::PROP_FLAGS_EC);
+    name_env.bindings.put_prop((void*)name_hstr, func_tv, hobject::PROP_FLAGS_EC, vm.heap);
     return name_env;
 }
 
@@ -199,7 +199,7 @@ fn bool vm_run_depth_exceeded(Vm* vm) {
         if (msg_str != null && msg_key != null) {
             TVal msg_val;
             msg_val.set_string(msg_str);
-            eo.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WEC);
+            eo.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WEC, vm.heap);
         }
         err.set_object(eo);
     }
@@ -642,12 +642,12 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                     if (try arr = arr_raw) {
                         arr.prototype = vm.heap.array_proto;
                         for (uint i = 0; i < overflow; i++) {
-                            arr.set_array_idx(i, args[copy_count + i]);
+                            arr.set_array_idx(i, args[copy_count + i], vm.heap);
                         }
                         HString* len_str = (HString*)vm.heap.strs[heap::BuiltinStr.LENGTH];
                         TVal len_tv;
                         len_tv.set_fastint((long)overflow);
-                        if (len_str != null) arr.put_prop(len_str, len_tv, hobject::PROP_FLAGS_WEC);
+                        if (len_str != null) arr.put_prop(len_str, len_tv, hobject::PROP_FLAGS_WEC, vm.heap);
                         frame[rest_idx].set_object(arr);
                     }
                 } else {
@@ -676,7 +676,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                     // Read from the original args[] array (not frame[]) so arguments
                     // beyond num_regs are included when nargs > nregs.
                     for (uint ai = 0; ai < nargs; ai++) {
-                        args_obj.set_array_idx(ai, args[ai]);
+                        args_obj.set_array_idx(ai, args[ai], vm.heap);
                     }
                     // ES5 §10.6: [[Prototype]] is Object.prototype
                     args_obj.prototype = vm.heap.object_proto;
@@ -691,7 +691,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                     if (args_name != null) {
                         TVal args_tv;
                         args_tv.set_object(args_obj);
-                        env::env_declare(act.var_env, args_name, args_tv);
+                        env::env_declare(act.var_env, args_name, args_tv, vm.heap);
                     }
                 }
             }
@@ -842,7 +842,7 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
         if (args_arr != null) {
             HString* len_key = builtins::builtin_intern_string(heap, "length");
             if (len_key != null) {
-                TVal? lv = args_arr.get_prop_proto(len_key);
+                TVal? lv = args_arr.get_prop_proto(len_key, vm.heap);
                 if (try l = lv) {
                     if (l.is_fastint()) {
                         bound_argc = (uint)l.get_fastint();
@@ -874,7 +874,7 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
                 if (n > 0 && n < 20) {
                     HString* ek = builtins::builtin_intern_string(heap, buf[:n]);
                     if (ek != null) {
-                        TVal? e = args_arr.get_prop_proto(ek);
+                        TVal? e = args_arr.get_prop_proto(ek, vm.heap);
                         if (try got = e) ev = got;
                     }
                 }
@@ -908,7 +908,7 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
     new_this.prototype = heap.object_proto;
     HString* ctor_proto_key = (HString*)heap.strs[heap::BuiltinStr.PROTOTYPE];
     if (ctor_proto_key != null) {
-        if (try proto_tv = new_target_obj.get_prop_proto(ctor_proto_key)) {
+        if (try proto_tv = new_target_obj.get_prop_proto(ctor_proto_key, vm.heap)) {
             if (proto_tv.is_object() && proto_tv.get_heapptr() != null) {
                 new_this.prototype = (HObject*)proto_tv.get_heapptr();
             }
@@ -1092,13 +1092,13 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
                     if (rest_idx + ri < nregs) {
                         HString* rkey = vm.heap.int_to_hstring((long)ri);
                         if (rkey != null) {
-                            rest_arr.put_prop(rkey, frame[rest_idx + ri], hobject::PROP_FLAGS_WEC);
+                            rest_arr.put_prop(rkey, frame[rest_idx + ri], hobject::PROP_FLAGS_WEC, vm.heap);
                         }
                     }
                 }
                 HString* len_str = (HString*)vm.heap.strs[heap::BuiltinStr.LENGTH];
                 TVal len_val; len_val.set_fastint((long)overflow);
-                rest_arr.put_prop(len_str, len_val, hobject::PROP_FLAGS_WEC);
+                rest_arr.put_prop(len_str, len_val, hobject::PROP_FLAGS_WEC, vm.heap);
                 frame[rest_idx].set_object(rest_arr);
             } else {
                 frame[rest_idx].set_undefined();
@@ -1109,7 +1109,7 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
         HObject*? args_obj_raw = vm.heap.alloc_object(hobject::ObjClass.ARGUMENTS);
         if (try args_obj = args_obj_raw) {
             for (uint ai = 0; ai < nargs; ai++) {
-                args_obj.set_array_idx(ai, frame[ai]);
+                args_obj.set_array_idx(ai, frame[ai], vm.heap);
             }
             args_obj.prototype = vm.heap.object_proto;
             // Install length, callee, and @@iterator (= %Array.prototype.values%)
@@ -1122,7 +1122,7 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
             if (args_name != null) {
                 TVal args_tv;
                 args_tv.set_object(args_obj);
-                env::env_declare(cfn_var_env, args_name, args_tv);
+                env::env_declare(cfn_var_env, args_name, args_tv, vm.heap);
             }
         }
     }
@@ -2744,7 +2744,7 @@ fn TVal? Vm.run(Vm* vm) {
                 TVal hasinst_val;
                 hasinst_val.set_undefined();
                 bool have_value = false;
-                AccessorResult hi_acc = rfunc.find_accessor_proto(hasinst_key, true);
+                AccessorResult hi_acc = rfunc.find_accessor_proto(hasinst_key, true, vm.heap);
                 if (hi_acc.found) {
                     // Accessor property: invoke the getter (this = original
                     // receiver = rfunc). A throwing getter propagates.
@@ -2760,7 +2760,7 @@ fn TVal? Vm.run(Vm* vm) {
                 } else {
                     // Data property (or not present). Read raw value via the
                     // prototype chain; fall back to undefined if missing.
-                    TVal? raw = rfunc.get_prop_proto(hasinst_key);
+                    TVal? raw = rfunc.get_prop_proto(hasinst_key, vm.heap);
                     if (try raw_v = raw) {
                         hasinst_val = raw_v;
                         have_value = true;
@@ -2837,7 +2837,7 @@ fn TVal? Vm.run(Vm* vm) {
             // its getter; otherwise fall back to the raw data-property value.
             HString* proto_key_str = (HString*)vm.heap.strs[heap::BuiltinStr.PROTOTYPE];
             TVal proto_val;
-            AccessorResult acc = rfunc.find_accessor_proto(proto_key_str, true);
+            AccessorResult acc = rfunc.find_accessor_proto(proto_key_str, true, vm.heap);
             if (acc.found) {
                 // ES6 §7.3.1 Get(O, P): an accessor's getter is called with
                 // `this` bound to the original receiver (rfunc). The getter
@@ -2850,7 +2850,7 @@ fn TVal? Vm.run(Vm* vm) {
                             continue;
                         }
             } else {
-                proto_val = get_prop_with_proto(rfunc, proto_key_str);
+                proto_val = get_prop_with_proto(rfunc, proto_key_str, vm.heap);
             }
             if (!proto_val.is_object()) {
                 // ES6 §7.3.19 OrdinaryHasInstance step 6: If Type(P) is not
@@ -2946,7 +2946,7 @@ fn TVal? Vm.run(Vm* vm) {
                     // An out-of-bounds index checks only the prototype.
                     void* key = get_prop_key(vm, rb);
                     if (key != null) {
-                        ra.set_boolean(obj.prototype != null && obj.prototype.has_prop_proto(key));
+                        ra.set_boolean(obj.prototype != null && obj.prototype.has_prop_proto(key, vm.heap));
                     } else {
                         ra.set_boolean(false);
                     }
@@ -2980,7 +2980,7 @@ fn TVal? Vm.run(Vm* vm) {
                         }
                     }
                 }
-                ra.set_boolean(obj.has_prop_proto(key));
+                ra.set_boolean(obj.has_prop_proto(key, vm.heap));
             } else {
                 ra.set_boolean(false);
             }
@@ -3523,7 +3523,7 @@ fn TVal? Vm.run(Vm* vm) {
                         && ds.act.this_binding.get_heapptr() != null) {
                     HObject* caller_this_h = (HObject*)ds.act.this_binding.get_heapptr();
                     HString* caller_flag_key = builtins::builtin_intern_string(vm.heap, "@@__derived_super_called__");
-                    TVal caller_fv = caller_this_h.get_prop(caller_flag_key) ?? (TVal){};
+                    TVal caller_fv = caller_this_h.get_prop(caller_flag_key, vm.heap) ?? (TVal){};
                     if (!caller_fv.is_undefined() && caller_fv.get_boolean()) {
                         super_already_bound = true;
                     }
@@ -3545,7 +3545,7 @@ fn TVal? Vm.run(Vm* vm) {
                     HString* super_called_key = builtins::builtin_intern_string(vm.heap, "@@__derived_super_called__");
                     TVal true_tv; true_tv.set_boolean(true);
                     HObject* this_hobj = (HObject*)super_bound_act.this_binding.get_heapptr();
-                    this_hobj.put_prop(super_called_key, true_tv, hobject::PROP_FLAGS_NNC);
+                    this_hobj.put_prop(super_called_key, true_tv, hobject::PROP_FLAGS_NNC, vm.heap);
                 }
             }
 
@@ -3712,7 +3712,7 @@ fn TVal? Vm.run(Vm* vm) {
                         && ds.act.this_binding.get_heapptr() != null) {
                     HObject* su_caller_h = (HObject*)ds.act.this_binding.get_heapptr();
                     HString* su_flag_key = builtins::builtin_intern_string(vm.heap, "@@__derived_super_called__");
-                    TVal su_fv = su_caller_h.get_prop(su_flag_key) ?? (TVal){};
+                    TVal su_fv = su_caller_h.get_prop(su_flag_key, vm.heap) ?? (TVal){};
                     if (!su_fv.is_undefined() && su_fv.get_boolean()) {
                         su_already_bound = true;
                     }
@@ -3731,7 +3731,7 @@ fn TVal? Vm.run(Vm* vm) {
                     HString* super_called_key = builtins::builtin_intern_string(vm.heap, "@@__derived_super_called__");
                     TVal true_tv; true_tv.set_boolean(true);
                     HObject* this_hobj = (HObject*)su_bound_act.this_binding.get_heapptr();
-                    this_hobj.put_prop(super_called_key, true_tv, hobject::PROP_FLAGS_NNC);
+                    this_hobj.put_prop(super_called_key, true_tv, hobject::PROP_FLAGS_NNC, vm.heap);
                 }
                 // §8.1.1.3.1 BindThisValue step 3, a second super() call: the
                 // superclass constructor already ran (side effects above), but
@@ -3796,14 +3796,14 @@ fn TVal? Vm.run(Vm* vm) {
                     int owner_idx = -1;
                     EnvRecord* cur = ds.act.lex_env;
                     while (cur != null) {
-                        int idx = cur.bindings.find_prop_idx(key);
+                        int idx = cur.bindings.find_prop_idx(key, vm.heap);
                         if (idx >= 0) { owner = cur; owner_idx = idx; break; }
                         cur = cur.parent;
                     }
                     if (owner == null && ds.act.lex_env != ds.act.var_env) {
                         cur = ds.act.var_env;
                         while (cur != null) {
-                            int idx = cur.bindings.find_prop_idx(key);
+                            int idx = cur.bindings.find_prop_idx(key, vm.heap);
                             if (idx >= 0) { owner = cur; owner_idx = idx; break; }
                             cur = cur.parent;
                         }
@@ -3867,7 +3867,7 @@ fn TVal? Vm.run(Vm* vm) {
                             HObject* b = (HObject*)vic.bindings;
                             if (b.shape_id == vic.shape_id
                                 && vm.heap.shape_recycle_epoch == vic.recycle_epoch) {
-                                if (b.get_prop_flags(vic.prop_idx).is_accessor) {
+                                if (b.get_prop_flags(vic.prop_idx, vm.heap).is_accessor) {
                                     // Accessor property: fall through to slow path which invokes getter
                                 } else {
                                     TVal v = b.prop_values()[vic.prop_idx];
@@ -3895,7 +3895,7 @@ fn TVal? Vm.run(Vm* vm) {
                     // Search lexical environment first (for let/const bindings)
                     EnvRecord* cur = ds.act.lex_env;
                     while (cur != null) {
-                        int idx = cur.bindings.find_prop_idx(key);
+                        int idx = cur.bindings.find_prop_idx(key, vm.heap);
                         if (idx >= 0) {
                             // ENV_STRICT: GETVAR read traps are gone, since a needs_env=false
                             // lex_env == parent env, so a hit here is a legitimate parent
@@ -3909,7 +3909,7 @@ fn TVal? Vm.run(Vm* vm) {
                                     return VM_ERROR~;
                                 }
                                 found = true; // prevent duplicate error
-                            } else if (cur.bindings.get_prop_flags((uint)idx).is_accessor) {
+                            } else if (cur.bindings.get_prop_flags((uint)idx, vm.heap).is_accessor) {
                                 // Accessor property: invoke getter
                                 TVal getter = hobject::hobject_access_getter(v_raw);
                                 if (!getter.is_undefined() && !getter.is_null() && vm.heap.call_fn != null) {
@@ -3960,7 +3960,7 @@ fn TVal? Vm.run(Vm* vm) {
                         // Not in lex_env, so search var_env, which only `with` blocks need.
                         EnvRecord* vcur = ds.act.var_env;
                         while (vcur != null) {
-                            int vidx = vcur.bindings.find_prop_idx(key);
+                            int vidx = vcur.bindings.find_prop_idx(key, vm.heap);
                             if (vidx >= 0) {
                                 // ENV_STRICT: no trap here. For needs_env=false
                                 // functions ds.act.var_env IS the parent env (no
@@ -3970,7 +3970,7 @@ fn TVal? Vm.run(Vm* vm) {
                                 // as a "not defined" throw (its DECLVAR was elided
                                 // and nothing else defines it), caught by the corpus.
 
-                                if (vcur.bindings.get_prop_flags((uint)vidx).is_accessor) {
+                                if (vcur.bindings.get_prop_flags((uint)vidx, vm.heap).is_accessor) {
                                     TVal gs_slot = vcur.bindings.prop_values()[vidx];
                                     TVal getter = hobject::hobject_access_getter(gs_slot);
                                     if (!getter.is_undefined() && !getter.is_null() && vm.heap.call_fn != null) {
@@ -4076,14 +4076,14 @@ fn TVal? Vm.run(Vm* vm) {
                     int ic_prop_idx = -1;
                     EnvRecord* cur = ds.act.lex_env;
                     while (cur != null) {
-                        int idx = cur.bindings.find_prop_idx(key);
+                        int idx = cur.bindings.find_prop_idx(key, vm.heap);
                         if (idx >= 0) { ic_env = cur; ic_prop_idx = idx; break; }
                         cur = cur.parent;
                     }
                     if (ic_env == null && ds.act.lex_env != ds.act.var_env) {
                         EnvRecord* vcur = ds.act.var_env;
                         while (vcur != null) {
-                            int vidx = vcur.bindings.find_prop_idx(key);
+                            int vidx = vcur.bindings.find_prop_idx(key, vm.heap);
                             if (vidx >= 0) { ic_env = vcur; ic_prop_idx = vidx; break; }
                             vcur = vcur.parent;
                         }
@@ -4144,14 +4144,14 @@ fn TVal? Vm.run(Vm* vm) {
                     int owner_idx = -1;
                     EnvRecord* pcur = ds.act.lex_env;
                     while (pcur != null) {
-                        int idx = pcur.bindings.find_prop_idx(key);
+                        int idx = pcur.bindings.find_prop_idx(key, vm.heap);
                         if (idx >= 0) { owner = pcur; owner_idx = idx; break; }
                         pcur = pcur.parent;
                     }
                     if (owner == null) {
                         EnvRecord* vcur = ds.act.var_env;
                         while (vcur != null) {
-                            int vidx = vcur.bindings.find_prop_idx(key);
+                            int vidx = vcur.bindings.find_prop_idx(key, vm.heap);
                             if (vidx >= 0) { owner = vcur; owner_idx = vidx; break; }
                             vcur = vcur.parent;
                         }
@@ -4161,7 +4161,7 @@ fn TVal? Vm.run(Vm* vm) {
                         *slot = *ra;
                         ra.set_undefined();
                         if (ds.var_ic_base != null) {
-                            hobject::PropFlags fl = owner.bindings.get_prop_flags((uint)owner_idx);
+                            hobject::PropFlags fl = owner.bindings.get_prop_flags((uint)owner_idx, vm.heap);
                             if (fl.writable && !fl.is_accessor) {
                                 uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                                 hobject::VarICEntry* gic = ds.var_ic_base + pc_off;
@@ -4227,14 +4227,14 @@ fn TVal? Vm.run(Vm* vm) {
                     int didx = -1;
                     EnvRecord* dcur = ds.act.lex_env;
                     while (dcur != null) {
-                        int idx = dcur.bindings.find_prop_idx(dst_key);
+                        int idx = dcur.bindings.find_prop_idx(dst_key, vm.heap);
                         if (idx >= 0) { denv = dcur; didx = idx; break; }
                         dcur = dcur.parent;
                     }
                     if (denv == null) {
                         EnvRecord* vcur = ds.act.var_env;
                         while (vcur != null) {
-                            int vidx = vcur.bindings.find_prop_idx(dst_key);
+                            int vidx = vcur.bindings.find_prop_idx(dst_key, vm.heap);
                             if (vidx >= 0) { denv = vcur; didx = vidx; break; }
                             vcur = vcur.parent;
                         }
@@ -4244,14 +4244,14 @@ fn TVal? Vm.run(Vm* vm) {
                     int sidx = -1;
                     EnvRecord* scur = ds.act.lex_env;
                     while (scur != null) {
-                        int idx = scur.bindings.find_prop_idx(src_key);
+                        int idx = scur.bindings.find_prop_idx(src_key, vm.heap);
                         if (idx >= 0) { senv = scur; sidx = idx; break; }
                         scur = scur.parent;
                     }
                     if (senv == null && ds.act.lex_env != ds.act.var_env) {
                         EnvRecord* vcur = ds.act.var_env;
                         while (vcur != null) {
-                            int vidx = vcur.bindings.find_prop_idx(src_key);
+                            int vidx = vcur.bindings.find_prop_idx(src_key, vm.heap);
                             if (vidx >= 0) { senv = vcur; sidx = vidx; break; }
                             vcur = vcur.parent;
                         }
@@ -4274,7 +4274,7 @@ fn TVal? Vm.run(Vm* vm) {
                         // Populate the destination write IC (only when the slot
                         // is a writable, non-configurable data binding, the same
                         // gate as PUTGLOBAL_PRIM's varref_store_ok).
-                        hobject::PropFlags dfl = denv.bindings.get_prop_flags((uint)didx);
+                        hobject::PropFlags dfl = denv.bindings.get_prop_flags((uint)didx, vm.heap);
                         if (dfl.writable && !dfl.is_accessor) {
                             dic.env = (void*)denv;
                             dic.bindings = (void*)denv.bindings;
@@ -4329,14 +4329,14 @@ fn TVal? Vm.run(Vm* vm) {
                         int gidx = -1;
                         EnvRecord* cur = ds.act.lex_env;
                         while (cur != null) {
-                            int idx = cur.bindings.find_prop_idx(key);
+                            int idx = cur.bindings.find_prop_idx(key, vm.heap);
                             if (idx >= 0) { genv = cur; gidx = idx; break; }
                             cur = cur.parent;
                         }
                         if (genv == null && ds.act.lex_env != ds.act.var_env) {
                             EnvRecord* vcur = ds.act.var_env;
                             while (vcur != null) {
-                                int vidx = vcur.bindings.find_prop_idx(key);
+                                int vidx = vcur.bindings.find_prop_idx(key, vm.heap);
                                 if (vidx >= 0) { genv = vcur; gidx = vidx; break; }
                                 vcur = vcur.parent;
                             }
@@ -4438,7 +4438,7 @@ fn TVal? Vm.run(Vm* vm) {
 
                     EnvRecord* cur = ds.act.lex_env;
                     while (cur != null) {
-                        int idx = cur.bindings.find_prop_idx(key);
+                        int idx = cur.bindings.find_prop_idx(key, vm.heap);
                         if (idx >= 0) {
                             TVal v_raw = cur.bindings.prop_values()[idx];
                             if (env::is_tdz_sentinel(&v_raw)) {
@@ -4447,7 +4447,7 @@ fn TVal? Vm.run(Vm* vm) {
                                     return VM_ERROR~;
                                 }
                                 found = true;
-                            } else if (cur.bindings.get_prop_flags((uint)idx).is_accessor) {
+                            } else if (cur.bindings.get_prop_flags((uint)idx, vm.heap).is_accessor) {
                                 TVal getter = hobject::hobject_access_getter(v_raw);
                                 if (!getter.is_undefined() && !getter.is_null() && vm.heap.call_fn != null) {
                                     TVal this_tv;
@@ -4488,9 +4488,9 @@ fn TVal? Vm.run(Vm* vm) {
                     if (!found && ds.act.lex_env != ds.act.var_env) {
                         EnvRecord* vcur = ds.act.var_env;
                         while (vcur != null) {
-                            int vidx = vcur.bindings.find_prop_idx(key);
+                            int vidx = vcur.bindings.find_prop_idx(key, vm.heap);
                             if (vidx >= 0) {
-                                if (vcur.bindings.get_prop_flags((uint)vidx).is_accessor) {
+                                if (vcur.bindings.get_prop_flags((uint)vidx, vm.heap).is_accessor) {
                                     TVal gs_slot = vcur.bindings.prop_values()[vidx];
                                     TVal getter = hobject::hobject_access_getter(gs_slot);
                                     if (!getter.is_undefined() && !getter.is_null() && vm.heap.call_fn != null) {
@@ -4582,7 +4582,7 @@ fn TVal? Vm.run(Vm* vm) {
                         }
                     }
 
-                    int put_result = env::env_try_put_lex(ds.act.lex_env, key, *ra, true);
+                    int put_result = env::env_try_put_lex(ds.act.lex_env, key, *ra, true, vm.heap);
                     if (put_result == -1) {
                         HString* name_hstr = (HString*)key;
                         if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
@@ -4599,14 +4599,14 @@ fn TVal? Vm.run(Vm* vm) {
                         // Not in lex env, so check var env. Assigning to an
                         // undeclared name throws a ReferenceError, since this
                         // engine is strict-only and has no implicit globals.
-                        if (!env::env_has(ds.act.var_env, key)) {
+                        if (!env::env_has(ds.act.var_env, key, vm.heap)) {
                             HString* name_hstr = (HString*)key;
                             if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "'%s' is not defined", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
                                 return VM_ERROR~;
                             }
                             break;
                         }
-                        env::env_put(ds.act.var_env, key, *ra);
+                        env::env_put(ds.act.var_env, key, *ra, vm.heap);
                     }
                     vm.heap.decref_tval(ra);
                     ra.set_undefined();
@@ -4618,16 +4618,16 @@ fn TVal? Vm.run(Vm* vm) {
                         if (put_result == 1) {
                             EnvRecord* pcur = ds.act.lex_env;
                             while (pcur != null) {
-                                int idx = pcur.bindings.find_prop_idx(key);
+                                int idx = pcur.bindings.find_prop_idx(key, vm.heap);
                                 if (idx >= 0) { owner = pcur; owner_idx = idx; break; }
                                 pcur = pcur.parent;
                             }
                         } else {
-                            int idx = ds.act.var_env.bindings.find_prop_idx(key);
+                            int idx = ds.act.var_env.bindings.find_prop_idx(key, vm.heap);
                             if (idx >= 0) { owner = ds.act.var_env; owner_idx = idx; }
                         }
                         if (owner != null && owner_idx >= 0) {
-                            hobject::PropFlags fl = owner.bindings.get_prop_flags((uint)owner_idx);
+                            hobject::PropFlags fl = owner.bindings.get_prop_flags((uint)owner_idx, vm.heap);
                             if (fl.writable && !fl.is_accessor) {
                                 uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                                 hobject::VarICEntry* gic = ds.var_ic_base + pc_off;
@@ -4668,7 +4668,7 @@ fn TVal? Vm.run(Vm* vm) {
                                 && vm.heap.shape_recycle_epoch == vic.recycle_epoch) {
                                 // Accessor properties store a getter/setter pair, not the
                                 // actual value.  Fall through to slow path which invokes the getter.
-                                if (b.get_prop_flags(vic.prop_idx).is_accessor) {
+                                if (b.get_prop_flags(vic.prop_idx, vm.heap).is_accessor) {
                                     // Invalidate the IC and let the slow path handle it.
                                 } else {
                                     TVal v = b.prop_values()[vic.prop_idx];
@@ -4696,7 +4696,7 @@ fn TVal? Vm.run(Vm* vm) {
                     // Search lexical environment first (for let/const bindings)
                     EnvRecord* cur = ds.act.lex_env;
                     while (cur != null) {
-                        int idx = cur.bindings.find_prop_idx(key);
+                        int idx = cur.bindings.find_prop_idx(key, vm.heap);
                         if (idx >= 0) {
                             // ENV_STRICT: TYPEOFIDENT read traps are gone, since a needs_env=false
                             // lex_env == parent env, so a hit here is a legitimate parent
@@ -4710,7 +4710,7 @@ fn TVal? Vm.run(Vm* vm) {
                                 if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "Cannot access '%s' before initialization", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
                                     return VM_ERROR~;
                                 }
-                            } else if (cur.bindings.get_prop_flags((uint)idx).is_accessor) {
+                            } else if (cur.bindings.get_prop_flags((uint)idx, vm.heap).is_accessor) {
                                 // Accessor property: invoke getter for typeof
                                 TVal getter = hobject::hobject_access_getter(v_raw);
                                 bool getter_threw = false;
@@ -4761,12 +4761,12 @@ fn TVal? Vm.run(Vm* vm) {
                         // Not in lex_env, so search var_env.
                         EnvRecord* vcur2 = ds.act.var_env;
                         while (vcur2 != null) {
-                            int vidx2 = vcur2.bindings.find_prop_idx(key);
+                            int vidx2 = vcur2.bindings.find_prop_idx(key, vm.heap);
                             if (vidx2 >= 0) {
                                 // ENV_STRICT: no trap here (var_env == parent env
                                 // when needs_env=false; see GETVAR note above).
 
-                                if (vcur2.bindings.get_prop_flags((uint)vidx2).is_accessor) {
+                                if (vcur2.bindings.get_prop_flags((uint)vidx2, vm.heap).is_accessor) {
                                     TVal gs_slot2 = vcur2.bindings.prop_values()[vidx2];
                                     TVal getter2 = hobject::hobject_access_getter(gs_slot2);
                                     if (!getter2.is_undefined() && !getter2.is_null() && vm.heap.call_fn != null) {
@@ -4840,7 +4840,7 @@ fn TVal? Vm.run(Vm* vm) {
                     // ENV_STRICT TODO: own-vs-parent check for lex_env and var_env walks.
                     // Would need to introspect env_try_put_lex or rewrite walk here.
                     // Combined single-walk: check lex_env, writability, and update in one pass
-                    int put_result = env::env_try_put_lex(ds.act.lex_env, key, *ra, false);
+                    int put_result = env::env_try_put_lex(ds.act.lex_env, key, *ra, false, vm.heap);
                     if (put_result == -1) {
                         // A const violation throws a TypeError.
                         HString* name_hstr = (HString*)key;
@@ -4850,7 +4850,7 @@ fn TVal? Vm.run(Vm* vm) {
                         break;
                     } else if (put_result == 0) {
                         // Not in lex_env, so fall through to var_env.
-                        env::env_put(ds.act.var_env, key, *ra);
+                        env::env_put(ds.act.var_env, key, *ra, vm.heap);
                     }
                     // put_result == 1: already updated in lex_env
                     // Release ra's reference, since the binding now owns one.
@@ -4887,7 +4887,7 @@ fn TVal? Vm.run(Vm* vm) {
                             if (b.shape_id == vic.shape_id
                                 && vm.heap.shape_recycle_epoch == vic.recycle_epoch) {
                                 TVal* pv = &b.prop_values()[vic.prop_idx];
-                                hobject::PropFlags fl = b.get_prop_flags(vic.prop_idx);
+                                hobject::PropFlags fl = b.get_prop_flags(vic.prop_idx, vm.heap);
                                 if (!env::is_tdz_sentinel(pv) && fl.writable && !fl.is_accessor) {
                                     // Move ra's value into the slot: decref the old
                                     // slot value, take ra's reference, clear ra. Net
@@ -4903,7 +4903,7 @@ fn TVal? Vm.run(Vm* vm) {
                         }
                     }
 
-                    int put_result = env::env_try_put_lex(ds.act.lex_env, key, *ra, true);
+                    int put_result = env::env_try_put_lex(ds.act.lex_env, key, *ra, true, vm.heap);
                     if (put_result == -1) {
                         HString* name_hstr = (HString*)key;
                         if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
@@ -4920,14 +4920,14 @@ fn TVal? Vm.run(Vm* vm) {
                         // Not in lex env, so check var env. Assigning to an
                         // identifier that exists nowhere in the scope chain throws a
                         // ReferenceError (ES5 §11.13.1, ES2015 §12.15.4).
-                        if (!env::env_has(ds.act.var_env, key)) {
+                        if (!env::env_has(ds.act.var_env, key, vm.heap)) {
                             HString* name_hstr = (HString*)key;
                             if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "'%s' is not defined", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
                                 return VM_ERROR~;
                             }
                             break;
                         }
-                        env::env_put(ds.act.var_env, key, *ra);
+                        env::env_put(ds.act.var_env, key, *ra, vm.heap);
                     }
                     vm.heap.decref_tval(ra);
                     ra.set_undefined();
@@ -4944,16 +4944,16 @@ fn TVal? Vm.run(Vm* vm) {
                         if (put_result == 1) {
                             EnvRecord* cur = ds.act.lex_env;
                             while (cur != null) {
-                                int idx = cur.bindings.find_prop_idx(key);
+                                int idx = cur.bindings.find_prop_idx(key, vm.heap);
                                 if (idx >= 0) { owner = cur; owner_idx = idx; break; }
                                 cur = cur.parent;
                             }
                         } else {
-                            int idx = ds.act.var_env.bindings.find_prop_idx(key);
+                            int idx = ds.act.var_env.bindings.find_prop_idx(key, vm.heap);
                             if (idx >= 0) { owner = ds.act.var_env; owner_idx = idx; }
                         }
                         if (owner != null && owner_idx >= 0) {
-                            hobject::PropFlags fl = owner.bindings.get_prop_flags((uint)owner_idx);
+                            hobject::PropFlags fl = owner.bindings.get_prop_flags((uint)owner_idx, vm.heap);
                             if (fl.writable && !fl.is_accessor) {
                                 uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                                 hobject::VarICEntry* vic = ds.var_ic_base + pc_off;
@@ -4989,7 +4989,7 @@ fn TVal? Vm.run(Vm* vm) {
                     $endif
                     env::env_declare_global_func(ds.act.var_env, fdecl_name.get_heapptr(), *ra,
                         ds.act.var_env == vm.global_env,
-                        ((CompiledFunction*)ds.act.func).is_eval_fn());
+                        ((CompiledFunction*)ds.act.func).is_eval_fn(), vm.heap);
                 }
             }
             break;
@@ -5009,7 +5009,7 @@ fn TVal? Vm.run(Vm* vm) {
                     void* key = name_val.get_heapptr();
                     env::env_declare_var(ds.act.var_env, key, *ra,
                         ds.act.var_env == vm.global_env,
-                        ((CompiledFunction*)ds.act.func).is_eval_fn(), true);
+                        ((CompiledFunction*)ds.act.func).is_eval_fn(), true, vm.heap);
                 }
             }
             break;
@@ -5037,11 +5037,11 @@ fn TVal? Vm.run(Vm* vm) {
                                 && vm.heap.shape_recycle_epoch == vic.recycle_epoch) {
                                 // A direct write skips find_prop_idx and put_prop.
                                 TVal* pv = &b.prop_values()[vic.prop_idx];
-                                if (hobject::_active_heap != null && pv.is_string()) {
-                                    ((heap::Heap*)hobject::_active_heap).decref_tval(pv);
+                                if (pv.is_string()) {
+                                    vm.heap.decref_tval(pv);
                                 }
                                 *pv = *ra;
-                                if (hobject::_active_heap != null && ra.is_string()) {
+                                if (ra.is_string()) {
                                     void* ptr = ra.get_heapptr();
                                     if (ptr != null) ((types::HeapHeader*)ptr).incref();
                                 }
@@ -5058,7 +5058,7 @@ fn TVal? Vm.run(Vm* vm) {
                     // (ES2015 §8.1.1.4.15/.17, §15.1.11 vs §18.2.1.2).
                     env::env_declare_var(ds.act.var_env, key, *ra,
                         ds.act.var_env == vm.global_env,
-                        ((CompiledFunction*)ds.act.func).is_eval_fn(), false);
+                        ((CompiledFunction*)ds.act.func).is_eval_fn(), false, vm.heap);
 
                     // Populate VarIC for next time
                     if (ds.var_ic_base != null) {
@@ -5066,7 +5066,7 @@ fn TVal? Vm.run(Vm* vm) {
                         hobject::VarICEntry* vic = ds.var_ic_base + pc_off;
                         HObject* b = ds.act.var_env.bindings;
                         if (b != null) {
-                            int idx = b.find_prop_idx(key);
+                            int idx = b.find_prop_idx(key, vm.heap);
                             if (idx >= 0) {
                                 vic.env = (void*)ds.act.var_env;
                                 vic.bindings = (void*)b;
@@ -5094,7 +5094,7 @@ fn TVal? Vm.run(Vm* vm) {
                     if (vm.current_func.needs_env() == false) { unreachable("ENV_STRICT: needs_env=false fn touched own env: PUTLEX"); }
                     $endif
 
-                    env::env_declare_lex(ds.act.lex_env, key, *ra);
+                    env::env_declare_lex(ds.act.lex_env, key, *ra, vm.heap);
                 }
             }
             continue;
@@ -5111,7 +5111,7 @@ fn TVal? Vm.run(Vm* vm) {
                     if (vm.current_func.needs_env() == false) { unreachable("ENV_STRICT: needs_env=false fn touched own env: PUTLEX_C"); }
                     $endif
 
-                    ds.act.lex_env.bindings.put_prop(key, *ra, hobject::PROP_FLAGS_EC);
+                    ds.act.lex_env.bindings.put_prop(key, *ra, hobject::PROP_FLAGS_EC, vm.heap);
                 }
             }
             continue;
@@ -5134,7 +5134,7 @@ fn TVal? Vm.run(Vm* vm) {
                     // sentinel alive when a TYPEOFIDENT references its name.
 
                     TVal tdz = env::tdz_sentinel();
-                    ds.act.lex_env.bindings.put_prop(key, tdz, hobject::PROP_FLAGS_WEC);
+                    ds.act.lex_env.bindings.put_prop(key, tdz, hobject::PROP_FLAGS_WEC, vm.heap);
                 }
             }
             continue;
@@ -5154,8 +5154,8 @@ fn TVal? Vm.run(Vm* vm) {
                     HObject* globals = vm.global_env.bindings;
                     HObject* lex = vm.global_lex_env != null ? vm.global_lex_env.bindings : null;
 
-                    bool has_lex = lex != null && lex.find_prop_idx(key) >= 0;
-                    int gidx = globals.find_prop_idx(key);
+                    bool has_lex = lex != null && lex.find_prop_idx(key, vm.heap) >= 0;
+                    int gidx = globals.find_prop_idx(key, vm.heap);
                     bool has_global = gidx >= 0;
 
                     if (op == Opcode.CHKGLOBALLEX) {
@@ -5164,7 +5164,7 @@ fn TVal? Vm.run(Vm* vm) {
                         // binding, nor a restricted (non-configurable) global
                         // property (HasRestrictedGlobalProperty).
                         bool restricted = has_global
-                            && !globals.get_prop_flags((uint)gidx).configurable;
+                            && !globals.get_prop_flags((uint)gidx, vm.heap).configurable;
                         if (has_lex || restricted) {
                             HString* nm = (HString*)key;
                             if (!vm_throw_error_fmt(vm, vm.heap.syntax_err_proto,
@@ -5218,7 +5218,7 @@ fn TVal? Vm.run(Vm* vm) {
                         if (!has_global) {
                             definable = globals.is_extensible();
                         } else {
-                            hobject::PropFlags pf = globals.get_prop_flags((uint)gidx);
+                            hobject::PropFlags pf = globals.get_prop_flags((uint)gidx, vm.heap);
                             definable = pf.configurable
                                 || (!pf.is_accessor && pf.writable && pf.enumerable);
                         }

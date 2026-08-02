@@ -419,7 +419,7 @@ fn ModuleDef*? resolve_module(Heap* heap, char[] specifier, char[] base_name, bo
         }
         HString* def_key = heap.str_intern("default");
         if (def_key != null) {
-            env::env_declare(mod.env, def_key, mod.json_value);
+            env::env_declare(mod.env, def_key, mod.json_value, heap);
         }
         call_on_module_loaded(heap, mod);
         mod.status = ModuleStatus.LOADED;
@@ -755,7 +755,7 @@ fn bool link_module(Heap* heap, vm::Vm* vm, ModuleDef* mod, EnvRecord* global_en
             }
             // A function declaration wins over any earlier binding of the same
             // name (last-declaration hoisting), so declare unconditionally.
-            env::env_declare(mod.env, key, val);
+            env::env_declare(mod.env, key, val, heap);
         }
     }
 
@@ -777,14 +777,14 @@ fn bool link_module(Heap* heap, vm::Vm* vm, ModuleDef* mod, EnvRecord* global_en
         HString* key = heap.str_intern(ee.local_name);
         if (key == null) continue;
         // Check if already declared (from import resolution or as a function).
-        if (!env::env_has(mod.env, key)) {
+        if (!env::env_has(mod.env, key, heap)) {
             TVal val;
             if (ee.is_lexical) {
                 val = env::tdz_sentinel();
             } else {
                 val.set_undefined();
             }
-            env::env_declare(mod.env, key, val);
+            env::env_declare(mod.env, key, val, heap);
         }
     }
 
@@ -928,7 +928,7 @@ fn void module_attach_named_reaction(Heap* heap, ModuleDef* mod, HObject* source
     onf.flags.callable = true;
     onf.prototype = heap.function_proto;
     (*onf.extra_ptr()).func.builtin_fn_index = (int)onf_ordinal;
-    onf.put_prop(name_key, name_tv, hobject::PROP_FLAGS_WEC);
+    onf.put_prop(name_key, name_tv, hobject::PROP_FLAGS_WEC, heap);
 
     HObject*? onr_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
     if (catch err = onr_raw) return;
@@ -936,7 +936,7 @@ fn void module_attach_named_reaction(Heap* heap, ModuleDef* mod, HObject* source
     onr.flags.callable = true;
     onr.prototype = heap.function_proto;
     (*onr.extra_ptr()).func.builtin_fn_index = (int)onr_ordinal;
-    onr.put_prop(name_key, name_tv, hobject::PROP_FLAGS_WEC);
+    onr.put_prop(name_key, name_tv, hobject::PROP_FLAGS_WEC, heap);
 
     HObject*? rxn_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = rxn_raw) return;
@@ -944,8 +944,8 @@ fn void module_attach_named_reaction(Heap* heap, ModuleDef* mod, HObject* source
     rxn.prototype = heap.object_proto;
     TVal onf_tv; onf_tv.set_object(onf);
     TVal onr_tv; onr_tv.set_object(onr);
-    rxn.put_prop(onf_key, onf_tv, hobject::PROP_FLAGS_WEC);
-    rxn.put_prop(onr_key, onr_tv, hobject::PROP_FLAGS_WEC);
+    rxn.put_prop(onf_key, onf_tv, hobject::PROP_FLAGS_WEC, heap);
+    rxn.put_prop(onr_key, onr_tv, hobject::PROP_FLAGS_WEC, heap);
     // No `downstream`: these handlers act purely for their side effect
     // (finalizing mod, or running its deferred continuation) and their
     // return value is discarded, leaving `downstream` undefined means
@@ -970,7 +970,7 @@ fn void module_pending_finish_run(BuiltinContext* ctx, bool ok) {
     HString* name_key = heap.str_intern(MODULE_PENDING_FINISH_NAME_KEY);
     if (name_key == null) return;
     char[] name = {};
-    if (try nv = ctx.callee_obj.get_prop(name_key)) {
+    if (try nv = ctx.callee_obj.get_prop(name_key, ctx.heap)) {
         if (nv.is_string()) name = ((HString*)nv.get_heapptr()).get_data();
     }
     if (name.len == 0) return;
@@ -1024,7 +1024,7 @@ fn void module_deferred_continue_run(BuiltinContext* ctx, bool ok) {
     HString* name_key = heap.str_intern(MODULE_PENDING_FINISH_NAME_KEY);
     if (name_key == null) return;
     char[] name = {};
-    if (try nv = ctx.callee_obj.get_prop(name_key)) {
+    if (try nv = ctx.callee_obj.get_prop(name_key, ctx.heap)) {
         if (nv.is_string()) name = ((HString*)nv.get_heapptr()).get_data();
     }
     if (name.len == 0) return;
@@ -1214,7 +1214,7 @@ fn bool module_execute_continue(Heap* heap, Vm* vm, ModuleDef* mod) {
             ns_val.set_object(ns);
             HString* local_key = heap.str_intern(ie.local_name);
             if (local_key != null) {
-                env::env_declare_const(mod.env, local_key, ns_val);
+                env::env_declare_const(mod.env, local_key, ns_val, heap);
             }
             continue;
         }
@@ -1239,10 +1239,10 @@ fn bool module_execute_continue(Heap* heap, Vm* vm, ModuleDef* mod) {
                 HObject*? ns_opt = build_namespace_object(heap, rr.owner);
                 if (try ns = ns_opt) {
                     TVal ns_val; ns_val.set_object(ns);
-                    env::env_declare(mod.env, local_key, ns_val);
+                    env::env_declare(mod.env, local_key, ns_val, heap);
                 } else {
                     TVal undef; undef.set_undefined();
-                    env::env_declare(mod.env, local_key, undef);
+                    env::env_declare(mod.env, local_key, undef, heap);
                 }
             } else {
                 install_live_binding(heap, mod.env, local_key, rr.owner, rr.binding_name);
@@ -1659,15 +1659,15 @@ fn TVal? dynamic_import(Heap* heap, Vm* vm, char[] specifier, bool wants_json = 
     (*job.extra_ptr()).func.builtin_fn_index = (int)Builtin.DYNAMIC_IMPORT_JOB.ordinal;
 
     TVal spec_tv; spec_tv.set_string(spec_str);
-    job.put_prop(spec_key, spec_tv, hobject::PROP_FLAGS_WEC);
+    job.put_prop(spec_key, spec_tv, hobject::PROP_FLAGS_WEC, heap);
     if (base_str != null) {
         TVal base_tv; base_tv.set_string(base_str);
-        job.put_prop(base_key, base_tv, hobject::PROP_FLAGS_WEC);
+        job.put_prop(base_key, base_tv, hobject::PROP_FLAGS_WEC, heap);
     }
     TVal json_tv; json_tv.set_boolean(wants_json);
-    job.put_prop(json_key, json_tv, hobject::PROP_FLAGS_WEC);
+    job.put_prop(json_key, json_tv, hobject::PROP_FLAGS_WEC, heap);
     TVal prom_tv; prom_tv.set_object(prom);
-    job.put_prop(prom_key, prom_tv, hobject::PROP_FLAGS_WEC);
+    job.put_prop(prom_key, prom_tv, hobject::PROP_FLAGS_WEC, heap);
 
     TVal job_tv; job_tv.set_object(job);
     TVal undef_arg; undef_arg.set_undefined();
@@ -1700,19 +1700,19 @@ fn void builtin_dynamic_import_job(BuiltinContext* ctx) {
     if (spec_key == null || base_key == null || json_key == null || prom_key == null) return;
 
     char[] spec_data = {};
-    if (try sv = ctx.callee_obj.get_prop(spec_key)) {
+    if (try sv = ctx.callee_obj.get_prop(spec_key, ctx.heap)) {
         if (sv.is_string()) spec_data = ((HString*)sv.get_heapptr()).get_data();
     }
     char[] base_data = {};
-    if (try bv = ctx.callee_obj.get_prop(base_key)) {
+    if (try bv = ctx.callee_obj.get_prop(base_key, ctx.heap)) {
         if (bv.is_string()) base_data = ((HString*)bv.get_heapptr()).get_data();
     }
     bool wants_json = false;
-    if (try jv = ctx.callee_obj.get_prop(json_key)) {
+    if (try jv = ctx.callee_obj.get_prop(json_key, ctx.heap)) {
         if (jv.is_boolean()) wants_json = jv.get_boolean();
     }
     HObject* prom = null;
-    if (try pv = ctx.callee_obj.get_prop(prom_key)) {
+    if (try pv = ctx.callee_obj.get_prop(prom_key, ctx.heap)) {
         if (pv.is_object() && pv.get_heapptr() != null) prom = (HObject*)pv.get_heapptr();
     }
     if (prom == null) return;
@@ -1871,7 +1871,7 @@ fn TVal module_error_with_proto(Heap* heap, HObject* proto, char[] msg) {
         msg_val.set_string(msg_str);
         HString* msg_key = heap.str_intern("message");
         if (msg_key != null) {
-            err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WC);
+            err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WC, heap);
         }
     }
     result.set_object(err);
@@ -1943,31 +1943,31 @@ fn void install_live_binding(Heap* heap, EnvRecord* dest_env, HString* dest_key,
                               ModuleDef* source_mod, char[] src_local_name) {
     if (source_mod.env == null) {
         TVal undef; undef.set_undefined();
-        env::env_declare(dest_env, dest_key, undef);
+        env::env_declare(dest_env, dest_key, undef, heap);
         return;
     }
     HString* src_key = heap.str_intern(src_local_name);
     if (src_key == null) {
         TVal undef; undef.set_undefined();
-        env::env_declare(dest_env, dest_key, undef);
+        env::env_declare(dest_env, dest_key, undef, heap);
         return;
     }
     if (dest_env.bindings == source_mod.env.bindings && dest_key == src_key) {
         TVal undef; undef.set_undefined();
-        env::env_declare(dest_env, dest_key, undef);
+        env::env_declare(dest_env, dest_key, undef, heap);
         return;
     }
     TVal accessor = builtins::make_module_binding_accessor(heap, source_mod.env.bindings, src_key);
     if (accessor.is_undefined()) {
         // Accessor allocation failed, degrade to a one-time snapshot rather
         // than leaving the binding entirely undeclared.
-        TVal? val_opt = env::env_get(source_mod.env, src_key);
+        TVal? val_opt = env::env_get(source_mod.env, src_key, heap);
         TVal val;
         if (catch err = val_opt) { val.set_undefined(); } else { val = val_opt; }
-        env::env_declare(dest_env, dest_key, val);
+        env::env_declare(dest_env, dest_key, val, heap);
         return;
     }
-    env::env_declare_accessor(dest_env, dest_key, accessor);
+    env::env_declare_accessor(dest_env, dest_key, accessor, heap);
 }
 
 /// Byte-wise comparison of two identifier slices, used to sort namespace
@@ -2100,7 +2100,7 @@ fn HObject*? get_import_meta(Heap* heap, ModuleDef* mod) {
         url_val.set_string(url_str);
         HString* url_key = heap.str_intern("url");
         if (url_key != null) {
-            meta.put_prop(url_key, url_val, hobject::PROP_FLAGS_WEC);
+            meta.put_prop(url_key, url_val, hobject::PROP_FLAGS_WEC, heap);
         }
     }
 
@@ -2189,15 +2189,15 @@ fn HObject*? build_namespace_object(Heap* heap, ModuleDef* source_mod) {
                 HObject*? nested_opt = build_namespace_object(heap, target);
                 if (catch nerr = nested_opt) {
                     TVal undef; undef.set_undefined();
-                    ns.put_prop(export_key, undef, hobject::PROP_FLAGS_NEC);
+                    ns.put_prop(export_key, undef, hobject::PROP_FLAGS_NEC, heap);
                     continue;
                 }
                 TVal nested_tv; nested_tv.set_object(nested_opt);
-                ns.put_prop(export_key, nested_tv, hobject::PROP_FLAGS_NEC);
+                ns.put_prop(export_key, nested_tv, hobject::PROP_FLAGS_NEC, heap);
                 continue;
             }
             TVal undef; undef.set_undefined();
-            ns.put_prop(export_key, undef, hobject::PROP_FLAGS_NEC);
+            ns.put_prop(export_key, undef, hobject::PROP_FLAGS_NEC, heap);
             continue;
         }
 
@@ -2235,7 +2235,7 @@ fn HObject*? build_namespace_object(Heap* heap, ModuleDef* source_mod) {
             // Allocation failure or missing env, degrade to a static
             // undefined data property rather than dropping the export key.
             TVal undef; undef.set_undefined();
-            ns.put_prop(export_key, undef, hobject::PROP_FLAGS_NEC);
+            ns.put_prop(export_key, undef, hobject::PROP_FLAGS_NEC, heap);
             continue;
         }
 
@@ -2245,7 +2245,7 @@ fn HObject*? build_namespace_object(Heap* heap, ModuleDef* source_mod) {
         // namespace has no [[Set]], plain field left false by PROP_FLAGS
         // convention below).
         hobject::PropFlags acc_flags = { .writable = false, .enumerable = true, .configurable = false, .is_accessor = true };
-        ns.put_prop(export_key, accessor, acc_flags);
+        ns.put_prop(export_key, accessor, acc_flags, heap);
     }
 
     // ns[Symbol.toStringTag] === "Module", {writable:false, enumerable:false, configurable:false}
@@ -2256,7 +2256,7 @@ fn HObject*? build_namespace_object(Heap* heap, ModuleDef* source_mod) {
     if (tostrtag_sym != null) {
         TVal tag_val;
         tag_val.set_string(builtins::builtin_intern_string(heap, "Module"));
-        ns.put_prop(tostrtag_sym, tag_val, hobject::PROP_FLAGS_NNC);
+        ns.put_prop(tostrtag_sym, tag_val, hobject::PROP_FLAGS_NNC, heap);
     }
 
     // Module namespace exotic objects are not extensible (ECMA-262 §10.4.6):

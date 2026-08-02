@@ -388,7 +388,7 @@ fn bool thrown_type_matches(Vm* v, Heap* hp, char[] expected) {
     if (try ck = cks) {
         HObject* cur = thrown;
         for (uint guard = 0; guard < 64 && cur != null; guard++) {
-            int idx = cur.find_prop_idx(ck);
+            int idx = cur.find_prop_idx(ck, hp);
             if (idx >= 0) {
                 TVal cv = cur.prop_values()[idx];
                 if (cv.is_object() && cv.get_heapptr() != null) { ctor = (HObject*)cv.get_heapptr(); }
@@ -402,7 +402,7 @@ fn bool thrown_type_matches(Vm* v, Heap* hp, char[] expected) {
         uint nh = hp.hash_string(name_key);
         HString*? nks = hp.str_table_lookup(name_key, nh);
         if (try nk = nks) {
-            int nidx = ctor.find_prop_idx(nk);
+            int nidx = ctor.find_prop_idx(nk, hp);
             if (nidx >= 0) {
                 TVal nv = ctor.prop_values()[nidx];
                 if (nv.is_string() && nv.get_heapptr() != null) {
@@ -645,7 +645,7 @@ fn int run_one_test(Vm* v, Heap* hp, char[] test_path, char[] assert_src, char[]
             HObject* eo = (HObject*)hp.error_value.get_heapptr();
             if (eo != null) {
                 HString* msg_key = (HString*)hp.strs[heap::BuiltinStr.MESSAGE];
-                hobject::Shape* sh = eo.get_shape();
+                hobject::Shape* sh = eo.get_shape(hp);
                 TVal* vals = eo.prop_values();
                 uint val_idx = 0;
                 while (sh != null) {
@@ -701,7 +701,7 @@ fn int run_one_test(Vm* v, Heap* hp, char[] test_path, char[] assert_src, char[]
         uint adh = hp.hash_string(adk);
         HString*? ads = hp.str_table_lookup(adk, adh);
         if (try adks = ads) {
-            TVal? adtv = env::env_get(v.global_env, adks);
+            TVal? adtv = env::env_get(v.global_env, adks, hp);
             if (try adval = adtv) {
                 if (adval.get_fastint() == 0) {
                     // $DONE was never called, async test didn't settle
@@ -716,7 +716,7 @@ fn int run_one_test(Vm* v, Heap* hp, char[] test_path, char[] assert_src, char[]
     uint hh = hp.hash_string(kn);
     HString*? ks = hp.str_table_lookup(kn, hh);
     if (try k = ks) {
-        TVal? tv = env::env_get(v.global_env, k);
+        TVal? tv = env::env_get(v.global_env, k, hp);
         if (try val = tv) {
             return (val.get_fastint() == 0) ? 0 : 1;
         }

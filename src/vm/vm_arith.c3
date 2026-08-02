@@ -227,7 +227,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                         && vm.heap.shape_recycle_epoch == vic.recycle_epoch) {
                         TVal old_val = b.prop_values()[vic.prop_idx];
                         if (!env::is_tdz_sentinel(&old_val)
-                            && b.get_prop_flags(vic.prop_idx).writable) {
+                            && b.get_prop_flags(vic.prop_idx, ds.vm.heap).writable) {
                             // ENV_STRICT: INC_VAR and DEC_VAR read traps are gone, since a needs_env=false
                             // lex_env == parent env, so a hit here is a legitimate parent
                             // lookup, not own-local. Own-local leaks surface as 'not defined'
@@ -275,7 +275,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
             int ic_prop_idx = -1;
             EnvRecord* cur = ds.act.lex_env;
             while (cur != null) {
-                int idx = cur.bindings.find_prop_idx(key);
+                int idx = cur.bindings.find_prop_idx(key, ds.vm.heap);
                 if (idx >= 0) {
                     // ENV_STRICT: INC_VAR and DEC_VAR read traps are gone, since a needs_env=false
                     // lex_env == parent env, so a hit here is a legitimate parent
@@ -290,7 +290,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                         }
                         return (TVal){};
                     }
-                    if (!cur.bindings.get_prop_flags((uint)idx).writable) {
+                    if (!cur.bindings.get_prop_flags((uint)idx, ds.vm.heap).writable) {
                         HString* name_hstr = (HString*)key;
                         if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
                             return VM_ERROR~;
@@ -337,7 +337,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                 // var_env fallback (with-blocks)
                 // ENV_STRICT TODO: own-vs-parent check for var_env walk (currently skipped for conservative correctness)
                 if (ds.act.lex_env != ds.act.var_env) {
-                    TVal? result = env::env_get(ds.act.var_env, key);
+                    TVal? result = env::env_get(ds.act.var_env, key, ds.vm.heap);
                     if (try v2 = result) {
                         TVal new_val;
                         if (v2.is_fastint()) {
@@ -352,7 +352,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                             if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
                             new_val.set_number(d + (is_inc ? 1.0 : -1.0));
                         }
-                        env::env_put(ds.act.var_env, key, new_val);
+                        env::env_put(ds.act.var_env, key, new_val, ds.vm.heap);
                         vm.heap.tval_copy_ref(ra, &new_val);
                         found = true;
                     }
@@ -444,7 +444,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
             bool ic_store_ok = false;
             EnvRecord* cur = ds.act.lex_env;
             while (cur != null) {
-                int idx = cur.bindings.find_prop_idx(key);
+                int idx = cur.bindings.find_prop_idx(key, ds.vm.heap);
                 if (idx >= 0) {
                     TVal old_val = cur.bindings.prop_values()[idx];
                     if (env::is_tdz_sentinel(&old_val)) {
@@ -454,7 +454,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                         }
                         return (TVal){};
                     }
-                    hobject::PropFlags fl = cur.bindings.get_prop_flags((uint)idx);
+                    hobject::PropFlags fl = cur.bindings.get_prop_flags((uint)idx, ds.vm.heap);
                     if (!fl.writable) {
                         HString* name_hstr = (HString*)key;
                         if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
@@ -508,10 +508,10 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
             }
 
             if (!found && ds.act.lex_env != ds.act.var_env) {
-                int vidx = ds.act.var_env.bindings.find_prop_idx(key);
+                int vidx = ds.act.var_env.bindings.find_prop_idx(key, ds.vm.heap);
                 if (vidx >= 0) {
                     TVal old_val = ds.act.var_env.bindings.prop_values()[vidx];
-                    hobject::PropFlags fl = ds.act.var_env.bindings.get_prop_flags((uint)vidx);
+                    hobject::PropFlags fl = ds.act.var_env.bindings.get_prop_flags((uint)vidx, ds.vm.heap);
                     if (!fl.is_accessor && fl.writable && !env::is_tdz_sentinel(&old_val)) {
                         if (old_val.is_fastint()) {
                             long v = old_val.get_fastint() + (is_inc ? 1L : -1L);

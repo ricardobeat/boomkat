@@ -464,7 +464,7 @@ fn Instruction* th_getvar(Instruction* pc, Instruction* code_end, TVal* regs, Co
     HObject* b = (HObject*)vic.bindings;
     if (b.shape_id != vic.shape_id
         || vm.heap.shape_recycle_epoch != vic.recycle_epoch) return pc;
-    if (b.get_prop_flags(vic.prop_idx).is_accessor) return pc; // getter -> switch
+    if (b.get_prop_flags(vic.prop_idx, vm.heap).is_accessor) return pc; // getter -> switch
     TVal v = b.prop_values()[vic.prop_idx];
     if (env::is_tdz_sentinel(&v)) return pc; // TDZ error -> switch
     TVal* ra = regs + insn.a;
@@ -492,7 +492,7 @@ fn Instruction* th_putvar_assign(Instruction* pc, Instruction* code_end, TVal* r
     if (b.shape_id != vic.shape_id
         || vm.heap.shape_recycle_epoch != vic.recycle_epoch) return pc;
     TVal* pv = &b.prop_values()[vic.prop_idx];
-    hobject::PropFlags fl = b.get_prop_flags(vic.prop_idx);
+    hobject::PropFlags fl = b.get_prop_flags(vic.prop_idx, vm.heap);
     if (env::is_tdz_sentinel(pv) || !fl.writable || fl.is_accessor) return pc;
     TVal* ra = regs + insn.a;
     vm.heap.decref_tval(pv);
@@ -520,7 +520,7 @@ fn Instruction* th_inc_var(Instruction* pc, Instruction* code_end, TVal* regs, C
     if (b.shape_id != vic.shape_id
         || vm.heap.shape_recycle_epoch != vic.recycle_epoch) return pc;
     TVal old_val = b.prop_values()[vic.prop_idx];
-    if (env::is_tdz_sentinel(&old_val) || !b.get_prop_flags(vic.prop_idx).writable) return pc;
+    if (env::is_tdz_sentinel(&old_val) || !b.get_prop_flags(vic.prop_idx, vm.heap).writable) return pc;
     if (!old_val.is_fastint()) return pc;
     TVal* ra = regs + insn.a;
     long v = old_val.get_fastint() + 1L;

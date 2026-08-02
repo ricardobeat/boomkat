@@ -123,7 +123,7 @@ fn void print_tval_stderr(Heap* hp, TVal* v) {
     // Error-shaped: print the message, matching the long-standing wording for
     // `throw new Error("msg")`.
     HString* msg_key = (HString*)hp.strs[heap::BuiltinStr.MESSAGE];
-    TVal? msg_tv_opt = obj.get_prop(msg_key);
+    TVal? msg_tv_opt = obj.get_prop(msg_key, hp);
     if (try msg_tv = msg_tv_opt) {
         if (msg_tv.is_string()) {
             print_hstring_stderr((HString*)msg_tv.get_heapptr());

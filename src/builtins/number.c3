@@ -550,23 +550,23 @@ fn bool register_number_constructor(EnvRecord* global_env, Heap* heap) {
     HString* tostring_name_val = builtin_intern_string(heap, "toString");
     if (tostring_name_key != null && tostring_name_val != null) {
         TVal name_tv; name_tv.set_string(tostring_name_val);
-        tostring_obj.put_prop(tostring_name_key, name_tv, hobject::PROP_FLAGS_NWC);
+        tostring_obj.put_prop(tostring_name_key, name_tv, hobject::PROP_FLAGS_NWC, heap);
     }
     HString* tostring_length_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
     if (tostring_length_key != null) {
         TVal len_tv; len_tv.set_fastint(1);
-        tostring_obj.put_prop(tostring_length_key, len_tv, hobject::PROP_FLAGS_NWC);
+        tostring_obj.put_prop(tostring_length_key, len_tv, hobject::PROP_FLAGS_NWC, heap);
     }
     HString* tostring_key = (HString*)heap.strs[heap::BuiltinStr.TO_STRING];
     TVal tostring_tv;
     tostring_tv.set_object(tostring_obj);
-    proto.put_prop(tostring_key, tostring_tv, hobject::PROP_FLAGS_WC);
+    proto.put_prop(tostring_key, tostring_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Add .valueOf() method
     HString* valueof_key = (HString*)heap.strs[heap::BuiltinStr.VALUE_OF];
     TVal valueof_tv;
     valueof_tv.set_lightfunc((void*)(usz)Builtin.NUMBER_PROTO_VALUEOF.ordinal);
-    proto.put_prop(valueof_key, valueof_tv, hobject::PROP_FLAGS_WC);
+    proto.put_prop(valueof_key, valueof_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Add .toFixed() method (Phase 6d)
     if (!register_string_proto_method(proto, heap, "toFixed", Builtin.NUMBER_PROTO_TOFIXED.ordinal)) return false;
@@ -590,7 +590,7 @@ fn bool register_number_constructor(EnvRecord* global_env, Heap* heap) {
     HString* constructor_key = (HString*)heap.strs[heap::BuiltinStr.CONSTRUCTOR];
     TVal constructor_tv;
     constructor_tv.set_object(num);
-    proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_WC);
+    proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Set Number.prototype on the constructor (non-writable, non-enumerable, non-configurable)
     HString* prototype_key = (HString*)heap.strs[heap::BuiltinStr.PROTOTYPE];
@@ -601,7 +601,7 @@ fn bool register_number_constructor(EnvRecord* global_env, Heap* heap) {
     proto_pflags.enumerable = false;
     proto_pflags.configurable = false;
     proto_pflags.is_accessor = false;
-    num.put_prop(prototype_key, proto_tv, proto_pflags);
+    num.put_prop(prototype_key, proto_tv, proto_pflags, heap);
 
     // Add Number.MAX_VALUE (ES5 §15.7.3.2), non-writable, non-enumerable, non-configurable
     if (!set_num_static_prop(num, heap, "MAX_VALUE", 1.7976931348623157e+308)) return false;
@@ -634,7 +634,7 @@ fn bool register_number_constructor(EnvRecord* global_env, Heap* heap) {
     {
         HString* parse_int_key = builtin_intern_string(heap, "parseInt");
         if (parse_int_key == null) return false;
-        TVal? global_pi_opt = env::env_get(global_env, parse_int_key);
+        TVal? global_pi_opt = env::env_get(global_env, parse_int_key, heap);
         TVal global_pi;
         if (try pi = global_pi_opt) {
             global_pi = pi;
@@ -642,20 +642,20 @@ fn bool register_number_constructor(EnvRecord* global_env, Heap* heap) {
             // Fallback: create a new lightfunc if global lookup fails
             global_pi.set_lightfunc((void*)(usz)Builtin.PARSE_INT.ordinal);
         }
-        num.put_prop(parse_int_key, global_pi, hobject::PROP_FLAGS_WC);
+        num.put_prop(parse_int_key, global_pi, hobject::PROP_FLAGS_WC, heap);
     }
     // Add Number.parseFloat (ES6 §20.1.2.13), MUST be the same function object as global parseFloat.
     {
         HString* parse_float_key = builtin_intern_string(heap, "parseFloat");
         if (parse_float_key == null) return false;
-        TVal? global_pf_opt = env::env_get(global_env, parse_float_key);
+        TVal? global_pf_opt = env::env_get(global_env, parse_float_key, heap);
         TVal global_pf;
         if (try pf = global_pf_opt) {
             global_pf = pf;
         } else {
             global_pf.set_lightfunc((void*)(usz)Builtin.PARSE_FLOAT.ordinal);
         }
-        num.put_prop(parse_float_key, global_pf, hobject::PROP_FLAGS_WC);
+        num.put_prop(parse_float_key, global_pf, hobject::PROP_FLAGS_WC, heap);
     }
 
     // Register Number constructor globally as an OBJECT (not LIGHTFUNC)
@@ -664,7 +664,7 @@ fn bool register_number_constructor(EnvRecord* global_env, Heap* heap) {
     TVal num_val;
     num_val.set_object(num);
     set_func_ctor_name_length(num, heap, "Number", 1);
-    env::env_declare_nonenum(global_env, num_key, num_val);
+    env::env_declare_nonenum(global_env, num_key, num_val, heap);
 
     return true;
 }
