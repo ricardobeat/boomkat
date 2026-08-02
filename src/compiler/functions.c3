@@ -1408,6 +1408,14 @@ fn void CompilerContext.skip_function_body(&self) {
             if (pscan.classify_rbrace(self.lexer) == TemplateBrace.LEX_ERROR) return;
         }
     }
+    // TypeScript: the return-type annotation between `)` and the body can
+    // itself be a brace group (`function f(): { a: number } { ... }`). Skip
+    // it here or the brace scan below treats it as the function body and the
+    // real body leaks out as a top-level block.
+    if (self.lexer.ts_mode && self.peek_type() == TokenType.COLON) {
+        if (catch _e = self.advance()) return;  // consume ':'
+        if (catch _e = self.skip_type()) return;
+    }
     // Skip '{' ... '}', template-aware (see TemplateScan) so a '}' closing
     // a '${' does not prematurely end the function-body scan.
     uint brace_depth = 0;

@@ -398,6 +398,26 @@ fn ushort? CompilerContext.class_expression(&self) {
 /// `export default class { ... }`. The runtime-visible `.name` must be the
 /// literal string "default" (ES2024 §16.2.3.7), distinct from the binding
 /// name "*default*" the compiler uses for the declared-export machinery.
+
+/// True when the current token is a TypeScript generic-method head:
+/// `<T, U>` directly followed by `(`. Non-destructive (the lexer is
+/// copied and restored), so the class-body loop can classify `m<T>(...)`
+/// as a method before the field branch sees the `<`. The generics
+/// themselves are skipped later by compile_inner_function.
+fn bool CompilerContext.ts_next_is_generic_method(&self) {
+    if (!self.lexer.ts_mode) return false;
+    if (!self.check(TokenType.LT)) return false;
+    Lexer saved_lexer = *self.lexer;
+    bool ok = false;
+    if (catch _e = self.skip_generic_params()) {
+        *self.lexer = saved_lexer;
+        return false;
+    }
+    ok = self.check(TokenType.LPAREN);
+    *self.lexer = saved_lexer;
+    return ok;
+}
+
 fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, uint class_src_start = 0xFFFFFFFF, bool is_expr = false, ushort class_name_reg = REG_NONE, uint class_name_str_idx = 0, bool is_default_export = false) {
     // Save state for restoration after class body
     bool saved_in_class_body = self.in_class_body;
@@ -768,7 +788,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
         // NOT when followed by `(`, which is a private method (P3, handled
         // below alongside public methods so generator/async modifiers and
         // compile_inner_function are shared).
-        if (self.check(TokenType.HASH_IDENT) && !self.peek2_is_lparen()) {
+        if (self.check(TokenType.HASH_IDENT) && !self.peek2_is_lparen() && !self.ts_next_is_generic_method()) {
             Token priv_tok = self.advance()!;
             char[] priv_name = priv_tok.str_value;
             PrivateNameEntry* entry = self.resolve_private_name(priv_name)!;
@@ -1134,7 +1154,8 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
         bool is_public_field = !is_constructor
             && !is_getter && !is_setter
             && !is_generator_method && !is_async_method
-            && !self.check(TokenType.LPAREN);
+            && !self.check(TokenType.LPAREN)
+            && !self.ts_next_is_generic_method();
         if (is_public_field) {
             // PropName early errors (ES2022 §15.7.1):
             //  - FieldDefinition: PropName == "constructor"  → SyntaxError

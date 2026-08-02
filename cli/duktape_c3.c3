@@ -46,6 +46,19 @@ fn int main(String[] args) {
     if (catch err = v) { io::eprintfn("VM failed"); return 1; }
     defer vm::vm_destroy(v);
 
+    // A `.ts`/`.mts`/`.cts` file runs in TypeScript mode: type syntax is
+    // erased at parse time (plan 042). A file whose top level looks like a
+    // module (import/export at statement start) routes through the ESM
+    // pipeline regardless of extension.
+    if (has_ts_extension(path)) {
+        return run_with_lexer_ts(hp, v, path);
+    }
+    if (looks_like_module(source)) {
+        int rc = esm::run_module_file(hp, v, (char[])path);
+        if (rc != 0) io::eprintfn("module rc=%d", rc);
+        return rc;
+    }
+
     Lexer lex = lexer::lexer_init(source, hp);
     defer lex.free_arena();
     lex.skip_hashbang();
@@ -79,6 +92,93 @@ fn int main(String[] args) {
         return 1;
     }
     return 0;
+}
+
+/// Run a TypeScript source file: parse in ts_mode, then execute the script
+/// (or the ESM pipeline when the file is module-shaped).
+fn int run_with_lexer_ts(Heap* hp, Vm* v, String path) {
+    char[]? source = file::load_temp(path);
+    if (catch err = source) { io::eprintfn("Failed to read"); return 1; }
+    if (looks_like_module(source)) {
+        int rc = esm::run_module_file(hp, v, (char[])path);
+        if (rc != 0) io::eprintfn("module rc=%d", rc);
+        return rc;
+    }
+    Lexer lex = lexer::lexer_init(source, hp);
+    defer lex.free_arena();
+    lex.skip_hashbang();
+    lex.ts_mode = true;
+    CompiledFunction*? func = compiler::compile(&lex, hp);
+    CompiledFunction* f;
+    if (try ff = func) {
+        f = ff;
+    } else {
+        ZString msg = (ZString)&lex.err_msg[0];
+        io::eprintfn("SyntaxError: %s (line %d, col %d)", msg, lex.err_line, lex.err_col);
+        return 1;
+    }
+    TVal? result = v.execute(f);
+    hp.drain_microtasks((void*)v);
+    if (catch err = result) {
+        if (v.heap.has_error) {
+            print_uncaught(v.heap, &v.heap.error_value);
+        } else {
+            io::eprintfn("VM error: %s (at execute)", err);
+        }
+        return 1;
+    }
+    return 0;
+}
+
+/// True if the path ends in `.ts`, `.mts`, or `.cts` (case-sensitive, like
+/// TypeScript itself).
+fn bool has_ts_extension(String path) {
+    if (path.len >= 3 && path[^3..] == ".ts") return true;
+    if (path.len >= 4 && path[^4..] == ".mts") return true;
+    if (path.len >= 4 && path[^4..] == ".cts") return true;
+    return false;
+}
+
+/// Cheap top-level detection: scan for `import` or `export` at a
+/// statement-start position (start of file, or after a newline, skipping
+/// whitespace and single-line/block comments). Anything false-positive here
+/// just routes through the module pipeline, which handles a script-shaped
+/// module file (no imports/exports) fine.
+fn bool looks_like_module(char[] src) {
+    usz i = 0;
+    bool at_stmt_start = true;
+    while (i < src.len) {
+        char c = src[i];
+        if (c == '\n') { at_stmt_start = true; i++; continue; }
+        if (c == ' ' || c == '\t' || c == '\r') { i++; continue; }
+        // Line comment
+        if (i + 1 < src.len && c == '/' && src[i+1] == '/') {
+            while (i < src.len && src[i] != '\n') i++;
+            continue;
+        }
+        // Block comment
+        if (i + 1 < src.len && c == '/' && src[i+1] == '*') {
+            i += 2;
+            while (i + 1 < src.len && !(src[i] == '*' && src[i+1] == '/')) i++;
+            if (i + 1 < src.len) i += 2;
+            continue;
+        }
+        if (at_stmt_start) {
+            // Check for `import` or `export` as a whole word at this pos.
+            if (i + 6 <= src.len && src[i:6] == "import" &&
+                (i + 6 == src.len || !is_ident_cont(src[i+6]))) return true;
+            if (i + 6 <= src.len && src[i:6] == "export" &&
+                (i + 6 == src.len || !is_ident_cont(src[i+6]))) return true;
+        }
+        at_stmt_start = false;
+        i++;
+    }
+    return false;
+}
+
+fn bool is_ident_cont(char c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+           (c >= '0' && c <= '9') || c == '_' || c == '$';
 }
 
 /// Report an uncaught JS exception on stderr as a single line.

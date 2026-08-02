@@ -390,8 +390,6 @@ fn void? CompilerContext.statement(&self) {
         case TokenType.CLASS:
             self.class_declaration()!;
         case TokenType.IMPORT:
-            // TS: `import type ...` is fully erased, no module scope required.
-            if (self.lexer.ts_mode && self.ts_try_skip_type_only_import()!) break;
         {
             // `import(...)` (dynamic import) and `import.meta` (meta-property,
             // ES2024 §13.3.12) at statement level are ExpressionStatements, not
@@ -404,6 +402,11 @@ fn void? CompilerContext.statement(&self) {
             if (is_expr) {
                 self.expression_statement()!;
             } else {
+                // TS: `import type ...` is fully erased, no module scope
+                // required. Checked here, after the dynamic-import probe, so
+                // its CompilerContext pushbacks can't desync the lexer-based
+                // re-push above.
+                if (self.lexer.ts_mode && self.ts_try_skip_type_only_import()!) break;
                 // An ImportDeclaration is a ModuleItem, legal only in a
                 // Module's top-level StatementList (ES2024 §16.2.1).
                 if (!at_module_top) {

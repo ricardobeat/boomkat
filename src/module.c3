@@ -234,8 +234,7 @@ fn ModuleDef* heap_find_loaded_module(Heap* heap, char[] name) {
 /// a host resolve hook that returns a bare name still finds `./x.ts`
 /// (Node/Deno-style resolution).
 fn char[]? default_module_read(char[] normalized_name, void* udata) {
-    char[] data = file::load(mem, (String)normalized_name) ?? null;
-    if (data != null) {
+    if (try data = file::load(mem, (String)normalized_name)) {
         if (data.len == 0) {
             mem::free(data.ptr);
             return MODULE_ERROR~;
@@ -256,12 +255,12 @@ fn char[]? default_module_read(char[] normalized_name, void* udata) {
         char[] candidate = ((char*)raw)[:total];
         char[]? probe = file::load(mem, (String)candidate);
         mem::free(raw);
-        if (probe != null) {
-            if (probe.len == 0) {
-                mem::free(probe.ptr);
+        if (try loaded = probe) {
+            if (loaded.len == 0) {
+                mem::free(loaded.ptr);
                 return MODULE_ERROR~;
             }
-            return probe;
+            return loaded;
         }
     }
     return MODULE_ERROR~;
@@ -296,12 +295,12 @@ fn char[] resolve_extension(char[] path) {
     mem::copy(pbuf, path.ptr, (sz)(plen));
     ((char*)pbuf)[plen] = 0;
     char[] bare = ((char*)pbuf)[:plen];
-    char[]? bare_load = file::load(mem, (String)bare);
-    mem::free(pbuf);
-    if (bare_load != null) {
+    if (try bare_load = file::load(mem, (String)bare)) {
+        mem::free(pbuf);
         mem::free(bare_load.ptr);
         return path;
     }
+    mem::free(pbuf);
 
     String[6] exts = { ".ts", ".mts", ".cts", ".js", ".mjs", ".cjs" };
     for (usz e = 0; e < 6; e++) {
@@ -313,8 +312,7 @@ fn char[] resolve_extension(char[] path) {
         mem::copy((char*)buf + plen, ext.ptr, (sz)(ext.len));
         ((char*)buf)[total] = 0;
         char[] candidate = ((char*)buf)[:total];
-        char[]? probe = file::load(mem, (String)candidate);
-        if (probe != null) {
+        if (try probe = file::load(mem, (String)candidate)) {
             mem::free(probe.ptr);
             return candidate;
         }

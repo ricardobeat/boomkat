@@ -197,6 +197,7 @@ fn int main(String[] args) {
 
     Lexer lx = lexer::lexer_init(source, hp);
     defer lx.free_arena();
+    lx.ts_mode = has_ts_extension(path);
     bytecode::CompiledFunction*? func = compiler::compile(&lx, hp);
     if (catch err = func) {
         char* msg  = &lx.err_msg[0];
@@ -277,6 +278,15 @@ $endif
 // ============================================================================
 // Text bytecode dump
 // ============================================================================
+
+/// True if the path ends in `.ts`, `.mts`, or `.cts` (case-sensitive, like
+/// TypeScript itself).
+fn bool has_ts_extension(String path) {
+    if (path.len >= 3 && path[^3..] == ".ts") return true;
+    if (path.len >= 4 && path[^4..] == ".mts") return true;
+    if (path.len >= 4 && path[^4..] == ".cts") return true;
+    return false;
+}
 
 /// Dump an inner function and recurse into its own inner functions, labelling
 /// each with its dotted path from the top level ("Inner function 1.0.2").

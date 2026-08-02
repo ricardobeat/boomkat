@@ -358,13 +358,19 @@ fn bool CompilerContext.ts_try_declare_statement(&self) {
 fn bool CompilerContext.check_ts_ident(&self, char[] kw) {
     if (!self.lexer.ts_mode) return false;
     if (self.peek_type() != TokenType.IDENTIFIER) return false;
-
-    Token? cur_opt = self.advance();
-    if (catch _e = cur_opt) return false;
-    Token cur = cur_opt;
-    bool ok = ident_is(cur.str_value, kw);
-    self.pushback(cur);
-    return ok;
+    // Peek the token text without consuming anything. The consuming variants
+    // (match_ts_ident, ts_try_type_alias) are used where a mismatch can be
+    // pushed back cleanly; here the check guards the statement dispatcher
+    // before the label/expression fallthrough, and leaving a token on the
+    // pushback stack would desync the lexer's position cache from the real
+    // token stream (the label path refreshes token_start and re-pushes the
+    // identifier into the lexer's single-slot pushback).
+    if (self.pushback_count > 0) {
+        return ident_is(self.pushback_stack[self.pushback_count - 1].str_value, kw);
+    }
+    Token? peek_opt = self.lexer.peek();
+    if (catch _e = peek_opt) return false;
+    return ident_is(peek_opt.str_value, kw);
 }
 
 /// Swallow all tokens until (and including) the terminating semicolon at
