@@ -1396,12 +1396,26 @@ time"). If the goal is also "a runtime per worker thread", that is a *separate*
 change — and prototype C's one-line `tlocal` is most of it, for +64 bytes. Are
 both wanted, and if so, in which order?
 
-**4. Is the intermediate state after Phase 4 acceptable to ship?** At that
-point `_active_heap` is gone, the engine is structurally multi-runtime-capable,
-and the guard is still up — so the user-visible behaviour is unchanged and the
-1,100-site diff has landed with the full existing suite as its net. Shipping
-there is the low-risk path; shipping only the complete thing is the clean-story
-path. Which matters more here?
+**4. Ship the post-Phase-4 intermediate state: yes, decided.** At that point
+`_active_heap` is gone, the engine is structurally multi-runtime-capable, the
+guard is still up, and behaviour is identical to today. Land it as soon as it is
+green rather than holding it until Phase 6.
+
+Three reasons. The Phase 4 diff is the whole risk of this project (44 files,
+~1,122 call sites, and the default-argument trap that already produced a silent
+double free), and landing it behind the guard means a defect surfaces as an
+ordinary failure on the existing suite instead of as a new-feature bug. The
+refactor has value even if multi-runtime never lands, because the process-global
+is an active cross-thread hazard today. And a diff this wide rots: `hobject.c3`
+and `heap.c3` are under active change, so an unmerged conversion will conflict
+more the longer it waits.
+
+The cost is that "structurally capable but guarded" is verifiable only by
+inspection, since the multi-runtime tests cannot run until Phase 6. Its
+correctness rests on the existing suite plus the fact that deleting
+`_active_heap` turns every missed site into a compile error. That is a real
+limitation, not a formality, and it is the reason Phase 4's verification step
+demands GC_STRESS and ASan rather than the local suite alone.
 
 **5. How many runtimes should be supported, and does that change anything?**
 Nothing in this design caps the count. But if the target is *many small*
