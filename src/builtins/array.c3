@@ -541,7 +541,7 @@ fn void builtin_array(BuiltinContext* ctx) {
             *arr.array_len_ptr() = 1;
 
             // Set element at index 0
-            HString* zero_key = builtin_intern_string(ctx.heap, "0");
+            HString* zero_key = ctx.heap.int_to_hstring(0);
             arr.put_prop(zero_key, arg, hobject::PROP_FLAGS_WEC);
         }
         ctx.result.set_object(arr);

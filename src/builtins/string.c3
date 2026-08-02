@@ -1390,7 +1390,7 @@ fn void builtin_string_proto_split(BuiltinContext* ctx) {
         }
         TVal elem;
         elem.set_string(s_hstr);
-        HString* zero_key = builtin_intern_string(ctx.heap, "0");
+        HString* zero_key = ctx.heap.int_to_hstring(0);
         arr.put_prop(zero_key, elem, hobject::PROP_FLAGS_WEC);
         TVal len_val;
         len_val.set_fastint(1);

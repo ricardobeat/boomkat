@@ -536,10 +536,10 @@ fn HObject* regexp_build_match_result(BuiltinContext* ctx, void* re_data, HStrin
                 pair0.prototype = ctx.heap.array_proto;
                 TVal p0s; p0s.set_fastint((long)input_str.byte_offset_to_char_offset((uint)out_start));
                 TVal p0e; p0e.set_fastint((long)input_str.byte_offset_to_char_offset((uint)out_end));
-                pair0.put_prop(builtin_intern_string(ctx.heap, "0"), p0s, hobject::PROP_FLAGS_WEC);
-                pair0.put_prop(builtin_intern_string(ctx.heap, "1"), p0e, hobject::PROP_FLAGS_WEC);
+                pair0.put_prop(ctx.heap.int_to_hstring(0), p0s, hobject::PROP_FLAGS_WEC);
+                pair0.put_prop(ctx.heap.int_to_hstring(1), p0e, hobject::PROP_FLAGS_WEC);
                 TVal pair0_tv; pair0_tv.set_object(pair0);
-                indices_arr.put_prop(builtin_intern_string(ctx.heap, "0"), pair0_tv, hobject::PROP_FLAGS_WEC);
+                indices_arr.put_prop(ctx.heap.int_to_hstring(0), pair0_tv, hobject::PROP_FLAGS_WEC);
             }
 
             for (int i = 0; i < num_caps; i++) {
@@ -551,8 +551,8 @@ fn HObject* regexp_build_match_result(BuiltinContext* ctx, void* re_data, HStrin
                 if (caps_start[i] >= 0 && caps_end[i] >= 0) {
                     TVal ps; ps.set_fastint((long)input_str.byte_offset_to_char_offset((uint)caps_start[i]));
                     TVal pe; pe.set_fastint((long)input_str.byte_offset_to_char_offset((uint)caps_end[i]));
-                    pair.put_prop(builtin_intern_string(ctx.heap, "0"), ps, hobject::PROP_FLAGS_WEC);
-                    pair.put_prop(builtin_intern_string(ctx.heap, "1"), pe, hobject::PROP_FLAGS_WEC);
+                    pair.put_prop(ctx.heap.int_to_hstring(0), ps, hobject::PROP_FLAGS_WEC);
+                    pair.put_prop(ctx.heap.int_to_hstring(1), pe, hobject::PROP_FLAGS_WEC);
                     pair_tv.set_object(pair);
                 } else {
                     pair_tv.set_undefined();
@@ -578,8 +578,8 @@ fn HObject* regexp_build_match_result(BuiltinContext* ctx, void* re_data, HStrin
                                     pair.prototype = ctx.heap.array_proto;
                                     TVal ps; ps.set_fastint((long)input_str.byte_offset_to_char_offset((uint)caps_start[gi]));
                                     TVal pe; pe.set_fastint((long)input_str.byte_offset_to_char_offset((uint)caps_end[gi]));
-                                    pair.put_prop(builtin_intern_string(ctx.heap, "0"), ps, hobject::PROP_FLAGS_WEC);
-                                    pair.put_prop(builtin_intern_string(ctx.heap, "1"), pe, hobject::PROP_FLAGS_WEC);
+                                    pair.put_prop(ctx.heap.int_to_hstring(0), ps, hobject::PROP_FLAGS_WEC);
+                                    pair.put_prop(ctx.heap.int_to_hstring(1), pe, hobject::PROP_FLAGS_WEC);
                                     pair_tv.set_object(pair);
                                 } else {
                                     pair_tv.set_undefined();
@@ -877,7 +877,7 @@ fn void builtin_regexp_proto_symbol_match(BuiltinContext* ctx) {
         }
 
         // 8.e. Let matchStr be ? ToString(? Get(result, "0")).
-        HString* zero_key = builtin_intern_string(ctx.heap, "0");
+        HString* zero_key = ctx.heap.int_to_hstring(0);
         TVal? ms_opt = builtins_generic_get(match_arr, zero_key, ctx);
         if (ctx.should_throw) return;
         TVal ms_tv; ms_tv.set_undefined();
@@ -1258,7 +1258,7 @@ fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
                     done = true;
                 } else {
                     HObject* mr = (HObject*)match_result.get_heapptr();
-                    HString* zero_key2 = builtin_intern_string(heap, "0");
+                    HString* zero_key2 = heap.int_to_hstring(0);
                     TVal? ms_opt2 = builtins_generic_get(mr, zero_key2, ctx);
                     if (ctx.should_throw) return;
                     TVal ms_raw2; ms_raw2.set_undefined();
@@ -1331,7 +1331,7 @@ fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
         if (num_caps > re_bindings::RE_MAX_CAPTURES) num_caps = re_bindings::RE_MAX_CAPTURES;
 
         // Step 14.b: matched = ? ToString(? Get(result, "0")).
-        HString* zero_key = builtin_intern_string(heap, "0");
+        HString* zero_key = heap.int_to_hstring(0);
         TVal? z_opt = builtins_generic_get(m, zero_key, ctx);
         if (ctx.should_throw) return;
         TVal z_raw; z_raw.set_undefined();

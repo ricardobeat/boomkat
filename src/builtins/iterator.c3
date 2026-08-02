@@ -469,7 +469,7 @@ fn void builtin_regexp_string_iterator_next(BuiltinContext* ctx) {
         ? (HObject*)match_tv.get_heapptr() : null;
     if (global_flag) {
         // a.i. Let matchStr be ? ToString(? Get(match, "0")).
-        HString* zero_key = builtin_intern_string(heap, "0");
+        HString* zero_key = heap.int_to_hstring(0);
         TVal ms_tv; ms_tv.set_undefined();
         if (match_obj != null) {
             TVal? ms_opt = builtins_generic_get(match_obj, zero_key, ctx);

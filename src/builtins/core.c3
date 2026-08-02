@@ -2195,7 +2195,7 @@ fn HString* builtin_number_to_hstring(Heap* heap, double d) {
             : (HString*)heap.strs[heap::BuiltinStr.NEGATIVE_INFINITY];
     }
     // -0 must produce "0"
-    if (d == 0.0) return builtin_intern_string(heap, "0");
+    if (d == 0.0) return heap.int_to_hstring(0);
     // Integers up to 2^53 (every value in this range is exactly representable
     // and is therefore its own shortest round-trip decimal) use plain decimal
     // notation via printf. Above 2^53, adjacent doubles are more than 1 apart,

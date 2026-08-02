@@ -164,7 +164,7 @@ fn void builtin_number_proto_toString(BuiltinContext* ctx) {
         return;
     }
     if (d == 0.0) {
-        HString* s = builtin_intern_string(ctx.heap, "0");
+        HString* s = ctx.heap.int_to_hstring(0);
         ctx.result.set_string(s);
         return;
     }
