@@ -409,6 +409,10 @@ fn TVal json_parse_object(JsonParseCtx* jctx, JsonParseRecord** out_rec = null) 
                     json_record_free(jctx.heap, child);
                     TVal r; r.set_undefined(); return r;
                 }
+                // A key over MAX_INTERN_BYTES comes back un-interned, but
+                // put_prop stores keys canonically and the duplicate-key
+                // recording below compares by pointer, so canonicalize once.
+                k = jctx.heap.ensure_interned(k);
                 obj.put_prop(k, val, hobject::PROP_FLAGS_WEC, jctx.heap);
 
                 if (recording) {

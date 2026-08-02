@@ -2552,7 +2552,14 @@ fn HString* builtin_to_property_key_vm(BuiltinContext* ctx, TVal* val) {
     } else {
         res = builtin_to_string_vm(ctx, val);
     }
-    if (res != null) res.set_temproot();
+    if (res != null) {
+        // Property-key comparison is pointer identity, and a string built by
+        // concatenation is left un-interned past MAX_INTERN_BYTES. Canonicalize
+        // it the way get_prop_key does so find_prop_idx can match it. Symbols
+        // pass through: their unique hash keeps them distinct in the table.
+        if (!res.flags.is_interned) res = ctx.heap.ensure_interned(res);
+        res.set_temproot();
+    }
     return res;
 }
 

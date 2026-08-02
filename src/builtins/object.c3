@@ -1720,38 +1720,14 @@ fn void builtin_object_getOwnPropertyDescriptor(BuiltinContext* ctx) {
         return;
     }
     TVal key_val = ctx.regs[ctx.base_reg + 1];
-    // ES2015+ ToPropertyKey: if key is already a string (including symbols,
-    // which we represent as STRING tag with is_symbol flag), use it directly.
-    // Only convert objects (ToPrimitive) and primitives (ToString) otherwise.
-    HString* key_hstr;
-    if (key_val.is_string()) {
-        // Includes both regular strings and symbols (STRING tag + is_symbol flag)
-        key_hstr = (HString*)key_val.get_heapptr();
-        if (key_hstr == null) {
-            ctx.result.set_undefined();
-            return;
-        }
-    } else if (key_val.is_object()) {
-        key_hstr = builtin_to_string_vm(ctx, &key_val);
-        if (key_hstr == null) {
-            if (ctx.vm != null) {
-                Vm* vm_ptr = (Vm*)ctx.vm;
-                if (vm_ptr.throw_pending) {
-                    ctx.should_throw = true;
-                    ctx.throw_value = vm_ptr.throw_value;
-                    return;
-                }
-            }
-            ctx.result.set_undefined();
-            return;
-        }
-    } else {
-        // ToString for primitives (excluding symbols which were handled above)
-        key_hstr = builtin_to_string(ctx.heap, &key_val);
-        if (key_hstr == null) {
-            ctx.result.set_undefined();
-            return;
-        }
+    // ES2015+ ToPropertyKey. The shared helper passes symbols through, coerces
+    // objects via ToPrimitive, and interns the key: property lookup compares by
+    // pointer identity, so an un-interned concatenation result would miss.
+    HString* key_hstr = builtin_to_property_key_vm(ctx, &key_val);
+    if (key_hstr == null) {
+        if (ctx.should_throw) return;
+        ctx.result.set_undefined();
+        return;
     }
     void* key = key_hstr;
 

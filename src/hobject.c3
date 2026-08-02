@@ -1294,6 +1294,15 @@ fn bool dense_index_ok(uint cur_size, uint idx) {
 /// appended, growing the table if needed. Adding a property leaves the shape
 /// transition to the caller, through Heap.transition_shape.
 fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags, heap::Heap* h) {
+    // Property lookup compares keys by pointer, so a stored key must be the
+    // canonical interned string. Callers such as JSON.parse and
+    // builtin_to_property_key_vm hand in un-interned concatenation results;
+    // canonicalize here so the rest of this function and every later
+    // find_prop_idx can rely on pointer identity. Symbols pass through:
+    // their unique counter hash keeps them distinct in the table.
+    if (key != null && !((hstring::HString*)key).flags.is_interned) {
+        key = (void*)h.ensure_interned((hstring::HString*)key);
+    }
     // The interned "length" key. Null only before the builtin strings are
     // interned, during heap setup, when no exotic array exists yet for the
     // comparisons to match.
