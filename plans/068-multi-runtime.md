@@ -27,7 +27,7 @@ landable as-is.
 - [Test strategy](#test-strategy)
 - [Sequencing against in-flight work](#sequencing-against-in-flight-work)
 - [Risks](#risks)
-- [Open questions for the user](#open-questions-for-the-user)
+- [Decisions](#decisions)
 - [Sizing](#sizing)
 
 ---
@@ -1327,9 +1327,10 @@ already caught in today's code (`thread1 heap=… active=… match=NO`).
 
 ---
 
-## Open questions for the user
+## Decisions
 
-These need a decision, not an engineering judgment.
+All five questions that once needed a call from the user are settled; each entry
+records what was decided and why, so the reasoning survives the decision.
 
 **1. `NOSHAPECACHE`: resolved, no decision needed.** Earlier drafts asked
 whether the flag had to survive, because keeping it raises the signature closure
@@ -1389,12 +1390,41 @@ Sequencing: land with Phase 5, which is where `capi.c3` becomes per-runtime.
 Phase 7 updates `examples/c99/host_fn.c`, `test/capi/host_fn_abi.c` and the six
 bindings, none of which are released.
 
-**3. Is thread-safety in scope, or explicitly out?** This plan buys multiple
-runtimes on one thread and says nothing about threads, matching Duktape
-("only one native thread can execute any code within a single heap at any
-time"). If the goal is also "a runtime per worker thread", that is a *separate*
-change — and prototype C's one-line `tlocal` is most of it, for +64 bytes. Are
-both wanted, and if so, in which order?
+**3. Thread-safety: explicitly out of scope, and the per-thread story is
+already covered.** The engine contains no threading of its own: no atomics, no
+locks, refcounts are plain increments, and the GC, shape table, string intern
+table and free lists are all mutated unsynchronised. Two threads inside one heap
+corrupt it, and that is unchanged by how many heaps exist. Making it safe would
+mean atomic refcounts, a GC able to stop other threads, and locking the intern
+and shape tables: a different engine, and one both reference engines decline.
+Duktape states both halves in the same breath, no global state *and* "only one
+native thread can execute any code within a single heap at any time".
+
+What this plan does buy, at no extra cost, is **one runtime per thread**. That
+falls out of deleting `_active_heap` rather than needing prototype C's `tlocal`
+on top: once no state is shared between heaps, two threads each driving their
+own runtime share nothing. `tlocal` was only ever a way to make the *global*
+per-thread, and there is no global left to scope. It should not be added.
+
+**The decision that remains is narrower than "is thread-safety in scope".**
+`g_rt` is a plain global today (`capi.c3:120`), so `jse_open`'s guard is
+process-wide: a second runtime is refused even on another thread. Phase 5
+deletes `g_rt` and Phase 6 deletes the guard, after which nothing prevents two
+threads from opening two runtimes, which is correct, or from driving one runtime
+from two threads, which is not. Options:
+
+- **(a) Document the rule and enforce nothing**, as QuickJS and Duktape do.
+  Cheapest, and consistent with the reference engines.
+- **(b) Record the owning thread on `Heap` at `jse_open` and reject entry from
+  another**, turning a corruption into a clean `JSE_ERR_INVALID`. A few lines at
+  the ABI boundary, and it fits this project's stated preference for converting
+  silent corruption into reported errors. It does prevent a runtime from
+  legitimately migrating threads, so it would need an explicit handoff call.
+
+**Decided: (a).** Thread-safety is out of scope. Document that a runtime must
+be driven from one thread at a time and enforce nothing, as QuickJS and Duktape
+do. (b) stays available later if a real embedder trips over it, but it does not
+gate the guard lift and `tlocal` is not to be added.
 
 **4. Ship the post-Phase-4 intermediate state: yes, decided.** At that point
 `_active_heap` is gone, the engine is structurally multi-runtime-capable, the
@@ -1417,12 +1447,27 @@ correctness rests on the existing suite plus the fact that deleting
 limitation, not a formality, and it is the reason Phase 4's verification step
 demands GC_STRESS and ASan rather than the local suite alone.
 
-**5. How many runtimes should be supported, and does that change anything?**
-Nothing in this design caps the count. But if the target is *many small*
-runtimes (a plugin host with dozens), the current 240 KB floor per empty runtime
-becomes the interesting number, and it is worth measuring before the guard
-lifts. If the target is two or three (a sandbox next to a main context), it does
-not matter.
+**5. How many runtimes: as many as memory allows, measured.** Nothing in the
+design caps the count, and the prototype confirms it. Opening N runtimes and
+evaluating an independent script in each, on branch `proto/explicit-threading`:
+
+| Runtimes | Peak RSS | Correct |
+|---|---|---|
+| 1 | 3.2 MB | 1/1 |
+| 50 | 21.4 MB | 50/50 |
+| 200 | 76.4 MB | 200/200 |
+| 2000 | 737 MB | 2000/2000 |
+
+**~370 KB per runtime**, linear, with every runtime independently usable and all
+of them closing cleanly. No ceiling was reached.
+
+That per-runtime floor is the number to watch if the target is many small
+sandboxes: it is dominated by the builtin object graph each heap constructs at
+`create`, not by anything this plan introduces. Shrinking it (lazy builtin
+realisation, or sharing immutable prototype objects across heaps) is a separate
+change and should not be attached to this one. Sharing anything across heaps in
+particular would reintroduce exactly the cross-heap coupling being removed here,
+so it needs its own design.
 
 ---
 
