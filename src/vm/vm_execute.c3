@@ -3808,16 +3808,9 @@ fn TVal? Vm.run(Vm* vm) {
                     found = owner != null;
                     if (found && ds.var_ic_base != null) {
                         uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
-                        hobject::VarICEntry* vic = ds.var_ic_base + pc_off;
-                        vic.env = (void*)owner;
-                        vic.bindings = (void*)owner.bindings;
-                        vic.shape_id = owner.bindings.shape_id;
-                        vic.recycle_epoch = vm.heap.shape_recycle_epoch;
-                        vic.prop_idx = (uint)owner_idx;
-                        if (vic.key != null) { vm.heap.decref((types::HeapHeader*)vic.key); }
-                        vic.key = key;
-                        if (key != null) { ((types::HeapHeader*)key).incref(); }
-                        vic.search_head = (void*)ds.act.lex_env;
+                        hobject::var_ic_fill(ds.var_ic_base + pc_off, (void*)owner,
+                            (void*)owner.bindings, owner.bindings.shape_id, (uint)owner_idx, key,
+                            (void*)ds.act.lex_env, false, vm.heap);
                     }
                 }
             }
@@ -4008,16 +4001,9 @@ fn TVal? Vm.run(Vm* vm) {
                         // Populate IC
                         if (ds.var_ic_base != null && ic_env != null) {
                             uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
-                            hobject::VarICEntry* vic = ds.var_ic_base + pc_off;
-                            vic.env = ic_env;
-                            vic.bindings = ic_env.bindings;
-                            vic.shape_id = ic_env.bindings.shape_id;
-                            vic.recycle_epoch = vm.heap.shape_recycle_epoch;
-                            vic.prop_idx = (uint)ic_prop_idx;
-                            if (vic.key != null) { vm.heap.decref((types::HeapHeader*)vic.key); }
-                            vic.key = key;
-                            if (key != null) { ((types::HeapHeader*)key).incref(); }
-                            vic.search_head = (void*)ds.act.lex_env;
+                            hobject::var_ic_fill(ds.var_ic_base + pc_off, (void*)ic_env,
+                                (void*)ic_env.bindings, ic_env.bindings.shape_id, (uint)ic_prop_idx,
+                                key, (void*)ds.act.lex_env, false, vm.heap);
                         }
                     } else {
                         // ReferenceError: variable not declared
@@ -4095,12 +4081,9 @@ fn TVal? Vm.run(Vm* vm) {
                         }
                         if (ds.var_ic_base != null) {
                             uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
-                            hobject::VarICEntry* gic = ds.var_ic_base + pc_off;
-                            gic.env = (void*)ic_env;
-                            gic.bindings = (void*)ic_env.bindings;
-                            gic.shape_id = ic_env.bindings.shape_id;
-                            gic.prop_idx = (uint)ic_prop_idx;
-                            gic.search_head = (void*)ds.act.lex_env;
+                            hobject::var_ic_fill(ds.var_ic_base + pc_off, (void*)ic_env,
+                                (void*)ic_env.bindings, ic_env.bindings.shape_id, (uint)ic_prop_idx,
+                                key, (void*)ds.act.lex_env, false, vm.heap);
                         }
                     } else {
                         ra.set_undefined();
@@ -4128,7 +4111,8 @@ fn TVal? Vm.run(Vm* vm) {
                         hobject::VarICEntry* gic = ds.var_ic_base + pc_off;
                         HObject* gb = (HObject*)gic.bindings;
                         if (gb != null && gic.search_head == (void*)ds.act.lex_env
-                            && gb.shape_id == gic.shape_id && gic.varref_store_ok) {
+                            && gb.shape_id == gic.shape_id && gic.varref_store_ok
+                            && vm.heap.shape_recycle_epoch == gic.recycle_epoch) {
                             TVal* pv = &gb.prop_values()[gic.prop_idx];
                             *pv = *ra;
                             ra.set_undefined();
@@ -4161,13 +4145,9 @@ fn TVal? Vm.run(Vm* vm) {
                             hobject::PropFlags fl = owner.bindings.get_prop_flags((uint)owner_idx, vm.heap);
                             if (fl.writable && !fl.is_accessor) {
                                 uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
-                                hobject::VarICEntry* gic = ds.var_ic_base + pc_off;
-                                gic.env = (void*)owner;
-                                gic.bindings = (void*)owner.bindings;
-                                gic.shape_id = owner.bindings.shape_id;
-                                gic.prop_idx = (uint)owner_idx;
-                                gic.varref_store_ok = !fl.configurable;
-                                gic.search_head = (void*)ds.act.lex_env;
+                                hobject::var_ic_fill(ds.var_ic_base + pc_off, (void*)owner,
+                                    (void*)owner.bindings, owner.bindings.shape_id, (uint)owner_idx,
+                                    key, (void*)ds.act.lex_env, !fl.configurable, vm.heap);
                             }
                         }
                     } else {
@@ -4205,8 +4185,10 @@ fn TVal? Vm.run(Vm* vm) {
                     HObject* sgb = (HObject*)sic.bindings;
                     if (dgb != null && dic.search_head == (void*)ds.act.lex_env
                         && dgb.shape_id == dic.shape_id && dic.varref_store_ok
+                        && vm.heap.shape_recycle_epoch == dic.recycle_epoch
                         && sgb != null && sic.search_head == (void*)ds.act.lex_env
-                        && sgb.shape_id == sic.shape_id) {
+                        && sgb.shape_id == sic.shape_id
+                        && vm.heap.shape_recycle_epoch == sic.recycle_epoch) {
                         TVal* spv = &sgb.prop_values()[sic.prop_idx];
                         if (!env::is_tdz_sentinel(spv)) {
                             // Both provably primitive: raw copy, no refcount.
@@ -4263,22 +4245,17 @@ fn TVal? Vm.run(Vm* vm) {
                             dslot.set_undefined();
                         }
                         // Populate the source read IC.
-                        sic.env = (void*)senv;
-                        sic.bindings = (void*)senv.bindings;
-                        sic.shape_id = senv.bindings.shape_id;
-                        sic.prop_idx = (uint)sidx;
-                        sic.search_head = (void*)ds.act.lex_env;
+                        hobject::var_ic_fill(sic, (void*)senv, (void*)senv.bindings,
+                            senv.bindings.shape_id, (uint)sidx, src_key, (void*)ds.act.lex_env,
+                            false, vm.heap);
                         // Populate the destination write IC (only when the slot
                         // is a writable, non-configurable data binding, the same
                         // gate as PUTGLOBAL_PRIM's varref_store_ok).
                         hobject::PropFlags dfl = denv.bindings.get_prop_flags((uint)didx, vm.heap);
                         if (dfl.writable && !dfl.is_accessor) {
-                            dic.env = (void*)denv;
-                            dic.bindings = (void*)denv.bindings;
-                            dic.shape_id = denv.bindings.shape_id;
-                            dic.prop_idx = (uint)didx;
-                            dic.varref_store_ok = !dfl.configurable;
-                            dic.search_head = (void*)ds.act.lex_env;
+                            hobject::var_ic_fill(dic, (void*)denv, (void*)denv.bindings,
+                                denv.bindings.shape_id, (uint)didx, dst_key,
+                                (void*)ds.act.lex_env, !dfl.configurable, vm.heap);
                         }
                     }
                 }
@@ -4312,7 +4289,8 @@ fn TVal? Vm.run(Vm* vm) {
                     hobject::VarICEntry* gic = ds.var_ic_base + name_off;
                     HObject* gb = (HObject*)gic.bindings;
                     if (gb != null && gic.search_head == (void*)ds.act.lex_env
-                        && gb.shape_id == gic.shape_id) {
+                        && gb.shape_id == gic.shape_id
+                        && vm.heap.shape_recycle_epoch == gic.recycle_epoch) {
                         TVal* slot = &gb.prop_values()[gic.prop_idx];
                         if (!env::is_tdz_sentinel(slot)) {
                             gval = *slot;
@@ -4344,11 +4322,9 @@ fn TVal? Vm.run(Vm* vm) {
                                 gval = *slot;
                                 resolved = true;
                             }
-                            gic.env = (void*)genv;
-                            gic.bindings = (void*)genv.bindings;
-                            gic.shape_id = genv.bindings.shape_id;
-                            gic.prop_idx = (uint)gidx;
-                            gic.search_head = (void*)ds.act.lex_env;
+                            hobject::var_ic_fill(gic, (void*)genv, (void*)genv.bindings,
+                                genv.bindings.shape_id, (uint)gidx, key, (void*)ds.act.lex_env,
+                                false, vm.heap);
                         }
                     }
                 }
@@ -4527,12 +4503,9 @@ fn TVal? Vm.run(Vm* vm) {
                     if (found) {
                         if (ic_cacheable && ds.var_ic_base != null && ic_env != null) {
                             uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
-                            hobject::VarICEntry* gic = ds.var_ic_base + pc_off;
-                            gic.env = (void*)ic_env;
-                            gic.bindings = (void*)ic_env.bindings;
-                            gic.shape_id = ic_env.bindings.shape_id;
-                            gic.prop_idx = (uint)ic_prop_idx;
-                            gic.search_head = (void*)ds.act.lex_env;
+                            hobject::var_ic_fill(ds.var_ic_base + pc_off, (void*)ic_env,
+                                (void*)ic_env.bindings, ic_env.bindings.shape_id, (uint)ic_prop_idx,
+                                key, (void*)ds.act.lex_env, false, vm.heap);
                         }
                     } else {
                         HString* name_hstr = (HString*)key;
@@ -4571,7 +4544,8 @@ fn TVal? Vm.run(Vm* vm) {
                         hobject::VarICEntry* gic = ds.var_ic_base + pc_off;
                         HObject* gb = (HObject*)gic.bindings;
                         if (gb != null && gic.search_head == (void*)ds.act.lex_env
-                            && gb.shape_id == gic.shape_id && gic.varref_store_ok) {
+                            && gb.shape_id == gic.shape_id && gic.varref_store_ok
+                            && vm.heap.shape_recycle_epoch == gic.recycle_epoch) {
                             TVal* pv = &gb.prop_values()[gic.prop_idx];
                             vm.heap.tval_move_slot_fast(pv, ra);
                             ra.set_undefined();
@@ -4627,16 +4601,12 @@ fn TVal? Vm.run(Vm* vm) {
                             hobject::PropFlags fl = owner.bindings.get_prop_flags((uint)owner_idx, vm.heap);
                             if (fl.writable && !fl.is_accessor) {
                                 uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
-                                hobject::VarICEntry* gic = ds.var_ic_base + pc_off;
-                                gic.env = (void*)owner;
-                                gic.bindings = (void*)owner.bindings;
-                                gic.shape_id = owner.bindings.shape_id;
-                                gic.prop_idx = (uint)owner_idx;
                                 // Only a writable, non-configurable data global
                                 // has an immutable descriptor safe for the
                                 // re-check-free store path.
-                                gic.varref_store_ok = !fl.configurable;
-                                gic.search_head = (void*)ds.act.lex_env;
+                                hobject::var_ic_fill(ds.var_ic_base + pc_off, (void*)owner,
+                                    (void*)owner.bindings, owner.bindings.shape_id, (uint)owner_idx,
+                                    key, (void*)ds.act.lex_env, !fl.configurable, vm.heap);
                             }
                         }
                     }
@@ -4808,16 +4778,9 @@ fn TVal? Vm.run(Vm* vm) {
                     // Populate the IC, except for an unresolvable name with no env to cache.
                     if (found && ds.var_ic_base != null && ic_env != null) {
                         uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
-                        hobject::VarICEntry* vic = ds.var_ic_base + pc_off;
-                        vic.env = ic_env;
-                        vic.bindings = ic_env.bindings;
-                        vic.shape_id = ic_env.bindings.shape_id;
-                        vic.recycle_epoch = vm.heap.shape_recycle_epoch;
-                        vic.prop_idx = (uint)ic_prop_idx;
-                        if (vic.key != null) { vm.heap.decref((types::HeapHeader*)vic.key); }
-                        vic.key = key;
-                        if (key != null) { ((types::HeapHeader*)key).incref(); }
-                        vic.search_head = (void*)ds.act.lex_env;
+                        hobject::var_ic_fill(ds.var_ic_base + pc_off, (void*)ic_env,
+                            (void*)ic_env.bindings, ic_env.bindings.shape_id, (uint)ic_prop_idx,
+                            key, (void*)ds.act.lex_env, false, vm.heap);
                     }
                 } else {
                     ra.set_undefined();
@@ -4953,16 +4916,9 @@ fn TVal? Vm.run(Vm* vm) {
                             hobject::PropFlags fl = owner.bindings.get_prop_flags((uint)owner_idx, vm.heap);
                             if (fl.writable && !fl.is_accessor) {
                                 uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
-                                hobject::VarICEntry* vic = ds.var_ic_base + pc_off;
-                                vic.env = (void*)owner;
-                                vic.bindings = (void*)owner.bindings;
-                                vic.shape_id = owner.bindings.shape_id;
-                                vic.recycle_epoch = vm.heap.shape_recycle_epoch;
-                                vic.prop_idx = (uint)owner_idx;
-                                if (vic.key != null) { vm.heap.decref((types::HeapHeader*)vic.key); }
-                                vic.key = key;
-                                if (key != null) { ((types::HeapHeader*)key).incref(); }
-                                vic.search_head = (void*)ds.act.lex_env;
+                                hobject::var_ic_fill(ds.var_ic_base + pc_off, (void*)owner,
+                                    (void*)owner.bindings, owner.bindings.shape_id, (uint)owner_idx,
+                                    key, (void*)ds.act.lex_env, false, vm.heap);
                             }
                         }
                     }
@@ -5065,13 +5021,8 @@ fn TVal? Vm.run(Vm* vm) {
                         if (b != null) {
                             int idx = b.find_prop_idx(key, vm.heap);
                             if (idx >= 0) {
-                                vic.env = (void*)ds.act.var_env;
-                                vic.bindings = (void*)b;
-                                vic.shape_id = b.shape_id;
-                                vic.recycle_epoch = vm.heap.shape_recycle_epoch;
-                                vic.prop_idx = (uint)idx;
-                                vic.key = key;
-                                vic.search_head = null;
+                                hobject::var_ic_fill(vic, (void*)ds.act.var_env, (void*)b,
+                                    b.shape_id, (uint)idx, key, null, false, vm.heap);
                             }
                         }
                     }

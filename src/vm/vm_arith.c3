@@ -549,13 +549,9 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
 
             if (ds.var_ic_base != null && ic_env != null) {
                 uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
-                hobject::VarICEntry* gic = ds.var_ic_base + pc_off;
-                gic.env = (void*)ic_env;
-                gic.bindings = (void*)ic_env.bindings;
-                gic.shape_id = ic_env.bindings.shape_id;
-                gic.prop_idx = (uint)ic_prop_idx;
-                gic.varref_store_ok = ic_store_ok;
-                gic.search_head = (void*)ds.act.lex_env;
+                hobject::var_ic_fill(ds.var_ic_base + pc_off, (void*)ic_env, (void*)ic_env.bindings,
+                                     ic_env.bindings.shape_id, (uint)ic_prop_idx, key,
+                                     (void*)ds.act.lex_env, ic_store_ok, vm.heap);
             }
             return (TVal){};
         }

@@ -2460,6 +2460,27 @@ struct VarICEntry {
     bool    varref_store_ok;
 }
 
+/// Populate a variable IC entry, writing every guard field together. The
+/// readers compare shape_id, recycle_epoch, key and search_head; a fill that
+/// sets one without the others leaves the slot holding a stale value from its
+/// previous occupant, which a reader for a different field set could trust.
+/// All fill sites route through here. `key` is a reference the GC sweep marks,
+/// so the old key is released and the new one held.
+fn void var_ic_fill(VarICEntry* vic, void* env, void* bindings, uint shape_id,
+                    uint prop_idx, void* key, void* search_head, bool store_ok,
+                    heap::Heap* h) {
+    vic.env = env;
+    vic.bindings = bindings;
+    vic.shape_id = shape_id;
+    vic.prop_idx = prop_idx;
+    vic.recycle_epoch = h.shape_recycle_epoch;
+    if (vic.key != null) { h.decref((types::HeapHeader*)vic.key); }
+    vic.key = key;
+    if (key != null) { ((types::HeapHeader*)key).incref(); }
+    vic.search_head = search_head;
+    vic.varref_store_ok = store_ok;
+}
+
 /// True when the megamorphic cache may answer a getter lookup on this receiver.
 ///
 /// A cache hit reports a plain data property straight from the property table,

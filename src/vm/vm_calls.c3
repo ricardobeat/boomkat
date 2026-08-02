@@ -405,16 +405,9 @@ fn void? resolve_call_var(Dispatch* ds, uint name_const_idx, uint callee_reg, bo
     if (found) {
         if (ds.var_ic_base != null && ic_env != null) {
             uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
-            hobject::VarICEntry* vic = ds.var_ic_base + pc_off;
-            vic.env = ic_env;
-            vic.bindings = ic_env.bindings;
-            vic.shape_id = ic_env.bindings.shape_id;
-            vic.recycle_epoch = vm.heap.shape_recycle_epoch;
-            vic.prop_idx = (uint)ic_prop_idx;
-            if (vic.key != null) { vm.heap.decref((types::HeapHeader*)vic.key); }
-            vic.key = key;
-            if (key != null) { ((types::HeapHeader*)key).incref(); }
-            vic.search_head = (void*)ds.act.lex_env;
+            hobject::var_ic_fill(ds.var_ic_base + pc_off, (void*)ic_env, (void*)ic_env.bindings,
+                ic_env.bindings.shape_id, (uint)ic_prop_idx, key, (void*)ds.act.lex_env,
+                false, vm.heap);
         }
     } else {
         HString* name_hstr = (HString*)key;
