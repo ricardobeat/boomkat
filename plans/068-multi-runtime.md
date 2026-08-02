@@ -798,25 +798,33 @@ points still read `g_rt`. The guard is the *last* thing to go, after:
 - `mark_slots` / `capi_roots` are already per-heap (`capi.c3:183-184`) and need
   no change — a good sign the design was already heading this way.
 
-**The three-reader `null` fallback is a compatibility decision.**
-`jse_get_number(NULL, id, &d)` is documented, shipped, and used by
-`test/capi/host_fn_abi.c:37`. Options:
+**The three readers get a context tier.** `jse_get_number(NULL, id, &d)`
+resolves through `g_rt`, which is what lets a host function read its own
+arguments without holding a runtime (`examples/c99/host_fn.c:82`,
+`test/capi/host_fn_abi.c:38`). That cannot survive two runtimes: a global slot
+handle is a runtime-scoped integer carrying no owner, so `NULL` has no answer,
+and the failure mode is runtime A's handle resolving against runtime B's
+registry and returning B's value.
 
-- **(a) Keep it, resolving through the handle.** Scope handles (high-bit set,
-  `capi.c3:635`) cannot be resolved without a ctx, so `NULL` there must still
-  fail. Global slot handles are runtime-scoped integers with no owner
-  information — resolving them without a runtime is **impossible** once two
-  runtimes exist. So (a) is not actually available for slot handles.
-- **(b) Deprecate: require a non-null runtime, return `JSE_ERR_INVALID` for
-  `NULL`.** Breaks the shipped example and any host that copied it.
-- **(c) Keep `g_rt` as a "last runtime opened" fallback *only* for these three
-  readers, documented as legacy and correct only while one runtime is open.**
+This code is unreleased, so there is no compatibility cost and no transition
+period to design. Take the shape both reference engines use:
 
-**Recommendation: (b), with (c) as a transition.** Ship (c) behind a
-deprecation comment in the same release that lifts the guard, update
-`test/capi/host_fn_abi.c` and `examples/c99` to pass the runtime, and delete the
-fallback one release later. This is a **user decision** — see
-[Open questions](#open-questions-for-the-user).
+- **`jse_ctx_get_number` / `_bool` / `_string`** take a `jse_call_ctx`. This is
+  what a host function actually holds, and the ctx already reaches a heap
+  (`BuiltinContext.heap`, `builtins/core.c3:152`) and from Phase 5 a runtime.
+  Scope handles (high bit set, `capi.c3:635`) resolve here too, which the
+  runtime tier cannot do at all.
+- **`jse_get_number` / `_bool` / `_string`** keep taking a `jse_runtime` and
+  reject `NULL` with `JSE_ERR_INVALID`.
+- **`jse_ctx_runtime(ctx)`** for hosts that need the runtime itself, mirroring
+  `JS_GetRuntime(ctx)` (`quickjs.h:391`).
+
+`g_rt` is then unreferenced and is deleted rather than deprecated. Keeping a
+global that names "the one runtime" would preserve in `capi.c3` exactly the
+defect this plan removes from the engine.
+
+The migration is mechanical and confined to unreleased callers: host-side reads
+gain `_ctx_` and pass `ctx` instead of `NULL`.
 
 ---
 
@@ -831,7 +839,7 @@ Six surfaces. Only one has its own guard.
 | **`bindings/rust`** | no | Docs. Worth checking whether `Runtime` is `Send`/`!Sync` — after this change it should be `Send` but **not** `Sync`, and values must not be `Send` at all. That is a genuine type-level improvement Rust can express and the others cannot. |
 | **`bindings/ruby`** | no | Docs. |
 | **`bindings/python`** | no | Docs. |
-| **`examples/c99`** | no | Update if the `NULL`-runtime fallback is deprecated; add a two-runtime example. |
+| **`examples/c99`** | no | Move host-side reads to the `jse_ctx_get_*` tier; add a two-runtime example. |
 
 Note the irony worth recording in the C3 binding's commit message: its guard is
 already `tlocal`, so it was *stricter* than the engine's in the multi-thread
@@ -1058,13 +1066,25 @@ with none of the ABI risk, and it bisects cleanly.
 `resolve_handle`, `jse_return`, `jse_throw`, `jse_value_persist`, `jse_call`,
 `host_trampoline` and the three readers to resolve through
 `ctx.heap.runtime_ptr`. Seed each runtime's slot generation counter with a
-per-runtime nonce. `g_rt` becomes non-load-bearing (kept only as the documented
-legacy fallback for the three `NULL`-runtime readers, if option (c) is chosen).
+per-runtime nonce.
 
-**Files.** `src/capi.c3`, `src/heap.c3`.
+**Split the readers into two tiers** (see open question 2). Add
+`jse_ctx_get_number` / `jse_ctx_get_bool` / `jse_ctx_get_string` taking a
+`jse_call_ctx`, which is what a host function actually holds; the existing
+`jse_get_*` keep taking a `jse_runtime` and now reject `NULL` with
+`JSE_ERR_INVALID` instead of falling back to `g_rt`. Add `jse_ctx_runtime(ctx)`
+for hosts that need the runtime itself, mirroring `JS_GetRuntime`.
 
-**Verification.** The full existing `test/capi/` suite must pass **unchanged** —
-that is the point of this phase. Plus `host_fn_abi.c` under the GC_STRESS+ASan
+`g_rt` is then dead and is **deleted in this phase**, not deprecated. It is the
+last process-global in `capi.c3` and the plan's own premise is that a global
+naming "the one runtime" is exactly the bug being removed.
+
+**Files.** `src/capi.c3`, `src/heap.c3`, `include/jse.h`.
+
+**Verification.** `test/capi/` passes after the reader-tier migration, which
+touches `host_fn_abi.c:38`. Every other assertion must pass **unchanged** — a
+diff that only adds `_ctx_` at the host-side read sites is the signal this phase
+changed nothing else. Plus `host_fn_abi.c` under the GC_STRESS+ASan
 shared target (`project.json:181`).
 
 **Ships alone: yes.** No behaviour changes with one runtime open.
@@ -1319,14 +1339,55 @@ measures no faster than resolving `heap.shapes[shape_id]`, so there is nothing
 to preserve and nothing to configure. Folded into Phase 4; the closure stays at
 60. See that phase for the measurements.
 
-**2. May the `NULL`-runtime reader fallback be broken?**
-`jse_get_number`/`jse_get_bool`/`jse_get_string` accept `rtp_in == null` and
-resolve through `g_rt`. It is documented, shipped, and used by
-`test/capi/host_fn_abi.c:37`. Resolving a global slot handle without a runtime
-is **impossible** once two runtimes exist. Options: break it now
-(`JSE_ERR_INVALID` for `NULL`), or keep `g_rt` as a documented legacy fallback
-that is correct only while one runtime is open, and remove it a release later.
-This is an API-compatibility call.
+**2. The `NULL`-runtime reader fallback: resolved, no decision needed.** This
+code is unreleased, so compatibility is not a constraint and the question is
+simply what makes the best embedding API.
+
+`jse_get_number`/`jse_get_bool`/`jse_get_string` take a runtime and accept
+`NULL`, falling back to `g_rt`. That exists because a host function receives a
+`jse_call_ctx` and no runtime, so without it every callback reading its own
+arguments would have to thread one in. `examples/c99/host_fn.c:82` and
+`test/capi/host_fn_abi.c:38` both rely on it.
+
+It cannot survive two runtimes. A global slot handle is an index into *some*
+runtime's registry, so `NULL` stops having an answer. The failure is not a crash:
+runtime A's handle resolves against runtime B's registry and returns B's value at
+that slot, which is the same silent-wrong-answer class as the handle ABA bug
+fixed in `f89fffd7`.
+
+**The fix is to make the reader take a context, not a runtime.** QuickJS is the
+model: a `JSCFunction` receives `JSContext *ctx` as its first parameter and hands
+it to everything downstream (`quickjs.h:347`), with `JS_GetRuntime(ctx)` for the
+lower tier (`quickjs.h:391`). No call in that API is ambiguous about which
+instance it addresses.
+
+Our context is already self-sufficient: `BuiltinContext` carries `Heap* heap`
+(`builtins/core.c3:152`), and Phase 5 adds `runtime_ptr` to `Heap`. So a host can
+already answer "which runtime" from the ctx it holds; the readers just do not
+accept one.
+
+Adopt an explicit two-tier reader API, which is what both reference engines
+converged on:
+
+| Tier | Signature | For |
+|---|---|---|
+| context | `jse_ctx_get_number(jse_call_ctx, jse_value, double*)` | inside a host function |
+| runtime | `jse_get_number(jse_runtime, jse_value, double*)` | outside one |
+
+`NULL` is then rejected with `JSE_ERR_INVALID` in the runtime tier, because a
+host that has no runtime should be using the context tier. Nothing is
+ambiguous and nothing is silently wrong.
+
+The alternative of adding `jse_ctx_runtime(ctx)` and keeping one reader tier
+also works and is a smaller diff, but it makes every host-side read a
+two-call dance (`jse_get_number(jse_ctx_runtime(ctx), ...)`) where the reference
+engines need one. Prefer the two-tier form; add `jse_ctx_runtime` anyway, since
+a host that wants to persist a value or open a nested eval genuinely needs the
+runtime handle.
+
+Sequencing: land with Phase 5, which is where `capi.c3` becomes per-runtime.
+Phase 7 updates `examples/c99/host_fn.c`, `test/capi/host_fn_abi.c` and the six
+bindings, none of which are released.
 
 **3. Is thread-safety in scope, or explicitly out?** This plan buys multiple
 runtimes on one thread and says nothing about threads, matching Duktape
