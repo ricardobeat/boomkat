@@ -156,7 +156,7 @@ are the same corruption class:
 | `builtin_length_key` | `hobject.c3:75` | interned `HString*` from **one** heap |
 | `promise_reaction_next_key` | `hobject.c3:80` | interned `HString*` from **one** heap |
 | `g_symbol_counter` | `builtins/symbol.c3:16` | per-runtime uniqueness counter |
-| `g_private_class_id` | `compiler/private_names.c3:28` | per-compilation |
+| `g_private_class_id` | `compiler/private_names.c3:28` | per-runtime counter on `Heap` |
 | `g_last_err_msg/_line/_col` | `compiler/context.c3:177-179` | per-compilation |
 | `g_disable_optimize` | `compiler/context.c3:187` | process-wide CLI flag |
 | `test262_host_enabled` | `vm/vm_lifecycle.c3:19` | test harness |
@@ -725,10 +725,11 @@ is lifted so the comment never has to be re-litigated.
 **`g_last_err_msg`/`g_last_err_line`/`g_last_err_col`** (`compiler/context.c3:177-179`)
 and **`g_private_class_id`** (`compiler/private_names.c3:28`).
 
-These belong on `CompilerContext`, not on `Heap`. `set_compile_error` is
-first-writer-wins into a fixed 512-byte buffer, and `CompilerContext` already
-copies `g_disable_optimize` into an instance field at `context.c3:834` — the
-precedent for moving compiler state onto the context already exists in the file.
+**Resolved.** The error state now lives on the per-compile `Lexer`
+(`record_error`, `lex.err_msg`), and `g_private_class_id` is a counter on each
+runtime's `Heap` (`priv_class_id`), which keeps ids distinct across the
+parent/arrow nested-context split without atomics. The compiler has no mutable
+process-global state left except the `g_disable_optimize` CLI toggle.
 
 **Are they a multi-runtime bug?** Only mildly. Two runtimes compiling
 concurrently is impossible on one thread (compilation does not yield), so the
@@ -1154,9 +1155,9 @@ example each, and Rust's `Send`/`!Sync` audit. Parallelisable, one per binding.
 
 ### Deferred, tracked separately
 
-The compiler globals (`g_last_err_*`, `g_private_class_id`) move to
-`CompilerContext` as an independent plan item with its own rationale. Not part
-of this diff.
+Both compiler globals this plan deferred (`g_last_err_*`, `g_private_class_id`)
+have since been removed: the error state moved to the per-compile `Lexer`, and
+the class id moved to a per-runtime counter on `Heap`. Not part of this diff.
 
 ---
 

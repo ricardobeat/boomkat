@@ -1,6 +1,6 @@
 # Progress: Duktape C3 — test262 Conformance Tracker
 
-**Last Updated:** Session 304 — plan 068 (multi-runtime) verified end to end: `make all` from a clean tree, two_runtimes 23/23, runtime_cycles 40 cycles, host_fn_abi, local suite 306 scripts, rosetta 42/42, test262 phase 14 zero-fail. The two open BACKLOG items from the plan are closed: the phase-4 perf regression is gone on current main (re-measured interleaved against the pre-threading tree, mean +0.5%, every delta inside the noise band), and `delete_prop` no longer compacts values before reserving its shape slot, so a failed allocation leaves the object untouched instead of answering reads with a neighbour's value.
+**Last Updated:** Session 305 — the compiler's last mutable process-global, `g_private_class_id`, moved to a per-runtime counter on `Heap`; BACKLOG is now fully closed (53 items, 0 open). Local suite 311 scripts, rosetta 42/42, test262 phases 15 (8520 tests) and 0-1 (3148) zero-fail, capi suite green, ASAN clean, NONANBOX smoke passes.
 
 **Target:** 100% test262 pass rate on the targeted subset (see plan 040).
 
@@ -12,7 +12,14 @@
 - **Phase counts**: `bash scripts/count_test262_by_phase.sh` · **Delta**: `bash scripts/test262_delta.sh`.
 - **Build**: `c3c build test262_runner` or `c3c build duktape_c3` (plain runner; `duktape_c3_debug` for `-c`/`-t` inspection).
 
-## Session 304 (2026-08-02)
+## Session 305 (2026-08-02)
+
+The last open BACKLOG item closed. `g_private_class_id` (compiler/private_names.c3) was the compiler's only remaining mutable process-global: a monotonic class id for private-slot binding names, incremented by every class body, so two threads compiling classes into separate runtimes raced on the shared `uint`. It is now a per-runtime counter on `Heap` (`priv_class_id`, heap.c3). Every compiler context in one runtime reads the same field, so sibling classes across the parent/arrow nested-context split keep distinct ids (a per-context counter would restart inside the arrow's context and collide, which is why the previous session left the global in place); separate runtimes never touch the same memory, so no atomics are needed.
+
+- `test/private_class_id_siblings.js` pins the invariant: sibling classes in the same scope, one compiled inside a nested arrow, nested classes, and redefined classes all keep distinct private slots.
+- `test/capi/compile_threads.c` now compiles a private-field class per iteration on each of 4 threads (4×20k), exercising the per-runtime counter under concurrency.
+- The compiler now has zero mutable process-global state; only the `g_disable_optimize` CLI toggle (context.c3:210) remains, process-wide by design.
+- Gates: local suite 311 scripts + all sub-suites, rosetta 42/42, test262 phase 15 (Classes, 8520) 8374 pass / 0 fail / 0 CE-unexpected and phase 0-1 (Core VM, 3148) 2468 pass / 0 fail / 0 CE-unexpected, `make test-two-runtimes`, `make test-compile-threads` 4×20k, `runtime_cycles` 40 cycles, `host_fn_abi`, ASAN on all private-field tests, NONANBOX build + new test.
 
 Plan 068 verified and finished. The multi-runtime claims in the report all hold against a fresh tree: `_active_heap`, `g_rt`, the shape pointer cache, `NOSHAPECACHE`, `active_ctx` and the C3 binding's `RUNTIME_EXISTS` are gone (`grep` over `src/` is clean; only `g_engine_ready`, documented as genuinely process-wide, remains in `capi.c3`); `make all` rebuilds every target from an empty `out/`; `two_runtimes` passes 23/23 (three runtimes, interleaved globals/objects/strings, prototype-patch isolation, teardown survival, cross-runtime handle rejection, host udata isolation); `runtime_cycles` runs 40 open/eval/close cycles clean; `host_fn_abi` passes. Phase 7 bindings are all present: two-runtime examples for Python, Ruby, Rust, Zig and C99, and the Rust binding's `Runtime` is now `Send` but not `Sync` with a `Value<'rt>` that borrows its runtime.
 

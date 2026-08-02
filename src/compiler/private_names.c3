@@ -20,12 +20,13 @@ import std::io;
 // an undeclared name is a compile-time SyntaxError.
 // ============================================================================
 
-/// Monotonic compile-time id handed to each class body, embedded in its
-/// slot binding names ("#priv:<id>:foo") so that sibling classes in the
-/// same scope and nested classes never share a binding. Per-EVALUATION
+/// The class id for private-slot binding names lives on the heap, one
+/// monotonic counter per runtime. All compiler contexts in a runtime share
+/// the counter, so sibling classes compiled across the parent/arrow nested
+/// context split get distinct ids; separate runtimes never share it, so
+/// concurrent compiles on separate threads do not race. Per-EVALUATION
 /// freshness of the symbols themselves comes from NEW_PRIV_SYM at runtime;
 /// this id only keeps compile-time bindings distinct.
-uint g_private_class_id = 0;
 
 /// Build the lexical binding name for a private slot into `buf`:
 /// "#priv:<id>:<name>". Returns the filled prefix of `buf`.
@@ -101,7 +102,8 @@ fn void CompilerContext.declare_priv_slot(&self, char[] name) {
 fn void CompilerContext.push_private_scope(&self) {
     if (self.private_scope_depth < MAX_CLASS_NESTING) {
         self.private_scope_start[self.private_scope_depth] = self.private_name_table.count;
-        self.private_class_id[self.private_scope_depth] = g_private_class_id++;
+        Heap* hp = (Heap*)self.heap;
+        self.private_class_id[self.private_scope_depth] = hp.priv_class_id++;
         self.private_scope_depth++;
     }
 }

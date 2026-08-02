@@ -9,6 +9,11 @@
  * character and asserts that the reported error names that character, and
  * that a valid compile in the same thread still succeeds.
  *
+ * The class id behind private-slot binding names used to be a process global
+ * too; it now lives on each runtime's heap, so threads compiling classes
+ * with private fields never share a counter. Each worker also compiles a
+ * class per iteration to exercise that path.
+ *
  * This exercises the compile-error path only. Multi-runtime heap
  * independence under threads is covered by two_runtimes.c.
  */
@@ -32,10 +37,14 @@ static void check(const char *label, int cond) {
     else      { printf("FAIL %s\n", label); failures++; }
 }
 
+static const char class_src[] =
+    "class C { #v = 7; get() { return this.#v; } }\n"
+    "new C().get()";
+
 static void *worker(void *opaque) {
     struct worker_arg *w = (struct worker_arg *)opaque;
     char src[64];
-    int bad_saw = 0, valid_ok = 0;
+    int bad_saw = 0, valid_ok = 0, class_ok = 0;
     jse_value v;
 
     for (int i = 0; i < ITER; i++) {
@@ -54,12 +63,20 @@ static void *worker(void *opaque) {
             if (jse_get_number(w->rt, v, &d) == JSE_OK && d == 42) valid_ok++;
             jse_value_free(w->rt, v);
         }
+        /* A class with a private field; its slot id comes from this
+         * runtime's own counter, not a shared process global. */
+        if (jse_eval(w->rt, class_src, (int)strlen(class_src), &v) == JSE_OK) {
+            double d = 0;
+            if (jse_get_number(w->rt, v, &d) == JSE_OK && d == 7) class_ok++;
+            jse_value_free(w->rt, v);
+        }
     }
 
-    printf("thread %d: %d/%d error messages correct, %d/%d valid compiles ok\n",
-           w->id, bad_saw, ITER, valid_ok, ITER);
+    printf("thread %d: %d/%d error messages correct, %d/%d valid compiles ok, %d/%d classes ok\n",
+           w->id, bad_saw, ITER, valid_ok, ITER, class_ok, ITER);
     if (bad_saw != ITER) { printf("FAIL thread %d: error message race\n", w->id); failures++; }
     if (valid_ok != ITER) { printf("FAIL thread %d: valid compile broke\n", w->id); failures++; }
+    if (class_ok != ITER) { printf("FAIL thread %d: class compile broke\n", w->id); failures++; }
     return NULL;
 }
 

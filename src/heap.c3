@@ -493,6 +493,12 @@ struct Heap {
     /// Monotonic counter stamped into each handle. Never reset, so a handle
     /// from a popped scope can never collide with a live one.
     uint       host_scope_generation;
+    /// Monotonic compile-time id for class private-slot binding names
+    /// ("#priv:<id>:foo"), one per class body. Per-runtime: every compiler
+    /// context in one runtime shares it, so sibling classes across the
+    /// parent/arrow context split stay distinct, and separate runtimes never
+    /// race on it.
+    uint       priv_class_id;
 
     // Sweeping the string table is only safe when no raw HString* pointers sit
     // in C3 locals (see mark_and_sweep phase 3b). Off by default; callers at a
