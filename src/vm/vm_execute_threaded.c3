@@ -267,7 +267,7 @@ fn Instruction* th_cmp_branch(Instruction* pc, Instruction* code_end, TVal* regs
 fn Instruction* th_jmp_lt_g(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     Vm* vm = cold.vm;
-    hobject::VarICEntry* vic_base = (hobject::VarICEntry*)vm.current_func.var_ic_entries;
+    hobject::VarICEntry* vic_base = cold.var_ic_base;
     if (vic_base == null) return pc;
     uint name_off = (uint)(pc + 1 - cold.code_base);
     hobject::VarICEntry* gic = vic_base + name_off;
@@ -308,8 +308,7 @@ fn Instruction* th_jmp_lt_g(Instruction* pc, Instruction* code_end, TVal* regs, 
 
 fn Instruction* th_getglobal(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
-    Vm* vm = cold.vm;
-    hobject::VarICEntry* vic_base = (hobject::VarICEntry*)vm.current_func.var_ic_entries;
+    hobject::VarICEntry* vic_base = cold.var_ic_base;
     if (vic_base == null) return pc;
     uint pc_off = (uint)(pc - cold.code_base);
     hobject::VarICEntry* gic = vic_base + pc_off;
@@ -318,25 +317,25 @@ fn Instruction* th_getglobal(Instruction* pc, Instruction* code_end, TVal* regs,
     TVal* pv = &gb.prop_values()[gic.prop_idx];
     if (env::is_tdz_sentinel(pv)) return pc; // TDZ -> switch throws
     TVal* ra = regs + insn.a;
-    if (!pv.is_heap_allocated() && !ra.is_heap_allocated()) {
-        // prim -> prim: no refcount, no heap ref lands in the register, so no
-        // track_heap_store.
-        *ra = *pv;
-    } else {
-        vm.heap.tval_copy_ref(ra, pv);
-        track_heap_store(cold.act, ra, (uint)insn.a);
-    }
+    // prim -> prim only: no refcount, no heap ref lands in the register, so no
+    // track_heap_store. Either side being heap needs tval_copy_ref /
+    // track_heap_store, both real calls, which would make this handler
+    // non-leaf and cost every hit a register save/restore, so it bails.
+    if (pv.is_heap_allocated() || ra.is_heap_allocated()) return pc;
+    *ra = *pv;
     pc++;
     return th_next(pc, code_end, regs, cold);
 }
 
 // Proven primitive-only global read (see GETGLOBAL_PRIM in bytecode.c3): the
 // slot can never hold a heap value, so no source incref, no track_heap_store.
-// The destination register may still hold a stale heap ref, so decref it.
+// A destination register still holding a stale heap ref needs a decref, which
+// is a real call; taking it here would make this handler non-leaf and cost
+// every hit a five-pair register save/restore, so that case bails to the
+// switch instead (see the leaf-handler note above th_next).
 fn Instruction* th_getglobal_prim(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
-    Vm* vm = cold.vm;
-    hobject::VarICEntry* vic_base = (hobject::VarICEntry*)vm.current_func.var_ic_entries;
+    hobject::VarICEntry* vic_base = cold.var_ic_base;
     if (vic_base == null) return pc;
     uint pc_off = (uint)(pc - cold.code_base);
     hobject::VarICEntry* gic = vic_base + pc_off;
@@ -345,7 +344,7 @@ fn Instruction* th_getglobal_prim(Instruction* pc, Instruction* code_end, TVal* 
     TVal* pv = &gb.prop_values()[gic.prop_idx];
     if (env::is_tdz_sentinel(pv)) return pc;
     TVal* ra = regs + insn.a;
-    if (ra.is_heap_allocated()) vm.heap.decref_tval(ra);
+    if (ra.is_heap_allocated()) return pc;
     *ra = *pv;
     pc++;
     return th_next(pc, code_end, regs, cold);
@@ -357,7 +356,7 @@ fn Instruction* th_getglobal_prim(Instruction* pc, Instruction* code_end, TVal* 
 fn Instruction* th_putglobal_prim(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     Vm* vm = cold.vm;
-    hobject::VarICEntry* vic_base = (hobject::VarICEntry*)vm.current_func.var_ic_entries;
+    hobject::VarICEntry* vic_base = cold.var_ic_base;
     if (vic_base == null) return pc;
     uint pc_off = (uint)(pc - cold.code_base);
     hobject::VarICEntry* gic = vic_base + pc_off;
@@ -379,7 +378,7 @@ fn Instruction* th_putglobal_prim(Instruction* pc, Instruction* code_end, TVal* 
 // pc past both words. On hit, advance pc by 2.
 fn Instruction* th_move_gg(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
     Vm* vm = cold.vm;
-    hobject::VarICEntry* vic_base = (hobject::VarICEntry*)vm.current_func.var_ic_entries;
+    hobject::VarICEntry* vic_base = cold.var_ic_base;
     if (vic_base == null) return pc;
     uint dst_off = (uint)(pc - cold.code_base);
     hobject::VarICEntry* dic = vic_base + dst_off;
@@ -399,7 +398,7 @@ fn Instruction* th_move_gg(Instruction* pc, Instruction* code_end, TVal* regs, C
 fn Instruction* th_putglobal(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     Vm* vm = cold.vm;
-    hobject::VarICEntry* vic_base = (hobject::VarICEntry*)vm.current_func.var_ic_entries;
+    hobject::VarICEntry* vic_base = cold.var_ic_base;
     if (vic_base == null) return pc;
     uint pc_off = (uint)(pc - cold.code_base);
     hobject::VarICEntry* gic = vic_base + pc_off;
@@ -418,7 +417,7 @@ fn Instruction* th_putglobal(Instruction* pc, Instruction* code_end, TVal* regs,
 fn Instruction* th_inc_global_impl(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold, bool is_inc) {
     Instruction insn = *pc;
     Vm* vm = cold.vm;
-    hobject::VarICEntry* vic_base = (hobject::VarICEntry*)vm.current_func.var_ic_entries;
+    hobject::VarICEntry* vic_base = cold.var_ic_base;
     if (vic_base == null) return pc;
     uint pc_off = (uint)(pc - cold.code_base);
     hobject::VarICEntry* gic = vic_base + pc_off;
@@ -460,7 +459,7 @@ fn Instruction* th_getvar(Instruction* pc, Instruction* code_end, TVal* regs, Co
     TVal name_val = vm.current_func.constants[bc];
     if (!name_val.is_string()) return pc;
     void* key = name_val.get_heapptr();
-    hobject::VarICEntry* vic_base = (hobject::VarICEntry*)vm.current_func.var_ic_entries;
+    hobject::VarICEntry* vic_base = cold.var_ic_base;
     if (vic_base == null) return pc;
     uint pc_off = (uint)(pc - cold.code_base);
     hobject::VarICEntry* vic = vic_base + pc_off;
@@ -487,7 +486,7 @@ fn Instruction* th_putvar_assign(Instruction* pc, Instruction* code_end, TVal* r
     TVal name_val = vm.current_func.constants[bc];
     if (!name_val.is_string()) return pc;
     void* key = name_val.get_heapptr();
-    hobject::VarICEntry* vic_base = (hobject::VarICEntry*)vm.current_func.var_ic_entries;
+    hobject::VarICEntry* vic_base = cold.var_ic_base;
     if (vic_base == null) return pc;
     uint pc_off = (uint)(pc - cold.code_base);
     hobject::VarICEntry* vic = vic_base + pc_off;
@@ -515,7 +514,7 @@ fn Instruction* th_inc_var(Instruction* pc, Instruction* code_end, TVal* regs, C
     TVal name_val = vm.current_func.constants[bc];
     if (!name_val.is_string()) return pc;
     void* key = name_val.get_heapptr();
-    hobject::VarICEntry* vic_base = (hobject::VarICEntry*)vm.current_func.var_ic_entries;
+    hobject::VarICEntry* vic_base = cold.var_ic_base;
     if (vic_base == null) return pc;
     uint pc_off = (uint)(pc - cold.code_base);
     hobject::VarICEntry* vic = vic_base + pc_off;

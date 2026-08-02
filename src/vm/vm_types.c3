@@ -321,6 +321,10 @@ struct ColdCtx {
     Vm* vm;
     Activation* act;
     Instruction* code_base;
+    /// The current function's VarIC array, null when it has none. Frame-
+    /// invariant for the whole burst, so the global-slot handlers read it
+    /// here instead of re-chasing vm -> current_func -> var_ic_entries.
+    hobject::VarICEntry* var_ic_base;
 }
 
 struct Dispatch {
@@ -329,7 +333,6 @@ struct Dispatch {
     Instruction* code_end;
     TVal* constants;
     hobject::ICEntry* ic_base;
-    hobject::VarICEntry* var_ic_base;
     uint nregs;
     TVal* regs_base;
     Instruction* curr_pc;
