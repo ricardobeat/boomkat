@@ -3461,7 +3461,19 @@ fn uint Heap.hash_string(&self, char[] data) {
         h ^= (uint)b;
         h *= FNV1A_PRIME;
     }
-    return h;
+    // Keep HASH_DEFERRED reserved as the "not computed yet" sentinel.
+    return h == hstring::HASH_DEFERRED ? h + 1 : h;
+}
+
+/// The string's content hash, computing and caching it if it was deferred.
+/// Interned strings always have it already, so this is a plain field read on
+/// the hot path; only a large non-interned string ever pays the O(blen) scan,
+/// and only if something actually needs its hash.
+fn uint Heap.content_hash(&self, hstring::HString* s) {
+    if (s.hash == hstring::HASH_DEFERRED) {
+        s.hash = self.hash_string(s.get_data());
+    }
+    return s.hash;
 }
 
 // ============================================================================
@@ -3691,7 +3703,9 @@ fn void Heap.large_string_unregister(&self, HString* s) {
 /// non-interned concatenation result is used as a key.
 fn HString* Heap.ensure_interned(&self, hstring::HString* s) {
     if (s.flags.is_interned) return s;
-    HString* existing = self.str_table_lookup(s.get_data(), s.hash);
+    // A large concat result reaches here with its hash still deferred, and the
+    // table both probes and stores by hash, so materialize it first.
+    HString* existing = self.str_table_lookup(s.get_data(), self.content_hash(s));
     if (existing != null) return existing;
     // The table owns the string from here on, so it must leave the registry or
     // the sweep would free it behind the table's back. If the table cannot take
@@ -3748,14 +3762,19 @@ fn HString* Heap.str_intern(&self, char[] data) {
 /// already put through `normalize_to_cesu8`, can skip the astral scan by
 /// calling this directly.
 fn HString* Heap.str_intern_normalized(&self, char[] data) {
-    uint hash = self.hash_string(data);
     // Strings this long are not used as property keys, symbols, or identifiers.
     // Interning them piles dead strings into the table until the next GC, giving
     // O(n^2) memory growth in string-building loops such as buildString in the
     // test262 regExpUtils harness. A non-interned string is refcounted and so
     // freed promptly.
+    //
+    // The length test comes before the hash on purpose: hashing is O(len), so
+    // hashing first would make every `s += chunk` rehash the whole accumulated
+    // string and turn the loop O(n^2) in time even though it is already O(n) in
+    // memory. These strings get `HASH_DEFERRED` and hash lazily via
+    // `content_hash` if anything ever needs it.
     if (data.len > MAX_INTERN_BYTES) {
-        HString*? new_s = hstring::hstring_alloc(self, data, hash);
+        HString*? new_s = hstring::hstring_alloc(self, data, hstring::HASH_DEFERRED);
         if (try s = new_s) {
             // The registry is what the mark-sweep backstop and heap reset use to
             // reach a string the table does not hold.
@@ -3764,6 +3783,7 @@ fn HString* Heap.str_intern_normalized(&self, char[] data) {
         }
         return null;
     }
+    uint hash = self.hash_string(data);
     HString* existing = self.str_table_lookup(data, hash);
     if (existing != null) {
         return existing;

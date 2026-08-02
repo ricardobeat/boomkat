@@ -35,6 +35,17 @@ const uint REGISTRY_SLOT_NONE = (uint)-1;
 /// been computed for this string.
 const uint CHARLEN_NONE = (uint)-1;
 
+/// Word-at-a-time byte-scan constants: the high bit of each of the eight bytes,
+/// and 0x01 in each. Together they drive the classic
+/// `(w - ONE_BYTES) & ~w & HIGH_BITS` zero-byte test.
+const ulong HIGH_BITS = 0x8080_8080_8080_8080;
+const ulong ONE_BYTES = 0x0101_0101_0101_0101;
+
+/// Sentinel for `HString.hash`: the content hash has not been computed yet.
+/// A real FNV-1a hash that lands on this value is nudged to `HASH_DEFERRED + 1`
+/// so the sentinel stays unambiguous.
+const uint HASH_DEFERRED = (uint)-1;
+
 /// Returned by `scan_backwards_n` when the back-walk ran past the start of the
 /// string, which happens on malformed UTF-8 whose character length outruns its
 /// byte sequence.
@@ -114,9 +125,12 @@ struct HString {
 
     // --- String-specific fields ---
 
-    /// FNV-1a hash of the raw bytes, always the real content hash. Interned
-    /// strings index the string table with it, and non-interned ones use it as
-    /// the fast reject in `equals_hstring`.
+    /// FNV-1a hash of the raw bytes, or `HASH_DEFERRED` when it has not been
+    /// computed yet. Interned strings always carry the real hash, since the
+    /// string table indexes on it. A large non-interned string, such as the
+    /// running result of a `+=` loop, defers it: hashing is O(blen), and the
+    /// only consumers are the `equals_hstring` fast reject and a later
+    /// `ensure_interned`, both of which go through `content_hash`.
     uint hash;
     /// Byte length of the UTF-8 data (excluding the NUL terminator).
     uint blen;
@@ -175,7 +189,11 @@ fn bool HString.equals_hstring(&self, HString* other) {
     if (self == other) return true;
     if (!self.flags.is_interned || !other.flags.is_interned) {
         if (self.blen != other.blen) return false;
-        if (self.hash != other.hash) return false;
+        // The hash is only a fast reject here, so a deferred one on either side
+        // just falls through to the byte compare rather than forcing an O(blen)
+        // hash of a string that may never need one.
+        if (self.hash != other.hash
+            && self.hash != HASH_DEFERRED && other.hash != HASH_DEFERRED) return false;
         return mem::equals(self.get_cstr(), other.get_cstr(), self.blen);
     }
     return false;
@@ -509,11 +527,20 @@ fn uint compute_charlen(char[] data) {
 }
 
 /// Returns `true` when every byte in `data` is in the ASCII range (< 0x80).
+///
+/// Eight bytes at a time: a non-ASCII byte is exactly one with its high bit
+/// set, so masking a whole word against `HIGH_BITS` tests eight at once. Every
+/// concatenation result is scanned once over its full length, so this runs on
+/// the accumulated string on each step of a `s += chunk` loop.
 fn bool check_is_ascii(char[] data) {
-    foreach (b : data) {
-        if ((uint)b >= 0x80) {
-            return false;
-        }
+    usz len = data.len;
+    usz i = 0;
+    for (; i + 8 <= len; i += 8) {
+        ulong w = *(ulong*)(data.ptr + i);
+        if ((w & HIGH_BITS) != 0) return false;
+    }
+    for (; i < len; i++) {
+        if ((uint)data[i] >= 0x80) return false;
     }
     return true;
 }
@@ -744,8 +771,22 @@ fn uint advance_string_index_byte_len(char[] data, uint offset, bool unicode) {
 /// are CESU-8 canonical (see `normalize_to_cesu8`), and this check lets callers
 /// skip normalization for the common case of no 4-byte sequences.
 fn bool has_raw_utf8_astral(char[] data) {
-    foreach (b : data) {
-        if (((uint)b & 0xF8) == 0xF0) return true;
+    // Eight bytes at a time. Masking with 0xF8 per byte leaves each byte equal
+    // to 0xF0 exactly when it starts a 4-byte sequence; XOR-ing against a word
+    // of 0xF0 turns those into zero bytes, and the standard
+    // `(w - ONES) & ~w & HIGH_BITS` idiom reports whether any zero byte exists.
+    // ASCII text takes the early-out on every word, which matters because every
+    // interned string is scanned over its full length.
+    const ulong MASK_F8 = 0xF8F8_F8F8_F8F8_F8F8;
+    const ulong ALL_F0  = 0xF0F0_F0F0_F0F0_F0F0;
+    usz len = data.len;
+    usz i = 0;
+    for (; i + 8 <= len; i += 8) {
+        ulong w = (*(ulong*)(data.ptr + i) & MASK_F8) ^ ALL_F0;
+        if (((w - ONE_BYTES) & ~w & HIGH_BITS) != 0) return true;
+    }
+    for (; i < len; i++) {
+        if (((uint)data[i] & 0xF8) == 0xF0) return true;
     }
     return false;
 }
