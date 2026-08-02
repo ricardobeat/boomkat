@@ -4840,7 +4840,7 @@ fn TVal? Vm.run(Vm* vm) {
                     // ENV_STRICT TODO: own-vs-parent check for lex_env and var_env walks.
                     // Would need to introspect env_try_put_lex or rewrite walk here.
                     // Combined single-walk: check lex_env, writability, and update in one pass
-                    int put_result = env::env_try_put_lex(ds.act.lex_env, key, *ra);
+                    int put_result = env::env_try_put_lex(ds.act.lex_env, key, *ra, false);
                     if (put_result == -1) {
                         // A const violation throws a TypeError.
                         HString* name_hstr = (HString*)key;
@@ -5058,7 +5058,7 @@ fn TVal? Vm.run(Vm* vm) {
                     // (ES2015 §8.1.1.4.15/.17, §15.1.11 vs §18.2.1.2).
                     env::env_declare_var(ds.act.var_env, key, *ra,
                         ds.act.var_env == vm.global_env,
-                        ((CompiledFunction*)ds.act.func).is_eval_fn());
+                        ((CompiledFunction*)ds.act.func).is_eval_fn(), false);
 
                     // Populate VarIC for next time
                     if (ds.var_ic_base != null) {

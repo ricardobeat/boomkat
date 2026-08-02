@@ -1243,7 +1243,7 @@ fn bool Heap.shape_slot_live(&self, uint id) {
 /// `release_keys` must be false when the replacement shape copied this shape's
 /// key pointers without increfing them: the references move to the new shape,
 /// so decrefing here would leave it holding freed keys.
-fn void Heap.free_shape_slot(&self, uint id, bool release_keys = true) {
+fn void Heap.free_shape_slot(&self, uint id, bool release_keys) {
     if (id == 0 || id >= self.shape_count) return;
     if (self.shape_free_head == id) return;         // already free
     hobject::Shape* sh = self.shapes[id];
@@ -1370,7 +1370,7 @@ fn void Heap.destroy(&self) {
     while (cur != null) {
         HeapHeader* next = cur.next;
         if (cur.is_object()) {
-            hobject::hobject_free((HObject*)cur, (void*)self);
+            hobject::hobject_free((HObject*)cur, (void*)self, true);
         } else if (cur.is_bigint()) {
             // HBigInt boxes are the only non-object node on heap_allocated, and
             // they hold no children, so a plain free is enough.
@@ -1543,7 +1543,7 @@ fn void Heap.reset(&self) {
     while (cur != null) {
         HeapHeader* next = cur.next;
         if (cur.is_object()) {
-            hobject::hobject_free((HObject*)cur, (void*)self);
+            hobject::hobject_free((HObject*)cur, (void*)self, true);
         } else if (cur.is_bigint()) {
             // HBigInt boxes are the only non-object node on heap_allocated, and
             // they hold no children, so a plain free is enough.
@@ -2135,7 +2135,7 @@ fn void Heap.decref(&self, HeapHeader* hdr) {
         } else {
             hdr.unlink(&self.heap_allocated);
             if (hdr.is_object()) {
-                hobject::hobject_free((HObject*)hdr, (void*)self);
+                hobject::hobject_free((HObject*)hdr, (void*)self, true);
             } else {
                 // A buffer or BigInt box, both leaves.
                 self.free_func(self.heap_udata, hdr);

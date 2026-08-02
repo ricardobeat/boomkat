@@ -234,7 +234,7 @@ fn bool env_declare_const(EnvRecord* env, void* key, TVal val) @inline {
 ///
 /// FunctionDeclaration hoisting uses `env_declare_global_func` instead, since
 /// CreateGlobalFunctionBinding treats an existing property differently.
-fn bool env_declare_var(EnvRecord* env, void* key, TVal val, bool is_global, bool is_eval_code, bool is_bare = false) @inline {
+fn bool env_declare_var(EnvRecord* env, void* key, TVal val, bool is_global, bool is_eval_code, bool is_bare) @inline {
     if (is_global && is_bare && env.bindings.has_prop(key)) {
         return true;
     }
@@ -386,7 +386,7 @@ fn bool env_is_lex_writable(EnvRecord* lex_env, void* key) {
 /// -2 only happens under `check_tdz`, which PUTVAR_ASSIGN passes for a user
 /// assignment. Ordinary PUTVAR leaves it false so it can initialize a binding
 /// still holding the sentinel.
-fn int env_try_put_lex(EnvRecord* lex_env, void* key, TVal val, bool check_tdz = false) {
+fn int env_try_put_lex(EnvRecord* lex_env, void* key, TVal val, bool check_tdz) {
     EnvRecord* cur = lex_env;
     while (cur != null) {
         int idx = cur.bindings.find_prop_idx(key);

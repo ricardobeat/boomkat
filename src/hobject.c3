@@ -1614,7 +1614,7 @@ fn bool HObject.delete_prop(&self, void* key) {
             uint old_slot = (uint)self.shape_id;
             self.shape_id = 0;
             self.set_shape(h.shapes[0]);
-            h.free_shape_slot(old_slot);
+            h.free_shape_slot(old_slot, true);
         } else {
             self.set_shape(null);
         }
@@ -1973,7 +1973,7 @@ fn HObject*? hobject_alloc(void* heap_ptr, ObjClass cls) {
 /// A pooled object, meaning one without flags.pool_fallback, goes back to its
 /// FixedBlockPool. The rest are freed through the heap's allocator, or through
 /// mem::free when no heap is active.
-fn void hobject_free(HObject* obj, void* heap_ptr, bool free_header = true) {
+fn void hobject_free(HObject* obj, void* heap_ptr, bool free_header) {
     if (obj == null) { return; }
     // The owning heap, which every caller supplies. Its `tearing_down` flag,
     // not the presence of a heap, decides whether the decref passes below run:
