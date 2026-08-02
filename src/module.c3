@@ -436,9 +436,9 @@ fn ModuleDef*? resolve_module(Heap* heap, char[] specifier, char[] base_name, bo
     lex.skip_hashbang();
     bytecode::CompiledFunction*? func_opt = compiler::compile_module(&lex, heap, normalized, mod);
     if (catch err = func_opt) {
-        char* msg  = compiler::last_error_msg();
-        uint  line = compiler::last_error_line();
-        uint  col  = compiler::last_error_col();
+        char* msg  = &lex.err_msg[0];
+        uint  line = lex.err_line;
+        uint  col  = lex.err_col;
         usz   msg_len = (usz)((ZString)msg).len();
         // Build the module name portion into a temp buffer for printing.
         char[512] name_buf;

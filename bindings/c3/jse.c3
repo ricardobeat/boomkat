@@ -226,10 +226,10 @@ fn JsValue? JsRuntime.eval(&self, String source) {
     lex.skip_hashbang();
     CompiledFunction*? fnr = compiler::compile_eval(&lex, self.heap);
     if (catch fnr) {
-        // The compiler's message buffer is process-global and is overwritten by
-        // the next failing compile, so copy it out now. A few failure paths
-        // leave it empty; never surface a blank message.
-        char* msg = compiler::last_error_msg();
+        // The compiler's message buffer lives on the lexer and is overwritten
+        // by the next failing compile, so copy it out now. A few failure
+        // paths leave it empty; never surface a blank message.
+        char* msg = &lex.err_msg[0];
         usz n = 0;
         while (msg[n] != 0 && n < ERROR_BUF - 1) n++;
         if (n == 0) {

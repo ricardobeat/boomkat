@@ -16,9 +16,9 @@ import std::io;
 /// Returns the top-level CompiledFunction or a fault on error.
 fn CompiledFunction*? compile(Lexer* lex, void* heap) {
     // Reset error state for this top-level compilation.
-    g_last_err_msg[0] = 0;
-    g_last_err_line = 0;
-    g_last_err_col  = 0;
+    lex.err_msg[0] = 0;
+    lex.err_line = 0;
+    lex.err_col  = 0;
     CompilerContext ctx;
     ctx.init(lex, heap);
     ctx.is_global = true;
@@ -145,9 +145,9 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
                                     bool  parent_super_is_home_object = false,
                                     bool  allow_super_call = false,
                                     bool  caller_forbids_arguments = false) {
-    g_last_err_msg[0] = 0;
-    g_last_err_line = 0;
-    g_last_err_col  = 0;
+    lex.err_msg[0] = 0;
+    lex.err_line = 0;
+    lex.err_col  = 0;
     CompilerContext ctx;
     ctx.init(lex, heap);
     ctx.is_global = true;
@@ -314,15 +314,15 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
 /// See FuncFlags.subst_global_this.
 fn CompiledFunction*? compile_function(Lexer* lex, void* heap, bool is_expr, bool dynamic = false) {
     // Reset error state for this compilation; see `compile`'s matching
-    // reset. Without it, a stale `g_last_err_msg` left by a PREVIOUS
+    // reset. Without it, a stale `err_msg` left by a PREVIOUS
     // Function()-constructor SyntaxError makes finish()'s choke-point check
     // (context.c3) fail the very next, otherwise-valid compile too, e.g.
     // register_builtins() compiling Array.prototype.toLocaleString right
     // after an unrelated test threw a SyntaxError, poisoning every
     // subsequent test in the same batch-worker process.
-    g_last_err_msg[0] = 0;
-    g_last_err_line = 0;
-    g_last_err_col  = 0;
+    lex.err_msg[0] = 0;
+    lex.err_line = 0;
+    lex.err_col  = 0;
     CompilerContext ctx;
     ctx.init(lex, heap);
     ctx.subst_global_this = dynamic;
@@ -337,9 +337,9 @@ fn CompiledFunction*? compile_function(Lexer* lex, void* heap, bool is_expr, boo
 /// GeneratorFunction / AsyncFunction constructor (ES2019 §19.2.1.1.1).
 fn CompiledFunction*? compile_function_kind(Lexer* lex, void* heap, bool is_expr, bool is_generator, bool is_async, bool dynamic = false) {
     // See compile_function's matching reset, which has the same stale-flag hazard.
-    g_last_err_msg[0] = 0;
-    g_last_err_line = 0;
-    g_last_err_col  = 0;
+    lex.err_msg[0] = 0;
+    lex.err_line = 0;
+    lex.err_col  = 0;
     CompilerContext ctx;
     ctx.init(lex, heap);
     ctx.subst_global_this = dynamic;
@@ -363,9 +363,9 @@ fn CompiledFunction*? compile_function_kind(Lexer* lex, void* heap, bool is_expr
 /// `module_def` is an opaque ModuleDef*, the compiler writes import/export
 /// metadata into it via the void* current_module field.
 fn CompiledFunction*? compile_module(Lexer* lex, void* heap, char[] module_name, void* module_def) {
-    g_last_err_msg[0] = 0;
-    g_last_err_line = 0;
-    g_last_err_col  = 0;
+    lex.err_msg[0] = 0;
+    lex.err_line = 0;
+    lex.err_col  = 0;
     CompilerContext ctx;
     ctx.init(lex, heap);
     ctx.is_global = true;

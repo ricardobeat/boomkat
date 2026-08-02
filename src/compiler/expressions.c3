@@ -359,14 +359,7 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
     self.advance()!;
 
     if (self.last_was_optional_chain) {
-        if (g_last_err_msg[0] == 0) {
-            g_last_err_line = self.lexer.line;
-            g_last_err_col  = self.lexer.col;
-            char[] msg = "Invalid left-hand side in assignment";
-            usz copy_len = msg.len < (g_last_err_msg.len - 1) ? msg.len : (g_last_err_msg.len - 1);
-            mem::copy(&g_last_err_msg[0], msg.ptr, (sz)(copy_len));
-            g_last_err_msg[copy_len] = 0;
-        }
+        self.record_error("Invalid left-hand side in assignment");
         return COMPILE_ERROR~;
     }
 
@@ -418,14 +411,7 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
     // (a `.mjs` module still yields ReferenceError), which B.3.9 does not
     // permit.
     if (self.last_target_invalid || (!self.last_was_member && !self.last_was_getvar && !self.last_was_local_var)) {
-        if (g_last_err_msg[0] == 0) {
-            g_last_err_line = self.lexer.line;
-            g_last_err_col  = self.lexer.col;
-            char[] msg = "Invalid left-hand side in assignment";
-            usz copy_len = msg.len < (g_last_err_msg.len - 1) ? msg.len : (g_last_err_msg.len - 1);
-            mem::copy(&g_last_err_msg[0], msg.ptr, (sz)(copy_len));
-            g_last_err_msg[copy_len] = 0;
-        }
+        self.record_error("Invalid left-hand side in assignment");
         return COMPILE_ERROR~;
     }
 
@@ -2928,14 +2914,7 @@ fn ushort? CompilerContext.new_expr(&self) {
             if (self.in_eval_code && !self.eval_direct_in_function) {
                 // Indirect eval, global eval, or eval from arrow:
                 // new.target is a SyntaxError per spec.
-                if (g_last_err_msg[0] == 0) {
-                    g_last_err_line = self.lexer.line;
-                    g_last_err_col  = self.lexer.col;
-                    char[] msg = "new.target is not allowed in this eval context";
-                    usz copy_len = msg.len < (g_last_err_msg.len - 1) ? msg.len : (g_last_err_msg.len - 1);
-                    mem::copy(&g_last_err_msg[0], msg.ptr, (sz)(copy_len));
-                    g_last_err_msg[copy_len] = 0;
-                }
+                self.record_error("new.target is not allowed in this eval context");
                 return COMPILE_ERROR~;
             }
             // §16.1.1 (Script) and §16.2.1.1 (Module): it is a Syntax Error
@@ -2952,6 +2931,7 @@ fn ushort? CompilerContext.new_expr(&self) {
             ctor_reg = result_reg;
         } else {
             // Not 'target', error
+            self.record_error("expected 'target' after 'new.'");
             return COMPILE_ERROR~;
         }
     } else {
@@ -3191,6 +3171,7 @@ fn ushort? CompilerContext.new_expr(&self) {
                 prop_str = lexer::keyword_to_string(prop_name.type);
             }
             if (prop_name.type != TokenType.IDENTIFIER && prop_str.len == 0) {
+                self.record_error("expected a property name after '.'");
                 return COMPILE_ERROR~;
             }
             uint prop_const = self.add_string_constant(prop_str);
@@ -3341,6 +3322,7 @@ fn ushort? CompilerContext.member_expr(&self) {
                 prop_str = lexer::keyword_to_string(prop_name.type);
             }
             if (prop_name.type != TokenType.IDENTIFIER && prop_str.len == 0) {
+                self.record_error("expected a property name after '.'");
                 return COMPILE_ERROR~;
             }
             uint prop_const = self.add_string_constant(prop_str);
@@ -4460,6 +4442,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 // object-literal method, even without `extends`. The runtime raises
                 // a ReferenceError/TypeError when GetSuperBase returns undefined/null.
                 if (!self.has_super_binding && !self.in_class_body && !self.super_is_home_object) {
+                    self.record_error("'super' is only valid in a class method, object method, or class body");
                     return COMPILE_ERROR~;
                 }
 
@@ -4527,7 +4510,10 @@ fn ushort? CompilerContext.primary_expr(&self) {
                     // `super.IdentifierName` / `super[Expression]`, a PrivateName
                     // is not an IdentifierName, so `super.#x` is an early
                     // SyntaxError rather than a private-field access.
-                    if (self.check(TokenType.HASH_IDENT)) return COMPILE_ERROR~;
+                    if (self.check(TokenType.HASH_IDENT)) {
+                        self.record_error("'super.#x' is not allowed, a super property must be a public name");
+                        return COMPILE_ERROR~;
+                    }
                     // DOT: compute super base first, then emit constant key.
                     super_proto_reg = self.emit_super_base();
                     char[] prop_str = self.read_property_name()!;
@@ -4577,6 +4563,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 return result;
             }
 
+            self.record_error("'super' must be followed by a method call, property, or computed key");
             return COMPILE_ERROR~;
         }
 
@@ -5131,6 +5118,7 @@ fn ushort? CompilerContext.object_literal(&self) {
                 // (e.g. `*}`) does not leak the saved state forward.
                 self.is_generator = saved_is_generator;
                 self.is_async = saved_is_async;
+                self.record_error("expected a property name, '...', or '}' in object literal");
                 return COMPILE_ERROR~;
             }
 

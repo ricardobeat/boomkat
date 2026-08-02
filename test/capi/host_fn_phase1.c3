@@ -104,7 +104,7 @@ fn void check_num(Heap* hp, Vm* v, String label, String src, double want) {
     defer lex.free_arena();
     CompiledFunction*? f = compiler::compile_eval(&lex, hp);
     if (catch f) {
-        io::printfn("FAIL %s: compile error: %s", label, (ZString)compiler::last_error_msg());
+        io::printfn("FAIL %s: compile error: %s", label, (ZString)&lex.err_msg[0]);
         g_fails++;
         return;
     }

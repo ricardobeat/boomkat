@@ -119,11 +119,11 @@ fn int exec_js(Vm* v, Heap* hp, char[] src) {
     lx.skip_hashbang();
     CompiledFunction*? f = compiler::compile(&lx, hp);
     if (catch err = f) {
-        io::eprintfn("  COMPILE ERROR: %s", (String)compiler::g_last_err_msg[..]);
+        io::eprintfn("  COMPILE ERROR: %s", (String)lx.err_msg[..]);
         return 2;  // 2 = compile error (distinct from runtime error)
     }
     if (catch err = v.execute(f)) {
-        io::eprintfn("  RUNTIME ERROR (compiled ok, %d insns): %s", f.code_count, (String)compiler::g_last_err_msg[..]);
+        io::eprintfn("  RUNTIME ERROR (compiled ok, %d insns): %s", f.code_count, (String)lx.err_msg[..]);
         return 1;
     }
     return 0;

@@ -1741,6 +1741,7 @@ fn void? CompilerContext.var_declaration(&self) {
                 name_tok = self.advance(true)!;
                 ctx_keyword_ident = true;
             } else {
+                self.record_error("expected a binding identifier after the declaration keyword");
                 return COMPILE_ERROR~;
             }
             if (!ctx_keyword_ident && is_restricted_name(name_tok.str_value)) {
@@ -4270,6 +4271,7 @@ fn void? CompilerContext.return_statement(&self) {
     // A nested function body gets its own CompilerContext (is_global always
     // false there), so this only fires for genuinely top-level `return`.
     if (self.is_global) {
+        self.record_error("return is not allowed outside a function");
         return COMPILE_ERROR~;
     }
 

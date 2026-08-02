@@ -102,10 +102,10 @@ typedef enum {
 /*
  * Create the runtime and store it in *out_rt.
  *
- * Only ONE runtime may exist per process: the engine keeps process-global
- * state (the compiler's error buffer and the hobject active-heap pointer).
- * A second call while one is open returns JSE_ERR_INVALID rather than
- * corrupting the first. Returns JSE_OK, JSE_ERR_NOMEM, or JSE_ERR_INVALID.
+ * Multiple runtimes may exist in one process. Each is fully independent
+ * (heaps, globals, string tables); the compiler error state lives on the
+ * per-compilation lexer, so parallel compiles on separate threads do not
+ * share a buffer. Returns JSE_OK, JSE_ERR_NOMEM, or JSE_ERR_INVALID.
  */
 JSE_API int jse_open(jse_runtime *out_rt);
 

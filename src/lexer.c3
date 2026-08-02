@@ -487,6 +487,15 @@ struct Lexer {
     bool unterminated_comment;
     void* heap;
 
+    /// Compile-error state for the compilation owning this lexer. First
+    /// writer wins; the top-level compile entries clear it at the start of
+    /// each compilation. Lives on the caller's Lexer rather than in module
+    /// globals because a process can compile on several runtimes in
+    /// parallel, one per thread, and a shared buffer would race.
+    char[512] err_msg;
+    uint      err_line;
+    uint      err_col;
+
     /// Shared decoded-string arena holder (see LexArena). Allocated lazily on
     /// the first escape-bearing string/template literal, shared across lexer
     /// copies, freed by `free_arena()` at the end of the owning compilation.
@@ -518,6 +527,9 @@ fn Lexer lexer_init(char[] source, void* heap) {
     lex.html_comments = true;
     lex.unterminated_comment = false;
     lex.heap = heap;
+    // C3 zero-initialises the rest of the struct, so err_msg/err_line/err_col
+    // and ident_buf start clear; the top-level compile entries also reset the
+    // error fields explicitly before each compilation.
     // Allocate the shared arena holder eagerly (tiny, one pointer) so that
     // every speculative lexer copy made during parsing shares the SAME non-null
     // holder from the start. A lazily-created holder would be invisible to (and

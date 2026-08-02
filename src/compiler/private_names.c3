@@ -258,6 +258,9 @@ fn PrivateNameEntry*? CompilerContext.resolve_private_name(&self, char[] name) {
             return &t.entries[i];
         }
     }
+    char[128] buf;
+    usz n = (usz)(io::bprintf(&buf, "private name '#%s' is not declared", (String)name) ?? buf[:0]).len;
+    self.record_error(buf[:n]);
     return COMPILE_ERROR~;
 }
 

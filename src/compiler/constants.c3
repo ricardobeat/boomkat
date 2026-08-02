@@ -149,9 +149,9 @@ fn uint? CompilerContext.add_bigint_constant(&self, char[] digits) {
     int128? parsed = hbigint::parse_bigint_literal(digits);
     if (catch excuse = parsed) {
         if (excuse == hbigint::BIGINT_OVERFLOW) {
-            set_compile_error("BigInt value exceeds supported precision");
+            self.set_compile_error("BigInt value exceeds supported precision");
         } else {
-            set_compile_error("Invalid BigInt literal");
+            self.set_compile_error("Invalid BigInt literal");
         }
         return COMPILE_ERROR~;
     }
@@ -160,7 +160,7 @@ fn uint? CompilerContext.add_bigint_constant(&self, char[] digits) {
     // flags it a temproot; the constant-pool slot below is its anchoring ref.
     hbigint::HBigInt*? box_r = hbigint::hbigint_alloc(hp, parsed);
     if (catch box_r) {
-        set_compile_error("out of memory allocating BigInt");
+        self.set_compile_error("out of memory allocating BigInt");
         return COMPILE_ERROR~;
     }
     hbigint::HBigInt* box = box_r;

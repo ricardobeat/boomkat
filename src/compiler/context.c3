@@ -174,12 +174,32 @@ struct DestructParamDefault {
 // and ObjBind structs were removed in the destructuring consolidation.
 
 // ============================================================================
-// Last compile-error info (module-level; written on fault, read by callers)
+// Compile-error recording (per-lexer; written on fault, read by callers)
 // ============================================================================
 
-char[512] g_last_err_msg;
-uint      g_last_err_line;
-uint      g_last_err_col;
+/// Record a compile-error message into the owning Lexer's buffer (first
+/// writer wins, matching existing error sites).  Position defaults to the
+/// lexer's current position; callers needing a different position (a just
+/// consumed token, a backed-up lexer) write err_line/err_col themselves
+/// before or after.
+fn void CompilerContext.record_error(&self, char[] msg) {
+    if (self.lexer.err_msg[0] != 0) return;
+    self.lexer.err_line = self.lexer.line;
+    self.lexer.err_col  = self.lexer.col;
+    usz copy_len = msg.len < (self.lexer.err_msg.len - 1) ? msg.len : (self.lexer.err_msg.len - 1);
+    mem::copy(&self.lexer.err_msg[0], msg.ptr, (sz)(copy_len));
+    self.lexer.err_msg[copy_len] = 0;
+}
+
+/// Record a compile-error message without touching the position fields.
+/// Used by paths (BigInt literals) whose error is not anchored to a token;
+/// record_error is the position-carrying form.
+fn void CompilerContext.set_compile_error(&self, char[] msg) {
+    if (self.lexer.err_msg[0] != 0) return;
+    usz copy_len = msg.len < (self.lexer.err_msg.len - 1) ? msg.len : (self.lexer.err_msg.len - 1);
+    mem::copy(&self.lexer.err_msg[0], msg.ptr, (sz)(copy_len));
+    self.lexer.err_msg[copy_len] = 0;
+}
 
 /// Compiler debug toggle: when true, finish() skips every peephole pass
 /// (GETVAR+INC+PUTVAR → INC_VAR, LDCONST+GETPROP → GETPROPC, comparison
@@ -191,21 +211,6 @@ bool g_disable_optimize = false;
 
 fn void set_disable_optimize(bool v) { g_disable_optimize = v; }
 fn bool get_disable_optimize()       { return g_disable_optimize; }
-
-/// Record a compile-error message into the module-level buffer (first writer
-/// wins, matching existing error sites).  Position defaults to zero unless
-/// callers set g_last_err_line / g_last_err_col separately.
-fn void set_compile_error(char[] msg) {
-    if (g_last_err_msg[0] != 0) return;
-    usz copy_len = msg.len < (g_last_err_msg.len - 1) ? msg.len : (g_last_err_msg.len - 1);
-    mem::copy(&g_last_err_msg[0], msg.ptr, (sz)(copy_len));
-    g_last_err_msg[copy_len] = 0;
-}
-
-/// Retrieve the last compile error message (pointer to the module-level buffer).
-fn char* last_error_msg()   { return &g_last_err_msg[0]; }
-fn uint  last_error_line()  { return g_last_err_line; }
-fn uint  last_error_col()   { return g_last_err_col; }
 
 // ============================================================================
 // CompilerContext
@@ -1091,12 +1096,12 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     // `check()`, etc.) is swallowed there as a synthetic EOF_TOKEN so that
     // ASI-adjacent lookahead logic doesn't have to thread an optional through
     // every callsite; the error message/position was still recorded into
-    // `g_last_err_msg` at the point of failure. Without this check, a lex
+    // `self.lexer.err_msg` at the point of failure. Without this check, a lex
     // error occurring only during lookahead (never during an `advance()`)
     // would let `compile()`'s statement loop see a clean EOF and return
     // success. Catch that here, at the single choke point all compile entry
     // points funnel through.
-    if (g_last_err_msg[0] != 0) {
+    if (self.lexer.err_msg[0] != 0) {
         return COMPILE_ERROR~;
     }
     Heap* h = (Heap*)self.heap;

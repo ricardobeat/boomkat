@@ -79,6 +79,12 @@ echo ""
 bash "$DIR/console_format/run.sh" "$ENGINE"
 CFMT_RC=$?
 
+# Compile-error messages — every parse failure must report a non-empty message
+# instead of "SyntaxError:  (line 0, col 0)".
+echo ""
+bash "$DIR/compile_error_messages/run.sh" "$ENGINE"
+CEM_RC=$?
+
 [ "$FAIL" -eq 0 ] && [ "$MOD_RC" -eq 0 ] && [ "$MODSYN_RC" -eq 0 ] \
   && [ "$MODEXP_RC" -eq 0 ] && [ "$TOPLVL_RC" -eq 0 ] && [ "$UNC_RC" -eq 0 ] \
-  && [ "$CFMT_RC" -eq 0 ]
+  && [ "$CFMT_RC" -eq 0 ] && [ "$CEM_RC" -eq 0 ]

@@ -239,6 +239,7 @@ fn void? CompilerContext.class_declaration(&self, char[]* out_name = null, bool 
         // parse_class_tail_with_name via the is_default_export flag.
         class_name = "*default*";
     } else {
+        self.record_error("expected a class name after 'class'");
         return COMPILE_ERROR~;
     }
     // Surface the bound class name to callers (e.g. `export class Foo {}`,
@@ -1060,6 +1061,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
             // `,`, EOF).
             if (self.check(TokenType.LPAREN) || self.check(TokenType.EOF_TOKEN)
                 || self.is_at_end()) {
+                self.record_error("expected a method or field name in class body");
                 return COMPILE_ERROR~;
             }
             // Continue to the field branch below.

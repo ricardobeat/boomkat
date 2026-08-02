@@ -15,13 +15,13 @@ import std::io;
 /// Record a compile error with the current lexer position, then return COMPILE_ERROR~.
 /// Callers: `return self.fail("message")!;` or `return self.fail("message");`
 macro fault CompilerContext.fail(&self, char[] msg) {
-    if (g_last_err_msg[0] == 0) {
-        g_last_err_line = self.lexer.line;
-        g_last_err_col  = self.lexer.col;
+    if (self.lexer.err_msg[0] == 0) {
+        self.lexer.err_line = self.lexer.line;
+        self.lexer.err_col  = self.lexer.col;
         // Copy msg into fixed buffer (truncate if necessary, always NUL-terminate).
-        usz copy_len = msg.len < (g_last_err_msg.len - 1) ? msg.len : (g_last_err_msg.len - 1);
-        mem::copy(&g_last_err_msg[0], msg.ptr, (sz)(copy_len));
-        g_last_err_msg[copy_len] = 0;
+        usz copy_len = msg.len < (self.lexer.err_msg.len - 1) ? msg.len : (self.lexer.err_msg.len - 1);
+        mem::copy(&self.lexer.err_msg[0], msg.ptr, (sz)(copy_len));
+        self.lexer.err_msg[copy_len] = 0;
     }
     return COMPILE_ERROR;
 }
@@ -32,34 +32,34 @@ macro fault CompilerContext.fail(&self, char[] msg) {
 /// error the lexer has already advanced pos/col by one, so back up by one to
 /// point at the offending character.
 fn void CompilerContext.record_lex_error(&self) {
-    if (g_last_err_msg[0] != 0) return;
+    if (self.lexer.err_msg[0] != 0) return;
     // An unterminated `/*` comment has no offending character to point at —
     // the lexer stopped at end-of-input — so name the construct instead of
     // reporting whatever byte happens to precede `pos`.
     if (self.lexer.unterminated_comment) {
-        g_last_err_line = self.lexer.line;
-        g_last_err_col  = self.lexer.col;
+        self.lexer.err_line = self.lexer.line;
+        self.lexer.err_col  = self.lexer.col;
         char[] msg = "unterminated multi-line comment";
-        usz copy_len = msg.len < (g_last_err_msg.len - 1) ? msg.len : (g_last_err_msg.len - 1);
-        mem::copy(&g_last_err_msg[0], msg.ptr, (sz)(copy_len));
-        g_last_err_msg[copy_len] = 0;
+        usz copy_len = msg.len < (self.lexer.err_msg.len - 1) ? msg.len : (self.lexer.err_msg.len - 1);
+        mem::copy(&self.lexer.err_msg[0], msg.ptr, (sz)(copy_len));
+        self.lexer.err_msg[copy_len] = 0;
         return;
     }
-    g_last_err_line = self.lexer.line;
-    g_last_err_col  = self.lexer.col > 0 ? self.lexer.col - 1 : 0;
+    self.lexer.err_line = self.lexer.line;
+    self.lexer.err_col  = self.lexer.col > 0 ? self.lexer.col - 1 : 0;
     uint bad_pos = self.lexer.pos > 0 ? self.lexer.pos - 1 : 0;
     if (bad_pos < (uint)self.lexer.source.len) {
         char c = self.lexer.source[bad_pos];
         char[128] buf;
         usz n = (usz)(io::bprintf(&buf, "unexpected character '%c' (not supported)", c) ?? buf[:0]).len;
-        usz copy_len = n < (g_last_err_msg.len - 1) ? n : (g_last_err_msg.len - 1);
-        mem::copy(&g_last_err_msg[0], &buf[0], (sz)(copy_len));
-        g_last_err_msg[copy_len] = 0;
+        usz copy_len = n < (self.lexer.err_msg.len - 1) ? n : (self.lexer.err_msg.len - 1);
+        mem::copy(&self.lexer.err_msg[0], &buf[0], (sz)(copy_len));
+        self.lexer.err_msg[copy_len] = 0;
     } else {
         char[] msg = "unexpected end of input";
-        usz copy_len = msg.len < (g_last_err_msg.len - 1) ? msg.len : (g_last_err_msg.len - 1);
-        mem::copy(&g_last_err_msg[0], msg.ptr, (sz)(copy_len));
-        g_last_err_msg[copy_len] = 0;
+        usz copy_len = msg.len < (self.lexer.err_msg.len - 1) ? msg.len : (self.lexer.err_msg.len - 1);
+        mem::copy(&self.lexer.err_msg[0], msg.ptr, (sz)(copy_len));
+        self.lexer.err_msg[copy_len] = 0;
     }
 }
 
@@ -110,17 +110,17 @@ fn Token? CompilerContext.expect(&self, TokenType tt) {
     Token tok = self.advance()!;
     if (tok.type != tt) {
         // Only record if no earlier error has already been captured.
-        if (g_last_err_msg[0] == 0) {
+        if (self.lexer.err_msg[0] == 0) {
             char[128] buf;
             char[] want = lexer::token_type_name(tt);
             char[] got  = lexer::token_type_name(tok.type);
             usz n = (usz)(io::bprintf(&buf, "expected '%s', got '%s'",
                                         (String)want, (String)got) ?? buf[:0]).len;
-            g_last_err_line = tok.line;
-            g_last_err_col  = tok.col;
-            usz copy_len = n < (g_last_err_msg.len - 1) ? n : (g_last_err_msg.len - 1);
-            mem::copy(&g_last_err_msg[0], &buf[0], (sz)(copy_len));
-            g_last_err_msg[copy_len] = 0;
+            self.lexer.err_line = tok.line;
+            self.lexer.err_col  = tok.col;
+            usz copy_len = n < (self.lexer.err_msg.len - 1) ? n : (self.lexer.err_msg.len - 1);
+            mem::copy(&self.lexer.err_msg[0], &buf[0], (sz)(copy_len));
+            self.lexer.err_msg[copy_len] = 0;
         }
         return COMPILE_ERROR~;
     }
@@ -276,6 +276,7 @@ fn char[]? CompilerContext.read_property_name(&self) {
     if (tok.str_value.len > 0) return tok.str_value;
     char[] kw_str = lexer::keyword_to_string(tok.type);
     if (kw_str.len > 0) return kw_str;
+    self.record_error("expected a property name after '.'");
     return COMPILE_ERROR~;
 }
 

@@ -338,9 +338,9 @@ fn int jse_eval(void* rtp, char* src, usz len, uint* out_val) @export("jse_eval"
     // completion value, which is what an embedder expects from jse_eval.
     CompiledFunction*? fr = compiler::compile_eval(&lex, rt.heap);
     if (catch fr) {
-        // Copy immediately: the compiler error buffer is process-global and
+        // Copy immediately: the compiler error buffer lives on the lexer and
         // is clobbered by the next failing compile.
-        char* m = compiler::last_error_msg();
+        char* m = &lex.err_msg[0];
         usz n = 0;
         while (m[n] != 0 && n < ERRBUF - 1) n++;
         // Some compiler failure paths return without populating the global

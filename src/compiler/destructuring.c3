@@ -98,6 +98,7 @@ fn char[]? CompilerContext.destructuring_property_key(&self) {
         self.advance(true)!;
         return kw_str;
     }
+    self.record_error("expected a property name in destructuring pattern");
     return COMPILE_ERROR~;
 }
 

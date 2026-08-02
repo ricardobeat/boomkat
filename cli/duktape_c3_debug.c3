@@ -199,9 +199,9 @@ fn int main(String[] args) {
     defer lx.free_arena();
     bytecode::CompiledFunction*? func = compiler::compile(&lx, hp);
     if (catch err = func) {
-        char* msg  = compiler::last_error_msg();
-        uint  line = compiler::last_error_line();
-        uint  col  = compiler::last_error_col();
+        char* msg  = &lx.err_msg[0];
+        uint  line = lx.err_line;
+        uint  col  = lx.err_col;
         usz   msg_len = (usz)((ZString)msg).len();
         if (msg_len > 0) {
             io::eprintfn("%s: compile error at line %d:%d: %s", path, line, col, (ZString)msg);

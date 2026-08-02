@@ -166,6 +166,18 @@ out/two_runtimes: test/capi/two_runtimes.c include/jse.h out/jse_static.a
 test-two-runtimes: out/two_runtimes
 	./out/two_runtimes
 
+# Parallel compilation across threads: the compiler's last-error buffer was a
+# process global, so concurrent failing compiles raced; it now lives on the
+# per-compilation lexer. Four threads each compile a source whose only invalid
+# byte is thread-unique and assert that the reported error names their byte.
+out/compile_threads: test/capi/compile_threads.c include/jse.h out/jse_static.a
+	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/compile_threads.c \
+	   out/jse_static.a $(JSE_LDLIBS) -o out/compile_threads
+
+.PHONY: test-compile-threads
+test-compile-threads: out/compile_threads
+	./out/compile_threads
+
 # Heap teardown under GC_STRESS + ASan. Heap.destroy frees every object
 # directly and sets tearing_down so object teardown skips its decref pass;
 # decrefing there would touch the string table the sweep is walking. The JS

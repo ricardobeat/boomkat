@@ -54,8 +54,8 @@ fn int main(String[] args) {
     if (try ff = func) {
         f = ff;
     } else {
-        ZString msg = (ZString)compiler::last_error_msg();
-        io::eprintfn("SyntaxError: %s (line %d, col %d)", msg, compiler::last_error_line(), compiler::last_error_col());
+        ZString msg = (ZString)&lex.err_msg[0];
+        io::eprintfn("SyntaxError: %s (line %d, col %d)", msg, lex.err_line, lex.err_col);
         return 1;
     }
 
