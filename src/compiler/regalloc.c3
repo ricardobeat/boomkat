@@ -200,3 +200,41 @@ fn ushort CompilerContext.begin_spread_args(&self, ushort* callee_reg, ushort* f
     }
     return count_reg;
 }
+
+/// Compile a spread argument's source expression and return its register.
+///
+/// The first spread runs against an empty window: no argument values exist
+/// at or above `first_arg` yet, so the source is evaluated normally. The
+/// only register at risk is the source itself, if the expression lands in
+/// `[first_arg + arg_count, ...)` where SPREAD_ARG will write; SPREAD_ARG
+/// reads its source register into a local before writing, so the overlap is
+/// harmless, and the LDREG below just keeps the source above that window.
+///
+/// A spread after the first is different: at runtime, registers at or above
+/// `first_arg` already hold real argument values from the earlier spread(s)
+/// and any PUTARG'd trailing args. Evaluating the source with the normal
+/// allocator could land in one of those slots and destroy an argument
+/// before SPREAD_ARG runs. So the source is compiled into the reserved
+/// below-first_arg region, exactly like a trailing arg (reg_cap = first_arg
+/// caps the allocation there; an expression too big for the region is a
+/// compile error, not a silently corrupted argument list).
+fn ushort? CompilerContext.compile_spread_source(&self, ushort first_arg, ushort arg_count, bool is_first_spread) {
+    ushort spread_reg;
+    if (is_first_spread) {
+        spread_reg = self.assignment_expr()!;
+        ushort dest_start = first_arg + arg_count;
+        if (spread_reg >= dest_start && spread_reg <= dest_start + 10) {
+            ushort safe_reg = self.alloc_reg();
+            self.emit_abc(Opcode.LDREG, (uint)safe_reg, (uint)spread_reg, 0);
+            self.free_reg(spread_reg);
+            spread_reg = safe_reg;
+        }
+    } else {
+        ushort saved_cap = self.reg_cap;
+        self.next_reg = self.spread_eval_base;
+        self.reg_cap = first_arg;
+        spread_reg = self.assignment_expr()!;
+        self.reg_cap = saved_cap;
+    }
+    return spread_reg;
+}

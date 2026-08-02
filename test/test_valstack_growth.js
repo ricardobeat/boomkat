@@ -30,6 +30,8 @@ function spreadSum() { var s = 0; for (var i = 0; i < arguments.length; i++) { s
 var arr = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 check(spreadSum(0, ...arr, 99) === 154, "spread call with leading and trailing");
 check(spreadSum(...arr) === 55, "single spread");
+check(spreadSum(...arr, ...arr) === 110, "double spread");
+check(spreadSum(...arr, 5, ...arr) === 115, "double spread with middle arg");
 
 // Closures capturing many registers, called deep in a chain.
 function makeCounter(base) {

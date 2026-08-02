@@ -2538,6 +2538,11 @@ fn ushort? CompilerContext.emit_call(&self, ushort callee_reg) {
         for (;;) {
             // Check for spread argument
             if (self.match(TokenType.ELLIPSIS)) {
+                // The spread source's register depends on whether this is
+                // the first spread (empty window, normal eval) or a later
+                // one (window holds real arguments, eval into the reserved
+                // region below first_arg).
+                bool is_first_spread = !has_spread;
                 if (!has_spread) {
                     has_spread = true;
                     // Shift the callee frame up by one and place the running-total
@@ -2548,21 +2553,7 @@ fn ushort? CompilerContext.emit_call(&self, ushort callee_reg) {
                     total_count_reg = self.begin_spread_args(&callee_reg, &first_arg, arg_count);
                     self.emit(bytecode::make_a_sbx(Opcode.LDINT, (uint)total_count_reg, (int)arg_count));
                 }
-
-                // The spread source can live anywhere: SPREAD_ARG reads it
-                // before writing the window, so no reservation is needed and
-                // a previous trailing-arg evaluation may have left next_reg
-                // in the below-first_arg region.
-                ushort dest_start = first_arg + arg_count;
-                ushort spread_reg = self.assignment_expr()!;
-
-                // Move spread source away from the dest area if it overlaps
-                if (spread_reg >= dest_start && spread_reg <= dest_start + 10) {
-                    ushort safe_reg = self.alloc_reg();
-                    self.emit_abc(Opcode.LDREG, (uint)safe_reg, (uint)spread_reg, 0);
-                    self.free_reg(spread_reg);
-                    spread_reg = safe_reg;
-                }
+                ushort spread_reg = self.compile_spread_source(first_arg, arg_count, is_first_spread)!;
 
                 // SPREAD_ARG: A=first_arg base reg, B=running-total reg (in/out;
                 // the spread is written at first_arg + running_total and the
@@ -3022,6 +3013,9 @@ fn ushort? CompilerContext.new_expr(&self) {
             if (!self.check(TokenType.RPAREN)) {
                 for (;;) {
                     if (self.match(TokenType.ELLIPSIS)) {
+                        // See compile_spread_source: the first spread eval is
+                        // normal, later ones go into the region below first_arg.
+                        bool is_first_spread = !has_spread;
                         if (!has_spread) {
                             has_spread = true;
                             // See begin_spread_args: relocate the ctor frame up
@@ -3030,19 +3024,7 @@ fn ushort? CompilerContext.new_expr(&self) {
                             total_count_reg = self.begin_spread_args(&ctor_reg, &first_arg, arg_count);
                             self.emit(bytecode::make_a_sbx(Opcode.LDINT, (uint)total_count_reg, (int)arg_count));
                         }
-                        // The spread source can live anywhere: SPREAD_ARG
-                        // reads it before writing the window, so no
-                        // reservation is needed and a previous trailing-arg
-                        // evaluation may have left next_reg in the
-                        // below-first_arg region.
-                        ushort dest_start = first_arg + arg_count;
-                        ushort spread_reg = self.assignment_expr()!;
-                        if (spread_reg >= dest_start) {
-                            ushort safe_reg = self.alloc_reg();
-                            self.emit_abc(Opcode.LDREG, (uint)safe_reg, (uint)spread_reg, 0);
-                            self.free_reg(spread_reg);
-                            spread_reg = safe_reg;
-                        }
+                        ushort spread_reg = self.compile_spread_source(first_arg, arg_count, is_first_spread)!;
                         self.emit_abc(Opcode.SPREAD_ARG, (uint)first_arg, (uint)total_count_reg, (uint)spread_reg);
                         self.free_reg(spread_reg);
                     } else {
@@ -4398,6 +4380,10 @@ fn ushort? CompilerContext.primary_expr(&self) {
                         // Spread argument: super(...iterable), same lowering
                         // as emit_call (SPREAD_ARG + runtime count register).
                         if (self.match(TokenType.ELLIPSIS)) {
+                            // See compile_spread_source: the first spread eval
+                            // is normal, later ones go into the region below
+                            // first_arg.
+                            bool is_first_spread = !has_spread;
                             if (!has_spread) {
                                 has_spread = true;
                                 // See begin_spread_args: relocate the super frame
@@ -4406,19 +4392,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                                 total_count_reg = self.begin_spread_args(&super_reg, &first_arg, arg_count);
                                 self.emit(bytecode::make_a_sbx(Opcode.LDINT, (uint)total_count_reg, (int)arg_count));
                             }
-                            // The spread source can live anywhere: SPREAD_ARG
-                            // reads it before writing the window, so no
-                            // reservation is needed and a previous
-                            // trailing-arg evaluation may have left next_reg
-                            // in the below-first_arg region.
-                            ushort dest_start = first_arg + arg_count;
-                            ushort spread_reg = self.assignment_expr()!;
-                            if (spread_reg >= dest_start && spread_reg <= dest_start + 10) {
-                                ushort safe_reg = self.alloc_reg();
-                                self.emit_abc(Opcode.LDREG, (uint)safe_reg, (uint)spread_reg, 0);
-                                self.free_reg(spread_reg);
-                                spread_reg = safe_reg;
-                            }
+                            ushort spread_reg = self.compile_spread_source(first_arg, arg_count, is_first_spread)!;
                             self.emit_abc(Opcode.SPREAD_ARG, (uint)first_arg, (uint)total_count_reg, (uint)spread_reg);
                             self.free_reg(spread_reg);
                         } else {
