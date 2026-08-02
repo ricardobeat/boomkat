@@ -508,7 +508,7 @@ fn void builtin_regexp_string_iterator_next(BuiltinContext* ctx) {
                 int adv_bytes = (int)hstring::advance_string_index_byte_len(
                     input[:input_len], byte_off, unicode_flag);
                 uint new_byte_off = byte_off + (uint)adv_bytes;
-                next_index = (long)hstring::compute_charlen(input[:new_byte_off]);
+                next_index = (long)s_hstr.byte_offset_to_char_offset(new_byte_off);
             }
             TVal next_tv; next_tv.set_fastint(next_index);
 

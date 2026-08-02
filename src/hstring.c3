@@ -391,6 +391,33 @@ fn uint HString.char_offset_to_byte_offset(&self, uint char_offset) {
     return byte_off;
 }
 
+/// Convert a byte offset into this string's data to a character (UTF-16 code
+/// unit) offset, the inverse of `char_offset_to_byte_offset`.
+///
+/// For an ASCII string the two offsets are equal, so this answers in constant
+/// time; regexp match paths convert offsets for every match and capture, and a
+/// full `compute_charlen` scan there would be quadratic in the subject length.
+/// Non-ASCII strings fall back to counting characters up to `byte_offset`, and
+/// warm the same offset cache the forward conversion uses.
+fn uint HString.byte_offset_to_char_offset(&self, uint byte_offset) {
+    uint blen = self.blen;
+    if (byte_offset > blen) byte_offset = blen;
+    if (self.flags.is_ascii) {
+        // One byte per character.
+        return byte_offset;
+    }
+
+    // Exact cache hit.
+    if (byte_offset == self.cached_byte_offset) {
+        return self.cached_char_offset;
+    }
+
+    uint char_offset = compute_charlen(self.get_data()[:byte_offset]);
+    self.cached_char_offset = char_offset;
+    self.cached_byte_offset = byte_offset;
+    return char_offset;
+}
+
 /// Advance from `start` by exactly `n` non-continuation bytes, which are UTF-16
 /// code units under CESU-8.
 ///

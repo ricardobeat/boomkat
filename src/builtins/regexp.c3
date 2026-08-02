@@ -472,7 +472,7 @@ fn HObject* regexp_build_match_result(BuiltinContext* ctx, void* re_data, HStrin
     }
 
     // index property, convert byte offset to character (UTF-16 code unit) index
-    long char_index = (long)hstring::compute_charlen(input[:out_start]);
+    long char_index = (long)input_str.byte_offset_to_char_offset((uint)out_start);
     TVal idx_tv; idx_tv.set_fastint(char_index);
     arr.put_prop(builtin_intern_string(ctx.heap, "index"), idx_tv, hobject::PROP_FLAGS_WEC);
 
@@ -529,8 +529,8 @@ fn HObject* regexp_build_match_result(BuiltinContext* ctx, void* re_data, HStrin
             HObject*? pair0_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
             if (try pair0 = pair0_raw) {
                 pair0.prototype = ctx.heap.array_proto;
-                TVal p0s; p0s.set_fastint((long)hstring::compute_charlen(input[:out_start]));
-                TVal p0e; p0e.set_fastint((long)hstring::compute_charlen(input[:out_end]));
+                TVal p0s; p0s.set_fastint((long)input_str.byte_offset_to_char_offset((uint)out_start));
+                TVal p0e; p0e.set_fastint((long)input_str.byte_offset_to_char_offset((uint)out_end));
                 pair0.put_prop(builtin_intern_string(ctx.heap, "0"), p0s, hobject::PROP_FLAGS_WEC);
                 pair0.put_prop(builtin_intern_string(ctx.heap, "1"), p0e, hobject::PROP_FLAGS_WEC);
                 TVal pair0_tv; pair0_tv.set_object(pair0);
@@ -544,8 +544,8 @@ fn HObject* regexp_build_match_result(BuiltinContext* ctx, void* re_data, HStrin
                 pair.prototype = ctx.heap.array_proto;
                 TVal pair_tv;
                 if (caps_start[i] >= 0 && caps_end[i] >= 0) {
-                    TVal ps; ps.set_fastint((long)hstring::compute_charlen(input[:caps_start[i]]));
-                    TVal pe; pe.set_fastint((long)hstring::compute_charlen(input[:caps_end[i]]));
+                    TVal ps; ps.set_fastint((long)input_str.byte_offset_to_char_offset((uint)caps_start[i]));
+                    TVal pe; pe.set_fastint((long)input_str.byte_offset_to_char_offset((uint)caps_end[i]));
                     pair.put_prop(builtin_intern_string(ctx.heap, "0"), ps, hobject::PROP_FLAGS_WEC);
                     pair.put_prop(builtin_intern_string(ctx.heap, "1"), pe, hobject::PROP_FLAGS_WEC);
                     pair_tv.set_object(pair);
@@ -571,8 +571,8 @@ fn HObject* regexp_build_match_result(BuiltinContext* ctx, void* re_data, HStrin
                                 HObject*? pair_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
                                 if (try pair = pair_raw) {
                                     pair.prototype = ctx.heap.array_proto;
-                                    TVal ps; ps.set_fastint((long)hstring::compute_charlen(input[:caps_start[gi]]));
-                                    TVal pe; pe.set_fastint((long)hstring::compute_charlen(input[:caps_end[gi]]));
+                                    TVal ps; ps.set_fastint((long)input_str.byte_offset_to_char_offset((uint)caps_start[gi]));
+                                    TVal pe; pe.set_fastint((long)input_str.byte_offset_to_char_offset((uint)caps_end[gi]));
                                     pair.put_prop(builtin_intern_string(ctx.heap, "0"), ps, hobject::PROP_FLAGS_WEC);
                                     pair.put_prop(builtin_intern_string(ctx.heap, "1"), pe, hobject::PROP_FLAGS_WEC);
                                     pair_tv.set_object(pair);
@@ -695,10 +695,8 @@ fn void builtin_regexp_proto_exec(BuiltinContext* ctx) {
     int out_start = 0;
     int out_end = 0;
     int out_num_captures = 0;
-    int[re_bindings::RE_MAX_CAPTURES] caps_start;
-    int[re_bindings::RE_MAX_CAPTURES] caps_end;
-    mem::clear(&caps_start, (sz)(re_bindings::RE_MAX_CAPTURES * int::size));
-    mem::clear(&caps_end, (sz)(re_bindings::RE_MAX_CAPTURES * int::size));
+    int[re_bindings::RE_MAX_CAPTURES] caps_start @noinit;
+    int[re_bindings::RE_MAX_CAPTURES] caps_end @noinit;
 
     int result = re_bindings::re_run(
         (*obj.extra_ptr()).regexp.regexp_data, input, input_len, start_pos,
@@ -725,7 +723,9 @@ fn void builtin_regexp_proto_exec(BuiltinContext* ctx) {
     // any AdvanceStringIndex here; callers (@@match step 8.g, @@replace step
     // 11.d) handle the empty-match advance so that custom exec overrides work.
     if (global_flag || sticky_flag) {
-        long new_li = (long)hstring::compute_charlen(input[:out_end]);
+        long new_li = input_hstr != null
+            ? (long)input_hstr.byte_offset_to_char_offset((uint)out_end)
+            : (long)hstring::compute_charlen(input[:out_end]);
         TVal end_tv; end_tv.set_fastint(new_li);
         if (!regexp_set_prop(ctx, obj, li_key, &end_tv)) return;
     }
@@ -918,7 +918,7 @@ fn void builtin_regexp_proto_symbol_match(BuiltinContext* ctx) {
                 int adv_bytes = (int)hstring::advance_string_index_byte_len(
                     input[:input_len], byte_off, full_unicode);
                 uint new_byte_off = byte_off + (uint)adv_bytes;
-                next_index = (long)hstring::compute_charlen(input[:new_byte_off]);
+                next_index = (long)s_hstr.byte_offset_to_char_offset(new_byte_off);
             }
             TVal next_tv; next_tv.set_fastint(next_index);
             // 8.g.iii. Perform ? Set(rx, "lastIndex", nextIndex, true).
@@ -1284,7 +1284,7 @@ fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
                             int adv2 = (int)hstring::advance_string_index_byte_len(
                                 input[:input_len], byte_off2, rr_full_unicode);
                             long new_byte2 = (long)byte_off2 + adv2;
-                            next_li2 = (long)hstring::compute_charlen(input[:(usz)new_byte2]);
+                            next_li2 = (long)s_hstr.byte_offset_to_char_offset((uint)new_byte2);
                         }
                         TVal next_li_tv2;
                         if (next_li2 >= types::FASTINT_MIN && next_li2 <= types::FASTINT_MAX) {
@@ -1720,7 +1720,7 @@ fn void builtin_regexp_proto_symbol_split(BuiltinContext* ctx) {
     while (q < input_len) {
         // Step 24.a: Set(splitter, "lastIndex", q, true), q as char-unit index.
         {
-            long q_cu = (long)hstring::compute_charlen(input[:q]);
+            long q_cu = (long)s_hstr.byte_offset_to_char_offset((uint)q);
             TVal q_tv; q_tv.set_fastint(q_cu);
             if (!regexp_set_with_setter(ctx, splitter, li_key, q_tv)) return;
         }
@@ -2225,10 +2225,8 @@ fn bool regexp_exec_call(BuiltinContext* ctx, HObject* rx, TVal* input_str_tv) {
     int out_start = 0;
     int out_end = 0;
     int out_num_captures = 0;
-    int[re_bindings::RE_MAX_CAPTURES] caps_start;
-    int[re_bindings::RE_MAX_CAPTURES] caps_end;
-    mem::clear(&caps_start, (sz)(re_bindings::RE_MAX_CAPTURES * int::size));
-    mem::clear(&caps_end, (sz)(re_bindings::RE_MAX_CAPTURES * int::size));
+    int[re_bindings::RE_MAX_CAPTURES] caps_start @noinit;
+    int[re_bindings::RE_MAX_CAPTURES] caps_end @noinit;
 
     int result = re_bindings::re_run(
         re_data, input, input_len, start_pos,
@@ -2251,7 +2249,7 @@ fn bool regexp_exec_call(BuiltinContext* ctx, HObject* rx, TVal* input_str_tv) {
         // AdvanceStringIndex step is performed by the *caller* (@@match step
         // 8.g, @@replace step 11.d) so that custom exec overrides are also
         // covered. Do NOT advance here, set lastIndex = charlen(input[:e]).
-        long new_li = (long)hstring::compute_charlen(input[:out_end]);
+        long new_li = (long)s_hstr.byte_offset_to_char_offset((uint)out_end);
         TVal end_tv; end_tv.set_fastint(new_li);
         if (!regexp_set_prop(ctx, rx, li_key, &end_tv)) return false;
     }

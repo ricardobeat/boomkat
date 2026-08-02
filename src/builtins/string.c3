@@ -1450,10 +1450,8 @@ fn void builtin_string_proto_split(BuiltinContext* ctx) {
             int out_start = 0;
             int out_end = 0;
             int out_num_captures = 0;
-            int[re_bindings::RE_MAX_CAPTURES] caps_start;
-            int[re_bindings::RE_MAX_CAPTURES] caps_end;
-            mem::clear(&caps_start, (sz)(re_bindings::RE_MAX_CAPTURES * int::size));
-            mem::clear(&caps_end, (sz)(re_bindings::RE_MAX_CAPTURES * int::size));
+            int[re_bindings::RE_MAX_CAPTURES] caps_start @noinit;
+            int[re_bindings::RE_MAX_CAPTURES] caps_end @noinit;
 
             int result = re_bindings::re_run(
                 (*rx.extra_ptr()).regexp.regexp_data, input, input_len, search_pos,
@@ -1849,10 +1847,8 @@ fn void builtin_string_proto_replace(BuiltinContext* ctx) {
             int out_start = 0;
             int out_end = 0;
             int out_num_captures = 0;
-            int[re_bindings::RE_MAX_CAPTURES] caps_start;
-            int[re_bindings::RE_MAX_CAPTURES] caps_end;
-            mem::clear(&caps_start, (sz)(re_bindings::RE_MAX_CAPTURES * int::size));
-            mem::clear(&caps_end, (sz)(re_bindings::RE_MAX_CAPTURES * int::size));
+            int[re_bindings::RE_MAX_CAPTURES] caps_start @noinit;
+            int[re_bindings::RE_MAX_CAPTURES] caps_end @noinit;
 
             int result = re_bindings::re_run(
                 (*rx.extra_ptr()).regexp.regexp_data, input, input_len, 0,
@@ -1890,7 +1886,7 @@ fn void builtin_string_proto_replace(BuiltinContext* ctx) {
                 }
                 // position argument is the UTF-16 code-unit index, not the
                 // CESU-8 byte offset (out_start) used for slicing `input`.
-                TVal offset_tv; offset_tv.set_fastint((long)hstring::compute_charlen(input[:out_start]));
+                TVal offset_tv; offset_tv.set_fastint((long)s_hstr.byte_offset_to_char_offset((uint)out_start));
                 fn_args[arg_count++] = offset_tv;
                 fn_args[arg_count++].set_string(s_hstr);
                 TVal this_val; this_val.set_undefined();
@@ -1939,10 +1935,8 @@ fn void builtin_string_proto_replace(BuiltinContext* ctx) {
                 int out_start = 0;
                 int out_end = 0;
                 int out_num_captures = 0;
-                int[re_bindings::RE_MAX_CAPTURES] caps_start;
-                int[re_bindings::RE_MAX_CAPTURES] caps_end;
-                mem::clear(&caps_start, (sz)(re_bindings::RE_MAX_CAPTURES * int::size));
-                mem::clear(&caps_end, (sz)(re_bindings::RE_MAX_CAPTURES * int::size));
+                int[re_bindings::RE_MAX_CAPTURES] caps_start @noinit;
+                int[re_bindings::RE_MAX_CAPTURES] caps_end @noinit;
 
                 int result = re_bindings::re_run(
                     (*rx.extra_ptr()).regexp.regexp_data, input, input_len, search_pos,
@@ -1978,7 +1972,7 @@ fn void builtin_string_proto_replace(BuiltinContext* ctx) {
                     }
                     // position argument is the UTF-16 code-unit index, not
                     // the CESU-8 byte offset (out_start) used for slicing `input`.
-                    TVal offset_tv; offset_tv.set_fastint((long)hstring::compute_charlen(input[:out_start]));
+                    TVal offset_tv; offset_tv.set_fastint((long)s_hstr.byte_offset_to_char_offset((uint)out_start));
                     fn_args[arg_count++] = offset_tv;
                     fn_args[arg_count++].set_string(s_hstr);
                     TVal this_val; this_val.set_undefined();
@@ -2083,7 +2077,7 @@ fn void builtin_string_proto_replace(BuiltinContext* ctx) {
         fn_args[0].set_string(match_str);
         // position argument is the UTF-16 code-unit index, not the CESU-8
         // byte offset (found_pos) used for slicing `input`.
-        fn_args[1].set_fastint((long)hstring::compute_charlen(input[:found_pos]));
+        fn_args[1].set_fastint((long)s_hstr.byte_offset_to_char_offset((uint)found_pos));
         fn_args[2].set_string(s_hstr);
         TVal this_val; this_val.set_undefined();
         TVal res = ctx.heap.call_fn(ctx.vm, replace_val_str, &fn_args[0], 3, this_val);
@@ -2316,7 +2310,7 @@ fn void builtin_string_proto_replaceAll(BuiltinContext* ctx) {
             fn_args[0].set_string(search_hstr);
             // position argument is the UTF-16 code-unit index, not the
             // CESU-8 byte offset (pos) used for slicing `input`.
-            fn_args[1].set_fastint((long)hstring::compute_charlen(input[:pos]));
+            fn_args[1].set_fastint((long)s_hstr.byte_offset_to_char_offset((uint)pos));
             fn_args[2].set_string(s_hstr);
             TVal this_val; this_val.set_undefined();
             TVal res = ctx.heap.call_fn(ctx.vm, replace_val, &fn_args[0], 3, this_val);
