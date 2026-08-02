@@ -1423,6 +1423,60 @@ fn void builtin_array_proto_pop(BuiltinContext* ctx) {
     }
 
     ulong idx = len - 1;
+
+    // Fast path: read and clear the dense slot directly, skipping
+    // int_to_hstring + the named-property get/delete/[[Set]] machinery.
+    // Safe when the element can only ever live in the dense part: plain
+    // ARRAY, extensible, with a writable "length", idx within the
+    // dense-fast-path cap the VM's PUTPROP path also uses, and no own
+    // array-index key was ever promoted into the named table (that would
+    // shadow a dense slot with its own configurable/writable/enumerable
+    // flags, clearing the dense slot to a hole; see has_indexed_named_prop's
+    // doc comment for the exhaustive choke point that sets it). "length"
+    // commonly has its own named-table entry too (materialised by
+    // arr_set_length_or_throw, or present from array-literal creation);
+    // that is fine as long as it is not an accessor, but its stored TVal
+    // must be kept in sync below.
+    int len_own_idx_pop = obj.find_prop_idx(len_key_pop);
+    bool length_ok_pop = len_own_idx_pop < 0 || !obj.get_prop_flags((uint)len_own_idx_pop).is_accessor;
+    if (obj.get_class() == hobject::ObjClass.ARRAY
+        && obj.array_part() != null
+        && obj.flags.extensible
+        && obj.flags.array_len_writable
+        && idx < 0x1000000UL
+        && !obj.flags.has_indexed_named_prop
+        && length_ok_pop) {
+        uint idx32 = (uint)idx;
+        TVal elem_fast;
+        bool had_elem = idx32 < obj.array_size && !obj.array_part()[idx32].is_undefined();
+        if (had_elem) {
+            elem_fast = obj.array_part()[idx32];
+            // B30 fix: incref the popped element before clearing the slot.
+            if (elem_fast.is_heap_allocated() && elem_fast.get_heapptr() != null) {
+                ((types::HeapHeader*)elem_fast.get_heapptr()).incref();
+            }
+            // Clear in place: never grows the array, since idx32 < array_size
+            // here (unlike set_array_idx, which would grow to reach idx32
+            // for a hole that is already out of range and needs no clearing).
+            TVal undef_fast; undef_fast.set_undefined();
+            obj.set_array_idx(idx32, undef_fast);
+        } else {
+            elem_fast.set_undefined();
+        }
+        *obj.array_len_ptr() = (uint)idx;
+        if (len_own_idx_pop >= 0) {
+            TVal len_tv_pop;
+            if (idx <= (ulong)types::FASTINT_MAX) {
+                len_tv_pop.set_fastint((long)idx);
+            } else {
+                len_tv_pop.set_number((double)idx);
+            }
+            obj.prop_values()[len_own_idx_pop] = len_tv_pop;
+        }
+        *ctx.result = elem_fast;
+        return;
+    }
+
     TVal elem;
     bool present = arr_get_elem_vm(obj, idx, ctx.heap, ctx, &elem);
     if (ctx.should_throw) { ctx.result.set_undefined(); return; }
@@ -1469,6 +1523,89 @@ fn void builtin_array_proto_push(BuiltinContext* ctx) {
         return;
     }
 
+    ulong new_len = len + (ulong)ctx.argc;
+
+    // Fast path: append straight into the dense array part, skipping the
+    // per-element int_to_hstring + named-property [[Set]] machinery. Only
+    // safe when every element of [[Set]] besides "write the receiver's own
+    // data slot" is guaranteed to be a no-op:
+    //   - plain ARRAY (not Proxy/TypedArray/ARGUMENTS), extensible, with a
+    //     live dense part (seal/freeze abandon it, so its presence already
+    //     rules those out) and a writable, unshadowed "length".
+    //   - no own array-index key was ever promoted into the named table on
+    //     the receiver. Every write target here is >= the current length,
+    //     and a promoted index is always < length (and disappears from the
+    //     named table entirely if length later shrinks past it, verified
+    //     against quickjs), so this can't be hit by construction, but the
+    //     check is a free (O(1), sticky flag) second line of defense should
+    //     that invariant ever have an exception this reasoning missed.
+    //   - the target range stays under the same 2^24 cap the VM's PUTPROP
+    //     dense fast path uses (see vm_property.c3), so idx <= new_len-1
+    //     never grows past it.
+    //   - no object in the prototype chain could intercept the write: an
+    //     inherited accessor or non-configurable data property at one of
+    //     these (necessarily new, since push only appends) indices must
+    //     take priority over CreateDataProperty on the receiver.
+    if (ctx.argc > 0
+        && obj.get_class() == hobject::ObjClass.ARRAY
+        && obj.array_part() != null
+        && obj.flags.extensible
+        && obj.flags.array_len_writable
+        && !obj.flags.has_indexed_named_prop
+        && new_len < 0xFFFFFFFFUL && new_len <= 0x1000000UL) {
+        // "length" is usually authoritative via array_len_ptr even when it
+        // also has a named-table entry (see array_get_length_raw), EXCEPT
+        // when that entry is an accessor: defineProperty can replace length
+        // with a getter/setter pair without clearing array_len_writable.
+        // A plain data-property entry can also exist (e.g. once
+        // arr_set_length_or_throw has materialised one), and its stored
+        // TVal must stay in sync too, since defineProperty / for-in / the
+        // shape-hash and anything else reading prop_values() directly
+        // (rather than through array_get_length_raw) would otherwise see a
+        // stale value.
+        HString* len_key_fast = (HString*)ctx.heap.strs[heap::BuiltinStr.LENGTH];
+        int len_own_idx = obj.find_prop_idx(len_key_fast);
+        bool length_ok = len_own_idx < 0 || !obj.get_prop_flags((uint)len_own_idx).is_accessor;
+        if (length_ok
+            && (obj.prototype == null || proto_chain_has_no_indexed_props(obj.prototype))) {
+            bool fast_ok = true;
+            for (ushort i = 0; i < ctx.argc; i++) {
+                TVal arg = ctx.regs[ctx.base_reg + i];
+                if (!obj.set_array_idx((uint)(len + (ulong)i), arg)) {
+                    fast_ok = false;
+                    break;
+                }
+            }
+            if (fast_ok) {
+                *obj.array_len_ptr() = (uint)new_len;
+                if (len_own_idx >= 0) {
+                    TVal len_tv_fast;
+                    if (new_len <= (ulong)types::FASTINT_MAX) {
+                        len_tv_fast.set_fastint((long)new_len);
+                    } else {
+                        len_tv_fast.set_number((double)new_len);
+                    }
+                    obj.prop_values()[len_own_idx] = len_tv_fast;
+                }
+                if (new_len <= (ulong)types::FASTINT_MAX) {
+                    ctx.result.set_fastint((long)new_len);
+                } else {
+                    ctx.result.set_number((double)new_len);
+                }
+                return;
+            }
+            // set_array_idx only fails here on allocation failure while
+            // growing the dense backing store (the 2^24 cap above already
+            // rules out its own overflow guard). Earlier elements in this
+            // call may already have landed; falling through would re-run
+            // array_set_elem_ulong_set from element 0 and double-write them,
+            // so just report the OOM directly.
+            arr_throw_range_error(ctx, "Array.prototype.push out of memory");
+            ctx.result.set_undefined();
+            return;
+        }
+    }
+
     // Step 5: write each element (spec uses Set, which walks proto chain).
     for (ushort i = 0; i < ctx.argc; i++) {
         TVal arg = ctx.regs[ctx.base_reg + i];
@@ -1479,7 +1616,6 @@ fn void builtin_array_proto_push(BuiltinContext* ctx) {
     }
 
     // Step 6: Set(O, "length", new_len, true), throws if length is not writable.
-    ulong new_len = len + (ulong)ctx.argc;
     HString* len_key = (HString*)ctx.heap.strs[heap::BuiltinStr.LENGTH];
     if (!arr_set_length_or_throw(ctx, obj, len_key, new_len)) {
         ctx.result.set_undefined();
@@ -3850,6 +3986,28 @@ fn bool array_delete_elem_ulong_checked(BuiltinContext* ctx, HObject* obj, ulong
     HString* key = ctx.heap.int_to_hstring((long)idx);
     if (key != null) {
         obj.delete_prop(key);
+    }
+    return true;
+}
+
+/// True when no object in `proto`'s chain (inclusive) could intercept an
+/// indexed [[Set]]: no Proxy exotic, and no own property whose key is an
+/// array index (named table or dense array part). Writing a brand-new index
+/// on the receiver only skips the general [[Set]] walk safely when this
+/// holds, since OrdinarySet must otherwise consult an inherited accessor or
+/// data descriptor before falling back to CreateDataProperty on the receiver.
+/// has_indexed_named_prop (O(1), sticky) answers the named-table half;
+/// array_used > 0 answers the dense half, since a prototype can itself be a
+/// plain ARRAY with live dense elements that never touch the named table.
+fn bool proto_chain_has_no_indexed_props(HObject* proto) {
+    HObject* cur = proto;
+    uint depth = 0;
+    while (cur != null && depth < hobject::MAX_PROTO_DEPTH) {
+        if (cur.flags.exotic_proxyobj) return false;
+        if (cur.array_part() != null && cur.array_used > 0) return false;
+        if (cur.flags.has_indexed_named_prop) return false;
+        cur = cur.prototype;
+        depth++;
     }
     return true;
 }

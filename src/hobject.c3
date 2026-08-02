@@ -276,6 +276,18 @@ bitstruct ObjFlags : uint {
     /// Reflect.deleteProperty, [[Set]], and [[Delete]]. Plain [[Get]] still runs
     /// through the accessors, which already throw a ReferenceError on TDZ.
     bool exotic_module_ns : 28;
+    /// Set the first time an array-index key (e.g. "2") is installed in this
+    /// object's named property table, on any class. For an exotic array this
+    /// usually means some index now lives only in the named table, with its
+    /// own configurable/writable/enumerable flags, rather than the dense part
+    /// (see builtin_object_defineProperty's "dense array promotion", which
+    /// clears the dense slot at the same index once it promotes it); for a
+    /// plain object every numeric-looking key is a named property to begin
+    /// with. Never cleared, so it is conservative like has_nondefault_flags:
+    /// array push/pop fast paths use it (both on the receiver and while
+    /// walking its prototype chain) to skip an O(prop_count) scan of every
+    /// named key in the common case where no index was ever installed there.
+    bool has_indexed_named_prop : 29;
 }
 
 /// Sets the temproot flag on this object.
@@ -1443,6 +1455,27 @@ fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags) {
         }
     }
     self.prop_count++;
+
+    // This is the one place a new named-table slot is created (prop_count is
+    // incremented nowhere else), so it is the exhaustive choke point for
+    // detecting an array-index key entering the named table: some dense-array
+    // fast path (push/pop and anything else that trusts array_part() as the
+    // sole source of truth for in-range indices) may need to know a
+    // particular index no longer lives only there. Tracked for every class,
+    // not just exotic arrays: a plain object has no dense part of its own,
+    // but can sit on an array's prototype chain, where an indexed data or
+    // accessor property must still take priority over CreateDataProperty on
+    // a receiver that appends past its own length (e.g. Array.prototype.push
+    // walking the chain to decide whether a new index is truly unclaimed).
+    // The array-index case above returns early without reaching here for the
+    // common densely-written index on an exotic array, so for those this
+    // only fires for indices dense_index_ok rejected or an explicit
+    // named-table promotion (see e.g. Object.defineProperty's "dense array
+    // promotion", which follows by clearing the dense slot).
+    HString* new_key_hs = (HString*)key;
+    if (new_key_hs.is_arridx()) {
+        self.flags.has_indexed_named_prop = true;
+    }
 
     // Same length and dense-part syncing as the update path above.
     if (self.flags.exotic_array && key == builtin_length_key) {
