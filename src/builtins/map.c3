@@ -227,10 +227,10 @@ fn void builtin_map_iterator_next(BuiltinContext* ctx) {
         result.prototype = null;
         TVal undef; undef.set_undefined();
         HString* value_key = (HString*)heap.strs[heap::BuiltinStr.VALUE];
-        result.put_prop(value_key, undef, hobject::PROP_FLAGS_WEC);
+        result.put_prop(value_key, undef, hobject::PROP_FLAGS_WEC, ctx.heap);
         HString* done_key = (HString*)heap.strs[heap::BuiltinStr.DONE];
         TVal done_tv; done_tv.set_boolean(true);
-        result.put_prop(done_key, done_tv, hobject::PROP_FLAGS_WEC);
+        result.put_prop(done_key, done_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
         ctx.result.set_object(result);
         return;
     }
@@ -263,14 +263,14 @@ fn void builtin_map_iterator_next(BuiltinContext* ctx) {
                 HObject*? pair_raw = heap.alloc_object(hobject::ObjClass.ARRAY);
                 if (try pair = pair_raw) {
                     pair.prototype = heap.array_proto;
-                    pair.set_array_idx(0, entries[slot_idx]);
-                    pair.set_array_idx(1, entries[slot_idx + 1]);
+                    pair.set_array_idx(0, entries[slot_idx], ctx.heap);
+                    pair.set_array_idx(1, entries[slot_idx + 1], ctx.heap);
                     pair.array_used = 2;
                     HString* len_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
                     if (len_key != null) {
                         TVal len_tv;
                         len_tv.set_fastint(2);
-                        pair.put_prop(len_key, len_tv, hobject::PROP_FLAGS_WEC);
+                        pair.put_prop(len_key, len_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
                     }
                     value.set_object(pair);
                 }
@@ -295,12 +295,12 @@ fn void builtin_map_iterator_next(BuiltinContext* ctx) {
     result.prototype = null;
 
     HString* value_key = (HString*)heap.strs[heap::BuiltinStr.VALUE];
-    result.put_prop(value_key, value, hobject::PROP_FLAGS_WEC);
+    result.put_prop(value_key, value, hobject::PROP_FLAGS_WEC, ctx.heap);
 
     HString* done_key = (HString*)heap.strs[heap::BuiltinStr.DONE];
     TVal done_tv;
     done_tv.set_boolean(done);
-    result.put_prop(done_key, done_tv, hobject::PROP_FLAGS_WEC);
+    result.put_prop(done_key, done_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
 
     ctx.result.set_object(result);
 }
@@ -330,7 +330,7 @@ fn void builtin_map_proto_forEach(BuiltinContext* ctx) {
             TVal msg_val;
             msg_val.set_string(msg_str);
             HString* msg_key = ctx.heap.str(heap::BuiltinStr.MESSAGE);
-            err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WC);
+            err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WC, ctx.heap);
         }
         ctx.should_throw = true;
         ctx.throw_value.set_object(err);
@@ -431,9 +431,9 @@ fn bool register_map_constructor(EnvRecord* global_env, Heap* heap) {
         HString* iter_sym = ensure_iterator_symbol(heap);
         HString* entries_key = builtin_intern_string(heap, "entries");
         if (iter_sym != null && entries_key != null) {
-            PropValue*? entries_prop_opt = proto.find_prop(entries_key);
+            PropValue*? entries_prop_opt = proto.find_prop(entries_key, heap);
             if (try entries_prop = entries_prop_opt) {
-                proto.put_prop(iter_sym, *entries_prop, hobject::PROP_FLAGS_WC);
+                proto.put_prop(iter_sym, *entries_prop, hobject::PROP_FLAGS_WC, heap);
             }
         }
     }
@@ -443,7 +443,7 @@ fn bool register_map_constructor(EnvRecord* global_env, Heap* heap) {
     if (tag_key != null) {
         TVal tag_tv;
         tag_tv.set_string(builtin_intern_string(heap, "Map"));
-        proto.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC);
+        proto.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC, heap);
     }
 
     // Register .size as a getter accessor property (ES6 §23.1.3.10)
@@ -463,13 +463,13 @@ fn bool register_map_constructor(EnvRecord* global_env, Heap* heap) {
                 TVal name_tv;
                 name_tv.set_string(name_str);
                 HString* name_key = heap.str(heap::BuiltinStr.NAME);
-                fn_obj.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC);
+                fn_obj.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC, heap);
             }
             HString* length_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
             if (length_key != null) {
                 TVal len_tv;
                 len_tv.set_fastint(0);
-                fn_obj.put_prop(length_key, len_tv, hobject::PROP_FLAGS_NWC);
+                fn_obj.put_prop(length_key, len_tv, hobject::PROP_FLAGS_NWC, heap);
             }
             TVal getter_tv;
             getter_tv.set_object(fn_obj);
@@ -480,7 +480,7 @@ fn bool register_map_constructor(EnvRecord* global_env, Heap* heap) {
             acc_flags.enumerable = false;
             acc_flags.configurable = true;
             acc_flags.is_accessor = true;
-            proto.put_prop(size_key, hobject::hobject_create_accessors(heap, getter_tv, undef), acc_flags);
+            proto.put_prop(size_key, hobject::hobject_create_accessors(heap, getter_tv, undef), acc_flags, heap);
         }
     }
 
@@ -495,7 +495,7 @@ fn bool register_map_constructor(EnvRecord* global_env, Heap* heap) {
     HString* constructor_key = (HString*)heap.strs[heap::BuiltinStr.CONSTRUCTOR];
     TVal constructor_tv;
     constructor_tv.set_object(ctor);
-    proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_WC);
+    proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Set Map.prototype on the constructor (non-writable, non-enumerable, non-configurable)
     HString* prototype_key = (HString*)heap.strs[heap::BuiltinStr.PROTOTYPE];
@@ -506,13 +506,13 @@ fn bool register_map_constructor(EnvRecord* global_env, Heap* heap) {
     proto_pflags.enumerable = false;
     proto_pflags.configurable = false;
     proto_pflags.is_accessor = false;
-    ctor.put_prop(prototype_key, proto_tv, proto_pflags);
+    ctor.put_prop(prototype_key, proto_tv, proto_pflags, heap);
 
     // Set Map.length
     HString* length_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
     TVal length_tv;
     length_tv.set_fastint(0);
-    ctor.put_prop(length_key, length_tv, hobject::PROP_FLAGS_NWC);
+    ctor.put_prop(length_key, length_tv, hobject::PROP_FLAGS_NWC, heap);
 
     // Map[Symbol.species] accessor, ES6 §23.1.2.2: getter returns `this`.
     {
@@ -528,12 +528,12 @@ fn bool register_map_constructor(EnvRecord* global_env, Heap* heap) {
                 HString* getter_name_str = builtin_intern_string(heap, "get [Symbol.species]");
                 if (getter_name_key != null && getter_name_str != null) {
                     TVal gn_tv; gn_tv.set_string(getter_name_str);
-                    getter.put_prop(getter_name_key, gn_tv, hobject::PROP_FLAGS_NWC);
+                    getter.put_prop(getter_name_key, gn_tv, hobject::PROP_FLAGS_NWC, heap);
                 }
                 HString* getter_len_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
                 if (getter_len_key != null) {
                     TVal gl_tv; gl_tv.set_fastint(0);
-                    getter.put_prop(getter_len_key, gl_tv, hobject::PROP_FLAGS_NWC);
+                    getter.put_prop(getter_len_key, gl_tv, hobject::PROP_FLAGS_NWC, heap);
                 }
                 TVal getter_tv; getter_tv.set_object(getter);
                 TVal undef_tv; undef_tv.set_undefined();
@@ -542,7 +542,7 @@ fn bool register_map_constructor(EnvRecord* global_env, Heap* heap) {
                 acc_flags.enumerable = false;
                 acc_flags.configurable = true;
                 acc_flags.is_accessor = true;
-                ctor.put_prop(species_sym, hobject::hobject_create_accessors(heap, getter_tv, undef_tv), acc_flags);
+                ctor.put_prop(species_sym, hobject::hobject_create_accessors(heap, getter_tv, undef_tv), acc_flags, heap);
             }
         }
     }
@@ -552,7 +552,7 @@ fn bool register_map_constructor(EnvRecord* global_env, Heap* heap) {
     if (groupby_key == null) return false;
     TVal groupby_tv;
     groupby_tv.set_lightfunc((void*)(usz)Builtin.MAP_GROUPBY.ordinal);
-    ctor.put_prop(groupby_key, groupby_tv, hobject::PROP_FLAGS_WC);
+    ctor.put_prop(groupby_key, groupby_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Map.prototype's [[Prototype]] is set later (to Object.prototype)
 

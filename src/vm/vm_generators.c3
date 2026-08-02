@@ -70,8 +70,8 @@ fn bool ag_suspend_on_await(Dispatch* ds, GeneratorState* gs, HObject* await_obj
     TVal agj_tv; agj_tv.set_object(ag_reject_fn);
     HString* ag_ff = builtins::builtin_intern_string(vm.heap, "onFulfilled");
     HString* ag_rj = builtins::builtin_intern_string(vm.heap, "onRejected");
-    if (ag_ff != null) ag_rxn.put_prop(ag_ff, agr_tv, hobject::PROP_FLAGS_WEC);
-    if (ag_rj != null) ag_rxn.put_prop(ag_rj, agj_tv, hobject::PROP_FLAGS_WEC);
+    if (ag_ff != null) ag_rxn.put_prop(ag_ff, agr_tv, hobject::PROP_FLAGS_WEC, ds.vm.heap);
+    if (ag_rj != null) ag_rxn.put_prop(ag_rj, agj_tv, hobject::PROP_FLAGS_WEC, ds.vm.heap);
     builtins::promise_add_reaction(await_obj, ag_rxn, vm.heap);
     if (await_was_settled) {
         builtins::promise_trigger_reactions(await_obj, vm.heap, (void*)vm);
@@ -123,7 +123,7 @@ fn bool ays_is_callable(TVal v) {
 fn TVal ays_get_prop(Vm* vm, HObject* obj, HString* key, bool* err) {
     *err = false;
     TVal out; out.set_undefined();
-    hobject::PropLookupResult res = obj.get_prop_or_accessor_proto(key, true);
+    hobject::PropLookupResult res = obj.get_prop_or_accessor_proto(key, true, vm.heap);
     if (res.kind == hobject::PropLookupKind.PROP_ACCESSOR) {
         TVal acc_fn = res.acc.accessor_fn;
         if (!acc_fn.is_undefined() && !acc_fn.is_null()) {
@@ -238,7 +238,7 @@ fn bool ays_throw_type(Dispatch* ds, GeneratorState* gs, char[] msg) {
     te.prototype = vm.heap.type_err_proto;
     HString* mk = (HString*)vm.heap.strs[heap::BuiltinStr.MESSAGE];
     TVal mv; mv.set_string(intern_string(vm, msg));
-    if (mk != null) te.put_prop(mk, mv, hobject::PROP_FLAGS_WEC);
+    if (mk != null) te.put_prop(mk, mv, hobject::PROP_FLAGS_WEC, ds.vm.heap);
     TVal tv; tv.set_object(te);
     return ays_throw_into_body(ds, gs, tv);
 }
@@ -264,10 +264,10 @@ fn void ays_do_yield(Dispatch* ds, GeneratorState* gs, TVal value) {
     if (try robj = robj_raw) {
         robj.prototype = vm.heap.object_proto;
         HString* vk = (HString*)vm.heap.strs[heap::BuiltinStr.VALUE];
-        if (vk != null) robj.put_prop(vk, value, hobject::PROP_FLAGS_WEC);
+        if (vk != null) robj.put_prop(vk, value, hobject::PROP_FLAGS_WEC, ds.vm.heap);
         HString* dk = (HString*)vm.heap.strs[heap::BuiltinStr.DONE];
         TVal df; df.set_boolean(false);
-        if (dk != null) robj.put_prop(dk, df, hobject::PROP_FLAGS_WEC);
+        if (dk != null) robj.put_prop(dk, df, hobject::PROP_FLAGS_WEC, ds.vm.heap);
         wrapped.set_object(robj);
     } else {
         wrapped = value;
@@ -719,8 +719,8 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 rxn.prototype = vm.heap.object_proto;
                 HString* ff_key = builtins::builtin_intern_string(vm.heap, "onFulfilled");
                 HString* rj_key = builtins::builtin_intern_string(vm.heap, "onRejected");
-                if (ff_key != null) rxn.put_prop(ff_key, resume_tv, hobject::PROP_FLAGS_WEC);
-                if (rj_key != null) rxn.put_prop(rj_key, reject_tv, hobject::PROP_FLAGS_WEC);
+                if (ff_key != null) rxn.put_prop(ff_key, resume_tv, hobject::PROP_FLAGS_WEC, ds.vm.heap);
+                if (rj_key != null) rxn.put_prop(rj_key, reject_tv, hobject::PROP_FLAGS_WEC, ds.vm.heap);
                 builtins::promise_add_reaction(await_obj, rxn, vm.heap);
                 if (await_was_settled) {
                     // Promise was already fulfilled/rejected: enqueue the
@@ -957,11 +957,11 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     if (try robj = robj_raw) {
                         robj.prototype = vm.heap.object_proto;
                         HString* val_key = (HString*)vm.heap.strs[heap::BuiltinStr.VALUE];
-                        if (val_key != null) robj.put_prop(val_key, gs.return_value, hobject::PROP_FLAGS_WEC);
+                        if (val_key != null) robj.put_prop(val_key, gs.return_value, hobject::PROP_FLAGS_WEC, ds.vm.heap);
                         HString* done_key = (HString*)vm.heap.strs[heap::BuiltinStr.DONE];
                         TVal done_val;
                         done_val.set_boolean(true);
-                        if (done_key != null) robj.put_prop(done_key, done_val, hobject::PROP_FLAGS_WEC);
+                        if (done_key != null) robj.put_prop(done_key, done_val, hobject::PROP_FLAGS_WEC, ds.vm.heap);
                         wrapped_val.set_object(robj);
                     } else {
                         wrapped_val = gs.return_value;
@@ -1018,11 +1018,11 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 if (try robj = result_obj_raw) {
                     robj.prototype = vm.heap.object_proto;
                     HString* val_key = (HString*)vm.heap.strs[heap::BuiltinStr.VALUE];
-                    if (val_key != null) robj.put_prop(val_key, vm.heap.yield_value, hobject::PROP_FLAGS_WEC);
+                    if (val_key != null) robj.put_prop(val_key, vm.heap.yield_value, hobject::PROP_FLAGS_WEC, ds.vm.heap);
                     HString* done_key = (HString*)vm.heap.strs[heap::BuiltinStr.DONE];
                     TVal done_val;
                     done_val.set_boolean(false);
-                    if (done_key != null) robj.put_prop(done_key, done_val, hobject::PROP_FLAGS_WEC);
+                    if (done_key != null) robj.put_prop(done_key, done_val, hobject::PROP_FLAGS_WEC, ds.vm.heap);
                     wrapped_val.set_object(robj);
                 } else {
                     wrapped_val = vm.heap.yield_value;
@@ -1101,7 +1101,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     TVal throw_method; throw_method.set_undefined();
                     bool throw_has_method = false;
                     {
-                        hobject::PropLookupResult thr_res = iterator.get_prop_or_accessor_proto(throw_key, true);
+                        hobject::PropLookupResult thr_res = iterator.get_prop_or_accessor_proto(throw_key, true, ds.vm.heap);
                         if (thr_res.kind == hobject::PropLookupKind.PROP_ACCESSOR) {
                             TVal acc_fn = thr_res.acc.accessor_fn;
                             if (!acc_fn.is_undefined() && !acc_fn.is_null()) {
@@ -1138,7 +1138,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                         HString* ret_key_ic = intern_string(vm, "return");
                         bool ric_break = false;
                         {
-                            hobject::PropLookupResult ret_ic_res = iterator.get_prop_or_accessor_proto(ret_key_ic, true);
+                            hobject::PropLookupResult ret_ic_res = iterator.get_prop_or_accessor_proto(ret_key_ic, true, vm.heap);
                             TVal ret_ic_method; ret_ic_method.set_undefined();
                             bool ret_ic_callable = false;
                             if (ret_ic_res.kind == hobject::PropLookupKind.PROP_ACCESSOR) {
@@ -1225,7 +1225,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     HString* vk = (HString*)vm.heap.strs[heap::BuiltinStr.VALUE];
                     bool td = false;
                     {
-                        hobject::PropLookupResult td_res = tro.get_prop_or_accessor_proto(dk, true);
+                        hobject::PropLookupResult td_res = tro.get_prop_or_accessor_proto(dk, true, ds.vm.heap);
                         TVal td_val; td_val.set_undefined();
                         if (td_res.kind == hobject::PropLookupKind.PROP_ACCESSOR) {
                             TVal acc_fn3 = td_res.acc.accessor_fn;
@@ -1253,7 +1253,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                         // done=true: read value and return it as the yield* result
                         TVal tv; tv.set_undefined();
                         {
-                            hobject::PropLookupResult tv_res = tro.get_prop_or_accessor_proto(vk, true);
+                            hobject::PropLookupResult tv_res = tro.get_prop_or_accessor_proto(vk, true, ds.vm.heap);
                             if (tv_res.kind == hobject::PropLookupKind.PROP_ACCESSOR) {
                                 TVal acc_fn4 = tv_res.acc.accessor_fn;
                                 if (!acc_fn4.is_undefined() && !acc_fn4.is_null()) {
@@ -1284,7 +1284,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     TVal ret_method; ret_method.set_undefined();
                     bool ret_has_method = false;
                     {
-                        hobject::PropLookupResult ret_res = iterator.get_prop_or_accessor_proto(ret_key, true);
+                        hobject::PropLookupResult ret_res = iterator.get_prop_or_accessor_proto(ret_key, true, ds.vm.heap);
                         if (ret_res.kind == hobject::PropLookupKind.PROP_ACCESSOR) {
                             TVal acc_fn5 = ret_res.acc.accessor_fn;
                             if (!acc_fn5.is_undefined() && !acc_fn5.is_null()) {
@@ -1366,7 +1366,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     HString* vk2 = (HString*)vm.heap.strs[heap::BuiltinStr.VALUE];
                     bool rd = false;
                     {
-                        hobject::PropLookupResult rd_res = rro2.get_prop_or_accessor_proto(dk2, true);
+                        hobject::PropLookupResult rd_res = rro2.get_prop_or_accessor_proto(dk2, true, ds.vm.heap);
                         TVal rd_val; rd_val.set_undefined();
                         if (rd_res.kind == hobject::PropLookupKind.PROP_ACCESSOR) {
                             TVal acc_fn6 = rd_res.acc.accessor_fn;
@@ -1394,7 +1394,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                         // ES2020 §14.4.14 step 5.c.ii.7, done=true: read the value and return it.
                         TVal rv2; rv2.set_undefined();
                         {
-                            hobject::PropLookupResult rv2_res = rro2.get_prop_or_accessor_proto(vk2, true);
+                            hobject::PropLookupResult rv2_res = rro2.get_prop_or_accessor_proto(vk2, true, ds.vm.heap);
                             if (rv2_res.kind == hobject::PropLookupKind.PROP_ACCESSOR) {
                                 TVal acc_fn7b = rv2_res.acc.accessor_fn;
                                 if (!acc_fn7b.is_undefined() && !acc_fn7b.is_null()) {
@@ -1459,13 +1459,13 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     hobject::PropLookupResult im_res;
                     im_res.kind = hobject::PropLookupKind.PROP_NOT_FOUND;
                     if (iterable_val.is_object() && iterable_val.get_heapptr() != null) {
-                        im_res = ((HObject*)iterable_val.get_heapptr()).get_prop_or_accessor_proto(iter_sym, true);
+                        im_res = ((HObject*)iterable_val.get_heapptr()).get_prop_or_accessor_proto(iter_sym, true, ds.vm.heap);
                     } else if (iterable_val.is_string() && vm.heap.string_proto != null) {
-                        im_res = vm.heap.string_proto.get_prop_or_accessor_proto(iter_sym, true);
+                        im_res = vm.heap.string_proto.get_prop_or_accessor_proto(iter_sym, true, ds.vm.heap);
                     } else if (iterable_val.is_boolean() && vm.heap.bool_proto != null) {
-                        im_res = vm.heap.bool_proto.get_prop_or_accessor_proto(iter_sym, true);
+                        im_res = vm.heap.bool_proto.get_prop_or_accessor_proto(iter_sym, true, ds.vm.heap);
                     } else if ((iterable_val.is_number() || iterable_val.is_fastint()) && vm.heap.number_proto != null) {
-                        im_res = vm.heap.number_proto.get_prop_or_accessor_proto(iter_sym, true);
+                        im_res = vm.heap.number_proto.get_prop_or_accessor_proto(iter_sym, true, ds.vm.heap);
                     }
                     if (im_res.kind == hobject::PropLookupKind.PROP_ACCESSOR) {
                         TVal acc_fn8 = im_res.acc.accessor_fn;
@@ -1529,7 +1529,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 // Get the .next method, with accessor support.
                 TVal nm; nm.set_undefined(); bool nm_callable = false;
                 {
-                    hobject::PropLookupResult nk_res = iterator.get_prop_or_accessor_proto(nk, true);
+                    hobject::PropLookupResult nk_res = iterator.get_prop_or_accessor_proto(nk, true, ds.vm.heap);
                     if (nk_res.kind == hobject::PropLookupKind.PROP_ACCESSOR) {
                         TVal acc_fn9 = nk_res.acc.accessor_fn;
                         if (!acc_fn9.is_undefined() && !acc_fn9.is_null()) {
@@ -1582,7 +1582,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 // Read done with accessor support
                 bool nd = false;
                 {
-                    hobject::PropLookupResult nd_res = nro.get_prop_or_accessor_proto(dk3, true);
+                    hobject::PropLookupResult nd_res = nro.get_prop_or_accessor_proto(dk3, true, ds.vm.heap);
                     TVal nd_val; nd_val.set_undefined();
                     if (nd_res.kind == hobject::PropLookupKind.PROP_ACCESSOR) {
                         TVal acc_fnA = nd_res.acc.accessor_fn;
@@ -1608,7 +1608,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     // done=true: read value (IteratorValue) and return it as yield* result
                     TVal nv; nv.set_undefined();
                     {
-                        hobject::PropLookupResult nv_res = nro.get_prop_or_accessor_proto(vk3, true);
+                        hobject::PropLookupResult nv_res = nro.get_prop_or_accessor_proto(vk3, true, ds.vm.heap);
                         if (nv_res.kind == hobject::PropLookupKind.PROP_ACCESSOR) {
                             TVal acc_fnB = nv_res.acc.accessor_fn;
                             if (!acc_fnB.is_undefined() && !acc_fnB.is_null()) {
@@ -1665,9 +1665,9 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                         if (try p_robj = p_robj_raw) {
                             p_robj.prototype = vm.heap.object_proto;
                             HString* p_vk = (HString*)vm.heap.strs[heap::BuiltinStr.VALUE];
-                            if (p_vk != null) p_robj.put_prop(p_vk, received_val, hobject::PROP_FLAGS_WEC);
+                            if (p_vk != null) p_robj.put_prop(p_vk, received_val, hobject::PROP_FLAGS_WEC, ds.vm.heap);
                             HString* p_dk = (HString*)vm.heap.strs[heap::BuiltinStr.DONE]; TVal p_dt; p_dt.set_boolean(false);
-                            if (p_dk != null) p_robj.put_prop(p_dk, p_dt, hobject::PROP_FLAGS_WEC); p_wrapped.set_object(p_robj);
+                            if (p_dk != null) p_robj.put_prop(p_dk, p_dt, hobject::PROP_FLAGS_WEC, ds.vm.heap); p_wrapped.set_object(p_robj);
                         } else { p_wrapped = received_val; }
                     }
                     // retval is null when this activation was entered via the
@@ -2032,7 +2032,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
             if (gen_obj_g != null && gs.func_obj != null) {
                 HObject* func_obj_g = (HObject*)gs.func_obj;
                 HString* gen_proto_key_g = (HString*)vm.heap.strs[heap::BuiltinStr.PROTOTYPE];
-                TVal? gen_proto_val_g = func_obj_g.get_prop_proto(gen_proto_key_g);
+                TVal? gen_proto_val_g = func_obj_g.get_prop_proto(gen_proto_key_g, ds.vm.heap);
                 HObject* gen_proto_fallback = (gs.is_async_gen && vm.heap.async_generator_proto != null)
                     ? vm.heap.async_generator_proto : vm.heap.generator_proto;
                 if (try gpv_g = gen_proto_val_g) {

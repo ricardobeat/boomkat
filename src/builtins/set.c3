@@ -276,9 +276,9 @@ fn HObject* set_new_result(BuiltinContext* ctx) {
 /// the has-check other than the caller's own dedup responsibility), used
 /// when the caller already knows the value isn't a duplicate (union copy,
 /// fresh Set with only unique values found so far).
-fn void set_result_append(HObject* result, TVal value) {
+fn void set_result_append(HObject* result, TVal value, Heap* h) {
     uint idx = result.array_used;
-    result.set_array_idx(idx, value);
+    result.set_array_idx(idx, value, h);
     if (result.array_used <= idx) result.array_used = (uint)(idx + 1);
 }
 
@@ -294,7 +294,7 @@ fn HObject* set_copy_live_entries(BuiltinContext* ctx, HObject* set) {
     if (arr != null) {
         for (uint i = 0; i < used; i++) {
             if (arr[i].is_deleted()) continue;
-            set_result_append(result, arr[i]);
+            set_result_append(result, arr[i], ctx.heap);
         }
     }
     return result;
@@ -469,10 +469,10 @@ fn void builtin_set_iterator_next(BuiltinContext* ctx) {
         result.prototype = null;
         TVal undef; undef.set_undefined();
         HString* value_key = (HString*)heap.strs[heap::BuiltinStr.VALUE];
-        result.put_prop(value_key, undef, hobject::PROP_FLAGS_WEC);
+        result.put_prop(value_key, undef, hobject::PROP_FLAGS_WEC, ctx.heap);
         HString* done_key = (HString*)heap.strs[heap::BuiltinStr.DONE];
         TVal done_tv; done_tv.set_boolean(true);
-        result.put_prop(done_key, done_tv, hobject::PROP_FLAGS_WEC);
+        result.put_prop(done_key, done_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
         ctx.result.set_object(result);
         return;
     }
@@ -504,14 +504,14 @@ fn void builtin_set_iterator_next(BuiltinContext* ctx) {
                 HObject*? pair_raw = heap.alloc_object(hobject::ObjClass.ARRAY);
                 if (try pair = pair_raw) {
                     pair.prototype = heap.array_proto;
-                    pair.set_array_idx(0, item);
-                    pair.set_array_idx(1, item);
+                    pair.set_array_idx(0, item, ctx.heap);
+                    pair.set_array_idx(1, item, ctx.heap);
                     pair.array_used = 2;
                     HString* len_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
                     if (len_key != null) {
                         TVal len_tv;
                         len_tv.set_fastint(2);
-                        pair.put_prop(len_key, len_tv, hobject::PROP_FLAGS_WEC);
+                        pair.put_prop(len_key, len_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
                     }
                     value.set_object(pair);
                 }
@@ -536,12 +536,12 @@ fn void builtin_set_iterator_next(BuiltinContext* ctx) {
     result.prototype = null;
 
     HString* value_key = (HString*)heap.strs[heap::BuiltinStr.VALUE];
-    result.put_prop(value_key, value, hobject::PROP_FLAGS_WEC);
+    result.put_prop(value_key, value, hobject::PROP_FLAGS_WEC, ctx.heap);
 
     HString* done_key = (HString*)heap.strs[heap::BuiltinStr.DONE];
     TVal done_tv;
     done_tv.set_boolean(done);
-    result.put_prop(done_key, done_tv, hobject::PROP_FLAGS_WEC);
+    result.put_prop(done_key, done_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
 
     ctx.result.set_object(result);
 }
@@ -636,7 +636,7 @@ fn void builtin_set_proto_union(BuiltinContext* ctx) {
         if (done) break;
         next_value = set_normalize_neg_zero(next_value);
         if (set_find_value(result, next_value) < 0) {
-            set_result_append(result, next_value);
+            set_result_append(result, next_value, ctx.heap);
         }
     }
 
@@ -670,7 +670,7 @@ fn void builtin_set_proto_intersection(BuiltinContext* ctx) {
         while (set_live_walk_next(&walk, &elem)) {
             bool has = set_record_has(ctx, &rec, elem);
             if (ctx.should_throw) { ctx.result.set_undefined(); return; }
-            if (has && set_find_value(result, elem) < 0) set_result_append(result, elem);
+            if (has && set_find_value(result, elem) < 0) set_result_append(result, elem, ctx.heap);
             set_live_walk_resample(&walk);
         }
     } else {
@@ -685,7 +685,7 @@ fn void builtin_set_proto_intersection(BuiltinContext* ctx) {
             if (done) break;
             next_value = set_normalize_neg_zero(next_value);
             if (set_find_value(set, next_value) >= 0 && set_find_value(result, next_value) < 0) {
-                set_result_append(result, next_value);
+                set_result_append(result, next_value, ctx.heap);
             }
         }
     }
@@ -793,7 +793,7 @@ fn void builtin_set_proto_symmetricDifference(BuiltinContext* ctx) {
                 result.array_part()[(uint)found].set_deleted();
             }
         } else {
-            if (found < 0) set_result_append(result, next_value);
+            if (found < 0) set_result_append(result, next_value, ctx.heap);
         }
     }
 
@@ -948,9 +948,9 @@ fn bool register_set_constructor(EnvRecord* global_env, Heap* heap) {
         HString* values_key = builtin_intern_string(heap, "values");
         HString* keys_key = builtin_intern_string(heap, "keys");
         if (values_key != null && keys_key != null) {
-            PropValue*? values_prop_opt = proto.find_prop(values_key);
+            PropValue*? values_prop_opt = proto.find_prop(values_key, heap);
             if (try values_prop = values_prop_opt) {
-                proto.put_prop(keys_key, *values_prop, hobject::PROP_FLAGS_WC);
+                proto.put_prop(keys_key, *values_prop, hobject::PROP_FLAGS_WC, heap);
             }
         }
     }
@@ -972,9 +972,9 @@ fn bool register_set_constructor(EnvRecord* global_env, Heap* heap) {
         HString* iter_sym = ensure_iterator_symbol(heap);
         HString* values_key = builtin_intern_string(heap, "values");
         if (iter_sym != null && values_key != null) {
-            PropValue*? values_prop_opt = proto.find_prop(values_key);
+            PropValue*? values_prop_opt = proto.find_prop(values_key, heap);
             if (try values_prop = values_prop_opt) {
-                proto.put_prop(iter_sym, *values_prop, hobject::PROP_FLAGS_WC);
+                proto.put_prop(iter_sym, *values_prop, hobject::PROP_FLAGS_WC, heap);
             }
         }
     }
@@ -984,7 +984,7 @@ fn bool register_set_constructor(EnvRecord* global_env, Heap* heap) {
     if (tag_key != null) {
         TVal tag_tv;
         tag_tv.set_string(builtin_intern_string(heap, "Set"));
-        proto.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC);
+        proto.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC, heap);
     }
 
     // Register .size as a getter accessor property (ES6 §23.2.3.9)
@@ -1004,13 +1004,13 @@ fn bool register_set_constructor(EnvRecord* global_env, Heap* heap) {
                 TVal name_tv;
                 name_tv.set_string(name_str);
                 HString* name_key = heap.str(heap::BuiltinStr.NAME);
-                fn_obj.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC);
+                fn_obj.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC, heap);
             }
             HString* length_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
             if (length_key != null) {
                 TVal len_tv;
                 len_tv.set_fastint(0);
-                fn_obj.put_prop(length_key, len_tv, hobject::PROP_FLAGS_NWC);
+                fn_obj.put_prop(length_key, len_tv, hobject::PROP_FLAGS_NWC, heap);
             }
             TVal getter_tv;
             getter_tv.set_object(fn_obj);
@@ -1021,7 +1021,7 @@ fn bool register_set_constructor(EnvRecord* global_env, Heap* heap) {
             acc_flags.enumerable = false;
             acc_flags.configurable = true;
             acc_flags.is_accessor = true;
-            proto.put_prop(size_key, hobject::hobject_create_accessors(heap, getter_tv, undef), acc_flags);
+            proto.put_prop(size_key, hobject::hobject_create_accessors(heap, getter_tv, undef), acc_flags, heap);
         }
     }
 
@@ -1036,7 +1036,7 @@ fn bool register_set_constructor(EnvRecord* global_env, Heap* heap) {
     HString* constructor_key = (HString*)heap.strs[heap::BuiltinStr.CONSTRUCTOR];
     TVal constructor_tv;
     constructor_tv.set_object(ctor);
-    proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_WC);
+    proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Set Set.prototype on the constructor (non-writable, non-enumerable, non-configurable)
     HString* prototype_key = (HString*)heap.strs[heap::BuiltinStr.PROTOTYPE];
@@ -1047,13 +1047,13 @@ fn bool register_set_constructor(EnvRecord* global_env, Heap* heap) {
     proto_pflags.enumerable = false;
     proto_pflags.configurable = false;
     proto_pflags.is_accessor = false;
-    ctor.put_prop(prototype_key, proto_tv, proto_pflags);
+    ctor.put_prop(prototype_key, proto_tv, proto_pflags, heap);
 
     // Set Set.length
     HString* length_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
     TVal length_tv;
     length_tv.set_fastint(0);
-    ctor.put_prop(length_key, length_tv, hobject::PROP_FLAGS_NWC);
+    ctor.put_prop(length_key, length_tv, hobject::PROP_FLAGS_NWC, heap);
 
     // Set[Symbol.species] accessor, ES6 §23.2.2.2: getter returns `this`.
     {
@@ -1069,12 +1069,12 @@ fn bool register_set_constructor(EnvRecord* global_env, Heap* heap) {
                 HString* getter_name_str = builtin_intern_string(heap, "get [Symbol.species]");
                 if (getter_name_key != null && getter_name_str != null) {
                     TVal gn_tv; gn_tv.set_string(getter_name_str);
-                    getter.put_prop(getter_name_key, gn_tv, hobject::PROP_FLAGS_NWC);
+                    getter.put_prop(getter_name_key, gn_tv, hobject::PROP_FLAGS_NWC, heap);
                 }
                 HString* getter_len_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
                 if (getter_len_key != null) {
                     TVal gl_tv; gl_tv.set_fastint(0);
-                    getter.put_prop(getter_len_key, gl_tv, hobject::PROP_FLAGS_NWC);
+                    getter.put_prop(getter_len_key, gl_tv, hobject::PROP_FLAGS_NWC, heap);
                 }
                 TVal getter_tv; getter_tv.set_object(getter);
                 TVal undef_tv; undef_tv.set_undefined();
@@ -1083,7 +1083,7 @@ fn bool register_set_constructor(EnvRecord* global_env, Heap* heap) {
                 acc_flags.enumerable = false;
                 acc_flags.configurable = true;
                 acc_flags.is_accessor = true;
-                ctor.put_prop(species_sym, hobject::hobject_create_accessors(heap, getter_tv, undef_tv), acc_flags);
+                ctor.put_prop(species_sym, hobject::hobject_create_accessors(heap, getter_tv, undef_tv), acc_flags, heap);
             }
         }
     }

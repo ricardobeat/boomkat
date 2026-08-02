@@ -47,7 +47,7 @@ fn void builtin_weakref(BuiltinContext* ctx) {
     wr.prototype = builtin_proto_from_new_target(ctx, ctx.heap.weakref_proto);
     if (ctx.should_throw) { ctx.result.set_undefined(); return; }
 
-    wr.set_array_idx(0, target);
+    wr.set_array_idx(0, target, ctx.heap);
     if (wr.array_used < 1) wr.array_used = 1;
 
     ctx.result.set_object(wr);
@@ -95,7 +95,7 @@ fn void builtin_finalization_registry(BuiltinContext* ctx) {
     fr.prototype = builtin_proto_from_new_target(ctx, ctx.heap.finalization_registry_proto);
     if (ctx.should_throw) { ctx.result.set_undefined(); return; }
 
-    fr.set_array_idx(0, callback);
+    fr.set_array_idx(0, callback, ctx.heap);
     if (fr.array_used < 1) fr.array_used = 1;
 
     ctx.result.set_object(fr);
@@ -144,9 +144,9 @@ fn void builtin_finalization_registry_proto_register(BuiltinContext* ctx) {
     }
 
     uint cnt = fr.array_used;
-    fr.set_array_idx(cnt, target);
-    fr.set_array_idx(cnt + 1, held);
-    fr.set_array_idx(cnt + 2, token);
+    fr.set_array_idx(cnt, target, ctx.heap);
+    fr.set_array_idx(cnt + 1, held, ctx.heap);
+    fr.set_array_idx(cnt + 2, token, ctx.heap);
     if (fr.array_used < cnt + 3) fr.array_used = cnt + 3;
 
     ctx.result.set_undefined();
@@ -219,7 +219,7 @@ fn HObject* register_weak_wrapper(EnvRecord* global_env, Heap* heap,
     if (tag_key != null) {
         TVal tag_tv;
         tag_tv.set_string(builtin_intern_string(heap, name));
-        proto.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC);
+        proto.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC, heap);
     }
 
     HObject*? ctor_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
@@ -231,7 +231,7 @@ fn HObject* register_weak_wrapper(EnvRecord* global_env, Heap* heap,
     HString* constructor_key = (HString*)heap.strs[heap::BuiltinStr.CONSTRUCTOR];
     TVal constructor_tv;
     constructor_tv.set_object(ctor);
-    proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_WC);
+    proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_WC, heap);
 
     HString* prototype_key = (HString*)heap.strs[heap::BuiltinStr.PROTOTYPE];
     TVal proto_tv;
@@ -241,12 +241,12 @@ fn HObject* register_weak_wrapper(EnvRecord* global_env, Heap* heap,
     proto_pflags.enumerable = false;
     proto_pflags.configurable = false;
     proto_pflags.is_accessor = false;
-    ctor.put_prop(prototype_key, proto_tv, proto_pflags);
+    ctor.put_prop(prototype_key, proto_tv, proto_pflags, heap);
 
     HString* length_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
     TVal length_tv;
     length_tv.set_fastint(length);
-    ctor.put_prop(length_key, length_tv, hobject::PROP_FLAGS_NWC);
+    ctor.put_prop(length_key, length_tv, hobject::PROP_FLAGS_NWC, heap);
 
     HString* name_key = heap.str_intern(name);
     if (name_key == null) return null;

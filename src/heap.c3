@@ -332,9 +332,8 @@ fn void gs_acquire(GeneratorState* gs) {
 /// whatever landed there.
 ///
 /// `heap_ptr` is always required, including during full-heap teardown, which
-/// clears the `_active_heap` global but still frees through the heap's own
-/// allocator. With an embedder allocator, freeing to libc instead would be a
-/// cross-allocator free.
+/// still frees through the heap's own allocator. With an embedder allocator,
+/// freeing to libc instead would be a cross-allocator free.
 ///
 /// `run_decref` is false during teardown, where the heap is already coming apart.
 fn void gs_release(GeneratorState* gs, void* heap_ptr, bool run_decref) {
@@ -1023,9 +1022,6 @@ fn Heap*? create(
         h.obj_pool_func.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_FUNC, 512);
     }
 
-    // Activate this heap for RC operations and shape transitions.
-    hobject::hobject_set_active_heap((void*)h);
-
     return h;
 }
 
@@ -1195,7 +1191,7 @@ fn void Heap.init_shapes(&self) {
     self.shapes = (hobject::Shape**)self.alloc_func(self.heap_udata, bytes);
     mem::clear(self.shapes, (sz)(bytes));
     // Root shape: no properties, smallest hash (mask 0, so 2 slots).
-    self.shapes[0] = hobject::shape_create(0, 0, SHAPE_NONE, null);
+    self.shapes[0] = hobject::shape_create(0, 0, SHAPE_NONE, null, self);
     self.init_transition_table();
 }
 
@@ -1321,7 +1317,7 @@ fn uint Heap.transition_shape_new_flags(&self, uint cur_shape_id, void* key, hob
         return existing;
     }
 
-    hobject::Shape* ns = hobject::shape_extend(cur, cur_shape_id, key, flags);
+    hobject::Shape* ns = hobject::shape_extend(cur, cur_shape_id, key, flags, self);
     if (ns == null) return SHAPE_NONE;
 
     uint new_id = self.alloc_shape_slot();
@@ -1392,7 +1388,6 @@ fn void Heap.destroy(&self) {
     // decref loop: mixing decref with the str_table backshift-delete would
     // corrupt the table for the sweep below.
     self.tearing_down = true;
-    hobject::hobject_clear_active_heap();
 
     HeapHeader* cur = self.heap_allocated;
     while (cur != null) {
@@ -1565,7 +1560,6 @@ fn void Heap.reset(&self) {
 
     // Same teardown mode as destroy(): object teardown skips its RC decref loop.
     self.tearing_down = true;
-    hobject::hobject_clear_active_heap();
 
     HeapHeader* cur = self.heap_allocated;
     while (cur != null) {
@@ -1804,7 +1798,7 @@ fn void Heap.reset(&self) {
     self.shape_count = 1;
     self.shape_recycle_epoch = 0;
     self.shape_free_head = SHAPE_FREE_END;
-    self.shapes[0]   = hobject::shape_create(0, 0, SHAPE_NONE, null);
+    self.shapes[0]   = hobject::shape_create(0, 0, SHAPE_NONE, null, self);
     self.init_transition_table();
 
     self.free_module_cache();
@@ -1827,8 +1821,6 @@ fn void Heap.reset(&self) {
     // The sweep is over and the heap is usable again, so object teardown must
     // resume decrefing rather than assuming everything is about to be freed.
     self.tearing_down = false;
-
-    hobject::hobject_set_active_heap((void*)self);
 }
 
 // ============================================================================
@@ -1923,7 +1915,7 @@ fn bool Heap.host_scope_set(&self, uint depth, uint index, TVal v) {
     if (arr == null) return false;
     HString* key = self.int_to_hstring((long)index);
     if (key == null) return false;
-    return arr.put_prop(key, v, hobject::PROP_FLAGS_WEC);
+    return arr.put_prop(key, v, hobject::PROP_FLAGS_WEC, self);
 }
 
 /// Read the value at `index` in scope `depth`. Returns false when the scope is
@@ -1934,7 +1926,7 @@ fn bool Heap.host_scope_get(&self, uint depth, uint index, TVal* out) {
     if (arr == null) return false;
     HString* key = self.int_to_hstring((long)index);
     if (key == null) return false;
-    TVal? v = arr.get_prop(key);
+    TVal? v = arr.get_prop(key, self);
     if (catch v) return false;
     *out = v;
     return true;
@@ -2561,7 +2553,7 @@ fn void Heap.drain_gray(&self) {
         // Named properties.
         TVal* pv = obj.prop_values();
         for (uint i = 0; i < obj.prop_count; i++) {
-            HString* key = (HString*)obj.prop_key_at(i);
+            HString* key = (HString*)obj.prop_key_at(i, self);
             if (key != null) {
                 ((HeapHeader*)key).set_reachable();
             }
@@ -2638,7 +2630,7 @@ fn void Heap.drain_gray(&self) {
                     self.mark_hobject(reaction);
                     HObject* next_reaction = null;
                     if (self.promise_reaction_next_key != null) {
-                        if (try nv = reaction.get_prop(self.promise_reaction_next_key)) {
+                        if (try nv = reaction.get_prop(self.promise_reaction_next_key, self)) {
                             if (nv.is_object() && nv.get_heapptr() != null) {
                                 next_reaction = (HObject*)nv.get_heapptr();
                             }

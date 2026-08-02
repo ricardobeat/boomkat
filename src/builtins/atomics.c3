@@ -811,10 +811,10 @@ fn void atomics_make_wait_result_val(BuiltinContext* ctx, bool is_async, TVal va
 
     HString* async_key = builtin_intern_string(ctx.heap, "async");
     TVal async_tv; async_tv.set_boolean(is_async);
-    obj.put_prop(async_key, async_tv, hobject::PROP_FLAGS_WEC);
+    obj.put_prop(async_key, async_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
 
     HString* value_key = (HString*)ctx.heap.strs[heap::BuiltinStr.VALUE];
-    obj.put_prop(value_key, value_tv, hobject::PROP_FLAGS_WEC);
+    obj.put_prop(value_key, value_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
 
     ctx.result.set_object(obj);
 }
@@ -840,16 +840,16 @@ fn bool register_atomics_method(HObject* atomics, Heap* heap, char[] name, uint 
     HString* fn_name = builtin_intern_string(heap, name);
     if (fn_name != null) {
         TVal name_tv; name_tv.set_string(fn_name);
-        func_obj.put_prop((void*)heap.str(heap::BuiltinStr.NAME), name_tv, hobject::PROP_FLAGS_NWC);
+        func_obj.put_prop((void*)heap.str(heap::BuiltinStr.NAME), name_tv, hobject::PROP_FLAGS_NWC, heap);
     }
     HString* length_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
     if (length_key != null) {
         TVal len_tv; len_tv.set_fastint((long)length);
-        func_obj.put_prop(length_key, len_tv, hobject::PROP_FLAGS_NWC);
+        func_obj.put_prop(length_key, len_tv, hobject::PROP_FLAGS_NWC, heap);
     }
 
     TVal fn_tv; fn_tv.set_object(func_obj);
-    atomics.put_prop(key, fn_tv, hobject::PROP_FLAGS_WC);
+    atomics.put_prop(key, fn_tv, hobject::PROP_FLAGS_WC, heap);
     return true;
 }
 
@@ -879,7 +879,7 @@ fn bool register_atomics_object(EnvRecord* global_env, Heap* heap) {
     if (tag_key != null) {
         TVal tag_tv;
         tag_tv.set_string(builtin_intern_string(heap, "Atomics"));
-        atomics.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC);
+        atomics.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC, heap);
     }
 
     TVal atomics_tv;

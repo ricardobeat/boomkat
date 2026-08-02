@@ -128,7 +128,7 @@ fn bool register_weakmap_constructor(EnvRecord* global_env, Heap* heap) {
     if (tag_key != null) {
         TVal tag_tv;
         tag_tv.set_string(builtin_intern_string(heap, "WeakMap"));
-        proto.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC);
+        proto.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC, heap);
     }
 
     HObject*? ctor_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
@@ -140,7 +140,7 @@ fn bool register_weakmap_constructor(EnvRecord* global_env, Heap* heap) {
     HString* constructor_key = (HString*)heap.strs[heap::BuiltinStr.CONSTRUCTOR];
     TVal constructor_tv;
     constructor_tv.set_object(ctor);
-    proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_WC);
+    proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_WC, heap);
 
     HString* prototype_key = (HString*)heap.strs[heap::BuiltinStr.PROTOTYPE];
     TVal proto_tv;
@@ -150,12 +150,12 @@ fn bool register_weakmap_constructor(EnvRecord* global_env, Heap* heap) {
     proto_pflags.enumerable = false;
     proto_pflags.configurable = false;
     proto_pflags.is_accessor = false;
-    ctor.put_prop(prototype_key, proto_tv, proto_pflags);
+    ctor.put_prop(prototype_key, proto_tv, proto_pflags, heap);
 
     HString* length_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
     TVal length_tv;
     length_tv.set_fastint(0);
-    ctor.put_prop(length_key, length_tv, hobject::PROP_FLAGS_NWC);
+    ctor.put_prop(length_key, length_tv, hobject::PROP_FLAGS_NWC, heap);
 
     HString* wm_key = heap.str_intern("WeakMap");
     if (wm_key == null) return false;

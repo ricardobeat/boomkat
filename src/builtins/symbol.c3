@@ -585,7 +585,7 @@ fn void builtin_symbol_proto_valueOf(BuiltinContext* ctx) {
 /// skip the call rather than assuming so unconditionally.
 fn bool symbol_proto_toprimitive_is_original(Heap* heap) {
     if (heap.symbol_proto == null || heap.toprimitive_symbol == null) return false;
-    TVal? val = heap.symbol_proto.get_prop_proto(heap.toprimitive_symbol);
+    TVal? val = heap.symbol_proto.get_prop_proto(heap.toprimitive_symbol, heap);
     if (catch val) return false;
     TVal v = val;
     if (!v.is_object() || v.get_heapptr() == null) return false;
@@ -664,19 +664,19 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
                 TVal name_tv;
                 name_tv.set_string(tp_name);
                 HString* name_key = heap.str(heap::BuiltinStr.NAME);
-                fn_obj.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC);
+                fn_obj.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC, heap);
             }
             HString* length_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
             if (length_key != null) {
                 TVal len_tv;
                 len_tv.set_fastint(1);
-                fn_obj.put_prop(length_key, len_tv, hobject::PROP_FLAGS_NWC);
+                fn_obj.put_prop(length_key, len_tv, hobject::PROP_FLAGS_NWC, heap);
             }
 
             TVal toprim_fn;
             toprim_fn.set_object(fn_obj);
             // §19.4.3.5: {[[Writable]]:false,[[Enumerable]]:false,[[Configurable]]:true}
-            proto.put_prop(toprim_key, toprim_fn, hobject::PROP_FLAGS_NWC);
+            proto.put_prop(toprim_key, toprim_fn, hobject::PROP_FLAGS_NWC, heap);
         }
     }
 
@@ -685,7 +685,7 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
     if (tag_key != null) {
         TVal tag_tv;
         tag_tv.set_string(builtin_intern_string(heap, "Symbol"));
-        proto.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC);
+        proto.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC, heap);
     }
 
     // Register Symbol.prototype.description as a getter accessor (ES2019 §19.4.3.5)
@@ -707,14 +707,14 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
                 TVal name_tv;
                 name_tv.set_string(name_str);
                 HString* name_key = heap.str(heap::BuiltinStr.NAME);
-                fn_obj.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC);
+                fn_obj.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC, heap);
             }
             // Set .length = 0
             HString* length_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
             if (length_key != null) {
                 TVal len_tv;
                 len_tv.set_fastint(0);
-                fn_obj.put_prop(length_key, len_tv, hobject::PROP_FLAGS_NWC);
+                fn_obj.put_prop(length_key, len_tv, hobject::PROP_FLAGS_NWC, heap);
             }
 
             TVal getter_tv;
@@ -726,7 +726,7 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
             acc_flags.enumerable = false;
             acc_flags.configurable = true;
             acc_flags.is_accessor = true;
-            proto.put_prop(desc_key, hobject::hobject_create_accessors(heap, getter_tv, undef), acc_flags);
+            proto.put_prop(desc_key, hobject::hobject_create_accessors(heap, getter_tv, undef), acc_flags, heap);
         }
     }
 
@@ -741,7 +741,7 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
     HString* constructor_key = (HString*)heap.strs[heap::BuiltinStr.CONSTRUCTOR];
     TVal constructor_tv;
     constructor_tv.set_object(ctor);
-    proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_WC);
+    proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Wire ctor.prototype → proto (non-writable, non-enumerable, non-configurable)
     HString* prototype_key = (HString*)heap.strs[heap::BuiltinStr.PROTOTYPE];
@@ -752,25 +752,25 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
     proto_pflags.enumerable = false;
     proto_pflags.configurable = false;
     proto_pflags.is_accessor = false;
-    ctor.put_prop(prototype_key, proto_tv, proto_pflags);
+    ctor.put_prop(prototype_key, proto_tv, proto_pflags, heap);
 
     // Symbol.length = 0
     HString* length_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
     TVal length_tv;
     length_tv.set_fastint(0);
-    ctor.put_prop(length_key, length_tv, hobject::PROP_FLAGS_NWC);
+    ctor.put_prop(length_key, length_tv, hobject::PROP_FLAGS_NWC, heap);
 
     // Register Symbol.for as a property of the Symbol function
     HString* for_key = builtin_intern_string(heap, "for");
     TVal for_tv;
     for_tv.set_lightfunc((void*)(usz)Builtin.SYMBOL_FOR.ordinal);
-    ctor.put_prop(for_key, for_tv, hobject::PROP_FLAGS_WC);
+    ctor.put_prop(for_key, for_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Register Symbol.keyFor as a property of the Symbol function
     HString* keyfor_key = builtin_intern_string(heap, "keyFor");
     TVal keyfor_tv;
     keyfor_tv.set_lightfunc((void*)(usz)Builtin.SYMBOL_KEYFOR.ordinal);
-    ctor.put_prop(keyfor_key, keyfor_tv, hobject::PROP_FLAGS_WC);
+    ctor.put_prop(keyfor_key, keyfor_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Register Symbol.toStringTag as a well-known symbol property
     // Per ES6 §19.4.2.14: non-writable, non-enumerable, non-configurable
@@ -779,7 +779,7 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
         HString* tostrtag_key = builtin_intern_string(heap, "toStringTag");
         TVal tostrtag_val;
         tostrtag_val.set_string(tostrtag_sym);
-        ctor.put_prop(tostrtag_key, tostrtag_val, hobject::PROP_FLAGS_NNC);
+        ctor.put_prop(tostrtag_key, tostrtag_val, hobject::PROP_FLAGS_NNC, heap);
     }
 
     // Register Symbol.iterator as a well-known symbol property (non-writable, non-enumerable, non-configurable per ES6 §19.4.2.12)
@@ -789,7 +789,7 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
         if (iter_key != null) {
             TVal iter_val;
             iter_val.set_string(iter_sym);
-            ctor.put_prop(iter_key, iter_val, hobject::PROP_FLAGS_NNC);
+            ctor.put_prop(iter_key, iter_val, hobject::PROP_FLAGS_NNC, heap);
         }
     }
 
@@ -800,7 +800,7 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
         if (toprim_key != null) {
             TVal toprim_val;
             toprim_val.set_string(toprim_sym);
-            ctor.put_prop(toprim_key, toprim_val, hobject::PROP_FLAGS_NNC);
+            ctor.put_prop(toprim_key, toprim_val, hobject::PROP_FLAGS_NNC, heap);
         }
     }
 
@@ -812,7 +812,7 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
         if (concat_key != null) {
             TVal concat_val;
             concat_val.set_string(concat_sym);
-            ctor.put_prop(concat_key, concat_val, hobject::PROP_FLAGS_NNC);
+            ctor.put_prop(concat_key, concat_val, hobject::PROP_FLAGS_NNC, heap);
         }
     }
 
@@ -824,7 +824,7 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
         if (hasinst_key != null) {
             TVal hasinst_val;
             hasinst_val.set_string(hasinst_sym);
-            ctor.put_prop(hasinst_key, hasinst_val, hobject::PROP_FLAGS_NNC);
+            ctor.put_prop(hasinst_key, hasinst_val, hobject::PROP_FLAGS_NNC, heap);
         }
     }
 
@@ -836,7 +836,7 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
         if (match_key != null) {
             TVal match_val;
             match_val.set_string(match_sym);
-            ctor.put_prop(match_key, match_val, hobject::PROP_FLAGS_NNC);
+            ctor.put_prop(match_key, match_val, hobject::PROP_FLAGS_NNC, heap);
         }
     }
 
@@ -848,7 +848,7 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
         if (search_key != null) {
             TVal search_val;
             search_val.set_string(search_sym);
-            ctor.put_prop(search_key, search_val, hobject::PROP_FLAGS_NNC);
+            ctor.put_prop(search_key, search_val, hobject::PROP_FLAGS_NNC, heap);
         }
     }
 
@@ -860,7 +860,7 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
         if (replace_key != null) {
             TVal replace_val;
             replace_val.set_string(replace_sym);
-            ctor.put_prop(replace_key, replace_val, hobject::PROP_FLAGS_NNC);
+            ctor.put_prop(replace_key, replace_val, hobject::PROP_FLAGS_NNC, heap);
         }
     }
 
@@ -872,7 +872,7 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
         if (split_key != null) {
             TVal split_val;
             split_val.set_string(split_sym);
-            ctor.put_prop(split_key, split_val, hobject::PROP_FLAGS_NNC);
+            ctor.put_prop(split_key, split_val, hobject::PROP_FLAGS_NNC, heap);
         }
     }
 
@@ -884,7 +884,7 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
         if (species_key != null) {
             TVal species_val;
             species_val.set_string(species_sym);
-            ctor.put_prop(species_key, species_val, hobject::PROP_FLAGS_NNC);
+            ctor.put_prop(species_key, species_val, hobject::PROP_FLAGS_NNC, heap);
         }
     }
 
@@ -896,7 +896,7 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
         if (unscop_key != null) {
             TVal unscop_val;
             unscop_val.set_string(unscop_sym);
-            ctor.put_prop(unscop_key, unscop_val, hobject::PROP_FLAGS_NNC);
+            ctor.put_prop(unscop_key, unscop_val, hobject::PROP_FLAGS_NNC, heap);
         }
     }
 
@@ -908,7 +908,7 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
         if (matchall_key != null) {
             TVal matchall_val;
             matchall_val.set_string(matchall_sym);
-            ctor.put_prop(matchall_key, matchall_val, hobject::PROP_FLAGS_NNC);
+            ctor.put_prop(matchall_key, matchall_val, hobject::PROP_FLAGS_NNC, heap);
         }
     }
 
@@ -920,7 +920,7 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
         if (asynciter_key != null) {
             TVal asynciter_val;
             asynciter_val.set_string(asynciter_sym);
-            ctor.put_prop(asynciter_key, asynciter_val, hobject::PROP_FLAGS_NNC);
+            ctor.put_prop(asynciter_key, asynciter_val, hobject::PROP_FLAGS_NNC, heap);
         }
     }
 

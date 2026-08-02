@@ -319,7 +319,7 @@ fn bool register_bigint_constructor(EnvRecord* global_env, Heap* heap) {
     if (tag_key != null) {
         TVal tag_tv;
         tag_tv.set_string(builtin_intern_string(heap, "BigInt"));
-        proto.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC);
+        proto.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC, heap);
     }
 
     // --- Constructor function object ---
@@ -336,7 +336,7 @@ fn bool register_bigint_constructor(EnvRecord* global_env, Heap* heap) {
     // .constructor / .prototype cross-links.
     HString* constructor_key = (HString*)heap.strs[heap::BuiltinStr.CONSTRUCTOR];
     TVal ctor_tv; ctor_tv.set_object(ctor);
-    proto.put_prop(constructor_key, ctor_tv, hobject::PROP_FLAGS_WC);
+    proto.put_prop(constructor_key, ctor_tv, hobject::PROP_FLAGS_WC, heap);
 
     HString* prototype_key = (HString*)heap.strs[heap::BuiltinStr.PROTOTYPE];
     TVal proto_tv; proto_tv.set_object(proto);
@@ -345,7 +345,7 @@ fn bool register_bigint_constructor(EnvRecord* global_env, Heap* heap) {
     proto_pflags.enumerable = false;
     proto_pflags.configurable = false;
     proto_pflags.is_accessor = false;
-    ctor.put_prop(prototype_key, proto_tv, proto_pflags);
+    ctor.put_prop(prototype_key, proto_tv, proto_pflags, heap);
 
     // Static methods.
     if (!register_string_proto_method(ctor, heap, "asIntN", Builtin.BIGINT_AS_INTN.ordinal)) return false;

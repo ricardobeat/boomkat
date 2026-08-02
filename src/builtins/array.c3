@@ -542,7 +542,7 @@ fn void builtin_array(BuiltinContext* ctx) {
 
             // Set element at index 0
             HString* zero_key = ctx.heap.int_to_hstring(0);
-            arr.put_prop(zero_key, arg, hobject::PROP_FLAGS_WEC);
+            arr.put_prop(zero_key, arg, hobject::PROP_FLAGS_WEC, ctx.heap);
         }
         ctx.result.set_object(arr);
         return;
@@ -556,7 +556,7 @@ fn void builtin_array(BuiltinContext* ctx) {
         TVal elem = ctx.regs[ctx.base_reg + (uint)i];
         HString* idx_key = ctx.heap.int_to_hstring((long)i);
         if (idx_key != null) {
-            arr.put_prop(idx_key, elem, hobject::PROP_FLAGS_WEC);
+            arr.put_prop(idx_key, elem, hobject::PROP_FLAGS_WEC, ctx.heap);
         }
     }
 
@@ -581,7 +581,7 @@ fn HObject* array_proto_get_this(BuiltinContext* ctx) {
                 TVal msg_val;
                 msg_val.set_string(msg_str);
                 HString* msg_key = ctx.heap.str(heap::BuiltinStr.MESSAGE);
-                err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WC);
+                err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WC, ctx.heap);
             }
             TVal err_tv;
             err_tv.set_object(err);
@@ -688,9 +688,9 @@ fn double array_get_length_raw(HObject* obj, Heap* heap, BuiltinContext* ctx) {
         // For ARRAY class, also check if length is an accessor (set via defineProperty)
         HString* len_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
         if (len_key != null) {
-            int own_idx = obj.find_prop_idx(len_key);
+            int own_idx = obj.find_prop_idx(len_key, heap);
             if (own_idx >= 0) {
-                PropFlags pf = obj.get_prop_flags((uint)own_idx);
+                PropFlags pf = obj.get_prop_flags((uint)own_idx, heap);
                 if (pf.is_accessor) {
                     TVal gs_slot = obj.prop_values()[own_idx];
                     TVal getter_fn = hobject::hobject_access_getter(gs_slot);
@@ -704,23 +704,23 @@ fn double array_get_length_raw(HObject* obj, Heap* heap, BuiltinContext* ctx) {
         HString* len_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
         if (len_key == null) return 0;
         // Check own properties first for accessor
-        int own_idx = obj.find_prop_idx(len_key);
+        int own_idx = obj.find_prop_idx(len_key, heap);
         if (own_idx >= 0) {
-            PropFlags pf = obj.get_prop_flags((uint)own_idx);
+            PropFlags pf = obj.get_prop_flags((uint)own_idx, heap);
             if (pf.is_accessor) {
                 TVal gs_slot = obj.prop_values()[own_idx];
                 TVal getter_fn = hobject::hobject_access_getter(gs_slot);
                 return invoke_getter_as_length(obj, getter_fn, heap, ctx);
             }
         }
-        TVal? len_val = obj.get_prop(len_key);
+        TVal? len_val = obj.get_prop(len_key, heap);
         if (try v = len_val) {
             if (v.is_fastint()) return (double)v.get_fastint();
             if (v.is_number()) return v.get_number();
             // Non-numeric (string/bool/null/object): apply ToNumber per ES ToLength
             return builtin_to_number_vm(ctx, &v);
         }
-        len_val = obj.get_prop_proto(len_key);
+        len_val = obj.get_prop_proto(len_key, heap);
         if (try v = len_val) {
             if (v.is_fastint()) return (double)v.get_fastint();
             if (v.is_number()) return v.get_number();
@@ -733,9 +733,9 @@ fn double array_get_length_raw(HObject* obj, Heap* heap, BuiltinContext* ctx) {
     if (len_key == null) return 0;
 
     // Check own properties first for accessor
-    int own_idx = obj.find_prop_idx(len_key);
+    int own_idx = obj.find_prop_idx(len_key, heap);
     if (own_idx >= 0) {
-        PropFlags pf = obj.get_prop_flags((uint)own_idx);
+        PropFlags pf = obj.get_prop_flags((uint)own_idx, heap);
         if (pf.is_accessor) {
             TVal gs_slot = obj.prop_values()[own_idx];
             TVal getter_fn = hobject::hobject_access_getter(gs_slot);
@@ -744,7 +744,7 @@ fn double array_get_length_raw(HObject* obj, Heap* heap, BuiltinContext* ctx) {
     }
 
     // Fallback to normal lookup
-    hobject::PropLookupResult res = obj.get_prop_or_accessor_proto(len_key, true);
+    hobject::PropLookupResult res = obj.get_prop_or_accessor_proto(len_key, true, heap);
     if (res.kind == hobject::PropLookupKind.PROP_ACCESSOR) {
         TVal getter_fn = res.acc.accessor_fn;
         return invoke_getter_as_length(obj, getter_fn, heap, ctx);
@@ -823,7 +823,7 @@ fn void array_set_length(HObject* obj, uint len_val, Heap* heap) {
             TVal undef; undef.set_undefined();
             uint dense_limit = old_len < obj.array_size ? old_len : obj.array_size;
             for (uint i = len_val; i < dense_limit; i++) {
-                obj.set_array_idx(i, undef);
+                obj.set_array_idx(i, undef, heap);
             }
             // Delete named numeric properties that fall in the dropped range.
             // Walk backwards through the property table; delete_prop compacts the
@@ -835,19 +835,19 @@ fn void array_set_length(HObject* obj, uint len_val, Heap* heap) {
                 uint pi = pc;
                 while (pi > 0) {
                     pi--;
-                    void* pk = obj.prop_key_at((uint)pi);
+                    void* pk = obj.prop_key_at((uint)pi, heap);
                     if (pk != null) {
                         HString* pks = (HString*)pk;
                         if (pks.is_arridx()) {
                             uint ai = pks.array_index();
                             if (ai >= len_val) {
-                                PropFlags pf = obj.get_prop_flags((uint)pi);
+                                PropFlags pf = obj.get_prop_flags((uint)pi, heap);
                                 if (!pf.configurable) {
                                     // Cannot delete, adjust target length to ai+1.
                                     len_val = ai + 1;
                                     continue;
                                 }
-                                obj.delete_prop(pk);
+                                obj.delete_prop(pk, heap);
                             }
                         }
                     }
@@ -857,7 +857,7 @@ fn void array_set_length(HObject* obj, uint len_val, Heap* heap) {
         *obj.array_len_ptr() = len_val;
         HString* len_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
         if (len_key != null) {
-            int idx = obj.find_prop_idx(len_key);
+            int idx = obj.find_prop_idx(len_key, heap);
             if (idx >= 0) {
                 TVal tv;
                 tv.set_fastint((long)len_val);
@@ -871,7 +871,7 @@ fn void array_set_length(HObject* obj, uint len_val, Heap* heap) {
     if (obj.get_class() == ARGUMENTS) {
         HString* len_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
         if (len_key != null) {
-            int idx = obj.find_prop_idx(len_key);
+            int idx = obj.find_prop_idx(len_key, heap);
             if (idx >= 0) {
                 TVal tv;
                 tv.set_fastint((long)len_val);
@@ -884,7 +884,7 @@ fn void array_set_length(HObject* obj, uint len_val, Heap* heap) {
     if (len_key == null) return;
     TVal tv;
     tv.set_fastint((long)len_val);
-    obj.put_prop(len_key, tv, hobject::PROP_FLAGS_WEC);
+    obj.put_prop(len_key, tv, hobject::PROP_FLAGS_WEC, heap);
 }
 
 /// Get array element at numeric index (returns undefined for holes).
@@ -899,11 +899,11 @@ fn TVal array_get_elem(HObject* obj, uint idx, Heap* heap) {
     // properties via PUTPROP or Object.defineProperty).
     HString* key = heap.int_to_hstring((long)idx);
     if (key == null) { TVal undef; undef.set_undefined(); return undef; }
-    TVal? result = obj.get_prop(key);
+    TVal? result = obj.get_prop(key, heap);
     if (try v = result) {
         return v;
     }
-    TVal? result2 = obj.get_prop_proto(key);
+    TVal? result2 = obj.get_prop_proto(key, heap);
     if (try v2 = result2) {
         return v2;
     }
@@ -927,12 +927,12 @@ fn void array_set_elem(HObject* obj, uint idx, TVal val, Heap* heap, void* vm = 
         return;
     }
     if ((obj.get_class() == hobject::ObjClass.ARRAY || obj.get_class() == hobject::ObjClass.ARGUMENTS)
-        && obj.set_array_idx(idx, val)) {
+        && obj.set_array_idx(idx, val, heap)) {
         return;
     }
     HString* key = heap.int_to_hstring((long)idx);
     if (key != null) {
-        obj.put_prop(key, val, hobject::PROP_FLAGS_WEC);
+        obj.put_prop(key, val, hobject::PROP_FLAGS_WEC, heap);
     }
 }
 
@@ -956,7 +956,7 @@ fn void array_set_elem_ulong(HObject* obj, ulong idx, TVal val, Heap* heap, void
     }
     HString* key = heap.int_to_hstring((long)idx);
     if (key != null) {
-        obj.put_prop(key, val, hobject::PROP_FLAGS_WEC);
+        obj.put_prop(key, val, hobject::PROP_FLAGS_WEC, heap);
     }
 }
 
@@ -992,7 +992,7 @@ fn void array_set_length_ulong(HObject* obj, ulong len_val, Heap* heap, void* vm
     } else {
         tv.set_number((double)len_val);
     }
-    obj.put_prop(len_key, tv, hobject::PROP_FLAGS_WEC);
+    obj.put_prop(len_key, tv, hobject::PROP_FLAGS_WEC, heap);
 }
 
 /// Strict equality comparison for Array.prototype.indexOf / lastIndexOf.
@@ -1070,7 +1070,7 @@ fn void builtin_array_proto_toString(BuiltinContext* ctx) {
     TVal join_fn;
     bool join_found = false;
     if (obj != null) {
-        TVal? join_val = obj.get_prop_proto(join_key);
+        TVal? join_val = obj.get_prop_proto(join_key, ctx.heap);
         if (try jv = join_val) {
             join_fn = jv;
             join_found = true;
@@ -1363,7 +1363,7 @@ fn void builtin_array_proto_toLocaleString(BuiltinContext* ctx) {
         // string element resolves its own prototype's toLocaleString.
         HObject* elem_obj = arr_to_object(elem, ctx.heap);
         if (elem_obj == null) { ctx.result.set_undefined(); return; }
-        TVal? method_raw = elem_obj.get_prop_proto(tls_key);
+        TVal? method_raw = elem_obj.get_prop_proto(tls_key, ctx.heap);
         if (catch method_raw) {
             builtin_throw(ctx, ctx.heap.type_err_proto,
                 "element has no toLocaleString method");
@@ -1437,8 +1437,8 @@ fn void builtin_array_proto_pop(BuiltinContext* ctx) {
     // arr_set_length_or_throw, or present from array-literal creation);
     // that is fine as long as it is not an accessor, but its stored TVal
     // must be kept in sync below.
-    int len_own_idx_pop = obj.find_prop_idx(len_key_pop);
-    bool length_ok_pop = len_own_idx_pop < 0 || !obj.get_prop_flags((uint)len_own_idx_pop).is_accessor;
+    int len_own_idx_pop = obj.find_prop_idx(len_key_pop, ctx.heap);
+    bool length_ok_pop = len_own_idx_pop < 0 || !obj.get_prop_flags((uint)len_own_idx_pop, ctx.heap).is_accessor;
     if (obj.get_class() == hobject::ObjClass.ARRAY
         && obj.array_part() != null
         && obj.flags.extensible
@@ -1459,7 +1459,7 @@ fn void builtin_array_proto_pop(BuiltinContext* ctx) {
             // here (unlike set_array_idx, which would grow to reach idx32
             // for a hole that is already out of range and needs no clearing).
             TVal undef_fast; undef_fast.set_undefined();
-            obj.set_array_idx(idx32, undef_fast);
+            obj.set_array_idx(idx32, undef_fast, ctx.heap);
         } else {
             elem_fast.set_undefined();
         }
@@ -1564,14 +1564,14 @@ fn void builtin_array_proto_push(BuiltinContext* ctx) {
         // (rather than through array_get_length_raw) would otherwise see a
         // stale value.
         HString* len_key_fast = (HString*)ctx.heap.strs[heap::BuiltinStr.LENGTH];
-        int len_own_idx = obj.find_prop_idx(len_key_fast);
-        bool length_ok = len_own_idx < 0 || !obj.get_prop_flags((uint)len_own_idx).is_accessor;
+        int len_own_idx = obj.find_prop_idx(len_key_fast, ctx.heap);
+        bool length_ok = len_own_idx < 0 || !obj.get_prop_flags((uint)len_own_idx, ctx.heap).is_accessor;
         if (length_ok
             && (obj.prototype == null || proto_chain_has_no_indexed_props(obj.prototype))) {
             bool fast_ok = true;
             for (ushort i = 0; i < ctx.argc; i++) {
                 TVal arg = ctx.regs[ctx.base_reg + i];
-                if (!obj.set_array_idx((uint)(len + (ulong)i), arg)) {
+                if (!obj.set_array_idx((uint)(len + (ulong)i), arg, ctx.heap)) {
                     fast_ok = false;
                     break;
                 }
@@ -2212,7 +2212,7 @@ fn void builtin_array_proto_toReversed(BuiltinContext* ctx) {
             // Hole: explicitly create an own property with undefined
             HString* key = ctx.heap.int_to_hstring((long)i);
             if (key != null) {
-                result.put_prop(key, elem, hobject::PROP_FLAGS_WEC);
+                result.put_prop(key, elem, hobject::PROP_FLAGS_WEC, ctx.heap);
             }
         } else {
             array_set_elem_ulong(result, i, elem, ctx.heap);
@@ -2353,7 +2353,7 @@ fn void builtin_array_proto_toSorted(BuiltinContext* ctx) {
             // the result, and array_set_elem_ulong treats undefined as a hole.
             HString* key = ctx.heap.int_to_hstring((long)i);
             if (key != null) {
-                result.put_prop(key, elem, hobject::PROP_FLAGS_WEC);
+                result.put_prop(key, elem, hobject::PROP_FLAGS_WEC, ctx.heap);
             }
         } else {
             array_set_elem_ulong(result, i, elem, ctx.heap);
@@ -2470,7 +2470,7 @@ fn void builtin_array_proto_toSpliced(BuiltinContext* ctx) {
         if (i <= 0xFFFFFFFFUL && elem.is_undefined() && !found) {
             HString* key = ctx.heap.int_to_hstring((long)i);
             if (key != null) {
-                result.put_prop(key, elem, hobject::PROP_FLAGS_WEC);
+                result.put_prop(key, elem, hobject::PROP_FLAGS_WEC, ctx.heap);
             }
         } else {
             array_set_elem_ulong(result, i, elem, ctx.heap);
@@ -2496,7 +2496,7 @@ fn void builtin_array_proto_toSpliced(BuiltinContext* ctx) {
         if (i <= 0xFFFFFFFFUL && elem.is_undefined() && !found) {
             HString* key = ctx.heap.int_to_hstring((long)(k));
             if (key != null) {
-                result.put_prop(key, elem, hobject::PROP_FLAGS_WEC);
+                result.put_prop(key, elem, hobject::PROP_FLAGS_WEC, ctx.heap);
             }
         } else {
             array_set_elem_ulong(result, k, elem, ctx.heap);
@@ -2586,7 +2586,7 @@ fn void builtin_array_proto_with(BuiltinContext* ctx) {
                 // Hole: explicitly create an own property with undefined
                 HString* key = ctx.heap.int_to_hstring((long)i);
                 if (key != null) {
-                    result.put_prop(key, elem, hobject::PROP_FLAGS_WEC);
+                    result.put_prop(key, elem, hobject::PROP_FLAGS_WEC, ctx.heap);
                 }
             } else {
                 array_set_elem_ulong(result, i, elem, ctx.heap);
@@ -2955,7 +2955,7 @@ fn void arr_iterator_close_after_throw(BuiltinContext* ctx, TVal iterator) {
     HObject* iter_obj = (HObject*)iterator.get_heapptr();
     HString* return_key = builtin_intern_string(ctx.heap, "return");
     if (return_key == null) return;
-    TVal? return_method_opt = iter_obj.get_prop_proto(return_key);
+    TVal? return_method_opt = iter_obj.get_prop_proto(return_key, ctx.heap);
     if (try return_method = return_method_opt) {
         if (return_method.is_undefined() || return_method.is_null()) return;
         if (!arr_from_is_callable(return_method)) return;
@@ -3029,9 +3029,9 @@ fn bool arr_set_length_or_throw(BuiltinContext* ctx, HObject* obj, HString* len_
     }
 
     // Own property "length" check.
-    int own_idx = obj.find_prop_idx(len_key);
+    int own_idx = obj.find_prop_idx(len_key, ctx.heap);
     if (own_idx >= 0) {
-        hobject::PropFlags cur_flags = obj.get_prop_flags((uint)own_idx);
+        hobject::PropFlags cur_flags = obj.get_prop_flags((uint)own_idx, ctx.heap);
         if (cur_flags.is_accessor) {
             // Own accessor: invoke the setter, or throw if getter-only.
             TVal gs_slot = obj.prop_values()[own_idx];
@@ -3058,7 +3058,7 @@ fn bool arr_set_length_or_throw(BuiltinContext* ctx, HObject* obj, HString* len_
             return false;
         }
         // Update value, preserving existing flags.
-        if (!obj.put_prop(len_key, len_tv, cur_flags)) {
+        if (!obj.put_prop(len_key, len_tv, cur_flags, ctx.heap)) {
             arr_throw_type_error(ctx, "Cannot set property length, no space left");
             return false;
         }
@@ -3068,7 +3068,7 @@ fn bool arr_set_length_or_throw(BuiltinContext* ctx, HObject* obj, HString* len_
     // No own property: check the prototype chain for an inherited accessor
     // before falling back to defining a new own data property (Set()'s
     // OrdinarySet walks the chain first per ES2022 §10.1.9.2).
-    hobject::AccessorResult acc = obj.find_accessor_proto(len_key, false);
+    hobject::AccessorResult acc = obj.find_accessor_proto(len_key, false, ctx.heap);
     if (acc.found) {
         if (acc.accessor_fn.is_undefined() || acc.accessor_fn.is_null()) {
             arr_throw_type_error(ctx, "Cannot set property length, has only a getter");
@@ -3089,7 +3089,7 @@ fn bool arr_set_length_or_throw(BuiltinContext* ctx, HObject* obj, HString* len_
 
     // No accessor anywhere on the chain (no own property or inherited data
     // property), define as a new own data property on obj.
-    if (!obj.put_prop(len_key, len_tv, hobject::PROP_FLAGS_WEC)) {
+    if (!obj.put_prop(len_key, len_tv, hobject::PROP_FLAGS_WEC, ctx.heap)) {
         arr_throw_type_error(ctx, "Cannot set property length, no space left");
         return false;
     }
@@ -3539,7 +3539,7 @@ fn HObject* arr_to_object(TVal val, Heap* heap) {
             HString* len_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
             TVal len_tv;
             len_tv.set_fastint((long)prim_str.char_length());
-            obj.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NNC);
+            obj.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NNC, heap);
             // Indexed character properties are served lazily via the exotic_stringobj flag;
             // no per-character own properties are materialised at construction time.
             return obj;
@@ -3563,9 +3563,9 @@ fn void arr_throw_type_error(BuiltinContext* ctx, char[] msg) {
 /// throw). Returns true on success; on failure sets ctx.should_throw and
 /// returns false.
 fn bool arr_create_data_property_or_throw(BuiltinContext* ctx, HObject* obj, HString* key, TVal val) {
-    int idx = obj.find_prop_idx(key);
+    int idx = obj.find_prop_idx(key, ctx.heap);
     if (idx >= 0) {
-        hobject::PropFlags existing = obj.get_prop_flags((uint)idx);
+        hobject::PropFlags existing = obj.get_prop_flags((uint)idx, ctx.heap);
         // If the existing property is already {W:true, E:true, C:true} and a
         // plain data property, CreateDataProperty may simply overwrite the
         // value. Otherwise, since configurable is false, redefining to the
@@ -3580,7 +3580,7 @@ fn bool arr_create_data_property_or_throw(BuiltinContext* ctx, HObject* obj, HSt
         arr_throw_type_error(ctx, "Cannot add property, object is not extensible");
         return false;
     }
-    if (!obj.put_prop(key, val, hobject::PROP_FLAGS_WEC)) {
+    if (!obj.put_prop(key, val, hobject::PROP_FLAGS_WEC, ctx.heap)) {
         arr_throw_type_error(ctx, "Cannot add property, no space left");
         return false;
     }
@@ -3625,10 +3625,10 @@ fn bool arr_has_prop(HObject* obj, ulong key, Heap* heap, void* vm = null) {
     HString* pk = heap.int_to_hstring((long)key);
     if (pk == null) return false;
     // Check own properties first (handles accessor properties set via defineProperty)
-    int own_idx = obj.find_prop_idx(pk);
+    int own_idx = obj.find_prop_idx(pk, heap);
     if (own_idx >= 0) return true;
     // Then check prototype chain
-    TVal? found = obj.get_prop_proto(pk);
+    TVal? found = obj.get_prop_proto(pk, heap);
     return @ok(found);
 }
 
@@ -3656,7 +3656,7 @@ fn void arr_delete_elem_or_throw(BuiltinContext* ctx, HObject* obj, ulong key) {
         return;
     }
     HString* del_key = ctx.heap.int_to_hstring((long)key);
-    if (del_key != null) obj.delete_prop(del_key);
+    if (del_key != null) obj.delete_prop(del_key, ctx.heap);
 }
 
 /// Helper: invoke a getter function. Returns the getter result or undefined.
@@ -3860,9 +3860,9 @@ fn bool array_can_set_index(BuiltinContext* ctx, HObject* obj, ulong idx) {
     if (idx <= 0xFFFFFFFFUL) {
         HString* key = ctx.heap.int_to_hstring((long)idx);
         if (key != null) {
-            int own_idx = obj.find_prop_idx(key);
+            int own_idx = obj.find_prop_idx(key, ctx.heap);
             if (own_idx >= 0) {
-                PropFlags pf = obj.get_prop_flags((uint)own_idx);
+                PropFlags pf = obj.get_prop_flags((uint)own_idx, ctx.heap);
                 if (pf.is_accessor) {
                     arr_throw_type_error(ctx, "Cannot redefine accessor as data property");
                     return false;
@@ -3927,11 +3927,11 @@ fn bool array_set_elem_ulong_checked(BuiltinContext* ctx, HObject* obj, ulong id
             // Use put_prop when: (a) a named property exists that may have non-WEC
             // flags, or (b) the value is undefined, because undefined == hole in
             // the dense array and would make the slot appear absent.
-            bool has_named = obj.find_prop_idx(key) >= 0;
+            bool has_named = obj.find_prop_idx(key, ctx.heap) >= 0;
             bool is_undef = val.is_undefined();
             if (has_named || (is_undef && (obj.get_class() == hobject::ObjClass.ARRAY
                                         || obj.get_class() == hobject::ObjClass.ARGUMENTS))) {
-                obj.put_prop(key, val, hobject::PROP_FLAGS_WEC);
+                obj.put_prop(key, val, hobject::PROP_FLAGS_WEC, ctx.heap);
                 return true;
             }
         }
@@ -3945,9 +3945,9 @@ fn bool array_set_elem_ulong_checked(BuiltinContext* ctx, HObject* obj, ulong id
 fn bool array_can_delete_index(BuiltinContext* ctx, HObject* obj, ulong idx) {
     HString* key = ctx.heap.int_to_hstring((long)idx);
     if (key != null) {
-        int own_idx = obj.find_prop_idx(key);
+        int own_idx = obj.find_prop_idx(key, ctx.heap);
         if (own_idx >= 0) {
-            PropFlags pf = obj.get_prop_flags((uint)own_idx);
+            PropFlags pf = obj.get_prop_flags((uint)own_idx, ctx.heap);
             if (!pf.configurable) {
                 arr_throw_type_error(ctx, "Cannot delete non-configurable property");
                 return false;
@@ -3985,7 +3985,7 @@ fn bool array_delete_elem_ulong_checked(BuiltinContext* ctx, HObject* obj, ulong
     if (!array_can_delete_index(ctx, obj, idx)) return false;
     HString* key = ctx.heap.int_to_hstring((long)idx);
     if (key != null) {
-        obj.delete_prop(key);
+        obj.delete_prop(key, ctx.heap);
     }
     return true;
 }
@@ -4072,9 +4072,9 @@ fn bool array_set_elem_ulong_set(BuiltinContext* ctx, HObject* obj, ulong idx, T
     }
 
     // Step 1: own property
-    int own_idx = obj.find_prop_idx(key);
+    int own_idx = obj.find_prop_idx(key, ctx.heap);
     if (own_idx >= 0) {
-        PropFlags f = obj.get_prop_flags((uint)own_idx);
+        PropFlags f = obj.get_prop_flags((uint)own_idx, ctx.heap);
         if (f.is_accessor) {
             TVal setter = hobject::hobject_access_setter(obj.prop_values()[(uint)own_idx]);
             if (setter.is_undefined() || setter.is_null()) {
@@ -4109,7 +4109,7 @@ fn bool array_set_elem_ulong_set(BuiltinContext* ctx, HObject* obj, ulong idx, T
     }
 
     // Step 2: prototype chain accessor
-    hobject::AccessorResult acc = obj.find_accessor_proto((void*)key, false);
+    hobject::AccessorResult acc = obj.find_accessor_proto((void*)key, false, ctx.heap);
     if (acc.found) {
         TVal setter = acc.accessor_fn;
         if (setter.is_undefined() || setter.is_null()) {
@@ -4142,11 +4142,11 @@ fn bool array_set_elem_ulong_set(BuiltinContext* ctx, HObject* obj, ulong idx, T
         // ARRAY dense slots cannot distinguish an explicit undefined value
         // from a hole, so store undefined as a named property.
         if (obj.get_class() == hobject::ObjClass.ARRAY && val.is_undefined()) {
-            obj.put_prop(key, val, hobject::PROP_FLAGS_WEC);
+            obj.put_prop(key, val, hobject::PROP_FLAGS_WEC, ctx.heap);
         } else {
             // Try dense array first; fall back to named property when the
             // dense part can't grow (e.g. index >= 2^31).
-            if (obj.set_array_idx((uint)idx, val)) {
+            if (obj.set_array_idx((uint)idx, val, ctx.heap)) {
                 // Dense write succeeded, auto-grow length.
                 if (know_current_len && idx >= current_len) {
                     array_set_length_ulong(obj, idx + 1, ctx.heap);
@@ -4155,11 +4155,11 @@ fn bool array_set_elem_ulong_set(BuiltinContext* ctx, HObject* obj, ulong idx, T
             }
             // Dense write failed, store as named property (sparse array).
             // Do NOT auto-grow length here; the caller is responsible.
-            obj.put_prop(key, val, hobject::PROP_FLAGS_WEC);
+            obj.put_prop(key, val, hobject::PROP_FLAGS_WEC, ctx.heap);
         }
         return true;
     }
-    obj.put_prop(key, val, hobject::PROP_FLAGS_WEC);
+    obj.put_prop(key, val, hobject::PROP_FLAGS_WEC, ctx.heap);
     return true;
 }
 
@@ -4193,9 +4193,9 @@ fn bool arr_get_elem(HObject* obj, uint key, Heap* heap, TVal* out) {
     // Check own properties first, may be an accessor (set via defineProperty)
     // This must come BEFORE the dense array fast path because accessor properties
     // at numeric indices override the dense array value.
-    int own_idx = obj.find_prop_idx(pk);
+    int own_idx = obj.find_prop_idx(pk, heap);
     if (own_idx >= 0) {
-        PropFlags pf = obj.get_prop_flags((uint)own_idx);
+        PropFlags pf = obj.get_prop_flags((uint)own_idx, heap);
         if (pf.is_accessor) {
             TVal gs_slot = obj.prop_values()[own_idx];
             TVal getter_fn = hobject::hobject_access_getter(gs_slot);
@@ -4216,7 +4216,7 @@ fn bool arr_get_elem(HObject* obj, uint key, Heap* heap, TVal* out) {
     }
 
     // Prototype chain lookup
-    hobject::PropLookupResult res = obj.get_prop_or_accessor_proto(pk, true);
+    hobject::PropLookupResult res = obj.get_prop_or_accessor_proto(pk, true, heap);
     if (res.kind == hobject::PropLookupKind.PROP_ACCESSOR) {
         *out = arr_invoke_getter(obj, res.acc.accessor_fn, heap, null);
         return true;
@@ -4298,9 +4298,9 @@ fn bool arr_get_elem_vm(HObject* obj, ulong key, Heap* heap, BuiltinContext* ctx
     if (pk == null) return false;
 
     // Check own properties, may be an accessor (set via defineProperty)
-    int own_idx = obj.find_prop_idx(pk);
+    int own_idx = obj.find_prop_idx(pk, heap);
     if (own_idx >= 0) {
-        PropFlags pf = obj.get_prop_flags((uint)own_idx);
+        PropFlags pf = obj.get_prop_flags((uint)own_idx, heap);
         if (pf.is_accessor) {
             TVal gs_slot = obj.prop_values()[own_idx];
             TVal getter_fn = hobject::hobject_access_getter(gs_slot);
@@ -4313,7 +4313,7 @@ fn bool arr_get_elem_vm(HObject* obj, ulong key, Heap* heap, BuiltinContext* ctx
     }
 
     // Prototype chain lookup
-    hobject::PropLookupResult res = obj.get_prop_or_accessor_proto(pk, true);
+    hobject::PropLookupResult res = obj.get_prop_or_accessor_proto(pk, true, heap);
     if (res.kind == hobject::PropLookupKind.PROP_ACCESSOR) {
         *out = arr_invoke_getter_ctx(obj, res.acc.accessor_fn, heap, ctx);
         return !ctx.should_throw;
@@ -4489,7 +4489,7 @@ fn void builtin_array_proto_filter(BuiltinContext* ctx) {
     }
     HString* len_key = (HString*)ctx.heap.strs[heap::BuiltinStr.LENGTH];
     TVal len_tv; len_tv.set_fastint((long)aj);
-    arr.put_prop(len_key, len_tv, hobject::PROP_FLAGS_WEC);
+    arr.put_prop(len_key, len_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
     ctx.result.set_object((void*)arr);
 }
 
@@ -4880,7 +4880,7 @@ fn bool register_array_constructor(EnvRecord* global_env, Heap* heap) {
     HString* constructor_key = (HString*)heap.strs[heap::BuiltinStr.CONSTRUCTOR];
     TVal constructor_tv;
     constructor_tv.set_object(arr);
-    proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_WC);
+    proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Set Array.prototype on the constructor (non-writable, non-enumerable, non-configurable)
     HString* prototype_key = (HString*)heap.strs[heap::BuiltinStr.PROTOTYPE];
@@ -4891,7 +4891,7 @@ fn bool register_array_constructor(EnvRecord* global_env, Heap* heap) {
     proto_pflags.enumerable = false;
     proto_pflags.configurable = false;
     proto_pflags.is_accessor = false;
-    arr.put_prop(prototype_key, proto_tv, proto_pflags);
+    arr.put_prop(prototype_key, proto_tv, proto_pflags, heap);
 
     // Register Array.prototype methods
     if (!register_array_proto_method(proto, heap, "toString",  Builtin.ARRAY_PROTO_TOSTRING.ordinal))  return false;
@@ -4946,10 +4946,10 @@ fn bool register_array_constructor(EnvRecord* global_env, Heap* heap) {
         if (iter_sym != null) {
             HString* values_key = builtin_intern_string(heap, "values");
             if (values_key != null) {
-                TVal? values_tv = proto.get_prop(values_key);
+                TVal? values_tv = proto.get_prop(values_key, heap);
                 if (try values_func = values_tv) {
                     // Set @@iterator to the same function as .values
-                    proto.put_prop(iter_sym, values_func, hobject::PROP_FLAGS_WC);
+                    proto.put_prop(iter_sym, values_func, hobject::PROP_FLAGS_WC, heap);
                 }
             }
         }
@@ -4975,12 +4975,12 @@ fn bool register_array_constructor(EnvRecord* global_env, Heap* heap) {
             foreach (nm : names) {
                 HString* k = builtin_intern_string(heap, nm);
                 if (k == null) return false;
-                list.put_prop(k, true_tv, hobject::PROP_FLAGS_WEC);
+                list.put_prop(k, true_tv, hobject::PROP_FLAGS_WEC, heap);
             }
             TVal list_tv; list_tv.set_object(list);
             // { writable:false, enumerable:false, configurable:true }
             hobject::PropFlags unsc_flags = { .writable = false, .enumerable = false, .configurable = true, .is_accessor = false };
-            proto.put_prop(unsc_sym, list_tv, unsc_flags);
+            proto.put_prop(unsc_sym, list_tv, unsc_flags, heap);
         }
     }
 
@@ -4993,21 +4993,21 @@ fn bool register_array_constructor(EnvRecord* global_env, Heap* heap) {
     if (isarray_key == null) return false;
     TVal isarray_tv;
     isarray_tv.set_lightfunc((void*)(usz)Builtin.ARRAY_ISARRAY.ordinal);
-    arr.put_prop(isarray_key, isarray_tv, hobject::PROP_FLAGS_WC);
+    arr.put_prop(isarray_key, isarray_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Add Array.of (ES6 §22.1.2.3) as static method on the constructor
     HString* of_key = builtin_intern_string(heap, "of");
     if (of_key == null) return false;
     TVal of_tv;
     of_tv.set_lightfunc((void*)(usz)Builtin.ARRAY_OF.ordinal);
-    arr.put_prop(of_key, of_tv, hobject::PROP_FLAGS_WC);
+    arr.put_prop(of_key, of_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Add Array.from (ES6 §22.1.2.1) as static method on the constructor
     HString* from_key = builtin_intern_string(heap, "from");
     if (from_key == null) return false;
     TVal from_tv;
     from_tv.set_lightfunc((void*)(usz)Builtin.ARRAY_FROM.ordinal);
-    arr.put_prop(from_key, from_tv, hobject::PROP_FLAGS_WC);
+    arr.put_prop(from_key, from_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Add Array.fromAsync (proposal-array-from-async, ES2026) as a static
     // method on the constructor.
@@ -5015,7 +5015,7 @@ fn bool register_array_constructor(EnvRecord* global_env, Heap* heap) {
     if (from_async_key == null) return false;
     TVal from_async_tv;
     from_async_tv.set_lightfunc((void*)(usz)Builtin.ARRAY_FROM_ASYNC.ordinal);
-    arr.put_prop(from_async_key, from_async_tv, hobject::PROP_FLAGS_WC);
+    arr.put_prop(from_async_key, from_async_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Add @@species accessor (ES2022 §23.1.2.5): getter returns `this`.
     HString* species_sym = ensure_species_symbol(heap);
@@ -5028,11 +5028,11 @@ fn bool register_array_constructor(EnvRecord* global_env, Heap* heap) {
             HString* getter_name = builtin_intern_string(heap, "get [Symbol.species]");
             if (getter_name != null) {
                 TVal name_tv; name_tv.set_string(getter_name);
-                getter_fn.put_prop((void*)heap.str(heap::BuiltinStr.NAME), name_tv, hobject::PROP_FLAGS_NWC);
+                getter_fn.put_prop((void*)heap.str(heap::BuiltinStr.NAME), name_tv, hobject::PROP_FLAGS_NWC, heap);
             }
             HString* len_key_sp = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
             TVal zero_tv; zero_tv.set_fastint(0);
-            getter_fn.put_prop(len_key_sp, zero_tv, hobject::PROP_FLAGS_NWC);
+            getter_fn.put_prop(len_key_sp, zero_tv, hobject::PROP_FLAGS_NWC, heap);
 
             TVal getter_tv; getter_tv.set_object(getter_fn);
             TVal undef; undef.set_undefined();
@@ -5041,7 +5041,7 @@ fn bool register_array_constructor(EnvRecord* global_env, Heap* heap) {
             acc_flags.enumerable = false;
             acc_flags.configurable = true;
             acc_flags.is_accessor = true;
-            arr.put_prop(species_sym, hobject::hobject_create_accessors(heap, getter_tv, undef), acc_flags);
+            arr.put_prop(species_sym, hobject::hobject_create_accessors(heap, getter_tv, undef), acc_flags, heap);
         }
     }
 

@@ -59,17 +59,17 @@ fn bool register_async_generator(EnvRecord* global_env, Heap* heap) {
             {
                 HString* length_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
                 TVal len_tv; len_tv.set_fastint(0);
-                fn_obj.put_prop(length_key, len_tv, hobject::PROP_FLAGS_NWC);
+                fn_obj.put_prop(length_key, len_tv, hobject::PROP_FLAGS_NWC, heap);
                 HString* name_key = heap.str(heap::BuiltinStr.NAME);
                 HString* name_val = builtin_intern_string(heap, "[Symbol.asyncIterator]");
                 if (name_key != null && name_val != null) {
                     TVal name_tv; name_tv.set_string(name_val);
-                    fn_obj.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC);
+                    fn_obj.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC, heap);
                 }
             }
             TVal iter_tv;
             iter_tv.set_object(fn_obj);
-            ai_proto.put_prop(asynciter_key, iter_tv, hobject::PROP_FLAGS_WC);
+            ai_proto.put_prop(asynciter_key, iter_tv, hobject::PROP_FLAGS_WC, heap);
         }
     }
 
@@ -90,7 +90,7 @@ fn bool register_async_generator(EnvRecord* global_env, Heap* heap) {
         if (tag_key != null) {
             TVal tag_tv;
             tag_tv.set_string(builtin_intern_string(heap, "AsyncGenerator"));
-            ag_proto.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC);
+            ag_proto.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC, heap);
         }
     }
 
@@ -109,14 +109,14 @@ fn bool register_async_generator(EnvRecord* global_env, Heap* heap) {
         HString* proto_key = (HString*)heap.strs[heap::BuiltinStr.PROTOTYPE];
         TVal proto_tv;
         proto_tv.set_object(ag_proto);
-        agf_proto.put_prop(proto_key, proto_tv, hobject::PROP_FLAGS_NWC);
+        agf_proto.put_prop(proto_key, proto_tv, hobject::PROP_FLAGS_NWC, heap);
     }
     {
         HString* tag_key = ensure_tostringtag_symbol(heap);
         if (tag_key != null) {
             TVal tag_tv;
             tag_tv.set_string(builtin_intern_string(heap, "AsyncGeneratorFunction"));
-            agf_proto.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC);
+            agf_proto.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC, heap);
         }
     }
 
@@ -135,14 +135,14 @@ fn bool register_async_generator(EnvRecord* global_env, Heap* heap) {
         HString* constructor_key = (HString*)heap.strs[heap::BuiltinStr.CONSTRUCTOR];
         TVal constructor_tv;
         constructor_tv.set_object(ctor);
-        agf_proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_NWC);
+        agf_proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_NWC, heap);
     }
     // %AsyncGeneratorPrototype%.constructor → %AsyncGenerator% (§27.6.1.1).
     {
         HString* constructor_key = (HString*)heap.strs[heap::BuiltinStr.CONSTRUCTOR];
         TVal constructor_tv;
         constructor_tv.set_object(agf_proto);
-        ag_proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_NWC);
+        ag_proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_NWC, heap);
     }
     // %AsyncGeneratorFunction%.prototype → %AsyncGenerator%
     // {writable:false, enumerable:false, configurable:false} (§27.4.2.2).
@@ -150,13 +150,13 @@ fn bool register_async_generator(EnvRecord* global_env, Heap* heap) {
         HString* prototype_key = (HString*)heap.strs[heap::BuiltinStr.PROTOTYPE];
         TVal agf_proto_tv;
         agf_proto_tv.set_object(agf_proto);
-        ctor.put_prop(prototype_key, agf_proto_tv, hobject::PROP_FLAGS_NNC);
+        ctor.put_prop(prototype_key, agf_proto_tv, hobject::PROP_FLAGS_NNC, heap);
     }
     {
         HString* length_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
         TVal length_tv;
         length_tv.set_fastint(1);
-        ctor.put_prop(length_key, length_tv, hobject::PROP_FLAGS_NWC);
+        ctor.put_prop(length_key, length_tv, hobject::PROP_FLAGS_NWC, heap);
     }
     set_func_ctor_name(ctor, heap, "AsyncGeneratorFunction");
 
@@ -220,7 +220,7 @@ fn TVal async_gen_type_error(Heap* heap, char[] msg) {
         if (msg_str != null) {
             TVal msg_tv; msg_tv.set_string(msg_str);
             HString* msg_key = heap.str(heap::BuiltinStr.MESSAGE);
-            if (msg_key != null) err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
+            if (msg_key != null) err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC, heap);
         }
         out.set_object(err);
     }
@@ -234,10 +234,10 @@ fn HObject* async_gen_iter_result(Heap* heap, TVal value, bool done) {
     HObject* r = r_raw;
     r.prototype = heap.object_proto;
     HString* value_key = (HString*)heap.strs[heap::BuiltinStr.VALUE];
-    r.put_prop(value_key, value, hobject::PROP_FLAGS_WEC);
+    r.put_prop(value_key, value, hobject::PROP_FLAGS_WEC, heap);
     HString* done_key = (HString*)heap.strs[heap::BuiltinStr.DONE];
     TVal done_tv; done_tv.set_boolean(done);
-    r.put_prop(done_key, done_tv, hobject::PROP_FLAGS_WEC);
+    r.put_prop(done_key, done_tv, hobject::PROP_FLAGS_WEC, heap);
     return r;
 }
 
@@ -444,9 +444,9 @@ fn bool async_gen_finish_body(BuiltinContext* ctx, GeneratorState* gs, TVal resu
     if (result.is_object() && result.get_heapptr() != null) {
         HObject* robj = (HObject*)result.get_heapptr();
         HString* done_key = (HString*)heap.strs[heap::BuiltinStr.DONE];
-        if (try dv = robj.get_prop(done_key)) { done = builtin_to_boolean(&dv); }
+        if (try dv = robj.get_prop(done_key, ctx.heap)) { done = builtin_to_boolean(&dv); }
         HString* value_key = (HString*)heap.strs[heap::BuiltinStr.VALUE];
-        if (try vv = robj.get_prop(value_key)) { value = vv; }
+        if (try vv = robj.get_prop(value_key, ctx.heap)) { value = vv; }
     }
     async_gen_settle_result(heap, vm, gs, value, done);
     // Continue draining regardless of done: AsyncGeneratorDrainQueue
@@ -512,8 +512,8 @@ fn bool async_gen_await_return(BuiltinContext* ctx, GeneratorState* gs, TVal val
     TVal rj_tv; rj_tv.set_object(rj);
     HString* ff_key = builtin_intern_string(heap, "onFulfilled");
     HString* rj_key = builtin_intern_string(heap, "onRejected");
-    if (ff_key != null) rxn.put_prop(ff_key, ff_tv, hobject::PROP_FLAGS_WEC);
-    if (rj_key != null) rxn.put_prop(rj_key, rj_tv, hobject::PROP_FLAGS_WEC);
+    if (ff_key != null) rxn.put_prop(ff_key, ff_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
+    if (rj_key != null) rxn.put_prop(rj_key, rj_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
 
     // Hold the request across the await and pause draining. ag_root_promise
     // already points at it from the dequeue.
@@ -613,8 +613,8 @@ fn bool async_gen_yield_return_await(BuiltinContext* ctx, GeneratorState* gs, TV
     TVal rj_tv; rj_tv.set_object(rj);
     HString* ff_key = builtin_intern_string(heap, "onFulfilled");
     HString* rj_key = builtin_intern_string(heap, "onRejected");
-    if (ff_key != null) rxn.put_prop(ff_key, ff_tv, hobject::PROP_FLAGS_WEC);
-    if (rj_key != null) rxn.put_prop(rj_key, rj_tv, hobject::PROP_FLAGS_WEC);
+    if (ff_key != null) rxn.put_prop(ff_key, ff_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
+    if (rj_key != null) rxn.put_prop(rj_key, rj_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
 
     gs.state = GEN_AWAITING_RETURN;
     gs.ag_body_in_flight = true;

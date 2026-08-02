@@ -24,19 +24,19 @@ fn void finish_arguments_object(Vm* vm, HObject* args_obj, HObject* callee, uint
     if (callee_key != null) {
         TVal callee_tv;
         callee_tv.set_object(callee);
-        args_obj.put_prop(callee_key, callee_tv, hobject::PROP_FLAGS_WC);
+        args_obj.put_prop(callee_key, callee_tv, hobject::PROP_FLAGS_WC, vm.heap);
     }
     HString* length_key = (HString*)vm.heap.strs[heap::BuiltinStr.LENGTH];
     if (length_key != null) {
         TVal length_tv;
         length_tv.set_fastint((long)nargs);
-        args_obj.put_prop(length_key, length_tv, hobject::PROP_FLAGS_WC);
+        args_obj.put_prop(length_key, length_tv, hobject::PROP_FLAGS_WC, vm.heap);
     }
     HString* iter_sym = builtins::ensure_iterator_symbol(vm.heap);
     if (iter_sym != null && vm.heap.array_proto != null) {
-        TVal? values_tv = vm.heap.array_proto.get_prop(iter_sym);
+        TVal? values_tv = vm.heap.array_proto.get_prop(iter_sym, vm.heap);
         if (try values_fn = values_tv) {
-            args_obj.put_prop(iter_sym, values_fn, hobject::PROP_FLAGS_WC);
+            args_obj.put_prop(iter_sym, values_fn, hobject::PROP_FLAGS_WC, vm.heap);
         }
     }
 }
@@ -118,7 +118,7 @@ fn bool? vm_init_private_members(Vm* vm, EnvRecord* ctor_lex_env, EnvRecord* cto
             if (brand_sym.is_string()) {
                 void* brand_key = brand_sym.get_heapptr();
                 if (brand_key != null) {
-                    if (this_hobj.find_prop_idx(brand_key) >= 0) {
+                    if (this_hobj.find_prop_idx(brand_key, vm.heap) >= 0) {
                         if (!vm_throw_error(vm, vm.heap.type_err_proto,
                                 "Cannot initialize private members twice", act,
                                 curr_pc, needs_restart)) {
@@ -138,7 +138,7 @@ fn bool? vm_init_private_members(Vm* vm, EnvRecord* ctor_lex_env, EnvRecord* cto
                     }
                     TVal true_tv;
                     true_tv.set_boolean(true);
-                    this_hobj.put_prop(brand_key, true_tv, hobject::PROP_FLAGS_NNC);
+                    this_hobj.put_prop(brand_key, true_tv, hobject::PROP_FLAGS_NNC, vm.heap);
                 }
             }
         }
@@ -274,7 +274,7 @@ fn void? resolve_call_var(Dispatch* ds, uint name_const_idx, uint callee_reg, bo
             HObject* b = (HObject*)vic.bindings;
             if (b.shape_id == vic.shape_id
                 && vm.heap.shape_recycle_epoch == vic.recycle_epoch) {
-                if (!b.get_prop_flags(vic.prop_idx).is_accessor) {
+                if (!b.get_prop_flags(vic.prop_idx, ds.vm.heap).is_accessor) {
                     TVal v = b.prop_values()[vic.prop_idx];
                     if (!env::is_tdz_sentinel(&v)) {
                         if (is_global_bindings(vm, b)) {
@@ -302,7 +302,7 @@ fn void? resolve_call_var(Dispatch* ds, uint name_const_idx, uint callee_reg, bo
 
     EnvRecord* cur = ds.act.lex_env;
     while (cur != null) {
-        int idx = cur.bindings.find_prop_idx(key);
+        int idx = cur.bindings.find_prop_idx(key, ds.vm.heap);
         if (idx >= 0) {
             TVal v_raw = cur.bindings.prop_values()[idx];
             if (env::is_tdz_sentinel(&v_raw)) {
@@ -311,7 +311,7 @@ fn void? resolve_call_var(Dispatch* ds, uint name_const_idx, uint callee_reg, bo
                     return VM_ERROR~;
                 }
                 found = true; // prevent duplicate error
-            } else if (cur.bindings.get_prop_flags((uint)idx).is_accessor) {
+            } else if (cur.bindings.get_prop_flags((uint)idx, ds.vm.heap).is_accessor) {
                 TVal getter = hobject::hobject_access_getter(v_raw);
                 if (!getter.is_undefined() && !getter.is_null() && vm.heap.call_fn != null) {
                     TVal this_tv;
@@ -360,9 +360,9 @@ fn void? resolve_call_var(Dispatch* ds, uint name_const_idx, uint callee_reg, bo
     if (!found && ds.act.lex_env != ds.act.var_env) {
         EnvRecord* vcur = ds.act.var_env;
         while (vcur != null) {
-            int vidx = vcur.bindings.find_prop_idx(key);
+            int vidx = vcur.bindings.find_prop_idx(key, ds.vm.heap);
             if (vidx >= 0) {
-                if (vcur.bindings.get_prop_flags((uint)vidx).is_accessor) {
+                if (vcur.bindings.get_prop_flags((uint)vidx, ds.vm.heap).is_accessor) {
                     TVal gs_slot = vcur.bindings.prop_values()[vidx];
                     TVal getter = hobject::hobject_access_getter(gs_slot);
                     if (!getter.is_undefined() && !getter.is_null() && vm.heap.call_fn != null) {
@@ -486,7 +486,7 @@ fn void? resolve_call_global(Dispatch* ds, uint name_const_idx, uint callee_reg,
 
     EnvRecord* cur = ds.act.lex_env;
     while (cur != null) {
-        int idx = cur.bindings.find_prop_idx(key);
+        int idx = cur.bindings.find_prop_idx(key, ds.vm.heap);
         if (idx >= 0) {
             TVal v_raw = cur.bindings.prop_values()[idx];
             if (env::is_tdz_sentinel(&v_raw)) {
@@ -495,7 +495,7 @@ fn void? resolve_call_global(Dispatch* ds, uint name_const_idx, uint callee_reg,
                     return VM_ERROR~;
                 }
                 found = true;
-            } else if (cur.bindings.get_prop_flags((uint)idx).is_accessor) {
+            } else if (cur.bindings.get_prop_flags((uint)idx, ds.vm.heap).is_accessor) {
                 TVal getter = hobject::hobject_access_getter(v_raw);
                 if (!getter.is_undefined() && !getter.is_null() && vm.heap.call_fn != null) {
                     TVal this_tv;
@@ -541,9 +541,9 @@ fn void? resolve_call_global(Dispatch* ds, uint name_const_idx, uint callee_reg,
     if (!found && ds.act.lex_env != ds.act.var_env) {
         EnvRecord* vcur = ds.act.var_env;
         while (vcur != null) {
-            int vidx = vcur.bindings.find_prop_idx(key);
+            int vidx = vcur.bindings.find_prop_idx(key, ds.vm.heap);
             if (vidx >= 0) {
-                if (vcur.bindings.get_prop_flags((uint)vidx).is_accessor) {
+                if (vcur.bindings.get_prop_flags((uint)vidx, ds.vm.heap).is_accessor) {
                     TVal gs_slot = vcur.bindings.prop_values()[vidx];
                     TVal getter = hobject::hobject_access_getter(gs_slot);
                     if (!getter.is_undefined() && !getter.is_null() && vm.heap.call_fn != null) {
@@ -1000,7 +1000,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, Instruction insn, bool*
                         HObject*? args_obj_raw = vm.heap.alloc_object(hobject::ObjClass.ARGUMENTS);
                         if (try args_obj = args_obj_raw) {
                             for (uint ai = 0; ai < nargs; ai++) {
-                                args_obj.set_array_idx(ai, new_regs[ai]);
+                                args_obj.set_array_idx(ai, new_regs[ai], ds.vm.heap);
                             }
                             args_obj.prototype = vm.heap.object_proto;
                             finish_arguments_object(vm, args_obj, hobj_fast, nargs);
@@ -1027,13 +1027,13 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, Instruction insn, bool*
                             for (uint ri = 0; ri < overflow; ri++) {
                                 HString* rkey = vm.heap.int_to_hstring((long)ri);
                                 if (rkey != null) {
-                                    rest_arr.put_prop(rkey, new_regs[rest_idx + ri], hobject::PROP_FLAGS_WEC);
+                                    rest_arr.put_prop(rkey, new_regs[rest_idx + ri], hobject::PROP_FLAGS_WEC, ds.vm.heap);
                                 }
                             }
                             HString* len_str = (HString*)vm.heap.strs[heap::BuiltinStr.LENGTH];
                             TVal len_val;
                             len_val.set_fastint((long)overflow);
-                            rest_arr.put_prop(len_str, len_val, hobject::PROP_FLAGS_WEC);
+                            rest_arr.put_prop(len_str, len_val, hobject::PROP_FLAGS_WEC, ds.vm.heap);
                             new_regs[rest_idx].set_object(rest_arr);
                         } else {
                             new_regs[rest_idx].set_undefined();
@@ -1865,13 +1865,13 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                         for (uint i = 0; i < overflow_g; i++) {
                             HString* key = vm.heap.int_to_hstring((long)i);
                             if (key != null) {
-                                a_g.put_prop(key, old_args_g[copy_count_g + i], hobject::PROP_FLAGS_WEC);
+                                a_g.put_prop(key, old_args_g[copy_count_g + i], hobject::PROP_FLAGS_WEC, ds.vm.heap);
                             }
                         }
                         HString* len_str_g = (HString*)vm.heap.strs[heap::BuiltinStr.LENGTH];
                         TVal len_val_g;
                         len_val_g.set_fastint((long)overflow_g);
-                        a_g.put_prop(len_str_g, len_val_g, hobject::PROP_FLAGS_WEC);
+                        a_g.put_prop(len_str_g, len_val_g, hobject::PROP_FLAGS_WEC, ds.vm.heap);
                         new_regs_g[rest_idx_g].set_object(a_g);
                     } else {
                         new_regs_g[rest_idx_g].set_undefined();
@@ -1896,7 +1896,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                     HObject*? args_obj_raw_g = vm.heap.alloc_object(hobject::ObjClass.ARGUMENTS);
                     if (try args_obj_g = args_obj_raw_g) {
                         for (uint ai = 0; ai < nargs; ai++) {
-                            args_obj_g.set_array_idx(ai, new_regs_g[ai]);
+                            args_obj_g.set_array_idx(ai, new_regs_g[ai], ds.vm.heap);
                         }
                         args_obj_g.prototype = vm.heap.object_proto;
                         finish_arguments_object(vm, args_obj_g, hobj, nargs);
@@ -2062,14 +2062,14 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                         HString* key = vm.heap.int_to_hstring((long)i);
                         if (key != null) {
                             TVal elem = old_args[copy_count + i];
-                            a.put_prop(key, elem, hobject::PROP_FLAGS_WEC);
+                            a.put_prop(key, elem, hobject::PROP_FLAGS_WEC, ds.vm.heap);
                         }
                     }
                     // Set .length
                     HString* len_str = (HString*)vm.heap.strs[heap::BuiltinStr.LENGTH];
                     TVal len_val;
                     len_val.set_fastint((long)overflow);
-                    a.put_prop(len_str, len_val, hobject::PROP_FLAGS_WEC);
+                    a.put_prop(len_str, len_val, hobject::PROP_FLAGS_WEC, ds.vm.heap);
 
                     new_regs[rest_idx].set_object(a);
                 } else {
@@ -2122,7 +2122,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                 HObject*? args_obj_raw = vm.heap.alloc_object(hobject::ObjClass.ARGUMENTS);
                 if (try args_obj = args_obj_raw) {
                     for (uint ai = 0; ai < nargs; ai++) {
-                        args_obj.set_array_idx(ai, new_regs[ai]);
+                        args_obj.set_array_idx(ai, new_regs[ai], ds.vm.heap);
                     }
                     args_obj.prototype = vm.heap.object_proto;
                     finish_arguments_object(vm, args_obj, hobj, nargs);
@@ -2509,7 +2509,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                 // OrdinaryCreateFromConstructor: set [[Prototype]] from new.target.prototype
                 if (new_target != null) {
                     HString* proto_key_sc = (HString*)vm.heap.strs[heap::BuiltinStr.PROTOTYPE];
-                    TVal? proto_sc = new_target.get_prop_proto(proto_key_sc);
+                    TVal? proto_sc = new_target.get_prop_proto(proto_key_sc, ds.vm.heap);
                     if (try psc = proto_sc) {
                         if (psc.is_object() && psc.get_heapptr() != null) {
                             sc_new_obj.prototype = (HObject*)psc.get_heapptr();
@@ -2599,7 +2599,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                 HObject*? args_obj_raw_su = vm.heap.alloc_object(hobject::ObjClass.ARGUMENTS);
                 if (try args_obj_su = args_obj_raw_su) {
                     for (uint ai = 0; ai < nargs; ai++) {
-                        args_obj_su.set_array_idx(ai, old_args[ai]);
+                        args_obj_su.set_array_idx(ai, old_args[ai], ds.vm.heap);
                     }
                     args_obj_su.prototype = vm.heap.object_proto;
                     finish_arguments_object(vm, args_obj_su, super_hobj, nargs);
@@ -2626,14 +2626,14 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                         HString* key = vm.heap.int_to_hstring((long)j);
                         if (key != null) {
                             TVal elem = old_args[copy_count + j];
-                            rest_obj.put_prop(key, elem, hobject::PROP_FLAGS_WEC);
+                            rest_obj.put_prop(key, elem, hobject::PROP_FLAGS_WEC, ds.vm.heap);
                         }
                     }
                     // Set .length
                     HString* len_key = (HString*)vm.heap.strs[heap::BuiltinStr.LENGTH];
                     TVal len_val;
                     len_val.set_fastint((long)overflow);
-                    rest_obj.put_prop(len_key, len_val, hobject::PROP_FLAGS_WEC);
+                    rest_obj.put_prop(len_key, len_val, hobject::PROP_FLAGS_WEC, ds.vm.heap);
                     new_regs[rest_idx].set_object(rest_obj);
                 } else {
                     new_regs[rest_idx].set_undefined();
@@ -2963,7 +2963,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                 // constructor.prototype only replaces it when it is an object.
                 new_obj.prototype = vm.heap.object_proto;
                 HString* proto_key = (HString*)vm.heap.strs[heap::BuiltinStr.PROTOTYPE];
-                TVal? proto_val = hobj.get_prop_proto(proto_key);
+                TVal? proto_val = hobj.get_prop_proto(proto_key, ds.vm.heap);
                 if (try pv = proto_val) {
                     if (pv.is_object() && pv.get_heapptr() != null) {
                         new_obj.prototype = (HObject*)pv.get_heapptr();
@@ -3066,7 +3066,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                 HObject*? args_obj_raw2 = vm.heap.alloc_object(hobject::ObjClass.ARGUMENTS);
                 if (try args_obj2 = args_obj_raw2) {
                     for (uint ai = 0; ai < nargs; ai++) {
-                        args_obj2.set_array_idx(ai, old_args2[ai]);
+                        args_obj2.set_array_idx(ai, old_args2[ai], ds.vm.heap);
                     }
                     args_obj2.prototype = vm.heap.object_proto;
                     finish_arguments_object(vm, args_obj2, hobj, nargs);
@@ -3094,13 +3094,13 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                         HString* key2 = vm.heap.int_to_hstring((long)i);
                         if (key2 != null) {
                             TVal elem2 = old_args2[copy_count + i];
-                            a2.put_prop(key2, elem2, hobject::PROP_FLAGS_WEC);
+                            a2.put_prop(key2, elem2, hobject::PROP_FLAGS_WEC, ds.vm.heap);
                         }
                     }
                     HString* len_str2 = (HString*)vm.heap.strs[heap::BuiltinStr.LENGTH];
                     TVal len_val2;
                     len_val2.set_fastint((long)overflow);
-                    a2.put_prop(len_str2, len_val2, hobject::PROP_FLAGS_WEC);
+                    a2.put_prop(len_str2, len_val2, hobject::PROP_FLAGS_WEC, ds.vm.heap);
 
                     new_regs2[rest_idx].set_object(a2);
                 } else {

@@ -481,7 +481,7 @@ fn Instruction* th_getvar(Instruction* pc, Instruction* code_end, TVal* regs, Co
     HObject* b = (HObject*)vic.bindings;
     if (b.shape_id != vic.shape_id
         || vm.heap.shape_recycle_epoch != vic.recycle_epoch) return pc;
-    if (b.get_prop_flags(vic.prop_idx).is_accessor) return pc; // getter -> switch
+    if (b.get_prop_flags(vic.prop_idx, cold.vm.heap).is_accessor) return pc; // getter -> switch
     TVal v = b.prop_values()[vic.prop_idx];
     if (env::is_tdz_sentinel(&v)) return pc; // TDZ error -> switch
     TVal* ra = regs + insn.a;
@@ -509,7 +509,7 @@ fn Instruction* th_putvar_assign(Instruction* pc, Instruction* code_end, TVal* r
     if (b.shape_id != vic.shape_id
         || vm.heap.shape_recycle_epoch != vic.recycle_epoch) return pc;
     TVal* pv = &b.prop_values()[vic.prop_idx];
-    hobject::PropFlags fl = b.get_prop_flags(vic.prop_idx);
+    hobject::PropFlags fl = b.get_prop_flags(vic.prop_idx, cold.vm.heap);
     if (env::is_tdz_sentinel(pv) || !fl.writable || fl.is_accessor) return pc;
     TVal* ra = regs + insn.a;
     vm.heap.decref_tval(pv);
@@ -537,7 +537,7 @@ fn Instruction* th_inc_var(Instruction* pc, Instruction* code_end, TVal* regs, C
     if (b.shape_id != vic.shape_id
         || vm.heap.shape_recycle_epoch != vic.recycle_epoch) return pc;
     TVal old_val = b.prop_values()[vic.prop_idx];
-    if (env::is_tdz_sentinel(&old_val) || !b.get_prop_flags(vic.prop_idx).writable) return pc;
+    if (env::is_tdz_sentinel(&old_val) || !b.get_prop_flags(vic.prop_idx, cold.vm.heap).writable) return pc;
     if (!old_val.is_fastint()) return pc;
     TVal* ra = regs + insn.a;
     long v = old_val.get_fastint() + 1L;
@@ -589,7 +589,7 @@ fn Instruction* th_getpropc(Instruction* pc, Instruction* code_end, TVal* regs, 
     if (ic == null) return pc;
     void* key = vm.current_func.constants[(uint)insn.c].get_heapptr();
     if (ic.key != key || ic.shape_id != hobj.shape_id
-        || ic.shape_gen != hobj.shape_generation()) return pc;
+        || ic.shape_gen != hobj.shape_generation(vm.heap)) return pc;
     HObject* owner = hobject::ic_resolve_owner(ic, hobj);
     if (owner == null || ic.cached_prop_alloc != (void*)owner.prop_values()) return pc;
     TVal ic_val = *ic.prop_value_ptr;
@@ -615,7 +615,7 @@ fn Instruction* th_getpropc_cached(Instruction* pc, Instruction* code_end, TVal*
     HObject* hobj = (HObject*)rb.get_heapptr();
     hobject::ICEntry* ic = th_ic_at(vm, cold, pc);
     if (ic == null) return pc;
-    if (ic.shape_id != hobj.shape_id || ic.shape_gen != hobj.shape_generation()) return pc;
+    if (ic.shape_id != hobj.shape_id || ic.shape_gen != hobj.shape_generation(vm.heap)) return pc;
     HObject* owner = hobject::ic_resolve_owner(ic, hobj);
     if (owner == null || ic.cached_prop_alloc != (void*)owner.prop_values()) return pc;
     TVal ic_val = *ic.prop_value_ptr;
@@ -646,7 +646,7 @@ fn Instruction* th_putprop(Instruction* pc, Instruction* code_end, TVal* regs, C
     // every exotic class it guards against changes the shape id or is not a
     // plain object at all.
     if (ic.key != rb.get_heapptr() || ic.shape_id != hobj.shape_id || ic.proto != null
-        || ic.shape_gen != hobj.shape_generation()) return pc;
+        || ic.shape_gen != hobj.shape_generation(vm.heap)) return pc;
     if (ic.cached_prop_alloc != (void*)hobj.prop_values()
         || ic.prop_flags.is_accessor || !ic.prop_flags.writable) return pc;
     vm.heap.tval_copy_ref(ic.prop_value_ptr, regs + insn.c);

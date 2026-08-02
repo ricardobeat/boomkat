@@ -66,7 +66,7 @@ fn HObject*? async_from_sync_iterator(Heap* heap, HObject* syncIter, void* vm) {
     if (slot_key == null) return null;
     TVal sync_tv;
     sync_tv.set_object(syncIter);
-    adapter.put_prop(slot_key, sync_tv, hobject::PROP_FLAGS_WEC);
+    adapter.put_prop(slot_key, sync_tv, hobject::PROP_FLAGS_WEC, heap);
 
     // §7.4.2 GetIterator: the sync iterator record caches [[NextMethod]] once
     // (GetV(iterator, "next")). Read it here, at wrapping time, before any
@@ -75,7 +75,7 @@ fn HObject*? async_from_sync_iterator(Heap* heap, HObject* syncIter, void* vm) {
     // A throwing getter surfaces via heap.has_error for the caller to propagate.
     HString* next_key = builtin_intern_string(heap, "next");
     if (next_key != null) {
-        hobject::PropLookupResult nl = syncIter.get_with_accessors(next_key);
+        hobject::PropLookupResult nl = syncIter.get_with_accessors(next_key, heap);
         TVal next_method; next_method.set_undefined();
         if (nl.kind == hobject::PropLookupKind.PROP_DATA) {
             next_method = nl.data_val;
@@ -85,7 +85,7 @@ fn HObject*? async_from_sync_iterator(Heap* heap, HObject* syncIter, void* vm) {
             if (heap.has_error) return null; // getter threw, propagate
         }
         HString* next_slot = builtin_intern_string(heap, ASYNC_FROM_SYNC_NEXT_SLOT);
-        if (next_slot != null) adapter.put_prop(next_slot, next_method, hobject::PROP_FLAGS_WEC);
+        if (next_slot != null) adapter.put_prop(next_slot, next_method, hobject::PROP_FLAGS_WEC, heap);
     }
 
     return adapter;
@@ -99,7 +99,7 @@ fn HObject* async_from_sync_get_wrapped(BuiltinContext* ctx) {
     if (adapter == null) return null;
     HString* slot_key = builtin_intern_string(ctx.heap, ASYNC_FROM_SYNC_ITERATOR_SLOT);
     if (slot_key == null) return null;
-    TVal? sync_opt = adapter.get_prop(slot_key);
+    TVal? sync_opt = adapter.get_prop(slot_key, ctx.heap);
     if (try sv = sync_opt) {
         if (sv.is_object() && sv.get_heapptr() != null) return (HObject*)sv.get_heapptr();
     }
@@ -162,10 +162,10 @@ fn HObject*? async_from_sync_continuation(Heap* heap, void* vm, HObject* sync_it
     if (done_key == null || outer_key == null) return null;
 
     TVal done_tv; done_tv.set_boolean(done);
-    fulfill_fn.put_prop(done_key, done_tv, hobject::PROP_FLAGS_WEC);
+    fulfill_fn.put_prop(done_key, done_tv, hobject::PROP_FLAGS_WEC, heap);
     TVal outer_tv; outer_tv.set_object(outer);
-    fulfill_fn.put_prop(outer_key, outer_tv, hobject::PROP_FLAGS_WEC);
-    reject_fn.put_prop(outer_key, outer_tv, hobject::PROP_FLAGS_WEC);
+    fulfill_fn.put_prop(outer_key, outer_tv, hobject::PROP_FLAGS_WEC, heap);
+    reject_fn.put_prop(outer_key, outer_tv, hobject::PROP_FLAGS_WEC, heap);
 
     // §27.1.4.4 step 13: when done is false and closeOnRejection is true, the
     // onRejected reaction must close the sync iterator (with a throw completion
@@ -174,7 +174,7 @@ fn HObject*? async_from_sync_continuation(Heap* heap, void* vm, HObject* sync_it
         HString* closeiter_key = builtin_intern_string(heap, ASYNC_FROM_SYNC_CLOSEITER_SLOT);
         if (closeiter_key != null) {
             TVal si_tv; si_tv.set_object(sync_iter);
-            reject_fn.put_prop(closeiter_key, si_tv, hobject::PROP_FLAGS_WEC);
+            reject_fn.put_prop(closeiter_key, si_tv, hobject::PROP_FLAGS_WEC, heap);
         }
     }
 
@@ -196,11 +196,11 @@ fn void builtin_async_from_sync_value_unwrap(BuiltinContext* ctx) {
     if (done_key == null || outer_key == null) return;
 
     bool done = false;
-    if (try dv = ctx.callee_obj.get_prop(done_key)) {
+    if (try dv = ctx.callee_obj.get_prop(done_key, ctx.heap)) {
         if (dv.is_boolean()) done = dv.get_boolean();
     }
     HObject* outer = null;
-    if (try ov = ctx.callee_obj.get_prop(outer_key)) {
+    if (try ov = ctx.callee_obj.get_prop(outer_key, ctx.heap)) {
         if (ov.is_object() && ov.get_heapptr() != null) outer = (HObject*)ov.get_heapptr();
     }
     if (outer == null) return;
@@ -221,10 +221,10 @@ fn void builtin_async_from_sync_value_unwrap(BuiltinContext* ctx) {
     iter_result.prototype = heap.object_proto;
 
     HString* value_key = (HString*)heap.strs[heap::BuiltinStr.VALUE];
-    iter_result.put_prop(value_key, value, hobject::PROP_FLAGS_WEC);
+    iter_result.put_prop(value_key, value, hobject::PROP_FLAGS_WEC, ctx.heap);
     HString* done_out_key = (HString*)heap.strs[heap::BuiltinStr.DONE];
     TVal done_tv; done_tv.set_boolean(done);
-    iter_result.put_prop(done_out_key, done_tv, hobject::PROP_FLAGS_WEC);
+    iter_result.put_prop(done_out_key, done_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
 
     TVal iter_result_tv;
     iter_result_tv.set_object(iter_result);
@@ -243,7 +243,7 @@ fn void builtin_async_from_sync_reject_forward(BuiltinContext* ctx) {
     HString* outer_key = builtin_intern_string(heap, ASYNC_FROM_SYNC_OUTER_SLOT);
     if (outer_key == null) return;
     HObject* outer = null;
-    if (try ov = ctx.callee_obj.get_prop(outer_key)) {
+    if (try ov = ctx.callee_obj.get_prop(outer_key, ctx.heap)) {
         if (ov.is_object() && ov.get_heapptr() != null) outer = (HObject*)ov.get_heapptr();
     }
     if (outer == null) return;
@@ -258,7 +258,7 @@ fn void builtin_async_from_sync_reject_forward(BuiltinContext* ctx) {
     // unless closing itself throws, in which case that error becomes the reason.
     HString* closeiter_key = builtin_intern_string(heap, ASYNC_FROM_SYNC_CLOSEITER_SLOT);
     if (closeiter_key != null) {
-        if (try si = ctx.callee_obj.get_prop(closeiter_key)) {
+        if (try si = ctx.callee_obj.get_prop(closeiter_key, ctx.heap)) {
             if (si.is_object() && si.get_heapptr() != null) {
                 HObject* sync_iter = (HObject*)si.get_heapptr();
                 AsyncFromSyncCloseResult cr = async_from_sync_iterator_close_normal(heap, ctx.vm, sync_iter);
@@ -283,7 +283,7 @@ fn TVal async_from_sync_type_error(Heap* heap, char[] msg) {
         if (msg_str != null) {
             TVal msg_tv; msg_tv.set_string(msg_str);
             HString* msg_key = heap.str(heap::BuiltinStr.MESSAGE);
-            if (msg_key != null) err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
+            if (msg_key != null) err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC, heap);
         }
         out.set_object(err);
     }
@@ -324,7 +324,7 @@ fn AsyncFromSyncCloseResult async_from_sync_iterator_close_normal(Heap* heap, vo
     if (return_key == null) return out;
 
     // GetMethod(iterator, "return"), a throwing getter propagates.
-    hobject::PropLookupResult res = sync_iter.get_prop_or_accessor_proto((void*)return_key, true);
+    hobject::PropLookupResult res = sync_iter.get_prop_or_accessor_proto((void*)return_key, true, heap);
     TVal return_method;
     return_method.set_undefined();
     if (res.kind == hobject::PropLookupKind.PROP_DATA) {
@@ -419,7 +419,7 @@ fn void builtin_async_from_sync_next(BuiltinContext* ctx) {
     HString* next_slot = builtin_intern_string(heap, ASYNC_FROM_SYNC_NEXT_SLOT);
     TVal next_method; next_method.set_undefined();
     if (next_slot != null && adapter != null) {
-        if (try nm = adapter.get_prop(next_slot)) next_method = nm;
+        if (try nm = adapter.get_prop(next_slot, ctx.heap)) next_method = nm;
     }
     if (!next_method.is_object() || !((HObject*)next_method.get_heapptr()).is_callable()) {
         builtin_throw(ctx, heap.type_err_proto, "iterator.next is not a function");
@@ -494,10 +494,10 @@ fn void builtin_async_from_sync_return(BuiltinContext* ctx) {
         HObject* iter_result = iter_result_raw;
         iter_result.prototype = heap.object_proto;
         HString* value_key = (HString*)heap.strs[heap::BuiltinStr.VALUE];
-        iter_result.put_prop(value_key, arg, hobject::PROP_FLAGS_WEC);
+        iter_result.put_prop(value_key, arg, hobject::PROP_FLAGS_WEC, ctx.heap);
         HString* done_key = (HString*)heap.strs[heap::BuiltinStr.DONE];
         TVal done_tv; done_tv.set_boolean(true);
-        iter_result.put_prop(done_key, done_tv, hobject::PROP_FLAGS_WEC);
+        iter_result.put_prop(done_key, done_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
         TVal iter_result_tv;
         iter_result_tv.set_object(iter_result);
 

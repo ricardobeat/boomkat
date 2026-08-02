@@ -317,13 +317,13 @@ fn bool regexp_initialize(BuiltinContext* ctx, HObject* obj,
     // Set(obj, "lastIndex", 0, true): throws TypeError when an existing
     // lastIndex is non-writable (the internals above stay updated).
     HString* lastindex_key = ctx.heap.str(heap::BuiltinStr.LAST_INDEX);
-    if (!obj.is_prop_writable((void*)lastindex_key)) {
+    if (!obj.is_prop_writable((void*)lastindex_key, ctx.heap)) {
         builtin_throw_no_result_change(ctx, ctx.heap.type_err_proto, "Cannot assign to read only property 'lastIndex'");
         return false;
     }
     TVal lastindex_tv;
     lastindex_tv.set_fastint(0);
-    obj.put_prop(lastindex_key, lastindex_tv, hobject::PROP_FLAGS_WENC);
+    obj.put_prop(lastindex_key, lastindex_tv, hobject::PROP_FLAGS_WENC, ctx.heap);
     return true;
 }
 
@@ -458,7 +458,7 @@ fn HObject* regexp_build_match_result(BuiltinContext* ctx, void* re_data, HStrin
     // tell from a hole, so those keep the named-table path that records
     // presence (`n in m` must hold for every index below `length`).
     TVal elem; elem.set_string(match_str);
-    arr.set_array_idx(0, elem);
+    arr.set_array_idx(0, elem, ctx.heap);
 
     // Capture groups 1..N
     int total_captures = 1 + num_caps;
@@ -469,21 +469,21 @@ fn HObject* regexp_build_match_result(BuiltinContext* ctx, void* re_data, HStrin
             cap_elem.set_string(cap_len == 0
                 ? ctx.heap.str(heap::BuiltinStr.EMPTY)
                 : builtin_intern_string(ctx.heap, input[caps_start[i] : cap_len]));
-            arr.set_array_idx((uint)(i + 1), cap_elem);
+            arr.set_array_idx((uint)(i + 1), cap_elem, ctx.heap);
         } else {
             TVal cap_elem; cap_elem.set_undefined();
-            arr.put_prop(ctx.heap.int_to_hstring((long)(i + 1)), cap_elem, hobject::PROP_FLAGS_WEC);
+            arr.put_prop(ctx.heap.int_to_hstring((long)(i + 1)), cap_elem, hobject::PROP_FLAGS_WEC, ctx.heap);
         }
     }
 
     // index property, convert byte offset to character (UTF-16 code unit) index
     long char_index = (long)input_str.byte_offset_to_char_offset((uint)out_start);
     TVal idx_tv; idx_tv.set_fastint(char_index);
-    arr.put_prop(ctx.heap.str(heap::BuiltinStr.INDEX), idx_tv, hobject::PROP_FLAGS_WEC);
+    arr.put_prop(ctx.heap.str(heap::BuiltinStr.INDEX), idx_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
 
     // input property
     TVal input_tv; input_tv.set_string(input_str);
-    arr.put_prop(ctx.heap.str(heap::BuiltinStr.INPUT), input_tv, hobject::PROP_FLAGS_WEC);
+    arr.put_prop(ctx.heap.str(heap::BuiltinStr.INPUT), input_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
 
     // groups property
     char* group_names = re_bindings::re_get_groupnames(re_data);
@@ -509,19 +509,19 @@ fn HObject* regexp_build_match_result(BuiltinContext* ctx, void* re_data, HStrin
                     // Duplicate names (one per alternative) share this loop;
                     // a defined value always wins, but an undefined one must
                     // not clobber a value already set by an earlier alternative.
-                    if (!cap_val.is_undefined() || !groups.has_prop(name_str)) {
-                        groups.put_prop(name_str, cap_val, hobject::PROP_FLAGS_WEC);
+                    if (!cap_val.is_undefined() || !groups.has_prop(name_str, ctx.heap)) {
+                        groups.put_prop(name_str, cap_val, hobject::PROP_FLAGS_WEC, ctx.heap);
                     }
                 }
                 // Each entry is: name bytes + '\0' + scope byte (2 bytes minimum)
                 p += (long)(name_len + 2);
             }
             TVal groups_val; groups_val.set_object(groups);
-            arr.put_prop(ctx.heap.str(heap::BuiltinStr.GROUPS), groups_val, hobject::PROP_FLAGS_WEC);
+            arr.put_prop(ctx.heap.str(heap::BuiltinStr.GROUPS), groups_val, hobject::PROP_FLAGS_WEC, ctx.heap);
         }
     } else {
         TVal groups_undef; groups_undef.set_undefined();
-        arr.put_prop(ctx.heap.str(heap::BuiltinStr.GROUPS), groups_undef, hobject::PROP_FLAGS_WEC);
+        arr.put_prop(ctx.heap.str(heap::BuiltinStr.GROUPS), groups_undef, hobject::PROP_FLAGS_WEC, ctx.heap);
     }
 
     // indices property (ES2022 d-flag)
@@ -536,10 +536,10 @@ fn HObject* regexp_build_match_result(BuiltinContext* ctx, void* re_data, HStrin
                 pair0.prototype = ctx.heap.array_proto;
                 TVal p0s; p0s.set_fastint((long)input_str.byte_offset_to_char_offset((uint)out_start));
                 TVal p0e; p0e.set_fastint((long)input_str.byte_offset_to_char_offset((uint)out_end));
-                pair0.put_prop(ctx.heap.int_to_hstring(0), p0s, hobject::PROP_FLAGS_WEC);
-                pair0.put_prop(ctx.heap.int_to_hstring(1), p0e, hobject::PROP_FLAGS_WEC);
+                pair0.put_prop(ctx.heap.int_to_hstring(0), p0s, hobject::PROP_FLAGS_WEC, ctx.heap);
+                pair0.put_prop(ctx.heap.int_to_hstring(1), p0e, hobject::PROP_FLAGS_WEC, ctx.heap);
                 TVal pair0_tv; pair0_tv.set_object(pair0);
-                indices_arr.put_prop(ctx.heap.int_to_hstring(0), pair0_tv, hobject::PROP_FLAGS_WEC);
+                indices_arr.put_prop(ctx.heap.int_to_hstring(0), pair0_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
             }
 
             for (int i = 0; i < num_caps; i++) {
@@ -551,13 +551,13 @@ fn HObject* regexp_build_match_result(BuiltinContext* ctx, void* re_data, HStrin
                 if (caps_start[i] >= 0 && caps_end[i] >= 0) {
                     TVal ps; ps.set_fastint((long)input_str.byte_offset_to_char_offset((uint)caps_start[i]));
                     TVal pe; pe.set_fastint((long)input_str.byte_offset_to_char_offset((uint)caps_end[i]));
-                    pair.put_prop(ctx.heap.int_to_hstring(0), ps, hobject::PROP_FLAGS_WEC);
-                    pair.put_prop(ctx.heap.int_to_hstring(1), pe, hobject::PROP_FLAGS_WEC);
+                    pair.put_prop(ctx.heap.int_to_hstring(0), ps, hobject::PROP_FLAGS_WEC, ctx.heap);
+                    pair.put_prop(ctx.heap.int_to_hstring(1), pe, hobject::PROP_FLAGS_WEC, ctx.heap);
                     pair_tv.set_object(pair);
                 } else {
                     pair_tv.set_undefined();
                 }
-                indices_arr.put_prop(ctx.heap.int_to_hstring((long)(i + 1)), pair_tv, hobject::PROP_FLAGS_WEC);
+                indices_arr.put_prop(ctx.heap.int_to_hstring((long)(i + 1)), pair_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
             }
 
             // indices.groups
@@ -578,8 +578,8 @@ fn HObject* regexp_build_match_result(BuiltinContext* ctx, void* re_data, HStrin
                                     pair.prototype = ctx.heap.array_proto;
                                     TVal ps; ps.set_fastint((long)input_str.byte_offset_to_char_offset((uint)caps_start[gi]));
                                     TVal pe; pe.set_fastint((long)input_str.byte_offset_to_char_offset((uint)caps_end[gi]));
-                                    pair.put_prop(ctx.heap.int_to_hstring(0), ps, hobject::PROP_FLAGS_WEC);
-                                    pair.put_prop(ctx.heap.int_to_hstring(1), pe, hobject::PROP_FLAGS_WEC);
+                                    pair.put_prop(ctx.heap.int_to_hstring(0), ps, hobject::PROP_FLAGS_WEC, ctx.heap);
+                                    pair.put_prop(ctx.heap.int_to_hstring(1), pe, hobject::PROP_FLAGS_WEC, ctx.heap);
                                     pair_tv.set_object(pair);
                                 } else {
                                     pair_tv.set_undefined();
@@ -590,31 +590,31 @@ fn HObject* regexp_build_match_result(BuiltinContext* ctx, void* re_data, HStrin
                             // Duplicate names (one per alternative) share this loop;
                             // a defined value always wins, but an undefined one must
                             // not clobber a value already set by an earlier alternative.
-                            if (!pair_tv.is_undefined() || !igroups.has_prop(name_str)) {
-                                igroups.put_prop(name_str, pair_tv, hobject::PROP_FLAGS_WEC);
+                            if (!pair_tv.is_undefined() || !igroups.has_prop(name_str, ctx.heap)) {
+                                igroups.put_prop(name_str, pair_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
                             }
                         }
                         // Each entry is: name bytes + '\0' + scope byte (2 bytes minimum)
                         p += (long)(name_len + 2);
                     }
                     TVal igroups_tv; igroups_tv.set_object(igroups);
-                    indices_arr.put_prop(ctx.heap.str(heap::BuiltinStr.GROUPS), igroups_tv, hobject::PROP_FLAGS_WEC);
+                    indices_arr.put_prop(ctx.heap.str(heap::BuiltinStr.GROUPS), igroups_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
                 }
             } else {
                 TVal igroups_undef; igroups_undef.set_undefined();
-                indices_arr.put_prop(ctx.heap.str(heap::BuiltinStr.GROUPS), igroups_undef, hobject::PROP_FLAGS_WEC);
+                indices_arr.put_prop(ctx.heap.str(heap::BuiltinStr.GROUPS), igroups_undef, hobject::PROP_FLAGS_WEC, ctx.heap);
             }
 
             TVal indices_len; indices_len.set_fastint((long)total_captures);
-            indices_arr.put_prop(ctx.heap.str(heap::BuiltinStr.LENGTH), indices_len, hobject::PROP_FLAGS_WEC);
+            indices_arr.put_prop(ctx.heap.str(heap::BuiltinStr.LENGTH), indices_len, hobject::PROP_FLAGS_WEC, ctx.heap);
 
             TVal indices_tv; indices_tv.set_object(indices_arr);
-            arr.put_prop(ctx.heap.str(heap::BuiltinStr.INDICES), indices_tv, hobject::PROP_FLAGS_WEC);
+            arr.put_prop(ctx.heap.str(heap::BuiltinStr.INDICES), indices_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
         }
     }
 
     TVal len_tv; len_tv.set_fastint((long)total_captures);
-    arr.put_prop(ctx.heap.str(heap::BuiltinStr.LENGTH), len_tv, hobject::PROP_FLAGS_WEC);
+    arr.put_prop(ctx.heap.str(heap::BuiltinStr.LENGTH), len_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
 
     return arr;
 }
@@ -888,7 +888,7 @@ fn void builtin_regexp_proto_symbol_match(BuiltinContext* ctx) {
 
         // 8.f. Perform ! CreateDataProperty(A, ! ToString(n), matchStr).
         TVal elem; elem.set_string(match_str);
-        arr.put_prop(ctx.heap.int_to_hstring((long)arr_idx), elem, hobject::PROP_FLAGS_WEC);
+        arr.put_prop(ctx.heap.int_to_hstring((long)arr_idx), elem, hobject::PROP_FLAGS_WEC, ctx.heap);
         arr_idx++;
 
         // 8.g. If matchStr is the empty String, then
@@ -939,7 +939,7 @@ fn void builtin_regexp_proto_symbol_match(BuiltinContext* ctx) {
 
     TVal len_tv; len_tv.set_fastint((long)arr_idx);
     HString* len_key = ctx.heap.str(heap::BuiltinStr.LENGTH);
-    arr.put_prop(len_key, len_tv, hobject::PROP_FLAGS_WEC);
+    arr.put_prop(len_key, len_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
 
     ctx.result.set_object(arr);
 }
@@ -1449,7 +1449,7 @@ fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
                             TVal str_len_tv;
                             HString* s_hs = (HString*)named_captures_tv.get_heapptr();
                             str_len_tv.set_fastint((long)s_hs.char_length());
-                            box.put_prop(str_len_key, str_len_tv, hobject::PROP_FLAGS_NNC);
+                            box.put_prop(str_len_key, str_len_tv, hobject::PROP_FLAGS_NNC, ctx.heap);
                             named_captures_tv.set_object(box);
                         }
                     } else if (named_captures_tv.is_fastint() || named_captures_tv.is_number()) {
@@ -1708,9 +1708,9 @@ fn void builtin_regexp_proto_symbol_split(BuiltinContext* ctx) {
         if (z.is_null()) {
             // No match on empty string, return [S].
             TVal elem; elem.set_string(s_hstr);
-            arr.put_prop(heap.int_to_hstring(0), elem, hobject::PROP_FLAGS_WEC);
+            arr.put_prop(heap.int_to_hstring(0), elem, hobject::PROP_FLAGS_WEC, ctx.heap);
             TVal lv; lv.set_fastint(1);
-            arr.put_prop(len_key, lv, hobject::PROP_FLAGS_WEC);
+            arr.put_prop(len_key, lv, hobject::PROP_FLAGS_WEC, ctx.heap);
         }
         // else: match, return [] (empty).
         ctx.result.set_object(arr);
@@ -1794,11 +1794,11 @@ fn void builtin_regexp_proto_symbol_split(BuiltinContext* ctx) {
                 substr = builtin_intern_string(heap, input[p : (usz)sub_len]);
             }
             TVal elem; elem.set_string(substr);
-            arr.put_prop(heap.int_to_hstring((long)arr_idx), elem, hobject::PROP_FLAGS_WEC);
+            arr.put_prop(heap.int_to_hstring((long)arr_idx), elem, hobject::PROP_FLAGS_WEC, ctx.heap);
             arr_idx++;
             if (arr_idx >= limit) {
                 TVal lv; lv.set_fastint((long)arr_idx);
-                arr.put_prop(len_key, lv, hobject::PROP_FLAGS_WEC);
+                arr.put_prop(len_key, lv, hobject::PROP_FLAGS_WEC, ctx.heap);
                 ctx.result.set_object(arr);
                 return;
             }
@@ -1823,11 +1823,11 @@ fn void builtin_regexp_proto_symbol_split(BuiltinContext* ctx) {
             TVal cap_tv; cap_tv.set_undefined();
             if (try cv = cap_opt) { cap_tv = cv; }
             // Captures are pushed as-is (undefined stays undefined).
-            arr.put_prop(heap.int_to_hstring((long)arr_idx), cap_tv, hobject::PROP_FLAGS_WEC);
+            arr.put_prop(heap.int_to_hstring((long)arr_idx), cap_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
             arr_idx++;
             if (arr_idx >= limit) {
                 TVal lv; lv.set_fastint((long)arr_idx);
-                arr.put_prop(len_key, lv, hobject::PROP_FLAGS_WEC);
+                arr.put_prop(len_key, lv, hobject::PROP_FLAGS_WEC, ctx.heap);
                 ctx.result.set_object(arr);
                 return;
             }
@@ -1847,12 +1847,12 @@ fn void builtin_regexp_proto_symbol_split(BuiltinContext* ctx) {
             tail_str = builtin_intern_string(heap, input[p : (usz)tail_len]);
         }
         TVal elem; elem.set_string(tail_str);
-        arr.put_prop(heap.int_to_hstring((long)arr_idx), elem, hobject::PROP_FLAGS_WEC);
+        arr.put_prop(heap.int_to_hstring((long)arr_idx), elem, hobject::PROP_FLAGS_WEC, ctx.heap);
         arr_idx++;
     }
 
     TVal len_val; len_val.set_fastint((long)arr_idx);
-    arr.put_prop(len_key, len_val, hobject::PROP_FLAGS_WEC);
+    arr.put_prop(len_key, len_val, hobject::PROP_FLAGS_WEC, ctx.heap);
     ctx.result.set_object(arr);
 }
 
@@ -2094,12 +2094,12 @@ fn HObject* regexp_get_symbol_this(BuiltinContext* ctx) {
 fn bool regexp_set_prop(BuiltinContext* ctx, HObject* rx, HString* key, TVal* val_ptr) {
     TVal val = *val_ptr;
     // Check writability of existing own property before writing.
-    if (!rx.is_prop_writable((void*)key)) {
+    if (!rx.is_prop_writable((void*)key, ctx.heap)) {
         // Own non-writable data property, Set throws TypeError per spec.
         builtin_throw_no_result_change(ctx, ctx.heap.type_err_proto, "Cannot assign to read only property 'lastIndex'");
         return false;
     }
-    rx.put_prop((void*)key, val, hobject::PROP_FLAGS_WEC);
+    rx.put_prop((void*)key, val, hobject::PROP_FLAGS_WEC, ctx.heap);
     return true;
 }
 
@@ -2108,7 +2108,7 @@ fn bool regexp_set_prop(BuiltinContext* ctx, HObject* rx, HString* key, TVal* va
 /// Propagates throws via ctx.should_throw. Returns false on throw.
 fn bool regexp_set_with_setter(BuiltinContext* ctx, HObject* obj, HString* key, TVal val) {
     // Check for accessor setter first.
-    AccessorResult acc = obj.find_accessor_proto((void*)key, false);  // false = want setter
+    AccessorResult acc = obj.find_accessor_proto((void*)key, false, ctx.heap);  // false = want setter
     if (acc.found) {
         // Accessor property, invoke setter.
         if (acc.accessor_fn.is_undefined() || acc.accessor_fn.is_null()) {
@@ -2525,14 +2525,14 @@ fn bool register_proto_accessor(HObject* proto, Heap* heap, char[] name, uint ge
         TVal name_tv;
         name_tv.set_string(fn_name);
         HString* name_prop_key = heap.str(heap::BuiltinStr.NAME);
-        func_obj.put_prop(name_prop_key, name_tv, hobject::PROP_FLAGS_NWC);
+        func_obj.put_prop(name_prop_key, name_tv, hobject::PROP_FLAGS_NWC, heap);
     }
     // Set .length = 0
     HString* length_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
     if (length_key != null) {
         TVal len_tv;
         len_tv.set_fastint(0);
-        func_obj.put_prop(length_key, len_tv, hobject::PROP_FLAGS_NWC);
+        func_obj.put_prop(length_key, len_tv, hobject::PROP_FLAGS_NWC, heap);
     }
 
     // Register as non-enumerable, configurable accessor (ES6 spec)
@@ -2545,7 +2545,7 @@ fn bool register_proto_accessor(HObject* proto, Heap* heap, char[] name, uint ge
     acc_flags.enumerable = false;
     acc_flags.configurable = true;
     acc_flags.is_accessor = true;
-    proto.put_prop(key, hobject::hobject_create_accessors(heap, getter_tv, undef), acc_flags);
+    proto.put_prop(key, hobject::hobject_create_accessors(heap, getter_tv, undef), acc_flags, heap);
     return true;
 }
 
@@ -2738,7 +2738,7 @@ fn bool register_regexp_constructor(EnvRecord* global_env, Heap* heap) {
         if (match_sym != null) {
             TVal match_fn;
             match_fn.set_lightfunc((void*)(usz)Builtin.REGEXP_PROTO_SYMBOL_MATCH.ordinal);
-            proto.put_prop(match_sym, match_fn, hobject::PROP_FLAGS_WC);
+            proto.put_prop(match_sym, match_fn, hobject::PROP_FLAGS_WC, heap);
         }
     }
 
@@ -2748,7 +2748,7 @@ fn bool register_regexp_constructor(EnvRecord* global_env, Heap* heap) {
         if (search_sym != null) {
             TVal search_fn;
             search_fn.set_lightfunc((void*)(usz)Builtin.REGEXP_PROTO_SYMBOL_SEARCH.ordinal);
-            proto.put_prop(search_sym, search_fn, hobject::PROP_FLAGS_WC);
+            proto.put_prop(search_sym, search_fn, hobject::PROP_FLAGS_WC, heap);
         }
     }
 
@@ -2758,7 +2758,7 @@ fn bool register_regexp_constructor(EnvRecord* global_env, Heap* heap) {
         if (replace_sym != null) {
             TVal replace_fn;
             replace_fn.set_lightfunc((void*)(usz)Builtin.REGEXP_PROTO_SYMBOL_REPLACE.ordinal);
-            proto.put_prop(replace_sym, replace_fn, hobject::PROP_FLAGS_WC);
+            proto.put_prop(replace_sym, replace_fn, hobject::PROP_FLAGS_WC, heap);
         }
     }
 
@@ -2768,7 +2768,7 @@ fn bool register_regexp_constructor(EnvRecord* global_env, Heap* heap) {
         if (split_sym != null) {
             TVal split_fn;
             split_fn.set_lightfunc((void*)(usz)Builtin.REGEXP_PROTO_SYMBOL_SPLIT.ordinal);
-            proto.put_prop(split_sym, split_fn, hobject::PROP_FLAGS_WC);
+            proto.put_prop(split_sym, split_fn, hobject::PROP_FLAGS_WC, heap);
         }
     }
 
@@ -2781,7 +2781,7 @@ fn bool register_regexp_constructor(EnvRecord* global_env, Heap* heap) {
         if (matchall_sym != null) {
             TVal matchall_fn;
             matchall_fn.set_lightfunc((void*)(usz)Builtin.REGEXP_PROTO_SYMBOL_MATCHALL.ordinal);
-            proto.put_prop(matchall_sym, matchall_fn, hobject::PROP_FLAGS_WC);
+            proto.put_prop(matchall_sym, matchall_fn, hobject::PROP_FLAGS_WC, heap);
         }
     }
 
@@ -2795,7 +2795,7 @@ fn bool register_regexp_constructor(EnvRecord* global_env, Heap* heap) {
     HString* constructor_key = (HString*)heap.strs[heap::BuiltinStr.CONSTRUCTOR];
     TVal constructor_tv;
     constructor_tv.set_object(regexp_obj);
-    proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_WC);
+    proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Set RegExp.prototype on the constructor
     HString* prototype_key = (HString*)heap.strs[heap::BuiltinStr.PROTOTYPE];
@@ -2806,13 +2806,13 @@ fn bool register_regexp_constructor(EnvRecord* global_env, Heap* heap) {
     proto_pflags.enumerable = false;
     proto_pflags.configurable = false;
     proto_pflags.is_accessor = false;
-    regexp_obj.put_prop(prototype_key, proto_tv, proto_pflags);
+    regexp_obj.put_prop(prototype_key, proto_tv, proto_pflags, heap);
 
     // Set RegExp.length (ES5 15.10.5)
     HString* len_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
     TVal len_tv;
     len_tv.set_fastint(2);
-    regexp_obj.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NWC);
+    regexp_obj.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NWC, heap);
 
     // Add @@species accessor (ES2022 §21.2.4.2): getter returns `this`.
     HString* species_sym = ensure_species_symbol(heap);
@@ -2826,11 +2826,11 @@ fn bool register_regexp_constructor(EnvRecord* global_env, Heap* heap) {
             HString* getter_name = builtin_intern_string(heap, "get [Symbol.species]");
             if (getter_name != null) {
                 TVal name_tv; name_tv.set_string(getter_name);
-                getter_fn.put_prop((void*)heap.str(heap::BuiltinStr.NAME), name_tv, hobject::PROP_FLAGS_NWC);
+                getter_fn.put_prop((void*)heap.str(heap::BuiltinStr.NAME), name_tv, hobject::PROP_FLAGS_NWC, heap);
             }
             // Set .length = 0
             TVal zero_tv; zero_tv.set_fastint(0);
-            getter_fn.put_prop(len_key, zero_tv, hobject::PROP_FLAGS_NWC);
+            getter_fn.put_prop(len_key, zero_tv, hobject::PROP_FLAGS_NWC, heap);
 
             TVal getter_tv; getter_tv.set_object(getter_fn);
             TVal undef; undef.set_undefined();
@@ -2839,7 +2839,7 @@ fn bool register_regexp_constructor(EnvRecord* global_env, Heap* heap) {
             acc_flags.enumerable = false;
             acc_flags.configurable = true;
             acc_flags.is_accessor = true;
-            regexp_obj.put_prop(species_sym, hobject::hobject_create_accessors(heap, getter_tv, undef), acc_flags);
+            regexp_obj.put_prop(species_sym, hobject::hobject_create_accessors(heap, getter_tv, undef), acc_flags, heap);
         }
     }
 

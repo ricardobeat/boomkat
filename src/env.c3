@@ -70,6 +70,11 @@ struct EnvRecord {
     /// Is this a function call boundary? When true, var-scope writes
     /// stop here and do not propagate to parent scopes.
     bool is_function_scope;
+    /// The heap that owns `bindings`. Held here rather than passed to every
+    /// accessor: an EnvRecord belongs to exactly one heap for its whole life,
+    /// and the field lands in the padding after the two bools, so the struct
+    /// does not grow.
+    Heap* heap;
 }
 
 // ============================================================================
@@ -81,6 +86,7 @@ fn EnvRecord*? env_create_function_scope(Heap* heap, EnvRecord* parent) {
     EnvRecord*? raw = env_pool_alloc(heap);
     if (try env = raw) {
         env.parent = parent;
+        env.heap = heap;
         env.is_declarative = false;
         env.is_function_scope = true;
         HObject*? bindings = heap.alloc_object(hobject::ObjClass.OBJECT);
@@ -99,6 +105,7 @@ fn EnvRecord*? env_create(Heap* heap, EnvRecord* parent) {
     EnvRecord*? raw = env_pool_alloc(heap);
     if (try env = raw) {
         env.parent = parent;
+        env.heap = heap;
         env.is_declarative = false;
 
         HObject*? bindings = heap.alloc_object(hobject::ObjClass.OBJECT);
@@ -117,6 +124,7 @@ fn EnvRecord*? env_create_declarative(Heap* heap, EnvRecord* parent) {
     EnvRecord*? raw = env_pool_alloc(heap);
     if (try env = raw) {
         env.parent = parent;
+        env.heap = heap;
         env.is_declarative = true;
 
         HObject*? bindings = heap.alloc_object(hobject::ObjClass.OBJECT);
@@ -147,9 +155,10 @@ fn void env_destroy(Heap* heap, EnvRecord* env) {
 
 /// Find a binding by walking outward through the scope chain.
 fn TVal? env_get(EnvRecord* env, void* key) {
+    Heap* h = env.heap;
     EnvRecord* cur = env;
     while (cur != null) {
-        int idx = cur.bindings.find_prop_idx(key);
+        int idx = cur.bindings.find_prop_idx(key, h);
         if (idx >= 0) {
             return cur.bindings.prop_values()[idx];
         }
@@ -160,9 +169,10 @@ fn TVal? env_get(EnvRecord* env, void* key) {
 
 /// Check whether a binding exists anywhere in the scope chain.
 fn bool env_has(EnvRecord* env, void* key) @inline {
+    Heap* h = env.heap;
     EnvRecord* cur = env;
     while (cur != null) {
-        if (cur.bindings.has_prop(key)) {
+        if (cur.bindings.has_prop(key, h)) {
             return true;
         }
         cur = cur.parent;
@@ -178,31 +188,26 @@ fn bool env_has(EnvRecord* env, void* key) @inline {
 /// lives; if the name is bound nowhere, a new binding appears in the immediate
 /// environment.
 fn bool env_put(EnvRecord* env, void* key, TVal val) {
+    Heap* h = env.heap;
     EnvRecord* cur = env;
     while (cur != null) {
-        int idx = cur.bindings.find_prop_idx(key);
+        int idx = cur.bindings.find_prop_idx(key, h);
         if (idx >= 0) {
             TVal* pv = &cur.bindings.prop_values()[idx];
-            if (hobject::_active_heap != null) {
-                heap::Heap* h = (heap::Heap*)hobject::_active_heap;
-                if (pv.is_string() || pv.is_bigint()) { h.decref_tval(pv); }
-                *pv = val;
-                if (val.is_string() || val.is_bigint()) { void* p = val.get_heapptr(); if (p != null) ((types::HeapHeader*)p).incref(); }
-            } else {
-                *pv = val;
-            }
+            if (pv.is_string() || pv.is_bigint()) { h.decref_tval(pv); }
+            *pv = val;
+            if (val.is_string() || val.is_bigint()) { void* p = val.get_heapptr(); if (p != null) ((types::HeapHeader*)p).incref(); }
             return true;
         }
         cur = cur.parent;
     }
     // Unbound everywhere, so create it here.
-    EnvRecord* target = env;
-    return target.bindings.put_prop(key, val, hobject::PROP_FLAGS_WEC);
+    return env.bindings.put_prop(key, val, hobject::PROP_FLAGS_WEC, h);
 }
 
 /// Declare a binding in the given environment only (no chain walk).
 fn bool env_declare(EnvRecord* env, void* key, TVal val) @inline {
-    return env.bindings.put_prop(key, val, hobject::PROP_FLAGS_WEC);
+    return env.bindings.put_prop(key, val, hobject::PROP_FLAGS_WEC, env.heap);
 }
 
 /// Declare a non-writable, enumerable binding (CreateImmutableBinding, ES2015
@@ -210,7 +215,7 @@ fn bool env_declare(EnvRecord* env, void* key, TVal val) @inline {
 /// namespace object is bound once, and assigning to the local name afterwards
 /// must throw a TypeError, as it would for a `const`.
 fn bool env_declare_const(EnvRecord* env, void* key, TVal val) @inline {
-    return env.bindings.put_prop(key, val, hobject::PROP_FLAGS_EC);
+    return env.bindings.put_prop(key, val, hobject::PROP_FLAGS_EC, env.heap);
 }
 
 /// Declare a `var` binding in this environment alone, with no chain walk.
@@ -235,12 +240,13 @@ fn bool env_declare_const(EnvRecord* env, void* key, TVal val) @inline {
 /// FunctionDeclaration hoisting uses `env_declare_global_func` instead, since
 /// CreateGlobalFunctionBinding treats an existing property differently.
 fn bool env_declare_var(EnvRecord* env, void* key, TVal val, bool is_global, bool is_eval_code, bool is_bare) @inline {
-    if (is_global && is_bare && env.bindings.has_prop(key)) {
+    Heap* h = env.heap;
+    if (is_global && is_bare && env.bindings.has_prop(key, h)) {
         return true;
     }
     hobject::PropFlags flags = !is_global ? hobject::PROP_FLAGS_WEC
         : (is_eval_code ? hobject::PROP_FLAGS_WEC : hobject::PROP_FLAGS_WE);
-    return env.bindings.put_prop(key, val, flags);
+    return env.bindings.put_prop(key, val, flags, h);
 }
 
 /// Instantiate a top-level FunctionDeclaration binding
@@ -260,27 +266,28 @@ fn bool env_declare_var(EnvRecord* env, void* key, TVal val, bool is_global, boo
 ///     the illegal redefinitions, so anything arriving here is writable and
 ///     enumerable.
 fn bool env_declare_global_func(EnvRecord* env, void* key, TVal val, bool is_global, bool is_eval_code) @inline {
+    Heap* h = env.heap;
     if (!is_global) {
-        return env.bindings.put_prop(key, val, hobject::PROP_FLAGS_WEC);
+        return env.bindings.put_prop(key, val, hobject::PROP_FLAGS_WEC, h);
     }
-    int idx = env.bindings.find_prop_idx(key);
+    int idx = env.bindings.find_prop_idx(key, h);
     hobject::PropFlags flags = is_eval_code ? hobject::PROP_FLAGS_WEC : hobject::PROP_FLAGS_WE;
     if (idx >= 0) {
-        hobject::PropFlags existing = env.bindings.get_prop_flags((uint)idx);
+        hobject::PropFlags existing = env.bindings.get_prop_flags((uint)idx, h);
         if (!existing.configurable) { flags = existing; }
     }
-    return env.bindings.put_prop(key, val, flags);
+    return env.bindings.put_prop(key, val, flags, h);
 }
 
 /// Declare a built-in global, which ES §17 requires to be
 /// { writable: true, enumerable: false, configurable: true }.
 fn bool env_declare_nonenum(EnvRecord* env, void* key, TVal val) @inline {
-    return env.bindings.put_prop(key, val, hobject::PROP_FLAGS_WC);
+    return env.bindings.put_prop(key, val, hobject::PROP_FLAGS_WC, env.heap);
 }
 
 /// Declare an immutable global: `undefined`, `NaN`, and `Infinity` (ES5 §15.1).
 fn bool env_declare_immutable(EnvRecord* env, void* key, TVal val) @inline {
-    return env.bindings.put_prop(key, val, hobject::PROP_FLAGS_NNC);
+    return env.bindings.put_prop(key, val, hobject::PROP_FLAGS_NNC, env.heap);
 }
 
 /// Declare an accessor binding in this environment alone. `accessor_value` must
@@ -289,7 +296,7 @@ fn bool env_declare_immutable(EnvRecord* env, void* key, TVal val) @inline {
 /// reaches the exporting module's current value rather than a snapshot.
 fn bool env_declare_accessor(EnvRecord* env, void* key, TVal accessor_value) @inline {
     hobject::PropFlags flags = { .writable = false, .enumerable = true, .configurable = false, .is_accessor = true };
-    return env.bindings.put_prop(key, accessor_value, flags);
+    return env.bindings.put_prop(key, accessor_value, flags, env.heap);
 }
 
 // ============================================================================
@@ -329,14 +336,15 @@ $endif
 /// Bind a name in this lexical record alone, leaving the parent chain untouched.
 /// PUTLEX uses this for `let` and `const` declarations in the current block.
 fn bool env_declare_lex(EnvRecord* lex_env, void* key, TVal val) @inline {
-    return lex_env.bindings.put_prop(key, val, hobject::PROP_FLAGS_WEC);
+    return lex_env.bindings.put_prop(key, val, hobject::PROP_FLAGS_WEC, lex_env.heap);
 }
 
 /// Check if a binding exists in the lexical environment chain.
 fn bool env_has_lex(EnvRecord* lex_env, void* key) @inline {
+    Heap* h = lex_env.heap;
     EnvRecord* cur = lex_env;
     while (cur != null) {
-        if (cur.bindings.has_prop(key)) {
+        if (cur.bindings.has_prop(key, h)) {
             return true;
         }
         cur = cur.parent;
@@ -353,7 +361,7 @@ fn TVal? env_get_at_depth(EnvRecord* env, uint depth, void* key) {
         cur = cur.parent;
     }
     if (cur == null) return hobject::PROP_NOT_FOUND~;
-    int idx = cur.bindings.find_prop_idx(key);
+    int idx = cur.bindings.find_prop_idx(key, env.heap);
     if (idx >= 0) {
         return cur.bindings.prop_values()[idx];
     }
@@ -364,11 +372,12 @@ fn TVal? env_get_at_depth(EnvRecord* env, uint depth, void* key) {
 /// name can be created, so it is writable; a bound one answers with its own
 /// flag, which is false for a `const`.
 fn bool env_is_lex_writable(EnvRecord* lex_env, void* key) {
+    Heap* h = lex_env.heap;
     EnvRecord* cur = lex_env;
     while (cur != null) {
-        int idx = cur.bindings.find_prop_idx(key);
+        int idx = cur.bindings.find_prop_idx(key, h);
         if (idx >= 0) {
-            return cur.bindings.get_prop_flags((uint)idx).writable;
+            return cur.bindings.get_prop_flags((uint)idx, h).writable;
         }
         cur = cur.parent;
     }
@@ -387,28 +396,23 @@ fn bool env_is_lex_writable(EnvRecord* lex_env, void* key) {
 /// assignment. Ordinary PUTVAR leaves it false so it can initialize a binding
 /// still holding the sentinel.
 fn int env_try_put_lex(EnvRecord* lex_env, void* key, TVal val, bool check_tdz) {
+    Heap* h = lex_env.heap;
     EnvRecord* cur = lex_env;
     while (cur != null) {
-        int idx = cur.bindings.find_prop_idx(key);
+        int idx = cur.bindings.find_prop_idx(key, h);
         if (idx >= 0) {
-            TVal* pv0 = &cur.bindings.prop_values()[idx];
-            if (check_tdz && is_tdz_sentinel(pv0)) {
+            TVal* pv = &cur.bindings.prop_values()[idx];
+            if (check_tdz && is_tdz_sentinel(pv)) {
                 return -2;
             }
-            if (!cur.bindings.get_prop_flags((uint)idx).writable) {
+            if (!cur.bindings.get_prop_flags((uint)idx, h).writable) {
                 return -1;
             }
-            TVal* pv = &cur.bindings.prop_values()[idx];
-            if (hobject::_active_heap != null) {
-                heap::Heap* h = (heap::Heap*)hobject::_active_heap;
-                // Strings and BigInts are refcounted, so the old value is
-                // released and the new one taken.
-                if (pv.is_string() || pv.is_bigint()) { h.decref_tval(pv); }
-                *pv = val;
-                if (val.is_string() || val.is_bigint()) { void* p = val.get_heapptr(); if (p != null) ((types::HeapHeader*)p).incref(); }
-            } else {
-                *pv = val;
-            }
+            // Strings and BigInts are refcounted, so the old value is released
+            // and the new one taken.
+            if (pv.is_string() || pv.is_bigint()) { h.decref_tval(pv); }
+            *pv = val;
+            if (val.is_string() || val.is_bigint()) { void* p = val.get_heapptr(); if (p != null) ((types::HeapHeader*)p).incref(); }
             return 1;
         }
         cur = cur.parent;

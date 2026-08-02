@@ -193,13 +193,13 @@ fn void builtin_function(BuiltinContext* ctx) {
         HString* constr_key = ctx.heap.str(heap::BuiltinStr.CONSTRUCTOR);
         TVal constr_tv;
         constr_tv.set_object(func_obj);
-        proto.put_prop(constr_key, constr_tv, hobject::PROP_FLAGS_WC);
+        proto.put_prop(constr_key, constr_tv, hobject::PROP_FLAGS_WC, ctx.heap);
 
         HString* proto_key = ctx.heap.str(heap::BuiltinStr.PROTOTYPE);
         TVal proto_tv;
         proto_tv.set_object(proto);
         // ES5 §15.3.2.1 step 12: .prototype is {writable:true, enumerable:false, configurable:false}
-        func_obj.put_prop(proto_key, proto_tv, hobject::PROP_FLAGS_WENC);
+        func_obj.put_prop(proto_key, proto_tv, hobject::PROP_FLAGS_WENC, ctx.heap);
     }
     func_obj.flags.callable = true;
     func_obj.flags.constructable = true;
@@ -209,14 +209,14 @@ fn void builtin_function(BuiltinContext* ctx) {
     HString* len_key = ctx.heap.str(heap::BuiltinStr.LENGTH);
     TVal len_tv;
     len_tv.set_fastint((long)func.num_formals);
-    func_obj.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NWC);
+    func_obj.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NWC, ctx.heap);
 
     // ES2019 §19.2.1.1.1 CreateDynamicFunction step 29: SetFunctionName(F, "anonymous").
     // {writable:false, enumerable:false, configurable:true}
     HString* name_key = ctx.heap.str(heap::BuiltinStr.NAME);
     TVal name_tv;
     name_tv.set_string(builtin_intern_string(ctx.heap, "anonymous"));
-    func_obj.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC);
+    func_obj.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC, ctx.heap);
 
     // Return the function object
     ctx.result.set_object(func_obj);
@@ -500,8 +500,8 @@ fn void apply_call(BuiltinContext* ctx, TVal target, TVal this_arg, TVal arg_arr
 
         // Own accessor property at this index takes precedence over any
         // dense array storage (mirrors arr_get_elem's ordering).
-        int own_idx = arr_obj.find_prop_idx(key_hstr);
-        if (own_idx >= 0 && arr_obj.get_prop_flags((uint)own_idx).is_accessor) {
+        int own_idx = arr_obj.find_prop_idx(key_hstr, ctx.heap);
+        if (own_idx >= 0 && arr_obj.get_prop_flags((uint)own_idx, ctx.heap).is_accessor) {
             TVal gs_slot = arr_obj.prop_values()[own_idx];
             TVal getter_fn = hobject::hobject_access_getter(gs_slot);
             elem = arr_invoke_getter_ctx(arr_obj, getter_fn, ctx.heap, ctx);
@@ -515,7 +515,7 @@ fn void apply_call(BuiltinContext* ctx, TVal target, TVal this_arg, TVal arg_arr
                    && i < arr_obj.array_size && !arr_obj.array_part()[i].is_undefined()) {
             elem = arr_obj.array_part()[i];
         } else {
-            hobject::PropLookupResult res = arr_obj.get_prop_or_accessor_proto(key_hstr, true);
+            hobject::PropLookupResult res = arr_obj.get_prop_or_accessor_proto(key_hstr, true, ctx.heap);
             if (res.kind == hobject::PropLookupKind.PROP_ACCESSOR) {
                 elem = arr_invoke_getter_ctx(arr_obj, res.acc.accessor_fn, ctx.heap, ctx);
                 if (ctx.should_throw) {
@@ -738,14 +738,14 @@ fn void builtin_function_proto_bind(BuiltinContext* ctx) {
         HString* len_key = ctx.heap.str(heap::BuiltinStr.LENGTH);
         TVal len_tv;
         len_tv.set_fastint(bound_argc);
-        args_arr.put_prop(len_key, len_tv, hobject::PROP_FLAGS_WEC);
+        args_arr.put_prop(len_key, len_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
         // Set elements
         for (ushort i = 0; i < bound_argc; i++) {
             char[20] buf;
             int n = (int)(io::bprintf(&buf, "%d", i) ?? buf[:0]).len;
             if (n > 0 && n < 20) {
                 HString* elem_key = builtin_intern_string(ctx.heap, buf[:n]);
-                args_arr.put_prop(elem_key, bound_args_arr[i], hobject::PROP_FLAGS_WEC);
+                args_arr.put_prop(elem_key, bound_args_arr[i], hobject::PROP_FLAGS_WEC, ctx.heap);
             }
         }
     }
@@ -774,7 +774,7 @@ fn void builtin_function_proto_bind(BuiltinContext* ctx) {
         if (tobj != null) {
             HString* tlen_key = ctx.heap.str(heap::BuiltinStr.LENGTH);
             // HasOwnProperty: check own properties only
-            int own_idx = tobj.find_prop_idx(tlen_key);
+            int own_idx = tobj.find_prop_idx(tlen_key, ctx.heap);
             if (own_idx >= 0) {
                 TVal tlen_val = tobj.prop_values()[own_idx];
                 double target_len_d = 0.0;
@@ -820,7 +820,7 @@ fn void builtin_function_proto_bind(BuiltinContext* ctx) {
     len_flags.enumerable = false;
     len_flags.configurable = true;
     len_flags.is_accessor = false;
-    bound_obj.put_prop(len_key, len_tv, len_flags);
+    bound_obj.put_prop(len_key, len_tv, len_flags, ctx.heap);
 
     // Set .name: "bound " + targetName (ES6 §19.2.3.3).
     // Per spec: Get(target, "name"), must invoke accessor getters and
@@ -861,7 +861,7 @@ fn void builtin_function_proto_bind(BuiltinContext* ctx) {
     HString* bound_name = builtin_intern_string(ctx.heap, name_buf[:name_pos]);
     if (bound_name != null) {
         TVal name_tv; name_tv.set_string(bound_name);
-        bound_obj.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC);
+        bound_obj.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC, ctx.heap);
     }
 
     // Bound function exotic objects have no own "prototype" property
@@ -937,7 +937,7 @@ fn void builtin_function_proto_toString(BuiltinContext* ctx) {
             char* name_ptr = "anonymous";
             usz name_len = 9;
 
-            TVal? name_val = obj.get_prop_proto(name_key);
+            TVal? name_val = obj.get_prop_proto(name_key, ctx.heap);
             if (try nv = name_val) {
                 if (nv.is_string() && nv.get_heapptr() != null) {
                     HString* name_str = (HString*)nv.get_heapptr();
@@ -1011,7 +1011,7 @@ fn void builtin_function_proto_hasInstance(BuiltinContext* ctx) {
     TVal proto_val;
     if (c_val.is_object() && c_val.get_heapptr() != null) {
         HObject* c_obj = (HObject*)c_val.get_heapptr();
-        hobject::AccessorResult acc = c_obj.find_accessor_proto(proto_key, true);
+        hobject::AccessorResult acc = c_obj.find_accessor_proto(proto_key, true, ctx.heap);
         if (acc.found) {
             if (ctx.heap.call_fn == null || ctx.vm == null) { ctx.result.set_boolean(false); return; }
             TVal this_for_getter; this_for_getter.set_object(c_obj);
@@ -1023,7 +1023,7 @@ fn void builtin_function_proto_hasInstance(BuiltinContext* ctx) {
                 return;
             }
         } else {
-            TVal? pv = c_obj.get_prop_proto(proto_key);
+            TVal? pv = c_obj.get_prop_proto(proto_key, ctx.heap);
             if (try p = pv) { proto_val = p; } else { proto_val.set_undefined(); }
         }
     } else if (c_val.is_lightfunc()) {
@@ -1099,7 +1099,7 @@ fn void builtin_bound_call(BuiltinContext* ctx) {
     uint bound_argc = 0;
     if (args_arr != null) {
         HString* len_key = ctx.heap.str(heap::BuiltinStr.LENGTH);
-        TVal? lv = args_arr.get_prop_proto(len_key);
+        TVal? lv = args_arr.get_prop_proto(len_key, ctx.heap);
         if (try l = lv) {
             if (l.is_fastint()) {
                 bound_argc = (uint)l.get_fastint();
@@ -1125,7 +1125,7 @@ fn void builtin_bound_call(BuiltinContext* ctx) {
             int n = (int)(io::bprintf(&buf, "%d", i) ?? buf[:0]).len;
             if (n > 0 && n < 20) {
                 HString* ek = builtin_intern_string(ctx.heap, buf[:n]);
-                TVal? e = args_arr.get_prop_proto(ek);
+                TVal? e = args_arr.get_prop_proto(ek, ctx.heap);
                 if (try ev = e) all_args[actual_total++] = ev;
             }
         }
@@ -1291,25 +1291,25 @@ fn bool register_function_constructor(EnvRecord* global_env, Heap* heap) {
     HString* call_key = builtin_intern_string(heap, "call");
     TVal call_tv;
     call_tv.set_lightfunc((void*)(usz)Builtin.FUNCTION_PROTO_CALL.ordinal);
-    proto.put_prop(call_key, call_tv, hobject::PROP_FLAGS_WC);
+    proto.put_prop(call_key, call_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Add .apply method
     HString* apply_key = builtin_intern_string(heap, "apply");
     TVal apply_tv;
     apply_tv.set_lightfunc((void*)(usz)Builtin.FUNCTION_PROTO_APPLY.ordinal);
-    proto.put_prop(apply_key, apply_tv, hobject::PROP_FLAGS_WC);
+    proto.put_prop(apply_key, apply_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Add .bind method
     HString* bind_key = builtin_intern_string(heap, "bind");
     TVal bind_tv;
     bind_tv.set_lightfunc((void*)(usz)Builtin.FUNCTION_PROTO_BIND.ordinal);
-    proto.put_prop(bind_key, bind_tv, hobject::PROP_FLAGS_WC);
+    proto.put_prop(bind_key, bind_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Add .toString method
     HString* tostring_key = heap.str(heap::BuiltinStr.TO_STRING);
     TVal tostring_tv;
     tostring_tv.set_lightfunc((void*)(usz)Builtin.FUNCTION_PROTO_TOSTRING.ordinal);
-    proto.put_prop(tostring_key, tostring_tv, hobject::PROP_FLAGS_WC);
+    proto.put_prop(tostring_key, tostring_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Add [Symbol.hasInstance] method (ES6 §19.2.3.6).
     // Property descriptor: writable:false, enumerable:false, configurable:false.
@@ -1322,21 +1322,21 @@ fn bool register_function_constructor(EnvRecord* global_env, Heap* heap) {
         hi_flags.enumerable = false;
         hi_flags.configurable = false;
         hi_flags.is_accessor = false;
-        proto.put_prop(hasinst_sym, hasinst_tv, hi_flags);
+        proto.put_prop(hasinst_sym, hasinst_tv, hi_flags, heap);
     }
 
     // Set .constructor to the Function constructor object itself
     HString* constructor_key = (HString*)heap.strs[heap::BuiltinStr.CONSTRUCTOR];
     TVal constructor_tv;
     constructor_tv.set_object(func_obj);
-    proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_WC);
+    proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_WC, heap);
 
     // ES5 §15.3.5.1: Function.prototype.length is 0
     // { [[Writable]]: false, [[Enumerable]]: false, [[Configurable]]: true }
     HString* proto_len_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
     TVal proto_len_tv;
     proto_len_tv.set_fastint(0);
-    proto.put_prop(proto_len_key, proto_len_tv, hobject::PROP_FLAGS_NWC);
+    proto.put_prop(proto_len_key, proto_len_tv, hobject::PROP_FLAGS_NWC, heap);
 
     // ES6 §19.2.3: Function.prototype.name is "", must be defined immediately
     // after .length (property insertion order matters for property-order.js).
@@ -1344,7 +1344,7 @@ fn bool register_function_constructor(EnvRecord* global_env, Heap* heap) {
     HString* proto_name_key = (HString*)heap.strs[heap::BuiltinStr.NAME];
     TVal proto_name_tv;
     proto_name_tv.set_string((HString*)heap.strs[heap::BuiltinStr.EMPTY]);
-    proto.put_prop(proto_name_key, proto_name_tv, hobject::PROP_FLAGS_NWC);
+    proto.put_prop(proto_name_key, proto_name_tv, hobject::PROP_FLAGS_NWC, heap);
 
     // ES2017 §9.2.7 AddRestrictedFunctionProperties(F): attach `caller` and
     // `arguments` accessor properties on Function.prototype whose get/set
@@ -1371,12 +1371,12 @@ fn bool register_function_constructor(EnvRecord* global_env, Heap* heap) {
             if (get_name != null) {
                 TVal ntv; ntv.set_string(get_name);
                 HString* nkey = heap.str(heap::BuiltinStr.NAME);
-                if (nkey != null) get_fn.put_prop(nkey, ntv, hobject::PROP_FLAGS_NWC);
+                if (nkey != null) get_fn.put_prop(nkey, ntv, hobject::PROP_FLAGS_NWC, heap);
             }
             HString* len_str = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
             if (len_str != null) {
                 TVal ltv; ltv.set_fastint(0);
-                get_fn.put_prop(len_str, ltv, hobject::PROP_FLAGS_NWC);
+                get_fn.put_prop(len_str, ltv, hobject::PROP_FLAGS_NWC, heap);
             }
 
             TVal shared_thrower; shared_thrower.set_object(get_fn);
@@ -1393,14 +1393,14 @@ fn bool register_function_constructor(EnvRecord* global_env, Heap* heap) {
             if (caller_key != null) {
                 TVal gs_caller = hobject::hobject_create_accessors(heap,
                     shared_thrower, shared_setter);
-                proto.put_prop(caller_key, gs_caller, restricted_flags);
+                proto.put_prop(caller_key, gs_caller, restricted_flags, heap);
             }
 
             HString* args_key = heap.str(heap::BuiltinStr.ARGUMENTS);
             if (args_key != null) {
                 TVal gs_args = hobject::hobject_create_accessors(heap,
                     shared_thrower, shared_setter);
-                proto.put_prop(args_key, gs_args, restricted_flags);
+                proto.put_prop(args_key, gs_args, restricted_flags, heap);
             }
         }
     }
@@ -1414,13 +1414,13 @@ fn bool register_function_constructor(EnvRecord* global_env, Heap* heap) {
     proto_pflags.enumerable = false;
     proto_pflags.configurable = false;
     proto_pflags.is_accessor = false;
-    func_obj.put_prop(prototype_key, proto_tv, proto_pflags);
+    func_obj.put_prop(prototype_key, proto_tv, proto_pflags, heap);
 
     // Set Function.length (ES5 §15.3.3)
     HString* len_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
     TVal len_tv;
     len_tv.set_fastint(1);
-    func_obj.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NWC);
+    func_obj.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NWC, heap);
 
     // Register Function constructor globally as an OBJECT
     HString* func_key = heap.str_intern("Function");

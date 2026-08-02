@@ -47,7 +47,7 @@ fn void builtin_error_constructor_shared(BuiltinContext* ctx, HObject* proto) {
                 TVal msg_val;
                 msg_val.set_string(msg_str);
                 HString* msg_key = ctx.heap.str(heap::BuiltinStr.MESSAGE);
-                err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WC);
+                err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WC, ctx.heap);
             }
         }
     }
@@ -72,7 +72,7 @@ fn void builtin_error_constructor_shared(BuiltinContext* ctx, HObject* proto) {
                 TVal? cause_prop = builtins_generic_get(opt_obj, cause_key, ctx);
                 if (ctx.should_throw) return;
                 if (try cv = cause_prop) {
-                    err.put_prop(cause_key, cv, hobject::PROP_FLAGS_WC);
+                    err.put_prop(cause_key, cv, hobject::PROP_FLAGS_WC, ctx.heap);
                 }
             }
         }
@@ -86,7 +86,7 @@ fn void builtin_error_constructor_shared(BuiltinContext* ctx, HObject* proto) {
         HString* name_str = builtin_intern_string(ctx.heap, "Error");
         if (proto != null) {
             HString* name_key = (HString*)ctx.heap.strs[heap::BuiltinStr.NAME];
-            TVal? name_prop = proto.get_prop_proto(name_key);
+            TVal? name_prop = proto.get_prop_proto(name_key, ctx.heap);
             if (try nv = name_prop) {
                 // Must not invoke user code here: .stack is captured during
                 // construction, and a user-supplied .name accessor/toString
@@ -327,7 +327,7 @@ fn void builtin_aggregate_error(BuiltinContext* ctx) {
             TVal msg_prop;
             msg_prop.set_string(msg_str);
             HString* msg_key = ctx.heap.str(heap::BuiltinStr.MESSAGE);
-            err.put_prop(msg_key, msg_prop, hobject::PROP_FLAGS_WC);
+            err.put_prop(msg_key, msg_prop, hobject::PROP_FLAGS_WC, ctx.heap);
         }
     }
 
@@ -368,7 +368,7 @@ fn void builtin_aggregate_error(BuiltinContext* ctx) {
         HString* errors_key = builtin_intern_string(ctx.heap, "errors");
         TVal errors_tv;
         errors_tv.set_object(errors_arr);
-        err.put_prop(errors_key, errors_tv, hobject::PROP_FLAGS_WC);
+        err.put_prop(errors_key, errors_tv, hobject::PROP_FLAGS_WC, ctx.heap);
     }
 
     // ES2022 §20.5.8.1 InstallErrorCause, AggregateError's 3rd arg is options.
@@ -377,10 +377,10 @@ fn void builtin_aggregate_error(BuiltinContext* ctx) {
         if (opt_arg.is_object() && opt_arg.get_heapptr() != null) {
             HObject* opt_obj = (HObject*)opt_arg.get_heapptr();
             HString* cause_key = builtin_intern_string(ctx.heap, "cause");
-            if (opt_obj.has_prop(cause_key)) {
-                TVal? cause_prop = opt_obj.get_prop(cause_key);
+            if (opt_obj.has_prop(cause_key, ctx.heap)) {
+                TVal? cause_prop = opt_obj.get_prop(cause_key, ctx.heap);
                 if (try cv = cause_prop) {
-                    err.put_prop(cause_key, cv, hobject::PROP_FLAGS_WC);
+                    err.put_prop(cause_key, cv, hobject::PROP_FLAGS_WC, ctx.heap);
                 }
             }
         }
@@ -484,7 +484,7 @@ fn void builtin_error_captureStackTrace(BuiltinContext* ctx) {
     HString* empty = ctx.heap.str(heap::BuiltinStr.EMPTY);
     TVal stack_tv;
     stack_tv.set_string(empty);
-    target.put_prop(stack_key, stack_tv, hobject::PROP_FLAGS_WC);
+    target.put_prop(stack_key, stack_tv, hobject::PROP_FLAGS_WC, ctx.heap);
     ctx.result.set_undefined();
 }
 
@@ -656,14 +656,14 @@ fn HObject* register_error_prototype(Heap* heap, HObject* proto_parent, char[] n
     HString* name_hstr = builtin_intern_string(heap, name_str);
     TVal name_tv;
     name_tv.set_string(name_hstr);
-    proto.put_prop(name_key, name_tv, hobject::PROP_FLAGS_WC);
+    proto.put_prop(name_key, name_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Set .message property (empty string)
     HString* msg_key = (HString*)heap.strs[heap::BuiltinStr.MESSAGE];
     HString* msg_hstr = heap.str(heap::BuiltinStr.EMPTY);
     TVal msg_tv;
     msg_tv.set_string(msg_hstr);
-    proto.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
+    proto.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC, heap);
 
     return proto;
 }
@@ -679,7 +679,7 @@ fn bool register_error_builtins(EnvRecord* global_env, Heap* heap) {
     HString* tostring_key = (HString*)heap.strs[heap::BuiltinStr.TO_STRING];
     TVal tostring_tv;
     tostring_tv.set_lightfunc((void*)(usz)Builtin.ERROR_PROTO_TOSTRING.ordinal);
-    err_proto.put_prop(tostring_key, tostring_tv, hobject::PROP_FLAGS_WC);
+    err_proto.put_prop(tostring_key, tostring_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Error.prototype.stack, accessor pair (error-stack-accessor proposal).
     // { [[Enumerable]]: false, [[Configurable]]: true }.
@@ -733,7 +733,7 @@ fn bool register_error_builtins(EnvRecord* global_env, Heap* heap) {
     {
         TVal ctor_tv;
         ctor_tv.set_object(err_ctor);
-        err_proto.put_prop(constructor_key, ctor_tv, hobject::PROP_FLAGS_WC);
+        err_proto.put_prop(constructor_key, ctor_tv, hobject::PROP_FLAGS_WC, heap);
     }
 
     // Wire err_ctor["prototype"] → err_proto (non-writable, non-enumerable, non-configurable)
@@ -746,7 +746,7 @@ fn bool register_error_builtins(EnvRecord* global_env, Heap* heap) {
         proto_pflags.enumerable = false;
         proto_pflags.configurable = false;
         proto_pflags.is_accessor = false;
-        err_ctor.put_prop(prototype_key, proto_tv, proto_pflags);
+        err_ctor.put_prop(prototype_key, proto_tv, proto_pflags, heap);
     }
 
     // Register static method: Error.captureStackTrace
@@ -754,7 +754,7 @@ fn bool register_error_builtins(EnvRecord* global_env, Heap* heap) {
         HString* capture_key = builtin_intern_string(heap, "captureStackTrace");
         TVal capture_tv;
         capture_tv.set_lightfunc((void*)(usz)Builtin.ERROR_CAPTURE_STACK_TRACE.ordinal);
-        err_ctor.put_prop(capture_key, capture_tv, hobject::PROP_FLAGS_WC);
+        err_ctor.put_prop(capture_key, capture_tv, hobject::PROP_FLAGS_WC, heap);
     }
 
     // Register static method: Error.isError
@@ -762,7 +762,7 @@ fn bool register_error_builtins(EnvRecord* global_env, Heap* heap) {
         HString* iserror_key = builtin_intern_string(heap, "isError");
         TVal iserror_tv;
         iserror_tv.set_lightfunc((void*)(usz)Builtin.ERROR_ISERROR.ordinal);
-        err_ctor.put_prop(iserror_key, iserror_tv, hobject::PROP_FLAGS_WC);
+        err_ctor.put_prop(iserror_key, iserror_tv, hobject::PROP_FLAGS_WC, heap);
     }
 
     // Register Error in global environment
@@ -820,13 +820,13 @@ fn bool register_native_error_ctor(EnvRecord* global_env, Heap* heap, char[] nam
     proto_pflags.enumerable = false;
     proto_pflags.configurable = false;
     proto_pflags.is_accessor = false;
-    ctor.put_prop(prototype_key, proto_tv, proto_pflags);
+    ctor.put_prop(prototype_key, proto_tv, proto_pflags, heap);
 
     // Update native_proto.constructor → ctor HObject
     HString* constructor_key = (HString*)heap.strs[heap::BuiltinStr.CONSTRUCTOR];
     TVal ctor_tv;
     ctor_tv.set_object(ctor);
-    native_proto.put_prop(constructor_key, ctor_tv, hobject::PROP_FLAGS_WC);
+    native_proto.put_prop(constructor_key, ctor_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Set .name and .length on the constructor
     set_func_ctor_name_length(ctor, heap, name, ctor_length);

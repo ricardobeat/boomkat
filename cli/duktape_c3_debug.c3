@@ -471,7 +471,7 @@ fn void print_uncaught_error(heap::Heap* h, TVal* err_val) {
             bool found_name = false;
 
             // Walk shape chain (each shape has a range of properties)
-            hobject::Shape* sh = err_obj.get_shape();
+            hobject::Shape* sh = err_obj.get_shape(h);
             uint global_offset = 0;
             TVal* vals = err_obj.prop_values();
             uint val_idx = 0;

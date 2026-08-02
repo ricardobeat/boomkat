@@ -159,7 +159,7 @@ fn bool ForInSeen.shadowed(&self, Heap* h, HString* key) {
     if (key.is_symbol()) return false;
     for (uint i = 0; i < self.nearer_count; i++) {
         HObject* lvl = self.nearer[i];
-        if (lvl.find_prop_idx((void*)key) < 0) continue;
+        if (lvl.find_prop_idx((void*)key, h) < 0) continue;
         return true;
     }
     return false;
@@ -176,9 +176,9 @@ fn void ForInSeen.free(&self, Heap* h) {
 /// exemption mirrors `shadowed`.
 fn bool forin_record_non_enumerable(Heap* h, ForInSeen* seen, HObject* level) {
     for (uint i = 0; i < level.prop_count; i++) {
-        void* pk = level.prop_key_at(i);
+        void* pk = level.prop_key_at(i, h);
         if (pk == null) continue;
-        if (level.get_prop_flags(i).enumerable) continue;
+        if (level.get_prop_flags(i, h).enumerable) continue;
         HString* k = (HString*)pk;
         if (k.is_symbol()) continue;
         if (seen.contains(k)) continue;
@@ -234,10 +234,10 @@ fn bool forin_mark_seen(Heap* h, ForInSeen* seen, HString* key) {
 /// entirely, since their keys are virtual, added and removed through traps, and re-
 /// invoking [[HasProperty]] could yield inconsistent results, matching
 /// Duktape's `check_existence = !IS_PROXY(enum_target)` bypass.
-fn bool forin_key_still_exists(HObject* target, HString* key) {
+fn bool forin_key_still_exists(HObject* target, HString* key, Heap* h) {
     if (target == null || key == null) return false;
     if (target.flags.exotic_proxyobj) return true;
-    if (target.has_prop_proto((void*)key)) return true;
+    if (target.has_prop_proto((void*)key, h)) return true;
 
     // TypedArray exotic: integer-indexed elements are accessible via the
     // exotic [[Get]] handler, not find_prop_idx / dense_arridx_lookup.  An
@@ -340,11 +340,11 @@ fn ForInState* collect_forin_keys(Vm* vm, HObject* obj) {
         // null prototype, so it is always the sole object in the walk.
         if (cur.flags.exotic_module_ns) {
             for (uint i = 0; i < cur.prop_count; i++) {
-                void* pk = cur.prop_key_at(i);
+                void* pk = cur.prop_key_at(i, vm.heap);
                 if (pk == null) continue;
                 HString* ks = (HString*)pk;
                 if (ks.is_symbol()) continue;
-                if (!cur.get_prop_flags(i).enumerable) continue;
+                if (!cur.get_prop_flags(i, vm.heap).enumerable) continue;
                 ProxyDesc nd;
                 if (!builtins::module_ns_own_desc(vm, h, cur, ks, &nd)) {
                     // TDZ threw: abort enumeration; FORIN rethrows heap.has_error.
@@ -417,8 +417,8 @@ fn ForInState* collect_forin_keys(Vm* vm, HObject* obj) {
         {
             uint int_count = 0;
             for (uint i = 0; i < cur.prop_count; i++) {
-                if (cur.prop_key_at(i) != null && ((HString*)cur.prop_key_at(i)).is_arridx()
-                    && cur.get_prop_flags(i).enumerable) {
+                if (cur.prop_key_at(i, vm.heap) != null && ((HString*)cur.prop_key_at(i, vm.heap)).is_arridx()
+                    && cur.get_prop_flags(i, vm.heap).enumerable) {
                     int_count++;
                 }
             }
@@ -427,8 +427,8 @@ fn ForInState* collect_forin_keys(Vm* vm, HObject* obj) {
                 if (sbuf != null) {
                     uint p = 0;
                     for (uint i = 0; i < cur.prop_count; i++) {
-                        if (cur.prop_key_at(i) != null && cur.get_prop_flags(i).enumerable) {
-                            HString* k = (HString*)cur.prop_key_at(i);
+                        if (cur.prop_key_at(i, vm.heap) != null && cur.get_prop_flags(i, vm.heap).enumerable) {
+                            HString* k = (HString*)cur.prop_key_at(i, vm.heap);
                             if (k.is_arridx()) {
                                 sbuf[p * 2] = k.array_index();
                                 sbuf[p * 2 + 1] = i;
@@ -451,7 +451,7 @@ fn ForInState* collect_forin_keys(Vm* vm, HObject* obj) {
                     }
                     for (uint i = 0; i < int_count; i++) {
                         uint si = sbuf[i * 2 + 1];
-                        HString* k = (HString*)cur.prop_key_at(si);
+                        HString* k = (HString*)cur.prop_key_at(si, vm.heap);
                         if (!forin_add_key(h, &keys, &count, &keys_cap, &seen, track, k)) {
                             h.free_func(h.heap_udata, sbuf);
                             h.free_func(h.heap_udata, keys);
@@ -465,8 +465,8 @@ fn ForInState* collect_forin_keys(Vm* vm, HObject* obj) {
         }
         // Phase 2: non-index string named properties (insertion order, enumerable only)
         for (uint i = 0; i < cur.prop_count; i++) {
-            if (cur.get_prop_flags(i).enumerable && cur.prop_key_at(i) != null) {
-                HString* k = (HString*)cur.prop_key_at(i);
+            if (cur.get_prop_flags(i, vm.heap).enumerable && cur.prop_key_at(i, vm.heap) != null) {
+                HString* k = (HString*)cur.prop_key_at(i, vm.heap);
                 if (k.is_arridx()) continue;
                 if (k.is_symbol()) continue;
                 if (!forin_add_key(h, &keys, &count, &keys_cap, &seen, track, k)) {

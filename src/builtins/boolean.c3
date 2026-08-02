@@ -93,13 +93,13 @@ fn bool register_boolean_constructor(EnvRecord* global_env, Heap* heap) {
     HString* tostring_key = (HString*)heap.strs[heap::BuiltinStr.TO_STRING];
     TVal tostring_tv;
     tostring_tv.set_lightfunc((void*)(usz)Builtin.BOOLEAN_PROTO_TOSTRING.ordinal);
-    proto.put_prop(tostring_key, tostring_tv, hobject::PROP_FLAGS_WC);
+    proto.put_prop(tostring_key, tostring_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Add .valueOf() method
     HString* valueof_key = (HString*)heap.strs[heap::BuiltinStr.VALUE_OF];
     TVal valueof_tv;
     valueof_tv.set_lightfunc((void*)(usz)Builtin.BOOLEAN_PROTO_VALUEOF.ordinal);
-    proto.put_prop(valueof_key, valueof_tv, hobject::PROP_FLAGS_WC);
+    proto.put_prop(valueof_key, valueof_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Register Boolean as a proper HObject constructor (not a lightfunc).
     // Needs own "prototype" property (NWC) for S15.6.3_A1 and S15.6.3.1_A3.
@@ -119,13 +119,13 @@ fn bool register_boolean_constructor(EnvRecord* global_env, Heap* heap) {
     proto_pflags.enumerable = false;
     proto_pflags.configurable = false;
     proto_pflags.is_accessor = false;
-    ctor.put_prop(prototype_key, proto_tv, proto_pflags);
+    ctor.put_prop(prototype_key, proto_tv, proto_pflags, heap);
 
     // Wire Boolean.prototype.constructor → Boolean ctor HObject
     HString* constructor_key = (HString*)heap.strs[heap::BuiltinStr.CONSTRUCTOR];
     TVal ctor_tv;
     ctor_tv.set_object(ctor);
-    proto.put_prop(constructor_key, ctor_tv, hobject::PROP_FLAGS_WC);
+    proto.put_prop(constructor_key, ctor_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Set .name and .length
     set_func_ctor_name_length(ctor, heap, "Boolean", 1);

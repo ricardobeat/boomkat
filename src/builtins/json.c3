@@ -287,7 +287,7 @@ fn TVal json_parse_array(JsonParseCtx* jctx, JsonParseRecord** out_rec = null) {
 
             HString* idx_key = jctx.heap.int_to_hstring((long)idx);
             if (idx_key != null) {
-                arr.put_prop(idx_key, elem, hobject::PROP_FLAGS_WEC);
+                arr.put_prop(idx_key, elem, hobject::PROP_FLAGS_WEC, jctx.heap);
             }
 
             if (recording) {
@@ -331,7 +331,7 @@ fn TVal json_parse_array(JsonParseCtx* jctx, JsonParseRecord** out_rec = null) {
 
     TVal len_val;
     len_val.set_fastint((long)idx);
-    arr.put_prop(len_key, len_val, hobject::PROP_FLAGS_WEC);
+    arr.put_prop(len_key, len_val, hobject::PROP_FLAGS_WEC, jctx.heap);
 
     TVal result;
     result.set_object(arr);
@@ -409,7 +409,7 @@ fn TVal json_parse_object(JsonParseCtx* jctx, JsonParseRecord** out_rec = null) 
                     json_record_free(jctx.heap, child);
                     TVal r; r.set_undefined(); return r;
                 }
-                obj.put_prop(k, val, hobject::PROP_FLAGS_WEC);
+                obj.put_prop(k, val, hobject::PROP_FLAGS_WEC, jctx.heap);
 
                 if (recording) {
                     // Duplicate keys: last value wins (matches put_prop), so
@@ -656,7 +656,7 @@ fn TVal json_walk(void* vm, Heap* heap, TVal reviver, TVal holder, HString* name
                     if (obj.flags.exotic_proxyobj) {
                         if (!proxy_mop_delete(vm, heap, obj, idx_key, &deleted)) { val.set_undefined(); return val; }
                     } else {
-                        obj.es_delete_prop(idx_key);
+                        obj.es_delete_prop(idx_key, heap);
                     }
                 } else {
                     ProxyDesc nd = {};
@@ -685,10 +685,10 @@ fn TVal json_walk(void* vm, Heap* heap, TVal reviver, TVal holder, HString* name
                 uint int_count = 0;
                 uint str_count = 0;
                 for (uint i = 0; i < obj.prop_count && (int_count + str_count) < 128; i++) {
-                    HString* kk = obj.prop_key_at(i);
+                    HString* kk = obj.prop_key_at(i, heap);
                     if (kk == null) continue;
                     // Only enumerable own properties.
-                    if (!obj.get_prop_flags(i).enumerable) continue;
+                    if (!obj.get_prop_flags(i, heap).enumerable) continue;
                     if (kk.is_arridx()) {
                         if (int_count < 128) int_keys[int_count++] = kk;
                     } else {
@@ -734,7 +734,7 @@ fn TVal json_walk(void* vm, Heap* heap, TVal reviver, TVal holder, HString* name
                     if (obj.flags.exotic_proxyobj) {
                         if (!proxy_mop_delete(vm, heap, obj, key_str, &deleted)) { val.set_undefined(); return val; }
                     } else {
-                        obj.es_delete_prop(key_str);
+                        obj.es_delete_prop(key_str, heap);
                     }
                 } else {
                     ProxyDesc nd = {};
@@ -776,7 +776,7 @@ fn TVal json_walk(void* vm, Heap* heap, TVal reviver, TVal holder, HString* name
                         TVal src_tv;
                         src_tv.set_string(source_str);
                         HString* source_key = heap.str(heap::BuiltinStr.SOURCE);
-                        ctx_obj.put_prop(source_key, src_tv, hobject::PROP_FLAGS_WEC);
+                        ctx_obj.put_prop(source_key, src_tv, hobject::PROP_FLAGS_WEC, heap);
                     }
                 }
                 context_tv.set_object(ctx_obj);
@@ -803,7 +803,7 @@ fn void json_throw_syntax_error(BuiltinContext* ctx, char[] msg) {
         TVal msg_tv;
         msg_tv.set_string(msg_str);
         HString* msg_key = ctx.heap.str(heap::BuiltinStr.MESSAGE);
-        err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
+        err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC, ctx.heap);
         ctx.throw_value.set_object(err);
     } else {
         ctx.throw_value.set_undefined();
@@ -955,7 +955,7 @@ fn void builtin_json_parse(BuiltinContext* ctx) {
                 holder.prototype = ctx.heap.object_proto;
                 HString* empty_key = ctx.heap.str(heap::BuiltinStr.EMPTY);
                 // Use [[DefineOwnProperty]] WEC (CreateDataPropertyOrThrow per spec).
-                holder.put_prop(empty_key, result, hobject::PROP_FLAGS_WEC);
+                holder.put_prop(empty_key, result, hobject::PROP_FLAGS_WEC, ctx.heap);
 
                 TVal holder_tv;
                 holder_tv.set_object(holder);
@@ -1158,7 +1158,7 @@ fn void json_throw_type_error(JsonSerializeCtx* jctx, char[] msg) {
             TVal msg_val;
             msg_val.set_string(msg_str);
             HString* msg_key = jctx.heap.str(heap::BuiltinStr.MESSAGE);
-            err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WC);
+            err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WC, jctx.heap);
         }
         jctx.heap.has_error = true;
         jctx.heap.error_value.set_object(err);
@@ -1251,7 +1251,7 @@ fn TVal json_unwrap_wrapper(JsonSerializeCtx* jctx, TVal val, bool* had_error) {
     if (cls == ObjClass.STRING) {
         HString* to_str_key = (HString*)jctx.heap.strs[heap::BuiltinStr.TO_STRING];
         if (to_str_key == null) return val;
-        TVal? toString_fn_opt = obj.get_prop_proto(to_str_key);
+        TVal? toString_fn_opt = obj.get_prop_proto(to_str_key, jctx.heap);
         if (try toString_fn = toString_fn_opt) {
             bool callable = false;
             if (toString_fn.is_object() && toString_fn.get_heapptr() != null) {
@@ -1277,7 +1277,7 @@ fn TVal json_unwrap_wrapper(JsonSerializeCtx* jctx, TVal val, bool* had_error) {
     if (cls == ObjClass.NUMBER) {
         HString* vo_key = (HString*)jctx.heap.strs[heap::BuiltinStr.VALUE_OF];
         if (vo_key != null) {
-            TVal? valueOf_fn_opt = obj.get_prop_proto(vo_key);
+            TVal? valueOf_fn_opt = obj.get_prop_proto(vo_key, jctx.heap);
             if (try valueOf_fn = valueOf_fn_opt) {
                 bool callable = false;
                 if (valueOf_fn.is_object() && valueOf_fn.get_heapptr() != null) {
@@ -1319,7 +1319,7 @@ fn TVal json_check_property(JsonSerializeCtx* jctx, HString* key, TVal val, TVal
     if (val.is_object() && val.get_heapptr() != null) {
         HObject* obj = (HObject*)val.get_heapptr();
         HString* toJSON_key = builtin_intern_string(jctx.heap, "toJSON");
-        TVal? toJSON_val = obj.get_prop_proto(toJSON_key);
+        TVal? toJSON_val = obj.get_prop_proto(toJSON_key, jctx.heap);
         if (try toJSON_fn = toJSON_val) {
             bool callable = false;
             if (toJSON_fn.is_object() && toJSON_fn.get_heapptr() != null) {
@@ -1344,7 +1344,7 @@ fn TVal json_check_property(JsonSerializeCtx* jctx, HString* key, TVal val, TVal
         HString* toJSON_key = builtin_intern_string(jctx.heap, "toJSON");
         if (jctx.heap.bigint_proto != null) {
             // Use get_prop_or_accessor_proto to handle both data and accessor properties
-            PropLookupResult prop_result = jctx.heap.bigint_proto.get_prop_or_accessor_proto(toJSON_key, true);
+            PropLookupResult prop_result = jctx.heap.bigint_proto.get_prop_or_accessor_proto(toJSON_key, true, jctx.heap);
 
             TVal toJSON_fn;
             toJSON_fn.set_undefined();
@@ -1735,7 +1735,7 @@ fn int json_serialize_array(JsonSerializeCtx* jctx, HObject* arr) {
         // back to the cached array_length pointer (used by arrays whose
         // length is in array_part rather than the named prop table, e.g.
         // result of slice()).
-        TVal? len_prop = arr.get_prop_proto(len_key);
+        TVal? len_prop = arr.get_prop_proto(len_key, jctx.heap);
         if (try l = len_prop) {
             if (l.is_fastint()) {
                 len = (uint)l.get_fastint();
@@ -1898,7 +1898,7 @@ fn int json_serialize_val(JsonSerializeCtx* jctx, TVal* val) {
             if (obj.flags.is_raw_json) {
                 // rawJSON marker object: embed the "rawJSON" property verbatim.
                 HString* raw_key = builtin_intern_string(jctx.heap, "rawJSON");
-                TVal? raw_opt = obj.get_prop_proto(raw_key);
+                TVal? raw_opt = obj.get_prop_proto(raw_key, jctx.heap);
                 if (try raw_v = raw_opt) {
                     if (raw_v.is_string() && raw_v.get_heapptr() != null) {
                         HString* rs = (HString*)raw_v.get_heapptr();
@@ -2061,7 +2061,7 @@ fn void builtin_json_stringify(BuiltinContext* ctx) {
                             // ToString(value): call toString() to respect overrides
                             HString* ts_key = (HString*)ctx.heap.strs[heap::BuiltinStr.TO_STRING];
                             if (ts_key != null) {
-                                TVal? toString_fn_opt = eobj.get_prop_proto(ts_key);
+                                TVal? toString_fn_opt = eobj.get_prop_proto(ts_key, ctx.heap);
                                 if (try toString_fn = toString_fn_opt) {
                                     bool callable = false;
                                     if (toString_fn.is_object() && toString_fn.get_heapptr() != null) {
@@ -2086,7 +2086,7 @@ fn void builtin_json_stringify(BuiltinContext* ctx) {
                             // ToString(value): call toString() to respect overrides
                             HString* ts_key = (HString*)ctx.heap.strs[heap::BuiltinStr.TO_STRING];
                             if (ts_key != null) {
-                                TVal? toString_fn_opt = eobj.get_prop_proto(ts_key);
+                                TVal? toString_fn_opt = eobj.get_prop_proto(ts_key, ctx.heap);
                                 if (try toString_fn = toString_fn_opt) {
                                     bool callable = false;
                                     if (toString_fn.is_object() && toString_fn.get_heapptr() != null) {
@@ -2163,7 +2163,7 @@ fn void builtin_json_stringify(BuiltinContext* ctx) {
                 // ToNumber(space) → call valueOf()
                 HString* vo_key = (HString*)ctx.heap.strs[heap::BuiltinStr.VALUE_OF];
                 if (vo_key != null) {
-                    TVal? vo_opt = sobj.get_prop_proto(vo_key);
+                    TVal? vo_opt = sobj.get_prop_proto(vo_key, ctx.heap);
                     if (try vo_fn = vo_opt) {
                         bool callable = false;
                         if (vo_fn.is_object() && vo_fn.get_heapptr() != null) {
@@ -2191,7 +2191,7 @@ fn void builtin_json_stringify(BuiltinContext* ctx) {
                 // ToString(space) → call toString()
                 HString* ts_key = (HString*)ctx.heap.strs[heap::BuiltinStr.TO_STRING];
                 if (ts_key != null) {
-                    TVal? ts_opt = sobj.get_prop_proto(ts_key);
+                    TVal? ts_opt = sobj.get_prop_proto(ts_key, ctx.heap);
                     if (try ts_fn = ts_opt) {
                         bool callable = false;
                         if (ts_fn.is_object() && ts_fn.get_heapptr() != null) {
@@ -2286,7 +2286,7 @@ fn void builtin_json_stringify(BuiltinContext* ctx) {
 
     // Set wrapper[""] = value
     HString* empty_key = ctx.heap.str(heap::BuiltinStr.EMPTY);
-    wrapper.put_prop(empty_key, value, hobject::PROP_FLAGS_WEC);
+    wrapper.put_prop(empty_key, value, hobject::PROP_FLAGS_WEC, ctx.heap);
 
     // Initialize serialization context. The output buffer grows to fit, so the
     // only size limit is memory, and running into it throws instead of handing
@@ -2433,7 +2433,7 @@ fn void builtin_json_raw_json(BuiltinContext* ctx) {
     // Frozen: enumerable (Object.keys returns ["rawJSON"]), non-writable,
     // non-configurable.
     hobject::PropFlags frozen_flags = { .writable = false, .enumerable = true, .configurable = false, .is_accessor = false };
-    obj.put_prop(raw_key, raw_tv, frozen_flags);
+    obj.put_prop(raw_key, raw_tv, frozen_flags, ctx.heap);
 
     obj.flags.is_raw_json = true;
     obj.flags.extensible = false;
@@ -2477,7 +2477,7 @@ fn bool register_json_object(EnvRecord* global_env, Heap* heap) {
     if (tag_key != null) {
         TVal tag_tv;
         tag_tv.set_string(builtin_intern_string(heap, "JSON"));
-        json.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC);
+        json.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC, heap);
     }
 
     TVal json_tv;

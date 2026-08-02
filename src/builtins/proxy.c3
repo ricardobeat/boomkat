@@ -54,7 +54,7 @@ fn void proxy_throw_error(Heap* heap, HObject* proto, char[] msg) {
     HString* msg_str = builtin_intern_string(heap, msg);
     if (msg_str != null) {
         TVal msg_val; msg_val.set_string(msg_str);
-        err.put_prop(heap.str(heap::BuiltinStr.MESSAGE), msg_val, hobject::PROP_FLAGS_WC);
+        err.put_prop(heap.str(heap::BuiltinStr.MESSAGE), msg_val, hobject::PROP_FLAGS_WC, heap);
     }
     TVal err_tv; err_tv.set_object(err);
     heap.tval_copy_ref(&heap.error_value, &err_tv);
@@ -109,9 +109,9 @@ fn void ordinary_own_desc(Heap* heap, HObject* obj, HString* key, ProxyDesc* out
             return;
         }
     }
-    int idx = obj.find_prop_idx((void*)key);
+    int idx = obj.find_prop_idx((void*)key, heap);
     if (idx >= 0) {
-        hobject::PropFlags f = obj.get_prop_flags((uint)idx);
+        hobject::PropFlags f = obj.get_prop_flags((uint)idx, heap);
         out.found = true;
         out.enumerable = f.enumerable;   out.has_enumerable = true;
         out.configurable = f.configurable; out.has_configurable = true;
@@ -180,7 +180,7 @@ fn bool module_ns_own_desc(void* vm, Heap* heap, HObject* ns, HString* key, Prox
         ordinary_own_desc(heap, ns, key, out);
         return true;
     }
-    int idx = ns.find_prop_idx((void*)key);
+    int idx = ns.find_prop_idx((void*)key, heap);
     if (idx < 0) return true;          // not an export → undefined descriptor
     TVal value;
     module_ns_get_binding_value(vm, heap, ns, key, &value);
@@ -488,11 +488,11 @@ fn bool js_set_with_receiver(void* vm, Heap* heap, HObject* obj, HString* key, T
             .enumerable = existing.enumerable,
             .configurable = existing.configurable,
         };
-        *res = recv_obj.put_prop((void*)key, val, pf);
+        *res = recv_obj.put_prop((void*)key, val, pf, heap);
         return true;
     }
     if (!recv_obj.flags.extensible) { *res = false; return true; }
-    *res = recv_obj.put_prop((void*)key, val, hobject::PROP_FLAGS_WEC);
+    *res = recv_obj.put_prop((void*)key, val, hobject::PROP_FLAGS_WEC, heap);
     return true;
 }
 
@@ -688,7 +688,7 @@ fn bool proxy_mop_delete(void* vm, Heap* heap, HObject* proxy, HString* key, boo
         if (target.flags.exotic_proxyobj) {
             return proxy_mop_delete(vm, heap, target, key, out);
         }
-        *out = target.es_delete_prop((void*)key);
+        *out = target.es_delete_prop((void*)key, heap);
         return true;
     }
 
@@ -729,25 +729,25 @@ fn HObject* proxy_desc_to_object(Heap* heap, ProxyDesc* d) {
     obj.prototype = heap.object_proto;
     TVal b;
     if (d.has_value) {
-        obj.put_prop(heap.str(heap::BuiltinStr.VALUE), d.value, hobject::PROP_FLAGS_WEC);
+        obj.put_prop(heap.str(heap::BuiltinStr.VALUE), d.value, hobject::PROP_FLAGS_WEC, heap);
     }
     if (d.has_writable) {
         b.set_boolean(d.writable);
-        obj.put_prop(builtin_intern_string(heap, "writable"), b, hobject::PROP_FLAGS_WEC);
+        obj.put_prop(builtin_intern_string(heap, "writable"), b, hobject::PROP_FLAGS_WEC, heap);
     }
     if (d.has_get) {
-        obj.put_prop(builtin_intern_string(heap, "get"), d.getter, hobject::PROP_FLAGS_WEC);
+        obj.put_prop(builtin_intern_string(heap, "get"), d.getter, hobject::PROP_FLAGS_WEC, heap);
     }
     if (d.has_set) {
-        obj.put_prop(builtin_intern_string(heap, "set"), d.setter, hobject::PROP_FLAGS_WEC);
+        obj.put_prop(builtin_intern_string(heap, "set"), d.setter, hobject::PROP_FLAGS_WEC, heap);
     }
     if (d.has_enumerable) {
         b.set_boolean(d.enumerable);
-        obj.put_prop(builtin_intern_string(heap, "enumerable"), b, hobject::PROP_FLAGS_WEC);
+        obj.put_prop(builtin_intern_string(heap, "enumerable"), b, hobject::PROP_FLAGS_WEC, heap);
     }
     if (d.has_configurable) {
         b.set_boolean(d.configurable);
-        obj.put_prop(builtin_intern_string(heap, "configurable"), b, hobject::PROP_FLAGS_WEC);
+        obj.put_prop(builtin_intern_string(heap, "configurable"), b, hobject::PROP_FLAGS_WEC, heap);
     }
     return obj;
 }
@@ -910,9 +910,9 @@ fn bool array_set_length_desc(void* vm, Heap* heap, HObject* obj, ProxyDesc* des
         len_is_writable = obj.flags.array_len_writable;
     }
     if (len_key_intern != null) {
-        int len_prop_idx = obj.find_prop_idx(len_key_intern);
+        int len_prop_idx = obj.find_prop_idx(len_key_intern, heap);
         if (len_prop_idx >= 0) {
-            len_is_writable = obj.get_prop_flags((uint)len_prop_idx).writable;
+            len_is_writable = obj.get_prop_flags((uint)len_prop_idx, heap).writable;
         }
     }
 
@@ -959,13 +959,13 @@ fn bool array_set_length_desc(void* vm, Heap* heap, HObject* obj, ProxyDesc* des
         uint delete_floor = arr_new_len;
         uint pc = obj.prop_count;
         for (uint pi = 0; pi < pc; pi++) {
-            void* pk = obj.prop_key_at(pi);
+            void* pk = obj.prop_key_at(pi, heap);
             if (pk != null) {
                 HString* pks = (HString*)pk;
                 if (pks.is_arridx()) {
                     uint ai = pks.array_index();
                     if (ai >= arr_new_len && ai < old_len && ai + 1 > delete_floor
-                        && !obj.get_prop_flags((uint)pi).configurable) {
+                        && !obj.get_prop_flags((uint)pi, heap).configurable) {
                         delete_floor = ai + 1;
                     }
                 }
@@ -981,13 +981,13 @@ fn bool array_set_length_desc(void* vm, Heap* heap, HObject* obj, ProxyDesc* des
         uint pi = pc;
         while (pi > 0) {
             pi--;
-            void* pk = obj.prop_key_at(pi);
+            void* pk = obj.prop_key_at(pi, heap);
             if (pk != null) {
                 HString* pks = (HString*)pk;
                 if (pks.is_arridx()) {
                     uint ai = pks.array_index();
                     if (ai >= arr_new_len && ai < old_len) {
-                        obj.delete_prop(pk);
+                        obj.delete_prop(pk, heap);
                     }
                 }
             }
@@ -1009,11 +1009,11 @@ fn bool array_set_length_desc(void* vm, Heap* heap, HObject* obj, ProxyDesc* des
             obj.flags.array_len_writable = false;
         }
         if (len_key_intern != null) {
-            int len_prop_idx2 = obj.find_prop_idx(len_key_intern);
+            int len_prop_idx2 = obj.find_prop_idx(len_key_intern, heap);
             if (len_prop_idx2 >= 0) {
-                hobject::PropFlags lf = obj.get_prop_flags((uint)len_prop_idx2);
+                hobject::PropFlags lf = obj.get_prop_flags((uint)len_prop_idx2, heap);
                 lf.writable = false;
-                obj.set_prop_flags((uint)len_prop_idx2, lf);
+                obj.set_prop_flags((uint)len_prop_idx2, lf, heap);
             }
         }
     }
@@ -1114,9 +1114,9 @@ fn bool ordinary_define_own(void* vm, Heap* heap, HObject* obj, HString* key, Pr
         pf.writable = false;
         TVal gs = hobject::hobject_create_accessors(heap, merged.getter, merged.setter);
         if (gs.is_undefined()) { *res = false; return true; }
-        *res = obj.put_prop((void*)key, gs, pf);
+        *res = obj.put_prop((void*)key, gs, pf, heap);
     } else {
-        *res = obj.put_prop((void*)key, merged.value, pf);
+        *res = obj.put_prop((void*)key, merged.value, pf, heap);
     }
     return true;
 }
@@ -1288,17 +1288,17 @@ fn uint ordinary_own_keys(Heap* heap, HObject* obj, HString*** buf_out) {
     }
     // Integer-index named props (ascending), merged after dense for simplicity
     for (uint i = 0; i < obj.prop_count && n < cap; i++) {
-        HString* k = (HString*)obj.prop_key_at(i);
+        HString* k = (HString*)obj.prop_key_at(i, heap);
         if (k != null && k.is_arridx() && !k.is_symbol()) buf[n++] = k;
     }
     // Non-index strings (insertion order)
     for (uint i = 0; i < obj.prop_count && n < cap; i++) {
-        HString* k = (HString*)obj.prop_key_at(i);
+        HString* k = (HString*)obj.prop_key_at(i, heap);
         if (k != null && !k.is_arridx() && !k.is_symbol()) buf[n++] = k;
     }
     // Symbols (insertion order)
     for (uint i = 0; i < obj.prop_count && n < cap; i++) {
-        HString* k = (HString*)obj.prop_key_at(i);
+        HString* k = (HString*)obj.prop_key_at(i, heap);
         if (k != null && k.is_symbol()) {
             if (k.is_hidden()) continue;
             buf[n++] = k;
@@ -1333,7 +1333,7 @@ fn bool proxy_mop_own_keys(void* vm, Heap* heap, HObject* proxy, HObject** arr_o
             array_set_elem(arr, i, kv, heap);
         }
         TVal len_tv; len_tv.set_fastint((long)n);
-        arr.put_prop((void*)(HString*)heap.strs[heap::BuiltinStr.LENGTH], len_tv, hobject::PROP_FLAGS_WC);
+        arr.put_prop((void*)(HString*)heap.strs[heap::BuiltinStr.LENGTH], len_tv, hobject::PROP_FLAGS_WC, heap);
         if (keys != null) heap.free_func(heap.heap_udata, keys);
         *arr_out = arr;
         return true;
@@ -1467,7 +1467,7 @@ fn bool proxy_mop_own_keys(void* vm, Heap* heap, HObject* proxy, HObject** arr_o
         array_set_elem(arr, i, kv, heap);
     }
     TVal alen_tv; alen_tv.set_fastint((long)n);
-    arr.put_prop((void*)(HString*)heap.strs[heap::BuiltinStr.LENGTH], alen_tv, hobject::PROP_FLAGS_WC);
+    arr.put_prop((void*)(HString*)heap.strs[heap::BuiltinStr.LENGTH], alen_tv, hobject::PROP_FLAGS_WC, heap);
     heap.free_func(heap.heap_udata, keys);
     *arr_out = arr;
     return true;
@@ -1890,13 +1890,13 @@ fn void builtin_proxy_revocable(BuiltinContext* ctx) {
     revoker.prototype = ctx.heap.function_proto;
     // Own props in spec order: length (0), then name ("").
     TVal rl; rl.set_fastint(0);
-    revoker.put_prop((void*)(HString*)ctx.heap.strs[heap::BuiltinStr.LENGTH], rl, hobject::PROP_FLAGS_NWC);
+    revoker.put_prop((void*)(HString*)ctx.heap.strs[heap::BuiltinStr.LENGTH], rl, hobject::PROP_FLAGS_NWC, ctx.heap);
     HString* empty_name = ctx.heap.str(heap::BuiltinStr.EMPTY);
     TVal rn; rn.set_string(empty_name);
-    revoker.put_prop(ctx.heap.str(heap::BuiltinStr.NAME), rn, hobject::PROP_FLAGS_NWC);
+    revoker.put_prop(ctx.heap.str(heap::BuiltinStr.NAME), rn, hobject::PROP_FLAGS_NWC, ctx.heap);
     HString* slot_key = ctx.heap.str_intern(PROXY_REVOKE_SLOT);
     TVal p_tv; p_tv.set_object(p);
-    revoker.put_prop(slot_key, p_tv, hobject::PROP_FLAGS_NWC);
+    revoker.put_prop(slot_key, p_tv, hobject::PROP_FLAGS_NWC, ctx.heap);
 
     // Result: { proxy, revoke }
     HObject*? res_raw = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
@@ -1904,8 +1904,8 @@ fn void builtin_proxy_revocable(BuiltinContext* ctx) {
     HObject* res = res_raw;
     res.prototype = ctx.heap.object_proto;
     TVal r_tv; r_tv.set_object(revoker);
-    res.put_prop(builtin_intern_string(ctx.heap, "proxy"), p_tv, hobject::PROP_FLAGS_WEC);
-    res.put_prop(builtin_intern_string(ctx.heap, "revoke"), r_tv, hobject::PROP_FLAGS_WEC);
+    res.put_prop(builtin_intern_string(ctx.heap, "proxy"), p_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
+    res.put_prop(builtin_intern_string(ctx.heap, "revoke"), r_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
     ctx.result.set_object(res);
 }
 
@@ -1913,7 +1913,7 @@ fn void builtin_proxy_revoke(BuiltinContext* ctx) {
     ctx.result.set_undefined();
     if (ctx.callee_obj == null) return;
     HString* slot_key = ctx.heap.str_intern(PROXY_REVOKE_SLOT);
-    int idx = ctx.callee_obj.find_prop_idx((void*)slot_key);
+    int idx = ctx.callee_obj.find_prop_idx((void*)slot_key, ctx.heap);
     if (idx < 0) return;
     TVal p_tv = ctx.callee_obj.prop_values()[idx];
     if (!p_tv.is_object()) return;
@@ -1923,7 +1923,7 @@ fn void builtin_proxy_revoke(BuiltinContext* ctx) {
     (*p.extra_ptr()).proxy.handler = null;
     // Mark the revoker as spent so a second call is a no-op.
     TVal undef; undef.set_undefined();
-    ctx.callee_obj.put_prop((void*)slot_key, undef, hobject::PROP_FLAGS_NWC);
+    ctx.callee_obj.put_prop((void*)slot_key, undef, hobject::PROP_FLAGS_NWC, ctx.heap);
 }
 
 /// Proxy [[Call]] and [[Construct]], dispatched through the ordinary builtin
@@ -2006,7 +2006,7 @@ fn void builtin_proxy_call(BuiltinContext* ctx) {
         array_set_elem(arr, i, ctx.regs[ctx.base_reg + i], heap);
     }
     TVal alen; alen.set_fastint((long)ctx.argc);
-    arr.put_prop((void*)(HString*)heap.strs[heap::BuiltinStr.LENGTH], alen, hobject::PROP_FLAGS_WC);
+    arr.put_prop((void*)(HString*)heap.strs[heap::BuiltinStr.LENGTH], alen, hobject::PROP_FLAGS_WC, ctx.heap);
     TVal arr_tv; arr_tv.set_object(arr);
 
     TVal result;
@@ -2056,15 +2056,15 @@ fn bool register_proxy_constructor(EnvRecord* global_env, Heap* heap) {
     ctor.prototype = heap.function_proto;
 
     TVal len_tv; len_tv.set_fastint(2);
-    ctor.put_prop((void*)(HString*)heap.strs[heap::BuiltinStr.LENGTH], len_tv, hobject::PROP_FLAGS_NWC);
+    ctor.put_prop((void*)(HString*)heap.strs[heap::BuiltinStr.LENGTH], len_tv, hobject::PROP_FLAGS_NWC, heap);
     HString* name_str = builtin_intern_string(heap, "Proxy");
     TVal name_tv; name_tv.set_string(name_str);
-    ctor.put_prop(heap.str(heap::BuiltinStr.NAME), name_tv, hobject::PROP_FLAGS_NWC);
+    ctor.put_prop(heap.str(heap::BuiltinStr.NAME), name_tv, hobject::PROP_FLAGS_NWC, heap);
 
     HString* revocable_key = builtin_intern_string(heap, "revocable");
     TVal rev_tv;
     rev_tv.set_lightfunc((void*)(usz)Builtin.PROXY_REVOCABLE.ordinal);
-    ctor.put_prop(revocable_key, rev_tv, hobject::PROP_FLAGS_WC);
+    ctor.put_prop(revocable_key, rev_tv, hobject::PROP_FLAGS_WC, heap);
 
     TVal ctor_tv; ctor_tv.set_object(ctor);
     return register_named_value(global_env, heap, "Proxy", ctor_tv);

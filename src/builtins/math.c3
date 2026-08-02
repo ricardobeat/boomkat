@@ -653,7 +653,7 @@ fn void sp_iterator_close_after_throw(BuiltinContext* ctx, TVal iterator) {
     HObject* iter_obj = (HObject*)iterator.get_heapptr();
     HString* return_key = builtin_intern_string(ctx.heap, "return");
     if (return_key == null) return;
-    TVal? return_method_opt = iter_obj.get_prop_proto(return_key);
+    TVal? return_method_opt = iter_obj.get_prop_proto(return_key, ctx.heap);
     if (try return_method = return_method_opt) {
         if (return_method.is_undefined() || return_method.is_null()) return;
         if (!return_method.is_object() || return_method.get_heapptr() == null) return;
@@ -745,7 +745,7 @@ fn void builtin_math_sumPrecise(BuiltinContext* ctx) {
 
     // Get the next method
     HString* next_key = builtin_intern_string(heap, "next");
-    TVal? next_opt = iter_obj.get_prop_proto(next_key);
+    TVal? next_opt = iter_obj.get_prop_proto(next_key, ctx.heap);
     TVal next_fn_val;
     if (try nv = next_opt) {
         if (nv.is_undefined() || nv.is_null()) {
@@ -785,7 +785,7 @@ fn void builtin_math_sumPrecise(BuiltinContext* ctx) {
 
         // Check done property
         HString* done_key = (HString*)heap.strs[heap::BuiltinStr.DONE];
-        TVal? done_opt = result_obj.get_prop_proto(done_key);
+        TVal? done_opt = result_obj.get_prop_proto(done_key, ctx.heap);
         bool done = false;
         if (try dv = done_opt) {
             done = builtin_to_boolean(&dv);
@@ -795,7 +795,7 @@ fn void builtin_math_sumPrecise(BuiltinContext* ctx) {
 
         // Get value property
         HString* value_key = (HString*)heap.strs[heap::BuiltinStr.VALUE];
-        TVal? value_opt = result_obj.get_prop_proto(value_key);
+        TVal? value_opt = result_obj.get_prop_proto(value_key, ctx.heap);
 
         double d;
         if (try val = value_opt) {
@@ -881,7 +881,7 @@ fn bool register_math_object(EnvRecord* global_env, Heap* heap) {
     if (tag_key != null) {
         TVal tag_tv;
         tag_tv.set_string(builtin_intern_string(heap, "Math"));
-        math.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC);
+        math.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC, heap);
     }
 
     TVal math_tv;
@@ -897,7 +897,7 @@ fn bool register_math_method(HObject* math, Heap* heap, char[] name, uint fn_ind
     if (key == null) return false;
     TVal tv;
     tv.set_lightfunc((void*)(usz)fn_index);
-    math.put_prop(key, tv, hobject::PROP_FLAGS_WC);
+    math.put_prop(key, tv, hobject::PROP_FLAGS_WC, heap);
     return true;
 }
 
@@ -906,6 +906,6 @@ fn bool set_num_prop_lookup(HObject* obj, Heap* heap, char[] name, double val) {
     if (key == null) return false;
     TVal tv;
     tv.set_number(val);
-    obj.put_prop(key, tv, hobject::PROP_FLAGS_NNC);
+    obj.put_prop(key, tv, hobject::PROP_FLAGS_NNC, heap);
     return true;
 }

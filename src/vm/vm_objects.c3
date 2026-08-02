@@ -33,7 +33,7 @@ struct CopyPropResult {
 /// / Get's abrupt completion propagates through the ReturnIfAbrupt chain).
 /// Shared by OBJSPRD's and OBJREST's three key-ordering passes.
 fn CopyPropResult copy_data_property(Vm* vm, HObject* source, HObject* target, uint i, void* key) {
-    hobject::PropFlags flags = source.get_prop_flags(i);
+    hobject::PropFlags flags = source.get_prop_flags(i, vm.heap);
     TVal val;
     if (flags.is_accessor) {
         TVal gs_slot = source.prop_values()[i];
@@ -51,7 +51,7 @@ fn CopyPropResult copy_data_property(Vm* vm, HObject* source, HObject* target, u
     } else {
         val = source.prop_values()[i];
     }
-    if (!target.put_prop(key, val, hobject::PROP_FLAGS_WEC)) {
+    if (!target.put_prop(key, val, hobject::PROP_FLAGS_WEC, vm.heap)) {
         return { false, true, false, {} };
     }
     return { true, false, false, {} };
@@ -147,7 +147,7 @@ fn void? copy_data_properties_into(Vm* vm, Dispatch* ds, HObject* target, TVal s
                 }
                 return;
             }
-            if (!target.put_prop((void*)pk, pval, hobject::PROP_FLAGS_WEC)) {
+            if (!target.put_prop((void*)pk, pval, hobject::PROP_FLAGS_WEC, vm.heap)) {
                 return VM_ERROR~;
             }
         }
@@ -164,7 +164,7 @@ fn void? copy_data_properties_into(Vm* vm, Dispatch* ds, HObject* target, TVal s
                     HString* key = intern_string(vm, digit_buf[:(uint)dlen]);
                     if (key != null && !key_is_excluded((void*)key, excluded)) {
                         TVal val = source.array_part()[i];
-                        if (!target.put_prop((void*)key, val, hobject::PROP_FLAGS_WEC)) {
+                        if (!target.put_prop((void*)key, val, hobject::PROP_FLAGS_WEC, vm.heap)) {
                             return VM_ERROR~;
                         }
                     }
@@ -186,7 +186,7 @@ fn void? copy_data_properties_into(Vm* vm, Dispatch* ds, HObject* target, TVal s
                 HString* ch_str = intern_string(vm, cbuf[:cblen]);
                 if (ch_str != null) {
                     TVal ch_tv; ch_tv.set_string(ch_str);
-                    if (!target.put_prop((void*)ik, ch_tv, hobject::PROP_FLAGS_WEC)) {
+                    if (!target.put_prop((void*)ik, ch_tv, hobject::PROP_FLAGS_WEC, vm.heap)) {
                         return VM_ERROR~;
                     }
                 }
@@ -208,8 +208,8 @@ fn void? copy_data_properties_into(Vm* vm, Dispatch* ds, HObject* target, TVal s
     {
         uint arridx_count = 0;
         for (uint i = 0; i < source.prop_count; i++) {
-            void* key = source.prop_key_at(i);
-            if (key != null && ((HString*)key).is_arridx() && source.get_prop_flags(i).enumerable
+            void* key = source.prop_key_at(i, vm.heap);
+            if (key != null && ((HString*)key).is_arridx() && source.get_prop_flags(i, vm.heap).enumerable
                 && !key_is_excluded(key, excluded)) {
                 arridx_count++;
             }
@@ -220,8 +220,8 @@ fn void? copy_data_properties_into(Vm* vm, Dispatch* ds, HObject* target, TVal s
             if (sort_buf != null) {
                 uint p = 0;
                 for (uint i = 0; i < source.prop_count; i++) {
-                    void* key = source.prop_key_at(i);
-                    if (key != null && ((HString*)key).is_arridx() && source.get_prop_flags(i).enumerable
+                    void* key = source.prop_key_at(i, vm.heap);
+                    if (key != null && ((HString*)key).is_arridx() && source.get_prop_flags(i, vm.heap).enumerable
                         && !key_is_excluded(key, excluded)) {
                         sort_buf[p * 2]     = ((HString*)key).array_index();
                         sort_buf[p * 2 + 1] = i;
@@ -243,7 +243,7 @@ fn void? copy_data_properties_into(Vm* vm, Dispatch* ds, HObject* target, TVal s
                 }
                 for (uint a = 0; a < arridx_count; a++) {
                     uint i = sort_buf[a * 2 + 1];
-                    CopyPropResult r = copy_data_property(vm, source, target, i, source.prop_key_at(i));
+                    CopyPropResult r = copy_data_property(vm, source, target, i, source.prop_key_at(i, vm.heap));
                     if (r.vm_error) { vm.heap.free_func(vm.heap.heap_udata, sort_buf); return VM_ERROR~; }
                     if (r.getter_threw) {
                         vm.heap.free_func(vm.heap.heap_udata, sort_buf);
@@ -261,8 +261,8 @@ fn void? copy_data_properties_into(Vm* vm, Dispatch* ds, HObject* target, TVal s
     }
     // Pass 2: other String keys, insertion (table) order.
     for (uint i = 0; i < source.prop_count; i++) {
-        void* key = source.prop_key_at(i);
-        if (key == null || !source.get_prop_flags(i).enumerable) continue;
+        void* key = source.prop_key_at(i, vm.heap);
+        if (key == null || !source.get_prop_flags(i, vm.heap).enumerable) continue;
         HString* khs = (HString*)key;
         if (khs.is_arridx() || khs.is_symbol()) continue;
         if (key_is_excluded(key, excluded)) continue;
@@ -279,8 +279,8 @@ fn void? copy_data_properties_into(Vm* vm, Dispatch* ds, HObject* target, TVal s
     }
     // Pass 3: Symbol keys, insertion (table) order.
     for (uint i = 0; i < source.prop_count; i++) {
-        void* key = source.prop_key_at(i);
-        if (key == null || !source.get_prop_flags(i).enumerable) continue;
+        void* key = source.prop_key_at(i, vm.heap);
+        if (key == null || !source.get_prop_flags(i, vm.heap).enumerable) continue;
         if (!((HString*)key).is_symbol()) continue;
         if (key_is_excluded(key, excluded)) continue;
         CopyPropResult r = copy_data_property(vm, source, target, i, key);
@@ -453,7 +453,7 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
                                 HString* lastindex_key = intern_string(vm, "lastIndex");
                                 TVal lastindex_tv;
                                 lastindex_tv.set_fastint(0);
-                                obj.put_prop(lastindex_key, lastindex_tv, hobject::PROP_FLAGS_WENC);
+                                obj.put_prop(lastindex_key, lastindex_tv, hobject::PROP_FLAGS_WENC, ds.vm.heap);
                                 ra.set_object(obj);
                                 track_heap_store(ds.act, ra, (uint)insn.a);
                             } else {
@@ -498,7 +498,7 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
                 HString* len_str = (HString*)vm.heap.strs[heap::BuiltinStr.LENGTH];
                 TVal len_val;
                 len_val.set_fastint((long)count);
-                hobj.put_prop(len_str, len_val, hobject::PROP_FLAGS_WENC);
+                hobj.put_prop(len_str, len_val, hobject::PROP_FLAGS_WENC, ds.vm.heap);
             }
             return (TVal){};
         }
@@ -506,7 +506,7 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
         case Opcode.FREEZEOBJ: {
             if (ra.is_object()) {
                 HObject* hobj = (HObject*)ra.get_heapptr();
-                hobj.freeze();
+                hobj.freeze(vm.heap);
             }
             return (TVal){};
         }
@@ -552,7 +552,7 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
                     iter_lookup_obj = vm.heap.string_proto;
                 }
                 if (iter_lookup_obj != null) {
-                    hobject::PropLookupResult im_res = iter_lookup_obj.get_prop_or_accessor_proto((void*)iter_sym, true);
+                    hobject::PropLookupResult im_res = iter_lookup_obj.get_prop_or_accessor_proto((void*)iter_sym, true, vm.heap);
                     if (im_res.kind == hobject::PropLookupKind.PROP_ACCESSOR) {
                         iter_method = vm.heap.call_fn(vm, im_res.acc.accessor_fn, null, 0, src_tv);
                         if (vm.has_error) {
@@ -612,7 +612,7 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
             uint k = 0;
             while (vm.heap.call_fn != null) {
                 HObject* iter_obj = (HObject*)iterator.get_heapptr();
-                TVal? next_opt = iter_obj.get_prop_proto(next_key);
+                TVal? next_opt = iter_obj.get_prop_proto(next_key, ds.vm.heap);
                 TVal next_method;
                 if (try nm = next_opt) { next_method = nm; } else { break; }
                 bool callable = next_method.is_lightfunc() ||
@@ -635,7 +635,7 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
                 HObject* result_obj = (HObject*)result.get_heapptr();
 
                 // ES IteratorComplete: Get(result, "done") can invoke a getter that throws
-                hobject::PropLookupResult done_res = result_obj.get_prop_or_accessor_proto(done_key, true);
+                hobject::PropLookupResult done_res = result_obj.get_prop_or_accessor_proto(done_key, true, ds.vm.heap);
                 TVal done_val;
                 if (done_res.kind == hobject::PropLookupKind.PROP_ACCESSOR) {
                     TVal acc_fn = done_res.acc.accessor_fn;
@@ -664,7 +664,7 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
                 if (done) { break; }
 
                 // ES IteratorValue: Get(result, "value") can invoke a getter that throws
-                hobject::PropLookupResult value_res = result_obj.get_prop_or_accessor_proto(value_key, true);
+                hobject::PropLookupResult value_res = result_obj.get_prop_or_accessor_proto(value_key, true, ds.vm.heap);
                 TVal value_val;
                 bool value_found = true;
                 if (value_res.kind == hobject::PropLookupKind.PROP_ACCESSOR) {
@@ -694,7 +694,7 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
                 if (value_found) {
                     HString* pk = vm.heap.int_to_hstring(idx + (long)k);
                     if (pk != null) {
-                        target.put_prop(pk, value_val, hobject::PROP_FLAGS_WEC);
+                        target.put_prop(pk, value_val, hobject::PROP_FLAGS_WEC, ds.vm.heap);
                     }
                     k++;
                 } else { break; }
@@ -758,7 +758,7 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
                     iter_lookup_obj = vm.heap.string_proto;
                 }
                 if (iter_lookup_obj != null) {
-                    hobject::PropLookupResult im_res = iter_lookup_obj.get_prop_or_accessor_proto((void*)iter_sym, true);
+                    hobject::PropLookupResult im_res = iter_lookup_obj.get_prop_or_accessor_proto((void*)iter_sym, true, vm.heap);
                     if (im_res.kind == hobject::PropLookupKind.PROP_ACCESSOR) {
                         iter_method = vm.heap.call_fn(vm, im_res.acc.accessor_fn, null, 0, src_tv);
                         if (vm.has_error) {
@@ -827,7 +827,7 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
             uint k = 0;
             while (vm.heap.call_fn != null) {
                 HObject* iter_obj = (HObject*)iterator.get_heapptr();
-                TVal? next_opt = iter_obj.get_prop_proto(next_key);
+                TVal? next_opt = iter_obj.get_prop_proto(next_key, ds.vm.heap);
                 TVal next_method;
                 if (try nm = next_opt) { next_method = nm; } else { break; }
                 bool callable = next_method.is_lightfunc() ||
@@ -851,7 +851,7 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
                 HObject* result_obj = (HObject*)result.get_heapptr();
 
                 // ES IteratorComplete: Get(result, "done") can invoke a getter that throws
-                hobject::PropLookupResult done_res2 = result_obj.get_prop_or_accessor_proto(done_key, true);
+                hobject::PropLookupResult done_res2 = result_obj.get_prop_or_accessor_proto(done_key, true, ds.vm.heap);
                 TVal done_val2;
                 if (done_res2.kind == hobject::PropLookupKind.PROP_ACCESSOR) {
                     TVal acc_fn2 = done_res2.acc.accessor_fn;
@@ -881,7 +881,7 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
                 if (done) { break; }
 
                 // ES IteratorValue: Get(result, "value") can invoke a getter that throws
-                hobject::PropLookupResult value_res2 = result_obj.get_prop_or_accessor_proto(value_key, true);
+                hobject::PropLookupResult value_res2 = result_obj.get_prop_or_accessor_proto(value_key, true, ds.vm.heap);
                 TVal value_val2;
                 bool value_found2 = true;
                 if (value_res2.kind == hobject::PropLookupKind.PROP_ACCESSOR) {
@@ -961,7 +961,7 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
                 // Fallback: use "length" property
                 HString* length_key = (HString*)vm.heap.strs[heap::BuiltinStr.LENGTH];
                 if (length_key != null) {
-                    int idx = src_obj.find_prop_idx(length_key);
+                    int idx = src_obj.find_prop_idx(length_key, ds.vm.heap);
                     if (idx >= 0) {
                         TVal len_val = src_obj.prop_values()[idx];
                         if (len_val.is_fastint()) {
@@ -985,7 +985,7 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
                     idx_val.set_fastint((long)i);
                     TVal* idx_slot = ds.regs_base + first_arg_reg + i;
                     // Use the object's indexed access
-                    hobject::PropLookupResult plr = src_obj.get_prop_or_accessor_proto(vm.heap.strs[heap::BuiltinStr.EMPTY], false);
+                    hobject::PropLookupResult plr = src_obj.get_prop_or_accessor_proto(vm.heap.strs[heap::BuiltinStr.EMPTY], false, vm.heap);
                     // Simpler: just check property table for numeric key
                     TVal undef_val;
                     undef_val.set_undefined();

@@ -82,7 +82,7 @@ fn bool builtin_to_object(BuiltinContext* ctx, TVal val) {
         HString* len_key = (HString*)ctx.heap.strs[heap::BuiltinStr.LENGTH];
         TVal len_tv;
         len_tv.set_fastint((long)prim_str.char_length());
-        obj.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NNC);
+        obj.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NNC, ctx.heap);
         // Indexed character properties are served lazily via the exotic_stringobj flag;
         // no per-character own properties are materialised at construction time.
         ctx.result.set_object(obj);
@@ -97,13 +97,13 @@ fn void builtin_build_data_descriptor(Heap* heap, HObject** out, TVal value, boo
     if (catch err = desc_raw) { *out = null; return; }
     HObject* desc = desc_raw;
     desc.prototype = heap.object_proto;
-    desc.put_prop(heap.str(heap::BuiltinStr.VALUE), value, hobject::PROP_FLAGS_WEC);
+    desc.put_prop(heap.str(heap::BuiltinStr.VALUE), value, hobject::PROP_FLAGS_WEC, heap);
     TVal w_tv; w_tv.set_boolean(writable);
-    desc.put_prop(builtin_intern_string(heap, "writable"), w_tv, hobject::PROP_FLAGS_WEC);
+    desc.put_prop(builtin_intern_string(heap, "writable"), w_tv, hobject::PROP_FLAGS_WEC, heap);
     TVal e_tv; e_tv.set_boolean(enumerable);
-    desc.put_prop(builtin_intern_string(heap, "enumerable"), e_tv, hobject::PROP_FLAGS_WEC);
+    desc.put_prop(builtin_intern_string(heap, "enumerable"), e_tv, hobject::PROP_FLAGS_WEC, heap);
     TVal c_tv; c_tv.set_boolean(configurable);
-    desc.put_prop(builtin_intern_string(heap, "configurable"), c_tv, hobject::PROP_FLAGS_WEC);
+    desc.put_prop(builtin_intern_string(heap, "configurable"), c_tv, hobject::PROP_FLAGS_WEC, heap);
     *out = desc;
 }
 
@@ -240,7 +240,7 @@ fn void builtin_object(BuiltinContext* ctx) {
         HString* len_key = (HString*)ctx.heap.strs[heap::BuiltinStr.LENGTH];
         TVal len_tv;
         len_tv.set_fastint((long)prim_str.char_length());
-        obj.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NNC);
+        obj.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NNC, ctx.heap);
         // Indexed character properties are served lazily via the exotic_stringobj flag;
         // no per-character own properties are materialised at construction time.
         ctx.result.set_object(obj);
@@ -313,7 +313,7 @@ fn bool own_has_enum_string_key(Heap* heap, HObject* obj) {
         }
     }
     for (uint i = 0; i < obj.prop_count; i++) {
-        if (obj.prop_key_at(i) != null) return true;
+        if (obj.prop_key_at(i, heap) != null) return true;
     }
     return false;
 }
@@ -350,7 +350,7 @@ fn uint collect_own_enum_string_keys(Heap* heap, HObject* obj, HString** key_buf
         // Count integer-indexed named properties
         uint named_int_count = 0;
         for (uint i = 0; i < obj.prop_count; i++) {
-            if (obj.prop_key_at(i) != null && ((HString*)obj.prop_key_at(i)).is_arridx()) {
+            if (obj.prop_key_at(i, heap) != null && ((HString*)obj.prop_key_at(i, heap)).is_arridx()) {
                 named_int_count++;
             }
         }
@@ -365,7 +365,7 @@ fn uint collect_own_enum_string_keys(Heap* heap, HObject* obj, HString** key_buf
             for (uint i = 0; i < obj.array_size; i++) {
                 if (!obj.array_part()[i].is_undefined()) {
                     HString* ki = heap.int_to_hstring((long)i);
-                    if (ki != null && ki.is_arridx() && obj.find_prop_idx(ki) >= 0) continue;
+                    if (ki != null && ki.is_arridx() && obj.find_prop_idx(ki, heap) >= 0) continue;
                     dense_int_count++;
                 }
             }
@@ -380,8 +380,8 @@ fn uint collect_own_enum_string_keys(Heap* heap, HObject* obj, HString** key_buf
                 uint p = 0;
                 // Add integer-indexed named properties
                 for (uint i = 0; i < obj.prop_count; i++) {
-                    if (obj.prop_key_at(i) != null) {
-                        HString* key = (HString*)obj.prop_key_at(i);
+                    if (obj.prop_key_at(i, heap) != null) {
+                        HString* key = (HString*)obj.prop_key_at(i, heap);
                         if (key.is_arridx()) {
                             sort_buf[p * 3] = key.array_index();
                             sort_buf[p * 3 + 1] = i;     // prop table index
@@ -394,7 +394,7 @@ fn uint collect_own_enum_string_keys(Heap* heap, HObject* obj, HString** key_buf
                 for (uint i = 0; array_part_is_indexed && i < obj.array_size; i++) {
                     if (!obj.array_part()[i].is_undefined()) {
                         HString* ki = heap.int_to_hstring((long)i);
-                        if (ki != null && ki.is_arridx() && obj.find_prop_idx(ki) >= 0) continue;
+                        if (ki != null && ki.is_arridx() && obj.find_prop_idx(ki, heap) >= 0) continue;
                         sort_buf[p * 3] = (uint)i;
                         sort_buf[p * 3 + 1] = i;         // dense array index
                         sort_buf[p * 3 + 2] = 1;         // source: dense array
@@ -424,8 +424,8 @@ fn uint collect_own_enum_string_keys(Heap* heap, HObject* obj, HString** key_buf
                     if (src_type == 0) {
                         // Named property, check enumerable
                         uint prop_idx = sort_buf[i * 3 + 1];
-                        if (!require_enumerable || obj.get_prop_flags(prop_idx).enumerable) {
-                            HString* key = (HString*)obj.prop_key_at(prop_idx);
+                        if (!require_enumerable || obj.get_prop_flags(prop_idx, heap).enumerable) {
+                            HString* key = (HString*)obj.prop_key_at(prop_idx, heap);
                             key_buf[key_count++] = key;
                         }
                     } else {
@@ -441,8 +441,8 @@ fn uint collect_own_enum_string_keys(Heap* heap, HObject* obj, HString** key_buf
     }
     // Phase 2: non-index named properties (insertion order)
     for (uint i = 0; i < obj.prop_count; i++) {
-        if ((!require_enumerable || obj.get_prop_flags(i).enumerable) && obj.prop_key_at(i) != null) {
-            HString* key = (HString*)obj.prop_key_at(i);
+        if ((!require_enumerable || obj.get_prop_flags(i, heap).enumerable) && obj.prop_key_at(i, heap) != null) {
+            HString* key = (HString*)obj.prop_key_at(i, heap);
             if (key.is_symbol()) continue;  // only String keys
             if (key.is_arridx()) continue;
             if (obj.flags.exotic_stringobj && (void*)key == (void*)heap.strs[heap::BuiltinStr.LENGTH]) continue;
@@ -527,14 +527,14 @@ fn void builtin_object_keys(BuiltinContext* ctx) {
         if (idx_key == null) { ctx.result.set_undefined(); return; }
         TVal val_tv;
         val_tv.set_string(key_buf[i]);
-        arr.put_prop(idx_key, val_tv, hobject::PROP_FLAGS_WEC);
+        arr.put_prop(idx_key, val_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
     }
 
     // Set .length, Array.length is writable, non-enumerable, configurable (ES5 §15.4.5.1)
     TVal len_tv;
     len_tv.set_fastint((long)key_count);
     HString* length_key = ctx.heap.str(heap::BuiltinStr.LENGTH);
-    arr.put_prop(length_key, len_tv, hobject::PROP_FLAGS_WC);
+    arr.put_prop(length_key, len_tv, hobject::PROP_FLAGS_WC, ctx.heap);
     ctx.result.set_object(arr);
 }
 
@@ -588,7 +588,7 @@ fn void builtin_object_getOwnPropertyNames(BuiltinContext* ctx) {
         }
 
         TVal len_tv; len_tv.set_fastint((long)count);
-        arr.put_prop(ctx.heap.str(heap::BuiltinStr.LENGTH), len_tv, hobject::PROP_FLAGS_WEC);
+        arr.put_prop(ctx.heap.str(heap::BuiltinStr.LENGTH), len_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
         ctx.result.set_object(arr);
         return;
     }
@@ -618,10 +618,10 @@ fn void builtin_object_getOwnPropertyNames(BuiltinContext* ctx) {
             HString* idx_key = ctx.heap.int_to_hstring((long)i);
             if (idx_key == null) { ctx.result.set_undefined(); return; }
             TVal kv; kv.set_string(pkeys[i]);
-            parr.put_prop(idx_key, kv, hobject::PROP_FLAGS_WEC);
+            parr.put_prop(idx_key, kv, hobject::PROP_FLAGS_WEC, ctx.heap);
         }
         TVal plen; plen.set_fastint((long)pn);
-        parr.put_prop(ctx.heap.str(heap::BuiltinStr.LENGTH), plen, hobject::PROP_FLAGS_WC);
+        parr.put_prop(ctx.heap.str(heap::BuiltinStr.LENGTH), plen, hobject::PROP_FLAGS_WC, ctx.heap);
         ctx.result.set_object(parr);
         return;
     }
@@ -676,7 +676,7 @@ fn void builtin_object_getOwnPropertyNames(BuiltinContext* ctx) {
         // Count integer-indexed named properties
         uint named_int_count = 0;
         for (uint i = 0; i < obj.prop_count; i++) {
-            if (obj.prop_key_at(i) != null && ((HString*)obj.prop_key_at(i)).is_arridx()) {
+            if (obj.prop_key_at(i, ctx.heap) != null && ((HString*)obj.prop_key_at(i, ctx.heap)).is_arridx()) {
                 named_int_count++;
             }
         }
@@ -691,7 +691,7 @@ fn void builtin_object_getOwnPropertyNames(BuiltinContext* ctx) {
             for (uint i = 0; i < obj.array_size; i++) {
                 if (!obj.array_part()[i].is_undefined()) {
                     HString* ki = ctx.heap.int_to_hstring((long)i);
-                    if (ki != null && ki.is_arridx() && obj.find_prop_idx(ki) >= 0) continue;
+                    if (ki != null && ki.is_arridx() && obj.find_prop_idx(ki, ctx.heap) >= 0) continue;
                     dense_int_count++;
                 }
             }
@@ -704,8 +704,8 @@ fn void builtin_object_getOwnPropertyNames(BuiltinContext* ctx) {
                 uint p = 0;
                 // Add integer-indexed named properties (all, not just enumerable, this is getOwnPropertyNames)
                 for (uint i = 0; i < obj.prop_count; i++) {
-                    if (obj.prop_key_at(i) != null) {
-                        HString* key = (HString*)obj.prop_key_at(i);
+                    if (obj.prop_key_at(i, ctx.heap) != null) {
+                        HString* key = (HString*)obj.prop_key_at(i, ctx.heap);
                         if (key.is_arridx()) {
                             sort_buf[p * 3] = key.array_index();
                             sort_buf[p * 3 + 1] = i;
@@ -718,7 +718,7 @@ fn void builtin_object_getOwnPropertyNames(BuiltinContext* ctx) {
                 for (uint i = 0; array_part_is_indexed && i < obj.array_size; i++) {
                     if (!obj.array_part()[i].is_undefined()) {
                         HString* ki = ctx.heap.int_to_hstring((long)i);
-                        if (ki != null && ki.is_arridx() && obj.find_prop_idx(ki) >= 0) continue;
+                        if (ki != null && ki.is_arridx() && obj.find_prop_idx(ki, ctx.heap) >= 0) continue;
                         sort_buf[p * 3] = (uint)i;
                         sort_buf[p * 3 + 1] = i;
                         sort_buf[p * 3 + 2] = 1;  // source: dense array
@@ -746,7 +746,7 @@ fn void builtin_object_getOwnPropertyNames(BuiltinContext* ctx) {
                     uint src_type = sort_buf[i * 3 + 2];
                     if (src_type == 0) {
                         uint prop_idx = sort_buf[i * 3 + 1];
-                        HString* key = (HString*)obj.prop_key_at(prop_idx);
+                        HString* key = (HString*)obj.prop_key_at(prop_idx, ctx.heap);
                         if (key.is_symbol()) continue;
                         key_buf[key_count++] = key;
                     } else {
@@ -762,8 +762,8 @@ fn void builtin_object_getOwnPropertyNames(BuiltinContext* ctx) {
     // Phase 2: non-index named properties (insertion order)
     // ES5 §15.2.3.4: getOwnPropertyNames returns ONLY string keys (no symbols)
     for (uint i = 0; i < obj.prop_count; i++) {
-        if (obj.prop_key_at(i) != null) {
-            HString* key = (HString*)obj.prop_key_at(i);
+        if (obj.prop_key_at(i, ctx.heap) != null) {
+            HString* key = (HString*)obj.prop_key_at(i, ctx.heap);
             if (key.is_arridx()) continue;
             if (key.is_symbol()) continue;  // Skip symbol keys
             key_buf[key_count++] = key;
@@ -776,14 +776,14 @@ fn void builtin_object_getOwnPropertyNames(BuiltinContext* ctx) {
         if (idx_key == null) { ctx.result.set_undefined(); return; }
         TVal val_tv;
         val_tv.set_string(key_buf[i]);
-        arr.put_prop(idx_key, val_tv, hobject::PROP_FLAGS_WEC);
+        arr.put_prop(idx_key, val_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
     }
 
     // Set .length, Array.length is writable, non-enumerable, configurable (ES5 §15.4.5.1)
     TVal len_tv;
     len_tv.set_fastint((long)key_count);
     HString* length_key = ctx.heap.str(heap::BuiltinStr.LENGTH);
-    arr.put_prop(length_key, len_tv, hobject::PROP_FLAGS_WC);
+    arr.put_prop(length_key, len_tv, hobject::PROP_FLAGS_WC, ctx.heap);
     ctx.result.set_object(arr);
 }
 
@@ -830,7 +830,7 @@ fn void builtin_object_getOwnPropertySymbols(BuiltinContext* ctx) {
             array_set_elem(parr, i, kv, ctx.heap);
         }
         TVal plen; plen.set_fastint((long)pn);
-        parr.put_prop(ctx.heap.str(heap::BuiltinStr.LENGTH), plen, hobject::PROP_FLAGS_WC);
+        parr.put_prop(ctx.heap.str(heap::BuiltinStr.LENGTH), plen, hobject::PROP_FLAGS_WC, ctx.heap);
         ctx.result.set_object(parr);
         return;
     }
@@ -847,8 +847,8 @@ fn void builtin_object_getOwnPropertySymbols(BuiltinContext* ctx) {
 
     // Collect only symbol-keyed own properties
     for (uint i = 0; i < obj.prop_count; i++) {
-        if (obj.prop_key_at(i) != null) {
-            HString* key = (HString*)obj.prop_key_at(i);
+        if (obj.prop_key_at(i, ctx.heap) != null) {
+            HString* key = (HString*)obj.prop_key_at(i, ctx.heap);
             if (key.is_symbol()) {
                 if (key.is_hidden()) continue;
                 TVal key_tv;
@@ -863,7 +863,7 @@ fn void builtin_object_getOwnPropertySymbols(BuiltinContext* ctx) {
     TVal len_tv;
     len_tv.set_fastint((long)idx);
     HString* length_key = ctx.heap.str(heap::BuiltinStr.LENGTH);
-    arr.put_prop(length_key, len_tv, hobject::PROP_FLAGS_WC);
+    arr.put_prop(length_key, len_tv, hobject::PROP_FLAGS_WC, ctx.heap);
     ctx.result.set_object(arr);
 }
 
@@ -930,7 +930,7 @@ fn void builtin_reflect_ownKeys(BuiltinContext* ctx) {
     {
         uint named_int_count = 0;
         for (uint i = 0; i < obj.prop_count; i++) {
-            if (obj.prop_key_at(i) != null && ((HString*)obj.prop_key_at(i)).is_arridx()) {
+            if (obj.prop_key_at(i, ctx.heap) != null && ((HString*)obj.prop_key_at(i, ctx.heap)).is_arridx()) {
                 named_int_count++;
             }
         }
@@ -944,7 +944,7 @@ fn void builtin_reflect_ownKeys(BuiltinContext* ctx) {
             for (uint i = 0; i < obj.array_size; i++) {
                 if (!obj.array_part()[i].is_undefined()) {
                     HString* ki = ctx.heap.int_to_hstring((long)i);
-                    if (ki != null && ki.is_arridx() && obj.find_prop_idx(ki) >= 0) continue;
+                    if (ki != null && ki.is_arridx() && obj.find_prop_idx(ki, ctx.heap) >= 0) continue;
                     dense_int_count++;
                 }
             }
@@ -956,8 +956,8 @@ fn void builtin_reflect_ownKeys(BuiltinContext* ctx) {
             if (sort_buf != null) {
                 uint p = 0;
                 for (uint i = 0; i < obj.prop_count; i++) {
-                    if (obj.prop_key_at(i) != null) {
-                        HString* key = (HString*)obj.prop_key_at(i);
+                    if (obj.prop_key_at(i, ctx.heap) != null) {
+                        HString* key = (HString*)obj.prop_key_at(i, ctx.heap);
                         if (key.is_arridx()) {
                             sort_buf[p * 3] = key.array_index();
                             sort_buf[p * 3 + 1] = i;
@@ -969,7 +969,7 @@ fn void builtin_reflect_ownKeys(BuiltinContext* ctx) {
                 for (uint i = 0; array_part_is_indexed && i < obj.array_size; i++) {
                     if (!obj.array_part()[i].is_undefined()) {
                         HString* ki = ctx.heap.int_to_hstring((long)i);
-                        if (ki != null && ki.is_arridx() && obj.find_prop_idx(ki) >= 0) continue;
+                        if (ki != null && ki.is_arridx() && obj.find_prop_idx(ki, ctx.heap) >= 0) continue;
                         sort_buf[p * 3] = i;
                         sort_buf[p * 3 + 1] = i;
                         sort_buf[p * 3 + 2] = 1;  // dense array
@@ -996,7 +996,7 @@ fn void builtin_reflect_ownKeys(BuiltinContext* ctx) {
                     uint src_type = sort_buf[i * 3 + 2];
                     HString* key;
                     if (src_type == 0) {
-                        key = (HString*)obj.prop_key_at(sort_buf[i * 3 + 1]);
+                        key = (HString*)obj.prop_key_at(sort_buf[i * 3 + 1], ctx.heap);
                         if (key.is_symbol()) continue;
                     } else {
                         key = ctx.heap.int_to_hstring((long)sort_buf[i * 3]);
@@ -1011,8 +1011,8 @@ fn void builtin_reflect_ownKeys(BuiltinContext* ctx) {
 
     // Phase 2: non-index string properties (insertion order).
     for (uint i = 0; i < obj.prop_count; i++) {
-        if (obj.prop_key_at(i) != null) {
-            HString* key = (HString*)obj.prop_key_at(i);
+        if (obj.prop_key_at(i, ctx.heap) != null) {
+            HString* key = (HString*)obj.prop_key_at(i, ctx.heap);
             if (key.is_arridx() || key.is_symbol()) continue;
             key_buf[key_count++] = key;
         }
@@ -1020,8 +1020,8 @@ fn void builtin_reflect_ownKeys(BuiltinContext* ctx) {
 
     // Phase 3: symbol properties (insertion order).
     for (uint i = 0; i < obj.prop_count; i++) {
-        if (obj.prop_key_at(i) != null) {
-            HString* key = (HString*)obj.prop_key_at(i);
+        if (obj.prop_key_at(i, ctx.heap) != null) {
+            HString* key = (HString*)obj.prop_key_at(i, ctx.heap);
             if (key.is_symbol()) {
                 if (key.is_hidden()) continue;
                 key_buf[key_count++] = key;
@@ -1035,13 +1035,13 @@ fn void builtin_reflect_ownKeys(BuiltinContext* ctx) {
         if (idx_key == null) { ctx.result.set_undefined(); return; }
         TVal val_tv;
         val_tv.set_string(key_buf[i]);
-        arr.put_prop(idx_key, val_tv, hobject::PROP_FLAGS_WEC);
+        arr.put_prop(idx_key, val_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
     }
 
     TVal len_tv;
     len_tv.set_fastint((long)key_count);
     HString* length_key = ctx.heap.str(heap::BuiltinStr.LENGTH);
-    arr.put_prop(length_key, len_tv, hobject::PROP_FLAGS_WC);
+    arr.put_prop(length_key, len_tv, hobject::PROP_FLAGS_WC, ctx.heap);
     ctx.result.set_object(arr);
 }
 
@@ -1168,10 +1168,10 @@ fn void builtin_reflect_deleteProperty(BuiltinContext* ctx) {
     // (any export or Symbol.toStringTag) is non-configurable and cannot be
     // deleted (false).
     if (obj.flags.exotic_module_ns) {
-        ctx.result.set_boolean(obj.find_prop_idx((void*)key) < 0);
+        ctx.result.set_boolean(obj.find_prop_idx((void*)key, ctx.heap) < 0);
         return;
     }
-    ctx.result.set_boolean(obj.es_delete_prop((void*)key));
+    ctx.result.set_boolean(obj.es_delete_prop((void*)key, ctx.heap));
 }
 
 // ============================================================================
@@ -1411,8 +1411,8 @@ fn void builtin_reflect_construct(BuiltinContext* ctx) {
         if (n <= 0 || n >= 20) break;
         HString* key = builtin_intern_string(ctx.heap, buf[:n]);
         if (key == null) break;
-        int own_idx = arr_obj.find_prop_idx(key);
-        if (own_idx >= 0 && arr_obj.get_prop_flags((uint)own_idx).is_accessor) {
+        int own_idx = arr_obj.find_prop_idx(key, ctx.heap);
+        if (own_idx >= 0 && arr_obj.get_prop_flags((uint)own_idx, ctx.heap).is_accessor) {
             TVal getter = hobject::hobject_access_getter(arr_obj.prop_values()[own_idx]);
             elem = arr_invoke_getter_ctx(arr_obj, getter, ctx.heap, ctx);
             if (ctx.should_throw) {
@@ -1425,7 +1425,7 @@ fn void builtin_reflect_construct(BuiltinContext* ctx) {
                    && i < arr_obj.array_size && !arr_obj.array_part()[i].is_undefined()) {
             elem = arr_obj.array_part()[i];
         } else {
-            hobject::PropLookupResult res = arr_obj.get_prop_or_accessor_proto(key, true);
+            hobject::PropLookupResult res = arr_obj.get_prop_or_accessor_proto(key, true, ctx.heap);
             if (res.kind == hobject::PropLookupKind.PROP_ACCESSOR) {
                 elem = arr_invoke_getter_ctx(arr_obj, res.acc.accessor_fn, ctx.heap, ctx);
                 if (ctx.should_throw) {
@@ -1607,13 +1607,13 @@ fn void builtin_object_getOwnPropertyDescriptor(BuiltinContext* ctx) {
 
                 HString* name_val = builtin_intern_string(ctx.heap, meta.name);
                 TVal name_tv; name_tv.set_string(name_val);
-                desc.put_prop(ctx.heap.str(heap::BuiltinStr.VALUE), name_tv, hobject::PROP_FLAGS_WEC);
+                desc.put_prop(ctx.heap.str(heap::BuiltinStr.VALUE), name_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
                 TVal w_tv; w_tv.set_boolean(false);
-                desc.put_prop(builtin_intern_string(ctx.heap, "writable"), w_tv, hobject::PROP_FLAGS_WEC);
+                desc.put_prop(builtin_intern_string(ctx.heap, "writable"), w_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
                 TVal e_tv; e_tv.set_boolean(false);
-                desc.put_prop(builtin_intern_string(ctx.heap, "enumerable"), e_tv, hobject::PROP_FLAGS_WEC);
+                desc.put_prop(builtin_intern_string(ctx.heap, "enumerable"), e_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
                 TVal c_tv; c_tv.set_boolean(true);
-                desc.put_prop(builtin_intern_string(ctx.heap, "configurable"), c_tv, hobject::PROP_FLAGS_WEC);
+                desc.put_prop(builtin_intern_string(ctx.heap, "configurable"), c_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
 
                 ctx.result.set_object(desc);
             } else {
@@ -1633,13 +1633,13 @@ fn void builtin_object_getOwnPropertyDescriptor(BuiltinContext* ctx) {
                 desc.prototype = ctx.heap.object_proto;
 
                 TVal len_tv; len_tv.set_fastint((long)(meta.arity >= 0 ? meta.arity : 0));
-                desc.put_prop(ctx.heap.str(heap::BuiltinStr.VALUE), len_tv, hobject::PROP_FLAGS_WEC);
+                desc.put_prop(ctx.heap.str(heap::BuiltinStr.VALUE), len_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
                 TVal w_tv; w_tv.set_boolean(false);
-                desc.put_prop(builtin_intern_string(ctx.heap, "writable"), w_tv, hobject::PROP_FLAGS_WEC);
+                desc.put_prop(builtin_intern_string(ctx.heap, "writable"), w_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
                 TVal e_tv; e_tv.set_boolean(false);
-                desc.put_prop(builtin_intern_string(ctx.heap, "enumerable"), e_tv, hobject::PROP_FLAGS_WEC);
+                desc.put_prop(builtin_intern_string(ctx.heap, "enumerable"), e_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
                 TVal c_tv; c_tv.set_boolean(true);
-                desc.put_prop(builtin_intern_string(ctx.heap, "configurable"), c_tv, hobject::PROP_FLAGS_WEC);
+                desc.put_prop(builtin_intern_string(ctx.heap, "configurable"), c_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
 
                 ctx.result.set_object(desc);
             }
@@ -1667,13 +1667,13 @@ fn void builtin_object_getOwnPropertyDescriptor(BuiltinContext* ctx) {
                 desc.prototype = ctx.heap.object_proto;
 
                 TVal proto_tv; proto_tv.set_object(proto);
-                desc.put_prop(ctx.heap.str(heap::BuiltinStr.VALUE), proto_tv, hobject::PROP_FLAGS_WEC);
+                desc.put_prop(ctx.heap.str(heap::BuiltinStr.VALUE), proto_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
                 TVal w_tv; w_tv.set_boolean(false);
-                desc.put_prop(builtin_intern_string(ctx.heap, "writable"), w_tv, hobject::PROP_FLAGS_WEC);
+                desc.put_prop(builtin_intern_string(ctx.heap, "writable"), w_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
                 TVal e_tv; e_tv.set_boolean(false);
-                desc.put_prop(builtin_intern_string(ctx.heap, "enumerable"), e_tv, hobject::PROP_FLAGS_WEC);
+                desc.put_prop(builtin_intern_string(ctx.heap, "enumerable"), e_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
                 TVal c_tv; c_tv.set_boolean(false);
-                desc.put_prop(builtin_intern_string(ctx.heap, "configurable"), c_tv, hobject::PROP_FLAGS_WEC);
+                desc.put_prop(builtin_intern_string(ctx.heap, "configurable"), c_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
 
                 ctx.result.set_object(desc);
             } else {
@@ -1789,7 +1789,7 @@ fn void builtin_object_getOwnPropertyDescriptor(BuiltinContext* ctx) {
 
     // Look up own property (not prototype chain - don't fall through to array_part
     // unless the key matches a numeric index and this is an Array)
-    int idx = obj.find_prop_idx(key);
+    int idx = obj.find_prop_idx(key, ctx.heap);
     if (idx < 0) {
         // TypedArray exotic [[GetOwnProperty]], ES2015 §9.4.5.3: integer
         // indices in range are own data properties {value, writable:true,
@@ -1810,13 +1810,13 @@ fn void builtin_object_getOwnPropertyDescriptor(BuiltinContext* ctx) {
                     if (catch err = desc_raw) { ctx.result.set_undefined(); return; }
                     HObject* desc = desc_raw;
                     desc.prototype = ctx.heap.object_proto;
-                    desc.put_prop(ctx.heap.str(heap::BuiltinStr.VALUE), ta_val, hobject::PROP_FLAGS_WEC);
+                    desc.put_prop(ctx.heap.str(heap::BuiltinStr.VALUE), ta_val, hobject::PROP_FLAGS_WEC, ctx.heap);
                     TVal w_tv; w_tv.set_boolean(true);
-                    desc.put_prop(builtin_intern_string(ctx.heap, "writable"), w_tv, hobject::PROP_FLAGS_WEC);
+                    desc.put_prop(builtin_intern_string(ctx.heap, "writable"), w_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
                     TVal e_tv; e_tv.set_boolean(true);
-                    desc.put_prop(builtin_intern_string(ctx.heap, "enumerable"), e_tv, hobject::PROP_FLAGS_WEC);
+                    desc.put_prop(builtin_intern_string(ctx.heap, "enumerable"), e_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
                     TVal c_tv; c_tv.set_boolean(true);
-                    desc.put_prop(builtin_intern_string(ctx.heap, "configurable"), c_tv, hobject::PROP_FLAGS_WEC);
+                    desc.put_prop(builtin_intern_string(ctx.heap, "configurable"), c_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
                     ctx.result.set_object(desc);
                     return;
                 }
@@ -1841,22 +1841,22 @@ fn void builtin_object_getOwnPropertyDescriptor(BuiltinContext* ctx) {
                 HString* value_key = ctx.heap.str(heap::BuiltinStr.VALUE);
                 TVal len_tv;
                 len_tv.set_fastint((long)obj.array_size);
-                desc.put_prop(value_key, len_tv, hobject::PROP_FLAGS_WEC);
+                desc.put_prop(value_key, len_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
 
                 HString* writable_key = builtin_intern_string(ctx.heap, "writable");
                 TVal w_tv;
                 w_tv.set_boolean(true);
-                desc.put_prop(writable_key, w_tv, hobject::PROP_FLAGS_WEC);
+                desc.put_prop(writable_key, w_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
 
                 HString* enumerable_key = builtin_intern_string(ctx.heap, "enumerable");
                 TVal e_tv;
                 e_tv.set_boolean(false);
-                desc.put_prop(enumerable_key, e_tv, hobject::PROP_FLAGS_WEC);
+                desc.put_prop(enumerable_key, e_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
 
                 HString* configurable_key = builtin_intern_string(ctx.heap, "configurable");
                 TVal c_tv;
                 c_tv.set_boolean(false);
-                desc.put_prop(configurable_key, c_tv, hobject::PROP_FLAGS_WEC);
+                desc.put_prop(configurable_key, c_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
 
                 ctx.result.set_object(desc);
                 return;
@@ -1893,22 +1893,22 @@ fn void builtin_object_getOwnPropertyDescriptor(BuiltinContext* ctx) {
             vt.set_string(key_str);
             // Actually set the array element value as the descriptor value
             TVal array_val = obj.array_part()[arr_idx];
-            desc.put_prop(value_key, array_val, hobject::PROP_FLAGS_WEC);
+            desc.put_prop(value_key, array_val, hobject::PROP_FLAGS_WEC, ctx.heap);
 
             HString* writable_key = builtin_intern_string(ctx.heap, "writable");
             TVal w_tv;
             w_tv.set_boolean(true);
-            desc.put_prop(writable_key, w_tv, hobject::PROP_FLAGS_WEC);
+            desc.put_prop(writable_key, w_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
 
             HString* enumerable_key = builtin_intern_string(ctx.heap, "enumerable");
             TVal e_tv;
             e_tv.set_boolean(true);
-            desc.put_prop(enumerable_key, e_tv, hobject::PROP_FLAGS_WEC);
+            desc.put_prop(enumerable_key, e_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
 
             HString* configurable_key = builtin_intern_string(ctx.heap, "configurable");
             TVal c_tv;
             c_tv.set_boolean(true);
-            desc.put_prop(configurable_key, c_tv, hobject::PROP_FLAGS_WEC);
+            desc.put_prop(configurable_key, c_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
 
             ctx.result.set_object(desc);
             return;
@@ -1942,7 +1942,7 @@ fn void builtin_object_getOwnPropertyDescriptor(BuiltinContext* ctx) {
     }
 
     hobject::PropValue* entry = &obj.prop_values()[idx];
-    hobject::PropFlags entry_flags = obj.get_prop_flags((uint)idx);
+    hobject::PropFlags entry_flags = obj.get_prop_flags((uint)idx, ctx.heap);
 
     // Build the descriptor object
     HObject*? desc_raw = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
@@ -1956,39 +1956,39 @@ fn void builtin_object_getOwnPropertyDescriptor(BuiltinContext* ctx) {
     if (entry_flags.is_accessor) {
         // Accessor descriptor: { get, set, enumerable, configurable }
         HString* get_key = builtin_intern_string(ctx.heap, "get");
-        desc.put_prop(get_key, hobject::hobject_access_getter(*entry), hobject::PROP_FLAGS_WEC);
+        desc.put_prop(get_key, hobject::hobject_access_getter(*entry), hobject::PROP_FLAGS_WEC, ctx.heap);
 
         HString* set_key = builtin_intern_string(ctx.heap, "set");
-        desc.put_prop(set_key, hobject::hobject_access_setter(*entry), hobject::PROP_FLAGS_WEC);
+        desc.put_prop(set_key, hobject::hobject_access_setter(*entry), hobject::PROP_FLAGS_WEC, ctx.heap);
 
         HString* enumerable_key = builtin_intern_string(ctx.heap, "enumerable");
         TVal e_tv;
         e_tv.set_boolean(entry_flags.enumerable);
-        desc.put_prop(enumerable_key, e_tv, hobject::PROP_FLAGS_WEC);
+        desc.put_prop(enumerable_key, e_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
 
         HString* configurable_key = builtin_intern_string(ctx.heap, "configurable");
         TVal c_tv;
         c_tv.set_boolean(entry_flags.configurable);
-        desc.put_prop(configurable_key, c_tv, hobject::PROP_FLAGS_WEC);
+        desc.put_prop(configurable_key, c_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
     } else {
         // Data descriptor: { value, writable, enumerable, configurable }
         HString* value_key = ctx.heap.str(heap::BuiltinStr.VALUE);
-        desc.put_prop(value_key, *entry, hobject::PROP_FLAGS_WEC);
+        desc.put_prop(value_key, *entry, hobject::PROP_FLAGS_WEC, ctx.heap);
 
         HString* writable_key = builtin_intern_string(ctx.heap, "writable");
         TVal w_tv;
         w_tv.set_boolean(entry_flags.writable);
-        desc.put_prop(writable_key, w_tv, hobject::PROP_FLAGS_WEC);
+        desc.put_prop(writable_key, w_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
 
         HString* enumerable_key = builtin_intern_string(ctx.heap, "enumerable");
         TVal e_tv;
         e_tv.set_boolean(entry_flags.enumerable);
-        desc.put_prop(enumerable_key, e_tv, hobject::PROP_FLAGS_WEC);
+        desc.put_prop(enumerable_key, e_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
 
         HString* configurable_key = builtin_intern_string(ctx.heap, "configurable");
         TVal c_tv;
         c_tv.set_boolean(entry_flags.configurable);
-        desc.put_prop(configurable_key, c_tv, hobject::PROP_FLAGS_WEC);
+        desc.put_prop(configurable_key, c_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
     }
 
     ctx.result.set_object(desc);
@@ -2029,15 +2029,15 @@ fn void builtin_object_getOwnPropertyDescriptors(BuiltinContext* ctx) {
                 ndesc.prototype = ctx.heap.object_proto;
                 HString* nstr = builtin_intern_string(ctx.heap, lf_meta.name);
                 TVal ntv; ntv.set_string(nstr);
-                ndesc.put_prop(ctx.heap.str(heap::BuiltinStr.VALUE), ntv, hobject::PROP_FLAGS_WEC);
+                ndesc.put_prop(ctx.heap.str(heap::BuiltinStr.VALUE), ntv, hobject::PROP_FLAGS_WEC, ctx.heap);
                 TVal w; w.set_boolean(false);
-                ndesc.put_prop(builtin_intern_string(ctx.heap, "writable"), w, hobject::PROP_FLAGS_WEC);
+                ndesc.put_prop(builtin_intern_string(ctx.heap, "writable"), w, hobject::PROP_FLAGS_WEC, ctx.heap);
                 TVal e; e.set_boolean(false);
-                ndesc.put_prop(builtin_intern_string(ctx.heap, "enumerable"), e, hobject::PROP_FLAGS_WEC);
+                ndesc.put_prop(builtin_intern_string(ctx.heap, "enumerable"), e, hobject::PROP_FLAGS_WEC, ctx.heap);
                 TVal c; c.set_boolean(true);
-                ndesc.put_prop(builtin_intern_string(ctx.heap, "configurable"), c, hobject::PROP_FLAGS_WEC);
+                ndesc.put_prop(builtin_intern_string(ctx.heap, "configurable"), c, hobject::PROP_FLAGS_WEC, ctx.heap);
                 TVal ndtv; ndtv.set_object(ndesc);
-                res.put_prop(name_key, ndtv, hobject::PROP_FLAGS_WEC);
+                res.put_prop(name_key, ndtv, hobject::PROP_FLAGS_WEC, ctx.heap);
             }
         }
         if (length_key != null) {
@@ -2045,15 +2045,15 @@ fn void builtin_object_getOwnPropertyDescriptors(BuiltinContext* ctx) {
             if (try ldesc = ldesc_raw) {
                 ldesc.prototype = ctx.heap.object_proto;
                 TVal ltv; ltv.set_fastint((long)(lf_meta.arity >= 0 ? lf_meta.arity : 0));
-                ldesc.put_prop(ctx.heap.str(heap::BuiltinStr.VALUE), ltv, hobject::PROP_FLAGS_WEC);
+                ldesc.put_prop(ctx.heap.str(heap::BuiltinStr.VALUE), ltv, hobject::PROP_FLAGS_WEC, ctx.heap);
                 TVal w; w.set_boolean(false);
-                ldesc.put_prop(builtin_intern_string(ctx.heap, "writable"), w, hobject::PROP_FLAGS_WEC);
+                ldesc.put_prop(builtin_intern_string(ctx.heap, "writable"), w, hobject::PROP_FLAGS_WEC, ctx.heap);
                 TVal e; e.set_boolean(false);
-                ldesc.put_prop(builtin_intern_string(ctx.heap, "enumerable"), e, hobject::PROP_FLAGS_WEC);
+                ldesc.put_prop(builtin_intern_string(ctx.heap, "enumerable"), e, hobject::PROP_FLAGS_WEC, ctx.heap);
                 TVal c; c.set_boolean(true);
-                ldesc.put_prop(builtin_intern_string(ctx.heap, "configurable"), c, hobject::PROP_FLAGS_WEC);
+                ldesc.put_prop(builtin_intern_string(ctx.heap, "configurable"), c, hobject::PROP_FLAGS_WEC, ctx.heap);
                 TVal ldtv; ldtv.set_object(ldesc);
-                res.put_prop(length_key, ldtv, hobject::PROP_FLAGS_WEC);
+                res.put_prop(length_key, ldtv, hobject::PROP_FLAGS_WEC, ctx.heap);
             }
         }
         ctx.result.set_object(res);
@@ -2081,7 +2081,7 @@ fn void builtin_object_getOwnPropertyDescriptors(BuiltinContext* ctx) {
             HObject* dobj = proxy_desc_to_object(ctx.heap, &pd);
             if (dobj == null) continue;
             TVal dtv; dtv.set_object(dobj);
-            res.put_prop((void*)k, dtv, hobject::PROP_FLAGS_WEC);
+            res.put_prop((void*)k, dtv, hobject::PROP_FLAGS_WEC, ctx.heap);
         }
         ctx.result.set_object(res);
         return;
@@ -2114,7 +2114,7 @@ fn void builtin_object_getOwnPropertyDescriptors(BuiltinContext* ctx) {
         }
     }
     for (uint i = 0; i < obj.prop_count && kn < cap; i++) {
-        void* kptr = obj.prop_key_at(i);
+        void* kptr = obj.prop_key_at(i, ctx.heap);
         if (kptr == null) continue;
         keys[kn++] = (HString*)kptr;
     }
@@ -2142,7 +2142,7 @@ fn void builtin_object_getOwnPropertyDescriptors(BuiltinContext* ctx) {
             return;
         }
         if (desc_result.is_undefined()) continue;
-        res.put_prop(key, desc_result, hobject::PROP_FLAGS_WEC);
+        res.put_prop(key, desc_result, hobject::PROP_FLAGS_WEC, ctx.heap);
     }
 
     ctx.result.set_object(res);
@@ -2159,7 +2159,7 @@ fn bool desc_get(BuiltinContext* ctx, HObject* obj, hstring::HString* key, TVal*
         }
         return true;
     }
-    hobject::PropLookupResult res = obj.get_prop_or_accessor_proto(key, true);
+    hobject::PropLookupResult res = obj.get_prop_or_accessor_proto(key, true, ctx.heap);
     if (res.kind == hobject::PropLookupKind.PROP_NOT_FOUND) {
         return false;
     }
@@ -2200,10 +2200,10 @@ fn bool desc_get(BuiltinContext* ctx, HObject* obj, hstring::HString* key, TVal*
 /// indices are always enumerable by spec and can't be redefined non-
 /// enumerable without leaving the property table, so only named
 /// properties need a fresh flags lookup.
-fn bool key_is_currently_enumerable(HObject* obj, hstring::HString* key) {
-    int idx = obj.find_prop_idx(key);
+fn bool key_is_currently_enumerable(HObject* obj, hstring::HString* key, Heap* h) {
+    int idx = obj.find_prop_idx(key, h);
     if (idx < 0) return true;
-    return obj.get_prop_flags((uint)idx).enumerable;
+    return obj.get_prop_flags((uint)idx, h).enumerable;
 }
 
 /// [[Get]] for Object.values/entries enumeration: like desc_get, but also serves
@@ -2254,8 +2254,8 @@ fn bool obj_assign_set(BuiltinContext* ctx, HObject* obj, hstring::HString* key,
     if (obj.get_class() == hobject::ObjClass.ARRAY && key.equals("length")) {
         bool len_writable = true;
         if (obj.flags.exotic_array) len_writable = obj.flags.array_len_writable;
-        int len_idx = obj.find_prop_idx(key);
-        if (len_idx >= 0) len_writable = obj.get_prop_flags((uint)len_idx).writable;
+        int len_idx = obj.find_prop_idx(key, ctx.heap);
+        if (len_idx >= 0) len_writable = obj.get_prop_flags((uint)len_idx, ctx.heap).writable;
         double num = builtin_to_number_vm(ctx, val);
         if (ctx.should_throw) return false;
         if (num != num || num < 0.0 || num > 4294967295.0 || num != math::floor(num)) {
@@ -2284,9 +2284,9 @@ fn bool obj_assign_set(BuiltinContext* ctx, HObject* obj, hstring::HString* key,
     }
 
     // Step 1: own property
-    int idx = obj.find_prop_idx((void*)key);
+    int idx = obj.find_prop_idx((void*)key, ctx.heap);
     if (idx >= 0) {
-        hobject::PropFlags f = obj.get_prop_flags((uint)idx);
+        hobject::PropFlags f = obj.get_prop_flags((uint)idx, ctx.heap);
         if (f.is_accessor) {
             // Accessor, invoke the setter
             TVal setter = hobject::hobject_access_setter(obj.prop_values()[(uint)idx]);
@@ -2322,7 +2322,7 @@ fn bool obj_assign_set(BuiltinContext* ctx, HObject* obj, hstring::HString* key,
     }
 
     // Step 2: not an own property, check prototype chain for accessor
-    hobject::AccessorResult acc = obj.find_accessor_proto((void*)key, false);
+    hobject::AccessorResult acc = obj.find_accessor_proto((void*)key, false, ctx.heap);
     if (acc.found) {
         TVal setter = acc.accessor_fn;
         if (setter.is_undefined() || setter.is_null()) {
@@ -2347,7 +2347,7 @@ fn bool obj_assign_set(BuiltinContext* ctx, HObject* obj, hstring::HString* key,
         builtin_throw_no_result_change(ctx, ctx.heap.type_err_proto, "Cannot add property to non-extensible object");
         return false;
     }
-    obj.put_prop((void*)key, *val, hobject::PROP_FLAGS_WEC);
+    obj.put_prop((void*)key, *val, hobject::PROP_FLAGS_WEC, ctx.heap);
     return true;
 }
 
@@ -2640,7 +2640,7 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
 
     // Step 5: [[DefineOwnProperty]]
     // Check if property already exists
-    int existing_idx = obj.find_prop_idx(key);
+    int existing_idx = obj.find_prop_idx(key, ctx.heap);
 
     // Dense array promotion: if the key is a valid array index and the element
     // exists in the dense array part but not in named props, promote it with
@@ -2658,11 +2658,11 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
             TVal arr_val = ap[arr_idx];
             if (!arr_val.is_undefined()) {
                 // PROP_FLAGS_WC has enumerable=false, put_prop routes to named table.
-                obj.put_prop((void*)key, arr_val, hobject::PROP_FLAGS_WC);
-                existing_idx = obj.find_prop_idx(key);
+                obj.put_prop((void*)key, arr_val, hobject::PROP_FLAGS_WC, ctx.heap);
+                existing_idx = obj.find_prop_idx(key, ctx.heap);
                 if (existing_idx >= 0) {
                     // Fix flags to WEC: dense elements are WEC data properties.
-                    obj.set_prop_flags((uint)existing_idx, hobject::PROP_FLAGS_WEC);
+                    obj.set_prop_flags((uint)existing_idx, hobject::PROP_FLAGS_WEC, ctx.heap);
                     // Clear the dense slot: the named-prop table is now authoritative.
                     // This prevents the VM GETPROP fast path from returning the stale
                     // dense value instead of the (soon-to-be-updated) named value.
@@ -2671,7 +2671,7 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
                     // and already decrements array_used on the non-undefined→undefined
                     // transition, so no separate decrement is needed here.
                     TVal hole; hole.set_undefined();
-                    obj.set_array_idx(arr_idx, hole);
+                    obj.set_array_idx(arr_idx, hole, ctx.heap);
                 }
             }
         }
@@ -2686,8 +2686,8 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
             bool arr_len_writable = true;
             HString* len_key_i2 = ctx.heap.str(heap::BuiltinStr.LENGTH);
             if (len_key_i2 != null) {
-                int li2 = obj.find_prop_idx(len_key_i2);
-                if (li2 >= 0) arr_len_writable = obj.get_prop_flags((uint)li2).writable;
+                int li2 = obj.find_prop_idx(len_key_i2, ctx.heap);
+                if (li2 >= 0) arr_len_writable = obj.get_prop_flags((uint)li2, ctx.heap).writable;
             }
             if (!arr_len_writable) {
                 builtin_throw(ctx, ctx.heap.type_err_proto, "Cannot define array element: length is non-writable");
@@ -2712,8 +2712,8 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
         // Create new property
         if (is_accessor) {
             // Accessor property, set value as getter placeholder
-            obj.put_prop(key, desc_vals[0], desc_flags);
-            int idx = obj.find_prop_idx(key);
+            obj.put_prop(key, desc_vals[0], desc_flags, ctx.heap);
+            int idx = obj.find_prop_idx(key, ctx.heap);
             if (idx >= 0) {
                 // put_prop above anchored desc_vals[0] as the (placeholder) slot value;
                 // the GS cell holds its own incref'd copy, so release the placeholder's
@@ -2732,12 +2732,12 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
                 }
             }
         } else {
-            obj.put_prop(key, desc_vals[0], desc_flags);
+            obj.put_prop(key, desc_vals[0], desc_flags, ctx.heap);
         }
     } else {
         // Property exists, validate changes per ES5 §8.12.9
         hobject::PropValue* current = &obj.prop_values()[existing_idx];
-        hobject::PropFlags cur_flags = obj.get_prop_flags((uint)existing_idx);
+        hobject::PropFlags cur_flags = obj.get_prop_flags((uint)existing_idx, ctx.heap);
         TVal cur_value = *current;
 
         // Check if descriptor is empty (generic, no fields)
@@ -2752,8 +2752,8 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
             bool desc_has_enum = false;
             HString* tmp_conf_k = builtin_intern_string(ctx.heap, "configurable");
             HString* tmp_enum_k = builtin_intern_string(ctx.heap, "enumerable");
-            if (tmp_conf_k != null) desc_has_conf = desc_obj.find_prop_idx(tmp_conf_k) >= 0;
-            if (tmp_enum_k != null) desc_has_enum = desc_obj.find_prop_idx(tmp_enum_k) >= 0;
+            if (tmp_conf_k != null) desc_has_conf = desc_obj.find_prop_idx(tmp_conf_k, ctx.heap) >= 0;
+            if (tmp_enum_k != null) desc_has_enum = desc_obj.find_prop_idx(tmp_enum_k, ctx.heap) >= 0;
             if (desc_has_conf && desc_flags.configurable != cur_flags.configurable) reject = true;
             if (desc_has_enum && desc_flags.enumerable != cur_flags.enumerable) reject = true;
             if (reject) {
@@ -2795,7 +2795,7 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
             }
             if (has_enum_in_desc) cur_flags.enumerable   = desc_flags.enumerable;
             if (has_conf_in_desc) cur_flags.configurable = desc_flags.configurable;
-            obj.set_prop_flags((uint)existing_idx, cur_flags);
+            obj.set_prop_flags((uint)existing_idx, cur_flags, ctx.heap);
         } else if (is_accessor) {
             // Update accessor fields. Use to_property_descriptor's has_* flags
             // (which include inherited accessor lookups that returned undefined).
@@ -2835,7 +2835,7 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
             cur_flags.is_accessor = true;
             if (has_enum_in_desc) cur_flags.enumerable   = desc_flags.enumerable;
             if (has_conf_in_desc) cur_flags.configurable = desc_flags.configurable;
-            obj.set_prop_flags((uint)existing_idx, cur_flags);
+            obj.set_prop_flags((uint)existing_idx, cur_flags, ctx.heap);
             // Clear the dense array slot so arr_get_elem_vm falls through to the
             // named-property accessor rather than returning a stale data value.
             if (key_hstr.is_arridx()) {
@@ -2880,7 +2880,7 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
             if (has_conf_in_desc) cur_flags.configurable = desc_flags.configurable;
             // Clear is_accessor when converting accessor→data (ES5 §8.12.9 step 9)
             cur_flags.is_accessor = false;
-            obj.set_prop_flags((uint)existing_idx, cur_flags);
+            obj.set_prop_flags((uint)existing_idx, cur_flags, ctx.heap);
         }
     }
 
@@ -2930,8 +2930,8 @@ fn void builtin_object_defineProperties(BuiltinContext* ctx) {
     // [[DefineOwnProperty]].
     if (obj.flags.exotic_proxyobj) {
         for (uint i = 0; i < props.prop_count; i++) {
-            if (props.prop_key_at(i) == null || !props.get_prop_flags(i).enumerable) continue;
-            HString* k = (HString*)props.prop_key_at(i);
+            if (props.prop_key_at(i, ctx.heap) == null || !props.get_prop_flags(i, ctx.heap).enumerable) continue;
+            HString* k = (HString*)props.prop_key_at(i, ctx.heap);
             TVal desc_val;
             if (!desc_get(ctx, props, k, &desc_val)) {
                 if (ctx.should_throw) return;
@@ -2994,8 +2994,8 @@ fn void builtin_object_defineProperties(BuiltinContext* ctx) {
                     continue;
                 }
                 if (is_acc) {
-                    obj.put_prop((void*)k, desc_vals[0], desc_flags);
-                    int pidx = obj.find_prop_idx(k);
+                    obj.put_prop((void*)k, desc_vals[0], desc_flags, ctx.heap);
+                    int pidx = obj.find_prop_idx(k, ctx.heap);
                     if (pidx >= 0) {
                         // put_prop above anchored desc_vals[0] as the (placeholder) slot
                         // value; the GS cell holds its own incref'd copy, so release the
@@ -3004,7 +3004,7 @@ fn void builtin_object_defineProperties(BuiltinContext* ctx) {
                         obj.prop_values()[pidx] = hobject::hobject_create_accessors(ctx.heap, desc_vals[0], desc_vals[1]);
                     }
                 } else {
-                    obj.put_prop((void*)k, desc_vals[0], desc_flags);
+                    obj.put_prop((void*)k, desc_vals[0], desc_flags, ctx.heap);
                 }
             }
         }
@@ -3017,8 +3017,8 @@ fn void builtin_object_defineProperties(BuiltinContext* ctx) {
     HString*[256] keys_arr;
     uint keys_count = 0;
     for (uint i = 0; i < props.prop_count && keys_count < 256; i++) {
-        if (props.prop_key_at(i) != null && props.get_prop_flags(i).enumerable) {
-            keys_arr[keys_count] = (HString*)props.prop_key_at(i);
+        if (props.prop_key_at(i, ctx.heap) != null && props.get_prop_flags(i, ctx.heap).enumerable) {
+            keys_arr[keys_count] = (HString*)props.prop_key_at(i, ctx.heap);
             keys_count++;
         }
     }
@@ -3126,26 +3126,26 @@ fn void builtin_object_defineProperties(BuiltinContext* ctx) {
             // After creating the named entry we fix flags to WEC and clear the dense slot
             // so the VM GETPROP fast path does not return the stale dense value.
             if ((obj.get_class() == hobject::ObjClass.ARRAY || obj.get_class() == hobject::ObjClass.ARGUMENTS)
-                && obj.find_prop_idx(p_key) < 0 && p_key.is_arridx()) {
+                && obj.find_prop_idx(p_key, ctx.heap) < 0 && p_key.is_arridx()) {
                 uint p_ai = (uint)((HString*)p_key).array_index();
                 if (p_ai < obj.array_size) {
                     TVal dense_elem = obj.array_part()[p_ai];
                     if (!dense_elem.is_undefined()) {
-                        obj.put_prop(p_key, dense_elem, hobject::PROP_FLAGS_WC);
-                        int promo_idx = obj.find_prop_idx(p_key);
+                        obj.put_prop(p_key, dense_elem, hobject::PROP_FLAGS_WC, ctx.heap);
+                        int promo_idx = obj.find_prop_idx(p_key, ctx.heap);
                         if (promo_idx >= 0) {
-                            obj.set_prop_flags((uint)promo_idx, hobject::PROP_FLAGS_WEC);
+                            obj.set_prop_flags((uint)promo_idx, hobject::PROP_FLAGS_WEC, ctx.heap);
                             // set_array_idx decrefs the dense slot's own reference to
                             // dense_elem (a separate owning copy from the one put_prop
                             // just anchored above) and already decrements array_used on
                             // the non-undefined→undefined transition.
                             TVal hole; hole.set_undefined();
-                            obj.set_array_idx(p_ai, hole);
+                            obj.set_array_idx(p_ai, hole, ctx.heap);
                         }
                     }
                 }
             }
-            int existing_idx = obj.find_prop_idx(p_key);
+            int existing_idx = obj.find_prop_idx(p_key, ctx.heap);
             // ES5 §15.4.5.1 step 4: defining a valid array index >= length on an
             // Array whose length is non-writable throws TypeError (mirrors the
             // single-property defineProperty path).
@@ -3156,8 +3156,8 @@ fn void builtin_object_defineProperties(BuiltinContext* ctx) {
                     HString* len_key_dp = ctx.heap.str(heap::BuiltinStr.LENGTH);
                     bool dp_len_wr = true;
                     if (len_key_dp != null) {
-                        int li_dp = obj.find_prop_idx(len_key_dp);
-                        if (li_dp >= 0) dp_len_wr = obj.get_prop_flags((uint)li_dp).writable;
+                        int li_dp = obj.find_prop_idx(len_key_dp, ctx.heap);
+                        if (li_dp >= 0) dp_len_wr = obj.get_prop_flags((uint)li_dp, ctx.heap).writable;
                     }
                     if (!dp_len_wr) {
                         builtin_throw(ctx, ctx.heap.type_err_proto, "Cannot add property past a non-writable array length");
@@ -3171,8 +3171,8 @@ fn void builtin_object_defineProperties(BuiltinContext* ctx) {
                     return;
                 }
                 if (is_accessor) {
-                    obj.put_prop(p_key, desc_vals[0], desc_flags);
-                    int idx = obj.find_prop_idx(p_key);
+                    obj.put_prop(p_key, desc_vals[0], desc_flags, ctx.heap);
+                    int idx = obj.find_prop_idx(p_key, ctx.heap);
                     if (idx >= 0) {
                         // put_prop above anchored desc_vals[0] as the (placeholder) slot
                         // value; the GS cell holds its own incref'd copy, so release the
@@ -3181,12 +3181,12 @@ fn void builtin_object_defineProperties(BuiltinContext* ctx) {
                         obj.prop_values()[idx] = hobject::hobject_create_accessors(ctx.heap, desc_vals[0], desc_vals[1]);
                     }
                 } else {
-                    obj.put_prop(p_key, desc_vals[0], desc_flags);
+                    obj.put_prop(p_key, desc_vals[0], desc_flags, ctx.heap);
                 }
             } else {
                 // Property exists, validate changes
                 hobject::PropValue* current = &obj.prop_values()[existing_idx];
-                hobject::PropFlags cur_flags = obj.get_prop_flags((uint)existing_idx);
+                hobject::PropFlags cur_flags = obj.get_prop_flags((uint)existing_idx, ctx.heap);
                 // ES5 §8.12.9 step 8: Reject changes to non-configurable property
                 if (!cur_flags.configurable) {
                     bool reject = false;
@@ -3248,7 +3248,7 @@ fn void builtin_object_defineProperties(BuiltinContext* ctx) {
                     cur_flags.is_accessor = true;
                     if (has_enumerable_in_desc_helper(ctx.heap, desc_obj)) cur_flags.enumerable = desc_flags.enumerable;
                     if (has_configurable_in_desc_helper(ctx.heap, desc_obj)) cur_flags.configurable = desc_flags.configurable;
-                    obj.set_prop_flags((uint)existing_idx, cur_flags);
+                    obj.set_prop_flags((uint)existing_idx, cur_flags, ctx.heap);
                 } else {
                     // Data descriptor update (or accessor→data conversion).
                     // A generic descriptor (only enumerable/configurable, no value/writable/get/set)
@@ -3286,14 +3286,14 @@ fn void builtin_object_defineProperties(BuiltinContext* ctx) {
                         if (obj.get_class() == hobject::ObjClass.ARRAY && p_key.is_arridx()) {
                             uint sync_ai = ((HString*)p_key).array_index();
                             if (sync_ai < obj.array_size) {
-                                obj.set_array_idx(sync_ai, desc_vals[0]);
+                                obj.set_array_idx(sync_ai, desc_vals[0], ctx.heap);
                             }
                         }
                     }
                     if (has_writable_in_desc_helper(ctx.heap, desc_obj)) cur_flags.writable = desc_flags.writable;
                     if (has_enumerable_in_desc_helper(ctx.heap, desc_obj)) cur_flags.enumerable = desc_flags.enumerable;
                     if (has_configurable_in_desc_helper(ctx.heap, desc_obj)) cur_flags.configurable = desc_flags.configurable;
-                    obj.set_prop_flags((uint)existing_idx, cur_flags);
+                    obj.set_prop_flags((uint)existing_idx, cur_flags, ctx.heap);
                 }
             }
         }
@@ -3306,32 +3306,32 @@ fn void builtin_object_defineProperties(BuiltinContext* ctx) {
 /// Helper: check if descriptor object has "get" property
 fn bool has_get_in_desc_helper(Heap* heap, HObject* desc_obj) {
     HString* key = builtin_intern_string(heap, "get");
-    return key != null && desc_obj.find_prop_idx(key) >= 0;
+    return key != null && desc_obj.find_prop_idx(key, heap) >= 0;
 }
 /// Helper: check if descriptor object has "set" property
 fn bool has_set_in_desc_helper(Heap* heap, HObject* desc_obj) {
     HString* key = builtin_intern_string(heap, "set");
-    return key != null && desc_obj.find_prop_idx(key) >= 0;
+    return key != null && desc_obj.find_prop_idx(key, heap) >= 0;
 }
 /// Helper: check if descriptor object has "value" property
 fn bool has_value_in_desc_helper(Heap* heap, HObject* desc_obj) {
     HString* key = (HString*)heap.strs[heap::BuiltinStr.VALUE];
-    return key != null && desc_obj.find_prop_idx(key) >= 0;
+    return key != null && desc_obj.find_prop_idx(key, heap) >= 0;
 }
 /// Helper: check if descriptor object has "writable" property
 fn bool has_writable_in_desc_helper(Heap* heap, HObject* desc_obj) {
     HString* key = builtin_intern_string(heap, "writable");
-    return key != null && desc_obj.find_prop_idx(key) >= 0;
+    return key != null && desc_obj.find_prop_idx(key, heap) >= 0;
 }
 /// Helper: check if descriptor object has "enumerable" property
 fn bool has_enumerable_in_desc_helper(Heap* heap, HObject* desc_obj) {
     HString* key = builtin_intern_string(heap, "enumerable");
-    return key != null && desc_obj.find_prop_idx(key) >= 0;
+    return key != null && desc_obj.find_prop_idx(key, heap) >= 0;
 }
 /// Helper: check if descriptor object has "configurable" property
 fn bool has_configurable_in_desc_helper(Heap* heap, HObject* desc_obj) {
     HString* key = builtin_intern_string(heap, "configurable");
-    return key != null && desc_obj.find_prop_idx(key) >= 0;
+    return key != null && desc_obj.find_prop_idx(key, heap) >= 0;
 }
 
 // ============================================================================
@@ -3429,14 +3429,14 @@ fn void builtin_object_create(BuiltinContext* ctx) {
             // Helper: collect keys, named properties first, then array-part, then symbols
             // Named properties
             for (uint i = 0; i < props.prop_count && desc_count < 256; i++) {
-                void* raw_key = props.prop_key_at(i);
+                void* raw_key = props.prop_key_at(i, ctx.heap);
                 if (raw_key == null) continue;
                 HString* pk_key = (HString*)raw_key;
 
                 // [[GetOwnProperty]](pk_key), check if own and enumerable
-                int pidx = props.find_prop_idx(pk_key);
+                int pidx = props.find_prop_idx(pk_key, ctx.heap);
                 if (pidx < 0) continue;
-                hobject::PropFlags pflags = props.get_prop_flags((uint)pidx);
+                hobject::PropFlags pflags = props.get_prop_flags((uint)pidx, ctx.heap);
                 if (!pflags.enumerable) continue;
 
                 // [[Get]](props, pk_key), invoke getter if accessor
@@ -3578,8 +3578,8 @@ fn void builtin_object_create(BuiltinContext* ctx) {
                 HString* pk_key = desc_keys[k];
                 hobject::PropFlags df = desc_flags_arr[k];
                 if (desc_is_acc[k]) {
-                    obj.put_prop(pk_key, desc_acc_get[k], df);
-                    int eidx = obj.find_prop_idx(pk_key);
+                    obj.put_prop(pk_key, desc_acc_get[k], df, ctx.heap);
+                    int eidx = obj.find_prop_idx(pk_key, ctx.heap);
                     if (eidx >= 0) {
                         // put_prop above anchored desc_acc_get[k] as the (placeholder) slot
                         // value; the GS cell holds its own incref'd copy, so release the
@@ -3589,7 +3589,7 @@ fn void builtin_object_create(BuiltinContext* ctx) {
                             ctx.heap, desc_acc_get[k], desc_acc_set[k]);
                     }
                 } else {
-                    obj.put_prop(pk_key, desc_values[k], df);
+                    obj.put_prop(pk_key, desc_values[k], df, ctx.heap);
                 }
             }
         }
@@ -3633,7 +3633,7 @@ fn void builtin_object_seal(BuiltinContext* ctx) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "Cannot seal this TypedArray");
         return;
     }
-    obj.seal();
+    obj.seal(ctx.heap);
     ctx.result.set_object(obj);
 }
 
@@ -3681,7 +3681,7 @@ fn void builtin_object_freeze(BuiltinContext* ctx) {
     // An empty namespace (only Symbol.toStringTag, already non-writable) freezes.
     if (obj.flags.exotic_module_ns) {
         for (uint i = 0; i < obj.prop_count; i++) {
-            void* pk = obj.prop_key_at(i);
+            void* pk = obj.prop_key_at(i, ctx.heap);
             if (pk != null && !((HString*)pk).is_symbol()) {
                 builtin_throw(ctx, ctx.heap.type_err_proto, "Cannot freeze module namespace object");
                 return;
@@ -3690,7 +3690,7 @@ fn void builtin_object_freeze(BuiltinContext* ctx) {
         ctx.result.set_object(obj);
         return;
     }
-    obj.freeze();
+    obj.freeze(ctx.heap);
     ctx.result.set_object(obj);
 }
 
@@ -3730,7 +3730,7 @@ fn void builtin_object_isSealed(BuiltinContext* ctx) {
 
     // Check if any own property is configurable
     for (uint i = 0; i < obj.prop_count; i++) {
-        if (obj.prop_key_at(i) != null && obj.get_prop_flags(i).configurable) {
+        if (obj.prop_key_at(i, ctx.heap) != null && obj.get_prop_flags(i, ctx.heap).configurable) {
             ctx.result.set_boolean(false);
             return;
         }
@@ -3778,7 +3778,7 @@ fn void builtin_object_isFrozen(BuiltinContext* ctx) {
     // (only the non-writable Symbol.toStringTag) is frozen.
     if (obj.flags.exotic_module_ns) {
         for (uint i = 0; i < obj.prop_count; i++) {
-            void* pk = obj.prop_key_at(i);
+            void* pk = obj.prop_key_at(i, ctx.heap);
             if (pk != null && !((HString*)pk).is_symbol()) {
                 ctx.result.set_boolean(false);
                 return;
@@ -3797,8 +3797,8 @@ fn void builtin_object_isFrozen(BuiltinContext* ctx) {
 
     // Check if any own property is configurable or data property writable
     for (uint i = 0; i < obj.prop_count; i++) {
-        if (obj.prop_key_at(i) != null) {
-            hobject::PropFlags f = obj.get_prop_flags(i);
+        if (obj.prop_key_at(i, ctx.heap) != null) {
+            hobject::PropFlags f = obj.get_prop_flags(i, ctx.heap);
             if (f.configurable) {
                 ctx.result.set_boolean(false);
                 return;
@@ -3875,7 +3875,7 @@ fn void builtin_object_entries(BuiltinContext* ctx) {
             array_set_elem(pair, 1, val, ctx.heap);
             TVal len_tv; len_tv.set_fastint(2);
             HString* len_key = ctx.heap.str(heap::BuiltinStr.LENGTH);
-            pair.put_prop(len_key, len_tv, hobject::PROP_FLAGS_WEC);
+            pair.put_prop(len_key, len_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
             TVal pair_tv; pair_tv.set_object(pair);
             array_set_elem(arr, idx, pair_tv, ctx.heap);
             idx++;
@@ -3893,7 +3893,7 @@ fn void builtin_object_entries(BuiltinContext* ctx) {
         uint key_count = collect_own_enum_string_keys(ctx.heap, obj, key_buf, false);
         for (uint i = 0; i < key_count; i++) {
             HString* key = key_buf[i];
-            if (!key_is_currently_enumerable(obj, key)) continue;
+            if (!key_is_currently_enumerable(obj, key, ctx.heap)) continue;
             TVal val;
             if (!desc_get_enum(ctx, obj, key, &val)) {
                 if (ctx.should_throw) { return; }
@@ -3908,7 +3908,7 @@ fn void builtin_object_entries(BuiltinContext* ctx) {
             array_set_elem(pair, 1, val, ctx.heap);
             TVal len_tv; len_tv.set_fastint(2);
             HString* len_key = ctx.heap.str(heap::BuiltinStr.LENGTH);
-            pair.put_prop(len_key, len_tv, hobject::PROP_FLAGS_WEC);
+            pair.put_prop(len_key, len_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
             TVal pair_tv; pair_tv.set_object(pair);
             array_set_elem(arr, idx, pair_tv, ctx.heap);
             idx++;
@@ -3917,7 +3917,7 @@ fn void builtin_object_entries(BuiltinContext* ctx) {
 
     TVal rlen_tv; rlen_tv.set_fastint((long)idx);
     HString* rlen_key = ctx.heap.str(heap::BuiltinStr.LENGTH);
-    arr.put_prop(rlen_key, rlen_tv, hobject::PROP_FLAGS_WEC);
+    arr.put_prop(rlen_key, rlen_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
     ctx.result.set_object(arr);
 }
 
@@ -3979,7 +3979,7 @@ fn void builtin_object_values(BuiltinContext* ctx) {
         uint key_count = collect_own_enum_string_keys(ctx.heap, obj, key_buf, false);
         for (uint i = 0; i < key_count; i++) {
             HString* key = key_buf[i];
-            if (!key_is_currently_enumerable(obj, key)) continue;
+            if (!key_is_currently_enumerable(obj, key, ctx.heap)) continue;
             TVal val;
             if (!desc_get_enum(ctx, obj, key, &val)) {
                 if (ctx.should_throw) { return; }
@@ -3992,7 +3992,7 @@ fn void builtin_object_values(BuiltinContext* ctx) {
 
     TVal rlen_tv; rlen_tv.set_fastint((long)idx);
     HString* rlen_key = ctx.heap.str(heap::BuiltinStr.LENGTH);
-    arr.put_prop(rlen_key, rlen_tv, hobject::PROP_FLAGS_WEC);
+    arr.put_prop(rlen_key, rlen_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
     ctx.result.set_object(arr);
 }
 
@@ -4038,7 +4038,7 @@ fn void builtin_object_assign(BuiltinContext* ctx) {
         HString* len_key = (HString*)ctx.heap.strs[heap::BuiltinStr.LENGTH];
         TVal len_tv;
         len_tv.set_fastint((long)prim_str.char_length());
-        downstream.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NNC);
+        downstream.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NNC, ctx.heap);
     } else if (downstream_val.is_number() || downstream_val.is_fastint()) {
         HObject*? obj_raw = ctx.heap.alloc_object(hobject::ObjClass.NUMBER);
         if (catch err2 = obj_raw) { ctx.result.set_undefined(); return; }
@@ -4079,7 +4079,7 @@ fn void builtin_object_assign(BuiltinContext* ctx) {
             HString* len_key = (HString*)ctx.heap.strs[heap::BuiltinStr.LENGTH];
             TVal len_tv;
             len_tv.set_fastint((long)prim_str.char_length());
-            src_obj.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NNC);
+            src_obj.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NNC, ctx.heap);
         } else {
             // Number, Boolean, Symbol, BigInt, no enumerable own properties
             continue;
@@ -4109,8 +4109,8 @@ fn void builtin_object_assign(BuiltinContext* ctx) {
         // (test262/built-ins/Object/assign/strings-and-symbol-order.js).
         for (uint pass = 0; pass < 2; pass++) {
             for (uint i = 0; i < src_obj.prop_count; i++) {
-                if (!src_obj.get_prop_flags(i).enumerable || src_obj.prop_key_at(i) == null) continue;
-                HString* key = (HString*)src_obj.prop_key_at(i);
+                if (!src_obj.get_prop_flags(i, ctx.heap).enumerable || src_obj.prop_key_at(i, ctx.heap) == null) continue;
+                HString* key = (HString*)src_obj.prop_key_at(i, ctx.heap);
                 bool is_sym = key.flags.is_symbol;
                 if ((pass == 0 && is_sym) || (pass == 1 && !is_sym)) continue;
                 if (is_sym && key.is_hidden()) continue;
@@ -4228,7 +4228,7 @@ fn void builtin_object_hasOwn(BuiltinContext* ctx) {
         ctx.result.set_boolean(pd.found);
         return;
     }
-    PropValue*? entry = obj.find_prop(key);
+    PropValue*? entry = obj.find_prop(key, ctx.heap);
     if (try e = entry) {
         ctx.result.set_boolean(true);
     } else {
@@ -4428,7 +4428,7 @@ fn void builtin_object_fromEntries(BuiltinContext* ctx) {
     TVal iterator;
 
     if (iter_sym != null) {
-        TVal? iter_method_opt = iterable.get_prop_proto(iter_sym);
+        TVal? iter_method_opt = iterable.get_prop_proto(iter_sym, ctx.heap);
         if (try iter_method = iter_method_opt) {
             bool callable = false;
             if (iter_method.is_lightfunc()) {
@@ -4459,7 +4459,7 @@ fn void builtin_object_fromEntries(BuiltinContext* ctx) {
             if (!iterator.is_object() || iterator.get_heapptr() == null) break;
             HObject* iter_obj = (HObject*)iterator.get_heapptr();
 
-            TVal? next_method_opt = iter_obj.get_prop_proto(next_key);
+            TVal? next_method_opt = iter_obj.get_prop_proto(next_key, ctx.heap);
             TVal next_method;
             if (try nm = next_method_opt) {
                 next_method = nm;
@@ -4561,7 +4561,7 @@ fn void builtin_object_fromEntries(BuiltinContext* ctx) {
                 return;
             }
             if (key_str != null) {
-                obj.put_prop(key_str, val_val, hobject::PROP_FLAGS_WEC);
+                obj.put_prop(key_str, val_val, hobject::PROP_FLAGS_WEC, ctx.heap);
             }
             if (val_val_pinned) ctx.heap.decref_tval(&val_val);
         }
@@ -4579,7 +4579,7 @@ fn void builtin_object_fromEntries(BuiltinContext* ctx) {
         has_len = true;
     } else {
         HString* length_key = ctx.heap.str(heap::BuiltinStr.LENGTH);
-        if (try len_tv = iterable.get_prop(length_key)) {
+        if (try len_tv = iterable.get_prop(length_key, ctx.heap)) {
             if (len_tv.is_fastint() && len_tv.get_fastint() >= 0) {
                 len = (usz)len_tv.get_fastint();
                 has_len = true;
@@ -4611,7 +4611,7 @@ fn void builtin_object_fromEntries(BuiltinContext* ctx) {
             // Fall back: element stored as named property (e.g. "0", "1")
             HString* idx_str = ctx.heap.int_to_hstring((long)i);
             if (idx_str == null) continue;
-            if (try e2 = iterable.get_prop_proto(idx_str)) {
+            if (try e2 = iterable.get_prop_proto(idx_str, ctx.heap)) {
                 entry = e2;
                 got_entry = true;
             }
@@ -4629,7 +4629,7 @@ fn void builtin_object_fromEntries(BuiltinContext* ctx) {
         if (!got_key) {
             HString* zero_str = ctx.heap.int_to_hstring(0);
             if (zero_str == null) continue;
-            if (try kv2 = pair.get_prop_proto(zero_str)) { key_val = kv2; got_key = true; }
+            if (try kv2 = pair.get_prop_proto(zero_str, ctx.heap)) { key_val = kv2; got_key = true; }
         }
         if (!got_key) continue;
         TVal val_tmp; val_tmp.set_undefined();
@@ -4638,13 +4638,13 @@ fn void builtin_object_fromEntries(BuiltinContext* ctx) {
         } else {
             HString* one_str = ctx.heap.int_to_hstring(1);
             if (one_str != null) {
-                if (try vv2 = pair.get_prop_proto(one_str)) { val_tmp = vv2; }
+                if (try vv2 = pair.get_prop_proto(one_str, ctx.heap)) { val_tmp = vv2; }
             }
         }
         val_val = val_tmp;
         HString* key_str = builtin_to_property_key(ctx, key_val);
         if (key_str != null) {
-            obj.put_prop(key_str, val_val, hobject::PROP_FLAGS_WEC);
+            obj.put_prop(key_str, val_val, hobject::PROP_FLAGS_WEC, ctx.heap);
         }
     }
     ctx.result.set_object(obj);
@@ -4800,7 +4800,7 @@ fn void builtin_object_proto_toString(BuiltinContext* ctx) {
         if (tag_sym != null && prim_proto != null) {
             // Create a temporary wrapper object to search the prototype chain.
             // Use get_prop_or_accessor_proto starting from prim_proto directly.
-            hobject::PropLookupResult res = prim_proto.get_prop_or_accessor_proto((void*)tag_sym, true);
+            hobject::PropLookupResult res = prim_proto.get_prop_or_accessor_proto((void*)tag_sym, true, ctx.heap);
             if (res.kind == hobject::PropLookupKind.PROP_DATA) {
                 TVal tv = res.data_val;
                 if (tv.is_string()) {
@@ -4993,7 +4993,7 @@ fn void builtin_object_proto_hasOwnProperty(BuiltinContext* ctx) {
         return;
     }
     // Check own property
-    PropValue*? entry = obj.find_prop(key);
+    PropValue*? entry = obj.find_prop(key, ctx.heap);
     if (try e = entry) {
         ctx.result.set_boolean(true);
         return;
@@ -5068,10 +5068,10 @@ fn void builtin_object_proto_propertyIsEnumerable(BuiltinContext* ctx) {
         return;
     }
     // Find own property descriptor
-    PropValue*? entry = obj.find_prop(key);
+    PropValue*? entry = obj.find_prop(key, ctx.heap);
     if (try e = entry) {
         uint prop_idx = (uint)((char*)e - (char*)obj.prop_values()) / hobject::PropValue::size;
-        ctx.result.set_boolean(obj.get_prop_flags(prop_idx).enumerable);
+        ctx.result.set_boolean(obj.get_prop_flags(prop_idx, ctx.heap).enumerable);
         return;
     }
     // ARRAY / ARGUMENTS exotic: numeric indices in the dense part are own
@@ -5291,7 +5291,7 @@ fn void builtin_object_proto_toLocaleString(BuiltinContext* ctx) {
     // properly handles both data properties and accessor (getter) properties.
     TVal fn_val;
     bool found = false;
-    hobject::PropLookupResult res = search_start.get_prop_or_accessor_proto((void*)ts_key, true);
+    hobject::PropLookupResult res = search_start.get_prop_or_accessor_proto((void*)ts_key, true, ctx.heap);
     if (res.kind == hobject::PropLookupKind.PROP_DATA) {
         fn_val = res.data_val;
         found = true;
@@ -5353,37 +5353,37 @@ fn bool register_object_constructor(EnvRecord* global_env, Heap* heap) {
     HString* tostring_key = (HString*)heap.strs[heap::BuiltinStr.TO_STRING];
     TVal tostring_tv;
     tostring_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_PROTO_TOSTRING.ordinal);
-    proto.put_prop(tostring_key, tostring_tv, hobject::PROP_FLAGS_WC);
+    proto.put_prop(tostring_key, tostring_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Add .hasOwnProperty() method to Object.prototype
     HString* hasown_key = builtin_intern_string(heap, "hasOwnProperty");
     TVal hasown_tv;
     hasown_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_PROTO_HASOWNPROPERTY.ordinal);
-    proto.put_prop(hasown_key, hasown_tv, hobject::PROP_FLAGS_WC);
+    proto.put_prop(hasown_key, hasown_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Add .propertyIsEnumerable() method to Object.prototype (non-enumerable per ES5 §15.2.4.7)
     HString* propisenum_key = builtin_intern_string(heap, "propertyIsEnumerable");
     TVal propisenum_tv;
     propisenum_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_PROTO_PROPERTYISENUMERABLE.ordinal);
-    proto.put_prop(propisenum_key, propisenum_tv, hobject::PROP_FLAGS_WC);
+    proto.put_prop(propisenum_key, propisenum_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Add .valueOf() method to Object.prototype (returns 'this')
     HString* valueof_key = (HString*)heap.strs[heap::BuiltinStr.VALUE_OF];
     TVal valueof_tv;
     valueof_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_PROTO_VALUEOF.ordinal);
-    proto.put_prop(valueof_key, valueof_tv, hobject::PROP_FLAGS_WC);
+    proto.put_prop(valueof_key, valueof_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Add .isPrototypeOf() method to Object.prototype
     HString* isproto_key = builtin_intern_string(heap, "isPrototypeOf");
     TVal isproto_tv;
     isproto_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_PROTO_ISPROTOTYPEOF.ordinal);
-    proto.put_prop(isproto_key, isproto_tv, hobject::PROP_FLAGS_WC);
+    proto.put_prop(isproto_key, isproto_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Add .toLocaleString() method to Object.prototype (ES5 §15.2.4.3)
     HString* tolocalestring_key = builtin_intern_string(heap, "toLocaleString");
     TVal tolocalestring_tv;
     tolocalestring_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_PROTO_TOLOCALESTRING.ordinal);
-    proto.put_prop(tolocalestring_key, tolocalestring_tv, hobject::PROP_FLAGS_WC);
+    proto.put_prop(tolocalestring_key, tolocalestring_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Add .__proto__ accessor (ES2015 Annex B §B.2.2.1 / §B.2.2.2), getter
     // returns Object.getPrototypeOf(this); setter is Object.setPrototypeOf(this, value).
@@ -5426,20 +5426,20 @@ fn bool register_object_constructor(EnvRecord* global_env, Heap* heap) {
                 HString* gname_str = builtin_intern_string(heap, "get __proto__");
                 if (gname_str != null) {
                     TVal gname_tv; gname_tv.set_string(gname_str);
-                    __proto___getter.put_prop(name_key, gname_tv, hobject::PROP_FLAGS_NWC);
+                    __proto___getter.put_prop(name_key, gname_tv, hobject::PROP_FLAGS_NWC, heap);
                 }
                 HString* sname_str = builtin_intern_string(heap, "set __proto__");
                 if (sname_str != null) {
                     TVal sname_tv; sname_tv.set_string(sname_str);
-                    __proto___setter.put_prop(name_key, sname_tv, hobject::PROP_FLAGS_NWC);
+                    __proto___setter.put_prop(name_key, sname_tv, hobject::PROP_FLAGS_NWC, heap);
                 }
             }
             HString* length_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
             if (length_key != null) {
                 TVal glen_tv; glen_tv.set_fastint(0);
-                __proto___getter.put_prop(length_key, glen_tv, hobject::PROP_FLAGS_NWC);
+                __proto___getter.put_prop(length_key, glen_tv, hobject::PROP_FLAGS_NWC, heap);
                 TVal slen_tv; slen_tv.set_fastint(1);
-                __proto___setter.put_prop(length_key, slen_tv, hobject::PROP_FLAGS_NWC);
+                __proto___setter.put_prop(length_key, slen_tv, hobject::PROP_FLAGS_NWC, heap);
             }
             TVal getter_tv; getter_tv.set_object(__proto___getter);
             TVal setter_tv; setter_tv.set_object(__proto___setter);
@@ -5448,7 +5448,7 @@ fn bool register_object_constructor(EnvRecord* global_env, Heap* heap) {
             acc_flags.enumerable = false;
             acc_flags.configurable = true;
             acc_flags.is_accessor = true;
-            proto.put_prop(proto_accessor_key, hobject::hobject_create_accessors(heap, getter_tv, setter_tv), acc_flags);
+            proto.put_prop(proto_accessor_key, hobject::hobject_create_accessors(heap, getter_tv, setter_tv), acc_flags, heap);
             // Stash on the heap so register_function_constructor can back-patch
             // the [[Prototype]] once Function.prototype exists.
             heap.object_proto___proto___getter = __proto___getter;
@@ -5467,7 +5467,7 @@ fn bool register_object_constructor(EnvRecord* global_env, Heap* heap) {
     HString* constructor_key = (HString*)heap.strs[heap::BuiltinStr.CONSTRUCTOR];
     TVal constructor_tv;
     constructor_tv.set_object(obj);
-    proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_WC);
+    proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Set Object.prototype on the constructor (non-writable, non-enumerable, non-configurable)
     HString* prototype_key = (HString*)heap.strs[heap::BuiltinStr.PROTOTYPE];
@@ -5478,13 +5478,13 @@ fn bool register_object_constructor(EnvRecord* global_env, Heap* heap) {
     proto_pflags.enumerable = false;
     proto_pflags.configurable = false;
     proto_pflags.is_accessor = false;
-    obj.put_prop(prototype_key, proto_tv, proto_pflags);
+    obj.put_prop(prototype_key, proto_tv, proto_pflags, heap);
 
     // Set Object.length (ES5 §15.2.1)
     HString* length_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
     TVal length_tv;
     length_tv.set_fastint(1);
-    obj.put_prop(length_key, length_tv, hobject::PROP_FLAGS_NWC);
+    obj.put_prop(length_key, length_tv, hobject::PROP_FLAGS_NWC, heap);
 
     // Set Object.name (ES2015 §19: "length" before "name")
     HString* name_key_obj = heap.str(heap::BuiltinStr.NAME);
@@ -5493,7 +5493,7 @@ fn bool register_object_constructor(EnvRecord* global_env, Heap* heap) {
         if (name_val_obj != null) {
             TVal name_tv_obj;
             name_tv_obj.set_string(name_val_obj);
-            obj.put_prop(name_key_obj, name_tv_obj, hobject::PROP_FLAGS_NWC);
+            obj.put_prop(name_key_obj, name_tv_obj, hobject::PROP_FLAGS_NWC, heap);
         }
     }
 
@@ -5503,161 +5503,161 @@ fn bool register_object_constructor(EnvRecord* global_env, Heap* heap) {
     if (keys_key == null) return false;
     TVal keys_tv;
     keys_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_KEYS.ordinal);
-    obj.put_prop(keys_key, keys_tv, hobject::PROP_FLAGS_WC);
+    obj.put_prop(keys_key, keys_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Object.getPrototypeOf, ES5 §15.2.3.2
     HString* getproto_key = builtin_intern_string(heap, "getPrototypeOf");
     if (getproto_key == null) return false;
     TVal getproto_tv;
     getproto_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_GETPROTOTYPEOF.ordinal);
-    obj.put_prop(getproto_key, getproto_tv, hobject::PROP_FLAGS_WC);
+    obj.put_prop(getproto_key, getproto_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Object.isExtensible, ES5 §15.2.3.13
     HString* isext_key = builtin_intern_string(heap, "isExtensible");
     if (isext_key == null) return false;
     TVal isext_tv;
     isext_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_ISEXTENSIBLE.ordinal);
-    obj.put_prop(isext_key, isext_tv, hobject::PROP_FLAGS_WC);
+    obj.put_prop(isext_key, isext_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Object.preventExtensions, ES5 §15.2.3.10
     HString* prevext_key = builtin_intern_string(heap, "preventExtensions");
     if (prevext_key == null) return false;
     TVal prevext_tv;
     prevext_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_PREVENTEXTENSIONS.ordinal);
-    obj.put_prop(prevext_key, prevext_tv, hobject::PROP_FLAGS_WC);
+    obj.put_prop(prevext_key, prevext_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Object.getOwnPropertyDescriptor, ES5 §15.2.3.3
     HString* getownpropdesc_key = builtin_intern_string(heap, "getOwnPropertyDescriptor");
     if (getownpropdesc_key == null) return false;
     TVal getownpropdesc_tv;
     getownpropdesc_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_GETOWNPROPERTYDESCRIPTOR.ordinal);
-    obj.put_prop(getownpropdesc_key, getownpropdesc_tv, hobject::PROP_FLAGS_WC);
+    obj.put_prop(getownpropdesc_key, getownpropdesc_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Object.getOwnPropertyDescriptors, ES2017 §19.1.2.9
     HString* getownpropdescs_key = builtin_intern_string(heap, "getOwnPropertyDescriptors");
     if (getownpropdescs_key == null) return false;
     TVal getownpropdescs_tv;
     getownpropdescs_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_GETOWNPROPERTYDESCRIPTORS.ordinal);
-    obj.put_prop(getownpropdescs_key, getownpropdescs_tv, hobject::PROP_FLAGS_WC);
+    obj.put_prop(getownpropdescs_key, getownpropdescs_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Object.defineProperty, ES5 §15.2.3.6
     HString* defineprop_key = builtin_intern_string(heap, "defineProperty");
     if (defineprop_key == null) return false;
     TVal defineprop_tv;
     defineprop_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_DEFINEPROPERTY.ordinal);
-    obj.put_prop(defineprop_key, defineprop_tv, hobject::PROP_FLAGS_WC);
+    obj.put_prop(defineprop_key, defineprop_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Object.getOwnPropertyNames, ES5 §15.2.3.4
     HString* getownpropnames_key = builtin_intern_string(heap, "getOwnPropertyNames");
     if (getownpropnames_key == null) return false;
     TVal getownpropnames_tv;
     getownpropnames_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_GETOWNPROPERTYNAMES.ordinal);
-    obj.put_prop(getownpropnames_key, getownpropnames_tv, hobject::PROP_FLAGS_WC);
+    obj.put_prop(getownpropnames_key, getownpropnames_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Object.getOwnPropertySymbols, ES6 §19.1.2.7
     HString* getownpropsymbols_key = builtin_intern_string(heap, "getOwnPropertySymbols");
     if (getownpropsymbols_key == null) return false;
     TVal getownpropsymbols_tv;
     getownpropsymbols_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_GETOWNPROPERTYSYMBOLS.ordinal);
-    obj.put_prop(getownpropsymbols_key, getownpropsymbols_tv, hobject::PROP_FLAGS_WC);
+    obj.put_prop(getownpropsymbols_key, getownpropsymbols_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Object.defineProperties, ES5 §15.2.3.7
     HString* defineprops_key = builtin_intern_string(heap, "defineProperties");
     if (defineprops_key == null) return false;
     TVal defineprops_tv;
     defineprops_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_DEFINEPROPERTIES.ordinal);
-    obj.put_prop(defineprops_key, defineprops_tv, hobject::PROP_FLAGS_WC);
+    obj.put_prop(defineprops_key, defineprops_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Object.create, ES5 §15.2.3.5
     HString* create_key = builtin_intern_string(heap, "create");
     if (create_key == null) return false;
     TVal create_tv;
     create_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_CREATE.ordinal);
-    obj.put_prop(create_key, create_tv, hobject::PROP_FLAGS_WC);
+    obj.put_prop(create_key, create_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Object.seal, ES5 §15.2.3.8
     HString* seal_key = builtin_intern_string(heap, "seal");
     if (seal_key == null) return false;
     TVal seal_tv;
     seal_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_SEAL.ordinal);
-    obj.put_prop(seal_key, seal_tv, hobject::PROP_FLAGS_WC);
+    obj.put_prop(seal_key, seal_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Object.freeze, ES5 §15.2.3.9
     HString* freeze_key = builtin_intern_string(heap, "freeze");
     if (freeze_key == null) return false;
     TVal freeze_tv;
     freeze_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_FREEZE.ordinal);
-    obj.put_prop(freeze_key, freeze_tv, hobject::PROP_FLAGS_WC);
+    obj.put_prop(freeze_key, freeze_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Object.isSealed, ES5 §15.2.3.11
     HString* issealed_key = builtin_intern_string(heap, "isSealed");
     if (issealed_key == null) return false;
     TVal issealed_tv;
     issealed_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_ISSEALED.ordinal);
-    obj.put_prop(issealed_key, issealed_tv, hobject::PROP_FLAGS_WC);
+    obj.put_prop(issealed_key, issealed_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Object.isFrozen, ES5 §15.2.3.12
     HString* isfrozen_key = builtin_intern_string(heap, "isFrozen");
     if (isfrozen_key == null) return false;
     TVal isfrozen_tv;
     isfrozen_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_ISFROZEN.ordinal);
-    obj.put_prop(isfrozen_key, isfrozen_tv, hobject::PROP_FLAGS_WC);
+    obj.put_prop(isfrozen_key, isfrozen_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Object.entries, ES2017 §19.1.2.21
     HString* entries_key = builtin_intern_string(heap, "entries");
     if (entries_key == null) return false;
     TVal entries_tv;
     entries_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_ENTRIES.ordinal);
-    obj.put_prop(entries_key, entries_tv, hobject::PROP_FLAGS_WC);
+    obj.put_prop(entries_key, entries_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Object.values, ES2017 §19.1.2.22
     HString* values_key = builtin_intern_string(heap, "values");
     if (values_key == null) return false;
     TVal values_tv;
     values_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_VALUES.ordinal);
-    obj.put_prop(values_key, values_tv, hobject::PROP_FLAGS_WC);
+    obj.put_prop(values_key, values_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Object.assign, ES2015 §19.1.2.2
     HString* assign_key = builtin_intern_string(heap, "assign");
     if (assign_key == null) return false;
     TVal assign_tv;
     assign_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_ASSIGN.ordinal);
-    obj.put_prop(assign_key, assign_tv, hobject::PROP_FLAGS_WC);
+    obj.put_prop(assign_key, assign_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Object.is, ES6 §19.1.2.10
     HString* is_key = builtin_intern_string(heap, "is");
     if (is_key == null) return false;
     TVal is_tv;
     is_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_IS.ordinal);
-    obj.put_prop(is_key, is_tv, hobject::PROP_FLAGS_WC);
+    obj.put_prop(is_key, is_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Object.hasOwn, ES2022 §19.1.2.10
     HString* hasown_static_key = builtin_intern_string(heap, "hasOwn");
     if (hasown_static_key == null) return false;
     TVal hasown_static_tv;
     hasown_static_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_HASOWN.ordinal);
-    obj.put_prop(hasown_static_key, hasown_static_tv, hobject::PROP_FLAGS_WC);
+    obj.put_prop(hasown_static_key, hasown_static_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Object.setPrototypeOf, ES2015 §19.1.2.19
     HString* setproto_key = builtin_intern_string(heap, "setPrototypeOf");
     if (setproto_key == null) return false;
     TVal setproto_tv;
     setproto_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_SETPROTOTYPEOF.ordinal);
-    obj.put_prop(setproto_key, setproto_tv, hobject::PROP_FLAGS_WC);
+    obj.put_prop(setproto_key, setproto_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Object.fromEntries, ES2019 §19.1.2.5
     HString* fromentries_key = builtin_intern_string(heap, "fromEntries");
     if (fromentries_key == null) return false;
     TVal fromentries_tv;
     fromentries_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_FROMENTRIES.ordinal);
-    obj.put_prop(fromentries_key, fromentries_tv, hobject::PROP_FLAGS_WC);
+    obj.put_prop(fromentries_key, fromentries_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Object.groupBy, ES2024 §23.1.2.1
     HString* groupby_key = builtin_intern_string(heap, "groupBy");
     if (groupby_key == null) return false;
     TVal groupby_tv;
     groupby_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_GROUPBY.ordinal);
-    obj.put_prop(groupby_key, groupby_tv, hobject::PROP_FLAGS_WC);
+    obj.put_prop(groupby_key, groupby_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Register Object constructor globally as an OBJECT (not LIGHTFUNC)
     HString* obj_key = heap.str_intern("Object");

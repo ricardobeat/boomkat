@@ -196,7 +196,7 @@ fn void builtin_array_iterator_next(BuiltinContext* ctx) {
         // over a resizable buffer change length when the buffer is resized.
         len = (long)ta_element_count(target);
     } else {
-        TVal? len_val = target.get_prop_proto((HString*)heap.strs[heap::BuiltinStr.LENGTH]);
+        TVal? len_val = target.get_prop_proto((HString*)heap.strs[heap::BuiltinStr.LENGTH], ctx.heap);
         if (try lv = len_val) {
             if (lv.is_fastint()) {
                 len = lv.get_fastint();
@@ -267,8 +267,8 @@ fn void builtin_array_iterator_next(BuiltinContext* ctx) {
                 pair.prototype = heap.array_proto;
                 TVal idx_tv;
                 idx_tv.set_fastint((long)idx);
-                pair.set_array_idx(0, idx_tv);
-                pair.set_array_idx(1, value);
+                pair.set_array_idx(0, idx_tv, ctx.heap);
+                pair.set_array_idx(1, value, ctx.heap);
                 pair.array_used = 2;
                 *pair.array_len_ptr() = 2;
                 value.set_object(pair);
@@ -287,13 +287,13 @@ fn void builtin_array_iterator_next(BuiltinContext* ctx) {
 
     // Set .value
     HString* value_key = (HString*)heap.strs[heap::BuiltinStr.VALUE];
-    result.put_prop(value_key, value, hobject::PROP_FLAGS_WEC);
+    result.put_prop(value_key, value, hobject::PROP_FLAGS_WEC, ctx.heap);
 
     // Set .done
     HString* done_key = (HString*)heap.strs[heap::BuiltinStr.DONE];
     TVal done_tv;
     done_tv.set_boolean(done);
-    result.put_prop(done_key, done_tv, hobject::PROP_FLAGS_WEC);
+    result.put_prop(done_key, done_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
 
     ctx.result.set_object(result);
 }
@@ -332,11 +332,11 @@ fn void builtin_string_iterator_next(BuiltinContext* ctx) {
         HString* done_key = (HString*)heap.strs[heap::BuiltinStr.DONE];
         TVal done_tv;
         done_tv.set_boolean(true);
-        result.put_prop(done_key, done_tv, hobject::PROP_FLAGS_WEC);
+        result.put_prop(done_key, done_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
         HString* value_key = (HString*)heap.strs[heap::BuiltinStr.VALUE];
         TVal undef;
         undef.set_undefined();
-        result.put_prop(value_key, undef, hobject::PROP_FLAGS_WEC);
+        result.put_prop(value_key, undef, hobject::PROP_FLAGS_WEC, ctx.heap);
         ctx.result.set_object(result);
         return;
     }
@@ -375,14 +375,14 @@ fn void builtin_string_iterator_next(BuiltinContext* ctx) {
     if (cp_str != null) {
         TVal value_tv;
         value_tv.set_string(cp_str);
-        result.put_prop(value_key, value_tv, hobject::PROP_FLAGS_WEC);
+        result.put_prop(value_key, value_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
     }
 
     // Set .done
     HString* done_key = (HString*)heap.strs[heap::BuiltinStr.DONE];
     TVal done_tv;
     done_tv.set_boolean(false);
-    result.put_prop(done_key, done_tv, hobject::PROP_FLAGS_WEC);
+    result.put_prop(done_key, done_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
 
     ctx.result.set_object(result);
 }
@@ -415,11 +415,11 @@ fn void builtin_regexp_string_iterator_next(BuiltinContext* ctx) {
         HString* done_key = (HString*)heap.strs[heap::BuiltinStr.DONE];
         TVal done_tv;
         done_tv.set_boolean(true);
-        result.put_prop(done_key, done_tv, hobject::PROP_FLAGS_WEC);
+        result.put_prop(done_key, done_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
         HString* value_key = (HString*)heap.strs[heap::BuiltinStr.VALUE];
         TVal undef;
         undef.set_undefined();
-        result.put_prop(value_key, undef, hobject::PROP_FLAGS_WEC);
+        result.put_prop(value_key, undef, hobject::PROP_FLAGS_WEC, ctx.heap);
         ctx.result.set_object(result);
         return;
     }
@@ -455,11 +455,11 @@ fn void builtin_regexp_string_iterator_next(BuiltinContext* ctx) {
         HString* done_key = (HString*)heap.strs[heap::BuiltinStr.DONE];
         TVal done_tv;
         done_tv.set_boolean(true);
-        result.put_prop(done_key, done_tv, hobject::PROP_FLAGS_WEC);
+        result.put_prop(done_key, done_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
         HString* value_key = (HString*)heap.strs[heap::BuiltinStr.VALUE];
         TVal undef;
         undef.set_undefined();
-        result.put_prop(value_key, undef, hobject::PROP_FLAGS_WEC);
+        result.put_prop(value_key, undef, hobject::PROP_FLAGS_WEC, ctx.heap);
         ctx.result.set_object(result);
         return;
     }
@@ -527,12 +527,12 @@ fn void builtin_regexp_string_iterator_next(BuiltinContext* ctx) {
     iter_result.prototype = null;
 
     HString* value_key = (HString*)heap.strs[heap::BuiltinStr.VALUE];
-    iter_result.put_prop(value_key, match_tv, hobject::PROP_FLAGS_WEC);
+    iter_result.put_prop(value_key, match_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
 
     HString* done_key = (HString*)heap.strs[heap::BuiltinStr.DONE];
     TVal done_tv;
     done_tv.set_boolean(false);
-    iter_result.put_prop(done_key, done_tv, hobject::PROP_FLAGS_WEC);
+    iter_result.put_prop(done_key, done_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
 
     ctx.result.set_object(iter_result);
 }
@@ -568,18 +568,18 @@ fn bool register_iterator_prototype(Heap* heap) {
         if (name_key != null && name_val != null) {
             TVal name_tv;
             name_tv.set_string(name_val);
-            fn_obj.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC);
+            fn_obj.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC, heap);
         }
         // Set .length = 0
         HString* len_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
         if (len_key != null) {
             TVal len_tv;
             len_tv.set_fastint(0);
-            fn_obj.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NWC);
+            fn_obj.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NWC, heap);
         }
         TVal iter_tv;
         iter_tv.set_object(fn_obj);
-        proto.put_prop(iter_sym, iter_tv, hobject::PROP_FLAGS_WC);
+        proto.put_prop(iter_sym, iter_tv, hobject::PROP_FLAGS_WC, heap);
     }
 
     // ArrayIteratorPrototype.next is shared by all ArrayIterator instances.
@@ -590,7 +590,7 @@ fn bool register_iterator_prototype(Heap* heap) {
     HString* tag_sym = ensure_tostringtag_symbol(heap);
     if (tag_sym != null) {
         TVal tag_tv; tag_tv.set_string(builtin_intern_string(heap, "Array Iterator"));
-        array_proto.put_prop(tag_sym, tag_tv, hobject::PROP_FLAGS_NWC);
+        array_proto.put_prop(tag_sym, tag_tv, hobject::PROP_FLAGS_NWC, heap);
     }
 
     // %MapIteratorPrototype%, %SetIteratorPrototype%, and
@@ -605,7 +605,7 @@ fn bool register_iterator_prototype(Heap* heap) {
     if (!register_string_proto_method(map_iter_proto, heap, "next", Builtin.MAP_ITERATOR_NEXT.ordinal)) return false;
     if (tag_sym != null) {
         TVal tag_tv; tag_tv.set_string(builtin_intern_string(heap, "Map Iterator"));
-        map_iter_proto.put_prop(tag_sym, tag_tv, hobject::PROP_FLAGS_NWC);
+        map_iter_proto.put_prop(tag_sym, tag_tv, hobject::PROP_FLAGS_NWC, heap);
     }
 
     HObject*? set_proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
@@ -616,7 +616,7 @@ fn bool register_iterator_prototype(Heap* heap) {
     if (!register_string_proto_method(set_iter_proto, heap, "next", Builtin.SET_ITERATOR_NEXT.ordinal)) return false;
     if (tag_sym != null) {
         TVal tag_tv; tag_tv.set_string(builtin_intern_string(heap, "Set Iterator"));
-        set_iter_proto.put_prop(tag_sym, tag_tv, hobject::PROP_FLAGS_NWC);
+        set_iter_proto.put_prop(tag_sym, tag_tv, hobject::PROP_FLAGS_NWC, heap);
     }
 
     HObject*? str_proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
@@ -627,7 +627,7 @@ fn bool register_iterator_prototype(Heap* heap) {
     if (!register_string_proto_method(str_iter_proto, heap, "next", Builtin.STRING_ITERATOR_NEXT.ordinal)) return false;
     if (tag_sym != null) {
         TVal tag_tv; tag_tv.set_string(builtin_intern_string(heap, "String Iterator"));
-        str_iter_proto.put_prop(tag_sym, tag_tv, hobject::PROP_FLAGS_NWC);
+        str_iter_proto.put_prop(tag_sym, tag_tv, hobject::PROP_FLAGS_NWC, heap);
     }
 
     // %RegExpStringIteratorPrototype% (ES2020 §22.2.9.2), shared by every
@@ -640,7 +640,7 @@ fn bool register_iterator_prototype(Heap* heap) {
     if (!register_string_proto_method(regexp_str_iter_proto, heap, "next", Builtin.REGEXP_STRING_ITERATOR_NEXT.ordinal)) return false;
     if (tag_sym != null) {
         TVal tag_tv; tag_tv.set_string(builtin_intern_string(heap, "RegExp String Iterator"));
-        regexp_str_iter_proto.put_prop(tag_sym, tag_tv, hobject::PROP_FLAGS_NWC);
+        regexp_str_iter_proto.put_prop(tag_sym, tag_tv, hobject::PROP_FLAGS_NWC, heap);
     }
 
     return true;
@@ -674,7 +674,7 @@ fn bool iterhelper_register_accessor(HObject* proto, Heap* heap, void* key, uint
     acc_flags.enumerable = false;
     acc_flags.configurable = true;
     acc_flags.is_accessor = true;
-    proto.put_prop(key, hobject::hobject_create_accessors(heap, getter_tv, setter_tv), acc_flags);
+    proto.put_prop(key, hobject::hobject_create_accessors(heap, getter_tv, setter_tv), acc_flags, heap);
     return true;
 }
 
@@ -734,7 +734,7 @@ fn bool register_iterator_ctor_and_helpers(EnvRecord* global_env, Heap* heap) {
     proto_pflags.enumerable = false;
     proto_pflags.configurable = false;
     proto_pflags.is_accessor = false;
-    ctor.put_prop(prototype_key, proto_tv, proto_pflags);
+    ctor.put_prop(prototype_key, proto_tv, proto_pflags, heap);
 
     // Iterator.from(obj).
     if (!register_string_proto_method(ctor, heap, "from", Builtin.ITERATOR_FROM.ordinal)) return false;
@@ -761,7 +761,7 @@ fn bool register_iterator_ctor_and_helpers(EnvRecord* global_env, Heap* heap) {
     if (!register_string_proto_method(ih_proto, heap, "return", Builtin.ITERATOR_HELPER_RETURN.ordinal)) return false;
     if (tag_sym != null) {
         TVal tag_tv; tag_tv.set_string(builtin_intern_string(heap, "Iterator Helper"));
-        ih_proto.put_prop(tag_sym, tag_tv, hobject::PROP_FLAGS_NWC);
+        ih_proto.put_prop(tag_sym, tag_tv, hobject::PROP_FLAGS_NWC, heap);
     }
 
     // %WrapForValidIteratorPrototype% (ES2025 §27.1.3.2.2.1): [[Prototype]]
@@ -792,7 +792,7 @@ fn bool register_iterator_ctor_and_helpers(EnvRecord* global_env, Heap* heap) {
 fn TVal iterhelper_getv(BuiltinContext* ctx, HObject* lookup_obj, void* key, TVal receiver) {
     TVal undef; undef.set_undefined();
     if (lookup_obj == null || key == null) return undef;
-    hobject::PropLookupResult res = lookup_obj.get_prop_or_accessor_proto(key, true);
+    hobject::PropLookupResult res = lookup_obj.get_prop_or_accessor_proto(key, true, ctx.heap);
     switch (res.kind) {
         case hobject::PropLookupKind.PROP_DATA:
             return res.data_val;
@@ -821,11 +821,11 @@ fn HObject* iterhelper_make_result(Heap* heap, TVal value, bool done) {
     HObject* result = result_raw;
     result.prototype = heap.object_proto;
     HString* value_key = (HString*)heap.strs[heap::BuiltinStr.VALUE];
-    result.put_prop(value_key, value, hobject::PROP_FLAGS_WEC);
+    result.put_prop(value_key, value, hobject::PROP_FLAGS_WEC, heap);
     HString* done_key = (HString*)heap.strs[heap::BuiltinStr.DONE];
     TVal done_tv;
     done_tv.set_boolean(done);
-    result.put_prop(done_key, done_tv, hobject::PROP_FLAGS_WEC);
+    result.put_prop(done_key, done_tv, hobject::PROP_FLAGS_WEC, heap);
     return result;
 }
 
@@ -1149,9 +1149,9 @@ fn void iterhelper_setter_ignores_prototype_properties(BuiltinContext* ctx, HObj
     // beyond a plain data-property lookup since thisValue is arbitrary
     // ECMAScript-authored code (own accessor "constructor"/@@toStringTag
     // properties are vanishingly rare test surface but handled below).
-    int idx = this_obj.find_prop_idx(property_key);
+    int idx = this_obj.find_prop_idx(property_key, ctx.heap);
     if (idx >= 0) {
-        hobject::PropFlags pf = this_obj.get_prop_flags((uint)idx);
+        hobject::PropFlags pf = this_obj.get_prop_flags((uint)idx, ctx.heap);
         if (pf.is_accessor) {
             TVal setter = hobject::hobject_access_setter(this_obj.prop_values()[idx]);
             bool callable = setter.is_lightfunc() ||
@@ -1172,7 +1172,7 @@ fn void iterhelper_setter_ignores_prototype_properties(BuiltinContext* ctx, HObj
             builtin_throw(ctx, heap.type_err_proto, "cannot assign to read only property");
             return;
         }
-        this_obj.put_prop(property_key, value, pf);
+        this_obj.put_prop(property_key, value, pf, ctx.heap);
         return;
     }
 
@@ -1183,7 +1183,7 @@ fn void iterhelper_setter_ignores_prototype_properties(BuiltinContext* ctx, HObj
         builtin_throw(ctx, heap.type_err_proto, "object is not extensible");
         return;
     }
-    if (!this_obj.put_prop(property_key, value, hobject::PROP_FLAGS_WEC)) {
+    if (!this_obj.put_prop(property_key, value, hobject::PROP_FLAGS_WEC, ctx.heap)) {
         builtin_throw(ctx, heap.type_err_proto, "Cannot add property, no space left");
     }
 }
@@ -1534,7 +1534,7 @@ fn bool iterhelper_run_step(BuiltinContext* ctx, HObject* obj, HObjectIteratorHe
                 // Get the total count of iterables
                 HString* count_key = builtin_intern_string(heap, "count");
                 if (count_key == null) { *out_done = true; return true; }
-                TVal? count_opt = wrapper.get_prop_proto(count_key);
+                TVal? count_opt = wrapper.get_prop_proto(count_key, ctx.heap);
                 if (ctx.should_throw) return false;
                 long count = 0;
                 if (try count_tv = count_opt) {
@@ -1554,7 +1554,7 @@ fn bool iterhelper_run_step(BuiltinContext* ctx, HObject* obj, HObjectIteratorHe
                 // Get iterables and methods arrays
                 HString* iterables_key = builtin_intern_string(heap, "iterables");
                 if (iterables_key == null) { *out_done = true; return true; }
-                TVal? iterables_opt = wrapper.get_prop_proto(iterables_key);
+                TVal? iterables_opt = wrapper.get_prop_proto(iterables_key, ctx.heap);
                 if (ctx.should_throw) return false;
                 TVal iterables_tv;
                 if (try itv = iterables_opt) { iterables_tv = itv; } else { *out_done = true; return true; }
@@ -1567,7 +1567,7 @@ fn bool iterhelper_run_step(BuiltinContext* ctx, HObject* obj, HObjectIteratorHe
 
                 HString* methods_key = builtin_intern_string(heap, "methods");
                 if (methods_key == null) { *out_done = true; return true; }
-                TVal? methods_opt = wrapper.get_prop_proto(methods_key);
+                TVal? methods_opt = wrapper.get_prop_proto(methods_key, ctx.heap);
                 if (ctx.should_throw) return false;
                 TVal methods_tv;
                 if (try mtv = methods_opt) { methods_tv = mtv; } else { *out_done = true; return true; }
@@ -1943,7 +1943,7 @@ fn void builtin_iterator_proto_toarray(BuiltinContext* ctx) {
             ctx.result.set_undefined();
             return;
         }
-        arr.set_array_idx(idx, value);
+        arr.set_array_idx(idx, value, ctx.heap);
         idx++;
         *arr.array_len_ptr() = idx;
     }
@@ -2176,8 +2176,8 @@ fn void builtin_iterator_concat(BuiltinContext* ctx) {
         }
 
         // Add to the arrays
-        iterables_arr.set_array_idx((uint)count, arg);
-        methods_arr.set_array_idx((uint)count, method);
+        iterables_arr.set_array_idx((uint)count, arg, ctx.heap);
+        methods_arr.set_array_idx((uint)count, method, ctx.heap);
         count += 1;
     }
 
@@ -2196,21 +2196,21 @@ fn void builtin_iterator_concat(BuiltinContext* ctx) {
     HString* iterables_key = builtin_intern_string(heap, "iterables");
     if (iterables_key != null) {
         TVal iterables_tv; iterables_tv.set_object(iterables_arr);
-        wrapper.put_prop(iterables_key, iterables_tv, hobject::PROP_FLAGS_WEC);
+        wrapper.put_prop(iterables_key, iterables_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
     }
 
     // Store the methods array
     HString* methods_key = builtin_intern_string(heap, "methods");
     if (methods_key != null) {
         TVal methods_tv; methods_tv.set_object(methods_arr);
-        wrapper.put_prop(methods_key, methods_tv, hobject::PROP_FLAGS_WEC);
+        wrapper.put_prop(methods_key, methods_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
     }
 
     // Store the count
     HString* count_key = builtin_intern_string(heap, "count");
     if (count_key != null) {
         TVal count_tv; count_tv.set_fastint(count);
-        wrapper.put_prop(count_key, count_tv, hobject::PROP_FLAGS_WEC);
+        wrapper.put_prop(count_key, count_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
     }
 
     // Create the iterator helper with concat kind

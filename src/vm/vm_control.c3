@@ -62,11 +62,11 @@ fn void vm_complete_generator_return(Dispatch* ds, TVal* val) {
     if (try robj = robj_raw) {
         robj.prototype = vm.heap.object_proto;
         HString* val_key = (HString*)vm.heap.strs[heap::BuiltinStr.VALUE];
-        if (val_key != null) robj.put_prop(val_key, *val, hobject::PROP_FLAGS_WEC);
+        if (val_key != null) robj.put_prop(val_key, *val, hobject::PROP_FLAGS_WEC, ds.vm.heap);
         HString* done_key = (HString*)vm.heap.strs[heap::BuiltinStr.DONE];
         TVal done_val;
         done_val.set_boolean(true);
-        if (done_key != null) robj.put_prop(done_key, done_val, hobject::PROP_FLAGS_WEC);
+        if (done_key != null) robj.put_prop(done_key, done_val, hobject::PROP_FLAGS_WEC, ds.vm.heap);
         wrapped_val.set_object(robj);
     } else {
         wrapped_val = *val;
@@ -227,7 +227,7 @@ fn void class_initaccessor_set_name(Vm* vm, HObject* fn_obj, TVal* key_tval, cha
     // placeholder for computed keys; non-computed keys already have the
     // correct name set at compile time).
     HString* name_key = (HString*)vm.heap.strs[heap::BuiltinStr.NAME];
-    int name_idx = fn_obj.find_prop_idx((void*)name_key);
+    int name_idx = fn_obj.find_prop_idx((void*)name_key, vm.heap);
     if (name_idx < 0) return;
     TVal* name_slot = &fn_obj.prop_values()[name_idx];
     if (!name_slot.is_string()) return;
@@ -315,9 +315,9 @@ fn int initprop_define(Vm* vm, HObject* hobj, TVal* key_val, TVal* val) {
         return INITPROP_OK;
     }
 
-    int idx = hobj.find_prop_idx(key);
+    int idx = hobj.find_prop_idx(key, vm.heap);
     if (idx >= 0) {
-        hobject::PropFlags ef = hobj.get_prop_flags((uint)idx);
+        hobject::PropFlags ef = hobj.get_prop_flags((uint)idx, vm.heap);
         if (ef.configurable) {
             TVal put_val = *val;
             vm.heap.tval_copy_ref(&hobj.prop_values()[idx], &put_val);
@@ -326,7 +326,7 @@ fn int initprop_define(Vm* vm, HObject* hobj, TVal* key_val, TVal* val) {
             nf.enumerable = true;
             nf.configurable = true;
             nf.is_accessor = false;
-            hobj.set_prop_flags((uint)idx, nf);
+            hobj.set_prop_flags((uint)idx, nf, vm.heap);
         } else {
             // An existing non-configurable property; the caller throws TypeError.
             return INITPROP_TYPE_ERROR;
@@ -337,7 +337,7 @@ fn int initprop_define(Vm* vm, HObject* hobj, TVal* key_val, TVal* val) {
         if (!hobj.is_extensible()) {
             return INITPROP_TYPE_ERROR;
         }
-        hobj.put_prop(key, *val, hobject::PROP_FLAGS_WEC);
+        hobj.put_prop(key, *val, hobject::PROP_FLAGS_WEC, vm.heap);
     }
     return INITPROP_OK;
 }
@@ -393,7 +393,7 @@ fn HObject* instantiate_closure(Vm* vm, CompiledFunction* template, EnvRecord* v
     HString* len_key = (HString*)vm.heap.strs[heap::BuiltinStr.LENGTH];
     TVal len_val;
     len_val.set_fastint((long)template.num_formals);
-    func_obj.put_prop(len_key, len_val, hobject::PROP_FLAGS_NWC);
+    func_obj.put_prop(len_key, len_val, hobject::PROP_FLAGS_NWC, vm.heap);
 
     // Set .name property (ES6 §14.1.20: non-writable, non-enumerable, configurable)
     // Always set name; anonymous functions get "" per spec.
@@ -407,7 +407,7 @@ fn HObject* instantiate_closure(Vm* vm, CompiledFunction* template, EnvRecord* v
     if (name_hstr != null) {
         TVal name_tv;
         name_tv.set_string(name_hstr);
-        func_obj.put_prop((HString*)vm.heap.strs[heap::BuiltinStr.NAME], name_tv, hobject::PROP_FLAGS_NWC);
+        func_obj.put_prop((HString*)vm.heap.strs[heap::BuiltinStr.NAME], name_tv, hobject::PROP_FLAGS_NWC, vm.heap);
     }
 
     // `is_generator()` is overloaded at compile time (compile_inner_function /
@@ -455,13 +455,13 @@ fn HObject* instantiate_closure(Vm* vm, CompiledFunction* template, EnvRecord* v
                 HString* constr_key = (HString*)vm.heap.strs[heap::BuiltinStr.CONSTRUCTOR];
                 TVal constr_val;
                 constr_val.set_object(func_obj);
-                proto_obj.put_prop(constr_key, constr_val, hobject::PROP_FLAGS_WC);
+                proto_obj.put_prop(constr_key, constr_val, hobject::PROP_FLAGS_WC, vm.heap);
             }
             // Set .prototype on the function
             HString* proto_key = (HString*)vm.heap.strs[heap::BuiltinStr.PROTOTYPE];
             TVal proto_tv;
             proto_tv.set_object(proto_obj);
-            func_obj.put_prop(proto_key, proto_tv, proto_pflags);
+            func_obj.put_prop(proto_key, proto_tv, proto_pflags, vm.heap);
         }
     }
 
@@ -581,7 +581,7 @@ fn TVal? dispatch_iterator(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 HString* len_key = (HString*)vm.heap.strs[heap::BuiltinStr.LENGTH];
                 TVal len_tv;
                 len_tv.set_fastint((long)prim_str.char_length());
-                obj.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NNC);
+                obj.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NNC, ds.vm.heap);
             } else if (ra.is_number() || ra.is_fastint()) {
                 HObject*? wrapped = vm.heap.alloc_object(hobject::ObjClass.NUMBER);
                 if (catch _err = wrapped) { rb.set_null(); break; }
@@ -644,7 +644,7 @@ fn TVal? dispatch_iterator(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
             while (state.index < state.count) {
                 HString* k = state.keys[state.index];
                 state.index++;
-                if (state.target == null || !forin_key_still_exists(state.target, k)) {
+                if (state.target == null || !forin_key_still_exists(state.target, k, ds.vm.heap)) {
                     // The property was deleted before its turn, so skip it.
                     continue;
                 }
@@ -678,7 +678,7 @@ fn TVal? throw_type_error_at(Vm* vm, Dispatch* ds, String msg) {
         te.prototype = vm.heap.type_err_proto;
         HString* mk = (HString*)vm.heap.strs[heap::BuiltinStr.MESSAGE];
         TVal mv; mv.set_string(intern_string(vm, msg));
-        te.put_prop(mk, mv, hobject::PROP_FLAGS_WEC);
+        te.put_prop(mk, mv, hobject::PROP_FLAGS_WEC, vm.heap);
         TVal tv; tv.set_object(te);
         if (!vm_throw_value(vm, tv, ds.act, &ds.curr_pc, &ds.needs_restart)) {
             return vm_uncaught_error(vm, &tv);
@@ -786,27 +786,27 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, In
                 TVal getter_val = *rc;
                 if (key != null && hobj != null) {
                     // Check if property already exists as accessor
-                    int idx = hobj.find_prop_idx(key);
+                    int idx = hobj.find_prop_idx(key, ds.vm.heap);
                     TVal* initget_props = hobj.prop_values();
                     // DefinePropertyOrThrow: redefining a non-configurable
                     // non-accessor property (e.g. a static computed getter named
                     // "prototype"/"length" on the class constructor) throws.
-                    if (idx >= 0 && !hobj.get_prop_flags((uint)idx).configurable
-                        && !hobj.get_prop_flags((uint)idx).is_accessor) {
+                    if (idx >= 0 && !hobj.get_prop_flags((uint)idx, ds.vm.heap).configurable
+                        && !hobj.get_prop_flags((uint)idx, ds.vm.heap).is_accessor) {
                         HString* nm = (HString*)key;
                         if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Cannot redefine non-configurable property '%s'", nm.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
                             return VM_ERROR~;
                         }
                         return (TVal){};
                     }
-                    if (idx >= 0 && hobj.get_prop_flags((uint)idx).is_accessor) {
+                    if (idx >= 0 && hobj.get_prop_flags((uint)idx, ds.vm.heap).is_accessor) {
                         // Update existing accessor's getter
                         hobject::hobject_set_access_getter(initget_props[idx], getter_val, vm.heap);
                     } else {
                         // Create new accessor property
                         TVal undef;
                         undef.set_undefined();
-                        hobj.put_prop(key, hobject::hobject_create_accessors(vm.heap, getter_val, undef), hobject::PROP_FLAGS_ACCESSOR);
+                        hobj.put_prop(key, hobject::hobject_create_accessors(vm.heap, getter_val, undef), hobject::PROP_FLAGS_ACCESSOR, ds.vm.heap);
                     }
                 }
                 // ES2015 §14.3 + §9.2.11 SetFunctionName: for computed-key
@@ -828,24 +828,24 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, In
                 TVal setter_val = *rc;
                 if (key != null && hobj != null) {
                     // Check if property already exists as accessor
-                    int idx = hobj.find_prop_idx(key);
+                    int idx = hobj.find_prop_idx(key, ds.vm.heap);
                     TVal* initset_props = hobj.prop_values();
-                    if (idx >= 0 && !hobj.get_prop_flags((uint)idx).configurable
-                        && !hobj.get_prop_flags((uint)idx).is_accessor) {
+                    if (idx >= 0 && !hobj.get_prop_flags((uint)idx, ds.vm.heap).configurable
+                        && !hobj.get_prop_flags((uint)idx, ds.vm.heap).is_accessor) {
                         HString* nm = (HString*)key;
                         if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Cannot redefine non-configurable property '%s'", nm.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
                             return VM_ERROR~;
                         }
                         return (TVal){};
                     }
-                    if (idx >= 0 && hobj.get_prop_flags((uint)idx).is_accessor) {
+                    if (idx >= 0 && hobj.get_prop_flags((uint)idx, ds.vm.heap).is_accessor) {
                         // Update existing accessor's setter
                         hobject::hobject_set_access_setter(initset_props[idx], setter_val, vm.heap);
                     } else {
                         // Create new accessor property
                         TVal undef;
                         undef.set_undefined();
-                        hobj.put_prop(key, hobject::hobject_create_accessors(vm.heap, undef, setter_val), hobject::PROP_FLAGS_ACCESSOR);
+                        hobj.put_prop(key, hobject::hobject_create_accessors(vm.heap, undef, setter_val), hobject::PROP_FLAGS_ACCESSOR, ds.vm.heap);
                     }
                 }
                 // ES2015 §14.3 + §9.2.11 SetFunctionName: for computed-key
@@ -876,7 +876,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, In
                     long idx_long = rb.is_fastint() ? rb.get_fastint() : (long)rb.get_number();
                     if (idx_long >= 0 && idx_long < 0xFFFFFFFFL && idx_long < 0x1000000L) {
                         uint idx = (uint)idx_long;
-                        if (hobj.set_array_idx(idx, *rc)) {
+                        if (hobj.set_array_idx(idx, *rc, ds.vm.heap)) {
                             if (hobj.get_class() == hobject::ObjClass.ARRAY && idx >= *hobj.array_len_ptr()) {
                                 *hobj.array_len_ptr() = idx + 1;
                             }
@@ -974,7 +974,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, In
                 TVal getter_val = *rc;
                 if (key != null && hobj != null) {
                     // Check if property already exists as accessor
-                    int idx = hobj.find_prop_idx(key);
+                    int idx = hobj.find_prop_idx(key, ds.vm.heap);
                     TVal* initget_props = hobj.prop_values();
                     // A private get/set pair (`get #x` + `set #x`) shares one
                     // hidden-symbol key and is installed non-configurable, so
@@ -983,10 +983,10 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, In
                     // non-configurable rejection below (which exists to catch
                     // genuine PUBLIC-key redefinition attempts, e.g. a
                     // non-configurable `.prototype`).
-                    if (idx >= 0 && hobj.get_prop_flags((uint)idx).is_accessor) {
+                    if (idx >= 0 && hobj.get_prop_flags((uint)idx, ds.vm.heap).is_accessor) {
                         // Update existing accessor's getter
                         hobject::hobject_set_access_getter(initget_props[idx], getter_val, vm.heap);
-                    } else if (idx >= 0 && !hobj.get_prop_flags((uint)idx).configurable) {
+                    } else if (idx >= 0 && !hobj.get_prop_flags((uint)idx, ds.vm.heap).configurable) {
                         // Non-configurable: DefinePropertyOrThrow throws TypeError
                         // (e.g. redefining the class constructor's non-configurable
                         // .prototype via `static get ['prototype']() {}`).
@@ -1007,7 +1007,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, In
                         HString* key_hs_g = (HString*)key;
                         hobject::PropFlags initget_flags = key_hs_g.is_hidden()
                             ? hobject::PROP_FLAGS_PRIVATE_ACCESSOR : hobject::PROP_FLAGS_CLASS_ACCESSOR;
-                        hobj.put_prop(key, hobject::hobject_create_accessors(vm.heap, getter_val, undef), initget_flags);
+                        hobj.put_prop(key, hobject::hobject_create_accessors(vm.heap, getter_val, undef), initget_flags, ds.vm.heap);
                     }
                 }
                 // ES2015 §14.5.14 + §9.2.11 SetFunctionName: for computed-key
@@ -1040,14 +1040,14 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, In
                 TVal setter_val = *rc;
                 if (key != null && hobj != null) {
                     // Check if property already exists as accessor
-                    int idx = hobj.find_prop_idx(key);
+                    int idx = hobj.find_prop_idx(key, ds.vm.heap);
                     TVal* initset_props = hobj.prop_values();
                     // See CLASS_INITGET: a private get/set pair merge must be
                     // checked before the non-configurable rejection.
-                    if (idx >= 0 && hobj.get_prop_flags((uint)idx).is_accessor) {
+                    if (idx >= 0 && hobj.get_prop_flags((uint)idx, ds.vm.heap).is_accessor) {
                         // Update existing accessor's setter
                         hobject::hobject_set_access_setter(initset_props[idx], setter_val, vm.heap);
-                    } else if (idx >= 0 && !hobj.get_prop_flags((uint)idx).configurable) {
+                    } else if (idx >= 0 && !hobj.get_prop_flags((uint)idx, ds.vm.heap).configurable) {
                         // Non-configurable: DefinePropertyOrThrow throws TypeError
                         // (e.g. redefining the class constructor's non-configurable
                         // .prototype via `static set ['prototype'](_) {}`).
@@ -1067,7 +1067,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, In
                         HString* key_hs_s = (HString*)key;
                         hobject::PropFlags initset_flags = key_hs_s.is_hidden()
                             ? hobject::PROP_FLAGS_PRIVATE_ACCESSOR : hobject::PROP_FLAGS_CLASS_ACCESSOR;
-                        hobj.put_prop(key, hobject::hobject_create_accessors(vm.heap, undef, setter_val), initset_flags);
+                        hobj.put_prop(key, hobject::hobject_create_accessors(vm.heap, undef, setter_val), initset_flags, ds.vm.heap);
                     }
                 }
                 // ES2015 §14.5.14 + §9.2.11 SetFunctionName: for computed-key
@@ -1097,10 +1097,10 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, In
                     return (TVal){};
                 }
                 if (key != null && hobj != null) {
-                    int idx = hobj.find_prop_idx(key);
+                    int idx = hobj.find_prop_idx(key, ds.vm.heap);
                     if (idx >= 0) {
                         // An existing property is replaced when configurable.
-                        hobject::PropFlags ef = hobj.get_prop_flags((uint)idx);
+                        hobject::PropFlags ef = hobj.get_prop_flags((uint)idx, ds.vm.heap);
                         if (ef.configurable) {
                             TVal put_val = *rc;
                             vm.heap.tval_copy_ref(&hobj.prop_values()[idx], &put_val);
@@ -1109,7 +1109,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, In
                             nf.enumerable = false;
                             nf.configurable = true;
                             nf.is_accessor = false;
-                            hobj.set_prop_flags((uint)idx, nf);
+                            hobj.set_prop_flags((uint)idx, nf, ds.vm.heap);
                         } else {
                             // Non-configurable: DefinePropertyOrThrow throws TypeError
                             // (§14.3.9 MethodDefinitionEvaluation, §10.1.6.3 ValidateAndApplyPropertyDescriptor).
@@ -1128,7 +1128,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, In
                         HString* key_hs_m = (HString*)key;
                         hobject::PropFlags initprop_flags = key_hs_m.is_hidden()
                             ? hobject::PROP_FLAGS_NNC : hobject::PROP_FLAGS_CLASS_METHOD;
-                        hobj.put_prop(key, *rc, initprop_flags);
+                        hobj.put_prop(key, *rc, initprop_flags, ds.vm.heap);
                     }
                 }
                 // ES2015 §9.2.11 SetFunctionName for computed-key methods:
@@ -1312,7 +1312,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, In
 
             // Use get_with_accessors to properly invoke accessor getters
             // (ES2022 §7.4.6 step 4: GetMethod calls GetV which invokes getters).
-            hobject::PropLookupResult ret_lookup = iter.get_with_accessors(ret_key);
+            hobject::PropLookupResult ret_lookup = iter.get_with_accessors(ret_key, ds.vm.heap);
 
             // If .return accessor threw during access, propagate for non-throw,
             // suppress for throw completion.
@@ -1430,7 +1430,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, In
 
             // Look up @@asyncIterator.
             HString* async_sym = builtins::ensure_asynciterator_symbol(vm.heap);
-            hobject::PropLookupResult al = src_obj.get_with_accessors(async_sym);
+            hobject::PropLookupResult al = src_obj.get_with_accessors(async_sym, ds.vm.heap);
             TVal async_method;
             async_method.set_undefined();
             if (al.kind == hobject::PropLookupKind.PROP_DATA) {
@@ -1471,7 +1471,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, In
 
             // No @@asyncIterator → wrap the sync iterator (§7.4.2 step 1.b.iii).
             HString* sync_sym = builtins::ensure_iterator_symbol(vm.heap);
-            hobject::PropLookupResult sl = src_obj.get_with_accessors(sync_sym);
+            hobject::PropLookupResult sl = src_obj.get_with_accessors(sync_sym, ds.vm.heap);
             TVal sync_method;
             sync_method.set_undefined();
             if (sl.kind == hobject::PropLookupKind.PROP_DATA) {
@@ -1550,7 +1550,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, In
             if (!ra.is_object() || ra.get_heapptr() == null) { ra.set_undefined(); return (TVal){}; }
             HObject* iter = (HObject*)ra.get_heapptr();
             HString* ret_key = intern_string(vm, "return");
-            hobject::PropLookupResult ret_lookup = iter.get_with_accessors(ret_key);
+            hobject::PropLookupResult ret_lookup = iter.get_with_accessors(ret_key, ds.vm.heap);
 
             if (vm.has_error) {
                 if (is_throw_completion) {
@@ -1688,7 +1688,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, In
                 if (hobj != null && key != null) {
                     TVal true_tv;
                     true_tv.set_boolean(true);
-                    hobj.put_prop(key, true_tv, hobject::PROP_FLAGS_NNC);
+                    hobj.put_prop(key, true_tv, hobject::PROP_FLAGS_NNC, ds.vm.heap);
                 }
             }
             return (TVal){};
@@ -1705,7 +1705,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, In
                 HObject* hobj = (HObject*)ra.get_heapptr();
                 void* key = rb.get_heapptr();
                 if (hobj != null && key != null) {
-                    ok = hobj.find_prop_idx(key) >= 0;
+                    ok = hobj.find_prop_idx(key, ds.vm.heap) >= 0;
                 }
             }
             if (!ok) {
@@ -1754,7 +1754,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, In
             HObject* hobj = (HObject*)rb.get_heapptr();
             void* key = rc.get_heapptr();
             if (hobj != null && key != null) {
-                has = hobj.find_prop_idx(key) >= 0;
+                has = hobj.find_prop_idx(key, ds.vm.heap) >= 0;
             }
             ra.set_boolean(has);
             return (TVal){};
@@ -1777,7 +1777,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, In
                         }
                         return (TVal){};
                     }
-                    hobj.put_prop(key, *rc, hobject::PROP_FLAGS_WENC);
+                    hobj.put_prop(key, *rc, hobject::PROP_FLAGS_WENC, ds.vm.heap);
                 }
             }
             return (TVal){};
@@ -1796,7 +1796,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, In
                     HObject* cur = hobj;
                     uint depth = 0;
                     while (cur != null && depth < 256) {
-                        hobject::PropLookupResult res = cur.get_prop_or_accessor_own(key, true);
+                        hobject::PropLookupResult res = cur.get_prop_or_accessor_own(key, true, ds.vm.heap);
                         if (res.kind == hobject::PropLookupKind.PROP_ACCESSOR) {
                             // Private accessor: invoke getter if present;
                             // throw TypeError if no [[Get]] field per ES2022

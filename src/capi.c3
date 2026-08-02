@@ -412,16 +412,16 @@ fn int jse_eval(void* rtp, char* src, usz len, uint* out_val) @export("jse_eval"
 /// routes a Proxy anywhere on the chain back through the trap machinery and
 /// into the VM. describe_error runs on the unwind path, where re-entering the
 /// VM could throw again; a proxy link simply ends the search instead.
-fn HString* str_prop(HObject* o, HString* key) {
+fn HString* str_prop(HObject* o, HString* key, heap::Heap* h) {
     HObject* cur = o;
     uint depth = 0;
     while (cur != null && depth < 64) {
         if (cur.flags.exotic_proxyobj) return null;
-        int idx = cur.find_prop_idx((void*)key);
+        int idx = cur.find_prop_idx((void*)key, h);
         if (idx >= 0) {
             // An accessor slot holds a getter/setter pair, not a value. Reading
             // it would mean calling into the VM, so treat it as absent.
-            if (cur.get_prop_flags((uint)idx).is_accessor) return null;
+            if (cur.get_prop_flags((uint)idx, h).is_accessor) return null;
             TVal got = cur.prop_values()[idx];
             if (got.is_string()) return (HString*)got.get_heapptr();
             return null;
@@ -457,8 +457,8 @@ fn void describe_error(Runtime* rt, TVal* ev) {
     }
     if (ev.is_object()) {
         HObject* o = (HObject*)ev.get_heapptr();
-        HString* msg  = str_prop(o, rt.heap.strs[heap::BuiltinStr.MESSAGE]);
-        HString* name = str_prop(o, rt.heap.strs[heap::BuiltinStr.NAME]);
+        HString* msg  = str_prop(o, rt.heap.strs[heap::BuiltinStr.MESSAGE], rt.heap);
+        HString* name = str_prop(o, rt.heap.strs[heap::BuiltinStr.NAME], rt.heap);
 
         // "TypeError: x is not a function" -- name comes off the prototype, so
         // this reads like the message a JS host would print.

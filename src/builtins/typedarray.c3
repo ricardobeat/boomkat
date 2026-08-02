@@ -221,7 +221,7 @@ fn HObject* typed_array_resolve_instance_proto(BuiltinContext* ctx) {
     if (ctx.callee_obj != null) {
         HString* proto_key = (HString*)heap.strs[heap::BuiltinStr.PROTOTYPE];
         if (proto_key != null) {
-            int pidx = ctx.callee_obj.find_prop_idx((void*)proto_key);
+            int pidx = ctx.callee_obj.find_prop_idx((void*)proto_key, ctx.heap);
             if (pidx >= 0) {
                 TVal pv = ctx.callee_obj.prop_values()[pidx];
                 if (pv.is_object() && pv.get_heapptr() != null) {
@@ -725,7 +725,7 @@ fn void typed_array_construct(BuiltinContext* ctx, hobject::ObjClass obj_class) 
                 while (true) {
                     if (!iterator.is_object() || iterator.get_heapptr() == null) break;
                     HObject* iter_obj = (HObject*)iterator.get_heapptr();
-                    TVal? next_method_opt = iter_obj.get_prop_proto(next_key);
+                    TVal? next_method_opt = iter_obj.get_prop_proto(next_key, ctx.heap);
                     TVal next_method;
                     if (try nm = next_method_opt) { next_method = nm; } else { break; }
                     bool next_callable = false;
@@ -747,7 +747,7 @@ fn void typed_array_construct(BuiltinContext* ctx, hobject::ObjClass obj_class) 
                     if (!result.is_object() || result.get_heapptr() == null) break;
                     HObject* result_obj = (HObject*)result.get_heapptr();
 
-                    TVal? done_opt = result_obj.get_prop_proto(done_key);
+                    TVal? done_opt = result_obj.get_prop_proto(done_key, ctx.heap);
                     bool done = false;
                     if (try dv = done_opt) done = builtin_to_boolean(&dv);
                     if (done) break;
@@ -3785,8 +3785,8 @@ fn void b64_make_read_written(BuiltinContext* ctx, uint read, uint written) {
     HString* written_key = builtin_intern_string(ctx.heap, "written");
     TVal read_tv; read_tv.set_fastint((long)read);
     TVal written_tv; written_tv.set_fastint((long)written);
-    obj.put_prop(read_key, read_tv, hobject::PROP_FLAGS_WEC);
-    obj.put_prop(written_key, written_tv, hobject::PROP_FLAGS_WEC);
+    obj.put_prop(read_key, read_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
+    obj.put_prop(written_key, written_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
     ctx.result.set_object(obj);
 }
 
@@ -4021,13 +4021,13 @@ fn bool register_typedarray_accessor(HObject* proto, Heap* heap, char[] name, ui
         TVal name_tv;
         name_tv.set_string(fn_name);
         HString* name_prop_key = heap.str(heap::BuiltinStr.NAME);
-        func_obj.put_prop(name_prop_key, name_tv, hobject::PROP_FLAGS_NWC);
+        func_obj.put_prop(name_prop_key, name_tv, hobject::PROP_FLAGS_NWC, heap);
     }
     HString* length_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
     if (length_key != null) {
         TVal len_tv;
         len_tv.set_fastint(0);
-        func_obj.put_prop(length_key, len_tv, hobject::PROP_FLAGS_NWC);
+        func_obj.put_prop(length_key, len_tv, hobject::PROP_FLAGS_NWC, heap);
     }
 
     TVal getter_tv;
@@ -4039,7 +4039,7 @@ fn bool register_typedarray_accessor(HObject* proto, Heap* heap, char[] name, ui
     acc_flags.enumerable = false;
     acc_flags.configurable = true;
     acc_flags.is_accessor = true;
-    proto.put_prop(key, hobject::hobject_create_accessors(heap, getter_tv, undef), acc_flags);
+    proto.put_prop(key, hobject::hobject_create_accessors(heap, getter_tv, undef), acc_flags, heap);
     return true;
 }
 
@@ -4057,13 +4057,13 @@ fn bool register_typedarray_symbol_accessor(HObject* proto, Heap* heap, HString*
     HString* len_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
     if (len_key != null) {
         TVal len_tv; len_tv.set_fastint(0);
-        func_obj.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NWC);
+        func_obj.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NWC, heap);
     }
     HString* name_key2 = heap.str(heap::BuiltinStr.NAME);
     HString* name_val2 = builtin_intern_string(heap, "get [Symbol.toStringTag]");
     if (name_key2 != null && name_val2 != null) {
         TVal name_tv2; name_tv2.set_string(name_val2);
-        func_obj.put_prop(name_key2, name_tv2, hobject::PROP_FLAGS_NWC);
+        func_obj.put_prop(name_key2, name_tv2, hobject::PROP_FLAGS_NWC, heap);
     }
 
     TVal getter_tv;
@@ -4075,7 +4075,7 @@ fn bool register_typedarray_symbol_accessor(HObject* proto, Heap* heap, HString*
     acc_flags.enumerable = false;
     acc_flags.configurable = true;
     acc_flags.is_accessor = true;
-    proto.put_prop(key, hobject::hobject_create_accessors(heap, getter_tv, undef), acc_flags);
+    proto.put_prop(key, hobject::hobject_create_accessors(heap, getter_tv, undef), acc_flags, heap);
     return true;
 }
 
@@ -4097,14 +4097,14 @@ fn bool register_ta_ctor(EnvRecord* global_env, Heap* heap, char[] name, uint fn
     if (name_key != null && name_val != null) {
         TVal name_tv;
         name_tv.set_string(name_val);
-        ctor.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC);
+        ctor.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC, heap);
     }
 
     // Set .length = 3 (buffer, byteOffset, length, the widest overload)
     HString* length_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
     TVal length_tv;
     length_tv.set_fastint(3);
-    ctor.put_prop(length_key, length_tv, hobject::PROP_FLAGS_NWC);
+    ctor.put_prop(length_key, length_tv, hobject::PROP_FLAGS_NWC, heap);
 
     // Per ES6 §22.2, each TypedArray constructor has its own .prototype that
     // inherits from the shared %TypedArray%.prototype. We set @@toStringTag on
@@ -4124,12 +4124,12 @@ fn bool register_ta_ctor(EnvRecord* global_env, Heap* heap, char[] name, uint fn
     proto_pflags.enumerable = false;
     proto_pflags.configurable = false;
     proto_pflags.is_accessor = false;
-    ctor.put_prop(prototype_key, proto_tv, proto_pflags);
+    ctor.put_prop(prototype_key, proto_tv, proto_pflags, heap);
 
     // .constructor back-reference on the per-ctor prototype.
     HString* constructor_key = (HString*)heap.strs[heap::BuiltinStr.CONSTRUCTOR];
     TVal ctor_val_tv; ctor_val_tv.set_object(ctor);
-    ctor_proto.put_prop(constructor_key, ctor_val_tv, hobject::PROP_FLAGS_WC);
+    ctor_proto.put_prop(constructor_key, ctor_val_tv, hobject::PROP_FLAGS_WC, heap);
 
     // BYTES_PER_ELEMENT on both constructor and per-class prototype.
     // Attributes: {writable:false, enumerable:false, configurable:false}.
@@ -4143,8 +4143,8 @@ fn bool register_ta_ctor(EnvRecord* global_env, Heap* heap, char[] name, uint fn
             bpe_pflags.is_accessor = false;
             TVal bpe_tv;
             bpe_tv.set_fastint((long)bpe);
-            ctor.put_prop(bpe_key, bpe_tv, bpe_pflags);
-            ctor_proto.put_prop(bpe_key, bpe_tv, bpe_pflags);
+            ctor.put_prop(bpe_key, bpe_tv, bpe_pflags, heap);
+            ctor_proto.put_prop(bpe_key, bpe_tv, bpe_pflags, heap);
         }
     }
 
@@ -4199,7 +4199,7 @@ fn bool register_typed_array_constructors(EnvRecord* global_env, Heap* heap) {
         proto_pflags.enumerable = false;
         proto_pflags.configurable = false;
         proto_pflags.is_accessor = false;
-        intrinsic.put_prop(prototype_key, proto_tv, proto_pflags);
+        intrinsic.put_prop(prototype_key, proto_tv, proto_pflags, heap);
     }
 
     // typedarray_proto.constructor = intrinsic
@@ -4207,7 +4207,7 @@ fn bool register_typed_array_constructors(EnvRecord* global_env, Heap* heap) {
         HString* constructor_key = (HString*)heap.strs[heap::BuiltinStr.CONSTRUCTOR];
         TVal intr_tv;
         intr_tv.set_object(intrinsic);
-        proto.put_prop(constructor_key, intr_tv, hobject::PROP_FLAGS_WC);
+        proto.put_prop(constructor_key, intr_tv, hobject::PROP_FLAGS_WC, heap);
     }
 
     set_func_ctor_name_length(intrinsic, heap, "TypedArray", 0);
@@ -4261,9 +4261,9 @@ fn bool register_typed_array_constructors(EnvRecord* global_env, Heap* heap) {
     {
         HString* tostr_key = heap.str(heap::BuiltinStr.TO_STRING);
         if (tostr_key != null && heap.array_proto != null) {
-            TVal? arr_tostr = heap.array_proto.get_prop(tostr_key);
+            TVal? arr_tostr = heap.array_proto.get_prop(tostr_key, heap);
             if (try atv = arr_tostr) {
-                proto.put_prop(tostr_key, atv, hobject::PROP_FLAGS_WC);
+                proto.put_prop(tostr_key, atv, hobject::PROP_FLAGS_WC, heap);
             } else {
                 if (!register_string_proto_method(proto, heap, "toString", Builtin.TA_PROTO_TO_STRING.ordinal)) return false;
             }
@@ -4280,9 +4280,9 @@ fn bool register_typed_array_constructors(EnvRecord* global_env, Heap* heap) {
         if (iter_sym != null) {
             HString* values_key = builtin_intern_string(heap, "values");
             if (values_key != null) {
-                TVal? values_tv = proto.get_prop(values_key);
+                TVal? values_tv = proto.get_prop(values_key, heap);
                 if (try vtv = values_tv) {
-                    proto.put_prop(iter_sym, vtv, hobject::PROP_FLAGS_WC);
+                    proto.put_prop(iter_sym, vtv, hobject::PROP_FLAGS_WC, heap);
                 }
             }
         }
@@ -4322,12 +4322,12 @@ fn bool register_typed_array_constructors(EnvRecord* global_env, Heap* heap) {
                 HString* gname_val = builtin_intern_string(heap, "get [Symbol.species]");
                 if (gname_key != null && gname_val != null) {
                     TVal gname_tv; gname_tv.set_string(gname_val);
-                    getter.put_prop(gname_key, gname_tv, hobject::PROP_FLAGS_NWC);
+                    getter.put_prop(gname_key, gname_tv, hobject::PROP_FLAGS_NWC, heap);
                 }
                 HString* glen_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
                 if (glen_key != null) {
                     TVal glen_tv; glen_tv.set_fastint(0);
-                    getter.put_prop(glen_key, glen_tv, hobject::PROP_FLAGS_NWC);
+                    getter.put_prop(glen_key, glen_tv, hobject::PROP_FLAGS_NWC, heap);
                 }
                 TVal getter_tv; getter_tv.set_object(getter);
                 TVal undef; undef.set_undefined();
@@ -4336,7 +4336,7 @@ fn bool register_typed_array_constructors(EnvRecord* global_env, Heap* heap) {
                 acc_flags.enumerable = false;
                 acc_flags.configurable = true;
                 acc_flags.is_accessor = true;
-                intrinsic.put_prop(species_sym, hobject::hobject_create_accessors(heap, getter_tv, undef), acc_flags);
+                intrinsic.put_prop(species_sym, hobject::hobject_create_accessors(heap, getter_tv, undef), acc_flags, heap);
             }
         }
     }

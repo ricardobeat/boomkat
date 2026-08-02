@@ -120,7 +120,7 @@ fn void builtin_dynamic_gen_function(BuiltinContext* ctx, bool is_gen, bool is_a
         HString* proto_key = ctx.heap.str(heap::BuiltinStr.PROTOTYPE);
         TVal proto_tv;
         proto_tv.set_object(gen_proto);
-        func_obj.put_prop(proto_key, proto_tv, hobject::PROP_FLAGS_WENC);
+        func_obj.put_prop(proto_key, proto_tv, hobject::PROP_FLAGS_WENC, ctx.heap);
     }
 
     // .length (25.2.4.1) and .name (25.2.4.2): non-writable, non-enumerable,
@@ -128,12 +128,12 @@ fn void builtin_dynamic_gen_function(BuiltinContext* ctx, bool is_gen, bool is_a
     HString* len_key = ctx.heap.str(heap::BuiltinStr.LENGTH);
     TVal len_tv;
     len_tv.set_fastint((long)func.num_formals);
-    func_obj.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NWC);
+    func_obj.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NWC, ctx.heap);
 
     HString* name_key = ctx.heap.str(heap::BuiltinStr.NAME);
     TVal name_tv;
     name_tv.set_string(builtin_intern_string(ctx.heap, "anonymous"));
-    func_obj.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC);
+    func_obj.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC, ctx.heap);
 
     // GeneratorFunction/AsyncFunction instances are callable but not
     // constructable (ES2015 §25.2.3 / §25.7.3, `new gfn()` throws TypeError).
@@ -186,12 +186,12 @@ fn void builtin_generator_proto_next(BuiltinContext* ctx) {
             HString* value_key = ctx.heap.str(heap::BuiltinStr.VALUE);
             TVal undef_val;
             undef_val.set_undefined();
-            r.put_prop(value_key, undef_val, hobject::PROP_FLAGS_WEC);
+            r.put_prop(value_key, undef_val, hobject::PROP_FLAGS_WEC, ctx.heap);
 
             HString* done_key = ctx.heap.str(heap::BuiltinStr.DONE);
             TVal done_val;
             done_val.set_boolean(true);
-            r.put_prop(done_key, done_val, hobject::PROP_FLAGS_WEC);
+            r.put_prop(done_key, done_val, hobject::PROP_FLAGS_WEC, ctx.heap);
 
             ctx.result.set_object(r);
         }
@@ -349,12 +349,12 @@ fn void builtin_generator_proto_return(BuiltinContext* ctx) {
             } else {
                 arg_val.set_undefined();
             }
-            r.put_prop(value_key, arg_val, hobject::PROP_FLAGS_WEC);
+            r.put_prop(value_key, arg_val, hobject::PROP_FLAGS_WEC, ctx.heap);
 
             HString* done_key = ctx.heap.str(heap::BuiltinStr.DONE);
             TVal done_val;
             done_val.set_boolean(true);
-            r.put_prop(done_key, done_val, hobject::PROP_FLAGS_WEC);
+            r.put_prop(done_key, done_val, hobject::PROP_FLAGS_WEC, ctx.heap);
 
             ctx.result.set_object(r);
         }
@@ -381,11 +381,11 @@ fn void builtin_generator_proto_return(BuiltinContext* ctx) {
         if (try r = result_raw) {
             r.prototype = ctx.heap.object_proto;
             HString* value_key = ctx.heap.str(heap::BuiltinStr.VALUE);
-            r.put_prop(value_key, arg_val, hobject::PROP_FLAGS_WEC);
+            r.put_prop(value_key, arg_val, hobject::PROP_FLAGS_WEC, ctx.heap);
             HString* done_key = ctx.heap.str(heap::BuiltinStr.DONE);
             TVal done_val;
             done_val.set_boolean(true);
-            r.put_prop(done_key, done_val, hobject::PROP_FLAGS_WEC);
+            r.put_prop(done_key, done_val, hobject::PROP_FLAGS_WEC, ctx.heap);
             ctx.result.set_object(r);
         }
         return;
@@ -461,7 +461,7 @@ fn bool register_generator_constructor(EnvRecord* global_env, Heap* heap) {
             fn_obj.prototype = heap.function_proto;
             TVal iter_tv;
             iter_tv.set_object(fn_obj);
-            proto.put_prop(iter_sym, iter_tv, hobject::PROP_FLAGS_WC);
+            proto.put_prop(iter_sym, iter_tv, hobject::PROP_FLAGS_WC, heap);
         }
     }
 
@@ -470,7 +470,7 @@ fn bool register_generator_constructor(EnvRecord* global_env, Heap* heap) {
     if (tag_key != null) {
         TVal tag_tv;
         tag_tv.set_string(builtin_intern_string(heap, "Generator"));
-        proto.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC);
+        proto.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC, heap);
     }
 
     // Create GeneratorFunction.prototype (ES6 §25.2.3)
@@ -491,7 +491,7 @@ fn bool register_generator_constructor(EnvRecord* global_env, Heap* heap) {
         HString* gf_prototype_key = (HString*)heap.strs[heap::BuiltinStr.PROTOTYPE];
         TVal gf_prototype_tv;
         gf_prototype_tv.set_object(proto);
-        gf_proto.put_prop(gf_prototype_key, gf_prototype_tv, hobject::PROP_FLAGS_NWC);
+        gf_proto.put_prop(gf_prototype_key, gf_prototype_tv, hobject::PROP_FLAGS_NWC, heap);
     }
 
     // Set GeneratorFunction.prototype.constructor → GeneratorFunction
@@ -503,7 +503,7 @@ fn bool register_generator_constructor(EnvRecord* global_env, Heap* heap) {
         if (gf_tag_key != null) {
             TVal tag_tv;
             tag_tv.set_string(builtin_intern_string(heap, "GeneratorFunction"));
-            gf_proto.put_prop(gf_tag_key, tag_tv, hobject::PROP_FLAGS_NWC);
+            gf_proto.put_prop(gf_tag_key, tag_tv, hobject::PROP_FLAGS_NWC, heap);
         }
     }
 
@@ -526,7 +526,7 @@ fn bool register_generator_constructor(EnvRecord* global_env, Heap* heap) {
         HString* constructor_key = (HString*)heap.strs[heap::BuiltinStr.CONSTRUCTOR];
         TVal constructor_tv;
         constructor_tv.set_object(gf_proto);
-        proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_NWC);
+        proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_NWC, heap);
     }
 
     // Wire GeneratorFunction.prototype.constructor → GeneratorFunction
@@ -535,7 +535,7 @@ fn bool register_generator_constructor(EnvRecord* global_env, Heap* heap) {
         HString* constructor_key = (HString*)heap.strs[heap::BuiltinStr.CONSTRUCTOR];
         TVal constructor_tv;
         constructor_tv.set_object(ctor);
-        gf_proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_NWC);
+        gf_proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_NWC, heap);
     }
 
     // Wire GeneratorFunction.prototype → GeneratorFunction.prototype object
@@ -549,7 +549,7 @@ fn bool register_generator_constructor(EnvRecord* global_env, Heap* heap) {
         proto_pflags.enumerable = false;
         proto_pflags.configurable = false;
         proto_pflags.is_accessor = false;
-        ctor.put_prop(prototype_key, gf_proto_tv, proto_pflags);
+        ctor.put_prop(prototype_key, gf_proto_tv, proto_pflags, heap);
     }
 
     // GeneratorFunction.length = 1 (ES6 §25.2.2)
@@ -557,7 +557,7 @@ fn bool register_generator_constructor(EnvRecord* global_env, Heap* heap) {
         HString* length_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
         TVal length_tv;
         length_tv.set_fastint(1);
-        ctor.put_prop(length_key, length_tv, hobject::PROP_FLAGS_NWC);
+        ctor.put_prop(length_key, length_tv, hobject::PROP_FLAGS_NWC, heap);
     }
 
     // GeneratorFunction.name = "GeneratorFunction" (ES6 §25.2.2)
@@ -586,7 +586,7 @@ fn bool register_generator_constructor(EnvRecord* global_env, Heap* heap) {
         if (af_tag_key != null) {
             TVal tag_tv;
             tag_tv.set_string(builtin_intern_string(heap, "AsyncFunction"));
-            af_proto.put_prop(af_tag_key, tag_tv, hobject::PROP_FLAGS_NWC);
+            af_proto.put_prop(af_tag_key, tag_tv, hobject::PROP_FLAGS_NWC, heap);
         }
     }
 
@@ -605,7 +605,7 @@ fn bool register_generator_constructor(EnvRecord* global_env, Heap* heap) {
         HString* constructor_key = (HString*)heap.strs[heap::BuiltinStr.CONSTRUCTOR];
         TVal constructor_tv;
         constructor_tv.set_object(af_ctor);
-        af_proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_WC);
+        af_proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_WC, heap);
     }
 
     // AsyncFunction.prototype → af_proto (non-writable, non-enumerable, non-configurable)
@@ -618,7 +618,7 @@ fn bool register_generator_constructor(EnvRecord* global_env, Heap* heap) {
         proto_pflags.enumerable = false;
         proto_pflags.configurable = false;
         proto_pflags.is_accessor = false;
-        af_ctor.put_prop(prototype_key, af_proto_tv, proto_pflags);
+        af_ctor.put_prop(prototype_key, af_proto_tv, proto_pflags, heap);
     }
 
     // AsyncFunction.length = 1, AsyncFunction.name = "AsyncFunction"
@@ -626,7 +626,7 @@ fn bool register_generator_constructor(EnvRecord* global_env, Heap* heap) {
         HString* length_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
         TVal length_tv;
         length_tv.set_fastint(1);
-        af_ctor.put_prop(length_key, length_tv, hobject::PROP_FLAGS_NWC);
+        af_ctor.put_prop(length_key, length_tv, hobject::PROP_FLAGS_NWC, heap);
     }
     set_func_ctor_name(af_ctor, heap, "AsyncFunction");
 

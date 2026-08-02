@@ -869,13 +869,13 @@ fn bool register_arraybuffer_accessor(HObject* proto, Heap* heap, char[] name, u
         TVal name_tv;
         name_tv.set_string(fn_name);
         HString* name_prop_key = heap.str(heap::BuiltinStr.NAME);
-        func_obj.put_prop(name_prop_key, name_tv, hobject::PROP_FLAGS_NWC);
+        func_obj.put_prop(name_prop_key, name_tv, hobject::PROP_FLAGS_NWC, heap);
     }
     HString* length_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
     if (length_key != null) {
         TVal len_tv;
         len_tv.set_fastint(0);
-        func_obj.put_prop(length_key, len_tv, hobject::PROP_FLAGS_NWC);
+        func_obj.put_prop(length_key, len_tv, hobject::PROP_FLAGS_NWC, heap);
     }
 
     TVal getter_tv;
@@ -887,7 +887,7 @@ fn bool register_arraybuffer_accessor(HObject* proto, Heap* heap, char[] name, u
     acc_flags.enumerable = false;
     acc_flags.configurable = true;
     acc_flags.is_accessor = true;
-    proto.put_prop(key, hobject::hobject_create_accessors(heap, getter_tv, undef), acc_flags);
+    proto.put_prop(key, hobject::hobject_create_accessors(heap, getter_tv, undef), acc_flags, heap);
     return true;
 }
 
@@ -909,7 +909,7 @@ fn bool register_arraybuffer(EnvRecord* global_env, Heap* heap) {
     HString* constructor_key = (HString*)heap.strs[heap::BuiltinStr.CONSTRUCTOR];
     TVal constructor_tv;
     constructor_tv.set_object(ctor);
-    proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_WC);
+    proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_WC, heap);
 
     // .prototype on the constructor (non-writable, non-enumerable, non-configurable)
     HString* prototype_key = (HString*)heap.strs[heap::BuiltinStr.PROTOTYPE];
@@ -920,7 +920,7 @@ fn bool register_arraybuffer(EnvRecord* global_env, Heap* heap) {
     proto_pflags.enumerable = false;
     proto_pflags.configurable = false;
     proto_pflags.is_accessor = false;
-    ctor.put_prop(prototype_key, proto_tv, proto_pflags);
+    ctor.put_prop(prototype_key, proto_tv, proto_pflags, heap);
 
     // Accessors
     if (!register_arraybuffer_accessor(proto, heap, "byteLength", Builtin.ARRAYBUFFER_PROTO_BYTELENGTH_GET.ordinal)) return false;
@@ -939,7 +939,7 @@ fn bool register_arraybuffer(EnvRecord* global_env, Heap* heap) {
     if (tag_key != null) {
         TVal tag_tv;
         tag_tv.set_string(builtin_intern_string(heap, "ArrayBuffer"));
-        proto.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC);
+        proto.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC, heap);
     }
 
     // Static ArrayBuffer.isView, proper HObject so .length/.name are accessible.
@@ -958,11 +958,11 @@ fn bool register_arraybuffer(EnvRecord* global_env, Heap* heap) {
             HString* getter_name = builtin_intern_string(heap, "get [Symbol.species]");
             if (getter_name != null) {
                 TVal name_tv; name_tv.set_string(getter_name);
-                getter.put_prop((void*)heap.str(heap::BuiltinStr.NAME), name_tv, hobject::PROP_FLAGS_NWC);
+                getter.put_prop((void*)heap.str(heap::BuiltinStr.NAME), name_tv, hobject::PROP_FLAGS_NWC, heap);
             }
             HString* len_key_sp = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
             TVal zero_tv; zero_tv.set_fastint(0);
-            getter.put_prop(len_key_sp, zero_tv, hobject::PROP_FLAGS_NWC);
+            getter.put_prop(len_key_sp, zero_tv, hobject::PROP_FLAGS_NWC, heap);
 
             TVal getter_tv;
             getter_tv.set_object(getter);
@@ -973,7 +973,7 @@ fn bool register_arraybuffer(EnvRecord* global_env, Heap* heap) {
             acc_flags.enumerable = false;
             acc_flags.configurable = true;
             acc_flags.is_accessor = true;
-            ctor.put_prop(species_sym, hobject::hobject_create_accessors(heap, getter_tv, undef), acc_flags);
+            ctor.put_prop(species_sym, hobject::hobject_create_accessors(heap, getter_tv, undef), acc_flags, heap);
         }
     }
 
@@ -1006,7 +1006,7 @@ fn bool register_sharedarraybuffer(EnvRecord* global_env, Heap* heap) {
     HString* constructor_key = (HString*)heap.strs[heap::BuiltinStr.CONSTRUCTOR];
     TVal constructor_tv;
     constructor_tv.set_object(ctor);
-    proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_WC);
+    proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_WC, heap);
 
     // .prototype on the constructor (non-writable, non-enumerable, non-configurable)
     HString* prototype_key = (HString*)heap.strs[heap::BuiltinStr.PROTOTYPE];
@@ -1017,7 +1017,7 @@ fn bool register_sharedarraybuffer(EnvRecord* global_env, Heap* heap) {
     proto_pflags.enumerable = false;
     proto_pflags.configurable = false;
     proto_pflags.is_accessor = false;
-    ctor.put_prop(prototype_key, proto_tv, proto_pflags);
+    ctor.put_prop(prototype_key, proto_tv, proto_pflags, heap);
 
     // Accessors
     if (!register_arraybuffer_accessor(proto, heap, "byteLength", Builtin.SHAREDARRAYBUFFER_PROTO_BYTELENGTH_GET.ordinal)) return false;
@@ -1033,7 +1033,7 @@ fn bool register_sharedarraybuffer(EnvRecord* global_env, Heap* heap) {
     if (tag_key != null) {
         TVal tag_tv;
         tag_tv.set_string(builtin_intern_string(heap, "SharedArrayBuffer"));
-        proto.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC);
+        proto.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC, heap);
     }
 
     // Static @@species accessor (returns `this` constructor).
@@ -1049,11 +1049,11 @@ fn bool register_sharedarraybuffer(EnvRecord* global_env, Heap* heap) {
             HString* getter_name = builtin_intern_string(heap, "get [Symbol.species]");
             if (getter_name != null) {
                 TVal name_tv; name_tv.set_string(getter_name);
-                getter.put_prop((void*)heap.str(heap::BuiltinStr.NAME), name_tv, hobject::PROP_FLAGS_NWC);
+                getter.put_prop((void*)heap.str(heap::BuiltinStr.NAME), name_tv, hobject::PROP_FLAGS_NWC, heap);
             }
             HString* len_key_sp = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
             TVal zero_tv; zero_tv.set_fastint(0);
-            getter.put_prop(len_key_sp, zero_tv, hobject::PROP_FLAGS_NWC);
+            getter.put_prop(len_key_sp, zero_tv, hobject::PROP_FLAGS_NWC, heap);
 
             TVal getter_tv;
             getter_tv.set_object(getter);
@@ -1064,7 +1064,7 @@ fn bool register_sharedarraybuffer(EnvRecord* global_env, Heap* heap) {
             acc_flags.enumerable = false;
             acc_flags.configurable = true;
             acc_flags.is_accessor = true;
-            ctor.put_prop(species_sym, hobject::hobject_create_accessors(heap, getter_tv, undef), acc_flags);
+            ctor.put_prop(species_sym, hobject::hobject_create_accessors(heap, getter_tv, undef), acc_flags, heap);
         }
     }
 

@@ -584,9 +584,9 @@ fn bool inspect_array_element(InspectCtx* ctx, HObject* obj, uint i, TVal* out) 
     }
     HString* key = ctx.heap.int_to_hstring((long)i);
     if (key == null) return false;
-    int idx = obj.find_prop_idx(key);
+    int idx = obj.find_prop_idx(key, ctx.heap);
     if (idx < 0) return false;
-    if (obj.get_prop_flags((uint)idx).is_accessor) { out.set_undefined(); return true; }
+    if (obj.get_prop_flags((uint)idx, ctx.heap).is_accessor) { out.set_undefined(); return true; }
     *out = obj.prop_values()[idx];
     return true;
 }
@@ -613,7 +613,7 @@ fn bool inspect_collect_named(InspectCtx* ctx, HObject* obj, int depth,
             uint best = 0;
             uint best_idx = 0;
             for (uint i = 0; i < obj.prop_count; i++) {
-                HString* key = (HString*)obj.prop_key_at(i);
+                HString* key = (HString*)obj.prop_key_at(i, ctx.heap);
                 if (key == null || key.is_symbol() || !key.is_arridx() || key.is_hidden()) continue;
                 uint n = key.array_index();
                 if (have_prev && n <= prev) continue;
@@ -628,7 +628,7 @@ fn bool inspect_collect_named(InspectCtx* ctx, HObject* obj, int depth,
     // Non-index string keys, then symbol keys, both in insertion order.
     for (uint pass = 0; pass < 2; pass++) {
         for (uint i = 0; i < obj.prop_count; i++) {
-            HString* key = (HString*)obj.prop_key_at(i);
+            HString* key = (HString*)obj.prop_key_at(i, ctx.heap);
             if (key == null || key.is_hidden()) continue;
             bool is_sym = key.is_symbol();
             if ((pass == 0) == is_sym) continue;
@@ -642,9 +642,9 @@ fn bool inspect_collect_named(InspectCtx* ctx, HObject* obj, int depth,
 /// Emit property slot `i` as a `key: value` entry, if it is enumerable.
 fn bool inspect_emit_named(InspectCtx* ctx, HObject* obj, uint i, int depth,
                            InspectEntries* entries) {
-    hobject::PropFlags flags = obj.get_prop_flags(i);
+    hobject::PropFlags flags = obj.get_prop_flags(i, ctx.heap);
     if (!flags.enumerable) return true;
-    HString* key = (HString*)obj.prop_key_at(i);
+    HString* key = (HString*)obj.prop_key_at(i, ctx.heap);
     if (key == null) return true;
 
     StrBuf* b = entries.next(ctx.heap);
@@ -984,9 +984,9 @@ fn bool inspect_is_class_ctor(HObject* obj) {
 fn char[] inspect_function_name(InspectCtx* ctx, HObject* obj) {
     HString* name_key = ctx.heap.str(heap::BuiltinStr.NAME);
     if (name_key == null) return "";
-    int idx = obj.find_prop_idx(name_key);
+    int idx = obj.find_prop_idx(name_key, ctx.heap);
     if (idx < 0) return "";
-    if (obj.get_prop_flags((uint)idx).is_accessor) return "";
+    if (obj.get_prop_flags((uint)idx, ctx.heap).is_accessor) return "";
     TVal v = obj.prop_values()[idx];
     if (!v.is_string()) return "";
     HString* s = (HString*)v.get_heapptr();
@@ -999,8 +999,8 @@ fn char[] inspect_function_name(InspectCtx* ctx, HObject* obj) {
 fn bool inspect_error(InspectCtx* ctx, HObject* obj, StrBuf* out) {
     HString* stack_key = ctx.heap.str(heap::BuiltinStr.STACK);
     if (stack_key != null) {
-        int idx = obj.find_prop_idx(stack_key);
-        if (idx >= 0 && !obj.get_prop_flags((uint)idx).is_accessor) {
+        int idx = obj.find_prop_idx(stack_key, ctx.heap);
+        if (idx >= 0 && !obj.get_prop_flags((uint)idx, ctx.heap).is_accessor) {
             TVal v = obj.prop_values()[idx];
             if (v.is_string()) {
                 HString* s = (HString*)v.get_heapptr();
@@ -1048,7 +1048,7 @@ fn HString* inspect_call_method(InspectCtx* ctx, HObject* obj, char[] name) {
     if (ctx.vm == null || ctx.heap.call_fn == null) return null;
     HString* key = builtin_intern_string(ctx.heap, name);
     if (key == null) return null;
-    TVal? found = obj.get_prop_proto(key);
+    TVal? found = obj.get_prop_proto(key, ctx.heap);
     if (catch found) return null;
     if (!found.is_object() && !found.is_lightfunc()) return null;
 
@@ -1079,7 +1079,7 @@ fn bool inspect_has_custom_tostring(Heap* heap, HObject* obj) {
     HObject* cur = obj;
     while (cur != null) {
         if (cur == heap.object_proto || inspect_is_builtin_proto(heap, cur)) return false;
-        if (cur.find_prop_idx(key) >= 0) return true;
+        if (cur.find_prop_idx(key, heap) >= 0) return true;
         cur = cur.prototype;
     }
     return false;

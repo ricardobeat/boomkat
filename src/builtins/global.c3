@@ -24,7 +24,7 @@ fn void print_tval_ctx(BuiltinContext* ctx, TVal* val) {
         // Look up toString on the object (searches prototype chain)
         HString* tostr_key = ctx.heap.str(heap::BuiltinStr.TO_STRING);
         if (tostr_key != null) {
-            if (try method_val = obj.get_prop_proto(tostr_key)) {
+            if (try method_val = obj.get_prop_proto(tostr_key, ctx.heap)) {
                 if (method_val.is_object() || method_val.is_lightfunc()) {
                     TVal str_result = ctx.heap.call_fn(ctx.vm, method_val, null, 0, *val);
                     if (ctx.heap.has_error) { ctx.should_throw = true; ctx.heap.has_error = false; return; }
@@ -477,7 +477,7 @@ fn void print_tval_err_ctx(BuiltinContext* ctx, TVal* val) {
         HObject* obj = (HObject*)val.get_heapptr();
         HString* tostr_key = ctx.heap.str(heap::BuiltinStr.TO_STRING);
         if (tostr_key != null) {
-            if (try method_val = obj.get_prop_proto(tostr_key)) {
+            if (try method_val = obj.get_prop_proto(tostr_key, ctx.heap)) {
                 if (method_val.is_object() || method_val.is_lightfunc()) {
                     TVal str_result = ctx.heap.call_fn(ctx.vm, method_val, null, 0, *val);
                     if (ctx.heap.has_error) { ctx.should_throw = true; ctx.heap.has_error = false; return; }
@@ -940,7 +940,7 @@ fn void builtin_eval(BuiltinContext* ctx) {
             HString* msg_str = builtin_intern_string(ctx.heap, "SyntaxError in eval code");
             TVal msg_tv;
             msg_tv.set_string(msg_str);
-            err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
+            err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC, ctx.heap);
             TVal err_tv;
             err_tv.set_object(err);
             ctx.throw_value.set_object(err_tv.get_heapptr());
@@ -1099,7 +1099,7 @@ fn void builtin_eval_script(BuiltinContext* ctx) {
             HString* msg_str = builtin_intern_string(ctx.heap, "SyntaxError in eval code");
             TVal msg_tv;
             msg_tv.set_string(msg_str);
-            err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
+            err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC, ctx.heap);
             TVal err_tv;
             err_tv.set_object(err);
             ctx.throw_value.set_object(err_tv.get_heapptr());

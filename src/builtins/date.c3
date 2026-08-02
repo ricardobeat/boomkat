@@ -116,7 +116,7 @@ fn double date_this_time_value(BuiltinContext* ctx, TVal* val) {
     err.prototype = ctx.heap.type_err_proto;
     HString* msg_str = builtin_intern_string(ctx.heap, "this is not a Date");
     TVal msg_tv; msg_tv.set_string(msg_str);
-    err.put_prop(ctx.heap.str(heap::BuiltinStr.MESSAGE), msg_tv, hobject::PROP_FLAGS_WC);
+    err.put_prop(ctx.heap.str(heap::BuiltinStr.MESSAGE), msg_tv, hobject::PROP_FLAGS_WC, ctx.heap);
     ctx.should_throw = true;
     ctx.throw_value.set_object(err);
     return double::nan;  // caller should return after this
@@ -1229,7 +1229,7 @@ fn void builtin_date_proto_toJSON(BuiltinContext* ctx) {
     // find_accessor_proto to handle both data and accessor (getter-defined)
     // properties correctly.
     HString* toiso_key = builtin_intern_string(ctx.heap, "toISOString");
-    hobject::AccessorResult acc = obj.find_accessor_proto(toiso_key, true);
+    hobject::AccessorResult acc = obj.find_accessor_proto(toiso_key, true, ctx.heap);
     TVal toiso_fn;
     TVal call_this = object_val;
     bool found = acc.found;
@@ -1251,7 +1251,7 @@ fn void builtin_date_proto_toJSON(BuiltinContext* ctx) {
         call_this = object_val;
     } else {
         // Data property or no property: fall back to get_prop_proto.
-        TVal? toiso_val = obj.get_prop_proto(toiso_key);
+        TVal? toiso_val = obj.get_prop_proto(toiso_key, ctx.heap);
         if (try tv = toiso_val) {
             toiso_fn = tv;
             found = true;
@@ -1347,7 +1347,7 @@ fn void builtin_date_proto_toPrimitive(BuiltinContext* ctx) {
         // Get the method via accessor-aware lookup (handles getter-defined props).
         TVal method_fn;
         bool found = false;
-        hobject::AccessorResult acc = this_obj.find_accessor_proto(key, true);
+        hobject::AccessorResult acc = this_obj.find_accessor_proto(key, true, ctx.heap);
         if (acc.found) {
             // Invoke the getter to obtain the method value.
             TVal getter_this;
@@ -1361,7 +1361,7 @@ fn void builtin_date_proto_toPrimitive(BuiltinContext* ctx) {
             }
             found = true;
         } else {
-            TVal? mv = this_obj.get_prop_proto(key);
+            TVal? mv = this_obj.get_prop_proto(key, ctx.heap);
             if (try tv = mv) {
                 method_fn = tv;
                 found = true;
@@ -2402,7 +2402,7 @@ fn bool register_date_constructor(EnvRecord* global_env, Heap* heap) {
             tp_flags.enumerable = false;
             tp_flags.configurable = true;
             tp_flags.is_accessor = false;
-            proto.put_prop(toprim_key, toprim_tv, tp_flags);
+            proto.put_prop(toprim_key, toprim_tv, tp_flags, heap);
         }
     }
 
@@ -2539,7 +2539,7 @@ fn bool register_date_constructor(EnvRecord* global_env, Heap* heap) {
     HString* constructor_key = (HString*)heap.strs[heap::BuiltinStr.CONSTRUCTOR];
     TVal constructor_tv;
     constructor_tv.set_object(date_obj);
-    proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_WC);
+    proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Set Date.prototype on the constructor
     HString* prototype_key = (HString*)heap.strs[heap::BuiltinStr.PROTOTYPE];
@@ -2550,7 +2550,7 @@ fn bool register_date_constructor(EnvRecord* global_env, Heap* heap) {
     proto_pflags.enumerable = false;
     proto_pflags.configurable = false;
     proto_pflags.is_accessor = false;
-    date_obj.put_prop(prototype_key, proto_tv, proto_pflags);
+    date_obj.put_prop(prototype_key, proto_tv, proto_pflags, heap);
 
     // Add Date.now() static method
     if (!register_string_proto_method(date_obj, heap, "now", Builtin.DATE_NOW.ordinal)) return false;

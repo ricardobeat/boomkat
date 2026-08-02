@@ -49,13 +49,13 @@ fn void afa_put_obj(HObject* state, Heap* heap, char[] key, HObject* val) {
     if (k == null) return;
     TVal tv;
     if (val != null) { tv.set_object(val); } else { tv.set_undefined(); }
-    state.put_prop(k, tv, hobject::PROP_FLAGS_WEC);
+    state.put_prop(k, tv, hobject::PROP_FLAGS_WEC, heap);
 }
 
 fn void afa_put_tval(HObject* state, Heap* heap, char[] key, TVal val) {
     HString* k = builtin_intern_string(heap, key);
     if (k == null) return;
-    state.put_prop(k, val, hobject::PROP_FLAGS_WEC);
+    state.put_prop(k, val, hobject::PROP_FLAGS_WEC, heap);
 }
 
 fn void afa_put_bool(HObject* state, Heap* heap, char[] key, bool val) {
@@ -71,7 +71,7 @@ fn void afa_put_int(HObject* state, Heap* heap, char[] key, long val) {
 fn HObject* afa_get_obj(HObject* state, Heap* heap, char[] key) {
     HString* k = builtin_intern_string(heap, key);
     if (k == null) return null;
-    if (try v = state.get_prop(k)) {
+    if (try v = state.get_prop(k, heap)) {
         if (v.is_object() && v.get_heapptr() != null) return (HObject*)v.get_heapptr();
     }
     return null;
@@ -81,7 +81,7 @@ fn TVal afa_get_tval(HObject* state, Heap* heap, char[] key) {
     TVal out; out.set_undefined();
     HString* k = builtin_intern_string(heap, key);
     if (k == null) return out;
-    if (try v = state.get_prop(k)) return v;
+    if (try v = state.get_prop(k, heap)) return v;
     return out;
 }
 
@@ -194,7 +194,7 @@ fn TVal afa_range_error(Heap* heap, char[] msg) {
         if (msg_str != null) {
             TVal msg_tv; msg_tv.set_string(msg_str);
             HString* msg_key = heap.str(heap::BuiltinStr.MESSAGE);
-            if (msg_key != null) err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC);
+            if (msg_key != null) err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC, heap);
         }
         out.set_object(err);
     }
@@ -216,7 +216,7 @@ fn void afa_close_iterator(Heap* heap, void* vm, HObject* state) {
     if (heap.call_fn == null || vm == null) return;
     HString* return_key = builtin_intern_string(heap, "return");
     if (return_key == null) return;
-    TVal? rm_opt = iter.get_prop_proto(return_key);
+    TVal? rm_opt = iter.get_prop_proto(return_key, heap);
     if (try rm = rm_opt) {
         if (rm.is_undefined() || rm.is_null()) return;
         bool callable = rm.is_lightfunc() ||
