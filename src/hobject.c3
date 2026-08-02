@@ -1525,75 +1525,77 @@ fn bool HObject.delete_prop(&self, void* key, heap::Heap* h) {
     uint ui = (uint)idx;
     uint new_count = self.prop_count - 1;
 
-    // Release the deleted slot's own reference before it is overwritten by
-    // the compaction shift below.
-    h.decref_tval(&self.prop_values()[ui]);
-
-    // Shift the surviving values down over the deleted slot.
-    for (uint i = ui; i < new_count; i++) {
-        self.prop_values()[i] = self.prop_values()[i + 1];
-    }
-    mem::clear(&self.prop_values()[new_count], (sz)(PropValue::size));
-    self.prop_count = new_count;
-
     // An emptied object returns to the root shape in slot 0, which describes it
     // exactly. Allocating a fresh private shape on every delete would grow the
-    // shapes array without bound for no benefit.
+    // shapes array without bound for no benefit. Nothing on this path can fail,
+    // so the compaction may start right away.
     if (new_count == 0) {
+        h.decref_tval(&self.prop_values()[ui]);
+        mem::clear(&self.prop_values()[ui], (sz)(PropValue::size));
+        self.prop_count = 0;
         uint old_slot = (uint)self.shape_id;
         self.shape_id = 0;
         h.free_shape_slot(old_slot, true);
     } else {
-        // Build a flat private shape holding every surviving property. It stays
-        // out of the transition table, since it belongs to this object alone.
+        // Build the replacement private shape and reserve its slot before the
+        // compaction. A failed allocation then leaves the object untouched
+        // instead of compacting values under a stale shape that still names the
+        // deleted key at its old index, which would answer reads with a
+        // neighbour's value.
         Shape* ns = shape_create(new_count, 0, PRIVATE_SHAPE_PARENT, null, h);
-        if (ns != null) {
-            // Collect surviving property names by walking the old shape chain.
-            // The walk visits the newest shape first, so place each key at its
-            // absolute index, less one past the deleted slot, so appending in
-            // walk order would reverse the key order relative to the values,
-            // which were compacted in index order above.
-            if (self.get_shape(h) != null) {
-                ShapeProperty* new_sp = ns.props();
-                Shape* walk = self.get_shape(h);
-                while (walk != null) {
-                    ShapeProperty* old_sp = walk.props();
-                    for (uint j = 0; j < walk.own_count; j++) {
-                        uint old_idx = walk.offset + j;
-                        if (old_idx == ui) continue;
-                        uint new_idx = old_idx < ui ? old_idx : old_idx - 1;
-                        if (new_idx < new_count) {
-                            new_sp[new_idx].key   = old_sp[j].key;
-                            new_sp[new_idx].flags = old_sp[j].flags;
-                        }
-                    }
-                    walk = walk.parent_shape;
-                }
-            }
+        if (ns == null) return false;
+        uint slot = h.alloc_shape_slot();
+        if (slot == heap::SHAPE_NONE) {
+            // Keys were copied without incref, so shape_free must not decref.
+            shape_free(ns, h, false);
+            return false;
+        }
 
-            {
-                uint old_slot = (uint)self.shape_id;
-                Shape* old_shape = self.get_shape(h);
-                bool old_was_private = old_shape != null
-                                    && old_shape.parent == PRIVATE_SHAPE_PARENT;
-                uint slot = h.alloc_shape_slot();
-                if (slot != heap::SHAPE_NONE) {
-                    h.store_new_shape(slot, ns);
-                    self.shape_id = slot;
-                    // The surviving keys moved to `ns` uncounted, so the old
-                    // slot must not decref them. Only the deleted key's own
-                    // reference is dropped, and only when the old shape was
-                    // private -- a shared shape keeps its keys for its other
-                    // objects and is left untouched.
-                    if (old_was_private && old_slot != slot) {
-                        if (key != null) h.decref((HeapHeader*)key);
-                        h.free_shape_slot(old_slot, false);
-                    }
-                } else {
-                    // Keys were copied without incref, so shape_free must not decref.
-                    shape_free(ns, h, false);
+        // Collect surviving property names by walking the old shape chain.
+        // The walk visits the newest shape first, so place each key at its
+        // absolute index, less one past the deleted slot, so appending in
+        // walk order would reverse the key order relative to the values,
+        // which are compacted in index order below.
+        ShapeProperty* new_sp = ns.props();
+        Shape* walk = self.get_shape(h);
+        while (walk != null) {
+            ShapeProperty* old_sp = walk.props();
+            for (uint j = 0; j < walk.own_count; j++) {
+                uint old_idx = walk.offset + j;
+                if (old_idx == ui) continue;
+                uint new_idx = old_idx < ui ? old_idx : old_idx - 1;
+                if (new_idx < new_count) {
+                    new_sp[new_idx].key   = old_sp[j].key;
+                    new_sp[new_idx].flags = old_sp[j].flags;
                 }
             }
+            walk = walk.parent_shape;
+        }
+
+        // Release the deleted slot's own reference before it is overwritten by
+        // the compaction shift below.
+        h.decref_tval(&self.prop_values()[ui]);
+
+        // Shift the surviving values down over the deleted slot.
+        for (uint i = ui; i < new_count; i++) {
+            self.prop_values()[i] = self.prop_values()[i + 1];
+        }
+        mem::clear(&self.prop_values()[new_count], (sz)(PropValue::size));
+        self.prop_count = new_count;
+
+        // The surviving keys moved to `ns` uncounted, so the old slot must not
+        // decref them. Only the deleted key's own reference is dropped, and
+        // only when the old shape was private; a shared shape keeps its keys
+        // for its other objects and is left untouched.
+        uint old_slot = (uint)self.shape_id;
+        Shape* old_shape = self.get_shape(h);
+        bool old_was_private = old_shape != null
+                            && old_shape.parent == PRIVATE_SHAPE_PARENT;
+        h.store_new_shape(slot, ns);
+        self.shape_id = slot;
+        if (old_was_private && old_slot != slot) {
+            if (key != null) h.decref((HeapHeader*)key);
+            h.free_shape_slot(old_slot, false);
         }
     }
 
