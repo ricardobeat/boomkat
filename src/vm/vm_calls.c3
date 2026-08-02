@@ -657,7 +657,8 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, Instruction insn, bool*
     // Replacing one full opcode dispatch with one register store into an
     // already-hot slot is the net win. CALL_VAR is likewise always a plain
     // (undefined-this) call, by the same reasoning.
-    if (op == Opcode.CALL_UNDEF_THIS || is_fused_var) {
+    bool undef_this = op == Opcode.CALL_UNDEF_THIS || is_fused_var;
+    if (undef_this) {
         ds.regs_base[callee_reg + 1].set_undefined();
     }
 
@@ -793,8 +794,16 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, Instruction insn, bool*
                     // Save the 'this' value before clearing the slot, so that GC
                     // during env creation doesn't follow a stale object pointer
                     // from a previous call in the sliding-window model.
-                    TVal saved_this = ds.regs_base[callee_reg + 1];
-                    ds.regs_base[callee_reg + 1].set_undefined();
+                    // An undefined-this call already stored undefined into the
+                    // slot above and never reads saved_this (see the
+                    // this_binding assignment below), so skip both accesses.
+                    TVal saved_this;
+                    if (undef_this) {
+                        saved_this.set_undefined();
+                    } else {
+                        saved_this = ds.regs_base[callee_reg + 1];
+                        ds.regs_base[callee_reg + 1].set_undefined();
+                    }
 
                     Activation* new_act = &vm.activations[vm.activation_count];
 
@@ -943,7 +952,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, Instruction insn, bool*
                     // subst_global_this and must take the coercion path so an
                     // undefined receiver becomes the global object (ES5 §10.4.3),
                     // observable as `Function('return this;')()`.
-                    if ((op == Opcode.CALL_UNDEF_THIS || is_fused_var) && !target_fast.is_arrow() && !target_fast.subst_global_this()) {
+                    if (undef_this && !target_fast.is_arrow() && !target_fast.subst_global_this()) {
                         new_act.this_binding.set_undefined();
                     } else {
                     TVal arrow_live_this;
