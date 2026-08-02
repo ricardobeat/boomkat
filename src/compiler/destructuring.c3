@@ -520,11 +520,11 @@ fn void CompilerContext.emit_deferred_target(&self, DestructBind* bind)
     Lexer saved = *self.lexer;
     Token[4] saved_pb = self.pushback_stack;
     uint saved_pbc = self.pushback_count;
-    *self.lexer = snap.lexer;
+    self.swap_lexer_preserving_error(snap.lexer);
     self.pushback_stack = snap.pushback;
     self.pushback_count = snap.pushback_count;
     defer {
-        *self.lexer = saved;
+        self.swap_lexer_preserving_error(saved);
         self.pushback_stack = saved_pb;
         self.pushback_count = saved_pbc;
         bind.deferred_target = null;
@@ -615,11 +615,11 @@ fn void CompilerContext.emit_deferred_computed_key(&self, DestructBind* bind)
     Lexer saved = *self.lexer;
     Token[4] saved_pb = self.pushback_stack;
     uint saved_pbc = self.pushback_count;
-    *self.lexer = snap.lexer;
+    self.swap_lexer_preserving_error(snap.lexer);
     self.pushback_stack = snap.pushback;
     self.pushback_count = snap.pushback_count;
     defer {
-        *self.lexer = saved;
+        self.swap_lexer_preserving_error(saved);
         self.pushback_stack = saved_pb;
         self.pushback_count = saved_pbc;
         bind.deferred_computed_key = null;

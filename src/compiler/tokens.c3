@@ -384,8 +384,34 @@ fn bool CompilerContext.rhs_may_write_registers(&self) {
         if (n == SCAN_LIMIT - 1) { result = true; }
     }
 
-    *self.lexer = saved_lexer;
+    self.swap_lexer_preserving_error(saved_lexer);
     return result;
+}
+
+/// Swap in a lexer state (speculative scan / re-parse window) while preserving
+/// the per-compilation error fields. The error state lives on the Lexer, so a
+/// plain `*self.lexer = snapshot` restore would wipe a message a fault
+/// recorded inside the window; keep whichever error was recorded first across
+/// the swap (the incoming state's err fields are discarded).
+fn void CompilerContext.swap_lexer_preserving_error(&self, Lexer incoming) {
+    char[512] kept;
+    usz kept_len = 0;
+    uint kept_line = self.lexer.err_line;
+    uint kept_col = self.lexer.err_col;
+    if (self.lexer.err_msg[0] != 0) {
+        while (kept_len < kept.len - 1 && self.lexer.err_msg[kept_len] != 0) {
+            kept[kept_len] = self.lexer.err_msg[kept_len];
+            kept_len++;
+        }
+        kept[kept_len] = 0;
+    }
+    *self.lexer = incoming;
+    if (kept_len > 0) {
+        mem::copy(&self.lexer.err_msg[0], &kept[0], (sz)kept_len);
+        self.lexer.err_msg[kept_len] = 0;
+        self.lexer.err_line = kept_line;
+        self.lexer.err_col = kept_col;
+    }
 }
 
 /// Push a token back into the input stream for backtracking.
