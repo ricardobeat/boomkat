@@ -739,6 +739,19 @@ struct Heap {
     // live inline cache still matches. Set by alloc_shape_slot.
     uint                shape_reuse_gen;
 
+    // Set for the duration of destroy() and reset(), which free every object
+    // directly instead of refcounting them down. Object teardown reads it to
+    // skip its decref loop: releasing references while the sweep runs would
+    // corrupt the string table it is walking, and every node is about to be
+    // freed regardless.
+    //
+    // This is state about the heap, so it lives on the heap. It used to be
+    // inferred from the process-global active-heap pointer being null, which
+    // conflated "we are tearing down" with "there is no heap to allocate from"
+    // and left teardown behaviour depending on a global that a second runtime
+    // would overwrite.
+    bool                tearing_down;
+
     // Maps (parent_shape_id, key_pointer) to child_shape_id, so objects that add
     // properties in the same order share one Shape.
     TransitionEntry*    trans_table;
@@ -1229,7 +1242,7 @@ fn void Heap.free_shape_slot(&self, uint id, bool release_keys = true) {
     // Carry the dead shape's generation in the link so the next occupant of
     // this slot starts past it and no live inline-cache entry can match.
     uint gen = sh.generation & SHAPE_FREE_GEN_MASK;
-    hobject::shape_free(sh, release_keys ? (void*)self : null);
+    hobject::shape_free(sh, (void*)self, release_keys);
     uint link = (gen << SHAPE_FREE_LINK_BITS) | (self.shape_free_head & SHAPE_FREE_LINK_MASK);
     self.shapes[id] = (hobject::Shape*)(SHAPE_FREE_TAG | (uptr)link);
     self.shape_free_head = id;
@@ -1275,7 +1288,7 @@ fn uint Heap.transition_shape_new_flags(&self, uint cur_shape_id, void* key, hob
 
     uint new_id = self.alloc_shape_slot();
     if (new_id == SHAPE_NONE) {
-        hobject::shape_free(ns, (void*)self);
+        hobject::shape_free(ns, (void*)self, true);
         return SHAPE_NONE;
     }
 
@@ -1337,9 +1350,10 @@ fn void Heap.free_compiled_funcs(&self) {
  * Release every managed object, then free the heap struct itself.
  */
 fn void Heap.destroy(&self) {
-    // Clearing the active heap makes hobject_free skip its RC decref loop.
-    // Teardown frees everything directly, and mixing decref with the
-    // str_table backshift-delete would corrupt the table for the sweep below.
+    // Teardown frees everything directly, so object teardown must skip its RC
+    // decref loop: mixing decref with the str_table backshift-delete would
+    // corrupt the table for the sweep below.
+    self.tearing_down = true;
     hobject::hobject_clear_active_heap();
 
     HeapHeader* cur = self.heap_allocated;
@@ -1440,7 +1454,7 @@ fn void Heap.destroy(&self) {
     if (self.shapes != null) {
         for (uint i = 0; i < self.shape_count; i++) {
             if (self.shape_slot_live(i)) {
-                hobject::shape_free(self.shapes[i], null);
+                hobject::shape_free(self.shapes[i], (void*)self, false);
             }
         }
         self.free_func(self.heap_udata, self.shapes);
@@ -1511,8 +1525,8 @@ fn void Heap.reset(&self) {
         }
     }
 
-    // Same teardown-mode guard as destroy(): with no active heap, hobject_free
-    // skips its RC decref loop.
+    // Same teardown mode as destroy(): object teardown skips its RC decref loop.
+    self.tearing_down = true;
     hobject::hobject_clear_active_heap();
 
     HeapHeader* cur = self.heap_allocated;
@@ -1743,7 +1757,7 @@ fn void Heap.reset(&self) {
     if (self.shapes != null) {
         for (uint i = 0; i < self.shape_count; i++) {
             if (self.shape_slot_live(i)) {
-                hobject::shape_free(self.shapes[i], null);
+                hobject::shape_free(self.shapes[i], (void*)self, false);
             }
         }
         // The pointer array is reused, so zeroing it is enough.
@@ -1771,6 +1785,10 @@ fn void Heap.reset(&self) {
     }
 
     self.init_builtin_strs();
+
+    // The sweep is over and the heap is usable again, so object teardown must
+    // resume decrefing rather than assuming everything is about to be freed.
+    self.tearing_down = false;
 
     hobject::hobject_set_active_heap((void*)self);
 }

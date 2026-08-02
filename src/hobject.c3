@@ -1171,7 +1171,7 @@ fn void HObject.make_shape_private(&self) {
         if (old_slot != slot) h.free_shape_slot(old_slot, false);
     } else {
         // The keys were copied without an incref, so shape_free must not decref.
-        shape_free(ns, null);
+        shape_free(ns, (void*)h, false);
     }
 }
 
@@ -1637,12 +1637,13 @@ fn bool HObject.delete_prop(&self, void* key) {
                         h.free_shape_slot(old_slot, false);
                     }
                 } else {
-                    // Keys were copied without incref; pass null so shape_free skips decref.
-                    shape_free(ns, null);
+                    // Keys were copied without incref, so shape_free must not decref.
+                    shape_free(ns, (void*)h, false);
                     self.set_shape(null);
                 }
             } else {
-                shape_free(ns, null);
+                // No heap to free through, so shape_free falls back to mem::free.
+                shape_free(ns, null, false);
                 self.set_shape(null);
             }
         } else {
@@ -1945,6 +1946,11 @@ fn HObject*? hobject_alloc(void* heap_ptr, ObjClass cls) {
 /// mem::free when no heap is active.
 fn void hobject_free(HObject* obj, void* heap_ptr, bool free_header = true) {
     if (obj == null) { return; }
+    // The owning heap, which every caller supplies. Its `tearing_down` flag,
+    // not the presence of a heap, decides whether the decref passes below run:
+    // destroy() and reset() free every node directly and must not also release
+    // references into a string table they are sweeping.
+    heap::Heap* hp = (heap::Heap*)heap_ptr;
 
     if (obj.flags.obj_class == ObjClass.REGEXP && (*obj.extra_ptr()).regexp.regexp_data != null) {
         re_bindings::re_free((*obj.extra_ptr()).regexp.regexp_data);
@@ -1953,16 +1959,16 @@ fn void hobject_free(HObject* obj, void* heap_ptr, bool free_header = true) {
 
     // Release the promise's settled value. The reactions are HObjects the
     // collector owns, so they are dropped rather than freed.
-    if (obj.flags.obj_class == ObjClass.PROMISE && _active_heap != null) {
-        heap::Heap* h = (heap::Heap*)_active_heap;
+    if (obj.flags.obj_class == ObjClass.PROMISE && !hp.tearing_down) {
+        heap::Heap* h = hp;
         h.decref_tval(&(*obj.extra_ptr()).promise.result);
         (*obj.extra_ptr()).promise.reactions_head = null;
         (*obj.extra_ptr()).promise.reactions_tail = null;
     }
 
     // A detached buffer has already released its backing store.
-    if (obj.flags.obj_class == ObjClass.ARRAYBUFFER && _active_heap != null) {
-        heap::Heap* h = (heap::Heap*)_active_heap;
+    if (obj.flags.obj_class == ObjClass.ARRAYBUFFER && !hp.tearing_down) {
+        heap::Heap* h = hp;
         if ((*obj.extra_ptr()).ab.data != null) {
             h.free_func(h.heap_udata, (*obj.extra_ptr()).ab.data);
             (*obj.extra_ptr()).ab.data = null;
@@ -1971,8 +1977,8 @@ fn void hobject_free(HObject* obj, void* heap_ptr, bool free_header = true) {
 
     // Free the per-object property hash table.
     if (obj.prop_hash != null) {
-        if (_active_heap != null) {
-            heap::Heap* h = (heap::Heap*)_active_heap;
+        if (hp != null) {
+            heap::Heap* h = hp;
             h.free_func(h.heap_udata, obj.prop_hash.table);
             h.free_func(h.heap_udata, obj.prop_hash);
         } else {
@@ -1982,8 +1988,8 @@ fn void hobject_free(HObject* obj, void* heap_ptr, bool free_header = true) {
     }
 
     // Decref getter/setter inside GetterSetter cells.
-    if (obj.flags.obj_class == ObjClass.GETTER_SETTER && _active_heap != null) {
-        heap::Heap* h = (heap::Heap*)_active_heap;
+    if (obj.flags.obj_class == ObjClass.GETTER_SETTER && !hp.tearing_down) {
+        heap::Heap* h = hp;
         h.decref_tval(&(*obj.extra_ptr()).gs.getter);
         h.decref_tval(&(*obj.extra_ptr()).gs.setter);
     }
@@ -1991,22 +1997,22 @@ fn void hobject_free(HObject* obj, void* heap_ptr, bool free_header = true) {
     // Release [[BoundTargetFunction]], [[BoundThis]], and [[BoundArguments]].
     // A bound function never sets captured_this, so this cannot overlap with the
     // arrow-capture release below.
-    if (obj.flags.obj_class == ObjClass.FUNCTION && obj.flags.is_bound && _active_heap != null) {
-        heap::Heap* h = (heap::Heap*)_active_heap;
+    if (obj.flags.obj_class == ObjClass.FUNCTION && obj.flags.is_bound && !hp.tearing_down) {
+        heap::Heap* h = hp;
         h.decref_tval(&(*obj.extra_ptr()).func.bound_target);
         h.decref_tval(&(*obj.extra_ptr()).func.bound_this);
         if ((*obj.extra_ptr()).func.bound_args != null) {
             h.decref((types::HeapHeader*)(*obj.extra_ptr()).func.bound_args);
         }
-    } else if (obj.flags.obj_class == ObjClass.FUNCTION && _active_heap != null) {
+    } else if (obj.flags.obj_class == ObjClass.FUNCTION && !hp.tearing_down) {
         // Decref an arrow function's captured lexical `this`.
-        heap::Heap* h = (heap::Heap*)_active_heap;
+        heap::Heap* h = hp;
         h.decref_tval(&(*obj.extra_ptr()).func.captured_this);
     }
 
     // Decref the stack string captured at Error construction time.
-    if (obj.flags.obj_class == ObjClass.ERROR && _active_heap != null) {
-        heap::Heap* h = (heap::Heap*)_active_heap;
+    if (obj.flags.obj_class == ObjClass.ERROR && !hp.tearing_down) {
+        heap::Heap* h = hp;
         h.decref_tval(&(*obj.extra_ptr()).err.captured_stack);
     }
 
@@ -2014,8 +2020,8 @@ fn void hobject_free(HObject* obj, void* heap_ptr, bool free_header = true) {
     if ((obj.flags.obj_class == ObjClass.ARRAY_ITERATOR
         || obj.flags.obj_class == ObjClass.MAP_ITERATOR
         || obj.flags.obj_class == ObjClass.SET_ITERATOR)
-        && _active_heap != null && (*obj.extra_ptr()).iter.target != null) {
-        heap::Heap* h = (heap::Heap*)_active_heap;
+        && !hp.tearing_down && (*obj.extra_ptr()).iter.target != null) {
+        heap::Heap* h = hp;
         h.decref((types::HeapHeader*)(*obj.extra_ptr()).iter.target);
         (*obj.extra_ptr()).iter.target = null;
     }
@@ -2028,17 +2034,16 @@ fn void hobject_free(HObject* obj, void* heap_ptr, bool free_header = true) {
     // through heap::gs_acquire, so the last one torn down performs the free.
     // See heap::gs_release for why the count, and not any gs field, decides.
     //
-    // The allocator comes from `heap_ptr` rather than `_active_heap`, which
-    // teardown clears before this walk. `_active_heap` still says whether the
-    // decref pass runs.
+    // The allocator comes from `heap_ptr`; `tearing_down` on that same heap
+    // says whether the decref pass runs.
     if (obj.flags.obj_class == ObjClass.GENERATOR) {
         heap::GeneratorState* gs = (heap::GeneratorState*)(*obj.extra_ptr()).gen.generator_data;
         (*obj.extra_ptr()).gen.generator_data = null;
-        heap::gs_release(gs, heap_ptr, _active_heap != null);
+        heap::gs_release(gs, heap_ptr, hp != null && !hp.tearing_down);
     } else if (obj.flags.obj_class == ObjClass.FUNCTION && obj.flags.is_async_state) {
         heap::GeneratorState* gs = (heap::GeneratorState*)(*obj.extra_ptr()).func.var_env;
         (*obj.extra_ptr()).func.var_env = null;
-        heap::gs_release(gs, heap_ptr, _active_heap != null);
+        heap::gs_release(gs, heap_ptr, hp != null && !hp.tearing_down);
     }
 
     // Release the values held in property slots and array elements. A neighbour
@@ -2046,8 +2051,8 @@ fn void hobject_free(HObject* obj, void* heap_ptr, bool free_header = true) {
     // so these go through Heap.decref and its sweep guard, which skips any
     // unmarked non-temproot target. Mark-and-sweep reclaims cycles; this pass
     // never does.
-    if (obj.prop_alloc != null && _active_heap != null) {
-        heap::Heap* h = (heap::Heap*)_active_heap;
+    if (obj.prop_alloc != null && !hp.tearing_down) {
+        heap::Heap* h = hp;
         PropValue* pvs = obj.prop_values();
         for (uint i = 0; i < obj.prop_count; i++) {
             if (pvs[i].is_heap_allocated()) {
@@ -2067,8 +2072,8 @@ fn void hobject_free(HObject* obj, void* heap_ptr, bool free_header = true) {
     // Free the block holding prop_values and array_part. The shape is shared and
     // owned by the heap, so it stays.
     if (obj.prop_alloc != null) {
-        if (_active_heap != null) {
-            heap::Heap* h = (heap::Heap*)_active_heap;
+        if (hp != null) {
+            heap::Heap* h = hp;
             h.free_func(h.heap_udata, obj.prop_alloc);
         } else {
             mem::free(obj.prop_alloc);
@@ -2089,9 +2094,10 @@ fn void hobject_free(HObject* obj, void* heap_ptr, bool free_header = true) {
 /// will be read again.
 fn void hobject_free_header(HObject* obj, void* heap_ptr) {
     if (obj == null) { return; }
+    heap::Heap* hp = (heap::Heap*)heap_ptr;
     if (obj.flags.pool_fallback) {
-        if (_active_heap != null) {
-            heap::Heap* h = (heap::Heap*)_active_heap;
+        if (hp != null) {
+            heap::Heap* h = hp;
             h.free_func(h.heap_udata, obj);
         } else {
             mem::free(obj);
@@ -2101,8 +2107,8 @@ fn void hobject_free_header(HObject* obj, void* heap_ptr) {
         if (pool != null) {
             ((mem::mempool::FixedBlockPool*)pool).dealloc(obj);
         } else {
-            if (_active_heap != null) {
-                heap::Heap* h = (heap::Heap*)_active_heap;
+            if (hp != null) {
+                heap::Heap* h = hp;
                 h.free_func(h.heap_udata, obj);
             } else {
                 mem::free(obj);
@@ -2327,19 +2333,27 @@ fn Shape* shape_extend(Shape* parent, uint parent_id, void* new_key, PropFlags f
 
 /// Free a shape. A non-null `heap_ptr` also releases the property keys it
 /// holds; pass null during teardown, when the string table is already going.
-fn void shape_free(Shape* sh, void* heap_ptr) {
+/// Free a shape's backing memory, optionally releasing the key references it
+/// holds.
+///
+/// `release_keys` is separate from the heap because the two questions are
+/// unrelated: a shape built by copying keys from another shape never took its
+/// own references and must not drop them, while the memory still belongs to
+/// this heap either way. They were once a single `heap_ptr` argument where null
+/// meant "do not release", which forced every no-release caller to also give up
+/// the allocator and fall back to `mem::free`.
+fn void shape_free(Shape* sh, void* heap_ptr, bool release_keys) {
     if (sh == null) return;
-    if (heap_ptr != null) {
+    heap::Heap* h = (heap::Heap*)heap_ptr;
+    if (release_keys && h != null) {
         ShapeProperty* sp = sh.props();
-        heap::Heap* h = (heap::Heap*)heap_ptr;
         for (uint i = 0; i < sh.own_count; i++) {
             if (sp[i].key != null) {
                 h.decref((HeapHeader*)sp[i].key);
             }
         }
     }
-    if (_active_heap != null) {
-        heap::Heap* h = (heap::Heap*)_active_heap;
+    if (h != null) {
         h.free_func(h.heap_udata, sh);
     } else {
         mem::free(sh);

@@ -154,6 +154,17 @@ test-registry-gc:
 	$(C3C_BUILD) value_registry_gc_stress $(C3C_LDFLAGS)
 	./out/value_registry_gc_stress
 
+# Heap teardown under GC_STRESS + ASan. Heap.destroy frees every object
+# directly and sets tearing_down so object teardown skips its decref pass;
+# decrefing there would touch the string table the sweep is walking. The JS
+# suites run one destroy per process, so this drives 40 full heap lifecycles.
+.PHONY: test-runtime-cycles
+test-runtime-cycles: jse-stress
+	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/runtime_cycles.c \
+	   out/jse_stress.$(SHLIB_EXT) -Wl,-rpath,$(CURDIR)/out $(JSE_LDLIBS) \
+	   -o out/runtime_cycles
+	ASAN_OPTIONS=detect_leaks=0 ./out/runtime_cycles
+
 # Larger example, linked against the shared library via rpath.
 out/hello: examples/c/hello.c include/jse.h out/libjse.$(SHLIB_EXT)
 	cc -std=c99 -Wall -Wextra -pedantic -Iinclude examples/c/hello.c \
