@@ -216,8 +216,7 @@ fn Instruction* th_jump(Instruction* pc, Instruction* code_end, TVal* regs, Cold
         if (th_bwd_edge_needs_safepoint(cold)) return pc;
         cold.vm.heap.bwd_gc_budget--;
     }
-    pc++;
-    pc += off;
+    pc += (sz)(1 + off);
     return th_next(pc, code_end, regs, cold);
 }
 
