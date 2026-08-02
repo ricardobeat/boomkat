@@ -69,16 +69,30 @@ eq(add(2, 3), 5, "returned copy");
 // ── Spread tail: trailing non-spread arg after a large spread ────────────
 // The call-window liveness must keep the argument slots live while the
 // producer-retarget liveness still collapses the literal write below
-// first_arg. Regression for the `f(1,...a,99)` shape. Kept function-scoped
-// so the low register pressure lets the retarget fire (at top level, where
-// many globals push the trailing-arg temp into the spread's dest window,
-// the codegen's temp reuse is a pre-existing compiler bug).
+// first_arg. Regression for the `f(1,...a,99)` shape.
 function spreadTest() {
   var arr = [2, 3, 4, 5];
   function spreadArgs() { return arguments.length + ":" + arguments[4] + ":" + arguments[5]; }
   return spreadArgs(1, ...arr, 99);
 }
 eq(spreadTest(), "6:5:99", "spread tail arg after large spread");
+
+// High register pressure: many globals push the trailing-arg temp up into
+// the spread's runtime dest window, which used to clobber an already-written
+// argument slot (`args[4]=99` instead of `args[4]=5`). The trailing arg is
+// now compiled into the reserved below-first_arg evaluation region.
+var hp0=0,hp1=0,hp2=0,hp3=0,hp4=0,hp5=0,hp6=0,hp7=0,hp8=0,hp9=0;
+var hp10=0,hp11=0,hp12=0,hp13=0,hp14=0,hp15=0,hp16=0,hp17=0,hp18=0,hp19=0;
+var hp20=0,hp21=0,hp22=0,hp23=0,hp24=0,hp25=0,hp26=0,hp27=0,hp28=0,hp29=0;
+var hpArr = [2, 3, 4, 5];
+function hpArgs() {
+  var s = arguments.length;
+  for (var i = 0; i < arguments.length; i++) { s += ":" + arguments[i]; }
+  return s;
+}
+eq(hpArgs(1, ...hpArr, 99), "6:1:2:3:4:5:99", "high-pressure spread tail, single trailing");
+eq(hpArgs(...hpArr, 2, 3, 4, 5, 6, 7, 8), "11:2:3:4:5:2:3:4:5:6:7:8", "high-pressure spread tail, many trailing");
+eq(hpArgs(...hpArr, 99), "5:2:3:4:5:99", "high-pressure spread tail, no leading");
 
 print('codegen_dead_dest: ' + pass + ' passed, ' + fail + ' failed');
 if (fail > 0) { print('SOME TESTS FAILED'); throw new Error('FAIL'); }

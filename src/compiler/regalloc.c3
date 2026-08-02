@@ -19,6 +19,15 @@ fn ushort CompilerContext.alloc_reg(&self) {
     if (self.next_reg > self.max_reg) {
         self.max_reg = self.next_reg;
     }
+    if (self.reg_cap != 0xFFFF && reg >= self.reg_cap) {
+        // The cap keeps a spread call's trailing-argument evaluation below
+        // first_arg; an expression needing more registers than the reserved
+        // region cannot be compiled. Overflow is reported by finish().
+        self.reg_overflow = true;
+        self.next_reg = (ushort)MAX_REGISTERS;
+        self.max_reg  = (ushort)MAX_REGISTERS;
+        return (ushort)(MAX_REGISTERS - 1);
+    }
     if (self.next_reg > MAX_REGISTERS) {
         // Out of registers: flag the overflow and clamp. finish() reports it
         // as a COMPILE_ERROR; compilation continues only to keep the parser
@@ -37,6 +46,13 @@ fn ushort CompilerContext.alloc_regs(&self, ushort count) {
     self.next_reg += count;
     if (self.next_reg > self.max_reg) {
         self.max_reg = self.next_reg;
+    }
+    if (self.reg_cap != 0xFFFF && first >= self.reg_cap) {
+        // See alloc_reg: the spread-call evaluation-region cap.
+        self.reg_overflow = true;
+        self.next_reg = (ushort)MAX_REGISTERS;
+        self.max_reg  = (ushort)MAX_REGISTERS;
+        return (ushort)(MAX_REGISTERS - 1);
     }
     if (self.next_reg > MAX_REGISTERS) {
         self.reg_overflow = true;
@@ -131,7 +147,7 @@ fn ushort CompilerContext.alloc_persistent_reg(&self) {
 }
 
 /// Set up the running-argument-count register for a spread call and shift the
-/// callee frame up by one register to make room below it.
+/// callee frame up to make room below it.
 ///
 /// A spread produces an unbounded number of arguments at runtime, written to
 /// `[first_arg, first_arg + count)`. The count register (SPREAD_ARG/PUTARG's B
@@ -140,29 +156,37 @@ fn ushort CompilerContext.alloc_persistent_reg(&self) {
 /// post-spread count store then clobbers a real argument slot (see plan on
 /// spread-into-call arity). The only registers below `first_arg` are the callee
 /// and `this` slots, which the call still needs. So we relocate the callee,
-/// `this`, and the `arg_count` plain arguments already emitted up by one
-/// register and hand the freed low slot back as the count register, placing it
-/// below the new `first_arg` where it survives the spread and the call.
+/// `this`, and the `arg_count` plain arguments already emitted up by
+/// `2 + SPREAD_EVAL_REGS` and hand the freed low slots back as the count
+/// register plus an evaluation region, placing them below the new `first_arg`
+/// where they survive the spread and the call.
 ///
 /// A plain argument that follows a spread (`f(...a, x)`) is emitted with PUTARG,
 /// which writes `x` at the runtime slot `first_arg + count`. Its value operand
-/// must likewise live below `first_arg`, or a large spread overwrites the value
-/// register before PUTARG reads it. So the frame is shifted up by *two*
-/// registers: the lower freed slot becomes the count register, the next one a
-/// scratch (`spread_val_reg`) that trailing PUTARG args are copied into before
-/// emission. `spread_val_reg` is stored on the context (reused across PUTARGs).
+/// must live below `first_arg`, or a large spread overwrites the value register
+/// before PUTARG reads it; worse, evaluating it into a register the spread has
+/// already written to clobbers a real argument. So the frame is shifted up by
+/// `2 + SPREAD_EVAL_REGS`: the lower freed slot becomes the count register,
+/// and the next `SPREAD_EVAL_REGS` slots form the evaluation region
+/// (`spread_eval_base .. first_arg`) that a trailing argument's expression is
+/// compiled into (see emit_call). `first_arg` caps allocation there, so an
+/// expression needing more registers than the region is a compile error, not a
+/// silently corrupted argument list.
 ///
 /// `callee_reg`, `first_arg`, and `arg_count` are updated in place. Returns the
 /// count register (initialized to `arg_count` by the caller via LDINT).
+const uint SPREAD_EVAL_REGS = 6;
 fn ushort CompilerContext.begin_spread_args(&self, ushort* callee_reg, ushort* first_arg, ushort arg_count) {
     ushort old_callee = *callee_reg;
     ushort count_reg = old_callee;
-    self.spread_val_reg = old_callee + 1;
-    ushort new_callee = old_callee + 2;
-    // Shift callee, this, and the plain args already emitted up by two, from the
-    // top down so overlapping source/dest registers are not clobbered.
+    ushort new_callee = old_callee + 2 + (ushort)SPREAD_EVAL_REGS;
+    self.spread_eval_base = old_callee + 2;
+    // Shift callee, this, and the plain args already emitted up by
+    // 2 + SPREAD_EVAL_REGS, from the top down so overlapping source/dest
+    // registers are not clobbered.
     for (int i = (int)arg_count + 1; i >= 0; i--) {
-        self.emit_abc(Opcode.LDREG, (uint)(old_callee + 2 + i), (uint)(old_callee + i), 0);
+        self.emit_abc(Opcode.LDREG, (uint)(old_callee + 2 + (uint)SPREAD_EVAL_REGS + (uint)i),
+                      (uint)(old_callee + (uint)i), 0);
     }
     *callee_reg = new_callee;
     *first_arg = new_callee + 2;
