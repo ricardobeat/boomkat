@@ -14,7 +14,9 @@
  *     slot registry. A handle is NOT a pointer and must never be dereferenced.
  *   - Every call returns a status code or a nullable handle. Nothing aborts,
  *     panics, or longjmps across this boundary.
- *   - NOT thread-safe, and single-runtime per process (see jse_open).
+ *   - Several runtimes may be open at once and share nothing; values do not
+ *     cross between them. A runtime must be driven from one thread at a time,
+ *     which is not enforced (see jse_open).
  *
  * LINKING
  *   - The static archive is only safe when the final link is driven by a C

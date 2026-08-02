@@ -112,11 +112,7 @@ struct Runtime {
     char[ERRBUF] errmsg;
     int      errcode;
     /// Innermost host-call context, or null outside a host callback. Lets the
-    /// readers resolve a scope handle without the host threading the context
-    /// through every call.
 }
-
-Runtime* g_rt = null;
 
 // Set once the engine's compile-time-populated tables are known good; see
 // ensure_engine_init. Never cleared, since the tables outlive any runtime.
@@ -156,7 +152,6 @@ fn void ensure_engine_init() {
 fn int jse_open(void** out_rt) @export("jse_open") {
     if (out_rt == null) return JSE_ERR_INVALID;
     *out_rt = null;
-    if (g_rt != null) return JSE_ERR_INVALID;   // single-runtime rule
     ensure_engine_init();
 
     Heap*? hpr = heap::create(null, null, null, null, null);
@@ -182,7 +177,6 @@ fn int jse_open(void** out_rt) @export("jse_open") {
     hp.capi_runtime = (void*)rt;
     hp.capi_mark = (heap::CapiMarkFn)&mark_slots;
 
-    g_rt = rt;
     *out_rt = (void*)rt;
     return JSE_OK;
 }
@@ -221,7 +215,6 @@ fn void jse_close(void* rtp) @export("jse_close") {
     vm::vm_destroy(rt.vm);
     hp.free_func(hp.heap_udata, (void*)rt);
     hp.destroy();
-    if (g_rt == rt) g_rt = null;
 }
 
 // ============================================================================

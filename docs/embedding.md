@@ -296,7 +296,7 @@ registry is full.
 
 | Function | Returns | Contract |
 |---|---|---|
-| `jse_open(jse_runtime *out)` | status | One runtime per process. A second call while one is open returns `JSE_ERR_INVALID` rather than corrupting the first (verified). |
+| `jse_open(jse_runtime *out)` | status | Opens an independent runtime. Several may be open at once; they share no globals, objects or interned strings (verified). |
 | `jse_close(jse_runtime)` | void | Destroys the runtime and everything it owns; all handles become invalid. Safe with `NULL`. |
 | `jse_version(void)` | `const char *` | Static string, currently `"0.1.0"`. Never `NULL`. |
 | `jse_eval(rt, src, len, out_val)` | status | Compiles and runs `len` bytes of UTF-8 for its completion value, so `"40 + 2"` yields 42. On `JSE_OK` `*out_val` is an owned handle; pass `NULL` for `out_val` to run for side effects only. Drains microtasks before returning. |
@@ -448,12 +448,18 @@ Never dereference a `jse_value`. It is an index, not an address.
 Do not cache `const char *` returns. `jse_last_error` and `jse_version` point to
 runtime-owned storage. Copy before the next call.
 
-There is one runtime per process, and it is not thread-safe. The engine has
-process-global state (the compiler error buffer, the active-heap pointer). A
-second `jse_open` returns `JSE_ERR_INVALID`. That check is a plain global with
-no lock, so two threads calling `jse_open` simultaneously still race. The ABI is
-documented not-thread-safe; it does not enforce it. Confine all engine calls to
-one thread.
+Several runtimes may be open at once, each with its own globals, objects and
+interned strings. Nothing is shared between them, so one is unaffected by
+another allocating, collecting, or closing.
+
+Values do not cross. A `jse_value` is an index into one runtime's registry, so
+passing a handle to a different runtime's reader returns `JSE_ERR_INVALID`
+rather than resolving against an unrelated value. To move a value, read it out
+and write it back in: the copy is a distinct object in the receiving runtime.
+
+A runtime must be driven from one thread at a time. The engine has no locking,
+so two threads inside one runtime corrupt it, and nothing enforces that. Two
+threads each driving their own runtime share nothing and are safe.
 
 The handle design was chosen because both obvious alternatives are broken, which
 is worth knowing before anyone proposes them again:
@@ -733,8 +739,9 @@ optimised build is far cheaper.
 The readers do no coercion. `jse_get_string` on a number returns
 `JSE_ERR_TYPE`. Call `String(x)` in JS first.
 
-There is one runtime per process, it is not thread-safe, and that is unenforced
-across threads. See [Lifetime and GC rules](#lifetime-and-gc-rules).
+A runtime must be driven from one thread at a time, and that is unenforced.
+Multiple runtimes in one process are supported; values do not cross between
+them. See [Lifetime and GC rules](#lifetime-and-gc-rules).
 
 The registry grows on demand up to 65535 live handles. That ceiling is not
 configurable at runtime.

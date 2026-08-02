@@ -50,7 +50,6 @@ import std::io;
 faultdef
     NOT_OPEN,             // operation on a runtime that was never opened
     ALREADY_OPEN,         // second open() on the same runtime
-    RUNTIME_EXISTS,       // another JsRuntime is already open in this process
     OUT_OF_MEMORY,
     SYNTAX_ERROR,         // source failed to compile; see last_error()
     JS_EXCEPTION,         // script threw; see last_error()
@@ -130,10 +129,14 @@ fn bool JsValue.is_empty(self) => self.slot == 0;
 
 /// Owns a heap, a VM, and the root registry. Declare one, `open` it, `close` it.
 ///
-/// Exactly one may be open per process: the engine keeps process-global state
-/// (the compiler's error buffer and the active-heap pointer), so a second
-/// runtime would corrupt the first. `open` reports RUNTIME_EXISTS rather than
-/// letting that happen. Not thread-safe.
+/// Several may be open at once, each with its own globals, objects and interned
+/// strings. Values do not cross between them: a `JsValue` names a slot in the
+/// runtime that produced it, so passing one to another runtime reports
+/// `STALE_VALUE`.
+///
+/// A runtime must be driven from one thread at a time. The engine has no
+/// locking, so two threads inside one runtime corrupt it; two threads each
+/// driving their own runtime share nothing and are fine.
 struct JsRuntime {
     Heap*       heap;
     Vm*         vm;
@@ -147,15 +150,11 @@ struct JsRuntime {
     usz         errlen;
 }
 
-// Process-wide open-runtime guard. See the struct doc for why.
-tlocal JsRuntime* active_runtime = null;
-
 /// Create the heap and VM.
 ///
-/// Faults: ALREADY_OPEN, RUNTIME_EXISTS, OUT_OF_MEMORY
+/// Faults: ALREADY_OPEN, OUT_OF_MEMORY
 fn void? JsRuntime.open(&self) {
     if (self.heap != null) return ALREADY_OPEN~;
-    if (active_runtime != null) return RUNTIME_EXISTS~;
 
     Heap*? hpr = heap::create(null, null, null, null, null);
     if (catch hpr) return OUT_OF_MEMORY~;
@@ -181,7 +180,6 @@ fn void? JsRuntime.open(&self) {
     self.live = 0;
     self.errlen = 0;
     self.errbuf[0] = 0;
-    active_runtime = self;
 }
 
 /// Tear down the heap and VM. Safe to call on a runtime that was never opened,
@@ -204,7 +202,6 @@ fn void JsRuntime.close(&self) {
     self.slot_count = 0;
     self.free_head = SLOT_FREE_END;
     self.live = 0;
-    if (active_runtime == self) active_runtime = null;
 }
 
 fn bool JsRuntime.is_open(&self) => self.heap != null;
@@ -386,7 +383,7 @@ fn void JsRuntime.release(&self, JsValue v) {
     uint idx = (v.slot & SLOT_INDEX_MASK) - 1;
     HString* key = self.heap.int_to_hstring((long)idx);
     if (key == null) return;
-    self.registry.delete_prop(key);
+    self.registry.delete_prop(key, self.heap);
     e.used = false;
     if (self.live > 0) self.live--;
 
@@ -419,7 +416,7 @@ fn JsValue? JsRuntime.root(&self, TVal tv) {
 
     HString* key = self.heap.int_to_hstring((long)idx);
     if (key == null) return OUT_OF_MEMORY~;
-    if (!self.registry.put_prop(key, tv, hobject::PROP_FLAGS_WEC)) return OUT_OF_MEMORY~;
+    if (!self.registry.put_prop(key, tv, hobject::PROP_FLAGS_WEC, self.heap)) return OUT_OF_MEMORY~;
 
     SlotEntry* e = &self.slots[idx];
     e.used = true;
@@ -434,7 +431,7 @@ fn bool JsRuntime.load(&self, JsValue v, TVal* out) {
     uint idx = (v.slot & SLOT_INDEX_MASK) - 1;
     HString* key = self.heap.int_to_hstring((long)idx);
     if (key == null) return false;
-    TVal? tv = self.registry.get_prop(key);
+    TVal? tv = self.registry.get_prop(key, self.heap);
     if (catch tv) return false;
     *out = tv;
     return true;
@@ -469,7 +466,7 @@ fn void JsRuntime.describe_thrown(&self, TVal* thrown) {
     if (thrown.is_object()) {
         HObject* obj = (HObject*)thrown.get_heapptr();
         HString* message_key = self.heap.strs[heap::BuiltinStr.MESSAGE];
-        if (try m = obj.get_prop(message_key)) {
+        if (try m = obj.get_prop(message_key, self.heap)) {
             if (m.is_string()) {
                 self.set_error((String)((HString*)m.get_heapptr()).get_data());
                 return;
@@ -483,21 +480,17 @@ fn void JsRuntime.describe_thrown(&self, TVal* thrown) {
 // CESU-8 -> UTF-8
 // ============================================================================
 
-// write_cesu8_as_utf8 takes a bare `fn void(char)` with no user-data pointer,
-// so the sink has to be module state. Single-runtime and single-threaded by
-// contract, and thread-local for defence in depth.
-tlocal DString* utf8_sink @local;
-
-fn void utf8_put(char c) @local {
-    utf8_sink.append_char(c);
+// The sink state is the caller's buffer, reached through the udata pointer
+// write_cesu8_as_utf8 passes back, so nothing here is shared between runtimes
+// or between calls.
+fn void utf8_put(char c, void* udata) {
+    ((DString*)udata).append_char(c);
 }
 
-fn String utf8_of(HString* s, Allocator allocator) @local {
+fn String utf8_of(HString* s, Allocator allocator) {
     if (s == null) return "";
     DString buf = dstring::temp_with_capacity(s.get_data().len + 4);
-    utf8_sink = &buf;
-    hstring::write_cesu8_as_utf8(s.get_data(), &utf8_put);
-    utf8_sink = null;
+    hstring::write_cesu8_as_utf8(s.get_data(), &utf8_put, &buf);
     return buf.copy_str(allocator);
 }
 
@@ -744,7 +737,7 @@ fn JsArg? JsCtx.get_prop(self, JsArg obj, String key) {
     if (o == null || k == null) return WRONG_TYPE~;
     JsArg out = { .tv = {} };
     out.tv.set_undefined();
-    TVal? v = o.get_prop(k);
+    TVal? v = o.get_prop(k, self.ctx.heap);
     if (try got = v) out.tv = got;
     return out;
 }
@@ -758,7 +751,7 @@ fn bool? JsCtx.set_prop(self, JsArg obj, String key, JsArg value) {
     HObject* o = (HObject*)obj.tv.get_heapptr();
     HString* k = self.ctx.heap.str_intern((char[])key);
     if (o == null || k == null) return WRONG_TYPE~;
-    return o.put_prop(k, value.tv, hobject::PROP_FLAGS_WEC);
+    return o.put_prop(k, value.tv, hobject::PROP_FLAGS_WEC, self.ctx.heap);
 }
 
 // --- failing ----------------------------------------------------------------

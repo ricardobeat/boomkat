@@ -154,6 +154,18 @@ test-registry-gc:
 	$(C3C_BUILD) value_registry_gc_stress $(C3C_LDFLAGS)
 	./out/value_registry_gc_stress
 
+# Multiple runtimes in one process: independent globals, objects, shapes and
+# interned strings; a host function in one calling into another; and handles
+# refused across runtimes. None of this could run before the process-global heap
+# pointer was removed.
+out/two_runtimes: test/capi/two_runtimes.c include/jse.h out/jse_static.a
+	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/two_runtimes.c \
+	   out/jse_static.a $(JSE_LDLIBS) -o out/two_runtimes
+
+.PHONY: test-two-runtimes
+test-two-runtimes: out/two_runtimes
+	./out/two_runtimes
+
 # Heap teardown under GC_STRESS + ASan. Heap.destroy frees every object
 # directly and sets tearing_down so object teardown skips its decref pass;
 # decrefing there would touch the string table the sweep is walking. The JS
