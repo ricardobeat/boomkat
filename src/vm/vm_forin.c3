@@ -87,7 +87,7 @@ macro uint forin_seen_slot(ForInSeen* s, HString* key) => key.hash & s.index_mas
 /// always terminates on an empty slot.  Returns false only on allocation
 /// failure, in which case the set stays valid and simply keeps scanning
 /// linearly.
-fn bool ForInSeen.reindex(&self, Heap* h, uint index_cap) @local {
+fn bool ForInSeen.reindex(&self, Heap* h, uint index_cap) {
     uint* tbl = (uint*)h.alloc_func(h.heap_udata, (usz)index_cap * uint::size);
     if (tbl == null) return false;
     for (uint i = 0; i < index_cap; i++) tbl[i] = 0;
@@ -102,7 +102,7 @@ fn bool ForInSeen.reindex(&self, Heap* h, uint index_cap) @local {
     return true;
 }
 
-fn bool ForInSeen.contains(&self, HString* key) @local {
+fn bool ForInSeen.contains(&self, HString* key) {
     if (self.index == null) {
         for (uint i = 0; i < self.count; i++) {
             if (self.entries[i] == key) return true;
@@ -118,7 +118,7 @@ fn bool ForInSeen.contains(&self, HString* key) @local {
 }
 
 /// Append a known-absent key.  Callers must have checked `contains` first.
-fn bool ForInSeen.append(&self, Heap* h, HString* key) @local {
+fn bool ForInSeen.append(&self, Heap* h, HString* key) {
     if (!forin_ensure_cap(h, &self.entries, &self.cap, self.count + 1)) return false;
     self.entries[self.count] = key;
     self.count++;
@@ -141,7 +141,7 @@ fn bool ForInSeen.append(&self, Heap* h, HString* key) @local {
 /// Record `level` as walked so keys yielded from farther levels can be probed
 /// against its own properties.  Returns false when the list is full, in which
 /// case the caller must record the level's non-enumerable keys eagerly.
-fn bool ForInSeen.push_level(&self, HObject* level) @local {
+fn bool ForInSeen.push_level(&self, HObject* level) {
     if (self.nearer_count >= FORIN_NEARER_MAX) return false;
     self.nearer[self.nearer_count] = level;
     self.nearer_count++;
@@ -155,7 +155,7 @@ fn bool ForInSeen.push_level(&self, HObject* level) @local {
 /// it is non-enumerable, so EnumerateObjectProperties still records it as
 /// visited and it suppresses a same-named enumerable property inherited from
 /// the prototype chain.
-fn bool ForInSeen.shadowed(&self, Heap* h, HString* key) @local {
+fn bool ForInSeen.shadowed(&self, Heap* h, HString* key) {
     if (key.is_symbol()) return false;
     for (uint i = 0; i < self.nearer_count; i++) {
         HObject* lvl = self.nearer[i];
@@ -165,7 +165,7 @@ fn bool ForInSeen.shadowed(&self, Heap* h, HString* key) @local {
     return false;
 }
 
-fn void ForInSeen.free(&self, Heap* h) @local {
+fn void ForInSeen.free(&self, Heap* h) {
     if (self.entries != null) h.free_func(h.heap_udata, self.entries);
     if (self.index != null) h.free_func(h.heap_udata, self.index);
 }

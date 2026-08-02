@@ -3635,7 +3635,7 @@ fn bool Heap.str_table_insert(&self, HString* hstr) {
  * mark it interned so `decref` unhooks it from the table (not the large-string
  * registry) and incref for the slot the table now holds.
  */
-fn void Heap.str_table_adopt(&self, HString* hstr) @local {
+fn void Heap.str_table_adopt(&self, HString* hstr) {
     hstr.flags.is_interned = true;
     ((HeapHeader*)hstr).incref();
 }
