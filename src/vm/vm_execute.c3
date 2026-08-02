@@ -372,7 +372,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
             // The callback frame is placed above all live caller registers.
             uint true_used = (uint)(true_top - vm.valstack);
             if (true_top + nregs > vm.valstack_end) {
-                if (!ensure_valstack_grow(vm, true_used + nregs - (uint)(vm.valstack_top - vm.valstack))) {
+                if (!ensure_valstack_grow(vm, true_used + nregs)) {
                     return undef;
                 }
                 // Recompute true_top after potential realloc
@@ -1465,7 +1465,7 @@ fn bool? Vm.execute_module_nested(Vm* vm, CompiledFunction* func, EnvRecord* env
     // module frame is placed above all live caller registers.
     uint true_used = (uint)(true_top - vm.valstack);
     if (true_top + nregs > vm.valstack_end) {
-        if (!ensure_valstack_grow(vm, true_used + nregs - (uint)(vm.valstack_top - vm.valstack))) {
+        if (!ensure_valstack_grow(vm, true_used + nregs)) {
             return VM_ERROR~;
         }
         // Recompute true_top after potential realloc

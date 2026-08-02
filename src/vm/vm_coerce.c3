@@ -167,11 +167,15 @@ $else
 $endif
 }
 
-/// Ensure the value stack has room for `needed` more slots.
+/// Ensure the value stack has at least `needed` slots from its base, an
+/// absolute watermark (the frame being entered ends at that index). Callers
+/// computing the end of a register window as `(ptr - vm.valstack) + nregs`
+/// hand in the index directly, so the fast path compares the watermark
+/// against the allocated size, not the current top.
 /// Fast path uses pointer comparison (no division).
 fn bool ensure_valstack(Vm* vm, uint needed) @inline {
-    // Fast path: check if top + needed fits within allocated end
-    if (vm.valstack_top + needed <= vm.valstack_end) {
+    // Fast path: check if the watermark fits within the allocated slots
+    if (needed <= (uint)(vm.valstack_end - vm.valstack)) {
         return true;
     }
     return ensure_valstack_grow(vm, needed);
@@ -180,9 +184,8 @@ fn bool ensure_valstack(Vm* vm, uint needed) @inline {
 /// Slow path: grow the value stack.
 fn bool ensure_valstack_grow(Vm* vm, uint needed) {
     TVal* old_base = vm.valstack;
-    uint used = (uint)((usz)vm.valstack_top - (usz)vm.valstack) / TVal::size;
     uint new_size = vm.valstack_size;
-    while (new_size < used + needed) {
+    while (new_size < needed) {
         new_size *= 2;
     }
     usz old_bytes = (usz)vm.valstack_size * TVal::size;
