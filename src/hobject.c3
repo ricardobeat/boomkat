@@ -2461,11 +2461,25 @@ fn HObject* ic_resolve_owner(ICEntry* ic, HObject* hobj) @inline {
 /// One entry in the global megamorphic cache, keyed by (shape_id, key) and
 /// shared by every call site, which spares polymorphic sites the repeated
 /// prototype-chain walks.
+///
+/// An entry covers an own property or one found on the receiver's immediate
+/// prototype. The one-link case needs more than the receiver's shape to stay
+/// sound, because a shape describes only a property layout: it does not name a
+/// prototype, and `Object.setPrototypeOf` repoints that link without touching
+/// the shape. So the entry snapshots the prototype's identity and shape and the
+/// hit path re-checks both, exactly as ICEntry's chain replay does.
 struct MegamorphicEntry {
     void*   key;           // interned key pointer (null = empty slot)
-    uint    shape_id;      // object shape ID at lookup time
+    uint    shape_id;      // receiver's shape ID at lookup time
     uint    prop_idx;      // property index in owner.prop_values[]
-    void*   proto;         // owning object (null = own property)
+    void*   proto;         // owning prototype (null = own property)
+    /// The owning prototype's shape when the entry was filled, so a property
+    /// added to or deleted from it is noticed. Meaningless when `proto` is null.
+    uint    proto_shape_id;
+    /// The heap's shape-recycle epoch at population time. A freed shape id is
+    /// handed back out, so an id alone cannot say whether it still names the
+    /// shape this entry was filled for; comparing the epoch closes that gap.
+    uint    recycle_epoch;
     TVal*   prop_value_ptr; // direct pointer to value slot
     void*   cached_prop_alloc; // owner.prop_values() snapshot for invalidation
 }
@@ -2480,27 +2494,37 @@ fn MegamorphicEntry* mega_cache_lookup(heap::Heap* h, HObject* hobj, void* key) 
     if (h.mega_cache == null) return null;
     uint slot = mega_hash(hobj.shape_id, key);
     MegamorphicEntry* e = h.mega_cache + slot;
-    if (e.key == key && e.shape_id == hobj.shape_id) {
-        HObject* owner = e.proto == null ? hobj : (HObject*)e.proto;
-        if (e.cached_prop_alloc == (void*)owner.prop_values()) {
-            return e;
-        }
+    if (e.key != key || e.shape_id != hobj.shape_id) return null;
+    if (e.recycle_epoch != h.shape_recycle_epoch) return null;
+    HObject* owner = hobj;
+    if (e.proto != null) {
+        // The receiver's shape says it has no own `key`; the recorded link must
+        // still be the live one, at the same shape, for the owner to answer.
+        owner = (HObject*)e.proto;
+        if (hobj.prototype != owner) return null;
+        if (owner.shape_id != e.proto_shape_id) return null;
     }
-    return null;
+    if (e.cached_prop_alloc != (void*)owner.prop_values()) return null;
+    return e;
 }
 
-/// Record a successful lookup in the megamorphic cache. Only own properties go
-/// in: the cache cannot tell when an intermediate prototype changes, so caching
-/// an inherited lookup would serve stale results.
+/// Record a successful lookup in the megamorphic cache.
+///
+/// Own properties and properties on the receiver's immediate prototype are
+/// stored; anything deeper is not, since the entry has room to re-check only
+/// one link and a longer chain could change out of sight.
 fn void mega_cache_store(heap::Heap* h, HObject* hobj, void* key, HObject* owner, int prop_idx) @inline {
     if (h.mega_cache == null) return;
-    if (owner != hobj) return;
+    bool own = owner == hobj;
+    if (!own && hobj.prototype != owner) return;
     uint slot = mega_hash(hobj.shape_id, key);
     MegamorphicEntry* e = h.mega_cache + slot;
     e.key = key;
     e.shape_id = hobj.shape_id;
     e.prop_idx = (uint)prop_idx;
-    e.proto = null;  // own property
+    e.proto = own ? null : (void*)owner;
+    e.proto_shape_id = owner.shape_id;
+    e.recycle_epoch = h.shape_recycle_epoch;
     e.prop_value_ptr = &owner.prop_values()[prop_idx];
     e.cached_prop_alloc = (void*)owner.prop_values();
 }
@@ -2539,11 +2563,51 @@ struct VarICEntry {
     bool    varref_store_ok;
 }
 
+/// True when the megamorphic cache may answer a getter lookup on this receiver.
+///
+/// A cache hit reports a plain data property straight from the property table,
+/// so it must only serve receivers for which the table is the whole answer. Two
+/// classes of receiver are excluded:
+///
+///   - a proxy, whose [[Get]] runs a trap and whose shape says nothing about
+///     what the trap will return;
+///   - an exotic array or arguments object, where a key can be answered by the
+///     dense part or by `array_len_ptr` rather than the table, neither of which
+///     a (shape, key) entry can describe;
+///   - a string wrapper, whose indexed keys are read from the primitive by the
+///     caller and so are invisible to this walk.
+///
+/// The same test gates storing, so no entry is ever filled from a receiver it
+/// could not later be served to.
+macro bool HObject.mega_cacheable(&self) @private {
+    return !self.flags.exotic_proxyobj
+        && !self.flags.exotic_array
+        && !self.flags.exotic_stringobj
+        && self.get_class() != ObjClass.ARGUMENTS;
+}
+
 /// Walk the prototype chain once, returning whichever of an accessor or a data
 /// property is found first, along with the object that owns it.
+///
+/// Every full Get in the engine funnels through here: the VM's GETPROP slow
+/// path, the spec-mandated Gets that builtins perform, and the coercion
+/// helpers. The megamorphic cache is consulted here rather than at those call
+/// sites so all of them share one probe and one invalidation story.
 fn PropLookupResult HObject.get_prop_or_accessor_proto(&self, void* key, bool want_getter) {
     HObject* cur = self;
     uint depth = 0;
+
+    if (want_getter && _active_heap != null && self.mega_cacheable()) {
+        heap::Heap* mh = (heap::Heap*)_active_heap;
+        MegamorphicEntry* me = mega_cache_lookup(mh, self, key);
+        if (me != null) {
+            return {
+                .kind = PropLookupKind.PROP_DATA,
+                .data_val = *me.prop_value_ptr,
+                .owner = me.proto == null ? self : (HObject*)me.proto
+            };
+        }
+    }
 
     while (cur != null && depth < MAX_PROTO_DEPTH) {
         // A proxy on the chain runs a getter search through the trap machinery
@@ -2577,6 +2641,12 @@ fn PropLookupResult HObject.get_prop_or_accessor_proto(&self, void* key, bool wa
                         .found = true
                     }
                 };
+            }
+            // Record the hit so the next lookup of this (shape, key) skips the
+            // walk. mega_cache_store rejects an owner further than one link
+            // away, so only depth 0 and 1 are offered.
+            if (want_getter && depth <= 1 && _active_heap != null && self.mega_cacheable()) {
+                mega_cache_store((heap::Heap*)_active_heap, self, key, cur, idx);
             }
             return {
                 .kind = PropLookupKind.PROP_DATA,

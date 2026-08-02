@@ -283,18 +283,10 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             // lookup so that explicitly assigned out-of-range slots are still found.
                         }
                     }
-                    // Megamorphic cache: try global (shape, key) → offset cache before full chain walk
-                    hobject::MegamorphicEntry* mega = hobject::mega_cache_lookup(vm.heap, hobj, key);
-                    if (mega != null) {
-                        TVal mega_val = *mega.prop_value_ptr;
-                        if (!mega_val.is_heap_allocated()) {
-                            *ra = mega_val;
-                        } else {
-                            vm.heap.tval_copy_ref(ra, &mega_val);
-                            track_heap_store(ds.act, ra, (uint)insn.a);
-                        }
-                        return (TVal){};
-                    }
+                    // The megamorphic cache is probed inside
+                    // get_prop_or_accessor_proto, which knows which receivers
+                    // it may answer for; a probe out here would have to repeat
+                    // those tests and would serve exotic receivers it must not.
                     hobject::PropLookupResult res = hobj.get_prop_or_accessor_proto(key, true);
                     if (res.kind == hobject::PropLookupKind.PROP_ACCESSOR) {
                         // ES2022 §7.3.25 PrivateGet: a set-only private
@@ -360,8 +352,6 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                     ic.key = key;
                                     ic.prop_value_ptr = &res.owner.prop_values()[owner_idx];
                                     ic.cached_prop_alloc = (void*)res.owner.prop_values();
-                                    // Also populate megamorphic cache for cross-site benefit
-                                    hobject::mega_cache_store(vm.heap, hobj, key, res.owner, owner_idx);
                                 }
                             }
                         } else {
@@ -710,18 +700,9 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                 }
                             }
                         }
-                        // Megamorphic cache: try global (shape, key) → offset cache before full chain walk
-                        hobject::MegamorphicEntry* mega = hobject::mega_cache_lookup(vm.heap, hobj, key);
-                        if (mega != null) {
-                            TVal mega_val = *mega.prop_value_ptr;
-                            if (!mega_val.is_heap_allocated()) {
-                                *ra = mega_val;
-                            } else {
-                                vm.heap.tval_copy_ref(ra, &mega_val);
-                                track_heap_store(ds.act, ra, (uint)insn.a);
-                            }
-                            return (TVal){};
-                        }
+                        // The megamorphic cache is probed inside
+                        // get_prop_or_accessor_proto, which knows which
+                        // receivers it may answer for.
                         hobject::PropLookupResult res = hobj.get_prop_or_accessor_proto(key, true);
                         if (res.kind == hobject::PropLookupKind.PROP_ACCESSOR) {
                             TVal obj_val;
@@ -791,10 +772,6 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                         // Keep A, B, C operands the same, just change the opcode
                                         ds.curr_pc[-1] = bytecode::make_abc(bytecode::Opcode.GETPROPC_CACHED,
                                                                           (uint)insn.a, (uint)insn.b, (uint)insn.c);
-                                        // Also populate megamorphic cache for cross-site benefit
-                                        if (is_own) {
-                                            hobject::mega_cache_store(vm.heap, hobj, key, res.owner, owner_idx);
-                                        }
                                     }
                                 }
                             }
