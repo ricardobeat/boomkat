@@ -388,7 +388,7 @@ fn bool thrown_type_matches(Vm* v, Heap* hp, char[] expected) {
     if (try ck = cks) {
         HObject* cur = thrown;
         for (uint guard = 0; guard < 64 && cur != null; guard++) {
-            int idx = cur.find_prop_idx(ck);
+            int idx = cur.find_prop_idx(ck, hp);
             if (idx >= 0) {
                 TVal cv = cur.prop_values()[idx];
                 if (cv.is_object() && cv.get_heapptr() != null) { ctor = (HObject*)cv.get_heapptr(); }
@@ -402,7 +402,7 @@ fn bool thrown_type_matches(Vm* v, Heap* hp, char[] expected) {
         uint nh = hp.hash_string(name_key);
         HString*? nks = hp.str_table_lookup(name_key, nh);
         if (try nk = nks) {
-            int nidx = ctor.find_prop_idx(nk);
+            int nidx = ctor.find_prop_idx(nk, hp);
             if (nidx >= 0) {
                 TVal nv = ctor.prop_values()[nidx];
                 if (nv.is_string() && nv.get_heapptr() != null) {
@@ -645,7 +645,7 @@ fn int run_one_test(Vm* v, Heap* hp, char[] test_path, char[] assert_src, char[]
             HObject* eo = (HObject*)hp.error_value.get_heapptr();
             if (eo != null) {
                 HString* msg_key = (HString*)hp.strs[heap::BuiltinStr.MESSAGE];
-                hobject::Shape* sh = eo.get_shape();
+                hobject::Shape* sh = eo.get_shape(hp);
                 TVal* vals = eo.prop_values();
                 uint val_idx = 0;
                 while (sh != null) {
