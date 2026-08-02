@@ -2139,7 +2139,11 @@ fn TVal? Vm.run(Vm* vm) {
                 if (mul_b >= -0x40000000L && mul_b <= 0x3FFFFFFFL &&
                     mul_c >= -0x40000000L && mul_c <= 0x3FFFFFFFL) {
                     long mul_result = mul_b * mul_c;
-                    if (mul_result >= types::FASTINT_MIN && mul_result <= types::FASTINT_MAX) {
+                    if (mul_result == 0 && (mul_b ^ mul_c) < 0) {
+                        // A zero product with operands of opposite sign is -0,
+                        // which no fastint can represent (ES2024 6.1.6.1.4).
+                        ra.set_number(-0.0);
+                    } else if (mul_result >= types::FASTINT_MIN && mul_result <= types::FASTINT_MAX) {
                         ra.set_fastint(mul_result);
                     } else {
                         ra.set_number((double)mul_result);
