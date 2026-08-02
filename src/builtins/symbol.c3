@@ -13,7 +13,6 @@ import duktape::hobject;
 
 /// Symbol creation counter, incremented for each unique symbol to guarantee
 /// uniqueness even with identical descriptions.
-uint g_symbol_counter = 0;
 
 /// Create a new Symbol HString with 0xFF prefix byte.
 /// Symbols are NOT inserted into the string table (they are unique).
@@ -28,8 +27,8 @@ uint g_symbol_counter = 0;
 fn HString* create_symbol_string(Heap* heap, char[] desc, bool has_desc = true) {
     // Build internal representation: 0xFF [0x01 marker if has_desc] + description
     // We add a counter suffix for uniqueness when description is empty
-    uint counter = g_symbol_counter;
-    g_symbol_counter++;
+    uint counter = heap.symbol_counter;
+    heap.symbol_counter++;
 
     char[256] buf;
     buf[0] = (char)0xFF;
@@ -63,8 +62,8 @@ fn HString* create_symbol_string(Heap* heap, char[] desc, bool has_desc = true) 
 /// detection sets is_symbol + is_hidden automatically, and enumeration
 /// paths filter them out. NOT inserted into the string table (unique).
 fn HString* create_hidden_symbol(Heap* heap, char[] desc) {
-    uint counter = g_symbol_counter;
-    g_symbol_counter++;
+    uint counter = heap.symbol_counter;
+    heap.symbol_counter++;
 
     char[256] buf;
     buf[0] = (char)0xFF;

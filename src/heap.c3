@@ -739,6 +739,17 @@ struct Heap {
     // live inline cache still matches. Set by alloc_shape_slot.
     uint                shape_reuse_gen;
 
+    // The interned key naming a promise reaction's link to the next reaction,
+    // written by builtins::reaction_set_next and read by the GC to walk the
+    // pending-reaction list. Interned once per heap at promise setup, because
+    // an interned string belongs to the heap whose table produced it.
+    void*               promise_reaction_next_key;
+
+    // Counter making generated symbol descriptions unique within this heap.
+    // Symbols are per-heap, so this is too: a process-wide counter would let
+    // one runtime's allocations shift another's symbol names.
+    uint                symbol_counter;
+
     // Set for the duration of destroy() and reset(), which free every object
     // directly instead of refcounting them down. Object teardown reads it to
     // skip its decref loop: releasing references while the sweep runs would
@@ -1009,7 +1020,6 @@ fn void Heap.init_builtin_strs(&self) {
         }
     }
     // Cache the "length" pointer for HObject.put_prop array_length sync.
-    hobject::builtin_length_key = self.strs[BuiltinStr.LENGTH];
 }
 
 /// Convert an integer to an interned HString*. Values from 0 to 255 come from
@@ -2590,7 +2600,7 @@ fn void Heap.drain_gray(&self) {
             case ObjClass.PROMISE:
                 // The settled value and the list of pending reaction records.
                 // A reaction's link to the next one is a hidden TVal property
-                // (hobject::promise_reaction_next_key, written by
+                // (Heap.promise_reaction_next_key, written by
                 // builtins::reaction_set_next). HeapHeader.next threads the
                 // heap_allocated GC list instead, so walking it here would
                 // follow unrelated objects.
@@ -2599,8 +2609,8 @@ fn void Heap.drain_gray(&self) {
                 while (reaction != null) {
                     self.mark_hobject(reaction);
                     HObject* next_reaction = null;
-                    if (hobject::promise_reaction_next_key != null) {
-                        if (try nv = reaction.get_prop((void*)hobject::promise_reaction_next_key)) {
+                    if (self.promise_reaction_next_key != null) {
+                        if (try nv = reaction.get_prop(self.promise_reaction_next_key)) {
                             if (nv.is_object() && nv.get_heapptr() != null) {
                                 next_reaction = (HObject*)nv.get_heapptr();
                             }
