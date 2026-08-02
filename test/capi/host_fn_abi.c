@@ -35,7 +35,7 @@ static void h_add(jse_call_ctx ctx, void *udata) {
     unsigned int i, n = jse_argc(ctx);
     for (i = 0; i < n; i++) {
         double d;
-        if (jse_get_number(NULL, jse_arg(ctx, i), &d) == JSE_OK) sum += d;
+        if (jse_ctx_get_number(ctx, jse_arg(ctx, i), &d) == JSE_OK) sum += d;
     }
     jse_return_number(ctx, sum);
 }

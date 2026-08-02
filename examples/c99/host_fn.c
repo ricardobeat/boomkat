@@ -56,7 +56,7 @@ static void h_greet(jse_call_ctx ctx, void *udata)
     }
 
     /* Strict readers: a non-string argument is a type error, not a coercion. */
-    if (jse_get_string(NULL, jse_arg(ctx, 0), name, sizeof(name), &len) != JSE_OK) {
+    if (jse_ctx_get_string(ctx, jse_arg(ctx, 0), name, sizeof(name), &len) != JSE_OK) {
         jse_throw_error(ctx, JSE_ERROR_TYPE, "greet() wants a string");
         return;
     }
@@ -79,8 +79,8 @@ static void h_divide(jse_call_ctx ctx, void *udata)
 
     (void)udata;
 
-    if (jse_get_number(NULL, jse_arg(ctx, 0), &a) != JSE_OK ||
-        jse_get_number(NULL, jse_arg(ctx, 1), &b) != JSE_OK) {
+    if (jse_ctx_get_number(ctx, jse_arg(ctx, 0), &a) != JSE_OK ||
+        jse_ctx_get_number(ctx, jse_arg(ctx, 1), &b) != JSE_OK) {
         jse_throw_error(ctx, JSE_ERROR_TYPE, "divide() wants two numbers");
         return;
     }

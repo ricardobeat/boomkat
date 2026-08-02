@@ -653,6 +653,14 @@ struct Heap {
     // the mark phase cannot reach it transitively. capi_mark, when set, is
     // called with capi_roots during mark_roots to mark every host-held value.
     void*               capi_roots;
+
+    // The C ABI Runtime that owns this heap, or null when the heap was not
+    // created through jse_open. A host function receives a call context, which
+    // carries a heap, so this is how it reaches its runtime without a global
+    // naming "the one runtime". Distinct from capi_roots, which happens to hold
+    // the same pointer but means "what the GC should walk for host-held values":
+    // one field answering two questions is the defect this change removes.
+    void*               capi_runtime;
     CapiMarkFn          capi_mark;
 
     // Valstack window the GC scans for roots. valstack_base is refreshed on VM
@@ -1668,6 +1676,7 @@ fn void Heap.reset(&self) {
     self.ag_did_await     = false;
     self.gc_root_count    = 0;
     self.capi_roots       = null;
+    self.capi_runtime     = null;
     self.capi_mark        = null;
     self.gc_running       = false;
     self.gc_trigger_counter = GC_INITIAL_TRIGGER;

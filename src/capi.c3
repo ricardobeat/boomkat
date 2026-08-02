@@ -114,7 +114,6 @@ struct Runtime {
     /// Innermost host-call context, or null outside a host callback. Lets the
     /// readers resolve a scope handle without the host threading the context
     /// through every call.
-    void*    active_ctx;
 }
 
 Runtime* g_rt = null;
@@ -174,13 +173,13 @@ fn int jse_open(void** out_rt) @export("jse_open") {
     rt.heap = hp; rt.vm = v;
     rt.slots = null; rt.slot_cap = 0; rt.slot_count = 0;
     rt.free_head = SLOT_FREE_END; rt.live = 0; rt.retired = 0;
-    rt.active_ctx = null;
     clear_err(rt);
 
     // The slot array is not an HObject, so the mark phase cannot reach it
     // transitively. Hand the heap a direct view of it instead; mark_roots walks
     // every live entry from there.
     hp.capi_roots = (void*)rt;
+    hp.capi_runtime = (void*)rt;
     hp.capi_mark = (heap::CapiMarkFn)&mark_slots;
 
     g_rt = rt;
@@ -207,6 +206,7 @@ fn void jse_close(void* rtp) @export("jse_close") {
     Heap* hp = rt.heap;
     // Stop the GC walking the registry before any of it is torn down.
     hp.capi_roots = null;
+    hp.capi_runtime = null;
     hp.capi_mark = null;
     if (rt.slots != null) {
         for (uint i = 0; i < rt.slot_count; i++) {
@@ -286,18 +286,6 @@ fn SlotEntry* slot_entry(Runtime* rt, uint id) {
     if (!e.used) return null;
     if (((id >> SLOT_INDEX_BITS) & SLOT_GEN_MASK) != (e.gen & SLOT_GEN_MASK)) return null;
     return e;
-}
-
-/// Resolve any handle: a scope handle against the innermost host call, a
-/// global slot id against the registry. Readers go through this so a host can
-/// pass jse_arg() straight into jse_get_number and friends.
-fn bool any_get(Runtime* rt, uint id, TVal* out) {
-    if ((id & SCOPE_HANDLE_BIT) != 0) {
-        if (rt == null || rt.active_ctx == null) return false;
-        return resolve_handle(rt, rt.active_ctx, id, out);
-    }
-    if (rt == null) return false;
-    return slot_get(rt, id, out);
 }
 
 fn bool slot_get(Runtime* rt, uint id, TVal* out) {
@@ -486,11 +474,10 @@ fn void describe_error(Runtime* rt, TVal* ev) {
 // Readers
 // ============================================================================
 
-fn int jse_type_of(void* rtp, uint id) @export("jse_type_of") {
-    if (rtp == null) return JSE_TYPE_OTHER;
-    Runtime* rt = (Runtime*)rtp;
+fn int type_of(Runtime* rt, void* ctxp, uint id) {
+    if (rt == null) return JSE_TYPE_OTHER;
     TVal v;
-    if (!any_get(rt, id, &v)) return JSE_TYPE_UNDEFINED;
+    if (!resolve_handle(rt, ctxp, id, &v)) return JSE_TYPE_UNDEFINED;
     if (v.is_undefined()) return JSE_TYPE_UNDEFINED;
     if (v.is_null()) return JSE_TYPE_NULL;
     if (v.is_boolean()) return JSE_TYPE_BOOLEAN;
@@ -511,6 +498,15 @@ fn int jse_type_of(void* rtp, uint id) @export("jse_type_of") {
     return JSE_TYPE_OTHER;
 }
 
+fn int jse_type_of(void* rtp, uint id) @export("jse_type_of") {
+    return type_of((Runtime*)rtp, null, id);
+}
+
+/// Context tier; see jse_ctx_get_number.
+fn int jse_ctx_type_of(void* ctxp, uint id) @export("jse_ctx_type_of") {
+    return type_of(ctx_runtime(ctxp), ctxp, id);
+}
+
 // A reader that fails must leave a message behind: jse_last_error is documented
 // as describing "the most recent failure", and a host that logs it on a bad
 // status would otherwise print an empty string (or, worse, a stale message from
@@ -520,28 +516,52 @@ fn int reader_fail(Runtime* rt, int code, String msg) {
     return code;
 }
 
-fn int jse_get_number(void* rtp_in, uint id, double* out) @export("jse_get_number") {
+// The readers come in two tiers. A host function holds a call context, not a
+// runtime, and only the context tier can resolve a scope handle at all. Code
+// outside a callback holds a runtime and uses the runtime tier. Neither accepts
+// a null and falls back to "the one runtime": a global slot handle is an index
+// into some runtime's registry, so with two runtimes open there is no such
+// thing, and guessing would resolve one runtime's handle against another's
+// values.
+fn int read_number(Runtime* rt, void* ctxp, uint id, double* out) {
     if (out == null) return JSE_ERR_INVALID;
-    Runtime* rt = rtp_in != null ? (Runtime*)rtp_in : g_rt;
     if (rt == null) return JSE_ERR_INVALID;
     clear_err(rt);
     TVal v;
-    if (!any_get(rt, id, &v)) return reader_fail(rt, JSE_ERR_INVALID, "invalid or freed value handle");
+    if (!resolve_handle(rt, ctxp, id, &v)) return reader_fail(rt, JSE_ERR_INVALID, "invalid or freed value handle");
     if (!v.is_numeric()) return reader_fail(rt, JSE_ERR_TYPE, "value is not a number");
     *out = v.get_number_or_fastint();
     return JSE_OK;
 }
 
-fn int jse_get_bool(void* rtp_in, uint id, int* out) @export("jse_get_bool") {
+fn int jse_get_number(void* rtp_in, uint id, double* out) @export("jse_get_number") {
+    return read_number((Runtime*)rtp_in, null, id, out);
+}
+
+/// Context tier: reads an argument or any handle a callback holds, including a
+/// scope handle, which the runtime tier cannot resolve.
+fn int jse_ctx_get_number(void* ctxp, uint id, double* out) @export("jse_ctx_get_number") {
+    return read_number(ctx_runtime(ctxp), ctxp, id, out);
+}
+
+fn int read_bool(Runtime* rt, void* ctxp, uint id, int* out) {
     if (out == null) return JSE_ERR_INVALID;
-    Runtime* rt = rtp_in != null ? (Runtime*)rtp_in : g_rt;
     if (rt == null) return JSE_ERR_INVALID;
     clear_err(rt);
     TVal v;
-    if (!any_get(rt, id, &v)) return reader_fail(rt, JSE_ERR_INVALID, "invalid or freed value handle");
+    if (!resolve_handle(rt, ctxp, id, &v)) return reader_fail(rt, JSE_ERR_INVALID, "invalid or freed value handle");
     if (!v.is_boolean()) return reader_fail(rt, JSE_ERR_TYPE, "value is not a boolean");
     *out = v.get_boolean() ? 1 : 0;
     return JSE_OK;
+}
+
+fn int jse_get_bool(void* rtp_in, uint id, int* out) @export("jse_get_bool") {
+    return read_bool((Runtime*)rtp_in, null, id, out);
+}
+
+/// Context tier; see jse_ctx_get_number.
+fn int jse_ctx_get_bool(void* ctxp, uint id, int* out) @export("jse_ctx_get_bool") {
+    return read_bool(ctx_runtime(ctxp), ctxp, id, out);
 }
 
 // UTF-8 conversion sink. The state is per-call and lives on jse_get_string's
@@ -564,12 +584,11 @@ fn void sink_put(char c, void* udata) {
 
 /// Copy a JS string out as NUL-terminated UTF-8. Two-call protocol: pass
 /// buf==null to learn the required size (excluding NUL).
-fn int jse_get_string(void* rtp_in, uint id, char* buf, usz cap, usz* out_len) @export("jse_get_string") {
-    Runtime* rt = rtp_in != null ? (Runtime*)rtp_in : g_rt;
+fn int read_string(Runtime* rt, void* ctxp, uint id, char* buf, usz cap, usz* out_len) {
     if (rt == null) return JSE_ERR_INVALID;
     clear_err(rt);
     TVal v;
-    if (!any_get(rt, id, &v)) return reader_fail(rt, JSE_ERR_INVALID, "invalid or freed value handle");
+    if (!resolve_handle(rt, ctxp, id, &v)) return reader_fail(rt, JSE_ERR_INVALID, "invalid or freed value handle");
     if (!v.is_string()) return reader_fail(rt, JSE_ERR_TYPE, "value is not a string");
     HString* s = (HString*)v.get_heapptr();
     // Symbols share the string tag but carry no meaningful text; copying their
@@ -584,6 +603,21 @@ fn int jse_get_string(void* rtp_in, uint id, char* buf, usz cap, usz* out_len) @
     if (need + 1 > cap) return reader_fail(rt, JSE_ERR_FULL, "buffer too small for string");
     buf[need] = 0;
     return JSE_OK;
+}
+
+fn int jse_get_string(void* rtp_in, uint id, char* buf, usz cap, usz* out_len) @export("jse_get_string") {
+    return read_string((Runtime*)rtp_in, null, id, buf, cap, out_len);
+}
+
+/// Context tier; see jse_ctx_get_number.
+fn int jse_ctx_get_string(void* ctxp, uint id, char* buf, usz cap, usz* out_len) @export("jse_ctx_get_string") {
+    return read_string(ctx_runtime(ctxp), ctxp, id, buf, cap, out_len);
+}
+
+/// The runtime owning a callback's context, for a host that needs to persist a
+/// value or evaluate. Mirrors QuickJS's JS_GetRuntime(ctx).
+fn void* jse_ctx_runtime(void* ctxp) @export("jse_ctx_runtime") {
+    return (void*)ctx_runtime(ctxp);
 }
 
 // ============================================================================
@@ -665,14 +699,7 @@ fn void host_trampoline(builtins::BuiltinContext* ctx, void* udata) {
     HostReg* reg = (HostReg*)udata;
     if (reg.cfn == null) return;
     JseHostFn cfn = (JseHostFn)reg.cfn;
-    // Publish this call's context so the readers can resolve scope handles
-    // without the host threading it through. Saved and restored rather than
-    // cleared: a host -> JS -> host chain must leave the outer call's context
-    // in place when the inner one returns.
-    void* prev = null;
-    if (g_rt != null) { prev = g_rt.active_ctx; g_rt.active_ctx = (void*)ctx; }
     cfn((void*)ctx, reg.udata);
-    if (g_rt != null) { g_rt.active_ctx = prev; }
 }
 
 /// Register `cfn` as a global function named `name`.
@@ -741,12 +768,23 @@ fn int jse_is_construct(void* ctxp) @export("jse_is_construct") {
     return builtins::host_is_construct((builtins::BuiltinContext*)ctxp) ? 1 : 0;
 }
 
+/// The runtime owning the call context, or null if the context is not one of
+/// ours. A host function is handed a context, not a runtime, so this is how the
+/// context-tier entry points find their runtime without consulting a global.
+fn Runtime* ctx_runtime(void* ctxp) @inline {
+    if (ctxp == null) return null;
+    builtins::BuiltinContext* ctx = (builtins::BuiltinContext*)ctxp;
+    if (ctx.heap == null) return null;
+    return (Runtime*)ctx.heap.capi_runtime;
+}
+
 /// Set the callback's return value from a handle.
 fn void jse_return(void* ctxp, uint id) @export("jse_return") {
-    if (ctxp == null || g_rt == null) return;
+    Runtime* rt = ctx_runtime(ctxp);
+    if (rt == null) return;
     builtins::BuiltinContext* ctx = (builtins::BuiltinContext*)ctxp;
     TVal v;
-    if (!resolve_handle(g_rt, ctxp, id, &v)) return;
+    if (!resolve_handle(rt, ctxp, id, &v)) return;
     builtins::host_return(ctx, v);
 }
 
@@ -789,19 +827,21 @@ fn void jse_throw_error(void* ctxp, int kind, char* msg) @export("jse_throw_erro
 
 /// Throw an arbitrary value by handle.
 fn void jse_throw(void* ctxp, uint id) @export("jse_throw") {
-    if (ctxp == null || g_rt == null) return;
+    Runtime* rt = ctx_runtime(ctxp);
+    if (rt == null) return;
     TVal v;
-    if (!resolve_handle(g_rt, ctxp, id, &v)) return;
+    if (!resolve_handle(rt, ctxp, id, &v)) return;
     builtins::host_throw((builtins::BuiltinContext*)ctxp, v);
 }
 
 /// Promote a scope handle to a runtime-owned global handle the host may keep
 /// past the callback. The caller then owns it and must jse_value_free it.
 fn uint jse_value_persist(void* ctxp, uint id) @export("jse_value_persist") {
-    if (g_rt == null) return 0;
+    Runtime* rt = ctx_runtime(ctxp);
+    if (rt == null) return 0;
     TVal v;
-    if (!resolve_handle(g_rt, ctxp, id, &v)) return 0;
-    return slot_alloc(g_rt, v);
+    if (!resolve_handle(rt, ctxp, id, &v)) return 0;
+    return slot_alloc(rt, v);
 }
 
 /// Call a JS function from host code.
@@ -812,9 +852,9 @@ fn uint jse_value_persist(void* ctxp, uint id) @export("jse_value_persist") {
 /// should return promptly; the status is JSE_ERR_THROW.
 fn int jse_call(void* ctxp, uint func_id, uint* argv, uint argc, uint this_id,
                 uint* out_val) @export("jse_call") {
-    if (ctxp == null || g_rt == null) return JSE_ERR_INVALID;
+    Runtime* rt = ctx_runtime(ctxp);
+    if (rt == null) return JSE_ERR_INVALID;
     builtins::BuiltinContext* ctx = (builtins::BuiltinContext*)ctxp;
-    Runtime* rt = g_rt;
     if (out_val != null) *out_val = 0;
 
     TVal fv;

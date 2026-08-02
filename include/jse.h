@@ -141,10 +141,27 @@ JSE_API void jse_value_free(jse_runtime rt, jse_value v);
 /* ------------------------------------------------------------------ readers */
 
 /*
+ * Readers come in two tiers, and which one you want follows from what you hold.
+ *
+ * Outside a callback you hold a jse_runtime: use jse_get_number and friends.
+ * Inside a host function you hold a jse_call_ctx and no runtime: use the
+ * jse_ctx_* forms. Only the context tier can resolve the handles jse_arg,
+ * jse_this and jse_new_target hand out, because those name a slot in the call's
+ * scope rather than in the runtime's registry.
+ *
+ * Neither tier accepts NULL. A value handle is an index into one runtime's
+ * registry, so with more than one runtime open there is no "the runtime" to
+ * guess: resolving a handle against the wrong one would answer with an
+ * unrelated value rather than fail. jse_ctx_runtime(ctx) gets you the runtime
+ * when you need it, mirroring QuickJS's JS_GetRuntime.
+ */
+
+/*
  * Type of a value. An invalid or freed handle reports JSE_TYPE_UNDEFINED, so
  * this never fails and needs no status code.
  */
 JSE_API int jse_type_of(jse_runtime rt, jse_value v);
+JSE_API int jse_ctx_type_of(jse_call_ctx ctx, jse_value v);
 
 /*
  * Read a number. Accepts both internal numeric representations (double and
@@ -152,12 +169,14 @@ JSE_API int jse_type_of(jse_runtime rt, jse_value v);
  * Returns JSE_OK, JSE_ERR_TYPE, or JSE_ERR_INVALID.
  */
 JSE_API int jse_get_number(jse_runtime rt, jse_value v, double *out);
+JSE_API int jse_ctx_get_number(jse_call_ctx ctx, jse_value v, double *out);
 
 /*
  * Read a boolean into *out as 0 or 1. Strict: does not coerce.
  * Returns JSE_OK, JSE_ERR_TYPE, or JSE_ERR_INVALID.
  */
 JSE_API int jse_get_bool(jse_runtime rt, jse_value v, int *out);
+JSE_API int jse_ctx_get_bool(jse_call_ctx ctx, jse_value v, int *out);
 
 /*
  * Copy a string out as NUL-terminated UTF-8. Strict: does not coerce, so call
@@ -175,6 +194,14 @@ JSE_API int jse_get_bool(jse_runtime rt, jse_value v, int *out);
  */
 JSE_API int jse_get_string(jse_runtime rt, jse_value v, char *buf, size_t cap,
                            size_t *out_len);
+JSE_API int jse_ctx_get_string(jse_call_ctx ctx, jse_value v, char *buf,
+                               size_t cap, size_t *out_len);
+
+/*
+ * The runtime that owns a callback's context, for a host that needs to persist
+ * a value or evaluate from inside a call. Mirrors JS_GetRuntime(ctx).
+ */
+JSE_API jse_runtime jse_ctx_runtime(jse_call_ctx ctx);
 
 /* ------------------------------------------------------- errors / microtasks */
 
@@ -189,8 +216,8 @@ JSE_API int jse_get_string(jse_runtime rt, jse_value v, char *buf, size_t cap,
  * host may log it unconditionally on failure. Those readers also clear it on
  * entry, so a message never survives from an unrelated earlier call.
  *
- * The one exception is a NULL rt or NULL out-parameter: that returns
- * JSE_ERR_INVALID with no runtime to record the message in.
+ * A NULL runtime, NULL context or NULL out-parameter returns JSE_ERR_INVALID
+ * with no runtime to record the message in.
  *
  * For a thrown Error the text is "Name: message" ("TypeError: x is not a
  * function"), which lets a host map it onto its own exception classes; `name`
