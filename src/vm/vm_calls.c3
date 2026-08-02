@@ -691,6 +691,22 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, Instruction insn, bool*
     TVal* func_slot = ds.regs_base + callee_reg;
     TVal func_val = *func_slot;
 
+    // Decode the callee once. Both the borrow-commit decision below and the
+    // activation-setup fast path after it need the same chain (is_object ->
+    // is_callable -> callable_kind -> extra_ptr().func.comp_func); walking it
+    // twice repeated four dependent pointer loads on every call, and a
+    // borrowed callee (the shape both benchmarked call forms produce) always
+    // walked both.
+    HObject* hobj_fast = null;
+    CompiledFunction* target_fast = null;
+    if (func_val.is_object()) {
+        HObject* hb = (HObject*)func_val.get_heapptr();
+        if (hb != null && hb.is_callable() && hb.callable_kind() == hobject::CallableKind.COMPILED_FN) {
+            hobj_fast = hb;
+            target_fast = (*hb.extra_ptr()).func.comp_func;
+        }
+    }
+
     // The borrow (no incref) is only committed when this call takes the
     // compiled-function activation-setup fast path below, where the result
     // overwrites the borrowed callee register on return and the write-back
@@ -700,20 +716,12 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, Instruction insn, bool*
     // register with ordinary owned semantics, so restore the owning
     // reference here before proceeding.
     if (callee_borrowed) {
-        bool commit = false;
-        if (func_val.is_object()) {
-            HObject* hb = (HObject*)func_val.get_heapptr();
-            if (hb != null && hb.is_callable() && hb.callable_kind() == hobject::CallableKind.COMPILED_FN) {
-                CompiledFunction* tf = (*hb.extra_ptr()).func.comp_func;
-                // Async callees are excluded: their promise result is written
-                // back to the callee register across suspension/resumption and
-                // rejection-unwind paths, where borrowed-slot bookkeeping would
-                // be fragile. Plain (sync) compiled functions only.
-                if (tf != null && !tf.is_class_ctor() && !tf.is_generator() && !tf.is_async()) {
-                    commit = true;
-                }
-            }
-        }
+        // Async callees are excluded: their promise result is written back to
+        // the callee register across suspension/resumption and rejection-unwind
+        // paths, where borrowed-slot bookkeeping would be fragile. Plain (sync)
+        // compiled functions only.
+        bool commit = target_fast != null && !target_fast.is_class_ctor()
+            && !target_fast.is_generator() && !target_fast.is_async();
         if (!commit) {
             if (func_val.is_heap_allocated() && func_val.get_heapptr() != null) {
                 ((types::HeapHeader*)func_val.get_heapptr()).incref();
@@ -724,10 +732,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, Instruction insn, bool*
     }
 
     // === Fast path: direct compiled HObject call (most common) ===
-    if (func_val.is_object()) {
-        HObject* hobj_fast = (HObject*)func_val.get_heapptr();
-        if (hobj_fast != null && hobj_fast.is_callable() && hobj_fast.callable_kind() == hobject::CallableKind.COMPILED_FN) {
-            CompiledFunction* target_fast = (*hobj_fast.extra_ptr()).func.comp_func;
+    if (hobj_fast != null) {
             if (target_fast == null) { *handled = true; ds.regs_base[result_reg].set_undefined(); return (TVal){}; }
                     // ES2015 §9.2.1 step 1: class constructors cannot be called without 'new'
                     if (target_fast.is_class_ctor()) {
@@ -1068,11 +1073,10 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, Instruction insn, bool*
                     ds.regs_base = ds.act.bottom;
                     return (TVal){};
                     }
-                }
-            }
+    }
 
-            *handled = false;
-            return (TVal){};
+    *handled = false;
+    return (TVal){};
 }
 
 fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, Instruction insn) {
