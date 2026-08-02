@@ -3026,7 +3026,7 @@ fn TVal? Vm.run(Vm* vm) {
                 HObject* hobj = (HObject*)rb.get_heapptr();
                 uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                 hobject::ICEntry* ic = ds.ic_base + pc_off;
-                if (ic.shape_id == hobj.shape_id) {
+                if (ic.shape_id == hobj.shape_id && ic.shape_gen == hobj.shape_generation()) {
                     // Own properties resolve to the receiver; a proto hit
                     // replays the recorded chain, since neither setPrototypeOf
                     // nor a shadowing property upstream moves shape_id here.

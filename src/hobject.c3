@@ -2411,6 +2411,11 @@ const uint IC_MAX_CHAIN = 4;
 struct ICEntry {
     /// Shape ID of the object when this entry was populated.
     uint   shape_id;
+    /// The receiver shape's generation when this entry was populated. A shape
+    /// id is recycled after the last object holding it drops it, so the id
+    /// alone can come back naming a different property layout; pairing it with
+    /// the generation stamped at reuse makes the (id, generation) pair unique.
+    uint   shape_gen;
     /// Property index within the owner's prop_values[].
     uint   prop_idx;
     /// The property's flags, so a cache hit needs no shape walk.
@@ -2434,6 +2439,14 @@ struct ICEntry {
     /// The owner's prop_alloc when this entry was filled. A hit requires it to
     /// still match, which is one pointer comparison.
     void*  cached_prop_alloc;
+}
+
+/// This object's shape generation, or a value no entry can match when it has
+/// no shape. Paired with shape_id it names one property layout uniquely, since
+/// a recycled id is always stamped with a fresh generation.
+fn uint HObject.shape_generation(&self) @inline {
+    Shape* sh = self.get_shape();
+    return sh != null ? sh.generation : 0xFFFFFFFFu;
 }
 
 /// Resolve the owner an ICEntry points at, or null when the entry no longer

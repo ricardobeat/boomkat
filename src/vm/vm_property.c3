@@ -93,7 +93,8 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     void* lookup_key = null;
                     if (rc.is_string()) lookup_key = rc.get_heapptr();
                     // Check shape_id first: most likely to differ on polymorphic sites.
-                    if (lookup_key != null && ic.shape_id == hobj.shape_id && ic.key == lookup_key) {
+                    if (lookup_key != null && ic.shape_id == hobj.shape_id && ic.key == lookup_key
+                        && ic.shape_gen == hobj.shape_generation()) {
                         HObject* ic_owner = hobject::ic_resolve_owner(ic, hobj);
                         if (ic_owner != null && ic.cached_prop_alloc == (void*)ic_owner.prop_values()) {
                             // Ultra-fast path: when the IC value is not a heap
@@ -339,6 +340,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                 int owner_idx = res.owner.find_prop_idx(key);
                                 if (owner_idx >= 0) {
                                     ic.shape_id = hobj.shape_id;
+                                    ic.shape_gen = hobj.shape_generation();
                                     ic.proto = null;  // own property
                                     ic.chain_len = 0;
                                     ic.prop_idx = (uint)owner_idx;
@@ -606,7 +608,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     if (ds.ic_base != null) {
                         uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                         hobject::ICEntry* ic = ds.ic_base + pc_off;
-                        if (ic.key == (void*)key_hstr && ic.shape_id == hobj.shape_id) {
+                        if (ic.key == (void*)key_hstr && ic.shape_id == hobj.shape_id && ic.shape_gen == hobj.shape_generation()) {
                             HObject* ic_owner = hobject::ic_resolve_owner(ic, hobj);
                             if (ic_owner != null && ic.cached_prop_alloc == (void*)ic_owner.prop_values()) {
                                 TVal ic_val = *ic.prop_value_ptr;
@@ -751,6 +753,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                     int owner_idx = res.owner.find_prop_idx(key);
                                     if (owner_idx >= 0) {
                                         ic.shape_id = hobj.shape_id;
+                                        ic.shape_gen = hobj.shape_generation();
                                         ic.proto = is_own ? null : (void*)res.owner;
                                         ic.chain_len = (char)chain_len;
                                         for (uint ci = 0; ci < chain_len; ci++) {
@@ -965,7 +968,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 HObject* hobj = (HObject*)rb.get_heapptr();
                 uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                 hobject::ICEntry* ic = ds.ic_base + pc_off;
-                if (ic.shape_id == hobj.shape_id) {
+                if (ic.shape_id == hobj.shape_id && ic.shape_gen == hobj.shape_generation()) {
                     HObject* ic_owner = hobject::ic_resolve_owner(ic, hobj);
                     if (ic_owner != null && ic.cached_prop_alloc == (void*)ic_owner.prop_values()) {
                         TVal ic_val = *ic.prop_value_ptr;
@@ -1021,7 +1024,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 }
                 if (!hop1_proxy && ds.ic_base != null) {
                     hobject::ICEntry* ic1 = ds.ic_base + pc1;
-                    if (ic1.key == (void*)key1_hstr && ic1.shape_id == hobj1.shape_id) {
+                    if (ic1.key == (void*)key1_hstr && ic1.shape_id == hobj1.shape_id && ic1.shape_gen == hobj1.shape_generation()) {
                         HObject* owner1 = hobject::ic_resolve_owner(ic1, hobj1);
                         if (owner1 != null && ic1.cached_prop_alloc == (void*)owner1.prop_values()) {
                             mid_val = *ic1.prop_value_ptr;
@@ -1046,6 +1049,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                 int idx1 = r1.owner.find_prop_idx(key1);
                                 if (idx1 >= 0) {
                                     ic1.shape_id = hobj1.shape_id;
+                                    ic1.shape_gen = hobj1.shape_generation();
                                     ic1.proto = null;  // own property
                                     ic1.chain_len = 0;
                                     ic1.prop_idx = (uint)idx1;
@@ -1129,7 +1133,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     // IC fast path for hop 2
                     if (ds.ic_base != null && key2_hstr != null) {
                         hobject::ICEntry* ic2 = ds.ic_base + pc2;
-                        if (ic2.key == (void*)key2_hstr && ic2.shape_id == hobj2.shape_id) {
+                        if (ic2.key == (void*)key2_hstr && ic2.shape_id == hobj2.shape_id && ic2.shape_gen == hobj2.shape_generation()) {
                             HObject* owner2 = hobject::ic_resolve_owner(ic2, hobj2);
                             if (owner2 != null && ic2.cached_prop_alloc == (void*)owner2.prop_values()) {
                                 TVal ic2_val = *ic2.prop_value_ptr;
@@ -1169,6 +1173,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                     int idx2 = r2.owner.find_prop_idx(key2);
                                     if (idx2 >= 0) {
                                         ic2.shape_id = hobj2.shape_id;
+                                        ic2.shape_gen = hobj2.shape_generation();
                                         ic2.proto = null;  // own property
                                         ic2.chain_len = 0;
                                         ic2.prop_idx = (uint)idx2;
@@ -1562,7 +1567,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     // IC fast path for hop 2
                     if (ds.ic_base != null && key2_hstr != null) {
                         hobject::ICEntry* ic2 = ds.ic_base + pc2;
-                        if (ic2.key == (void*)key2_hstr && ic2.shape_id == hobj2.shape_id) {
+                        if (ic2.key == (void*)key2_hstr && ic2.shape_id == hobj2.shape_id && ic2.shape_gen == hobj2.shape_generation()) {
                             HObject* owner2 = hobject::ic_resolve_owner(ic2, hobj2);
                             if (owner2 != null && ic2.cached_prop_alloc == (void*)owner2.prop_values()) {
                                 TVal ic2_val = *ic2.prop_value_ptr;
@@ -1602,6 +1607,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                     int idx2 = r2.owner.find_prop_idx(key2);
                                     if (idx2 >= 0) {
                                         ic2.shape_id = hobj2.shape_id;
+                                        ic2.shape_gen = hobj2.shape_generation();
                                         ic2.proto = null;  // own property
                                         ic2.chain_len = 0;
                                         ic2.prop_idx = (uint)idx2;
@@ -2229,7 +2235,8 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                     hobject::ICEntry* ic = ds.ic_base + pc_off;
                     void* wkey = rb.get_heapptr();
-                    if (wkey != null && ic.key == wkey && ic.shape_id == hobj.shape_id && ic.proto == null) {
+                    if (wkey != null && ic.key == wkey && ic.shape_id == hobj.shape_id && ic.proto == null
+                        && ic.shape_gen == hobj.shape_generation()) {
                         if (ic.cached_prop_alloc == (void*)hobj.prop_values()
                             && !ic.prop_flags.is_accessor
                             && ic.prop_flags.writable) {
@@ -2473,6 +2480,31 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         } else {
                             // Update value, preserve existing flags
                             vm.heap.tval_copy_ref(entry, &put_val);
+                            // Cache this site so a repeat write on the same shape
+                            // stores straight through the slot pointer. Only an own,
+                            // writable, non-accessor data property qualifies, which is
+                            // exactly what the hit path re-asserts from prop_flags.
+                            // The hit path matches on rb's own pointer, so a key
+                            // that get_prop_key replaced (an uninterned string, or
+                            // any coerced non-string) must not be cached under it.
+                            if (ds.ic_base != null && rb.is_string() && rb.get_heapptr() == key) {
+                                uint put_pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
+                                hobject::ICEntry* put_ic = ds.ic_base + put_pc_off;
+                                put_ic.shape_id = hobj.shape_id;
+                                put_ic.shape_gen = hobj.shape_generation();
+                                put_ic.proto = null;
+                                put_ic.chain_len = 0;
+                                put_ic.prop_idx = (uint)exist_idx;
+                                put_ic.prop_flags = exist_flags;
+                                // incref before decref, for the reason given at the
+                                // GETPROP fill: the slot's own reference may be the
+                                // key's last one when the same key is re-cached.
+                                ((types::HeapHeader*)key).incref();
+                                if (put_ic.key != null) { vm.heap.decref((types::HeapHeader*)put_ic.key); }
+                                put_ic.key = key;
+                                put_ic.prop_value_ptr = entry;
+                                put_ic.cached_prop_alloc = (void*)hobj.prop_values();
+                            }
                         }
                     } else {
                         // ARRAY exotic: element may live in the dense array part even when

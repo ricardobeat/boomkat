@@ -85,6 +85,11 @@ fn void init_threaded_handlers() {
     g_threaded_handlers[Opcode.INC_VAR.ordinal]       = &th_inc_var;
     g_threaded_handlers[Opcode.JUMP.ordinal]          = &th_jump;
     g_threaded_handlers[Opcode.TONUMERIC.ordinal]     = &th_tonumeric;
+
+    // --- Property access: IC hit path (bench_object / bench_property_lookup) ---
+    g_threaded_handlers[Opcode.GETPROPC.ordinal]        = &th_getpropc;
+    g_threaded_handlers[Opcode.GETPROPC_CACHED.ordinal] = &th_getpropc_cached;
+    g_threaded_handlers[Opcode.PUTPROP.ordinal]         = &th_putprop;
 }
 
 // Bail: return the resume pc WITHOUT consuming *pc -- the switch loop
@@ -541,6 +546,98 @@ fn Instruction* th_tonumeric(Instruction* pc, Instruction* code_end, TVal* regs,
     if (!rb.is_fastint()) return pc;
     TVal* ra = regs + insn.a;
     ra.set_fastint(rb.get_fastint());
+    pc++;
+    return th_next(pc, code_end, regs, cold);
+}
+
+// --- Property access: monomorphic inline-cache hit path only. ---
+//
+// A property op is a call into dispatch_property, whose prologue and sub-switch
+// cost more than the cached load or store itself. These handlers serve only the
+// IC hit, so the exotic receivers, accessors, prototype walks and shape
+// transitions all stay behind one bail to the switch, which re-decodes the
+// instruction and runs the full handler.
+
+/// The ICEntry for the instruction at `pc`, or null when the function carries
+/// no IC array.
+macro hobject::ICEntry* th_ic_at(Vm* vm, ColdCtx* cold, Instruction* pc) {
+    hobject::ICEntry* base = (hobject::ICEntry*)vm.current_func.ic_entries;
+    return base == null ? null : base + (uint)(pc - cold.code_base);
+}
+
+fn Instruction* th_getpropc(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    Instruction insn = *pc;
+    Vm* vm = cold.vm;
+    TVal* rb = regs + insn.b;
+    if (!rb.is_object()) return pc;
+    HObject* hobj = (HObject*)rb.get_heapptr();
+    // Proxy [[Get]] can run a trap, so it never reaches the cache.
+    if (hobj.flags.exotic_proxyobj) return pc;
+    hobject::ICEntry* ic = th_ic_at(vm, cold, pc);
+    if (ic == null) return pc;
+    void* key = vm.current_func.constants[(uint)insn.c].get_heapptr();
+    if (ic.key != key || ic.shape_id != hobj.shape_id
+        || ic.shape_gen != hobj.shape_generation()) return pc;
+    HObject* owner = hobject::ic_resolve_owner(ic, hobj);
+    if (owner == null || ic.cached_prop_alloc != (void*)owner.prop_values()) return pc;
+    TVal ic_val = *ic.prop_value_ptr;
+    TVal* ra = regs + insn.a;
+    if (!ic_val.is_heap_allocated()) {
+        *ra = ic_val;
+    } else {
+        vm.heap.tval_copy_ref(ra, &ic_val);
+        track_heap_store(cold.act, ra, (uint)insn.a);
+    }
+    pc++;
+    return th_next(pc, code_end, regs, cold);
+}
+
+/// GETPROPC_CACHED, the warm form GETPROPC rewrites itself into. The key is
+/// implied by the site, so only the shape and the storage pointer are checked;
+/// a miss bails so the switch performs the downgrade back to GETPROPC.
+fn Instruction* th_getpropc_cached(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    Instruction insn = *pc;
+    Vm* vm = cold.vm;
+    TVal* rb = regs + insn.b;
+    if (!rb.is_object()) return pc;
+    HObject* hobj = (HObject*)rb.get_heapptr();
+    hobject::ICEntry* ic = th_ic_at(vm, cold, pc);
+    if (ic == null) return pc;
+    if (ic.shape_id != hobj.shape_id || ic.shape_gen != hobj.shape_generation()) return pc;
+    HObject* owner = hobject::ic_resolve_owner(ic, hobj);
+    if (owner == null || ic.cached_prop_alloc != (void*)owner.prop_values()) return pc;
+    TVal ic_val = *ic.prop_value_ptr;
+    TVal* ra = regs + insn.a;
+    if (!ic_val.is_heap_allocated()) {
+        *ra = ic_val;
+    } else {
+        vm.heap.tval_copy_ref(ra, &ic_val);
+        track_heap_store(cold.act, ra, (uint)insn.a);
+    }
+    pc++;
+    return th_next(pc, code_end, regs, cold);
+}
+
+fn Instruction* th_putprop(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    Instruction insn = *pc;
+    Vm* vm = cold.vm;
+    TVal* ra = regs + insn.a;
+    if (!ra.is_object()) return pc;
+    HObject* hobj = (HObject*)ra.get_heapptr();
+    TVal* rb = regs + insn.b;
+    if (!rb.is_string()) return pc;
+    hobject::ICEntry* ic = th_ic_at(vm, cold, pc);
+    if (ic == null) return pc;
+    // proto == null restricts the entry to an own property, so no exotic
+    // receiver, inherited setter or prototype walk can be in play: the switch
+    // only ever fills this entry from the plain own-data-property store, and
+    // every exotic class it guards against changes the shape id or is not a
+    // plain object at all.
+    if (ic.key != rb.get_heapptr() || ic.shape_id != hobj.shape_id || ic.proto != null
+        || ic.shape_gen != hobj.shape_generation()) return pc;
+    if (ic.cached_prop_alloc != (void*)hobj.prop_values()
+        || ic.prop_flags.is_accessor || !ic.prop_flags.writable) return pc;
+    vm.heap.tval_copy_ref(ic.prop_value_ptr, regs + insn.c);
     pc++;
     return th_next(pc, code_end, regs, cold);
 }
