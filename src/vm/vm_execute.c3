@@ -691,7 +691,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                     if (args_name != null) {
                         TVal args_tv;
                         args_tv.set_object(args_obj);
-                        env::env_declare(act.var_env, args_name, args_tv, vm.heap);
+                        env::env_declare(act.var_env, args_name, args_tv);
                     }
                 }
             }
@@ -1122,7 +1122,7 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
             if (args_name != null) {
                 TVal args_tv;
                 args_tv.set_object(args_obj);
-                env::env_declare(cfn_var_env, args_name, args_tv, vm.heap);
+                env::env_declare(cfn_var_env, args_name, args_tv);
             }
         }
     }
@@ -4582,7 +4582,7 @@ fn TVal? Vm.run(Vm* vm) {
                         }
                     }
 
-                    int put_result = env::env_try_put_lex(ds.act.lex_env, key, *ra, true, vm.heap);
+                    int put_result = env::env_try_put_lex(ds.act.lex_env, key, *ra, true);
                     if (put_result == -1) {
                         HString* name_hstr = (HString*)key;
                         if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
@@ -4599,14 +4599,14 @@ fn TVal? Vm.run(Vm* vm) {
                         // Not in lex env, so check var env. Assigning to an
                         // undeclared name throws a ReferenceError, since this
                         // engine is strict-only and has no implicit globals.
-                        if (!env::env_has(ds.act.var_env, key, vm.heap)) {
+                        if (!env::env_has(ds.act.var_env, key)) {
                             HString* name_hstr = (HString*)key;
                             if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "'%s' is not defined", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
                                 return VM_ERROR~;
                             }
                             break;
                         }
-                        env::env_put(ds.act.var_env, key, *ra, vm.heap);
+                        env::env_put(ds.act.var_env, key, *ra);
                     }
                     vm.heap.decref_tval(ra);
                     ra.set_undefined();
@@ -4840,7 +4840,7 @@ fn TVal? Vm.run(Vm* vm) {
                     // ENV_STRICT TODO: own-vs-parent check for lex_env and var_env walks.
                     // Would need to introspect env_try_put_lex or rewrite walk here.
                     // Combined single-walk: check lex_env, writability, and update in one pass
-                    int put_result = env::env_try_put_lex(ds.act.lex_env, key, *ra, false, vm.heap);
+                    int put_result = env::env_try_put_lex(ds.act.lex_env, key, *ra, false);
                     if (put_result == -1) {
                         // A const violation throws a TypeError.
                         HString* name_hstr = (HString*)key;
@@ -4850,7 +4850,7 @@ fn TVal? Vm.run(Vm* vm) {
                         break;
                     } else if (put_result == 0) {
                         // Not in lex_env, so fall through to var_env.
-                        env::env_put(ds.act.var_env, key, *ra, vm.heap);
+                        env::env_put(ds.act.var_env, key, *ra);
                     }
                     // put_result == 1: already updated in lex_env
                     // Release ra's reference, since the binding now owns one.
@@ -4903,7 +4903,7 @@ fn TVal? Vm.run(Vm* vm) {
                         }
                     }
 
-                    int put_result = env::env_try_put_lex(ds.act.lex_env, key, *ra, true, vm.heap);
+                    int put_result = env::env_try_put_lex(ds.act.lex_env, key, *ra, true);
                     if (put_result == -1) {
                         HString* name_hstr = (HString*)key;
                         if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
@@ -4920,14 +4920,14 @@ fn TVal? Vm.run(Vm* vm) {
                         // Not in lex env, so check var env. Assigning to an
                         // identifier that exists nowhere in the scope chain throws a
                         // ReferenceError (ES5 §11.13.1, ES2015 §12.15.4).
-                        if (!env::env_has(ds.act.var_env, key, vm.heap)) {
+                        if (!env::env_has(ds.act.var_env, key)) {
                             HString* name_hstr = (HString*)key;
                             if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "'%s' is not defined", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
                                 return VM_ERROR~;
                             }
                             break;
                         }
-                        env::env_put(ds.act.var_env, key, *ra, vm.heap);
+                        env::env_put(ds.act.var_env, key, *ra);
                     }
                     vm.heap.decref_tval(ra);
                     ra.set_undefined();
@@ -4989,7 +4989,7 @@ fn TVal? Vm.run(Vm* vm) {
                     $endif
                     env::env_declare_global_func(ds.act.var_env, fdecl_name.get_heapptr(), *ra,
                         ds.act.var_env == vm.global_env,
-                        ((CompiledFunction*)ds.act.func).is_eval_fn(), vm.heap);
+                        ((CompiledFunction*)ds.act.func).is_eval_fn());
                 }
             }
             break;
@@ -5009,7 +5009,7 @@ fn TVal? Vm.run(Vm* vm) {
                     void* key = name_val.get_heapptr();
                     env::env_declare_var(ds.act.var_env, key, *ra,
                         ds.act.var_env == vm.global_env,
-                        ((CompiledFunction*)ds.act.func).is_eval_fn(), true, vm.heap);
+                        ((CompiledFunction*)ds.act.func).is_eval_fn(), true);
                 }
             }
             break;
@@ -5058,7 +5058,7 @@ fn TVal? Vm.run(Vm* vm) {
                     // (ES2015 §8.1.1.4.15/.17, §15.1.11 vs §18.2.1.2).
                     env::env_declare_var(ds.act.var_env, key, *ra,
                         ds.act.var_env == vm.global_env,
-                        ((CompiledFunction*)ds.act.func).is_eval_fn(), false, vm.heap);
+                        ((CompiledFunction*)ds.act.func).is_eval_fn(), false);
 
                     // Populate VarIC for next time
                     if (ds.var_ic_base != null) {
@@ -5094,7 +5094,7 @@ fn TVal? Vm.run(Vm* vm) {
                     if (vm.current_func.needs_env() == false) { unreachable("ENV_STRICT: needs_env=false fn touched own env: PUTLEX"); }
                     $endif
 
-                    env::env_declare_lex(ds.act.lex_env, key, *ra, vm.heap);
+                    env::env_declare_lex(ds.act.lex_env, key, *ra);
                 }
             }
             continue;

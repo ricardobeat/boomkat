@@ -1552,7 +1552,7 @@ fn void builtin_regexp_proto_symbol_split(BuiltinContext* ctx) {
         if (genv != null) {
             HString* regexp_gkey = builtin_intern_string(heap, "RegExp");
             if (regexp_gkey != null) {
-                TVal? gv = env::env_get(genv, regexp_gkey, ctx.heap);
+                TVal? gv = env::env_get(genv, regexp_gkey);
                 if (try rgv = gv) { default_ctor_tv = rgv; }
             }
         }
@@ -1914,7 +1914,7 @@ fn void builtin_regexp_proto_symbol_matchAll(BuiltinContext* ctx) {
         if (genv != null) {
             HString* regexp_gkey = builtin_intern_string(heap, "RegExp");
             if (regexp_gkey != null) {
-                TVal? gv = env::env_get(genv, regexp_gkey, ctx.heap);
+                TVal? gv = env::env_get(genv, regexp_gkey);
                 if (try rgv = gv) { default_ctor_tv = rgv; }
             }
         }
@@ -2852,7 +2852,7 @@ fn bool register_regexp_constructor(EnvRecord* global_env, Heap* heap) {
     TVal regexp_val;
     regexp_val.set_object(regexp_obj);
     set_func_ctor_name(regexp_obj, heap, "RegExp");
-    env::env_declare_nonenum(global_env, regexp_key, regexp_val, heap);
+    env::env_declare_nonenum(global_env, regexp_key, regexp_val);
 
     return true;
 }

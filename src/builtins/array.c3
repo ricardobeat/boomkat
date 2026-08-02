@@ -5051,7 +5051,7 @@ fn bool register_array_constructor(EnvRecord* global_env, Heap* heap) {
     TVal arr_val;
     arr_val.set_object(arr);
     set_func_ctor_name_length(arr, heap, "Array", 1);
-    env::env_declare_nonenum(global_env, arr_key, arr_val, heap);
+    env::env_declare_nonenum(global_env, arr_key, arr_val);
 
     return true;
 }

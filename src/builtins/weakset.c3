@@ -122,7 +122,7 @@ fn bool register_weakset_constructor(EnvRecord* global_env, Heap* heap) {
     TVal ws_val;
     ws_val.set_object(ctor);
     set_func_ctor_name(ctor, heap, "WeakSet");
-    env::env_declare_nonenum(global_env, ws_key, ws_val, heap);
+    env::env_declare_nonenum(global_env, ws_key, ws_val);
 
     return true;
 }

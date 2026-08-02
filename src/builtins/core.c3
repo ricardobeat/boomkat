@@ -2726,7 +2726,7 @@ fn bool set_num_static_prop(HObject* obj, Heap* heap, char[] name, double val) {
 fn bool register_named_value(EnvRecord* global_env, Heap* heap, char[] name, TVal val) {
     HString* key = heap.str_intern(name);
     if (key == null) return false;
-    return env::env_declare_nonenum(global_env, key, val, heap);
+    return env::env_declare_nonenum(global_env, key, val);
 }
 
 /// Register a global constant with ES5 §15.1 flags:
@@ -2744,7 +2744,7 @@ fn bool register_global_immutable(EnvRecord* global_env, Heap* heap, char[] name
     } else {
         val.set_number(number_val);
     }
-    env::env_declare_immutable(global_env, key, val, heap);
+    env::env_declare_immutable(global_env, key, val);
     return true;
 }
 
@@ -2754,7 +2754,7 @@ fn bool register_simple_builtin(EnvRecord* global_env, Heap* heap, char[] name, 
 
     TVal val;
     val.set_lightfunc((void*)(usz)fn_index);
-    env::env_declare_nonenum(global_env, key, val, heap);
+    env::env_declare_nonenum(global_env, key, val);
     return true;
 }
 
@@ -3437,7 +3437,7 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
 
     TVal print_val;
     print_val.set_lightfunc((void*)(usz)Builtin.PRINT.ordinal);
-    env::env_declare_nonenum(global_env, print_key, print_val, heap);
+    env::env_declare_nonenum(global_env, print_key, print_val);
 
     char[] console_name = "console";
     HString* console_key = heap.str_intern(console_name);
@@ -3454,7 +3454,7 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
 
     TVal console_val;
     console_val.set_object(console_obj);
-    env::env_declare_nonenum(global_env, console_key, console_val, heap);
+    env::env_declare_nonenum(global_env, console_key, console_val);
 
     // Register parseInt
     if (!register_simple_builtin(global_env, heap, "parseInt", Builtin.PARSE_INT.ordinal)) return false;
@@ -3496,7 +3496,7 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
         if (u_key == null) return false;
         TVal u_val;
         u_val.set_undefined();
-        env::env_declare_immutable(global_env, u_key, u_val, heap);
+        env::env_declare_immutable(global_env, u_key, u_val);
     }
 
     // Register Object constructor FIRST, creates Object.prototype (root of all chains)
@@ -3716,7 +3716,7 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
         // is the Error constructor HObject (set by register_native_error_ctor), not Function.prototype.
         char[][] ctor_names = { "Object", "Number", "Boolean", "String", "Array", "Function", "Date", "RegExp", "Error", "Map", "Set", "WeakMap", "WeakSet", "Symbol", "Promise", "GeneratorFunction" };
         for (int i = 0; i < ctor_names.len; i++) {
-            TVal? optv = env::env_get(global_env, builtin_intern_string(heap, ctor_names[i]), heap);
+            TVal? optv = env::env_get(global_env, builtin_intern_string(heap, ctor_names[i]));
             if (try tv = optv) {
                 if (tv.is_object() && tv.get_heapptr() != null) {
                     HObject* ctor = (HObject*)tv.get_heapptr();
@@ -3733,7 +3733,7 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
         if (gthis_key != null) {
             TVal gthis_tv;
             gthis_tv.set_object(global_env.bindings);
-            env::env_declare_nonenum(global_env, gthis_key, gthis_tv, heap);
+            env::env_declare_nonenum(global_env, gthis_key, gthis_tv);
         }
     }
 
@@ -3805,13 +3805,13 @@ fn bool register_test262_host(EnvRecord* global_env, Heap* heap) {
     if (es_fn == null) return false;
     TVal es_tv;
     es_tv.set_object(es_fn);
-    env::env_declare_nonenum(global_env, es_key, es_tv, heap);
+    env::env_declare_nonenum(global_env, es_key, es_tv);
 
     HObject* detach_fn = alloc_builtin_fn(heap, Builtin.DETACH_ARRAYBUFFER.ordinal, "detachArrayBuffer", 1);
     if (detach_fn == null) return false;
     TVal detach_tv;
     detach_tv.set_object(detach_fn);
-    env::env_declare_nonenum(global_env, d_hidden_key, detach_tv, heap);
+    env::env_declare_nonenum(global_env, d_hidden_key, detach_tv);
 
     HObject*? h262_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = h262_raw) return false;
@@ -3819,7 +3819,7 @@ fn bool register_test262_host(EnvRecord* global_env, Heap* heap) {
     h262.prototype = heap.object_proto;
     TVal h262_tv;
     h262_tv.set_object(h262);
-    env::env_declare_nonenum(global_env, h262_key, h262_tv, heap);
+    env::env_declare_nonenum(global_env, h262_key, h262_tv);
 
     h262.put_prop(d_key, detach_tv, hobject::PROP_FLAGS_WC, heap);
     h262.put_prop(e_key, es_tv, hobject::PROP_FLAGS_WC, heap);

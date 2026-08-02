@@ -162,7 +162,7 @@ fn bool register_weakmap_constructor(EnvRecord* global_env, Heap* heap) {
     TVal wm_val;
     wm_val.set_object(ctor);
     set_func_ctor_name(ctor, heap, "WeakMap");
-    env::env_declare_nonenum(global_env, wm_key, wm_val, heap);
+    env::env_declare_nonenum(global_env, wm_key, wm_val);
 
     return true;
 }

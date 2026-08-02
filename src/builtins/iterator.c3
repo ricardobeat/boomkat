@@ -747,7 +747,7 @@ fn bool register_iterator_ctor_and_helpers(EnvRecord* global_env, Heap* heap) {
         HString* key = builtin_intern_string(heap, "Iterator");
         if (key == null) return false;
         TVal ctor_tv; ctor_tv.set_object(ctor);
-        env::env_declare_nonenum(global_env, key, ctor_tv, heap);
+        env::env_declare_nonenum(global_env, key, ctor_tv);
     }
 
     // %IteratorHelperPrototype% (ES2025 §27.1.2.1): [[Prototype]] is

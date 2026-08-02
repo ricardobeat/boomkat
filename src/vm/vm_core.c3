@@ -323,7 +323,7 @@ fn bool invoke_getter(Vm* vm, hobject::AccessorResult* acc,
             HString* args_name_ig = (HString*)vm.heap.strs[heap::BuiltinStr.ARGUMENTS];
             if (args_name_ig != null) {
                 TVal args_tv_ig; args_tv_ig.set_object(args_obj_ig);
-                env::env_declare(new_act.var_env, args_name_ig, args_tv_ig, vm.heap);
+                env::env_declare(new_act.var_env, args_name_ig, args_tv_ig);
             }
         }
     }

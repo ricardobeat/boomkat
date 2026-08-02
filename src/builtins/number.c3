@@ -634,7 +634,7 @@ fn bool register_number_constructor(EnvRecord* global_env, Heap* heap) {
     {
         HString* parse_int_key = builtin_intern_string(heap, "parseInt");
         if (parse_int_key == null) return false;
-        TVal? global_pi_opt = env::env_get(global_env, parse_int_key, heap);
+        TVal? global_pi_opt = env::env_get(global_env, parse_int_key);
         TVal global_pi;
         if (try pi = global_pi_opt) {
             global_pi = pi;
@@ -648,7 +648,7 @@ fn bool register_number_constructor(EnvRecord* global_env, Heap* heap) {
     {
         HString* parse_float_key = builtin_intern_string(heap, "parseFloat");
         if (parse_float_key == null) return false;
-        TVal? global_pf_opt = env::env_get(global_env, parse_float_key, heap);
+        TVal? global_pf_opt = env::env_get(global_env, parse_float_key);
         TVal global_pf;
         if (try pf = global_pf_opt) {
             global_pf = pf;
@@ -664,7 +664,7 @@ fn bool register_number_constructor(EnvRecord* global_env, Heap* heap) {
     TVal num_val;
     num_val.set_object(num);
     set_func_ctor_name_length(num, heap, "Number", 1);
-    env::env_declare_nonenum(global_env, num_key, num_val, heap);
+    env::env_declare_nonenum(global_env, num_key, num_val);
 
     return true;
 }

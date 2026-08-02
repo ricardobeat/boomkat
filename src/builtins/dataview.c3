@@ -573,7 +573,7 @@ fn bool register_dataview(EnvRecord* global_env, Heap* heap) {
     if (ctor_key == null) return false;
     TVal ctor_val;
     ctor_val.set_object(ctor);
-    env::env_declare_nonenum(global_env, ctor_key, ctor_val, heap);
+    env::env_declare_nonenum(global_env, ctor_key, ctor_val);
 
     return true;
 }

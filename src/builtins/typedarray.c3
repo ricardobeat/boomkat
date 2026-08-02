@@ -4153,7 +4153,7 @@ fn bool register_ta_ctor(EnvRecord* global_env, Heap* heap, char[] name, uint fn
     if (key == null) return false;
     TVal val;
     val.set_object(ctor);
-    env::env_declare_nonenum(global_env, key, val, heap);
+    env::env_declare_nonenum(global_env, key, val);
 
     // Uint8Array base64/hex methods (tc39 proposal-arraybuffer-base64) live only
     // on %Uint8Array% and %Uint8Array.prototype%, not the shared %TypedArray%.

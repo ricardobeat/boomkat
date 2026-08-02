@@ -1094,7 +1094,7 @@ fn bool register_set_constructor(EnvRecord* global_env, Heap* heap) {
     TVal set_val;
     set_val.set_object(ctor);
     set_func_ctor_name(ctor, heap, "Set");
-    env::env_declare_nonenum(global_env, set_key, set_val, heap);
+    env::env_declare_nonenum(global_env, set_key, set_val);
 
     return true;
 }

@@ -419,7 +419,7 @@ fn ModuleDef*? resolve_module(Heap* heap, char[] specifier, char[] base_name, bo
         }
         HString* def_key = heap.str_intern("default");
         if (def_key != null) {
-            env::env_declare(mod.env, def_key, mod.json_value, heap);
+            env::env_declare(mod.env, def_key, mod.json_value);
         }
         call_on_module_loaded(heap, mod);
         mod.status = ModuleStatus.LOADED;
@@ -755,7 +755,7 @@ fn bool link_module(Heap* heap, vm::Vm* vm, ModuleDef* mod, EnvRecord* global_en
             }
             // A function declaration wins over any earlier binding of the same
             // name (last-declaration hoisting), so declare unconditionally.
-            env::env_declare(mod.env, key, val, heap);
+            env::env_declare(mod.env, key, val);
         }
     }
 
@@ -777,14 +777,14 @@ fn bool link_module(Heap* heap, vm::Vm* vm, ModuleDef* mod, EnvRecord* global_en
         HString* key = heap.str_intern(ee.local_name);
         if (key == null) continue;
         // Check if already declared (from import resolution or as a function).
-        if (!env::env_has(mod.env, key, heap)) {
+        if (!env::env_has(mod.env, key)) {
             TVal val;
             if (ee.is_lexical) {
                 val = env::tdz_sentinel();
             } else {
                 val.set_undefined();
             }
-            env::env_declare(mod.env, key, val, heap);
+            env::env_declare(mod.env, key, val);
         }
     }
 
@@ -1214,7 +1214,7 @@ fn bool module_execute_continue(Heap* heap, Vm* vm, ModuleDef* mod) {
             ns_val.set_object(ns);
             HString* local_key = heap.str_intern(ie.local_name);
             if (local_key != null) {
-                env::env_declare_const(mod.env, local_key, ns_val, heap);
+                env::env_declare_const(mod.env, local_key, ns_val);
             }
             continue;
         }
@@ -1239,10 +1239,10 @@ fn bool module_execute_continue(Heap* heap, Vm* vm, ModuleDef* mod) {
                 HObject*? ns_opt = build_namespace_object(heap, rr.owner);
                 if (try ns = ns_opt) {
                     TVal ns_val; ns_val.set_object(ns);
-                    env::env_declare(mod.env, local_key, ns_val, heap);
+                    env::env_declare(mod.env, local_key, ns_val);
                 } else {
                     TVal undef; undef.set_undefined();
-                    env::env_declare(mod.env, local_key, undef, heap);
+                    env::env_declare(mod.env, local_key, undef);
                 }
             } else {
                 install_live_binding(heap, mod.env, local_key, rr.owner, rr.binding_name);
@@ -1943,31 +1943,31 @@ fn void install_live_binding(Heap* heap, EnvRecord* dest_env, HString* dest_key,
                               ModuleDef* source_mod, char[] src_local_name) {
     if (source_mod.env == null) {
         TVal undef; undef.set_undefined();
-        env::env_declare(dest_env, dest_key, undef, heap);
+        env::env_declare(dest_env, dest_key, undef);
         return;
     }
     HString* src_key = heap.str_intern(src_local_name);
     if (src_key == null) {
         TVal undef; undef.set_undefined();
-        env::env_declare(dest_env, dest_key, undef, heap);
+        env::env_declare(dest_env, dest_key, undef);
         return;
     }
     if (dest_env.bindings == source_mod.env.bindings && dest_key == src_key) {
         TVal undef; undef.set_undefined();
-        env::env_declare(dest_env, dest_key, undef, heap);
+        env::env_declare(dest_env, dest_key, undef);
         return;
     }
     TVal accessor = builtins::make_module_binding_accessor(heap, source_mod.env.bindings, src_key);
     if (accessor.is_undefined()) {
         // Accessor allocation failed, degrade to a one-time snapshot rather
         // than leaving the binding entirely undeclared.
-        TVal? val_opt = env::env_get(source_mod.env, src_key, heap);
+        TVal? val_opt = env::env_get(source_mod.env, src_key);
         TVal val;
         if (catch err = val_opt) { val.set_undefined(); } else { val = val_opt; }
-        env::env_declare(dest_env, dest_key, val, heap);
+        env::env_declare(dest_env, dest_key, val);
         return;
     }
-    env::env_declare_accessor(dest_env, dest_key, accessor, heap);
+    env::env_declare_accessor(dest_env, dest_key, accessor);
 }
 
 /// Byte-wise comparison of two identifier slices, used to sort namespace

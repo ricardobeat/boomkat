@@ -253,7 +253,7 @@ fn HObject* register_weak_wrapper(EnvRecord* global_env, Heap* heap,
     TVal ctor_val;
     ctor_val.set_object(ctor);
     set_func_ctor_name(ctor, heap, name);
-    env::env_declare_nonenum(global_env, name_key, ctor_val, heap);
+    env::env_declare_nonenum(global_env, name_key, ctor_val);
 
     return proto;
 }

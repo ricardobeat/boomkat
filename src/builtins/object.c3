@@ -4288,7 +4288,7 @@ fn bool ordinary_set_proto(BuiltinContext* ctx, HObject* obj, HObject* new_proto
                 } else {
                     super_val.set_object(new_proto);
                 }
-                env::env_put(lex_env, super_key, super_val, ctx.heap);
+                env::env_put(lex_env, super_key, super_val);
             }
         }
     }
@@ -5664,7 +5664,7 @@ fn bool register_object_constructor(EnvRecord* global_env, Heap* heap) {
     if (obj_key == null) return false;
     TVal obj_val;
     obj_val.set_object(obj);
-    env::env_declare_nonenum(global_env, obj_key, obj_val, heap);
+    env::env_declare_nonenum(global_env, obj_key, obj_val);
 
     return true;
 }

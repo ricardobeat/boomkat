@@ -135,7 +135,7 @@ fn bool register_boolean_constructor(EnvRecord* global_env, Heap* heap) {
     if (key == null) return false;
     TVal val;
     val.set_object(ctor);
-    env::env_declare_nonenum(global_env, key, val, heap);
+    env::env_declare_nonenum(global_env, key, val);
 
     return true;
 }

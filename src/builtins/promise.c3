@@ -4146,7 +4146,7 @@ fn bool register_promise_constructor(EnvRecord* global_env, Heap* heap) {
     if (promise_key == null) return false;
     TVal promise_val;
     promise_val.set_object(ctor);
-    env::env_declare_nonenum(global_env, promise_key, promise_val, heap);
+    env::env_declare_nonenum(global_env, promise_key, promise_val);
 
     return true;
 }

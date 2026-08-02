@@ -983,7 +983,7 @@ fn bool register_arraybuffer(EnvRecord* global_env, Heap* heap) {
     if (ctor_key == null) return false;
     TVal ctor_val;
     ctor_val.set_object(ctor);
-    env::env_declare_nonenum(global_env, ctor_key, ctor_val, heap);
+    env::env_declare_nonenum(global_env, ctor_key, ctor_val);
 
     return true;
 }
@@ -1074,7 +1074,7 @@ fn bool register_sharedarraybuffer(EnvRecord* global_env, Heap* heap) {
     if (ctor_key == null) return false;
     TVal ctor_val;
     ctor_val.set_object(ctor);
-    env::env_declare_nonenum(global_env, ctor_key, ctor_val, heap);
+    env::env_declare_nonenum(global_env, ctor_key, ctor_val);
 
     return true;
 }

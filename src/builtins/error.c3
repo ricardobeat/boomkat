@@ -772,7 +772,7 @@ fn bool register_error_builtins(EnvRecord* global_env, Heap* heap) {
         TVal err_val;
         err_val.set_object(err_ctor);
         set_func_ctor_name_length(err_ctor, heap, "Error", 1);
-        env::env_declare_nonenum(global_env, err_key, err_val, heap);
+        env::env_declare_nonenum(global_env, err_key, err_val);
     }
 
     // --- Register NativeError constructors as proper HObjects ---
@@ -836,6 +836,6 @@ fn bool register_native_error_ctor(EnvRecord* global_env, Heap* heap, char[] nam
     if (key == null) return false;
     TVal val;
     val.set_object(ctor);
-    env::env_declare_nonenum(global_env, key, val, heap);
+    env::env_declare_nonenum(global_env, key, val);
     return true;
 }

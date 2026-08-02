@@ -569,7 +569,7 @@ fn bool register_generator_constructor(EnvRecord* global_env, Heap* heap) {
         if (gf_key == null) return false;
         TVal gf_tv;
         gf_tv.set_object(ctor);
-        env::env_declare_nonenum(global_env, gf_key, gf_tv, heap);
+        env::env_declare_nonenum(global_env, gf_key, gf_tv);
     }
 
     // AsyncFunction infrastructure (ES2017 §25.7).

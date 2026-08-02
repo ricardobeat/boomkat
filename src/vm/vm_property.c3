@@ -2472,7 +2472,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                                 HString* args_name_s = (HString*)vm.heap.strs[heap::BuiltinStr.ARGUMENTS];
                                                 if (args_name_s != null) {
                                                     TVal args_tv_s; args_tv_s.set_object(args_obj_s);
-                                                    env::env_declare(new_act.var_env, args_name_s, args_tv_s, ds.vm.heap);
+                                                    env::env_declare(new_act.var_env, args_name_s, args_tv_s);
                                                 }
                                             }
                                         }
@@ -2663,7 +2663,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                             HString* args_name_s2 = (HString*)vm.heap.strs[heap::BuiltinStr.ARGUMENTS];
                                             if (args_name_s2 != null) {
                                                 TVal args_tv_s2; args_tv_s2.set_object(args_obj_s2);
-                                                env::env_declare(new_act.var_env, args_name_s2, args_tv_s2, ds.vm.heap);
+                                                env::env_declare(new_act.var_env, args_name_s2, args_tv_s2);
                                             }
                                         }
                                     }

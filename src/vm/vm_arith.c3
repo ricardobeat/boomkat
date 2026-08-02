@@ -337,7 +337,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                 // var_env fallback (with-blocks)
                 // ENV_STRICT TODO: own-vs-parent check for var_env walk (currently skipped for conservative correctness)
                 if (ds.act.lex_env != ds.act.var_env) {
-                    TVal? result = env::env_get(ds.act.var_env, key, ds.vm.heap);
+                    TVal? result = env::env_get(ds.act.var_env, key);
                     if (try v2 = result) {
                         TVal new_val;
                         if (v2.is_fastint()) {
@@ -352,7 +352,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                             if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
                             new_val.set_number(d + (is_inc ? 1.0 : -1.0));
                         }
-                        env::env_put(ds.act.var_env, key, new_val, ds.vm.heap);
+                        env::env_put(ds.act.var_env, key, new_val);
                         vm.heap.tval_copy_ref(ra, &new_val);
                         found = true;
                     }

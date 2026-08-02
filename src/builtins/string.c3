@@ -3640,7 +3640,7 @@ fn bool register_string_constructor(EnvRecord* global_env, Heap* heap) {
     TVal str_val;
     str_val.set_object(str_obj);
     set_func_ctor_name_length(str_obj, heap, "String", 1);
-    env::env_declare_nonenum(global_env, str_key, str_val, heap);
+    env::env_declare_nonenum(global_env, str_key, str_val);
 
     return true;
 }

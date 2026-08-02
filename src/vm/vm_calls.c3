@@ -114,7 +114,7 @@ fn bool? vm_init_private_members(Vm* vm, EnvRecord* ctor_lex_env, EnvRecord* cto
     HObject* this_hobj = (HObject*)this_tv.get_heapptr();
 
     if (target.brand_name_hstr != null) {
-        if (try brand_sym = env::env_get(ctor_lex_env, target.brand_name_hstr, vm.heap)) {
+        if (try brand_sym = env::env_get(ctor_lex_env, target.brand_name_hstr)) {
             if (brand_sym.is_string()) {
                 void* brand_key = brand_sym.get_heapptr();
                 if (brand_key != null) {
@@ -981,7 +981,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, Instruction insn, bool*
                             if (args_name != null) {
                                 TVal args_tv;
                                 args_tv.set_object(args_obj);
-                                env::env_declare(new_act.var_env, args_name, args_tv, ds.vm.heap);
+                                env::env_declare(new_act.var_env, args_name, args_tv);
                             }
                         }
                     }
@@ -1878,7 +1878,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                         if (args_name_g != null) {
                             TVal args_tv_g;
                             args_tv_g.set_object(args_obj_g);
-                            env::env_declare(new_act_g.var_env, args_name_g, args_tv_g, ds.vm.heap);
+                            env::env_declare(new_act_g.var_env, args_name_g, args_tv_g);
                         }
                     }
                 }
@@ -2104,7 +2104,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                     if (args_name != null) {
                         TVal args_tv;
                         args_tv.set_object(args_obj);
-                        env::env_declare(new_act.var_env, args_name, args_tv, ds.vm.heap);
+                        env::env_declare(new_act.var_env, args_name, args_tv);
                     }
                 }
             }
@@ -2580,7 +2580,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                     HString* args_name_su = (HString*)vm.heap.strs[heap::BuiltinStr.ARGUMENTS];
                     if (args_name_su != null) {
                         TVal args_tv_su; args_tv_su.set_object(args_obj_su);
-                        env::env_declare(super_var_env, args_name_su, args_tv_su, ds.vm.heap);
+                        env::env_declare(super_var_env, args_name_su, args_tv_su);
                     }
                 }
             }
@@ -3047,7 +3047,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, I
                     HString* args_name2 = (HString*)vm.heap.strs[heap::BuiltinStr.ARGUMENTS];
                     if (args_name2 != null) {
                         TVal args_tv2; args_tv2.set_object(args_obj2);
-                        env::env_declare(ctor_var_env, args_name2, args_tv2, ds.vm.heap);
+                        env::env_declare(ctor_var_env, args_name2, args_tv2);
                     }
                 }
             }

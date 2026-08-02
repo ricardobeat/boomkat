@@ -357,7 +357,7 @@ fn bool register_bigint_constructor(EnvRecord* global_env, Heap* heap) {
     HString* key = heap.str_intern("BigInt");
     if (key == null) return false;
     TVal ctor_val; ctor_val.set_object(ctor);
-    env::env_declare_nonenum(global_env, key, ctor_val, heap);
+    env::env_declare_nonenum(global_env, key, ctor_val);
 
     return true;
 }

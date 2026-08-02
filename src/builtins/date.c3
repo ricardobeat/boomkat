@@ -2567,7 +2567,7 @@ fn bool register_date_constructor(EnvRecord* global_env, Heap* heap) {
     TVal date_val;
     date_val.set_object(date_obj);
     set_func_ctor_name_length(date_obj, heap, "Date", 7);
-    env::env_declare_nonenum(global_env, date_key, date_val, heap);
+    env::env_declare_nonenum(global_env, date_key, date_val);
 
     return true;
 }

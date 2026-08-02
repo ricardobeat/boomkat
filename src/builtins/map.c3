@@ -562,7 +562,7 @@ fn bool register_map_constructor(EnvRecord* global_env, Heap* heap) {
     TVal map_val;
     map_val.set_object(ctor);
     set_func_ctor_name(ctor, heap, "Map");
-    env::env_declare_nonenum(global_env, map_key, map_val, heap);
+    env::env_declare_nonenum(global_env, map_key, map_val);
 
     return true;
 }

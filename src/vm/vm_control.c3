@@ -501,14 +501,14 @@ fn TVal? dispatch_closures(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 if ((depth_val.is_fastint() || depth_val.is_number()) && name_val.is_string()) {
                     uint depth = (uint)(depth_val.is_fastint() ? depth_val.get_fastint() : (long)depth_val.get_number());
                     void* key = name_val.get_heapptr();
-                    TVal? result = env::env_get_at_depth(ds.act.lex_env, depth, key, ds.vm.heap);
+                    TVal? result = env::env_get_at_depth(ds.act.lex_env, depth, key);
                     if (try v = result) {
                         vm.heap.tval_copy_ref(ra, &v);
                         track_heap_store(ds.act, ra, (uint)insn.a);
                     } else {
                         // Also check var_env if different
                         if (ds.act.lex_env != ds.act.var_env) {
-                            result = env::env_get_at_depth(ds.act.var_env, depth, key, ds.vm.heap);
+                            result = env::env_get_at_depth(ds.act.var_env, depth, key);
                             if (try v2 = result) {
                                 vm.heap.tval_copy_ref(ra, &v2);
                                 track_heap_store(ds.act, ra, (uint)insn.a);

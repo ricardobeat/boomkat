@@ -930,7 +930,7 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
     TVal sym_val;
     sym_val.set_object(ctor);
     set_func_ctor_name(ctor, heap, "Symbol");
-    env::env_declare_nonenum(global_env, sym_key, sym_val, heap);
+    env::env_declare_nonenum(global_env, sym_key, sym_val);
 
     return true;
 }
