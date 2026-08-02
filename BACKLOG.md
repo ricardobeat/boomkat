@@ -50,6 +50,8 @@ Four silent wrong-value or spec bugs, all of the same shape: an invariant hand-m
 
 ## Test coverage gaps
 
+- [ ] **`test/codegen_dead_dest.js` does not protect its own transform's jump-target guard** — mutation-testing the dead-destination LDREG elimination by disabling the `jump_targets[k]` check leaves that test at 16/16 passing. The broader suite does catch it (goldens 28/30, rosetta 39/42), so the guard is protected, just not by the dedicated test. It needs a case where a branch converges onto the copy for it to stand alone as the regression net
+
 - [x] **`$DONOTEVALUATE` parse-negative tests are no longer skipped wholesale** — `scripts/run_test262.py:851` compiles `negative: phase: parse` tests and scores rejection as a pass. Un-skipping them surfaced 35 real failures (all cleared in session 303). Only `phase: resolution` module-linking negatives remain skipped, correctly: they need the loader, not the parser
 - [x] Golden bytecode covers control-flow-carrying expressions — `test/golden_bytecode/` holds ternary (6 cases: nested, both operands, left/right operand, binary arms, compound assign), `&&`/`||`/`??` (4) and optional chaining, each carrying the behavioural pair in its header comment (e.g. `ternary_nested.js` names `test/codegen_control_flow_expr.js`)
 - [x] The two general codegen bugs from `b0fdc49c` have dedicated tests — `test/codegen_assign_clobber.js` (36 assertions) and `test/codegen_hoist_brace_swallow.js` (10), no longer resting on the `t11_colord` bundle
