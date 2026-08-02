@@ -1,7 +1,5 @@
-//! The engine allows only one runtime per process, and `cargo test` runs test
-//! functions on parallel threads in a single process. So this is deliberately
-//! ONE test function: opening a second runtime concurrently would fail by
-//! design, and the failure would be an artefact of the harness, not a bug.
+//! Runtimes are independent, so these tests open their own and run in
+//! parallel under `cargo test` like any other.
 
 use jse::{Error, Kind, Runtime, Type};
 
@@ -76,9 +74,6 @@ fn engine_round_trips() {
     rt.eval_unit("globalThis.p = 'no'; Promise.resolve('yes').then(v => p = v);")
         .unwrap();
     assert_eq!(rt.eval("p").unwrap().as_string().unwrap(), "yes");
-
-    // A second runtime is refused rather than corrupting the first.
-    assert_eq!(Runtime::new().unwrap_err().kind(), Kind::AlreadyOpen);
 
     // Dropping values releases slots. The registry grows on demand, so this
     // does not prove a fixed cap -- it proves Drop is wired up, since a leak
@@ -377,4 +372,227 @@ fn host_functions(rt: &Runtime) {
             .unwrap(),
         1.0
     );
+}
+
+/// Several runtimes at once, sharing nothing.
+#[test]
+fn runtimes_are_independent() {
+    let a = Runtime::new().expect("open A");
+    let b = Runtime::new().expect("open B");
+    let c = Runtime::new().expect("open C");
+
+    // Globals do not leak between them, and the same name holds three values.
+    a.eval_unit("globalThis.tag = 'A'").unwrap();
+    b.eval_unit("globalThis.tag = 'B'").unwrap();
+    c.eval_unit("globalThis.tag = 'C'").unwrap();
+    assert_eq!(a.eval("tag").unwrap().as_string().unwrap(), "A");
+    assert_eq!(b.eval("tag").unwrap().as_string().unwrap(), "B");
+    assert_eq!(c.eval("tag").unwrap().as_string().unwrap(), "C");
+    // A name defined in one is simply not there in another.
+    assert_eq!(
+        a.eval("typeof onlyInB").unwrap().as_string().unwrap(),
+        "undefined"
+    );
+    b.eval_unit("globalThis.onlyInB = 1").unwrap();
+    assert_eq!(
+        a.eval("typeof onlyInB").unwrap().as_string().unwrap(),
+        "undefined"
+    );
+
+    // Objects are per-runtime, and so are the shape transitions behind them:
+    // build the same property sequence in both and read both back.
+    for rt in [&a, &b] {
+        rt.eval_unit("globalThis.o = {}; for (let i = 0; i < 64; i++) o['k' + i] = i;")
+            .unwrap();
+    }
+    a.eval_unit("o.k7 = 'replaced in A'").unwrap();
+    assert_eq!(
+        a.eval("o.k7").unwrap().as_string().unwrap(),
+        "replaced in A"
+    );
+    assert_eq!(b.eval("o.k7").unwrap().as_number().unwrap(), 7.0);
+    assert_eq!(b.eval("o.k63").unwrap().as_number().unwrap(), 63.0);
+
+    // Even the built-in prototypes are separate: patching one is invisible in
+    // the others.
+    a.eval_unit("Array.prototype.mine = function () { return 'A only' }")
+        .unwrap();
+    assert_eq!(
+        a.eval("[].mine()").unwrap().as_string().unwrap(),
+        "A only"
+    );
+    assert_eq!(
+        b.eval("typeof [].mine").unwrap().as_string().unwrap(),
+        "undefined"
+    );
+
+    // Strings intern per-runtime, so identity holds within each and the two
+    // tables are unrelated. Both runtimes see the same text and each compares
+    // it equal to itself.
+    for rt in [&a, &b] {
+        assert!(rt
+            .eval("('alpha' + '') === 'alpha'")
+            .unwrap()
+            .as_bool()
+            .unwrap());
+        assert_eq!(rt.eval("'alpha'").unwrap().as_string().unwrap(), "alpha");
+    }
+
+    // Host functions are registered per-runtime. The same name in two runtimes
+    // is two different closures with their own captured state.
+    a.register_fn("who", 0, |ctx| Ok(ctx.string("host of A")))
+        .unwrap();
+    b.register_fn("who", 0, |ctx| Ok(ctx.string("host of B")))
+        .unwrap();
+    assert_eq!(a.eval("who()").unwrap().as_string().unwrap(), "host of A");
+    assert_eq!(b.eval("who()").unwrap().as_string().unwrap(), "host of B");
+    // C never registered it.
+    assert_eq!(
+        c.eval("typeof who").unwrap().as_string().unwrap(),
+        "undefined"
+    );
+
+    // Arguments still read correctly with more than one runtime open: the
+    // readers address the runtime through the call context, not a guess.
+    for rt in [&a, &b] {
+        rt.register_fn("twice", 1, |ctx| Ok(ctx.number(ctx.arg(0).as_number()? * 2.0)))
+            .unwrap();
+        assert_eq!(rt.eval("twice(21)").unwrap().as_number().unwrap(), 42.0);
+    }
+
+    // Closing one leaves the others fully working.
+    drop(b);
+    assert_eq!(a.eval("tag").unwrap().as_string().unwrap(), "A");
+    assert_eq!(a.eval("who()").unwrap().as_string().unwrap(), "host of A");
+    assert_eq!(c.eval("tag").unwrap().as_string().unwrap(), "C");
+
+    // And a fresh one opened afterwards starts clean -- no state survived.
+    let d = Runtime::new().expect("open D after closing B");
+    assert_eq!(
+        d.eval("typeof tag").unwrap().as_string().unwrap(),
+        "undefined"
+    );
+    assert_eq!(
+        d.eval("typeof [].mine").unwrap().as_string().unwrap(),
+        "undefined"
+    );
+    assert_eq!(d.eval("6 * 7").unwrap().as_number().unwrap(), 42.0);
+}
+
+/// Values move between runtimes by being read out and written back, never by
+/// handing a handle over -- which the borrow checker rejects outright.
+#[test]
+fn values_cross_runtimes_only_by_copying() {
+    let a = Runtime::new().unwrap();
+    let b = Runtime::new().unwrap();
+
+    let from_a = a.eval("'made in A'").unwrap().as_string().unwrap();
+    b.register_fn("fromA", 0, move |ctx| Ok(ctx.string(&from_a)))
+        .unwrap();
+    assert_eq!(
+        b.eval("fromA() + '!'").unwrap().as_string().unwrap(),
+        "made in A!"
+    );
+
+    // The handle itself never crosses. `a.eval(..)` borrows `a`, so there is no
+    // way to hand the resulting Value to `b`: it has no method taking one, and
+    // the 'rt lifetime would reject it if it did. This is the compile-time
+    // version of the ABI's JSE_ERR_INVALID.
+    let n = a.eval("21").unwrap().as_number().unwrap();
+    b.eval_unit(&format!("globalThis.n = {n} * 2")).unwrap();
+    assert_eq!(b.eval("n").unwrap().as_number().unwrap(), 42.0);
+}
+
+/// A host callback holding on to a value past the call that produced it.
+///
+/// `ctx.persist` copies a scope handle into its own runtime's registry, and the
+/// runtime is read off the call context -- so the same closure body registered
+/// in two runtimes persists into whichever one called it.
+#[test]
+fn callback_persists_into_its_own_runtime() {
+    use std::cell::RefCell;
+
+    let a = Runtime::new().unwrap();
+    let b = Runtime::new().unwrap();
+
+    for (rt, label) in [(&a, "A"), (&b, "B")] {
+        let held: RefCell<Option<jse::Persisted>> = RefCell::new(None);
+        rt.register_fn("remember", 1, move |ctx| {
+            *held.borrow_mut() = Some(ctx.persist(ctx.arg(0))?);
+            // Read it back through the runtime tier, after the scope handle
+            // that fed it would already be useless.
+            let seen = held.borrow().as_ref().unwrap().as_string()?;
+            Ok(ctx.string(&seen))
+        })
+        .unwrap();
+
+        let echoed = rt
+            .eval(&format!("remember('kept in {label}')"))
+            .unwrap()
+            .as_string()
+            .unwrap();
+        assert_eq!(echoed, format!("kept in {label}"));
+    }
+
+    // A host-built value has no handle, so persisting one is refused rather
+    // than fabricating a slot.
+    a.register_fn("persist_built", 0, |ctx| {
+        let built = ctx.number(1.0);
+        match ctx.persist(built) {
+            Ok(_) => Ok(ctx.string("unexpectedly persisted")),
+            Err(e) => Ok(ctx.string(&format!("refused: {:?}", e.kind()))),
+        }
+    })
+    .unwrap();
+    assert_eq!(
+        a.eval("persist_built()").unwrap().as_string().unwrap(),
+        "refused: Type"
+    );
+}
+
+/// `Runtime` moves between threads; it does not get shared with them.
+#[test]
+fn runtime_is_send_not_sync() {
+    fn assert_send<T: Send>() {}
+    assert_send::<Runtime>();
+
+    // Built here, driven there.
+    let rt = Runtime::new().unwrap();
+    rt.eval_unit("globalThis.origin = 'main'").unwrap();
+    let rt = std::thread::spawn(move || {
+        rt.eval_unit("globalThis.origin += '+worker'").unwrap();
+        rt
+    })
+    .join()
+    .unwrap();
+    assert_eq!(
+        rt.eval("origin").unwrap().as_string().unwrap(),
+        "main+worker"
+    );
+
+    // Two threads, one runtime each, running at the same time. They share
+    // nothing, so this is sound -- and it is the case `Send` exists for.
+    let handles: Vec<_> = (0..4)
+        .map(|i| {
+            std::thread::spawn(move || {
+                let rt = Runtime::new().unwrap();
+                rt.eval_unit(&format!("globalThis.id = {i}")).unwrap();
+                for _ in 0..200 {
+                    rt.eval_unit("({ junk: id })").unwrap();
+                }
+                // Bound rather than returned inline: the Value must drop
+                // before `rt` does, and a tail expression drops it after.
+                let id = rt.eval("id").unwrap().as_number().unwrap();
+                id
+            })
+        })
+        .collect();
+    let mut ids: Vec<f64> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+    ids.sort_by(f64::total_cmp);
+    assert_eq!(ids, vec![0.0, 1.0, 2.0, 3.0]);
+
+    // Sharing ONE runtime across threads is rejected at compile time; a Mutex
+    // is the opt-in, since the lock supplies the exclusion the engine lacks.
+    fn assert_sync<T: Sync>() {}
+    assert_sync::<std::sync::Mutex<Runtime>>();
 }

@@ -27,6 +27,7 @@ set `JSE_LIBRARY=/path/to/libjse.dylib` or pass `Runtime("/path/to/libjse.dylib"
 
 ```sh
 python3 bindings/python/example.py
+python3 bindings/python/example_two_runtimes.py
 ```
 
 ## Expected output
@@ -48,6 +49,22 @@ caught throw: [uncaught exception] TypeError: Cannot read properties of null (re
 caught syntax: [syntax error] expected '<identifier>', got '('
 still alive: yes
 runtime closed
+```
+
+And from `example_two_runtimes.py`:
+
+```
+a.x: 111.0  b.x: 222.0
+b cannot see onlyInA: ReferenceError: onlyInA is not defined
+a.o.k199: 199.0  b.o.k199: -199.0
+a: s === 'shared text' -> True
+b: s === 'shared text' -> True
+host fn invoked from a says: a
+host fn invoked from b says: b
+b received from a: a/7
+b still works after a closed: 223.0
+a is closed: this Runtime is closed
+both runtimes closed
 ```
 
 ## Usage
@@ -98,7 +115,13 @@ is the non-decorator form. `constructable=True` allows `new fn()`. Without it, `
 throws a `TypeError`, which is how JS built-ins behave.
 
 The `Call` carries `args` (arguments as plain Python values), `raw` (the same
-arguments as live `JsValue` references), `this`, and `is_construct`.
+arguments as live `JsValue` references), `this`, `new_target`, `is_construct`, and
+`runtime` (the `Runtime` this call is executing inside).
+
+Arguments arrive as *scope* handles, which name a slot in the call rather than in the
+runtime's value registry. The binding reads them through the ABI's context tier
+(`jse_ctx_type_of`, `jse_ctx_get_number`, `jse_ctx_get_bool`, `jse_ctx_get_string`),
+which is the only tier that resolves them.
 
 ### Throwing
 
@@ -148,16 +171,60 @@ arithmetic on the Python side of the result, or return data and let JS assemble 
 call. Returning a `dict` or `list` raises for the same reason; return
 `json.dumps(...)` and `JSON.parse` it in JS.
 
+## Multiple runtimes
+
+Several `Runtime` objects can be open at once. They share no globals, no objects, no
+prototypes and no interned strings.
+
+```python
+with Runtime() as a, Runtime() as b:
+    a.eval("globalThis.x = 111")
+    b.eval("globalThis.x = 222")
+    a.eval("x")                       # 111.0
+    b.eval("x")                       # 222.0
+```
+
+Closing one does not disturb the other. `bindings/python/example_two_runtimes.py` runs
+through independent globals, objects, string tables and host functions.
+
+### Moving values between runtimes
+
+A JS value belongs to the runtime that produced it, and nothing in the ABI transfers
+one. That costs the binding nothing, because a raw handle is never exposed: `eval()`
+hands back a plain Python object, and a `JsValue` from `call.raw` is confined to the
+host call it came from. So the Python value is what crosses:
+
+```python
+payload = a.eval("JSON.stringify(config)")
+b.eval("globalThis.config = JSON.parse(%r)" % payload)
+```
+
+Numbers, strings and booleans need no ceremony. Objects and functions have to be
+serialized, exactly as they do when leaving the engine for Python at all.
+
+### Host functions
+
+`Call.runtime` is the runtime the callback is executing inside, resolved from the call
+context via `jse_ctx_runtime` rather than from whichever `Runtime` registered the
+function. Registering one Python callable in several runtimes therefore works, and each
+invocation can tell them apart:
+
+```python
+def which(call):
+    return names[call.runtime]
+
+a.register("whichRuntime", which)
+b.register("whichRuntime", which)
+```
+
 ## Limitations
 
 These come from the C ABI, not the binding.
 
-One runtime per process. The engine holds process-global state; a second `Runtime()`
-raises `JsError` with code `-5` rather than corrupting the first.
-
-Not thread-safe. Confine a runtime to a single thread. CPython's ctypes callbacks take
-the GIL automatically, so host functions are safe on the single thread the ABI already
-requires. That is a throughput ceiling rather than a correctness problem.
+A runtime is driven from one thread at a time. Nothing enforces this: the engine has
+no locking, and two threads inside one runtime corrupt it. Two threads each driving
+their *own* runtime share nothing and are fine. CPython's ctypes callbacks take the
+GIL automatically, so host functions are safe on the thread the ABI already requires.
 
 Registration is permanent. The ABI has no way to unbind a host function, and its ctypes
 trampoline is held on the `Runtime` for the process lifetime. (It must be: ctypes keeps

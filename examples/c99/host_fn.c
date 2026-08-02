@@ -34,11 +34,12 @@ typedef struct {
  *
  * Reads one argument and returns a string the host built.
  *
- * Two details worth copying. First, jse_get_string uses the same two-call
+ * Two details worth copying. First, jse_ctx_get_string uses the same two-call
  * measure-then-fill protocol as everywhere else in the ABI, so the engine
- * never hands back memory to free. Second, the readers accept a NULL runtime
- * inside a callback — a binding does not have to thread the jse_runtime
- * through to its callbacks just to read an argument.
+ * never hands back memory to free. Second, it is the CONTEXT-tier reader: a
+ * callback holds a jse_call_ctx, and only that tier resolves the scope handles
+ * jse_arg hands out. jse_ctx_runtime(ctx) reaches the runtime when one is
+ * genuinely needed.
  */
 static void h_greet(jse_call_ctx ctx, void *udata)
 {
@@ -96,7 +97,9 @@ static void h_divide(jse_call_ctx ctx, void *udata)
  *
  * The host calling back into JS. jse_call runs a JS function from inside a
  * callback; the handle it writes to out_val is runtime-owned and must be
- * freed, unlike the scope handles from jse_arg.
+ * freed, unlike the scope handles from jse_arg. Freeing it needs the runtime
+ * that owns it, which jse_ctx_runtime(ctx) supplies — a handle names a slot in
+ * one specific runtime's registry, so there is no runtime-agnostic free.
  *
  * If the callee throws, jse_call returns JSE_ERR_THROW with the exception
  * already recorded on this context. The right move is to return promptly and
@@ -107,6 +110,7 @@ static void h_divide(jse_call_ctx ctx, void *udata)
  */
 static void h_map_twice(jse_call_ctx ctx, void *udata)
 {
+    jse_runtime rt = jse_ctx_runtime(ctx);
     jse_value fn   = jse_arg(ctx, 0);
     jse_value once = 0;
     jse_value twice = 0;
@@ -121,7 +125,7 @@ static void h_map_twice(jse_call_ctx ctx, void *udata)
 
     args[0] = once;
     if (jse_call(ctx, fn, args, 1, 0, &twice) != JSE_OK) {
-        jse_value_free(NULL, once);
+        jse_value_free(rt, once);
         return;
     }
 
@@ -132,8 +136,8 @@ static void h_map_twice(jse_call_ctx ctx, void *udata)
      * `twice` after handing it to jse_return is safe: the return value has
      * already been recorded on the context by then.
      */
-    jse_value_free(NULL, once);
-    jse_value_free(NULL, twice);
+    jse_value_free(rt, once);
+    jse_value_free(rt, twice);
 }
 
 /* Evaluate `src`, print `label = result`, and report any failure. */

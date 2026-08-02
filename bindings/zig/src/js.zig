@@ -4,8 +4,13 @@
 //!   - C status codes become a Zig error set, so every fallible call is `try`.
 //!   - `Runtime` and `Value` own their C resources and expose `deinit`, making
 //!     them `defer`-friendly. `Value.deinit` is idempotent.
-//!   - The engine is single-runtime-per-process and not thread-safe; a second
-//!     `Runtime.init` returns `error.Invalid`.
+//!   - Any number of runtimes may be open at once, each with its own globals,
+//!     objects and interned strings. A runtime must be driven from one thread
+//!     at a time; the engine has no locking and enforces nothing. Two threads
+//!     each driving their own runtime share nothing and are fine.
+//!   - A `Value` belongs to the runtime that produced it and carries a
+//!     reference to its owner, so the reader tier is picked for you. Handing a
+//!     value to a different runtime yields `error.Invalid`.
 //!   - Host functions are written as plain Zig functions taking a `Ctx`;
 //!     `Runtime.register` builds the `callconv(.c)` trampoline at comptime and
 //!     converts a returned Zig error into a JS throw.
@@ -26,7 +31,8 @@ pub const Error = error{
     Throw,
     /// Engine fault with no JS error attached.
     Internal,
-    /// Null/bad argument, bad handle, or a second runtime in this process.
+    /// Null/bad argument, or a bad handle -- including one belonging to a
+    /// different runtime than the one asked to resolve it.
     Invalid,
     /// Value is not of the requested type (readers do not coerce).
     WrongType,
@@ -65,6 +71,18 @@ pub fn version() [:0]const u8 {
     return std.mem.span(c.jse_version());
 }
 
+/// Who resolves a `Value`'s handle.
+///
+/// A handle indexes one runtime's registry, so reading it requires naming that
+/// runtime. Outside a callback you hold a `*Runtime`; inside one you hold a
+/// `jse_call_ctx` and no runtime, and only the context tier can resolve the
+/// scope handles `Ctx.arg`/`.this`/`.newTarget` return. `Value` records which
+/// it has, so callers use the same four readers either way.
+const Owner = union(enum) {
+    runtime: *Runtime,
+    ctx: c.jse_call_ctx,
+};
+
 /// A handle to a JS value.
 ///
 /// Two flavours share this type, distinguished by `owned`:
@@ -74,42 +92,55 @@ pub fn version() [:0]const u8 {
 ///     only until the host callback returns. `deinit` on one is a no-op, so
 ///     `defer v.deinit()` stays correct either way.
 ///
-/// Values do not outlive the `Runtime` that produced them.
+/// A value belongs to the runtime that produced it and does not outlive it.
+/// Handles are not portable between runtimes: every runtime numbers its
+/// registry slots from the same base, so the same integer is a live handle in
+/// each. A handle given to the wrong runtime yields `error.Invalid` only when
+/// that slot is empty there; otherwise it reads out an unrelated value. Treat
+/// crossing runtimes as a bug rather than something you will be told about --
+/// to move a value, read it out and write it back in.
 pub const Value = struct {
-    /// Null inside a host callback, where the readers accept a null runtime.
-    rt: ?*Runtime = null,
+    owner: Owner,
     handle: c.jse_value,
     /// False for scope handles, which the engine reclaims on callback return.
     owned: bool = true,
-
-    fn rtPtr(self: Value) c.jse_runtime {
-        return if (self.rt) |r| r.ptr else null;
-    }
 
     /// Release the handle. Idempotent, a no-op on scope handles, and safe to
     /// `defer` unconditionally.
     pub fn deinit(self: *Value) void {
         if (self.handle == 0 or !self.owned) return;
-        c.jse_value_free(self.rtPtr(), self.handle);
+        switch (self.owner) {
+            .runtime => |r| c.jse_value_free(r.ptr, self.handle),
+            .ctx => |ctx| c.jse_value_free(c.jse_ctx_runtime(ctx), self.handle),
+        }
         self.handle = 0;
     }
 
     pub fn typeOf(self: Value) Type {
-        return @enumFromInt(c.jse_type_of(self.rtPtr(), self.handle));
+        return @enumFromInt(switch (self.owner) {
+            .runtime => |r| c.jse_type_of(r.ptr, self.handle),
+            .ctx => |ctx| c.jse_ctx_type_of(ctx, self.handle),
+        });
     }
 
     /// Read a JS number. Does not coerce: fails with `error.WrongType` on
     /// anything that is not a number.
     pub fn toNumber(self: Value) Error!f64 {
         var out: f64 = undefined;
-        try check(c.jse_get_number(self.rtPtr(), self.handle, &out));
+        try check(switch (self.owner) {
+            .runtime => |r| c.jse_get_number(r.ptr, self.handle, &out),
+            .ctx => |ctx| c.jse_ctx_get_number(ctx, self.handle, &out),
+        });
         return out;
     }
 
     /// Read a JS boolean. Does not coerce.
     pub fn toBool(self: Value) Error!bool {
         var out: c_int = undefined;
-        try check(c.jse_get_bool(self.rtPtr(), self.handle, &out));
+        try check(switch (self.owner) {
+            .runtime => |r| c.jse_get_bool(r.ptr, self.handle, &out),
+            .ctx => |ctx| c.jse_ctx_get_bool(ctx, self.handle, &out),
+        });
         return out != 0;
     }
 
@@ -117,13 +148,32 @@ pub const Value = struct {
     /// JS first if you want stringification. Caller owns the returned slice.
     pub fn toString(self: Value, gpa: std.mem.Allocator) (Error || std.mem.Allocator.Error)![]u8 {
         var len: usize = undefined;
-        try check(c.jse_get_string(self.rtPtr(), self.handle, null, 0, &len));
+        try check(self.readString(null, 0, &len));
 
         const buf = try gpa.alloc(u8, len + 1);
         errdefer gpa.free(buf);
 
-        try check(c.jse_get_string(self.rtPtr(), self.handle, buf.ptr, buf.len, &len));
+        try check(self.readString(buf.ptr, buf.len, &len));
         return gpa.realloc(buf, len) catch buf[0..len];
+    }
+
+    /// Retag an owned handle onto `rt`, for a value persisted inside a callback
+    /// that must stay readable after the call returns.
+    ///
+    /// `rt` must be the runtime the value came from. Retagging onto any other
+    /// runtime is undetected whenever that slot is occupied there, and reads
+    /// back an unrelated value, so this is a promise you make rather than one
+    /// the engine checks.
+    pub fn rebind(self: Value, rt: *Runtime) Value {
+        return .{ .owner = .{ .runtime = rt }, .handle = self.handle, .owned = self.owned };
+    }
+
+    /// The two-call `jse_get_string` protocol, on whichever tier owns us.
+    fn readString(self: Value, buf: ?[*]u8, cap: usize, len: *usize) c_int {
+        return switch (self.owner) {
+            .runtime => |r| c.jse_get_string(r.ptr, self.handle, buf, cap, len),
+            .ctx => |ctx| c.jse_ctx_get_string(ctx, self.handle, buf, cap, len),
+        };
     }
 };
 
@@ -162,18 +212,18 @@ pub const Ctx = struct {
     /// Argument `i` as a scope handle. Reading past `argc` yields `undefined`,
     /// matching JS, so there is no bounds error to handle.
     pub fn arg(self: Ctx, i: u32) Value {
-        return .{ .handle = c.jse_arg(self.raw, i), .owned = false };
+        return .{ .owner = .{ .ctx = self.raw }, .handle = c.jse_arg(self.raw, i), .owned = false };
     }
 
     /// The `this` receiver. Strict semantics: an undefined receiver stays
     /// undefined rather than becoming the global object.
     pub fn this(self: Ctx) Value {
-        return .{ .handle = c.jse_this(self.raw), .owned = false };
+        return .{ .owner = .{ .ctx = self.raw }, .handle = c.jse_this(self.raw), .owned = false };
     }
 
     /// `new.target`, or `undefined` on a plain call.
     pub fn newTarget(self: Ctx) Value {
-        return .{ .handle = c.jse_new_target(self.raw), .owned = false };
+        return .{ .owner = .{ .ctx = self.raw }, .handle = c.jse_new_target(self.raw), .owned = false };
     }
 
     /// True when invoked through `new` or `super()`.
@@ -218,19 +268,44 @@ pub const Ctx = struct {
         c.jse_throw(self.raw, v.handle);
     }
 
+    /// The runtime this call is running in, for a host that needs to identify
+    /// or act on the runtime behind a callback -- telling apart two runtimes
+    /// sharing one registered function, or naming the runtime to `rebind` a
+    /// persisted value onto once the call returns.
+    ///
+    /// The returned `Runtime` borrows the engine instance -- it is the same
+    /// one the embedder opened, so do not `deinit` it here. It is returned by
+    /// value while `Value` holds a pointer back to it, so bind it to a local
+    /// (`var rt = ctx.runtime();`) and pass `&rt`.
+    ///
+    /// Do not re-enter the VM through it: calling `eval`/`exec` on this
+    /// runtime while the callback is still on the stack corrupts the
+    /// interpreter. Use `Ctx.call` to invoke JS from inside a host function.
+    pub fn runtime(self: Ctx) Runtime {
+        return .{ .ptr = c.jse_ctx_runtime(self.raw) };
+    }
+
     /// Promote a scope handle to a runtime-owned one that outlives the call.
     /// The returned `Value` is owned, so `deinit` it. This is the only
     /// supported way to retain a value past the callback.
-    pub fn persist(self: Ctx, rt: *Runtime, v: Value) Value {
-        return .{ .rt = rt, .handle = c.jse_value_persist(self.raw, v.handle), .owned = true };
+    ///
+    /// The result stays tagged with this context, which resolves to the right
+    /// runtime for as long as the call is on the stack. To read it after the
+    /// callback returns, retag it with `Value.rebind(&rt)`.
+    pub fn persist(self: Ctx, v: Value) Value {
+        return .{
+            .owner = .{ .ctx = self.raw },
+            .handle = c.jse_value_persist(self.raw, v.handle),
+            .owned = true,
+        };
     }
 
     /// Call a JS function from inside the callback.
     ///
     /// Pass `null` for `this_val` to call with `undefined`. The result is an
-    /// owned handle — `deinit` it — but it has no `Runtime` attached, which is
-    /// fine: the readers accept a null runtime, and freeing it is a no-op
-    /// against the scope. Prefer `callFree` when you only need to read it.
+    /// owned handle tagged with this context, so the readers resolve it and
+    /// `deinit` frees it. To keep it past the callback, `rebind` it to the
+    /// runtime first.
     ///
     /// If the callee throws, the exception is recorded on this context and
     /// `error.Throw` comes back; return promptly and let the engine propagate
@@ -250,7 +325,7 @@ pub const Ctx = struct {
             if (this_val) |t| t.handle else 0,
             &out,
         ));
-        return .{ .handle = out, .owned = true };
+        return .{ .owner = .{ .ctx = self.raw }, .handle = out, .owned = true };
     }
 };
 
@@ -287,11 +362,16 @@ fn trampoline(comptime func: anytype) c.jse_host_fn {
     return Shim.invoke;
 }
 
-/// The JS engine instance. Only one may exist per process.
+/// A JS engine instance: its own globals, objects, shapes and interned
+/// strings, sharing nothing with any other runtime.
+///
+/// Any number may be open at once. Each must be driven from one thread at a
+/// time -- the engine has no locking and enforces nothing -- but two threads
+/// each driving their own runtime share no state and are fine.
 pub const Runtime = struct {
     ptr: c.jse_runtime,
 
-    /// Create the runtime. Returns `error.Invalid` if one is already open.
+    /// Create a runtime, independent of any already open.
     ///
     /// The returned `Runtime` is returned by value but `Value` holds a pointer
     /// back to it, so keep it at a stable address (a local you never copy is
@@ -302,7 +382,8 @@ pub const Runtime = struct {
         return .{ .ptr = ptr };
     }
 
-    /// Destroy the runtime. All outstanding `Value`s become invalid.
+    /// Destroy the runtime. All outstanding `Value`s from it become invalid;
+    /// other runtimes are untouched.
     pub fn deinit(self: *Runtime) void {
         if (self.ptr == null) return;
         c.jse_close(self.ptr);
@@ -311,11 +392,11 @@ pub const Runtime = struct {
 
     /// Compile and run `src`, evaluated for its completion value (so
     /// `"40 + 2"` yields 42). Pending microtasks are drained before returning.
-    /// Caller owns the returned `Value`.
+    /// Caller owns the returned `Value`, which belongs to this runtime.
     pub fn eval(self: *Runtime, src: []const u8) Error!Value {
         var handle: c.jse_value = 0;
         try check(c.jse_eval(self.ptr, src.ptr, src.len, &handle));
-        return .{ .rt = self, .handle = handle };
+        return .{ .owner = .{ .runtime = self }, .handle = handle };
     }
 
     /// Bind a Zig function as a JS global named `name`.
@@ -418,6 +499,74 @@ test "eval, read back, and surface errors" {
     try std.testing.expectEqualStrings("Error: boom", rt.lastError());
 }
 
+test "runtimes are independent and do not share values" {
+    const gpa = std.testing.allocator;
+
+    var a = try Runtime.init();
+    defer a.deinit();
+    var b = try Runtime.init();
+    defer b.deinit();
+
+    // Separate global scopes: the same name holds a different value in each.
+    try a.exec("var tag = 'A'; var n = 111");
+    try b.exec("var tag = 'B'; var n = 222");
+
+    var a_tag = try a.eval("tag");
+    defer a_tag.deinit();
+    var b_tag = try b.eval("tag");
+    defer b_tag.deinit();
+
+    const a_text = try a_tag.toString(gpa);
+    defer gpa.free(a_text);
+    const b_text = try b_tag.toString(gpa);
+    defer gpa.free(b_text);
+    try std.testing.expectEqualStrings("A", a_text);
+    try std.testing.expectEqualStrings("B", b_text);
+
+    // Separate object graphs, built through the same property sequence so the
+    // shape transitions interleave.
+    try a.exec("var o = {}; for (let i = 0; i < 50; i++) o['k' + i] = i");
+    try b.exec("var o = {}; for (let i = 0; i < 50; i++) o['k' + i] = i * 2");
+
+    var a_k49 = try a.eval("o.k49");
+    defer a_k49.deinit();
+    var b_k49 = try b.eval("o.k49");
+    defer b_k49.deinit();
+    try std.testing.expectEqual(@as(f64, 49), try a_k49.toNumber());
+    try std.testing.expectEqual(@as(f64, 98), try b_k49.toNumber());
+
+    // Handles are per-runtime registry indices, numbered from the same base in
+    // every runtime, so A and B hand out equal integers for unrelated values.
+    var a_n = try a.eval("n");
+    defer a_n.deinit();
+    var b_n = try b.eval("n");
+    defer b_n.deinit();
+    try std.testing.expectEqual(a_n.handle, b_n.handle);
+    try std.testing.expectEqual(@as(f64, 111), try a_n.toNumber());
+    try std.testing.expectEqual(@as(f64, 222), try b_n.toNumber());
+
+    // Crossing runtimes is a programming error the engine does not reliably
+    // catch: with the slot occupied in B, B answers with its OWN value.
+    try std.testing.expectEqual(@as(f64, 222), try a_n.rebind(&b).toNumber());
+
+    // It only surfaces as error.Invalid when the slot is empty in the receiver.
+    var fresh = try Runtime.init();
+    defer fresh.deinit();
+    try std.testing.expectError(Error.Invalid, a_n.rebind(&fresh).toNumber());
+
+    // Moving a value across means reading it out and writing it back in.
+    try b.exec("var fromA = 111");
+    var moved = try b.eval("fromA + n");
+    defer moved.deinit();
+    try std.testing.expectEqual(@as(f64, 333), try moved.toNumber());
+
+    // Closing one runtime leaves the other fully working.
+    a.deinit();
+    var after = try b.eval("n + 1");
+    defer after.deinit();
+    try std.testing.expectEqual(@as(f64, 223), try after.toNumber());
+}
+
 // --- host function tests --------------------------------------------------
 
 fn tSum(ctx: Ctx) !void {
@@ -446,6 +595,69 @@ fn tTwice(ctx: Ctx) !void {
     var twice = try ctx.call(ctx.arg(0), &.{once}, null);
     defer twice.deinit();
     ctx.ret(twice);
+}
+
+/// Records which runtime the in-flight call belongs to, so the test can check
+/// `ctx.runtime()` against the runtime it evaluated through.
+fn tWhich(ctx: Ctx, seen: *c.jse_runtime) void {
+    seen.* = ctx.runtime().ptr;
+    ctx.returnNumber(@floatFromInt(ctx.argc()));
+}
+
+test "a callback reaches its own runtime, and registration is per-runtime" {
+    var a = try Runtime.init();
+    defer a.deinit();
+    var b = try Runtime.init();
+    defer b.deinit();
+
+    var seen_a: c.jse_runtime = null;
+    var seen_b: c.jse_runtime = null;
+    try a.registerWith("which", tWhich, &seen_a, .{});
+    try b.registerWith("which", tWhich, &seen_b, .{});
+    try a.register("sum", tSum, .{ .arity = 2 });
+
+    var from_a = try a.eval("which(1, 2)");
+    defer from_a.deinit();
+    var from_b = try b.eval("which(1)");
+    defer from_b.deinit();
+    try std.testing.expectEqual(@as(f64, 2), try from_a.toNumber());
+    try std.testing.expectEqual(@as(f64, 1), try from_b.toNumber());
+
+    // ctx.runtime() is the runtime that made the call, never the other one.
+    try std.testing.expect(seen_a == a.ptr);
+    try std.testing.expect(seen_b == b.ptr);
+    try std.testing.expect(seen_a != seen_b);
+
+    // Registration is per-runtime: `sum` exists only in A.
+    var only_a = try a.eval("sum(40, 2)");
+    defer only_a.deinit();
+    try std.testing.expectEqual(@as(f64, 42), try only_a.toNumber());
+    try std.testing.expectError(Error.Throw, b.eval("sum(40, 2)"));
+}
+
+/// Persists its argument, then reads it back through the runtime, exercising
+/// the `persist` -> `rebind` handoff a host uses to keep a value.
+fn tKeep(ctx: Ctx, slot: *Value) !void {
+    slot.* = ctx.persist(ctx.arg(0));
+    ctx.returnBool(true);
+}
+
+test "a persisted value outlives the call and reads back through the runtime" {
+    var rt = try Runtime.init();
+    defer rt.deinit();
+
+    var slot: Value = .{ .owner = .{ .runtime = &rt }, .handle = 0, .owned = false };
+    try rt.registerWith("keep", tKeep, &slot, .{ .arity = 1 });
+
+    var ok = try rt.eval("keep(42)");
+    defer ok.deinit();
+    try std.testing.expect(try ok.toBool());
+
+    // The handle was tagged with the (now-finished) call context; retag it onto
+    // the runtime to read it afterwards.
+    var kept = slot.rebind(&rt);
+    defer kept.deinit();
+    try std.testing.expectEqual(@as(f64, 42), try kept.toNumber());
 }
 
 test "host functions: arguments, udata, throws, and calling back into JS" {

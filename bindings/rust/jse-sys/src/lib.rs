@@ -8,9 +8,16 @@
 //!
 //! - `jse_value` is an integer handle into a GC-rooted slot registry, **not** a
 //!   pointer. Never dereference it. `0` is never valid.
-//! - Only one runtime may exist per process; a second [`jse_open`] returns
-//!   [`JSE_ERR_INVALID`].
-//! - The ABI is not thread-safe and does not enforce that with a lock.
+//! - Several runtimes may be open at once. They share nothing, and a handle
+//!   names a slot in exactly one of them: passing it to another runtime's
+//!   reader is [`JSE_ERR_INVALID`], not a resolution against that runtime.
+//! - Readers come in two tiers. [`jse_get_number`] and friends take a
+//!   `jse_runtime`; [`jse_ctx_get_number`] and friends take a `jse_call_ctx`.
+//!   Neither accepts NULL, and only the context tier resolves the scope handles
+//!   [`jse_arg`], [`jse_this`] and [`jse_new_target`] return.
+//! - The ABI is not thread-safe and does not enforce that with a lock. One
+//!   runtime must be driven from one thread at a time; two runtimes driven from
+//!   two threads share nothing and do not interact.
 //! - Nothing here aborts, panics, or unwinds across the boundary. That runs the
 //!   other way too: a [`jse_host_fn`] the engine calls back into must not
 //!   unwind, so any Rust panic inside one has to be caught before it returns.
@@ -75,8 +82,8 @@ pub const JSE_ERROR_REFERENCE: c_int = 3;
 pub const JSE_ERROR_SYNTAX: c_int = 4;
 
 extern "C" {
-    /// Create the runtime. One per process; a second call returns
-    /// [`JSE_ERR_INVALID`].
+    /// Create a runtime. Any number may be open at once; each owns its own
+    /// heap, globals, shapes and interned strings, and they share nothing.
     pub fn jse_open(out_rt: *mut jse_runtime) -> c_int;
 
     /// Destroy the runtime and everything it owns, invalidating all handles.
@@ -118,6 +125,25 @@ extern "C" {
         cap: usize,
         out_len: *mut usize,
     ) -> c_int;
+
+    // The context tier of the readers, for use inside a host callback. Same
+    // semantics as the runtime tier above, addressing the runtime the call
+    // belongs to; these are the only forms that resolve the scope handles
+    // [`jse_arg`], [`jse_this`] and [`jse_new_target`] return.
+    pub fn jse_ctx_type_of(ctx: jse_call_ctx, v: jse_value) -> c_int;
+    pub fn jse_ctx_get_number(ctx: jse_call_ctx, v: jse_value, out: *mut c_double) -> c_int;
+    pub fn jse_ctx_get_bool(ctx: jse_call_ctx, v: jse_value, out: *mut c_int) -> c_int;
+    pub fn jse_ctx_get_string(
+        ctx: jse_call_ctx,
+        v: jse_value,
+        buf: *mut c_char,
+        cap: usize,
+        out_len: *mut usize,
+    ) -> c_int;
+
+    /// The runtime owning a callback's context, for a host that needs to
+    /// persist a value or evaluate from inside a call.
+    pub fn jse_ctx_runtime(ctx: jse_call_ctx) -> jse_runtime;
 
     /// Message for the most recent failure. Never null; empty when no error.
     /// Owned by the runtime and valid only until the next `jse_*` call.

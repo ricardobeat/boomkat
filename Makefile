@@ -189,6 +189,7 @@ example-c: out/hello
 # needs the shared library and any ruby >= 2.6 (the macOS system ruby is 2.6).
 example-ruby: out/libjse.$(SHLIB_EXT)
 	ruby bindings/ruby/examples/example.rb
+	ruby bindings/ruby/examples/two_runtimes.rb
 
 # make install PREFIX=/usr/local -- header + both libraries.
 # The dylib keeps its @rpath install name rather than being restamped with an

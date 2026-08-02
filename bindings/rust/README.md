@@ -39,6 +39,7 @@ From this directory (`bindings/rust`):
 cargo build
 cargo run --example hello_js
 cargo run --example host_fns
+cargo run --example two_runtimes
 cargo test
 ```
 
@@ -59,7 +60,8 @@ recovered  = TypeError
 before job = pending
 after job  = done
 Null Undefined Boolean Number String Object Function 
-second rt  = a runtime is already open in this process
+second rt  = undefined
+first rt   = 10
 ok
 ```
 
@@ -79,6 +81,27 @@ mapTwice(x*3, 5)  = 45
 mapTwice(abs, -7) = 7
 callee throw      = RangeError: from JS
 runaway recursion = RangeError
+ok
+```
+
+`cargo run --example two_runtimes`:
+
+```
+A.tag             = A
+B.tag             = B
+A sees onlyInB    = undefined
+A.o.k7            = replaced in A
+B.o.k7            = 7
+A [].mine()       = patched in A
+B sees [].mine    = undefined
+A shout('hi')     = A says hi
+B shout('hi')     = B says hi
+A -> B by copy    = made in A
+A interning       = true
+A after B closed  = A
+thread            = worker 0
+thread            = worker 1
+thread            = worker 2
 ok
 ```
 
@@ -154,6 +177,25 @@ Three things this layer handles that the raw ABI leaves to the caller:
   until the callback returns. `Ctx` and `HostValue` are invariant over a
   lifetime tied to the call, so stashing one in a `static` is a compile error
   (`borrowed data escapes outside of closure`) rather than a use-after-free.
+  To keep one anyway, `ctx.persist` copies it into the runtime's own registry
+  and returns a `Persisted` that is not tied to the call:
+
+  ```rust,ignore
+  let last = RefCell::new(None);
+  rt.register_fn("remember", 1, move |ctx| {
+      *last.borrow_mut() = Some(ctx.persist(ctx.arg(0))?);
+      Ok(ctx.undefined())
+  })?;
+  ```
+
+  A `Persisted` holds a registry slot until it drops, and knows which runtime
+  it belongs to.
+- Reads inside a callback address the right runtime. A callback is handed a
+  call context, not a runtime, and with several open there is no "the runtime"
+  to fall back on — so `HostValue`'s readers go through the ABI's context tier
+  (`jse_ctx_get_number` and friends), which is also the only tier that resolves
+  the scope handles arguments carry. This is invisible from Rust: `ctx.arg(0)`
+  carries its context, so `.as_number()` simply works.
 - `ctx.call` results are freed for you. Each comes back runtime-owned,
   holding one of the registry's 65535 slots, and its `Retained` guard releases it
   on drop. That is what lets a host function call JS in a loop: the slot goes
@@ -177,18 +219,51 @@ is `Fn` (the engine may re-enter it) rather than `FnMut`.
   exhaustion by ordinary use.
 - Error messages are copied out of the engine's buffer immediately, since
   that buffer is only valid until the next `jse_*` call.
-- `Runtime` is neither `Send` nor `Sync`. The ABI is documented as not
-  thread-safe and does not lock, so this is a compile-time error rather than a
-  convention.
+- `Runtime` is `Send` but not `Sync`, which is the engine's threading rule
+  stated in the type system rather than in prose. See below.
+
+## Several runtimes
+
+Any number of runtimes can be open at once. They share nothing — separate
+globals, objects, prototypes, shapes, and interned strings:
+
+```rust
+let a = Runtime::new()?;
+let b = Runtime::new()?;
+
+a.eval_unit("globalThis.x = 'from A'")?;
+b.eval_unit("globalThis.x = 'from B'")?;
+
+assert_eq!(a.eval("x")?.as_string()?, "from A");
+assert_eq!(b.eval("x")?.as_string()?, "from B");
+```
+
+A value belongs to the runtime that made it. The C ABI answers a handle from
+the wrong runtime with `JSE_ERR_INVALID` rather than resolving it against an
+unrelated value; in Rust the case cannot arise, because `Value<'rt>` borrows its
+runtime and no method on another accepts one. To move a value, read it out and
+write it back in. `cargo run --example two_runtimes` walks all of this.
+
+### Threads
+
+`Runtime` is `Send` and deliberately not `Sync`:
+
+- **Two runtimes on two threads share nothing.** They hold no common state, so
+  this is sound, and `Send` is what lets you build a runtime on one thread and
+  drive it on another, or give every worker its own.
+- **One runtime on two threads at once would corrupt it.** The engine takes no
+  locks. `!Sync` makes that a compile error: with no shareable `&Runtime`, two
+  threads cannot both reach one instance. Wrapping it in a `Mutex<Runtime>` is
+  the opt-in, and is `Sync`, because the lock supplies the exclusion the engine
+  does not.
+
+`Value` is neither `Send` nor `Sync`, which follows for free: it borrows its
+runtime, and `&Runtime` is not `Send` precisely because `Runtime` is not `Sync`.
 
 ## Limitations
 
 These come from the C ABI, not from this binding.
 
-- One runtime per process. The engine keeps process-global state. A second
-  `Runtime::new()` returns `Kind::AlreadyOpen` instead of racing. This is why
-  `tests/basic.rs` is a single test function: `cargo test` would otherwise
-  open runtimes on parallel threads.
 - Registration is permanent. There is no `unregister`, which is why leaking
   the closure matches its actual lifetime.
 - A JS function cannot be called from outside a callback. `ctx.call` needs a

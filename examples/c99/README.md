@@ -8,6 +8,7 @@ build system beyond `make` and `cc`.
 |---|---|
 | `main.c` | Driving JS from C: evaluate for a value, read it out, surface errors, shut down. Read this first. It is meant as documentation. |
 | `host_fn.c` | The other direction: registering C callbacks as JS globals, with udata, arguments, throwing, and calling back into JS. |
+| `two_runtimes.c` | Several runtimes open at once: independent globals, objects and interned strings, and what a handle does and does not mean outside the runtime that issued it. |
 | `jse_util.h` / `jse_util.c` | Optional conveniences over the raw ABI (mainly the two-call string protocol). Copy them into your own project if useful. |
 | `Makefile` | Static and shared link recipes. |
 
@@ -42,10 +43,11 @@ Shared link, which resolves `libjse` at run time through an rpath:
 make PREFIX=/usr/local run-shared
 ```
 
-The host-function example, `host_fn.c`, is a separate static binary:
+The host-function and two-runtime examples are separate static binaries:
 
 ```sh
 make PREFIX=/usr/local run-host-fn
+make PREFIX=/usr/local run-two-runtimes
 ```
 
 To build straight from the engine's `out/` directory without installing at all:
@@ -56,9 +58,12 @@ make JSE_INCDIR=../../include JSE_LIBDIR=../../out \
 
 make JSE_INCDIR=../../include JSE_LIBDIR=../../out \
      JSE_STATIC_LIB=../../out/jse_static.a run-host-fn
+
+make JSE_INCDIR=../../include JSE_LIBDIR=../../out \
+     JSE_STATIC_LIB=../../out/jse_static.a run-two-runtimes
 ```
 
-`make clean` removes all three binaries.
+`make clean` removes all four binaries.
 
 ## Expected output
 
@@ -73,7 +78,7 @@ Math is object   = true (handle type: boolean)
 object as string = [object Object]
 
 errors are values, not crashes:
-  throw        THROW    index out of range
+  throw        THROW    RangeError: index out of range
   bad syntax   SYNTAX   expected '<identifier>', got '('
   wrong type   TYPE     value is not a string
 
@@ -112,12 +117,48 @@ greet() reached host state 4 times
 `greet` is called four times, not three: `['ada', 'alan'].map(greet)` accounts
 for two, and the count is read from host memory through the `udata` pointer.
 
+`make run-two-runtimes` prints:
+
+```
+jse version 0.1.0
+
+independent globals:
+  A.tag / A.n                  = A/111
+  B.tag / B.n                  = B/222
+  B.onlyB                      = number
+  A.onlyB                      = undefined
+
+independent objects and shapes:
+  A.o.k199                     = 199
+  B.o.k199                     = 1990
+  A key count                  = 200
+
+independent string interning:
+  A.s === literal              = true
+  B.s === literal              = true
+
+handles are per-runtime, and mixing them is not diagnosed:
+  C's handle vs D's handle     = 65537 vs 65537 (identical: yes)
+  C's handle read by C         = 42
+  D's handle read by D         = 7
+  C's handle read by D         = OK, n=7  <-- D's value, not C's
+  C's handle read by D again   = INVALID, n=-1  <-- caught, only by luck
+  moved A->B via C             = 42
+
+closing A leaves B alone:
+  B.tag after A closed         = B/222/1990
+```
+
+Four runtimes are open over the course of that run, two of them at the same
+time as the first pair.
+
 ## What to take away
 
-`jse_value` is a handle, not a pointer. It is an integer index into a GC-rooted
-slot registry, so do not dereference it. Every handle you get from `jse_eval`
-must be released with `jse_value_free`, and the registry holds 65535 live handles
-before returning `JSE_ERR_FULL`.
+`jse_value` is a handle, not a pointer. It is an integer index into one
+runtime's GC-rooted slot registry, so do not dereference it, and do not use it
+with any runtime but the one that issued it. Every handle you get from
+`jse_eval` must be released with `jse_value_free`, passing that same runtime;
+the registry holds 65535 live handles before returning `JSE_ERR_FULL`.
 
 Errors come back as return values. Nothing aborts, panics, or longjmps across
 the boundary. A failed call returns a negative status and leaves a message on
@@ -156,9 +197,19 @@ stored. To keep one, promote it with `jse_value_persist`, which yields a
 runtime-owned handle you must later `jse_value_free`. Handles that come back
 from `jse_call` are runtime-owned already and do need freeing.
 
-Readers work with a NULL runtime. Inside a callback, `jse_get_number` and
-friends accept `NULL` for the runtime, so a binding need not thread the
-`jse_runtime` through to every callback just to read an argument.
+Readers come in two tiers, and which one you want follows from what you hold.
+Outside a callback you hold a `jse_runtime`, so you use `jse_get_number`,
+`jse_get_bool`, `jse_get_string` and `jse_type_of`. Inside a callback you hold a
+`jse_call_ctx`, so you use `jse_ctx_get_number` and friends — and only that tier
+resolves the scope handles `jse_arg`, `jse_this` and `jse_new_target` hand out.
+Neither tier accepts `NULL`.
+
+`jse_ctx_runtime(ctx)` gets you the runtime when you genuinely need one: to
+free a handle from `jse_call`, to `jse_eval`, or to hold a value past the call.
+`h_map_twice` in `host_fn.c` uses it for exactly the first of those. Freeing
+with a null runtime is silently ignored, so a callback that gets this wrong
+leaks a registry slot per call and starts failing with `JSE_ERR_FULL` once the
+65535 slots run out — with no diagnostic before that point.
 
 Registered functions are ordinary function objects. They have a `.name` and
 `.length`, and work as methods, accessors, `.call`/`.apply`/`.bind` targets, and
@@ -174,10 +225,33 @@ the engine propagate it, as `mapTwice` does. Host recursion is bounded, so a
 callback that re-enters JS without end raises a `RangeError` rather than
 exhausting the native stack.
 
+## Several runtimes at once (`two_runtimes.c`)
+
+`jse_open` may be called as many times as you like. Each runtime owns its own
+globals, objects, shapes and interned strings, and they stay independent for
+their whole lifetimes; closing one does not disturb another. `two_runtimes.c`
+demonstrates each of those, then opens two more to make a point about handles.
+
+A `jse_value` belongs to one runtime and means nothing in another, but the
+engine will not catch you for mixing them up. A handle is a slot index plus a
+generation tag, with nothing identifying which runtime issued it, so two
+runtimes at the same allocation state hand out bit-identical handles. Passing
+one to the wrong runtime's reader is caught only when that slot happens to be
+free or differently-generationed on the other side; when the two registries are
+in step, the read returns `JSE_OK` and quietly gives you the other runtime's
+value. `two_runtimes.c` prints both outcomes from the same pair.
+
+Pairing a handle with its runtime is therefore the host's job. If your binding
+hands `jse_value`s to its users, that is an argument for wrapping them in
+something that carries the runtime along. To move a value across, read it out
+on one side and write it back on the other.
+
 ## Limitations in v1
 
-- One runtime per process. A second `jse_open` returns `JSE_ERR_INVALID`.
-- The engine is not thread safe. Nothing enforces this; it is only documented.
+- The engine is not thread safe. A runtime must be driven from one thread at a
+  time: there is no locking, and nothing enforces the rule. Two threads each
+  driving their *own* runtime share nothing and are fine; two threads inside one
+  runtime corrupt it.
 - Host functions are globals. `jse_register_fn` binds a name on the global
   object; there is no API for installing a C callback as a property of an
   arbitrary object. Do that from JS, by moving the global onto the object.

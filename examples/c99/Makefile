@@ -5,6 +5,7 @@
 #   make run             # build and run the static binary
 #   make run-shared      # build and run the shared binary
 #   make run-host-fn     # build and run the host-function example
+#   make run-two-runtimes # build and run the two-runtime example
 #   make clean
 #
 # PREFIX points at the tree `make install` produced in the engine repo:
@@ -52,11 +53,16 @@ SRCS := main.c jse_util.c
 # The host-function example: C callbacks registered as JS globals.
 HOST_FN_SRCS := host_fn.c jse_util.c
 
-.PHONY: all static shared host-fn run run-shared run-host-fn clean
-all: static host-fn
+# The two-runtime example: two independent runtimes open at once.
+TWO_RT_SRCS := two_runtimes.c jse_util.c
+
+.PHONY: all static shared host-fn two-runtimes run run-shared run-host-fn \
+        run-two-runtimes clean
+all: static host-fn two-runtimes
 static: jse-example
 shared: jse-example-shared
 host-fn: jse-host-fn
+two-runtimes: jse-two-runtimes
 
 # --- static link -------------------------------------------------------------
 # The archive already contains the vendored C (libregexp, cutils, dtoa), so it
@@ -80,6 +86,13 @@ jse-host-fn: $(HOST_FN_SRCS) jse_util.h
 	$(CC) $(CFLAGS) $(CPPFLAGS) $(HOST_FN_SRCS) $(JSE_STATIC_LIB) $(LDLIBS_EXTRA) \
 	    $(LDLIBS_STATIC_EXTRA) -o $@
 
+# --- two runtimes ------------------------------------------------------------
+# Statically linked like the others; opening more than one runtime needs no
+# special build, since the engine keeps no process-global state.
+jse-two-runtimes: $(TWO_RT_SRCS) jse_util.h
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(TWO_RT_SRCS) $(JSE_STATIC_LIB) $(LDLIBS_EXTRA) \
+	    $(LDLIBS_STATIC_EXTRA) -o $@
+
 run: jse-example
 	./jse-example
 
@@ -89,5 +102,8 @@ run-shared: jse-example-shared
 run-host-fn: jse-host-fn
 	./jse-host-fn
 
+run-two-runtimes: jse-two-runtimes
+	./jse-two-runtimes
+
 clean:
-	rm -f jse-example jse-example-shared jse-host-fn
+	rm -f jse-example jse-example-shared jse-host-fn jse-two-runtimes

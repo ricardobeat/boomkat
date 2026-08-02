@@ -20,14 +20,16 @@ from JS:
     def now(call):
         return time.time() * 1000
 
-Only one Runtime may exist per process -- the engine keeps process-global
-state. Opening a second one raises JsError. The engine is not thread-safe.
+Several Runtimes can be open at once. Each has its own globals, objects and
+strings, and they share nothing -- so a value read out of one is a plain Python
+object with no tie to the engine it came from. A single Runtime must be driven
+from one thread at a time; nothing enforces that.
 """
 
 import ctypes
-import json
 import os
 import sys
+import weakref
 
 __all__ = ["Runtime", "JsError", "JsObject", "JsThrow", "JsValue",
            "JsFunction", "Call", "version"]
@@ -153,6 +155,17 @@ def _declare(lib):
         ("jse_get_bool", [rt, u32, ctypes.POINTER(ctypes.c_int)], ctypes.c_int),
         ("jse_get_string", [rt, u32, ctypes.c_char_p, ctypes.c_size_t,
                             ctypes.POINTER(ctypes.c_size_t)], ctypes.c_int),
+        # The context tier of the same readers. A host callback holds a call
+        # context and no runtime, and only these resolve the scope handles
+        # jse_arg/jse_this/jse_new_target return.
+        ("jse_ctx_type_of", [ctx, u32], ctypes.c_int),
+        ("jse_ctx_get_number", [ctx, u32, ctypes.POINTER(ctypes.c_double)],
+         ctypes.c_int),
+        ("jse_ctx_get_bool", [ctx, u32, ctypes.POINTER(ctypes.c_int)],
+         ctypes.c_int),
+        ("jse_ctx_get_string", [ctx, u32, ctypes.c_char_p, ctypes.c_size_t,
+                                ctypes.POINTER(ctypes.c_size_t)], ctypes.c_int),
+        ("jse_ctx_runtime", [ctx], ctypes.c_void_p),
         ("jse_last_error", [rt], ctypes.c_char_p),
         ("jse_last_error_code", [rt], ctypes.c_int),
         ("jse_drain_microtasks", [rt], None),
@@ -220,8 +233,7 @@ class JsValue:
 
     def to_python(self):
         """Convert to a plain Python value, as call.args already did."""
-        return _read_value(self._call._lib, self._call._runtime._rt,
-                           self._handle, self._type)
+        return self._call.reader.to_python(self._handle, self._type)
 
     def __repr__(self):
         return "<js %s>" % self.type_name
@@ -245,22 +257,28 @@ class Call:
     Arguments are already converted to Python values in `args`; the raw context
     is only used for the things conversion cannot express -- calling a JS
     function back, or asking whether this was a `new` call.
+
+    `runtime` is the Runtime this call is running inside, resolved from the
+    context itself rather than assumed, so a host function registered in
+    several runtimes sees the right one every time.
     """
 
-    __slots__ = ("_lib", "_ctx", "_runtime", "args", "raw", "_live")
+    __slots__ = ("_lib", "_ctx", "_runtime", "reader", "args", "raw", "_live")
 
     def __init__(self, lib, ctx, runtime):
         self._lib = lib
         self._ctx = ctx
         self._runtime = runtime
         self._live = True
-        rt = runtime._rt
+        # Everything a callback reads goes through the context tier: its
+        # arguments are scope handles, which the runtime tier cannot resolve.
+        self.reader = _Reader(lib, ctx, "jse_ctx_")
         handles = tuple(lib.jse_arg(ctx, i) for i in range(lib.jse_argc(ctx)))
         # `raw` keeps the live references, which is what a JS callback can be
         # handed back; `args` is the convenient plain-Python view of the same
         # arguments. A function argument appears in both, since calling one is
         # the common case and needs no ceremony.
-        self.raw = tuple(self._wrap(h, lib.jse_type_of(rt, h)) for h in handles)
+        self.raw = tuple(self._wrap(h, self.reader.type_of(h)) for h in handles)
         # A callable stays callable in `args` so `call.args[0](x)` just works;
         # everything else becomes a plain Python value.
         self.args = tuple(v if isinstance(v, JsFunction) else v.to_python()
@@ -270,9 +288,19 @@ class Call:
     def this(self):
         """The `this` receiver. Strict semantics: undefined stays undefined."""
         handle = self._lib.jse_this(self._ctx)
-        type_id = self._lib.jse_type_of(self._runtime._rt, handle)
-        value = self._wrap(handle, type_id)
+        value = self._wrap(handle, self.reader.type_of(handle))
         return value if isinstance(value, JsFunction) else value.to_python()
+
+    @property
+    def new_target(self):
+        """new.target, or None on a plain call."""
+        handle = self._lib.jse_new_target(self._ctx)
+        return self.reader.to_python(handle)
+
+    @property
+    def runtime(self):
+        """The Runtime this call is executing inside."""
+        return self._runtime
 
     @property
     def is_construct(self):
@@ -280,11 +308,7 @@ class Call:
         return bool(self._lib.jse_is_construct(self._ctx))
 
     def _wrap(self, handle, type_id):
-        # The runtime pointer is required for jse_type_of, not optional: it
-        # reports OTHER for a NULL runtime, and scope handles resolve through
-        # the runtime's active context.
-        #
-        # OTHER is treated as callable alongside FUNCTION because jse_type_of
+        # OTHER is treated as callable alongside FUNCTION because jse_ctx_type_of
         # has no lightfunc case: engine built-ins such as Math.abs are stored
         # as a tagged ordinal rather than an HObject, so they fall through to
         # OTHER even though `typeof` says "function" and jse_call invokes them
@@ -309,13 +333,13 @@ class Call:
             # trampoline, which returns promptly and lets the engine propagate
             # the original JS exception rather than a new one.
             raise _Propagate()
-        rt = self._runtime._rt
+        # jse_call hands back a runtime-owned handle, not a scope handle, but
+        # the context tier resolves both -- so read it through this call's
+        # reader rather than reaching for the Runtime.
         try:
-            return _read_value(self._lib, rt, out.value,
-                               self._lib.jse_type_of(rt, out.value))
+            return self.reader.to_python(out.value)
         finally:
-            # jse_call hands back a runtime-owned handle, so release it.
-            self._lib.jse_value_free(rt, out.value)
+            self._lib.jse_value_free(self._runtime._rt, out.value)
 
     def _to_js(self, value):
         """Handle for a Python value passed as a jse_call argument.
@@ -365,30 +389,73 @@ def _count_parameters(pyfunc):
     return 0
 
 
-def _read_value(lib, rt, handle, type_id):
-    """Convert a handle to a Python value. `rt` may be None inside a callback."""
-    if type_id in (_UNDEFINED, _NULL):
-        return None
-    if type_id == _BOOLEAN:
-        out = ctypes.c_int()
-        if lib.jse_get_bool(rt, handle, ctypes.byref(out)) != _OK:
-            return JsObject(type_id)
-        return bool(out.value)
-    if type_id == _NUMBER:
-        out = ctypes.c_double()
-        if lib.jse_get_number(rt, handle, ctypes.byref(out)) != _OK:
-            return JsObject(type_id)
-        return out.value
-    if type_id == _STRING:
-        size = ctypes.c_size_t(0)
-        if lib.jse_get_string(rt, handle, None, 0, ctypes.byref(size)) != _OK:
-            return JsObject(type_id)
-        buffer = ctypes.create_string_buffer(size.value + 1)
-        if lib.jse_get_string(rt, handle, buffer, size.value + 1,
-                              ctypes.byref(size)) != _OK:
-            return JsObject(type_id)
-        return buffer.raw[:size.value].decode("utf-8")
-    return JsObject(type_id)
+class _Reader:
+    """One tier of the ABI's readers, bound to the thing that resolves handles.
+
+    The ABI reads values through two parallel families. Outside a callback you
+    hold a runtime and call jse_get_number and friends; inside one you hold a
+    call context and call the jse_ctx_ forms. They are not interchangeable:
+    the handles jse_arg/jse_this/jse_new_target return name a slot in the
+    call's scope rather than in the runtime's registry, so only the context
+    tier can resolve them, and neither tier accepts a null first argument.
+
+    Rather than spread that fork through every conversion site, each tier
+    becomes a _Reader carrying its own owner pointer and function names.
+    """
+
+    __slots__ = ("_owner", "type_of", "_get_bool", "_get_number", "_get_string")
+
+    def __init__(self, lib, owner, prefix):
+        self._owner = owner
+        self.type_of = _bind(lib, prefix + "type_of", owner)
+        self._get_bool = _bind(lib, prefix + "get_bool", owner)
+        self._get_number = _bind(lib, prefix + "get_number", owner)
+        self._get_string = _bind(lib, prefix + "get_string", owner)
+
+    def to_python(self, handle, type_id=None):
+        """Convert a handle to a plain Python value."""
+        if type_id is None:
+            type_id = self.type_of(handle)
+        if type_id in (_UNDEFINED, _NULL):
+            return None
+        if type_id == _BOOLEAN:
+            out = ctypes.c_int()
+            if self._get_bool(handle, ctypes.byref(out)) != _OK:
+                return JsObject(type_id)
+            return bool(out.value)
+        if type_id == _NUMBER:
+            out = ctypes.c_double()
+            if self._get_number(handle, ctypes.byref(out)) != _OK:
+                return JsObject(type_id)
+            return out.value
+        if type_id == _STRING:
+            size = ctypes.c_size_t(0)
+            if self._get_string(handle, None, 0, ctypes.byref(size)) != _OK:
+                return JsObject(type_id)
+            buffer = ctypes.create_string_buffer(size.value + 1)
+            if self._get_string(handle, buffer, size.value + 1,
+                                ctypes.byref(size)) != _OK:
+                return JsObject(type_id)
+            return buffer.raw[:size.value].decode("utf-8")
+        return JsObject(type_id)
+
+
+def _bind(lib, name, owner):
+    """Partially apply an ABI function to the runtime or context it reads through."""
+    fn = getattr(lib, name)
+    return lambda *rest: fn(owner, *rest)
+
+
+# Every open Runtime, keyed by its engine pointer, so a call context can be
+# mapped back to the Python object that owns it. Weak so that a Runtime the
+# embedder has dropped stays collectable; entries also go on close().
+_OPEN_RUNTIMES = weakref.WeakValueDictionary()
+
+
+def _runtime_for(lib, ctx, fallback):
+    """The Runtime a callback is executing inside, per jse_ctx_runtime."""
+    pointer = lib.jse_ctx_runtime(ctx)
+    return _OPEN_RUNTIMES.get(pointer, fallback)
 
 
 class Runtime:
@@ -396,6 +463,12 @@ class Runtime:
 
     Closing is idempotent, and `with` closes on the way out even if the body
     raised, so the engine heap is never leaked.
+
+    Several Runtimes can be open at the same time. They share no globals, no
+    objects and no interned strings, and a JS value belongs to exactly the one
+    that produced it. The binding never lets a handle escape its Runtime: eval()
+    converts results to plain Python objects, so moving data between two
+    Runtimes is just reading it out of one and passing it into the other.
     """
 
     def __init__(self, library_path=None):
@@ -413,8 +486,10 @@ class Runtime:
         self._last_host_exception = None
         rc = self._lib.jse_open(ctypes.byref(self._rt))
         if rc != _OK:
-            raise JsError(rc, "jse_open failed (is another Runtime already open? "
-                              "the engine allows one per process)")
+            raise JsError(rc, "jse_open failed to create a runtime")
+        # The runtime tier of the readers, for handles this Runtime owns.
+        self._reader = _Reader(self._lib, self._rt, "jse_")
+        _OPEN_RUNTIMES[self._rt.value] = self
 
     @property
     def version(self):
@@ -491,7 +566,12 @@ class Runtime:
         def trampoline(ctx, _udata):
             call = None
             try:
-                call = Call(lib, ctx, self)
+                # A trampoline is created per registration, so `self` is the
+                # Runtime this callback was bound to. jse_ctx_runtime(ctx)
+                # reports the same thing from the engine's side; consult it so
+                # `call.runtime` is what the engine says, not what the closure
+                # assumed.
+                call = Call(lib, ctx, _runtime_for(lib, ctx, self))
                 result = pyfunc(call)
             except _Propagate:
                 # jse_call already recorded the callee's throw on this context.
@@ -558,6 +638,7 @@ class Runtime:
 
     def close(self):
         if self._rt:
+            _OPEN_RUNTIMES.pop(self._rt.value, None)
             self._lib.jse_close(self._rt)
             self._rt = ctypes.c_void_p()
 
@@ -579,8 +660,6 @@ class Runtime:
         return raw.decode("utf-8", "replace") if raw else ""
 
     def _to_python(self, handle):
-        # Shared with the host-function path, which reads the same way against
-        # a NULL runtime. Strings emerge as real UTF-8: the engine converts its
-        # internal CESU-8, so astral characters arrive as 4-byte sequences.
-        type_id = self._lib.jse_type_of(self._rt, handle)
-        return _read_value(self._lib, self._rt, handle, type_id)
+        # Strings emerge as real UTF-8: the engine converts its internal
+        # CESU-8, so astral characters arrive as 4-byte sequences.
+        return self._reader.to_python(handle)

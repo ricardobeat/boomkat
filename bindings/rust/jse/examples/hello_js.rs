@@ -67,12 +67,11 @@ fn main() -> Result<(), jse::Error> {
     }
     println!();
 
-    // Only one runtime may exist per process; a second is refused rather than
-    // corrupting the first.
-    match Runtime::new() {
-        Ok(_) => println!("unexpected: second runtime opened"),
-        Err(e) => println!("second rt  = {e}"),
-    }
+    // Runtimes are independent, so a second one starts clean and leaves the
+    // first alone. See the `two_runtimes` example for what that buys.
+    let other = Runtime::new()?;
+    println!("second rt  = {}", other.eval("typeof counter")?.as_string()?);
+    println!("first rt   = {}", rt.eval("counter")?.as_number()?);
 
     assert_eq!(rt.eval("'x'")?.type_of(), Type::String);
 

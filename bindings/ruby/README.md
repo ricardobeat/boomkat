@@ -29,10 +29,11 @@ That produces `out/libjse.dylib` (macOS) or `out/libjse.so` (Linux).
 make example-ruby
 ```
 
-or directly:
+That runs both examples, or run either directly:
 
 ```sh
 ruby bindings/ruby/examples/example.rb
+ruby bindings/ruby/examples/two_runtimes.rb
 ```
 
 The binding finds the library by searching, in order:
@@ -72,6 +73,22 @@ twice(x => x * 3, 5): 45.0
 mapPair: LEFT / RIGHT
 propagated RangeError: from JS
 runtime closed
+```
+
+and from `two_runtimes.rb`:
+
+```
+two runtimes open: #<JS::Runtime> #<JS::Runtime>
+A.x=111, B.x=222
+A has only_in_a: function
+B has only_in_a: undefined
+A.o.k199=199, B.o.k199=1990
+A.s="alpha-A", B.s="alpha-B"
+A: host on A, B: host on B
+moved through Ruby: B.got="carried from A"
+handle 458753: A reads "secret from A", B refused: handle 458753 is not held by this runtime
+A closed: #<JS::Runtime (closed)>; B still works: B.x=222
+both runtimes closed
 ```
 
 ## Usage
@@ -205,13 +222,60 @@ than failing silently. Arguments therefore carry their handle along: a JS
 number arrives as a `JS::TaggedNumber`, which behaves as a `Float` but can also
 be handed back to JS.
 
+## Multiple runtimes
+
+Any number of runtimes can be open at once. Each has its own globals, objects,
+prototypes, host functions and interned strings, and shares nothing with the
+others.
+
+```ruby
+a = JS.open
+b = JS.open
+
+a.exec('var x = 111')
+b.exec('var x = 222')
+a.eval('x')   # => 111.0
+b.eval('x')   # => 222.0
+
+a.register('whoami') { 'host on A' }
+b.register('whoami') { 'host on B' }
+```
+
+Closing one leaves the others running.
+
+### Values belong to one runtime
+
+`#eval` converts its result to Ruby before returning, so ordinary results are
+plain `Float`/`String`/`true`/`nil` and move between runtimes freely.
+
+A *handle* does not. It indexes one runtime's registry, and each runtime
+numbers its slots independently, so the same integer is soon live in both.
+`#read` refuses a handle this runtime does not hold rather than resolving it
+against an unrelated value:
+
+```ruby
+a.register('hand_over', with_call: true) do |args, call|
+  handle = call.persist(args[0].handle)
+  call.runtime.read(handle)   # => "secret from A"
+  b.read(handle)              # raises JS::Error: not held by this runtime
+end
+```
+
+To move a value across, read it out and write it back in.
+
+Run the example:
+
+```sh
+ruby bindings/ruby/examples/two_runtimes.rb
+```
+
 ## Limitations
 
 These come from the v1 ABI, not from the binding:
 
-- One runtime per process. The engine keeps process-global state, so a second
-  `JS.open` while one is live raises `JS::Error`. Close the first.
-- No thread safety. Confine a runtime to one thread.
+- No thread safety. A runtime must be driven from one thread at a time; the
+  engine has no locking and enforces nothing. Two threads each driving their
+  own runtime share no state and do not interfere.
 - No value constructors. A host function can return a Ruby primitive, but it
   cannot build a new JS value to *pass* to a JS callback, as described above.
 - No direct property access. Reach into objects from JS source and return a

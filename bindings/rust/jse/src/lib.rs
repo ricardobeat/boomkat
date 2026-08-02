@@ -27,9 +27,63 @@
 //!   into exhaustion by ordinary use.
 //! - Every fallible call returns [`Result`], with the engine's message
 //!   captured (copied, not borrowed) into [`Error`].
-//! - [`Runtime`] is neither [`Send`] nor [`Sync`]: the ABI is documented as
-//!   not thread-safe and does not lock, so this is enforced at compile time
-//!   rather than by convention.
+//! - [`Runtime`] is [`Send`] but not [`Sync`], which is exactly the engine's
+//!   threading rule expressed in the type system. See below.
+//!
+//! # Several runtimes
+//!
+//! Any number of [`Runtime`]s may be open at once, sharing nothing — separate
+//! globals, objects, prototypes, shapes and interned strings:
+//!
+//! ```no_run
+//! # fn main() -> Result<(), jse::Error> {
+//! let a = jse::Runtime::new()?;
+//! let b = jse::Runtime::new()?;
+//!
+//! a.eval_unit("globalThis.x = 'from A'")?;
+//! b.eval_unit("globalThis.x = 'from B'")?;
+//!
+//! assert_eq!(a.eval("x")?.as_string()?, "from A");
+//! assert_eq!(b.eval("x")?.as_string()?, "from B");
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! A [`Value`] belongs to the runtime that produced it and means nothing to any
+//! other — the C ABI answers such a handle with an error rather than resolving
+//! it somewhere else. Here it does not come up: `Value<'rt>` borrows its
+//! runtime, so handing one to another runtime is a borrow-checker error, not a
+//! runtime failure. To move a value between runtimes, read it out and write it
+//! back in (`a.eval(...)?.as_string()?` into a snippet `b` evaluates).
+//!
+//! # Threads
+//!
+//! [`Runtime`] is [`Send`] and deliberately not [`Sync`]. The engine takes no
+//! locks and has no thread-local or process-global state, so:
+//!
+//! - Two runtimes on two threads share nothing and do not interact. `Send` is
+//!   what lets you build one here and drive it there, or give each worker its
+//!   own.
+//! - One runtime driven from two threads at once would corrupt it. `!Sync` is
+//!   what makes that a compile error: without a shareable `&Runtime`, two
+//!   threads cannot both reach the same instance. Opting in means saying so —
+//!   a [`std::sync::Mutex<Runtime>`] serialises access and *is* `Sync`,
+//!   because the lock supplies the exclusion the engine does not.
+//!
+//! [`Value`] is neither, and follows for free: it borrows its runtime, and
+//! `&Runtime` is not [`Send`] precisely because [`Runtime`] is not [`Sync`].
+//!
+//! Sharing one runtime is rejected rather than merely discouraged:
+//!
+//! ```compile_fail
+//! fn assert_sync<T: Sync>() {}
+//! assert_sync::<jse::Runtime>();
+//! ```
+//!
+//! ```compile_fail
+//! fn assert_send<T: Send>() {}
+//! assert_send::<jse::Value<'static>>();
+//! ```
 //!
 //! # Host functions
 //!
@@ -60,7 +114,6 @@ use std::fmt;
 use std::marker::PhantomData;
 use std::os::raw::{c_char, c_int, c_void};
 use std::panic::{catch_unwind, AssertUnwindSafe};
-use std::sync::atomic::{AtomicBool, Ordering};
 
 use jse_sys as sys;
 
@@ -84,8 +137,6 @@ pub enum Kind {
     Type,
     /// The value registry is exhausted (524287 live handles).
     Full,
-    /// A runtime already exists in this process.
-    AlreadyOpen,
     /// Source or a string result was not valid UTF-8 / contained a NUL byte.
     Encoding,
     /// The ABI returned a status this binding does not know.
@@ -115,7 +166,6 @@ impl Kind {
             Kind::Invalid => "invalid argument",
             Kind::Type => "wrong type",
             Kind::Full => "value registry full",
-            Kind::AlreadyOpen => "a runtime is already open in this process",
             Kind::Encoding => "invalid text encoding",
             Kind::Unknown(_) => "unknown error",
         }
@@ -210,43 +260,57 @@ impl Type {
     }
 }
 
-/// Guards the ABI's one-runtime-per-process rule so a second [`Runtime::new`]
-/// reports [`Kind::AlreadyOpen`] instead of racing inside C.
-static RUNTIME_OPEN: AtomicBool = AtomicBool::new(false);
-
-/// The engine. Owns the heap and every value derived from it.
+/// An engine instance. Owns a heap and every value derived from it.
 ///
-/// Dropping it closes the engine and frees the heap. Values borrow it, so no
+/// Any number may be open at once. Each has its own globals, objects, shapes
+/// and interned strings, and they share nothing — so a [`Value`] from one is
+/// meaningless to another, which the `'rt` borrow already makes a compile
+/// error. See [`Runtime::new`].
+///
+/// Dropping it closes that instance and frees its heap. Values borrow it, so no
 /// [`Value`] can still be alive at that point.
+///
+/// # Threads
+///
+/// [`Send`] but deliberately not [`Sync`]. The engine takes no locks, so a
+/// single runtime must be driven from one thread at a time; `!Sync` is what
+/// makes sharing one across threads a compile error. Moving one to another
+/// thread, or giving each thread its own, is sound and is what `Send` allows:
+/// two runtimes share no state whatsoever. See the crate docs for the full
+/// argument.
 pub struct Runtime {
     raw: sys::jse_runtime,
-    /// The ABI is not thread-safe; keep this type off other threads.
-    _not_send_sync: PhantomData<*const ()>,
+    /// `Send`, not `Sync`: a runtime may move between threads but must not be
+    /// used from two at once. See the type's doc comment.
+    _not_sync: PhantomData<std::cell::Cell<()>>,
 }
 
-impl Runtime {
-    /// Open the engine.
-    ///
-    /// Only one runtime may exist per process — the engine keeps process-global
-    /// state — so a second call while one is alive fails with
-    /// [`Kind::AlreadyOpen`].
-    pub fn new() -> Result<Self, Error> {
-        if RUNTIME_OPEN.swap(true, Ordering::SeqCst) {
-            return Err(Error::new(Kind::AlreadyOpen, ""));
-        }
+// SAFETY: a runtime owns a heap that is reachable from nothing else -- no
+// process-global state remains in the engine, so two runtimes on two threads
+// touch disjoint memory. Handing one to another thread is therefore sound so
+// long as only one thread drives it at a time, which `!Sync` (via the `Cell`
+// marker) enforces: without `&Runtime` being shareable, two threads cannot hold
+// a usable reference to the same instance.
+unsafe impl Send for Runtime {}
 
+impl Runtime {
+    /// Open an engine instance.
+    ///
+    /// Any number may be open in one process at the same time. They are fully
+    /// independent: each has its own globals, prototypes, objects and string
+    /// intern table, and nothing is shared between them.
+    pub fn new() -> Result<Self, Error> {
         let mut raw: sys::jse_runtime = std::ptr::null_mut();
         // SAFETY: `raw` is a valid, writable out-parameter.
         let status = unsafe { sys::jse_open(&mut raw) };
 
         if status != sys::JSE_OK || raw.is_null() {
-            RUNTIME_OPEN.store(false, Ordering::SeqCst);
             return Err(Error::new(Kind::from_status(status), ""));
         }
 
         Ok(Runtime {
             raw,
-            _not_send_sync: PhantomData,
+            _not_sync: PhantomData,
         })
     }
 
@@ -374,16 +438,10 @@ impl Runtime {
     {
         // One leaked box per registration; see the doc comment above. The
         // pointer is erased to `*mut c_void` for the ABI and recovered inside
-        // `trampoline::<F>`, the only place that knows `F` again.
-        //
-        // The runtime pointer rides along because the trampoline needs it:
-        // `jse_value_free` is a no-op on a null runtime (unlike the readers,
-        // which resolve scope handles through the active call), so releasing
-        // what `Ctx::call` returns requires the real one.
-        let boxed: *mut Registration<F> = Box::into_raw(Box::new(Registration {
-            rt: self.raw,
-            f,
-        }));
+        // `trampoline::<F>`, the only place that knows `F` again. The runtime
+        // does not ride along: the trampoline reads it off the call context,
+        // so a closure registered here can only ever address this runtime.
+        let boxed: *mut F = Box::into_raw(Box::new(f));
 
         // SAFETY: `name` is valid for `name.len()` bytes; `trampoline::<F>` has
         // the required C signature; `boxed` outlives the runtime because it is
@@ -444,9 +502,9 @@ impl Drop for Runtime {
     fn drop(&mut self) {
         // SAFETY: `self.raw` came from a successful jse_open and is closed
         // exactly once, since Runtime is neither Copy nor Clone. Every Value
-        // borrows self, so none can be alive here.
+        // borrows self, so none can be alive here. Other runtimes are
+        // untouched: closing one frees only its own heap.
         unsafe { sys::jse_close(self.raw) };
-        RUNTIME_OPEN.store(false, Ordering::SeqCst);
     }
 }
 
@@ -495,7 +553,7 @@ impl<'rt> Value<'rt> {
     /// This drives the ABI's measure-then-fill protocol, so no allocation
     /// crosses the boundary in either direction.
     pub fn as_string(&self) -> Result<String, Error> {
-        read_string(self.rt.raw, self.handle, Some(self.rt))
+        read_string(self.rt, self.handle)
     }
 
     /// Render a primitive the way JS would display it.
@@ -543,12 +601,20 @@ impl fmt::Debug for Value<'_> {
 /// so `'a` is what stops one being stashed in a `static` or returned past the
 /// closure — the mistake the C ABI can only warn about in prose.
 ///
+/// It carries the call context it came from, because that is what names the
+/// runtime the handle belongs to. With several runtimes open a handle is an
+/// index into exactly one registry, so a reader that had to guess would answer
+/// with an unrelated value; every read here goes through `jse_ctx_*` instead.
+///
 /// A `HostValue` does not free anything on drop. Scope handles have nothing to
 /// free; a [`Ctx::call`] result is owned by its [`Retained`] guard, which frees
 /// the slot when it drops, or by the call itself after [`Retained::keep`].
 #[derive(Clone, Copy)]
 pub struct HostValue<'a> {
     repr: Repr,
+    /// The call this value belongs to. Readers address the runtime through it;
+    /// a host-built value has none to address, and never needs one.
+    ctx: sys::jse_call_ctx,
     /// Invariant in `'a`: `HostValue<'long>` must not coerce to
     /// `HostValue<'short>` or vice versa, so no lifetime laundering can smuggle
     /// a handle out of the call it belongs to.
@@ -571,16 +637,18 @@ enum Repr {
 }
 
 impl<'a> HostValue<'a> {
-    fn handle(handle: sys::jse_value) -> Self {
+    fn handle(ctx: sys::jse_call_ctx, handle: sys::jse_value) -> Self {
         HostValue {
             repr: Repr::Handle(handle),
+            ctx,
             _call: PhantomData,
         }
     }
 
-    fn built(index: usize) -> Self {
+    fn built(ctx: sys::jse_call_ctx, index: usize) -> Self {
         HostValue {
             repr: Repr::Built(index),
+            ctx,
             _call: PhantomData,
         }
     }
@@ -607,9 +675,10 @@ impl<'a> HostValue<'a> {
     /// not constructed it yet.
     pub fn type_of(&self) -> Type {
         match self.raw() {
-            // SAFETY: inside a callback the readers accept a null runtime and
-            // resolve scope handles through the active call context.
-            Some(h) => Type::from_raw(unsafe { sys::jse_type_of(std::ptr::null_mut(), h) }),
+            // SAFETY: live context for this call; the context tier is what
+            // resolves scope handles, and it reports undefined for anything it
+            // does not recognise rather than faulting.
+            Some(h) => Type::from_raw(unsafe { sys::jse_ctx_type_of(self.ctx, h) }),
             None => Type::Undefined,
         }
     }
@@ -619,7 +688,7 @@ impl<'a> HostValue<'a> {
         let handle = self.raw().ok_or_else(|| Error::new(Kind::Type, NOT_READABLE))?;
         let mut out = 0.0f64;
         // SAFETY: as `type_of`; `out` is a valid out-parameter.
-        let status = unsafe { sys::jse_get_number(std::ptr::null_mut(), handle, &mut out) };
+        let status = unsafe { sys::jse_ctx_get_number(self.ctx, handle, &mut out) };
         if status != sys::JSE_OK {
             return Err(Error::new(Kind::from_status(status), "value is not a number"));
         }
@@ -631,7 +700,7 @@ impl<'a> HostValue<'a> {
         let handle = self.raw().ok_or_else(|| Error::new(Kind::Type, NOT_READABLE))?;
         let mut out: c_int = 0;
         // SAFETY: as `type_of`; `out` is a valid out-parameter.
-        let status = unsafe { sys::jse_get_bool(std::ptr::null_mut(), handle, &mut out) };
+        let status = unsafe { sys::jse_ctx_get_bool(self.ctx, handle, &mut out) };
         if status != sys::JSE_OK {
             return Err(Error::new(Kind::from_status(status), "value is not a boolean"));
         }
@@ -641,7 +710,7 @@ impl<'a> HostValue<'a> {
     /// Copy a string out as a Rust `String`. Does not coerce.
     pub fn as_string(&self) -> Result<String, Error> {
         let handle = self.raw().ok_or_else(|| Error::new(Kind::Type, NOT_READABLE))?;
-        read_string(std::ptr::null_mut(), handle, None)
+        read_ctx_string(self.ctx, handle)
     }
 }
 
@@ -661,8 +730,9 @@ impl fmt::Debug for HostValue<'_> {
 /// escaping into a longer-lived place.
 pub struct Ctx<'a> {
     raw: sys::jse_call_ctx,
-    /// The runtime this call belongs to. [`jse_value_free`] needs it, and it is
-    /// not reachable from a call context, so it rides in from the registration.
+    /// The runtime this call belongs to, read off the context. Freeing a
+    /// [`Ctx::call`] result needs it, and so does a host that wants to
+    /// evaluate; see [`Ctx::runtime`].
     rt: sys::jse_runtime,
     /// Values the host built, parked until one of them is returned. See
     /// [`Repr::Built`].
@@ -675,10 +745,12 @@ pub struct Ctx<'a> {
 }
 
 impl<'a> Ctx<'a> {
-    fn new(raw: sys::jse_call_ctx, rt: sys::jse_runtime) -> Self {
+    fn new(raw: sys::jse_call_ctx) -> Self {
         Ctx {
             raw,
-            rt,
+            // SAFETY: `raw` is the live context the engine handed the
+            // trampoline; the ABI answers which runtime owns it.
+            rt: unsafe { sys::jse_ctx_runtime(raw) },
             built: std::cell::RefCell::new(Vec::new()),
             kept: std::cell::RefCell::new(Vec::new()),
             _call: PhantomData,
@@ -689,7 +761,7 @@ impl<'a> Ctx<'a> {
     fn park(&self, value: Built) -> HostValue<'a> {
         let mut built = self.built.borrow_mut();
         built.push(value);
-        HostValue::built(built.len() - 1)
+        HostValue::built(self.raw, built.len() - 1)
     }
 
     /// How many arguments JS passed. Unrelated to the registered arity.
@@ -702,26 +774,68 @@ impl<'a> Ctx<'a> {
     /// where reading a missing argument is not an error.
     pub fn arg(&self, i: u32) -> HostValue<'a> {
         // SAFETY: the ABI documents out-of-range indices as yielding undefined.
-        HostValue::handle(unsafe { sys::jse_arg(self.raw, i) })
+        HostValue::handle(self.raw, unsafe { sys::jse_arg(self.raw, i) })
     }
 
     /// The `this` receiver. Strict semantics: an undefined receiver stays
     /// undefined rather than becoming the global object.
     pub fn this(&self) -> HostValue<'a> {
         // SAFETY: live context.
-        HostValue::handle(unsafe { sys::jse_this(self.raw) })
+        HostValue::handle(self.raw, unsafe { sys::jse_this(self.raw) })
     }
 
     /// `new.target`, or `undefined` on a plain call.
     pub fn new_target(&self) -> HostValue<'a> {
         // SAFETY: live context.
-        HostValue::handle(unsafe { sys::jse_new_target(self.raw) })
+        HostValue::handle(self.raw, unsafe { sys::jse_new_target(self.raw) })
     }
 
     /// Whether this invocation came through `new` or `super()`.
     pub fn is_construct(&self) -> bool {
         // SAFETY: live context.
         unsafe { sys::jse_is_construct(self.raw) != 0 }
+    }
+
+    /// Copy a value out of this call so it outlives the callback.
+    ///
+    /// Arguments and `this` are *scope* handles: the engine reclaims them the
+    /// moment the callback returns, which is why [`HostValue`] is bound to the
+    /// call's lifetime. This takes a copy into the runtime's own registry and
+    /// hands back a [`Persisted`], which is not tied to the call and can be
+    /// stored in the closure's captured state.
+    ///
+    /// A host-built value ([`Ctx::number`] and friends) has no handle to copy
+    /// and is rejected with [`Kind::Type`].
+    ///
+    /// The [`Persisted`] holds a registry slot until it drops. It knows which
+    /// runtime it belongs to — read off this context, since with several
+    /// runtimes open the handle names a slot in exactly one of them.
+    ///
+    /// ```no_run
+    /// # fn main() -> Result<(), jse::Error> {
+    /// # let rt = jse::Runtime::new()?;
+    /// use std::cell::RefCell;
+    /// let last = RefCell::new(None);
+    /// rt.register_fn("remember", 1, move |ctx| {
+    ///     *last.borrow_mut() = Some(ctx.persist(ctx.arg(0))?);
+    ///     Ok(ctx.undefined())
+    /// })?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn persist(&self, value: HostValue<'a>) -> Result<Persisted, Error> {
+        let handle = value.raw().ok_or_else(|| {
+            Error::new(Kind::Type, "a host-built value has no handle to persist")
+        })?;
+        // SAFETY: live context; `handle` came from this call.
+        let out = unsafe { sys::jse_value_persist(self.raw, handle) };
+        if out == sys::JSE_INVALID_VALUE {
+            return Err(Error::new(Kind::Full, "could not persist the value"));
+        }
+        Ok(Persisted {
+            rt: self.rt,
+            handle: out,
+        })
     }
 
     /// A number to return from the closure.
@@ -828,7 +942,7 @@ impl<'a> Ctx<'a> {
         // The result is a runtime-owned registry slot. The guard frees it on
         // drop rather than letting it accumulate until the call returns.
         Ok(Retained {
-            value: HostValue::handle(out),
+            value: HostValue::handle(self.raw, out),
             ctx: self,
         })
     }
@@ -906,6 +1020,79 @@ impl fmt::Debug for Retained<'_, '_> {
     }
 }
 
+/// A value copied out of a host call, outliving it.
+///
+/// [`Ctx::persist`] makes one. It owns a slot in its runtime's registry and
+/// releases it on drop, so a closure that keeps one keeps it for as long as it
+/// holds the `Persisted` and no longer.
+///
+/// It carries the runtime the value belongs to, which is what makes it readable
+/// after the call that produced it has gone. That runtime must still be open:
+/// the type cannot borrow it, because the whole point is to outlive the call,
+/// so unlike [`Value`] this one is on the host to sequence. Registered closures
+/// are dropped only when the runtime is, which is the case it is designed for.
+///
+/// A `Persisted` is not [`Send`]: it names a slot in one runtime, and that
+/// runtime must be driven from one thread at a time.
+pub struct Persisted {
+    rt: sys::jse_runtime,
+    handle: sys::jse_value,
+}
+
+impl Persisted {
+    /// The value's JavaScript type.
+    pub fn type_of(&self) -> Type {
+        // SAFETY: the runtime this value was persisted into; an unknown handle
+        // reports undefined rather than faulting.
+        Type::from_raw(unsafe { sys::jse_type_of(self.rt, self.handle) })
+    }
+
+    /// Read a number. Does not coerce.
+    pub fn as_number(&self) -> Result<f64, Error> {
+        let mut out = 0.0f64;
+        // SAFETY: live runtime and handle; `out` is a valid out-parameter.
+        let status = unsafe { sys::jse_get_number(self.rt, self.handle, &mut out) };
+        if status != sys::JSE_OK {
+            return Err(Error::new(Kind::from_status(status), "value is not a number"));
+        }
+        Ok(out)
+    }
+
+    /// Read a boolean. Does not coerce.
+    pub fn as_bool(&self) -> Result<bool, Error> {
+        let mut out: c_int = 0;
+        // SAFETY: live runtime and handle; `out` is a valid out-parameter.
+        let status = unsafe { sys::jse_get_bool(self.rt, self.handle, &mut out) };
+        if status != sys::JSE_OK {
+            return Err(Error::new(Kind::from_status(status), "value is not a boolean"));
+        }
+        Ok(out != 0)
+    }
+
+    /// Copy a string out as a Rust `String`. Does not coerce.
+    pub fn as_string(&self) -> Result<String, Error> {
+        read_measured(
+            // SAFETY: live runtime and handle; the measure-then-fill protocol.
+            |buf, cap, len| unsafe { sys::jse_get_string(self.rt, self.handle, buf, cap, len) },
+            |status| Error::new(Kind::from_status(status), "value is not a string"),
+        )
+    }
+}
+
+impl Drop for Persisted {
+    fn drop(&mut self) {
+        // SAFETY: `handle` is a registry slot in `self.rt` from
+        // `jse_value_persist`, freed exactly once since this is not Copy/Clone.
+        unsafe { sys::jse_value_free(self.rt, self.handle) };
+    }
+}
+
+impl fmt::Debug for Persisted {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Persisted({:?})", self.type_of())
+    }
+}
+
 /// Marker message for a failure that the engine has *already* recorded as a
 /// throw. The trampoline must not overwrite it with a second throw, which would
 /// replace the callee's real exception with a generic one.
@@ -944,38 +1131,50 @@ impl Built {
     }
 }
 
-/// Read a string through the ABI's measure-then-fill protocol.
+/// Read a string owned by `owner` through the ABI's measure-then-fill protocol.
 ///
-/// Shared by [`Value::as_string`] and [`HostValue::as_string`]. Inside a
-/// callback `rt` is null — the readers resolve scope handles through the active
-/// call context — and `owner` is `None`, so failures carry a generic message
-/// instead of the engine's, which needs a runtime to read.
-fn read_string(
-    rt: sys::jse_runtime,
-    handle: sys::jse_value,
-    owner: Option<&Runtime>,
-) -> Result<String, Error> {
-    let fail = |status: c_int| match owner {
-        Some(rt) => rt.error(status),
-        None => Error::new(Kind::from_status(status), "value is not a string"),
-    };
+/// Used by [`Value::as_string`], which holds a runtime and can therefore report
+/// the engine's own message on failure.
+fn read_string(owner: &Runtime, handle: sys::jse_value) -> Result<String, Error> {
+    read_measured(
+        |buf, cap, len| {
+            // SAFETY: live runtime and handle; `buf`/`len` are valid for the
+            // capacity given, which is 0 with a null buf on the measuring call.
+            unsafe { sys::jse_get_string(owner.raw, handle, buf, cap, len) }
+        },
+        |status| owner.error(status),
+    )
+}
 
+/// As [`read_string`], but addressing the runtime through a call context.
+///
+/// This is what a host callback uses: it holds a `jse_call_ctx` and no runtime,
+/// and only the context tier resolves the scope handles arguments carry. There
+/// is no runtime here to read a message from, so failures carry a generic one.
+fn read_ctx_string(ctx: sys::jse_call_ctx, handle: sys::jse_value) -> Result<String, Error> {
+    read_measured(
+        // SAFETY: live context and handle; as `read_string`.
+        |buf, cap, len| unsafe { sys::jse_ctx_get_string(ctx, handle, buf, cap, len) },
+        |status| Error::new(Kind::from_status(status), "value is not a string"),
+    )
+}
+
+/// The measure-then-fill protocol itself, over whichever reader tier `read`
+/// closes over.
+fn read_measured(
+    read: impl Fn(*mut c_char, usize, *mut usize) -> c_int,
+    fail: impl Fn(c_int) -> Error,
+) -> Result<String, Error> {
     let mut len: usize = 0;
     // Measure. A null buffer asks for the byte length, excluding the NUL.
-    // SAFETY: `handle` is live; a null buf with cap 0 is the ABI's documented
-    // measuring call; `len` is a valid out-parameter.
-    let status = unsafe { sys::jse_get_string(rt, handle, std::ptr::null_mut(), 0, &mut len) };
+    let status = read(std::ptr::null_mut(), 0, &mut len);
     if status != sys::JSE_OK {
         return Err(fail(status));
     }
 
     // Fill. The ABI writes a trailing NUL, so ask for len + 1.
     let mut buf = vec![0u8; len + 1];
-    // SAFETY: `buf` has exactly the capacity the ABI requires, and the call
-    // writes at most that many bytes.
-    let status = unsafe {
-        sys::jse_get_string(rt, handle, buf.as_mut_ptr() as *mut c_char, buf.len(), &mut len)
-    };
+    let status = read(buf.as_mut_ptr() as *mut c_char, buf.len(), &mut len);
     if status != sys::JSE_OK {
         return Err(fail(status));
     }
@@ -983,15 +1182,6 @@ fn read_string(
     buf.truncate(len);
     String::from_utf8(buf)
         .map_err(|_| Error::new(Kind::Encoding, "engine returned a non-UTF-8 string"))
-}
-
-/// What a registration leaks: the host closure plus the runtime it belongs to.
-///
-/// The runtime pointer is not reachable from a call context, and the trampoline
-/// needs it to free the runtime-owned handles [`Ctx::call`] produces.
-struct Registration<F> {
-    rt: sys::jse_runtime,
-    f: F,
 }
 
 /// The one `extern "C"` function every registration goes through.
@@ -1025,18 +1215,17 @@ where
     if raw.is_null() || udata.is_null() {
         return;
     }
-    // SAFETY: `udata` is the leaked `*mut Registration<F>` from
-    // `register_fn_impl`, alive for the runtime's lifetime. Taken as a shared
-    // reference only; the closure is `Fn`, so re-entrant calls
-    // (host -> JS -> same host) are fine.
-    let reg: &Registration<F> = unsafe { &*(udata as *const Registration<F>) };
+    // SAFETY: `udata` is the leaked `*mut F` from `register_fn_impl`, alive for
+    // the runtime's lifetime. Taken as a shared reference only; the closure is
+    // `Fn`, so re-entrant calls (host -> JS -> same host) are fine.
+    let f: &F = unsafe { &*(udata as *const F) };
 
-    let ctx = Ctx::new(raw, reg.rt);
+    let ctx = Ctx::new(raw);
 
     // AssertUnwindSafe: on a panic we touch `ctx` only to record a throw and
     // free handles, neither of which reads closure state that a panic could
     // have left inconsistent.
-    let result = catch_unwind(AssertUnwindSafe(|| (reg.f)(&ctx)));
+    let result = catch_unwind(AssertUnwindSafe(|| f(&ctx)));
 
     match result {
         // Apply exactly the value the closure returned, ignoring any others it
@@ -1073,9 +1262,10 @@ where
     // those when the call frame goes.
     for handle in ctx.kept.borrow().iter() {
         // SAFETY: each handle came from a successful `jse_call` on this
-        // context, is runtime-owned, and is freed exactly once: `keep` forgets
-        // the guard that would otherwise free it, and pushes it here once.
-        unsafe { sys::jse_value_free(reg.rt, *handle) };
+        // context, is runtime-owned by `ctx.rt`, and is freed exactly once:
+        // `keep` forgets the guard that would otherwise free it, and pushes it
+        // here once.
+        unsafe { sys::jse_value_free(ctx.rt, *handle) };
     }
 }
 

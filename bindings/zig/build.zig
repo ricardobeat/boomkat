@@ -51,21 +51,44 @@ pub fn build(b: *std.Build) void {
     const lib_dir = std.fs.path.dirname(lib_path) orelse ".";
     mod.addRPathSpecial(lib_dir);
 
-    const exe = b.addExecutable(.{
-        .name = "jse-example",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("example/main.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{.{ .name = "jse", .module = mod }},
-        }),
-    });
-    b.installArtifact(exe);
+    const Example = struct {
+        name: []const u8,
+        path: []const u8,
+        step: []const u8,
+        desc: []const u8,
+    };
+    const examples = [_]Example{
+        .{
+            .name = "jse-example",
+            .path = "example/main.zig",
+            .step = "run",
+            .desc = "Build and run the example",
+        },
+        .{
+            .name = "jse-two-runtimes",
+            .path = "example/two_runtimes.zig",
+            .step = "run-two-runtimes",
+            .desc = "Build and run the two-runtime example",
+        },
+    };
 
-    const run = b.addRunArtifact(exe);
-    run.step.dependOn(b.getInstallStep());
-    if (b.args) |args| run.addArgs(args);
-    b.step("run", "Build and run the example").dependOn(&run.step);
+    for (examples) |ex| {
+        const exe = b.addExecutable(.{
+            .name = ex.name,
+            .root_module = b.createModule(.{
+                .root_source_file = b.path(ex.path),
+                .target = target,
+                .optimize = optimize,
+                .imports = &.{.{ .name = "jse", .module = mod }},
+            }),
+        });
+        b.installArtifact(exe);
+
+        const run = b.addRunArtifact(exe);
+        run.step.dependOn(b.getInstallStep());
+        if (b.args) |args| run.addArgs(args);
+        b.step(ex.step, ex.desc).dependOn(&run.step);
+    }
 
     const tests = b.addTest(.{ .root_module = mod });
     const run_tests = b.addRunArtifact(tests);

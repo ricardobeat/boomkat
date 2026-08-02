@@ -15,8 +15,9 @@
 #
 # The block form closes the runtime on the way out, including on exception.
 #
-# Only one runtime may exist per process -- the engine keeps process-global
-# state -- so a second JS.open while one is live raises JS::Error.
+# Runtimes are independent: any number may be open at once, each with its own
+# globals, objects and host functions. A value belongs to the runtime that
+# produced it and cannot be read by another.
 
 require 'fiddle'
 require 'fiddle/import'
@@ -187,9 +188,15 @@ module JS
       'int jse_last_error_code(void*)',
       'void jse_drain_microtasks(void*)',
 
-      # Host functions. The jse_call_ctx is an opaque pointer, and every reader
-      # above also accepts the scope handles reached through it.
+      # Host functions. The jse_call_ctx is an opaque pointer; the readers above
+      # take a runtime, so a callback reads its arguments through the jse_ctx_*
+      # tier instead -- only that tier resolves a scope handle.
       'int jse_register_fn(void*, const char*, size_t, void*, void*, int, int)',
+      'void* jse_ctx_runtime(void*)',
+      'int jse_ctx_type_of(void*, unsigned int)',
+      'int jse_ctx_get_number(void*, unsigned int, double*)',
+      'int jse_ctx_get_bool(void*, unsigned int, int*)',
+      'int jse_ctx_get_string(void*, unsigned int, char*, size_t, size_t*)',
       'unsigned int jse_argc(void*)',
       'unsigned int jse_arg(void*, unsigned int)',
       'unsigned int jse_this(void*)',
@@ -351,6 +358,63 @@ module JS
     alias inspect to_s
   end
 
+  # Which tier of the C reader API a handle must be resolved through.
+  #
+  # A jse_value names a slot, and the slot table it indexes depends on where the
+  # handle came from: a runtime's registry for an #eval result, one call's scope
+  # for an argument. The two tiers take different first arguments -- a runtime
+  # or a call context -- and neither accepts NULL, so a handle carries the tier
+  # that can read it rather than the conversion code guessing.
+  module Reader
+    # Resolves runtime-registry handles: what jse_eval and jse_call hand back.
+    class Runtime
+      def initialize(pointer)
+        @p = pointer
+      end
+
+      def type_of(v)
+        Lib.jse_type_of(@p, v)
+      end
+
+      def get_number(v, out)
+        Lib.jse_get_number(@p, v, out)
+      end
+
+      def get_bool(v, out)
+        Lib.jse_get_bool(@p, v, out)
+      end
+
+      def get_string(v, buf, cap, len)
+        Lib.jse_get_string(@p, v, buf, cap, len)
+      end
+    end
+
+    # Resolves scope handles -- jse_arg, jse_this -- which name a slot in the
+    # live call rather than in the runtime, and which the runtime tier cannot
+    # see. It also resolves registry handles, so one host call needs only this.
+    class Context
+      def initialize(ctx)
+        @p = ctx
+      end
+
+      def type_of(v)
+        Lib.jse_ctx_type_of(@p, v)
+      end
+
+      def get_number(v, out)
+        Lib.jse_ctx_get_number(@p, v, out)
+      end
+
+      def get_bool(v, out)
+        Lib.jse_ctx_get_bool(@p, v, out)
+      end
+
+      def get_string(v, buf, cap, len)
+        Lib.jse_ctx_get_string(@p, v, buf, cap, len)
+      end
+    end
+  end
+
   # The live context of one host-function invocation.
   #
   # Yielded as the second block parameter by Runtime#register when the block
@@ -359,9 +423,14 @@ module JS
     # The runtime this call belongs to.
     attr_reader :runtime
 
+    # Resolves every handle reached through this call. Scope handles are only
+    # visible to the context tier, so this is the one reader a host body uses.
+    attr_reader :reader
+
     def initialize(runtime, ctx)
       @runtime = runtime
       @ctx = ctx
+      @reader = Reader::Context.new(ctx)
       @live = true
       # Global handles produced by #invoke, released when the call ends.
       @owned = []
@@ -434,7 +503,9 @@ module JS
       @runtime.send(:handle_to_ruby, id, self)
     end
 
-    # Promote a scope handle to a runtime-owned one that outlives the call.
+    # Promote a scope handle to a registry handle on #runtime that outlives the
+    # call. It stays a handle on that runtime: passing it to a different one is
+    # refused, so move a value across by reading it out and writing it back in.
     def persist(handle)
       check_live!
       Lib.jse_value_persist(@ctx, handle)
@@ -478,6 +549,9 @@ module JS
 
   # Open a runtime. With a block, closes it afterwards and returns the block's
   # value; without one, the caller owns the runtime and must call #close.
+  #
+  # Runtimes are independent, so this may be called again while one is live:
+  # each gets its own globals and shares nothing with the others.
   def self.open(library = nil)
     vm = Runtime.new(library)
     return vm unless block_given?
@@ -489,20 +563,26 @@ module JS
     end
   end
 
-  # A JavaScript runtime. Not thread-safe, and only one may be open per process.
+  # A JavaScript runtime: its own globals, objects, prototypes and interned
+  # strings, sharing nothing with any other.
+  #
+  # Any number may be open at once. Each must be driven from one thread at a
+  # time -- the engine has no locking and enforces nothing -- but two threads
+  # each driving their own runtime share no state and do not interfere.
+  #
+  # A value belongs to the runtime that produced it. #eval converts its result
+  # to Ruby before returning, so ordinary results move freely; a handle held
+  # inside a host function does not, and the other runtime refuses it.
   class Runtime
     def initialize(library = nil)
       Lib.load!(library || JS.default_library)
 
       out = Fiddle::Pointer.malloc(Fiddle::SIZEOF_VOIDP)
       status = Lib.jse_open(out)
-      if status != Status::OK
-        raise Error.new(
-          'jse_open failed -- a runtime is already open in this process ' \
-          '(the engine allows only one)', status
-        )
-      end
+      raise Error.new('jse_open failed', status) if status != Status::OK
+
       @rt = out.ptr
+      @reader = Reader::Runtime.new(@rt)
       @closed = false
 
       # Every Fiddle::Closure registered against this runtime. A closure that
@@ -616,6 +696,31 @@ module JS
       self
     end
 
+    # Read a handle held on THIS runtime -- one JS::Call#persist returned --
+    # and convert it to Ruby.
+    #
+    # A handle indexes one runtime's registry, so it means nothing anywhere
+    # else, and runtimes issue the same small integers independently: two of
+    # them will both hand out 65537. A handle this runtime does not hold raises
+    # JS::Error rather than reading whatever occupies that slot.
+    #
+    # jse_type_of reports an unheld handle as undefined, which is also what a
+    # genuine `undefined` reads as, so the two are told apart by asking a
+    # reader: it answers JSE_ERR_INVALID for an unheld slot and JSE_ERR_TYPE
+    # for a real undefined.
+    def read(handle)
+      check_open!
+      if @reader.type_of(handle) == Type::UNDEFINED
+        probe = Fiddle::Pointer.malloc(Fiddle::SIZEOF_DOUBLE)
+        if @reader.get_number(handle, probe) == Status::INVALID
+          raise Error.new(
+            "handle #{handle} is not held by this runtime", Status::INVALID
+          )
+        end
+      end
+      to_ruby(handle)
+    end
+
     # Run pending promise jobs. #eval already drains before returning, so this
     # is only needed after resolving promises from outside the engine.
     def drain_microtasks
@@ -630,6 +735,7 @@ module JS
 
       Lib.jse_close(@rt)
       @rt = nil
+      @reader = nil
       @closed = true
       # The engine can no longer reach these trampolines, so dropping the last
       # reference is safe only now -- not a moment earlier.
@@ -785,24 +891,26 @@ module JS
     end
 
     # Convert a handle reached through a live host call -- an argument's scope
-    # handle, or a global handle jse_call returned -- into Ruby, keeping the
+    # handle, or a registry handle jse_call returned -- into Ruby, keeping the
     # handle attached so the value can be passed back into JS. Functions become
     # JS::Callback so the host can call back into JS.
     #
-    # The runtime pointer is required even for a scope handle: it resolves
-    # against the runtime's active context, so passing NULL would make
-    # jse_type_of report OTHER and every reader fail with JSE_ERR_INVALID.
+    # Everything resolves through the call's context reader. A scope handle
+    # names a slot in this call rather than in the runtime's registry, so the
+    # runtime tier cannot see it: read through it and jse_type_of reports
+    # UNDEFINED and every reader fails with JSE_ERR_INVALID.
     def handle_to_ruby(id, call)
       return nil if id.zero?
 
-      type = Lib.jse_type_of(@rt, id)
+      reader = call.reader
+      type = reader.type_of(id)
       case type
       when Type::UNDEFINED, Type::NULL then nil
-      when Type::BOOLEAN  then read_bool(id)
+      when Type::BOOLEAN  then read_bool(id, reader)
       # Numbers and strings keep their handle, which the v1 ABI requires of
       # anything passed to jse_call: it can only take values it already holds.
-      when Type::NUMBER   then Tagged.wrap(read_number(id), id)
-      when Type::STRING   then Tagged.wrap(read_string(id), id)
+      when Type::NUMBER   then Tagged.wrap(read_number(id, reader), id)
+      when Type::STRING   then Tagged.wrap(read_string(id, reader), id)
       when Type::FUNCTION then Callback.new(call, id)
       when Type::OTHER
         # jse_type_of reports OTHER for a lightfunc -- the compact
@@ -831,29 +939,30 @@ module JS
     end
 
     def to_ruby(id)
-      case Lib.jse_type_of(@rt, id)
+      type = @reader.type_of(id)
+      case type
       when Type::UNDEFINED, Type::NULL then nil
-      when Type::BOOLEAN then read_bool(id)
-      when Type::NUMBER  then read_number(id)
-      when Type::STRING  then read_string(id)
-      else Opaque.new(Lib.jse_type_of(@rt, id))
+      when Type::BOOLEAN then read_bool(id, @reader)
+      when Type::NUMBER  then read_number(id, @reader)
+      when Type::STRING  then read_string(id, @reader)
+      else Opaque.new(type)
       end
     end
 
-    # The readers serve both handle kinds: a global slot id from #eval and a
-    # scope handle from a host function's arguments. Both resolve through the
-    # runtime, so @rt is always passed.
-    def read_bool(id)
+    # The readers take the tier that can resolve the handle: this runtime for a
+    # registry handle from #eval, the call's context for a scope handle from a
+    # host function's arguments.
+    def read_bool(id, reader)
       out = Fiddle::Pointer.malloc(Fiddle::SIZEOF_INT)
-      status = Lib.jse_get_bool(@rt, id, out)
+      status = reader.get_bool(id, out)
       raise Error.new('jse_get_bool failed', status) if status != Status::OK
 
       out[0, Fiddle::SIZEOF_INT].unpack1('l') != 0
     end
 
-    def read_number(id)
+    def read_number(id, reader)
       out = Fiddle::Pointer.malloc(Fiddle::SIZEOF_DOUBLE)
-      status = Lib.jse_get_number(@rt, id, out)
+      status = reader.get_number(id, out)
       raise Error.new('jse_get_number failed', status) if status != Status::OK
 
       out[0, Fiddle::SIZEOF_DOUBLE].unpack1('d')
@@ -862,16 +971,16 @@ module JS
     # Two-call protocol: a NULL buffer measures, then a second call fills.
     # The engine converts its internal CESU-8 to real UTF-8 here, so astral
     # characters arrive as proper 4-byte sequences.
-    def read_string(id)
+    def read_string(id, reader)
       len = Fiddle::Pointer.malloc(Fiddle::SIZEOF_SIZE_T)
-      status = Lib.jse_get_string(@rt, id, nil, 0, len)
+      status = reader.get_string(id, nil, 0, len)
       raise Error.new('jse_get_string (measure) failed', status) if status != Status::OK
 
       size = len[0, Fiddle::SIZEOF_SIZE_T].unpack1('J')
       return ''.dup.force_encoding(Encoding::UTF_8) if size.zero?
 
       buf = Fiddle::Pointer.malloc(size + 1)
-      status = Lib.jse_get_string(@rt, id, buf, size + 1, len)
+      status = reader.get_string(id, buf, size + 1, len)
       raise Error.new('jse_get_string (read) failed', status) if status != Status::OK
 
       buf[0, size].force_encoding(Encoding::UTF_8)
