@@ -112,7 +112,9 @@ which has none either (`env.c3:63` is `parent`, `bindings`, two bools).
 `$if USE_SHAPE_CACHE` (`hobject.c3:80`, `USE_SHAPE_CACHE = !$feature(NOSHAPECACHE)`).
 The default build never compiles it. This single site is worth **34 signature
 changes** in the transitive closure, because it sits under `find_prop_idx`,
-which sits under everything. See [Open questions](#open-questions-for-the-user).
+which sits under everything. Phase 4 deletes the cache outright rather than
+paying that, so the 94-row below is what the alternative would have cost, not a
+live option.
 
 ### The transitive closure — the number that matters
 
@@ -982,6 +984,38 @@ in-scope heap; the tier-A substitutions in `heap.c3` and `vm_execute.c3`.
 `_active_heap` and its two accessors are **deleted at the end of this phase**,
 so every missed site is a compile error.
 
+**Delete the shape pointer cache along with the flag.** `HObject.shape` is an
+8-byte per-object copy of what `heap.shapes[shape_id]` already gives, and it
+exists only to avoid one indirection into an array that is permanently hot.
+Measured on the paths that actually walk shapes (a megamorphic site that defeats
+the inline cache, and `Object.keys`, both interleaved to cancel thermal drift),
+the no-cache build is marginally *ahead*:
+
+| | cache | no cache |
+|---|---|---|
+| megamorphic reads | 88-100ms | 86-94ms |
+| `Object.keys` | 115-122ms | 113-117ms |
+| chain walk | 8ms | 8-10ms |
+
+`HObjectBase` goes 80 to 72 bytes and `OBJ_SIZE_PLAIN` 112 to 104. Note the RSS
+win does not follow: both land in the same allocator size class, so 300k objects
+moved 16 KB out of 56 MB. The reason to do this is not memory.
+
+So there is no trade to configure, and `NOSHAPECACHE` stops being a build option
+because both settings land on the same point. Remove the field, the `$if`/`$else`
+in `get_shape`, all of `set_shape` (14 call sites become direct reads), the flag,
+and the `build-noshape` recipe in `justfile`.
+
+Sequencing matters: this is a consequence of the phase, not a prerequisite.
+Removing the cache makes `get_shape` need a heap, which today means
+`_active_heap`. Doing it first would make the engine's most-called accessor read
+the global unconditionally rather than in an arm the default build never
+compiles. It is cheap only once `Heap*` is threaded, which is why it belongs
+here and not in its own phase.
+
+A no-cache binary already passes the full local suite (303 scripts, 0 failed),
+so this is a supported configuration today, just not one CI exercises.
+
 **Files.** `src/hobject.c3`, `src/env.c3`, `src/heap.c3`,
 `src/vm/vm_execute.c3`, and every caller — prototype A measured **1,122 call
 sites across 44 files**, with `object.c3` alone at 109.
@@ -1277,14 +1311,13 @@ already caught in today's code (`thread1 heap=… active=… match=NO`).
 
 These need a decision, not an engineering judgment.
 
-**1. Does `NOSHAPECACHE` have to survive?** `HObject.get_shape`
-(`hobject.c3:871`) reads `_active_heap` only in the `$else` arm of
-`$if USE_SHAPE_CACHE`, which the default build never compiles. Keeping it alive
-raises the signature closure from **60 to 94 — 36% of the total cost of this
-change** — because it sits under `find_prop_idx`, which sits under everything.
-Prototype A **deleted the branch** rather than thread a parameter into the
-engine's most-called accessor. Is `-D NOSHAPECACHE` still a supported
-configuration, or can it go?
+**1. `NOSHAPECACHE`: resolved, no decision needed.** Earlier drafts asked
+whether the flag had to survive, because keeping it raises the signature closure
+from 60 to 94 (36% of the total cost) via `get_shape` sitting under
+`find_prop_idx`. The question is moot: the *cache* goes, not just the flag. It
+measures no faster than resolving `heap.shapes[shape_id]`, so there is nothing
+to preserve and nothing to configure. Folded into Phase 4; the closure stays at
+60. See that phase for the measurements.
 
 **2. May the `NULL`-runtime reader fallback be broken?**
 `jse_get_number`/`jse_get_bool`/`jse_get_string` accept `rtp_in == null` and
