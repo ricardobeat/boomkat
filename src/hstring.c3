@@ -563,7 +563,11 @@ fn bool check_is_ascii(char[] data) {
     usz len = data.len;
     usz i = 0;
     for (; i + 8 <= len; i += 8) {
-        ulong w = *(ulong*)(data.ptr + i);
+        // A string's bytes carry no alignment guarantee: an HString's payload
+        // starts right after its header, and a slice can begin at any offset.
+        // A plain ulong* deref is an unaligned read, which the sanitising
+        // builds trap on.
+        ulong w = mem::load((ulong*)(data.ptr + i), 1);
         if ((w & HIGH_BITS) != 0) return false;
     }
     for (; i < len; i++) {
@@ -809,7 +813,8 @@ fn bool has_raw_utf8_astral(char[] data) {
     usz len = data.len;
     usz i = 0;
     for (; i + 8 <= len; i += 8) {
-        ulong w = (*(ulong*)(data.ptr + i) & MASK_F8) ^ ALL_F0;
+        // Unaligned, for the same reason as check_is_ascii above.
+        ulong w = (mem::load((ulong*)(data.ptr + i), 1) & MASK_F8) ^ ALL_F0;
         if (((w - ONE_BYTES) & ~w & HIGH_BITS) != 0) return true;
     }
     for (; i < len; i++) {
