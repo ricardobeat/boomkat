@@ -57,6 +57,21 @@ function pick(c) {
 eq(pick(true), 11, "converging branch copy, true arm");
 eq(pick(false), 22, "converging branch copy, false arm");
 
+// ── Nested ternary: a branch converges onto the outer join copy ──────────
+// `n > 90 ? 1 : n > 80 ? 2 : 3` compiles to two join copies: the inner one
+// (`LDREG r6 = r7`) feeds the outer one (`LDREG r3 = r6`), and the inner
+// true arm's JUMP lands directly on the outer copy slot. Retargeting the
+// inner join copy into r3 (the outer copy's destination) and NOPing the
+// outer copy is only sound when every path through the outer copy also ran
+// the retargeted producer; the jump-in path did not, so it would return a
+// register that was never written. This is the case that pins the
+// jump_targets[k] guard in run_move_elimination: disabling it turns
+// grade(85) from 2 into undefined.
+function grade(n) { return n > 90 ? 1 : n > 80 ? 2 : 3; }
+eq(grade(95), 1, "nested ternary, outer true arm");
+eq(grade(85), 2, "nested ternary, inner true arm");
+eq(grade(70), 3, "nested ternary, false arm");
+
 // ── Loop sum read after the loop: destination live across the back-edge ──
 var s = 0;
 for (var i = 0; i < 3; i++) { s = s + i; }
