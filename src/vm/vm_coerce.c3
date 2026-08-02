@@ -429,16 +429,16 @@ fn HString*? vm_number_to_string(Vm* vm, double val) {
 
     // ES5 §9.8.1 ToString(number): -0 must produce "0", not "-0".
     if (val == 0.0) {
-        return vm.heap.str_intern("0");
+        return vm.heap.int_to_hstring(0);
     }
 
-    // ES5 §9.8.1 steps 5-7: integers with |val| < 10^21 use decimal notation
-    if (val == math::trunc(val) && val > -1e21 && val < 1e21) {
-        char[64] ibuf;
-        int ilen = (int)(io::bprintf(&ibuf, "%.0f", val) ?? ibuf[:0]).len;
-        if (ilen >= 0 && ilen < 64) {
-            return vm.heap.str_intern(ibuf[:ilen]);
-        }
+    // ES5 §9.8.1 steps 5-7: integers use decimal notation. Every integer up to
+    // 2^53 is exactly representable, so its decimal expansion is already the
+    // shortest round-trip form and plain digit emission matches dtoa's output.
+    // Past 2^53 adjacent doubles are more than 1 apart and the shortest form is
+    // no longer the exact expansion, so those fall through to dtoa below.
+    if (val == math::trunc(val) && val > -9007199254740992.0 && val < 9007199254740992.0) {
+        return vm.heap.int_to_hstring((long)val);
     }
 
     // ES2015 §7.1.12.1 ToString(Number): QuickJS js_dtoa in FREE mode emits

@@ -2203,11 +2203,7 @@ fn HString* builtin_number_to_hstring(Heap* heap, double d) {
     // is no longer necessarily the shortest round-trip String; those go
     // through dtoa's FREE format below to match ES ToString semantics.
     if (d == math::trunc(d) && d > -9007199254740992.0 && d < 9007199254740992.0) {
-        char[64] ibuf;
-        int ilen = (int)(io::bprintf(&ibuf, "%.0f", d) ?? ibuf[:0]).len;
-        if (ilen >= 0 && ilen < 64) {
-            return builtin_intern_string(heap, ibuf[:ilen]);
-        }
+        return heap.int_to_hstring((long)d);
     }
     char[64] buf;
     char[dtoa_bindings::DTOA_FORMAT_TMP_SIZE] tmp;
@@ -2252,10 +2248,7 @@ fn HString* builtin_to_string(Heap* heap, TVal* val) {
             return builtin_number_to_hstring(heap, val.get_number());
         }
         case FASTINT: {
-            char[64] buf;
-            int len = (int)(io::bprintf(&buf, "%d", (long)val.get_fastint()) ?? buf[:0]).len;
-            if (len < 0 || len >= 64) return null;
-            return builtin_intern_string(heap, buf[:len]);
+            return heap.int_to_hstring(val.get_fastint());
         }
         case BOOLEAN:
             if (val.get_boolean()) return (HString*)heap.strs[heap::BuiltinStr.TRUE];
