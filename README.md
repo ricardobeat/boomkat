@@ -60,9 +60,7 @@ inline-cache and valstack microbenchmarks.
 
 ### Startup time
 
-Time from process spawn to a finished empty program, median of 60 runs on
-macOS arm64. The engine initializes a heap, VM, and global environment per
-process, so this is the cost a CLI tool pays on every invocation.
+Empty program, median of 60 runs on macOS arm64.
 
 | Runtime | Median startup |
 |---|---|
@@ -70,10 +68,6 @@ process, so this is the cost a CLI tool pays on every invocation.
 | QuickJS (`out/qjs`) | 2.4 ms |
 | Bun 1.3.13 | 8.4 ms |
 | Node 24.13.0 | 19.0 ms |
-
-The engine starts about 7x faster than Node and 3x faster than Bun, at
-parity with the repo-built QuickJS. The gap to the big runtimes is process
-and runtime initialization: no JIT warmup, no dependency graph, no workers.
 
 ## Design
 
