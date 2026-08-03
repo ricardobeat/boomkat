@@ -1927,8 +1927,18 @@ fn ushort? CompilerContext.postfix_expr(&self) {
                 continue;
             }
             if (tt2 == TokenType.IDENTIFIER) {
-                if (self.match_ts_ident("as") || self.match_ts_ident("satisfies")) {
-                    // Special case `as const`.
+                if (self.check_ts_ident("as") || self.check_ts_ident("satisfies")) {
+                    // The contextual keyword really matches; consume it and
+                    // skip the type. check_ts_ident (not match_ts_ident)
+                    // because the failed probe would consume+pushback the
+                    // identifier, and when this expression runs inside a
+                    // nested compile context (class field initializer), the
+                    // pushback would land on the nested context's stack,
+                    // invisible to the caller that reads the shared lexer.
+                    Token _kw = self.advance()!;
+                    // `as const` — `const` is a keyword, not a type name, so
+                    // skip_type would stop on it immediately.
+                    if (self.match(TokenType.CONST)) continue;
                     self.skip_type()!;
                     continue;
                 }
@@ -2188,6 +2198,21 @@ fn ushort? CompilerContext.call_expr(&self) {
     int opt_jump_count = 0;
 
     for (;;) {
+        // TypeScript call-site type arguments: `f<T>(x)`. The `<` after a
+        // callee is type args only when a balanced `<...>` is directly
+        // followed by `(`; otherwise it's a comparison (left for binary_expr).
+        if (self.lexer.ts_mode && self.check(TokenType.LT) && self.ts_peek_generics_lparen()) {
+            self.skip_generic_params()!;
+            continue;
+        }
+        // TypeScript non-null assertion postfix `!` (`o!.x`, `f()!`).
+        // Consumed inside the chain loop so the `.`/`[`/`(` suffix after it
+        // still parses; postfix_expr's own `!` case then only sees the
+        // non-chaining forms and simply continues.
+        if (self.lexer.ts_mode && self.check(TokenType.LOG_NOT)) {
+            self.advance()!;
+            continue;
+        }
         if (self.check(TokenType.LPAREN)) {
             callee = self.emit_call(callee)!;
             // The result of a call is not a member expression and not a
@@ -2994,6 +3019,13 @@ fn ushort? CompilerContext.new_expr(&self) {
         // Parse the constructor (could be member access)
         ctor_reg = self.member_expr()!;
 
+        // TypeScript constructor type arguments: `new Y<T>(...)`. The `<`
+        // after the constructor name is type args only when followed by `(`;
+        // otherwise it's a comparison.
+        if (self.lexer.ts_mode && self.check(TokenType.LT) && self.ts_peek_generics_lparen()) {
+            self.skip_generic_params()!;
+        }
+
         // Per ES2023 §13.3.1.1 (EvaluateNew): GetValue(constructor) happens
         // BEFORE argument evaluation. If the constructor is a local var and
         // an argument expression assigns to that same var, the assignment
@@ -3548,10 +3580,51 @@ fn ushort? CompilerContext.primary_expr(&self) {
     self.no_arrow_head = false;
 
     // TypeScript generic arrow: `<T,>(params) => body`. Skip the type params
-    // then fall through to the normal LPAREN/IDENTIFIER arrow path.
+    // then fall through to the normal LPAREN arrow path. The legacy
+    // angle-bracket type assertion `<T>expr` is rejected by
+    // --erasableSyntaxOnly (TS1294), so anything that is not an arrow head
+    // after the `<...>` group is a compile error rather than an accepted
+    // expression.
     if (self.lexer.ts_mode && tt == TokenType.LT) {
         self.skip_generic_params()!;
         tt = self.peek_type();
+        if (tt != TokenType.LPAREN) {
+            return self.fail("type assertions must use 'as', not angle brackets (not erasable)")~;
+        }
+        // `<T>(...)` is a generic arrow only when `=>` directly follows the
+        // group. Otherwise it is the legacy angle-bracket assertion
+        // `<T>expr` (`<any>(10 + 10)`), rejected by --erasableSyntaxOnly.
+        // Probe the paren group without consuming it.
+        Lexer saved_lexer = *self.lexer;
+        bool is_arrow = false;
+        if (catch _e = self.advance()) {
+            *self.lexer = saved_lexer;
+        } else {
+            int p = 1;
+            while (p > 0) {
+                TokenType t2 = self.peek_type();
+                if (t2 == TokenType.EOF_TOKEN) break;
+                Token? adv_opt = self.advance();
+                if (catch _e2 = adv_opt) break;
+                Token adv = adv_opt;
+                if (adv.type == TokenType.LPAREN) { p++; }
+                else if (adv.type == TokenType.RPAREN) { p--; }
+            }
+            is_arrow = self.check(TokenType.ARROW);
+            if (!is_arrow) {
+                // `(x: T): R => ...` — the return-type annotation sits
+                // between the group and the arrow.
+                if (catch _e3 = self.try_skip_ts_type_annotation()) {
+                    *self.lexer = saved_lexer;
+                    return self.fail("type assertions must use 'as', not angle brackets (not erasable)")~;
+                }
+                is_arrow = self.check(TokenType.ARROW);
+            }
+            *self.lexer = saved_lexer;
+        }
+        if (!is_arrow) {
+            return self.fail("type assertions must use 'as', not angle brackets (not erasable)")~;
+        }
     }
 
     switch (tt) {
@@ -3758,6 +3831,14 @@ fn ushort? CompilerContext.primary_expr(&self) {
             bool  saved_slt   = self.lexer.seen_line_term;
             bool saved_inside_parens = self.inside_parens;
             self.inside_parens = true;
+            // The compiler's own pushback stack is separate from the lexer's
+            // buffers: the speculative scan's try_skip_ts_optional_marker /
+            // try_skip_ts_type_annotation push rejected tokens onto it, so it
+            // must be restored alongside the lexer or the grouping re-parse
+            // reads a stale token first (e.g. `(t ? 1 : 2)` re-parsed as
+            // starting at the `?`).
+            uint saved_pb_count = self.pushback_count;
+            Token[4] saved_pb_stack = self.pushback_stack;
 
             // Check for empty parens: () => ...
             if (self.check(TokenType.RPAREN)) {
@@ -3777,6 +3858,8 @@ fn ushort? CompilerContext.primary_expr(&self) {
                     self.lexer.pushed_back     = saved_push;
                     self.lexer.has_pushed_back = saved_haspb;
                     self.lexer.seen_line_term  = saved_slt;
+                    self.pushback_count = saved_pb_count;
+                    self.pushback_stack = saved_pb_stack;
                     self.inside_parens = saved_inside_parens;
                     return self.parse_arrow_function_reparse(lparen_pos)!;
                 }
@@ -3790,6 +3873,8 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 self.lexer.pushed_back     = saved_push;
                 self.lexer.has_pushed_back = saved_haspb;
                 self.lexer.seen_line_term  = saved_slt;
+                self.pushback_count = saved_pb_count;
+                self.pushback_stack = saved_pb_stack;
                 ushort inner2 = self.expression()!;
                 // A parenthesized expression is never a bare IdentifierReference,
                 // so `(eval)(...)`/`(0, eval)(...)` must NOT be treated as direct
@@ -3945,6 +4030,8 @@ fn ushort? CompilerContext.primary_expr(&self) {
                     self.lexer.pushed_back     = saved_push;
                     self.lexer.has_pushed_back = saved_haspb;
                     self.lexer.seen_line_term  = saved_slt;
+                    self.pushback_count = saved_pb_count;
+                    self.pushback_stack = saved_pb_stack;
                     self.inside_parens = saved_inside_parens;
                     return self.parse_arrow_function_reparse(lparen_pos)!;
                 }
@@ -3959,6 +4046,8 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 self.lexer.pushed_back     = saved_push;
                 self.lexer.has_pushed_back = saved_haspb;
                 self.lexer.seen_line_term  = saved_slt;
+                self.pushback_count = saved_pb_count;
+                self.pushback_stack = saved_pb_stack;
                 ushort inner2 = self.expression()!;
                 // A parenthesized expression is never a bare IdentifierReference,
                 // so `(eval)(...)`/`(0, eval)(...)` must NOT be treated as direct
@@ -4022,6 +4111,8 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 self.lexer.pushed_back     = saved_push;
                 self.lexer.has_pushed_back = saved_haspb;
                 self.lexer.seen_line_term  = saved_slt;
+                self.pushback_count = saved_pb_count;
+                self.pushback_stack = saved_pb_stack;
                 ushort inner2 = self.expression()!;
                 // A parenthesized expression is never a bare IdentifierReference,
                 // so `(eval)(...)`/`(0, eval)(...)` must NOT be treated as direct
@@ -5172,6 +5263,13 @@ fn ushort? CompilerContext.object_literal(&self) {
                 return COMPILE_ERROR~;
             }
 
+            // TypeScript generic method shorthand: `{ foo<T>(x: T) { ... } }`.
+            // The `<...>` after the key is the method's own type-parameter
+            // list (a comparison `foo < x` would be followed by an operator,
+            // not `(`), so skip it and fall through to the method path below.
+            if (self.lexer.ts_mode && self.check(TokenType.LT) && self.ts_peek_generics_lparen()) {
+                self.skip_generic_params()!;
+            }
             // Check for method shorthand or data property
             if (self.check(TokenType.LPAREN)) {
                 // Method shorthand: key() { ... }, name inferred from key (set above)

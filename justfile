@@ -185,6 +185,16 @@ test262: build-batch
 test262-phase phase="0": build-batch
     python3 scripts/run_test262.py --phase {{phase}}
 
+# ── TypeScript conformance ───────────────────────────────────────────────────
+
+# Run the TypeScript erasable-syntax conformance corpus (tsc accept/reject
+# oracle against the engine; needs `tsc` on PATH and the corpus fetched with
+# `python3 scripts/fetch_ts_conformance.py`). The full run takes ~1 minute.
+# Subset: `just ts-conformance types`
+ts-conformance phase-dir="":
+    @test -d test/typescript/conformance-src || { echo "ERROR: corpus missing — run: python3 scripts/fetch_ts_conformance.py"; exit 1; }
+    @if [ -n "{{phase-dir}}" ]; then python3 scripts/run_ts_conformance.py --phase-dir "{{phase-dir}}"; else python3 scripts/run_ts_conformance.py; fi
+
 # Detect test contamination: run a phase with --workers 1 in fixed vs shuffled
 # order and diff — any delta is a reset bug by definition.
 test262-contamination phase="0": build-batch

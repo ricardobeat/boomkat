@@ -284,6 +284,17 @@ fn void? CompilerContext.collect_obj_param_binds(&self,
                 } else {
                     self.collect_arr_param_binds(binds, count, src_reg, synth_idx)!;
                 }
+                // Default after a computed-key nested pattern:
+                // `{ [k]: { x } = d }` — the default belongs to the
+                // synthetic binding (this branch exits the loop directly,
+                // skipping the shared default handling below).
+                if (self.match(TokenType.ASSIGN)) {
+                    if (*count > 0) {
+                        binds[synth_idx].has_default = true;
+                        binds[synth_idx].default_func_idx =
+                            self.add_inner_func(self.compile_default_expr()!);
+                    }
+                }
             } else {
                 Token bind = self.expect_binding_identifier()!;
                 if (*count < binds.len) {
@@ -1416,6 +1427,13 @@ fn void CompilerContext.skip_function_body(&self) {
         if (catch _e = self.advance()) return;  // consume ':'
         if (catch _e = self.skip_type()) return;
     }
+    // TypeScript: an overload signature `function f(x: T): R;` has no body,
+    // stop at the `;` instead of scanning for the `{` that starts a real
+    // body (the brace scan would wander into the next statement).
+    if (self.lexer.ts_mode && self.peek_type() == TokenType.SEMICOLON) {
+        if (catch _e = self.advance()) return;
+        return;
+    }
     // Skip '{' ... '}', template-aware (see TemplateScan) so a '}' closing
     // a '${' does not prematurely end the function-body scan.
     uint brace_depth = 0;
@@ -2004,6 +2022,13 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
             char[] fn_name = name_opt.str_value;
             if (fn_name.len == 0) continue;
 
+            // TypeScript overload signature (no body): skip it without
+            // recording, so the implementation gets hoisted instead.
+            if (self.lexer.ts_mode && self.ts_try_skip_overload_signature()) {
+                self.is_async = false;
+                continue;
+            }
+
             // Check if already hoisted
             bool already = false;
             for (ushort hi = 0; hi < self.hoisted_fn_count; hi++) {
@@ -2438,6 +2463,17 @@ fn void? CompilerContext.hoist_global_fn_decls(&self, bool checks_only = false) 
             char[] fn_name = name_opt.str_value;
             if (fn_name.len == 0) continue;
 
+            // TypeScript overload signature: `function foo(x: T);` with no
+            // body declares nothing at runtime, so skip it without recording
+            // the name, letting the implementation (or first bodied
+            // occurrence) be the one hoisted and emitted.
+            if (self.lexer.ts_mode && self.ts_try_skip_overload_signature()) {
+                self.is_async = false;
+                prev_toplevel = TokenType.SEMICOLON;
+                has_prev = true;
+                continue;
+            }
+
             // Record as hoisted so the statement parser skips every like-named
             // declaration on its own pass. Every occurrence is still compiled
             // and emitted below: GlobalDeclarationInstantiation (§15.1.11 step
@@ -2765,6 +2801,29 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
 
     if (!self.check(TokenType.RPAREN)) {
         for (;;) {
+            // TypeScript `this` parameter: `function f(this: T, x) {}` binds
+            // nothing, its annotation is erasable. `this` is reserved in
+            // strict mode, so this runs before the binding path rejects it.
+            if (self.lexer.ts_mode && self.check(TokenType.THIS)) {
+                Lexer saved_this = *self.lexer;
+                bool is_this_param = false;
+                if (catch _te = self.advance()) {
+                    *self.lexer = saved_this;
+                } else if (self.check(TokenType.COLON)) {
+                    if (catch _te2 = self.try_skip_ts_type_annotation()) {
+                        *self.lexer = saved_this;
+                    } else {
+                        is_this_param = true;
+                    }
+                } else {
+                    *self.lexer = saved_this;
+                }
+                if (is_this_param) {
+                    if (!self.match(TokenType.COMMA)) break;
+                    if (self.check(TokenType.RPAREN)) break;
+                    continue;
+                }
+            }
             // Check for rest parameter
             if (self.match(TokenType.ELLIPSIS)) {
                 Token rest_param;
@@ -3351,6 +3410,27 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
 
     if (!inner_ctx.check(TokenType.RPAREN)) {
         for (;;) {
+            // TypeScript `this` parameter (see parse_function_body's loop).
+            if (inner_ctx.lexer.ts_mode && inner_ctx.check(TokenType.THIS)) {
+                Lexer saved_this = *inner_ctx.lexer;
+                bool is_this_param = false;
+                if (catch _te = inner_ctx.advance()) {
+                    *inner_ctx.lexer = saved_this;
+                } else if (inner_ctx.check(TokenType.COLON)) {
+                    if (catch _te2 = inner_ctx.try_skip_ts_type_annotation()) {
+                        *inner_ctx.lexer = saved_this;
+                    } else {
+                        is_this_param = true;
+                    }
+                } else {
+                    *inner_ctx.lexer = saved_this;
+                }
+                if (is_this_param) {
+                    if (!inner_ctx.match(TokenType.COMMA)) break;
+                    if (inner_ctx.check(TokenType.RPAREN)) break;
+                    continue;
+                }
+            }
             // Check for rest parameter
             if (inner_ctx.match(TokenType.ELLIPSIS)) {
                 Token rest_param;

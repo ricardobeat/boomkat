@@ -418,6 +418,8 @@ fn void? CompilerContext.statement(&self) {
         case TokenType.EXPORT:
             // TS: `export type ...` is fully erased, no module scope required.
             if (self.lexer.ts_mode && self.ts_try_skip_type_only_export()!) break;
+            // TS: `export interface/declare/namespace ...` likewise erased.
+            if (self.lexer.ts_mode && self.ts_try_skip_type_only_export_decl()!) break;
             // Likewise an ExportDeclaration is a ModuleItem: never valid
             // inside a block, loop/switch body, label or try/catch/finally.
             if (!at_module_top) {
@@ -452,7 +454,41 @@ fn void? CompilerContext.statement(&self) {
                     if (self.ts_try_declare_statement()) break;
                 }
                 if (self.check_ts_ident("namespace") || self.check_ts_ident("module")) {
-                    return self.fail("'namespace' / 'module' is not supported (not erasable syntax)")~;
+                    // A namespace is erasable only when its body holds just
+                    // type declarations; runtime code inside is a TS1294
+                    // violation and must be rejected. The keyword is a
+                    // namespace head only when a name (or ambient module
+                    // string) and `{` follow on the same line; CommonJS
+                    // `module.exports = ...`, `namespace.foo = ...`, and
+                    // ASI'd `namespace\nn { }` are ordinary identifier
+                    // expressions and must fall through to the expression
+                    // statement path.
+                    Lexer saved_ns = *self.lexer;
+                    bool ns_form = false;
+                    if (catch _ne = self.advance()) {
+                        *self.lexer = saved_ns;
+                    } else if (self.check(TokenType.IDENTIFIER) || self.check(TokenType.STRING)) {
+                        bool same_line = !self.lexer.seen_line_term;
+                        if (catch _ne2 = self.advance()) {
+                            *self.lexer = saved_ns;
+                        } else {
+                            // Dotted name: `namespace A.B { ... }`.
+                            while (self.check(TokenType.DOT)) {
+                                if (catch _ne3 = self.advance()) { *self.lexer = saved_ns; }
+                                if (catch _ne4 = self.advance()) { *self.lexer = saved_ns; }
+                            }
+                            ns_form = same_line && self.check(TokenType.LBRACE);
+                            *self.lexer = saved_ns;
+                        }
+                    } else {
+                        *self.lexer = saved_ns;
+                    }
+                    if (ns_form) {
+                        if (!self.ts_try_type_only_namespace()) {
+                            return self.fail("'namespace' / 'module' is not supported (not erasable syntax)")~;
+                        }
+                        break;
+                    }
                 }
                 if (self.check_ts_ident("abstract")) {
                     // `abstract class X {}` — consume `abstract` and fall through
@@ -636,20 +672,20 @@ fn bool is_restricted_name(char[] name,
                 name[3] == 'l' && name[4] == 'i' && name[5] == 'c') return true;
             break;
         case 9:
-            // "arguments"
+            // "arguments", "interface"
             if (name[0] == 'a' && name[1] == 'r' && name[2] == 'g' &&
                 name[3] == 'u' && name[4] == 'm' && name[5] == 'e' &&
                 name[6] == 'n' && name[7] == 't' && name[8] == 's') return true;
+            if (name[0] == 'i' && name[1] == 'n' && name[2] == 't' &&
+                name[3] == 'e' && name[4] == 'r' && name[5] == 'f' &&
+                name[6] == 'a' && name[7] == 'c' && name[8] == 'e') return true;
             break;
         case 10:
-            // "implements", "interface"
+            // "implements"
             if (name[0] == 'i' && name[1] == 'm' && name[2] == 'p' &&
                 name[3] == 'l' && name[4] == 'e' && name[5] == 'm' &&
                 name[6] == 'e' && name[7] == 'n' && name[8] == 't' &&
                 name[9] == 's') return true;
-            if (name[0] == 'i' && name[1] == 'n' && name[2] == 't' &&
-                name[3] == 'e' && name[4] == 'r' && name[5] == 'f' &&
-                name[6] == 'a' && name[7] == 'c' && name[8] == 'e') return true;
             break;
     }
     // "protected"
@@ -1033,6 +1069,7 @@ fn uint CompilerContext.pre_scan_lexical_decls(&self, NameSpan* spans, uint capa
             // boundary, while an `=` leaves us inside an initialiser, where
             // a following `class` is an EXPRESSION whose name binds nothing
             // (`let A = class A {}` declares one `A`, not two).
+            uint list_start_count = count;
             TokenType list_end = TokenType.SEMICOLON;
             for (;;) {
                 Token? name_opt = self.lexer.next_token();
@@ -1060,6 +1097,16 @@ fn uint CompilerContext.pre_scan_lexical_decls(&self, NameSpan* spans, uint capa
                     break;
                 }
                 // continue to the next declarator name
+            }
+            // A `const`/`let` inside a TypeScript generic parameter list
+            // (`declare function f<const T>(...)`) is a type-parameter
+            // modifier, not a declaration: its list ends with `>` rather
+            // than a declaration terminator, so drop the names collected
+            // for it (they would otherwise collide across two `<const T>`
+            // lists and trip the duplicate-lexical-names check).
+            if (list_end != TokenType.SEMICOLON && list_end != TokenType.ASSIGN
+                && list_end != TokenType.COLON && list_end != TokenType.COMMA) {
+                count = list_start_count;
             }
             prev_tt = list_end;
             continue;
@@ -2229,6 +2276,47 @@ fn void? CompilerContext.for_statement(&self) {
 
     self.expect(TokenType.LPAREN)!;
 
+    // `for (using x of ...)` / `for (await using x of ...)`: explicit
+    // resource management (ES2025) is not implemented. statement() rejects
+    // the statement-level `using` introducer; catch the for-head form here
+    // (with an optional `await` prefix) with the same message so it is not
+    // misparsed as an identifier.
+    if (self.peek_type() == TokenType.IDENTIFIER || self.check(TokenType.AWAIT)) {
+        Lexer saved_u = *self.lexer;
+        Token? u_opt = self.advance();
+        bool is_using = false;
+        if (try u = u_opt) {
+            if (u.str_value.len == 5
+                && u.str_value[0] == 'u' && u.str_value[1] == 's'
+                && u.str_value[2] == 'i' && u.str_value[3] == 'n'
+                && u.str_value[4] == 'g') {
+                is_using = true;
+            } else if (u.type == TokenType.AWAIT
+                || (u.str_value.len == 5
+                    && u.str_value[0] == 'a' && u.str_value[1] == 'w'
+                    && u.str_value[2] == 'a' && u.str_value[3] == 'i'
+                    && u.str_value[4] == 't')) {
+                // `await using`: `await` may lex as the AWAIT token (async
+                // context) or as an identifier.
+                if (self.peek_type() == TokenType.IDENTIFIER) {
+                    Token? u2_opt = self.advance();
+                    if (try u2 = u2_opt) {
+                        if (u2.str_value.len == 5
+                            && u2.str_value[0] == 'u' && u2.str_value[1] == 's'
+                            && u2.str_value[2] == 'i' && u2.str_value[3] == 'n'
+                            && u2.str_value[4] == 'g') {
+                            is_using = true;
+                        }
+                    }
+                }
+            }
+        }
+        *self.lexer = saved_u;
+        if (is_using) {
+            return self.fail("using declarations are not supported")~;
+        }
+    }
+
     uint saved_scope = self.scope_depth;
     ushort saved_reg = self.next_reg;
 
@@ -2423,11 +2511,18 @@ fn void? CompilerContext.for_statement(&self) {
         ForLhsSnapshot lhs_snap = self.save_lhs_snapshot();
         ushort saved_next_reg = self.next_reg;
         uint saved_code_count = self.code_count;
+        // The speculative parse can record a compile error (e.g. `yield` as
+        // a for-head LHS in a generator: primary_expr's YIELD case rejects
+        // a non-AssignmentExpression position via fail()); save the error
+        // state so a failed probe falls through to the real init parse.
+        char[512] saved_err_msg = self.lexer.err_msg;
+        uint saved_err_line = self.lexer.err_line;
+        uint saved_err_col = self.lexer.err_col;
 
         bool is_member_head = false;
         bool head_is_of = false;
 
-        if (try mreg = self.member_expr()) {
+        if (try mreg = self.call_expr()) {
             if (self.last_was_member) {
                 self.free_reg(self.last_member_prop_reg);
                 self.free_reg(self.last_member_obj_reg);
@@ -2455,6 +2550,9 @@ fn void? CompilerContext.for_statement(&self) {
         self.next_reg = saved_next_reg;
         self.code_count = saved_code_count;
         self.discard_member_head_state();
+        self.lexer.err_msg = saved_err_msg;
+        self.lexer.err_line = saved_err_line;
+        self.lexer.err_col = saved_err_col;
 
         if (is_member_head) {
             // Re-consume the LHS only to advance the lexer past it; the store
@@ -2466,7 +2564,10 @@ fn void? CompilerContext.for_statement(&self) {
             // at this point still overlaps the enclosing function's locals).
             uint pre_code = self.code_count;
             ushort pre_reg = self.next_reg;
-            self.member_expr()!;
+            // call_expr, not member_expr: the LHS can be a call followed by
+            // a member (`for (foo().x of [])`), and the re-consume must
+            // advance past the whole shape or the `(` leaks into the head.
+            self.call_expr()!;
             self.code_count = pre_code;
             self.free_regs_to(pre_reg);
             self.discard_member_head_state();
@@ -4897,8 +4998,29 @@ fn void? CompilerContext.labeled_statement(&self, char[] name) {
     self.labels[label_idx].name = name;
     self.label_count++;
 
-    // Look ahead to determine if the inner statement is a loop
+    // Look ahead to determine if the inner statement is a loop, skipping any
+    // nested labels (`target1: target2: while (...)` — both labels name the
+    // same loop, so target1 must be marked is_loop too). Probing with a
+    // lexer copy keeps the nested labels in place for the statement parser.
     TokenType next = self.peek_type();
+    if (next == TokenType.IDENTIFIER) {
+        Lexer scan = *self.lexer;
+        scan.has_pushed_back = false;
+        Token? nt_opt = scan.next_token();
+        if (try nt = nt_opt) {
+            if (nt.type == TokenType.IDENTIFIER) {
+                Token? colon_opt = scan.next_token();
+                if (try colon = colon_opt) {
+                    if (colon.type == TokenType.COLON) {
+                        Token? n2_opt = scan.next_token();
+                        if (try n2 = n2_opt) {
+                            next = n2.type;
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     if (next == TokenType.FOR || next == TokenType.WHILE || next == TokenType.DO) {
         // The label refers to a loop. The loop will be pushed at index
@@ -5014,7 +5136,7 @@ fn void? CompilerContext.continue_statement(&self) {
             if (str_eq(self.labels[i].name, label_name)) {
                 if (!self.labels[i].is_loop) {
                     // continue on a non-loop label is a syntax error
-                    return COMPILE_ERROR~;
+                    return self.fail("'continue' may only target a loop label")~;
                 }
                 uint loop_idx = self.labels[i].loop_index;
                 // Unwind lex_env stack back to the labeled loop's depth.
@@ -5210,6 +5332,19 @@ fn void? CompilerContext.function_declaration(&self, bool is_async_decl = false,
     // The name is parsed; from here on self.is_async describes the function
     // being compiled, not the enclosing one.
     self.is_async = false;
+    // TypeScript overload signature (`function foo(x: T);`): a declaration
+    // without a body produces no runtime binding, so skip it and restore the
+    // enclosing context flags. The implementation emits its own CLOSURE at
+    // its own position. Global signatures never reach here: their name was
+    // recorded by hoist_global_fn_decls from the implementation, so the
+    // already-hoisted path above consumed them.
+    if (self.lexer.ts_mode && self.ts_try_skip_overload_signature()) {
+        self.is_async = saved_is_async;
+        self.is_generator = saved_is_generator;
+        self.is_user_generator = saved_is_user_generator;
+        self.is_constructable = saved_is_constructable;
+        return;
+    }
     // Intern now: an escaped function name borrows the lexer's shared
     // ident_buf scratch, which compile_inner_function below will overwrite
     // while scanning the parameter list and body. declare_var stores this
@@ -5596,6 +5731,18 @@ fn void? CompilerContext.export_declaration(&self) {
     // export default ...
     if (tt == TokenType.DEFAULT) {
         self.advance()!; // consume 'default'
+        // TypeScript `export default interface Foo {...}` / `export default
+        // type X = ...`: the whole declaration is type-only (erasable), no
+        // runtime export is produced.
+        if (self.lexer.ts_mode && self.peek_type() == TokenType.INTERFACE) {
+            self.ts_interface_declaration()!;
+            self.match(TokenType.SEMICOLON);
+            return;
+        }
+        if (self.lexer.ts_mode && self.check_ts_ident("type")
+            && self.ts_try_type_alias()) {
+            return;
+        }
         // `export default async function ...`, the `async` prefix is
         // detected before the FUNCTION dispatch below so the same
         // hoistable-declaration path handles both sync and async forms.
@@ -5638,6 +5785,18 @@ fn void? CompilerContext.export_declaration(&self) {
             // and async functions never are (§14.4/§14.7.5), mirrors
             // function_declaration's handling.
             bool saved_is_constructable = self.is_constructable;
+            // TypeScript overload signature as a default export:
+            // `export default function f();` declares no implementation, so
+            // it produces no runtime binding or export; a later
+            // `export default function f(...) { }` (the implementation)
+            // binds the export.
+            if (self.lexer.ts_mode && self.ts_try_skip_overload_signature()) {
+                self.is_async = saved_is_async;
+                self.is_constructable = saved_is_constructable;
+                self.is_generator = false;
+                self.is_user_generator = false;
+                return;
+            }
             self.is_constructable = !self.is_generator && !is_async_default_fn;
             // The declaration's own async-ness comes from is_async_default_fn,
             // never the enclosing flag (mirrors function_declaration).
@@ -5770,6 +5929,33 @@ fn void? CompilerContext.export_declaration(&self) {
         while (!self.check(TokenType.RBRACE) && !self.is_at_end()) {
             if (count >= 32) return COMPILE_ERROR~;
             bool local_was_string = false;
+            // TypeScript `export { type foo }` / `export { type foo as bar }`:
+            // the `type` modifier marks a type-only specifier, fully erased.
+            // Only a modifier when another export name follows on the same
+            // line; `export { type }` exports a binding literally named
+            // "type".
+            if (self.lexer.ts_mode && self.check_ts_ident("type")) {
+                Lexer saved_ts = *self.lexer;
+                bool is_type_mod = false;
+                Token? type_tok_opt = self.advance();
+                if (catch _te = type_tok_opt) {
+                    *self.lexer = saved_ts;
+                } else {
+                    Token type_tok = type_tok_opt;
+                    // The name must follow on the same line as `type`
+                    // (seen_line_term after advance describes the gap BEFORE
+                    // `type`, e.g. the export-clause `{` newline).
+                    Token? nxt_opt = self.lexer.peek();
+                    if (try nxt = nxt_opt) {
+                        is_type_mod = nxt.line == type_tok.line
+                            && (nxt.type == TokenType.IDENTIFIER || nxt.type == TokenType.STRING);
+                    }
+                    *self.lexer = saved_ts;
+                }
+                if (is_type_mod) {
+                    Token _tmod = self.advance()!;
+                }
+            }
             char[] local_str = self.parse_module_export_name(&local_was_string)!;
             local_is_string[count] = local_was_string;
             if (self.match_as()) {
@@ -5821,6 +6007,14 @@ fn void? CompilerContext.export_declaration(&self) {
                 if (ie != null) {
                     char[] indirect_local = ie.is_star ? "*" : ie.import_name;
                     self.register_export(mod, indirect_local, export_names[i], true, ie.req_module_idx)!;
+                    continue;
+                }
+                // TypeScript: a specifier naming a type-only binding
+                // (`interface G {}` then `export { G };`) has no runtime
+                // value, so the export erases to nothing. tsc accepts this
+                // under --erasableSyntaxOnly; registering the phantom export
+                // would make the linker reject it.
+                if (self.lexer.ts_mode && !self.ts_name_is_runtime_binding(local_names[i])) {
                     continue;
                 }
                 // Local export: look up the name's declared kind so a
@@ -5899,6 +6093,20 @@ fn void? CompilerContext.export_declaration(&self) {
         self.register_export(mod, class_name, class_name, false, 0, true, true)!;
         self.match(TokenType.SEMICOLON);
         return;
+    }
+
+    // TypeScript `export abstract class Foo {}` — `abstract` is erasable.
+    if (self.lexer.ts_mode && tt == TokenType.IDENTIFIER
+        && self.check_ts_ident("abstract")) {
+        Token abs_tok = self.advance()!;
+        if (self.check(TokenType.CLASS)) {
+            char[] class_name;
+            self.class_declaration(&class_name)!;
+            self.register_export(mod, class_name, class_name, false, 0, true, true)!;
+            self.match(TokenType.SEMICOLON);
+            return;
+        }
+        self.pushback(abs_tok);
     }
 
     // export const/let/var x = ...

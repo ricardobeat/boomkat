@@ -548,6 +548,31 @@ fn bool CompilerContext.is_async_arrow_lookahead(&self) {
         self.pushback(cur);
         return true;
     }
+    if (next_tok.type == TokenType.LT && self.lexer.ts_mode) {
+        // `async <T, U>(params) => ...`: a TypeScript generic type-parameter
+        // list between `async` and the parameter list. Probe it: skip the
+        // list and require `(` on the same line. Non-destructive.
+        if (next_tok.line != cur.line) {
+            self.pushback(cur);
+            return false;
+        }
+        Lexer saved_lk = *self.lexer;
+        bool ok = false;
+        if (catch _e = self.skip_generic_params()) {
+            *self.lexer = saved_lk;
+        } else if (self.check(TokenType.LPAREN)) {
+            ok = true;
+            *self.lexer = saved_lk;
+        } else {
+            *self.lexer = saved_lk;
+        }
+        if (!ok) {
+            self.pushback(cur);
+            return false;
+        }
+        self.pushback(cur);
+        return true;
+    }
     if (next_tok.type == TokenType.IDENTIFIER) {
         // [no LineTerminator here] between `async` and the binding identifier.
         // Without this, `async\nx => {}` would parse as an AsyncArrowFunction,
@@ -803,7 +828,10 @@ fn bool CompilerContext.skip_expr_lex(&self) {
     // skips the body's `;` instead of stopping on it.
     int paren_depth = 0;
     int brace_depth = 0;
-    int template_depth = 0;
+    // Template-aware (TemplateScan): a `${...}` substitution's `}` must be
+    // consumed by scan_template_after_expr or the lexer re-lexes the template
+    // tail as JS and the skip desyncs (e.g. `while (`abc${0}abc`)`).
+    TemplateScan tscan;
     for (;;) {
         Token? tok_opt = self.lexer.next_token();
         if (catch _err = tok_opt) { return false; }
@@ -827,19 +855,24 @@ fn bool CompilerContext.skip_expr_lex(&self) {
             // Function body `{...}`, keep balanced; its outer closing `}`
             // is consumed by the brace counter. `;` inside the body must
             // not terminate the skip.
-            case TokenType.LBRACE:    brace_depth++; continue;
+            case TokenType.LBRACE:
+                tscan.on_lbrace();
+                brace_depth++;
+                continue;
             case TokenType.RBRACE: {
+                TemplateBrace tb = tscan.classify_rbrace(self.lexer);
+                if (tb == TemplateBrace.LEX_ERROR) return false;
+                if (tb == TemplateBrace.SUBST) continue;
                 if (brace_depth > 0) brace_depth--;
+                continue;
             }
-            // Template literal substitutions, `}` inside a `${...}` is not
-            // a function-body close (matches skip_braced_block convention).
-            case TokenType.TEMPLATE_HEAD: template_depth++; continue;
-            case TokenType.TEMPLATE_MIDDLE:
-            case TokenType.TEMPLATE_TAIL: {
-                if (template_depth > 0) template_depth--;
-            }
+            // Template literal substitutions: the `${...}` braces are owned
+            // by the lexer/parser, not the function-body counter.
+            case TokenType.TEMPLATE_HEAD:
+                tscan.on_template_head();
+                continue;
             case TokenType.SEMICOLON: {
-                if (paren_depth == 0 && brace_depth == 0 && template_depth == 0) {
+                if (paren_depth == 0 && brace_depth == 0 && tscan.depth == 0) {
                     self.lexer.pushed_back = tok;
                     self.lexer.has_pushed_back = true;
                     return true;

@@ -399,12 +399,13 @@ fn ushort? CompilerContext.class_expression(&self) {
 /// literal string "default" (ES2024 §16.2.3.7), distinct from the binding
 /// name "*default*" the compiler uses for the declared-export machinery.
 
-/// True when the current token is a TypeScript generic-method head:
-/// `<T, U>` directly followed by `(`. Non-destructive (the lexer is
-/// copied and restored), so the class-body loop can classify `m<T>(...)`
-/// as a method before the field branch sees the `<`. The generics
-/// themselves are skipped later by compile_inner_function.
-fn bool CompilerContext.ts_next_is_generic_method(&self) {
+/// True when the current token is a TypeScript generic head: `<T, U>`
+/// directly followed by `(`. Non-destructive (the lexer is copied and
+/// restored), so the class-body loop can classify `m<T>(...)` as a method
+/// before the field branch sees the `<`, and call_expr can consume call-site
+/// type arguments `f<T>(x)`. The generics themselves are skipped later by
+/// compile_inner_function / the caller.
+fn bool CompilerContext.ts_peek_generics_lparen(&self) {
     if (!self.lexer.ts_mode) return false;
     if (!self.check(TokenType.LT)) return false;
     Lexer saved_lexer = *self.lexer;
@@ -413,9 +414,106 @@ fn bool CompilerContext.ts_next_is_generic_method(&self) {
         *self.lexer = saved_lexer;
         return false;
     }
-    ok = self.check(TokenType.LPAREN);
+    // Type args are followed by a call `(` or a tagged template
+    // (`` f<T> `text${x}` ``).
+    ok = self.check(TokenType.LPAREN) || self.is_next_template();
     *self.lexer = saved_lexer;
     return ok;
+}
+
+/// Reject the auto-accessor modifier `accessor x` / `static accessor y`
+/// (ES2025 proposal): real runtime syntax, not erasable type syntax, and out
+/// of scope for this engine. `accessor` is only the modifier when a member
+/// name follows on the same line; as a bare field/method name
+/// (`accessor = 1`, `accessor()`, `accessor: T`) it is ordinary and must be
+/// left alone, so the caller continues with `accessor` as the element name.
+/// Returns true when a modifier was consumed (compile error already
+/// recorded), false when `accessor` is not the modifier.
+fn bool? CompilerContext.ts_check_accessor_modifier(&self) {
+    if (!self.lexer.ts_mode) return false;
+    if (!self.check_ts_ident("accessor")) return false;
+    Token acc_tok = self.advance()!;
+    // A member name follows only when it is on the SAME line as `accessor`.
+    // seen_line_term after advance still describes the gap BEFORE the
+    // consumed token (the class-body `{` newline for a first member), so it
+    // cannot decide this; compare the peeked token's line instead.
+    bool name_follows = false;
+    Token? nxt_opt = self.lexer.peek();
+    if (catch _e = nxt_opt) {
+        // EOF: `accessor` is a bare field name.
+    } else {
+        Token nxt = nxt_opt;
+        name_follows = nxt.line == acc_tok.line
+            && nxt.type != TokenType.COLON && nxt.type != TokenType.ASSIGN
+            && nxt.type != TokenType.LPAREN && nxt.type != TokenType.SEMICOLON
+            && nxt.type != TokenType.RBRACE && nxt.type != TokenType.EOF_TOKEN;
+    }
+    if (!name_follows) {
+        self.pushback(acc_tok);
+        return false;
+    }
+    return self.fail("auto-accessors ('accessor') are not supported (not erasable)")~;
+}
+
+/// Consume a TypeScript class index signature `[k: string]: T;` and return
+/// true. Non-destructive on failure, so the computed-key field path can
+/// proceed when this is an ordinary `[expr]` key. The `readonly`/`static`
+/// modifiers are stripped earlier in the class-body loop.
+fn bool CompilerContext.ts_try_index_signature(&self) {
+    if (!self.lexer.ts_mode) return false;
+    if (!self.check(TokenType.LBRACKET)) return false;
+    Lexer saved_lexer = *self.lexer;
+    if (catch _e = self.advance()) { *self.lexer = saved_lexer; return false; }  // '['
+    if (self.peek_type() != TokenType.IDENTIFIER) { *self.lexer = saved_lexer; return false; }
+    if (catch _e = self.advance()) { *self.lexer = saved_lexer; return false; }  // key name
+    if (!self.check(TokenType.COLON)) { *self.lexer = saved_lexer; return false; }
+    if (catch _e = self.advance()) { *self.lexer = saved_lexer; return false; }  // ':'
+    if (catch _e = self.skip_type()) { *self.lexer = saved_lexer; return false; }
+    if (!self.check(TokenType.RBRACKET)) { *self.lexer = saved_lexer; return false; }
+    if (catch _e = self.advance()) { *self.lexer = saved_lexer; return false; }  // ']'
+    if (!self.check(TokenType.COLON)) { *self.lexer = saved_lexer; return false; }
+    if (catch _e = self.advance()) { *self.lexer = saved_lexer; return false; }  // ':'
+    if (catch _e = self.skip_type()) { *self.lexer = saved_lexer; return false; }
+    self.match(TokenType.SEMICOLON);
+    return true;
+}
+
+/// Consume a TypeScript overload signature `name(params);` /
+/// `name<T>(params): R;` and return true. A signature declares no
+/// implementation, so the whole class element is type-only (erasable) and
+/// emits nothing. Non-destructive: a method with a body
+/// (`name(params) { ... }`) or any other shape returns false with input
+/// untouched. Callers exclude getters/setters, which cannot be overloaded.
+///
+/// The terminating `;` is optional: a constructor (or ASI'd method)
+/// signature may be followed directly by the next overload or the
+/// implementation on a new line (`constructor(a: any)` newline
+/// `constructor(b: number) { }`). A `{` is always the method body, even
+/// when it sits on the next line.
+fn bool CompilerContext.ts_try_skip_overload_signature(&self) {
+    if (!self.lexer.ts_mode) return false;
+    Lexer saved_lexer = *self.lexer;
+    if (self.check(TokenType.LT)) {
+        if (catch _e = self.skip_generic_params()) { *self.lexer = saved_lexer; return false; }
+    }
+    if (!self.check(TokenType.LPAREN)) { *self.lexer = saved_lexer; return false; }
+    if (catch _e = self.skip_type()) { *self.lexer = saved_lexer; return false; }
+    if (catch _e = self.try_skip_ts_type_annotation()) { *self.lexer = saved_lexer; return false; }
+    // Shape confirmed: the tokens consumed so far are the signature. Decide
+    // the terminator: `;`, or a newline followed by the next class element
+    // (peek_type below also refreshes seen_line_term to the gap AFTER the
+    // params/return type). `{` is the implementation body, not a signature.
+    TokenType after = self.peek_type();
+    if (after == TokenType.SEMICOLON) {
+        self.match(TokenType.SEMICOLON);
+        return true;
+    }
+    if (after != TokenType.LBRACE && after != TokenType.EOF_TOKEN
+        && self.lexer.seen_line_term) {
+        return true;
+    }
+    *self.lexer = saved_lexer;
+    return false;
 }
 
 fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, uint class_src_start = 0xFFFFFFFF, bool is_expr = false, ushort class_name_reg = REG_NONE, uint class_name_str_idx = 0, bool is_default_export = false) {
@@ -715,8 +813,8 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
         self.lexer.refresh_token_start();
 
         // TypeScript-only member modifiers: `public`, `private`, `protected`,
-        // `readonly`, `override`, `abstract`. Strip them; they carry no
-        // runtime semantics under erasable syntax.
+        // `readonly`, `override`, `abstract`, `declare`. Strip them; they
+        // carry no runtime semantics under erasable syntax.
         if (self.lexer.ts_mode) {
             for (;;) {
                 if (self.match(TokenType.PUBLIC)) continue;
@@ -725,6 +823,8 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
                 if (self.match_ts_ident("readonly")) continue;
                 if (self.match_ts_ident("override")) continue;
                 if (self.match_ts_ident("abstract")) continue;
+                if (self.match_ts_ident("declare")) continue;
+                if (self.ts_check_accessor_modifier()!) return COMPILE_ERROR~;
                 break;
             }
         }
@@ -769,6 +869,8 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
                 if (self.match_ts_ident("readonly")) continue;
                 if (self.match_ts_ident("override")) continue;
                 if (self.match_ts_ident("abstract")) continue;
+                if (self.match_ts_ident("declare")) continue;
+                if (self.ts_check_accessor_modifier()!) return COMPILE_ERROR~;
                 break;
             }
         }
@@ -788,7 +890,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
         // NOT when followed by `(`, which is a private method (P3, handled
         // below alongside public methods so generator/async modifiers and
         // compile_inner_function are shared).
-        if (self.check(TokenType.HASH_IDENT) && !self.peek2_is_lparen() && !self.ts_next_is_generic_method()) {
+        if (self.check(TokenType.HASH_IDENT) && !self.peek2_is_lparen() && !self.ts_peek_generics_lparen()) {
             Token priv_tok = self.advance()!;
             char[] priv_name = priv_tok.str_value;
             PrivateNameEntry* entry = self.resolve_private_name(priv_name)!;
@@ -809,6 +911,13 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
             }
 
             ushort init_reg;
+            // TypeScript: optional `?`/`!` markers and `: T` annotation on the
+            // private field (all erasable).
+            if (self.lexer.ts_mode) {
+                self.try_skip_ts_optional_marker()!;
+                self.try_skip_ts_definite_marker()!;
+                self.try_skip_ts_type_annotation()!;
+            }
             if (self.match(TokenType.ASSIGN)) {
                 // ES2022 §15.7.10 step 7 / DefineField step 7: an anonymous
                 // function definition initializer gets SetFunctionName with
@@ -889,6 +998,14 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
         // ToString(NumericValue(NumericLiteral)) per ES2020 PropertyName.
         bool method_name_is_bigint = false;
         char[] method_name_bigint_src = {};
+
+        // TypeScript class index signature `[k: string]: T;` (also static and
+        // readonly forms, modifiers already stripped) — erase it entirely.
+        // Checked before the computed-key path, whose `[expr]` parsing would
+        // trip on the `:` after the key name.
+        if (self.ts_try_index_signature()) {
+            continue;
+        }
 
         // Check for computed key [expr]
         bool has_computed_key = false;
@@ -1131,6 +1248,27 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
             // Continue to the field branch below.
         }
 
+        // TypeScript optional method `f?() {}` (or signature `f?(): R;`):
+        // the `?` marks the method optional. try_skip_ts_optional_marker
+        // below only consumes `?` before field terminators, so consume it
+        // here when `(` follows and fall through to the method/signature
+        // paths; any other follow-on leaves it for the field path.
+        if (self.lexer.ts_mode && self.check(TokenType.QUESTION)) {
+            Lexer saved_q = *self.lexer;
+            if (catch _qe = self.advance()) { *self.lexer = saved_q; }
+            if (!self.check(TokenType.LPAREN)) {
+                *self.lexer = saved_q;
+            }
+        }
+
+        // TypeScript overload signature: `name(params);` declares no
+        // implementation, the element is type-only (erasable). Getters and
+        // setters cannot be overloaded, so they always have bodies.
+        if (self.lexer.ts_mode && !is_getter && !is_setter
+            && self.ts_try_skip_overload_signature()) {
+            continue;
+        }
+
         // A line terminator after the identifier `accessor` cannot be
         // reinterpreted as a second class element after an accessor-field
         // introducer. Resource/accessor proposal syntax is not implemented,
@@ -1155,7 +1293,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
             && !is_getter && !is_setter
             && !is_generator_method && !is_async_method
             && !self.check(TokenType.LPAREN)
-            && !self.ts_next_is_generic_method();
+            && !self.ts_peek_generics_lparen();
         if (is_public_field) {
             // PropName early errors (ES2022 §15.7.1):
             //  - FieldDefinition: PropName == "constructor"  → SyntaxError
@@ -1289,6 +1427,13 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
             }
 
             ushort init_reg;
+            // TypeScript: optional `?`/`!` markers and `: T` annotation on the
+            // field (all erasable). Must run before the `=` initializer check.
+            if (self.lexer.ts_mode) {
+                self.try_skip_ts_optional_marker()!;
+                self.try_skip_ts_definite_marker()!;
+                self.try_skip_ts_type_annotation()!;
+            }
             if (self.match(TokenType.ASSIGN)) {
                 init_reg = target_ctx.assignment_expr()!;
             } else {

@@ -211,6 +211,29 @@ fn bool CompilerContext.is_name_lexical(&self, char[] name) {
     return false;
 }
 
+/// True when `name` has a runtime binding in this module scope: any
+/// var/let/const/class/function declared here. A TypeScript type-only name
+/// (an `interface` or `type` alias, which the parser erases without a
+/// binding) is absent, which is what lets `export { G };` after
+/// `interface G {}` erase to nothing instead of registering a phantom
+/// export the linker would reject.
+fn bool CompilerContext.ts_name_is_runtime_binding(&self, char[] name) {
+    uint i = self.scope_depth;
+    while (i > 0) {
+        i--;
+        ScopeEntry* e = &self.scope_stack[i];
+        if (e.kind != ScopeKind.SCOPEMARK && str_eq(e.name, name)) {
+            return true;
+        }
+    }
+    // Top-level function declarations are recorded in hoisted_fn_names, not
+    // on the scope stack at the time the export clause is parsed.
+    for (ushort h = 0; h < self.hoisted_fn_count; h++) {
+        if (str_eq(self.hoisted_fn_names[h], name)) return true;
+    }
+    return false;
+}
+
 /// Resolve a variable name to its register REGARDLESS of capture status.
 /// Only for declaration-site checks (e.g. `var` redeclaration must reuse the
 /// existing binding, never re-declare and clobber the env value). Normal
