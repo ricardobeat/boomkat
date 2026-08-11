@@ -19,6 +19,25 @@ import duktape::bytecode;
 import duktape::esm;
 import std::io;
 
+/// Counts the rejections reported by cli_rejection_tracker, so the exit status
+/// can be non-zero for a program that otherwise ran to completion. An async
+/// failure nobody caught is still a failure.
+int unhandled_rejection_count = 0;
+
+/// Heap.set_rejection_tracker callback: print one line per promise that reached
+/// the end of the microtask drain rejected and unwatched.
+///
+/// The reason is formatted with print_tval_stderr for the same reason
+/// print_uncaught uses it: a user `toString` could throw or re-enter the VM,
+/// and this runs after the program is over.
+fn void cli_rejection_tracker(void* heap_raw, void* vm, TVal promise, TVal reason, void* udata) {
+    unhandled_rejection_count++;
+    Heap* hp = (Heap*)heap_raw;
+    io::eprintf("Unhandled promise rejection: ");
+    print_tval_stderr(hp, &reason);
+    io::eprintf("\n");
+}
+
 fn int main(String[] args) {
     vm::test262_host_enabled = true;
     // `--module <path>` drives the full ESM resolve->link->evaluate pipeline.
@@ -30,8 +49,10 @@ fn int main(String[] args) {
         Vm*? mv = vm::vm_create(mhp);
         if (catch err = mv) { io::eprintfn("VM failed"); return 1; }
         defer vm::vm_destroy(mv);
+        mhp.set_rejection_tracker(&cli_rejection_tracker, null);
         int rc = esm::run_module_file(mhp, mv, (char[])mpath);
         if (rc != 0) io::eprintfn("module rc=%d", rc);
+        if (rc == 0 && unhandled_rejection_count > 0) return 1;
         return rc;
     }
     String path = args.len > 1 ? args[1] : "test/simple.js";
@@ -46,6 +67,8 @@ fn int main(String[] args) {
     if (catch err = v) { io::eprintfn("VM failed"); return 1; }
     defer vm::vm_destroy(v);
 
+    hp.set_rejection_tracker(&cli_rejection_tracker, null);
+
     // A `.ts`/`.mts`/`.cts` file runs in TypeScript mode: type syntax is
     // erased at parse time (plan 042). A file whose top level looks like a
     // module (import/export at statement start) routes through the ESM
@@ -56,6 +79,7 @@ fn int main(String[] args) {
     if (looks_like_module(source)) {
         int rc = esm::run_module_file(hp, v, (char[])path);
         if (rc != 0) io::eprintfn("module rc=%d", rc);
+        if (rc == 0 && unhandled_rejection_count > 0) return 1;
         return rc;
     }
 
@@ -91,7 +115,9 @@ fn int main(String[] args) {
         }
         return 1;
     }
-    return 0;
+    // A program that completed but left a rejected promise nobody watched
+    // still failed; cli_rejection_tracker has already said so on stderr.
+    return unhandled_rejection_count > 0 ? 1 : 0;
 }
 
 /// Run a TypeScript source file: parse in ts_mode, then execute the script
@@ -102,6 +128,7 @@ fn int run_with_lexer_ts(Heap* hp, Vm* v, String path) {
     if (looks_like_module(source)) {
         int rc = esm::run_module_file(hp, v, (char[])path);
         if (rc != 0) io::eprintfn("module rc=%d", rc);
+        if (rc == 0 && unhandled_rejection_count > 0) return 1;
         return rc;
     }
     Lexer lex = lexer::lexer_init(source, hp);
@@ -127,7 +154,7 @@ fn int run_with_lexer_ts(Heap* hp, Vm* v, String path) {
         }
         return 1;
     }
-    return 0;
+    return unhandled_rejection_count > 0 ? 1 : 0;
 }
 
 /// True if the path ends in `.ts`, `.mts`, or `.cts` (case-sensitive, like

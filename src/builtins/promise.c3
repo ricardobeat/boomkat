@@ -14,9 +14,11 @@ import duktape::vm;
 // Promise helpers (ES6 §25.4)
 // ============================================================================
 
-const uint PROMISE_PENDING   = 0;
-const uint PROMISE_FULFILLED = 1;
-const uint PROMISE_REJECTED  = 2;
+/// The [[PromiseState]] values, declared alongside the field they occupy in
+/// hobject.c3 so heap.c3's rejection tracking can name them too.
+const uint PROMISE_PENDING   = hobject::PROMISE_PENDING;
+const uint PROMISE_FULFILLED = hobject::PROMISE_FULFILLED;
+const uint PROMISE_REJECTED  = hobject::PROMISE_REJECTED;
 
 /// Hidden property keys for Promise internals.
 /// Leading \xFF makes them inaccessible to user code (no way to spell that
@@ -32,6 +34,8 @@ fn void promise_init(HObject* promise) {
     (*promise.extra_ptr()).promise.result.set_undefined();
     (*promise.extra_ptr()).promise.reactions_head = null;
     (*promise.extra_ptr()).promise.reactions_tail = null;
+    (*promise.extra_ptr()).promise.is_handled = false;
+    (*promise.extra_ptr()).promise.in_reject_list = false;
 }
 
 /// Get the promise state from HObjectExtra.promise.state.
@@ -42,11 +46,19 @@ fn uint promise_get_state(HObject* promise, uint default_state) {
 
 /// Settle a Promise in one shot: state + result + refcounting.
 /// No-op if the promise is already settled.
+///
+/// A rejection with no reaction attached yet is recorded on the heap's
+/// unhandled list. Recording is not reporting: a handler attached later in the
+/// same tick still un-marks it, and only what survives to the end of the
+/// microtask drain reaches the host's tracker.
 fn void promise_settle(HObject* promise, uint state, TVal* val, Heap* heap) {
     if (promise == null) return;
     if ((*promise.extra_ptr()).promise.state != PROMISE_PENDING) return;
     heap.tval_copy_ref(&(*promise.extra_ptr()).promise.result, val);
     (*promise.extra_ptr()).promise.state = state;
+    if (state == PROMISE_REJECTED && !(*promise.extra_ptr()).promise.is_handled) {
+        heap.track_rejection(promise);
+    }
 }
 
 /// Get the promise's resolved value / rejection reason.
@@ -834,6 +846,11 @@ fn bool promise_throw_capability_failure(BuiltinContext* ctx, HObject* hole) {
 /// Append a reaction HObject to the promise's reaction linked list.
 fn void promise_add_reaction(HObject* promise, HObject* reaction, Heap* heap) {
     if (promise == null || reaction == null) return;
+    // Every route that observes a promise lands here: then/catch/finally, the
+    // await suspension in vm_generators, and the pass-through reaction that
+    // promise adoption installs. Attaching any of them sets [[PromiseIsHandled]],
+    // so a rejection this promise already recorded is no longer reportable.
+    (*promise.extra_ptr()).promise.is_handled = true;
     reaction_set_next(reaction, null, heap);
     if ((*promise.extra_ptr()).promise.reactions_tail == null) {
         (*promise.extra_ptr()).promise.reactions_head = reaction;
