@@ -1976,7 +1976,10 @@ fn void? CompilerContext.if_statement(&self) {
     uint false_jump = self.emit_cond_jump(Opcode.IF_FALSE, (uint)cond_reg);
     self.free_reg(cond_reg);
 
-    // Compile then-branch
+    // Compile then-branch. The `)` just consumed closes the if-clause, not an
+    // operand, so a following `/` must start a RegularExpressionLiteral (see
+    // Lexer.note_block_close doc; B2).
+    self.lexer.note_block_close();
     self.statement_body()!;
 
     if (self.match(TokenType.ELSE)) {
@@ -1984,7 +1987,9 @@ fn void? CompilerContext.if_statement(&self) {
         uint end_jump = self.emit_jump(Opcode.JUMP);
         self.patch_jump(false_jump);
 
-        // Compile else-branch
+        // Compile else-branch. `else` is a keyword, never an operand, so the
+        // same regex hint applies here too.
+        self.lexer.note_block_close();
         self.statement_body()!;
 
         self.patch_jump(end_jump);
@@ -2129,6 +2134,9 @@ fn void? CompilerContext.while_statement(&self) {
     // skip_expr_lex scans until `)` at depth 0, leaving it in pushed_back.
     self.skip_expr_lex();
     self.expect(TokenType.RPAREN)!;  // consume ')'
+    // The `)` just consumed closes the while-clause, not an operand, so a
+    // following `/` must start a RegularExpressionLiteral (B2).
+    self.lexer.note_block_close();
 
     // ----------------------------------------------------------------
     // Step 5: Push loop (continue_target = body_label placeholder;
@@ -2918,6 +2926,9 @@ fn void? CompilerContext.for_statement(&self) {
                                                 DestructStoreMode.DECLARE, is_lexical, is_const);
                 }
 
+                // The head's `)` closes the for-in clause, not an operand, so a
+                // following `/` must start a RegularExpressionLiteral (B2).
+                self.lexer.note_block_close();
                 self.statement_body()!;
 
                 // CreatePerIterationEnvironment.  Copy all leaf bindings before
@@ -3096,6 +3107,9 @@ fn void? CompilerContext.for_statement(&self) {
                 // Compile body. Each body evaluation starts with an empty
                 // completion; an expression statement then replaces it.
                 if (self.eval_mode) self.emit_abc(Opcode.LDUNDEF, (uint)self.eval_acc_reg, 0, 0);
+                // The head's `)` closes the for-in clause, not an operand, so a
+                // following `/` must start a RegularExpressionLiteral (B2).
+                self.lexer.note_block_close();
                 self.statement_body()!;
 
                 // CreatePerIterationEnvironment: copy the current binding into a
@@ -3479,6 +3493,9 @@ fn void? CompilerContext.for_statement(&self) {
         self.skip_expr_lex();
     }
     self.expect(TokenType.RPAREN)!;   // consume `)` after increment
+    // The `)` just consumed closes the for-clause, not an operand, so a
+    // following `/` must start a RegularExpressionLiteral (B2).
+    self.lexer.note_block_close();
 
     // ----------------------------------------------------------------
     // Step 5: Push loop and compile body.
@@ -3762,6 +3779,9 @@ fn void? CompilerContext.emit_bare_forin_loop(&self, char[] var_name, ushort obj
     }
 
     if (self.eval_mode) self.emit_abc(Opcode.LDUNDEF, (uint)self.eval_acc_reg, 0, 0);
+    // The head's `)` closes the for-in clause, not an operand, so a following
+    // `/` must start a RegularExpressionLiteral (B2).
+    self.lexer.note_block_close();
     self.statement_body()!;
 
     self.loop_stack[self.loop_depth - 1].continue_target = self.code_count;
@@ -3985,6 +4005,9 @@ fn void? CompilerContext.emit_forof(&self, ForOfHead head, ushort src_reg, uint 
     if (self.eval_mode) {
         self.emit_abc(Opcode.LDUNDEF, (uint)self.eval_acc_reg, 0, 0);
     }
+    // The head's `)` closes the for-of clause, not an operand, so a following
+    // `/` must start a RegularExpressionLiteral (B2).
+    self.lexer.note_block_close();
     self.statement_body()!;
 
     self.emit_simple(Opcode.ENDTRY);
@@ -4245,6 +4268,9 @@ fn void? CompilerContext.emit_bare_forin_destruct_loop(&self, bool is_array_patt
                                     DestructStoreMode.ASSIGN_TARGET, false, false);
     }
 
+    // The head's `)` closes the for-in clause, not an operand, so a following
+    // `/` must start a RegularExpressionLiteral (B2).
+    self.lexer.note_block_close();
     self.statement_body()!;
 
     int back_offset = (int)loop_start - (int)self.code_count - 1;
@@ -4295,6 +4321,9 @@ fn void? CompilerContext.emit_forin_loop_member(&self, ForLhsSnapshot lhs_snap, 
     self.emit_member_lhs_store(lhs_snap, key_reg)!;
 
     if (self.eval_mode) self.emit_abc(Opcode.LDUNDEF, (uint)self.eval_acc_reg, 0, 0);
+    // The head's `)` closes the for-in clause, not an operand, so a following
+    // `/` must start a RegularExpressionLiteral (B2).
+    self.lexer.note_block_close();
     self.statement_body()!;
 
     self.loop_stack[self.loop_depth - 1].continue_target = self.code_count;
