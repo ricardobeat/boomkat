@@ -1,7 +1,7 @@
 #!/bin/bash
 # Run the local JS test suite.
 #
-# Three surfaces, because they need different invocations:
+# Five surfaces, because they need different invocations:
 #   1. test/*.js       — plain scripts, run as `duktape_c3 <file>`.
 #   2. test/modules/   — ESM fixtures, run as `duktape_c3 --module <entry>`;
 #                        delegated to test/modules/run.sh, which owns the
@@ -9,6 +9,10 @@
 #   3. test/uncaught/  — uncaught-exception reporting on stderr; delegated to
 #                        test/uncaught/run.sh. These exit non-zero on purpose,
 #                        so the flat sweep cannot express them.
+#   4. test/rejections/ — unhandled-rejection reporting: exit status and stderr,
+#                        which a script cannot assert about its own silence.
+#   5. test/robustness/ — resource limits. When broken these crash or hang, so
+#                        there is no output to assert and no return to wait for.
 #
 # A test fails if the engine exits non-zero or prints a line containing FAIL
 # (the convention local tests use for an assertion-failure branch).
@@ -73,6 +77,18 @@ echo ""
 bash "$DIR/uncaught/run.sh" "$ENGINE"
 UNC_RC=$?
 
+# Unhandled promise rejections — exit status and stderr, which a script cannot
+# assert about its own silent death.
+echo ""
+bash "$DIR/rejections/run.sh" "$ENGINE"
+REJ_RC=$?
+
+# Resource-limit robustness — these cases crash or hang when broken, which the
+# flat sweep cannot express (no output to assert, or never returns).
+echo ""
+bash "$DIR/robustness/run.sh" "$ENGINE"
+ROB_RC=$?
+
 # console format specifiers — asserted by diffing stdout against node's captured
 # output, which the self-asserting flat sweep cannot express.
 echo ""
@@ -87,4 +103,5 @@ CEM_RC=$?
 
 [ "$FAIL" -eq 0 ] && [ "$MOD_RC" -eq 0 ] && [ "$MODSYN_RC" -eq 0 ] \
   && [ "$MODEXP_RC" -eq 0 ] && [ "$TOPLVL_RC" -eq 0 ] && [ "$UNC_RC" -eq 0 ] \
+  && [ "$REJ_RC" -eq 0 ] && [ "$ROB_RC" -eq 0 ] \
   && [ "$CFMT_RC" -eq 0 ] && [ "$CEM_RC" -eq 0 ]

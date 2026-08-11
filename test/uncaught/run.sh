@@ -73,10 +73,35 @@ check "throw from nested"  'function g(){ throw "deep"; } function f(){ g(); } f
 check "rethrow from catch"  'try { throw 1; } catch (e) { throw "re:" + e; }' \
       "Uncaught: re:1"
 
+# A LIVE MICROTASK QUEUE must not change any of the above. With a pending
+# microtask, every one of these used to collapse onto
+# "VM error: vm::VM_ERROR (at execute)" — the error was formed correctly and
+# then lost on the unwind path, so the reporting regressed exactly where real
+# async programs live. Same invariant as the block above, plus a pending job.
+check "microtask + throw Error" \
+      'Promise.resolve().then(function(){}); throw new Error("msg");' \
+      "Uncaught: msg"
+check "microtask + engine TypeError" \
+      'Promise.resolve().then(function(){}); null.x;' \
+      "Uncaught: Cannot read properties of null (reading 'x')"
+check "microtask + ReferenceError" \
+      'Promise.resolve().then(function(){}); missingGlobalName;' \
+      "Uncaught: missingGlobalName is not defined"
+check "microtask + throw string" \
+      'Promise.resolve().then(function(){}); throw "a string";' \
+      "Uncaught: a string"
+check "microtask + throw from nested" \
+      'Promise.resolve().then(function(){}); function g(){ throw "deep"; } function f(){ g(); } f();' \
+      "Uncaught: deep"
+check "async fn pending + throw" \
+      '(async function(){ await null; }()); throw new Error("msg");' \
+      "Uncaught: msg"
+
 # NOT covered here: an unhandled PROMISE REJECTION (`async function f(){ throw
 # "x"; } f();`) is silently ignored and exits 0 — node reports it. That is a
 # separate, pre-existing gap in rejection tracking, not part of this reporting
 # path, which only sees exceptions that unwind to the top level synchronously.
+# Its own coverage is in test/rejections/run.sh.
 
 echo ""
 echo "Uncaught reporting: $PASS passed, $FAIL failed"

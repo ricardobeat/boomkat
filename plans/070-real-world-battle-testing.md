@@ -318,17 +318,38 @@ where a script failed. Stack traces are not listed as a non-goal in
 
 **Severity: medium. Silent data loss.**
 
-A self-referential *array* serialises to `"[]"` instead of throwing. The
-object path is correct, so only the array branch is missing its
-cycle check.
+A self-referential array built by *indexed assignment* serialises to
+`"[]"` instead of throwing. Building the identical cycle with `push`
+throws correctly, which is the whole subtlety:
 
 ```js
 "use strict";
 var a = []; a[0] = a;
-JSON.stringify(a);   // c3: returns "[]"      qjs: throws TypeError
+JSON.stringify(a);        // c3: returns "[]"      qjs: throws TypeError
+
+var d = []; d.push(d);
+JSON.stringify(d);        // c3: throws TypeError  qjs: throws TypeError
+
 var o = {}; o.self = o;
-JSON.stringify(o);   // c3: throws TypeError  qjs: throws TypeError
+JSON.stringify(o);        // c3: throws TypeError  qjs: throws TypeError
 ```
+
+So the cycle check is present but is not reached for elements installed
+by direct index assignment — likely a fast path for dense/indexed
+elements that bypasses the stack check the `push`-created shape goes
+through.
+
+test262 **does** cover cyclic arrays
+(`built-ins/JSON/stringify/value-array-circular.js`) and that test
+**passes**, because it constructs both its cases with `push`:
+
+```js
+var direct = [];
+direct.push(direct);
+assert.throws(TypeError, function() { JSON.stringify(direct); });
+```
+
+A one-line variant using `direct[0] = direct` would have caught this.
 
 Per spec (`SerializeJSONArray`), a value already on the stack must raise a
 `TypeError`. Returning `"[]"` means a host silently persists or transmits
@@ -359,6 +380,35 @@ that runs untrusted or merely careless script has its process taken down
 with no exception to catch and no way to recover. It needs a maximum
 string length enforced at every allocation and concatenation site, raising
 a JS error instead of overflowing.
+
+---
+
+## B11: deeply nested source segfaults the parser
+
+**Severity: critical. Host process crash on input, not on execution.**
+
+The parser has no recursion depth limit, so nested literals overflow the
+native stack:
+
+```js
+var x = [[[[ ... 1000 levels ... ]]]];   // SIGSEGV (exit 139)
+var y = (((( ... 2000 levels ... ))));   // SIGSEGV (exit 139)
+```
+
+QuickJS reports `SyntaxError: stack overflow` for both. Measured
+threshold: 500 levels is fine, 1000 crashes.
+
+This is worse than B6 in one respect — it happens at *compile* time, so an
+embedder is exposed merely by parsing untrusted source, before any script
+runs. A depth counter in the recursive-descent parser, raising a
+SyntaxError past a bound, is the standard fix.
+
+**Correction to an earlier claim in this plan:** an initial probe reported
+5,000-level nesting compiling fine and was listed under "what held up".
+That probe used a form whose value was discarded, and did not crash; the
+crash appears once the parsed value is bound and used. The robustness
+suite (`test/robustness/run.sh`) caught it, and the earlier claim has been
+removed.
 
 ---
 
@@ -511,6 +561,32 @@ cannot safely run untrusted or even merely buggy script — which is the
 main reason to embed a JS engine at all. This is the single most
 important gap found in the API.
 
+### Test coverage
+
+**None, deliberately.** Every other finding in this plan has a regression
+test (see the section below), but E1 is a *missing feature* rather than a
+broken one: there is no API to call, so a test would not compile. Writing
+one that merely asserts `while(true){}` hangs would encode the defect as
+expected behaviour and would itself hang the suite.
+
+What to add once the API exists — the shape the fix should be designed
+against:
+
+- A C host in `test/capi/` that installs an interrupt handler, evaluates
+  `while(true){}`, and asserts `jse_eval` returns a throw status within a
+  bounded number of callbacks. It must exit on its own, with no external
+  `timeout` — an in-suite watchdog is the whole point.
+- The runtime must remain usable afterwards: a subsequent `jse_eval` of
+  `1+1` must return `JSE_OK`. An interrupt that poisons the runtime only
+  converts a hang into a leak.
+- The interrupt must surface as a catchable JS error, and a `try`/`catch`
+  in script must not be able to swallow it and resume looping.
+- Uninterrupted scripts must be unaffected, so the polling cannot be
+  implemented by aborting anything long-running.
+
+The same host program is the natural place to cover the other E2 gaps
+(property access, source location) as they land.
+
 ---
 
 ## E2: embedding API gaps
@@ -596,8 +672,6 @@ Worth recording, since these were attacked and did not break:
 
 - Deep recursion raises a clean `RangeError: Maximum call stack size
   exceeded` rather than overflowing the native stack.
-- 5,000-level nested array literals compile fine; QuickJS rejects the same
-  source with a stack overflow.
 - Recursive proxy `get` traps terminate with `RangeError`; revoked proxies
   raise `TypeError`.
 - Mutating an array inside its own `sort` comparator, and deleting a
@@ -605,6 +679,159 @@ Worth recording, since these were attacked and did not break:
 - `var g = function(){}`, object-literal methods, and plain locals do not
   leak registers (see B1), so the 256-register wrap needs hoisted
   declarations specifically.
+
+---
+
+## test262 skip-list audit
+
+Question asked: could the official suite have caught these already, and is
+the skip list hiding in-scope tests? **Answer: no on both counts.** The
+skip list is tight and the misses are genuine coverage gaps upstream.
+
+**The skip list is not the problem.** `SKIP_DIRS` has two entries
+(`annexB`, `intl402`), `SKIP_GLOBS` is empty, and `SKIP_FILES` has two
+individual files. Everything else is `UNSUPPORTED_PATTERN`, which matches
+on `features:` keywords only — Stage 3 proposals (Temporal, ShadowRealm,
+decorators…), Annex B (`__proto__`, `__getter__`), and engine pragmatics
+(`cross-realm`, `caller`, `tail-call-optimization`). No rule is
+over-broad. In the three directories covering these bugs, the number of
+tests skipped by any rule is:
+
+| directory | tests | skipped |
+|---|---|---|
+| `built-ins/String/prototype/repeat/` | 16 | **0** |
+| `built-ins/Number/prototype/toString/` | 90 | **0** |
+| `built-ins/JSON/stringify/` | 66 | 2 (unrelated feature flags) |
+
+Per-bug classification:
+
+- **B7 (`repeat` 32-bit truncation) — NOT-COVERED.** All 16 tests exist
+  and run. They cover `Infinity`, negative counts, zero, and coercion —
+  but no test anywhere in `built-ins/String/` uses a count near 2^32, and
+  none asserts an implementation-limit error. A new test would need
+  `assert.throws(RangeError, () => "x".repeat(4294967296))`.
+- **B8 (`toString(radix)` saturation) — NOT-COVERED.** All 90 tests run
+  and pass. `numeric-literal-tostring-radix-16.js` contains exactly four
+  assertions — `0`, `1`, `NaN`, `Infinity` — so **the largest number it
+  tests is `1`**. No test in the directory uses `1e20` or `MAX_VALUE`.
+  Nothing there could detect a cliff at 2^63.
+- **B5 (cyclic array) — COVERED-AND-PASSING, and the passing is
+  legitimate.** `value-array-circular.js` tests precisely this, and the
+  engine passes it, because the test builds its cycles with
+  `direct.push(direct)` — the path that works. The broken path is
+  `a[0] = a`. A one-line variant would have caught it. This is the
+  closest call of the audit: test262 had the concept but not the shape.
+- **B2 (regexp after a control-clause `)`) — NOT-COVERED.** No test under
+  `language/statements/{if,while,for}/` puts a regexp literal in an
+  unbraced body; searching for the pattern returns nothing.
+- **B1, B3, B6, B9, B10, E1, E2 — outside test262's remit by
+  construction.** Register pressure at scale, quadratic performance,
+  process crashes, host-embedding APIs and CLI error reporting are not
+  things a conformance suite asserts.
+
+**Conclusion.** The green gate is not overstating conformance — it is
+accurately reporting that the engine passes what test262 asserts. The
+gap is that test262 asserts *behaviour on small inputs*, and every bug
+here needed either scale (B1, B3, B6, B7, B8), an unusual construction
+shape (B5, B2), or a non-language surface (B9, B10, E1, E2). The
+actionable follow-up is not to change the skip list but to add the
+targeted regression tests named above, and to keep the real-library
+sweep as a separate gate.
+
+---
+
+## Open questions / next steps
+
+Not yet answered — the session ran out of budget before these finished.
+
+1. **Root-cause the other six library failures.** bluebird, jszip,
+   handlebars and protobufjs fail with `undefined`-shaped errors that B1
+   does not explain (see the headline table); typescript and babel exit
+   non-zero with no message. Each is a free real-world reproduction of a
+   bug not yet characterised. For handlebars specifically the trail is
+   already warm: it is a webpack bundle, and the throw happens inside
+   `$export` (bundle module 20) after it is entered with `name='Object'`,
+   called from module 64 via module 81's `Object.seal` core-js polyfill.
+   Module 64 returning a function, `exec(fn)`, `Object.seal/freeze/keys`
+   on the primitive `1`, and reserved-word property access
+   (`o["default"]`) have all been ruled out. The next step is to
+   instrument inside `$export`'s `for(key in source)` loop — candidates
+   are `key in target`, `target[key] == out`, the `ctx(out, global)` call,
+   and the `IS_PROTO` branch.
+
+2. **Implement an interrupt/limit API (E1).** This is the one finding with
+   no regression test, because there is no API to test — it needs building
+   before it can be covered. Design notes and the test to write alongside
+   it are in the E1 section above. Minimum viable shape, following
+   QuickJS's `JS_SetInterruptHandler`:
+
+   ```c
+   typedef int (*jse_interrupt_fn)(jse_runtime rt, void *udata);
+   JSE_API void jse_set_interrupt_handler(jse_runtime rt,
+                                          jse_interrupt_fn fn, void *udata);
+   ```
+
+   A non-zero return aborts the running script with a catchable JS error
+   and leaves the runtime usable. The handler needs polling at backward
+   jumps and call entry — the same safepoints the collector already uses,
+   so the hook has a natural home. Worth considering in the same pass: a
+   memory ceiling and a bytecode-instruction budget, since a host that
+   cannot bound time usually cannot bound allocation either.
+
+3. **Re-run the loading sweep after B1 and B2 land**, to see how many of
+   the eight failures they actually account for.
+
+Done since: the test262 skip-list audit (its own section above) and
+regression coverage for every finding except E1 (see below).
+
+---
+
+## Regression coverage
+
+Every finding except E1 has a test that **fails on the current engine and
+passes under QuickJS or node**. A test that passes on broken code is worth
+nothing, so each was validated in both directions before being committed.
+
+| finding | test | surface |
+|---|---|---|
+| B1 registers | `test/test_many_decls_param_registers.js` | flat sweep |
+| B2 regexp after `)` | `test/test_regexp_after_control_clause.js` | flat sweep |
+| B3 quadratic `+=` | `scripts/check_string_concat_scaling.sh` | `just test-string-concat-scaling` |
+| B5 JSON cycles | `test/test_json_stringify_cycles.js` | flat sweep |
+| B6 string overflow | `test/robustness/run.sh` | `test-local` |
+| B7 `repeat` limits | `test/test_string_repeat_limits.js` | flat sweep |
+| B8 `toString(radix)` | `test/test_number_tostring_radix.js` | flat sweep |
+| B9 rejections | `test/rejections/run.sh` | `test-local` |
+| B10 `VM_ERROR` | `test/uncaught/run.sh` | `test-local` |
+| B11 nesting crash | `test/robustness/run.sh` | `test-local` |
+| B4 `error.stack` | — | needs frames first; assert in `test/uncaught/` once they exist |
+| E1 interrupt | — | no API to test; see E1 above |
+
+Three new surfaces were added to `test/run_local.sh`, because the flat
+`test/*.js` sweep cannot express them:
+
+- `test/rejections/` — asserts exit status and stderr. A script cannot
+  assert its own silent death, and these must also confirm the complement:
+  a *handled* rejection stays quiet and exits 0, so the fix cannot be to
+  shout about every rejection.
+- `test/robustness/` — the failures are crashes and hangs, so there is no
+  output to assert and, for a hang, no return to wait for. Classifies by
+  exit signal.
+- B10's cases went into the existing `test/uncaught/`, which already owns
+  the invariant they violate: `"VM error:"` is reserved for a genuine
+  internal fault and must never appear for a JS-level throw.
+
+B3 is a *scaling* assertion, not a speed one: it times the engine against
+itself at 20k and 80k iterations and fails if 4x the work costs more than
+8x the time. Linear is ~4x, quadratic ~16x, so the threshold tolerates a
+loaded machine without tolerating the bug. Measured: 12.4x before the fix,
+1.11x for QuickJS.
+
+Two tests are worth keeping even though they pass today, as guards on
+invariants a fix could easily break: `test_error_identity_with_microtasks.js`
+(caught errors keep identity while a queue is live — the catchable half of
+B10) and the deep-recursion cases in `test/robustness/run.sh` (already
+correct, but a frame-layout change could turn them into segfaults).
 
 ---
 

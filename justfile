@@ -160,6 +160,14 @@ test-generator-catcher-rss:
     @just build duktape_c3
     bash scripts/check_generator_catcher_rss.sh
 
+# Assert that `s += ...` in a loop scales linearly. Lives outside test-local
+# because it is a timing comparison of the engine against itself at two input
+# sizes; a script cannot assert its own asymptotics. Interning every
+# concatenation temporary made this O(n^2).
+test-string-concat-scaling:
+    @just build duktape_c3
+    bash scripts/check_string_concat_scaling.sh
+
 # ── JS test suites ───────────────────────────────────────────────────────────
 
 # Run the engine conformance tests (hand-written assert-based)
