@@ -1254,6 +1254,19 @@ fn void builtin_array_proto_join(BuiltinContext* ctx) {
         return;
     }
 
+    // A join whose pieces sum past the string cap can never produce a value, so
+    // refuse before reserving the buffer. total_len is already 64-bit, so the
+    // sum above is exact; only the result is out of range.
+    if (hstring::length_exceeds_max((ulong)total_len)) {
+        if (sep_str != null) ctx.heap.decref((types::HeapHeader*)sep_str);
+        for (uint i = 0; i < len; i++) {
+            ctx.heap.decref((types::HeapHeader*)elem_strs[i]);
+        }
+        if (elem_strs_heap != null) ctx.heap.free_func(ctx.heap.heap_udata, elem_strs_heap);
+        builtin_throw(ctx, ctx.heap.range_err_proto, "Invalid string length");
+        return;
+    }
+
     char* result_buf = (char*)ctx.heap.alloc_func(ctx.heap.heap_udata, total_len);
     if (result_buf == null) {
         if (sep_str != null) ctx.heap.decref((types::HeapHeader*)sep_str);
