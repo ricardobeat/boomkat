@@ -42,6 +42,12 @@ const uint MAX_CONSTANTS_HARD   = 1 << 20;  // 1M constants
 const uint MAX_INNER_FUNCS_HARD = 1 << 16;  // 65K inner functions
 const uint MAX_SCOPE_DEPTH = 256;
 const uint MAX_CAPTURED_NAMES = 48;
+/// Cap on primary_expr recursion depth (nested `[[[`, `((((`, etc). The
+/// recursive-descent parser has no other bound and a deeply nested literal
+/// overflows the native stack (measured: 500 levels fine, 1000 crashes with
+/// SIGSEGV before this guard existed). 256 leaves real headroom below the
+/// measured crash point while comfortably covering realistic source.
+const uint MAX_EXPR_DEPTH = 256;
 const uint MAX_LOOP_DEPTH  = 16;
 const uint MAX_TRY_DEPTH   = 8;
 const uint MAX_LABELS       = 16;
@@ -226,6 +232,13 @@ struct CompilerContext {
     // Register allocation
     ushort next_reg;
     ushort max_reg;
+
+    /// Recursion depth of primary_expr, guarded against MAX_EXPR_DEPTH to
+    /// turn a deeply nested literal (`[[[...`, `((((...`) into a catchable
+    /// SyntaxError instead of a native stack overflow (SIGSEGV). Incremented
+    /// on entry and decremented via `defer` so every exit path, including
+    /// error returns, restores it.
+    uint expr_depth;
 
     // Constant pool (growable)
     TVal* constants;

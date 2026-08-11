@@ -3569,6 +3569,12 @@ fn ushort CompilerContext.emit_super_base(&self) {
 
 /// Parse primary expressions: literals, identifiers, grouping, etc.
 fn ushort? CompilerContext.primary_expr(&self) {
+    self.expr_depth++;
+    defer self.expr_depth--;
+    if (self.expr_depth > MAX_EXPR_DEPTH) {
+        return self.fail("expression nested too deeply")~;
+    }
+
     TokenType tt = self.peek_type();
 
     // A class heritage expression is a LeftHandSideExpression, so an arrow
