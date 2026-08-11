@@ -12,7 +12,8 @@ decimal.js, bignumber.js, mathjs, jszip, papaparse, crypto-js, protobufjs,
 chance, he, nearley, d3-array, uuid, plus typescript 9 MB and babel 5 MB).
 QuickJS (`out/qjs`) is the differential oracle throughout.
 
-Status: open. None of these are fixed yet.
+Status: B2, B5, B6, B7, B8, B9, B10, B11 fixed. B1 in progress. B3, B4, B12
+and the E-series open.
 
 ## Contents
 
@@ -536,6 +537,38 @@ essentially every real async program has a live microtask queue, this is
 the error message users will actually see. Caught errors are unaffected
 (`catch(e)` still receives a proper `ReferenceError`), so the loss is in
 the top-level uncaught path.
+
+---
+
+## B12: `yield` as a destructuring default in `for await` loses the binding
+
+**Severity: medium. Found by B9's rejection reporting, not by the suite.**
+
+A destructuring pattern whose default is a `yield` expression, used as the
+`for await` target, never binds the variable. The resulting `ReferenceError`
+is swallowed into a rejected promise, so the failure was invisible until
+unhandled-rejection reporting landed.
+
+```js
+async function* g(){ for await ([value = yield "a"] of [[]]) { print(value); } }
+var it = g();
+it.next().then(function(r){ return it.next(11); });
+```
+
+- `qjs`: resumes the body with `value=11`
+- `duktape_c3`: `ReferenceError: 'value' is not defined`
+
+`test/test_for_await_yield_operand.js` reports `4 pass, 0 fail` in both
+engines, because the assertions live inside the loop body the engine never
+reaches. Only the stderr rejection distinguishes them, which is why the
+existing test did not catch it.
+
+Both the array (`[value = yield]`) and object (`{value = yield}`) forms fail
+the same way.
+
+Note this is a genuine engine bug and not fixture noise: unlike the four
+promise fixtures quieted in `eba2734d`, QuickJS produces no rejection here at
+all.
 
 ---
 
