@@ -17,6 +17,7 @@ print(p1 instanceof Promise);
 
 print("Test 6: Promise.reject returns promise");
 var p2 = Promise.reject("error");
+p2.catch(function(){});
 print(typeof p2);
 print(p2 instanceof Promise);
 

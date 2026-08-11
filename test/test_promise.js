@@ -11,6 +11,7 @@ print(typeof p1); // Should be "object"
 print("");
 print("=== Promise.reject ===");
 var p2 = Promise.reject("error");
+p2.catch(function(){});
 print(typeof p2); // Should be "object"
 
 print("");
