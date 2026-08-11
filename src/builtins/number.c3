@@ -39,6 +39,36 @@ fn bool this_number_value(BuiltinContext* ctx, double* out) {
     return false;
 }
 
+/// Helper: append the radix digits of a non-negative integer-valued double to
+/// `out`, most significant digit first. Doubles reach ~1.8e308 (up to ~1024
+/// bits, ~1024 base-2 digits), far past any fixed-width integer type, so this
+/// works entirely in `double` via repeated division/floor rather than casting
+/// through `ulong`/`long` the way `number_to_radix_str` does for the part
+/// that DOES fit in 64 bits. Returns false on allocation failure.
+fn bool append_double_int_radix(StrBuf* out, double val, uint radix) {
+    if (val == 0.0) return out.append_char('0');
+    // Peel off least-significant digits first, buffering them, then emit
+    // most-significant first. A double integer part needs at most ~1024
+    // base-2 digits, so a generous fixed scratch buffer is safe here (unlike
+    // the caller's final output, which also carries a fractional part of
+    // unbounded-until-exhausted length).
+    char[1100] digits;
+    int n = 0;
+    double v = val;
+    double r = (double)radix;
+    while (v > 0.0 && n < 1100) {
+        double q = math::floor(v / r);
+        uint digit = (uint)(v - q * r);
+        if (digit >= radix) digit = radix - 1; // guard fp rounding at the boundary
+        digits[n++] = digit < 10 ? (char)('0' + digit) : (char)('a' + digit - 10);
+        v = q;
+    }
+    for (int i = n - 1; i >= 0; i--) {
+        if (!out.append_char(digits[i])) return false;
+    }
+    return true;
+}
+
 /// Helper: convert a positive integer to a string in the given radix (2-36).
 /// Writes at most 64 chars into buf. Returns the number of chars written.
 fn int number_to_radix_str(ulong val, uint radix, char* buf, usz buf_size) {
@@ -177,7 +207,11 @@ fn void builtin_number_proto_toString(BuiltinContext* ctx) {
         return;
     }
 
-    // Radix 2-36: manual conversion
+    // Radix 2-36: manual conversion. The integer part can need up to ~1024
+    // base-2 digits (doubles reach ~1.8e308) and the fractional part up to
+    // ~1074 (the smallest denormal is 2^-1074), so this builds into a
+    // heap-backed StrBuf rather than a fixed buffer; short, common results
+    // (small integers, base 16/36) never leave the buffer's inline storage.
     bool negative = d < 0;
     if (negative) d = -d;
 
@@ -185,41 +219,37 @@ fn void builtin_number_proto_toString(BuiltinContext* ctx) {
     double int_part = math::trunc(d);
     double frac_part = d - int_part;
 
-    char[128] buf;
-    usz offset = 0;
+    StrBuf out;
+    out.init(ctx.heap);
+    defer out.free();
 
-    if (negative) {
-        buf[offset++] = '-';
+    if (negative && !out.append_char('-')) { ctx.result.set_undefined(); return; }
+
+    // Convert integer part. Doubles beyond 2^53 no longer represent every
+    // integer exactly, but the *radix expansion* of whatever double value we
+    // do have is still computed exactly here via repeated float division,
+    // matching V8/QuickJS rather than saturating through a 64-bit cast.
+    if (!append_double_int_radix(&out, int_part, (uint)radix)) {
+        ctx.result.set_undefined();
+        return;
     }
 
-    // Convert integer part
-    ulong int_val = (ulong)(long)int_part;
-    char[64] int_digits;
-    int int_len = number_to_radix_str(int_val, (uint)radix, &int_digits, 64);
-    for (int i = 0; i < int_len; i++) {
-        buf[offset++] = int_digits[i];
-    }
-
-    // Convert fractional part (up to 20 digits)
-    if (frac_part > 0.0 && offset < 120) {
-        buf[offset++] = '.';
-        int max_frac_digits = 20;
-        if ((int)offset + max_frac_digits > 127) max_frac_digits = 127 - (int)offset;
-        for (int i = 0; i < max_frac_digits; i++) {
+    // Convert fractional part: keep going until the remainder is exhausted
+    // (frac_part hits exactly 0.0), not a fixed digit count. A hard cap still
+    // guards against a value that never reaches exact zero in float.
+    if (frac_part > 0.0) {
+        if (!out.append_char('.')) { ctx.result.set_undefined(); return; }
+        for (int i = 0; i < 1100 && frac_part > 0.0; i++) {
             frac_part *= (double)radix;
             uint digit = (uint)(long)frac_part;
             if (digit >= (uint)radix) digit = (uint)radix - 1;
             frac_part -= (double)digit;
-            if (digit < 10) {
-                buf[offset++] = (char)('0' + digit);
-            } else {
-                buf[offset++] = (char)('a' + digit - 10);
-            }
-            if (frac_part <= 0.0) break;
+            char c = digit < 10 ? (char)('0' + digit) : (char)('a' + digit - 10);
+            if (!out.append_char(c)) { ctx.result.set_undefined(); return; }
         }
     }
 
-    HString* result = builtin_intern_string(ctx.heap, buf[:offset]);
+    HString* result = builtin_intern_string(ctx.heap, out.bytes());
     if (result == null) {
         ctx.result.set_undefined();
         return;
