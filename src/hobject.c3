@@ -562,14 +562,33 @@ struct HObjectGenerator {
     EnvRecord*        lex_env;
 }
 
+/// [[PromiseState]] values, held in HObjectPromise.state. They live here rather
+/// than in builtins because heap.c3 reads the field too, when deciding whether
+/// a tracked rejection is still a rejection at the end of the microtask drain,
+/// and heap.c3 sits below builtins in the import order.
+const uint PROMISE_PENDING   = 0;
+const uint PROMISE_FULFILLED = 1;
+const uint PROMISE_REJECTED  = 2;
+
 /// Promise state, result, and pending reaction list. The reactions are linked
 /// HObjects allocated as ObjClass.OBJECT, and all promise state lives in this
 /// union slot rather than the property table, where user code could reach it.
 struct HObjectPromise {
-    uint      state;             // 0=pending, 1=fulfilled, 2=rejected
+    uint      state;             // one of PROMISE_PENDING/FULFILLED/REJECTED
     TVal      result;            // resolved value or rejection reason
     HObject*  reactions_head;    // linked list of reaction records
     HObject*  reactions_tail;    // tail pointer (O(1) append)
+    /// [[PromiseIsHandled]] (ES2015+ §27.2.6). Set the moment any reaction is
+    /// attached, including the handler-less pass-through ones that `await` and
+    /// promise adoption install, and never cleared: once something is watching
+    /// a promise, its rejection is somebody's to report.
+    ///
+    /// A rejection with this still false at the end of the microtask drain is
+    /// an unhandled rejection; see Heap.track_rejection.
+    bool      is_handled;
+    /// True while this promise sits in Heap.unhandled_rejections, so a promise
+    /// rejected, un-tracked, and rejected again cannot be listed twice.
+    bool      in_reject_list;
 }
 
 /// Array/Map/Set iterator state.

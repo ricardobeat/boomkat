@@ -45,6 +45,12 @@ const int CATCHER_CHAIN_FREE_NODES_ONLY  = 2;
 /// and the downstream promise to resolve.
 alias MicrotaskAfterFn = fn void(void* heap, void* vm, TVal result, TVal downstream);
 
+/// Host notification for a promise that was rejected with nothing watching it.
+/// Called once per such promise at the end of drain_microtasks, with the
+/// rejection reason. `udata` is whatever the host passed to
+/// Heap.set_rejection_tracker.
+alias RejectionTrackerFn = fn void(void* heap, void* vm, TVal promise, TVal reason, void* udata);
+
 /// Calls a JS function with an argument array and an explicit `this`.
 alias VmCallFn = fn TVal(void* vm, TVal func, TVal* args, uint nargs, TVal this_val);
 
@@ -724,6 +730,21 @@ struct Heap {
     uint      microtask_capacity;
     bool      microtask_draining;  // re-entrancy guard
 
+    // Promises rejected with [[PromiseIsHandled]] still false. Recording one
+    // here is provisional: a handler attached later in the same tick clears its
+    // is_handled flag and the entry is skipped, which is why the decision can
+    // only be made once the drain has run to completion.
+    //
+    // Entries are TVals so the GC marks them and so the list holds a reference,
+    // keeping a rejected promise nobody else references alive long enough to be
+    // reported.
+    TVal*                unhandled_rejections;
+    uint                 unhandled_count;
+    uint                 unhandled_capacity;
+    /// Host callback for unhandled rejections, invoked at the end of the drain.
+    RejectionTrackerFn   rejection_tracker_fn;
+    void*                rejection_tracker_udata;
+
     // Parked Atomics.waitAsync waiters. Each holds a pending Promise against a
     // SharedArrayBuffer and byte index, and Atomics.notify resolves matching
     // waiters with "ok" in FIFO order. Active waiters act as GC roots.
@@ -1028,6 +1049,12 @@ fn Heap*? create(
     }
     h.microtask_count = 0;
     h.microtask_draining = false;
+    // Allocated on the first unhandled rejection: most programs never have one.
+    h.unhandled_rejections    = null;
+    h.unhandled_count         = 0;
+    h.unhandled_capacity      = 0;
+    h.rejection_tracker_fn    = null;
+    h.rejection_tracker_udata = null;
     h.async_waiter_count = 0;
 
     {
@@ -1482,6 +1509,13 @@ fn void Heap.destroy(&self) {
         self.microtask_queue = null;
     }
 
+    if (self.unhandled_rejections != null) {
+        self.free_func(self.heap_udata, self.unhandled_rejections);
+        self.unhandled_rejections = null;
+        self.unhandled_capacity = 0;
+    }
+    self.unhandled_count = 0;
+
     if (self.gray_objects != null) {
         self.free_func(self.heap_udata, self.gray_objects);
         self.gray_objects = null;
@@ -1664,6 +1698,11 @@ fn void Heap.reset(&self) {
         mem::clear(self.microtask_queue,
             (sz)((usz)self.microtask_capacity * TVal::size * 3));
     }
+    if (self.unhandled_rejections != null) {
+        mem::clear(self.unhandled_rejections,
+            (sz)((usz)self.unhandled_capacity * TVal::size));
+    }
+    self.unhandled_count    = 0;
     self.microtask_count    = 0;
     self.microtask_draining = false;
     self.async_waiter_count = 0;
@@ -2828,6 +2867,15 @@ fn void Heap.mark_roots(&self) {
         }
     }
 
+    // A promise queued for unhandled-rejection reporting is frequently
+    // referenced by nothing else, so this list is its only root until the
+    // drain ends and the report is made.
+    if (self.unhandled_rejections != null) {
+        for (uint i = 0; i < self.unhandled_count; i++) {
+            self.mark_tval(&self.unhandled_rejections[i]);
+        }
+    }
+
     // Atomics.waitAsync waiters keep their parked buffer + pending promise alive.
     for (uint i = 0; i < self.async_waiter_count; i++) {
         if (self.async_waiters[i].active) {
@@ -3891,7 +3939,13 @@ fn void Heap.enqueue_microtask(&self, TVal handler, TVal arg, TVal downstream) {
 /// from starting a second drain.
 fn void Heap.drain_microtasks(&self, void* vm) {
     if (self.microtask_draining) { return; }
-    if (self.microtask_count == 0) { return; }
+    // An empty queue still has to fall through to the report: a top-level
+    // `Promise.reject(x)` with no `.then` anywhere queues no job at all, and
+    // is precisely the rejection most in need of reporting.
+    if (self.microtask_count == 0) {
+        self.report_unhandled_rejections(vm);
+        return;
+    }
     self.microtask_draining = true;
     defer self.microtask_draining = false;
 
@@ -3932,5 +3986,82 @@ fn void Heap.drain_microtasks(&self, void* vm) {
             self.microtask_queue[base + 2].set_undefined();
         }
         self.microtask_count = 0;
+    }
+
+    self.report_unhandled_rejections(vm);
+}
+
+// ============================================================================
+// Unhandled rejection tracking
+// ============================================================================
+
+/// Install the host's unhandled-rejection callback. Passing null disables
+/// reporting, which is the default: the engine keeps recording rejections
+/// either way, so a tracker installed mid-run still sees later ones.
+fn void Heap.set_rejection_tracker(&self, RejectionTrackerFn fnp, void* udata) {
+    self.rejection_tracker_fn = fnp;
+    self.rejection_tracker_udata = udata;
+}
+
+/// Record a promise that was rejected with nothing watching it.
+///
+/// Called from promise_settle on every rejection. The verdict is provisional:
+/// `p.catch(...)` later in the same tick sets is_handled, and
+/// report_unhandled_rejections skips the entry. That is the whole reason the
+/// list exists rather than reporting at rejection time.
+fn void Heap.track_rejection(&self, hobject::HObject* promise) {
+    if (promise == null) return;
+    if ((*promise.extra_ptr()).promise.in_reject_list) return;
+
+    uint needed = self.unhandled_count + 1;
+    if (needed > self.unhandled_capacity) {
+        uint new_cap = self.unhandled_capacity == 0 ? 8 : self.unhandled_capacity * 2;
+        usz new_bytes = (usz)new_cap * TVal::size;
+        TVal* grown = (TVal*)self.realloc_func(self.heap_udata, self.unhandled_rejections, new_bytes);
+        if (grown == null) return;
+        mem::clear(grown + self.unhandled_capacity,
+            (sz)((long)(new_cap - self.unhandled_capacity) * TVal::size));
+        self.unhandled_rejections = grown;
+        self.unhandled_capacity = new_cap;
+    }
+
+    TVal pv;
+    pv.set_object(promise);
+    self.tval_copy_ref(&self.unhandled_rejections[self.unhandled_count], &pv);
+    self.unhandled_count++;
+    (*promise.extra_ptr()).promise.in_reject_list = true;
+}
+
+/// Deliver the rejections that are still unhandled now that the queue is
+/// empty, then clear the list.
+///
+/// The list is drained into locals before any callback runs, because a tracker
+/// is host code that may evaluate script and reject further promises; those
+/// belong to the next drain, not this one.
+fn void Heap.report_unhandled_rejections(&self, void* vm) {
+    if (self.unhandled_count == 0) return;
+
+    uint n = self.unhandled_count;
+    self.unhandled_count = 0;
+
+    for (uint i = 0; i < n; i++) {
+        TVal pv = self.unhandled_rejections[i];
+        if (pv.is_object() && pv.get_heapptr() != null) {
+            hobject::HObject* p = (hobject::HObject*)pv.get_heapptr();
+            (*p.extra_ptr()).promise.in_reject_list = false;
+            bool still_unhandled =
+                !(*p.extra_ptr()).promise.is_handled &&
+                (*p.extra_ptr()).promise.state == hobject::PROMISE_REJECTED;
+            if (still_unhandled && self.rejection_tracker_fn != null) {
+                // Marked handled before the callback so that a tracker which
+                // itself attaches a handler, or which re-enters the engine and
+                // re-rejects, cannot make the same promise report twice.
+                (*p.extra_ptr()).promise.is_handled = true;
+                TVal reason = (*p.extra_ptr()).promise.result;
+                self.rejection_tracker_fn((void*)self, vm, pv, reason, self.rejection_tracker_udata);
+            }
+        }
+        self.decref_tval(&self.unhandled_rejections[i]);
+        self.unhandled_rejections[i].set_undefined();
     }
 }
