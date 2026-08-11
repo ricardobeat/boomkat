@@ -1370,6 +1370,7 @@ fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags, heap::Hea
                 }
                 if (ks_idx >= *self.array_len_ptr()) {
                     *self.array_len_ptr() = ks_idx + 1;
+                    self.sync_named_length(h);
                 }
             }
         }
@@ -1393,6 +1394,7 @@ fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags, heap::Hea
             if (self.set_array_idx(ks_idx, val, h)) {
                 if (ks_idx >= *self.array_len_ptr()) {
                     *self.array_len_ptr() = ks_idx + 1;
+                    self.sync_named_length(h);
                 }
                 return true;
             }
@@ -1460,6 +1462,7 @@ fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags, heap::Hea
             }
             if (ks_idx >= *self.array_len_ptr()) {
                 *self.array_len_ptr() = ks_idx + 1;
+                self.sync_named_length(h);
             }
         }
     }
@@ -1659,6 +1662,36 @@ fn TVal? HObject.get_array_idx(&self, uint idx) {
 /// Store a value in the dense array part, growing it if needed. Returns false
 /// when the index cannot go there, because of overflow or a failed grow, and the
 /// caller should then fall through to put_prop.
+/// Keep a materialised named "length" property in sync with array_len_ptr.
+///
+/// Most arrays never get a named "length" entry at all — array_len_ptr is the
+/// sole source of truth and every reader (get_prop, get_prop_proto, for-in,
+/// JSON.stringify) knows to fall back to it. But SETALEN (array literals) and
+/// arr_set_length_or_throw both call put_prop with the "length" key, which
+/// creates a real prop_values() slot holding a TVal snapshot of the length.
+/// Once that slot exists, any later write that bumps array_len_ptr through a
+/// fast path bypassing put_prop's own key==length_key branch — the dense
+/// indexed-store fast paths here and in vm_property.c3's PUTPROP handler —
+/// must update the same slot, or a reader that finds the named property first
+/// (find_prop_idx succeeds before the array_len_ptr fallback is ever reached)
+/// sees the stale value frozen at whatever SETALEN last wrote. This is a
+/// no-op, no lookup beyond the one find_prop_idx, for the (overwhelmingly
+/// common) case where no such property exists.
+fn void HObject.sync_named_length(&self, heap::Heap* h) {
+    if (!self.flags.exotic_array) return;
+    void* length_key = (void*)h.strs[heap::BuiltinStr.LENGTH];
+    int idx = self.find_prop_idx(length_key, h);
+    if (idx < 0) return;
+    ulong len = (ulong)*self.array_len_ptr();
+    TVal len_tv;
+    if (len <= (ulong)types::FASTINT_MAX) {
+        len_tv.set_fastint((long)len);
+    } else {
+        len_tv.set_number((double)len);
+    }
+    self.prop_values()[idx] = len_tv;
+}
+
 fn bool HObject.set_array_idx(&self, uint idx, TVal val, heap::Heap* h) {
     if (idx >= self.array_size) {
         uint new_size = self.array_size;

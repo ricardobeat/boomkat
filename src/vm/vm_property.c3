@@ -2145,6 +2145,12 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             // Update .length fast: use array_length field directly (ARRAY only)
                             if (hobj.get_class() == hobject::ObjClass.ARRAY && idx >= *hobj.array_len_ptr()) {
                                 *hobj.array_len_ptr() = idx + 1;
+                                // A "length" data property can already be
+                                // materialised in the named table (e.g. by
+                                // SETALEN for an array literal); this shadow
+                                // update must not leave it stale. See
+                                // hobject.c3's sync_named_length.
+                                hobj.sync_named_length(ds.vm.heap);
                             }
                             return (TVal){};
                         }
