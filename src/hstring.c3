@@ -21,6 +21,22 @@ const uint FNV1A_OFFSET_BASIS = 0x811C_9DC5;
 /// FNV-1a 32-bit prime.
 const uint FNV1A_PRIME        = 0x0100_0193;
 
+/// Maximum byte length of a single string (2^30 - 1, matching QuickJS's cap).
+///
+/// This is a deliberate implementation limit, not a consequence of the data
+/// layout. `blen` is a `uint`, so an unbounded `a.blen + b.blen` wraps and the
+/// undersized buffer that follows corrupts the heap; capping well below 2^32
+/// leaves every such sum representable. Every site that computes a new string
+/// length must do so in 64 bits and run it through `length_exceeds_max` before
+/// allocating, so the check itself cannot wrap.
+const ulong MAX_STRING_BYTES = 0x3FFF_FFFF;
+
+/// True when `len` is past the maximum representable string length.
+///
+/// Takes a `ulong` so callers widen before they add: the whole point is that
+/// the sum being tested is computed in 64 bits.
+macro bool length_exceeds_max(ulong len) => len > MAX_STRING_BYTES;
+
 /// Maximum valid ECMAScript array index (2^32 - 2).
 const uint MAX_ARRIDX = 0xFFFF_FFFE;
 
@@ -465,6 +481,14 @@ fn uint scan_backwards_n(char[] data, uint start, uint n) @local {
 ///
 /// Returns the new HString, or a fault if allocation fails.
 fn HString*? hstring_alloc(void* heap_ptr, char[] data, uint hash) {
+    // Backstop for the string-length cap. Callers are expected to check first,
+    // so they can raise a catchable RangeError naming the operation; refusing
+    // here as an allocation failure keeps a missed caller from writing a
+    // wrapped `blen` into the header.
+    if (length_exceeds_max((ulong)data.len)) {
+        return duktape::types::ALLOC_ERROR~;
+    }
+
     usz total = HSTRING_HDR_SIZE + (usz)data.len + 1;  // +1 for NUL
 
     void* raw = ((heap::Heap*)heap_ptr).alloc_no_gc(total) ?? null;

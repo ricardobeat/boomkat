@@ -1844,7 +1844,19 @@ fn TVal? Vm.run(Vm* vm) {
                     int int_len = hstring::int_to_buf(int_val, &int_buf, 32);
                     if (int_len > 0) {
                         uint s_len = str.blen;
-                        uint total = s_len + (uint)int_len;
+                        // The cap bounds s_len well below 2^32, so this sum
+                        // cannot wrap; it can still land past the cap, which
+                        // must surface as a RangeError rather than a failed
+                        // allocation returning a null string.
+                        ulong total64 = (ulong)s_len + (ulong)int_len;
+                        if (hstring::length_exceeds_max(total64)) {
+                            if (!vm_throw_error(vm, vm.heap.range_err_proto, "Invalid string length", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                return VM_ERROR~;
+                            }
+                            if (ds.needs_restart) break;
+                            continue;
+                        }
+                        uint total = (uint)total64;
                         char[544] stack_buf;
                         char* buf;
                         bool heap_allocated = false;
@@ -1904,7 +1916,18 @@ fn TVal? Vm.run(Vm* vm) {
                 if (try ls = left_str && try rs = right_str) {
                     uint a_len = ls.blen;
                     uint b_len = rs.blen;
-                    uint total = a_len + b_len;
+                    // Widened before the add: two lengths at the cap still sum
+                    // to well under 2^32 here, whereas a `uint` sum would wrap
+                    // and undersize the buffer the copies below write into.
+                    ulong total64 = (ulong)a_len + (ulong)b_len;
+                    if (hstring::length_exceeds_max(total64)) {
+                        if (!vm_throw_error(vm, vm.heap.range_err_proto, "Invalid string length", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                            return VM_ERROR~;
+                        }
+                        if (ds.needs_restart) break;
+                        continue;
+                    }
+                    uint total = (uint)total64;
 
                     // Use stack buffer for small strings, heap for large
                     char[512] stack_buf;
@@ -2009,7 +2032,18 @@ fn TVal? Vm.run(Vm* vm) {
                     int int_len = hstring::int_to_buf(imm, &int_buf, 32);
                     if (int_len > 0) {
                         uint s_len = str.blen;
-                        uint total = s_len + (uint)int_len;
+                        // Widened for the same reason as the ADD fast path: the
+                        // cap keeps the sum from wrapping, and a result past the
+                        // cap has to raise a RangeError.
+                        ulong total64 = (ulong)s_len + (ulong)int_len;
+                        if (hstring::length_exceeds_max(total64)) {
+                            if (!vm_throw_error(vm, vm.heap.range_err_proto, "Invalid string length", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                return VM_ERROR~;
+                            }
+                            if (ds.needs_restart) break;
+                            continue;
+                        }
+                        uint total = (uint)total64;
                         char[544] stack_buf;
                         char* buf;
                         bool heap_allocated = false;
@@ -2060,7 +2094,16 @@ fn TVal? Vm.run(Vm* vm) {
                         int int_len = hstring::int_to_buf(imm, &int_buf, 32);
                         if (int_len > 0) {
                             uint s_len = left_str.blen;
-                            uint total = s_len + (uint)int_len;
+                            // Widened for the same reason as the ADD fast path.
+                            ulong total64 = (ulong)s_len + (ulong)int_len;
+                            if (hstring::length_exceeds_max(total64)) {
+                                if (!vm_throw_error(vm, vm.heap.range_err_proto, "Invalid string length", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                    return VM_ERROR~;
+                                }
+                                if (ds.needs_restart) break;
+                                continue;
+                            }
+                            uint total = (uint)total64;
                             char[544] stack_buf;
                             char* buf;
                             bool heap_allocated = false;

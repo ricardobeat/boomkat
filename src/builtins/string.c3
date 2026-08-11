@@ -1658,13 +1658,20 @@ fn void builtin_string_proto_concat(BuiltinContext* ctx) {
     // Concatenate all into a buffer. First, coerce and collect all argument strings.
     usz max_args = ctx.argc < 256 ? (usz)ctx.argc : 256;
     HString*[256] arg_strs;
-    uint total_len = len;
+    // Accumulated in 64 bits: 256 arguments each near the cap sum past 2^32,
+    // and a wrapped total would undersize the buffer the copies below fill.
+    ulong total64 = (ulong)len;
     for (usz i = 0; i < max_args; i++) {
         HString* arg_str = builtin_to_string_vm(ctx, &ctx.regs[ctx.base_reg + i]);
         if (ctx.should_throw) { ctx.result.set_undefined(); return; }
         arg_strs[i] = arg_str;
-        if (arg_str != null) total_len += arg_str.blen;
+        if (arg_str != null) total64 += (ulong)arg_str.blen;
     }
+    if (hstring::length_exceeds_max(total64)) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "Invalid string length");
+        return;
+    }
+    uint total_len = (uint)total64;
 
     // Allocate output buffer and copy.
     char* out_buf = (char*)alloc::malloc_try(mem, (sz)((usz)total_len + 1)) ?? null;
@@ -2527,21 +2534,34 @@ fn void builtin_string_proto_repeat(BuiltinContext* ctx) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "Invalid count value");
         return;
     }
-    uint count = (uint)(long)count_d;
-
-    if (count == 0 || s_hstr.blen == 0) {
+    // A zero count, or a receiver with nothing to repeat, yields "" whatever
+    // the count is. This has to precede the length check: an empty receiver has
+    // a representable result for every finite count, so `"".repeat(2**32)` is
+    // "" and not a RangeError. The count stays a double until here, since
+    // narrowing it first is what let 2**32 wrap to 0 and 1e10 to 1410065408.
+    if (count_d == 0 || s_hstr.blen == 0) {
         HString* empty = ctx.heap.str(heap::BuiltinStr.EMPTY);
         ctx.result.set_string(empty);
         return;
     }
 
+    // The product is formed in double, which represents every finite count
+    // exactly up to 2^53 and saturates rather than wrapping above that, so a
+    // count of 2^32 or 1e10 is compared at its true magnitude.
+    double total_d = (double)s_hstr.blen * count_d;
+    if (total_d > (double)hstring::MAX_STRING_BYTES) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "Invalid string length");
+        return;
+    }
+    ulong count64 = (ulong)count_d;
+
     // Build repeated string
-    usz total = (usz)s_hstr.blen * (usz)count;
+    usz total = (usz)s_hstr.blen * (usz)count64;
     char* buf = (char*)ctx.heap.alloc_func(ctx.heap.heap_udata, total + 1);
     if (buf == null) { ctx.result.set_undefined(); return; }
     char* src = s_hstr.get_cstr();
-    for (uint i = 0; i < count; i++) {
-        mem::copy(&buf[i * s_hstr.blen], src, (sz)(s_hstr.blen));
+    for (ulong i = 0; i < count64; i++) {
+        mem::copy(&buf[i * (ulong)s_hstr.blen], src, (sz)(s_hstr.blen));
     }
     buf[total] = 0;
 
@@ -2689,8 +2709,15 @@ fn void builtin_string_proto_padStart(BuiltinContext* ctx) {
     char[] fill_data = fill_hstr.get_data();
     char[] src = s_hstr.get_data();
 
-    // Worst case every pad unit is a 4-byte codepoint.
-    usz cap = (usz)pad_units * 4 + (usz)src.len + 1;
+    // Worst case every pad unit is a 4-byte codepoint. Checked in 64 bits
+    // against the cap before allocating: maxLength is caller-controlled up to
+    // 2^32, which would otherwise reserve gigabytes for one padded string.
+    ulong cap64 = (ulong)pad_units * 4 + (ulong)src.len + 1;
+    if (hstring::length_exceeds_max(cap64)) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "Invalid string length");
+        return;
+    }
+    usz cap = (usz)cap64;
     char* buf_ptr = (char*)ctx.heap.alloc_func(ctx.heap.heap_udata, cap);
     if (buf_ptr == null) { ctx.result.set_undefined(); return; }
 
@@ -2743,7 +2770,13 @@ fn void builtin_string_proto_padEnd(BuiltinContext* ctx) {
     char[] fill_data = fill_hstr.get_data();
     char[] src = s_hstr.get_data();
 
-    usz cap = (usz)src.len + (usz)pad_units * 4 + 1;
+    // See padStart: sized in 64 bits and capped before the allocation.
+    ulong cap64 = (ulong)src.len + (ulong)pad_units * 4 + 1;
+    if (hstring::length_exceeds_max(cap64)) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "Invalid string length");
+        return;
+    }
+    usz cap = (usz)cap64;
     char* buf_ptr = (char*)ctx.heap.alloc_func(ctx.heap.heap_udata, cap);
     if (buf_ptr == null) { ctx.result.set_undefined(); return; }
 
