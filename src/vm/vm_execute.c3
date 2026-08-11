@@ -1244,8 +1244,20 @@ fn TVal? Vm.execute(Vm* vm, CompiledFunction* func) {
 
     TVal? result = Vm.run(vm);
 
+    // A top-level uncaught error must survive the drain below: each queued
+    // job runs through vm_call_handler_fn_impl, which unconditionally clears
+    // heap.has_error (so a stale error from a PRIOR job can't resurface
+    // inside the next one) even though nothing here queued a new error yet.
+    // That clear also wipes the flag for the uncaught error `run` just set,
+    // while error_value itself is untouched and stays GC-rooted (see
+    // Heap.mark/error_value), so latch the flag and restore it once the
+    // drain (which legitimately owns has_error while jobs run) is done.
+    bool had_error = vm.heap.has_error;
+
     // Drain microtask queue after top-level script execution
     vm.heap.drain_microtasks((void*)vm);
+
+    if (had_error) vm.heap.has_error = true;
 
     return result;
 }
@@ -1303,7 +1315,14 @@ fn TVal? Vm.execute_in_env(Vm* vm, CompiledFunction* func, EnvRecord* env) {
 
     TVal? result = Vm.run(vm);
 
+    // See the matching latch in Vm.execute(): the drain below runs jobs
+    // through vm_call_handler_fn_impl, which unconditionally clears
+    // heap.has_error, wiping the flag for the uncaught error `run` just set.
+    bool had_error = vm.heap.has_error;
+
     vm.heap.drain_microtasks((void*)vm);
+
+    if (had_error) vm.heap.has_error = true;
 
     return result;
 }
