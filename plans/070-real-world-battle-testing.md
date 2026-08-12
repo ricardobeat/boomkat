@@ -12,28 +12,34 @@ decimal.js, bignumber.js, mathjs, jszip, papaparse, crypto-js, protobufjs,
 chance, he, nearley, d3-array, uuid, plus typescript 9 MB and babel 5 MB).
 QuickJS (`out/qjs`) is the differential oracle throughout.
 
-Status: B1-B11, B13, B14 and B15 fixed. B12 withdrawn — it was a sloppy-mode
-fixture, not an engine bug. The E-series is open and is all that remains.
+Status: B1-B11 and B13-B17 fixed. B12 withdrawn — it was a sloppy-mode
+fixture, not an engine bug. **B18 is open** (an async callback invoked by a
+builtin does not return a promise), along with the E-series.
+
+Library loading: **5 of the 8 original failures now pass** — four of them
+fixed by B16 alone. protobufjs and typescript still fail; babel is untested.
 
 As of 2026-08-12 **every known test failure is closed**: the full test262
 corpus runs **49814 pass / 0 fail** (verified against a freshly built
-`out/test262_runner`), the local suite is 322/0, `test/engine/` is 106/0,
+`out/test262_runner`), the local suite is 324/0, `test/engine/` is 106/0,
 golden-bytecode is 30/30, and the module, uncaught, rejection and robustness
 surfaces are all clean. The run immediately before the last two fixes was
 49812 pass / 2 fail, and those 2 were B15.
 
-**A green corpus is not a working engine**, though: B16 below is a silent
-wrong-register read that miscompiles ordinary code and breaks jszip, and
-test262 does not catch it. Four library load failures remain open.
+**A green corpus is not a working engine.** B16, B17 and B18 were all present
+while those 49,814 tests passed: a wrong-register call, a rejection of
+`a && b.every((x, i) => ...)`, and async callbacks that never return promises.
+Each needs two ordinary constructs nested in a specific way, and the suite
+exercises them only separately.
 
-B14 and B15 were both found by *re-running the suites against a freshly built
-batch binary* rather than by new probing — see the measurement note below.
-Four library load failures remain open and are tracked separately.
+B14 and B15 were found by re-running the suites against a freshly built batch
+binary rather than by new probing (see the measurement note below); B16 and
+B17 were found by loading real library bundles.
 
 ## Contents
 
 - [Scope note: strict-only is not the cause](#scope-note-strict-only-is-not-the-cause)
-- [Headline: 8 of 21 libraries fail to load](#headline-8-of-21-libraries-fail-to-load)
+- [Headline: 8 of 21 libraries failed to load; 5 now pass](#headline-8-of-21-libraries-failed-to-load-5-now-pass)
 - [B1: register allocation silently wraps at 256](#b1-register-allocation-silently-wraps-at-256)
 - [B2: regexp literal after a control-clause `)`](#b2-regexp-literal-after-a-control-clause-)
 - [B3: string `+=` is quadratic](#b3-string--is-quadratic)
@@ -50,6 +56,8 @@ Four library load failures remain open and are tracked separately.
 - [B14: `Array.prototype.pop` reads a hole as `undefined`](#b14-arrayprototypepop-reads-a-hole-as-undefined)
 - [B15: a `yield` operand ignores the enclosing `[In]` parameter](#b15-a-yield-operand-ignores-the-enclosing-in-parameter)
 - [B16: a call's callee is materialized into the wrong register](#b16-a-calls-callee-is-materialized-into-the-wrong-register)
+- [B17: an arrow call argument rejected as a bare arrow operand](#b17-an-arrow-call-argument-rejected-as-a-bare-arrow-operand)
+- [B18: an async callback invoked by a builtin does not return a promise](#b18-an-async-callback-invoked-by-a-builtin-does-not-return-a-promise)
 - [Note on measurement: the batch binary is a separate build](#note-on-measurement-the-batch-binary-is-a-separate-build)
 - [E1: no way to interrupt a runaway script](#e1-no-way-to-interrupt-a-runaway-script)
 - [E2: embedding API gaps](#e2-embedding-api-gaps)
@@ -68,47 +76,54 @@ fails here. These are engine bugs, not scope decisions.
 
 ---
 
-## Headline: 8 of 21 libraries fail to load
+## Headline: 8 of 21 libraries failed to load; 5 now pass
 
 Each bundle was prefixed with a host shim
 (`globalThis.window = globalThis.self = globalThis.global = globalThis`)
 and followed by `console.log("LOADED")`, then run under both engines.
-**All 21 load under QuickJS. 8 fail here.**
+All 21 load under QuickJS; 8 failed here originally.
 
-| library | duktape_c3 | first error |
-|---|---|---|
-| underscore 1.13.6 | FAIL | `Cannot read properties of undefined (reading 'length')` (B1) |
-| marked 4.3.0 | FAIL | `SyntaxError: unexpected token in expression` (B2) |
-| bluebird 3.7.2 | FAIL | `Cannot read properties of undefined` |
-| jszip 3.10.1 | FAIL | `Cannot read properties of undefined` |
-| handlebars 4.7.8 | FAIL | `object is not a function` |
-| protobufjs 7.4.0 | FAIL | `undefined is not a function` |
-| typescript 5.4.5 | FAIL | exit 2 |
-| babel 7.24.7 | FAIL | exit 1 |
-| lodash, moment, immutable, acorn, decimal.js, bignumber.js, mathjs, papaparse, crypto-js, chance, he, nearley, d3-array, uuid | PASS | — |
+**Original state (8 failing).** Re-verified 2026-08-12 after B1-B17:
 
-Two failures are root-caused: underscore to B1, marked to B2.
+| library | was | now | root cause |
+|---|---|---|---|
+| underscore 1.13.6 | FAIL | **PASS** | B1 (>255 registers) |
+| marked 4.3.0 | FAIL | **PASS** | B2, then B16 |
+| bluebird 3.7.2 | FAIL | **PASS** | B16 |
+| jszip 3.10.1 | FAIL | **PASS** | B16 |
+| handlebars 4.7.8 | FAIL | **PASS** | B16 |
+| protobufjs 7.4.0 | FAIL | FAIL | `request must be specified` — see below |
+| typescript 5.4.5 | FAIL | FAIL | B17 fixed the parse error; now dies in COMPILATION (rc=138, a signal) on the 9 MB source before executing a line. A depth/size limit, not a syntax bug. |
+| babel 7.24.7 | FAIL | ? | not re-tested |
 
-The other six are **not** explained by B1, and are still unidentified.
-Counting function declarations per scope rules it out: only underscore
-concentrates them in a single scope (109 at two-space indent). bluebird
-(149), jszip (148), protobufjs (131) and handlebars (76) spread theirs
-across per-module closures, so none of them approaches the 256-register
-ceiling in any one scope. Their errors — `Cannot read properties of
-undefined`, `object is not a function`, `undefined is not a function` —
-share the signature of a value silently becoming `undefined`, but the
-cause is different and needs its own minimisation. typescript and babel
-fail with bare non-zero exits (2 and 1) and are the least useful starting
-points given their size.
+**Five of the eight are fixed, four of them by B16 alone.** Their symptoms had
+looked unrelated — handlebars reported `Object.defineProperty called on
+non-object`, jszip and marked reported `undefined is not a function` — which
+is why they were carried as four separate unexplained failures for weeks. One
+missing guard term accounted for all of them.
 
-Investigating these six is the highest-value follow-up from this plan:
-they are six independent real-world reproductions of bugs not yet
-characterised.
+protobufjs's remaining error is thrown by protobufjs itself, not by the
+engine, and it loads far enough to run its own argument validation; it may not
+be an engine bug at all. Worth confirming before spending on it.
+The original analysis here reasoned from function-declaration counts per scope
+and concluded the remaining six needed "six independent minimisations". That
+was wrong in an instructive way: bluebird, jszip, handlebars and marked shared
+a **single** root cause (B16), and their three different-looking error messages
+were all the same wrong-register read surfacing at different points. Distinct
+symptoms are not evidence of distinct bugs.
 
-This is the number that matters most: the conformance gate is green at
-49,814 tests, but a majority-of-the-ecosystem sample of real bundles has a
-38% load failure rate. Conformance and real-world compatibility have
-diverged, which is what motivated this plan.
+What actually found it was not counting anything about the source. It was
+picking ONE failure (jszip), injecting a per-module load trace into its
+browserify loader to get the failing module number, extracting that module's
+body, and cutting it down to five lines — then narrowing the trigger by
+probing adjacent shapes against node under `"use strict"`. That took one
+sitting and cleared four libraries.
+
+**The lesson for the rest of this plan:** minimise one failure completely
+rather than triaging several partially. And note that the conformance gate was
+green at 49,814 tests through all of B16, B17 and B18 — test262 could not have
+found any of them, because each needs two ordinary constructs *nested in a
+specific way* that the suite exercises only separately.
 
 ---
 
@@ -742,7 +757,7 @@ built batch binary.
 
 ## B16: a call's callee is materialized into the wrong register
 
-**Severity: high. Silent wrong-register read. OPEN.**
+**Severity: high. Silent wrong-register read. Fixed 2026-08-12 in `44acadc8`.**
 
 ```js
 (function(e){
@@ -798,16 +813,92 @@ this shape:
 Found by bisecting the minified bundle down to the 5 lines above, via a
 per-module load trace injected into the browserify loader.
 
-**Not yet fixed.** A staged regression test covering every shape above, with
-the failing and passing cases separated, is at
-`test/pending/test_call_callee_register.js` — it is outside `test/` so it does
-not break the green sweep; move it up as part of the fix. It passes in full on
-node under `"use strict"`.
+**Root cause.** The callee's `GETVAR` is STRIPPED from the code stream up
+front, on the promise that `CALL_VAR` at the end of the call will load the
+callee itself. But `CALL_VAR` is only emitted when `undef_this` holds, and
+that is false whenever a receiver register is pending. A stale
+`call_prop_obj_reg` left by the enclosing property assignment made the strip
+fire and then emit a plain `CALL`, reading a register nothing had written.
+
+The sibling `getglobal_callee` guard already carried the
+`call_prop_obj_reg == REG_NONE` precondition, with a comment naming this exact
+hazard — "the same non-method precondition that makes the CALL_GLOBAL emission
+below reachable". `getvar_callee` was simply missing it. The fix adds the same
+term. **A guard that exists on one of two parallel paths is a bug report about
+the other one.**
+
+Regression coverage in `test/test_call_callee_register.js`, pinning all 15
+probed shapes — the failing ones and the passing ones, so a later change
+cannot narrow the guard to the wrong condition.
 
 The whole test262 corpus (49814 tests) passes with this bug present, so **the
 suite cannot be the oracle here**; node under `"use strict"` is. Likewise
 `./out/qjs` on a plain script is sloppy mode and will mislead on the
 shadowing cases.
+
+---
+
+## B17: an arrow call argument rejected as a bare arrow operand
+
+**Severity: high (rejects valid, extremely common code). Fixed 2026-08-12 in
+`77f06187`.**
+
+```js
+true && a.every((x, i) => x > 0)   // SyntaxError: arrow function in
+                                    // expression position not allowed
+```
+
+ArrowFunction is AssignmentExpression-level and may not appear directly as a
+binary operand (`1 + () => 2`, ES §13.16/§13.15). `check_no_arrow_rhs`
+enforces that with a `last_was_arrow_expr` flag — but an arrow inside a
+**call's parentheses** is not that. The flag survived the argument parse, and
+nothing cleared it before the enclosing `binary_expr`'s post-RHS check.
+
+Any binary operator, any arrow arity: `&&`, `||`, `??`, `+`, `===` all
+rejected. This is the line that broke **typescript 5.4.5**:
+
+```js
+a.length === b.length && a.every((x, i) => equalityComparer(x, b[i]))
+```
+
+Fixed by clearing the flag when a CallExpression finishes parsing. The
+negative cases are now pinned in `compile_error_messages` so a later change
+cannot "fix" an over-rejection by dropping the guard entirely.
+
+---
+
+## B18: an async callback invoked by a builtin does not return a promise
+
+**Severity: medium. OPEN — partial fix attempted and reverted, see below.**
+
+```js
+[1, 2].map(async (x) => x)[0]        // ours: 1        node: Promise
+[1, 2].filter(async () => false)     // ours: []       node: [1, 2]
+```
+
+A plain function *returning* a promise works. An **async function** called by
+a builtin does not: it runs to completion and hands back the raw return value.
+`filter` is the sharpest case — a promise is always truthy, so an async
+predicate must keep every element, and ours drops them all.
+
+Root cause: `vm_call_fn_impl` (`src/vm/vm_execute.c3`, "Case 3: compiled
+function on HObject") is the path builtins use to invoke a JS callback. It
+handles *resuming* an async function (`gs_r.async_promise`) but has no setup
+for an **initial** async call — no `promise_create`, no `ACT_FLAG_ASYNC`. The
+CALL opcode's path in `vm_calls.c3` does both.
+
+**A one-block fix is NOT sufficient.** Adding the `promise_create` +
+`ACT_FLAG_ASYNC` setup there does make `map`/`filter`/`some` return real
+promises that resolve correctly — but a callback that actually *suspends*
+(`async x => { await null; return x; }`) then resolves to `null`, because this
+path re-enters the VM synchronously and has no generator state to suspend
+into. That is strictly worse than the current behaviour, so the attempt was
+reverted rather than shipped.
+
+Doing this properly means giving the call_fn path the same
+suspend/resume machinery the CALL opcode has. Affects every builtin that
+invokes a callback: `map`, `filter`, `some`, `every`, `forEach`, `sort`
+comparators, `Promise` executors, and accessors.
 
 ---
 
