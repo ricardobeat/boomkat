@@ -285,6 +285,7 @@ fn PrivateNameEntry*? CompilerContext.resolve_private_name(&self, char[] name) {
 /// `get #x` + `set #x` pair for the same name merges into one entry; any
 /// other re-declaration of the same name is a SyntaxError.
 fn void? CompilerContext.prescan_private_names(&self) {
+    io::eprintfn("[SCAN] private_names.c3.prescan_private_names");
     uint saved_pos    = self.lexer.pos;
     uint saved_line    = self.lexer.line;
     uint saved_col      = self.lexer.col;

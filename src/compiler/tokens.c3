@@ -265,6 +265,25 @@ fn bool CompilerContext.check_arrow(&self) {
     return self.check(TokenType.ARROW) && !self.lexer.seen_line_term;
 }
 
+/// True when the next token can start the PropertyName of an accessor
+/// definition: `[` (computed), an IdentifierName (plain identifier or any
+/// keyword used as a name), a string literal, or a numeric literal.
+///
+/// This is the lookahead that decides whether a `get`/`set` key opens an
+/// accessor at all. Deciding it by the absence of `:`/`(` instead treats
+/// `{ get }` and `{ get, set }` — shorthand properties named `get`/`set`,
+/// which minified bundles emit — as a malformed accessor. The accepted set
+/// must stay in sync with the accessor PropertyName parser in
+/// `object_literal` (expressions.c3) and `class_body` (class.c3).
+fn bool CompilerContext.at_accessor_property_name(&self) {
+    TokenType tt = self.peek_type();
+    return tt == TokenType.LBRACKET
+        || tt == TokenType.IDENTIFIER
+        || tt == TokenType.STRING
+        || tt == TokenType.NUMBER
+        || lexer::keyword_to_string(tt).len > 0;
+}
+
 /// Read the next token as a property name (IdentifierName).
 /// After '.' or other contexts where any keyword can be used as a name,
 /// this returns the string value regardless of whether the token is an
@@ -337,6 +356,7 @@ fn bool CompilerContext.peek2_is_lparen(&self) {
 /// Non-destructive: the lexer, its lookahead and the compiler pushback stack
 /// are all restored before returning.
 fn bool CompilerContext.rhs_may_write_registers(&self) {
+    io::eprintfn("[SCAN] tokens.c3.rhs_may_write_registers");
     // A pending pushback would have to be replayed in order; rather than
     // reimplement that, treat it as "unknown" and take the safe answer.
     if (self.pushback_count > 0) return true;
@@ -820,6 +840,7 @@ fn bool? CompilerContext.match_static_block_prefix(&self) {
 /// Depth tracking: LPAREN/RPAREN increment/decrement a depth counter; the scan stops
 /// when a SEMICOLON is seen at depth 0, or when a RPAREN is seen at depth 0.
 fn bool CompilerContext.skip_expr_lex(&self) {
+    io::eprintfn("[SCAN] tokens.c3.skip_expr_lex");
     // Skip tokens until matching ')' or ';' is found at depth 0. This must
     // additionally track function expressions (function NAME(args){body}) and
     // braces so an arrow/function body is not mistaken for an enclosing

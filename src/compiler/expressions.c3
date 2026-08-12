@@ -163,6 +163,7 @@ fn ushort? CompilerContext.assignment_expr(&self) {
 }
 
 fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
+    io::eprintfn("[SCAN] expressions.c3.assignment_expr_inner");
     // Reset so a parenthesized arrow LHS doesn't survive past the destructure check.
     self.last_was_arrow_expr = false;
     // Consume the caller's void-context signal exactly once, into a local, and
@@ -1429,6 +1430,7 @@ fn ushort? CompilerContext.unary_expr(&self) {
 /// Split out so unary_expr can set last_was_unary_op AFTER the recursive
 /// operand parse, which would otherwise clobber it.
 fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) {
+    io::eprintfn("[SCAN] expressions.c3.unary_expr_inner");
     switch (tt) {
         // ES §13.5: a UnaryExpression's value is the operator's result, never
         // a Reference (AssignmentTargetType ~invalid~). clear_ref_markers drops
@@ -2936,6 +2938,7 @@ fn ushort? CompilerContext.emit_tagged_template(&self, ushort callee_reg) {
 
 /// Parse new expression: new Constructor(args).
 fn ushort? CompilerContext.new_expr(&self) {
+    io::eprintfn("[SCAN] expressions.c3.new_expr");
     self.expect(TokenType.NEW)!;
 
     ushort ctor_reg;
@@ -3333,6 +3336,7 @@ fn ushort? CompilerContext.new_expr(&self) {
 
 /// Parse member expression: property accesses and computed accesses.
 fn ushort? CompilerContext.member_expr(&self) {
+    io::eprintfn("[SCAN] expressions.c3.member_expr");
     self.callee_is_eval = false;  // Reset before each callee resolution
     // Reset last_was_member: if the loop runs, it will be set to true.
     // This ensures that a non-member result (simple variable, literal) does
@@ -5081,7 +5085,12 @@ fn ushort? CompilerContext.object_literal(&self) {
                 // `{ yield(){} }` use the property-name path, not this one.
 
                 // Check for getter/setter: `get prop() {}` / `set prop(v) {}`
-                // If key is "get" or "set" AND next token is a property key (not `:` or `(`)
+                // `get`/`set` only opens an accessor when a PropertyName
+                // actually follows (ES2015 §12.2.6 MethodDefinition). Testing
+                // for the ABSENCE of `:`/`(` instead would claim the accessor
+                // shape for `{ get }` and `{ get, set }` — shorthand named
+                // `get`/`set`, which real bundles (typescript 5.4.5) use — and
+                // then fail on the missing name with a bare COMPILE_ERROR.
                 // Generator-method shorthand forbids the getter/setter shape, `*get` / `*set`
                 // would otherwise be misparsed as a method shorthand that named `get`/`set`,
                 // so we disable the detection entirely when a star was consumed.
@@ -5093,7 +5102,7 @@ fn ushort? CompilerContext.object_literal(&self) {
                 // fails as `get m(){}` — two names with no separator — which
                 // is the SyntaxError the spec requires.
                 if (!is_generator_method && key_tt == TokenType.IDENTIFIER && !key_tok.has_escape
-                        && !self.check(TokenType.COLON) && !self.check(TokenType.LPAREN)) {
+                        && self.at_accessor_property_name()) {
                     if (key_tok.str_value.len == 3
                         && key_tok.str_value[0] == 'g'
                         && key_tok.str_value[1] == 'e'
@@ -5137,6 +5146,10 @@ fn ushort? CompilerContext.object_literal(&self) {
                         } else if (prop_tt == TokenType.NUMBER) {
                             prop_tok = self.advance()!;
                         } else {
+                            // Only reachable for a token that
+                            // at_accessor_property_name() admitted but this
+                            // parser cannot key on (BigInt literals).
+                            self.record_error("unsupported property name after 'get'/'set'");
                             return COMPILE_ERROR~;
                         }
 

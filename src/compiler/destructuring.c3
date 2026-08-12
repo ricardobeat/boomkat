@@ -303,6 +303,7 @@ fn void? CompilerContext.object_destructure(&self, ScopeKind kind, bool is_lexic
 ///
 /// The actual lexer state is never modified; the scan is purely speculative.
 fn bool CompilerContext.primary_is_member_target(&self) {
+    io::eprintfn("[SCAN] destructuring.c3.primary_is_member_target");
     // Determine the open/close bracket pair from the upcoming token.
     TokenType open_tt  = self.peek_type();
     TokenType close_tt = (open_tt == TokenType.LBRACE)

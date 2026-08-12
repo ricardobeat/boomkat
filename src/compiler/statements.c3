@@ -885,7 +885,7 @@ fn void? CompilerContext.check_module_duplicate_lexical_names(&self) {
     self.check_duplicate_lexical_names(&spans[0], n)!;
     for (uint i = 0; i < n; i++) {
         char[] name = self.name_span_text(spans[i]);
-        for (ushort h = 0; h < self.hoisted_fn_count; h++) {
+        for (uint h = 0; h < self.hoisted_fn_count; h++) {
             if (str_eq(self.hoisted_fn_names[h], name)) {
                 return self.fail("Identifier has already been declared")~;
             }
@@ -948,7 +948,7 @@ fn void? CompilerContext.check_module_exports_resolvable(&self) {
         for (uint s = 0; s < self.scope_depth && !found; s++) {
             if (str_eq(self.scope_stack[s].name, local)) found = true;
         }
-        for (ushort h = 0; h < self.hoisted_fn_count && !found; h++) {
+        for (uint h = 0; h < self.hoisted_fn_count && !found; h++) {
             if (str_eq(self.hoisted_fn_names[h], local)) found = true;
         }
         for (uint d = 0; d < mod.func_decl_count && !found; d++) {
@@ -988,6 +988,7 @@ fn void? CompilerContext.hoist_lexical_tdz_checks(&self) {
 /// Each name's position in the source text is stored in `spans` so the
 /// caller can reconstruct the `char[]` slice from `lexer.source`.
 fn uint CompilerContext.pre_scan_lexical_decls(&self, NameSpan* spans, uint capacity) {
+    io::eprintfn("[SCAN] statements.c3.pre_scan_lexical_decls");
     // --- Save lexer state ---
     uint saved_pos    = self.lexer.pos;
     uint saved_line   = self.lexer.line;
@@ -1160,6 +1161,7 @@ fn uint CompilerContext.pre_scan_lexical_decls(&self, NameSpan* spans, uint capa
 /// block contribute. Saves/restores lexer state so normal parsing can
 /// proceed afterwards.
 fn uint CompilerContext.pre_scan_var_decls(&self, NameSpan* spans, uint capacity) {
+    io::eprintfn("[SCAN] statements.c3.pre_scan_var_decls");
     uint saved_pos    = self.lexer.pos;
     uint saved_line   = self.lexer.line;
     uint saved_col    = self.lexer.col;
@@ -1322,6 +1324,7 @@ fn uint CompilerContext.pre_scan_var_decls(&self, NameSpan* spans, uint capacity
 /// Saves and restores the lexer state so normal parsing can proceed afterwards.
 /// Returns the number of names found (0 to MAX_PRESCAN_NAMES).
 fn uint CompilerContext.pre_scan_switch_lexical_decls(&self, NameSpan* spans, uint capacity) {
+    io::eprintfn("[SCAN] statements.c3.pre_scan_switch_lexical_decls");
     // --- Save lexer state ---
     uint saved_pos    = self.lexer.pos;
     uint saved_line   = self.lexer.line;
@@ -2000,6 +2003,7 @@ fn void? CompilerContext.if_statement(&self) {
 
 /// Parse while statement.
 fn void? CompilerContext.while_statement(&self) {
+    io::eprintfn("[SCAN] statements.c3.while_statement");
     self.expect(TokenType.WHILE)!;
     self.expect(TokenType.LPAREN)!;
 
@@ -2265,6 +2269,7 @@ fn void CompilerContext.emit_create_per_iteration_env(&self,
 
 /// Parse for statement (basic for, for-in, for-of, for-await-of).
 fn void? CompilerContext.for_statement(&self) {
+    io::eprintfn("[SCAN] statements.c3.for_statement");
     self.expect(TokenType.FOR)!;
 
     // `for await (LHS of expr)`, ES2018 async iteration (§14.7.5). Only valid
@@ -5327,7 +5332,7 @@ fn void? CompilerContext.function_declaration(&self, bool is_async_decl = false,
             if (fn_name.len > 0) {
                 // Check if already hoisted
                 bool already = false;
-                for (ushort hi = 0; hi < self.hoisted_fn_count; hi++) {
+                for (uint hi = 0; hi < self.hoisted_fn_count; hi++) {
                     if (str_eq(self.hoisted_fn_names[hi], fn_name)) {
                         already = true;
                         break;
@@ -5499,6 +5504,7 @@ fn void? CompilerContext.expect_from(&self) {
 /// Match the contextual keyword `from`, consumes and returns true if the
 /// current token is the identifier "from".
 fn bool CompilerContext.match_from(&self) {
+    io::eprintfn("[SCAN] statements.c3.match_from");
     if (self.peek_type() != TokenType.IDENTIFIER) return false;
     // Peek at the actual token to check the string value
     Token? tok_opt = self.lexer.next_token();
@@ -5524,6 +5530,7 @@ fn void? CompilerContext.expect_as(&self) {
 
 /// Match the contextual keyword `as`.
 fn bool CompilerContext.match_as(&self) {
+    io::eprintfn("[SCAN] statements.c3.match_as");
     if (self.peek_type() != TokenType.IDENTIFIER) return false;
     Token? tok_opt = self.lexer.next_token();
     if (catch _err = tok_opt) return false;
@@ -5607,6 +5614,7 @@ fn bool? CompilerContext.parse_with_clause(&self) {
 /// differently: a string ModuleExportName must be well-formed Unicode, and a
 /// `NamedExports` with no `from` clause may not use one at all (both below).
 fn char[]? CompilerContext.parse_module_export_name(&self, bool* was_string = null) {
+    io::eprintfn("[SCAN] statements.c3.parse_module_export_name");
     Token tok = self.lexer.next_token()!;
     if (was_string != null) *was_string = (tok.type == TokenType.STRING);
     if (tok.type == TokenType.STRING) {

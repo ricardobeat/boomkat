@@ -80,6 +80,7 @@ fn bool CompilerContext.is_captured_name(&self, char[] name) {
 /// the scan stops when the expression ends (a closer below the entry depth,
 /// or a top-level `,` / `;`). The lexer state is fully restored on return.
 fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false) {
+    io::eprintfn("[SCAN] captures.c3.pre_scan_captures");
     // --- Save lexer state ---
     uint saved_pos    = self.lexer.pos;
     uint saved_line   = self.lexer.line;

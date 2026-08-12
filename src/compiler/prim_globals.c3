@@ -123,6 +123,7 @@ fn PrimCandidate* prim_intern(PrimCandidate* table, uint* count, char[] name, bo
 /// self.prim_only_name_idxs with the constant-pool indices of proven
 /// primitive-only top-level globals. Lexer state is fully saved and restored.
 fn void CompilerContext.pre_scan_prim_globals(&self) {
+    io::eprintfn("[SCAN] prim_globals.c3.pre_scan_prim_globals");
     // Only Script global scope: modules bind via GETVAR (no GETGLOBAL), and the
     // opcodes are only substituted at global slot scope anyway.
     if (!self.is_global || self.is_module) return;

@@ -1328,6 +1328,7 @@ fn void CompilerContext.emit_destruct_bindings(&self,
 /// Template-aware: a '}' that closes a template substitution is consumed via
 /// scan_template_after_expr() and never counted as a plain RBRACE.
 fn void CompilerContext.skip_braced_block(&self) {
+    io::eprintfn("[SCAN] functions.c3.skip_braced_block");
     uint brace_depth = 1;
     TemplateScan tscan;
     while (brace_depth > 0) {
@@ -1357,6 +1358,7 @@ fn void CompilerContext.skip_braced_block(&self) {
 /// function or Program scope, so hoist_decls must skip it wholesale rather
 /// than brace-walk into a method and mis-hoist that method's locals.
 fn void CompilerContext.skip_class_body(&self) {
+    io::eprintfn("[SCAN] functions.c3.skip_class_body");
     // Advance to the class body's opening '{', which is the first LBRACE at
     // paren/bracket depth 0. The heading before it (name, `extends expr`)
     // may itself contain parens/brackets (e.g. `extends f(a[0])`) whose
@@ -1397,6 +1399,7 @@ fn void CompilerContext.skip_class_body(&self) {
 /// Template-aware: a '}' that closes a template substitution is consumed via
 /// scan_template_after_expr() and never counted as a plain RBRACE.
 fn void CompilerContext.skip_function_body(&self) {
+    io::eprintfn("[SCAN] functions.c3.skip_function_body");
     // Skip '(' ... ')'
     // Template-aware: parameter DEFAULT values can contain templates
     // (`function f(a = ``${x}``) {}`) whose parts must be consumed properly
@@ -1464,6 +1467,7 @@ fn void CompilerContext.skip_function_body(&self) {
 /// already been consumed by the caller; this advances the lexer to just
 /// past the matching closing token.
 fn void CompilerContext.skip_destructure_pattern(&self) {
+    io::eprintfn("[SCAN] functions.c3.skip_destructure_pattern");
     int depth = 1;
     // Template-aware: default values can contain templates whose `${...}`
     // braces must not be counted as pattern nesting.
@@ -1500,6 +1504,7 @@ fn void CompilerContext.skip_destructure_pattern(&self) {
 /// Assumes the outer '(' has already been consumed and the lexer is positioned
 /// at the start of the destructuring pattern ({ or [).
 fn bool CompilerContext.scan_destruct_param_to_arrow(&self) {
+    io::eprintfn("[SCAN] functions.c3.scan_destruct_param_to_arrow");
     int paren_d = 1;   // outer '(' already consumed
     int brace_d = 0;
     int bracket_d = 0;
@@ -1534,6 +1539,7 @@ fn bool CompilerContext.scan_destruct_param_to_arrow(&self) {
 /// Skip past an arbitrary expression in the lexer without compiling.
 /// Tracks paren, brace, and bracket depth.
 fn void CompilerContext.skip_expression(&self) {
+    io::eprintfn("[SCAN] functions.c3.skip_expression");
     uint paren_depth = 0;
     uint brace_depth = 0;
     uint bracket_depth = 0;
@@ -1645,6 +1651,7 @@ fn void CompilerContext.hoist_one_var_name(&self, char[] raw_name, bool is_globa
 ///     the walk tracks both the enclosing bracket kind and whether it is
 ///     currently at a property start.
 fn void? CompilerContext.hoist_var_pattern(&self, bool is_global, bool checks_only, bool opened_with_brace) {
+    io::eprintfn("[SCAN] functions.c3.hoist_var_pattern");
     // is_obj[i] is true when nesting level i was opened by '{'. Level 0 is the
     // caller-consumed opening bracket. Patterns deeper than this are
     // vanishingly rare; on overflow the walk falls back to treating brackets as
@@ -1719,6 +1726,7 @@ fn void? CompilerContext.hoist_var_pattern(&self, bool is_global, bool checks_on
 /// skip_expression, because the key expression ends at a ']' that
 /// skip_expression would treat as a stray closer.
 fn void CompilerContext.skip_bracketed_key(&self) {
+    io::eprintfn("[SCAN] functions.c3.skip_bracketed_key");
     uint depth = 1;
     for (;;) {
         Token? tok_opt = self.lexer.next_token();
@@ -1742,6 +1750,7 @@ fn void CompilerContext.skip_bracketed_key(&self) {
 /// initializer, hoisting names out of it (`var {w: [x] = [4]} = ...` bound
 /// `w`). The default ends at a ',', ']' or '}' seen at nesting depth 0.
 fn void CompilerContext.skip_pattern_default(&self) {
+    io::eprintfn("[SCAN] functions.c3.skip_pattern_default");
     uint paren_depth = 0;
     uint brace_depth = 0;
     uint bracket_depth = 0;
@@ -1787,6 +1796,7 @@ fn void CompilerContext.skip_pattern_default(&self) {
 /// Pre-scan function body for var and function declarations and emit hoisted
 /// bytecode so they are available before any statements run.
 fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = false) {
+    io::eprintfn("[SCAN] functions.c3.hoist_decls");
     // self.is_async doubles as the "saw `async function`" latch between loop
     // iterations below. It must start clear, otherwise, inside an async
     // function's body, the enclosing flag would mark every hoisted plain
@@ -2031,7 +2041,7 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
 
             // Check if already hoisted
             bool already = false;
-            for (ushort hi = 0; hi < self.hoisted_fn_count; hi++) {
+            for (uint hi = 0; hi < self.hoisted_fn_count; hi++) {
                 if (str_eq(self.hoisted_fn_names[hi], fn_name)) {
                     already = true;
                     break;
@@ -2044,11 +2054,10 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
             }
 
             // Record as hoisted
-            if (self.hoisted_fn_count < MAX_HOISTED_FNS) {
+            self.ensure_hoisted_cap();
+            if (self.hoisted_fn_count < self.hoisted_fn_cap) {
                 self.hoisted_fn_names[self.hoisted_fn_count] = fn_name;
                 self.hoisted_fn_count++;
-            } else {
-                self.hoisted_overflow = true;
             }
 
             // Restore lexer to before 'function' so we can re-consume it properly
@@ -2172,7 +2181,7 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
                 // order is caught here. Scripts keep the ES5 behavior where
                 // both are var-scoped and may share a name.
                 if (self.is_module) {
-                    for (ushort hi = 0; hi < self.hoisted_fn_count; hi++) {
+                    for (uint hi = 0; hi < self.hoisted_fn_count; hi++) {
                         if (str_eq(self.hoisted_fn_names[hi], name_tok2.str_value)) {
                             return self.fail("module-level function declaration cannot share a name with a var declaration")~;
                         }
@@ -2279,6 +2288,7 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
 /// check prologue, which must precede every var/function/lexical binding so a
 /// collision throws with no observable side effects (ES2015 §15.1.11).
 fn void? CompilerContext.hoist_global_fn_decls(&self, bool checks_only = false) {
+    io::eprintfn("[SCAN] functions.c3.hoist_global_fn_decls");
     // See hoist_decls: self.is_async is the between-iteration `async function`
     // latch; start it clear and restore the enclosing value (e.g. a module
     // body's top-level-await flag set by compile_module) on exit.
@@ -2484,7 +2494,7 @@ fn void? CompilerContext.hoist_global_fn_decls(&self, bool checks_only = false) 
             // source order lets the final DECLVAR overwrite the earlier
             // global-object bindings at runtime.
             bool already = false;
-            for (ushort hi = 0; hi < self.hoisted_fn_count; hi++) {
+            for (uint hi = 0; hi < self.hoisted_fn_count; hi++) {
                 if (str_eq(self.hoisted_fn_names[hi], fn_name)) {
                     already = true;
                     break;
@@ -2497,11 +2507,12 @@ fn void? CompilerContext.hoist_global_fn_decls(&self, bool checks_only = false) 
             if (already && self.is_module) {
                 return self.fail("duplicate module-level function declaration")~;
             }
-            if (!already && self.hoisted_fn_count < MAX_HOISTED_FNS) {
-                self.hoisted_fn_names[self.hoisted_fn_count] = fn_name;
-                self.hoisted_fn_count++;
-            } else if (!already) {
-                self.hoisted_overflow = true;
+            if (!already) {
+                self.ensure_hoisted_cap();
+                if (self.hoisted_fn_count < self.hoisted_fn_cap) {
+                    self.hoisted_fn_names[self.hoisted_fn_count] = fn_name;
+                    self.hoisted_fn_count++;
+                }
             }
 
             // Check-prologue pass: emit CanDeclareGlobalFunction for each

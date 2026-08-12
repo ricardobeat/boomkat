@@ -237,7 +237,7 @@ fn bool CompilerContext.ts_name_is_runtime_binding(&self, char[] name) {
     }
     // Top-level function declarations are recorded in hoisted_fn_names, not
     // on the scope stack at the time the export clause is parsed.
-    for (ushort h = 0; h < self.hoisted_fn_count; h++) {
+    for (uint h = 0; h < self.hoisted_fn_count; h++) {
         if (str_eq(self.hoisted_fn_names[h], name)) return true;
     }
     return false;
