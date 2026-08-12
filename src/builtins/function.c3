@@ -117,7 +117,17 @@ fn void builtin_function(BuiltinContext* ctx) {
     int src_pos = 0;
 
     src_pos += (int)(io::bprintf(src_buf[src_pos..], "(%s\n){\n", (ZString)&param_buf) ?? src_buf[:0]).len;
-    // Copy body (up to remaining buffer space)
+    // A body that does not fit must be REJECTED, not silently truncated.
+    // The copy below is bounds-checked, so it never overflowed — but cutting
+    // the source mid-token produced a function that compiled and then failed
+    // at call time with nonsense like "retu is not defined", or built cleanly
+    // and returned undefined. Either way the failure surfaced far from its
+    // cause, with nothing pointing at a length limit.
+    if (body_len > (usz)(16377 - src_pos)) {
+        builtin_throw_no_result_change(ctx, ctx.heap.syntax_err_proto,
+            "Function constructor body too large");
+        return;
+    }
     for (usz i = 0; i < body_len && src_pos < 16377; i++) {
         src_buf[src_pos++] = body_str[i];
     }
