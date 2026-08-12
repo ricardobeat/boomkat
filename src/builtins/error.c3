@@ -7,6 +7,8 @@ import duktape::hstring;
 import duktape::hobject;
 
 import duktape::heap;
+import duktape::vm;
+import duktape::bytecode;
 
 // ============================================================================
 // Error constructor builtins
@@ -22,6 +24,76 @@ fn void error_set_captured_stack(HObject* err, Heap* heap, HString* stack_str) {
     TVal tv;
     tv.set_string(stack_str);
     heap.tval_copy_ref(&(*err.extra_ptr()).err.captured_stack, &tv);
+}
+
+/// Append one `    at <name> (<file>:<line>)` frame line to `out`.
+///
+/// `file` and `line` are omitted when the compiled function carries neither,
+/// which is the case whenever the source was not compiled from a named script
+/// or no line table was emitted for it.
+fn void error_append_frame(StrBuf* out, char[] name, char[] file, uint line) {
+    out.append_bytes("\n    at ");
+    out.append_bytes(name.len > 0 ? name : "<anonymous>");
+    if (file.len > 0 || line != 0) {
+        out.append_bytes(" (");
+        if (file.len > 0) out.append_bytes(file);
+        if (line != 0) {
+            out.append_char(':');
+            char[16] num;
+            int nd = 0;
+            uint v = line;
+            while (v > 0) { num[nd++] = (char)('0' + (v % 10)); v /= 10; }
+            while (nd > 0) { nd--; out.append_char(num[nd]); }
+        }
+        out.append_char(')');
+    }
+}
+
+/// Append the current JS call stack to `out`, innermost frame first.
+///
+/// Walks Vm.activations from the top down. The topmost activations belong to
+/// the Error constructor itself (a native builtin, which has no
+/// CompiledFunction), so frames without a compiled function are skipped
+/// rather than emitted as placeholders.
+fn void error_append_stack_frames(StrBuf* out, void* vm_ptr) {
+    if (vm_ptr == null) return;
+    Vm* vm = (Vm*)vm_ptr;
+    uint n = vm.activation_count;
+    while (n > 0) {
+        n--;
+        Activation* act = &vm.activations[n];
+        CompiledFunction* cf = (CompiledFunction*)act.func;
+        if (cf == null) continue;
+        uint line = 0;
+        if (act.curr_pc != null && cf.code != null) {
+            long off = (long)(act.curr_pc - cf.code);
+            if (off > 0 && off <= (long)cf.code_count) line = cf.get_line((uint)(off - 1));
+        }
+        error_append_frame(out, cf.get_name(), cf.get_filename(), line);
+    }
+}
+
+/// Build the `.stack` payload for a freshly constructed error: the
+/// `"name: message"` header followed by one line per live JS call frame.
+///
+/// Heap-backed (StrBuf) rather than a fixed buffer: a deep stack runs to
+/// kilobytes and a fixed buffer would silently truncate it.
+fn HString* error_build_stack_string(BuiltinContext* ctx, HString* name_str, HString* msg_str) {
+    StrBuf out;
+    out.init(ctx.heap);
+    defer out.free();
+
+    if (name_str != null && name_str.blen > 0) {
+        out.append_bytes(name_str.get_cstr()[:name_str.blen]);
+    }
+    out.append_bytes(": ");
+    if (msg_str != null && msg_str.blen > 0) {
+        out.append_bytes(msg_str.get_cstr()[:msg_str.blen]);
+    }
+
+    error_append_stack_frames(&out, ctx.vm);
+
+    return builtin_intern_string(ctx.heap, out.bytes());
 }
 
 /// Shared constructor: create an error object with ObjClass.ERROR,
@@ -78,7 +150,7 @@ fn void builtin_error_constructor_shared(BuiltinContext* ctx, HObject* proto) {
         }
     }
 
-    // Capture .stack (stub, "name: message" format for now) as an internal
+    // Capture .stack ("name: message" plus the live call frames) as an internal
     // property; it is exposed to JS only via the get/set accessor pair on
     // Error.prototype (error-stack-accessor proposal), not as an own property.
     {
@@ -104,27 +176,7 @@ fn void builtin_error_constructor_shared(BuiltinContext* ctx, HObject* proto) {
             }
         }
 
-        // Build stack string: "name: message"
-        char[512] stack_buf;
-        int pos = 0;
-
-        // Copy name
-        if (name_str.blen > 0) {
-            mem::copy(&stack_buf[pos], name_str.get_cstr(), (sz)(name_str.blen));
-            pos += (int)name_str.blen;
-        }
-
-        // Add ": "
-        stack_buf[pos] = ':'; pos++;
-        stack_buf[pos] = ' '; pos++;
-
-        // Copy message (or empty string if no message)
-        if (msg_str != null && msg_str.blen > 0) {
-            mem::copy(&stack_buf[pos], msg_str.get_cstr(), (sz)(msg_str.blen));
-            pos += (int)msg_str.blen;
-        }
-
-        HString* stack_str = builtin_intern_string(ctx.heap, stack_buf[:pos]);
+        HString* stack_str = error_build_stack_string(ctx, name_str, msg_str);
         error_set_captured_stack(err, ctx.heap, stack_str);
     }
 
@@ -331,30 +383,11 @@ fn void builtin_aggregate_error(BuiltinContext* ctx) {
         }
     }
 
-    // Capture .stack (stub, "AggregateError: message" format for now) as an
-    // internal property; exposed to JS only via Error.prototype's accessor.
+    // Capture .stack ("AggregateError: message" plus the live call frames) as
+    // an internal property; exposed to JS only via Error.prototype's accessor.
     {
-        char[512] stack_buf;
-        int pos = 0;
-
-        // Copy "AggregateError"
         HString* name_str = builtin_intern_string(ctx.heap, "AggregateError");
-        if (name_str.blen > 0) {
-            mem::copy(&stack_buf[pos], name_str.get_cstr(), (sz)(name_str.blen));
-            pos += (int)name_str.blen;
-        }
-
-        // Add ": "
-        stack_buf[pos] = ':'; pos++;
-        stack_buf[pos] = ' '; pos++;
-
-        // Copy message (or empty string if no message)
-        if (msg_str != null && msg_str.blen > 0) {
-            mem::copy(&stack_buf[pos], msg_str.get_cstr(), (sz)(msg_str.blen));
-            pos += (int)msg_str.blen;
-        }
-
-        HString* stack_str = builtin_intern_string(ctx.heap, stack_buf[:pos]);
+        HString* stack_str = error_build_stack_string(ctx, name_str, msg_str);
         error_set_captured_stack(err, ctx.heap, stack_str);
     }
 
