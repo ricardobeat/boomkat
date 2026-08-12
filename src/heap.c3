@@ -434,6 +434,26 @@ struct HostScope {
 
 // --- Heap struct ---
 
+/// Size classes for the small-block pools on the Heap. Property blocks and
+/// string bodies both draw from them, so the classes cover the property-table
+/// sizes (8-byte slots growing at 1.5x: 64, 96, 144, 216, ...) and the string
+/// sizes that dominate real programs (a 40-byte header plus a short payload).
+/// Requests above the largest class go through the heap allocator, where the
+/// per-block overhead is a rounding error.
+const usz POOL_CLASS_COUNT = 16;
+const usz[POOL_CLASS_COUNT] POOL_CLASS_SIZES = {
+    48, 64, 96, 128, 192, 256, 384, 512, 768, 1024, 1536, 2048, 3072, 4096, 6144, 8192
+};
+
+/// The pool that holds a request of `size` bytes, or -1 when it exceeds the
+/// largest class and must go to the heap allocator.
+fn int pool_class_index(usz size) @inline {
+    for (usz i = 0; i < POOL_CLASS_COUNT; i++) {
+        if (size <= POOL_CLASS_SIZES[i]) return (int)i;
+    }
+    return -1;
+}
+
 struct Heap {
     // Allocator callbacks
     AllocFunc    alloc_func;
@@ -827,6 +847,13 @@ struct Heap {
     mempool::FixedBlockPool obj_pool_array;
     mempool::FixedBlockPool obj_pool_func;
 
+    // One FixedBlockPool per POOL_CLASS_SIZES entry, shared by property blocks
+    // and string bodies. Both are small, high-churn allocations; keeping them
+    // inside page-granular pool pages removes the per-block malloc header and
+    // the arena fragmentation that repeated grow/free of prop blocks leaves
+    // behind. pool_alloc/pool_free select the class, so no block stores one.
+    mempool::FixedBlockPool[POOL_CLASS_COUNT] small_pools;
+
     // Module cache and host hooks.
     void*       module_cache;       // growable ModuleDef** array
     uint        module_cache_count;
@@ -1029,6 +1056,17 @@ fn Heap*? create(
     h.str_table_size = INITIAL_STR_TABLE_SIZE;
     h.str_table_used = 0;
 
+    // The pools must exist before the first string does: pre-interning the
+    // well-known strings below allocates through the size-class pools.
+    {
+        h.obj_pool_plain.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_PLAIN, 512);
+        h.obj_pool_array.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_ARRAY, 512);
+        h.obj_pool_func.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_FUNC, 512);
+        for (usz i = 0; i < POOL_CLASS_COUNT; i++) {
+            h.small_pools[i].init(&allocators::LIBC_ALLOCATOR, (sz)POOL_CLASS_SIZES[i]);
+        }
+    }
+
     // Pre-intern well-known strings
     h.init_builtin_strs();
 
@@ -1056,12 +1094,6 @@ fn Heap*? create(
     h.rejection_tracker_fn    = null;
     h.rejection_tracker_udata = null;
     h.async_waiter_count = 0;
-
-    {
-        h.obj_pool_plain.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_PLAIN, 512);
-        h.obj_pool_array.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_ARRAY, 512);
-        h.obj_pool_func.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_FUNC, 512);
-    }
 
     return h;
 }
@@ -1555,6 +1587,9 @@ fn void Heap.destroy(&self) {
     self.obj_pool_plain.free();
     self.obj_pool_array.free();
     self.obj_pool_func.free();
+    for (usz i = 0; i < POOL_CLASS_COUNT; i++) {
+        self.small_pools[i].free();
+    }
 
     FreeFunc    ffn   = self.free_func;
     void*       udata = self.heap_udata;
@@ -1864,10 +1899,16 @@ fn void Heap.reset(&self) {
     self.obj_pool_plain.free();
     self.obj_pool_array.free();
     self.obj_pool_func.free();
+    for (usz i = 0; i < POOL_CLASS_COUNT; i++) {
+        self.small_pools[i].free();
+    }
     {
         self.obj_pool_plain.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_PLAIN, 512);
         self.obj_pool_array.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_ARRAY, 512);
         self.obj_pool_func.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_FUNC, 512);
+        for (usz i = 0; i < POOL_CLASS_COUNT; i++) {
+            self.small_pools[i].init(&allocators::LIBC_ALLOCATOR, (sz)POOL_CLASS_SIZES[i]);
+        }
     }
 
     self.init_builtin_strs();
@@ -2075,6 +2116,9 @@ fn void*? Heap.alloc(&self, usz size) {
 /// see, such as the gap between alloc_object and the put_prop that anchors it,
 /// which corrupts the pool through a double free. Allocations here only ever set
 /// gc_pending, and the collection runs at the next safepoint.
+///
+/// Small requests come from the size-class pools; only oversized ones reach the
+/// allocator below, so strings pay no per-block malloc header.
 fn void*? Heap.alloc_no_gc(&self, usz size) {
     // Large strings still count toward GC pressure. A program building many
     // multi-KB concat results held by short-lived objects would never burn the
@@ -2088,6 +2132,10 @@ fn void*? Heap.alloc_no_gc(&self, usz size) {
             self.gc_pending = true;
         }
     }
+    int cls = pool_class_index(size);
+    if (cls >= 0) {
+        return self.small_pools[cls].alloc();
+    }
     void* ptr = self.alloc_func(self.heap_udata, size);
     if (ptr == null && size > 0) {
         // Out of memory. Reclaim what mark-and-sweep can, then retry once.
@@ -2098,6 +2146,33 @@ fn void*? Heap.alloc_no_gc(&self, usz size) {
         }
     }
     return ptr;
+}
+
+/**
+ * Allocate a block of at least `size` bytes from the size-class pools, or
+ * through the heap allocator when the request exceeds the largest class.
+ * GC counting matches Heap.alloc, which is the path the fallback shares.
+ */
+fn void*? Heap.pool_alloc(&self, usz size) {
+    int cls = pool_class_index(size);
+    if (cls >= 0) {
+        return self.small_pools[cls].alloc();
+    }
+    return self.alloc(size);
+}
+
+/**
+ * Return a pooled block to its class pool. `size` must be the size the block
+ * was requested with: it selects the class, or the heap allocator for an
+ * oversized block.
+ */
+fn void Heap.pool_free(&self, void* ptr, usz size) {
+    int cls = pool_class_index(size);
+    if (cls >= 0) {
+        self.small_pools[cls].dealloc(ptr);
+    } else {
+        self.free(ptr);
+    }
 }
 
 /**
@@ -2160,11 +2235,18 @@ fn void Heap.set_reg_string(&self, TVal* reg, hstring::HString* s) @inline {
 }
 
 /**
- * Free an HString through the heap's allocator, matching Heap.alloc.
+ * Free an HString through the heap, matching how it was allocated: back to its
+ * size-class pool, or to the allocator for a string above the largest class.
  */
 fn void Heap.free_string(&self, hstring::HString* s) {
     if (s == null) { return; }
-    self.free_func(self.heap_udata, s);
+    usz total = hstring::HSTRING_HDR_SIZE + (usz)s.capacity + 1;  // +1 for NUL
+    int cls = pool_class_index(total);
+    if (cls >= 0) {
+        self.small_pools[cls].dealloc((void*)s);
+    } else {
+        self.free_func(self.heap_udata, (void*)s);
+    }
 }
 
 

@@ -38,18 +38,21 @@ module duktape::compiler;
 
 import duktape::bytecode;
 
-/// Number of uint words needed to hold a MAX_REGISTERS-sized bitset.
-/// MAX_REGISTERS is defined in context.c3; this pass is only ever invoked
-/// with `code_count` bounded reg indices that fit in a register file no
-/// larger than that, so this many words is always sufficient headroom.
-const uint MOVEELIM_BITSET_WORDS = (MAX_REGISTERS + 31) / 32;
-
+/// Register bitset for the liveness pass, sized to the registers the
+/// function under compilation actually uses instead of the full 16-bit
+/// register file. A fixed MAX_REGISTERS-wide set is 8 KB per instruction
+/// slot, which turns the four per-PC liveness arrays into megabytes even
+/// for a function whose register high-water mark is a few dozen.
+/// `words` points into the per-function liveness arena allocated in
+/// CompilerContext.finish; `word_count` is how many words are valid, so a
+/// set covering registers 0..max_reg-1 needs (max_reg + 31) / 32 words.
 struct RegSet {
-    uint[MOVEELIM_BITSET_WORDS] words;
+    uint* words;
+    uint  word_count;
 }
 
 fn void RegSet.clear(&self) {
-    for (uint i = 0; i < MOVEELIM_BITSET_WORDS; i++) { self.words[i] = 0; }
+    for (uint i = 0; i < self.word_count; i++) { self.words[i] = 0; }
 }
 
 fn void RegSet.set(&self, uint reg) {
@@ -61,15 +64,15 @@ fn bool RegSet.test(&self, uint reg) {
 }
 
 fn void RegSet.copy_from(&self, RegSet* other) {
-    for (uint i = 0; i < MOVEELIM_BITSET_WORDS; i++) { self.words[i] = other.words[i]; }
+    for (uint i = 0; i < self.word_count; i++) { self.words[i] = other.words[i]; }
 }
 
 fn void RegSet.union_with(&self, RegSet* other) {
-    for (uint i = 0; i < MOVEELIM_BITSET_WORDS; i++) { self.words[i] |= other.words[i]; }
+    for (uint i = 0; i < self.word_count; i++) { self.words[i] |= other.words[i]; }
 }
 
 fn bool RegSet.equals(&self, RegSet* other) {
-    for (uint i = 0; i < MOVEELIM_BITSET_WORDS; i++) {
+    for (uint i = 0; i < self.word_count; i++) {
         if (self.words[i] != other.words[i]) { return false; }
     }
     return true;
@@ -256,7 +259,7 @@ fn Instruction moveelim_retarget_a(Instruction ins, Opcode op, uint new_a) {
 /// the bitset.
 fn void moveelim_mark_range(RegSet* live, uint first, uint last) {
     uint hi = last;
-    if (hi >= MOVEELIM_BITSET_WORDS * 32) { hi = MOVEELIM_BITSET_WORDS * 32 - 1; }
+    if (hi >= live.word_count * 32) { hi = live.word_count * 32 - 1; }
     for (uint r = first; r <= hi; r++) { live.set(r); }
 }
 
@@ -299,7 +302,7 @@ fn void moveelim_add_uses(Instruction ins, RegSet* live, bool mark_call_windows)
             case Opcode.CALL_S:
             case Opcode.NEW_OBJ_S:
             case Opcode.SUPER_CALL_S:
-                moveelim_mark_range(live, (uint)ins.b, MOVEELIM_BITSET_WORDS * 32 - 1);
+                moveelim_mark_range(live, (uint)ins.b, live.word_count * 32 - 1);
             default: {}
         }
     }
@@ -426,8 +429,10 @@ fn void moveelim_mark_jump_targets_and_try_regions(Instruction* code, uint code_
 /// `mark_call_windows` picks the use-set's view of the call-family argument
 /// windows: ON for the dead-destination liveness, OFF for the producer-
 /// retarget liveness (see run_move_elimination for why the two differ).
+/// `scratch` supplies the three working sets (new_out, new_in, uses), whose
+/// words are already wired into the function's liveness arena.
 fn void moveelim_compute_liveness(Instruction* code, uint code_count, RegSet* live_out, RegSet* live_in,
-                                  bool mark_call_windows) {
+                                  bool mark_call_windows, RegSet* scratch) {
     for (uint i = 0; i < code_count; i++) { live_out[i].clear(); live_in[i].clear(); }
 
     bool changed = true;
@@ -443,7 +448,7 @@ fn void moveelim_compute_liveness(Instruction* code, uint code_count, RegSet* li
             Instruction ins = code[ii];
             Opcode op = ins.op;
 
-            RegSet new_out;
+            RegSet* new_out = &scratch[0];
             new_out.clear();
 
             // Fallthrough successor: any instruction except an unconditional
@@ -501,24 +506,24 @@ fn void moveelim_compute_liveness(Instruction* code, uint code_count, RegSet* li
             }
 
             if (!new_out.equals(&live_out[ii])) {
-                live_out[ii].copy_from(&new_out);
+                live_out[ii].copy_from(new_out);
                 changed = true;
             }
 
             // live_in[ii] = uses(ii) U (live_out[ii] - defs(ii))
-            RegSet new_in;
+            RegSet* new_in = &scratch[1];
             new_in.copy_from(&live_out[ii]);
             uint def_reg;
             if (moveelim_get_def(ins, &def_reg)) {
                 new_in.words[def_reg / 32] &= ~(1u << (def_reg % 32));
             }
-            RegSet uses;
+            RegSet* uses = &scratch[2];
             uses.clear();
-            moveelim_add_uses(ins, &uses, mark_call_windows);
-            new_in.union_with(&uses);
+            moveelim_add_uses(ins, uses, mark_call_windows);
+            new_in.union_with(uses);
 
             if (!new_in.equals(&live_in[ii])) {
-                live_in[ii].copy_from(&new_in);
+                live_in[ii].copy_from(new_in);
                 changed = true;
             }
         }
@@ -558,13 +563,14 @@ fn void moveelim_compute_liveness(Instruction* code, uint code_count, RegSet* li
 /// would otherwise suppress the retarget that makes a trailing non-spread
 /// argument after a spread safe (`f(1,...a,99)`).
 fn void run_move_elimination(Instruction* code, uint code_count, bool* jump_targets, bool* in_try,
-                              RegSet* live_out, RegSet* live_in, RegSet* ret_out, RegSet* ret_in) {
+                              RegSet* live_out, RegSet* live_in, RegSet* ret_out, RegSet* ret_in,
+                              RegSet* scratch) {
     if (code_count < 2) { return; }
 
     moveelim_mark_jump_targets_and_try_regions(code, code_count, jump_targets, in_try);
 
-    moveelim_compute_liveness(code, code_count, live_out, live_in, true);
-    moveelim_compute_liveness(code, code_count, ret_out, ret_in, false);
+    moveelim_compute_liveness(code, code_count, live_out, live_in, true, scratch);
+    moveelim_compute_liveness(code, code_count, ret_out, ret_in, false, scratch);
 
     // --- Elimination pass: for every LDREG rDst=rT, find its immediately
     // preceding non-NOP instruction (the producer candidate) and retarget
@@ -660,9 +666,9 @@ fn void run_move_elimination(Instruction* code, uint code_count, bool* jump_targ
         // `moveelim_accum_safe` reads all its source operands before writing
         // A, so aliasing ra==rb/rc reads the old value first. See that
         // helper for the per-op read-before-write verification.
-        RegSet producer_uses;
+        RegSet* producer_uses = &scratch[3];
         producer_uses.clear();
-        moveelim_add_uses(producer, &producer_uses, false);
+        moveelim_add_uses(producer, producer_uses, false);
         bool producer_reads_rdst = producer_uses.test(rDst);
         if (producer_reads_rdst && !accum) { continue; }
 

@@ -82,6 +82,52 @@ accept this.
 
 ## Remaining gap, not yet profiled
 
-The 7-prop baseline still trails QuickJS (16,112 KB vs 14,976 KB on the same
-script). The cause is unknown and no fix is planned here. It becomes M2 once
-profiling names the allocation responsible.
+M2 (below) closed the micro-bench gap as a side effect: the 7-prop and
+8-prop scripts now measure 13,304 KB and 13,287 KB, both under QuickJS
+14,976 KB. The surviving delta is the pool pages and engine scaffolding.
+
+## M2: pooled small blocks for property storage and strings
+
+### What profiling found
+
+The normal memory bench (`benchmarks/memory_test.js`) measured 15,248 KB
+against QuickJS's 6,128 KB, but a frozen heap walk showed only ~2 MB of live
+data. The gap was allocator overhead: object headers were pooled, while
+property blocks, string bodies, and everything the compiler touched went
+through raw malloc/realloc, whose freed blocks macOS keeps resident.
+
+Profiling also found a compile-time spike dwarfing the runtime: compiling
+`memory_test.js` alone peaked at 13 MB. The move-elimination liveness pass
+allocated four per-instruction register bitsets, each sized for the full
+16-bit register file: `code_cap * 4 * 8 KB`. A 1188-byte script paid 16 MB
+per compile, and larger functions double it.
+
+### The change
+
+- Size-class `FixedBlockPool`s on the Heap, shared by property blocks and
+  string bodies, with classes from 48 B to 8 KB and libc fallback above.
+  `grow_props`/`grow_array` copy into a fresh block and return the old one
+  to its class pool, replacing realloc; `seal` shrinks its block so the
+  free site can still derive the class from the current size.
+- The liveness `RegSet` is now sized by the function's actual `max_reg`
+  instead of `MAX_REGISTERS`: a few words per instruction instead of 2048,
+  cutting the four arrays from 16 MB to tens of KB for typical functions.
+  The sets live in one per-function arena wired in `CompilerContext.finish`.
+
+### Measured result
+
+| Benchmark | before | after | vs qjs |
+|-----------|--------|-------|--------|
+| memory_test.js | 15,248 KB | 6,960 KB | 1.1x (was 2.4x) |
+| bench_memory_heavy.js | 40,512 KB | 30,320 KB | 0.9x (was 1.2x) |
+
+Compile-only peak for the same script: 13 MB to 4.2 MB. Gates: rosetta
+42/42, local suite and all sub-suites green, test262 phases 0-8 and 11-15,
+17, 20-22 all 0 fail, golden bytecode 30/30, nonanbox build clean.
+
+### Notes
+
+Pooling alone did not move RSS; the liveness fix is what closed the gap.
+macOS malloc keeps freed Large-zone blocks resident, so the remaining
+~700 KB over QuickJS is the pool pages and engine scaffolding, not
+fragmentation.

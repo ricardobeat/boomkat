@@ -932,7 +932,24 @@ fn void HObject.seal(&self, heap::Heap* h) {
         }
     }
 
-    self.array_size = 0;
+    // The dense part is gone, so shrink the block to fit the named table.
+    // pool_free picks the class pool from the allocation-time size, so a block
+    // must keep matching the size it was allocated with. If the shrink fails
+    // (an oversized object at OOM), array_size stays so the block still
+    // matches, and the abandoned slots read as undefined.
+    if (self.prop_alloc != null) {
+        usz old_size = self.prop_alloc_size();
+        usz new_size = (usz)self.prop_capacity * PropValue::size;
+        void* new_raw = h.pool_alloc(new_size) ?? null;
+        if (new_raw != null) {
+            mem::copy(new_raw, self.prop_alloc, (sz)((usz)self.prop_count * PropValue::size));
+            h.pool_free(self.prop_alloc, old_size);
+            self.prop_alloc = new_raw;
+            self.array_size = 0;
+        }
+    } else {
+        self.array_size = 0;
+    }
     self.array_used = 0;
 
     self.make_shape_private(h);
@@ -1666,17 +1683,27 @@ fn void HObject.grow_props(&self, heap::Heap* h) {
     void* new_raw;
     if (self.prop_alloc == null) {
         // Leaving inline storage: allocate, then copy the inline data across.
-        new_raw = h.alloc_func(h.heap_udata, new_size);
+        new_raw = h.pool_alloc(new_size) ?? null;
         if (new_raw == null) return;
         PropValue* inline_src = self.inline_props_ptr();
         mem::copy(new_raw, inline_src, (sz)((usz)self.prop_count * PropValue::size));
     } else {
+        // The size-class pools have no realloc, so grow by copying both parts
+        // to their new offsets in a fresh block and releasing the old one to
+        // its class pool. The old block never sits half-way between classes,
+        // which is where the fragmentation came from.
         usz old_size = self.prop_alloc_size();
         usz old_prop_bytes = (usz)self.prop_capacity * PropValue::size;
-        new_size = old_size - old_prop_bytes + new_prop_bytes;
-        new_raw = h.realloc_func(h.heap_udata, self.prop_alloc, new_size);
+        new_raw = h.pool_alloc(new_size) ?? null;
+        if (new_raw == null) return;
+        mem::copy(new_raw, self.prop_alloc, (sz)old_prop_bytes);
+        if (self.array_size > 0) {
+            mem::copy((char*)new_raw + new_prop_bytes,
+                      (char*)self.prop_alloc + old_prop_bytes,
+                      (sz)((usz)self.array_size * TVal::size));
+        }
+        h.pool_free(self.prop_alloc, old_size);
     }
-    if (new_raw == null) return;
 
     self.prop_alloc = new_raw;
     uint old_prop_capacity = self.prop_capacity;
@@ -1686,17 +1713,6 @@ fn void HObject.grow_props(&self, heap::Heap* h) {
     // must be invalidated. shape_id is unchanged, so the generation bump is what
     // does it.
     h.bump_shape_gen(self.shape_id);
-
-    // The dense array part follows the property values, so a larger capacity
-    // shifts it right. realloc keeps the old bytes where they were, so move them
-    // before anything reads through the new offsets.
-    if (self.array_size > 0 && self.array_part() != null) {
-        usz old_arr_off = (usz)old_prop_capacity * PropValue::size;
-        usz new_arr_off = (usz)new_cap * PropValue::size;
-        if (old_arr_off != new_arr_off) {
-            mem::move((char*)self.prop_alloc + new_arr_off, (char*)self.prop_alloc + old_arr_off, (sz)((usz)self.array_size * TVal::size));
-        }
-    }
 
     if (new_cap > old_prop_capacity) {
         usz added_bytes = (usz)(new_cap - old_prop_capacity) * PropValue::size;
@@ -1718,12 +1734,18 @@ fn void HObject.grow_array(&self, uint new_size, heap::Heap* h) {
     void* new_raw;
     if (self.prop_alloc == null) {
         // Transition from inline to heap: allocate and copy inline props.
-        new_raw = h.alloc_func(h.heap_udata, new_bytes);
+        new_raw = h.pool_alloc(new_bytes) ?? null;
         if (new_raw == null) return;
         PropValue* inline_src = self.inline_props_ptr();
         mem::copy(new_raw, inline_src, (sz)((usz)self.prop_count * PropValue::size));
     } else {
-        new_raw = h.realloc_func(h.heap_udata, self.prop_alloc, new_bytes);
+        // The array part offset does not change, so a straight copy of the old
+        // block puts every byte where the new one expects it.
+        usz old_size = self.prop_alloc_size();
+        new_raw = h.pool_alloc(new_bytes) ?? null;
+        if (new_raw == null) return;
+        mem::copy(new_raw, self.prop_alloc, (sz)old_size);
+        h.pool_free(self.prop_alloc, old_size);
     }
     if (new_raw == null) return;
 
@@ -1942,11 +1964,12 @@ fn void hobject_free(HObject* obj, void* heap_ptr, bool free_header) {
     }
 
     // Free the block holding prop_values and array_part. The shape is shared and
-    // owned by the heap, so it stays.
+    // owned by the heap, so it stays. pool_free finds the class from the block's
+    // current size, which the pools kept exact.
     if (obj.prop_alloc != null) {
         if (hp != null) {
             heap::Heap* h = hp;
-            h.free_func(h.heap_udata, obj.prop_alloc);
+            h.pool_free(obj.prop_alloc, obj.prop_alloc_size());
         } else {
             mem::free(obj.prop_alloc);
         }

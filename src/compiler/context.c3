@@ -1425,33 +1425,61 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         usz bufsz = (usz)self.code_cap;
         bool* me_jump_targets = (bool*)h.alloc_func(h.heap_udata, bufsz);
         bool* me_in_try       = (bool*)h.alloc_func(h.heap_udata, bufsz);
-        usz regsetsz = (usz)self.code_cap * RegSet::size;
         // live_out/live_in carry the call-window-inclusive liveness for the
         // dead-destination check; ret_out/ret_in the window-free liveness
         // that drives the producer-retarget decisions (see moveelim.c3).
-        RegSet* me_live_out = (RegSet*)h.alloc_func(h.heap_udata, regsetsz);
-        RegSet* me_live_in  = (RegSet*)h.alloc_func(h.heap_udata, regsetsz);
-        RegSet* me_ret_out  = (RegSet*)h.alloc_func(h.heap_udata, regsetsz);
-        RegSet* me_ret_in   = (RegSet*)h.alloc_func(h.heap_udata, regsetsz);
+        //
+        // The sets are per-instruction register bitsets. A fixed
+        // MAX_REGISTERS-wide set would cost 8 KB per instruction slot, so the
+        // four arrays below would be megabytes even for tiny functions; size
+        // them by the registers this function actually uses instead. max_reg
+        // is the allocator's high-water mark, so every operand register is
+        // below it, and the words arena holds all four arrays plus the four
+        // working sets the pass clears per iteration.
+        uint words_per_set = (self.max_reg + 31) / 32;
+        if (words_per_set < 1) { words_per_set = 1; }
+        usz n = (usz)self.code_cap;
+        RegSet* me_live_out = (RegSet*)h.alloc_func(h.heap_udata, n * RegSet::size);
+        RegSet* me_live_in  = (RegSet*)h.alloc_func(h.heap_udata, n * RegSet::size);
+        RegSet* me_ret_out  = (RegSet*)h.alloc_func(h.heap_udata, n * RegSet::size);
+        RegSet* me_ret_in   = (RegSet*)h.alloc_func(h.heap_udata, n * RegSet::size);
+        uint* me_words = (uint*)h.alloc_func(h.heap_udata, (4 * n + 4) * (usz)words_per_set * uint::size);
         if (me_jump_targets == null || me_in_try == null || me_live_out == null || me_live_in == null
-            || me_ret_out == null || me_ret_in == null) {
+            || me_ret_out == null || me_ret_in == null || me_words == null) {
             if (me_jump_targets != null) { h.free_func(h.heap_udata, me_jump_targets); }
             if (me_in_try != null) { h.free_func(h.heap_udata, me_in_try); }
             if (me_live_out != null) { h.free_func(h.heap_udata, me_live_out); }
             if (me_live_in != null) { h.free_func(h.heap_udata, me_live_in); }
             if (me_ret_out != null) { h.free_func(h.heap_udata, me_ret_out); }
             if (me_ret_in != null) { h.free_func(h.heap_udata, me_ret_in); }
+            if (me_words != null) { h.free_func(h.heap_udata, me_words); }
             self.cleanup();
             return COMPILE_ERROR~;
         }
+        for (usz i = 0; i < n; i++) {
+            me_live_out[i].word_count = words_per_set;
+            me_live_out[i].words = &me_words[(0 * n + i) * words_per_set];
+            me_live_in[i].word_count = words_per_set;
+            me_live_in[i].words = &me_words[(1 * n + i) * words_per_set];
+            me_ret_out[i].word_count = words_per_set;
+            me_ret_out[i].words = &me_words[(2 * n + i) * words_per_set];
+            me_ret_in[i].word_count = words_per_set;
+            me_ret_in[i].words = &me_words[(3 * n + i) * words_per_set];
+        }
+        RegSet[4] me_scratch;
+        for (usz s = 0; s < 4; s++) {
+            me_scratch[s].word_count = words_per_set;
+            me_scratch[s].words = &me_words[(4 * n + s) * words_per_set];
+        }
         run_move_elimination(self.code, self.code_count, me_jump_targets, me_in_try, me_live_out, me_live_in,
-                             me_ret_out, me_ret_in);
+                             me_ret_out, me_ret_in, &me_scratch[0]);
         h.free_func(h.heap_udata, me_jump_targets);
         h.free_func(h.heap_udata, me_in_try);
         h.free_func(h.heap_udata, me_live_out);
         h.free_func(h.heap_udata, me_live_in);
         h.free_func(h.heap_udata, me_ret_out);
         h.free_func(h.heap_udata, me_ret_in);
+        h.free_func(h.heap_udata, me_words);
     }
 
     // --- Register-resident locals: elide dead env ops when no scope is needed ---
