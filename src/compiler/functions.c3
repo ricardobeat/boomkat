@@ -759,13 +759,13 @@ fn void CompilerContext.emit_object_rest(&self,
             self.emit_a_bc(Opcode.LDCONST, (uint)elem_reg, binds[j].key_idx);
         }
         ushort idx_reg = self.alloc_reg();
-        self.emit(bytecode::make_a_sbx(Opcode.LDINT, (uint)idx_reg, (int)excl_count));
+        self.emit_a_sbx(Opcode.LDINT, (uint)idx_reg, (int)excl_count);
         self.emit_abc(Opcode.PUTPROP, (uint)excl_reg, (uint)idx_reg, (uint)elem_reg);
         self.free_reg(idx_reg);
         if (!binds[j].is_computed_key) self.free_reg(elem_reg);
         excl_count++;
     }
-    self.emit(bytecode::make_a_bc(Opcode.SETALEN, (uint)excl_reg, excl_count));
+    self.emit_a_bc(Opcode.SETALEN, (uint)excl_reg, excl_count);
 
     self.emit_abc(Opcode.NEWOBJ, (uint)dest_reg, 0, 0);
     self.emit_abc(Opcode.OBJREST, (uint)dest_reg, (uint)excl_reg, (uint)src_reg);
@@ -1020,7 +1020,7 @@ fn void CompilerContext.emit_destruct_bindings(&self,
                 self.free_reg(undef_reg);
 
                 uint skip_addr = self.code_count;
-                self.emit(bytecode::make_a_sbx(Opcode.IF_TRUE, (uint)cmp_reg, 0));
+                self.emit_a_sbx(Opcode.IF_TRUE, (uint)cmp_reg, 0);
                 self.free_reg(cmp_reg);
 
                 ushort closure_reg = self.alloc_reg();
@@ -1208,7 +1208,7 @@ fn void CompilerContext.emit_destruct_bindings(&self,
                 self.free_reg(undef_reg);
 
                 uint skip_addr = self.code_count;
-                self.emit(bytecode::make_a_sbx(Opcode.IF_TRUE, (uint)cmp_reg, 0));
+                self.emit_a_sbx(Opcode.IF_TRUE, (uint)cmp_reg, 0);
                 self.free_reg(cmp_reg);
 
                 ushort closure_reg = self.alloc_reg();
@@ -2703,7 +2703,7 @@ fn void? CompilerContext.emit_param_prologue(&self, ushort arg_count,
 
         // IF_TRUE: skip past default evaluation (will be patched)
         uint skip_addr = self.code_count;
-        self.emit(bytecode::make_a_sbx(Opcode.IF_TRUE, (uint)cmp_reg, 0));
+        self.emit_a_sbx(Opcode.IF_TRUE, (uint)cmp_reg, 0);
         self.free_reg(cmp_reg);
 
         // CLOSURE for default function
@@ -3876,7 +3876,7 @@ fn ushort? CompilerContext.function_expr(&self, bool is_async_expr = false) {
     uint inner_idx = self.add_inner_func(inner);
 
     ushort result = self.alloc_reg();
-    self.emit(bytecode::make_a_bc(Opcode.CLOSURE, (uint)result, inner_idx));
+    self.emit_a_bc(Opcode.CLOSURE, (uint)result, inner_idx);
 
     return result;
 }
@@ -3935,7 +3935,7 @@ fn ushort? CompilerContext.function_expr_body(&self, uint src_start = 0xFFFFFFFF
     uint inner_idx = self.add_inner_func(inner);
 
     ushort result = self.alloc_reg();
-    self.emit(bytecode::make_a_bc(Opcode.CLOSURE, (uint)result, inner_idx));
+    self.emit_a_bc(Opcode.CLOSURE, (uint)result, inner_idx);
     return result;
 }
 
@@ -3980,7 +3980,7 @@ fn ushort? CompilerContext.parse_arrow_function_reparse(&self, uint src_start = 
     uint inner_idx = self.add_inner_func(inner);
 
     ushort result = self.alloc_reg();
-    self.emit(bytecode::make_a_bc(Opcode.CLOSURE, (uint)result, inner_idx));
+    self.emit_a_bc(Opcode.CLOSURE, (uint)result, inner_idx);
     self.last_was_arrow_expr = true;
     return result;
 }
@@ -4516,7 +4516,7 @@ fn ushort? CompilerContext.parse_arrow_function(&self, char[]* params, ushort pa
     uint inner_idx = self.add_inner_func(inner);
 
     ushort result = self.alloc_reg();
-    self.emit(bytecode::make_a_bc(Opcode.CLOSURE, (uint)result, inner_idx));
+    self.emit_a_bc(Opcode.CLOSURE, (uint)result, inner_idx);
     self.last_was_arrow_expr = true;
     return result;
 }

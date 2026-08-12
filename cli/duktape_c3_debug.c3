@@ -325,6 +325,24 @@ $if $feature(TRACE_VM):
             i++;
             continue;
         }
+        // WIDE is a prefix word: its A/B/C carry the high bytes of the next
+        // instruction's operands. Render the pair as one instruction with
+        // the effective 16-bit operands.
+        if (f.code[i].op == bytecode::Opcode.WIDE && i + 1 < f.code_count) {
+            bytecode::Instruction wide = f.code[i];
+            bytecode::Instruction payload = f.code[i + 1];
+            bytecode::DecodedInsn di;
+            di.op = payload.op;
+            di.a = ((uint)wide.a << 8) | payload.a;
+            di.b = ((uint)wide.b << 8) | payload.b;
+            di.c = ((uint)wide.c << 8) | payload.c;
+            usz wwritten = di.disassemble(line_buf[..]);
+            uint wend = wwritten < (usz)line_buf.len ? (uint)wwritten : line_buf.len;
+            io::printfn("[%3d] %s", i + 1, (String)line_buf[0:wend]);
+            io::printfn("[%3d]   (wide-prefix)", i);
+            i++;
+            continue;
+        }
         usz written = f.code[i].disassemble(line_buf[..]);
         uint end = written < (usz)line_buf.len ? (uint)written : line_buf.len;
         String instr = (String)line_buf[0:end];

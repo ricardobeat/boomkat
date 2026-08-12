@@ -620,7 +620,7 @@ fn void? resolve_call_global(Dispatch* ds, uint name_const_idx, uint callee_reg,
 /// call was fully handled here; sets *handled=false (return value unused)
 /// if the guard conditions weren't met and the caller must fall back to
 /// the full dispatch_calls slow path.
-fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, Instruction insn, bool* handled) @inline {
+fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool* handled) @inline {
     Vm* vm = ds.vm;
     *handled = false;
 
@@ -1091,7 +1091,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, Instruction insn, bool*
     return (TVal){};
 }
 
-fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, Instruction insn) {
+fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, DecodedInsn insn) {
     Vm* vm = ds.vm;
     switch (op) {
         case Opcode.CALL:

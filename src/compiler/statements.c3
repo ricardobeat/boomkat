@@ -2107,10 +2107,10 @@ fn void? CompilerContext.while_statement(&self) {
         int int_rhs = (int)simple_cond_rhs;
         if ((double)int_rhs == simple_cond_rhs
             && int_rhs >= bytecode::MIN_SBC && int_rhs <= bytecode::MAX_SBC) {
-            self.emit(bytecode::make_a_sbx(Opcode.LDINT, (uint)pinned_rhs_reg, int_rhs));
+            self.emit_a_sbx(Opcode.LDINT, (uint)pinned_rhs_reg, int_rhs);
         } else {
             uint rhs_const_idx = self.add_number_constant(simple_cond_rhs);
-            self.emit(bytecode::make_a_bc(Opcode.LDCONST, (uint)pinned_rhs_reg, rhs_const_idx));
+            self.emit_a_bc(Opcode.LDCONST, (uint)pinned_rhs_reg, rhs_const_idx);
         }
     }
 
@@ -2211,8 +2211,7 @@ fn void? CompilerContext.while_statement(&self) {
         ushort cmp_res = self.alloc_reg();
         self.emit_abc(simple_cond_op, (uint)cmp_res, (uint)lhs_reg, (uint)pinned_rhs_reg);
         self.free_reg(lhs_reg);
-        int back = (int)body_label - (int)self.code_count - 1;
-        self.emit(bytecode::make_a_sbx(Opcode.IF_TRUE, (uint)cmp_res, back));
+        self.emit_cond_jump_back(Opcode.IF_TRUE, (uint)cmp_res, body_label);
         self.free_reg(cmp_res);
         self.free_reg(pinned_rhs_reg);
     } else {
@@ -2224,8 +2223,7 @@ fn void? CompilerContext.while_statement(&self) {
         self.pushback_count = _cond_pbc; self.pushback_stack = _cond_pbs;
         ushort cond_reg = self.expression()!;
         self.expect(TokenType.RPAREN)!;
-        int back = (int)body_label - (int)self.code_count - 1;
-        self.emit(bytecode::make_a_sbx(Opcode.IF_TRUE, (uint)cond_reg, back));
+        self.emit_cond_jump_back(Opcode.IF_TRUE, (uint)cond_reg, body_label);
         self.free_reg(cond_reg);
     }
 
@@ -3206,8 +3204,21 @@ fn void? CompilerContext.for_statement(&self) {
             // compile to GETVAR/INC_VAR and the env is authoritative, so the
             // register-cache sync machinery (which would write the stale
             // register copy back over the env) must stay off.
+            //
+            // resolve_var additionally gates register-caching on the binding
+            // having a live scope entry. When the scope stack overflows
+            // (MAX_SCOPE_DEPTH) declare_var silently skips the push, so the
+            // name reads through the env and the register is never updated:
+            // has_for_var must be false or the sync writes a stale register
+            // back over the env every iteration.
             has_for_var = !is_lexical && !self.is_global
                        && !self.is_captured_name(name_tok.str_value);
+            if (has_for_var) {
+                ushort? for_var_rslv = self.resolve_var(name_tok.str_value);
+                if (catch _fault = for_var_rslv) {
+                    has_for_var = false;
+                }
+            }
             for_var_reg = var_reg;
             for_var_name_idx = self.add_string_constant(name_tok.str_value);
             // Collect per-iter binding: a let/const binding needs a fresh env each
@@ -3433,10 +3444,10 @@ fn void? CompilerContext.for_statement(&self) {
         int int_rhs = (int)simple_cond_rhs;
         if ((double)int_rhs == simple_cond_rhs
             && int_rhs >= bytecode::MIN_SBC && int_rhs <= bytecode::MAX_SBC) {
-            self.emit(bytecode::make_a_sbx(Opcode.LDINT, (uint)pinned_rhs_reg, int_rhs));
+            self.emit_a_sbx(Opcode.LDINT, (uint)pinned_rhs_reg, int_rhs);
         } else {
             uint rhs_const_idx = self.add_number_constant(simple_cond_rhs);
-            self.emit(bytecode::make_a_bc(Opcode.LDCONST, (uint)pinned_rhs_reg, rhs_const_idx));
+            self.emit_a_bc(Opcode.LDCONST, (uint)pinned_rhs_reg, rhs_const_idx);
         }
     }
 
@@ -3627,8 +3638,7 @@ fn void? CompilerContext.for_statement(&self) {
             ushort cmp_res = self.alloc_reg();
             self.emit_abc(simple_cond_op, (uint)cmp_res, (uint)lhs_reg, (uint)pinned_rhs_reg);
             self.free_reg(lhs_reg);
-            int back = (int)body_label - (int)self.code_count - 1;
-            self.emit(bytecode::make_a_sbx(Opcode.IF_TRUE, (uint)cmp_res, back));
+            self.emit_cond_jump_back(Opcode.IF_TRUE, (uint)cmp_res, body_label);
             self.free_reg(cmp_res);
             self.free_reg(pinned_rhs_reg);
         } else {
@@ -3648,8 +3658,7 @@ fn void? CompilerContext.for_statement(&self) {
             }
             ushort cond_reg = self.expression()!;
             self.expect(TokenType.SEMICOLON)!;
-            int back = (int)body_label - (int)self.code_count - 1;
-            self.emit(bytecode::make_a_sbx(Opcode.IF_TRUE, (uint)cond_reg, back));
+            self.emit_cond_jump_back(Opcode.IF_TRUE, (uint)cond_reg, body_label);
             self.free_reg(cond_reg);
         }
     } else {
@@ -4398,8 +4407,7 @@ fn void? CompilerContext.do_while_statement(&self) {
     self.match(TokenType.SEMICOLON);
 
     // If condition is true, jump back to loop_start
-    int back_offset = (int)loop_start - (int)self.code_count - 1;
-    self.emit(bytecode::make_a_sbx(Opcode.IF_TRUE, (uint)cond_reg, back_offset));
+    self.emit_cond_jump_back(Opcode.IF_TRUE, (uint)cond_reg, loop_start);
     self.free_reg(cond_reg);
 
     self.pop_loop();

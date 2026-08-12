@@ -1077,7 +1077,7 @@ fn ushort? CompilerContext.binary_expr(&self, int min_prec) {
             // The brand binding lives in this context's pool.
             uint brand_bind_idx = self.add_string_constant(entry.brand_slot_name);
             ushort brand_reg = self.alloc_reg();
-            self.emit(bytecode::make_a_bc(Opcode.GETVAR, (uint)brand_reg, brand_bind_idx));
+            self.emit_a_bc(Opcode.GETVAR, (uint)brand_reg, brand_bind_idx);
 
             // Parse RHS with precedence above IN so relational ops don't
             // chain into the probe's object operand.
@@ -1526,7 +1526,7 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
                     self.note_arguments_reference(idTok2.str_value)!;
                     uint name_idx = self.add_string_constant(idTok2.str_value);
                     ushort res_typeof = self.alloc_reg();
-                    self.emit(bytecode::make_a_bc(Opcode.TYPEOFIDENT, (uint)res_typeof, name_idx));
+                    self.emit_a_bc(Opcode.TYPEOFIDENT, (uint)res_typeof, name_idx);
                     return res_typeof;
                 }
 
@@ -1583,7 +1583,7 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
                             self.note_arguments_reference(idTok.str_value)!;
                             uint name_idx = self.add_string_constant(idTok.str_value);
                             ushort res_typeof = self.alloc_reg();
-                            self.emit(bytecode::make_a_bc(Opcode.TYPEOFIDENT, (uint)res_typeof, name_idx));
+                            self.emit_a_bc(Opcode.TYPEOFIDENT, (uint)res_typeof, name_idx);
                             return res_typeof;
                         }
                     }
@@ -1664,7 +1664,7 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
                     self.free_reg(op_del);
                     uint msg_idx = self.add_string_constant("Cannot delete a super property");
                     ushort err_reg = self.alloc_reg();
-                    self.emit(bytecode::make_a_bc(Opcode.THROW_REF, (uint)err_reg, msg_idx));
+                    self.emit_a_bc(Opcode.THROW_REF, (uint)err_reg, msg_idx);
                     return err_reg;
                 }
                 // Patch the last emitted instruction from GETPROP (or
@@ -2280,7 +2280,7 @@ fn ushort? CompilerContext.call_expr(&self) {
             uint prop_const = self.add_string_constant(prop_str);
 
             ushort prop_reg = self.alloc_reg();
-            self.emit(bytecode::make_a_bc(Opcode.LDCONST, (uint)prop_reg, prop_const));
+            self.emit_a_bc(Opcode.LDCONST, (uint)prop_reg, prop_const);
 
             ushort result = self.alloc_reg();
             self.emit_abc(Opcode.GETPROP, (uint)result, (uint)callee, (uint)prop_reg);
@@ -2415,7 +2415,7 @@ fn ushort? CompilerContext.call_expr(&self) {
                 uint prop_const = self.add_string_constant(prop_str);
 
                 ushort prop_reg = self.alloc_reg();
-                self.emit(bytecode::make_a_bc(Opcode.LDCONST, (uint)prop_reg, prop_const));
+                self.emit_a_bc(Opcode.LDCONST, (uint)prop_reg, prop_const);
 
                 ushort result = self.alloc_reg();
                 self.emit_abc(Opcode.GETPROP, (uint)result, (uint)callee, (uint)prop_reg);
@@ -2587,7 +2587,7 @@ fn ushort? CompilerContext.emit_call(&self, ushort callee_reg) {
                     // spread cannot overwrite it or the arguments. Updates
                     // callee_reg / first_arg in place.
                     total_count_reg = self.begin_spread_args(&callee_reg, &first_arg, arg_count);
-                    self.emit(bytecode::make_a_sbx(Opcode.LDINT, (uint)total_count_reg, (int)arg_count));
+                    self.emit_a_sbx(Opcode.LDINT, (uint)total_count_reg, (int)arg_count);
                 }
                 ushort spread_reg = self.compile_spread_source(first_arg, arg_count, is_first_spread)!;
 
@@ -2658,9 +2658,9 @@ fn ushort? CompilerContext.emit_call(&self, ushort callee_reg) {
         // above (spread-ness is only known once args are fully parsed), restore
         // it here, CALL_S needs the real value in the register.
         if (getvar_callee) {
-            self.emit(bytecode::make_a_bc(Opcode.GETVAR, (uint)callee_reg, getvar_name_idx));
+            self.emit_a_bc(Opcode.GETVAR, (uint)callee_reg, getvar_name_idx);
         } else if (getglobal_callee) {
-            self.emit(bytecode::make_a_bc(Opcode.GETGLOBAL, (uint)callee_reg, getvar_name_idx));
+            self.emit_a_bc(Opcode.GETGLOBAL, (uint)callee_reg, getvar_name_idx);
         }
         // CALL_S: A=result, B=callee_reg, C=nargs_reg, reuse callee_reg for result
         self.emit_abc(Opcode.CALL_S, (uint)callee_reg, (uint)callee_reg, (uint)total_count_reg);
@@ -2796,7 +2796,7 @@ fn ushort? CompilerContext.emit_tagged_template(&self, ushort callee_reg) {
     uint cache_idx = self.add_constant(undef_tv);
 
     ushort tmpl_arr_reg = self.alloc_reg();
-    self.emit(bytecode::make_a_bc(Opcode.LDCONST, (uint)tmpl_arr_reg, cache_idx));
+    self.emit_a_bc(Opcode.LDCONST, (uint)tmpl_arr_reg, cache_idx);
     ushort cache_test_reg = self.alloc_reg();
     self.emit_abc(Opcode.LDUNDEF, (uint)cache_test_reg, 0, 0);
     self.emit_abc(Opcode.SEQ, (uint)cache_test_reg, (uint)tmpl_arr_reg, (uint)cache_test_reg);
@@ -2812,15 +2812,15 @@ fn ushort? CompilerContext.emit_tagged_template(&self, ushort callee_reg) {
         if (part_invalid[i]) {
             self.emit_abc(Opcode.LDUNDEF, (uint)elem_reg, 0, 0);
         } else {
-            self.emit(bytecode::make_a_bc(Opcode.LDCONST, (uint)elem_reg, str_indices[i]));
+            self.emit_a_bc(Opcode.LDCONST, (uint)elem_reg, str_indices[i]);
         }
         ushort idx_reg = self.alloc_reg();
-        self.emit(bytecode::make_a_sbx(Opcode.LDINT, (uint)idx_reg, (int)i));
+        self.emit_a_sbx(Opcode.LDINT, (uint)idx_reg, (int)i);
         self.emit_abc(Opcode.PUTPROP, (uint)tmpl_arr_reg, (uint)idx_reg, (uint)elem_reg);
         self.free_reg(elem_reg);
         self.free_reg(idx_reg);
     }
-    self.emit(bytecode::make_a_bc(Opcode.SETALEN, (uint)tmpl_arr_reg, part_count));
+    self.emit_a_bc(Opcode.SETALEN, (uint)tmpl_arr_reg, part_count);
 
     // Create raw array (uncooked source text of each part)
     ushort raw_arr_reg = self.alloc_reg();
@@ -2828,14 +2828,14 @@ fn ushort? CompilerContext.emit_tagged_template(&self, ushort callee_reg) {
 
     for (uint i = 0; i < part_count; i++) {
         ushort str_reg = self.alloc_reg();
-        self.emit(bytecode::make_a_bc(Opcode.LDCONST, (uint)str_reg, raw_indices[i]));
+        self.emit_a_bc(Opcode.LDCONST, (uint)str_reg, raw_indices[i]);
         ushort idx_reg = self.alloc_reg();
-        self.emit(bytecode::make_a_sbx(Opcode.LDINT, (uint)idx_reg, (int)i));
+        self.emit_a_sbx(Opcode.LDINT, (uint)idx_reg, (int)i);
         self.emit_abc(Opcode.PUTPROP, (uint)raw_arr_reg, (uint)idx_reg, (uint)str_reg);
         self.free_reg(str_reg);
         self.free_reg(idx_reg);
     }
-    self.emit(bytecode::make_a_bc(Opcode.SETALEN, (uint)raw_arr_reg, part_count));
+    self.emit_a_bc(Opcode.SETALEN, (uint)raw_arr_reg, part_count);
 
     // Set .raw property on template array, a real but non-enumerable data
     // property (ES2015 §12.2.9.3 step 8: CreateDataProperty, then step 9
@@ -2844,7 +2844,7 @@ fn ushort? CompilerContext.emit_tagged_template(&self, ushort callee_reg) {
     {
         uint raw_key_idx = self.add_string_constant("raw");
         ushort raw_key_reg = self.alloc_reg();
-        self.emit(bytecode::make_a_bc(Opcode.LDCONST, (uint)raw_key_reg, raw_key_idx));
+        self.emit_a_bc(Opcode.LDCONST, (uint)raw_key_reg, raw_key_idx);
         self.emit_abc(Opcode.PUTPROP_NE, (uint)tmpl_arr_reg, (uint)raw_key_reg, (uint)raw_arr_reg);
         self.free_reg(raw_key_reg);
     }
@@ -2855,7 +2855,7 @@ fn ushort? CompilerContext.emit_tagged_template(&self, ushort callee_reg) {
     self.free_reg(raw_arr_reg);
     self.emit_abc(Opcode.FREEZEOBJ, (uint)tmpl_arr_reg, 0, 0);
 
-    self.emit(bytecode::make_a_bc(Opcode.SETCONST, (uint)tmpl_arr_reg, cache_idx));
+    self.emit_a_bc(Opcode.SETCONST, (uint)tmpl_arr_reg, cache_idx);
 
     self.patch_jump(cached_jump);
 
@@ -3059,7 +3059,7 @@ fn ushort? CompilerContext.new_expr(&self) {
                             // and place the count register below first_arg so an
                             // unbounded spread cannot corrupt the argument slots.
                             total_count_reg = self.begin_spread_args(&ctor_reg, &first_arg, arg_count);
-                            self.emit(bytecode::make_a_sbx(Opcode.LDINT, (uint)total_count_reg, (int)arg_count));
+                            self.emit_a_sbx(Opcode.LDINT, (uint)total_count_reg, (int)arg_count);
                         }
                         ushort spread_reg = self.compile_spread_source(first_arg, arg_count, is_first_spread)!;
                         self.emit_abc(Opcode.SPREAD_ARG, (uint)first_arg, (uint)total_count_reg, (uint)spread_reg);
@@ -3169,7 +3169,7 @@ fn ushort? CompilerContext.new_expr(&self) {
                 char[] prop_str = self.read_property_name()!;
                 uint prop_const = self.add_string_constant(prop_str);
                 ushort prop_reg = self.alloc_reg();
-                self.emit(bytecode::make_a_bc(Opcode.LDCONST, (uint)prop_reg, prop_const));
+                self.emit_a_bc(Opcode.LDCONST, (uint)prop_reg, prop_const);
                 ushort result = self.alloc_reg();
                 self.emit_abc(Opcode.GETPROP, (uint)result, (uint)ctor_reg, (uint)prop_reg);
                 self.free_reg(prop_reg);
@@ -3233,7 +3233,7 @@ fn ushort? CompilerContext.new_expr(&self) {
             }
             uint prop_const = self.add_string_constant(prop_str);
             ushort prop_reg = self.alloc_reg();
-            self.emit(bytecode::make_a_bc(Opcode.LDCONST, (uint)prop_reg, prop_const));
+            self.emit_a_bc(Opcode.LDCONST, (uint)prop_reg, prop_const);
             ushort result = self.alloc_reg();
             self.emit_abc(Opcode.GETPROP, (uint)result, (uint)ctor_reg, (uint)prop_reg);
             // Check if this is a method call: new X().method(args)
@@ -3385,7 +3385,7 @@ fn ushort? CompilerContext.member_expr(&self) {
             uint prop_const = self.add_string_constant(prop_str);
 
             ushort prop_reg = self.alloc_reg();
-            self.emit(bytecode::make_a_bc(Opcode.LDCONST, (uint)prop_reg, prop_const));
+            self.emit_a_bc(Opcode.LDCONST, (uint)prop_reg, prop_const);
 
             // Always emit GETPROP
             ushort result = self.alloc_reg();
@@ -3549,7 +3549,7 @@ fn ushort CompilerContext.emit_super_base(&self) {
         ? self.add_string_constant("__static_super__")
         : self.add_string_constant("__super__");
     ushort super_ctor_reg = self.alloc_reg();
-    self.emit(bytecode::make_a_bc(Opcode.GETVAR, (uint)super_ctor_reg, super_name_idx));
+    self.emit_a_bc(Opcode.GETVAR, (uint)super_ctor_reg, super_name_idx);
     ushort super_proto_reg;
     if (self.super_is_static_method || self.super_is_home_object) {
         super_proto_reg = self.alloc_reg();
@@ -3558,7 +3558,7 @@ fn ushort CompilerContext.emit_super_base(&self) {
     } else {
         uint proto_name_idx = self.add_string_constant("prototype");
         ushort proto_key_reg = self.alloc_reg();
-        self.emit(bytecode::make_a_bc(Opcode.LDCONST, (uint)proto_key_reg, proto_name_idx));
+        self.emit_a_bc(Opcode.LDCONST, (uint)proto_key_reg, proto_name_idx);
         super_proto_reg = self.alloc_reg();
         self.emit_abc(Opcode.GETPROP, (uint)super_proto_reg, (uint)super_ctor_reg, (uint)proto_key_reg);
         self.free_reg(proto_key_reg);
@@ -3659,10 +3659,10 @@ fn ushort? CompilerContext.primary_expr(&self) {
             double val = num_tok.num_value;
             int int_val = (int)val;
             if ((double)int_val == val && int_val >= bytecode::MIN_SBC && int_val <= bytecode::MAX_SBC) {
-                self.emit(bytecode::make_a_sbx(Opcode.LDINT, (uint)num_reg, int_val));
+                self.emit_a_sbx(Opcode.LDINT, (uint)num_reg, int_val);
             } else {
                 uint const_idx = self.add_number_constant(val);
-                self.emit(bytecode::make_a_bc(Opcode.LDCONST, (uint)num_reg, const_idx));
+                self.emit_a_bc(Opcode.LDCONST, (uint)num_reg, const_idx);
             }
             return num_reg;
 
@@ -3671,7 +3671,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
             Token bi_tok = self.advance()!;
             uint bi_idx = self.add_bigint_constant(bi_tok.str_value)!;
             ushort bi_reg = self.alloc_reg();
-            self.emit(bytecode::make_a_bc(Opcode.LDCONST, (uint)bi_reg, bi_idx));
+            self.emit_a_bc(Opcode.LDCONST, (uint)bi_reg, bi_idx);
             return bi_reg;
 
         case TokenType.STRING:
@@ -3688,7 +3688,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
 
             uint str_idx = self.add_string_constant(str_tok.str_value);
             ushort str_reg = self.alloc_reg();
-            self.emit(bytecode::make_a_bc(Opcode.LDCONST, (uint)str_reg, str_idx));
+            self.emit_a_bc(Opcode.LDCONST, (uint)str_reg, str_idx);
             return str_reg;
 
         case TokenType.IDENTIFIER:
@@ -4494,7 +4494,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 }
                 uint super_name_idx = self.add_string_constant("__super__");
                 ushort super_reg = self.alloc_reg();
-                self.emit(bytecode::make_a_bc(Opcode.GETVAR, (uint)super_reg, super_name_idx));
+                self.emit_a_bc(Opcode.GETVAR, (uint)super_reg, super_name_idx);
 
                 // Parse arguments
                 ushort first_arg = super_reg + 2;
@@ -4519,7 +4519,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                                 // up and place the count register below first_arg
                                 // so an unbounded spread cannot corrupt the args.
                                 total_count_reg = self.begin_spread_args(&super_reg, &first_arg, arg_count);
-                                self.emit(bytecode::make_a_sbx(Opcode.LDINT, (uint)total_count_reg, (int)arg_count));
+                                self.emit_a_sbx(Opcode.LDINT, (uint)total_count_reg, (int)arg_count);
                             }
                             ushort spread_reg = self.compile_spread_source(first_arg, arg_count, is_first_spread)!;
                             self.emit_abc(Opcode.SPREAD_ARG, (uint)first_arg, (uint)total_count_reg, (uint)spread_reg);
@@ -4604,7 +4604,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 if (self.del_mode) {
                     uint msg_idx = self.add_string_constant("Cannot delete a super property");
                     ushort throw_reg = self.alloc_reg();
-                    self.emit(bytecode::make_a_bc(Opcode.THROW_REF, (uint)throw_reg, msg_idx));
+                    self.emit_a_bc(Opcode.THROW_REF, (uint)throw_reg, msg_idx);
                     // Consume the property-name / computed-key tokens so the
                     // surrounding parser sees a clean state. We still parse
                     // `super[expr]` correctly for syntax errors, but the emitted
@@ -4666,7 +4666,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                     char[] prop_str = self.read_property_name()!;
                     uint prop_idx = self.add_string_constant(prop_str);
                     super_key_reg = self.alloc_reg();
-                    self.emit(bytecode::make_a_bc(Opcode.LDCONST, (uint)super_key_reg, prop_idx));
+                    self.emit_a_bc(Opcode.LDCONST, (uint)super_key_reg, prop_idx);
                     result = self.alloc_reg();
                     self.emit_abc(Opcode.GETPROP_SUPER, (uint)result, (uint)super_proto_reg, (uint)super_key_reg);
                 } else {
@@ -4723,7 +4723,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
             }
             uint head_idx = self.add_string_constant(head_tok.str_value);
             ushort result_reg = self.alloc_reg();
-            self.emit(bytecode::make_a_bc(Opcode.LDCONST, (uint)result_reg, head_idx));
+            self.emit_a_bc(Opcode.LDCONST, (uint)result_reg, head_idx);
 
             // Parse the expression inside ${...}. The closing `}` will be a
             // plain RBRACE token (B23 fix: the parser, not the lexer, owns
@@ -4761,7 +4761,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 }
                 uint mid_idx = self.add_string_constant(next_tok.str_value);
                 ushort mid_reg = self.alloc_reg();
-                self.emit(bytecode::make_a_bc(Opcode.LDCONST, (uint)mid_reg, mid_idx));
+                self.emit_a_bc(Opcode.LDCONST, (uint)mid_reg, mid_idx);
 
                 // Concatenate the middle text
                 ushort concat_reg2 = self.alloc_reg();
@@ -4797,7 +4797,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
 
             uint tail_idx = self.add_string_constant(next_tok.str_value);
             ushort tail_reg = self.alloc_reg();
-            self.emit(bytecode::make_a_bc(Opcode.LDCONST, (uint)tail_reg, tail_idx));
+            self.emit_a_bc(Opcode.LDCONST, (uint)tail_reg, tail_idx);
 
             // Concatenate the tail text
             ushort concat_reg4 = self.alloc_reg();
@@ -4814,7 +4814,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
             Token tmpl_tok = self.advance()!;
             uint tmpl_idx = self.add_string_constant(tmpl_tok.str_value);
             ushort tmpl_reg = self.alloc_reg();
-            self.emit(bytecode::make_a_bc(Opcode.LDCONST, (uint)tmpl_reg, tmpl_idx));
+            self.emit_a_bc(Opcode.LDCONST, (uint)tmpl_reg, tmpl_idx);
             return tmpl_reg;
 
         case TokenType.REGEXP: {
@@ -4822,7 +4822,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
             self.validate_regexp_literal(re_tok.str_value)!;
             uint re_idx = self.add_string_constant(re_tok.str_value);
             ushort re_reg = self.alloc_reg();
-            self.emit(bytecode::make_a_bc(Opcode.NEWREGEXP, (uint)re_reg, re_idx));
+            self.emit_a_bc(Opcode.NEWREGEXP, (uint)re_reg, re_idx);
             return re_reg;
         }
 
@@ -5108,7 +5108,7 @@ fn ushort? CompilerContext.object_literal(&self) {
                             prop_key_idx = self.add_string_constant(prop_tok.str_value);
                         }
                         key_reg = self.alloc_reg();
-                        self.emit(bytecode::make_a_bc(Opcode.LDCONST, (uint)key_reg, prop_key_idx));
+                        self.emit_a_bc(Opcode.LDCONST, (uint)key_reg, prop_key_idx);
 
                         // ES2015 §14.3: getter/setter names are prefixed with
                         // "get " or "set " so `o = { get foo() {} }; o.foo.name === "get foo"`.
@@ -5189,7 +5189,7 @@ fn ushort? CompilerContext.object_literal(&self) {
                 shorthand_name_idx = key_idx;  // shorthand `{ name }` = GETVAR this name
                 shorthand_name = key_tok.str_value;
                 key_reg = self.alloc_reg();
-                self.emit(bytecode::make_a_bc(Opcode.LDCONST, (uint)key_reg, key_idx));
+                self.emit_a_bc(Opcode.LDCONST, (uint)key_reg, key_idx);
 
                 // ES2015 §14.3 / §14.1.20: method name inference. Always overwrite
                 // the inherited inferred name from the enclosing assignment, the
@@ -5206,7 +5206,7 @@ fn ushort? CompilerContext.object_literal(&self) {
 
                 uint key_idx = self.add_number_constant(key_tok.num_value);
                 key_reg = self.alloc_reg();
-                self.emit(bytecode::make_a_bc(Opcode.LDCONST, (uint)key_reg, key_idx));
+                self.emit_a_bc(Opcode.LDCONST, (uint)key_reg, key_idx);
             } else if (key_tt == TokenType.BIGINT) {
                 // ES2020 PropertyName: NumericLiteral (DecimalBigIntegerLiteral),
                 // the property name is ToString(NumericValue(NumericLiteral)).
@@ -5215,7 +5215,7 @@ fn ushort? CompilerContext.object_literal(&self) {
                 Token key_tok = self.advance()!;
                 uint key_idx = self.add_bigint_constant(key_tok.str_value)!;
                 key_reg = self.alloc_reg();
-                self.emit(bytecode::make_a_bc(Opcode.LDCONST, (uint)key_reg, key_idx));
+                self.emit_a_bc(Opcode.LDCONST, (uint)key_reg, key_idx);
                 self.emit_abc(Opcode.TOPROPKEY, (uint)key_reg, 0, 0);
             } else if (key_tt == TokenType.LBRACKET) {
                 // Computed property key, clear inferred name since the actual
@@ -5437,7 +5437,7 @@ fn ushort? CompilerContext.array_literal(&self) {
                 // Elision (hole in array)
                 if (has_spread) {
                     ushort one = self.alloc_reg();
-                    self.emit(bytecode::make_a_sbx(Opcode.LDINT, (uint)one, 1));
+                    self.emit_a_sbx(Opcode.LDINT, (uint)one, 1);
                     self.emit_abc(Opcode.ADD, (uint)idx_reg, (uint)idx_reg, (uint)one);
                     self.free_reg(one);
                 } else {
@@ -5455,7 +5455,7 @@ fn ushort? CompilerContext.array_literal(&self) {
                     // First spread: switch to register-based index
                     has_spread = true;
                     idx_reg = self.alloc_reg();
-                    self.emit(bytecode::make_a_sbx(Opcode.LDINT, (uint)idx_reg, (int)index));
+                    self.emit_a_sbx(Opcode.LDINT, (uint)idx_reg, (int)index);
                 }
 
                 // ARRSPRD: A=target_arr, B=idx_reg, C=source
@@ -5470,13 +5470,13 @@ fn ushort? CompilerContext.array_literal(&self) {
                     // a non-writable prototype index doesn't block literal initialisation.
                     self.emit_abc(Opcode.INITPROP, (uint)arr_reg, (uint)idx_reg, (uint)elem_reg);
                     ushort one = self.alloc_reg();
-                    self.emit(bytecode::make_a_sbx(Opcode.LDINT, (uint)one, 1));
+                    self.emit_a_sbx(Opcode.LDINT, (uint)one, 1);
                     self.emit_abc(Opcode.ADD, (uint)idx_reg, (uint)idx_reg, (uint)one);
                     self.free_reg(one);
                 } else {
                     // Compile-time index, use INITPROP (DefinePropertyOrThrow).
                     ushort idx_const = self.alloc_reg();
-                    self.emit(bytecode::make_a_sbx(Opcode.LDINT, (uint)idx_const, (int)index));
+                    self.emit_a_sbx(Opcode.LDINT, (uint)idx_const, (int)index);
                     self.emit_abc(Opcode.INITPROP, (uint)arr_reg, (uint)idx_const, (uint)elem_reg);
                     self.free_reg(idx_const);
                     index++;
@@ -5495,11 +5495,11 @@ fn ushort? CompilerContext.array_literal(&self) {
         // Dynamic length: set arr["length"] = idx_reg
         uint len_const_idx = self.add_string_constant("length");
         ushort len_reg = self.alloc_reg();
-        self.emit(bytecode::make_a_bc(Opcode.LDCONST, (uint)len_reg, len_const_idx));
+        self.emit_a_bc(Opcode.LDCONST, (uint)len_reg, len_const_idx);
         self.emit_abc(Opcode.PUTPROP, (uint)arr_reg, (uint)len_reg, (uint)idx_reg);
         self.free_reg(len_reg);
     } else {
-        self.emit(bytecode::make_a_bc(Opcode.SETALEN, (uint)arr_reg, index));
+        self.emit_a_bc(Opcode.SETALEN, (uint)arr_reg, index);
     }
 
     self.expect(TokenType.RBRACKET)!;

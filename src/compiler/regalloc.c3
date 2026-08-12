@@ -14,12 +14,7 @@ import std::io;
 
 /// Allocate the next free register.
 fn ushort CompilerContext.alloc_reg(&self) {
-    ushort reg = self.next_reg;
-    self.next_reg++;
-    if (self.next_reg > self.max_reg) {
-        self.max_reg = self.next_reg;
-    }
-    if (self.reg_cap != 0xFFFF && reg >= self.reg_cap) {
+    if (self.reg_cap != 0xFFFF && self.next_reg >= self.reg_cap) {
         // The cap keeps a spread call's trailing-argument evaluation below
         // first_arg; an expression needing more registers than the reserved
         // region cannot be compiled. Overflow is reported by finish().
@@ -28,37 +23,45 @@ fn ushort CompilerContext.alloc_reg(&self) {
         self.max_reg  = (ushort)MAX_REGISTERS;
         return (ushort)(MAX_REGISTERS - 1);
     }
-    if (self.next_reg > MAX_REGISTERS) {
+    if ((uint)self.next_reg + 1 > MAX_REGISTERS) {
         // Out of registers: flag the overflow and clamp. finish() reports it
         // as a COMPILE_ERROR; compilation continues only to keep the parser
-        // in sync, since the emitted code is never run.
+        // in sync, since the emitted code is never run. The comparison is
+        // done in uint: next_reg is ushort, so a ushort increment at the
+        // ceiling would wrap to 0 and the guard would never fire.
         self.reg_overflow = true;
         self.next_reg = (ushort)(MAX_REGISTERS - 1);
         self.max_reg  = (ushort)(MAX_REGISTERS - 1);
         return (ushort)(MAX_REGISTERS - 1);
+    }
+    ushort reg = self.next_reg;
+    self.next_reg++;
+    if (self.next_reg > self.max_reg) {
+        self.max_reg = self.next_reg;
     }
     return reg;
 }
 
 /// Allocate multiple consecutive registers, returning the first.
 fn ushort CompilerContext.alloc_regs(&self, ushort count) {
-    ushort first = self.next_reg;
-    self.next_reg += count;
-    if (self.next_reg > self.max_reg) {
-        self.max_reg = self.next_reg;
-    }
-    if (self.reg_cap != 0xFFFF && first >= self.reg_cap) {
+    if (self.reg_cap != 0xFFFF && self.next_reg >= self.reg_cap) {
         // See alloc_reg: the spread-call evaluation-region cap.
         self.reg_overflow = true;
         self.next_reg = (ushort)MAX_REGISTERS;
         self.max_reg  = (ushort)MAX_REGISTERS;
         return (ushort)(MAX_REGISTERS - 1);
     }
-    if (self.next_reg > MAX_REGISTERS) {
+    if ((uint)self.next_reg + (uint)count > MAX_REGISTERS) {
+        // See alloc_reg for why the comparison is done in uint.
         self.reg_overflow = true;
         self.next_reg = (ushort)(MAX_REGISTERS - 1);
         self.max_reg  = (ushort)(MAX_REGISTERS - 1);
         return (ushort)(MAX_REGISTERS - 1);
+    }
+    ushort first = self.next_reg;
+    self.next_reg += count;
+    if (self.next_reg > self.max_reg) {
+        self.max_reg = self.next_reg;
     }
     return first;
 }
@@ -122,7 +125,17 @@ fn void CompilerContext.reclaim_stmt_regs(&self, ushort base) {
 /// emission site must funnel through here instead of open-coding a next_reg
 /// bump past `callee_reg + 2 + nargs`.
 fn void CompilerContext.reserve_call_frame(&self, ushort callee_reg, ushort nargs) {
-    ushort frame_top = callee_reg + 2 + nargs;   // first register past the args
+    uint frame_top_u = (uint)callee_reg + 2 + (uint)nargs;   // first register past the args
+    if (frame_top_u > MAX_REGISTERS) {
+        // The callee frame does not fit in the register file. Reported by
+        // finish(); computed in uint because ushort addition wraps at the
+        // ceiling.
+        self.reg_overflow = true;
+        self.next_reg = (ushort)(MAX_REGISTERS - 1);
+        self.max_reg  = (ushort)(MAX_REGISTERS - 1);
+        return;
+    }
+    ushort frame_top = (ushort)frame_top_u;
     if (self.next_reg < frame_top) {
         self.next_reg = frame_top;
     }
@@ -179,6 +192,15 @@ const uint SPREAD_EVAL_REGS = 6;
 fn ushort CompilerContext.begin_spread_args(&self, ushort* callee_reg, ushort* first_arg, ushort arg_count) {
     ushort old_callee = *callee_reg;
     ushort count_reg = old_callee;
+    if ((uint)old_callee + 2 + SPREAD_EVAL_REGS + 2 + (uint)arg_count > MAX_REGISTERS) {
+        // The shifted spread frame does not fit in the register file; the
+        // uint comparison avoids the ushort wrap at the ceiling. Reported by
+        // finish().
+        self.reg_overflow = true;
+        self.next_reg = (ushort)(MAX_REGISTERS - 1);
+        self.max_reg  = (ushort)(MAX_REGISTERS - 1);
+        return count_reg;
+    }
     ushort new_callee = old_callee + 2 + (ushort)SPREAD_EVAL_REGS;
     self.spread_eval_base = old_callee + 2;
     // Shift callee, this, and the plain args already emitted up by
