@@ -1,6 +1,6 @@
 # Progress: Duktape C3 — test262 Conformance Tracker
 
-**Last Updated:** Session 305 — the compiler's last mutable process-global, `g_private_class_id`, moved to a per-runtime counter on `Heap`; BACKLOG is now fully closed (53 items, 0 open). Local suite 311 scripts, rosetta 42/42, test262 phases 15 (8520 tests) and 0-1 (3148) zero-fail, capi suite green, ASAN clean, NONANBOX smoke passes.
+**Last Updated:** Session 306 — plan 071 M1: the property hash table moved from each object to its shared shape; the 8-property memory cliff is gone (31.1 → 16.3 MB on 50k objects, QuickJS 15.0 MB). Rosetta 42/42, local suite green, test262 phase 0-1 zero-fail.
 
 **Target:** 100% test262 pass rate on the targeted subset (see plan 040).
 
@@ -11,6 +11,17 @@
 - **Single-test repro**: `python3 scripts/run_test262.py --single <path>` (warns if the suite skips the test; `--debug`/`--keep` concat harness for `just lldb` / `--trace-vm`).
 - **Phase counts**: `bash scripts/count_test262_by_phase.sh` · **Delta**: `bash scripts/test262_delta.sh`.
 - **Build**: `c3c build test262_runner` or `c3c build duktape_c3` (plain runner; `duktape_c3_debug` for `-c`/`-t` inspection).
+
+## Session 306 (2026-08-12)
+
+Memory work against QuickJS (`just bench-memory`), opening plan 071. Profiling 50,000 same-shaped objects showed `HASH_MIN_PROPS = 8` as the exact cliff: at 8 named properties every object allocated its own hash table (16 slots x 16 B plus the 16 B `PropHashInfo`, 272 B predicted, 276 B measured), so 50,000 identically-shaped objects built 50,000 identical tables while the shared shape chain already held the authoritative key list. Peak RSS went 17.6 → 31.1 MB between the 7-prop and 8-prop scripts; QuickJS stayed flat at 15.0 MB.
+
+- The table now lives on `Shape` (src/hobject.c3), the same place QuickJS keeps it. A shape's key-to-index mapping is immutable for its lifetime (keys fixed at creation; `delete_prop` and `set_prop_flags` hand the object a fresh private shape instead of mutating a shared one), so a table once built never goes stale and needs no invalidation. It is built lazily on the first `find_prop_idx` that sees `prop_count >= 8`, covers the whole chain from root to leaf, and is freed in `shape_free`, the single teardown choke point. Allocation failure leaves the table null and lookups fall back to the chain walk.
+- Deleted with it: the in-place insert in `put_prop`, the rebuild in `delete_prop`, the free in `hobject_free`, the 8 B `prop_hash` pointer in `HObjectBase`, and the `PropHashInfo` struct.
+- Result: the 8-prop script peaks at 16.3 MB (was 31.1), within noise of the 7-prop script, which itself dropped 17.6 → 16.1 MB on the removed pointer. Objects built but never read by key now pay nothing. `bench_memory_heavy.js` stands at 39.6 MB vs QuickJS 31.9 MB (1.2x); Duktape is 39.1 MB.
+- Accepted trade-off, recorded in the plan: an interleaved grow-then-read loop rebuilds the table once per new shape where the per-object design did an O(1) insert. Builds are per shape, not per object, so class instances and plain construction pay nothing.
+- Gates: rosetta 42/42, local suite and all sub-suites green, test262 phase 0-1 (Core VM, 3148) 2468 pass / 0 fail / 0 CE-unexpected.
+- Remaining gap (plan 071, M2 once profiled): `memory_test.js` still peaks at 2.5x QuickJS. Decomposed above each engine's empty-script baseline (duktape_c3 3,296 KB, QuickJS 2,384 KB, so +912 KB fixed): string concatenation costs 5x (1,840 vs 352 KB), a 200x200 array matrix 2.5x (3,040 vs 1,216 KB), plain objects 2x (3,952 vs 1,920 KB). String concat is the largest relative gap.
 
 ## Session 305 (2026-08-02)
 

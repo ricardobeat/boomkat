@@ -1,0 +1,87 @@
+# Plan 071: memory usage
+
+Work to close the peak-RSS gap with QuickJS, driven by profiling rather than
+guesswork. Each item below starts from a measured allocation, explains why the
+current design pays it, and states the change that removes it.
+
+## M1: per-object property hash tables
+
+### What profiling found
+
+`HASH_MIN_PROPS = 8` (src/hobject.c3) is exactly where object memory climbs.
+A micro-benchmark of 50,000 same-shaped objects, once with 7 named properties
+and once with 8:
+
+| Script | duktape_c3 | QuickJS |
+|--------|-----------|---------|
+| 7 props | 17,584 KB | 14,976 KB |
+| 8 props | 31,056 KB | 14,976 KB |
+
+The 7-to-8 jump is 13,472 KB over 50,000 objects, or 276 B per object. The
+code predicts 272 B: `prop_hash_mask_for(8)` doubles to 16 slots, 16 slots x
+16 B per `HashEntry` is 256 B, plus the 16 B `PropHashInfo` struct. QuickJS
+does not move at all between the two scripts.
+
+### Why the design pays it
+
+The hash table is allocated per object. The shape chain already holds the
+authoritative key list and is shared between same-shaped objects through the
+transition table, so 50,000 identically-shaped objects build 50,000 identical
+256 B tables to answer the same key-to-index question one shared table could
+answer. `HObjectBase` also carries an 8 B `prop_hash` pointer on every object,
+including the majority that never reach 8 properties.
+
+### The change
+
+Move the table from the object to the shape, which is how QuickJS avoids the
+cliff (its `JSShape` holds the property hash for every object using it).
+
+A shape's key-to-index mapping is immutable for its whole lifetime: keys are
+fixed at creation, and both `delete_prop` and `set_prop_flags` operate by
+giving the object a fresh private shape rather than mutating a shared one. A
+table built once therefore never goes stale, needs no invalidation, and stays
+valid for every object that shares the shape.
+
+Concretely:
+
+- Add a `HashEntry*` field to `Shape`. The table covers the whole chain from
+  root to that shape, since that is the key list lookups walk.
+- Build the table lazily in `find_prop_idx`, the first time a lookup sees
+  `prop_count >= HASH_MIN_PROPS` on a shape with no table. Build by walking
+  the shape chain, as the current `ensure_prop_hash` does. Allocation failure
+  leaves the table null and falls back to the chain walk.
+- Free the table in `shape_free`, the single choke point all shape teardown
+  paths go through.
+- Delete the eager maintenance: the in-place insert in `put_prop`, the
+  rebuild in `delete_prop`, the free in `hobject_free`, the `prop_hash`
+  pointer in `HObjectBase`, and the `PropHashInfo` struct.
+
+### Expected effect
+
+On the profiled script the 50,000 tables become one table per shape in the
+chain: 13.5 MB saved, bringing the 8-prop case from 31 MB to roughly the
+7-prop baseline. Every object also shrinks by 8 B, and objects that are built
+but never read by key (write-only construction) never pay for a table at all.
+
+### Measured result
+
+Done. The 8-prop case went from 31,056 KB to 16,288 KB, within noise of the
+7-prop case (16,112 KB, itself down from 17,584 KB on the removed pointer).
+QuickJS holds at 14,976 KB for both. Gates: rosetta 42/42, local suite and
+all sub-suites green, test262 phase 0-1 2468 pass / 0 fail.
+
+### Accepted trade-off
+
+A loop that grows an object one property at a time and reads after every
+write rebuilds the table once per new shape, an O(n) chain walk per build
+where the per-object design did an O(1) insert. Builds are per shape rather
+than per object, so steady-state class instances pay nothing after the first
+instance, and plain construction with no interleaved reads pays nothing until
+the first lookup. The interleaved grow-and-read pattern is rare enough to
+accept this.
+
+## Remaining gap, not yet profiled
+
+The 7-prop baseline still trails QuickJS (16,112 KB vs 14,976 KB on the same
+script). The cause is unknown and no fix is planned here. It becomes M2 once
+profiling names the allocation responsible.

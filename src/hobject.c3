@@ -733,7 +733,6 @@ struct HObjectBase {
     uint          array_size;
     uint          array_used;
     void*         prop_alloc;
-    PropHashInfo* prop_hash;
 }
 
 /// The core ECMAScript object representation.
@@ -984,19 +983,10 @@ fn uint hash_key(void* key) @inline {
 // HObject: property index lookup
 // ============================================================================
 
-/// Each entry in the per-object hash table for fast property lookup.
+/// Each entry in a shape's hash table for fast property lookup.
 struct HashEntry {
     void* key;
     uint  index;
-}
-
-/// Metadata for an object's property hash table, allocated once prop_count
-/// reaches HASH_MIN_PROPS. HObject holds only a pointer to it, so an object that
-/// never builds a table costs 8 bytes rather than the whole struct.
-struct PropHashInfo {
-    void* table;    /// HashEntry[] buffer
-    uint  mask;     /// one less than the slot count
-    uint  count;    /// prop_count as of the last rebuild
 }
 
 /// Choose a hash mask for a given property count.
@@ -1006,57 +996,6 @@ fn uint prop_hash_mask_for(uint prop_count) @inline {
         slots *= 2;
     }
     return slots - 1;
-}
-
-/// Allocate or grow the per-object hash table for property lookup.
-fn void HObject.ensure_prop_hash(&self, heap::Heap* h) {
-    if (self.prop_count < HASH_MIN_PROPS) return;
-    uint new_mask = prop_hash_mask_for(self.prop_count);
-    // Nothing to do when the table is current and correctly sized.
-    if (self.prop_hash != null && self.prop_hash.count == self.prop_count && self.prop_hash.mask == new_mask) return;
-
-    usz new_bytes = (usz)(new_mask + 1) * 16;
-    void* new_table = h.alloc_func(h.heap_udata, new_bytes);
-    if (new_table == null) return;
-    mem::clear(new_table, (sz)(new_bytes));
-
-    HashEntry* entries = (HashEntry*)new_table;
-    uint mask = new_mask;
-
-    // The shape chain is the authoritative key list. During put_prop growth the
-    // new key is already in the shape but not yet in the old table, so rebuild
-    // from the shape rather than from the table.
-    hobject::Shape* sh = self.get_shape(h);
-    while (sh != null) {
-        hobject::ShapeProperty* sp = sh.props();
-        for (uint j = 0; j < sh.own_count; j++) {
-            void* k = sp[j].key;
-            if (k == null) continue;
-            uint hv = hash_key(k);
-            uint slot = hv & mask;
-            while (entries[slot].key != null) slot = (slot + 1) & mask;
-            entries[slot].key = k;
-            entries[slot].index = sh.offset + j;
-        }
-        sh = sh.parent_shape;
-    }
-
-    if (self.prop_hash != null) {
-        h.free_func(h.heap_udata, self.prop_hash.table);
-        self.prop_hash.mask = new_mask;
-        self.prop_hash.count = self.prop_count;
-        self.prop_hash.table = new_table;
-    } else {
-        PropHashInfo* phi = (PropHashInfo*)h.alloc_func(h.heap_udata, PropHashInfo::size);
-        if (phi == null) {
-            h.free_func(h.heap_udata, new_table);
-            return;
-        }
-        phi.table = new_table;
-        phi.mask = new_mask;
-        phi.count = self.prop_count;
-        self.prop_hash = phi;
-    }
 }
 
 /// The property key at `idx`, found by walking the shape chain. Null when the
@@ -1167,26 +1106,32 @@ fn void HObject.set_prop_flags(&self, uint idx, PropFlags new_flags, heap::Heap*
     }
 }
 
-/// The index of the property with this interned key, or -1. Uses the per-object
-/// hash table when one exists, and walks the shape chain otherwise.
+/// The index of the property with this interned key, or -1. Uses the shape's
+/// hash table, building it on first use once the property count reaches
+/// HASH_MIN_PROPS, and walks the shape chain otherwise.
 fn int HObject.find_prop_idx(&self, void* key, heap::Heap* h) {
     if (key == null || self.prop_count == 0) return -1;
 
-    if (self.prop_hash != null) {
-        HashEntry* entries = (HashEntry*)self.prop_hash.table;
-        uint mask = self.prop_hash.mask;
-        uint slot = hash_key(key) & mask;
-        for (uint probes = 0; probes <= mask; probes++) {
-            HashEntry* e = &entries[slot];
-            if (e.key == null) return -1;
-            if (e.key == key) return (int)e.index;
-            slot = (slot + 1) & mask;
+    hobject::Shape* sh = self.get_shape(h);
+
+    if (self.prop_count >= HASH_MIN_PROPS && sh != null) {
+        if (sh.hash_table == null) shape_build_hash(sh, h);
+        if (sh.hash_table != null) {
+            HashEntry* entries = sh.hash_table;
+            uint mask = prop_hash_mask_for(self.prop_count);
+            uint slot = hash_key(key) & mask;
+            for (uint probes = 0; probes <= mask; probes++) {
+                HashEntry* e = &entries[slot];
+                if (e.key == null) return -1;
+                if (e.key == key) return (int)e.index;
+                slot = (slot + 1) & mask;
+            }
+            return -1;
         }
-        return -1;
+        // The table allocation failed, so fall through to the chain walk.
     }
 
     // No hash table, so walk the shape chain.
-    hobject::Shape* sh = self.get_shape(h);
     while (sh != null) {
         hobject::ShapeProperty* sp = sh.props();
         for (uint i = 0; i < sh.own_count; i++) {
@@ -1473,11 +1418,12 @@ fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags, heap::Hea
     // every instance of a class installing the same private field share one
     // shape, where set_prop_flags() would give each a private, uncacheable one.
     //
-    // The shape chain is the authoritative key list that ensure_prop_hash()
-    // rebuilds from, so an object whose shape does not name this key has not
-    // really stored it. transition_shape_new_flags() returns the current ID
-    // unchanged when it cannot allocate, so that case unwinds the append and
-    // reports failure rather than claiming a write that later reads cannot see.
+    // The shape chain is the authoritative key list, so an object whose shape
+    // does not name this key has not really stored it.
+    // transition_shape_new_flags() returns the current ID unchanged when it
+    // cannot allocate, so that case unwinds the append and reports failure
+    // rather than claiming a write that later reads cannot see. The new
+    // shape's hash table stays unbuilt until the first lookup needs it.
     uint new_shape_id = h.transition_shape_new_flags(self.shape_id, key, pflags);
     if (new_shape_id == heap::SHAPE_NONE) {
         // The shape pool is exhausted. Storing the value anyway would leave
@@ -1493,46 +1439,12 @@ fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags, heap::Hea
     }
     self.shape_id = new_shape_id;
 
-    // Insert into the per-object hash table directly, which avoids the malloc
-    // and free that a full rebuild would cost on every put_prop.
-    if (self.prop_count >= HASH_MIN_PROPS) {
-        uint needed_mask = prop_hash_mask_for(self.prop_count);
-        if (self.prop_hash == null) {
-            // No table yet.
-            self.ensure_prop_hash(h);
-        } else if (self.prop_hash.mask != needed_mask) {
-            // Wrong size, so rebuild.
-            self.ensure_prop_hash(h);
-        } else {
-            // Right size, so insert in place.
-            HashEntry* entries = (HashEntry*)self.prop_hash.table;
-            uint mask = self.prop_hash.mask;
-            uint slot = hash_key(key) & mask;
-            uint probes = 0;
-            while (entries[slot].key != null && probes <= mask) {
-                if (entries[slot].key == key) {
-                    // A new key should not already be present; repoint it anyway.
-                    entries[slot].index = new_idx;
-                    return true;
-                }
-                slot = (slot + 1) & mask;
-                probes++;
-            }
-            if (entries[slot].key == null) {
-                entries[slot].key = key;
-                entries[slot].index = new_idx;
-                self.prop_hash.count = self.prop_count;
-            }
-            // A full table cannot happen at the 70% load factor.
-        }
-    }
-
     return true;
 }
 
 /// Delete an own property by interned key. The surviving values shift down to
-/// close the gap, and the object gets a fresh private shape so its hash table
-/// matches the new layout.
+/// close the gap, and the object gets a fresh private shape that names the
+/// surviving keys at their new indexes.
 fn bool HObject.delete_prop(&self, void* key, heap::Heap* h) {
     // On ARRAY and ARGUMENTS exotics a numeric-string key may also sit in the
     // dense part, so clear that slot to `undefined`, the hole sentinel, or a
@@ -1630,14 +1542,8 @@ fn bool HObject.delete_prop(&self, void* key, heap::Heap* h) {
         }
     }
 
-    // Every index after the deleted slot shifted down, so the hash table has to
-    // be rebuilt from the new shape.
-    if (self.prop_hash != null) {
-        h.free_func(h.heap_udata, self.prop_hash.table);
-        h.free_func(h.heap_udata, self.prop_hash);
-        self.prop_hash = null;
-        self.ensure_prop_hash(h);
-    }
+    // The fresh shape has no hash table yet; the next lookup builds one if the
+    // surviving count still reaches HASH_MIN_PROPS.
 
     return true;
 }
@@ -1915,8 +1821,8 @@ fn HObject*? hobject_alloc(void* heap_ptr, ObjClass cls) {
     return obj;
 }
 
-/// Free an HObject along with everything it owns: the property table, the hash
-/// table, and the array part. The caller must already have unlinked it from the
+/// Free an HObject along with everything it owns: the property table and the
+/// array part. The caller must already have unlinked it from the
 /// heap's GC list.
 ///
 /// A pooled object, meaning one without flags.pool_fallback, goes back to its
@@ -1950,18 +1856,6 @@ fn void hobject_free(HObject* obj, void* heap_ptr, bool free_header) {
         if ((*obj.extra_ptr()).ab.data != null) {
             h.free_func(h.heap_udata, (*obj.extra_ptr()).ab.data);
             (*obj.extra_ptr()).ab.data = null;
-        }
-    }
-
-    // Free the per-object property hash table.
-    if (obj.prop_hash != null) {
-        if (hp != null) {
-            heap::Heap* h = hp;
-            h.free_func(h.heap_udata, obj.prop_hash.table);
-            h.free_func(h.heap_udata, obj.prop_hash);
-        } else {
-            mem::free(obj.prop_hash.table);
-            mem::free(obj.prop_hash);
         }
     }
 
@@ -2248,6 +2142,12 @@ struct Shape {
     uint      offset;
     /// Parent pointer for walking the chain, null at the root.
     Shape*    parent_shape;
+    /// Key-to-index table covering the whole chain from root to this shape,
+    /// shared by every object using it. Built on first lookup once the
+    /// property count reaches HASH_MIN_PROPS, and valid for the shape's whole
+    /// life because a shape's keys and indexes never change after creation.
+    /// Null until built, or permanently when allocation failed.
+    HashEntry* hash_table;
 }
 
 // ============================================================================
@@ -2303,8 +2203,35 @@ fn Shape* shape_extend(Shape* parent, uint parent_id, void* new_key, PropFlags f
     return ns;
 }
 
-/// Free a shape. A non-null `heap_ptr` also releases the property keys it
-/// holds; pass null during teardown, when the string table is already going.
+/// Build the hash table of `leaf`, covering every key from the root of the
+/// chain down to `leaf` itself. The shape chain is the authoritative key
+/// list, and it is immutable, so the finished table serves every object that
+/// shares the shape for the shape's whole life. Leaves hash_table null when
+/// the allocation fails; lookups then fall back to walking the chain.
+fn void shape_build_hash(Shape* leaf, heap::Heap* h) {
+    uint total = leaf.offset + leaf.own_count;
+    uint mask = prop_hash_mask_for(total);
+    usz bytes = (usz)(mask + 1) * HashEntry::size;
+    HashEntry* entries = (HashEntry*)h.alloc_func(h.heap_udata, bytes);
+    if (entries == null) return;
+    mem::clear(entries, (sz)bytes);
+
+    Shape* sh = leaf;
+    while (sh != null) {
+        ShapeProperty* sp = sh.props();
+        for (uint j = 0; j < sh.own_count; j++) {
+            void* k = sp[j].key;
+            if (k == null) continue;
+            uint slot = hash_key(k) & mask;
+            while (entries[slot].key != null) slot = (slot + 1) & mask;
+            entries[slot].key = k;
+            entries[slot].index = sh.offset + j;
+        }
+        sh = sh.parent_shape;
+    }
+    leaf.hash_table = entries;
+}
+
 /// Free a shape's backing memory, optionally releasing the key references it
 /// holds.
 ///
@@ -2322,6 +2249,7 @@ fn void shape_free(Shape* sh, heap::Heap* h, bool release_keys) {
             }
         }
     }
+    if (sh.hash_table != null) h.free_func(h.heap_udata, sh.hash_table);
     h.free_func(h.heap_udata, sh);
 }
 
