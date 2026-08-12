@@ -12,7 +12,7 @@ decimal.js, bignumber.js, mathjs, jszip, papaparse, crypto-js, protobufjs,
 chance, he, nearley, d3-array, uuid, plus typescript 9 MB and babel 5 MB).
 QuickJS (`out/qjs`) is the differential oracle throughout.
 
-Status: B2, B5, B6, B7, B8, B9, B10, B11 fixed. B1 in progress. B3, B4, B12
+Status: B1, B2, B5, B6, B7, B8, B9, B10, B11 fixed. B3, B4, B12
 and the E-series open.
 
 ## Contents
@@ -91,6 +91,9 @@ diverged, which is what motivated this plan.
 ---
 
 ## B1: register allocation silently wraps at 256
+
+**Status: FIXED (a9b75316)** — a two-word WIDE prefix extends operands to
+16 bits (65535 registers); see the commit for the full design.
 
 **Severity: high. Silent wrong answers, no diagnostic.**
 
