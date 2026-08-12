@@ -3790,6 +3790,25 @@ fn void Heap.large_string_unregister(&self, HString* s) {
     s.registry_slot = hstring::REGISTRY_SLOT_NONE;
 }
 
+/// Allocate a non-interned concat accumulator holding `data` but with room to
+/// grow to `cap` bytes, so subsequent appends land in place instead of copying
+/// the whole accumulator again.
+///
+/// Only used for results already past `MAX_INTERN_BYTES`, which `str_intern`
+/// would leave un-interned anyway, so this adds no new un-interned strings; it
+/// only gives one of them spare capacity. Returns null if allocation fails.
+fn HString* Heap.alloc_concat_accumulator(&self, char[] data, uint cap) {
+    HString*? new_s = hstring::hstring_alloc_cap(self, data, hstring::HASH_DEFERRED, cap);
+    if (try s = new_s) {
+        // Same registry contract as any other large non-interned string: the
+        // registry is how mark-sweep and heap reset reach a string the table
+        // does not hold.
+        self.large_string_register(s);
+        return s;
+    }
+    return null;
+}
+
 /// Intern an HString on demand. An already-interned string comes back
 /// unchanged; otherwise a lookup by content may find an existing copy, and
 /// failing that this string is inserted. Property lookup calls this when a
