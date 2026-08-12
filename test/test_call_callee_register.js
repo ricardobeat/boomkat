@@ -1,9 +1,5 @@
-// B16 — PENDING: this test FAILS on the current engine. It is staged here,
-// outside test/ proper, so it does not break the green sweep; move it up to
-// test/ as part of the fix.
-//
-// A call's callee is materialized into the wrong register when BOTH of these
-// hold:
+// A call's callee was materialized into the wrong register when BOTH of these
+// held:
 //   1. SHADOWING — some nested function rebinds the callee's name. Any form
 //      does it: `var e` in an inner declaration, `var e` in a function
 //      expression, or an inner parameter named `e`. The outer binding may be
@@ -22,9 +18,23 @@
 //   [  6] LDREG           r6 = r2, r0      <-- callee into r6
 //   [  8] CALL            r5 = r5, r1      <-- CALL reads r5
 //
-// so it calls a stale register and reports "undefined is not a function".
+// so it called a stale register and reported "undefined is not a function".
 //
-// This breaks jszip 3.10.1, whose browserify module 10 is exactly this shape.
+// Root cause: the callee's GETVAR is STRIPPED from the code stream up front,
+// on the promise that CALL_VAR at the end will load the callee itself. But
+// CALL_VAR is only emitted when `undef_this` holds, and that is false whenever
+// a receiver register is pending. A stale `call_prop_obj_reg` left by the
+// enclosing property assignment made the strip fire and then emit a plain
+// CALL, reading a register nothing had written. The sibling getglobal_callee
+// guard already carried the `call_prop_obj_reg == REG_NONE` precondition, with
+// a comment naming this exact hazard; getvar_callee was missing it.
+//
+// This broke jszip 3.10.1, marked 4.3.0, handlebars 4.7.8 and bluebird 3.7.2 —
+// all four failed to load, with symptoms that looked unrelated (handlebars
+// reported "Object.defineProperty called on non-object"). The entire test262
+// corpus (49814 tests) passes with the bug present, so the oracle here is node
+// under an explicit "use strict"; qjs on a plain script runs sloppy mode and
+// disagrees about the shadowing cases for the wrong reason.
 // The ENTIRE test262 corpus (49814 tests) passes with this bug present, so the
 // oracle here is node under an explicit "use strict" — not the suite.
 //
