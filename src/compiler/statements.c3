@@ -5304,10 +5304,23 @@ fn void? CompilerContext.function_declaration(&self, bool is_async_decl = false,
     // `async` keyword, and we use that instead of fn_kw_start.
     uint fn_kw_start = is_async_decl && async_kw_start != 0xFFFFFFFF ? async_kw_start : self.lexer.token_start;
 
-    // Check if this function declaration was already hoisted during pre-scan
+    // Check if this function declaration was already hoisted during pre-scan.
     // If so, skip it entirely to avoid duplicate compilation.
-    // For global scope, check against hoisted_fn_names
-    if (self.is_global) {
+    //
+    // This applies to function-local bodies as well as global scope:
+    // hoist_decls already emitted CLOSURE+DECLVAR for every declaration at the
+    // body's own top level, so re-compiling here would emit a SECOND CLOSURE
+    // and rebind the name to a different function object at the declaration's
+    // textual position. Code that reads the binding before that point (the
+    // browserify `module.exports = c; ... function c(){}` shape) would then
+    // hold a stale object whose later statics never appear on it.
+    // hoisted_fn_names is per-CompilerContext and each function body compiles
+    // in its own context, so the list only ever names this body's own
+    // top-level declarations. The scope_depth == 0 guard keeps a declaration
+    // nested in a block (`function c(){} { function c(){} }`) out of the skip:
+    // hoist_decls never recorded that one, and it is a distinct binding that
+    // must still get its own CLOSURE here.
+    if (self.is_global || (self.hoisted_fn_count > 0 && self.scope_depth == 0)) {
         // Extract function name from current lexer position. A `function*`
         // generator's name is TWO tokens ahead (`*` then the identifier), and
         // the lexer's single-slot pushback can't hold both, use the
