@@ -125,15 +125,24 @@ bitstruct HStringFlags : uint {
 /// Header size in bytes, used to locate the inline string data.
 const usz HSTRING_HDR_SIZE = HString::size;
 
-/// A heap-allocated, immutable string.
+/// A heap-allocated string.
 ///
 /// The raw UTF-8 bytes sit immediately after the struct in the same allocation;
 /// `get_data()` returns a slice over them. A NUL terminator is always written
 /// past the last byte, so the data pointer can go straight to a C API.
+///
+/// Strings are immutable once they can be observed. The one exception is a
+/// non-interned concatenation accumulator that is provably referenced by a
+/// single VM register: `try_append_in_place` extends it in the spare bytes
+/// `capacity` reserves, which is what keeps `s += chunk` loops linear.
 struct HString {
     /// HeapHeader-compatible bits plus the string-specific ones.
     HStringFlags flags;
     uint         refcount;
+    /// Bytes of inline data this allocation can hold, excluding the NUL
+    /// terminator. Equal to `blen` for every ordinary string; only an
+    /// over-allocated concat accumulator has `capacity > blen`.
+    uint capacity;
     /// Slot this string holds in the heap's large-string registry, or
     /// `REGISTRY_SLOT_NONE` for an interned string, which the string table
     /// tracks instead, and for one whose registration was declined.
@@ -481,15 +490,25 @@ fn uint scan_backwards_n(char[] data, uint start, uint n) @local {
 ///
 /// Returns the new HString, or a fault if allocation fails.
 fn HString*? hstring_alloc(void* heap_ptr, char[] data, uint hash) {
+    return hstring_alloc_cap(heap_ptr, data, hash, (uint)data.len);
+}
+
+/// Allocate an HString whose inline buffer holds `cap` bytes but whose logical
+/// length is `data.len`, so `try_append_in_place` can extend it without moving
+/// the allocation. `cap` must be at least `data.len`.
+///
+/// Returns the new HString, or a fault if allocation fails.
+fn HString*? hstring_alloc_cap(void* heap_ptr, char[] data, uint hash, uint cap) {
     // Backstop for the string-length cap. Callers are expected to check first,
     // so they can raise a catchable RangeError naming the operation; refusing
     // here as an allocation failure keeps a missed caller from writing a
     // wrapped `blen` into the header.
-    if (length_exceeds_max((ulong)data.len)) {
+    if (length_exceeds_max((ulong)data.len) || length_exceeds_max((ulong)cap)) {
         return duktape::types::ALLOC_ERROR~;
     }
+    if (cap < (uint)data.len) { cap = (uint)data.len; }
 
-    usz total = HSTRING_HDR_SIZE + (usz)data.len + 1;  // +1 for NUL
+    usz total = HSTRING_HDR_SIZE + (usz)cap + 1;  // +1 for NUL
 
     void* raw = ((heap::Heap*)heap_ptr).alloc_no_gc(total) ?? null;
     if (raw == null) {
@@ -504,6 +523,7 @@ fn HString*? hstring_alloc(void* heap_ptr, char[] data, uint hash) {
     s.flags.htype = HType.STRING;
     s.hash = hash;
     s.blen = (uint)data.len;
+    s.capacity = cap;
 
     // Unregistered until the caller decides the string needs a registry slot.
     s.registry_slot = REGISTRY_SLOT_NONE;
@@ -537,6 +557,40 @@ fn HString*? hstring_alloc(void* heap_ptr, char[] data, uint hash) {
     dest[data.len] = 0;  // NUL terminator
 
     return s;
+}
+
+/// Append `data` to a concat accumulator in place, if it has the spare capacity.
+/// Returns false when it does not, leaving the string untouched so the caller
+/// falls back to allocating a fresh one.
+///
+/// The caller must have established that `self` is safe to mutate: non-interned,
+/// not a symbol, and reachable from exactly one VM register. See the guard in
+/// the ADD opcode's string path, which is the only caller.
+fn bool HString.try_append_in_place(&self, char[] data) {
+    ulong need = (ulong)self.blen + (ulong)data.len;
+    if (need > (ulong)self.capacity) { return false; }
+
+    char* dest = self.get_cstr();
+    if (data.len > 0) {
+        mem::copy(dest + self.blen, data.ptr, (sz)(data.len));
+    }
+    self.blen = (uint)need;
+    dest[need] = 0;  // NUL terminator
+
+    // The bytes changed, so every content-derived field has to be rebuilt or
+    // invalidated. A hash is O(blen) and would reintroduce the quadratic cost
+    // the in-place append exists to remove, so it is deferred to content_hash.
+    self.hash = HASH_DEFERRED;
+    self.cached_charlen = CHARLEN_NONE;
+    self.cached_char_offset = 0;
+    self.cached_byte_offset = 0;
+    if (self.flags.is_ascii && !check_is_ascii(data)) {
+        self.flags.is_ascii = false;
+    }
+    // is_arridx and is_symbol cannot newly become true: the accumulator is
+    // already longer than any array index, and a symbol prefix is decided by
+    // byte 0, which an append never touches.
+    return true;
 }
 
 // ============================================================================

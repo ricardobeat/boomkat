@@ -187,6 +187,97 @@ fn bool instanceof_walk_chain(Vm* vm, Dispatch* ds, HObject* start, HObject* pro
 /// heap.has_error when they convert it into their own throw, but nothing clears
 /// throw_pending, so the next arithmetic coercion re-fires the same RangeError
 /// after the user's catch has already handled it.
+/// Minimum accumulator size before the in-place append path engages. Below
+/// `MAX_INTERN_BYTES` a concat result is interned, so it is shared by
+/// definition and must never be mutated; the ordinary copy path handles it.
+const uint CONCAT_ACCUM_MIN = heap::MAX_INTERN_BYTES;
+
+/// Fast path for `acc = acc + chunk`, the shape every `acc += chunk` loop
+/// compiles to. Appends `rs` onto `ls` in place and leaves the result in `ra`,
+/// returning true when it applied.
+///
+/// Mutating a live HString is only sound because every way the string could be
+/// observed elsewhere is excluded first:
+///
+///   - `!ls.flags.is_interned` — an interned string is in the string table,
+///     where any equal literal or property key can alias it, and mutating it
+///     would corrupt unrelated values. Interning also means the table holds a
+///     reference, so the refcount test below would fail anyway.
+///   - `!ls.is_symbol()` — symbol identity is its bytes; never extend one.
+///   - `refcount == 1`, or `2` when the next instruction stores `ra` straight
+///     back into the binding it was just loaded from (see below). One owner,
+///     combined with `ra` being that owner (checked next), means no other
+///     register, property slot, environment binding, or native local can see
+///     this string.
+///   - `ra` holds `ls` and `ra == rb` — the destination register IS the sole
+///     owner, so the append cannot change any value other than the one being
+///     assigned. This is precisely the `acc = acc + chunk` shape; `x = y + z`
+///     with a distinct destination does not qualify and falls through.
+///   - not a temproot — a temproot is anchored by a native C3 local that can
+///     still read it after this opcode.
+///
+/// The refcount-2 case covers `s += chunk` on a variable rather than a
+/// temporary, which compiles to GETGLOBAL/GETVAR, ADD, PUT*: the load leaves the
+/// binding slot and the register holding the same pointer, so the second
+/// reference is the very slot the following PUT overwrites with this same
+/// string. Requiring that PUT to be the next instruction, and to name this
+/// register, is what makes "the other owner is that binding" a certainty rather
+/// than an inference — no other opcode can observe the old bytes in between.
+///
+/// The result stays non-interned, which is the pre-existing contract for any
+/// concat result over `MAX_INTERN_BYTES`: `ensure_interned` canonicalizes it at
+/// every point where identity matters.
+fn bool vm_concat_accumulate(Vm* vm, Activation* act, TVal* ra, TVal* rb,
+                             HString* ls, HString* rs, uint reg_idx,
+                             bytecode::Instruction* next_insn) {
+    if (ra != rb) return false;
+    if (ls.blen < CONCAT_ACCUM_MIN) return false;
+    if (ls.flags.is_interned || ls.flags.is_symbol) return false;
+    if (((types::HeapHeader*)ls).is_temproot()) return false;
+    if (!ra.is_string() || ra.get_heapptr() != (void*)ls) return false;
+
+    uint rc_val = ((types::HeapHeader*)ls).refcount;
+    if (rc_val != 1) {
+        if (rc_val != 2) return false;
+        // The only tolerated second owner is the binding slot this value came
+        // from and is about to be written straight back into.
+        if (next_insn == null) return false;
+        if (next_insn.a != reg_idx) return false;
+        Opcode nop = next_insn.op;
+        if (nop != Opcode.PUTGLOBAL && nop != Opcode.PUTVAR
+            && nop != Opcode.PUTVAR_ASSIGN) return false;
+    }
+    // Appending to itself would read the buffer it is writing into.
+    if (ls == rs) return false;
+
+    if (ls.try_append_in_place(rs.get_data())) return true;
+
+    // Out of capacity: grow geometrically so a loop of N appends does O(log N)
+    // copies overall rather than one per iteration.
+    ulong need = (ulong)ls.blen + (ulong)rs.blen;
+    ulong want = (ulong)ls.capacity * 2;
+    if (want < need) { want = need; }
+    if (hstring::length_exceeds_max(want)) { want = need; }
+    if (hstring::length_exceeds_max(want)) return false;
+
+    HString* grown = vm.heap.alloc_concat_accumulator(ls.get_data(), (uint)want);
+    if (grown == null) return false;
+    if (!grown.try_append_in_place(rs.get_data())) {
+        // Cannot happen: the capacity was sized for exactly this append. Drop
+        // the allocation, which no one references yet, and let the generic path
+        // produce the result.
+        vm.heap.large_string_unregister(grown);
+        vm.heap.free_string(grown);
+        return false;
+    }
+
+    // set_reg_string increfs the new string and releases the old accumulator,
+    // whose sole reference was this register, so it is freed here.
+    vm.heap.set_reg_string(ra, grown);
+    track_heap_store(act, ra, reg_idx);
+    return true;
+}
+
 fn bool vm_run_depth_exceeded(Vm* vm) {
     if (vm.run_depth < MAX_RUN_DEPTH) return false;
     TVal err;
@@ -1978,6 +2069,15 @@ fn TVal? Vm.run(Vm* vm) {
                         buf = (char*)vm.heap.alloc_func(vm.heap.heap_udata, total);
                         if (buf == null) { ra.set_undefined(); break; }
                         heap_allocated = true;
+                    }
+
+                    // `acc += chunk` in a loop: extend the accumulator in place
+                    // rather than copying it whole on every iteration, which is
+                    // what makes the naive form quadratic. Only legal when the
+                    // accumulator is provably unshared; see vm_concat_accumulate.
+                    if (vm_concat_accumulate(vm, ds.act, ra, rb, ls, rs, (uint)insn.a,
+                                             ds.curr_pc)) {
+                        continue;
                     }
 
                     // Copy both halves directly into buffer
