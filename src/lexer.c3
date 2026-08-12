@@ -2005,6 +2005,24 @@ fn char[]? Lexer.scan_template_content(&self, char* end_char, bool* has_escapes,
     uint raw_len = 0;
 
     while (!self.at_end()) {
+        // Both buffers are fixed-size stack arrays, and every write below is
+        // an unguarded `buf[buf_len] = ...; buf_len++`. scan_string carries
+        // the same check (search STRING_BUF_SIZE - 6 there); this function did
+        // not, so a template part longer than the buffer wrote past the end of
+        // a stack array and corrupted the compiler's own frame. On typescript
+        // 5.4.5 that landed as a jump into string data (PC = 0x6e694c656c676e69,
+        // ASCII text) rather than any diagnosable error.
+        //
+        // The -6 margin matches scan_string's: a single iteration can append
+        // up to 4 bytes for a \uXXXX escape encoded as UTF-8, and the raw
+        // buffer can take several bytes for one escape sequence, so the check
+        // has to leave room for the widest single step rather than one byte.
+        // Checked once at the top of the loop, which dominates every write in
+        // the body.
+        if (buf_len >= STRING_BUF_SIZE - 6 || raw_len >= STRING_BUF_SIZE - 6) {
+            return LEX_ERROR~;
+        }
+
         char ch = self.peek_char();
 
         if (ch == '`') {
@@ -2188,9 +2206,16 @@ fn char[]? Lexer.scan_template_content(&self, char* end_char, bool* has_escapes,
         if (raw_end > start_pos) {
             // Normalize CR / CRLF to LF in the raw text (TRV of
             // LineTerminatorSequence), same as the cooked-scanning path above.
+            // Same bound as the cooked loop above: out_len grows with the
+            // source span, which is unbounded, while raw_buf is a fixed stack
+            // array. Checked before each write rather than once, since this
+            // loop copies straight from source with no other exit.
             uint out_len = 0;
             uint ri = start_pos;
             while (ri < raw_end) {
+                if (out_len >= STRING_BUF_SIZE - 6) {
+                    return LEX_ERROR~;
+                }
                 char rc = self.source[ri];
                 if (rc == '\r') {
                     raw_buf[out_len] = '\n'; out_len++;
