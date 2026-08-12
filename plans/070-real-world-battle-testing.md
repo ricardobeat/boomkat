@@ -102,7 +102,7 @@ All 21 load under QuickJS; 8 failed here originally.
 | jszip 3.10.1 | FAIL | **PASS** | B16 |
 | handlebars 4.7.8 | FAIL | **PASS** | B16 |
 | protobufjs 7.4.0 | FAIL | FAIL | `request must be specified` — see below |
-| typescript 5.4.5 | FAIL | FAIL | B17 fixed the parse error; now dies in COMPILATION (rc=138, a signal) on the 9 MB source before executing a line. A depth/size limit, not a syntax bug. |
+| typescript 5.4.5 | FAIL | FAIL | Was a SIGBUS from B19's buffer overruns; now fails cleanly. Remaining blocker is a **positionless diagnostic** — `compile error at line 0:0` with no message — so the actual cause is still unidentified. ASan is clean on it, so it is no longer memory corruption. |
 | babel 7.24.7 | FAIL | ? | not re-tested |
 
 **Five of the eight are fixed, four of them by B16 alone.** Their symptoms had
@@ -114,6 +114,13 @@ missing guard term accounted for all of them.
 protobufjs's remaining error is thrown by protobufjs itself, not by the
 engine, and it loads far enough to run its own argument validation; it may not
 be an engine bug at all. Worth confirming before spending on it.
+
+**The next step for typescript is fixing the DIAGNOSTIC, not guessing at the
+cause.** `compile error at line 0:0` with an empty message means the module
+path lost the lexer's recorded position and text; until that reports properly,
+any work on the underlying failure is blind. The plain-script path prints
+`SyntaxError: <msg> (line L, col C)` correctly, so the two paths have diverged
+— the same parallel-path asymmetry as B16 and B19.
 The original analysis here reasoned from function-declaration counts per scope
 and concluded the remaining six needed "six independent minimisations". That
 was wrong in an instructive way: bluebird, jszip, handlebars and marked shared
