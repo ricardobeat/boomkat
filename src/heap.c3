@@ -3498,9 +3498,8 @@ fn void Heap.sweep_large_strings(&self) {
     for (uint i = 0; i < self.large_string_count; i++) {
         HString* s = self.large_strings[i];
         if (((HeapHeader*)s).is_reachable()) {
-            // Survivors compact downward, carrying their recorded slot along.
+            // Survivors compact downward.
             self.large_strings[kept] = s;
-            s.registry_slot = kept;
             kept++;
         } else {
             self.free_string(s);
@@ -3850,26 +3849,23 @@ fn void Heap.large_string_register(&self, HString* s) {
         self.large_strings         = (HString**)grown;
         self.large_string_capacity = new_cap;
     }
-    s.registry_slot = self.large_string_count;
     self.large_strings[self.large_string_count] = s;
     self.large_string_count++;
 }
 
 /**
- * Remove a non-interned string from the registry by its recorded slot,
- * moving the last entry into the vacated slot and fixing up its index.
+ * Remove a non-interned string from the registry, moving the last entry into
+ * the vacated slot. The registry holds few strings, so finding the entry by
+ * pointer beats carrying a slot index in every string header.
  */
 fn void Heap.large_string_unregister(&self, HString* s) {
-    uint slot = s.registry_slot;
-    if (slot >= self.large_string_count) { return; }
-    uint last = self.large_string_count - 1;
-    if (slot != last) {
-        HString* moved = self.large_strings[last];
-        self.large_strings[slot] = moved;
-        moved.registry_slot = slot;
+    for (uint i = 0; i < self.large_string_count; i++) {
+        if (self.large_strings[i] == s) {
+            self.large_string_count--;
+            self.large_strings[i] = self.large_strings[self.large_string_count];
+            return;
+        }
     }
-    self.large_string_count = last;
-    s.registry_slot = hstring::REGISTRY_SLOT_NONE;
 }
 
 /// Allocate a non-interned concat accumulator holding `data` but with room to

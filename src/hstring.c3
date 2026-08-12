@@ -43,10 +43,6 @@ const uint MAX_ARRIDX = 0xFFFF_FFFE;
 /// Sentinel value indicating "not a valid array index".
 const uint ARRIDX_NONE = 0xFFFF_FFFF;
 
-/// Sentinel for `HString.registry_slot`: the string holds no slot in the
-/// heap's large-string registry.
-const uint REGISTRY_SLOT_NONE = (uint)-1;
-
 /// Sentinel for `HString.cached_charlen`: the character length has not yet
 /// been computed for this string.
 const uint CHARLEN_NONE = (uint)-1;
@@ -143,10 +139,6 @@ struct HString {
     /// terminator. Equal to `blen` for every ordinary string; only an
     /// over-allocated concat accumulator has `capacity > blen`.
     uint capacity;
-    /// Slot this string holds in the heap's large-string registry, or
-    /// `REGISTRY_SLOT_NONE` for an interned string, which the string table
-    /// tracks instead, and for one whose registration was declined.
-    uint registry_slot;
 
     // --- String-specific fields ---
 
@@ -525,8 +517,6 @@ fn HString*? hstring_alloc_cap(void* heap_ptr, char[] data, uint hash, uint cap)
     s.blen = (uint)data.len;
     s.capacity = cap;
 
-    // Unregistered until the caller decides the string needs a registry slot.
-    s.registry_slot = REGISTRY_SLOT_NONE;
     // char_length() fills this in on first use.
     s.cached_charlen = CHARLEN_NONE;
 
