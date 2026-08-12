@@ -102,7 +102,7 @@ All 21 load under QuickJS; 8 failed here originally.
 | jszip 3.10.1 | FAIL | **PASS** | B16 |
 | handlebars 4.7.8 | FAIL | **PASS** | B16 |
 | protobufjs 7.4.0 | FAIL | FAIL | `request must be specified` — see below |
-| typescript 5.4.5 | FAIL | FAIL | Was a SIGBUS from B19's buffer overruns; now fails cleanly. Remaining blocker is a **positionless diagnostic** — `compile error at line 0:0` with no message — so the actual cause is still unidentified. ASan is clean on it, so it is no longer memory corruption. |
+| typescript 5.4.5 | FAIL | FAIL | **Diagnosed.** Was a SIGBUS from B19; now reports `compile error at line 15576:4: too many nested scopes or declarations in one function`. It genuinely exceeds `MAX_SCOPE_DEPTH` (1024) in one function — a real limit to raise, not a bug. ASan is clean. |
 | babel 7.24.7 | FAIL | ? | not re-tested |
 
 **Five of the eight are fixed, four of them by B16 alone.** Their symptoms had
@@ -115,12 +115,17 @@ protobufjs's remaining error is thrown by protobufjs itself, not by the
 engine, and it loads far enough to run its own argument validation; it may not
 be an engine bug at all. Worth confirming before spending on it.
 
-**The next step for typescript is fixing the DIAGNOSTIC, not guessing at the
-cause.** `compile error at line 0:0` with an empty message means the module
-path lost the lexer's recorded position and text; until that reports properly,
-any work on the underlying failure is blind. The plain-script path prints
-`SyntaxError: <msg> (line L, col C)` correctly, so the two paths have diverged
-— the same parallel-path asymmetry as B16 and B19.
+**Fixing the diagnostic diagnosed it.** The plan above was to repair
+`compile error at line 0:0` before guessing at the cause; enforcing the
+scope-stack cap (`bcef20e9`) did exactly that, and typescript immediately named
+its own problem: it exceeds `MAX_SCOPE_DEPTH` in one function, at line 15576.
+
+That is a limit to raise, not a bug to fix — but raising it needs a
+heap-allocated scope stack, since 1024 entries is already the ceiling that fits
+c3c's 64 KB stack-object budget for `CompilerContext`. Converting
+`scope_stack`, `patches` and `hoisted_fn_names` to heap-backed growable arrays
+is the single change that lifts all three caps at once, and is the natural next
+step for this file.
 The original analysis here reasoned from function-declaration counts per scope
 and concluded the remaining six needed "six independent minimisations". That
 was wrong in an instructive way: bluebird, jszip, handlebars and marked shared
