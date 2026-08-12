@@ -658,6 +658,32 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                 act.this_binding = this_val;
             }
 
+            // Initial (non-resume) call to a plain async function, i.e. a
+            // builtin invoking an async callback (Array.prototype.map's
+            // mapper, a sort comparator, ...). The CALL opcode installs the
+            // Promise and ACT_FLAG_ASYNC for the same case in vm_calls.c3;
+            // without it here the body runs to completion synchronously and
+            // the raw return value leaks out in place of a Promise.
+            //
+            // Async generators are excluded: they suspend at GEN_START and
+            // hand back a generator object through the block below instead.
+            //
+            // The Promise is kept in cfn_async_promise so the suspend path
+            // can return it: an AWAIT in the body pops this activation, and
+            // with activation_count reaching 0 the inner Vm.run halts with
+            // undefined rather than reaching RET. The body resumes later, off
+            // the microtask queue, through this same function (Case 3's
+            // resume branch above), and its RET settles this Promise.
+            HObject* cfn_async_promise = null;
+            if (!did_resume && target.is_async() && !target.is_user_generator()) {
+                HObject*? cfn_prom_raw = builtins::promise_create(vm.heap);
+                if (try cfn_p = cfn_prom_raw) {
+                    act.flags |= ACT_FLAG_ASYNC;
+                    act.async_promise = cfn_p;
+                    cfn_async_promise = cfn_p;
+                }
+            }
+
             // For the initial (non-resume) call to a generator function, set up
             // gen_initial_gs / gen_initial_obj so GEN_START can find them.
             // vm.heap.gen_initial_gs may already be set (from the inline CALL opcode)
@@ -840,6 +866,22 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
             if (cfn_is_gen_initial && cfn_gen_result_slot.is_object()
                 && cfn_gen_result_slot.get_heapptr() != null) {
                 result = cfn_gen_result_slot;
+            }
+
+            // An async function always evaluates to its Promise. Two shapes
+            // reach here and both must produce it:
+            //   - the body ran to RET, which already resolved the Promise and
+            //     handed it back as the result (this is a no-op rewrite);
+            //   - the body suspended at an AWAIT, which popped the only
+            //     activation and halted the inner Vm.run with undefined. The
+            //     Promise is still pending and is settled later, when the
+            //     microtask queue drains and the resume reaction re-enters
+            //     the body through Case 3's resume branch.
+            // Without this, the suspending shape returns undefined and the
+            // caller (Array.prototype.map, a sort comparator, ...) sees a
+            // hole where the Promise belongs.
+            if (cfn_async_promise != null) {
+                result.set_object(cfn_async_promise);
             }
 
             // Drain microtasks after callback execution, but only when this
