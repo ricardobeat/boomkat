@@ -999,10 +999,21 @@ fn void CompilerContext.adopt_private_names(&self, CompilerContext* parent) {
 fn void CompilerContext.ensure_code_cap(&self) {
     if (self.code_count < self.code_cap) return;
     uint new_cap = self.code_cap * 2;
-    if (new_cap > MAX_CODE_HARD) return;
+    // Returning silently leaves emit() to hit the cap and drop instructions,
+    // producing a truncated function with NO recorded error — the CLI then
+    // prints "compile error at line 0:0" with an empty message, naming neither
+    // the cause nor a position. record_error (not set_compile_error) so the
+    // current token's line/col is carried too.
+    if (new_cap > MAX_CODE_HARD) {
+        self.record_error("function too large (bytecode limit exceeded)");
+        return;
+    }
     Heap* h = (Heap*)self.heap;
     void* p = h.realloc_func(h.heap_udata, self.code, (usz)(new_cap * Instruction::size));
-    if (p == null) return;
+    if (p == null) {
+        self.record_error("out of memory growing the bytecode buffer");
+        return;
+    }
     self.code = (Instruction*)p;
     self.code_cap = new_cap;
 }
@@ -1011,12 +1022,20 @@ fn void CompilerContext.ensure_code_cap(&self) {
 fn void CompilerContext.ensure_const_cap(&self) {
     if (self.const_count < self.const_cap) return;
     uint new_cap = self.const_cap * 2;
-    if (new_cap > MAX_CONSTANTS_HARD) return;
+    // Same reasoning as ensure_code_cap: a silent return here leaves the pool
+    // full and the resulting failure carries no message or position.
+    if (new_cap > MAX_CONSTANTS_HARD) {
+        self.record_error("too many constants in one function");
+        return;
+    }
     Heap* h = (Heap*)self.heap;
 
     // Grow constants array
     void* p = h.realloc_func(h.heap_udata, self.constants, (usz)(new_cap * TVal::size));
-    if (p == null) return;
+    if (p == null) {
+        self.record_error("out of memory growing the constant pool");
+        return;
+    }
     self.constants = (TVal*)p;
     self.const_cap = new_cap;
 
