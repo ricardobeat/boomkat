@@ -7,8 +7,13 @@
 # non-declaration export forms additionally end with `;` in the grammar, so a
 # missing semicolon is a SyntaxError unless ASI supplies one.
 #
-# Each case is written to a temporary .mjs and compiled (never run). Reject
+# Each case is written to a temporary .mjs and passed to the engine. Reject
 # cases must exit non-zero with a syntax error; accept cases must exit zero.
+#
+# The release CLI has no parse-only mode, so an accepted case is also RUN. That
+# is invisible for all but one case here — see the module-resolution note in
+# check() — because every other fixture is a bare declaration with no runtime
+# behaviour to fail at.
 #
 # The same fixtures are checked against `node --check` when node is available,
 # so the expectations are V8-verified rather than assumed.
@@ -35,7 +40,27 @@ check() {
     echo "FAIL: $desc -- engine HUNG (timeout)"
     return
   fi
-  if [ "$rc" -eq 0 ]; then got=ACCEPT; else got=REJECT; fi
+  if [ "$rc" -eq 0 ]; then
+    got=ACCEPT
+  else
+    got=REJECT
+    # What is under test is whether the source PARSES, and the release CLI has
+    # no parse-only mode: it runs what it accepts. A case whose source parses
+    # but then fails at RUNTIME must not be scored as a syntax rejection.
+    #
+    # `{ import("./x.js"); }` is the one case where the two differ. A dynamic
+    # import is an ordinary call expression, legal in a block, so it parses —
+    # and then rejects because ./x.js does not exist. Scoring that as REJECT
+    # blamed the parser for the module loader's (correct) resolution failure.
+    #
+    # Only a module-resolution failure is forgiven, and only for ACCEPT cases;
+    # anything else, and every REJECT case, is scored strictly. Note the engine
+    # reports this through an unhandled rejection, since `import()` returns a
+    # promise, so the exit status alone cannot distinguish the two.
+    case "$out" in
+      *"cannot resolve module"*) [ "$expect" = ACCEPT ] && got=ACCEPT ;;
+    esac
+  fi
 
   # Cross-check the expectation against node when it is available.
   if command -v node >/dev/null 2>&1; then
