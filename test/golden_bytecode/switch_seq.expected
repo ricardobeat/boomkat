@@ -15,18 +15,18 @@
 [  0] LDINT           r1, +1
 [  1] JMP_SEQ         r1 = r0, r1
 [  2] JUMP            +3
-[  3] LDCONST         r2, 1
-[  4] RET             r2 = r0, r0
+[  3] LDCONST         r1, 1
+[  4] RET             r1 = r0, r0
 [  5] JUMP            +3
-[  6] LDINT           r2, +2
-[  7] JMP_SEQ         r1 = r0, r2
+[  6] LDINT           r1, +2
+[  7] JMP_SEQ         r1 = r0, r1
 [  8] JUMP            +3
-[  9] LDCONST         r3, 2
-[ 10] RET             r3 = r0, r0
+[  9] LDCONST         r1, 2
+[ 10] RET             r1 = r0, r0
 [ 11] JUMP            +1
 [ 12] JUMP            0
-[ 13] LDCONST         r3, 3
-[ 14] RET             r3 = r0, r0
+[ 13] LDCONST         r1, 3
+[ 14] RET             r1 = r0, r0
 [ 15] JUMP            0
 [ 16] RETUNDEF        
 --- End bytecode ---

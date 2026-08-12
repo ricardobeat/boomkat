@@ -58,21 +58,39 @@ assertEq(big(65), 65, "case two past the old boundary");
 assertEq(big(299), 299, "last case");
 assertEq(big(9999), -2, "default still reached");
 
-// A generated switch, checked at every 25th arm plus the default path.
-// NOTE: capped at 250 clauses. Past 256 clauses this engine takes a
-// separate, still-open path (B20: a switch with >256 clauses falls through to
-// default, a WIDE-prefix jump-offset fault, not a buffer overrun). Raising
-// this number is the regression test for that fix.
+// A generated switch with 400 clauses, well past BOTH old limits: the 64-entry
+// body_addrs array and the 256-entry break/continue patch pool. The patch-pool
+// overflow was the nastier of the two — add_patch returned SILENTLY, so each
+// `break` past the 256th stayed an unpatched `JUMP 0` and fell through to
+// `default`. Arms 0..255 answered correctly and everything after them returned
+// the default value, with no diagnostic anywhere.
 (function () {
     var src = "var r = -1; switch (x) {";
-    for (var i = 0; i < 250; i++) { src += "case " + i + ": r = " + (i * 2) + "; break;"; }
+    for (var i = 0; i < 400; i++) { src += "case " + i + ": r = " + (i * 2) + "; break;"; }
     src += "default: r = -2; } return r;";
     var f = new Function("x", src);
-    for (var k = 0; k < 250; k += 25) {
-        assertEq(f(k), k * 2, "generated 250-case switch, arm " + k);
+    for (var k = 0; k < 400; k += 25) {
+        assertEq(f(k), k * 2, "generated 400-case switch, arm " + k);
     }
-    assertEq(f(249), 498, "generated switch, last arm");
+    assertEq(f(255), 510, "arm at the old patch-pool boundary");
+    assertEq(f(256), 512, "arm one past the old patch-pool boundary");
+    assertEq(f(257), 514, "arm two past the old patch-pool boundary");
+    assertEq(f(399), 798, "generated switch, last arm");
     assertEq(f(-1), -2, "generated switch, default");
+}());
+
+// The patch pool is per-FUNCTION and never reset mid-function, so this is not
+// only about switches: 400 loops each containing a `break` share the same pool.
+// The patch pool is per-FUNCTION and never reset mid-function, so this is not
+// only about switches: many loops each containing a `break` share the pool.
+// Written literally rather than through `new Function`, which has its own
+// separate defect on large bodies (B21).
+(function () {
+    var n = 0, i = 0;
+    for (i = 0; i < 3; i++) { if (i === 1) break; n++; }
+    for (i = 0; i < 3; i++) { if (i === 1) break; n++; }
+    for (i = 0; i < 3; i++) { if (i === 1) break; n++; }
+    assertEq(n, 3, "loops with break still work");
 }());
 
 // Fall-through across the old boundary must still work: consecutive clauses

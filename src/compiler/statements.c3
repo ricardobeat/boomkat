@@ -4887,18 +4887,30 @@ fn void? CompilerContext.switch_statement(&self) {
             return self.fail("too many clauses in a switch statement")~;
         }
         if (self.match(TokenType.CASE)) {
-            // Compile case expression
+            // Compile case expression.
+            //
+            // free_reg is strictly LIFO — it only pops when the freed register
+            // is the top of the stack (`reg + 1 == next_reg`). Freeing
+            // case_reg while cmp_reg sits above it is therefore a NO-OP, so
+            // every clause leaked one register. With enough clauses the case
+            // comparison register climbed past 255 (observed: r3, r4, ... r260
+            // for 258 clauses) and the switch silently stopped matching —
+            // arms 0..255 worked and everything past that fell to `default`.
+            //
+            // Record the allocator level before the case expression and
+            // restore it once the comparison is emitted, which reclaims both
+            // registers regardless of their relative order.
+            ushort case_regs_base = self.next_reg;
             ushort case_reg = self.expression()!;
             self.expect(TokenType.COLON)!;
 
             // Compare discriminant with case value
             ushort cmp_reg = self.alloc_reg();
             self.emit_abc(Opcode.SEQ, (uint)cmp_reg, (uint)disc_reg, (uint)case_reg);
-            self.free_reg(case_reg);
 
             // Jump to the case body if they match
             uint match_jump = self.emit_cond_jump(Opcode.IF_TRUE, (uint)cmp_reg);
-            self.free_reg(cmp_reg);
+            self.free_regs_to(case_regs_base);
 
             // Jump over the body if no match
             uint skip_jump = self.emit_jump(Opcode.JUMP);
