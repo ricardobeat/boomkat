@@ -1148,8 +1148,19 @@ where real stack traces will not fit in 512 bytes) and `char[256] buf` in
   failed silently**: no error, no diagnostic, just a wrong answer or a
   corrupted frame. Where a growable structure is not warranted, the limit still
   has to be *enforced* — a cap that is merely "not exceeded in practice" is a
-  latent silent-wrong-answer bug, and `hoisted_fn_names` and
-  `MAX_SCOPE_DEPTH = 256` are both still in that state.
+  latent silent-wrong-answer bug.
+
+  `MAX_SCOPE_DEPTH` was the last of these and is now fixed (`bcef20e9`): a
+  dropped scope entry made a declaration invisible to shadowing, TDZ and
+  duplicate-declaration checks. It is a compile error now — **and the error
+  alone was not enough.** At the old bound of 256 it *rejected* bluebird and
+  jszip, which had been loading, because real minified bundles pass 256
+  declarations in one function routinely. Turning a silent miscompile into a
+  hard rejection of working code is a regression, not a fix; the cap had to be
+  raised (to 1024) at the same time. **Enforce the limit AND size it for real
+  input — the two changes belong in the same commit.**
+
+  `char[][256] hoisted_fn_names` is still in the unenforced state.
 - **B6/B7 need a limit that is deliberately hardcoded.** An engine must
   refuse an over-long string with a JS error rather than attempt the
   allocation; QuickJS caps at 2^30 and throws `InternalError: string too
