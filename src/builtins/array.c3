@@ -1462,24 +1462,29 @@ fn void builtin_array_proto_pop(BuiltinContext* ctx) {
         && obj.flags.array_len_writable
         && idx < 0x1000000UL
         && !obj.flags.has_indexed_named_prop
-        && length_ok_pop) {
+        && length_ok_pop
+        // The element must be PRESENT in the dense part. A hole is not
+        // undefined: [[Get]] continues up the prototype chain, and
+        // Array.prototype can itself carry an indexed property, so
+        // `Array.prototype[1] = 1; var x = [0]; x.length = 2; x.pop()` must
+        // yield 1 (test262 built-ins/Array/prototype/pop/S15.4.4.6_A4_T1.js).
+        // The fast path can only answer from the dense part, so a hole is
+        // handed to the prototype-aware slow path below. The generic-object
+        // path was always correct here; only this array fast path short-cut
+        // the lookup.
+        && idx < (ulong)obj.array_size
+        && !obj.array_part()[(uint)idx].is_undefined()) {
         uint idx32 = (uint)idx;
-        TVal elem_fast;
-        bool had_elem = idx32 < obj.array_size && !obj.array_part()[idx32].is_undefined();
-        if (had_elem) {
-            elem_fast = obj.array_part()[idx32];
-            // B30 fix: incref the popped element before clearing the slot.
-            if (elem_fast.is_heap_allocated() && elem_fast.get_heapptr() != null) {
-                ((types::HeapHeader*)elem_fast.get_heapptr()).incref();
-            }
-            // Clear in place: never grows the array, since idx32 < array_size
-            // here (unlike set_array_idx, which would grow to reach idx32
-            // for a hole that is already out of range and needs no clearing).
-            TVal undef_fast; undef_fast.set_undefined();
-            obj.set_array_idx(idx32, undef_fast, ctx.heap);
-        } else {
-            elem_fast.set_undefined();
+        TVal elem_fast = obj.array_part()[idx32];
+        // B30 fix: incref the popped element before clearing the slot.
+        if (elem_fast.is_heap_allocated() && elem_fast.get_heapptr() != null) {
+            ((types::HeapHeader*)elem_fast.get_heapptr()).incref();
         }
+        // Clear in place: never grows the array, since idx32 < array_size
+        // here (unlike set_array_idx, which would grow to reach idx32
+        // for a hole that is already out of range and needs no clearing).
+        TVal undef_fast; undef_fast.set_undefined();
+        obj.set_array_idx(idx32, undef_fast, ctx.heap);
         *obj.array_len_ptr() = (uint)idx;
         if (len_own_idx_pop >= 0) {
             TVal len_tv_pop;
