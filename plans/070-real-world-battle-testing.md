@@ -15,11 +15,16 @@ QuickJS (`out/qjs`) is the differential oracle throughout.
 Status: B1-B11, B13, B14 and B15 fixed. B12 withdrawn — it was a sloppy-mode
 fixture, not an engine bug. The E-series is open and is all that remains.
 
-As of 2026-08-12 **every known test failure is closed**: the local suite is
-322/0, `test/engine/` is 106/0, golden-bytecode is 30/30, test262 phase 6 is
-4619/0 and phase 21 is 2131/0, and the module, uncaught, rejection and
-robustness surfaces are all clean. The full-corpus run immediately before
-these last two fixes was 49812 pass / 2 fail, and those 2 were B15.
+As of 2026-08-12 **every known test failure is closed**: the full test262
+corpus runs **49814 pass / 0 fail** (verified against a freshly built
+`out/test262_runner`), the local suite is 322/0, `test/engine/` is 106/0,
+golden-bytecode is 30/30, and the module, uncaught, rejection and robustness
+surfaces are all clean. The run immediately before the last two fixes was
+49812 pass / 2 fail, and those 2 were B15.
+
+**A green corpus is not a working engine**, though: B16 below is a silent
+wrong-register read that miscompiles ordinary code and breaks jszip, and
+test262 does not catch it. Four library load failures remain open.
 
 B14 and B15 were both found by *re-running the suites against a freshly built
 batch binary* rather than by new probing — see the measurement note below.
@@ -44,6 +49,7 @@ Four library load failures remain open and are tracked separately.
 - [B13: `ADDI` fusion swaps operands, so `1 + str` concatenates backwards](#b13-addi-fusion-swaps-operands-so-1--str-concatenates-backwards)
 - [B14: `Array.prototype.pop` reads a hole as `undefined`](#b14-arrayprototypepop-reads-a-hole-as-undefined)
 - [B15: a `yield` operand ignores the enclosing `[In]` parameter](#b15-a-yield-operand-ignores-the-enclosing-in-parameter)
+- [B16: a call's callee is materialized into the wrong register](#b16-a-calls-callee-is-materialized-into-the-wrong-register)
 - [Note on measurement: the batch binary is a separate build](#note-on-measurement-the-batch-binary-is-a-separate-build)
 - [E1: no way to interrupt a runaway script](#e1-no-way-to-interrupt-a-runaway-script)
 - [E2: embedding API gaps](#e2-embedding-api-gaps)
@@ -731,6 +737,77 @@ cleared. The fix parks the consumed value in `yield_forbid_in` alongside
 negative *parse* tests, so no runtime suite could have caught them — and they
 only surfaced because the full-corpus run below was done against a freshly
 built batch binary.
+
+---
+
+## B16: a call's callee is materialized into the wrong register
+
+**Severity: high. Silent wrong-register read. OPEN.**
+
+```js
+(function(e){
+  function n(){ var e = 1; return e; }
+  (n.x = e("k")).y = 1;
+  print("ok n.x=" + JSON.stringify(n.x));
+})(function(k){ return {v:k}; });
+```
+
+- node (with `"use strict"`): `ok n.x={"v":"k","y":1}`
+- `duktape_c3`: `Uncaught: undefined is not a function`
+
+The disassembly of the inner function shows the fault directly:
+
+```
+[  5] LDCONST         r3, 2
+[  6] LDREG           r6 = r2, r0      <-- callee materialized into r6
+[  7] LDCONST         r7, 3
+[  8] CALL            r5 = r5, r1      <-- but CALL reads the callee from r5
+[  9] PUTPROP         r2 = r3, r5
+```
+
+The callee lands in `r6` while `CALL` reads `r5`, so it calls a stale
+register. (`[6]` also copies from `r2`, the closure `n`, which does not look
+like `e` either — possibly a second fault, possibly register reuse.)
+
+**Two ingredients are required**, each harmless alone. Measured by probing
+adjacent shapes against node (`"use strict"`), which is the only usable oracle
+here:
+
+1. **Shadowing.** Some nested function rebinds the callee's name. Any form
+   does it: `var e` in an inner declaration, `var e` in a function
+   *expression*, or an inner *parameter* named `e`. Rename it and the bug goes
+   away. The outer binding may be either a parameter or a `var`.
+2. **A parenthesized property-assignment around the call.**
+   `(o.b = e("q"))` fails; `(z = e("q"))` with a plain variable target does
+   NOT, and neither does `o.b = e("q")` without the parentheses. A further
+   `.y = 1` on the result is *not* required — `var w = (o.b = e("q"))` fails
+   on its own, so the original "base of a further assignment" reading was too
+   narrow.
+
+Unaffected: method calls (`o.make("m")`) and `new C("n")` in the same
+position both work, so this is specific to a **bare-identifier callee**.
+
+This is what breaks **jszip 3.10.1**, whose browserify module 10 is exactly
+this shape:
+
+```js
+(function(e,t,r){ function n(){ ...this.clone=function(){var e=new n;...} }
+  (n.prototype=e("./object")).loadAsync=e("./load"), ... })(...)
+```
+
+Found by bisecting the minified bundle down to the 5 lines above, via a
+per-module load trace injected into the browserify loader.
+
+**Not yet fixed.** A staged regression test covering every shape above, with
+the failing and passing cases separated, is at
+`test/pending/test_call_callee_register.js` — it is outside `test/` so it does
+not break the green sweep; move it up as part of the fix. It passes in full on
+node under `"use strict"`.
+
+The whole test262 corpus (49814 tests) passes with this bug present, so **the
+suite cannot be the oracle here**; node under `"use strict"` is. Likewise
+`./out/qjs` on a plain script is sloppy mode and will mislead on the
+shadowing cases.
 
 ---
 
