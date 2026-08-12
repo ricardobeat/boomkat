@@ -51,6 +51,13 @@ fn void builtin_dynamic_gen_function(BuiltinContext* ctx, bool is_gen, bool is_a
     char[16384] src_buf;
     int src_pos = 0;
     src_pos += (int)(io::bprintf(src_buf[src_pos..], "(%s\n){\n", (ZString)&param_buf) ?? src_buf[:0]).len;
+    // Reject an oversized body rather than truncating it mid-token; see the
+    // same guard in builtin_function_ctor (src/builtins/function.c3).
+    if (body_len > (usz)(16377 - src_pos)) {
+        builtin_throw_no_result_change(ctx, ctx.heap.syntax_err_proto,
+            "GeneratorFunction constructor body too large");
+        return;
+    }
     for (usz i = 0; i < body_len && src_pos < 16377; i++) src_buf[src_pos++] = body_str[i];
     src_pos += (int)(io::bprintf(src_buf[src_pos..], "\n}") ?? src_buf[:0]).len;
 
