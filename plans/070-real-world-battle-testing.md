@@ -1,10 +1,15 @@
 # Plan 070: real-world battle testing
 
 Findings from running third-party production JavaScript against the engine
-rather than test262. The gate is green on 49,814 conformance tests, so the
-bugs below are all in territory the suite does not reach: register pressure
-in large real functions, the regex/division lexer heuristic, incremental
-string building, and host-visible error reporting.
+rather than test262. The gate is green on 49,814 conformance tests, so every
+bug below is in territory the suite does not reach.
+
+Two shapes account for all of them. **Scale**: register pressure, scope depth,
+clause counts and source length in real functions, where fixed compiler arrays
+silently dropped entries or overran. **Nesting**: two ordinary constructs
+combined in a way the suite only ever exercises separately — a call inside a
+parenthesised assignment, an arrow inside a call inside a binary operand. Plus
+the original lexer, string-building and error-reporting findings.
 
 Corpus used: 21 unmodified library bundles fetched from jsDelivr (lodash,
 underscore, moment, marked, handlebars, immutable, acorn, bluebird,
