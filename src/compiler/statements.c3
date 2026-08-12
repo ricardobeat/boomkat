@@ -3206,11 +3206,14 @@ fn void? CompilerContext.for_statement(&self) {
             // register copy back over the env) must stay off.
             //
             // resolve_var additionally gates register-caching on the binding
-            // having a live scope entry. When the scope stack overflows
-            // (MAX_SCOPE_DEPTH) declare_var silently skips the push, so the
-            // name reads through the env and the register is never updated:
-            // has_for_var must be false or the sync writes a stale register
-            // back over the env every iteration.
+            // having a live scope entry. The scope stack is heap-grown now, so
+            // a missing entry means an allocation failure (recorded as
+            // scope_overflow, which aborts the compile) rather than the silent
+            // skip this originally guarded against — but the check below is
+            // kept because it is the same condition either way: a name with no
+            // scope entry reads through the env and its register is never
+            // updated, so has_for_var must be false or the sync writes a stale
+            // register back over the env every iteration.
             has_for_var = !is_lexical && !self.is_global
                        && !self.is_captured_name(name_tok.str_value);
             if (has_for_var) {

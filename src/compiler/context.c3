@@ -40,15 +40,6 @@ const uint INITIAL_INNER_FUNCS = 16;
 const uint MAX_CODE_HARD        = 1 << 22;  // 4M instructions
 const uint MAX_CONSTANTS_HARD   = 1 << 20;  // 1M constants
 const uint MAX_INNER_FUNCS_HARD = 1 << 16;  // 65K inner functions
-/// Scope-stack entries per function: block markers plus every tracked
-/// declaration. Was 256, which real minified bundles exceed easily —
-/// bluebird and jszip both have functions past it. Overflow used to DROP the
-/// entry silently, making a declaration invisible to shadowing, TDZ and
-/// duplicate-declaration checks; it is now a compile error (scope_overflow).
-///
-/// 1024 is the ceiling that keeps CompilerContext inside c3c's 64 KB
-/// stack-object limit alongside `patches` — 2048 does not build.
-const uint MAX_SCOPE_DEPTH = 1024;
 const uint MAX_CAPTURED_NAMES = 48;
 /// Cap on primary_expr recursion depth (nested `[[[`, `((((`, etc). The
 /// recursive-descent parser has no other bound and a deeply nested literal
@@ -70,6 +61,9 @@ const uint MAX_LABELS       = 16;
 const uint MAX_PATCHES      = 2048;
 /// Top-level function declarations tracked for duplicate detection.
 const uint MAX_HOISTED_FNS  = 512;
+/// Initial scope-stack capacity; grows on the heap from here (see
+/// ensure_scope_cap), so there is no fixed ceiling.
+const uint INITIAL_SCOPE_DEPTH = 256;
 const uint MAX_CONST_HASH   = 1024;  // Open-addressing hash table for constant dedup
 
 /// Sentinel for "no patch" in break/continue patch lists.
@@ -281,7 +275,14 @@ struct CompilerContext {
     uint inner_func_cap;
 
     // Scope tracking
-    ScopeEntry[MAX_SCOPE_DEPTH] scope_stack;
+    /// Heap-allocated so it can grow past any fixed ceiling. It was
+    /// `ScopeEntry[256]`, then `[1024]` — but CompilerContext is a stack
+    /// local, so every fixed array here is charged against c3c's 64 KB
+    /// stack-object budget, and 1024 was already the ceiling. typescript
+    /// 5.4.5 exceeds it in a single function. Growing on the heap removes the
+    /// cap entirely; scope_overflow now only fires if an allocation fails.
+    ScopeEntry* scope_stack;
+    uint scope_cap;
     uint scope_depth;
 
     // Loop/break/continue tracking
@@ -952,6 +953,8 @@ fn void CompilerContext.init(&self, Lexer* lex, void* heap) {
     Heap* h = (Heap*)heap;
     self.code_cap = INITIAL_CODE;
     self.code = (Instruction*)h.alloc_func(h.heap_udata, (usz)(INITIAL_CODE * Instruction::size));
+    self.scope_cap = INITIAL_SCOPE_DEPTH;
+    self.scope_stack = (ScopeEntry*)h.alloc_func(h.heap_udata, (usz)(INITIAL_SCOPE_DEPTH * ScopeEntry::size));
     self.const_cap = INITIAL_CONSTANTS;
     self.constants = (TVal*)h.alloc_func(h.heap_udata, (usz)(INITIAL_CONSTANTS * TVal::size));
     self.const_hash_cap = INITIAL_CONST_HASH;
@@ -983,6 +986,7 @@ fn void CompilerContext.init(&self, Lexer* lex, void* heap) {
 fn void CompilerContext.cleanup(&self) {
     Heap* h = (Heap*)self.heap;
     if (self.code != null) { h.free_func(h.heap_udata, self.code); self.code = null; }
+    if (self.scope_stack != null) { h.free_func(h.heap_udata, self.scope_stack); self.scope_stack = null; }
     if (self.constants != null) { h.free_func(h.heap_udata, self.constants); self.constants = null; }
     if (self.const_hash != null) { h.free_func(h.heap_udata, self.const_hash); self.const_hash = null; }
     if (self.inner_funcs != null) { h.free_func(h.heap_udata, self.inner_funcs); self.inner_funcs = null; }
@@ -1040,6 +1044,22 @@ fn void CompilerContext.ensure_code_cap(&self) {
     }
     self.code = (Instruction*)p;
     self.code_cap = new_cap;
+}
+
+/// Grow the scope stack. Unlike the code/constant buffers this has no hard
+/// cap: the depth is bounded by the source, and a real bundle (typescript
+/// 5.4.5) exceeds any fixed size that fits on the stack.
+fn void CompilerContext.ensure_scope_cap(&self) {
+    if (self.scope_depth < self.scope_cap) return;
+    uint new_cap = self.scope_cap * 2;
+    Heap* h = (Heap*)self.heap;
+    void* p = h.realloc_func(h.heap_udata, self.scope_stack, (usz)(new_cap * ScopeEntry::size));
+    if (p == null) {
+        self.record_error("out of memory growing the scope stack");
+        return;
+    }
+    self.scope_stack = (ScopeEntry*)p;
+    self.scope_cap = new_cap;
 }
 
 /// Grow constant pool and hash table.
