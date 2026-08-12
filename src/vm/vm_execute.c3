@@ -224,11 +224,16 @@ const uint CONCAT_ACCUM_MIN = heap::MAX_INTERN_BYTES;
 /// register, is what makes "the other owner is that binding" a certainty rather
 /// than an inference — no other opcode can observe the old bytes in between.
 ///
+/// `tail` is the bytes to append. It is a slice rather than an HString so the
+/// STRING + FASTINT paths can append a stack-formatted integer without
+/// allocating an HString for it first. It must not alias `ls`'s own buffer;
+/// the overlap check below enforces that.
+///
 /// The result stays non-interned, which is the pre-existing contract for any
 /// concat result over `MAX_INTERN_BYTES`: `ensure_interned` canonicalizes it at
 /// every point where identity matters.
 fn bool vm_concat_accumulate(Vm* vm, Activation* act, TVal* ra, TVal* rb,
-                             HString* ls, HString* rs, uint reg_idx,
+                             HString* ls, char[] tail, uint reg_idx,
                              bytecode::Instruction* next_insn) {
     if (ra != rb) return false;
     if (ls.blen < CONCAT_ACCUM_MIN) return false;
@@ -247,14 +252,18 @@ fn bool vm_concat_accumulate(Vm* vm, Activation* act, TVal* ra, TVal* rb,
         if (nop != Opcode.PUTGLOBAL && nop != Opcode.PUTVAR
             && nop != Opcode.PUTVAR_ASSIGN) return false;
     }
-    // Appending to itself would read the buffer it is writing into.
-    if (ls == rs) return false;
+    // Appending a slice of the accumulator's own buffer would read the bytes
+    // the append is concurrently writing, and growing would leave `tail`
+    // dangling at the old allocation. `s += s` is the reachable case; the
+    // check is on the buffer range so it also rejects any partial overlap.
+    char* ls_data = ls.get_cstr();
+    if (tail.ptr >= ls_data && tail.ptr < ls_data + ls.capacity) return false;
 
-    if (ls.try_append_in_place(rs.get_data())) return true;
+    if (ls.try_append_in_place(tail)) return true;
 
     // Out of capacity: grow geometrically so a loop of N appends does O(log N)
     // copies overall rather than one per iteration.
-    ulong need = (ulong)ls.blen + (ulong)rs.blen;
+    ulong need = (ulong)ls.blen + (ulong)tail.len;
     ulong want = (ulong)ls.capacity * 2;
     if (want < need) { want = need; }
     if (hstring::length_exceeds_max(want)) { want = need; }
@@ -262,7 +271,7 @@ fn bool vm_concat_accumulate(Vm* vm, Activation* act, TVal* ra, TVal* rb,
 
     HString* grown = vm.heap.alloc_concat_accumulator(ls.get_data(), (uint)want);
     if (grown == null) return false;
-    if (!grown.try_append_in_place(rs.get_data())) {
+    if (!grown.try_append_in_place(tail)) {
         // Cannot happen: the capacity was sized for exactly this append. Drop
         // the allocation, which no one references yet, and let the generic path
         // produce the result.
@@ -1987,6 +1996,21 @@ fn TVal? Vm.run(Vm* vm) {
                             continue;
                         }
                         uint total = (uint)total64;
+
+                        // `acc += n` in a loop. The string+string path below
+                        // hooks the same accumulator, but a numeric right
+                        // operand never reaches it, so this loop stayed
+                        // quadratic. Only the STRING + FASTINT order can
+                        // accumulate: FASTINT + STRING prepends, which is not
+                        // an append into the accumulator's spare capacity.
+                        // The digits live in a stack buffer that cannot alias
+                        // the accumulator, so a self-append is impossible here.
+                        if (b_is_plain_str && vm_concat_accumulate(vm, ds.act, ra, rb, str,
+                                                                   ((char*)&int_buf)[:(usz)int_len],
+                                                                   (uint)insn.a, ds.curr_pc)) {
+                            continue;
+                        }
+
                         char[544] stack_buf;
                         char* buf;
                         bool heap_allocated = false;
@@ -2075,7 +2099,7 @@ fn TVal? Vm.run(Vm* vm) {
                     // rather than copying it whole on every iteration, which is
                     // what makes the naive form quadratic. Only legal when the
                     // accumulator is provably unshared; see vm_concat_accumulate.
-                    if (vm_concat_accumulate(vm, ds.act, ra, rb, ls, rs, (uint)insn.a,
+                    if (vm_concat_accumulate(vm, ds.act, ra, rb, ls, rs.get_data(), (uint)insn.a,
                                              ds.curr_pc)) {
                         continue;
                     }
@@ -2183,6 +2207,26 @@ fn TVal? Vm.run(Vm* vm) {
                             continue;
                         }
                         uint total = (uint)total64;
+
+                        // `acc += <literal int>` fuses LDINT+ADD into ADDI, so
+                        // the accumulate hook on ADD never sees this shape and
+                        // the loop stayed quadratic.
+                        //
+                        // This appends the immediate on the right, matching the
+                        // copies below, so it concatenates in whatever order the
+                        // surrounding path already does. Note that order is
+                        // already wrong for `<literal> + str`: FUSION_ADDI_SUBI
+                        // folds `imm + rS` as well as `rS + imm` but ADDI cannot
+                        // encode which side the immediate came from, so
+                        // `function f(a){return 1+a} f("A")` yields "A1". That
+                        // is a pre-existing fusion bug, not one this introduces,
+                        // and fixing it needs a bytecode change.
+                        if (vm_concat_accumulate(vm, ds.act, ra, rb, str,
+                                                 ((char*)&int_buf)[:(usz)int_len],
+                                                 (uint)insn.a, ds.curr_pc)) {
+                            continue;
+                        }
+
                         char[544] stack_buf;
                         char* buf;
                         bool heap_allocated = false;
