@@ -120,12 +120,20 @@ be an engine bug at all. Worth confirming before spending on it.
 scope-stack cap (`bcef20e9`) did exactly that, and typescript immediately named
 its own problem: it exceeds `MAX_SCOPE_DEPTH` in one function, at line 15576.
 
-That is a limit to raise, not a bug to fix — but raising it needs a
-heap-allocated scope stack, since 1024 entries is already the ceiling that fits
-c3c's 64 KB stack-object budget for `CompilerContext`. Converting
-`scope_stack`, `patches` and `hoisted_fn_names` to heap-backed growable arrays
-is the single change that lifts all three caps at once, and is the natural next
-step for this file.
+**`scope_stack` is now heap-grown** (`a5c26d6f`), so that cap is gone entirely
+— 8000 declarations in one function compile where 1024 was the hard limit.
+`MAX_SCOPE_DEPTH` is deleted.
+
+typescript gets further and still fails, now against **a different silent
+limit**: `compile error at line 0:0` again, with ASan clean on the full 9 MB
+source (so it is a cap, not memory corruption). Finding it is the same exercise
+as before — the positionless message means some path returns `COMPILE_ERROR`
+without calling `record_error`, and `grep -n "return COMPILE_ERROR~;"
+src/compiler/*.c3 | grep -v "fail("` lists the candidates.
+
+`patches` (2048) and `hoisted_fn_names` (512) are still fixed, but both are
+enforced now and both have real headroom; converting them to the same
+heap-grown pattern is mechanical when it is wanted.
 The original analysis here reasoned from function-declaration counts per scope
 and concluded the remaining six needed "six independent minimisations". That
 was wrong in an instructive way: bluebird, jszip, handlebars and marked shared
