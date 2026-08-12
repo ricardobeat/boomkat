@@ -52,12 +52,13 @@ fn void CompilerContext.pop_scope_to(&self, uint saved_depth) {
 /// the parameter check has to see through this one marker and stop at any
 /// other.
 fn void CompilerContext.push_scope_marker(&self, bool is_body = false) {
-    // Overflowing the scope stack drops the entry SILENTLY, which makes a
-    // declaration invisible to shadowing, TDZ and duplicate-declaration
-    // checks — a wrong answer, not a diagnostic. Record it so finish() can
-    // stop, the same way patch_overflow does for the break/continue pool.
-    if (self.scope_depth >= MAX_SCOPE_DEPTH) { self.scope_overflow = true; }
-    if (self.scope_depth < MAX_SCOPE_DEPTH) {
+    // The stack grows on the heap, so the only way to fail here is an
+    // allocation failure — which ensure_scope_cap records. A dropped entry
+    // would make a declaration invisible to shadowing, TDZ and
+    // duplicate-declaration checks, so it must never happen silently.
+    self.ensure_scope_cap();
+    if (self.scope_depth >= self.scope_cap) { self.scope_overflow = true; }
+    if (self.scope_depth < self.scope_cap) {
         self.scope_stack[self.scope_depth].name = (char[]){};
         self.scope_stack[self.scope_depth].reg = 0;
         self.scope_stack[self.scope_depth].kind = SCOPEMARK;
@@ -146,8 +147,9 @@ fn ushort CompilerContext.declare_var(&self, char[] name, ScopeKind kind, bool i
     // need it, or the body `let` that may not redeclare it has nothing to see.
     bool push_scope = !self.is_global || kind != VAR || is_param;
     // See push_scope_marker: a dropped entry is a silent wrong answer.
-    if (push_scope && self.scope_depth >= MAX_SCOPE_DEPTH) { self.scope_overflow = true; }
-    if (push_scope && self.scope_depth < MAX_SCOPE_DEPTH) {
+    if (push_scope) { self.ensure_scope_cap(); }
+    if (push_scope && self.scope_depth >= self.scope_cap) { self.scope_overflow = true; }
+    if (push_scope && self.scope_depth < self.scope_cap) {
         // Locals referenced inside nested callable bodies (or reachable by
         // direct eval) must be env-resident: force every access through
         // GETVAR/PUTVAR so closure and eval reads/writes stay coherent
