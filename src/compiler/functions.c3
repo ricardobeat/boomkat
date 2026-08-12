@@ -2044,9 +2044,11 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
             }
 
             // Record as hoisted
-            if (self.hoisted_fn_count < 256) {
+            if (self.hoisted_fn_count < MAX_HOISTED_FNS) {
                 self.hoisted_fn_names[self.hoisted_fn_count] = fn_name;
                 self.hoisted_fn_count++;
+            } else {
+                self.hoisted_overflow = true;
             }
 
             // Restore lexer to before 'function' so we can re-consume it properly
@@ -2495,9 +2497,11 @@ fn void? CompilerContext.hoist_global_fn_decls(&self, bool checks_only = false) 
             if (already && self.is_module) {
                 return self.fail("duplicate module-level function declaration")~;
             }
-            if (!already && self.hoisted_fn_count < 256) {
+            if (!already && self.hoisted_fn_count < MAX_HOISTED_FNS) {
                 self.hoisted_fn_names[self.hoisted_fn_count] = fn_name;
                 self.hoisted_fn_count++;
+            } else if (!already) {
+                self.hoisted_overflow = true;
             }
 
             // Check-prologue pass: emit CanDeclareGlobalFunction for each

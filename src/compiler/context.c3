@@ -68,6 +68,8 @@ const uint MAX_LABELS       = 16;
 /// directly against that budget. 2048 comfortably exceeds MAX_SWITCH_CLAUSES
 /// (1024), which is the realistic driver.
 const uint MAX_PATCHES      = 2048;
+/// Top-level function declarations tracked for duplicate detection.
+const uint MAX_HOISTED_FNS  = 512;
 const uint MAX_CONST_HASH   = 1024;  // Open-addressing hash table for constant dedup
 
 /// Sentinel for "no patch" in break/continue patch lists.
@@ -311,6 +313,8 @@ struct CompilerContext {
     /// error. A dropped scope entry makes a declaration invisible to
     /// shadowing/TDZ/duplicate checks rather than reporting anything.
     bool scope_overflow;
+    /// Set when hoisted_fn_names overflowed; finish() turns this into an error.
+    bool hoisted_overflow;
 
     // Track last identifier resolved via GETVAR (for assignment write-back)
     bool last_was_getvar;
@@ -775,7 +779,13 @@ struct CompilerContext {
 
     // Hoisted function declaration names (so main pass can skip recompilation).
     // Fixed-size, bounded by top-level function count in a single module.
-    char[][256] hoisted_fn_names;
+    /// Top-level function declarations seen by the hoisting pre-pass. Used for
+    /// duplicate-declaration detection, so a DROPPED entry means a duplicate
+    /// goes unreported — silently, like the scope stack and patch pool did.
+    /// Overflow sets hoisted_overflow, which finish() turns into an error.
+    /// 512 rather than 256: a real bundle can define that many top-level
+    /// functions (underscore is at 109 in one scope; larger ones go further).
+    char[][MAX_HOISTED_FNS] hoisted_fn_names;
     ushort hoisted_fn_count;
 
     // Constant-pool indices of the top-level `var` / `function` names this
@@ -930,6 +940,7 @@ fn void CompilerContext.init(&self, Lexer* lex, void* heap) {
     self.patch_count = 0;
     self.patch_overflow = false;
     self.scope_overflow = false;
+    self.hoisted_overflow = false;
     self.const_hash_count = 0;
     self.call_prop_obj_reg = REG_NONE;
     self.deferred_brand_reg_hint = 0xFFFF;
@@ -1187,6 +1198,9 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     }
     if (self.scope_overflow) {
         return self.fail("too many nested scopes or declarations in one function")~;
+    }
+    if (self.hoisted_overflow) {
+        return self.fail("too many top-level function declarations")~;
     }
     // A lex error surfaced through `peek_type()` (used by `is_at_end()`,
     // `check()`, etc.) is swallowed there as a synthetic EOF_TOKEN so that
