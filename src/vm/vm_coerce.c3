@@ -263,6 +263,12 @@ fn void* get_prop_key(Vm* vm, TVal* val) {
             return h.strs[heap::BuiltinStr.FALSE];
         case UNDEFINED: return h.strs[heap::BuiltinStr.UNDEFINED];
         case NULL_VAL:  return h.strs[heap::BuiltinStr.NULL_STR];
+        case LIGHTFUNC:
+            // ToPropertyKey(builtin fn) is ToString of the function, i.e. the
+            // NativeFunction grammar. Without this case a lightfunc key fell to
+            // the `default` arm below and silently became the string
+            // "undefined", so `o[Math.max] = 1` created a key named "undefined".
+            return builtins::builtin_to_string(h, val);
         case OBJECT: {
             // Object keys take a full ToPrimitive with hint "string", calling toString and valueOf,
             // Symbol.toPrimitive, etc. Sets throw_pending on failure (§7.1.1.1 step 6).

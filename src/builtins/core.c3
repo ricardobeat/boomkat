@@ -2259,8 +2259,21 @@ fn HString* builtin_to_string(Heap* heap, TVal* val) {
             return (HString*)heap.strs[heap::BuiltinStr.NULL_STR];
         case OBJECT:
             return builtin_intern_string(heap, "[object Object]");
-        case LIGHTFUNC:
-            return builtin_intern_string(heap, "[function]");
+        case LIGHTFUNC: {
+            // ToString of a built-in function is Function.prototype.toString's
+            // result, i.e. the NativeFunction grammar (ES2019 §19.2.3.5), not a
+            // placeholder. This path is what `[fn].join()`, string concatenation
+            // and ToPropertyKey(fn) go through, so returning "[function]" here
+            // made `String(Math.max)` disagree with `Math.max.toString()`.
+            BuiltinMeta meta = builtin_get_metadata((uint)(usz)val.get_heapptr());
+            char[] name = meta.name;
+            if (name.len == 0) name = "anonymous";
+            char[256] buf;
+            int len = (int)(io::bprintf(&buf, "function %s() { [native code] }",
+                (String)name) ?? buf[:0]).len;
+            if (len <= 0 || len >= 256) return null;
+            return builtin_intern_string(heap, buf[:len]);
+        }
         case BIGINT: {
             char[48] bbuf;
             char[] bs = hbigint::int128_to_decimal(val.get_bigint(), bbuf[..]);

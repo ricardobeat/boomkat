@@ -177,13 +177,15 @@ fn void builtin_function(BuiltinContext* ctx) {
     }
     HObject* func_obj = func_obj_raw;
     (*func_obj.extra_ptr()).func.comp_func = func;
-    // -2 sentinel: marks engine-installed JS-defined built-ins (e.g.
-    // Array.prototype.toLocaleString) as distinct from user-script functions
-    // (which are -1). Function.prototype.toString uses this distinction to
-    // return a NativeFunction-style string instead of the literal source
-    // text, ES2019 §19.2.3.5 step 3 mandates that any function object
-    // created by the engine return NativeFunction grammar.
-    (*func_obj.extra_ptr()).func.builtin_fn_index = -2;
+    // -1 marks a function whose source text is its own: CreateDynamicFunction
+    // (ES2019 §19.2.1.1.1 step 29) gives the result a [[SourceText]] of
+    // "function anonymous(" + params + "\n) {\n" + body + "\n}", built above and
+    // stored on func.src_ptr. Function.prototype.toString must return that text,
+    // not the NativeFunction grammar, which §19.2.3.5 reserves for functions
+    // with no [[SourceText]] (true built-ins and bound function exotic objects).
+    // This matches the GeneratorFunction/AsyncFunction constructors, which take
+    // the same path in generator.c3.
+    (*func_obj.extra_ptr()).func.builtin_fn_index = -1;
 
     // Use the global environment (per ES5 §15.3.2.1 step 5)
     (*func_obj.extra_ptr()).func.var_env = ctx.global_env;
@@ -922,15 +924,30 @@ fn void builtin_function_proto_toString(BuiltinContext* ctx) {
                 return;
             }
 
+            // ES2019 §19.2.3.5 step 3: a Bound Function exotic object has no
+            // [[SourceText]] either, so it also takes the NativeFunction form.
+            // It must NOT be built from the .name property: BoundFunctionCreate
+            // sets that to "bound " + targetName (§19.2.3.2), and splicing that
+            // in yields "function bound f() { [native code] }" — two
+            // IdentifierNames where the NativeFunction grammar allows one, which
+            // test262's nativeFunctionMatcher rejects. (It only ever passed for
+            // an anonymous target, where the name is the bare "bound ".)
+            if (obj.callable_kind() == hobject::CallableKind.BOUND_FN) {
+                HString* result = builtin_intern_string(ctx.heap, "function () { [native code] }");
+                ctx.result.set_string(result);
+                return;
+            }
+
             // Compiled JS functions retain their original source text (ES2019
             // §19.2.3.5 / Function.prototype.toString), if the compiler kept it,
             // return that exact text instead of the [native code] placeholder.
-            // A callable with a non-null comp_func and `builtin_fn_index == -1`
-            // identifies a user-script (compiled) function; `== -2` is the
-            // sentinel used by register_compiled_proto_method for engine-installed
-            // built-ins (e.g. Array.prototype.toLocaleString) that are JS-defined
-            // but NOT user-script, they must return a NativeFunction string
-            // per spec, so we fall through to the .name branch below.
+            // `builtin_fn_index == -1` identifies a JS-compiled (non-builtin)
+            // function; a retained src_ptr is what distinguishes one that has a
+            // [[SourceText]] from one that does not. Engine-installed JS-defined
+            // built-ins (register_compiled_proto_method, e.g.
+            // Array.prototype.toLocaleString) also carry -1, but the compiler
+            // keeps no source for them, so src_ptr stays null and they correctly
+            // fall through to the NativeFunction form built below.
             CompiledFunction* cf = null;
             if ((*obj.extra_ptr()).func.comp_func != null
                     && (*obj.extra_ptr()).func.builtin_fn_index == -1) {
