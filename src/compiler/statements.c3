@@ -4850,9 +4850,21 @@ fn void? CompilerContext.switch_statement(&self) {
         self.emit_abc(Opcode.LDUNDEF, (uint)self.eval_acc_reg, 0, 0);
     }
 
-    // Track all body entries (cases and default) in source order
-    uint[64] body_addrs;
-    uint[64] ft_jump_addrs;
+    // Track all body entries (cases and default) in source order.
+    //
+    // These are fixed stack arrays and every write below is unguarded, so a
+    // switch with more clauses than this wrote past the end of the compiler's
+    // own frame. The old bound was 64, which real code exceeds easily — a
+    // tokenizer or an AST visitor dispatching on a node kind routinely has
+    // hundreds of cases, and typescript 5.4.5 has several. It corrupted the
+    // stack SILENTLY: a 100-case switch still produced correct output while
+    // writing 36 entries past the end.
+    //
+    // 1024 covers any plausible hand-written or generated switch; past that
+    // the guard below reports a SyntaxError rather than corrupting memory.
+    const uint MAX_SWITCH_CLAUSES = 1024;
+    uint[MAX_SWITCH_CLAUSES] body_addrs;
+    uint[MAX_SWITCH_CLAUSES] ft_jump_addrs;
     uint body_count = 0;
     bool has_default = false;
     uint default_body_idx = 0;
@@ -4868,6 +4880,12 @@ fn void? CompilerContext.switch_statement(&self) {
     }
 
     while (!self.check(TokenType.RBRACE) && !self.is_at_end()) {
+        // Both clause kinds below write body_addrs[body_count] and
+        // ft_jump_addrs[body_count]. One check here dominates both, and fails
+        // before any of the clause is compiled.
+        if (body_count >= MAX_SWITCH_CLAUSES) {
+            return self.fail("too many clauses in a switch statement")~;
+        }
         if (self.match(TokenType.CASE)) {
             // Compile case expression
             ushort case_reg = self.expression()!;
