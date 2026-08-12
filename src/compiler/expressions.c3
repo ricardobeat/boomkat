@@ -2473,7 +2473,16 @@ fn ushort? CompilerContext.emit_call(&self, ushort callee_reg) {
     // compilation) can invalidate last_was_getvar / append to the code
     // array. The name's constant pool index must fit CALL_VAR's 8-bit C
     // field; larger indices fall back to plain GETVAR + CALL_UNDEF_THIS.
+    // The `call_prop_obj_reg == REG_NONE` term is the same non-method
+    // precondition getglobal_callee carries below, and for the same reason:
+    // the strip below is only safe if CALL_VAR is actually reached, and the
+    // CALL_VAR emission is guarded by `undef_this`, which is false whenever a
+    // receiver register is pending. Without it, a stale call_prop_obj_reg
+    // left by an enclosing property assignment made this strip the callee's
+    // GETVAR and then emit a plain CALL, which read a register nothing had
+    // written — a silent wrong-register call.
     bool getvar_callee = self.last_was_getvar
+        && self.call_prop_obj_reg == REG_NONE
         && self.last_getvar_code_pos + 1 == self.code_count
         && self.code[self.last_getvar_code_pos].op == Opcode.GETVAR
         && self.code[self.last_getvar_code_pos].a == callee_reg
