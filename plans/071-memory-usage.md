@@ -131,3 +131,15 @@ Pooling alone did not move RSS; the liveness fix is what closed the gap.
 macOS malloc keeps freed Large-zone blocks resident, so the remaining
 ~700 KB over QuickJS is the pool pages and engine scaffolding, not
 fragmentation.
+
+## M3: string header, array growth, follow-ups
+
+- The HString header is now 32 bytes (was 36): the large-string registry
+  slot moved out and the registry finds entries by pointer, since it holds
+  only a handful of large non-interned strings. The char-offset scan cache
+  stays: dropping it made non-ASCII charCodeAt loops 20x slower than the
+  reference engines for a 4-byte-per-string saving.
+- Dense-array growth was left as-is. The doubling schedule matches QuickJS
+  and Duktape, and the realloc churn the tuning was meant to remove was
+  already absorbed by the M2 pools: the matrix section dropped from +3.0 MB
+  to +1.33 MB with the pool pages accounting for 1.06 MB of that.
