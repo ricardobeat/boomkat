@@ -113,6 +113,95 @@ $endif
 }
 
 // ============================================================================
+// DecodedInsn.disassemble: same rendering, widened operands
+// ============================================================================
+
+/// Write a one-line disassembly of a decoded (possibly WIDE-expanded)
+/// instruction into `buf`. Mirrors Instruction.disassemble but reads the
+/// effective 16-bit operand values, so a WIDE-prefixed instruction renders
+/// the registers the VM will actually use.
+fn usz DecodedInsn.disassemble(&self, char[] buf) {
+$if $feature(TRACE_VM):
+    if (buf.len == 0) { return 0; }
+
+    Opcode op = self.op;
+    OpFormat fmt = get_op_format(op);
+    usz pos = 0;
+
+    pos = write_opcode_name(op, buf, pos);
+
+    while (pos < 16 && pos < buf.len) {
+        buf[pos] = ' ';
+        pos++;
+    }
+
+    switch (fmt) {
+        case ABC:
+            if (op == Opcode.JMP_LT_G) {
+                pos = write_int(buf, pos, (int)(ichar)self.a);
+                pos = write_str(buf, pos, ", r");
+                pos = write_uint(buf, pos, self.b);
+                pos = write_str(buf, pos, ", g[..]");
+            } else if (op == Opcode.JMP_NLT || op == Opcode.JMP_NLE
+                || op == Opcode.JMP_NGT || op == Opcode.JMP_NGE
+                || op == Opcode.JMP_LT  || op == Opcode.JMP_LE
+                || op == Opcode.JMP_GT  || op == Opcode.JMP_GE) {
+                pos = write_int(buf, pos, (int)(ichar)self.a);
+                pos = write_str(buf, pos, ", r");
+                pos = write_uint(buf, pos, self.b);
+                pos = write_str(buf, pos, ", r");
+                pos = write_uint(buf, pos, self.c);
+            } else if (op == Opcode.CALL_VAR || op == Opcode.CALL_GLOBAL) {
+                pos = write_str(buf, pos, "r");
+                pos = write_uint(buf, pos, self.a);
+                pos = write_str(buf, pos, ", argc=");
+                pos = write_uint(buf, pos, self.b);
+                pos = write_str(buf, pos, ", K[");
+                pos = write_uint(buf, pos, self.c);
+                pos = write_str(buf, pos, "]");
+            } else {
+                pos = write_str(buf, pos, "r");
+                pos = write_uint(buf, pos, self.a);
+                pos = write_str(buf, pos, " = r");
+                pos = write_uint(buf, pos, self.b);
+                pos = write_str(buf, pos, ", r");
+                pos = write_uint(buf, pos, self.c);
+            }
+
+        case A_BC:
+            pos = write_str(buf, pos, "r");
+            pos = write_uint(buf, pos, self.a);
+            pos = write_str(buf, pos, ", ");
+            pos = write_uint(buf, pos, self.get_bc());
+
+        case A_SBX:
+            pos = write_str(buf, pos, "r");
+            pos = write_uint(buf, pos, self.a);
+            pos = write_str(buf, pos, ", ");
+            pos = write_int(buf, pos, self.get_sbc());
+
+        case WIDE_SABC:
+            pos = write_int(buf, pos, self.get_sabc());
+
+        case WIDE_ABC:
+            pos = write_uint(buf, pos, self.get_abc());
+
+        case NONE:
+            if (op == Opcode.INC || op == Opcode.DEC) {
+                pos = write_str(buf, pos, "r");
+                pos = write_uint(buf, pos, self.a);
+            }
+            break;
+    }
+
+    return pos;
+$else
+    (void)buf;
+    return 0;
+$endif
+}
+
+// ============================================================================
 // Opcode name table (for disassembly / debugging)
 // ============================================================================
 
@@ -123,6 +212,7 @@ $endif
 /// disassembler path reads it.
 const char*[Opcode.LAST_OP.ordinal + 1] OPCODE_NAMES = {
     [Opcode.LDREG.ordinal]       = "LDREG",
+    [Opcode.WIDE.ordinal]        = "WIDE",
     [Opcode.LDCONST.ordinal]     = "LDCONST",
     [Opcode.SETCONST.ordinal]    = "SETCONST",
     [Opcode.FREEZEOBJ.ordinal]   = "FREEZEOBJ",

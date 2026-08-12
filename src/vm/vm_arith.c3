@@ -17,7 +17,7 @@ import std::math;
 // inlined directly in Vm.run (src/vm/vm_execute.c3) to avoid per-instruction
 // call overhead; only the loop-bearing unary handlers live out-of-line here.
 // ============================================================================
-fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, Instruction insn) @inline {
+fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, DecodedInsn insn) @inline {
     Vm* vm = ds.vm;
     switch (op) {
         case Opcode.UNP:

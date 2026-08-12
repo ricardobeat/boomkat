@@ -893,6 +893,18 @@ enum Opcode : char {
     /// ABC format: A=result_reg, B=0, C=0.
     IMPORT_META,
 
+    /// Prefix word that supplies the high-order operand bits for the
+    /// instruction that follows it.  When any operand of an instruction
+    /// exceeds 255 (MAX_A/B/C), the compiler emits `WIDE` immediately before
+    /// it: the WIDE word's A/B/C fields carry the extension bytes, and the
+    /// effective operand of the next instruction's A/B/C field is
+    /// `(ext << 8) | field` (16 bits, up to 65535 registers).
+    /// Instructions whose operands all fit in 8 bits never get a prefix, so
+    /// the common path is byte-identical to the pre-WIDE encoding.  WIDE is
+    /// opaque to every peephole pass: a function whose code contains WIDE
+    /// skips all of them.
+    WIDE,
+
     /// Marks the end of the enum, and is not a real opcode.
     LAST_OP,
 }
@@ -988,6 +1000,7 @@ case PUTLEX:     return A_BC;
         case JUMP:      return WIDE_SABC;
 
         // No operands
+        case WIDE:      return NONE;
         case NOP:       return NONE;
         case RETUNDEF:  return NONE;
         case RETUNDEF_GEN: return NONE;
@@ -1102,6 +1115,13 @@ fn Instruction make_sabc(Opcode op, int sabc) {
     return make_abc_wide(op, abc);
 }
 
+/// Encode a WIDE prefix word: its A/B/C fields carry the extension bytes for
+/// the following instruction's A/B/C fields.  Each extension byte is the
+/// high byte of the effective 16-bit operand.
+fn Instruction make_wide(uint ext_a, uint ext_b, uint ext_c) {
+    return make_abc(Opcode.WIDE, ext_a, ext_b, ext_c);
+}
+
 // ============================================================================
 // Instruction: field accessors
 // ============================================================================
@@ -1162,6 +1182,66 @@ macro uint Instruction.to_raw(&self) {
 /// Creates an Instruction from a raw 32-bit word.
 macro Instruction from_raw(uint raw) {
     return (Instruction)raw;
+}
+
+// ============================================================================
+// DecodedInsn: operand values after WIDE expansion
+// ============================================================================
+
+/// An instruction whose operand fields carry their effective values: 16-bit
+/// register indices for a WIDE-prefixed instruction, the raw 8-bit field
+/// values otherwise (identical for operands that never exceed 255).  The VM
+/// builds one per dispatch and passes it to handlers in place of the packed
+/// `Instruction`, so a handler reads the widened operands without any
+/// per-opcode knowledge of the prefix.  The BC/ABC accessors mirror
+/// Instruction's, and are only ever called on opcodes whose extension bytes
+/// are zero by construction (the compiler widens exactly the fields that
+/// hold register indices, never immediates or combined BC operands).
+struct DecodedInsn {
+    Opcode op;
+    uint   a;
+    uint   b;
+    uint   c;
+}
+
+/// Returns the opcode.
+macro Opcode DecodedInsn.get_op(&self) {
+    return self.op;
+}
+
+/// Returns the effective A operand (16-bit when WIDE-expanded).
+macro uint DecodedInsn.get_a(&self) {
+    return self.a;
+}
+
+/// Returns the effective B operand.
+macro uint DecodedInsn.get_b(&self) {
+    return self.b;
+}
+
+/// Returns the effective C operand.
+macro uint DecodedInsn.get_c(&self) {
+    return self.c;
+}
+
+/// Returns the 16-bit unsigned BC combined operand.
+macro uint DecodedInsn.get_bc(&self) {
+    return (self.c << 8) | self.b;
+}
+
+/// Returns the signed 16-bit BC operand (bias-decoded).
+macro int DecodedInsn.get_sbc(&self) {
+    return (int)self.get_bc() - (int)BC_BIAS;
+}
+
+/// Returns the unsigned 24-bit ABC operand (all three fields concatenated).
+macro uint DecodedInsn.get_abc(&self) {
+    return (self.c << 16) | (self.b << 8) | self.a;
+}
+
+/// Returns the signed 24-bit ABC operand (bias-decoded).
+macro int DecodedInsn.get_sabc(&self) {
+    return (int)self.get_abc() - (int)ABC_BIAS;
 }
 
 // ============================================================================

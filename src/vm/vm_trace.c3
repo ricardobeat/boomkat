@@ -52,7 +52,7 @@ $endif
 
 /// Trace a single instruction before dispatch (for --trace-vm).
 /// Writes to stderr so it doesn't interfere with program output.
-fn void trace_instruction(Vm* vm, Instruction* ip, uint offset,
+fn void trace_instruction(Vm* vm, Instruction* ip, uint offset, DecodedInsn* di,
                           TVal* ra, TVal* rb, TVal* rc,
                           TVal* regs_base, Activation* act) {
 $if $feature(TRACE_VM):
@@ -61,19 +61,22 @@ $if $feature(TRACE_VM):
     uint end = written < (usz)line_buf.len ? (uint)written : line_buf.len;
     io::eprintf("[0x%04X] %s  | ", offset, (String)line_buf[0:end]);
 
-    // Print register values for the operands
-    ushort a = (ushort)ip.a;
-    ushort b = (ushort)ip.b;
-    ushort c = (ushort)ip.c;
+    // Print register values for the operands. The indices come from the
+    // decoded instruction, so a WIDE-prefixed instruction shows its
+    // effective 16-bit registers even though the raw word holds only the
+    // low bytes.
+    uint a = di.a;
+    uint b = di.b;
+    uint c = di.c;
     io::eprintf("r%d=", a); trace_print_tval(ra);
     io::eprintf(" r%d=", b); trace_print_tval(rb);
-    if (c != 0 || ip.op != Opcode.NOP) {
+    if (c != 0 || di.op != Opcode.NOP) {
         io::eprintf(" r%d=", c); trace_print_tval(rc);
     }
     io::eprintf("\n");
 $else
     // Stub for non-TRACE_VM builds. Call in vm_execute.c3 is similarly
     // gated, so this body is unreachable in release builds.
-    (void)vm; (void)ip; (void)offset; (void)ra; (void)rb; (void)rc; (void)regs_base; (void)act;
+    (void)vm; (void)ip; (void)offset; (void)di; (void)ra; (void)rb; (void)rc; (void)regs_base; (void)act;
 $endif
 }

@@ -717,18 +717,18 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
             }
 
             ushort fi_key_reg = field_init_ctx.alloc_reg();
-            field_init_ctx.emit(bytecode::make_a_bc(Opcode.GETVAR, (uint)fi_key_reg,
-                field_init_ctx.add_string_constant(pme.slot_name)));
+            field_init_ctx.emit_a_bc(Opcode.GETVAR, (uint)fi_key_reg,
+                field_init_ctx.add_string_constant(pme.slot_name));
 
             if (!pme.has_getter && !pme.has_setter) {
                 // Plain method: one closure slot, CLASS_INITPROP.
                 char[] mclo_name = self.mint_priv_closure_slot((usz)(pmi - priv_scope_begin_m), "mclo");
                 pme.method_closure_slot_name = mclo_name;
                 ushort fi_method_reg = field_init_ctx.alloc_reg();
-                field_init_ctx.emit(bytecode::make_a_bc(Opcode.GETVAR, (uint)fi_method_reg,
-                    field_init_ctx.add_string_constant(mclo_name)));
+                field_init_ctx.emit_a_bc(Opcode.GETVAR, (uint)fi_method_reg,
+                    field_init_ctx.add_string_constant(mclo_name));
                 ushort fi_this_reg = field_init_ctx.alloc_reg();
-                field_init_ctx.emit(bytecode::make_a_bc(Opcode.LDTHIS, (uint)fi_this_reg, 0));
+                field_init_ctx.emit_a_bc(Opcode.LDTHIS, (uint)fi_this_reg, 0);
                 field_init_ctx.emit_abc(Opcode.CLASS_INITPROP, (uint)fi_this_reg, (uint)fi_key_reg, (uint)fi_method_reg);
                 field_init_ctx.free_reg(fi_this_reg);
                 field_init_ctx.free_reg(fi_method_reg);
@@ -740,10 +740,10 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
                     char[] gclo_name = self.mint_priv_closure_slot((usz)(pmi - priv_scope_begin_m), "gclo");
                     pme.getter_closure_slot_name = gclo_name;
                     ushort fi_g_reg = field_init_ctx.alloc_reg();
-                    field_init_ctx.emit(bytecode::make_a_bc(Opcode.GETVAR, (uint)fi_g_reg,
-                        field_init_ctx.add_string_constant(gclo_name)));
+                    field_init_ctx.emit_a_bc(Opcode.GETVAR, (uint)fi_g_reg,
+                        field_init_ctx.add_string_constant(gclo_name));
                     ushort fi_this_g = field_init_ctx.alloc_reg();
-                    field_init_ctx.emit(bytecode::make_a_bc(Opcode.LDTHIS, (uint)fi_this_g, 0));
+                    field_init_ctx.emit_a_bc(Opcode.LDTHIS, (uint)fi_this_g, 0);
                     field_init_ctx.emit_abc(Opcode.CLASS_INITGET, (uint)fi_this_g, (uint)fi_key_reg, (uint)fi_g_reg);
                     field_init_ctx.free_reg(fi_this_g);
                     field_init_ctx.free_reg(fi_g_reg);
@@ -752,10 +752,10 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
                     char[] sclo_name = self.mint_priv_closure_slot((usz)(pmi - priv_scope_begin_m), "sclo");
                     pme.setter_closure_slot_name = sclo_name;
                     ushort fi_s_reg = field_init_ctx.alloc_reg();
-                    field_init_ctx.emit(bytecode::make_a_bc(Opcode.GETVAR, (uint)fi_s_reg,
-                        field_init_ctx.add_string_constant(sclo_name)));
+                    field_init_ctx.emit_a_bc(Opcode.GETVAR, (uint)fi_s_reg,
+                        field_init_ctx.add_string_constant(sclo_name));
                     ushort fi_this_s = field_init_ctx.alloc_reg();
-                    field_init_ctx.emit(bytecode::make_a_bc(Opcode.LDTHIS, (uint)fi_this_s, 0));
+                    field_init_ctx.emit_a_bc(Opcode.LDTHIS, (uint)fi_this_s, 0);
                     field_init_ctx.emit_abc(Opcode.CLASS_INITSET, (uint)fi_this_s, (uint)fi_key_reg, (uint)fi_s_reg);
                     field_init_ctx.free_reg(fi_this_s);
                     field_init_ctx.free_reg(fi_s_reg);
@@ -844,9 +844,9 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
             CompiledFunction* block_func = self.compile_static_block()!;
             uint block_idx = static_init_ctx.add_inner_func(block_func);
             ushort block_reg = static_init_ctx.alloc_reg();
-            static_init_ctx.emit(bytecode::make_a_bc(Opcode.CLOSURE, (uint)block_reg, block_idx));
+            static_init_ctx.emit_a_bc(Opcode.CLOSURE, (uint)block_reg, block_idx);
             ushort block_this_slot = static_init_ctx.alloc_reg();  // must be block_reg + 1
-            static_init_ctx.emit(bytecode::make_a_bc(Opcode.LDTHIS, (uint)block_this_slot, 0));
+            static_init_ctx.emit_a_bc(Opcode.LDTHIS, (uint)block_this_slot, 0);
             static_init_ctx.emit_abc(Opcode.CALL, (uint)block_reg, (uint)block_reg, 0);
             static_init_ctx.free_reg(block_this_slot);
             static_init_ctx.free_reg(block_reg);
@@ -950,10 +950,10 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
             // static field, `this` inside __static_init__ is bound to the
             // constructor (see __static_init__'s CALL emission below).
             ushort this_reg = target_ctx.alloc_reg();
-            target_ctx.emit(bytecode::make_a_bc(Opcode.LDTHIS, (uint)this_reg, 0));
+            target_ctx.emit_a_bc(Opcode.LDTHIS, (uint)this_reg, 0);
             ushort key_reg = target_ctx.alloc_reg();
-            target_ctx.emit(bytecode::make_a_bc(Opcode.GETVAR, (uint)key_reg,
-                target_ctx.add_string_constant(entry_slot_name)));
+            target_ctx.emit_a_bc(Opcode.GETVAR, (uint)key_reg,
+                target_ctx.add_string_constant(entry_slot_name));
             target_ctx.emit_abc(Opcode.INITPROP_PRIV, (uint)this_reg, (uint)key_reg, (uint)init_reg);
             target_ctx.free_reg(key_reg);
             target_ctx.free_reg(this_reg);
@@ -1384,10 +1384,10 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
                     // object-key that throws on toString throws NOW, not at
                     // per-instance init time).
                     fkey_reg = self.alloc_reg();
-                    self.emit(bytecode::make_a_bc(Opcode.CLOSURE, (uint)fkey_reg, computed_key_inner_idx));
+                    self.emit_a_bc(Opcode.CLOSURE, (uint)fkey_reg, computed_key_inner_idx);
                     // CALL convention: this at callee_reg + 1, result into callee_reg.
                     ushort this_slot = self.alloc_reg();
-                    self.emit(bytecode::make_a_bc(Opcode.LDTHIS, (uint)this_slot, 0));
+                    self.emit_a_bc(Opcode.LDTHIS, (uint)this_slot, 0);
                     self.emit_abc(Opcode.CALL, (uint)fkey_reg, (uint)fkey_reg, 0);
                     self.free_reg(this_slot);
                     self.emit_abc(Opcode.TOPROPKEY, (uint)fkey_reg, 0, 0);
@@ -1458,23 +1458,23 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
             // no prototype-chain walk, no setters triggered). For computed
             // keys, the key value is read from the hidden slot set above.
             ushort this_reg = target_ctx.alloc_reg();
-            target_ctx.emit(bytecode::make_a_bc(Opcode.LDTHIS, (uint)this_reg, 0));
+            target_ctx.emit_a_bc(Opcode.LDTHIS, (uint)this_reg, 0);
             ushort key_reg = target_ctx.alloc_reg();
             if (has_computed_key) {
-                target_ctx.emit(bytecode::make_a_bc(Opcode.GETVAR, (uint)key_reg,
-                    target_ctx.add_string_constant(fkey_slot)));
+                target_ctx.emit_a_bc(Opcode.GETVAR, (uint)key_reg,
+                    target_ctx.add_string_constant(fkey_slot));
             } else if (method_name_is_number) {
                 uint key_idx = target_ctx.add_number_constant(method_name_num_value);
-                target_ctx.emit(bytecode::make_a_bc(Opcode.LDCONST, (uint)key_reg, key_idx));
+                target_ctx.emit_a_bc(Opcode.LDCONST, (uint)key_reg, key_idx);
             } else if (method_name_is_bigint) {
                 uint key_idx = target_ctx.add_bigint_constant(method_name_bigint_src)!;
-                target_ctx.emit(bytecode::make_a_bc(Opcode.LDCONST, (uint)key_reg, key_idx));
+                target_ctx.emit_a_bc(Opcode.LDCONST, (uint)key_reg, key_idx);
             } else if (method_name.type == TokenType.STRING) {
                 uint key_idx = target_ctx.add_string_constant(method_name.str_value);
-                target_ctx.emit(bytecode::make_a_bc(Opcode.LDCONST, (uint)key_reg, key_idx));
+                target_ctx.emit_a_bc(Opcode.LDCONST, (uint)key_reg, key_idx);
             } else {
                 uint key_idx = target_ctx.add_string_constant(field_propname);
-                target_ctx.emit(bytecode::make_a_bc(Opcode.LDCONST, (uint)key_reg, key_idx));
+                target_ctx.emit_a_bc(Opcode.LDCONST, (uint)key_reg, key_idx);
             }
             // TOPROPKEY in-place so a symbol-coercing key doesn't leak the
             // coercion through a later GETPROP. Symmetric with object-literal
@@ -1754,7 +1754,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
 
     // Emit CLOSURE for the constructor
     ushort ctor_reg = self.alloc_reg();
-    self.emit(bytecode::make_a_bc(Opcode.CLOSURE, (uint)ctor_reg, ctor_inner_idx));
+    self.emit_a_bc(Opcode.CLOSURE, (uint)ctor_reg, ctor_inner_idx);
 
     // Bind __static_super__ = the constructor itself, for static methods'
     // `super.x` (HomeObject = constructor, per §13.3.7.1).
@@ -1766,7 +1766,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
     uint proto_name_idx = self.add_string_constant("prototype");
     {
         ushort proto_key_reg = self.alloc_reg();
-        self.emit(bytecode::make_a_bc(Opcode.LDCONST, (uint)proto_key_reg, proto_name_idx));
+        self.emit_a_bc(Opcode.LDCONST, (uint)proto_key_reg, proto_name_idx);
         self.emit_abc(Opcode.GETPROP, (uint)proto_reg, (uint)ctor_reg, (uint)proto_key_reg);
         self.free_reg(proto_key_reg);
     }
@@ -1817,7 +1817,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
         // Non-null path: base_proto_reg = Base.prototype
         {
             ushort base_proto_key_reg = self.alloc_reg();
-            self.emit(bytecode::make_a_bc(Opcode.LDCONST, (uint)base_proto_key_reg, proto_name_idx));
+            self.emit_a_bc(Opcode.LDCONST, (uint)base_proto_key_reg, proto_name_idx);
             self.emit_abc(Opcode.GETPROP, (uint)base_proto_reg, (uint)base_reg, (uint)base_proto_key_reg);
             self.free_reg(base_proto_key_reg);
         }
@@ -1842,7 +1842,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
     for (ushort mi = 0; mi < method_count; mi++) {
         uint mi_idx = methods[mi].inner_idx;
         ushort method_reg = self.alloc_reg();
-        self.emit(bytecode::make_a_bc(Opcode.CLOSURE, (uint)method_reg, mi_idx));
+        self.emit_a_bc(Opcode.CLOSURE, (uint)method_reg, mi_idx);
 
         // Private instance method/accessor: stash this SAME closure object
         // into its hidden slot so __field_init__ can re-install it (own
@@ -1879,8 +1879,8 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
         ushort key_reg;
         if (methods[mi].is_private) {
             key_reg = self.alloc_reg();
-            self.emit(bytecode::make_a_bc(Opcode.GETVAR, (uint)key_reg,
-                self.add_string_constant(methods[mi].priv_slot_name)));
+            self.emit_a_bc(Opcode.GETVAR, (uint)key_reg,
+                self.add_string_constant(methods[mi].priv_slot_name));
         } else if (methods[mi].computed_key_inner_idx == 0xFFFFFFFE) {
             // Inline-compiled computed key (yield/await in generator/async).
             // The expression was compiled inline during parsing and the result
@@ -1892,9 +1892,9 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
             // CALL convention: CALL result_reg, callee_reg, nargs
             // this must be at callee_reg + 1, args at callee_reg + 2, ...
             key_reg = self.alloc_reg();
-            self.emit(bytecode::make_a_bc(Opcode.CLOSURE, (uint)key_reg, methods[mi].computed_key_inner_idx));
+            self.emit_a_bc(Opcode.CLOSURE, (uint)key_reg, methods[mi].computed_key_inner_idx);
             ushort this_slot = self.alloc_reg(); // must be key_reg + 1
-            self.emit(bytecode::make_a_bc(Opcode.LDTHIS, (uint)this_slot, 0));
+            self.emit_a_bc(Opcode.LDTHIS, (uint)this_slot, 0);
             self.emit_abc(Opcode.CALL, (uint)key_reg, (uint)key_reg, 0);
             self.free_reg(this_slot);
         } else {
@@ -1911,7 +1911,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
                 key_idx = self.add_string_constant(methods[mi].name);
             }
             key_reg = self.alloc_reg();
-            self.emit(bytecode::make_a_bc(Opcode.LDCONST, (uint)key_reg, key_idx));
+            self.emit_a_bc(Opcode.LDCONST, (uint)key_reg, key_idx);
         }
 
         if (methods[mi].is_getter) {
@@ -1952,7 +1952,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
         // if called twice, see field_init_func above).
         uint static_init_idx = self.add_inner_func(static_init_func);
         ushort si_reg = self.alloc_reg();
-        self.emit(bytecode::make_a_bc(Opcode.CLOSURE, (uint)si_reg, static_init_idx));
+        self.emit_a_bc(Opcode.CLOSURE, (uint)si_reg, static_init_idx);
         // Initialize the class-name binding inside the classScope while it
         // is still the current lex scope (the CLOSURE above just captured
         // it for static_init, methods on the class already captured it

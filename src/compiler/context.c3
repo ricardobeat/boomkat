@@ -675,6 +675,14 @@ struct CompilerContext {
     // source fails the compile instead of aborting the host process.
     bool reg_overflow;
 
+    // True once a WIDE prefix word has been emitted: some operand of this
+    // function exceeded 255, so its bytecode carries 16-bit register indices.
+    // finish() skips every peephole/fusion pass for such functions (the
+    // passes read raw 8-bit fields and would see truncated operands); the
+    // code runs unoptimized, which is correct and only matters for the rare
+    // over-255-register function.
+    bool has_wide;
+
     // Permanent register floor: parameters and hoisted function-scope slots
     // allocated before body statements begin. Set at each body-compile site
     // (parse_function_body, inner/arrow bodies, program/eval/module entry);
@@ -1076,7 +1084,7 @@ fn void CompilerContext.emit_destruct_param_defaults(&self) {
 
         // IF_TRUE: skip past the default-eval block (will patch target after).
         uint skip_addr = self.code_count;
-        self.emit(bytecode::make_a_sbx(Opcode.IF_TRUE, (uint)cmp_reg, 0));
+        self.emit_a_sbx(Opcode.IF_TRUE, (uint)cmp_reg, 0);
         self.free_reg(cmp_reg);
 
         // Call the default thunk. Result replaces the arg slot in-place so
@@ -1138,7 +1146,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     // Ported 1:1 from the original hand-written pass; equivalence is checked
     // by the golden-bytecode suite (test/golden_bytecode/, `just
     // test-golden-bytecode`).
-    if (!self.disable_optimize && self.code_count >= 3) {
+    if (!self.disable_optimize && !self.has_wide && self.code_count >= 3) {
         fuse_inc_dec_var(self.code, self.code_count, self.const_count);
     }
 
@@ -1155,7 +1163,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     // dead-after-liveness driver (run_fusion_rule). The jump-target bitset needs
     // a code_count-sized bool scratch, allocated here so fusion.c3 stays free of
     // heap dependencies.
-    if (!self.disable_optimize && self.code_count >= 2) {
+    if (!self.disable_optimize && !self.has_wide && self.code_count >= 2) {
         bool* gp_jump_targets = (bool*)h.alloc_func(h.heap_udata, (usz)self.code_cap);
         if (gp_jump_targets == null) { self.cleanup(); return COMPILE_ERROR~; }
         fuse_getpropc(self.code, self.code_count, gp_jump_targets, self.constants);
@@ -1170,7 +1178,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     // JMP_SNEQ. Loose EQ/NEQ are deliberately excluded (they coerce and can
     // throw). Needs a code_count-sized bool scratch buffer for the jump-target
     // bitset, allocate it here to keep fusion.c3 free of heap dependencies.
-    if (!self.disable_optimize && self.code_count >= 2) {
+    if (!self.disable_optimize && !self.has_wide && self.code_count >= 2) {
         bool* jump_targets = (bool*)h.alloc_func(h.heap_udata, (usz)self.code_cap);
         if (jump_targets == null) { self.cleanup(); return COMPILE_ERROR~; }
         run_cmp_branch_fusion(self.code, self.code_count, jump_targets);
@@ -1211,7 +1219,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     // local, re-read each iteration, rather than a per-arm scratch. Guarding it
     // would cost the `total = total + i` loop-body copy elision for no
     // correctness gain; golden_bytecode/loop_addi covers that.
-    if (!self.disable_optimize && self.code_count >= 2) {
+    if (!self.disable_optimize && !self.has_wide && self.code_count >= 2) {
         bool* cp_jump_targets = (bool*)h.alloc_func(h.heap_udata, (usz)self.code_cap);
         if (cp_jump_targets == null) { self.cleanup(); return COMPILE_ERROR~; }
         build_jump_targets(self.code, self.code_count, cp_jump_targets);
@@ -1290,7 +1298,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     // join point in `5 + (c ? 10 : 20)`: without it the false arm's literal is
     // baked into an ADDI the true arm branches straight onto. The bitset needs a
     // code_count-sized bool scratch.
-    if (!self.disable_optimize && self.code_count >= 2) {
+    if (!self.disable_optimize && !self.has_wide && self.code_count >= 2) {
         bool* addi_jump_targets = (bool*)h.alloc_func(h.heap_udata, (usz)self.code_cap);
         if (addi_jump_targets == null) { self.cleanup(); return COMPILE_ERROR~; }
         fuse_addi_subi(self.code, self.code_count, addi_jump_targets);
@@ -1304,7 +1312,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     // form) and BEFORE NOP compaction (so the NOPs it introduces are
     // physically removed). See src/compiler/moveelim.c3 for the liveness
     // analysis and the full safety-condition reasoning.
-    if (!self.disable_optimize && self.code_count >= 2) {
+    if (!self.disable_optimize && !self.has_wide && self.code_count >= 2) {
         usz bufsz = (usz)self.code_cap;
         bool* me_jump_targets = (bool*)h.alloc_func(h.heap_udata, bufsz);
         bool* me_in_try       = (bool*)h.alloc_func(h.heap_udata, bufsz);
@@ -1375,7 +1383,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
                      && !self.is_arrow
                      && !self.is_generator
                      && !self.is_async;
-        if (!self.disable_optimize && elide_ok) {
+        if (!self.disable_optimize && !self.has_wide && elide_ok) {
             // TYPEOFIDENT relies on the INITTZ sentinel in the block env to
             // throw for `typeof x` inside x's temporal dead zone, collect the
             // name indices it references so those sentinels are kept.
@@ -1429,7 +1437,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     // and before the NOP compaction pass so the trailing word is protected by
     // nop_keep[] (see below) exactly like TRY's finally slot. Needs a
     // code_count-sized bool scratch for the jump-target bitset.
-    if (!self.disable_optimize && self.code_count >= 2) {
+    if (!self.disable_optimize && !self.has_wide && self.code_count >= 2) {
         bool* mgg_jump_targets = (bool*)h.alloc_func(h.heap_udata, (usz)self.code_cap);
         if (mgg_jump_targets == null) { self.cleanup(); return COMPILE_ERROR~; }
         run_move_gg_fusion(self.code, self.code_count, mgg_jump_targets);
@@ -1787,7 +1795,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     }
 
     // Run bytecode peephole optimizations (GETPROPC2 chain fusion, etc.)
-    peephole::peephole_scan(func, hp);
+    if (!self.has_wide) { peephole::peephole_scan(func, hp); }
 
     // Free compiler scratch buffers, the CompiledFunction owns its own copies.
     self.cleanup();

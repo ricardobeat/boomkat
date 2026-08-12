@@ -1717,18 +1717,38 @@ fn TVal? Vm.run(Vm* vm) {
             ds.curr_pc = run_threaded_burst(ds.curr_pc, ds.code_end, ds.regs_base, &ds.cold);
         $endif
 
-            Instruction insn = *ds.curr_pc;
+            Instruction word = *ds.curr_pc;
             ds.curr_pc++;
+
+            // WIDE prefix: the word's A/B/C fields carry the high bytes of
+            // the following instruction's operands. Handlers only ever see
+            // the widened DecodedInsn, never the prefix word. The threaded
+            // burst never reaches here with WIDE (it is not in its handler
+            // table, so it bails back to this loop first).
+            DecodedInsn insn;
+            if (@unlikely(word.op == Opcode.WIDE)) {
+                Instruction payload = *ds.curr_pc;
+                ds.curr_pc++;
+                insn.op = payload.op;
+                insn.a  = ((uint)word.a << 8) | payload.a;
+                insn.b  = ((uint)word.b << 8) | payload.b;
+                insn.c  = ((uint)word.c << 8) | payload.c;
+            } else {
+                insn.op = word.op;
+                insn.a  = word.a;
+                insn.b  = word.b;
+                insn.c  = word.c;
+            }
 
             Opcode op = insn.op;
 
-            TVal* ra = ds.regs_base + ((uint)insn.a);
-            TVal* rb = ds.regs_base + ((uint)insn.b);
-            TVal* rc = ds.regs_base + ((uint)insn.c);
+            TVal* ra = ds.regs_base + insn.a;
+            TVal* rb = ds.regs_base + insn.b;
+            TVal* rc = ds.regs_base + insn.c;
 
         $if $feature(TRACE_VM):
         if (@unlikely(vm.trace)) {
-            trace_instruction(vm, ds.curr_pc - 1, (uint)((ds.curr_pc - 1) - ds.code_base),
+            trace_instruction(vm, ds.curr_pc - 1, (uint)((ds.curr_pc - 1) - ds.code_base), &insn,
                               ra, rb, rc, ds.regs_base, ds.act);
         }
         $endif

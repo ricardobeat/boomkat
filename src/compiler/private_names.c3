@@ -503,7 +503,7 @@ fn ushort? CompilerContext.emit_private_access(&self, char[] name, ushort obj_re
     // writes callee/this at [result_reg, result_reg + 1] before the call).
     ushort brand_reg = self.deferred_brand_reg_hint != 0xFFFF
         ? self.deferred_brand_reg_hint : self.alloc_reg();
-    self.emit(bytecode::make_a_bc(Opcode.GETVAR, (uint)brand_reg, brand_bind_idx));
+    self.emit_a_bc(Opcode.GETVAR, (uint)brand_reg, brand_bind_idx);
     uint name_const_idx = self.add_string_constant(name);
     uint name_c = name_const_idx <= 0xFE ? name_const_idx : 0xFF;
     if (self.defer_brand_check) {
@@ -519,6 +519,6 @@ fn ushort? CompilerContext.emit_private_access(&self, char[] name, ushort obj_re
 
     ushort key_reg = self.alloc_reg();
     uint slot_bind_idx = self.add_string_constant(entry.slot_name);
-    self.emit(bytecode::make_a_bc(Opcode.GETVAR, (uint)key_reg, slot_bind_idx));
+    self.emit_a_bc(Opcode.GETVAR, (uint)key_reg, slot_bind_idx);
     return key_reg;
 }
