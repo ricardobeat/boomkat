@@ -12,8 +12,13 @@ decimal.js, bignumber.js, mathjs, jszip, papaparse, crypto-js, protobufjs,
 chance, he, nearley, d3-array, uuid, plus typescript 9 MB and babel 5 MB).
 QuickJS (`out/qjs`) is the differential oracle throughout.
 
-Status: B1, B2, B5, B6, B7, B8, B9, B10, B11 fixed. B3, B4, B12
-and the E-series open.
+Status: B1-B11 and B13 fixed. B12 withdrawn — it was a sloppy-mode fixture,
+not an engine bug. B14 (found while closing the above) fixed. The E-series is
+open and is all that remains.
+
+As of 2026-08-12 every known test failure is closed: test262 phase 6 is
+4619/0, the local suite is 321/0, `test/engine/` is 106/0, and the module,
+uncaught, rejection and robustness surfaces are all clean.
 
 ## Contents
 
@@ -29,6 +34,10 @@ and the E-series open.
 - [B8: `Number.prototype.toString(radix)` saturates at 2^63](#b8-numberprototypetostringradix-saturates-at-263)
 - [B9: unhandled promise rejections are silent](#b9-unhandled-promise-rejections-are-silent)
 - [B10: uncaught errors degrade to `VM_ERROR` when a microtask is pending](#b10-uncaught-errors-degrade-to-vm_error-when-a-microtask-is-pending)
+- [B11: deeply nested source segfaults the parser](#b11-deeply-nested-source-segfaults-the-parser)
+- [B12: NOT A BUG — a sloppy-mode fixture, withdrawn](#b12-not-a-bug--a-sloppy-mode-fixture-withdrawn)
+- [B13: `ADDI` fusion swaps operands, so `1 + str` concatenates backwards](#b13-addi-fusion-swaps-operands-so-1--str-concatenates-backwards)
+- [B14: `Array.prototype.pop` reads a hole as `undefined`](#b14-arrayprototypepop-reads-a-hole-as-undefined)
 - [E1: no way to interrupt a runaway script](#e1-no-way-to-interrupt-a-runaway-script)
 - [E2: embedding API gaps](#e2-embedding-api-gaps)
 - [What held up](#what-held-up)
@@ -562,35 +571,48 @@ the top-level uncaught path.
 
 ---
 
-## B12: `yield` as a destructuring default in `for await` loses the binding
+## B12: NOT A BUG — a sloppy-mode fixture, withdrawn
 
-**Severity: medium. Found by B9's rejection reporting, not by the suite.**
+**Resolved 2026-08-12 in `a2be8d67`. The engine was correct; the test was
+wrong, and so was this entry.**
 
-A destructuring pattern whose default is a `yield` expression, used as the
-`for await` target, never binds the variable. The resulting `ReferenceError`
-is swallowed into a rejected promise, so the failure was invisible until
-unhandled-rejection reporting landed.
+Originally filed as "`yield` as a destructuring default in `for await` loses
+the binding", on the strength of this comparison:
 
 ```js
 async function* g(){ for await ([value = yield "a"] of [[]]) { print(value); } }
-var it = g();
-it.next().then(function(r){ return it.next(11); });
 ```
 
 - `qjs`: resumes the body with `value=11`
 - `duktape_c3`: `ReferenceError: 'value' is not defined`
 
-`test/test_for_await_yield_operand.js` reports `4 pass, 0 fail` in both
-engines, because the assertions live inside the loop body the engine never
-reaches. Only the stderr rejection distinguishes them, which is why the
-existing test did not catch it.
+The fixture never declares `value`. This engine is strict-only, so assigning
+to an undeclared identifier is a ReferenceError — and **node agrees under an
+explicit `"use strict"`**, producing the identical error. `qjs` and bare node
+accepted it only because they ran the file as sloppy mode, where the
+assignment implicitly creates a global. The rejection was correct behaviour.
 
-Both the array (`[value = yield]`) and object (`{value = yield}`) forms fail
-the same way.
+With the binding declared, the feature works and matches both oracles exactly
+(yielded operand `"array"`, resume value `11`, body runs). Verified against
+qjs and node.
 
-Note this is a genuine engine bug and not fixture noise: unlike the four
-promise fixtures quieted in `eba2734d`, QuickJS produces no rejection here at
-all.
+The entry above asserted "this is a genuine engine bug and not fixture noise"
+precisely because qjs produced no rejection — but qjs's silence *was* the
+sloppy-mode tell, not evidence of a bug. This is the exact false-positive
+class the [scope note](#scope-note-strict-only-is-not-the-cause) warns about,
+and it got past that guard because the fixture's self-reported `4 pass, 0
+fail` looked like corroboration. It was not: all four of those assertions were
+the `instanceof Promise` checks *outside* the loop, and the two that mattered
+sat in a body that never ran.
+
+The rewritten fixture declares its bindings, asserts the yielded operands and
+completion from the promise chain, and counts body executions so a body that
+never runs can no longer report a pass. 8 assertions, identical in all three
+engines.
+
+**Lesson for the remaining entries:** a fixture that prints a pass while
+stderr shows an error is not two independent signals agreeing. Check where
+the assertions actually live.
 
 ---
 
@@ -621,9 +643,59 @@ Only the constant-on-the-left form is affected; `a + 1` is already correct.
 
 Found while investigating string-concatenation performance, and confirmed at
 `9e3bae69` with all perf work stashed, so it is independent of that change.
-Fixing it means either restricting the fusion to the constant-on-the-right
-form, or finding a bit to record the operand order — both are compiler /
-bytecode changes.
+
+**Fixed 2026-08-12 in `5342971b`.** The fold is now restricted to
+`rS <op> imm` — the constraint `SUB` already carried, since `imm - rS` was
+never a subtract-immediate either. `imm + rS` stays as `LDINT`+`ADD`, which
+reads its operands in source order.
+
+Restricting beat spending a bit on operand order: the golden-bytecode suite is
+unchanged at 30/30, so no fused case in that corpus even used the removed
+form, and `bench-fast` shows no movement. The commutative case that matters
+for performance — `acc + 1` in a loop — was always the right-hand form.
+
+Regression coverage in `test/test_addi_fusion_operand_order.js`, which
+mutation-tests to 4 failures with the fix reverted. It pins both orders for
+strings and numbers, the ±128 immediate boundaries, the out-of-range (unfused)
+path, `ToPrimitive` operands, and the `SUB` asymmetry — so a later change
+cannot "restore symmetry" by folding the other side back in.
+
+---
+
+## B14: `Array.prototype.pop` reads a hole as `undefined`
+
+**Severity: medium. The last standing test262 failure, and a real one.**
+
+**Fixed 2026-08-12 in `0c6dc565`.**
+
+```js
+Array.prototype[1] = 1;
+var x = [0]; x.length = 2;
+x.pop();   // duktape_c3: undefined      node/qjs: 1
+```
+
+`pop` reads index `length-1` with `[[Get]]`, which continues up the prototype
+chain when the own element is absent. The dense fast path in
+`builtin_array_proto_pop` treated "no own dense slot" as "the value is
+undefined" and answered directly. The generic-object path — `Array.prototype
+.pop` applied to a plain object — was always correct; only the array fast path
+short-cut the lookup, which is why the same test's later assertions passed.
+
+The fast path now requires the element to be *present* in the dense part
+before it may claim the operation, so a hole falls through to the existing
+prototype-aware `arr_get_elem_vm`. An own `undefined` is still present and
+continues to shadow the inherited value.
+
+Probed the sibling methods for the same hole-vs-undefined confusion —
+`shift`, `indexOf`, `includes`, `join`, `slice`, `concat`, `reverse`,
+`lastIndexOf` all already match QuickJS on an inherited indexed property.
+`pop` was alone.
+
+This one had been carried for weeks as "pre-existing, unrelated" whenever a
+phase-6 number was quoted. It was a one-condition fix. **A known failure that
+nobody has read is not a known failure.**
+
+Coverage: `test/test_array_pop_hole_prototype.js`, green in all three engines.
 
 ---
 
