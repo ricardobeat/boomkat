@@ -1036,6 +1036,39 @@ Any test262 number is only as fresh as `out/test262_runner`.
 
 ---
 
+## B13: `ADDI` fusion swaps operands, so `1 + str` concatenates backwards
+
+**Severity: high. Silent wrong answers on ordinary code.**
+
+```js
+function f(a){ return 1 + a; }
+f("A");   // duktape_c3: "A1"      node/qjs: "1A"
+```
+
+`FUSION_ADDI_SUBI` (`src/compiler/fusion.c3`, the `is_add` branch) folds a
+constant operand into `ADDI` from *either* side:
+
+```c3
+if (rX == rK && rY != rK)      { rS = rY; }
+else if (rY == rK && rX != rK) { rS = rX; }
+```
+
+`ADDI`'s A/B/C fields are fully consumed by dest/src/immediate, so nothing
+records which side the immediate was on, and the VM evaluates every fused form
+as `rS + imm`. Addition is commutative for numbers, so this is invisible for
+arithmetic — but string concatenation is not, and the operands come out
+reversed.
+
+Only the constant-on-the-left form is affected; `a + 1` is already correct.
+
+Found while investigating string-concatenation performance, and confirmed at
+`9e3bae69` with all perf work stashed, so it is independent of that change.
+Fixing it means either restricting the fusion to the constant-on-the-right
+form, or finding a bit to record the operand order — both are compiler /
+bytecode changes.
+
+---
+
 ## E1: no way to interrupt a runaway script
 
 **Severity: critical for embedders. Host hangs permanently.**
