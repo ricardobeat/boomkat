@@ -80,6 +80,16 @@ check "super outside a class"         'super.#x'
 check "yield operand with in, for-init"   'function* g(){ for (yield "" in {}; ; ) ; }'
 check "yield* operand with in, for-init"  'function* g(){ for (yield * "" in {}; ; ) ; }'
 
+# An ArrowFunction is AssignmentExpression-level and may not appear directly
+# as a binary operand (ES §13.16, §13.15). These must stay rejected: the
+# complement of test/test_arrow_call_arg_binary_operand.js, which fixed an
+# over-rejection of an arrow passed as a CALL ARGUMENT in the same position.
+# node rejects all of these too.
+check "bare arrow after +"            '1 + () => 2'
+check "bare arrow after &&"           'true && x => 1'
+check "bare arrow after ??"           'null ?? () => 1'
+check "bare arrow in an initializer"  'var x = 1 + (y) => 2'
+
 # Control: a path that always had a message still reports it.
 check "expression with a bad token"   'x ='
 

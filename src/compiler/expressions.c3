@@ -2698,6 +2698,16 @@ fn ushort? CompilerContext.emit_call(&self, ushort callee_reg) {
         self.emit_abc(Opcode.CALL, (uint)callee_reg, (uint)callee_reg, (uint)arg_count);
     }
 
+    // What just parsed is a CallExpression, not an ArrowFunction. An arrow
+    // passed as an ARGUMENT (`a.every((x, i) => x > 0)`) leaves
+    // last_was_arrow_expr set on the way out of assignment_expr, and nothing
+    // between there and the enclosing binary_expr's post-RHS
+    // check_no_arrow_rhs() cleared it — so `true && a.every((x,i) => x>0)`
+    // was rejected as "arrow function in expression position not allowed".
+    // The guard exists to reject a BARE arrow as a binary operand
+    // (`1 + () => 2`); an arrow inside the call's parentheses is not that.
+    self.last_was_arrow_expr = false;
+
     // Free everything from callee_reg (callee, this, args, spread temps)
     self.free_regs_to(callee_reg);
     // Result lives at callee_reg
