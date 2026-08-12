@@ -40,7 +40,15 @@ const uint INITIAL_INNER_FUNCS = 16;
 const uint MAX_CODE_HARD        = 1 << 22;  // 4M instructions
 const uint MAX_CONSTANTS_HARD   = 1 << 20;  // 1M constants
 const uint MAX_INNER_FUNCS_HARD = 1 << 16;  // 65K inner functions
-const uint MAX_SCOPE_DEPTH = 256;
+/// Scope-stack entries per function: block markers plus every tracked
+/// declaration. Was 256, which real minified bundles exceed easily —
+/// bluebird and jszip both have functions past it. Overflow used to DROP the
+/// entry silently, making a declaration invisible to shadowing, TDZ and
+/// duplicate-declaration checks; it is now a compile error (scope_overflow).
+///
+/// 1024 is the ceiling that keeps CompilerContext inside c3c's 64 KB
+/// stack-object limit alongside `patches` — 2048 does not build.
+const uint MAX_SCOPE_DEPTH = 1024;
 const uint MAX_CAPTURED_NAMES = 48;
 /// Cap on primary_expr recursion depth (nested `[[[`, `((((`, etc). The
 /// recursive-descent parser has no other bound and a deeply nested literal
@@ -299,6 +307,10 @@ struct CompilerContext {
     uint patch_count;
     /// Set when add_patch overflowed; finish() turns this into a compile error.
     bool patch_overflow;
+    /// Set when the scope stack overflowed; finish() turns this into a compile
+    /// error. A dropped scope entry makes a declaration invisible to
+    /// shadowing/TDZ/duplicate checks rather than reporting anything.
+    bool scope_overflow;
 
     // Track last identifier resolved via GETVAR (for assignment write-back)
     bool last_was_getvar;
@@ -917,6 +929,7 @@ fn void CompilerContext.init(&self, Lexer* lex, void* heap) {
     self.label_count = 0;
     self.patch_count = 0;
     self.patch_overflow = false;
+    self.scope_overflow = false;
     self.const_hash_count = 0;
     self.call_prop_obj_reg = REG_NONE;
     self.deferred_brand_reg_hint = 0xFFFF;
@@ -1171,6 +1184,9 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     }
     if (self.patch_overflow) {
         return self.fail("too many break/continue targets in one function")~;
+    }
+    if (self.scope_overflow) {
+        return self.fail("too many nested scopes or declarations in one function")~;
     }
     // A lex error surfaced through `peek_type()` (used by `is_at_end()`,
     // `check()`, etc.) is swallowed there as a synthetic EOF_TOKEN so that

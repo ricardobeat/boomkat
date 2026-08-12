@@ -146,6 +146,29 @@ assertEq(big(9999), -2, "default still reached");
     assertEq(out, "12:11:42", "tagged template raw and cooked lengths");
 }());
 
+// The scope stack is the third fixed compiler array of this shape. Overflow
+// used to DROP the entry silently, making a declaration invisible to
+// shadowing, TDZ and duplicate-declaration checks — a wrong answer rather than
+// a diagnostic. The old bound was 256, which real minified bundles exceed
+// easily (bluebird and jszip both have functions past it); it is now 1024,
+// with a compile error past that.
+(function () {
+    var src = "";
+    for (var i = 0; i < 900; i++) { src += "var v" + i + " = " + i + ";"; }
+    src += "return v899;";
+    assertEq(new Function(src)(), 899, "900 declarations in one function");
+}());
+
+// Shadowing must still resolve correctly deep into the stack — the silent-drop
+// failure mode was a declaration the compiler could no longer see.
+(function () {
+    var src = "";
+    for (var i = 0; i < 700; i++) { src += "var v" + i + " = " + i + ";"; }
+    src += "var shadowed = 1; { let shadowed = 2; if (shadowed !== 2) return 'inner wrong'; }";
+    src += "return shadowed;";
+    assertEq(new Function(src)(), 1, "shadowing past the old scope bound");
+}());
+
 if (failures === 0) {
     print("PASS: compiler fixed-buffer bounds");
 } else {
