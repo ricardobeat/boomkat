@@ -12,13 +12,18 @@ decimal.js, bignumber.js, mathjs, jszip, papaparse, crypto-js, protobufjs,
 chance, he, nearley, d3-array, uuid, plus typescript 9 MB and babel 5 MB).
 QuickJS (`out/qjs`) is the differential oracle throughout.
 
-Status: B1-B11 and B13 fixed. B12 withdrawn — it was a sloppy-mode fixture,
-not an engine bug. B14 (found while closing the above) fixed. The E-series is
-open and is all that remains.
+Status: B1-B11, B13, B14 and B15 fixed. B12 withdrawn — it was a sloppy-mode
+fixture, not an engine bug. The E-series is open and is all that remains.
 
-As of 2026-08-12 every known test failure is closed: test262 phase 6 is
-4619/0, the local suite is 321/0, `test/engine/` is 106/0, and the module,
-uncaught, rejection and robustness surfaces are all clean.
+As of 2026-08-12 **every known test failure is closed**: the local suite is
+322/0, `test/engine/` is 106/0, golden-bytecode is 30/30, test262 phase 6 is
+4619/0 and phase 21 is 2131/0, and the module, uncaught, rejection and
+robustness surfaces are all clean. The full-corpus run immediately before
+these last two fixes was 49812 pass / 2 fail, and those 2 were B15.
+
+B14 and B15 were both found by *re-running the suites against a freshly built
+batch binary* rather than by new probing — see the measurement note below.
+Four library load failures remain open and are tracked separately.
 
 ## Contents
 
@@ -38,6 +43,8 @@ uncaught, rejection and robustness surfaces are all clean.
 - [B12: NOT A BUG — a sloppy-mode fixture, withdrawn](#b12-not-a-bug--a-sloppy-mode-fixture-withdrawn)
 - [B13: `ADDI` fusion swaps operands, so `1 + str` concatenates backwards](#b13-addi-fusion-swaps-operands-so-1--str-concatenates-backwards)
 - [B14: `Array.prototype.pop` reads a hole as `undefined`](#b14-arrayprototypepop-reads-a-hole-as-undefined)
+- [B15: a `yield` operand ignores the enclosing `[In]` parameter](#b15-a-yield-operand-ignores-the-enclosing-in-parameter)
+- [Note on measurement: the batch binary is a separate build](#note-on-measurement-the-batch-binary-is-a-separate-build)
 - [E1: no way to interrupt a runaway script](#e1-no-way-to-interrupt-a-runaway-script)
 - [E2: embedding API gaps](#e2-embedding-api-gaps)
 - [What held up](#what-held-up)
@@ -696,6 +703,52 @@ phase-6 number was quoted. It was a one-condition fix. **A known failure that
 nobody has read is not a known failure.**
 
 Coverage: `test/test_array_pop_hole_prototype.js`, green in all three engines.
+
+---
+
+## B15: a `yield` operand ignores the enclosing `[In]` parameter
+
+**Severity: low (accepts invalid syntax). Fixed 2026-08-12 in `77057548`.**
+
+```js
+function* g(){ for (yield '' in {}; ; ) ; }   // must be a SyntaxError
+```
+
+`yield [no LineTerminator here] AssignmentExpression[?In, +Yield]` — the `?In`
+propagates, so in a `[~In]` position (a C-style for head) the operand may not
+consume an `in` either. Both the plain and `yield*` forms parsed; qjs and node
+both reject them.
+
+`binary_expr` consumes `forbid_in` on entry so it cannot leak into a nested
+`[+In]` construct like `f(a in b)`. That is correct for those, but a
+YieldExpression is not one of them — it propagates `?In` rather than forcing
+`+In`, and it is handled in `primary_expr`, far below where the flag was
+cleared. The fix parks the consumed value in `yield_forbid_in` alongside
+`yield_ok_here`, which already marks the only position a `yield` can appear.
+
+**These were the last two failures in the entire test262 corpus** (phase 21,
+`language/expressions/yield/{in,star-in}-iteration-stmt.js`). They are
+negative *parse* tests, so no runtime suite could have caught them — and they
+only surfaced because the full-corpus run below was done against a freshly
+built batch binary.
+
+---
+
+## Note on measurement: the batch binary is a separate build
+
+`out/test262_runner` is **not** rebuilt by `just build`, and
+`python3 scripts/run_test262.py` rebuilds nothing at all. Only `just
+build-batch` (or the `just test262*` recipes) refreshes it.
+
+This bit twice on 2026-08-12. The B14 pop fix was correct and a hand-run of
+the test262 file passed, yet the suite kept reporting the same failure against
+a nine-day-old binary. The tell is the contradiction itself: a hand-run of the
+exact file passing while the suite disagrees means the two are running
+different code. Separately, and more quietly, the "no conformance regression"
+number quoted during the WIDE-prefix review had been measured the same way —
+the right conclusion, but not actually evidence.
+
+Any test262 number is only as fresh as `out/test262_runner`.
 
 ---
 
