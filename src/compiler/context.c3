@@ -51,6 +51,15 @@ const uint MAX_EXPR_DEPTH = 256;
 const uint MAX_LOOP_DEPTH  = 16;
 const uint MAX_TRY_DEPTH   = 8;
 const uint MAX_LABELS       = 16;
+/// Break/continue forward-patch slots per FUNCTION (8 bytes each, so 16 KB).
+/// Not per loop: the pool is never reset mid-function, so this bounds the
+/// total number of break/continue statements in one function body.
+///
+/// Sized to stay within c3c's 64 KB stack-object limit — CompilerContext is a
+/// stack local (see entry.c3 / class.c3), so this array's size is charged
+/// directly against that budget. 2048 comfortably exceeds MAX_SWITCH_CLAUSES
+/// (1024), which is the realistic driver.
+const uint MAX_PATCHES      = 2048;
 const uint MAX_CONST_HASH   = 1024;  // Open-addressing hash table for constant dedup
 
 /// Sentinel for "no patch" in break/continue patch lists.
@@ -277,9 +286,19 @@ struct CompilerContext {
     LabelInfo[MAX_LABELS] labels;
     uint label_count;
 
-    // Patch list pool for break/continue forward patches
-    PatchEntry[256] patches;
+    // Patch list pool for break/continue forward patches.
+    //
+    // This is a per-FUNCTION pool that is never reset mid-function, so the
+    // bound is the total number of break/continue statements in one function,
+    // not the depth of any single loop. The old bound was 256 and overflowing
+    // it made add_patch return SILENTLY: the jump was never recorded, never
+    // patched, and stayed `JUMP 0`. A switch with more than 256 clauses
+    // therefore fell through to `default` for every arm past the 256th, with
+    // no diagnostic — see MAX_PATCHES's use in patches.c3.
+    PatchEntry[MAX_PATCHES] patches;
     uint patch_count;
+    /// Set when add_patch overflowed; finish() turns this into a compile error.
+    bool patch_overflow;
 
     // Track last identifier resolved via GETVAR (for assignment write-back)
     bool last_was_getvar;
@@ -897,6 +916,7 @@ fn void CompilerContext.init(&self, Lexer* lex, void* heap) {
     self.try_depth = 0;
     self.label_count = 0;
     self.patch_count = 0;
+    self.patch_overflow = false;
     self.const_hash_count = 0;
     self.call_prop_obj_reg = REG_NONE;
     self.deferred_brand_reg_hint = 0xFFFF;
@@ -1129,6 +1149,9 @@ fn void CompilerContext.emit_destruct_param_defaults(&self) {
 fn CompiledFunction*? CompilerContext.finish(&self) {
     if (self.reg_overflow) {
         return self.fail("register limit exceeded")~;
+    }
+    if (self.patch_overflow) {
+        return self.fail("too many break/continue targets in one function")~;
     }
     // A lex error surfaced through `peek_type()` (used by `is_at_end()`,
     // `check()`, etc.) is swallowed there as a synthetic EOF_TOKEN so that
