@@ -1136,6 +1136,20 @@ where real stack traces will not fit in 512 bytes) and `char[256] buf` in
   `COMPILE_ERROR` path fires, or widen the operands. (Nearby
   `char[][256] hoisted_fn_names` and `PatchEntry[256] patches` *are*
   genuine `List` candidates, and silently cap large functions today.)
+
+  **That parenthetical was right, and it took a real bundle to prove it.**
+  `PatchEntry[256] patches` became **B20**: `add_patch` returned silently at
+  the cap, so a switch past 256 clauses answered `default` for every arm after
+  the 256th. Two more of the same shape turned up in the same sitting — B19
+  (`uint[64]` switch tables and `char[65536]` template buffers, written with
+  no bound at all) and B21 (a `Function` body truncated mid-token).
+
+  The through-line is not the specific numbers. It is that **every one of these
+  failed silently**: no error, no diagnostic, just a wrong answer or a
+  corrupted frame. Where a growable structure is not warranted, the limit still
+  has to be *enforced* — a cap that is merely "not exceeded in practice" is a
+  latent silent-wrong-answer bug, and `hoisted_fn_names` and
+  `MAX_SCOPE_DEPTH = 256` are both still in that state.
 - **B6/B7 need a limit that is deliberately hardcoded.** An engine must
   refuse an over-long string with a JS error rather than attempt the
   allocation; QuickJS caps at 2^30 and throws `InternalError: string too
