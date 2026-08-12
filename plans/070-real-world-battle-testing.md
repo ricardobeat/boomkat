@@ -275,8 +275,12 @@ generally:
 var a = []; for (var i=0;i<40000;i++){ a.push("abc"); } var s = a.join("");
 ```
 
-`String.prototype.split` on a large string shows the same order of
-overhead (18x at 20k) and is likely the same underlying copy.
+`String.prototype.split` was originally listed here as showing the same
+order of overhead (18x at 20k). That was a misattribution: the benchmark
+built its subject string with `+=`, so it measured the quadratic
+accumulation, not the split. Measured in isolation, split is linear —
+4x the input costs 3.1x the time (2.2 ms at 20k, 6.9 ms at 80k), about
+3x QuickJS.
 
 Probable cause: the engine-wide invariant that every `HString` is interned
 (string equality is pointer identity) means each intermediate result is
