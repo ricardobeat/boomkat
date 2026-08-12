@@ -1,10 +1,15 @@
 # Plan 070: real-world battle testing
 
 Findings from running third-party production JavaScript against the engine
-rather than test262. The gate is green on 49,814 conformance tests, so the
-bugs below are all in territory the suite does not reach: register pressure
-in large real functions, the regex/division lexer heuristic, incremental
-string building, and host-visible error reporting.
+rather than test262. The gate is green on 49,814 conformance tests, so every
+bug below is in territory the suite does not reach.
+
+Two shapes account for all of them. **Scale**: register pressure, scope depth,
+clause counts and source length in real functions, where fixed compiler arrays
+silently dropped entries or overran. **Nesting**: two ordinary constructs
+combined in a way the suite only ever exercises separately — a call inside a
+parenthesised assignment, an arrow inside a call inside a binary operand. Plus
+the original lexer, string-building and error-reporting findings.
 
 Corpus used: 21 unmodified library bundles fetched from jsDelivr (lodash,
 underscore, moment, marked, handlebars, immutable, acorn, bluebird,
@@ -12,13 +17,40 @@ decimal.js, bignumber.js, mathjs, jszip, papaparse, crypto-js, protobufjs,
 chance, he, nearley, d3-array, uuid, plus typescript 9 MB and babel 5 MB).
 QuickJS (`out/qjs`) is the differential oracle throughout.
 
-Status: B2, B5, B6, B7, B8, B9, B10, B11 fixed. B1 in progress. B3, B4, B12
-and the E-series open.
+Status: B1-B11, B13-B17 and B19-B21 fixed. B12 withdrawn — it was a
+sloppy-mode fixture, not an engine bug. **B18 is open** (an async callback
+invoked by a builtin does not return a promise), along with the E-series.
+
+Library loading: **5 of the 8 original failures now pass** — four of them
+fixed by B16 alone. protobufjs and typescript still fail; babel is untested.
+
+The last five bugs (B16, B17, B19, B20, B21) were all found by loading real
+library bundles, and **every one of them is a silent wrong answer or memory
+corruption that the full test262 corpus passes straight through**.
+
+As of 2026-08-12 **every known test failure is closed**: the full test262
+corpus runs **49814 pass / 0 fail** (verified against a freshly built
+`out/test262_runner`), the local suite is 326/0, `test/engine/` is 106/0,
+golden-bytecode is 30/30, and the module, uncaught, rejection and robustness
+surfaces are all clean. The run immediately before the last two fixes was
+49812 pass / 2 fail, and those 2 were B15.
+
+**A green corpus is not a working engine.** B16-B21 were all present while
+those 49,814 tests passed: a wrong-register call, a rejection of
+`a && b.every((x, i) => ...)`, async callbacks that never return promises, two
+unbounded writes into fixed compiler buffers, a switch that silently answered
+`default` past 256 clauses, and a `Function` body truncated mid-token. Each
+needs either two ordinary constructs nested a particular way, or simply more
+of something than any fixture contains — and the suite has neither.
+
+B14 and B15 were found by re-running the suites against a freshly built batch
+binary rather than by new probing (see the measurement note below); B16 and
+B17 were found by loading real library bundles.
 
 ## Contents
 
 - [Scope note: strict-only is not the cause](#scope-note-strict-only-is-not-the-cause)
-- [Headline: 8 of 21 libraries fail to load](#headline-8-of-21-libraries-fail-to-load)
+- [Headline: 8 of 21 libraries failed to load; 5 now pass](#headline-8-of-21-libraries-failed-to-load-5-now-pass)
 - [B1: register allocation silently wraps at 256](#b1-register-allocation-silently-wraps-at-256)
 - [B2: regexp literal after a control-clause `)`](#b2-regexp-literal-after-a-control-clause-)
 - [B3: string `+=` is quadratic](#b3-string--is-quadratic)
@@ -29,6 +61,18 @@ and the E-series open.
 - [B8: `Number.prototype.toString(radix)` saturates at 2^63](#b8-numberprototypetostringradix-saturates-at-263)
 - [B9: unhandled promise rejections are silent](#b9-unhandled-promise-rejections-are-silent)
 - [B10: uncaught errors degrade to `VM_ERROR` when a microtask is pending](#b10-uncaught-errors-degrade-to-vm_error-when-a-microtask-is-pending)
+- [B11: deeply nested source segfaults the parser](#b11-deeply-nested-source-segfaults-the-parser)
+- [B12: NOT A BUG — a sloppy-mode fixture, withdrawn](#b12-not-a-bug--a-sloppy-mode-fixture-withdrawn)
+- [B13: `ADDI` fusion swaps operands, so `1 + str` concatenates backwards](#b13-addi-fusion-swaps-operands-so-1--str-concatenates-backwards)
+- [B14: `Array.prototype.pop` reads a hole as `undefined`](#b14-arrayprototypepop-reads-a-hole-as-undefined)
+- [B15: a `yield` operand ignores the enclosing `[In]` parameter](#b15-a-yield-operand-ignores-the-enclosing-in-parameter)
+- [B16: a call's callee is materialized into the wrong register](#b16-a-calls-callee-is-materialized-into-the-wrong-register)
+- [B17: an arrow call argument rejected as a bare arrow operand](#b17-an-arrow-call-argument-rejected-as-a-bare-arrow-operand)
+- [B18: an async callback invoked by a builtin does not return a promise](#b18-an-async-callback-invoked-by-a-builtin-does-not-return-a-promise)
+- [B19: unbounded writes into fixed compiler buffers](#b19-unbounded-writes-into-fixed-compiler-buffers)
+- [B20: a switch past 256 clauses silently fell through to `default`](#b20-a-switch-past-256-clauses-silently-fell-through-to-default)
+- [B21: an oversized `Function` constructor body was truncated](#b21-an-oversized-function-constructor-body-was-truncated)
+- [Note on measurement: the batch binary is a separate build](#note-on-measurement-the-batch-binary-is-a-separate-build)
 - [E1: no way to interrupt a runaway script](#e1-no-way-to-interrupt-a-runaway-script)
 - [E2: embedding API gaps](#e2-embedding-api-gaps)
 - [What held up](#what-held-up)
@@ -46,51 +90,81 @@ fails here. These are engine bugs, not scope decisions.
 
 ---
 
-## Headline: 8 of 21 libraries fail to load
+## Headline: 8 of 21 libraries failed to load; 5 now pass
 
 Each bundle was prefixed with a host shim
 (`globalThis.window = globalThis.self = globalThis.global = globalThis`)
 and followed by `console.log("LOADED")`, then run under both engines.
-**All 21 load under QuickJS. 8 fail here.**
+All 21 load under QuickJS; 8 failed here originally.
 
-| library | duktape_c3 | first error |
-|---|---|---|
-| underscore 1.13.6 | FAIL | `Cannot read properties of undefined (reading 'length')` (B1) |
-| marked 4.3.0 | FAIL | `SyntaxError: unexpected token in expression` (B2) |
-| bluebird 3.7.2 | FAIL | `Cannot read properties of undefined` |
-| jszip 3.10.1 | FAIL | `Cannot read properties of undefined` |
-| handlebars 4.7.8 | FAIL | `object is not a function` |
-| protobufjs 7.4.0 | FAIL | `undefined is not a function` |
-| typescript 5.4.5 | FAIL | exit 2 |
-| babel 7.24.7 | FAIL | exit 1 |
-| lodash, moment, immutable, acorn, decimal.js, bignumber.js, mathjs, papaparse, crypto-js, chance, he, nearley, d3-array, uuid | PASS | — |
+**Original state (8 failing).** Re-verified 2026-08-12 after B1-B17:
 
-Two failures are root-caused: underscore to B1, marked to B2.
+| library | was | now | root cause |
+|---|---|---|---|
+| underscore 1.13.6 | FAIL | **PASS** | B1 (>255 registers) |
+| marked 4.3.0 | FAIL | **PASS** | B2, then B16 |
+| bluebird 3.7.2 | FAIL | **PASS** | B16 |
+| jszip 3.10.1 | FAIL | **PASS** | B16 |
+| handlebars 4.7.8 | FAIL | **PASS** | B16 |
+| protobufjs 7.4.0 | FAIL | FAIL | `request must be specified` — see below |
+| typescript 5.4.5 | FAIL | FAIL | **Diagnosed.** Was a SIGBUS from B19; now reports `compile error at line 15576:4: too many nested scopes or declarations in one function`. It genuinely exceeds `MAX_SCOPE_DEPTH` (1024) in one function — a real limit to raise, not a bug. ASan is clean. |
+| babel 7.24.7 | FAIL | ? | not re-tested |
 
-The other six are **not** explained by B1, and are still unidentified.
-Counting function declarations per scope rules it out: only underscore
-concentrates them in a single scope (109 at two-space indent). bluebird
-(149), jszip (148), protobufjs (131) and handlebars (76) spread theirs
-across per-module closures, so none of them approaches the 256-register
-ceiling in any one scope. Their errors — `Cannot read properties of
-undefined`, `object is not a function`, `undefined is not a function` —
-share the signature of a value silently becoming `undefined`, but the
-cause is different and needs its own minimisation. typescript and babel
-fail with bare non-zero exits (2 and 1) and are the least useful starting
-points given their size.
+**Five of the eight are fixed, four of them by B16 alone.** Their symptoms had
+looked unrelated — handlebars reported `Object.defineProperty called on
+non-object`, jszip and marked reported `undefined is not a function` — which
+is why they were carried as four separate unexplained failures for weeks. One
+missing guard term accounted for all of them.
 
-Investigating these six is the highest-value follow-up from this plan:
-they are six independent real-world reproductions of bugs not yet
-characterised.
+protobufjs's remaining error is thrown by protobufjs itself, not by the
+engine, and it loads far enough to run its own argument validation; it may not
+be an engine bug at all. Worth confirming before spending on it.
 
-This is the number that matters most: the conformance gate is green at
-49,814 tests, but a majority-of-the-ecosystem sample of real bundles has a
-38% load failure rate. Conformance and real-world compatibility have
-diverged, which is what motivated this plan.
+**Fixing the diagnostic diagnosed it.** The plan above was to repair
+`compile error at line 0:0` before guessing at the cause; enforcing the
+scope-stack cap (`bcef20e9`) did exactly that, and typescript immediately named
+its own problem: it exceeds `MAX_SCOPE_DEPTH` in one function, at line 15576.
+
+**`scope_stack` is now heap-grown** (`a5c26d6f`), so that cap is gone entirely
+— 8000 declarations in one function compile where 1024 was the hard limit.
+`MAX_SCOPE_DEPTH` is deleted.
+
+typescript gets further and still fails, now against **a different silent
+limit**: `compile error at line 0:0` again, with ASan clean on the full 9 MB
+source (so it is a cap, not memory corruption). Finding it is the same exercise
+as before — the positionless message means some path returns `COMPILE_ERROR`
+without calling `record_error`, and `grep -n "return COMPILE_ERROR~;"
+src/compiler/*.c3 | grep -v "fail("` lists the candidates.
+
+`patches` (2048) and `hoisted_fn_names` (512) are still fixed, but both are
+enforced now and both have real headroom; converting them to the same
+heap-grown pattern is mechanical when it is wanted.
+The original analysis here reasoned from function-declaration counts per scope
+and concluded the remaining six needed "six independent minimisations". That
+was wrong in an instructive way: bluebird, jszip, handlebars and marked shared
+a **single** root cause (B16), and their three different-looking error messages
+were all the same wrong-register read surfacing at different points. Distinct
+symptoms are not evidence of distinct bugs.
+
+What actually found it was not counting anything about the source. It was
+picking ONE failure (jszip), injecting a per-module load trace into its
+browserify loader to get the failing module number, extracting that module's
+body, and cutting it down to five lines — then narrowing the trigger by
+probing adjacent shapes against node under `"use strict"`. That took one
+sitting and cleared four libraries.
+
+**The lesson for the rest of this plan:** minimise one failure completely
+rather than triaging several partially. And note that the conformance gate was
+green at 49,814 tests through all of B16, B17 and B18 — test262 could not have
+found any of them, because each needs two ordinary constructs *nested in a
+specific way* that the suite exercises only separately.
 
 ---
 
 ## B1: register allocation silently wraps at 256
+
+**Status: FIXED (a9b75316)** — a two-word WIDE prefix extends operands to
+16 bits (65535 registers); see the commit for the full design.
 
 **Severity: high. Silent wrong answers, no diagnostic.**
 
@@ -275,8 +349,12 @@ generally:
 var a = []; for (var i=0;i<40000;i++){ a.push("abc"); } var s = a.join("");
 ```
 
-`String.prototype.split` on a large string shows the same order of
-overhead (18x at 20k) and is likely the same underlying copy.
+`String.prototype.split` was originally listed here as showing the same
+order of overhead (18x at 20k). That was a misattribution: the benchmark
+built its subject string with `+=`, so it measured the quadratic
+accumulation, not the split. Measured in isolation, split is linear —
+4x the input costs 3.1x the time (2.2 ms at 20k, 6.9 ms at 80k), about
+3x QuickJS.
 
 Probable cause: the engine-wide invariant that every `HString` is interned
 (string equality is pointer identity) means each intermediate result is
@@ -555,35 +633,406 @@ the top-level uncaught path.
 
 ---
 
-## B12: `yield` as a destructuring default in `for await` loses the binding
+## B12: NOT A BUG — a sloppy-mode fixture, withdrawn
 
-**Severity: medium. Found by B9's rejection reporting, not by the suite.**
+**Resolved 2026-08-12 in `a2be8d67`. The engine was correct; the test was
+wrong, and so was this entry.**
 
-A destructuring pattern whose default is a `yield` expression, used as the
-`for await` target, never binds the variable. The resulting `ReferenceError`
-is swallowed into a rejected promise, so the failure was invisible until
-unhandled-rejection reporting landed.
+Originally filed as "`yield` as a destructuring default in `for await` loses
+the binding", on the strength of this comparison:
 
 ```js
 async function* g(){ for await ([value = yield "a"] of [[]]) { print(value); } }
-var it = g();
-it.next().then(function(r){ return it.next(11); });
 ```
 
 - `qjs`: resumes the body with `value=11`
 - `duktape_c3`: `ReferenceError: 'value' is not defined`
 
-`test/test_for_await_yield_operand.js` reports `4 pass, 0 fail` in both
-engines, because the assertions live inside the loop body the engine never
-reaches. Only the stderr rejection distinguishes them, which is why the
-existing test did not catch it.
+The fixture never declares `value`. This engine is strict-only, so assigning
+to an undeclared identifier is a ReferenceError — and **node agrees under an
+explicit `"use strict"`**, producing the identical error. `qjs` and bare node
+accepted it only because they ran the file as sloppy mode, where the
+assignment implicitly creates a global. The rejection was correct behaviour.
 
-Both the array (`[value = yield]`) and object (`{value = yield}`) forms fail
-the same way.
+With the binding declared, the feature works and matches both oracles exactly
+(yielded operand `"array"`, resume value `11`, body runs). Verified against
+qjs and node.
 
-Note this is a genuine engine bug and not fixture noise: unlike the four
-promise fixtures quieted in `eba2734d`, QuickJS produces no rejection here at
-all.
+The entry above asserted "this is a genuine engine bug and not fixture noise"
+precisely because qjs produced no rejection — but qjs's silence *was* the
+sloppy-mode tell, not evidence of a bug. This is the exact false-positive
+class the [scope note](#scope-note-strict-only-is-not-the-cause) warns about,
+and it got past that guard because the fixture's self-reported `4 pass, 0
+fail` looked like corroboration. It was not: all four of those assertions were
+the `instanceof Promise` checks *outside* the loop, and the two that mattered
+sat in a body that never ran.
+
+The rewritten fixture declares its bindings, asserts the yielded operands and
+completion from the promise chain, and counts body executions so a body that
+never runs can no longer report a pass. 8 assertions, identical in all three
+engines.
+
+**Lesson for the remaining entries:** a fixture that prints a pass while
+stderr shows an error is not two independent signals agreeing. Check where
+the assertions actually live.
+
+---
+
+## B13: `ADDI` fusion swaps operands, so `1 + str` concatenates backwards
+
+**Severity: high. Silent wrong answers on ordinary code.**
+
+```js
+function f(a){ return 1 + a; }
+f("A");   // duktape_c3: "A1"      node/qjs: "1A"
+```
+
+`FUSION_ADDI_SUBI` (`src/compiler/fusion.c3`, the `is_add` branch) folds a
+constant operand into `ADDI` from *either* side:
+
+```c3
+if (rX == rK && rY != rK)      { rS = rY; }
+else if (rY == rK && rX != rK) { rS = rX; }
+```
+
+`ADDI`'s A/B/C fields are fully consumed by dest/src/immediate, so nothing
+records which side the immediate was on, and the VM evaluates every fused form
+as `rS + imm`. Addition is commutative for numbers, so this is invisible for
+arithmetic — but string concatenation is not, and the operands come out
+reversed.
+
+Only the constant-on-the-left form is affected; `a + 1` is already correct.
+
+Found while investigating string-concatenation performance, and confirmed at
+`9e3bae69` with all perf work stashed, so it is independent of that change.
+
+**Fixed 2026-08-12 in `5342971b`.** The fold is now restricted to
+`rS <op> imm` — the constraint `SUB` already carried, since `imm - rS` was
+never a subtract-immediate either. `imm + rS` stays as `LDINT`+`ADD`, which
+reads its operands in source order.
+
+Restricting beat spending a bit on operand order: the golden-bytecode suite is
+unchanged at 30/30, so no fused case in that corpus even used the removed
+form, and `bench-fast` shows no movement. The commutative case that matters
+for performance — `acc + 1` in a loop — was always the right-hand form.
+
+Regression coverage in `test/test_addi_fusion_operand_order.js`, which
+mutation-tests to 4 failures with the fix reverted. It pins both orders for
+strings and numbers, the ±128 immediate boundaries, the out-of-range (unfused)
+path, `ToPrimitive` operands, and the `SUB` asymmetry — so a later change
+cannot "restore symmetry" by folding the other side back in.
+
+---
+
+## B14: `Array.prototype.pop` reads a hole as `undefined`
+
+**Severity: medium. The last standing test262 failure, and a real one.**
+
+**Fixed 2026-08-12 in `0c6dc565`.**
+
+```js
+Array.prototype[1] = 1;
+var x = [0]; x.length = 2;
+x.pop();   // duktape_c3: undefined      node/qjs: 1
+```
+
+`pop` reads index `length-1` with `[[Get]]`, which continues up the prototype
+chain when the own element is absent. The dense fast path in
+`builtin_array_proto_pop` treated "no own dense slot" as "the value is
+undefined" and answered directly. The generic-object path — `Array.prototype
+.pop` applied to a plain object — was always correct; only the array fast path
+short-cut the lookup, which is why the same test's later assertions passed.
+
+The fast path now requires the element to be *present* in the dense part
+before it may claim the operation, so a hole falls through to the existing
+prototype-aware `arr_get_elem_vm`. An own `undefined` is still present and
+continues to shadow the inherited value.
+
+Probed the sibling methods for the same hole-vs-undefined confusion —
+`shift`, `indexOf`, `includes`, `join`, `slice`, `concat`, `reverse`,
+`lastIndexOf` all already match QuickJS on an inherited indexed property.
+`pop` was alone.
+
+This one had been carried for weeks as "pre-existing, unrelated" whenever a
+phase-6 number was quoted. It was a one-condition fix. **A known failure that
+nobody has read is not a known failure.**
+
+Coverage: `test/test_array_pop_hole_prototype.js`, green in all three engines.
+
+---
+
+## B15: a `yield` operand ignores the enclosing `[In]` parameter
+
+**Severity: low (accepts invalid syntax). Fixed 2026-08-12 in `77057548`.**
+
+```js
+function* g(){ for (yield '' in {}; ; ) ; }   // must be a SyntaxError
+```
+
+`yield [no LineTerminator here] AssignmentExpression[?In, +Yield]` — the `?In`
+propagates, so in a `[~In]` position (a C-style for head) the operand may not
+consume an `in` either. Both the plain and `yield*` forms parsed; qjs and node
+both reject them.
+
+`binary_expr` consumes `forbid_in` on entry so it cannot leak into a nested
+`[+In]` construct like `f(a in b)`. That is correct for those, but a
+YieldExpression is not one of them — it propagates `?In` rather than forcing
+`+In`, and it is handled in `primary_expr`, far below where the flag was
+cleared. The fix parks the consumed value in `yield_forbid_in` alongside
+`yield_ok_here`, which already marks the only position a `yield` can appear.
+
+**These were the last two failures in the entire test262 corpus** (phase 21,
+`language/expressions/yield/{in,star-in}-iteration-stmt.js`). They are
+negative *parse* tests, so no runtime suite could have caught them — and they
+only surfaced because the full-corpus run below was done against a freshly
+built batch binary.
+
+---
+
+## B16: a call's callee is materialized into the wrong register
+
+**Severity: high. Silent wrong-register read. Fixed 2026-08-12 in `44acadc8`.**
+
+```js
+(function(e){
+  function n(){ var e = 1; return e; }
+  (n.x = e("k")).y = 1;
+  print("ok n.x=" + JSON.stringify(n.x));
+})(function(k){ return {v:k}; });
+```
+
+- node (with `"use strict"`): `ok n.x={"v":"k","y":1}`
+- `duktape_c3`: `Uncaught: undefined is not a function`
+
+The disassembly of the inner function shows the fault directly:
+
+```
+[  5] LDCONST         r3, 2
+[  6] LDREG           r6 = r2, r0      <-- callee materialized into r6
+[  7] LDCONST         r7, 3
+[  8] CALL            r5 = r5, r1      <-- but CALL reads the callee from r5
+[  9] PUTPROP         r2 = r3, r5
+```
+
+The callee lands in `r6` while `CALL` reads `r5`, so it calls a stale
+register. (`[6]` also copies from `r2`, the closure `n`, which does not look
+like `e` either — possibly a second fault, possibly register reuse.)
+
+**Two ingredients are required**, each harmless alone. Measured by probing
+adjacent shapes against node (`"use strict"`), which is the only usable oracle
+here:
+
+1. **Shadowing.** Some nested function rebinds the callee's name. Any form
+   does it: `var e` in an inner declaration, `var e` in a function
+   *expression*, or an inner *parameter* named `e`. Rename it and the bug goes
+   away. The outer binding may be either a parameter or a `var`.
+2. **A parenthesized property-assignment around the call.**
+   `(o.b = e("q"))` fails; `(z = e("q"))` with a plain variable target does
+   NOT, and neither does `o.b = e("q")` without the parentheses. A further
+   `.y = 1` on the result is *not* required — `var w = (o.b = e("q"))` fails
+   on its own, so the original "base of a further assignment" reading was too
+   narrow.
+
+Unaffected: method calls (`o.make("m")`) and `new C("n")` in the same
+position both work, so this is specific to a **bare-identifier callee**.
+
+This is what breaks **jszip 3.10.1**, whose browserify module 10 is exactly
+this shape:
+
+```js
+(function(e,t,r){ function n(){ ...this.clone=function(){var e=new n;...} }
+  (n.prototype=e("./object")).loadAsync=e("./load"), ... })(...)
+```
+
+Found by bisecting the minified bundle down to the 5 lines above, via a
+per-module load trace injected into the browserify loader.
+
+**Root cause.** The callee's `GETVAR` is STRIPPED from the code stream up
+front, on the promise that `CALL_VAR` at the end of the call will load the
+callee itself. But `CALL_VAR` is only emitted when `undef_this` holds, and
+that is false whenever a receiver register is pending. A stale
+`call_prop_obj_reg` left by the enclosing property assignment made the strip
+fire and then emit a plain `CALL`, reading a register nothing had written.
+
+The sibling `getglobal_callee` guard already carried the
+`call_prop_obj_reg == REG_NONE` precondition, with a comment naming this exact
+hazard — "the same non-method precondition that makes the CALL_GLOBAL emission
+below reachable". `getvar_callee` was simply missing it. The fix adds the same
+term. **A guard that exists on one of two parallel paths is a bug report about
+the other one.**
+
+Regression coverage in `test/test_call_callee_register.js`, pinning all 15
+probed shapes — the failing ones and the passing ones, so a later change
+cannot narrow the guard to the wrong condition.
+
+The whole test262 corpus (49814 tests) passes with this bug present, so **the
+suite cannot be the oracle here**; node under `"use strict"` is. Likewise
+`./out/qjs` on a plain script is sloppy mode and will mislead on the
+shadowing cases.
+
+---
+
+## B17: an arrow call argument rejected as a bare arrow operand
+
+**Severity: high (rejects valid, extremely common code). Fixed 2026-08-12 in
+`77f06187`.**
+
+```js
+true && a.every((x, i) => x > 0)   // SyntaxError: arrow function in
+                                    // expression position not allowed
+```
+
+ArrowFunction is AssignmentExpression-level and may not appear directly as a
+binary operand (`1 + () => 2`, ES §13.16/§13.15). `check_no_arrow_rhs`
+enforces that with a `last_was_arrow_expr` flag — but an arrow inside a
+**call's parentheses** is not that. The flag survived the argument parse, and
+nothing cleared it before the enclosing `binary_expr`'s post-RHS check.
+
+Any binary operator, any arrow arity: `&&`, `||`, `??`, `+`, `===` all
+rejected. This is the line that broke **typescript 5.4.5**:
+
+```js
+a.length === b.length && a.every((x, i) => equalityComparer(x, b[i]))
+```
+
+Fixed by clearing the flag when a CallExpression finishes parsing. The
+negative cases are now pinned in `compile_error_messages` so a later change
+cannot "fix" an over-rejection by dropping the guard entirely.
+
+---
+
+## B18: an async callback invoked by a builtin does not return a promise
+
+**Severity: medium. OPEN — partial fix attempted and reverted, see below.**
+
+```js
+[1, 2].map(async (x) => x)[0]        // ours: 1        node: Promise
+[1, 2].filter(async () => false)     // ours: []       node: [1, 2]
+```
+
+A plain function *returning* a promise works. An **async function** called by
+a builtin does not: it runs to completion and hands back the raw return value.
+`filter` is the sharpest case — a promise is always truthy, so an async
+predicate must keep every element, and ours drops them all.
+
+Root cause: `vm_call_fn_impl` (`src/vm/vm_execute.c3`, "Case 3: compiled
+function on HObject") is the path builtins use to invoke a JS callback. It
+handles *resuming* an async function (`gs_r.async_promise`) but has no setup
+for an **initial** async call — no `promise_create`, no `ACT_FLAG_ASYNC`. The
+CALL opcode's path in `vm_calls.c3` does both.
+
+**A one-block fix is NOT sufficient.** Adding the `promise_create` +
+`ACT_FLAG_ASYNC` setup there does make `map`/`filter`/`some` return real
+promises that resolve correctly — but a callback that actually *suspends*
+(`async x => { await null; return x; }`) then resolves to `null`, because this
+path re-enters the VM synchronously and has no generator state to suspend
+into. That is strictly worse than the current behaviour, so the attempt was
+reverted rather than shipped.
+
+Doing this properly means giving the call_fn path the same
+suspend/resume machinery the CALL opcode has. Affects every builtin that
+invokes a callback: `map`, `filter`, `some`, `every`, `forEach`, `sort`
+comparators, `Promise` executors, and accessors.
+
+---
+
+## B19: unbounded writes into fixed compiler buffers
+
+**Severity: critical (memory corruption). Fixed 2026-08-12 in `f6abf005`.**
+
+Two stack arrays in the compiler were written with no bound at all:
+
+- `switch_statement`'s `body_addrs` / `ft_jump_addrs` (`uint[64]`). A switch
+  with more than 64 clauses wrote past the end of the compiler's own frame,
+  **silently** — a 100-case switch still produced correct output while writing
+  36 entries past the end. Raised to 1024 with a check.
+- `scan_template_content`'s `buf` / `raw_buf` (`char[65536]`), in both the
+  cooked loop and the invalid-escape rescan. `scan_string` already carried
+  exactly this check (`buf_len >= STRING_BUF_SIZE - 6`); the template scanner
+  did not — the same guard-on-one-of-two-parallel-paths shape as B16.
+
+Found by running typescript 5.4.5 (9 MB) under AddressSanitizer. In the release
+build the template overflow landed as a **jump into string data**
+(PC = `0x6e694c656c676e69`, which is ASCII text): memory corruption with
+nothing pointing at the lexer. ASan named the file and line immediately.
+
+**Reach for ASan early on a crash whose PC is nonsense.** The release-build
+symptom was unusable and cost far more time than the ASan run, which took one
+command.
+
+---
+
+## B20: a switch past 256 clauses silently fell through to `default`
+
+**Severity: high. Silent wrong answers. Fixed 2026-08-12 in `453a97d1`.**
+
+```js
+function f(x){ switch(x){ /* 300 clauses */ } }
+f(257)   // ours: the default arm's value      node: 514
+```
+
+`add_patch` returned **silently** when the break/continue patch pool was full:
+the jump was never recorded, `patch_chain` never patched it, and it executed as
+`JUMP 0`. Arms 0..255 answered correctly; everything past the 256th returned
+`default`, with no diagnostic.
+
+The pool is per-**function** and never reset mid-function, so the bound was the
+total number of break/continue statements in one function body, not the depth
+of any one loop — 400 loops each containing a `break` hit it too.
+
+Fixed by raising `MAX_PATCHES` to 2048 (16 KB; `CompilerContext` is a stack
+local, so 8192 exceeded c3c's 64 KB stack-object limit and failed to build) and
+by turning overflow into a compile error via `patch_overflow`, alongside the
+existing `reg_overflow` check.
+
+Also fixed alongside it: `switch_statement` freed its case registers with two
+`free_reg` calls, but `free_reg` is strictly LIFO, so freeing `case_reg` while
+`cmp_reg` sat above it was a no-op and **every clause leaked a register** — the
+comparison register climbed r3, r4, ... r260 over 258 clauses. Now reclaimed
+with `free_regs_to`, which also tightens ordinary switches (the `switch_seq`
+golden reuses r1 instead of climbing to r2, with both `JMP_SEQ` fusions still
+firing).
+
+---
+
+## B21: an oversized `Function` constructor body was truncated
+
+**Severity: high. Silent wrong answers. Fixed 2026-08-12 in `34626235`.**
+
+The `Function` and `GeneratorFunction` constructors build their compilation
+source in a fixed `char[16384]` stack buffer. The copy was bounds-checked, so
+nothing overflowed — but a body that did not fit was silently cut **mid-token**
+and then compiled:
+
+- a truncated `return` failed at CALL time with `retu is not defined`;
+- a body cut at a statement boundary compiled cleanly and returned `undefined`;
+- a body cut inside a block gave `SyntaxError in Function constructor` with no
+  hint that length was the issue.
+
+Now rejected with an error that names the limit. Found while generating a
+400-iteration loop body through `new Function` for the B20 test.
+
+**Still open, found alongside it:** `Function.prototype.toString` on a
+constructor-built function returns `"[native code]"` rather than the source
+text ES2019 §19.2.1.1.1 requires. Verified pre-existing.
+
+---
+
+## Note on measurement: the batch binary is a separate build
+
+`out/test262_runner` is **not** rebuilt by `just build`, and
+`python3 scripts/run_test262.py` rebuilds nothing at all. Only `just
+build-batch` (or the `just test262*` recipes) refreshes it.
+
+This bit twice on 2026-08-12. The B14 pop fix was correct and a hand-run of
+the test262 file passed, yet the suite kept reporting the same failure against
+a nine-day-old binary. The tell is the contradiction itself: a hand-run of the
+exact file passing while the suite disagrees means the two are running
+different code. Separately, and more quietly, the "no conformance regression"
+number quoted during the WIDE-prefix review had been measured the same way —
+the right conclusion, but not actually evidence.
+
+Any test262 number is only as fresh as `out/test262_runner`.
 
 ---
 
@@ -705,6 +1154,31 @@ where real stack traces will not fit in 512 bytes) and `char[256] buf` in
   `COMPILE_ERROR` path fires, or widen the operands. (Nearby
   `char[][256] hoisted_fn_names` and `PatchEntry[256] patches` *are*
   genuine `List` candidates, and silently cap large functions today.)
+
+  **That parenthetical was right, and it took a real bundle to prove it.**
+  `PatchEntry[256] patches` became **B20**: `add_patch` returned silently at
+  the cap, so a switch past 256 clauses answered `default` for every arm after
+  the 256th. Two more of the same shape turned up in the same sitting — B19
+  (`uint[64]` switch tables and `char[65536]` template buffers, written with
+  no bound at all) and B21 (a `Function` body truncated mid-token).
+
+  The through-line is not the specific numbers. It is that **every one of these
+  failed silently**: no error, no diagnostic, just a wrong answer or a
+  corrupted frame. Where a growable structure is not warranted, the limit still
+  has to be *enforced* — a cap that is merely "not exceeded in practice" is a
+  latent silent-wrong-answer bug.
+
+  `MAX_SCOPE_DEPTH` was the last of these and is now fixed (`bcef20e9`): a
+  dropped scope entry made a declaration invisible to shadowing, TDZ and
+  duplicate-declaration checks. It is a compile error now — **and the error
+  alone was not enough.** At the old bound of 256 it *rejected* bluebird and
+  jszip, which had been loading, because real minified bundles pass 256
+  declarations in one function routinely. Turning a silent miscompile into a
+  hard rejection of working code is a regression, not a fix; the cap had to be
+  raised (to 1024) at the same time. **Enforce the limit AND size it for real
+  input — the two changes belong in the same commit.**
+
+  `char[][256] hoisted_fn_names` is still in the unenforced state.
 - **B6/B7 need a limit that is deliberately hardcoded.** An engine must
   refuse an over-long string with a JS error rather than attempt the
   allocation; QuickJS caps at 2^30 and throws `InternalError: string too
