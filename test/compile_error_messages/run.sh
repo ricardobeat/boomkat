@@ -71,6 +71,15 @@ check "undeclared private name"       'x.#x'
 check "super with no follower"        'var x = super'
 check "super outside a class"         'super.#x'
 
+# A YieldExpression operand inherits the enclosing [In] parameter, so an `in`
+# is no more available inside it than outside it in a `[~In]` for head
+# (`yield [no LineTerminator here] AssignmentExpression[?In, +Yield]`). These
+# parsed before, because binary_expr consumes forbid_in on the way down and the
+# yield operand is parsed below that point. test262:
+# language/expressions/yield/{in,star-in}-iteration-stmt.js.
+check "yield operand with in, for-init"   'function* g(){ for (yield "" in {}; ; ) ; }'
+check "yield* operand with in, for-init"  'function* g(){ for (yield * "" in {}; ; ) ; }'
+
 # Control: a path that always had a message still reports it.
 check "expression with a bad token"   'x ='
 

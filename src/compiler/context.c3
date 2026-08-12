@@ -625,6 +625,23 @@ struct CompilerContext {
     /// really did begin an AssignmentExpression.
     bool yield_ok_here;
 
+    /// The value of `forbid_in` at the AssignmentExpression position marked by
+    /// `yield_ok_here`, captured before binary_expr consumes it.
+    ///
+    /// A YieldExpression's operand keeps the enclosing In parameter —
+    /// `yield [no LineTerminator here] AssignmentExpression[?In, +Yield]` —
+    /// so `for (yield '' in {}; ; ) ;` is a SyntaxError: the for-init is
+    /// `[~In]`, the `?In` passes that down, and the `in` can never be consumed
+    /// by the operand.
+    ///
+    /// A separate field is needed because binary_expr clears forbid_in on
+    /// entry (consume-on-entry, so it cannot leak into a nested `[+In]`
+    /// construct like `f(a in b)`), and `yield` is handled far below that in
+    /// primary_expr. YieldExpression is not one of those nested constructs; it
+    /// propagates `?In` rather than forcing `+In`, so it needs the value the
+    /// consume threw away. Set alongside yield_ok_here and cleared with it.
+    bool yield_forbid_in;
+
     /// True while parsing the enclosing function's FormalParameters. Parameter
     /// defaults must reject yield/await EXPRESSIONS (FormalParameters may not
     /// Contain them, §14.1.2/§14.7), but destructuring defaults in the BODY of
