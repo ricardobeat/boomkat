@@ -286,6 +286,21 @@ interning invariant — most likely by leaving concatenation temporaries
 un-interned until they escape, which `src/hstring.c3:186` already
 contemplates ("non-interned, such as a concatenation temporary").
 
+### Remaining after the fix
+
+The in-place accumulator covers the ADD opcode's string+string path only. The
+`STRING + FASTINT` fast path just above it is untouched and is still
+quadratic — `s += 1` over 80,000 iterations takes 407 ms against QuickJS's
+4 ms (~100x). The same in-place treatment should apply; it was measured but
+not fixed.
+
+`src/vm/vm_execute_threaded.c3` also has a concat path that was not checked
+for the same issue.
+
+Absolute throughput on the fixed path is ~6x QuickJS (17 ms vs 3 ms at 80k),
+but the growth is now linear: 4x the work costs 1.31x the time, against 4x
+before.
+
 ---
 
 ## B4: `error.stack` has no frames
