@@ -12,25 +12,31 @@ decimal.js, bignumber.js, mathjs, jszip, papaparse, crypto-js, protobufjs,
 chance, he, nearley, d3-array, uuid, plus typescript 9 MB and babel 5 MB).
 QuickJS (`out/qjs`) is the differential oracle throughout.
 
-Status: B1-B11 and B13-B17 fixed. B12 withdrawn — it was a sloppy-mode
-fixture, not an engine bug. **B18 is open** (an async callback invoked by a
-builtin does not return a promise), along with the E-series.
+Status: B1-B11, B13-B17 and B19-B21 fixed. B12 withdrawn — it was a
+sloppy-mode fixture, not an engine bug. **B18 is open** (an async callback
+invoked by a builtin does not return a promise), along with the E-series.
 
 Library loading: **5 of the 8 original failures now pass** — four of them
 fixed by B16 alone. protobufjs and typescript still fail; babel is untested.
 
+The last five bugs (B16, B17, B19, B20, B21) were all found by loading real
+library bundles, and **every one of them is a silent wrong answer or memory
+corruption that the full test262 corpus passes straight through**.
+
 As of 2026-08-12 **every known test failure is closed**: the full test262
 corpus runs **49814 pass / 0 fail** (verified against a freshly built
-`out/test262_runner`), the local suite is 324/0, `test/engine/` is 106/0,
+`out/test262_runner`), the local suite is 326/0, `test/engine/` is 106/0,
 golden-bytecode is 30/30, and the module, uncaught, rejection and robustness
 surfaces are all clean. The run immediately before the last two fixes was
 49812 pass / 2 fail, and those 2 were B15.
 
-**A green corpus is not a working engine.** B16, B17 and B18 were all present
-while those 49,814 tests passed: a wrong-register call, a rejection of
-`a && b.every((x, i) => ...)`, and async callbacks that never return promises.
-Each needs two ordinary constructs nested in a specific way, and the suite
-exercises them only separately.
+**A green corpus is not a working engine.** B16-B21 were all present while
+those 49,814 tests passed: a wrong-register call, a rejection of
+`a && b.every((x, i) => ...)`, async callbacks that never return promises, two
+unbounded writes into fixed compiler buffers, a switch that silently answered
+`default` past 256 clauses, and a `Function` body truncated mid-token. Each
+needs either two ordinary constructs nested a particular way, or simply more
+of something than any fixture contains — and the suite has neither.
 
 B14 and B15 were found by re-running the suites against a freshly built batch
 binary rather than by new probing (see the measurement note below); B16 and
@@ -58,6 +64,9 @@ B17 were found by loading real library bundles.
 - [B16: a call's callee is materialized into the wrong register](#b16-a-calls-callee-is-materialized-into-the-wrong-register)
 - [B17: an arrow call argument rejected as a bare arrow operand](#b17-an-arrow-call-argument-rejected-as-a-bare-arrow-operand)
 - [B18: an async callback invoked by a builtin does not return a promise](#b18-an-async-callback-invoked-by-a-builtin-does-not-return-a-promise)
+- [B19: unbounded writes into fixed compiler buffers](#b19-unbounded-writes-into-fixed-compiler-buffers)
+- [B20: a switch past 256 clauses silently fell through to `default`](#b20-a-switch-past-256-clauses-silently-fell-through-to-default)
+- [B21: an oversized `Function` constructor body was truncated](#b21-an-oversized-function-constructor-body-was-truncated)
 - [Note on measurement: the batch binary is a separate build](#note-on-measurement-the-batch-binary-is-a-separate-build)
 - [E1: no way to interrupt a runaway script](#e1-no-way-to-interrupt-a-runaway-script)
 - [E2: embedding API gaps](#e2-embedding-api-gaps)
@@ -899,6 +908,88 @@ Doing this properly means giving the call_fn path the same
 suspend/resume machinery the CALL opcode has. Affects every builtin that
 invokes a callback: `map`, `filter`, `some`, `every`, `forEach`, `sort`
 comparators, `Promise` executors, and accessors.
+
+---
+
+## B19: unbounded writes into fixed compiler buffers
+
+**Severity: critical (memory corruption). Fixed 2026-08-12 in `f6abf005`.**
+
+Two stack arrays in the compiler were written with no bound at all:
+
+- `switch_statement`'s `body_addrs` / `ft_jump_addrs` (`uint[64]`). A switch
+  with more than 64 clauses wrote past the end of the compiler's own frame,
+  **silently** — a 100-case switch still produced correct output while writing
+  36 entries past the end. Raised to 1024 with a check.
+- `scan_template_content`'s `buf` / `raw_buf` (`char[65536]`), in both the
+  cooked loop and the invalid-escape rescan. `scan_string` already carried
+  exactly this check (`buf_len >= STRING_BUF_SIZE - 6`); the template scanner
+  did not — the same guard-on-one-of-two-parallel-paths shape as B16.
+
+Found by running typescript 5.4.5 (9 MB) under AddressSanitizer. In the release
+build the template overflow landed as a **jump into string data**
+(PC = `0x6e694c656c676e69`, which is ASCII text): memory corruption with
+nothing pointing at the lexer. ASan named the file and line immediately.
+
+**Reach for ASan early on a crash whose PC is nonsense.** The release-build
+symptom was unusable and cost far more time than the ASan run, which took one
+command.
+
+---
+
+## B20: a switch past 256 clauses silently fell through to `default`
+
+**Severity: high. Silent wrong answers. Fixed 2026-08-12 in `453a97d1`.**
+
+```js
+function f(x){ switch(x){ /* 300 clauses */ } }
+f(257)   // ours: the default arm's value      node: 514
+```
+
+`add_patch` returned **silently** when the break/continue patch pool was full:
+the jump was never recorded, `patch_chain` never patched it, and it executed as
+`JUMP 0`. Arms 0..255 answered correctly; everything past the 256th returned
+`default`, with no diagnostic.
+
+The pool is per-**function** and never reset mid-function, so the bound was the
+total number of break/continue statements in one function body, not the depth
+of any one loop — 400 loops each containing a `break` hit it too.
+
+Fixed by raising `MAX_PATCHES` to 2048 (16 KB; `CompilerContext` is a stack
+local, so 8192 exceeded c3c's 64 KB stack-object limit and failed to build) and
+by turning overflow into a compile error via `patch_overflow`, alongside the
+existing `reg_overflow` check.
+
+Also fixed alongside it: `switch_statement` freed its case registers with two
+`free_reg` calls, but `free_reg` is strictly LIFO, so freeing `case_reg` while
+`cmp_reg` sat above it was a no-op and **every clause leaked a register** — the
+comparison register climbed r3, r4, ... r260 over 258 clauses. Now reclaimed
+with `free_regs_to`, which also tightens ordinary switches (the `switch_seq`
+golden reuses r1 instead of climbing to r2, with both `JMP_SEQ` fusions still
+firing).
+
+---
+
+## B21: an oversized `Function` constructor body was truncated
+
+**Severity: high. Silent wrong answers. Fixed 2026-08-12 in `34626235`.**
+
+The `Function` and `GeneratorFunction` constructors build their compilation
+source in a fixed `char[16384]` stack buffer. The copy was bounds-checked, so
+nothing overflowed — but a body that did not fit was silently cut **mid-token**
+and then compiled:
+
+- a truncated `return` failed at CALL time with `retu is not defined`;
+- a body cut at a statement boundary compiled cleanly and returned `undefined`;
+- a body cut inside a block gave `SyntaxError in Function constructor` with no
+  hint that length was the issue.
+
+Now rejected with an error that names the limit. Found while generating a
+400-iteration loop body through `new Function` for the B20 test.
+
+**Still open, found alongside it:** `Function.prototype.toString` on a
+constructor-built function returns `"[native code]"` rather than the source
+text ES2019 §19.2.1.1.1 requires. Verified pre-existing.
 
 ---
 
