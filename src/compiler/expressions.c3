@@ -1055,6 +1055,11 @@ fn ushort? CompilerContext.binary_expr(&self, int min_prec) {
     // while `for (a in b;;)` is not.
     bool no_in = self.forbid_in;
     self.forbid_in = false;
+    // A YieldExpression propagates `?In` to its operand instead of forcing
+    // `+In`, and it is reached from primary_expr, below the clear above. Park
+    // the consumed value where the yield case can find it; it travels with
+    // yield_ok_here, since that marks the only position a yield can appear.
+    self.yield_forbid_in = no_in && yield_ok;
 
     // ES2022 class-fields-private-in: `[+In] PrivateIdentifier in ShiftExpression`.
     // The grammar gives the PrivateIdentifier as a standalone LHS of the `in`
@@ -4251,9 +4256,16 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 is_delegate = true;
             }
 
+            // Both YieldExpression operand forms are `AssignmentExpression
+            // [?In]`, so both inherit the enclosing In parameter. Captured
+            // once here, before either branch parses its operand.
+            bool yield_no_in = self.yield_forbid_in;
+
             ushort val_reg;
             if (is_delegate) {
+                self.forbid_in = yield_no_in;
                 ushort iterable_reg = self.assignment_expr()!;
+                self.forbid_in = false;
                 if (self.is_async_gen()) {
                     // async `yield* EXPR` (ES2018 §14.4.14 async / §27.6.3.8):
                     // delegate over the *async* iterator protocol. GET_ITER_ASYNC
@@ -4295,7 +4307,16 @@ fn ushort? CompilerContext.primary_expr(&self) {
                     self.last_was_newline_yield = nl_after_yield;
                     return result;
                 }
+                // `yield [no LineTerminator here] AssignmentExpression[?In]`:
+                // the operand inherits the enclosing In parameter, so in a
+                // `[~In]` position (a for-init) the operand may not consume an
+                // `in` either. Without this, `for (yield '' in {}; ; ) ;`
+                // parsed, where the spec and every other engine report a
+                // SyntaxError. binary_expr already consumed forbid_in on the
+                // way down, so restore it from the parked copy.
+                self.forbid_in = yield_no_in;
                 val_reg = self.assignment_expr()!;
+                self.forbid_in = false;
                 ushort result = self.alloc_reg();
                 self.emit_abc(Opcode.LDREG, (uint)result, (uint)val_reg, 0);
                 // ES2018 §27.6.3.8 AsyncGeneratorYield step 5: the yield operand
