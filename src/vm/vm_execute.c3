@@ -2212,15 +2212,12 @@ fn TVal? Vm.run(Vm* vm) {
                         // the accumulate hook on ADD never sees this shape and
                         // the loop stayed quadratic.
                         //
-                        // This appends the immediate on the right, matching the
-                        // copies below, so it concatenates in whatever order the
-                        // surrounding path already does. Note that order is
-                        // already wrong for `<literal> + str`: FUSION_ADDI_SUBI
-                        // folds `imm + rS` as well as `rS + imm` but ADDI cannot
-                        // encode which side the immediate came from, so
-                        // `function f(a){return 1+a} f("A")` yields "A1". That
-                        // is a pre-existing fusion bug, not one this introduces,
-                        // and fixing it needs a bytecode change.
+                        // The immediate is appended on the right, matching the
+                        // copies below. That is the only order ADDI can mean:
+                        // FUSION_ADDI_SUBI folds `rS + imm` exclusively, and
+                        // leaves `imm + rS` as LDINT+ADD precisely because ADDI
+                        // has no field to record which side the immediate came
+                        // from.
                         if (vm_concat_accumulate(vm, ds.act, ra, rb, str,
                                                  ((char*)&int_buf)[:(usz)int_len],
                                                  (uint)insn.a, ds.curr_pc)) {

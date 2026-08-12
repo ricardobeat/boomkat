@@ -324,9 +324,14 @@ fn void run_fusion_rule(Instruction* code, uint code_count, bool* jump_targets, 
 // byte-identical against it via the golden-bytecode suite
 // (test/golden_bytecode/, `just test-golden-bytecode`).
 //
-// Commutativity: ADD folds with rK as either source (rS+imm == imm+rS).
-// SUB folds only `rS - imm` (rK must be the right/second source); `imm -
-// rS` is not a subtract-immediate and is left alone.
+// Operand order: ADD and SUB both fold only when rK is the RIGHT source, so
+// the folded form is always `rS <op> imm`. `+` is NOT commutative in
+// JavaScript — ES5 §11.6.1 makes it string concatenation whenever either
+// operand is a string after ToPrimitive — and ADDI has no field left to
+// record which side the immediate came from. Folding `imm + rS` would emit
+// the same ADDI as `rS + imm`, so `function f(a){return 1+a} f("A")` would
+// evaluate to "A1". `imm + rS` is left as LDINT+ADD, which reads its
+// operands in source order and concatenates correctly.
 
 fn FusionMatch fusion_addi_subi_trigger(Instruction trigger, void* ctx) {
     FusionMatch m;
@@ -349,15 +354,10 @@ fn FusionMatch fusion_addi_subi_consumer(Instruction trigger, Instruction consum
     uint rX = (uint)consumer.b;
     uint rY = (uint)consumer.c;
 
-    uint rS;
-    if (is_sub) {
-        if (rY != rK || rX == rK) { return m; }   // need `rX - rK`
-        rS = rX;
-    } else {
-        if (rX == rK && rY != rK)      { rS = rY; }
-        else if (rY == rK && rX != rK) { rS = rX; }
-        else { return m; }
-    }
+    // Both operators need `rX <op> rK`: the immediate must be the right-hand
+    // source, because that is the only order ADDI/SUBI can express.
+    if (rY != rK || rX == rK) { return m; }
+    uint rS = rX;
 
     m.matched    = true;
     m.rewrite_op = is_sub ? Opcode.SUBI : Opcode.ADDI;
