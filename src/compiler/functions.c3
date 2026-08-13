@@ -2054,11 +2054,10 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
                 }
             }
             if (!already) {
-                if (self.hoisted_fn_count < MAX_HOISTED_FNS) {
+                self.ensure_hoisted_fn_cap();
+                if (self.hoisted_fn_count < self.hoisted_fn_cap) {
                     self.hoisted_fn_names[self.hoisted_fn_count] = fn_name;
                     self.hoisted_fn_count++;
-                } else {
-                    self.hoisted_overflow = true;
                 }
             } else {
                 // Second or later declaration of this name: record it so the
@@ -2072,7 +2071,8 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
                     }
                 }
                 if (!dup_known) {
-                    if (self.hoisted_dup_count < MAX_HOISTED_FNS) {
+                    self.ensure_hoisted_dup_cap();
+                    if (self.hoisted_dup_count < self.hoisted_dup_cap) {
                         // Intern before storing: an escaped name borrows the
                         // lexer's shared ident_buf scratch, which the rest of
                         // this pass overwrites, and this slice has to stay
@@ -2080,8 +2080,6 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
                         HString* dup_hstr = ((Heap*)self.heap).str_intern(fn_name);
                         self.hoisted_dup_names[self.hoisted_dup_count] = dup_hstr.get_data();
                         self.hoisted_dup_count++;
-                    } else {
-                        self.hoisted_overflow = true;
                     }
                 }
             }
@@ -2583,11 +2581,12 @@ fn void? CompilerContext.hoist_global_fn_decls(&self, bool checks_only = false) 
             if (already && self.is_module) {
                 return self.fail("duplicate module-level function declaration")~;
             }
-            if (!already && self.hoisted_fn_count < MAX_HOISTED_FNS) {
-                self.hoisted_fn_names[self.hoisted_fn_count] = fn_name;
-                self.hoisted_fn_count++;
-            } else if (!already) {
-                self.hoisted_overflow = true;
+            if (!already) {
+                self.ensure_hoisted_fn_cap();
+                if (self.hoisted_fn_count < self.hoisted_fn_cap) {
+                    self.hoisted_fn_names[self.hoisted_fn_count] = fn_name;
+                    self.hoisted_fn_count++;
+                }
             }
 
             // Check-prologue pass: emit CanDeclareGlobalFunction for each
