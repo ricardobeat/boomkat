@@ -65,6 +65,16 @@ fn void fuse_getpropc_chains(CompiledFunction* f, bool* jump_targets) {
         // Fuse: rewrite i1 as GETPROPC2, repurpose i2 as data slot
         f.code[i] = bytecode::make_abc(Opcode.GETPROPC2, i1.a, i1.b, i1.c);
         // i2 stays as-is; GETPROPC2 handler will read A and C from it and skip past
+
+        // Step over the data slot. Without this, a three-hop chain
+        // (`o.a.b.c`, three consecutive GETPROPCs) fuses at i, then examines
+        // the pair at i+1: the data word still decodes as a GETPROPC whose
+        // A/B/C happen to satisfy the chain test, so it is rewritten to a
+        // second GETPROPC2 and i+2 becomes ITS data slot. The result is two
+        // overlapping fused pairs sharing a word that is an instruction to one
+        // and data to the other -- exactly the "data slot decoded as an
+        // instruction" hazard invariant 1 above exists to prevent.
+        i++;
     }
 }
 

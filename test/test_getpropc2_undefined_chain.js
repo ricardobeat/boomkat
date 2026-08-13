@@ -76,5 +76,26 @@ for (var i = 0; i < 50; i++) {
 }
 ck("repeated-stable", stable, true);
 
+// Chains longer than two links must stay correct: the fusion pass rewrites a
+// pair at i and turns i+1 into a data word, so it has to resume at i+2. Fusing
+// the data word again would leave two overlapping pairs sharing a slot that is
+// an instruction to one and data to the other.
+var three = { a: { b: { c: "three" } } };
+ck("three-link-value", three.a.b.c, "three");
+var four = { q: { r: { s: { t: "four" } } } };
+ck("four-link-value", four.q.r.s.t, "four");
+var five = { a: { b: { c: { d: { e: "five" } } } } };
+ck("five-link-value", five.a.b.c.d.e, "five");
+
+// A long chain calling through its last link keeps the correct `this`.
+var deepCall = { x: { y: { z: function () { return this === deepCall.x.y; } } } };
+ck("three-link-this", deepCall.x.y.z(), true);
+
+// A break anywhere in a long chain throws at that link, naming its key.
+ck("three-link-break-mid", msgOf(function () { return ({ a: {} }).a.b.c; }),
+   "Cannot read properties of undefined (reading 'c')");
+ck("three-link-break-first", msgOf(function () { return ({}).a.b.c; }),
+   "Cannot read properties of undefined (reading 'b')");
+
 print(p + " passed, " + f + " failed");
 if (f > 0) { throw new Error("FAIL"); }
