@@ -1125,13 +1125,14 @@ fn void HObject.set_prop_flags(&self, uint idx, PropFlags new_flags, heap::Heap*
 
 /// The index of the property with this interned key, or -1. Uses the shape's
 /// hash table, building it on first use once the property count reaches
-/// HASH_MIN_PROPS, and walks the shape chain otherwise.
+/// HASH_MIN_PROPS and a second object has reached the shape, and walks the
+/// shape chain otherwise.
 fn int HObject.find_prop_idx(&self, void* key, heap::Heap* h) {
     if (key == null || self.prop_count == 0) return -1;
 
     hobject::Shape* sh = self.get_shape(h);
 
-    if (self.prop_count >= HASH_MIN_PROPS && sh != null) {
+    if (self.prop_count >= HASH_MIN_PROPS && sh != null && sh.shared) {
         if (sh.hash_table == null) shape_build_hash(sh, h);
         if (sh.hash_table != null) {
             HashEntry* entries = sh.hash_table;
@@ -2167,10 +2168,17 @@ struct Shape {
     Shape*    parent_shape;
     /// Key-to-index table covering the whole chain from root to this shape,
     /// shared by every object using it. Built on first lookup once the
-    /// property count reaches HASH_MIN_PROPS, and valid for the shape's whole
-    /// life because a shape's keys and indexes never change after creation.
-    /// Null until built, or permanently when allocation failed.
+    /// property count reaches HASH_MIN_PROPS AND a second object has reached
+    /// this shape, and valid for the shape's whole life because a shape's keys
+    /// and indexes never change after creation. Null until built, or
+    /// permanently when allocation failed.
     HashEntry* hash_table;
+    /// Set when a second object reaches this shape through the transition
+    /// table. A table costs O(prop_count) to build and to hold, and a chain of
+    /// N single-user shapes would pay that N times over for one object, which
+    /// is quadratic in both time and memory. Only a shape more than one object
+    /// actually uses can amortize it, so unshared shapes walk the chain.
+    bool      shared;
 }
 
 // ============================================================================

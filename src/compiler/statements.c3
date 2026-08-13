@@ -988,6 +988,8 @@ fn void? CompilerContext.hoist_lexical_tdz_checks(&self) {
 /// Each name's position in the source text is stored in `spans` so the
 /// caller can reconstruct the `char[]` slice from `lexer.source`.
 fn uint CompilerContext.pre_scan_lexical_decls(&self, NameSpan* spans, uint capacity) {
+    // An empty source has nothing to scan, and `&source[0]` would fault on it.
+    if (self.lexer.source.len == 0) return 0;
     // --- Save lexer state ---
     uint saved_pos    = self.lexer.pos;
     uint saved_line   = self.lexer.line;
@@ -1160,6 +1162,8 @@ fn uint CompilerContext.pre_scan_lexical_decls(&self, NameSpan* spans, uint capa
 /// block contribute. Saves/restores lexer state so normal parsing can
 /// proceed afterwards.
 fn uint CompilerContext.pre_scan_var_decls(&self, NameSpan* spans, uint capacity) {
+    // An empty source has nothing to scan, and `&source[0]` would fault on it.
+    if (self.lexer.source.len == 0) return 0;
     uint saved_pos    = self.lexer.pos;
     uint saved_line   = self.lexer.line;
     uint saved_col    = self.lexer.col;
@@ -1322,6 +1326,8 @@ fn uint CompilerContext.pre_scan_var_decls(&self, NameSpan* spans, uint capacity
 /// Saves and restores the lexer state so normal parsing can proceed afterwards.
 /// Returns the number of names found (0 to MAX_PRESCAN_NAMES).
 fn uint CompilerContext.pre_scan_switch_lexical_decls(&self, NameSpan* spans, uint capacity) {
+    // An empty source has nothing to scan, and `&source[0]` would fault on it.
+    if (self.lexer.source.len == 0) return 0;
     // --- Save lexer state ---
     uint saved_pos    = self.lexer.pos;
     uint saved_line   = self.lexer.line;

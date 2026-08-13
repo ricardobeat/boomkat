@@ -1384,9 +1384,12 @@ fn uint Heap.transition_shape_new_flags(&self, uint cur_shape_id, void* key, hob
     hobject::Shape* cur = self.shapes[cur_shape_id];
     char raw_flags = (char)flags;
 
-    // Another object may already have taken this transition.
+    // Another object may already have taken this transition. Reaching one that
+    // exists is exactly the second user arriving, so the shape is now shared
+    // and a hash table built for it will serve every later arrival too.
     uint existing = self.lookup_transition(cur_shape_id, key, raw_flags);
     if (existing != SHAPE_NONE) {
+        if (self.shape_slot_live(existing)) self.shapes[existing].shared = true;
         return existing;
     }
 

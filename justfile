@@ -168,6 +168,23 @@ test-string-concat-scaling:
     @just build duktape_c3
     bash scripts/check_string_concat_scaling.sh
 
+# Assert that adding properties to one object scales linearly in memory. Same
+# reasoning as test-string-concat-scaling: correctness is identical either way,
+# so only peak RSS at two sizes separates them. Building the property hash
+# table per shape made a single object's growth O(n^2).
+test-unshared-shape-hash-rss:
+    @just build duktape_c3
+    bash scripts/check_unshared_shape_hash_rss.sh
+
+# Run the local corpus through the ASan build. The compiler sizes its own
+# buffers from counters that are easy to get wrong, and a bad bound there is
+# silent on the normal build, so this catches what correctness gates cannot.
+# The runner executes each file; two are skipped because ASan changes their
+# behavior rather than the engine's memory handling (see the script header).
+test-compile-asan:
+    @make out/test262_runner_asan
+    bash scripts/check_compile_asan.sh
+
 # ── JS test suites ───────────────────────────────────────────────────────────
 
 # Run the engine conformance tests (hand-written assert-based)

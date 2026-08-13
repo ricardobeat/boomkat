@@ -55,12 +55,30 @@ fn void RegSet.clear(&self) {
     for (uint i = 0; i < self.word_count; i++) { self.words[i] = 0; }
 }
 
+/// Both accessors clamp to the allocated word count. `moveelim_a_is_read` is
+/// the inverse of a small allow-list, so A is read as a register for opcodes
+/// where it is really a packed branch offset (JUMP, JMP_LT, JMP_SNEQ) whose
+/// value routinely exceeds the function's register high-water mark. That was
+/// harmless while every set covered the whole 16-bit register file, but the
+/// sets are now sized to max_reg, so an unclamped index writes past the arena.
+/// Dropping an out-of-range register loses nothing: the function has no such
+/// register, so nothing can be live in it.
 fn void RegSet.set(&self, uint reg) {
-    self.words[reg / 32] |= (1u << (reg % 32));
+    uint w = reg / 32;
+    if (w >= self.word_count) return;
+    self.words[w] |= (1u << (reg % 32));
+}
+
+fn void RegSet.unset(&self, uint reg) {
+    uint w = reg / 32;
+    if (w >= self.word_count) return;
+    self.words[w] &= ~(1u << (reg % 32));
 }
 
 fn bool RegSet.test(&self, uint reg) {
-    return (self.words[reg / 32] & (1u << (reg % 32))) != 0;
+    uint w = reg / 32;
+    if (w >= self.word_count) return false;
+    return (self.words[w] & (1u << (reg % 32))) != 0;
 }
 
 fn void RegSet.copy_from(&self, RegSet* other) {
@@ -515,7 +533,7 @@ fn void moveelim_compute_liveness(Instruction* code, uint code_count, RegSet* li
             new_in.copy_from(&live_out[ii]);
             uint def_reg;
             if (moveelim_get_def(ins, &def_reg)) {
-                new_in.words[def_reg / 32] &= ~(1u << (def_reg % 32));
+                new_in.unset(def_reg);
             }
             RegSet* uses = &scratch[2];
             uses.clear();
