@@ -213,6 +213,10 @@ fn bool vm_throw_error(Vm* vm, HObject* proto, char[] msg, Activation* act,
             msg_tv.set_string(msg_str);
             err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WEC, vm.heap);
         }
+        // Capture .stack before unwinding: vm_throw_value pops the
+        // activations this walks, so afterwards there is no stack left to
+        // record.
+        builtins::error_capture_vm_stack(err, vm.heap, (void*)vm, msg);
         TVal err_val;
         err_val.set_object(err);
         if (vm_throw_value(vm, err_val, act, curr_pc, needs_restart)) {

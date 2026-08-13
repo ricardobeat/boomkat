@@ -96,6 +96,40 @@ fn HString* error_build_stack_string(BuiltinContext* ctx, HString* name_str, HSt
     return builtin_intern_string(ctx.heap, out.bytes());
 }
 
+/// Capture `.stack` on an error the ENGINE threw (a TypeError from a bad
+/// property access, a ReferenceError from an unresolvable name, ...) rather
+/// than one `new Error()` built.
+///
+/// Same payload as error_build_stack_string, but reachable from the VM, which
+/// has no BuiltinContext: the error's name is read off its prototype's `name`
+/// property instead of being passed in. Without this an engine-thrown error
+/// reached a catch block with an empty `.stack`, so a bundle's own error
+/// reporting -- and anyone debugging one -- had nothing to work from.
+fn void error_capture_vm_stack(HObject* err, Heap* heap, void* vm_ptr, char[] msg) {
+    StrBuf out;
+    out.init(heap);
+    defer out.free();
+
+    HObject* proto = err.prototype;
+    if (proto != null) {
+        HString* name_key = (HString*)heap.strs[heap::BuiltinStr.NAME];
+        TVal? nm = proto.get_prop_proto(name_key, heap);
+        if (try nv = nm) {
+            if (nv.is_string()) {
+                HString* ns = (HString*)nv.get_heapptr();
+                if (ns != null && ns.blen > 0) out.append_bytes(ns.get_cstr()[:ns.blen]);
+            }
+        }
+    }
+    out.append_bytes(": ");
+    if (msg.len > 0) out.append_bytes(msg);
+
+    error_append_stack_frames(&out, vm_ptr);
+
+    HString* s = builtin_intern_string(heap, out.bytes());
+    if (s != null) error_set_captured_stack(err, heap, s);
+}
+
 /// Shared constructor: create an error object with ObjClass.ERROR,
 /// set prototype to `proto`, and set .message from args[0] if provided.
 /// Also handles the ES2022 `options.cause` install (step 4 of the spec).
