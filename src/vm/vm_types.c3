@@ -41,7 +41,21 @@ faultdef STACK_OVERFLOW;
 // Constants
 // ============================================================================
 
-const uint MAX_CALLS        = 512;
+/// Maximum JS call frames within one Vm.run.
+///
+/// vm.activations is an Activation[MAX_CALLS] inside the heap-allocated Vm
+/// struct, so this trades heap (about 80 bytes per frame) for reachable
+/// recursion depth; it costs no native stack, since the re-entrant save paths
+/// buffer INLINE_SAVED_ACTS frames and spill the rest to the temp allocator.
+///
+/// 4096 rather than 512: a recursive-descent parser over a real source file
+/// nests far deeper than 512 frames -- babel 7.24.7 parsing its own output
+/// exhausted 512 -- and 512 also sat two orders of magnitude below what other
+/// engines admit (node reaches ~10000 on the same recursion). The remaining
+/// distance to that number is deliberate: the ceiling has to stay low enough
+/// that a host embedding on a small stack still throws RangeError rather than
+/// faulting, and every frame here is also a GC root the collector walks.
+const uint MAX_CALLS        = 4096;
 const uint INITIAL_VALSTACK = 1024;
 
 /// Activations kept in the nested-run save area before it spills to the temp
