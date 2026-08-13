@@ -4229,10 +4229,19 @@ fn TVal? Vm.run(Vm* vm) {
                                 key, (void*)ds.act.lex_env, false, vm.heap);
                         }
                     } else {
-                        // ReferenceError: variable not declared
-                        HString* name_hstr = (HString*)key;
-                        if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "%s is not defined", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                            return VM_ERROR~;
+                        // Not bound on the chain: the global record binds the
+                        // global object's inherited properties too (see
+                        // global_proto_lookup).
+                        TVal gproto_val;
+                        if (global_proto_lookup(vm, key, &gproto_val)) {
+                            vm.heap.tval_copy_ref(ra, &gproto_val);
+                            track_heap_store(ds.act, ra, (uint)insn.a);
+                        } else {
+                            // ReferenceError: variable not declared
+                            HString* name_hstr = (HString*)key;
+                            if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "%s is not defined", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                return VM_ERROR~;
+                            }
                         }
                     }
                 } else {
@@ -4731,9 +4740,18 @@ fn TVal? Vm.run(Vm* vm) {
                                 key, (void*)ds.act.lex_env, false, vm.heap);
                         }
                     } else {
-                        HString* name_hstr = (HString*)key;
-                        if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "%s is not defined", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                            return VM_ERROR~;
+                        // Not bound anywhere on the chain: the global record is
+                        // an object Environment Record, so an inherited
+                        // property of the global object is still a binding.
+                        TVal gproto_val;
+                        if (global_proto_lookup(vm, key, &gproto_val)) {
+                            vm.heap.tval_copy_ref(ra, &gproto_val);
+                            track_heap_store(ds.act, ra, (uint)insn.a);
+                        } else {
+                            HString* name_hstr = (HString*)key;
+                            if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "%s is not defined", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                return VM_ERROR~;
+                            }
                         }
                     }
                 } else {
@@ -4992,8 +5010,15 @@ fn TVal? Vm.run(Vm* vm) {
                             vcur2 = vcur2.parent;
                         }
                         if (!found) {
-                            // Unresolvable reference → "undefined" (no error)
-                            HString* ts = (HString*)vm.heap.strs[heap::BuiltinStr.UNDEFINED];
+                            // An inherited property of the global object IS a
+                            // binding (see global_proto_lookup), so
+                            // `typeof hasOwnProperty` is "function". Only a
+                            // genuinely unresolvable reference is "undefined"
+                            // (no error).
+                            TVal gproto_val;
+                            HString* ts = global_proto_lookup(vm, key, &gproto_val)
+                                ? typeof_string(vm, &gproto_val)
+                                : (HString*)vm.heap.strs[heap::BuiltinStr.UNDEFINED];
                             vm.heap.set_reg_string(ra, ts);
                         }
                     }

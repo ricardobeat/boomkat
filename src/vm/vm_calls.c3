@@ -221,6 +221,33 @@ fn bool is_global_bindings(Vm* vm, HObject* b) @inline {
         || (vm.global_lex_env != null && b == vm.global_lex_env.bindings);
 }
 
+/// Resolve an unqualified name that the environment chain did not bind, by
+/// looking it up on the global object's PROTOTYPE chain.
+///
+/// The global environment is an object Environment Record whose binding object
+/// is the global object (§9.1.1.4), and HasBinding on such a record is
+/// HasProperty, not GetOwnProperty. So an inherited property of the global
+/// object -- everything on Object.prototype -- is a resolvable name:
+/// `hasOwnProperty.call(o, k)` is the idiomatic spelling minifiers emit, and
+/// bare `toString`, `valueOf` and `propertyIsEnumerable` resolve the same way.
+/// The env walk uses own-property lookups, so it stops one link short of these.
+///
+/// Returns true and writes the value to `out` when found. Accessors on the
+/// chain are reported as not-found: the global object's own accessors already
+/// live in its own properties (which the env walk sees), and an inherited one
+/// would need the getter called with the global as receiver, which no caller
+/// of this helper is positioned to do.
+fn bool global_proto_lookup(Vm* vm, void* key, TVal* out) {
+    if (vm.global_env == null || vm.global_env.bindings == null) return false;
+    HObject* g = vm.global_env.bindings;
+    // Walks from the global object itself, so this also covers an own property
+    // the env walk missed; the common case is an inherited one.
+    hobject::PropLookupResult r = g.get_prop_or_accessor_proto(key, true, vm.heap);
+    if (r.kind != hobject::PropLookupKind.PROP_DATA) return false;
+    *out = r.data_val;
+    return true;
+}
+
 /// Resolve CALL_VAR's callee-by-name lookup into ds.regs_base[callee_reg].
 /// Mirrors the GETVAR opcode handler in vm_execute.c3 (same VarIC keyed on
 /// this instruction's own pc_off, same env-chain walk, same getter/TDZ
@@ -419,9 +446,19 @@ fn void? resolve_call_var(Dispatch* ds, uint name_const_idx, uint callee_reg, bo
                 false, vm.heap);
         }
     } else {
-        HString* name_hstr = (HString*)key;
-        if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "%s is not defined", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
-            return VM_ERROR~;
+        // Not bound on the chain: the global record binds the global object's
+        // inherited properties too (see global_proto_lookup). The value comes
+        // from a prototype, NOT from a global environment binding, so it is
+        // stored owned -- `borrowed` stays false and the usual incref applies.
+        TVal gproto_val;
+        if (global_proto_lookup(vm, key, &gproto_val)) {
+            vm.heap.tval_copy_ref(ra, &gproto_val);
+            track_heap_store(ds.act, ra, callee_reg);
+        } else {
+            HString* name_hstr = (HString*)key;
+            if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "%s is not defined", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                return VM_ERROR~;
+            }
         }
     }
     return;
@@ -600,9 +637,19 @@ fn void? resolve_call_global(Dispatch* ds, uint name_const_idx, uint callee_reg,
             gic.search_head = (void*)ds.act.lex_env;
         }
     } else {
-        HString* name_hstr = (HString*)key;
-        if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "%s is not defined", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
-            return VM_ERROR~;
+        // Not bound on the chain: the global record binds the global object's
+        // inherited properties too (see global_proto_lookup). The value comes
+        // from a prototype, NOT from a global environment binding, so it is
+        // stored owned -- `borrowed` stays false and the usual incref applies.
+        TVal gproto_val;
+        if (global_proto_lookup(vm, key, &gproto_val)) {
+            vm.heap.tval_copy_ref(ra, &gproto_val);
+            track_heap_store(ds.act, ra, callee_reg);
+        } else {
+            HString* name_hstr = (HString*)key;
+            if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "%s is not defined", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                return VM_ERROR~;
+            }
         }
     }
     return;
