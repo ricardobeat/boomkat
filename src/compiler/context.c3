@@ -1330,6 +1330,49 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     CompiledFunction* func = (CompiledFunction*)raw;
     func.flags.htype = HType.OBJECT;
 
+    // --- True register high-water mark ---
+    //
+    // max_reg is maintained by alloc_reg/alloc_regs alone, so it counts only
+    // registers the allocator handed out. A call reads a whole WINDOW the
+    // allocator never allocated one-by-one: the VM overlays the callee frame
+    // at callee_reg, with `this` at callee_reg+1 and the arguments above it
+    // (see reserve_call_frame). The topmost slot of that window can therefore
+    // sit AT max_reg -- one past the last allocated register -- and every
+    // consumer sized by max_reg then silently excludes it:
+    //
+    //   * moveelim's per-instruction bitsets are (max_reg + 31) / 32 words, so
+    //     the window's top register falls outside and moveelim_mark_range
+    //     clamps it away. The `this` slot never looks live, and the LDREG that
+    //     loads it is removed as a dead store -- the method then runs with
+    //     whatever the register happened to hold. Babel 7.24.7 hit exactly
+    //     this: `this.skipSpace()` at max_reg == 32 with the receiver at r32.
+    //   * func.num_regs sizes the VM's register frame for the call.
+    //
+    // So take the mark from the emitted code, which is the only place the
+    // window is visible.
+    uint hw_max = (uint)self.max_reg;
+    for (uint hi = 0; hi < self.code_count; hi++) {
+        Instruction hins = self.code[hi];
+        uint htop = 0;
+        switch (hins.op) {
+            case Opcode.CALL:
+            case Opcode.CALL_UNDEF_THIS:
+            case Opcode.NEW_OBJ:
+            case Opcode.SUPER_CALL:
+                // callee at B, `this` at B+1, then C arguments.
+                htop = (uint)hins.b + 1 + (uint)hins.c;
+            case Opcode.CALL_VAR:
+            case Opcode.CALL_GLOBAL:
+                // callee/result at A, then B arguments above `this`.
+                htop = (uint)hins.a + 1 + (uint)hins.b;
+            default:
+                continue;
+        }
+        if (htop + 1 > hw_max) { hw_max = htop + 1; }
+    }
+    if (hw_max > MAX_REGISTERS) { hw_max = MAX_REGISTERS; }
+
+
     // --- Peephole: fuse GETVAR + INC/DEC + PUTVAR into INC_VAR/DEC_VAR ---
     // Pattern: GETVAR r, name  /  INC r  /  PUTVAR r, name
     //   → NOP  /  INC_VAR name  /  NOP
@@ -1517,11 +1560,13 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         // The sets are per-instruction register bitsets. A fixed
         // MAX_REGISTERS-wide set would cost 8 KB per instruction slot, so the
         // four arrays below would be megabytes even for tiny functions; size
-        // them by the registers this function actually uses instead. max_reg
-        // is the allocator's high-water mark, so every operand register is
-        // below it, and the words arena holds all four arrays plus the four
-        // working sets the pass clears per iteration.
-        uint words_per_set = (self.max_reg + 31) / 32;
+        // them by the registers this function actually uses instead.
+        //
+        // Sized by hw_max, NOT max_reg: a call window's top slot can sit one
+        // past the allocator's high-water mark, and a bitset that excludes it
+        // makes moveelim_mark_range clamp the window, leaving the receiver
+        // slot looking dead. See the hw_max computation above.
+        uint words_per_set = (hw_max + 31) / 32;
         if (words_per_set < 1) { words_per_set = 1; }
         usz n = (usz)self.code_cap;
         RegSet* me_live_out = (RegSet*)h.alloc_func(h.heap_udata, n * RegSet::size);
@@ -1870,7 +1915,9 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         func.inner_count = self.inner_func_count;
     }
 
-    func.num_regs = self.max_reg;
+    // Sized by hw_max, not max_reg: the VM's register frame must include the
+    // whole call window (see the hw_max computation above).
+    func.num_regs = (ushort)(hw_max > (uint)self.max_reg ? hw_max : (uint)self.max_reg);
     func.flags.has_rest = self.has_rest;
     func.flags.is_constructable = self.is_constructable;
     // is_class_ctor is NOT derived here: ordinary function expressions nested
