@@ -541,21 +541,26 @@ fn void builtin_error_captureStackTrace(BuiltinContext* ctx) {
 //   "stack" own property, a fake "stack" own data property on a non-Error
 //   object is ignored, since the getter only reads the internal slot.
 fn void builtin_error_proto_stack_get(BuiltinContext* ctx) {
+    io::eprintfn("[DBG] stack getter invoked");
     TVal this_val = ctx.this_val;
     if (!this_val.is_object() || this_val.get_heapptr() == null) {
+        io::eprintfn("[DBG] stack getter THROW: non-object this");
         builtin_throw_no_result_change(ctx, ctx.heap.type_err_proto, "Error.prototype.stack getter called on non-object");
         return;
     }
     HObject* obj = (HObject*)this_val.get_heapptr();
     if (obj.get_class() != hobject::ObjClass.ERROR) {
+        io::eprintfn("[DBG] stack getter: non-ERROR class");
         ctx.result.set_undefined();
         return;
     }
     TVal* captured = &(*obj.extra_ptr()).err.captured_stack;
     if (captured.is_string()) {
+        io::eprintfn("[DBG] stack getter: captured string");
         ctx.heap.tval_copy_ref(ctx.result, captured);
         return;
     }
+    io::eprintfn("[DBG] stack getter: no captured stack");
     // Foreign new.target (Reflect.construct(Ctor, args, NotAnError)) still
     // acquires [[ErrorData]] via Ctor's [[Construct]], but if the capture
     // above somehow found nothing, produce an empty string rather than
@@ -572,8 +577,10 @@ fn void builtin_error_proto_stack_get(BuiltinContext* ctx) {
 ///      %Error.prototype%, "stack", v).
 ///   5. Return undefined.
 fn void builtin_error_proto_stack_set(BuiltinContext* ctx) {
+    io::eprintfn("[DBG] stack setter invoked");
     TVal this_val = ctx.this_val;
     if (!this_val.is_object() || this_val.get_heapptr() == null) {
+        io::eprintfn("[DBG] stack setter THROW: non-object this");
         builtin_throw_no_result_change(ctx, ctx.heap.type_err_proto, "Error.prototype.stack setter called on non-object");
         return;
     }
@@ -584,6 +591,7 @@ fn void builtin_error_proto_stack_set(BuiltinContext* ctx) {
     bool is_real_string = value.is_string() && value.get_heapptr() != null
         && !((HString*)value.get_heapptr()).is_symbol();
     if (!is_real_string) {
+        io::eprintfn("[DBG] stack setter THROW: non-string value");
         builtin_throw_no_result_change(ctx, ctx.heap.type_err_proto, "Error.prototype.stack setter requires a String value");
         return;
     }

@@ -7,6 +7,7 @@ import duktape::hstring;
 import duktape::hobject;
 import duktape::env;
 import duktape::builtins;
+import std::io;
 
 // ============================================================================
 // GC activation marking
@@ -204,6 +205,16 @@ fn bool invoke_getter(Vm* vm, hobject::AccessorResult* acc,
                       Activation* act, Instruction** curr_pc, bool* needs_restart,
                       TVal* regs_base) {
     TVal getter_fn = acc.accessor_fn;
+    if (this_val.is_object()) {
+        HObject* t = (HObject*)this_val.get_heapptr();
+        if (t.get_class() == hobject::ObjClass.ERROR) {
+            io::eprintfn("[DBG] GETTER-ON-ERROR: getter_kind=%d fnidx=%d proto=%p err_proto=%p",
+                getter_fn.is_object() ? (int)((HObject*)getter_fn.get_heapptr()).callable_kind() : -1,
+                getter_fn.is_object() && ((HObject*)getter_fn.get_heapptr()).callable_kind() == hobject::CallableKind.BUILTIN_FN
+                    ? (int)(*((HObject*)getter_fn.get_heapptr()).extra_ptr()).func.builtin_fn_index : -1,
+                (void*)t.prototype, (void*)vm.heap.err_proto);
+        }
+    }
 
     // If getter is undefined/null, return undefined (no-op)
     if (getter_fn.is_undefined() || getter_fn.is_null()) {

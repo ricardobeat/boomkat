@@ -1832,18 +1832,6 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
     // included (ES2019 §19.2.3.5 requires the exact source text).
     uint pending_async_fn_kw_pos = 0xFFFFFFFF;
 
-    // Previous token seen at the scan's own depth, used to tell a function
-    // *declaration* from a function *expression* (see hoist_global_fn_decls,
-    // which carries the same tracking for the global scan). `function` starts
-    // a declaration only in statement position; after an operator or an
-    // opening paren (`o.f = function t(){}`, `(function t(){})`) it is a
-    // FunctionExpression whose name binds only inside its own body
-    // (ES2015 §14.1.20), so hoisting that name here would wrongly declare a
-    // function-scoped var that shadows an enclosing parameter of the same
-    // name.
-    TokenType prev_at_depth = TokenType.EOF_TOKEN;
-    bool has_prev = false;
-
     while (true) {
         // Save lexer state before consuming this token (so we can restore
         // and re-consume it for function compilation).
@@ -1866,13 +1854,6 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
         if (tt == TokenType.LBRACE) {
             tscan.on_lbrace();
             brace_depth++;
-            // The '{' that opens the scanned scope itself, and any block that
-            // opens at that depth, both leave the following token in statement
-            // position.
-            if (brace_depth == own_depth) {
-                prev_at_depth = TokenType.LBRACE;
-                has_prev = true;
-            }
             continue;
         }
         // TEMPLATE_HEAD opens a template substitution: the lexer already
@@ -1885,23 +1866,12 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
         if (tt == TokenType.RBRACE) {
             TemplateBrace tb = tscan.classify_rbrace(self.lexer);
             if (tb == TemplateBrace.LEX_ERROR) break;
-            // A completed template substitution is part of an expression, not
-            // a statement boundary, so it must not reset statement position.
             if (tb == TemplateBrace.SUBST) continue;
             if (!is_global && brace_depth == 0) break;
             if (brace_depth > 0) brace_depth--;
             // For function-level hoisting, stop when the function body's
             // closing '}' returns brace_depth to 0 (end of scanned scope).
             if (!is_global && brace_depth == 0) break;
-            if (brace_depth == own_depth) {
-                prev_at_depth = TokenType.RBRACE;
-                has_prev = true;
-            }
-            continue;
-        }
-        if (brace_depth == own_depth && tt == TokenType.SEMICOLON) {
-            prev_at_depth = TokenType.SEMICOLON;
-            has_prev = true;
             continue;
         }
 
@@ -2024,34 +1994,6 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
                 self.skip_function_body();
                 continue;
             }
-            // `function` here is a declaration only when it starts a
-            // statement. In expression position (`o.f = function t(){}`,
-            // `(function t(){})`, `x || function t(){}`) it is a
-            // FunctionExpression: its name is bound in a lexical scope of its
-            // own body, never in this one. Hoisting it as a var would shadow a
-            // same-named parameter or outer binding for the whole scope, and
-            // its `var`s belong to its own VarDeclaredNames, so skip it whole.
-            bool in_stmt_pos = !has_prev
-                || prev_at_depth == TokenType.SEMICOLON
-                || prev_at_depth == TokenType.RBRACE
-                || prev_at_depth == TokenType.LBRACE
-                || prev_at_depth == TokenType.EOF_TOKEN;
-            if (!in_stmt_pos) {
-                // Clear any is_async latched by the `async function` detection
-                // above: this function is skipped, so the flag must not leak
-                // into a later declaration in the scan.
-                self.is_async = false;
-                Token? xstar = self.lexer.next_token();
-                if (catch _errx = xstar) continue;
-                if (xstar.type != TokenType.STAR) { self.lexer.pushback(xstar); }
-                Token? xname = self.lexer.next_token();
-                if (catch _errx2 = xname) continue;
-                if (xname.type != TokenType.IDENTIFIER) { self.lexer.pushback(xname); }
-                self.skip_function_body();
-                prev_at_depth = TokenType.FUNCTION;
-                has_prev = true;
-                continue;
-            }
             // If we detected `async function` above, is_async is already true.
             bool hoist_is_async = self.is_async;
             self.is_async = false;
@@ -2102,7 +2044,8 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
             }
 
             // Record as hoisted
-            if (self.hoisted_fn_count < MAX_HOISTED_FNS) {
+            self.ensure_hoisted_fn_cap();
+            if (self.hoisted_fn_count < self.hoisted_fn_cap) {
                 self.hoisted_fn_names[self.hoisted_fn_count] = fn_name;
                 self.hoisted_fn_count++;
             } else {
@@ -2183,14 +2126,7 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
             uint name_idx = self.add_string_constant(fn_name2);
             self.emit_a_bc(Opcode.DECLVAR, (uint)func_reg, name_idx);
 
-            // Lexer is now past the function body. A declaration's closing '}'
-            // ends the statement, so what follows is again statement position
-            // (`function f(){} function g(){}`). The fallthrough at the bottom
-            // of the loop would otherwise record FUNCTION and misclassify the
-            // next declaration as an expression.
-            prev_at_depth = TokenType.RBRACE;
-            has_prev = true;
-            continue;
+            // Lexer is now past the function body. Continue scanning.
         } else if (tt == TokenType.VAR) {
             // var declarations hoist through nested blocks (if/for/try/plain
             // `{}`) to the enclosing function or Program/module scope,
@@ -2319,14 +2255,6 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
             self.lexer.has_pushed_back = haspb_before;
             self.lexer.seen_line_term  = slt_before;
             break;
-        }
-
-        // Any other token at the scan's own depth leaves the next `function`
-        // in expression position unless a statement boundary (`;` `{` `}`)
-        // intervenes; those three reset it in their own branches above.
-        if (brace_depth == own_depth) {
-            prev_at_depth = tt;
-            has_prev = true;
         }
     }
 
@@ -2570,11 +2498,14 @@ fn void? CompilerContext.hoist_global_fn_decls(&self, bool checks_only = false) 
             if (already && self.is_module) {
                 return self.fail("duplicate module-level function declaration")~;
             }
-            if (!already && self.hoisted_fn_count < MAX_HOISTED_FNS) {
-                self.hoisted_fn_names[self.hoisted_fn_count] = fn_name;
-                self.hoisted_fn_count++;
-            } else if (!already) {
-                self.hoisted_overflow = true;
+            if (!already) {
+                self.ensure_hoisted_fn_cap();
+                if (self.hoisted_fn_count < self.hoisted_fn_cap) {
+                    self.hoisted_fn_names[self.hoisted_fn_count] = fn_name;
+                    self.hoisted_fn_count++;
+                } else {
+                    self.hoisted_overflow = true;
+                }
             }
 
             // Check-prologue pass: emit CanDeclareGlobalFunction for each

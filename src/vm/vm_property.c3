@@ -290,6 +290,25 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     // those tests and would serve exotic receivers it must not.
                     hobject::PropLookupResult res = hobj.get_prop_or_accessor_proto(key, true, ds.vm.heap);
                     if (res.kind == hobject::PropLookupKind.PROP_ACCESSOR) {
+                        {
+                            HString* key_hs_dbg = (HString*)key;
+                            if (key_hs_dbg != null && key_hs_dbg.blen == 5
+                                && key_hs_dbg.get_data()[0] == 's' && key_hs_dbg.get_data()[1] == 't'
+                                && key_hs_dbg.get_data()[2] == 'a' && key_hs_dbg.get_data()[3] == 'c'
+                                && key_hs_dbg.get_data()[4] == 'k') {
+                                TVal gf = res.acc.accessor_fn;
+                                int gk = -1; int gfi = -1;
+                                if (gf.is_object() && gf.get_heapptr() != null) {
+                                    HObject* gfo = (HObject*)gf.get_heapptr();
+                                    gk = (int)gfo.callable_kind();
+                                    if (gk == 1) gfi = (int)(*gfo.extra_ptr()).func.builtin_fn_index;
+                                }
+                                io::eprintfn("[DBG] GETPROP stack: obj=%p cls=%d owner=%p is_err_proto=%d gk=%d gfi=%d proto=%p err_proto=%p",
+                                    (void*)hobj, (int)hobj.get_class(), (void*)res.owner,
+                                    (int)(res.owner == ds.vm.heap.err_proto), gk, gfi,
+                                    (void*)hobj.prototype, (void*)ds.vm.heap.err_proto);
+                            }
+                        }
                         // ES2022 §7.3.25 PrivateGet: a set-only private
                         // accessor throws TypeError on read (unlike a public
                         // set-only accessor, which reads as undefined, so

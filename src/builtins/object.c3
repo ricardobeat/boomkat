@@ -2695,6 +2695,7 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
                 // the GS cell holds its own incref'd copy, so release the placeholder's
                 // reference before replacing the slot.
                 ctx.heap.decref_tval(&obj.prop_values()[idx]);
+                hobject::dbg_check_store(&obj.prop_values()[idx], "objdp-2698");
                 obj.prop_values()[idx] = hobject::hobject_create_accessors(ctx.heap, desc_vals[0], desc_vals[1]);
             }
             // Clear the dense array slot so arr_get_elem_vm falls through to the
@@ -2800,6 +2801,7 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
                 // Decref the old data value (may be a heap pointer like a string)
                 // and replace with a fresh GS cell.
                 ctx.heap.decref_tval(current);
+                hobject::dbg_check_store(current, "objdp-2804");
                 *current = hobject::hobject_create_accessors(ctx.heap, desc_vals[0], desc_vals[1]);
             } else {
                 // Update existing accessor: modify the GS cell in-place.
@@ -2977,6 +2979,7 @@ fn void builtin_object_defineProperties(BuiltinContext* ctx) {
                         // value; the GS cell holds its own incref'd copy, so release the
                         // placeholder's reference before replacing the slot.
                         ctx.heap.decref_tval(&obj.prop_values()[pidx]);
+                        hobject::dbg_check_store(&obj.prop_values()[pidx], "objdp-2982");
                         obj.prop_values()[pidx] = hobject::hobject_create_accessors(ctx.heap, desc_vals[0], desc_vals[1]);
                     }
                 } else {
@@ -3154,6 +3157,7 @@ fn void builtin_object_defineProperties(BuiltinContext* ctx) {
                         // value; the GS cell holds its own incref'd copy, so release the
                         // placeholder's reference before replacing the slot.
                         ctx.heap.decref_tval(&obj.prop_values()[idx]);
+                        hobject::dbg_check_store(&obj.prop_values()[idx], "objdp-3160");
                         obj.prop_values()[idx] = hobject::hobject_create_accessors(ctx.heap, desc_vals[0], desc_vals[1]);
                     }
                 } else {
@@ -3215,6 +3219,7 @@ fn void builtin_object_defineProperties(BuiltinContext* ctx) {
                         // hobject_set_access_getter on it would crash on slot.get_heapptr().
                         // Decref the old data value and replace with a fresh GS cell.
                         ctx.heap.decref_tval(current);
+                        hobject::dbg_check_store(current, "objdp-3222");
                         *current = hobject::hobject_create_accessors(ctx.heap, desc_vals[0], desc_vals[1]);
                     } else {
                         // Update existing accessor: modify the GS cell in-place.
@@ -3561,6 +3566,7 @@ fn void builtin_object_create(BuiltinContext* ctx) {
                         // value; the GS cell holds its own incref'd copy, so release the
                         // placeholder's reference before replacing the slot.
                         ctx.heap.decref_tval(&obj.prop_values()[eidx]);
+                        hobject::dbg_check_store(&obj.prop_values()[eidx], "objdp-3569");
                         obj.prop_values()[eidx] = hobject::hobject_create_accessors(
                             ctx.heap, desc_acc_get[k], desc_acc_set[k]);
                     }

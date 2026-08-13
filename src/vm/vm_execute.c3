@@ -4229,10 +4229,21 @@ fn TVal? Vm.run(Vm* vm) {
                                 key, (void*)ds.act.lex_env, false, vm.heap);
                         }
                     } else {
-                        // ReferenceError: variable not declared
-                        HString* name_hstr = (HString*)key;
-                        if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "%s is not defined", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                            return VM_ERROR~;
+                        // The walk only sees the global object's own
+                        // properties; inherited globals (hasOwnProperty,
+                        // toString, ...) resolve through the chain.
+                        TVal chain_val;
+                        int cres = vm_global_chain_read(vm, key, &chain_val, &ds);
+                        if (cres < 0) return VM_ERROR~;
+                        if (cres > 0) {
+                            vm.heap.tval_copy_ref(ra, &chain_val);
+                            track_heap_store(ds.act, ra, (uint)insn.a);
+                        } else {
+                            // ReferenceError: variable not declared
+                            HString* name_hstr = (HString*)key;
+                            if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "%s is not defined", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                return VM_ERROR~;
+                            }
                         }
                     }
                 } else {
@@ -4337,6 +4348,7 @@ fn TVal? Vm.run(Vm* vm) {
                             && gb.shape_id == gic.shape_id && gic.varref_store_ok
                             && vm.heap.shape_recycle_epoch == gic.recycle_epoch) {
                             TVal* pv = &gb.prop_values()[gic.prop_idx];
+                            hobject::dbg_check_store(pv, "exe-putglobal");
                             *pv = *ra;
                             ra.set_undefined();
                             break;
@@ -4362,6 +4374,7 @@ fn TVal? Vm.run(Vm* vm) {
                     }
                     if (owner != null && owner_idx >= 0) {
                         TVal* slot = &owner.bindings.prop_values()[owner_idx];
+                        hobject::dbg_check_store(slot, "exe-env-owner");
                         *slot = *ra;
                         ra.set_undefined();
                         if (ds.var_ic_base != null) {
@@ -4415,6 +4428,7 @@ fn TVal? Vm.run(Vm* vm) {
                         TVal* spv = &sgb.prop_values()[sic.prop_idx];
                         if (!env::is_tdz_sentinel(spv)) {
                             // Both provably primitive: raw copy, no refcount.
+                            hobject::dbg_check_store(&dgb.prop_values()[dic.prop_idx], "exe-move-gg");
                             dgb.prop_values()[dic.prop_idx] = *spv;
                             continue;
                         }
@@ -4731,9 +4745,20 @@ fn TVal? Vm.run(Vm* vm) {
                                 key, (void*)ds.act.lex_env, false, vm.heap);
                         }
                     } else {
-                        HString* name_hstr = (HString*)key;
-                        if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "%s is not defined", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                            return VM_ERROR~;
+                        // The walk only sees the global object's own
+                        // properties; inherited globals (hasOwnProperty,
+                        // toString, ...) resolve through the chain.
+                        TVal chain_val;
+                        int cres = vm_global_chain_read(vm, key, &chain_val, &ds);
+                        if (cres < 0) return VM_ERROR~;
+                        if (cres > 0) {
+                            vm.heap.tval_copy_ref(ra, &chain_val);
+                            track_heap_store(ds.act, ra, (uint)insn.a);
+                        } else {
+                            HString* name_hstr = (HString*)key;
+                            if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "%s is not defined", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                return VM_ERROR~;
+                            }
                         }
                     }
                 } else {
@@ -4992,9 +5017,20 @@ fn TVal? Vm.run(Vm* vm) {
                             vcur2 = vcur2.parent;
                         }
                         if (!found) {
-                            // Unresolvable reference → "undefined" (no error)
-                            HString* ts = (HString*)vm.heap.strs[heap::BuiltinStr.UNDEFINED];
-                            vm.heap.set_reg_string(ra, ts);
+                            // The walk only sees the global object's own
+                            // properties; inherited globals (hasOwnProperty,
+                            // toString, ...) resolve through the chain.
+                            TVal chain_val;
+                            int cres = vm_global_chain_read(vm, key, &chain_val, &ds);
+                            if (cres < 0) return VM_ERROR~;
+                            if (cres > 0) {
+                                HString* ts = typeof_string(vm, &chain_val);
+                                vm.heap.set_reg_string(ra, ts);
+                            } else {
+                                // Unresolvable reference → "undefined" (no error)
+                                HString* ts = (HString*)vm.heap.strs[heap::BuiltinStr.UNDEFINED];
+                                vm.heap.set_reg_string(ra, ts);
+                            }
                         }
                     }
 
@@ -5077,6 +5113,7 @@ fn TVal? Vm.run(Vm* vm) {
                                     // refcount effect matches the slow path
                                     // (binding gains a ref, register loses one).
                                     vm.heap.decref_tval(pv);
+                                    hobject::dbg_check_store(pv, "exe-putvar1");
                                     *pv = *ra;
                                     ra.set_undefined();
                                     break;
@@ -5216,6 +5253,7 @@ fn TVal? Vm.run(Vm* vm) {
                                 if (pv.is_string()) {
                                     vm.heap.decref_tval(pv);
                                 }
+                                hobject::dbg_check_store(pv, "exe-putvar2");
                                 *pv = *ra;
                                 if (ra.is_string()) {
                                     void* ptr = ra.get_heapptr();

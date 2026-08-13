@@ -59,8 +59,9 @@ const uint MAX_LABELS       = 16;
 /// directly against that budget. 2048 comfortably exceeds MAX_SWITCH_CLAUSES
 /// (1024), which is the realistic driver.
 const uint MAX_PATCHES      = 2048;
-/// Top-level function declarations tracked for duplicate detection.
-const uint MAX_HOISTED_FNS  = 512;
+/// Initial hoisted-function-name table capacity; grows on the heap from here
+/// (see ensure_hoisted_fn_cap), so there is no fixed ceiling.
+const uint INITIAL_HOISTED_FNS = 512;
 /// Initial scope-stack capacity; grows on the heap from here (see
 /// ensure_scope_cap), so there is no fixed ceiling.
 const uint INITIAL_SCOPE_DEPTH = 256;
@@ -778,15 +779,17 @@ struct CompilerContext {
     // or pre-scan capacity overflow.
     bool capture_all;
 
-    // Hoisted function declaration names (so main pass can skip recompilation).
-    // Fixed-size, bounded by top-level function count in a single module.
     /// Top-level function declarations seen by the hoisting pre-pass. Used for
     /// duplicate-declaration detection, so a DROPPED entry means a duplicate
-    /// goes unreported — silently, like the scope stack and patch pool did.
+    /// goes unreported, silently, like the scope stack and patch pool did.
     /// Overflow sets hoisted_overflow, which finish() turns into an error.
-    /// 512 rather than 256: a real bundle can define that many top-level
-    /// functions (underscore is at 109 in one scope; larger ones go further).
-    char[][MAX_HOISTED_FNS] hoisted_fn_names;
+    /// Heap-allocated: it was a fixed array (256, then 512), but babel 7.24.7
+    /// defines 630 top-level declarations in one body, and any fixed size
+    /// that fits in CompilerContext is charged against c3c's 64 KB stack
+    /// budget. ensure_hoisted_fn_cap grows it; an allocation failure leaves
+    /// hoisted_overflow set.
+    char[]* hoisted_fn_names;
+    uint hoisted_fn_cap;
     ushort hoisted_fn_count;
 
     // Constant-pool indices of the top-level `var` / `function` names this
@@ -955,6 +958,8 @@ fn void CompilerContext.init(&self, Lexer* lex, void* heap) {
     self.code = (Instruction*)h.alloc_func(h.heap_udata, (usz)(INITIAL_CODE * Instruction::size));
     self.scope_cap = INITIAL_SCOPE_DEPTH;
     self.scope_stack = (ScopeEntry*)h.alloc_func(h.heap_udata, (usz)(INITIAL_SCOPE_DEPTH * ScopeEntry::size));
+    self.hoisted_fn_cap = INITIAL_HOISTED_FNS;
+    self.hoisted_fn_names = (char[]*)h.alloc_func(h.heap_udata, (usz)(INITIAL_HOISTED_FNS * char[]::size));
     self.const_cap = INITIAL_CONSTANTS;
     self.constants = (TVal*)h.alloc_func(h.heap_udata, (usz)(INITIAL_CONSTANTS * TVal::size));
     self.const_hash_cap = INITIAL_CONST_HASH;
@@ -987,6 +992,7 @@ fn void CompilerContext.cleanup(&self) {
     Heap* h = (Heap*)self.heap;
     if (self.code != null) { h.free_func(h.heap_udata, self.code); self.code = null; }
     if (self.scope_stack != null) { h.free_func(h.heap_udata, self.scope_stack); self.scope_stack = null; }
+    if (self.hoisted_fn_names != null) { h.free_func(h.heap_udata, self.hoisted_fn_names); self.hoisted_fn_names = null; }
     if (self.constants != null) { h.free_func(h.heap_udata, self.constants); self.constants = null; }
     if (self.const_hash != null) { h.free_func(h.heap_udata, self.const_hash); self.const_hash = null; }
     if (self.inner_funcs != null) { h.free_func(h.heap_udata, self.inner_funcs); self.inner_funcs = null; }
@@ -1060,6 +1066,22 @@ fn void CompilerContext.ensure_scope_cap(&self) {
     }
     self.scope_stack = (ScopeEntry*)p;
     self.scope_cap = new_cap;
+}
+
+/// Grow the hoisted-function-name table. Same unbounded rationale as the
+/// scope stack: a real bundle (babel 7.24.7, 630 declarations in one body)
+/// exceeds any fixed size that fits on the stack.
+fn void CompilerContext.ensure_hoisted_fn_cap(&self) {
+    if (self.hoisted_fn_count < self.hoisted_fn_cap) return;
+    uint new_cap = self.hoisted_fn_cap * 2;
+    Heap* h = (Heap*)self.heap;
+    void* p = h.realloc_func(h.heap_udata, self.hoisted_fn_names, (usz)(new_cap * char[]::size));
+    if (p == null) {
+        self.record_error("out of memory growing the hoisted-function-name table");
+        return;
+    }
+    self.hoisted_fn_names = (char[]*)p;
+    self.hoisted_fn_cap = new_cap;
 }
 
 /// Grow constant pool and hash table.

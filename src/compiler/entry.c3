@@ -15,12 +15,27 @@ import std::io;
 /// Compile a complete program (sequence of statements).
 /// Returns the top-level CompiledFunction or a fault on error.
 fn CompiledFunction*? compile(Lexer* lex, void* heap) {
+    {
+        heap::Heap* dh = (heap::Heap*)heap;
+        if (dh != null && dh.obj_pool_func.head.buffer != null) {
+            void* fb = dh.obj_pool_func.head.buffer;
+            io::eprintfn("[DBG] COMPILE: func_pool=[%p,%p) arena_end=%p",
+                fb, (char*)fb + 512 * 168, (void*)((char*)fb + 512 * 168));
+            // Arm the trap: protect the arena's first page and install the handler.
+            long p0 = ((long)fb) & ~0x3FFF;
+            hobject::dbg_arm_arena((void*)p0);
+        }
+    }
     // Reset error state for this top-level compilation.
     lex.err_msg[0] = 0;
     lex.err_line = 0;
     lex.err_col  = 0;
     CompilerContext ctx;
     ctx.init(lex, heap);
+    {
+        io::eprintfn("[DBG] COMPILE ctx: code=%p scope_stack=%p constants=%p inner_funcs=%p",
+            (void*)ctx.code, (void*)ctx.scope_stack, (void*)ctx.constants, (void*)ctx.inner_funcs);
+    }
     ctx.is_global = true;
 
     // Save lexer state before any pre-processing.

@@ -2170,6 +2170,15 @@ fn void*? Heap.pool_alloc(&self, usz size) {
  * oversized block.
  */
 fn void Heap.pool_free(&self, void* ptr, usz size) {
+    {
+        // DEBUG: is this free returning a block that overlaps the watched cell?
+        void* cell = (char*)hobject::g_dbg_watch_addr - 64;
+        if (hobject::g_dbg_watch_addr != null
+            && (char*)ptr < (char*)cell + 168 && (char*)ptr + (sz)size > (char*)cell) {
+            io::eprintfn("[DBG] POOL_FREE OVERLAPS CELL: ptr=%p size=%u cls=%d", ptr, (uint)size,
+                pool_class_index(size));
+        }
+    }
     int cls = pool_class_index(size);
     if (cls >= 0) {
         self.small_pools[cls].dealloc(ptr);
@@ -2320,6 +2329,7 @@ fn void Heap.decref_tval(&self, TVal* tv) @inline {
 /// Copy a TVal from src to dst, keeping refcounts balanced. Increfs src, then
 /// decrefs the old dst value, then copies the bits. Does nothing when dst == src.
 fn void Heap.tval_copy_ref(&self, TVal* dst, TVal* src) @inline {
+    hobject::dbg_check_store(dst, "tval-copy-ref");
     if (dst != src) {
         // The incref comes first so that when src and dst hold the same object
         // at refcount 1, such as assigning one global to another, the decref
@@ -2380,6 +2390,7 @@ fn void Heap.store_builtin_result(&self, TVal* dst, TVal* transient) @inline {
 /// Only the overwritten dst value decides whether a decref is owed. The move
 /// preserves src's refcount whether src is a heap value or a primitive.
 fn void Heap.tval_move_slot_fast(&self, TVal* dst, TVal* src) @inline {
+    hobject::dbg_check_store(dst, "tval-move-slot");
     if (dst.is_heap_allocated()) {
         void* ptr = dst.get_heapptr();
         if (ptr != null) {

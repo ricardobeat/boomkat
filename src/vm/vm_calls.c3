@@ -221,6 +221,50 @@ fn bool is_global_bindings(Vm* vm, HObject* b) @inline {
         || (vm.global_lex_env != null && b == vm.global_lex_env.bindings);
 }
 
+/// Read a binding the way the spec's global Object Environment Record does.
+/// HasBinding and GetBindingValue consult [[HasProperty]] and [[Get]]
+/// (ES2015 §8.1.1.4.5), which walk the prototype chain, so inherited
+/// properties (hasOwnProperty, toString, valueOf) are valid global bindings.
+/// The env walks in the opcode handlers only see the global object's own
+/// properties, so call this when a walk misses.
+///
+/// Returns 1 on a data hit with `out` holding the raw slot (a borrow, like
+/// the inline walks' slots; callers copy or borrow per their own
+/// convention), 2 on an accessor hit with `out` holding the getter's result
+/// (fresh, needs an owning copy), 0 on a miss, and -1 when a chain accessor
+/// threw (already reported through the vm throw protocol, needs_restart
+/// included).
+fn int vm_global_chain_read(Vm* vm, void* key, TVal* out, Dispatch* ds) {
+    if (vm.global_env == null) return 0;
+    hobject::PropLookupResult r = vm.global_env.bindings.get_prop_or_accessor_proto(key, true, vm.heap);
+    if (r.kind == hobject::PropLookupKind.PROP_NOT_FOUND) return 0;
+    if (r.kind == hobject::PropLookupKind.PROP_ACCESSOR) {
+        TVal getter = r.acc.accessor_fn;
+        if (getter.is_undefined() || getter.is_null() || vm.heap.call_fn == null) {
+            out.set_undefined();
+            return 1;
+        }
+        TVal this_tv;
+        this_tv.set_object(r.acc.this_obj);
+        TVal getter_val = vm.heap.call_fn(vm, getter, null, 0, this_tv);
+        if (vm.heap.has_error) {
+            vm.heap.has_error = false;
+            TVal err_val = vm.heap.error_value;
+            if (!vm_throw_value(vm, err_val, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                vm.has_error = true;
+                vm.heap.has_error = true;
+                return -1;
+            }
+            out.set_undefined();
+            return 1;
+        }
+        *out = getter_val;
+        return 2;
+    }
+    *out = r.data_val;
+    return 1;
+}
+
 /// Resolve CALL_VAR's callee-by-name lookup into ds.regs_base[callee_reg].
 /// Mirrors the GETVAR opcode handler in vm_execute.c3 (same VarIC keyed on
 /// this instruction's own pc_off, same env-chain walk, same getter/TDZ
@@ -419,6 +463,23 @@ fn void? resolve_call_var(Dispatch* ds, uint name_const_idx, uint callee_reg, bo
                 false, vm.heap);
         }
     } else {
+        // The walk only sees the global object's own properties; inherited
+        // globals (hasOwnProperty, toString, ...) resolve through the chain.
+        TVal chain_val;
+        int cres = vm_global_chain_read(vm, key, &chain_val, ds);
+        if (cres < 0) return VM_ERROR~;
+        if (cres == 1) {
+            // Data on the chain lives in a permanent realm object (the global
+            // object's prototype), so borrow it like a global binding.
+            *ra = chain_val;
+            *borrowed = true;
+            return;
+        }
+        if (cres == 2) {
+            vm.heap.tval_copy_ref(ra, &chain_val);
+            track_heap_store(ds.act, ra, callee_reg);
+            return;
+        }
         HString* name_hstr = (HString*)key;
         if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "%s is not defined", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
             return VM_ERROR~;
@@ -600,6 +661,20 @@ fn void? resolve_call_global(Dispatch* ds, uint name_const_idx, uint callee_reg,
             gic.search_head = (void*)ds.act.lex_env;
         }
     } else {
+        TVal chain_val;
+        int cres = vm_global_chain_read(vm, key, &chain_val, ds);
+        if (cres < 0) return VM_ERROR~;
+        if (cres == 1) {
+            // Data on the chain lives in a permanent realm object, borrow it.
+            *ra = chain_val;
+            *borrowed = true;
+            return;
+        }
+        if (cres == 2) {
+            vm.heap.tval_copy_ref(ra, &chain_val);
+            track_heap_store(ds.act, ra, callee_reg);
+            return;
+        }
         HString* name_hstr = (HString*)key;
         if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "%s is not defined", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
             return VM_ERROR~;
