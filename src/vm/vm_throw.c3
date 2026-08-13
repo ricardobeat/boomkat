@@ -6,7 +6,6 @@ import duktape::hobject;
 import duktape::hstring;
 import duktape::heap;
 import duktape::builtins;
-import std::io;
 
 // ============================================================================
 // Catcher chain helpers
@@ -43,9 +42,6 @@ fn void vm_complete_gen_on_unwind(Vm* vm, Activation* act) {
 fn bool vm_throw_value(Vm* vm, TVal thrown_val, Activation* act,
                        Instruction** curr_pc, bool* needs_restart,
                        bool local_only = false) {
-    bytecode::CompiledFunction* thr_cfn = (bytecode::CompiledFunction*)act.func;
-    long thr_off = thr_cfn != null ? (long)((usz)act.curr_pc - 1 - (usz)thr_cfn.code) : -1;
-    io::eprintfn("[DBG] THROW heapptr=%p thrower_off=%d", thrown_val.get_heapptr(), (int)thr_off);
     // Walk through current and parent activations
     Activation* search_act = act;
     for (;;) {
@@ -63,10 +59,6 @@ fn bool vm_throw_value(Vm* vm, TVal thrown_val, Activation* act,
                         vm.heap.free_func(vm.heap.heap_udata, skip);
                     }
                 }
-                bytecode::CompiledFunction* cfn = (bytecode::CompiledFunction*)search_act.func;
-                long off = (long)((usz)cat.catch_pc - (usz)cfn.code);
-                io::eprintfn("[DBG] caught: fn=%p off=%d same_act=%d depth=%d",
-                    (void*)cfn, (int)off, (int)(search_act == act), (int)vm.activation_count);
                 vm.heap.tval_copy_ref(&cat.thrown_val, &thrown_val);
                 cat.flags &= ~CATCHER_FLAG_CATCH_ENABLED;
                 *curr_pc = cat.catch_pc;

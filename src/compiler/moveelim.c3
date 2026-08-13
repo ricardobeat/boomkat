@@ -310,8 +310,10 @@ fn void moveelim_add_uses(Instruction ins, RegSet* live, bool mark_call_windows)
         switch (op) {
             case Opcode.CALL:
             case Opcode.CALL_UNDEF_THIS:
+            case Opcode.CALL_PROP:
             case Opcode.NEW_OBJ:
             case Opcode.SUPER_CALL:
+            case Opcode.TAILCALL:
                 moveelim_mark_range(live, (uint)ins.b, (uint)ins.b + 1 + (uint)ins.c);
             case Opcode.CALL_VAR:
             case Opcode.CALL_GLOBAL:

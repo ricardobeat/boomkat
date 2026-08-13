@@ -17,163 +17,6 @@
 /// HASH_DELETED marking empty and tombstone slots.
 module duktape::hobject;
 
-/// DEBUG: armed by the WALK instrumentation; lldb breaks on dbg_watchpoint_here
-/// and watches this address.
-void* g_dbg_watch_addr = null;
-void* g_dbg_heap = null;
-fn void dbg_watchpoint_here() {
-    io::eprintfn("[DBG] watchpoint armed at %p", g_dbg_watch_addr);
-    dbg_protect_cell();
-}
-
-extern fn int mprotect(void* addr, usz len, int prot);
-extern fn int sigaction(int signum, void* act, void* oldact);
-extern fn void* signal(int signum, void* handler);
-extern fn void abort();
-extern fn void* memset(void* dst, int c, usz n);
-extern fn int* __error();
-extern fn void* malloc(usz size);
-extern fn uint mach_task_self();
-extern fn int vm_region_64(uint task, void** addr, ulong* size, int flavor, void* info, uint* count, void** object_name);
-extern fn int mincore(void* addr, usz len, char* vec);
-
-const int PROT_READ = 1;
-const int PROT_WRITE = 2;
-const int PROT_NONE = 0;
-const int SA_SIGINFO = 0x40;
-const int SIGSEGV = 11;
-const int SIGBUS = 10;
-
-/// Set when the trap handler unprotects the page for a non-cell fault; the
-/// next allocation re-protects it.
-bool g_dbg_reprotect = false;
-
-fn void dbg_segv_handler(int sig, void* siginfo, void* uctx) {
-    // siginfo_t layout (Darwin): si_signo@0, si_errno@4, si_code@8, si_pid@12,
-    // si_uid@16, si_status@20, si_addr@24 (0x18).
-    void* fault_addr = *(void**)((char*)siginfo + 0x18);
-    void* cell = (char*)g_dbg_watch_addr - 64;
-    bool in_cell = fault_addr >= cell && (char*)fault_addr < (char*)cell + 168;
-    // ucontext_t (Darwin arm64): uc_mcontext pointer candidates at 48/56;
-    // _STRUCT_ARM_THREAD_STATE64.__pc at offset 256.
-    void* mctx48 = *(void**)((char*)uctx + 48);
-    void* mctx56 = *(void**)((char*)uctx + 56);
-    void* pc = null;
-    void* mctx = mctx48;
-    void* pc48 = mctx48 != null ? *(void**)((char*)mctx48 + 256) : null;
-    void* pc56 = mctx56 != null ? *(void**)((char*)mctx56 + 256) : null;
-    if (pc48 != null && (usz)pc48 > 0x100000000u && (usz)pc48 < 0x200000000u) { pc = pc48; mctx = mctx48; }
-    else if (pc56 != null && (usz)pc56 > 0x100000000u && (usz)pc56 < 0x200000000u) { pc = pc56; mctx = mctx56; }
-    else { pc = pc48 != null ? pc48 : pc56; mctx = mctx48 != null ? mctx48 : mctx56; }
-    io::eprintfn("[DBG] FAULT: addr=%p pc=%p (pc48=%p pc56=%p) in_cell=%d", fault_addr, pc, pc48, pc56, (int)in_cell);
-    // Print the CompilerContext's code buffer if it overlaps the arena.
-    if (g_dbg_heap != null) {
-        heap::Heap* fh2 = (heap::Heap*)g_dbg_heap;
-        void* fb2 = fh2.obj_pool_func.head.buffer;
-        if (fb2 != null) {
-            // self (CompilerContext*) is in x19 for compiler fns; code field at +0x48.
-            // We can't read it reliably here, so print the arena bounds.
-            io::eprintfn("[DBG]   arena=[%p,%p) fault_in_arena=%d",
-                fb2, (char*)fb2 + 512 * 168,
-                (int)((char*)fault_addr >= (char*)fb2 && (char*)fault_addr < (char*)fb2 + 512 * 168));
-        }
-    }
-    if (g_dbg_heap != null) {
-        heap::Heap* fh = (heap::Heap*)g_dbg_heap;
-        io::eprintfn("[DBG]   pool: head=%p next_free=%p freelist=%p used=%d allocd=%d",
-            (void*)fh.obj_pool_func.head.buffer, (void*)fh.obj_pool_func.next_free,
-            (void*)fh.obj_pool_func.freelist, (int)fh.obj_pool_func.used, (int)fh.obj_pool_func.allocated);
-    }
-    {
-        // ARM_THREAD_STATE64: x0..x28 at mctx+0..232, fp@232, lr@240, sp@248.
-        ulong* xs = (ulong*)mctx;
-        io::eprintfn("[DBG]   x0=%p x1=%p x2=%p x8=%p x9=%p x19=%p x20=%p x21=%p x22=%p x23=%p x24=%p x25=%p x26=%p x27=%p x28=%p",
-            (void*)xs[0], (void*)xs[1], (void*)xs[2], (void*)xs[8], (void*)xs[9],
-            (void*)xs[19], (void*)xs[20], (void*)xs[21], (void*)xs[22], (void*)xs[23],
-            (void*)xs[24], (void*)xs[25], (void*)xs[26], (void*)xs[27], (void*)xs[28]);
-    }
-    if (in_cell) {
-        io::eprintfn("[DBG] *** CELL WRITE FAULT: addr=%p pc=%p", fault_addr, pc);
-        abort();
-    }
-    // Replay a legitimate write into the page, then re-protect at next alloc.
-    long page = ((long)cell) & ~0x3FFF;
-    mprotect((void*)page, 16384, PROT_READ | PROT_WRITE);
-    g_dbg_reprotect = true;
-}
-
-/// DEBUG struct mirroring Darwin's struct sigaction: handler union @0 (8),
-/// sa_mask@8 (4), pad@12, sa_flags@16 (4), pad@20.
-struct DbgSigaction {
-    void* sa_handler;
-    int sa_mask;
-    int sa_pad;
-    int sa_flags;
-    void* sa_sigaction;
-}
-
-/// mprotect the page holding the watched cell read-only; any write into the
-/// page faults and dbg_segv_handler decides whether it hit the cell.
-fn void dbg_protect_cell() {
-    if (g_dbg_watch_addr == null) return;
-    void* cell = (char*)g_dbg_watch_addr - 64;
-    long page = ((long)cell) & ~0x3FFF;
-    int rc = mprotect((void*)page, 16384, PROT_READ);
-    io::eprintfn("[DBG] page protected at %p rc=%d errno=%d", (void*)page, rc, *__error());
-    if (rc != 0) return;
-    DbgSigaction act;
-    act.sa_handler = null;
-    act.sa_mask = 0;
-    act.sa_flags = SA_SIGINFO;
-    act.sa_sigaction = (void*)&dbg_segv_handler;
-    int sar = sigaction(SIGSEGV, &act, null);
-    int sbr = sigaction(SIGBUS, &act, null);
-    io::eprintfn("[DBG] sigaction installed segv=%d bus=%d", sar, sbr);
-    // Fallback: plain signal() for both.
-    void* pr1 = signal(SIGSEGV, (void*)&dbg_segv_handler);
-    void* pr2 = signal(SIGBUS, (void*)&dbg_segv_handler);
-    io::eprintfn("[DBG] signal() prev handlers: %p %p", pr1, pr2);
-}
-
-/// DEBUG: arm the trap on an arbitrary page (used at compile start).
-void* g_dbg_prot_page = null;
-fn void dbg_arm_arena(void* page) {
-    g_dbg_prot_page = page;
-    int rc = mprotect(page, 16384, PROT_READ);
-    io::eprintfn("[DBG] arena trap armed at %p rc=%d", page, rc);
-    DbgSigaction act;
-    act.sa_handler = null;
-    act.sa_mask = 0;
-    act.sa_pad = 0;
-    act.sa_flags = SA_SIGINFO;
-    act.sa_sigaction = (void*)&dbg_segv_handler;
-    signal(SIGSEGV, (void*)&dbg_segv_handler);
-    signal(SIGBUS, (void*)&dbg_segv_handler);
-}
-
-/// DEBUG: re-protect after a non-cell fault was replayed.
-fn void dbg_reprotect_check() {
-    if (g_dbg_reprotect) {
-        g_dbg_reprotect = false;
-        void* cell = (char*)g_dbg_watch_addr - 64;
-        long page = ((long)cell) & ~0x3FFF;
-        mprotect((void*)page, 16384, PROT_READ);
-    }
-}
-
-/// DEBUG: called before every raw prop-slot store; fires when the store would
-/// land on the watched getter-field region.
-fn void dbg_check_store(void* dst, String site) {
-    if (g_dbg_watch_addr != null) {
-        char* d = (char*)dst;
-        char* w = (char*)g_dbg_watch_addr;
-        if (d >= w && d < w + 16) {
-            io::eprintfn("[DBG] *** WATCH STORE HIT: dst=%p (field=%p) site=%.*s", dst, w, (int)site.len, site.ptr);
-        }
-    }
-}
-
-
 import duktape::types;
 import duktape::hstring;
 import duktape::bytecode;
@@ -583,18 +426,6 @@ alias PropValue = TVal;
 fn TVal hobject_create_accessors(heap::Heap* h, TVal getter, TVal setter) {
     HObject*? gs_obj = h.alloc_object(ObjClass.GETTER_SETTER);
     if (try gs = gs_obj) {
-        if (h != null && h.err_proto != null) {
-            HString* sk = (HString*)h.strs[heap::BuiltinStr.STACK];
-            if (sk != null) {
-                int sidx = h.err_proto.find_prop_idx((void*)sk, h);
-                if (sidx >= 0) {
-                    TVal* scell = &h.err_proto.prop_values()[sidx];
-                    if (scell.is_object() && scell.get_heapptr() == (void*)gs) {
-                        io::eprintfn("[DBG] CREATE-ACCESSORS REUSED ERR_STACK CELL ADDRESS!");
-                    }
-                }
-            }
-        }
         (*gs.extra_ptr()).gs.getter = getter;
         (*gs.extra_ptr()).gs.setter = setter;
         // The cell now holds references to both.
@@ -624,23 +455,6 @@ fn TVal hobject_access_setter(TVal slot) {
 /// Update the getter inside an existing GetterSetter cell (refcounted).
 fn void hobject_set_access_getter(TVal slot, TVal new_getter, heap::Heap* h) {
     HObject* gs = (HObject*)slot.get_heapptr();
-    {
-        // DEBUG watch: does this write target the Error.prototype "stack" cell?
-        if (h != null && h.err_proto != null) {
-            HString* sk = (HString*)h.strs[heap::BuiltinStr.STACK];
-            if (sk != null) {
-                int sidx = h.err_proto.find_prop_idx((void*)sk, h);
-                if (sidx >= 0) {
-                    TVal* scell = &h.err_proto.prop_values()[sidx];
-                    if (scell.is_object() && scell.get_heapptr() == (void*)gs) {
-                        io::eprintfn("[DBG] SET-GETTER ON ERR_STACK CELL! new_getter_kind=%d new_getter_obj=%p",
-                            new_getter.is_object() ? (int)((HObject*)new_getter.get_heapptr()).callable_kind() : -1,
-                            new_getter.is_object() ? (void*)new_getter.get_heapptr() : null);
-                    }
-                }
-            }
-        }
-    }
     h.decref_tval(&(*gs.extra_ptr()).gs.getter);
     (*gs.extra_ptr()).gs.getter = new_getter;
     if (new_getter.is_heap_allocated() && new_getter.get_heapptr() != null) {
@@ -651,20 +465,6 @@ fn void hobject_set_access_getter(TVal slot, TVal new_getter, heap::Heap* h) {
 /// Update the setter inside an existing GetterSetter cell (refcounted).
 fn void hobject_set_access_setter(TVal slot, TVal new_setter, heap::Heap* h) {
     HObject* gs = (HObject*)slot.get_heapptr();
-    {
-        if (h != null && h.err_proto != null) {
-            HString* sk = (HString*)h.strs[heap::BuiltinStr.STACK];
-            if (sk != null) {
-                int sidx = h.err_proto.find_prop_idx((void*)sk, h);
-                if (sidx >= 0) {
-                    TVal* scell = &h.err_proto.prop_values()[sidx];
-                    if (scell.is_object() && scell.get_heapptr() == (void*)gs) {
-                        io::eprintfn("[DBG] SET-SETTER ON ERR_STACK CELL!");
-                    }
-                }
-            }
-        }
-    }
     h.decref_tval(&(*gs.extra_ptr()).gs.setter);
     (*gs.extra_ptr()).gs.setter = new_setter;
     if (new_setter.is_heap_allocated() && new_setter.get_heapptr() != null) {
@@ -1476,10 +1276,6 @@ fn bool dense_index_ok(uint cur_size, uint idx) {
 /// appended, growing the table if needed. Adding a property leaves the shape
 /// transition to the caller, through Heap.transition_shape.
 fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags, heap::Heap* h) {
-    if (self.flags.obj_class == ObjClass.GETTER_SETTER) {
-        io::eprintfn("[DBG] PUTPROP ON GETTER_SETTER CELL! key=%p val_is_obj=%d",
-            (void*)key, (int)(val.is_object() && val.get_heapptr() != null));
-    }
     // Property lookup compares keys by pointer, so a stored key must be the
     // canonical interned string. Callers such as JSON.parse and
     // builtin_to_property_key_vm hand in un-interned concatenation results;
@@ -1514,7 +1310,6 @@ fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags, heap::Hea
                 h.decref_tval(pv);
             }
         }
-        dbg_check_store(pv, "putprop-update");
         *pv = val;
         self.set_prop_flags((uint)idx, pflags, h);
         // A length write on an ARRAY exotic updates the shadow copy.
@@ -1580,7 +1375,6 @@ fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags, heap::Hea
     // Append at the next slot.
     uint new_idx = self.prop_count;
     mem::clear(&self.prop_values()[new_idx], (sz)(PropValue::size));
-    dbg_check_store(&self.prop_values()[new_idx], "putprop-append");
     self.prop_values()[new_idx] = val;
     // Strings, objects, buffers, and BigInts are reference-counted heap
     // values held by properties, so the new value needs its own reference.
@@ -1988,22 +1782,6 @@ fn void HObject.grow_array(&self, uint new_size, heap::Heap* h) {
 ///
 /// Returns `null` on allocation failure.
 fn HObject*? hobject_alloc(void* heap_ptr, ObjClass cls) {
-    dbg_reprotect_check();
-    {
-        static bool dbg_probed = false;
-        if (!dbg_probed) {
-            dbg_probed = true;
-            heap::Heap* hp0 = (heap::Heap*)heap_ptr;
-            if (hp0 != null && hp0.obj_pool_func.head.buffer != null) {
-                long p0 = ((long)hp0.obj_pool_func.head.buffer) & ~0xFFF;
-                for (long pp = p0; pp < p0 + 21 * 4096; pp += 4096) {
-                    int pr = mprotect((void*)pp, 4096, PROT_READ);
-                    io::eprintfn("[DBG] EARLY arena page %ld: rc=%d", (long)((pp - p0) / 4096), (int)pr);
-                    mprotect((void*)pp, 4096, PROT_READ | PROT_WRITE);
-                }
-            }
-        }
-    }
     usz alloc_sz = alloc_size_for_class(cls);
 
     // Try pool allocation first
@@ -2030,50 +1808,6 @@ fn HObject*? hobject_alloc(void* heap_ptr, ObjClass cls) {
     mem::clear(raw, (sz)(alloc_sz));
 
     HObject* obj = (HObject*)raw;
-
-    {
-        heap::Heap* hp = (heap::Heap*)heap_ptr;
-        if (hp != null && hp.err_proto != null) {
-            HString* sk = (HString*)hp.strs[heap::BuiltinStr.STACK];
-            if (sk != null) {
-                int sidx = hp.err_proto.find_prop_idx((void*)sk, hp);
-                if (sidx >= 0) {
-                    TVal* scell = &hp.err_proto.prop_values()[sidx];
-                    if (scell.is_object() && scell.get_heapptr() != null) {
-                        HObject* sc = (HObject*)scell.get_heapptr();
-                        if (sc.get_class() == ObjClass.GETTER_SETTER) {
-                            TVal gf = hobject_access_getter(*scell);
-                            if (gf.is_object() && gf.get_heapptr() != null) {
-                                HObject* gfo = (HObject*)gf.get_heapptr();
-                                int gk = (int)gfo.callable_kind();
-                                int gfi = gk == 1 ? (int)(*gfo.extra_ptr()).func.builtin_fn_index : -1;
-                                if (gfi != 562) {
-                                    io::eprintfn("[DBG] CELL CHECK @alloc cls=%d: getter gk=%d gfi=%d (CORRUPTED)",
-                                        (int)cls, gk, gfi);
-                                    {
-                                        void* raddr2 = (void*)(((long)sc) & ~0x3FFF);
-                                        ulong rsize2 = 0;
-                                        ulong[6] rinfo2;
-                                        uint rcount2 = 9;
-                                        void* robj2 = null;
-                                        int rv2 = vm_region_64(mach_task_self(), &raddr2, &rsize2, 9, &rinfo2, &rcount2, &robj2);
-                                        io::eprintfn("[DBG] cell region prot=%d maxprot=%d", (int)rinfo2[0], (int)rinfo2[1]);
-                                    }
-                                    io::eprintfn("[DBG] CELL REGIONS: cell=%p slot_addr=%p err_proto=%p err_props=%p",
-                                        (void*)sc, (void*)scell, (void*)hp.err_proto, (void*)hp.err_proto.prop_values());
-                                }
-                            } else {
-                                io::eprintfn("[DBG] CELL CHECK @alloc cls=%d: getter non-object (CORRUPTED?)", (int)cls);
-                            }
-                        }
-                    }
-                    if (scell.is_object() && scell.get_heapptr() == (void*)raw) {
-                        io::eprintfn("[DBG] ALLOC REUSED ERR_STACK CELL ADDRESS: new cls=%d", (int)cls);
-                    }
-                }
-            }
-        }
-    }
 
     obj.prop_alloc = null;
     obj.prop_capacity = INLINE_PROPS;
@@ -2826,45 +2560,6 @@ fn PropLookupResult HObject.get_prop_or_accessor_proto(&self, void* key, bool wa
             if (cur.get_prop_flags((uint)idx, h).is_accessor) {
                 TVal gs_slot = cur.prop_values()[idx];
             TVal accessor_fn = want_getter ? hobject_access_getter(gs_slot) : hobject_access_setter(gs_slot);
-                {
-                    HString* khs = (HString*)key;
-                    if (khs != null && khs.blen == 5 && khs.get_data()[0] == 's'
-                        && khs.get_data()[1] == 't' && khs.get_data()[2] == 'a'
-                        && khs.get_data()[3] == 'c' && khs.get_data()[4] == 'k'
-                        && accessor_fn.is_object()) {
-                        HObject* af = (HObject*)accessor_fn.get_heapptr();
-                        HObject* gsdbg = (HObject*)gs_slot.get_heapptr();
-                        TVal stv = hobject_access_setter(gs_slot);
-                        int sk = -1; int sfi = -1;
-                        if (stv.is_object() && stv.get_heapptr() != null) {
-                            HObject* so = (HObject*)stv.get_heapptr();
-                            sk = (int)so.callable_kind();
-                            if (sk == 1) sfi = (int)(*so.extra_ptr()).func.builtin_fn_index;
-                        }
-                        if (af.callable_kind() != hobject::CallableKind.BUILTIN_FN) {
-                            CompiledFunction* cfd = (*af.extra_ptr()).func.comp_func;
-                            io::eprintfn("[DBG] WALK stack: gs=%p gk=%d name='%.*s' fnobj=%p",
-                                (void*)gsdbg, (int)af.callable_kind(),
-                                (int)(cfd != null ? cfd.name_len : 0),
-                                cfd != null ? cfd.name_ptr : null,
-                                (void*)af);
-                        } else {
-                            io::eprintfn("[DBG] WALK stack: gs=%p gk=1 gfi=%d",
-                                (void*)gsdbg, (int)(*af.extra_ptr()).func.builtin_fn_index);
-                        }
-                        io::eprintfn("[DBG] WALK stack: cur=%p idx=%d gs=%p gs_cls=%d gk=%d gfi=%d sk=%d sfi=%d",
-                            (void*)cur, (int)idx, (void*)gsdbg, (int)gsdbg.get_class(),
-                            (int)af.callable_kind(),
-                            af.callable_kind() == hobject::CallableKind.BUILTIN_FN ? (int)(*af.extra_ptr()).func.builtin_fn_index : -1,
-                            sk, sfi);
-                        io::eprintfn("[DBG] WALK getter_field_addr=%p base_size=%d", (void*)((char*)gsdbg + HObjectBase::size), (int)HObjectBase::size);
-                        if (g_dbg_watch_addr == null) {
-                            g_dbg_watch_addr = (void*)((char*)gsdbg + HObjectBase::size);
-                            g_dbg_heap = h;
-                            dbg_watchpoint_here();
-                        }
-                    }
-                }
                 return {
                     .kind = PropLookupKind.PROP_ACCESSOR,
                     .acc = {

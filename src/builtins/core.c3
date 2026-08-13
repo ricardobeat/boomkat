@@ -3357,14 +3357,7 @@ fn void dispatch_builtin(uint fn_index, BuiltinContext* ctx) {
     // reachable only from a raw C3 local. Marking the frame keeps GC from
     // clearing its temproot at a safepoint inside that nested execution.
     ctx.heap.native_frame_depth++;
-    TVal* dbg_result_before = ctx.result;
-    TVal* dbg_vs_before = ctx.vm != null ? ((vm::Vm*)ctx.vm).valstack : null;
     handler(ctx);
-    if (ctx.vm != null && ((vm::Vm*)ctx.vm).valstack != dbg_vs_before) {
-        io::eprintfn("[DBG] builtin %d reentered & valstack moved (result ptr %p)",
-            (int)fn_index, (void*)dbg_result_before);
-        hobject::dbg_check_store(dbg_result_before, "dispatch-result");
-    }
     ctx.heap.native_frame_depth--;
 }
 

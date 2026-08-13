@@ -4348,7 +4348,6 @@ fn TVal? Vm.run(Vm* vm) {
                             && gb.shape_id == gic.shape_id && gic.varref_store_ok
                             && vm.heap.shape_recycle_epoch == gic.recycle_epoch) {
                             TVal* pv = &gb.prop_values()[gic.prop_idx];
-                            hobject::dbg_check_store(pv, "exe-putglobal");
                             *pv = *ra;
                             ra.set_undefined();
                             break;
@@ -4374,7 +4373,6 @@ fn TVal? Vm.run(Vm* vm) {
                     }
                     if (owner != null && owner_idx >= 0) {
                         TVal* slot = &owner.bindings.prop_values()[owner_idx];
-                        hobject::dbg_check_store(slot, "exe-env-owner");
                         *slot = *ra;
                         ra.set_undefined();
                         if (ds.var_ic_base != null) {
@@ -4428,7 +4426,6 @@ fn TVal? Vm.run(Vm* vm) {
                         TVal* spv = &sgb.prop_values()[sic.prop_idx];
                         if (!env::is_tdz_sentinel(spv)) {
                             // Both provably primitive: raw copy, no refcount.
-                            hobject::dbg_check_store(&dgb.prop_values()[dic.prop_idx], "exe-move-gg");
                             dgb.prop_values()[dic.prop_idx] = *spv;
                             continue;
                         }
@@ -5113,7 +5110,6 @@ fn TVal? Vm.run(Vm* vm) {
                                     // refcount effect matches the slow path
                                     // (binding gains a ref, register loses one).
                                     vm.heap.decref_tval(pv);
-                                    hobject::dbg_check_store(pv, "exe-putvar1");
                                     *pv = *ra;
                                     ra.set_undefined();
                                     break;
@@ -5253,7 +5249,6 @@ fn TVal? Vm.run(Vm* vm) {
                                 if (pv.is_string()) {
                                     vm.heap.decref_tval(pv);
                                 }
-                                hobject::dbg_check_store(pv, "exe-putvar2");
                                 *pv = *ra;
                                 if (ra.is_string()) {
                                     void* ptr = ra.get_heapptr();

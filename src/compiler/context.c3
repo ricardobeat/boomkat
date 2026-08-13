@@ -1443,6 +1443,47 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     // form) and BEFORE NOP compaction (so the NOPs it introduces are
     // physically removed). See src/compiler/moveelim.c3 for the liveness
     // analysis and the full safety-condition reasoning.
+
+    // Compute the true register high-water mark from the emitted bytecode.
+    // max_reg tracks only alloc_reg() calls, but call-family opcodes reserve
+    // this-slot and argument registers by bumping next_reg directly. A
+    // bytecode scan catches those: every register the function actually
+    // touches is below hw_max.
+    uint hw_max = (uint)self.max_reg;
+    for (usz si = 0; si < self.code_count; si++) {
+        Instruction ins = self.code[si];
+        Opcode op = ins.op;
+        OpFormat fmt = bytecode::get_op_format(op);
+        if (fmt == OpFormat.ABC) {
+            uint ab = (uint)ins.a;
+            if ((uint)ins.b > ab) ab = (uint)ins.b;
+            if (ab >= hw_max) hw_max = ab + 1;
+            if (op != Opcode.GETPROPC && op != Opcode.GETPROPC2
+                && op != Opcode.GETPROPC_CACHED && op != Opcode.LDREG) {
+                if ((uint)ins.c >= hw_max) hw_max = (uint)ins.c + 1;
+            }
+            switch (op) {
+                case Opcode.CALL:
+                case Opcode.CALL_UNDEF_THIS:
+                case Opcode.CALL_PROP:
+                case Opcode.NEW_OBJ:
+                case Opcode.SUPER_CALL:
+                case Opcode.TAILCALL: {
+                    uint win = (uint)ins.b + 1 + (uint)ins.c;
+                    if (win > hw_max) hw_max = win;
+                }
+                case Opcode.CALL_VAR:
+                case Opcode.CALL_GLOBAL: {
+                    uint win = (uint)ins.a + 1 + (uint)ins.b;
+                    if (win > hw_max) hw_max = win;
+                }
+                default: {}
+            }
+        } else if (fmt == OpFormat.A_BC || fmt == OpFormat.A_SBX) {
+            if ((uint)ins.a >= hw_max) hw_max = (uint)ins.a + 1;
+        }
+    }
+
     if (!self.disable_optimize && !self.has_wide && self.code_count >= 2) {
         usz bufsz = (usz)self.code_cap;
         bool* me_jump_targets = (bool*)h.alloc_func(h.heap_udata, bufsz);
@@ -1451,14 +1492,9 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         // dead-destination check; ret_out/ret_in the window-free liveness
         // that drives the producer-retarget decisions (see moveelim.c3).
         //
-        // The sets are per-instruction register bitsets. A fixed
-        // MAX_REGISTERS-wide set would cost 8 KB per instruction slot, so the
-        // four arrays below would be megabytes even for tiny functions; size
-        // them by the registers this function actually uses instead. max_reg
-        // is the allocator's high-water mark, so every operand register is
-        // below it, and the words arena holds all four arrays plus the four
-        // working sets the pass clears per iteration.
-        uint words_per_set = (self.max_reg + 31) / 32;
+        // hw_max (computed above) is the true register high-water mark from
+        // the bytecode scan, including call windows that alloc_reg never sees.
+        uint words_per_set = (hw_max + 31) / 32;
         if (words_per_set < 1) { words_per_set = 1; }
         usz n = (usz)self.code_cap;
         RegSet* me_live_out = (RegSet*)h.alloc_func(h.heap_udata, n * RegSet::size);
@@ -1542,7 +1578,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
                      && !self.is_arrow
                      && !self.is_generator
                      && !self.is_async;
-        if (!self.disable_optimize && !self.has_wide && elide_ok) {
+        if (false && !self.disable_optimize && !self.has_wide && elide_ok) {
             // TYPEOFIDENT relies on the INITTZ sentinel in the block env to
             // throw for `typeof x` inside x's temporal dead zone, collect the
             // name indices it references so those sentinels are kept.
@@ -1807,7 +1843,14 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         func.inner_count = self.inner_func_count;
     }
 
-    func.num_regs = self.max_reg;
+    // num_regs sizes the VM's register frame in the valstack. max_reg is only
+    // maintained by alloc_reg/alloc_regs, but the call-emitting sites in
+    // expressions.c3 reserve their callee/argument window by assigning
+    // next_reg directly, so max_reg can understate the frame a call actually
+    // touches. hw_max (scanned from the emitted bytecode above) is the true
+    // high-water mark; sizing the frame by it keeps a call window from
+    // spilling into the next activation's registers.
+    func.num_regs = (ushort)(hw_max > (uint)self.max_reg ? hw_max : (uint)self.max_reg);
     func.flags.has_rest = self.has_rest;
     func.flags.is_constructable = self.is_constructable;
     // is_class_ctor is NOT derived here: ordinary function expressions nested

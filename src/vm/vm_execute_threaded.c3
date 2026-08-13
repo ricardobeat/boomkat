@@ -4,7 +4,6 @@ import duktape::types;
 import duktape::bytecode;
 import duktape::heap;
 import duktape::hobject;
-import std::io;
 import duktape::env;
 
 // ============================================================================
@@ -379,7 +378,6 @@ fn Instruction* th_putglobal_prim(Instruction* pc, Instruction* code_end, TVal* 
     if (gb == null || gic.search_head != (void*)cold.act.lex_env || gb.shape_id != gic.shape_id || !gic.varref_store_ok) return pc;
     TVal* ra = regs + insn.a;
     TVal* pv = &gb.prop_values()[gic.prop_idx];
-    hobject::dbg_check_store(pv, "th-putglobal-prim");
     *pv = *ra;
     ra.set_undefined();
     pc++;
@@ -406,7 +404,6 @@ fn Instruction* th_move_gg(Instruction* pc, Instruction* code_end, TVal* regs, C
     TVal* spv = &sgb.prop_values()[sic.prop_idx];
     if (env::is_tdz_sentinel(spv)) return pc;
     // Both slots provably primitive: raw copy, no refcount.
-    hobject::dbg_check_store(&dgb.prop_values()[dic.prop_idx], "th-move-gg");
     dgb.prop_values()[dic.prop_idx] = *spv;
     pc += 2;
     return th_next(pc, code_end, regs, cold);
@@ -511,14 +508,10 @@ fn Instruction* th_putvar_assign(Instruction* pc, Instruction* code_end, TVal* r
     HObject* b = (HObject*)vic.bindings;
     if (b.shape_id != vic.shape_id
         || vm.heap.shape_recycle_epoch != vic.recycle_epoch) return pc;
-    if (b.get_class() == hobject::ObjClass.GETTER_SETTER) {
-        io::eprintfn("[DBG] th_putvar: bindings IS A GETTER_SETTER CELL! key=%p", (void*)key);
-    }
     TVal* pv = &b.prop_values()[vic.prop_idx];
     hobject::PropFlags fl = b.get_prop_flags(vic.prop_idx, cold.vm.heap);
     if (env::is_tdz_sentinel(pv) || !fl.writable || fl.is_accessor) return pc;
     TVal* ra = regs + insn.a;
-    hobject::dbg_check_store(pv, "th-putvar");
     vm.heap.decref_tval(pv);
     *pv = *ra;
     ra.set_undefined();
