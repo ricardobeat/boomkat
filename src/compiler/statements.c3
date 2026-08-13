@@ -1732,6 +1732,24 @@ fn void? CompilerContext.block(&self, bool check_directives, bool suppress_regex
         self.parse_directives()!;
     }
 
+    // Instantiate the surviving declaration of every duplicated function name
+    // (see hoisted_dup_names). This runs after PUSH_LEX/INITTZ, so the closure
+    // captures this block's lexical bindings, and before any statement, so a
+    // property stored on it later is never overwritten by a rebinding.
+    //
+    // Gated on check_directives, which is set only for a body block (the one
+    // the hoist pass that filled these records ran for). A nested block is
+    // compiled by the same context and would otherwise re-emit them, rebinding
+    // the function partway through the scope.
+    if (check_directives && self.hoisted_dup_count > 0) {
+        for (ushort di = 0; di < self.hoisted_dup_count; di++) {
+            self.emit_a_bc(Opcode.CLOSURE, (uint)self.hoisted_dup_regs[di],
+                           self.hoisted_dup_inner_idxs[di]);
+            self.emit_a_bc(Opcode.DECLVAR, (uint)self.hoisted_dup_regs[di],
+                           self.hoisted_dup_name_idxs[di]);
+        }
+    }
+
     while (!self.check(TokenType.RBRACE) && !self.is_at_end()) {
         self.statement()!;
     }
@@ -5427,7 +5445,39 @@ fn void? CompilerContext.function_declaration(&self, bool is_async_decl = false,
     // slice into scope_stack, which outlives the current token.
     HString* fn_name_hstr = ((Heap*)self.heap).str_intern(name_tok.str_value);
     char[] fn_name2 = fn_name_hstr.get_data();
-    ushort func_reg = self.declare_var(fn_name2, VAR);
+
+    // Every occurrence of a duplicated name is skipped here: block() already
+    // instantiated the one surviving binding (the LAST declaration's body,
+    // §10.2.11) just after PUSH_LEX. Re-emitting at a textual position would
+    // rebind a superseded body partway through the scope and replace the
+    // object any property set in between was stored on.
+    for (ushort di = 0; di < self.hoisted_dup_count; di++) {
+        if (str_eq(self.hoisted_dup_names[di], fn_name2)) {
+            self.skip_function_body();
+            self.lexer.note_block_close();
+            self.is_async = saved_is_async;
+            self.is_generator = saved_is_generator;
+            self.is_user_generator = saved_is_user_generator;
+            self.is_constructable = saved_is_constructable;
+            return;
+        }
+    }
+
+    // A redeclaration in the same scope is the same binding, so reuse its
+    // register instead of allocating a second one. Declaring afresh leaves
+    // code emitted between the two declarations (`function f(){} f.a = 1;
+    // function f(){}`) pointing at the first register while every later read
+    // resolves to the second, so the property write silently disappears.
+    // Same reuse rule var_declaration applies via find_local_reg, but seeing
+    // through the body marker the hoist pass declared beneath, so a
+    // block-nested declaration still keeps its own binding.
+    ushort func_reg;
+    ushort? existing_fn_reg = self.find_same_scope_reg(fn_name2);
+    if (try efr = existing_fn_reg) {
+        func_reg = efr;
+    } else {
+        func_reg = self.declare_var(fn_name2, VAR);
+    }
 
     // Compile the function into a nested CompiledFunction with the
     // declaration's own async flag, then restore the enclosing one.

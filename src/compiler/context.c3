@@ -789,6 +789,34 @@ struct CompilerContext {
     char[][MAX_HOISTED_FNS] hoisted_fn_names;
     ushort hoisted_fn_count;
 
+    /// Names in hoisted_fn_names a body-scope hoist pass saw declared more
+    /// than once at the scope's own top level.
+    ///
+    /// A single declaration must still emit its CLOSURE at its textual
+    /// position: the hoist pass runs before any PUSH_LEX, so only the textual
+    /// emission captures a lexical binding declared above it
+    /// (`const t = 1; function K(){ return t; }`). A DUPLICATE must not --
+    /// the hoist pass already emitted every occurrence into the one binding,
+    /// leaving the last body bound as §10.2.11 requires, and re-emitting at
+    /// the textual position would rebind an earlier body mid-scope.
+    char[][MAX_HOISTED_FNS] hoisted_dup_names;
+    /// The surviving (last) declaration of hoisted_dup_names[i]: the register
+    /// its binding lives in, its inner-function index, and its name's constant
+    /// index. block() re-emits CLOSURE+DECLVAR from these just after PUSH_LEX,
+    /// so the one surviving closure is created inside the lexical scope -- late
+    /// enough to capture the block's let/const bindings, but before any
+    /// statement can store a property on it.
+    ushort[MAX_HOISTED_FNS] hoisted_dup_regs;
+    uint[MAX_HOISTED_FNS] hoisted_dup_inner_idxs;
+    uint[MAX_HOISTED_FNS] hoisted_dup_name_idxs;
+    ushort hoisted_dup_count;
+
+    /// Code offset of the CLOSURE the hoist pass emitted for
+    /// hoisted_fn_names[i], so a later duplicate of that name can NOP the
+    /// now-superseded pair. Only the first occurrence of a name is emitted
+    /// before it is known to be duplicated, hence the back-patch.
+    uint[MAX_HOISTED_FNS] hoisted_fn_pcs;
+
     // Constant-pool indices of the top-level `var` / `function` names this
     // Script unit declares as globals (the exact names for which the check-
     // prologue emits CHKGLOBALVAR / CHKGLOBALFUNC). A strict-mode plain

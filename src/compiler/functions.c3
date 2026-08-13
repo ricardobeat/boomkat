@@ -2019,6 +2019,16 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
                 continue;
             }
 
+            // A declaration's name is a BindingIdentifier, so the §13.1.1
+            // restricted names are rejected. The check has to happen in this
+            // pre-scan and not only in function_declaration: once a name is
+            // recorded as hoisted, the statement pass skips the declaration
+            // outright and never reaches expect_binding_identifier's own
+            // check.
+            if (is_restricted_name(name_opt.str_value)) {
+                return self.fail("reserved word cannot be used as a binding identifier")~;
+            }
+
             char[] fn_name = name_opt.str_value;
             if (fn_name.len == 0) continue;
 
@@ -2029,7 +2039,13 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
                 continue;
             }
 
-            // Check if already hoisted
+            // Record the name once, but compile and emit EVERY occurrence.
+            //
+            // FunctionDeclarationInstantiation makes the last declaration of a
+            // name the surviving one, so emitting a CLOSURE+DECLVAR per
+            // occurrence in source order lets the final DECLVAR win, which is
+            // what a call placed before any of them must see. Skipping the
+            // duplicate instead left the FIRST body bound.
             bool already = false;
             for (ushort hi = 0; hi < self.hoisted_fn_count; hi++) {
                 if (str_eq(self.hoisted_fn_names[hi], fn_name)) {
@@ -2037,18 +2053,37 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
                     break;
                 }
             }
-            if (already) {
-                // Skip the rest of the function body
-                self.skip_function_body();
-                continue;
-            }
-
-            // Record as hoisted
-            if (self.hoisted_fn_count < MAX_HOISTED_FNS) {
-                self.hoisted_fn_names[self.hoisted_fn_count] = fn_name;
-                self.hoisted_fn_count++;
+            if (!already) {
+                if (self.hoisted_fn_count < MAX_HOISTED_FNS) {
+                    self.hoisted_fn_names[self.hoisted_fn_count] = fn_name;
+                    self.hoisted_fn_count++;
+                } else {
+                    self.hoisted_overflow = true;
+                }
             } else {
-                self.hoisted_overflow = true;
+                // Second or later declaration of this name: record it so the
+                // surviving closure is emitted once, inside the lexical scope
+                // (see hoisted_dup_names).
+                bool dup_known = false;
+                for (ushort di = 0; di < self.hoisted_dup_count; di++) {
+                    if (str_eq(self.hoisted_dup_names[di], fn_name)) {
+                        dup_known = true;
+                        break;
+                    }
+                }
+                if (!dup_known) {
+                    if (self.hoisted_dup_count < MAX_HOISTED_FNS) {
+                        // Intern before storing: an escaped name borrows the
+                        // lexer's shared ident_buf scratch, which the rest of
+                        // this pass overwrites, and this slice has to stay
+                        // valid until block() and function_declaration read it.
+                        HString* dup_hstr = ((Heap*)self.heap).str_intern(fn_name);
+                        self.hoisted_dup_names[self.hoisted_dup_count] = dup_hstr.get_data();
+                        self.hoisted_dup_count++;
+                    } else {
+                        self.hoisted_overflow = true;
+                    }
+                }
             }
 
             // Restore lexer to before 'function' so we can re-consume it properly
@@ -2101,7 +2136,17 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
             HString* fn_name_hstr = ((Heap*)self.heap).str_intern(name_tok2.str_value);
             char[] fn_name2 = fn_name_hstr.get_data();
 
-            ushort func_reg = self.declare_var(fn_name2, VAR);
+            // A duplicate declaration names the same binding, so it reuses the
+            // register the first one allocated; declaring afresh would leave the
+            // two closures in different registers, with reads resolving to the
+            // later one while earlier writes still target the first.
+            ushort func_reg;
+            ushort? hoist_existing_reg = self.find_same_scope_reg(fn_name2);
+            if (try her = hoist_existing_reg) {
+                func_reg = her;
+            } else {
+                func_reg = self.declare_var(fn_name2, VAR);
+            }
             self.has_local_bindings = true;
 
             // Regular function declarations are constructable per ES2015 §14.1.2.
@@ -2119,11 +2164,52 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
             self.is_constructable = saved_is_constructable;
 
             uint inner_idx = self.add_inner_func(inner);
-
-            // Emit CLOSURE + DECLVAR
-            self.emit_a_bc(Opcode.CLOSURE, (uint)func_reg, inner_idx);
             uint name_idx = self.add_string_constant(fn_name2);
+
+            // A name declared more than once at this level binds ONE function
+            // object, whose body is the last declaration's (§10.2.11). Emitting
+            // a CLOSURE per occurrence would bind a superseded body, and each
+            // later one would replace the object a statement in between had
+            // already stored a property on. So for a duplicate, NOP the
+            // occurrence emitted here and hand the surviving one to block(),
+            // which emits it once just after PUSH_LEX: late enough to capture
+            // the block's lexical bindings, early enough that no statement has
+            // run. Each occurrence overwrites the record, leaving the last.
+            uint closure_pc = self.code_count;
+            self.emit_a_bc(Opcode.CLOSURE, (uint)func_reg, inner_idx);
             self.emit_a_bc(Opcode.DECLVAR, (uint)func_reg, name_idx);
+            bool is_dup = false;
+            for (ushort di = 0; di < self.hoisted_dup_count; di++) {
+                if (str_eq(self.hoisted_dup_names[di], fn_name2)) {
+                    self.hoisted_dup_regs[di] = func_reg;
+                    self.hoisted_dup_inner_idxs[di] = inner_idx;
+                    self.hoisted_dup_name_idxs[di] = name_idx;
+                    is_dup = true;
+                    break;
+                }
+            }
+            if (is_dup) {
+                // This occurrence is superseded (block() re-emits the last
+                // one), and so is whichever occurrence of this name was
+                // emitted before the duplicate was known.
+                self.code[closure_pc]     = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
+                self.code[closure_pc + 1] = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
+                for (ushort hi = 0; hi < self.hoisted_fn_count; hi++) {
+                    if (str_eq(self.hoisted_fn_names[hi], fn_name2)) {
+                        uint prev_pc = self.hoisted_fn_pcs[hi];
+                        self.code[prev_pc]     = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
+                        self.code[prev_pc + 1] = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
+                        break;
+                    }
+                }
+            } else {
+                for (ushort hi = 0; hi < self.hoisted_fn_count; hi++) {
+                    if (str_eq(self.hoisted_fn_names[hi], fn_name2)) {
+                        self.hoisted_fn_pcs[hi] = closure_pc;
+                        break;
+                    }
+                }
+            }
 
             // Lexer is now past the function body. Continue scanning.
         } else if (tt == TokenType.VAR) {

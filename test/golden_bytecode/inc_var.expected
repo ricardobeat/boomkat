@@ -10,19 +10,18 @@
 [  1] DECLVAR_HOIST   r0, 0
 [  2] CLOSURE         r1, 0
 [  3] DECLVAR         r1, 1
-[  4] LDINT           r2, 0
-[  5] LDREG           r0 = r2, r0
-[  6] DECLVAR         r0, 0
-[  7] CLOSURE         r2, 1
-[  8] DECLGLOBALFUNC  r2, 1
-[  9] LDINT           r3, +5
-[ 10] JUMP            +1
-[ 11] INC_VAR         r4, 0
-[ 12] GETVAR          r4, 0
-[ 13] JMP_LT          -3, r4, r3
-[ 14] LDREG           r3 = r2, r0
-[ 15] CALL_UNDEF_THIS r3 = r3, r0
-[ 16] RET             r3 = r0, r0
+[  4] LDINT           r0, 0
+[  5] DECLVAR         r0, 0
+[  6] CLOSURE         r1, 1
+[  7] DECLGLOBALFUNC  r1, 1
+[  8] LDINT           r2, +5
+[  9] JUMP            +1
+[ 10] INC_VAR         r3, 0
+[ 11] GETVAR          r3, 0
+[ 12] JMP_LT          -3, r3, r2
+[ 13] LDREG           r2 = r1, r0
+[ 14] CALL_UNDEF_THIS r2 = r2, r0
+[ 15] RET             r2 = r0, r0
 
 --- Inner function 0.0 ---
 [  0] GETVAR          r0, 0

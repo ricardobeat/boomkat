@@ -258,6 +258,36 @@ fn ushort? CompilerContext.find_local_reg(&self, char[] name) {
     return SCOPE_ERROR~;
 }
 
+/// Resolve `name` to its register only if it is bound in the scope a function
+/// declaration at the current position belongs to.
+///
+/// A redeclaration of the same name in that scope is the very same binding, so
+/// the second declaration must write into the register the first one already
+/// uses (see function_declaration); allocating a fresh one leaves code emitted
+/// between the two pointing at a stale object. Stopping at a nested block's
+/// SCOPEMARK is what keeps that reuse from reaching an enclosing scope's
+/// binding, which a block-nested declaration is free to shadow.
+///
+/// Like check_lexical_redeclares_param, the walk sees through AT MOST ONE body
+/// marker: hoist_decls declares the body's function names before block()
+/// pushes that marker, so the binding a textual-position declaration must
+/// reuse sits just below it.
+fn ushort? CompilerContext.find_same_scope_reg(&self, char[] name) {
+    bool crossed_body_mark = false;
+    uint i = self.scope_depth;
+    while (i > 0) {
+        i--;
+        ScopeEntry* e = &self.scope_stack[i];
+        if (e.kind == SCOPEMARK) {
+            if (!e.is_body_mark || crossed_body_mark) break;
+            crossed_body_mark = true;
+            continue;
+        }
+        if (str_eq(e.name, name)) return e.reg;
+    }
+    return SCOPE_ERROR~;
+}
+
 /// True when `name` is already bound as a formal or catch PARAMETER.
 ///
 /// The hoisting pass uses this for the one case where a hoisted `var` must not
