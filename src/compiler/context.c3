@@ -1578,7 +1578,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
                      && !self.is_arrow
                      && !self.is_generator
                      && !self.is_async;
-        if (false && !self.disable_optimize && !self.has_wide && elide_ok) {
+        if (!self.disable_optimize && !self.has_wide && elide_ok) {
             // TYPEOFIDENT relies on the INITTZ sentinel in the block env to
             // throw for `typeof x` inside x's temporal dead zone, collect the
             // name indices it references so those sentinels are kept.
