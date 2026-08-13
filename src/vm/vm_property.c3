@@ -1315,6 +1315,30 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     } else {
                         ra2.set_undefined();
                     }
+                } else if (mid_val.is_null() || mid_val.is_undefined()) {
+                    // §7.3.2 GetV runs RequireObjectCoercible first, so the
+                    // second hop of `o.a.b` throws when `o.a` is null or
+                    // undefined. Unfused, hop 2 is a GETPROPC whose own
+                    // null/undefined branch throws exactly this; the fused
+                    // path silently answered undefined instead, so a broken
+                    // chain produced a wrong value rather than a TypeError.
+                    // The temp register still owes hop 1's value (see the
+                    // proxy branch above), but nothing reads it after a throw.
+                    char[types::ERROR_MSG_BUF] msg_buf2;
+                    int msg_len2;
+                    if (key2_hstr != null) {
+                        msg_len2 = (int)(io::bprintf(&msg_buf2, "Cannot read properties of %s (reading '%s')",
+                                                  (mid_val.is_null() ? "null" : "undefined"),
+                                                  (ZString)key2_hstr.get_cstr()) ?? msg_buf2[:0]).len;
+                    } else {
+                        msg_len2 = (int)(io::bprintf(&msg_buf2, "Cannot read properties of %s",
+                                                  (mid_val.is_null() ? "null" : "undefined")) ?? msg_buf2[:0]).len;
+                    }
+                    char[] msg_slice2 = (msg_len2 > 0 && msg_len2 < types::ERROR_MSG_BUF) ? msg_buf2[:msg_len2] : msg_buf2[:0];
+                    if (!vm_throw_error(vm, vm.heap.type_err_proto, msg_slice2, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                        return VM_ERROR~;
+                    }
+                    return (TVal){};
                 } else {
                     ra2.set_undefined();
                 }
