@@ -2709,6 +2709,21 @@ fn bool register_string_proto_method(HObject* proto, Heap* heap, char[] name, ui
     return true;
 }
 
+/// Register `alias_name` as an additional name for an already-registered
+/// method, sharing the *same function object* rather than allocating a second
+/// one. Several spec aliases (Annex B's String.prototype.trimLeft/trimRight,
+/// Set.prototype.keys) require identity with their canonical counterpart, and
+/// the alias keeps the original's `.name`.
+fn bool alias_proto_method(HObject* proto, Heap* heap, char[] name, char[] alias_name) {
+    HString* key = builtin_intern_string(heap, name);
+    HString* alias_key = builtin_intern_string(heap, alias_name);
+    if (key == null || alias_key == null) return false;
+    PropValue*? prop_opt = proto.find_prop(key, heap);
+    if (catch prop_opt) return false;
+    proto.put_prop(alias_key, *prop_opt, hobject::PROP_FLAGS_WC, heap);
+    return true;
+}
+
 fn bool set_num_static_prop(HObject* obj, Heap* heap, char[] name, double val) {
     HString* key = heap.str_intern(name);
     if (key == null) return false;

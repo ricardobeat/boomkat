@@ -3593,6 +3593,10 @@ fn bool register_string_constructor(EnvRecord* global_env, Heap* heap) {
     if (!register_string_proto_method(proto, heap, "repeat",     Builtin.STRING_PROTO_REPEAT.ordinal))     return false;
     if (!register_string_proto_method(proto, heap, "trimStart",  Builtin.STRING_PROTO_TRIMSTART.ordinal))  return false;
     if (!register_string_proto_method(proto, heap, "trimEnd",    Builtin.STRING_PROTO_TRIMEND.ordinal))    return false;
+    // Annex B §B.2.2.14-15: trimLeft/trimRight are the *same function objects*
+    // as trimStart/trimEnd, so they keep those names.
+    if (!alias_proto_method(proto, heap, "trimStart", "trimLeft"))  return false;
+    if (!alias_proto_method(proto, heap, "trimEnd",   "trimRight")) return false;
     if (!register_string_proto_method(proto, heap, "codePointAt", Builtin.STRING_PROTO_CODEPOINTAT.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "at",         Builtin.STRING_PROTO_AT.ordinal))         return false;
     if (!register_string_proto_method(proto, heap, "padStart",   Builtin.STRING_PROTO_PADSTART.ordinal))   return false;
