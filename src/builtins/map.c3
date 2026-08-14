@@ -325,7 +325,10 @@ fn void builtin_map_proto_forEach(BuiltinContext* ctx) {
     }
 
     TVal callback = ctx.regs[ctx.base_reg];
-    if (!(callback.is_object() && callback.get_heapptr() != null && ((HObject*)callback.get_heapptr()).flags.callable)) {
+    // ES6 §23.1.3.5 step 4: IsCallable(callbackfn). A lightfunc is callable, so
+    // `map.forEach(console.log)` and any other native builtin passed as the
+    // callback must be accepted; testing is_object() alone rejected them all.
+    if (!tval_is_callable(callback)) {
         HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
         if (catch err_k = err_raw) { ctx.result.set_undefined(); return; }
         HObject* err = err_raw;

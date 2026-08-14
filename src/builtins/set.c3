@@ -562,8 +562,11 @@ fn void builtin_set_proto_forEach(BuiltinContext* ctx) {
 
     TVal callback = ctx.regs[ctx.base_reg];
 
-    // ES6 §23.2.3.6 step 4: If IsCallable(callbackfn) is false, throw TypeError
-    if (!(callback.is_object() && callback.get_heapptr() != null && ((HObject*)callback.get_heapptr()).is_callable())) {
+    // ES6 §23.2.3.6 step 4: If IsCallable(callbackfn) is false, throw TypeError.
+    // IsCallable covers a lightfunc too, so `set.forEach(console.log)` and any
+    // other native builtin passed as the callback must be accepted; testing
+    // is_object() alone rejected every one of them.
+    if (!tval_is_callable(callback)) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "object is not a function");
         return;
     }
