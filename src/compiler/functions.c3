@@ -1970,13 +1970,24 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
             continue;
         }
 
-        // A `function` nested inside a block (if/for/try/plain `{}`) at global
-        // scope, a function expression (`x = function(){ var y }`) or a
-        // block-scoped function declaration, is its own VarDeclaredNames
-        // scope. Skip its body wholesale so its inner `var`s don't leak into
-        // the Program's global scope. (At own_depth the handler below does the
-        // hoist-aware skip; deeper functions only need to be skipped.)
-        if (is_global && brace_depth > own_depth && tt == TokenType.FUNCTION) {
+        // A `function` deeper than this scan's own top level -- a function
+        // expression inside a nested brace (`f({ m: function(){ var y } })`,
+        // `if (c) { g(function(){ var y }) }`) or a block-scoped function
+        // declaration -- is its own VarDeclaredNames scope. Skip its body
+        // wholesale so its inner `var`s don't leak into the scope being
+        // scanned. (At own_depth the handler below does the hoist-aware skip;
+        // deeper functions only need to be skipped.)
+        //
+        // This applies to a function-body scan exactly as it does to the
+        // Program's: the enclosing brace is not what makes an inner function a
+        // hoisting boundary. Gating it on `is_global` left the function-local
+        // scan walking into those bodies brace-by-brace, hoisting their locals
+        // into the enclosing function and shadowing a same-named parameter of
+        // an OUTER function with `undefined` (babel 7.24.7's bundled
+        // `regenerate` module loses its `module`/`exports` pair this way).
+        // A block-scoped function declaration is lexically bound in strict
+        // mode, so this scan never needed to record it either.
+        if (brace_depth > own_depth && tt == TokenType.FUNCTION) {
             self.is_async = false;
             Token? nstar = self.lexer.next_token();
             if (catch _errn = nstar) continue;
