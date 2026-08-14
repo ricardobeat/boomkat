@@ -11,3 +11,6 @@ dist/
 # TypeScript conformance corpus (sparse clone, fetched by scripts/fetch_ts_conformance.py)
 test/typescript/conformance-src/
 test/typescript/ts_conformance_cache/
+
+# Real-world library corpus (fetched by scripts/verify_libraries.py), not vendored
+test/libcorpus/
