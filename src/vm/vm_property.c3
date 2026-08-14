@@ -2368,6 +2368,10 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                     // dispatchers (e.g. those that re-enter the VM) see
                                     // GC-visible memory.
                                     TVal* stage_top = stage + 4;
+                                    // These slots are above the frame, so they still hold
+                                    // whatever an earlier deeper frame left there. Zero them
+                                    // before valstack_top exposes them to the mark phase.
+                                    zero_regs_undefined(stage, 0, 4);
                                     if (stage_top > vm.valstack_top) { vm.valstack_top = stage_top; }
 
                                     TVal setter_result; setter_result.set_undefined();
@@ -2376,10 +2380,13 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                     // regs = vm.valstack; base_reg = offset to stage, so the
                                     // builtin reads regs[base_reg-2] = stage[0] = callee,
                                     // regs[base_reg-1] = stage[1] = this, regs[base_reg] =
-                                    // stage[2] = put_val. No incref on the staged callee/this
-                                    // slots because the thrower builtin never reads its args
-                                    // (and any future builtin setter would own these slots
-                                    // for the dispatch's lifetime).
+                                    // stage[2] = put_val. stage[0] is a borrow kept alive by
+                                    // the accessor property; stage[1] carries the reference
+                                    // set_object takes. All three are cleared after the
+                                    // dispatch: the staging slots sit above this frame's
+                                    // register window, so no frame initializes or sweeps
+                                    // them, and pointer bits left behind are decref'd by
+                                    // whichever enclosing frame owns the same slot.
                                     sctx.regs = vm.valstack;
                                     sctx.base_reg = (ushort)((uint)(stage - vm.valstack) + 2);
                                     sctx.argc = 1;
@@ -2406,6 +2413,10 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                     // Cleanup: decrement the borrowed reference at stage[2]
                                     // (the builtin dispatch path doesn't always decref args).
                                     vm.heap.decref_tval(&stage[2]);
+                                    stage[2].set_undefined();
+                                    stage[0].set_undefined();
+                                    vm.heap.decref_tval(&stage[1]);
+                                    stage[1].set_undefined();
                                     if (sctx.should_throw) {
                                         if (!vm_throw_value(vm, sctx.throw_value, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                                             return vm_uncaught_error(vm, &sctx.throw_value);
@@ -2610,6 +2621,8 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                 ds.regs_base = ds.act.bottom;
                                 TVal* stage = ds.act.bottom + stage_offset;
                                 TVal* stage_top = stage + 4;
+                                // See the own-property setter path above.
+                                zero_regs_undefined(stage, 0, 4);
                                 if (stage_top > vm.valstack_top) { vm.valstack_top = stage_top; }
 
                                 TVal setter_result; setter_result.set_undefined();
@@ -2636,7 +2649,14 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                 stage[2] = put_val;
                                 builtins::dispatch_builtin(setter_fn_idx, &sctx);
                                 ds.regs_base = ds.act.bottom;
+                                // Release and clear the whole staged frame; see the
+                                // own-property setter path above for why the slots
+                                // cannot be left populated.
                                 vm.heap.decref_tval(&stage[2]);
+                                stage[2].set_undefined();
+                                stage[0].set_undefined();
+                                vm.heap.decref_tval(&stage[1]);
+                                stage[1].set_undefined();
                                 if (sctx.should_throw) {
                                     if (!vm_throw_value(vm, sctx.throw_value, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                                         return vm_uncaught_error(vm, &sctx.throw_value);
