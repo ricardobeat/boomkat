@@ -1515,20 +1515,35 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
             // about defaults to "not a kill", so the scan keeps looking and the
             // copy is merely left in place. Over-approximating liveness costs an
             // optimization; under-approximating it miscompiles.
+            //
+            // The scan is linear over slots, not a CFG walk, so inside the
+            // window a conditional branch can skip, the instructions it sees are
+            // not guaranteed to execute. A write there kills rT only on the
+            // fall-through path, so `join_pc` (the furthest pending branch
+            // target) suppresses the kill until the paths rejoin. Without it,
+            // `(o=1)-(r=1)<0 && (r=o)` lost its `r=1`: r's only later mention is
+            // the conditional `r=o`, whose A field ended the scan, so the copy
+            // feeding SUB was propagated away and r stayed undefined on the
+            // not-taken path.
             bool rT_live = false;
             if ((uint)consumer.a != rT) {
+                int join_pc = -1;
                 for (uint j = i + 2; j < self.code_count; j++) {
                     Instruction jns = self.code[j];
                     Opcode jop2 = jns.op;
                     if (jop2 == Opcode.IF_TRUE || jop2 == Opcode.IF_FALSE) {
                         if ((uint)jns.a == rT) { rT_live = true; break; }
+                        int t = fusion_conditional_branch_target(self.code, j);
+                        if (t > join_pc) { join_pc = t; }
                         continue;
                     }
                     OpFormat jfmt = bytecode::get_op_format(jop2);
                     if (jfmt == OpFormat.ABC) {
                         if ((uint)jns.b == rT || (uint)jns.c == rT) { rT_live = true; break; }
                     }
-                    if (jfmt != OpFormat.WIDE_SABC && jfmt != OpFormat.WIDE_ABC) {
+                    int bt = fusion_conditional_branch_target(self.code, j);
+                    if (bt > join_pc) { join_pc = bt; }
+                    if ((int)j >= join_pc && jfmt != OpFormat.WIDE_SABC && jfmt != OpFormat.WIDE_ABC) {
                         if ((uint)jns.a == rT) {
                             if (moveelim_a_is_write(jop2)) { break; }
                             rT_live = true;

@@ -141,24 +141,34 @@ fn bool fusion_abc_reads_reg(Instruction ins, uint reg) {
 /// ABC forms whose b and c are likewise not registers. The same applies to field
 /// A on the WIDE forms, which the guard below enforces.
 ///
-/// The direction of this scan's imprecision is what makes it safe, and every
-/// caller depends on it: this is a linear scan over slots, not a CFG walk, so it
-/// keeps scanning straight through a branch into code that is not the
-/// fall-through successor. That can only report a register live where a real CFG
-/// walk would prove it dead, which suppresses a fusion but never permits an
-/// unsafe one. The opposite error, reporting a live register dead, is the one
-/// that miscompiles, and the WIDE-format guard below is what prevents it.
+/// This is a linear scan over slots, not a CFG walk, so it keeps scanning
+/// straight through a branch into code that is not necessarily the executed
+/// successor. Reads found that way only over-report liveness (a suppressed
+/// fusion, never a miscompile), but WRITES do not: inside the window a
+/// conditional branch can skip, the write may not execute at runtime, so it
+/// cannot end the scan. `join_pc` holds the furthest pending branch target;
+/// while the scan sits before it, every `A == reg` is ignored as a kill.
+/// Treating a conditionally-executed write as a kill is what made
+/// `(o=1)-(r=1)<0 && (r=o)` drop the `r=1` store: r's only later mention is the
+/// `r=o` on the not-taken arm, so r was declared dead and left undefined. The
+/// opposite error, reporting a live register dead, is the one that miscompiles,
+/// and the WIDE-format guard below is the other half of preventing it.
 fn bool fusion_reg_live_from(Instruction* code, uint code_count, uint start, uint reg) {
+    int join_pc = -1;
     for (uint j = start; j < code_count; j++) {
         Instruction jns = code[j];
         Opcode jop = jns.op;
         if (jop == Opcode.IF_TRUE || jop == Opcode.IF_FALSE) {
             if ((uint)jns.a == reg) { return true; }
+            int t = fusion_conditional_branch_target(code, j);
+            if (t > join_pc) { join_pc = t; }
             continue;
         }
         if (bytecode::get_op_format(jop) == OpFormat.ABC) {
             if (fusion_abc_reads_reg(jns, reg)) { return true; }
         }
+        int bt = fusion_conditional_branch_target(code, j);
+        if (bt > join_pc) { join_pc = bt; }
         // Only non-WIDE forms use A as a destination register. WIDE_SABC/
         // WIDE_ABC (JUMP/BREAK/CONTINUE) pack a 24-bit branch offset across
         // A/B/C, so their A field is the offset's low byte, and reading it as a
@@ -170,11 +180,57 @@ fn bool fusion_reg_live_from(Instruction* code, uint code_count, uint start, uin
         // cmp_result_live_from and run_move_gg_fusion's scan already carried
         // this guard; this shared helper was the copy that omitted it.
         OpFormat jfmt_w = bytecode::get_op_format(jop);
-        if (jfmt_w != OpFormat.WIDE_SABC && jfmt_w != OpFormat.WIDE_ABC) {
+        if ((int)j >= join_pc && jfmt_w != OpFormat.WIDE_SABC && jfmt_w != OpFormat.WIDE_ABC) {
             if ((uint)jns.a == reg) { return false; }   // overwritten -> dead from here
         }
     }
     return false;
+}
+
+/// If `code[j]` is a conditional branch, return the slot it can skip TO;
+/// otherwise return -1. Used by the forward dead-register scans to bound how
+/// far a branch's "this write might not execute" effect reaches.
+///
+/// A conditional branch at j makes the slots in (j, target) skippable: control
+/// may jump straight over them. A write in that window therefore kills the
+/// scanned register only on the fall-through path and must not end the scan.
+/// Once the scan reaches `target` the two paths have rejoined, so writes are
+/// unconditional again and kills are valid once more. Callers track the maximum
+/// target seen so far, which handles nested/overlapping branches: the window
+/// stays open until the scan passes every pending join point.
+///
+/// A BACKWARD branch (target <= j, i.e. a loop back-edge) opens no window: it
+/// skips nothing ahead of the scan. It is reported as its own slot so the
+/// caller's running maximum is unaffected.
+///
+/// Unconditional transfers (JUMP/BREAK/CONTINUE/RET/THROW) are deliberately not
+/// here: they never fall through, so a scan continuing past one is already
+/// looking at unrelated code, which the jump-target and A-field guards handle.
+fn int fusion_conditional_branch_target(Instruction* code, uint j) {
+    Instruction ins = code[j];
+    int off;
+    switch (ins.op) {
+        case Opcode.IF_TRUE:
+        case Opcode.IF_FALSE:
+            off = ins.get_sbc();
+        case Opcode.JMP_NLT:
+        case Opcode.JMP_NLE:
+        case Opcode.JMP_NGT:
+        case Opcode.JMP_NGE:
+        case Opcode.JMP_LT:
+        case Opcode.JMP_LE:
+        case Opcode.JMP_GT:
+        case Opcode.JMP_GE:
+        case Opcode.JMP_SEQ:
+        case Opcode.JMP_SNEQ:
+            off = (int)(ichar)ins.a;
+        case Opcode.JMP_LT_G:
+            // Two-word form: the offset applies once both words are consumed.
+            return (int)j + 2 + (int)(ichar)ins.a;
+        default:
+            return -1;
+    }
+    return (int)j + 1 + off;
 }
 
 /// Mark every instruction slot that some branch, loop exit or exception
@@ -621,6 +677,7 @@ fn Opcode cmp_branch_fused_op(Opcode cmp_op, bool is_if_false) {
 /// branch-path scan ignore the jump-target flag on its own entry slot.
 fn bool cmp_result_live_from(Instruction* code, uint code_count, bool* jump_targets,
                              uint start, uint reg, bool skip_first_target) {
+    int join_pc = -1;
     for (uint j = start; j < code_count; j++) {
         if (jump_targets[j] && !(skip_first_target && j == start)) {
             // A path from outside reaches j; probe this one slot for a read of
@@ -644,13 +701,20 @@ fn bool cmp_result_live_from(Instruction* code, uint code_count, bool* jump_targ
         }
         if (jop == Opcode.IF_TRUE || jop == Opcode.IF_FALSE) {
             if ((uint)jns.a == reg) { return true; }
+            int t = fusion_conditional_branch_target(code, j);
+            if (t > join_pc) { join_pc = t; }
             continue;
         }
         OpFormat jfmt = bytecode::get_op_format(jop);
         if (jfmt == OpFormat.ABC) {
             if (fusion_abc_reads_reg(jns, reg)) { return true; }
         }
-        if (jfmt != OpFormat.WIDE_SABC && jfmt != OpFormat.WIDE_ABC) {
+        int bt = fusion_conditional_branch_target(code, j);
+        if (bt > join_pc) { join_pc = bt; }
+        // Inside a conditional branch's skip window the write may not execute,
+        // so it is not a kill. See fusion_reg_live_from for the failure this
+        // prevents.
+        if ((int)j >= join_pc && jfmt != OpFormat.WIDE_SABC && jfmt != OpFormat.WIDE_ABC) {
             if ((uint)jns.a == reg) { return false; }   // overwritten → dead
         }
     }
