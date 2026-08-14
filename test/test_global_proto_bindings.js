@@ -67,5 +67,38 @@ for (var i = 0; i < 50; i++) {
 }
 ck("repeated-resolution", stable, true);
 
+// An inherited ACCESSOR is a binding too, and GetBindingValue does the
+// ordinary [[Get]] on the binding object, so the getter's receiver is the
+// global object -- not the prototype that owns the accessor.
+Object.defineProperty(Object.prototype, "inheritedGetter", {
+    get: function () { return this === globalThis ? "recv-is-global" : "recv-is-other"; },
+    configurable: true
+});
+ck("inherited-accessor-read", inheritedGetter, "recv-is-global");
+ck("inherited-accessor-typeof", typeof inheritedGetter, "string");
+delete Object.prototype.inheritedGetter;
+
+// A set-only accessor reads as undefined, exactly as a property access would.
+Object.defineProperty(Object.prototype, "setOnly", {
+    set: function (v) { },
+    configurable: true
+});
+ck("set-only-accessor", typeof setOnly, "undefined");
+delete Object.prototype.setOnly;
+
+// An own global property still shadows an inherited accessor. Defined rather
+// than assigned: a plain assignment would run the inherited SETTER (or throw
+// when there is none), which is a different rule.
+Object.defineProperty(Object.prototype, "shadowMe", {
+    get: function () { return "inherited"; },
+    configurable: true
+});
+Object.defineProperty(globalThis, "shadowMe", {
+    value: "own", configurable: true, writable: true
+});
+ck("own-shadows-accessor", shadowMe, "own");
+delete globalThis.shadowMe;
+delete Object.prototype.shadowMe;
+
 print(p + " passed, " + f + " failed");
 if (f > 0) { throw new Error("FAIL"); }

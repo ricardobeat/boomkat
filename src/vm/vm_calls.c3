@@ -232,20 +232,45 @@ fn bool is_global_bindings(Vm* vm, HObject* b) @inline {
 /// bare `toString`, `valueOf` and `propertyIsEnumerable` resolve the same way.
 /// The env walk uses own-property lookups, so it stops one link short of these.
 ///
-/// Returns true and writes the value to `out` when found. Accessors on the
-/// chain are reported as not-found: the global object's own accessors already
-/// live in its own properties (which the env walk sees), and an inherited one
-/// would need the getter called with the global as receiver, which no caller
-/// of this helper is positioned to do.
+/// Returns true and writes the value to `out` when found. An inherited
+/// accessor runs its getter with the GLOBAL OBJECT as receiver, not the
+/// prototype that owns it: GetBindingValue performs the ordinary [[Get]] on
+/// the binding object, whose receiver is that object (§10.1.8.1).
+///
+/// A getter that throws is reported as a miss, leaving the caller to raise the
+/// ReferenceError it would otherwise have raised. Routing the throw through
+/// here instead would need the vm throw protocol (needs_restart and the
+/// activation unwind) threaded into every call site, and a global-prototype
+/// accessor that throws is not a shape worth that coupling.
 fn bool global_proto_lookup(Vm* vm, void* key, TVal* out) {
     if (vm.global_env == null || vm.global_env.bindings == null) return false;
     HObject* g = vm.global_env.bindings;
     // Walks from the global object itself, so this also covers an own property
     // the env walk missed; the common case is an inherited one.
     hobject::PropLookupResult r = g.get_prop_or_accessor_proto(key, true, vm.heap);
-    if (r.kind != hobject::PropLookupKind.PROP_DATA) return false;
-    *out = r.data_val;
-    return true;
+    if (r.kind == hobject::PropLookupKind.PROP_DATA) {
+        *out = r.data_val;
+        return true;
+    }
+    if (r.kind == hobject::PropLookupKind.PROP_ACCESSOR) {
+        TVal getter = r.acc.accessor_fn;
+        if (getter.is_undefined() || getter.is_null() || vm.heap.call_fn == null) {
+            // An accessor with no getter reads as undefined, exactly as a
+            // property access on it would.
+            out.set_undefined();
+            return true;
+        }
+        TVal recv;
+        recv.set_object(g);
+        TVal gv = vm.heap.call_fn(vm, getter, null, 0, recv);
+        if (vm.heap.has_error) {
+            vm.heap.has_error = false;
+            return false;
+        }
+        *out = gv;
+        return true;
+    }
+    return false;
 }
 
 /// Resolve CALL_VAR's callee-by-name lookup into ds.regs_base[callee_reg].
