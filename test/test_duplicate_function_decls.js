@@ -104,5 +104,49 @@ try {
 }
 ck("dup-in-block-is-error", block_dup_threw, true);
 
+// A SINGLE declaration is instantiated once too. The binding a statement
+// captures before the declaration's textual position must be the same object
+// the declaration binds -- the browserify/UMD shape, where the export is taken
+// first and statics are attached after. Emitting a second closure at the
+// textual position would leave the export pointing at an object nothing else
+// references.
+var exportsObj = {};
+function umd() {
+    exportsObj.c = c;
+    function c() {}
+    c.stat = 42;
+    return [exportsObj.c === c, c.stat].join(",");
+}
+ck("single-decl-one-object", umd(), "true,42");
+
+// Same, with the capture happening inside a nested block.
+var exportsObj2 = {};
+function umdBlock() {
+    { exportsObj2.c = c; }
+    function c() {}
+    c.stat = 7;
+    return [exportsObj2.c === c, c.stat].join(",");
+}
+ck("captured-in-block", umdBlock(), "true,7");
+
+// An arrow ConciseBody never goes through block(), so it needs its own
+// emission point; a declaration there must behave identically.
+var arrowUmd = () => {
+    var ex = {};
+    ex.c = c;
+    function c() {}
+    c.stat = 9;
+    return [ex.c === c, c.stat].join(",");
+};
+ck("arrow-body-one-object", arrowUmd(), "true,9");
+
+// And an arrow body's declaration must still capture the body's lexicals.
+var arrowCapture = () => {
+    const t = "AT";
+    function K() { return t; }
+    return K();
+};
+ck("arrow-body-captures-const", arrowCapture(), "AT");
+
 print(p + " passed, " + f + " failed");
 if (f > 0) { throw new Error("FAIL"); }

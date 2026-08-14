@@ -1786,6 +1786,29 @@ fn void CompilerContext.skip_pattern_default(&self) {
 
 /// Pre-scan function body for var and function declarations and emit hoisted
 /// bytecode so they are available before any statements run.
+/// Emit CLOSURE+DECLVAR for every function declaration the body-scope hoist
+/// pass deferred (see hoisted_defer_names), then clear the list so a nested
+/// block never re-emits them.
+///
+/// Called at the top of the body, after the lexical scope for the body's own
+/// let/const is pushed and before any statement runs. Every body shape has to
+/// reach this exactly once: ordinary function bodies go through block(), while
+/// arrow ConciseBodies run their own statement loop and call it directly.
+fn void CompilerContext.emit_hoisted_fn_decls(&self) {
+    if (self.hoisted_defer_count == 0 || self.hoisted_defer_emitted) return;
+    // The list is NOT cleared: function_declaration reads it to recognise the
+    // declarations it must skip, and every one of those is reached after this
+    // runs. A flag marks the emission instead, so a nested block cannot repeat
+    // it.
+    self.hoisted_defer_emitted = true;
+    for (ushort di = 0; di < self.hoisted_defer_count; di++) {
+        self.emit_a_bc(Opcode.CLOSURE, (uint)self.hoisted_defer_regs[di],
+                       self.hoisted_defer_inner_idxs[di]);
+        self.emit_a_bc(Opcode.DECLVAR, (uint)self.hoisted_defer_regs[di],
+                       self.hoisted_defer_name_idxs[di]);
+    }
+}
+
 fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = false) {
     // self.is_async doubles as the "saw `async function`" latch between loop
     // iterations below. It must start clear, otherwise, inside an async
@@ -2062,24 +2085,24 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
             } else {
                 // Second or later declaration of this name: record it so the
                 // surviving closure is emitted once, inside the lexical scope
-                // (see hoisted_dup_names).
+                // (see hoisted_defer_names).
                 bool dup_known = false;
-                for (ushort di = 0; di < self.hoisted_dup_count; di++) {
-                    if (str_eq(self.hoisted_dup_names[di], fn_name)) {
+                for (ushort di = 0; di < self.hoisted_defer_count; di++) {
+                    if (str_eq(self.hoisted_defer_names[di], fn_name)) {
                         dup_known = true;
                         break;
                     }
                 }
                 if (!dup_known) {
-                    self.ensure_hoisted_dup_cap();
-                    if (self.hoisted_dup_count < self.hoisted_dup_cap) {
+                    self.ensure_hoisted_defer_cap();
+                    if (self.hoisted_defer_count < self.hoisted_defer_cap) {
                         // Intern before storing: an escaped name borrows the
                         // lexer's shared ident_buf scratch, which the rest of
                         // this pass overwrites, and this slice has to stay
                         // valid until block() and function_declaration read it.
                         HString* dup_hstr = ((Heap*)self.heap).str_intern(fn_name);
-                        self.hoisted_dup_names[self.hoisted_dup_count] = dup_hstr.get_data();
-                        self.hoisted_dup_count++;
+                        self.hoisted_defer_names[self.hoisted_defer_count] = dup_hstr.get_data();
+                        self.hoisted_defer_count++;
                     }
                 }
             }
@@ -2173,39 +2196,40 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
             // which emits it once just after PUSH_LEX: late enough to capture
             // the block's lexical bindings, early enough that no statement has
             // run. Each occurrence overwrites the record, leaving the last.
-            uint closure_pc = self.code_count;
-            self.emit_a_bc(Opcode.CLOSURE, (uint)func_reg, inner_idx);
-            self.emit_a_bc(Opcode.DECLVAR, (uint)func_reg, name_idx);
-            bool is_dup = false;
-            for (ushort di = 0; di < self.hoisted_dup_count; di++) {
-                if (str_eq(self.hoisted_dup_names[di], fn_name2)) {
-                    self.hoisted_dup_regs[di] = func_reg;
-                    self.hoisted_dup_inner_idxs[di] = inner_idx;
-                    self.hoisted_dup_name_idxs[di] = name_idx;
-                    is_dup = true;
+            // Hand the declaration to block(), which emits CLOSURE+DECLVAR
+            // once just after PUSH_LEX/INITTZ. Emitting it here instead is
+            // wrong in both directions:
+            //
+            //   * here is BEFORE PUSH_LEX, so the closure cannot capture a
+            //     lexical binding declared in the body
+            //     (`const t = 1; function K(){ return t; }`), which is why the
+            //     statement pass used to re-emit at the textual position;
+            //   * that textual re-emission creates a SECOND function object,
+            //     so a property stored on the binding before it
+            //     (`exports.c = c; function c(){} c.stat = 1`, the browserify
+            //     shape) lands on an object nothing else references.
+            //
+            // block()'s slot is after PUSH_LEX and before any statement, so one
+            // emission satisfies both. A repeated name overwrites the record,
+            // leaving the LAST declaration bound as §10.2.11 requires.
+            bool recorded = false;
+            for (ushort di = 0; di < self.hoisted_defer_count; di++) {
+                if (str_eq(self.hoisted_defer_names[di], fn_name2)) {
+                    self.hoisted_defer_regs[di] = func_reg;
+                    self.hoisted_defer_inner_idxs[di] = inner_idx;
+                    self.hoisted_defer_name_idxs[di] = name_idx;
+                    recorded = true;
                     break;
                 }
             }
-            if (is_dup) {
-                // This occurrence is superseded (block() re-emits the last
-                // one), and so is whichever occurrence of this name was
-                // emitted before the duplicate was known.
-                self.code[closure_pc]     = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
-                self.code[closure_pc + 1] = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
-                for (ushort hi = 0; hi < self.hoisted_fn_count; hi++) {
-                    if (str_eq(self.hoisted_fn_names[hi], fn_name2)) {
-                        uint prev_pc = self.hoisted_fn_pcs[hi];
-                        self.code[prev_pc]     = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
-                        self.code[prev_pc + 1] = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
-                        break;
-                    }
-                }
-            } else {
-                for (ushort hi = 0; hi < self.hoisted_fn_count; hi++) {
-                    if (str_eq(self.hoisted_fn_names[hi], fn_name2)) {
-                        self.hoisted_fn_pcs[hi] = closure_pc;
-                        break;
-                    }
+            if (!recorded) {
+                self.ensure_hoisted_defer_cap();
+                if (self.hoisted_defer_count < self.hoisted_defer_cap) {
+                    self.hoisted_defer_names[self.hoisted_defer_count] = fn_name2;
+                    self.hoisted_defer_regs[self.hoisted_defer_count] = func_reg;
+                    self.hoisted_defer_inner_idxs[self.hoisted_defer_count] = inner_idx;
+                    self.hoisted_defer_name_idxs[self.hoisted_defer_count] = name_idx;
+                    self.hoisted_defer_count++;
                 }
             }
 
@@ -4418,6 +4442,9 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
         // `(a = 1) => { "use strict"; }` is a SyntaxError because the arrow's
         // parameters are not a simple list.
         arrow_ctx.parse_directives()!;
+        // An arrow ConciseBody never goes through block(), so emit the
+        // deferred declarations here instead.
+        arrow_ctx.emit_hoisted_fn_decls();
         while (!arrow_ctx.check(TokenType.RBRACE) && !arrow_ctx.is_at_end()) {
             arrow_ctx.statement()!;
         }
@@ -4739,6 +4766,9 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner(&self, char[]* params,
         // `(a = 1) => { "use strict"; }` is a SyntaxError because the arrow's
         // parameters are not a simple list.
         arrow_ctx.parse_directives()!;
+        // An arrow ConciseBody never goes through block(), so emit the
+        // deferred declarations here instead.
+        arrow_ctx.emit_hoisted_fn_decls();
         while (!arrow_ctx.check(TokenType.RBRACE) && !arrow_ctx.is_at_end()) {
             arrow_ctx.statement()!;
         }

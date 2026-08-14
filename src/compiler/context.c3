@@ -62,10 +62,9 @@ const uint MAX_PATCHES      = 2048;
 /// Initial capacity of the hoisted-function-name table; grows on the heap from
 /// here (see ensure_hoisted_fn_cap), so there is no fixed ceiling.
 const uint INITIAL_HOISTED_FNS = 128;
-/// Initial capacity of the duplicate-name tables, allocated lazily on the first
-/// redeclaration (see ensure_hoisted_dup_cap). Small: a redeclared function
-/// name is rare even in bundled code.
-const uint INITIAL_HOISTED_DUPS = 8;
+/// Initial capacity of the deferred-declaration tables, allocated lazily on the
+/// first body-scope function declaration (see ensure_hoisted_defer_cap).
+const uint INITIAL_HOISTED_DEFERS = 8;
 /// Initial scope-stack capacity; grows on the heap from here (see
 /// ensure_scope_cap), so there is no fixed ceiling.
 const uint INITIAL_SCOPE_DEPTH = 256;
@@ -782,36 +781,40 @@ struct CompilerContext {
     bool capture_all;
 
     // Hoisted function declaration names (so main pass can skip recompilation).
-    /// Top-level function declarations seen by the hoisting pre-pass, and the
-    /// code offset of the CLOSURE emitted for each (so a later duplicate of a
-    /// name can NOP the now-superseded pair: only the first occurrence is
-    /// emitted before the name is known to be duplicated).
+    /// Top-level function declarations seen by the hoisting pre-pass.
     ///
     /// Heap-grown rather than fixed: a real bundle declares tens of thousands
     /// of functions in one scope (babel 7.24.7 exceeds 512 several times over),
     /// and a cap here rejects working code outright.
     char[]* hoisted_fn_names;
-    uint*   hoisted_fn_pcs;
     uint    hoisted_fn_cap;
     uint    hoisted_fn_count;
 
-    /// Names a body-scope hoist pass saw declared more than once at the
-    /// scope's own top level, with the surviving (last) declaration's register,
-    /// inner-function index, and name constant index.
+    /// Every function declaration a body-scope hoist pass saw at the scope's
+    /// own top level, with its register, inner-function index, and name
+    /// constant index. block() emits CLOSURE+DECLVAR from these once, just
+    /// after PUSH_LEX/INITTZ.
     ///
-    /// A single declaration emits its CLOSURE at its textual position: the
-    /// hoist pass runs before any PUSH_LEX, so only the textual emission can
-    /// capture a lexical binding declared above it
-    /// (`const t = 1; function K(){ return t; }`). A duplicate cannot use
-    /// either position -- the hoist pass's is too early to capture, the textual
-    /// one replaces the object a property set in between was stored on -- so
-    /// block() emits these once, just after PUSH_LEX and before any statement.
-    char[]* hoisted_dup_names;
-    ushort* hoisted_dup_regs;
-    uint*   hoisted_dup_inner_idxs;
-    uint*   hoisted_dup_name_idxs;
-    uint    hoisted_dup_cap;
-    uint    hoisted_dup_count;
+    /// Neither of the two obvious emission points works. The hoist pass itself
+    /// runs BEFORE PUSH_LEX, so a closure it emits cannot capture a lexical
+    /// binding declared in the body (`const t = 1; function K(){ return t; }`).
+    /// Re-emitting at the declaration's textual position instead creates a
+    /// SECOND function object, so a property stored on the binding before that
+    /// point (`exports.c = c; function c(){} c.stat = 1`, the browserify shape)
+    /// lands on an object nothing else references. block()'s slot is after
+    /// PUSH_LEX and before any statement, so one emission satisfies both.
+    ///
+    /// A repeated name overwrites its entry rather than adding one, leaving the
+    /// LAST declaration bound as §10.2.11 requires.
+    char[]* hoisted_defer_names;
+    ushort* hoisted_defer_regs;
+    uint*   hoisted_defer_inner_idxs;
+    uint*   hoisted_defer_name_idxs;
+    uint    hoisted_defer_cap;
+    uint    hoisted_defer_count;
+    /// Set once emit_hoisted_fn_decls has run for this context, so a nested
+    /// block cannot emit the declarations a second time.
+    bool    hoisted_defer_emitted;
 
     // Constant-pool indices of the top-level `var` / `function` names this
     // Script unit declares as globals (the exact names for which the check-
@@ -990,15 +993,13 @@ fn void CompilerContext.init(&self, Lexer* lex, void* heap) {
     self.inner_funcs = (CompiledFunction**)h.alloc_func(h.heap_udata, (usz)(INITIAL_INNER_FUNCS * CompiledFunction*::size));
     self.hoisted_fn_cap = INITIAL_HOISTED_FNS;
     self.hoisted_fn_names = (char[]*)h.alloc_func(h.heap_udata, (usz)(INITIAL_HOISTED_FNS * char[]::size));
-    self.hoisted_fn_pcs = (uint*)h.alloc_func(h.heap_udata, (usz)(INITIAL_HOISTED_FNS * uint::size));
-    // The duplicate arrays stay unallocated until a redeclaration is actually
-    // seen: most scopes have none, and ensure_hoisted_dup_cap allocates on the
-    // first one.
-    self.hoisted_dup_cap = 0;
-    self.hoisted_dup_names = null;
-    self.hoisted_dup_regs = null;
-    self.hoisted_dup_inner_idxs = null;
-    self.hoisted_dup_name_idxs = null;
+    // Unallocated until a body-scope function declaration is actually seen;
+    // ensure_hoisted_defer_cap allocates on the first one.
+    self.hoisted_defer_cap = 0;
+    self.hoisted_defer_names = null;
+    self.hoisted_defer_regs = null;
+    self.hoisted_defer_inner_idxs = null;
+    self.hoisted_defer_name_idxs = null;
     PrivateNameTable* pnt = (PrivateNameTable*)h.alloc_func(h.heap_udata, (usz)PrivateNameTable::size);
     pnt.entries = (PrivateNameEntry*)h.alloc_func(h.heap_udata, (usz)(INITIAL_PRIVATE_NAMES * PrivateNameEntry::size));
     pnt.count = 0;
@@ -1025,11 +1026,10 @@ fn void CompilerContext.cleanup(&self) {
     if (self.const_hash != null) { h.free_func(h.heap_udata, self.const_hash); self.const_hash = null; }
     if (self.inner_funcs != null) { h.free_func(h.heap_udata, self.inner_funcs); self.inner_funcs = null; }
     if (self.hoisted_fn_names != null) { h.free_func(h.heap_udata, self.hoisted_fn_names); self.hoisted_fn_names = null; }
-    if (self.hoisted_fn_pcs != null) { h.free_func(h.heap_udata, self.hoisted_fn_pcs); self.hoisted_fn_pcs = null; }
-    if (self.hoisted_dup_names != null) { h.free_func(h.heap_udata, self.hoisted_dup_names); self.hoisted_dup_names = null; }
-    if (self.hoisted_dup_regs != null) { h.free_func(h.heap_udata, self.hoisted_dup_regs); self.hoisted_dup_regs = null; }
-    if (self.hoisted_dup_inner_idxs != null) { h.free_func(h.heap_udata, self.hoisted_dup_inner_idxs); self.hoisted_dup_inner_idxs = null; }
-    if (self.hoisted_dup_name_idxs != null) { h.free_func(h.heap_udata, self.hoisted_dup_name_idxs); self.hoisted_dup_name_idxs = null; }
+    if (self.hoisted_defer_names != null) { h.free_func(h.heap_udata, self.hoisted_defer_names); self.hoisted_defer_names = null; }
+    if (self.hoisted_defer_regs != null) { h.free_func(h.heap_udata, self.hoisted_defer_regs); self.hoisted_defer_regs = null; }
+    if (self.hoisted_defer_inner_idxs != null) { h.free_func(h.heap_udata, self.hoisted_defer_inner_idxs); self.hoisted_defer_inner_idxs = null; }
+    if (self.hoisted_defer_name_idxs != null) { h.free_func(h.heap_udata, self.hoisted_defer_name_idxs); self.hoisted_defer_name_idxs = null; }
     if (self.owns_private_names && self.private_name_table != null) {
         if (self.private_name_table.entries != null) {
             h.free_func(h.heap_udata, self.private_name_table.entries);
@@ -1102,8 +1102,7 @@ fn void CompilerContext.ensure_scope_cap(&self) {
     self.scope_cap = new_cap;
 }
 
-/// Grow the hoisted-function-name table (names and their CLOSURE offsets grow
-/// together, one entry per hoisted name).
+/// Grow the hoisted-function-name table.
 fn void CompilerContext.ensure_hoisted_fn_cap(&self) {
     if (self.hoisted_fn_count < self.hoisted_fn_cap) return;
     uint new_cap = self.hoisted_fn_cap * 2;
@@ -1114,40 +1113,34 @@ fn void CompilerContext.ensure_hoisted_fn_cap(&self) {
         return;
     }
     self.hoisted_fn_names = (char[]*)pn;
-    void* pp = h.realloc_func(h.heap_udata, self.hoisted_fn_pcs, (usz)(new_cap * uint::size));
-    if (pp == null) {
-        self.record_error("out of memory growing the hoisted function table");
-        return;
-    }
-    self.hoisted_fn_pcs = (uint*)pp;
     self.hoisted_fn_cap = new_cap;
 }
 
-/// Grow the duplicate-name tables, allocating them on the first redeclaration.
-/// All four grow together: they are parallel arrays indexed by dup number.
-fn void CompilerContext.ensure_hoisted_dup_cap(&self) {
-    if (self.hoisted_dup_cap != 0 && self.hoisted_dup_count < self.hoisted_dup_cap) return;
-    uint new_cap = self.hoisted_dup_cap == 0 ? INITIAL_HOISTED_DUPS : self.hoisted_dup_cap * 2;
+/// Grow the deferred-declaration tables, allocating them on the first body-scope
+/// function declaration. All four grow together: they are parallel arrays.
+fn void CompilerContext.ensure_hoisted_defer_cap(&self) {
+    if (self.hoisted_defer_cap != 0 && self.hoisted_defer_count < self.hoisted_defer_cap) return;
+    uint new_cap = self.hoisted_defer_cap == 0 ? INITIAL_HOISTED_DEFERS : self.hoisted_defer_cap * 2;
     Heap* h = (Heap*)self.heap;
-    void* pn = h.realloc_func(h.heap_udata, self.hoisted_dup_names, (usz)(new_cap * char[]::size));
-    void* pr = h.realloc_func(h.heap_udata, self.hoisted_dup_regs, (usz)(new_cap * ushort::size));
-    void* pi = h.realloc_func(h.heap_udata, self.hoisted_dup_inner_idxs, (usz)(new_cap * uint::size));
-    void* px = h.realloc_func(h.heap_udata, self.hoisted_dup_name_idxs, (usz)(new_cap * uint::size));
+    void* pn = h.realloc_func(h.heap_udata, self.hoisted_defer_names, (usz)(new_cap * char[]::size));
+    void* pr = h.realloc_func(h.heap_udata, self.hoisted_defer_regs, (usz)(new_cap * ushort::size));
+    void* pi = h.realloc_func(h.heap_udata, self.hoisted_defer_inner_idxs, (usz)(new_cap * uint::size));
+    void* px = h.realloc_func(h.heap_udata, self.hoisted_defer_name_idxs, (usz)(new_cap * uint::size));
     if (pn == null || pr == null || pi == null || px == null) {
-        // Keep whichever grew: they are only ever read below hoisted_dup_count,
+        // Keep whichever grew: they are only ever read below hoisted_defer_count,
         // which is not advanced when this fails.
-        if (pn != null) self.hoisted_dup_names = (char[]*)pn;
-        if (pr != null) self.hoisted_dup_regs = (ushort*)pr;
-        if (pi != null) self.hoisted_dup_inner_idxs = (uint*)pi;
-        if (px != null) self.hoisted_dup_name_idxs = (uint*)px;
-        self.record_error("out of memory growing the duplicate function table");
+        if (pn != null) self.hoisted_defer_names = (char[]*)pn;
+        if (pr != null) self.hoisted_defer_regs = (ushort*)pr;
+        if (pi != null) self.hoisted_defer_inner_idxs = (uint*)pi;
+        if (px != null) self.hoisted_defer_name_idxs = (uint*)px;
+        self.record_error("out of memory growing the deferred declaration table");
         return;
     }
-    self.hoisted_dup_names = (char[]*)pn;
-    self.hoisted_dup_regs = (ushort*)pr;
-    self.hoisted_dup_inner_idxs = (uint*)pi;
-    self.hoisted_dup_name_idxs = (uint*)px;
-    self.hoisted_dup_cap = new_cap;
+    self.hoisted_defer_names = (char[]*)pn;
+    self.hoisted_defer_regs = (ushort*)pr;
+    self.hoisted_defer_inner_idxs = (uint*)pi;
+    self.hoisted_defer_name_idxs = (uint*)px;
+    self.hoisted_defer_cap = new_cap;
 }
 
 /// Grow constant pool and hash table.

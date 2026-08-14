@@ -1733,22 +1733,16 @@ fn void? CompilerContext.block(&self, bool check_directives, bool suppress_regex
     }
 
     // Instantiate the surviving declaration of every duplicated function name
-    // (see hoisted_dup_names). This runs after PUSH_LEX/INITTZ, so the closure
+    // (see hoisted_defer_names). This runs after PUSH_LEX/INITTZ, so the closure
     // captures this block's lexical bindings, and before any statement, so a
     // property stored on it later is never overwritten by a rebinding.
     //
     // Gated on check_directives, which is set only for a body block (the one
     // the hoist pass that filled these records ran for). A nested block is
     // compiled by the same context and would otherwise re-emit them, rebinding
-    // the function partway through the scope.
-    if (check_directives && self.hoisted_dup_count > 0) {
-        for (ushort di = 0; di < self.hoisted_dup_count; di++) {
-            self.emit_a_bc(Opcode.CLOSURE, (uint)self.hoisted_dup_regs[di],
-                           self.hoisted_dup_inner_idxs[di]);
-            self.emit_a_bc(Opcode.DECLVAR, (uint)self.hoisted_dup_regs[di],
-                           self.hoisted_dup_name_idxs[di]);
-        }
-    }
+    // the function partway through the scope. Arrow bodies never reach block(),
+    // so they call emit_hoisted_fn_decls themselves.
+    if (check_directives) { self.emit_hoisted_fn_decls(); }
 
     while (!self.check(TokenType.RBRACE) && !self.is_at_end()) {
         self.statement()!;
@@ -5446,13 +5440,15 @@ fn void? CompilerContext.function_declaration(&self, bool is_async_decl = false,
     HString* fn_name_hstr = ((Heap*)self.heap).str_intern(name_tok.str_value);
     char[] fn_name2 = fn_name_hstr.get_data();
 
-    // Every occurrence of a duplicated name is skipped here: block() already
-    // instantiated the one surviving binding (the LAST declaration's body,
-    // §10.2.11) just after PUSH_LEX. Re-emitting at a textual position would
-    // rebind a superseded body partway through the scope and replace the
-    // object any property set in between was stored on.
-    for (ushort di = 0; di < self.hoisted_dup_count; di++) {
-        if (str_eq(self.hoisted_dup_names[di], fn_name2)) {
+    // A declaration the body-scope hoist pass recorded is skipped here:
+    // block() already instantiated its binding just after PUSH_LEX. Emitting
+    // again at the textual position would create a SECOND function object and
+    // rebind the name to it, so a property stored on the binding beforehand
+    // (`exports.c = c; function c(){} c.stat = 1`) would end up on an object
+    // nothing else references -- and for a repeated name it would additionally
+    // rebind a body §10.2.11 says is superseded.
+    for (ushort di = 0; di < self.hoisted_defer_count; di++) {
+        if (str_eq(self.hoisted_defer_names[di], fn_name2)) {
             self.skip_function_body();
             self.lexer.note_block_close();
             self.is_async = saved_is_async;
