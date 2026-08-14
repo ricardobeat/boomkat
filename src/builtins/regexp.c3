@@ -295,8 +295,11 @@ fn bool regexp_initialize(BuiltinContext* ctx, HObject* obj,
         flags, &error_buf, 128
     );
     if (compiled == null) {
-        // Compilation failed, throw SyntaxError (ES5 §15.10.4.1)
-        builtin_throw_no_result_change(ctx, ctx.heap.syntax_err_proto, error_buf[:128]);
+        // Compilation failed, throw SyntaxError (ES5 §15.10.4.1).
+        // Slice to the null-terminated length instead of the full 128-byte
+        // buffer, which would include trailing NUL bytes in the message.
+        usz msg_len = (usz)((ZString)&error_buf).len();
+        builtin_throw_no_result_change(ctx, ctx.heap.syntax_err_proto, error_buf[:msg_len]);
         return false;
     }
 
