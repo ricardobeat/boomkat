@@ -324,6 +324,77 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
     // generator's own suspend/resume bookkeeping).
     void* saved_resume_gen_outer = vm.heap.resume_gen;
 
+    // Bound function [[Call]] (ES2015 §9.4.1.1): unwrap [[BoundTargetFunction]],
+    // [[BoundThis]] and [[BoundArguments]] here and recurse, rather than
+    // dispatching BOUND_CALL through the temp_regs windows below.
+    // builtin_bound_call rewrites its register window with frame-owned
+    // refcounting (decref the old callee/this, incref the new), which is
+    // unbalanced against the raw borrows those windows hold on this path --
+    // each bound call drained one reference from the bound function -- and it
+    // re-dispatches into Case 3, which requires a compiled target, so a bound
+    // builtin or lightfunc target was silently never invoked. Mirrors the
+    // [[Construct]] unwrap in vm_construct_fn_impl. Nested binds recurse.
+    // Everything read out of the bound object stays borrowed, rooted by the
+    // chain from the caller's func, which the caller keeps alive across this
+    // call (the same contract Case 3 already relies on).
+    if (func.is_object() && func.get_heapptr() != null) {
+        HObject* bobj = (HObject*)func.get_heapptr();
+        if (bobj.is_bound()) {
+            Heap* heap = vm.heap;
+            TVal bound_target = (*bobj.extra_ptr()).func.bound_target;
+            TVal bound_this = (*bobj.extra_ptr()).func.bound_this;
+            HObject* args_arr = (*bobj.extra_ptr()).func.bound_args;
+
+            uint bound_argc = 0;
+            if (args_arr != null) {
+                HString* len_key = heap.str(heap::BuiltinStr.LENGTH);
+                if (len_key != null) {
+                    TVal? lv = args_arr.get_prop_proto(len_key, heap);
+                    if (try l = lv) {
+                        if (l.is_fastint()) {
+                            bound_argc = (uint)l.get_fastint();
+                        } else if (l.is_number()) {
+                            bound_argc = (uint)l.get_number();
+                        }
+                    }
+                }
+            }
+
+            uint total_argc = bound_argc + nargs;
+            TVal* combined_args = null;
+            if (total_argc > 0) {
+                combined_args = (TVal*)heap.alloc_func(heap.heap_udata, TVal::size * total_argc);
+                if (combined_args == null) return undef;
+            }
+            defer if (combined_args != null) heap.free_func(heap.heap_udata, combined_args);
+
+            uint combined_idx = 0;
+            if (args_arr != null) {
+                for (uint i = 0; i < bound_argc && combined_idx < total_argc; i++) {
+                    // A miss (hole / failed key intern) still consumes a
+                    // slot as undefined so the call args don't shift left.
+                    TVal ev;
+                    ev.set_undefined();
+                    char[20] buf;
+                    int n = (int)(io::bprintf(&buf, "%d", i) ?? buf[:0]).len;
+                    if (n > 0 && n < 20) {
+                        HString* ek = builtins::builtin_intern_string(heap, buf[:n]);
+                        if (ek != null) {
+                            TVal? e = args_arr.get_prop_proto(ek, heap);
+                            if (try got = e) ev = got;
+                        }
+                    }
+                    combined_args[combined_idx++] = ev;
+                }
+            }
+            for (uint i = 0; i < nargs && combined_idx < total_argc; i++) {
+                combined_args[combined_idx++] = args[i];
+            }
+
+            return vm_call_fn_impl(vm_ptr, bound_target, combined_args, combined_idx, bound_this);
+        }
+    }
+
     // Case 1: a lightfunc dispatches directly through BuiltinContext.
     if (func.is_lightfunc()) {
         uint fn_idx = (uint)(usz)func.get_heapptr();
@@ -335,7 +406,9 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
 
         TVal[16] temp_regs;
         temp_regs[0] = this_val;
-        for (uint i = 0; i < nargs && i < 16; i++) {
+        // Cap at 15 args: this_val occupies slot 0, so a 16th arg would land
+        // one past the end of temp_regs.
+        for (uint i = 0; i < nargs && i < 15; i++) {
             temp_regs[1 + i] = args[i];
         }
 
@@ -343,7 +416,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
         ctx.vm = vm;
         ctx.regs = &temp_regs;
         ctx.base_reg = 1;
-        ctx.argc = (ushort)nargs;
+        ctx.argc = (ushort)(nargs > 15 ? 15 : nargs);
         ctx.result = &temp_regs[0];
         ctx.heap = vm.heap;
         ctx.this_val = this_val;
