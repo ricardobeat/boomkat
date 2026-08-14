@@ -66,11 +66,11 @@ fn BigIntOpResult vm_bigint_binop(Vm* vm, Opcode op, TVal* ra, TVal* rb, TVal* r
     TVal pb = *rb;
     TVal pc = *rc;
     if (pb.is_object()) {
-        pb = to_primitive_value(vm, rb, 0);
+        pb = to_primitive_value(vm, rb, 2);
         if (vm.throw_pending) return BigIntOpResult.THREW;
     }
     if (pc.is_object()) {
-        pc = to_primitive_value(vm, rc, 0);
+        pc = to_primitive_value(vm, rc, 2);
         if (vm.throw_pending) return BigIntOpResult.THREW;
     }
 

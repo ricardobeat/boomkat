@@ -545,19 +545,15 @@ fn void builtin_date(BuiltinContext* ctx) {
                 HString* s = (HString*)arg.get_heapptr();
                 char* str = s.get_cstr();
                 usz slen = s.blen;
+                // ES2024 §21.4.2.1 step 3.a: a string argument is parsed as a
+                // date string only. An unparseable one yields NaN, producing
+                // an Invalid Date rather than falling back to the current
+                // time (or to ToNumber, which would make new Date("") the
+                // epoch even though Date.parse("") is NaN).
                 time_val = date_parse_iso_str(str, slen);
                 if (math::is_nan(time_val)) {
                     // Try locale format (toString/toUTCString)
                     time_val = date_parse_locale_str(str, slen);
-                }
-                if (math::is_nan(time_val)) {
-                    // Try as numeric string
-                    double num_val = builtin_string_to_number(s);
-                    if (!math::is_nan(num_val)) {
-                        time_val = num_val;
-                    } else {
-                        time_val = now;
-                    }
                 }
             } else if (arg.is_number() || arg.is_fastint()) {
                 time_val = arg.get_number_or_fastint();
@@ -593,10 +589,6 @@ fn void builtin_date(BuiltinContext* ctx) {
                         time_val = date_parse_iso_str(str, slen);
                         if (math::is_nan(time_val)) {
                             time_val = date_parse_locale_str(str, slen);
-                        }
-                        if (math::is_nan(time_val)) {
-                            double num_val = builtin_string_to_number(s);
-                            time_val = num_val;
                         }
                     } else {
                         time_val = vm::vm_to_number(v, &prim);
@@ -872,13 +864,10 @@ fn void builtin_date_parse(BuiltinContext* ctx) {
         ctx.result.set_number(double::nan);
         return;
     }
-    // Try numeric parsing first (milliseconds)
-    double num_val = builtin_string_to_number(s);
-    if (!math::is_nan(num_val)) {
-        ctx.result.set_number(num_val);
-        return;
-    }
-    // Try parsing as ISO 8601 date string
+    // ES2024 §21.4.3.2: Date.parse interprets its argument only as a date
+    // string, never as a number of milliseconds. Parsing numerically first
+    // would also shadow the year-only Date Time String form, making
+    // Date.parse("2020") the number 2020 instead of 2020-01-01T00:00:00Z.
     char* str = s.get_cstr();
     usz slen = s.blen;
     double date_val = date_parse_iso_str(str, slen);

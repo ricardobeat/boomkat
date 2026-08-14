@@ -45,7 +45,10 @@ fn double vm_to_number(Vm* vm, TVal* val) {
             vm_set_type_error(vm, "Cannot convert a BigInt value to a number");
             return double::nan;
         case OBJECT: {
-            TVal prim = to_primitive_value(vm, val);
+            // ES2024 §7.1.4 ToNumber step 8: ToPrimitive(argument, number).
+            // The hint matters for Date, whose @@toPrimitive only promotes
+            // "default" (not "number") to a toString-first lookup.
+            TVal prim = to_primitive_value(vm, val, 2);
             if (prim.get_tag() == OBJECT) return double::nan;
             return vm_to_number(vm, &prim);
         }
@@ -863,12 +866,15 @@ fn TVal to_primitive_value(Vm* vm, TVal* val, int hint = 0) {
         // Generic objects: call valueOf(), then toString()
         // ES5 §9.1: hint "string" → toString first, then valueOf;
         //           hint "number" (default) → valueOf first, then toString.
-        // Date objects override [[DefaultValue]] to always use "string" hint.
+        // ES2024 §21.4.4.45: Date.prototype[@@toPrimitive] promotes hint
+        // "default" to "string", but leaves hint "number" alone — so
+        // `+date`, `date - date` and relational compares still take valueOf
+        // first and yield the time value, not the date string.
         if (vm != null && vm.heap.call_fn != null) {
             Heap* h = vm.heap;
-            bool is_date = (cls == hobject::ObjClass.DATE);
-            // Date always uses toString first; other objects depend on hint.
-            bool use_string_first = is_date || (hint == 1);
+            bool date_prefers_string = (cls == hobject::ObjClass.DATE) && (hint != 2);
+            // Date promotes "default" to "string"; others depend on hint.
+            bool use_string_first = date_prefers_string || (hint == 1);
             HString* first_key = use_string_first
                 ? (HString*)h.strs[heap::BuiltinStr.TO_STRING]
                 : (HString*)h.strs[heap::BuiltinStr.VALUE_OF];
