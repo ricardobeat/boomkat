@@ -246,6 +246,34 @@ fn TVal builtin_arg(BuiltinContext* ctx, uint idx) {
     return undef;
 }
 
+/// Store a heap-valued result into `*ctx.result`, taking a reference for it.
+///
+/// `*ctx.result` does NOT hold an owned reference on entry: every call
+/// convention that reaches a builtin (both dispatch cases in vm_call_fn_impl,
+/// invoke_getter's builtin path, and the VM's own CALL_PROP handling) seeds the
+/// result slot with a RAW, non-incref'd copy of the callee or of `this`, since
+/// that slot doubles as the callee/`this` slot. `Heap.tval_copy_ref` would
+/// therefore decref bits the slot never owned, dropping a live reference on the
+/// callee itself -- for a builtin reachable as an intrinsic accessor (e.g.
+/// `get Error.prototype.stack`) that frees the intrinsic while the accessor
+/// cell still points at it, and the object pool then hands the same memory out
+/// as an unrelated closure.
+///
+/// The correct convention, the one `set_object` and friends already follow, is
+/// to incref the incoming value and store its bits raw. Use this whenever the
+/// result is read out of a slot the builtin does not own (an argument register,
+/// an internal slot such as HObjectError.captured_stack, a property table
+/// entry). A value the builtin already owns -- notably a `Heap.call_fn` return,
+/// which is itself a raw copy out of the callee's result slot -- is stored with
+/// a plain `*ctx.result = v` instead, as array/core/proxy already do.
+fn void builtin_store_result(BuiltinContext* ctx, TVal* src) {
+    if (src.is_heap_allocated()) {
+        void* ptr = src.get_heapptr();
+        if (ptr != null) { ((types::HeapHeader*)ptr).incref(); }
+    }
+    *ctx.result = *src;
+}
+
 /// Function.prototype.call(thisArg, ...args)
 ///
 /// Calls `this` (the downstream function) with `thisArg` as `this` and the

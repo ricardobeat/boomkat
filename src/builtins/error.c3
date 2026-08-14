@@ -587,7 +587,10 @@ fn void builtin_error_proto_stack_get(BuiltinContext* ctx) {
     }
     TVal* captured = &(*obj.extra_ptr()).err.captured_stack;
     if (captured.is_string()) {
-        ctx.heap.tval_copy_ref(ctx.result, captured);
+        // captured_stack stays owned by the Error, so the result takes its own
+        // reference; tval_copy_ref here would instead decref whatever raw copy
+        // of this getter the call convention left in the result slot.
+        builtin_store_result(ctx, captured);
         return;
     }
     // Foreign new.target (Reflect.construct(Ctor, args, NotAnError)) still

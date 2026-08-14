@@ -1076,7 +1076,10 @@ fn void builtin_eval_script(BuiltinContext* ctx) {
 
     TVal* arg = &ctx.regs[ctx.base_reg];
     if (!arg.is_string()) {
-        ctx.heap.tval_copy_ref(ctx.result, arg);
+        // The argument register keeps its own reference, so the result takes a
+        // fresh one rather than decref-ing the raw callee copy the call
+        // convention leaves in the result slot.
+        builtin_store_result(ctx, arg);
         return;
     }
 

@@ -1277,7 +1277,10 @@ fn void builtin_date_proto_toJSON(BuiltinContext* ctx) {
                 ctx.heap.has_error = false;
                 return;
             }
-            ctx.heap.tval_copy_ref(ctx.result, &result);
+            // call_fn hands back a raw copy of the callee's result slot, so the
+            // store is raw too. tval_copy_ref would decref the raw callee copy
+            // the call convention left in ctx.result, which nothing owns.
+            *ctx.result = result;
             return;
         }
     }
@@ -1387,9 +1390,11 @@ fn void builtin_date_proto_toPrimitive(BuiltinContext* ctx) {
             return;
         }
 
-        // If result is not Object, return it as the primitive.
+        // If result is not Object, return it as the primitive. call_fn's return
+        // is a raw copy of the callee's result slot, so this store is raw too;
+        // see the toISOString path above.
         if (!result.is_object()) {
-            ctx.heap.tval_copy_ref(ctx.result, &result);
+            *ctx.result = result;
             return;
         }
         // Result is an Object, try the next method.
