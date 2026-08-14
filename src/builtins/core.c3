@@ -773,6 +773,8 @@ enum Builtin : uint (String js_name, int js_arity, BuiltinFunc handler) {
     // --- error-stack-accessor proposal ---
     ERROR_PROTO_STACK_GET {"get stack", 0, &builtin_error_proto_stack_get},            // get Error.prototype.stack
     ERROR_PROTO_STACK_SET {"set stack", 1, &builtin_error_proto_stack_set},            // set Error.prototype.stack
+    ESCAPE {"escape", 1, &builtin_escape},                                             // escape(string) (Annex B §B.2.1.1)
+    UNESCAPE {"unescape", 1, &builtin_unescape},                                       // unescape(string) (Annex B §B.2.1.2)
     LAST {"", -1, null}, // sentinel, one past the highest valid builtin; not a real builtin
 }
 
@@ -3497,6 +3499,12 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
 
     // Register decodeURIComponent (ES5 §15.1.3.4)
     if (!register_simple_builtin(global_env, heap, "decodeURIComponent", Builtin.DECODE_URI_COMPONENT.ordinal)) return false;
+
+    // Register escape (Annex B §B.2.1.1)
+    if (!register_simple_builtin(global_env, heap, "escape", Builtin.ESCAPE.ordinal)) return false;
+
+    // Register unescape (Annex B §B.2.1.2)
+    if (!register_simple_builtin(global_env, heap, "unescape", Builtin.UNESCAPE.ordinal)) return false;
 
     // Register test262 batch runner helper
     if (!register_simple_builtin(global_env, heap, "__resetGlobals", Builtin.RESET_GLOBALS.ordinal)) return false;

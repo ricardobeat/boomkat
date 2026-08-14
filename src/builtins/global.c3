@@ -1401,3 +1401,115 @@ fn void builtin_decode_uri_component(BuiltinContext* ctx) {
     }
     uri_decode(ctx, str, false);
 }
+
+/// The unescaped set of Annex B §B.2.1.1 `escape`: `A-Za-z0-9@*_+-./`. Note it
+/// is neither encodeURI's nor encodeURIComponent's set — `@ * _ + - . /` pass
+/// through, but `! ~ ' ( )` do not.
+fn bool escape_is_unescaped(uint unit) {
+    if (unit >= 'A' && unit <= 'Z') return true;
+    if (unit >= 'a' && unit <= 'z') return true;
+    if (unit >= '0' && unit <= '9') return true;
+    return unit == '@' || unit == '*' || unit == '_' || unit == '+' ||
+           unit == '-' || unit == '.' || unit == '/';
+}
+
+fn void escape_emit_hex(char* out, usz* offset, uint value, uint digits) {
+    for (uint shift = digits * 4; shift > 0; shift -= 4) {
+        out[(*offset)++] = "0123456789ABCDEF"[(value >> (shift - 4)) & 0x0F];
+    }
+}
+
+/// escape (Annex B §B.2.1.1). Operates per UTF-16 code unit, so — unlike
+/// encodeURI — surrogate pairs are never recombined: each half is emitted on
+/// its own as `%uD83D%uDE00`, and a lone surrogate is legal rather than a
+/// URIError. Internal storage is CESU-8, where every code unit (surrogate
+/// halves included) is already its own byte sequence, so a plain walk of the
+/// sequences yields exactly the code units the spec iterates.
+fn void builtin_escape(BuiltinContext* ctx) {
+    if (ctx.argc < 1) {
+        ctx.result.set_string(ctx.heap.str(heap::BuiltinStr.UNDEFINED));
+        return;
+    }
+    HString* str = builtin_to_string_vm(ctx, &ctx.regs[ctx.base_reg]);
+    if (ctx.should_throw) return;
+    if (str == null) {
+        ctx.result.set_string(ctx.heap.str(heap::BuiltinStr.EMPTY));
+        return;
+    }
+    char[] data = str.get_data();
+    uint len = str.blen;
+    char[65536] out;
+    usz offset = 0;
+    uint i = 0;
+    while (i < len && offset < 65500) {
+        uint seq_len = hstring::utf16_unit_byte_len(data, i);
+        uint unit = hstring::decode_codepoint(data, i);
+        i += seq_len;
+        if (escape_is_unescaped(unit)) {
+            out[offset++] = (char)unit;
+        } else if (unit < 256) {
+            out[offset++] = '%';
+            escape_emit_hex(&out, &offset, unit, 2);
+        } else {
+            out[offset++] = '%';
+            out[offset++] = 'u';
+            escape_emit_hex(&out, &offset, unit, 4);
+        }
+    }
+    ctx.result.set_string(builtin_intern_string(ctx.heap, out[:offset]));
+}
+
+/// unescape (Annex B §B.2.1.2). Recognises `%uXXXX` and `%XX`; any `%` not
+/// starting a complete, well-formed escape is copied through verbatim (the
+/// spec's algorithm simply advances one code unit).
+fn void builtin_unescape(BuiltinContext* ctx) {
+    if (ctx.argc < 1) {
+        ctx.result.set_string(ctx.heap.str(heap::BuiltinStr.UNDEFINED));
+        return;
+    }
+    HString* str = builtin_to_string_vm(ctx, &ctx.regs[ctx.base_reg]);
+    if (ctx.should_throw) return;
+    if (str == null) {
+        ctx.result.set_string(ctx.heap.str(heap::BuiltinStr.EMPTY));
+        return;
+    }
+    char[] data = str.get_data();
+    uint len = str.blen;
+    char[65536] out;
+    usz offset = 0;
+    uint i = 0;
+    while (i < len && offset < 65500) {
+        if (data[i] != '%') {
+            uint seq_len = hstring::utf16_unit_byte_len(data, i);
+            for (uint k = 0; k < seq_len; k++) out[offset++] = data[i + k];
+            i += seq_len;
+            continue;
+        }
+        // A `%` is only consumed as an escape when the full form is present and
+        // every digit is hex; otherwise it stands for itself.
+        if (i + 5 < len && data[i + 1] == 'u') {
+            int d1 = hex_digit_val(data[i + 2]);
+            int d2 = hex_digit_val(data[i + 3]);
+            int d3 = hex_digit_val(data[i + 4]);
+            int d4 = hex_digit_val(data[i + 5]);
+            if (d1 >= 0 && d2 >= 0 && d3 >= 0 && d4 >= 0) {
+                uint unit = (uint)((d1 << 12) | (d2 << 8) | (d3 << 4) | d4);
+                uri_decode_emit(&out, &offset, unit);
+                i += 6;
+                continue;
+            }
+        }
+        if (i + 2 < len) {
+            int d1 = hex_digit_val(data[i + 1]);
+            int d2 = hex_digit_val(data[i + 2]);
+            if (d1 >= 0 && d2 >= 0) {
+                uri_decode_emit(&out, &offset, (uint)((d1 << 4) | d2));
+                i += 3;
+                continue;
+            }
+        }
+        out[offset++] = '%';
+        i++;
+    }
+    ctx.result.set_string(builtin_intern_string(ctx.heap, out[:offset]));
+}
