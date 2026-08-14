@@ -8,8 +8,7 @@
 // found (test/engine/test_hoist_var_block_no_semicolon.js), which needs no
 // download and always runs. This is corpus-level confidence that the fix
 // didn't just silence the crash but left the library actually working.
-var _ = globalThis._ || (typeof module !== "undefined" ? module.exports : undefined);
-if (!_) { console.log("FAILED: lodash did not export _ globally or via module"); }
+var _ = module.exports;
 
 var lines = [];
 function rec(name, value) { lines.push(name + "=" + JSON.stringify(value)); }
