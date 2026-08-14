@@ -1485,8 +1485,21 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
             // rT must be dead after the consumer: scan forward from i+2.
             // If the consumer itself writes rT (consumer.a == rT), the LDREG value is
             // immediately overwritten by the consumer, no scan needed, rT is dead.
-            // Note: IF_TRUE/IF_FALSE use field A as a READ (not a write), handle them
-            // explicitly so they are not mistaken for an overwrite of rT.
+            //
+            // Otherwise scan forward for a use of rT before a redefinition. Ending
+            // the scan on `A == rT` requires that A really is a write-only
+            // destination for that opcode: RET and the IF_TRUE/IF_FALSE family read
+            // A instead, so treating them as a kill declares a still-live register
+            // dead and NOPs a store the program depends on. That is exactly how
+            // `for (o = i + (s = c); ...)` lost its `s = c`: the only later mention
+            // of s was the function's own `RET s`, whose A field ended the scan.
+            //
+            // The write-only test is `moveelim_a_is_write` (src/compiler/moveelim.c3),
+            // a positive allow-list of opcodes confirmed to treat A as a pure
+            // destination. A deny-list is unsound here: any opcode not reasoned
+            // about defaults to "not a kill", so the scan keeps looking and the
+            // copy is merely left in place. Over-approximating liveness costs an
+            // optimization; under-approximating it miscompiles.
             bool rT_live = false;
             if ((uint)consumer.a != rT) {
                 for (uint j = i + 2; j < self.code_count; j++) {
@@ -1501,7 +1514,11 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
                         if ((uint)jns.b == rT || (uint)jns.c == rT) { rT_live = true; break; }
                     }
                     if (jfmt != OpFormat.WIDE_SABC && jfmt != OpFormat.WIDE_ABC) {
-                        if ((uint)jns.a == rT) { break; }
+                        if ((uint)jns.a == rT) {
+                            if (moveelim_a_is_write(jop2)) { break; }
+                            rT_live = true;
+                            break;
+                        }
                     }
                 }
             }
