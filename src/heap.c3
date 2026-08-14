@@ -2292,6 +2292,30 @@ fn void Heap.decref(&self, HeapHeader* hdr) {
             }
             self.free_string(s);
         } else {
+            // A marked node is live by the mark phase's determination, which is
+            // authoritative for the rest of this sweep: mark_roots reaches nodes
+            // through roots that hold no counted reference at all -- inline-cache
+            // proto slots, constant pools, activation envs, the module cache. So
+            // the only references such a node can lose here are the ones the
+            // dying nodes held, and hitting zero does not make it garbage.
+            //
+            // Freeing it anyway returns its block to the pool mid-sweep, and any
+            // later dying node in phase B that also references it then reads a
+            // recycled header. Observed as a use-after-poison on an ARRAY_ITERATOR
+            // created by `Array.prototype.values.call(x)`, whose surviving root
+            // was an inline cache while its last counted holder was collected.
+            //
+            // Leaving it linked costs nothing: the next cycle marks it again if a
+            // root still reaches it, and collects it as unmarked garbage if not.
+            //
+            // The count is restored to 1 rather than left at 0 so it keeps
+            // describing the uncounted root that is keeping the node alive.
+            // At 0 a later decref in this same sweep would wrap the unsigned
+            // count to UINT_MAX and strand the node forever.
+            if (self.sweeping && hdr.is_reachable()) {
+                hdr.refcount = 1;
+                return;
+            }
             hdr.unlink(&self.heap_allocated);
             if (hdr.is_object()) {
                 hobject::hobject_free((HObject*)hdr, (void*)self, true);
