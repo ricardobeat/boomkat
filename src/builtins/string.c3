@@ -1279,13 +1279,13 @@ fn void builtin_string_proto_trim(BuiltinContext* ctx) {
         end = lead;
     }
 
+    // Interned straight out of `data`: the trimmed run is contiguous, so a
+    // fixed staging buffer could only clamp and silently drop the tail of any
+    // string over 255 bytes.
     uint substr_len = end - start;
-    char[256] buf;
-    usz copy_len = substr_len < 256 ? (usz)substr_len : 256;
-    for (usz i = 0; i < copy_len; i++) {
-        buf[i] = data[start + i];
-    }
-    HString* result = builtin_intern_string(ctx.heap, buf[:copy_len]);
+    HString* result = substr_len == 0
+        ? ctx.heap.str(heap::BuiltinStr.EMPTY)
+        : builtin_intern_string(ctx.heap, data[start : substr_len]);
     ctx.result.set_string(result);
 }
 
@@ -1605,10 +1605,10 @@ fn void builtin_string_proto_split(BuiltinContext* ctx) {
         if (substr_len == 0) {
             substr = ctx.heap.str(heap::BuiltinStr.EMPTY);
         } else {
-            char[256] buf;
-            usz copy_len = substr_len < 256 ? (usz)substr_len : 256;
-            for (usz i = 0; i < copy_len; i++) buf[i] = data[search_pos + i];
-            substr = builtin_intern_string(ctx.heap, buf[:copy_len]);
+            // Interned straight out of `data`: the piece is already contiguous,
+            // so a fixed staging buffer would only be able to clamp a long piece
+            // and silently drop the rest of it.
+            substr = builtin_intern_string(ctx.heap, data[search_pos : substr_len]);
         }
 
         TVal elem;
@@ -1626,10 +1626,10 @@ fn void builtin_string_proto_split(BuiltinContext* ctx) {
         if (substr_len == 0) {
             substr = ctx.heap.str(heap::BuiltinStr.EMPTY);
         } else {
-            char[256] buf;
-            usz copy_len = substr_len < 256 ? (usz)substr_len : 256;
-            for (usz i = 0; i < copy_len; i++) buf[i] = data[search_pos + i];
-            substr = builtin_intern_string(ctx.heap, buf[:copy_len]);
+            // Same as the per-match piece above: intern the tail in place. This
+            // is the no-match case too (`"...".split(absent)` yields the whole
+            // string), where a clamp truncated every string over 255 bytes.
+            substr = builtin_intern_string(ctx.heap, data[search_pos : substr_len]);
         }
         TVal elem;
         elem.set_string(substr);
