@@ -445,8 +445,10 @@ fn void apply_call(BuiltinContext* ctx, TVal target, TVal this_arg, TVal arg_arr
             return;
         }
         if (target.is_object()) {
-            ctx.regs[ctx.base_reg - 2] = target;
-            ctx.regs[ctx.base_reg - 1] = this_arg;
+            // Owned stores, for the reason spelled out in the argument-carrying
+            // re-dispatch branch below.
+            ctx.heap.tval_copy_ref(&ctx.regs[ctx.base_reg - 2], &target);
+            ctx.heap.tval_copy_ref(&ctx.regs[ctx.base_reg - 1], &this_arg);
             ctx.needs_re_dispatch = true;
             ctx.re_nargs = 0;
         } else {
@@ -622,10 +624,19 @@ fn void apply_call(BuiltinContext* ctx, TVal target, TVal this_arg, TVal arg_arr
     }
 
     if (target.is_object()) {
-        ctx.regs[ctx.base_reg - 2] = target;
-        ctx.regs[ctx.base_reg - 1] = this_arg;
+        // The callee, this and argument slots all lie inside the calling frame's
+        // decref window, so every value written here has to arrive owned: the
+        // frame releases each of these slots when it overwrites them or unwinds.
+        // target and this_arg are copies of registers that keep their own
+        // reference, and the extracted args were read out of the array via a
+        // property get (no incref), so a raw store would hand the frame a
+        // reference nobody took and drain the value one count per call. That
+        // showed up as a receiver or callee freed and recycled after three
+        // Reflect.apply / Function.prototype.apply calls on the same values.
+        ctx.heap.tval_copy_ref(&ctx.regs[ctx.base_reg - 2], &target);
+        ctx.heap.tval_copy_ref(&ctx.regs[ctx.base_reg - 1], &this_arg);
         for (uint i = 0; i < actual_count; i++) {
-            ctx.regs[ctx.base_reg + i] = extracted_args[i];
+            ctx.heap.tval_copy_ref(&ctx.regs[ctx.base_reg + i], &extracted_args[i]);
         }
         if (extracted_args != null) ctx.heap.free_func(ctx.heap.heap_udata, extracted_args);
         ctx.needs_re_dispatch = true;
