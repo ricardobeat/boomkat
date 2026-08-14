@@ -380,14 +380,11 @@ fn void builtin_array_from_async(BuiltinContext* ctx) {
         }
         HObject* sync_or_async_iter = (HObject*)iterator.get_heapptr();
 
-        // Pin asyncItems for the driver's lifetime. The built-in array iterator
-        // holds only a *borrowed* GC pointer to its target (see
-        // create_array_iterator: iter.target = iterable, no incref); when
-        // fromAsync is reached via Function.prototype.call the source's only
-        // other strong reference can be released as intervening frames unwind,
-        // letting the source be freed and its heap slot reused (observed as the
-        // source array turning into our state object mid-iteration). Holding a
-        // strong reference on state keeps the iterator's target alive.
+        // Pin asyncItems for the driver's lifetime. create_array_iterator
+        // takes a strong reference (incref) on its target, so the iterator
+        // itself keeps the source alive; this extra pin on the state object
+        // is a belt-and-suspenders hold that outlives the iterator in case
+        // the driver consumes it before the state object is released.
         afa_put_tval(state, heap, AFA_SOURCE_SLOT, async_items);
 
         // For a sync iterable, wrap with CreateAsyncFromSyncIterator so the
