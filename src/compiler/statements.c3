@@ -812,6 +812,10 @@ fn void CompilerContext.record_name_span(&self, NameSpan* span, Token name_tok, 
         span.len = 0;
         span.name = self.intern_slot_name(name_tok.str_value);
     }
+    // Only pre_scan_switch_lexical_decls sets these, and only for a
+    // FunctionDeclaration (see NameSpan.is_fn); every other caller collects
+    // let/const/class names, which stay TDZ-initialized at block entry.
+    span.is_fn = false;
 }
 
 /// Reconstruct a prescanned binding name from a NameSpan, either its
@@ -1355,6 +1359,10 @@ fn uint CompilerContext.pre_scan_switch_lexical_decls(&self, NameSpan* spans, ui
     uint     question_depth = 0;
 
     while (count < capacity) {
+        // Snapshot before consuming, so a FunctionDeclaration found below can
+        // record the position of its `function` / `async` keyword for
+        // block()/switch_statement() to re-parse from (NameSpan.fn_pos).
+        LexerPos pos_before = self.capture_lexer_pos();
         Token? tok_opt = self.lexer.next_token();
         if (catch _err = tok_opt) {
             break;
@@ -1534,6 +1542,13 @@ fn uint CompilerContext.pre_scan_switch_lexical_decls(&self, NameSpan* spans, ui
             }
             if (name_tok.type == TokenType.IDENTIFIER && count < capacity) {
                 self.record_name_span(&spans[count], name_tok, source_base);
+                // §14.2.11 step 3(a)(ii): this binding is instantiated to its
+                // closure at block entry, not left in the TDZ. `pos_before` is
+                // the declaration's `function` (or, for an async declaration,
+                // `async`) keyword, which is where the caller re-enters the
+                // ordinary statement path to compile it.
+                spans[count].is_fn = true;
+                spans[count].fn_pos = pos_before;
                 count++;
             }
         }
@@ -1612,6 +1627,60 @@ fn void? CompilerContext.check_lexical_var_conflicts(&self, NameSpan* lex_spans,
             }
         }
     }
+}
+
+/// Instantiate every top-level FunctionDeclaration of a block (or switch
+/// CaseBlock) at the block's entry, per ES2024 §14.2.11
+/// BlockDeclarationInstantiation step 3(a)(ii): unlike a `let`/`const`/`class`
+/// binding, which step 3(d) leaves uninitialized (the TDZ sentinel INITTZ
+/// writes), a FunctionDeclaration runs InstantiateFunctionObject right here,
+/// so the binding already holds its closure before the block's first statement
+/// executes. `{ f(); function f(){} }` therefore works, and papaparse's
+/// mutually-recursive block-scoped helpers resolve.
+///
+/// Each declaration is compiled by re-entering the ordinary statement path
+/// with the lexer parked at its `function` / `async` keyword (the snapshot
+/// pre_scan_switch_lexical_decls stored in NameSpan.fn_lexer), so generators,
+/// async functions and Function.prototype.toString source retention all behave
+/// exactly as they do at the textual position. force_lexical_fn_decl is already
+/// set by the caller, so each one binds via PUTLEX into the lex_env PUSH_LEX
+/// just installed — late enough to capture this block's own lexical bindings,
+/// early enough that no statement has run.
+///
+/// The names are left in `block_fn_spans` for function_declaration to skip when
+/// the textual pass reaches them again.
+///
+/// Must be called after PUSH_LEX and the INITTZ loop, and before any statement.
+fn void? CompilerContext.emit_block_scoped_fn_decls(&self, NameSpan* lex_spans, uint num_lex) {
+    // The scan position to come back to: the block's first statement.
+    LexerPos resume_pos = self.capture_lexer_pos();
+
+    // Cleared for the duration: function_declaration consults it to SKIP an
+    // already-instantiated declaration, and the declarations being compiled
+    // right here are exactly the ones it must not skip. A declaration nested
+    // inside one of these bodies belongs to its own block, which sets its own.
+    NameSpan* outer_spans = self.block_fn_spans;
+    uint outer_count = self.block_fn_count;
+    self.block_fn_spans = null;
+    self.block_fn_count = 0;
+    defer {
+        self.block_fn_spans = outer_spans;
+        self.block_fn_count = outer_count;
+    }
+
+    for (uint i = 0; i < num_lex; i++) {
+        if (!lex_spans[i].is_fn) continue;
+        self.seek_lexer_to(lex_spans[i].fn_pos);
+        self.pushback_count = 0;
+        // statement() rather than function_declaration() directly: an
+        // AsyncFunctionDeclaration is reached through the `async` contextual
+        // keyword lookahead, which only statement() performs, and the recorded
+        // position is on `async` for exactly that case.
+        self.statement()!;
+    }
+
+    self.seek_lexer_to(resume_pos);
+    self.pushback_count = 0;
 }
 
 /// Parse a block: { statement* }
@@ -1710,15 +1779,24 @@ fn void? CompilerContext.block(&self, bool check_directives, bool suppress_regex
     // This ensures that accessing the variable before its declaration
     // throws a ReferenceError (temporal dead zone) instead of finding
     // an outer `var` binding or returning undefined.
+    //
+    // A top-level FunctionDeclaration is skipped: §14.2.11 step 3(a)(ii)
+    // instantiates it to its closure at block entry instead of leaving it
+    // uninitialized, so poisoning it here would make a call placed before its
+    // own textual position throw. emit_block_scoped_fn_decls below binds it.
     for (uint i = 0; i < num_lex; i++) {
         char[] name = self.name_span_text(lex_spans[i]);
-        uint name_idx = self.add_string_constant(name);
-        self.emit_a_bc(Opcode.INITTZ, 0, name_idx);
+        if (!lex_spans[i].is_fn) {
+            uint name_idx = self.add_string_constant(name);
+            self.emit_a_bc(Opcode.INITTZ, 0, name_idx);
+        }
 
         // Mark the outer scope_stack entry as captured so that the compiler
         // emits GETVAR instead of LDREG for this variable.  Without this,
-        // a register-cached value from an outer scope would bypass the TDZ
-        // sentinel in the new lex_env.
+        // a register-cached value from an outer scope would bypass the new
+        // lex_env: the TDZ sentinel for a let/const/class, and the block's own
+        // closure for a FunctionDeclaration, which shadows the outer binding
+        // for the whole block just the same.
         for (uint j = 0; j < saved_depth; j++) {
             if (str_eq(self.scope_stack[j].name, name)) {
                 self.scope_stack[j].is_captured = true;
@@ -1743,6 +1821,24 @@ fn void? CompilerContext.block(&self, bool check_directives, bool suppress_regex
     // the function partway through the scope. Arrow bodies never reach block(),
     // so they call emit_hoisted_fn_decls themselves.
     if (check_directives) { self.emit_hoisted_fn_decls(); }
+
+    // §14.2.11 step 3(a)(ii): instantiate this block's own top-level
+    // FunctionDeclarations before any statement runs. Saved/restored around the
+    // block so a nested block skips only its OWN declarations.
+    NameSpan* saved_block_fn_spans = self.block_fn_spans;
+    uint saved_block_fn_count = self.block_fn_count;
+    defer {
+        self.block_fn_spans = saved_block_fn_spans;
+        self.block_fn_count = saved_block_fn_count;
+    }
+    if (lexical_fns && has_lex) {
+        self.block_fn_spans = &lex_spans[0];
+        self.block_fn_count = num_lex;
+        self.emit_block_scoped_fn_decls(&lex_spans[0], num_lex)!;
+    } else {
+        self.block_fn_spans = null;
+        self.block_fn_count = 0;
+    }
 
     while (!self.check(TokenType.RBRACE) && !self.is_at_end()) {
         self.statement()!;
@@ -4845,14 +4941,22 @@ fn void? CompilerContext.switch_statement(&self) {
     // like block()'s INITTZ pass, so accessing any of these names before their
     // declaration (or from outside the switch after it ends) throws a
     // ReferenceError instead of resolving to an outer binding.
+    //
+    // A top-level FunctionDeclaration in a clause is skipped, exactly as in
+    // block(): §14.12.4 CaseBlockEvaluation runs BlockDeclarationInstantiation
+    // over the whole CaseBlock before any clause is selected, and step
+    // 3(a)(ii) instantiates such a declaration to its closure there rather
+    // than leaving it uninitialized.
     for (uint i = 0; i < num_switch_lex; i++) {
         char[] name = self.name_span_text(switch_lex_spans[i]);
-        uint name_idx = self.add_string_constant(name);
-        self.emit_a_bc(Opcode.INITTZ, 0, name_idx);
+        if (!switch_lex_spans[i].is_fn) {
+            uint name_idx = self.add_string_constant(name);
+            self.emit_a_bc(Opcode.INITTZ, 0, name_idx);
+        }
 
         // Mark any outer scope_stack entry with the same name as captured so
         // the compiler emits GETVAR instead of LDREG for it, without this, a
-        // register-cached outer value would bypass the TDZ sentinel we just
+        // register-cached outer value would bypass the binding we just
         // installed in the new lex_env.
         for (uint j = 0; j < saved_switch_scope_depth; j++) {
             if (str_eq(self.scope_stack[j].name, name)) {
@@ -4898,6 +5002,25 @@ fn void? CompilerContext.switch_statement(&self) {
     bool saved_force_lexical_fn_decl = self.force_lexical_fn_decl;
     if (switch_has_lex) {
         self.force_lexical_fn_decl = true;
+    }
+
+    // §14.12.4 / §14.2.11 step 3(a)(ii): instantiate the CaseBlock's top-level
+    // FunctionDeclarations before any clause runs, so a call in an earlier
+    // clause reaches a function declared in a later one. Saved/restored around
+    // the CaseBlock so a nested block skips only its OWN declarations.
+    NameSpan* saved_block_fn_spans = self.block_fn_spans;
+    uint saved_block_fn_count = self.block_fn_count;
+    defer {
+        self.block_fn_spans = saved_block_fn_spans;
+        self.block_fn_count = saved_block_fn_count;
+    }
+    if (switch_has_lex) {
+        self.block_fn_spans = &switch_lex_spans[0];
+        self.block_fn_count = num_switch_lex;
+        self.emit_block_scoped_fn_decls(&switch_lex_spans[0], num_switch_lex)!;
+    } else {
+        self.block_fn_spans = null;
+        self.block_fn_count = 0;
     }
 
     while (!self.check(TokenType.RBRACE) && !self.is_at_end()) {
@@ -5318,8 +5441,15 @@ fn void? CompilerContext.function_declaration(&self, bool is_async_decl = false,
 
     // Check if this function declaration was already hoisted during pre-scan
     // If so, skip it entirely to avoid duplicate compilation.
-    // For global scope, check against hoisted_fn_names
-    if (self.is_global) {
+    // For global scope, check against hoisted_fn_names.
+    //
+    // Not for a block-scoped declaration (force_lexical_fn_decl): a name in
+    // hoisted_fn_names is a Script-level VarDeclaredName, a DIFFERENT binding
+    // from the one this declaration creates in the block's lex_env, so matching
+    // on it skipped a block-scoped `function outer(){}` that merely shared a
+    // name with a top-level one, leaving the block's binding never emitted and
+    // every read inside the block resolving to the global.
+    if (self.is_global && !self.force_lexical_fn_decl) {
         // Extract function name from current lexer position. A `function*`
         // generator's name is TWO tokens ahead (`*` then the identifier), and
         // the lexer's single-slot pushback can't hold both, use the
@@ -5449,6 +5579,25 @@ fn void? CompilerContext.function_declaration(&self, bool is_async_decl = false,
     // rebind a body §10.2.11 says is superseded.
     for (ushort di = 0; di < self.hoisted_defer_count; di++) {
         if (str_eq(self.hoisted_defer_names[di], fn_name2)) {
+            self.skip_function_body();
+            self.lexer.note_block_close();
+            self.is_async = saved_is_async;
+            self.is_generator = saved_is_generator;
+            self.is_user_generator = saved_is_user_generator;
+            self.is_constructable = saved_is_constructable;
+            return;
+        }
+    }
+
+    // Same rule one scope down: a top-level FunctionDeclaration of the
+    // enclosing BlockStatement / CaseBlock was already instantiated at that
+    // block's entry by emit_block_scoped_fn_decls (§14.2.11 step 3(a)(ii)), so
+    // the textual pass only has to step over it. block_fn_spans is cleared
+    // while that eager pass itself runs, so this never skips the very
+    // declaration being compiled.
+    for (uint bi = 0; bi < self.block_fn_count; bi++) {
+        if (!self.block_fn_spans[bi].is_fn) continue;
+        if (str_eq(self.name_span_text(self.block_fn_spans[bi]), fn_name2)) {
             self.skip_function_body();
             self.lexer.note_block_close();
             self.is_async = saved_is_async;

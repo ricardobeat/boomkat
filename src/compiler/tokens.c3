@@ -414,6 +414,38 @@ fn void CompilerContext.swap_lexer_preserving_error(&self, Lexer incoming) {
     }
 }
 
+/// Capture the current scan position as a LexerPos, for a later seek_lexer_to.
+/// Only valid at a statement boundary, where no token has been read ahead: a
+/// LexerPos records the cursor, not the token stream state (see NameSpan.fn_pos
+/// for why the whole Lexer is not copied).
+fn LexerPos CompilerContext.capture_lexer_pos(&self) {
+    return {
+        .pos                     = self.lexer.pos,
+        .line                    = self.lexer.line,
+        .col                     = self.lexer.col,
+        .at_line_start           = self.lexer.at_line_start,
+        .force_regex_after_brace = self.lexer.force_regex_after_brace,
+        .seen_line_term          = self.lexer.seen_line_term,
+    };
+}
+
+/// Rewind the lexer to a position captured by capture_lexer_pos, discarding any
+/// lookahead/pushback so the next token is re-scanned from `p`. Everything not
+/// in LexerPos (error state, arena, ts_mode, ...) is per-compilation and stays
+/// as-is. The compiler-level pushback stack is the caller's to reset.
+fn void CompilerContext.seek_lexer_to(&self, LexerPos p) {
+    self.lexer.pos                     = p.pos;
+    self.lexer.line                    = p.line;
+    self.lexer.col                     = p.col;
+    self.lexer.at_line_start           = p.at_line_start;
+    self.lexer.force_regex_after_brace = p.force_regex_after_brace;
+    self.lexer.seen_line_term          = p.seen_line_term;
+    self.lexer.has_lookahead           = false;
+    self.lexer.has_pushed_back         = false;
+    self.lexer.token_start             = p.pos;
+    self.lexer.lookahead_token_start   = p.pos;
+}
+
 /// Push a token back into the input stream for backtracking.
 /// The next call to advance() will return this token.
 /// Supports up to 4 tokens of lookback.

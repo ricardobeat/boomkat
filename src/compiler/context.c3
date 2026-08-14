@@ -769,6 +769,21 @@ struct CompilerContext {
     // rather than leaking to the enclosing function/global scope.
     bool force_lexical_fn_decl;
 
+    /// Names of the top-level FunctionDeclarations the CURRENT block (or
+    /// switch CaseBlock) already instantiated at its entry, per §14.2.11 step
+    /// 3(a)(ii) — see CompilerContext.emit_block_scoped_fn_decls. The textual
+    /// pass reaches each of those declarations again and must skip it, exactly
+    /// as function_declaration already skips a hoisted_defer_names entry:
+    /// re-compiling would build a SECOND function object and rebind the name to
+    /// it, so a property stored on the binding beforehand would land on an
+    /// object nothing else references.
+    ///
+    /// Points into the caller's stack-allocated NameSpan array and is
+    /// saved/restored around each block, so a nested block never sees (and so
+    /// never skips) the enclosing block's declarations.
+    NameSpan* block_fn_spans;
+    uint      block_fn_count;
+
     // --- Capture pre-scan (plan 045) ---
     // Names referenced inside nested callable bodies, collected by
     // pre_scan_captures before the body compiles; declare_var marks matching
@@ -2094,6 +2109,43 @@ struct NameSpan {
     // names into a reused scratch buffer, so str_value points neither into
     // the source nor at stable storage. Empty for plain (unescaped) names.
     char[] name;
+    /// True when this name came from a top-level FunctionDeclaration rather
+    /// than a `let`/`const`/`class` binding. §14.2.11 BlockDeclarationInstantiation
+    /// initializes those two kinds differently: step 3(d)/(f) leaves a
+    /// let/const/class binding UNINITIALIZED (the TDZ sentinel INITTZ writes),
+    /// while step 3(a)(ii) runs InstantiateFunctionObject for a
+    /// FunctionDeclaration right there, so the binding already holds its
+    /// closure before the block's first statement runs. Emitting INITTZ for a
+    /// function name instead makes a call placed before the declaration's own
+    /// textual position throw "Cannot access X before initialization".
+    bool is_fn;
+    /// Scan position of the `function` (or, for an async declaration, `async`)
+    /// keyword of that declaration, so block()/switch_statement() can re-parse
+    /// it through the ordinary statement path at block entry and restore the
+    /// scan position afterwards. Only meaningful when `is_fn` is set.
+    ///
+    /// Just the cursor, not a whole Lexer: at 64 spans a struct copy of Lexer
+    /// (with its err_msg and ident_buf scratch) is 300 KB of stack per block,
+    /// and block() recurses once per nesting level. Everything else in the
+    /// Lexer is either per-compilation state that must NOT be rewound
+    /// (err_msg, arena, heap, ts_mode, ...) or token state that is empty at
+    /// the statement boundary a declaration starts on. See
+    /// CompilerContext.seek_lexer_to.
+    LexerPos fn_pos;
+}
+
+/// A resumable scan position inside the source, taken at a statement boundary.
+/// See NameSpan.fn_pos and CompilerContext.seek_lexer_to.
+struct LexerPos {
+    uint pos;
+    uint line;
+    uint col;
+    /// Both affect how the NEXT token is scanned (ASI and the `/` regexp-vs-
+    /// division decision), so they are part of the position, not of the
+    /// already-consumed token.
+    bool at_line_start;
+    bool force_regex_after_brace;
+    bool seen_line_term;
 }
 
 const uint MAX_CLASS_METHODS = 32;
