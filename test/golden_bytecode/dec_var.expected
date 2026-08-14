@@ -12,22 +12,16 @@
 [  3] DECLVAR         r1, 1
 [  4] LDINT           r0, +5
 [  5] DECLVAR         r0, 0
-[  6] CLOSURE         r1, 1
-[  7] DECLGLOBALFUNC  r1, 1
-[  8] LDINT           r2, 0
-[  9] JUMP            +1
-[ 10] DEC_VAR         r3, 0
-[ 11] GETVAR          r3, 0
-[ 12] JMP_GT          -3, r3, r2
-[ 13] LDREG           r2 = r1, r0
-[ 14] CALL_UNDEF_THIS r2 = r2, r0
-[ 15] RET             r2 = r0, r0
+[  6] LDINT           r2, 0
+[  7] JUMP            +1
+[  8] DEC_VAR         r3, 0
+[  9] GETVAR          r3, 0
+[ 10] JMP_GT          -3, r3, r2
+[ 11] LDREG           r2 = r1, r0
+[ 12] CALL_UNDEF_THIS r2 = r2, r0
+[ 13] RET             r2 = r0, r0
 
 --- Inner function 0.0 ---
-[  0] GETVAR          r0, 0
-[  1] RET             r0 = r0, r0
-
---- Inner function 0.1 ---
 [  0] GETVAR          r0, 0
 [  1] RET             r0 = r0, r0
 --- End bytecode ---
