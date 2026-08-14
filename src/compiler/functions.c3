@@ -1564,7 +1564,19 @@ fn void CompilerContext.skip_expression(&self) {
             TemplateBrace tb = tscan.classify_rbrace(self.lexer);
             if (tb == TemplateBrace.LEX_ERROR) break;
             if (tb == TemplateBrace.BLOCK) {
-                if (brace_depth == 0 && bracket_depth == 0 && paren_depth == 0) break;
+                if (brace_depth == 0 && bracket_depth == 0 && paren_depth == 0) {
+                    // This `}` closes the block (or function body) that
+                    // encloses the expression, so it belongs to the caller
+                    // exactly as the unmatched `)` above does. Consuming it
+                    // instead leaves the caller's brace_depth one too high, so
+                    // hoist_decls runs past the end of the body it is scanning
+                    // and hoists the following sibling declarations into it
+                    // (`function f(){ { var e=1 } }` followed by more function
+                    // declarations compiles them twice, and the surviving
+                    // closures capture the wrong scope).
+                    self.lexer.pushback(tok_opt);
+                    break;
+                }
                 if (brace_depth > 0) brace_depth--;
             }
         }
