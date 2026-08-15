@@ -1,6 +1,6 @@
 # Progress: Duktape C3 — test262 Conformance Tracker
 
-**Last Updated:** Session 306 — plan 071 M1: the property hash table moved from each object to its shared shape; the 8-property memory cliff is gone (31.1 → 16.3 MB on 50k objects, QuickJS 15.0 MB). Rosetta 42/42, local suite green, test262 phase 0-1 zero-fail.
+**Last Updated:** Session 307 — plan 072 closed out: `class await` hoist leak, `looks_like_module` depth-0 fix, unique per-class `__super__` bindings (the typescript services "object is not a constructor"), substr ±∞/undefined guards. Corpus re-verified: 22/22 load, 21/22 api-checks (typescript's jsDoc bug is the one left). Rosetta 42/42, local suite green, phase 15 8374/0/0.
 
 **Target:** 100% test262 pass rate on the targeted subset (see plan 040).
 
@@ -11,6 +11,22 @@
 - **Single-test repro**: `python3 scripts/run_test262.py --single <path>` (warns if the suite skips the test; `--debug`/`--keep` concat harness for `just lldb` / `--trace-vm`).
 - **Phase counts**: `bash scripts/count_test262_by_phase.sh` · **Delta**: `bash scripts/test262_delta.sh`.
 - **Build**: `c3c build test262_runner` or `c3c build duktape_c3` (plain runner; `duktape_c3_debug` for `-c`/`-t` inspection).
+
+## Session 307 (2026-08-16)
+
+Plan 072's open items, worked in three parallel agent worktrees and reviewed onto main. Five fixes landed:
+
+- **`class await {}` leaked its body's `var`s** (c8539a8a): `class_kw_starts_class` treated `AWAIT` as a non-binding token, so the hoist pre-scans never skipped the class body. Now accepted through the shared `await_is_identifier` predicate, one change covering both call sites.
+- **`looks_like_module` routed plain scripts through ESM** (c8539a8a): `export: 95,` at a line start inside an object literal (typescript's keyword table) passed the sniff. The scanner now tracks brace/paren/bracket depth and only matches `import`/`export` at depth 0; `import(` is excluded as dynamic import.
+- **Sibling classes shared one `__super__` slot** (8d951801): the typescript services block defines ~10 sibling classes in one `__esm` callback, so every class after the first got the last one's super constructor; `super()` threw "object is not a constructor" (this was the real cause behind the `objectAllocator` suspicion in plan 072). Each class now gets numbered bindings (`__super__0`, ...) propagated into inner functions, field/static initializers, static blocks, computed keys, defaults, and direct eval (the `CompiledFunction` snapshots the binding name; `builtin_eval` re-interns it; `Object.setPrototypeOf`'s class sync writes the numbered name, so `call-proto-not-ctor` still passes). The 31 regressions the first attempt introduced (super from arrows/fields/eval) were the missing propagation sites.
+- **Assignment result paths under-recorded their local register** (c8539a8a): `last_was_local_var` was set without `last_local_var_reg` at the simple/compound assignment exits; fails safe, now recorded for completeness.
+- **`substr` mishandled ±Infinity and undefined length** (186ca01a): `(int)(long)Inf` is UB (hung the VM); explicit `undefined` length means +∞ per §B.2.3, not 0.
+
+The 13 Annex B HTML tag methods were implemented by an agent, then rejected on review: engine-scope excludes Annex B legacy and nothing in the corpus uses them (ba4c137a records the decision). The BigNumber sqrt/base-24 bug does not reproduce at 6377fc14; its api-check driver now covers both cases diffed against qjs.
+
+Corpus numbers independently re-verified from a populated worktree: 22/22 load, 21/22 api-checks. The remaining failure is typescript's driver, which now loads and parses and dies deeper in with `Cannot create property 'jsDoc' on string` (plan 072, own task).
+
+Gates: rosetta 42/42, local suite 348 scripts + all sub-suites, phase 15 8374/0/0, phases 0-1 2847/0.
 
 ## Session 306 (2026-08-12)
 
