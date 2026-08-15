@@ -4249,14 +4249,22 @@ fn bool ordinary_set_proto(BuiltinContext* ctx, HObject* obj, HObject* new_proto
 
     obj.prototype = new_proto;
 
-    // Class constructors currently resolve super() through the captured
-    // __super__ binding. Keep that binding synchronized with the constructor's
-    // mutable [[Prototype]], which is what GetSuperConstructor reads.
+    // Class constructors resolve super() through the captured numbered
+    // __super__ binding (e.g. "__super__0"). Keep that binding synchronized
+    // with the constructor's mutable [[Prototype]], which is what
+    // GetSuperConstructor reads. The binding name rides on the
+    // CompiledFunction (super_binding_name); the literal fallback covers
+    // hand-built functions that predate the field.
     if (obj.get_class() == hobject::ObjClass.FUNCTION) {
         CompiledFunction* func = (*obj.extra_ptr()).func.comp_func;
         EnvRecord* lex_env = (*obj.extra_ptr()).func.lex_env;
         if (func != null && func.is_class_ctor() && lex_env != null) {
-            HString* super_key = builtin_intern_string(ctx.heap, "__super__");
+            HString* super_key;
+            if (func.super_binding_name != null) {
+                super_key = (HString*)func.super_binding_name;
+            } else {
+                super_key = builtin_intern_string(ctx.heap, "__super__");
+            }
             if (super_key != null) {
                 TVal super_val;
                 if (new_proto == null) {

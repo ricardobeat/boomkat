@@ -33,6 +33,18 @@ fn void CompilerContext.ensure_field_init_ctx(&self, CompilerContext* target_ctx
     target_ctx.adopt_private_names(self);
     target_ctx.private_scope_start = self.private_scope_start;
     target_ctx.private_scope_depth = self.private_scope_depth;
+    // Re-intern super name into the field-init context's own constant pool.
+    // Without this, super.x inside a field initializer or arrow compiled
+    // within one would resolve against the literal "__super__" fallback
+    // instead of the numbered binding (e.g. "__super__0") in the env chain.
+    if (self.super_name_idx != 0xFFFFFFFF) {
+        HString* super_hstr = (HString*)self.constants[self.super_name_idx].get_heapptr();
+        target_ctx.super_name_idx = target_ctx.add_string_constant(super_hstr.get_data());
+    }
+    if (self.static_super_name_idx != 0xFFFFFFFF) {
+        HString* static_super_hstr = (HString*)self.constants[self.static_super_name_idx].get_heapptr();
+        target_ctx.static_super_name_idx = target_ctx.add_string_constant(static_super_hstr.get_data());
+    }
     target_ctx.emit_simple(Opcode.PUSH_LEX);
 }
 
@@ -105,7 +117,7 @@ fn char[] format_field_number_key(double val, char[] buf) {
 /// class_name: when non-empty, used as the constructor's name property
 /// (per ES2015 §14.5.14 step 17 + SetFunctionName, a class declaration's
 /// default constructor inherits the class name as its .name).
-fn CompiledFunction*? make_default_constructor(Heap* hp, bool has_super, char[] class_name) {
+fn CompiledFunction*? make_default_constructor(Heap* hp, bool has_super, char[] class_name, char[] super_name) {
     void* raw = hp.alloc_func(hp.heap_udata, CompiledFunction::size);
     if (raw == null) return COMPILE_ERROR~;
     mem::clear(raw, (sz)(CompiledFunction::size));
@@ -141,12 +153,16 @@ fn CompiledFunction*? make_default_constructor(Heap* hp, bool has_super, char[] 
         func.num_formals = 0;   // rest param doesn't count toward length
         func.num_regs = 24;     // r0=rest, r1=__super__, r2=this, r3..r22=spread, r23=count
 
-        // Create interned string constant for "__super__"
-        HString* super_str = hp.str_intern("__super__");
+        // Create interned string constant for the super binding name
+        HString* super_str = hp.str_intern(super_name);
         if (super_str == null) {
             hp.free_func(hp.heap_udata, raw);
             return COMPILE_ERROR~;
         }
+        // Record it for Object.setPrototypeOf's class sync (object.c3),
+        // which keeps the numbered binding in step with the constructor's
+        // mutable [[Prototype]].
+        func.super_binding_name = (void*)super_str;
         func.const_count = 1;
         usz const_bytes = (usz)func.const_count * TVal::size;
         func.constants = (TVal*)hp.alloc_func(hp.heap_udata, const_bytes);
@@ -521,6 +537,8 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
     bool saved_in_class_body = self.in_class_body;
     bool saved_has_super = self.has_super_binding;
     bool saved_super_is_home = self.super_is_home_object;
+    uint saved_super_name_idx = self.super_name_idx;
+    uint saved_static_super_name_idx = self.static_super_name_idx;
     self.in_class_body = true;
     self.has_super_binding = false;
 
@@ -529,9 +547,39 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
     // GetSuperBase = __super__.prototype = Base.prototype).
     // For classes without extends, __super__ = C.prototype (super_is_home_object=true,
     // so GetSuperBase = Object.getPrototypeOf(__super__) = Object.prototype).
+    //
+    // Each class gets a UNIQUE __super__ binding name (__super__0, __super__1, ...)
+    // so that multiple classes in the same function scope don't clobber each other.
+    // Without this, the last `extends` clause in a function would overwrite the
+    // shared __super__ slot, causing earlier constructors to call the wrong
+    // superclass via super().
     char[] super_name = "__super__";
-    ushort super_reg = self.declare_var(super_name, LET);
-    uint super_name_idx = self.add_string_constant(super_name);
+    char[32] super_buf;
+    uint super_counter = self.super_class_counter;
+    self.super_class_counter = super_counter + 1;
+    // Build unique name: "__super__" + counter digits
+    uint super_pos = 0;
+    for (uint i = 0; i < super_name.len; i++) { super_buf[super_pos] = super_name[i]; super_pos++; }
+    if (super_counter == 0) {
+        super_buf[super_pos] = '0';
+        super_pos++;
+    } else {
+        char[10] num_buf;
+        uint num_pos = 0;
+        uint c = super_counter;
+        while (c > 0) {
+            num_buf[num_pos] = (char)('0' + c % 10);
+            num_pos++;
+            c = c / 10;
+        }
+        for (uint i = 0; i < num_pos; i++) {
+            super_buf[super_pos] = num_buf[num_pos - 1 - i];
+            super_pos++;
+        }
+    }
+    ushort super_reg = self.declare_var(super_buf[:super_pos], LET);
+    self.super_name_idx = self.add_string_constant(super_buf[:super_pos]);
+    uint super_name_idx = self.super_name_idx;
 
     // TypeScript: class-level type parameters `class Foo<T, U> { ... }`.
     if (self.lexer.ts_mode && self.check(TokenType.LT)) {
@@ -542,9 +590,30 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
     // resolve `super.x` against this binding via GETPROTO (HomeObject = the
     // constructor, per §13.3.7.1), independent of the extends clause: it is
     // bound to ctor_reg once the constructor closure exists, below.
-    char[] static_super_name = "__static_super__";
-    ushort static_super_reg = self.declare_var(static_super_name, LET);
-    uint static_super_name_idx = self.add_string_constant(static_super_name);
+    char[] static_super_name_src = "__static_super__";
+    char[32] static_super_buf;
+    uint static_super_pos = 0;
+    for (uint i = 0; i < static_super_name_src.len; i++) { static_super_buf[static_super_pos] = static_super_name_src[i]; static_super_pos++; }
+    if (super_counter == 0) {
+        static_super_buf[static_super_pos] = '0';
+        static_super_pos++;
+    } else {
+        char[10] num_buf2;
+        uint num_pos2 = 0;
+        uint c2 = super_counter;
+        while (c2 > 0) {
+            num_buf2[num_pos2] = (char)('0' + c2 % 10);
+            num_pos2++;
+            c2 = c2 / 10;
+        }
+        for (uint i = 0; i < num_pos2; i++) {
+            static_super_buf[static_super_pos] = num_buf2[num_pos2 - 1 - i];
+            static_super_pos++;
+        }
+    }
+    ushort static_super_reg = self.declare_var(static_super_buf[:static_super_pos], LET);
+    uint static_super_name_idx = self.add_string_constant(static_super_buf[:static_super_pos]);
+    self.static_super_name_idx = static_super_name_idx;
 
     // For default-exported anonymous classes, the constructor's visible
     // `.name` is the literal "default" (ES2024 §16.2.3.7); the binding
@@ -1701,7 +1770,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
     if (class_has_static_name) ctor_class_name = {};
     if (ctor_inner_idx == 0xFFFFFFFF) {
         heap::Heap* hp = (heap::Heap*)self.heap;
-        CompiledFunction*? ctor_func_raw = make_default_constructor(hp, self.has_super_binding, ctor_class_name);
+        CompiledFunction*? ctor_func_raw = make_default_constructor(hp, self.has_super_binding, ctor_class_name, super_buf[:super_pos]);
         if (catch err = ctor_func_raw) {
             return COMPILE_ERROR~;
         }
@@ -1990,6 +2059,8 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
     self.in_class_body = saved_in_class_body;
     self.has_super_binding = saved_has_super;
     self.super_is_home_object = saved_super_is_home;
+    self.super_name_idx = saved_super_name_idx;
+    self.static_super_name_idx = saved_static_super_name_idx;
     self.pop_private_scope();
 
     return ctor_reg;

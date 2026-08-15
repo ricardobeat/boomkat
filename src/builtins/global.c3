@@ -862,6 +862,8 @@ fn void builtin_eval(BuiltinContext* ctx) {
     uint parent_priv_count = 0;
     bool caller_super_is_home_object = false;
     bool caller_forbids_arguments = false;
+    char[] parent_super_name = {};
+    char[] parent_static_super_name = {};
     if (precheck_act_count > 0) {
         precheck_caller = &precheck_vm.activations[precheck_act_count - 1];
         caller_has_direct_eval = (precheck_caller.flags & vm::ACT_FLAG_DIRECT_EVAL) != 0;
@@ -906,6 +908,17 @@ fn void builtin_eval(BuiltinContext* ctx) {
                 caller_super_is_home_object = caller_cf.super_is_home_object();
                 parent_priv_names = caller_cf.eval_private_names;
                 parent_priv_count = caller_cf.eval_private_name_count;
+                // Read the caller's super name for direct eval super resolution.
+                // The eval body needs the numbered binding name (e.g. "__super__0")
+                // to match the actual env chain entry, not the literal "__super__".
+                if (caller_cf.super_binding_name != null) {
+                    HString* super_hstr = (HString*)caller_cf.super_binding_name;
+                    parent_super_name = super_hstr.get_data();
+                }
+                if (caller_cf.static_super_binding_name != null) {
+                    HString* static_super_hstr = (HString*)caller_cf.static_super_binding_name;
+                    parent_static_super_name = static_super_hstr.get_data();
+                }
                 // ContainsArguments (ES2022 §15.7.10 step 14): a direct eval
                 // called from a class field/static initializer or static
                 // block, or from another eval body that itself inherited
@@ -927,7 +940,9 @@ fn void builtin_eval(BuiltinContext* ctx) {
                                                     caller_has_direct_eval,
                                                     caller_super_is_home_object,
                                                     caller_allows_super_call,
-                                                    caller_forbids_arguments);
+                                                    caller_forbids_arguments,
+                                                    parent_super_name,
+                                                    parent_static_super_name);
     CompiledFunction* func;
     if (try f = cf) {
         func = f;

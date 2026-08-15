@@ -3585,9 +3585,18 @@ fn ushort? CompilerContext.member_expr(&self) {
 /// (the `extends Base` case), so the base is `Base.prototype` via GETPROP.
 /// Returns the register holding the super base (caller owns/frees it).
 fn ushort CompilerContext.emit_super_base(&self) {
-    uint super_name_idx = self.super_is_static_method
-        ? self.add_string_constant("__static_super__")
-        : self.add_string_constant("__super__");
+    uint super_name_idx;
+    if (self.super_is_static_method) {
+        super_name_idx = self.static_super_name_idx;
+        if (super_name_idx == 0xFFFFFFFF) {
+            super_name_idx = self.add_string_constant("__static_super__");
+        }
+    } else {
+        super_name_idx = self.super_name_idx;
+        if (super_name_idx == 0xFFFFFFFF) {
+            super_name_idx = self.add_string_constant("__super__");
+        }
+    }
     ushort super_ctor_reg = self.alloc_reg();
     self.emit_a_bc(Opcode.GETVAR, (uint)super_ctor_reg, super_name_idx);
     ushort super_proto_reg;
@@ -4548,7 +4557,12 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 if (!self.is_constructable) {
                     return COMPILE_ERROR~;
                 }
-                uint super_name_idx = self.add_string_constant("__super__");
+                uint super_name_idx = self.super_name_idx;
+                if (super_name_idx == 0xFFFFFFFF) {
+                    // Fallback for contexts that haven't set super_name_idx
+                    // (e.g. object literal methods): use the generic name.
+                    super_name_idx = self.add_string_constant("__super__");
+                }
                 ushort super_reg = self.alloc_reg();
                 self.emit_a_bc(Opcode.GETVAR, (uint)super_reg, super_name_idx);
 
