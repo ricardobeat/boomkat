@@ -1500,6 +1500,16 @@ struct CompiledFunction {
     // bytecode.c3 does not import. The compiler and builtin_eval both cast.
     void*           eval_private_names;
     uint            eval_private_name_count;
+    /// HString* of this function's enclosing class's `__super__ binding name
+    /// (e.g. "__super__0"; each class in a scope gets a unique number).
+    /// Two readers: builtin_eval re-interns it into the eval context's
+    /// constant pool so direct `eval("super.x")` GETVARs the numbered
+    /// binding, and Object.setPrototypeOf's class sync (object.c3) writes
+    /// the new [[Prototype]] under this name, keeping the binding in step
+    /// with GetSuperConstructor's runtime read. Null outside any class.
+    void*           super_binding_name;
+    /// HString* of the enclosing class's __static_super__ binding name.
+    void*           static_super_binding_name;
 }
 
 // ============================================================================

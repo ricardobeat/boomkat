@@ -111,6 +111,12 @@ fn CompiledFunction*? compile(Lexer* lex, void* heap) {
 /// still throws ReferenceError there, same as the spec's HasSuperBinding
 /// check would.
 ///
+/// `parent_super_name`/`parent_static_super_name`: when the caller is inside
+/// a class body with a numbered __super__ binding (e.g. "__super__0"), these
+/// pass the binding name so the eval context re-interns it into its own
+/// constant pool. Without this, eval("super.x") would GETVAR the literal
+/// "__super__" instead of the numbered name in the environment chain.
+///
 /// `parent_private_names`/`parent_private_name_count`: ES2022 §8.7.1 says
 /// direct eval inherits the calling execution context's PrivateEnvironment.
 /// `parent_private_names` is a heap-tracked snapshot of the caller's
@@ -144,7 +150,9 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
                                     bool  is_direct_eval = false,
                                     bool  parent_super_is_home_object = false,
                                     bool  allow_super_call = false,
-                                    bool  caller_forbids_arguments = false) {
+                                    bool  caller_forbids_arguments = false,
+                                    char[] parent_super_name = {},
+                                    char[] parent_static_super_name = {}) {
     lex.err_msg[0] = 0;
     lex.err_line = 0;
     lex.err_col  = 0;
@@ -155,6 +163,15 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
     ctx.in_eval_code = true;
     ctx.has_super_binding = allow_super;
     ctx.super_is_home_object = parent_super_is_home_object;
+    // Re-intern the caller's numbered super name (e.g. "__super__0") into
+    // the eval context's own constant pool so GETVAR resolves the binding
+    // that actually exists in the environment chain.
+    if (allow_super && parent_super_name.len > 0) {
+        ctx.super_name_idx = ctx.add_string_constant(parent_super_name);
+    }
+    if (allow_super && parent_static_super_name.len > 0) {
+        ctx.static_super_name_idx = ctx.add_string_constant(parent_static_super_name);
+    }
     // A direct eval inside a derived-class constructor may contain a `super()`
     // call (ES2022 §15.7.3 PerformEval: the eval inherits the caller's
     // GetThisEnvironment, whose FunctionEnvironmentRecord has [[ThisBinding

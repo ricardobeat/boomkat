@@ -603,6 +603,19 @@ struct CompilerContext {
     /// .prototype, so `super.x` there must resolve against __static_super__
     /// (always via GETPROTO on the constructor) rather than __super__.
     bool super_is_static_method;
+    /// Constant-pool index of the per-class `__super__` binding name (unique
+    /// per class definition).  Each class with `extends` gets its own binding
+    /// so that multiple classes in the same function scope don't share a
+    /// single __super__ slot (which the last `extends` clause would clobber).
+    /// 0xFFFFFFFF means unset (no enclosing class).
+    uint super_name_idx;
+    /// Constant-pool index of the per-class `__static_super__` binding name,
+    /// mirroring super_name_idx.  0xFFFFFFFF means unset (no enclosing class
+    /// with static super access).
+    uint static_super_name_idx;
+    /// Monotonic counter used to generate unique __super__ binding names
+    /// across classes within the same function scope.
+    uint super_class_counter;
 
     // Private class members (ES2022), name resolution.  Stack of declared
     // private names across nested class bodies; private_scope_start marks
@@ -989,6 +1002,8 @@ fn void CompilerContext.init(&self, Lexer* lex, void* heap) {
     self.pushback_count = 0;
     self.pending_async_arrow_src = 0xFFFFFFFF;
     self.pending_async_function_src = 0xFFFFFFFF;
+    self.super_name_idx = 0xFFFFFFFF;
+    self.static_super_name_idx = 0xFFFFFFFF;
 
     // Allocate growable buffers
     Heap* h = (Heap*)heap;
@@ -2101,6 +2116,20 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         // inherited private names (matches the pre-fix behaviour). Failing
         // the compile here would be worse: a transient alloc hiccup would
         // break every class-body eval test.
+    }
+
+    // Super-binding-name snapshot: any function compiled inside a class
+    // records the HString* of that class's numbered __super__ binding (e.g.
+    // "__super__0"). builtin_eval re-interns it into the eval context's
+    // constant pool so direct `eval("super.x")` GETVARs the numbered
+    // binding instead of the literal "__super__" that no longer exists in
+    // the env chain; Object.setPrototypeOf's class sync (object.c3) writes
+    // the new [[Prototype]] under this name.
+    if (self.super_name_idx != 0xFFFFFFFF) {
+        func.super_binding_name = self.constants[self.super_name_idx].get_heapptr();
+    }
+    if (self.static_super_name_idx != 0xFFFFFFFF) {
+        func.static_super_binding_name = self.constants[self.static_super_name_idx].get_heapptr();
     }
 
     // Run bytecode peephole optimizations (GETPROPC2 chain fusion, etc.)
