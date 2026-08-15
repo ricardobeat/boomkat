@@ -1821,6 +1821,42 @@ fn void CompilerContext.emit_hoisted_fn_decls(&self) {
     }
 }
 
+/// Whether a new Statement can begin immediately after a token of type `tt`,
+/// for the raw-token hoist pre-scan. Used to tell a FunctionDeclaration from a
+/// FunctionExpression (ES2024 §14.1): only the former is hoisted, and only the
+/// former's name binds in the enclosing scope.
+///
+/// A statement can follow a `;`, a `{`/`}` (a block boundary), a `:` (a
+/// LabelledStatement's colon, and — harmlessly for this use — an
+/// object-literal or conditional colon, where a `function` after it is an
+/// expression whose name the scan already leaves alone because it sits past
+/// `own_depth`), a `case`/`default` clause colon, or one of the keywords whose
+/// body is a Statement rather than an expression (`else`, `do`, `try`,
+/// `finally`). Everything else means an expression is still in progress, so a
+/// `function` there is a FunctionExpression.
+///
+/// A `function` immediately after an `if (...)`/`for (...)`/`while (...)`
+/// header is not covered (RPAREN is not listed): a FunctionDeclaration is not a
+/// legal body for those (§14.1 forbids it outside a Block), so the only
+/// `function` reachable there is an expression.
+fn bool stmt_start_after(TokenType tt) {
+    switch (tt) {
+        case TokenType.SEMICOLON:
+        case TokenType.LBRACE:
+        case TokenType.RBRACE:
+        case TokenType.COLON:
+        case TokenType.ELSE:
+        case TokenType.DO:
+        case TokenType.TRY:
+        case TokenType.FINALLY:
+        case TokenType.CASE:
+        case TokenType.DEFAULT:
+            return true;
+        default:
+            return false;
+    }
+}
+
 fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = false) {
     // self.is_async doubles as the "saw `async function`" latch between loop
     // iterations below. It must start clear, otherwise, inside an async
@@ -1867,6 +1903,18 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
     // included (ES2019 §19.2.3.5 requires the exact source text).
     uint pending_async_fn_kw_pos = 0xFFFFFFFF;
 
+    // ES2024 §14.1: `function` introduces a HoistableDeclaration only in
+    // statement position. In expression position it is a FunctionExpression,
+    // whose name (if any) binds only inside its own body (§15.2.5), so
+    // hoisting that name here would declare a var in the ENCLOSING scope and
+    // clobber a same-named parameter (`(function e(n){})(e)` passed the
+    // function instead of `e`). Anonymous expressions were already excluded
+    // by the name check below; this tracks the position so a *named* one is
+    // excluded too. A statement can start at the scan's beginning, after a
+    // `;`, after a block/statement brace, or after a label colon; every
+    // other token means an expression is in progress.
+    bool at_stmt_start = true;
+
     while (true) {
         // Save lexer state before consuming this token (so we can restore
         // and re-consume it for function compilation).
@@ -1885,6 +1933,12 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
         TokenType tt = tok_opt.type;
 
         if (tt == TokenType.EOF_TOKEN) break;
+
+        // Whether THIS token sits in statement position, plus the value the
+        // flag takes for the next one. Computed here because most branches
+        // below `continue` out of the loop body.
+        bool tok_at_stmt_start = at_stmt_start;
+        at_stmt_start = stmt_start_after(tt);
 
         if (tt == TokenType.LBRACE) {
             tscan.on_lbrace();
@@ -1943,6 +1997,11 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
                     self.lexer.pushback(fn_tok);
                 }
                 self.is_async = true;
+                // `async` is lexed as an IDENTIFIER, which normally ends
+                // statement position; carry this token's own position over to
+                // the pushed-back `function` so `async function f(){}` still
+                // hoists as a declaration.
+                at_stmt_start = tok_at_stmt_start;
                 continue;
             }
             // Not followed by function (or line terminator broke the
@@ -1979,6 +2038,11 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
             // class bodies inside a nested function are already unreachable
             // here because that function was skipped wholesale above.
             self.skip_class_body();
+            // A ClassDeclaration's body ends the statement (a ClassExpression's
+            // does not, but treating the next `function` as a declaration is
+            // only wrong for `(class{}) function` shapes, which are not valid
+            // JS anyway). The loop never sees the body's closing '}'.
+            at_stmt_start = true;
             continue;
         }
 
@@ -1999,7 +2063,11 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
         // `regenerate` module loses its `module`/`exports` pair this way).
         // A block-scoped function declaration is lexically bound in strict
         // mode, so this scan never needed to record it either.
-        if (brace_depth > own_depth && tt == TokenType.FUNCTION) {
+        // A FunctionExpression at this scan's own top level (`(function f(){})()`,
+        // `!function f(){}()`, `[function f(){}]`) is skipped by the same path:
+        // it declares nothing here, and hoisting its name would bind it in this
+        // scope instead of only inside its own body (§15.2.5).
+        if ((brace_depth > own_depth || !tok_at_stmt_start) && tt == TokenType.FUNCTION) {
             self.is_async = false;
             Token? nstar = self.lexer.next_token();
             if (catch _errn = nstar) continue;
@@ -2038,6 +2106,9 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
                 }
                 // skip_function_body expects lexer past the name, skip (params) { body }
                 self.skip_function_body();
+                // The skipped body's closing '}' ends the statement, and the
+                // loop never sees that token itself.
+                at_stmt_start = true;
                 continue;
             }
             // If we detected `async function` above, is_async is already true.
@@ -2256,7 +2327,13 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
                 }
             }
 
-            // Lexer is now past the function body. Continue scanning.
+            // Lexer is now past the function body. A declaration's body ends
+            // the statement, so the next token starts a new one — the loop
+            // never sees the body's closing '}' itself (compile_inner_function
+            // consumed it), so set this explicitly or the following
+            // `function` would be misread as an expression.
+            at_stmt_start = true;
+            // Continue scanning.
         } else if (tt == TokenType.VAR) {
             // var declarations hoist through nested blocks (if/for/try/plain
             // `{}`) to the enclosing function or Program/module scope,

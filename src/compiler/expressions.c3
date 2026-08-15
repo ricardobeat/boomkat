@@ -194,15 +194,29 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
         uint _pbc   = self.pushback_count;
         Token[4] _pbs = self.pushback_stack;
 
-        // Skip past the pattern (match brackets/braces at any depth)
+        // Skip past the pattern (match brackets/braces at any depth),
+        // template-aware (see TemplateScan) so a `}` closing a `${` is not
+        // counted as pattern nesting: miscounting it consumes a real `}` to
+        // compensate and runs the scan far past the pattern, resuming the
+        // re-lex from a position inside a later string or template.
         self.advance()!; // consume '[' or '{'
         uint depth = 1;
+        TemplateScan tscan;
         while (depth > 0) {
             Token? next_opt = self.lexer.next_token();
             if (try next = next_opt) {
-                if (next.type == TokenType.LBRACKET || next.type == TokenType.LBRACE) {
+                if (next.type == TokenType.LBRACE) {
+                    tscan.on_lbrace();
                     depth++;
-                } else if (next.type == TokenType.RBRACKET || next.type == TokenType.RBRACE) {
+                } else if (next.type == TokenType.LBRACKET) {
+                    depth++;
+                } else if (next.type == TokenType.TEMPLATE_HEAD) {
+                    tscan.on_template_head();
+                } else if (next.type == TokenType.RBRACE) {
+                    TemplateBrace tb = tscan.classify_rbrace(self.lexer);
+                    if (tb == TemplateBrace.LEX_ERROR) break;
+                    if (tb == TemplateBrace.BLOCK) depth--;
+                } else if (next.type == TokenType.RBRACKET) {
                     depth--;
                 } else if (next.type == TokenType.EOF_TOKEN) {
                     break;
