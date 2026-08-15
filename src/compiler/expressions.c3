@@ -5095,19 +5095,31 @@ fn ushort? CompilerContext.object_literal(&self) {
                 // `{ yield(){} }` use the property-name path, not this one.
 
                 // Check for getter/setter: `get prop() {}` / `set prop(v) {}`
-                // If key is "get" or "set" AND next token is a property key (not `:` or `(`)
                 // Generator-method shorthand forbids the getter/setter shape, `*get` / `*set`
                 // would otherwise be misparsed as a method shorthand that named `get`/`set`,
                 // so we disable the detection entirely when a star was consumed.
                 bool is_obj_getter = false;
                 bool is_obj_setter = false;
+                // `get`/`set` opens an accessor only when the NEXT token can
+                // actually start a PropertyName. Excluding just `:` and `(`
+                // left every other shorthand form (`{ get, set }`, `{ get }`,
+                // `{ get = d }`) misparsed as an accessor with a missing name.
+                // Same positive predicate the class body uses (class.c3's
+                // next_starts_key), minus HASH_IDENT: private names are class
+                // elements only.
+                bool next_starts_key = self.check(TokenType.IDENTIFIER)
+                    || self.check(TokenType.STRING)
+                    || self.check(TokenType.NUMBER)
+                    || self.check(TokenType.BIGINT)
+                    || self.check(TokenType.LBRACKET)
+                    || lexer::keyword_to_string(self.peek_type()).len > 0;
                 // Escaped `get`/`set` (`get m(){}`) is a plain
                 // IdentifierName, never the contextual accessor keyword
                 // (ES2024 §5.1.5), so it does not open an accessor. It then
                 // fails as `get m(){}` — two names with no separator — which
                 // is the SyntaxError the spec requires.
                 if (!is_generator_method && key_tt == TokenType.IDENTIFIER && !key_tok.has_escape
-                        && !self.check(TokenType.COLON) && !self.check(TokenType.LPAREN)) {
+                        && next_starts_key) {
                     if (key_tok.str_value.len == 3
                         && key_tok.str_value[0] == 'g'
                         && key_tok.str_value[1] == 'e'

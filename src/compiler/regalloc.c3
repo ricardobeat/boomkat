@@ -77,6 +77,24 @@ fn void CompilerContext.free_reg(&self, ushort reg) {
     }
 }
 
+/// Free the register an expression evaluated into, but only when it is a
+/// temporary. A `let`/`const` slot is allocated after the prologue, so it sits
+/// ABOVE reserved_regs and free_reg's guard does not protect it; when the
+/// expression was a bare reference to such a binding, the register handed back
+/// IS the binding's home slot and the next allocation overwrites the live
+/// local. `let v = o.get(k); if (v) { v.push(x); }` loaded the `"push"` key
+/// constant straight over `v`, so the method call ran against the string.
+///
+/// Callers that free "whatever the expression returned" (statement conditions,
+/// discarded operands) must use this instead of free_reg. primary_expr already
+/// reports the case through last_was_local_var/last_local_var_reg, so this is
+/// O(1) — free_reg is hot enough that scanning the scope stack there costs
+/// ~18% of compile time.
+fn void CompilerContext.free_expr_reg(&self, ushort reg) {
+    if (self.last_was_local_var && self.last_local_var_reg == reg) return;
+    self.free_reg(reg);
+}
+
 /// Free registers back to a saved point (never below reserved_regs).
 fn void CompilerContext.free_regs_to(&self, ushort saved) {
     if (saved < self.reserved_regs) {
