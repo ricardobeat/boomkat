@@ -5,51 +5,81 @@ the real-world library corpus (load sweep) this session; this doc tracks what
 is still open, surfaced either by the corpus work itself or by the opus
 review pass over its ~28 fix commits (867c1f6a..6377fc14).
 
-## Open bugs
+## Fixed this pass
 
-### 1. `class_kw_starts_class()` misses `await` as a class binding identifier — HIGH, confirmed
-
-`src/compiler/functions.c3:1874` (`class_kw_starts_class`), called from
-`functions.c3:2052` (`hoist_decls`) and `statements.c3:1215`
-(`pre_scan_var_decls`).
-
-```c3
-fn bool CompilerContext.class_kw_starts_class(&self) {
-    TokenType nt = self.peek_type();
-    return nt == TokenType.IDENTIFIER || nt == TokenType.EXTENDS || nt == TokenType.LBRACE;
-}
-```
+### 1. `class_kw_starts_class()` missed `await` as a class binding identifier (c8539a8a)
 
 `AWAIT` is its own `TokenType`, not `IDENTIFIER`, but `class await {}` is a
-legal BindingIdentifier in non-async, non-module code (the parser itself
-accepts it). The gate returns false here, so `skip_class_body()` is never
-called and the class body's `var`s leak into the enclosing scope — the exact
-leak this gate exists to prevent, reintroduced for one name.
+legal BindingIdentifier in non-async, non-module code. The gate returned
+false, so `skip_class_body()` never ran during the hoist pre-scans and the
+class body's `var`s leaked into the enclosing scope. The gate now accepts
+`AWAIT` via the shared `await_is_identifier` predicate (one change covers both
+call sites, `hoist_decls` and `pre_scan_var_decls`). `yield`/`static`/`let`/
+`package`/`implements` stay rejected. Test: `test/codegen_class_await_bindings.js`.
 
-Repro:
 ```js
 function f() {
   class await { m() { var leaked = 1; } }
   try { return "" + leaked; } catch (e) { return e.name; }
 }
 ```
-Engine currently prints `undefined`; spec/qjs give `ReferenceError`.
+Now prints `ReferenceError`, matching qjs.
 
-Fix: add `nt == TokenType.AWAIT` to the positive test at both call sites
-(same function, so one change covers both). Verify `yield`/`static` stay
-correctly rejected (strict mode already handles `yield` as reserved; no
-change needed there).
+### 2. `last_local_var_reg` stale at 2 of 4 `last_was_local_var` set sites (c8539a8a)
 
-### 2. `last_local_var_reg` stale at 2 of 4 `last_was_local_var` set sites — LOW, inspection only
+`expressions.c3`'s assignment result paths (simple `=` and compound `op=`)
+set `last_was_local_var = true` without updating `last_local_var_reg`. The
+guard in `free_expr_reg` is a conjunction, so this failed safe
+(under-protects). Both sites now record the register. No behavioral change
+was observable; the contract is pinned by
+`test/codegen_assignment_last_local_var_reg.js`.
 
-`src/compiler/expressions.c3:916` and `:983` (compound/simple assignment
-result paths) set `last_was_local_var = true` without updating
-`last_local_var_reg`, unlike the two bare-identifier-read sites (`:3831`,
-`:4408`). `free_expr_reg`'s guard is a conjunction
-(`last_was_local_var && last_local_var_reg == reg`), so this fails *safe*
-(under-protects, never over-frees) — could not turn into a wrong answer in
-review (`if ((v = {...}))` / `while ((y = {...}))` matched qjs). Worth
-tightening for robustness/completeness, not urgent.
+### 3. `looks_like_module()` false positive on `export:` at line start (c8539a8a)
+
+The detector treated any post-newline position as a statement start, so
+`export: 95,` inside a multi-line object literal (typescript 5.4.5's keyword
+table) routed a plain script through the ESM pipeline and reported failures
+as opaque `module rc=2`/`rc=1`. The scanner now tracks brace/paren/bracket
+depth and only matches `import`/`export` whole words at depth 0;
+`import(` (dynamic import) is excluded. Strings are still not lexed, same as
+before. Test: `test/cli_looks_like_module_depth.js`.
+
+### 4. Shared `__super__` slot: sibling classes clobbered each other (8d951801)
+
+Every class in one function scope declared a single shared `__super__` /
+`__static_super__` let-binding, so the last `extends` clause overwrote the
+earlier ones. The typescript bundle's services block defines ~10 sibling
+classes in one `__esm` callback; `super()` in an early constructor resolved
+to the last class's prototype object and threw "object is not a constructor"
+(this was the api-check driver failure previously blamed on the
+`objectAllocator` pattern itself).
+
+Each class now gets numbered bindings (`__super__0`, `__super__1`, ...) from
+a per-context counter, propagated into inner functions, field/static
+initializer contexts, static blocks, computed keys, parameter defaults, and
+direct eval (the enclosing `CompiledFunction` snapshots the binding name so
+`builtin_eval` can re-intern it). `Object.setPrototypeOf`'s class sync
+(object.c3) writes the new `[[Prototype]]` under the numbered name, so
+`super()` still observes runtime prototype changes
+(`language/expressions/super/call-proto-not-ctor.js`). Tests:
+`test/test_super_unique_bindings.js`, `test/test_class_super_bindings.js`.
+
+### 5. `captures.c3` `CLASS` comment (c8539a8a)
+
+The unguarded `CLASS` check now carries a comment recording why it stays an
+over-approximation (`capture_all = true`) rather than a lookahead gate like
+`class_kw_starts_class`: that scan works on raw token streams without lexer
+restore, and over-approximation is safe.
+
+## Open bugs
+
+### typescript api-check: `Cannot create property 'jsDoc' on string`
+
+The driver now loads the bundle and runs TS's own parser (both fixes above
+landed), then dies during `createSourceFile`/`transpileModule` with
+`TypeError: Cannot create property 'jsDoc' on string`. Next layer of the
+same driver; reproduce with `python3 scripts/verify_libraries.py --no-fetch
+--api-checks typescript`. Own task.
 
 ### 3. `BigNumber.prototype.sqrt()` and `new BigNumber("1.1", 24)` — NOT REPRODUCING
 
@@ -66,14 +96,14 @@ vendored 9.3.1 bundle in `test/libcorpus/_wrapped/bignumberjs.js` (md5
 | `new BN("2").sqrt()`             | `1.4142135623730950488`                 | `1.4142135623730950488`                  |
 | `new BN("0").sqrt()`             | `0`                                     | `0`                                      |
 | `new BN("4").sqrt()`             | `2`                                     | `2`                                      |
-| `new BN("0.5").sqrt()`           | `0.7071067811865475244`                 | `0.7071067811865475244`                  |
+| `new BN("0.5").sqrt()`           | `0.707106...5244`                       | `0.707106...5244`                        |
 | `new BN("1.1", 24)`              | `1.04166666666666666667`                | `1.04166666666666666667`                 |
 | `new BN("1.5", 24)`              | `1.20833333333333333333`                | `1.20833333333333333333`                 |
 | `new BN("1.1", 2)`               | `1.5`                                   | `1.5`                                    |
 | `new BN("ff", 16)`               | `255`                                   | `255`                                    |
 | `new BN("zz", 36)`               | `1295`                                  | `1295`                                   |
 | `new BN("1.1", 36)`              | `1.02777777777777777778`               | `1.02777777777777777778`                |
-| `new BN("2e30").sqrt()`          | `1414213562373095.04880168872420969808` | `1414213562373095.04880168872420969808`  |
+| `new BN("2e30").sqrt()`          | `1414213562373095.0488...`              | `1414213562373095.0488...`               |
 | `new BN("1").dividedBy("3").toFixed(10)` | `0.3333333333`                | `0.3333333333`                           |
 
 The api-check driver
@@ -93,46 +123,25 @@ A targeted bisect was not run; a future bisect would start at the last commit
 that *did* show the throw (probably post-`f258fb1b`, pre-`0e135315`) and
 walk forward.
 
-## Unverified corpus claims
+## Corpus claims
 
-The opus review agent's worktree had no vendored bundles
-(`test/libcorpus/` empty, reports 0/22 MISSING), so the 22/22 load and
-21/22 (typescript api-check still failing — see below) numbers from this
-session are **not independently re-verified**. Re-run
-`python3 scripts/verify_libraries.py --api-checks` (with network, or from a
-worktree that has `test/libcorpus` populated) to confirm before relying on
-those numbers for anything downstream.
+Independently re-verified from a worktree with `test/libcorpus` populated
+(2026-08-16, at 8d951801): load sweep 22/22, api-checks 21/22. The one
+failing driver is typescript, on the jsDoc bug above. `substr` picked up
+explicit ±Infinity/undefined-length guards in the same pass (186ca01a);
+pinned by `test/test_substr_infinity.js`.
 
 ## Known-open, not yet investigated further
 
-- **typescript's `--api-checks` driver still fails** even though the load
-  sweep now passes (22/22 load, but api-checks was 21/22 as of the
-  typescript fix). It reaches TypeScript's own parser and dies with
-  `object is not a constructor` at `IdentifierObject`
-  (TS's `objectAllocator` pattern). Confirmed not a regression — the
-  pre-fix build failed earlier and harder on the same driver. Separate bug,
-  own task.
-- **`looks_like_module()` false-positive** in `cli/duktape_c3.c3`: flags the
-  typescript bundle as ESM because `export: 95,` appears at line start
-  inside an object literal, routing a plain script through the ESM
-  pipeline. Harmless currently (qjs also passes the file), but is why the
-  original typescript failure surfaced as an opaque `module rc=2`/`rc=1`
-  instead of a real error location. Worth a proper fix (don't sniff `export`
-  as a bare keyword at line start inside braces).
 - **Annex B HTML tag methods (`anchor`, `big`, `blink`, `bold`, `fixed`,
   `fontcolor`, `fontsize`, `italics`, `link`, `small`, `strike`, `sub`,
-  `sup`)**: swept in the same branch, then **rejected as out of scope**.
-  The engine's scope (docs/engine-scope.md) excludes Annex B legacy; only
-  `trimLeft`/`trimRight` and the global `escape`/`unescape` functions
-  were retained because the real-world library corpus needs them; nothing
-  in the corpus uses these 13 HTML-tag methods, and they diverge from the
-  spec's `EscapeAttributeValue` (only escaping `"` instead of `&"'<>`).
-  Item closed as deliberately not implemented.
-- **`captures.c3:222`** has the same unguarded `CLASS` check as the
-  original `class_kw_starts_class` bug, but degrades safely to
-  `capture_all = true` (over-approximation, not a leak) — deliberately left
-  alone by the typescript-fix agent, worth a comment or a matching gate for
-  consistency but not a correctness bug.
+  `sup`)**: swept, then **rejected as out of scope**. The engine's scope
+  (docs/engine-scope.md) excludes Annex B legacy; only `trimLeft`/`trimRight`
+  and the global `escape`/`unescape` functions were retained because the
+  real-world library corpus needs them; nothing in the corpus uses these 13
+  HTML-tag methods, and they diverge from the spec's `EscapeAttributeValue`
+  (only escaping `"` instead of `&"'<>`). Item closed as deliberately not
+  implemented.
 - **`a6cca422`'s sibling paths** (other compiled-setter staging call sites)
   and **`3aa4544c`'s Reflect.apply note** — both commits self-flagged
   "other similar sites not audited"; opus review could not reproduce decay
