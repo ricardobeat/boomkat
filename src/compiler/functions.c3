@@ -1857,6 +1857,25 @@ fn bool stmt_start_after(TokenType tt) {
     }
 }
 
+/// Whether the `class` token the raw-token pre-scan just consumed really opens
+/// a ClassDeclaration/ClassExpression, as opposed to being an IdentifierName in
+/// property position (`{ class: 86 }`, `{ class() {} }`, `o.class`, `{ class }`).
+///
+/// `class` is a reserved word, but a PropertyName and a MemberExpression's name
+/// are IdentifierNames, so both accept it. Treating those as a real class made
+/// skip_class_body() hunt forward for a `{` and skip a balanced block that
+/// belongs to the enclosing code, silently swallowing every declaration after
+/// it (typescript 5.4.5's keyword table, `{ class: 86, ... }`, ate the rest of
+/// its module and the `var`s past it were never hoisted).
+///
+/// Positive test rather than a blacklist of property contexts: after the `class`
+/// keyword the grammar allows only a BindingIdentifier, `extends`, or the body's
+/// `{`. The lexer is restored either way, this is pure lookahead.
+fn bool CompilerContext.class_kw_starts_class(&self) {
+    TokenType nt = self.peek_type();
+    return nt == TokenType.IDENTIFIER || nt == TokenType.EXTENDS || nt == TokenType.LBRACE;
+}
+
 fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = false) {
     // self.is_async doubles as the "saw `async function`" latch between loop
     // iterations below. It must start clear, otherwise, inside an async
@@ -2030,7 +2049,7 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
             continue;
         }
 
-        if (tt == TokenType.CLASS) {
+        if (tt == TokenType.CLASS && self.class_kw_starts_class()) {
             // A class body is its own VarDeclaredNames scope, skip it whole
             // so a method/field-initializer's `var` locals never leak into
             // this scope. This applies at any depth the scan reaches (a class

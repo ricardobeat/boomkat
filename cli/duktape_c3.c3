@@ -79,6 +79,11 @@ fn int main(String[] args) {
     if (looks_like_module(source)) {
         int rc = esm::run_module_file(hp, v, (char[])path);
         if (rc != 0) io::eprintfn("module rc=%d", rc);
+        // rc 1 means the module body threw and left the value on the error
+        // channel. Reporting it here matches the script path's print_uncaught;
+        // without it a module-shaped file failing at runtime printed only
+        // "module rc=1", naming neither the error nor where it came from.
+        if (rc == 1 && hp.has_error) { print_uncaught(hp, &hp.error_value); }
         if (rc == 0 && unhandled_rejection_count > 0) return 1;
         return rc;
     }

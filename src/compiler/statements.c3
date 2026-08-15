@@ -1206,7 +1206,13 @@ fn uint CompilerContext.pre_scan_var_decls(&self, NameSpan* spans, uint capacity
         // VarDeclaredNames, not this block's. The inner walk swallows every
         // token through the body's closing RBRACE, so the outer loop resumes
         // cleanly at the next statement with brace_depth untouched.
-        if (tt == TokenType.FUNCTION || tt == TokenType.CLASS) {
+        //
+        // `class` only when it really opens one: as a PropertyName or member
+        // name it is an ordinary IdentifierName (`{ class: 1 }`, `o.class`),
+        // and consuming a body for it eats the enclosing block's tokens (see
+        // class_kw_starts_class).
+        if (tt == TokenType.FUNCTION
+            || (tt == TokenType.CLASS && self.class_kw_starts_class())) {
             int depth = 0;
             bool seen_body = false;
             while (true) {
@@ -2088,7 +2094,7 @@ fn void? CompilerContext.if_statement(&self) {
 
     // Emit conditional jump (skip then-branch if false)
     uint false_jump = self.emit_cond_jump(Opcode.IF_FALSE, (uint)cond_reg);
-    self.free_reg(cond_reg);
+    self.free_expr_reg(cond_reg);
 
     // Compile then-branch. The `)` just consumed closes the if-clause, not an
     // operand, so a following `/` must start a RegularExpressionLiteral (see
@@ -2338,7 +2344,7 @@ fn void? CompilerContext.while_statement(&self) {
         ushort cond_reg = self.expression()!;
         self.expect(TokenType.RPAREN)!;
         self.emit_cond_jump_back(Opcode.IF_TRUE, (uint)cond_reg, body_label);
-        self.free_reg(cond_reg);
+        self.free_expr_reg(cond_reg);
     }
 
     // exit: pop_loop patches all break jumps and resolves continue patches.
@@ -3776,7 +3782,7 @@ fn void? CompilerContext.for_statement(&self) {
             ushort cond_reg = self.expression()!;
             self.expect(TokenType.SEMICOLON)!;
             self.emit_cond_jump_back(Opcode.IF_TRUE, (uint)cond_reg, body_label);
-            self.free_reg(cond_reg);
+            self.free_expr_reg(cond_reg);
         }
     } else {
         // for(;;), unconditional back edge
@@ -4525,7 +4531,7 @@ fn void? CompilerContext.do_while_statement(&self) {
 
     // If condition is true, jump back to loop_start
     self.emit_cond_jump_back(Opcode.IF_TRUE, (uint)cond_reg, loop_start);
-    self.free_reg(cond_reg);
+    self.free_expr_reg(cond_reg);
 
     self.pop_loop();
 }
