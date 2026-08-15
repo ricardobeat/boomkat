@@ -714,6 +714,10 @@ fn void builtin_string_proto_substring(BuiltinContext* ctx) {
 }
 
 /// String.prototype.substr(start, length), ES5 §B.2.3
+///
+/// Per §B.2.3 step 4, an explicit `undefined` length means "+∞" — not the
+/// 0 that ToInteger(NaN) produces from a missing arg. Otherwise ToInteger
+/// applies and any negative result clamps to 0 via `resultLength ≤ 0`.
 fn void builtin_string_proto_substr(BuiltinContext* ctx) {
     HString* s_hstr = string_proto_get_this(ctx);
     if (s_hstr == null) {
@@ -729,6 +733,10 @@ fn void builtin_string_proto_substr(BuiltinContext* ctx) {
     int start_i;
     if (math::is_nan(start_d)) {
         start_i = 0;
+    } else if (start_d == double::inf) {
+        start_i = (int)len;
+    } else if (start_d == -double::inf) {
+        start_i = 0;
     } else if (start_d < 0) {
         start_i = (int)(long)start_d + (int)len;
         if (start_i < 0) start_i = 0;
@@ -737,22 +745,28 @@ fn void builtin_string_proto_substr(BuiltinContext* ctx) {
         if (start_i > (int)len) start_i = (int)len;
     }
 
+    // length_d = +∞ when no arg was passed or the arg was explicitly undefined.
+    // A `null` arg goes through ToInteger → 0 → empty string (matches qjs).
     double length_d;
-    if (ctx.argc > 1) {
-        length_d = builtin_to_integer_vm(ctx, &ctx.regs[ctx.base_reg + 1]);
+    if (ctx.argc < 2 || ctx.regs[ctx.base_reg + 1].is_undefined()) {
+        length_d = double::inf;
     } else {
-        length_d = (double)(len - (uint)start_i);
+        length_d = builtin_to_integer_vm(ctx, &ctx.regs[ctx.base_reg + 1]);
     }
     if (ctx.should_throw) { ctx.result.set_undefined(); return; }
 
-    int length_i;
-    if (math::is_nan(length_d) || length_d <= 0) {
+    if (length_d <= 0 || (length_d != length_d)) {
         ctx.result.set_string(ctx.heap.str(heap::BuiltinStr.EMPTY));
         return;
     }
-    length_i = (int)(long)length_d;
-    if (length_i > (int)len - start_i) {
+    int length_i;
+    if (length_d == double::inf) {
         length_i = (int)len - start_i;
+    } else {
+        length_i = (int)(long)length_d;
+        if (length_i > (int)len - start_i) {
+            length_i = (int)len - start_i;
+        }
     }
     if (length_i <= 0) {
         ctx.result.set_string(ctx.heap.str(heap::BuiltinStr.EMPTY));
