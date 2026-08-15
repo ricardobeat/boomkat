@@ -221,7 +221,11 @@ fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false) {
             pending_arrow = true;
         } else if (tt == TokenType.CLASS) {
             // Class field initializers run in constructor scope with no
-            // `) {` marker, so degrade rather than miss captures.
+            // `) {` marker, so degrade rather than miss captures. Unlike
+            // class_kw_starts_class in functions.c3, no lookahead gate is
+            // applied here: this scan works on raw token streams without
+            // lexer restore, and the over-approximation is safe (captures
+            // more, never fewer).
             self.capture_all = true;
         } else if (tt == TokenType.COMMA || tt == TokenType.SEMICOLON
                    || tt == TokenType.COLON) {

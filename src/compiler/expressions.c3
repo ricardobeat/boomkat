@@ -914,6 +914,7 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
                     // copies it to a temp instead of using the variable's own
                     // slot as the result destination and clobbering it.
                     self.last_was_local_var = true;
+                    self.last_local_var_reg = left;
                     return left;
                 }
             }
@@ -981,6 +982,7 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
                 // expression's value, so mark it for the enclosing
                 // operator's copy-to-temp guard (`(n *= 0.3) > 0`).
                 self.last_was_local_var = true;
+                self.last_local_var_reg = left;
                 return left;
             }
         }

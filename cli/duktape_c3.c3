@@ -172,13 +172,28 @@ fn bool has_ts_extension(String path) {
 }
 
 /// Cheap top-level detection: scan for `import` or `export` at a
-/// statement-start position (start of file, or after a newline, skipping
-/// whitespace and single-line/block comments). Anything false-positive here
+/// statement-start position at brace/paren/bracket depth 0, skipping
+/// whitespace and single-line/block comments. Anything false-positive here
 /// just routes through the module pipeline, which handles a script-shaped
 /// module file (no imports/exports) fine.
+///
+/// ES module `import`/`export` declarations are only legal at the top level
+/// of module code, never inside a brace/paren/bracket nesting, so we track
+/// nesting depth (`{` / `(` / `[` openers and closers) and only match the
+/// keywords at depth 0. Without that gate, a plain script containing a
+/// multi-line object literal with `{ export: 1, import: 2 }` at line starts
+/// would route through the ESM pipeline (typescript 5.4.5's bundle).
+///
+/// `import` immediately followed by `(` is a dynamic import() expression,
+/// legal in classic scripts, and does not make a file a module. String and
+/// template literal contents are not lexed here: a string spanning lines
+/// could in theory contain the literal word `export` at a line start at
+/// depth 0 and trick the detector, but the existing detector did not lex
+/// strings either, so this stays no worse.
 fn bool looks_like_module(char[] src) {
     usz i = 0;
     bool at_stmt_start = true;
+    int depth = 0;
     while (i < src.len) {
         char c = src[i];
         if (c == '\n') { at_stmt_start = true; i++; continue; }
@@ -195,10 +210,19 @@ fn bool looks_like_module(char[] src) {
             if (i + 1 < src.len) i += 2;
             continue;
         }
-        if (at_stmt_start) {
+        // Track nesting so a brace/paren/bracket at statement start does
+        // not count as a module-level position. The opener itself is not a
+        // statement-start token for `import`/`export`, but the FIRST token
+        // inside the new nesting is, and it must be at depth 1, not 0.
+        if (c == '{' || c == '(' || c == '[') { depth++; at_stmt_start = false; i++; continue; }
+        if (c == '}' || c == ')' || c == ']') { if (depth > 0) depth--; at_stmt_start = false; i++; continue; }
+        if (at_stmt_start && depth == 0) {
             // Check for `import` or `export` as a whole word at this pos.
+            // `import` followed by `(` is dynamic import(), legal in scripts.
             if (i + 6 <= src.len && src[i:6] == "import" &&
-                (i + 6 == src.len || !is_ident_cont(src[i+6]))) return true;
+                (i + 6 == src.len || !is_ident_cont(src[i+6]))) {
+                if (i + 6 >= src.len || src[i+6] != '(') return true;
+            }
             if (i + 6 <= src.len && src[i:6] == "export" &&
                 (i + 6 == src.len || !is_ident_cont(src[i+6]))) return true;
         }
