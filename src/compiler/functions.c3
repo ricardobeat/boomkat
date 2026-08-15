@@ -1870,10 +1870,18 @@ fn bool stmt_start_after(TokenType tt) {
 ///
 /// Positive test rather than a blacklist of property contexts: after the `class`
 /// keyword the grammar allows only a BindingIdentifier, `extends`, or the body's
-/// `{`. The lexer is restored either way, this is pure lookahead.
+/// `{`. `await` is its own TokenType, not IDENTIFIER, but `class await {}` is
+/// legal in non-async/non-module code (BindingIdentifier reuses the contextual
+/// await_is_identifier decision), so it must be recognized here too: missing it
+/// skipped the class-body skip and the body's `var`s leaked into the enclosing
+/// scope's hoist list. `yield` is always reserved in this strict-only engine,
+/// as are `static`, `let`, `package`, `implements`, etc., so they fall through
+/// to the parser's SyntaxError before this pre-scan's output matters. The lexer
+/// is restored either way, this is pure lookahead.
 fn bool CompilerContext.class_kw_starts_class(&self) {
     TokenType nt = self.peek_type();
-    return nt == TokenType.IDENTIFIER || nt == TokenType.EXTENDS || nt == TokenType.LBRACE;
+    return nt == TokenType.IDENTIFIER || self.await_is_identifier(nt)
+        || nt == TokenType.EXTENDS || nt == TokenType.LBRACE;
 }
 
 fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = false) {
