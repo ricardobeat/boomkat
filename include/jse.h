@@ -82,7 +82,8 @@ typedef enum {
     JSE_ERR_INTERNAL = -4,  /* engine fault with no JS error attached */
     JSE_ERR_INVALID  = -5,  /* null/bad argument, or bad handle */
     JSE_ERR_TYPE     = -6,  /* value is not of the requested type */
-    JSE_ERR_FULL     = -7   /* buffer too small, or slot table exhausted */
+    JSE_ERR_FULL     = -7,  /* buffer too small, or slot table exhausted */
+    JSE_ERR_INTERRUPT = -8  /* aborted by the interrupt handler */
 } jse_status;
 
 /* Value types as reported by jse_type_of. */
@@ -132,10 +133,19 @@ JSE_API const char *jse_version(void);
  * the detail. Microtasks are drained automatically before returning.
  *
  * Returns JSE_OK, JSE_ERR_SYNTAX, JSE_ERR_THROW, JSE_ERR_INTERNAL,
- * JSE_ERR_INVALID, or JSE_ERR_FULL.
+ * JSE_ERR_INVALID, JSE_ERR_FULL, or JSE_ERR_INTERRUPT.
  */
 JSE_API int jse_eval(jse_runtime rt, const char *src, size_t len,
                      jse_value *out_val);
+
+/*
+ * Like jse_eval, with `name` (UTF-8, `name_len` bytes) recorded as the script
+ * name for error reporting. The name is copied into runtime storage. NULL
+ * `name` behaves like an empty name. Returns the same statuses as jse_eval.
+ */
+JSE_API int jse_eval_with_name(jse_runtime rt, const char *src, size_t len,
+                               const char *name, size_t name_len,
+                               jse_value *out_val);
 
 /* Release a handle. Safe with 0 or an already-freed handle. */
 JSE_API void jse_value_free(jse_runtime rt, jse_value v);
@@ -234,11 +244,53 @@ JSE_API const char *jse_last_error(jse_runtime rt);
 /* Status code matching jse_last_error, or JSE_OK if none. */
 JSE_API int jse_last_error_code(jse_runtime rt);
 
+/* Kind and location of the most recent failure; see jse_last_error_info. */
+typedef struct {
+    int   code;          /* JSE_ERR_* of the failure, JSE_OK if none */
+    int   line;          /* 1-based line, 0 if unknown */
+    int   col;           /* 1-based column, 0 if unknown */
+    const char *script_name; /* name from jse_eval_with_name, or NULL */
+} jse_error_info;
+
+/*
+ * Fill *out with the details of the most recent failure on this runtime.
+ * `script_name` points to runtime-owned storage with the same lifetime as
+ * jse_last_error. Returns JSE_OK, or JSE_ERR_INVALID for a NULL argument.
+ */
+JSE_API int jse_last_error_info(jse_runtime rt, jse_error_info *out);
+
 /*
  * Run pending promise jobs. jse_eval already drains before returning; call
  * this after resolving promises from host code. Re-entrancy-guarded.
+ *
+ * Returns JSE_OK, or JSE_ERR_INTERRUPT when an interrupt fired inside a job
+ * (the drain aborts; the remaining queue is dropped). Existing callers that
+ * ignore the return keep compiling.
  */
-JSE_API void jse_drain_microtasks(jse_runtime rt);
+JSE_API int jse_drain_microtasks(jse_runtime rt);
+
+/*
+ * Host callback polled by the VM at safepoints (backward branches and call
+ * restarts). Return non-zero to abort the running script as JSE_ERR_INTERRUPT.
+ *
+ * Runs on the engine thread. It must not call any jse_* function: no eval,
+ * no call, no value access. A host that wants to interrupt from another
+ * thread stores a flag in `opaque` (with its own synchronisation) and the
+ * handler returns it; the engine never dereferences `opaque`.
+ */
+typedef int (*jse_interrupt_handler)(jse_runtime rt, void *opaque);
+
+/*
+ * Install or replace the interrupt handler; pass NULL for `cb` to clear it.
+ * Never fails; a NULL runtime is a no-op. The abort is uncatchable: a JS
+ * try/catch cannot intercept it, so script cannot swallow the abort and
+ * resume looping, but finally blocks still run during the unwind. After the
+ * abort the runtime stays usable; the next eval starts with a fresh poll
+ * budget.
+ */
+JSE_API void jse_set_interrupt_handler(jse_runtime rt,
+                                       jse_interrupt_handler cb,
+                                       void *opaque);
 
 /* ----------------------------------------------------------- host functions */
 
@@ -351,6 +403,79 @@ JSE_API jse_value jse_value_persist(jse_call_ctx ctx, jse_value v);
  */
 JSE_API int jse_call(jse_call_ctx ctx, jse_value func, const jse_value *argv,
                      unsigned int argc, jse_value this_val, jse_value *out_val);
+
+/* ------------------------------------------------- construction / object graph */
+
+/*
+ * Value and object constructors for hosts outside a callback, mirroring the
+ * jse_return_* helpers. A returned handle is caller-owned and must be
+ * released with jse_value_free, like a jse_eval result.
+ *
+ * All return JSE_OK, JSE_ERR_INVALID (null handle), JSE_ERR_NOMEM (heap), or
+ * JSE_ERR_FULL (slot table exhausted).
+ */
+JSE_API int jse_new_number(jse_runtime rt, double d, jse_value *out);
+JSE_API int jse_new_bool(jse_runtime rt, int b, jse_value *out);
+JSE_API int jse_new_null(jse_runtime rt, jse_value *out);
+JSE_API int jse_new_undefined(jse_runtime rt, jse_value *out);
+/* Fresh JS string from `len` bytes of UTF-8. */
+JSE_API int jse_new_string(jse_runtime rt, const char *utf8, size_t len,
+                           jse_value *out);
+JSE_API int jse_new_object(jse_runtime rt, jse_value *out);
+JSE_API int jse_new_array(jse_runtime rt, jse_value *out);
+/* Fresh array whose elements are the first `n` of `elems`; copies them in. */
+JSE_API int jse_new_array_from(jse_runtime rt, const jse_value *elems,
+                               unsigned int n, jse_value *out);
+/* Handle to the global object (globalThis). Caller owns it. */
+JSE_API int jse_get_global(jse_runtime rt, jse_value *out);
+
+/*
+ * Read `key` from `obj`, following the prototype chain. A missing property
+ * yields JSE_OK with *out set to a handle of undefined, matching JS. A getter
+ * or Proxy trap that throws returns JSE_ERR_THROW (or JSE_ERR_INTERRUPT).
+ */
+JSE_API int jse_get_prop(jse_runtime rt, jse_value obj,
+                         const char *key, size_t key_len, jse_value *out);
+JSE_API int jse_get_prop_index(jse_runtime rt, jse_value obj,
+                               unsigned int idx, jse_value *out);
+
+/*
+ * Write `val` with full Set semantics (own or inherited writable
+ * data/accessor). The value is copied in; the handle stays caller-owned. A
+ * setter or a strict-mode write failure throws, reported as JSE_ERR_THROW.
+ */
+JSE_API int jse_set_prop(jse_runtime rt, jse_value obj,
+                         const char *key, size_t key_len, jse_value val);
+JSE_API int jse_set_prop_index(jse_runtime rt, jse_value obj,
+                               unsigned int idx, jse_value val);
+
+/* `key in obj`, chain included. Sets *out to 0 or 1. */
+JSE_API int jse_has_prop(jse_runtime rt, jse_value obj,
+                         const char *key, size_t key_len, int *out);
+
+/*
+ * `delete obj.key`. Sets *out to 1 if deleted, 0 if the property was not an
+ * own property. Deleting a non-configurable property throws (strict engine),
+ * reported as JSE_ERR_THROW.
+ */
+JSE_API int jse_delete_prop(jse_runtime rt, jse_value obj,
+                            const char *key, size_t key_len, int *out);
+
+/* Fresh array of `obj`'s own string property names (enumerable and not;
+ * symbol keys deferred). Walk it with jse_get_prop_index. */
+JSE_API int jse_own_prop_names(jse_runtime rt, jse_value obj, jse_value *out);
+
+/*
+ * Call a JS function from outside a callback. `argv`/`argc` (NULL/0 for none),
+ * `this_val` (0 for undefined). On JSE_OK, *out_val (when non-NULL) receives a
+ * caller-owned handle. A thrown callee returns JSE_ERR_THROW (or
+ * JSE_ERR_INTERRUPT for an interrupt); the exception is recorded on the
+ * runtime, not unwound through C. Calling a non-function records a TypeError.
+ * If the callee is a host function it gets a fresh call context.
+ */
+JSE_API int jse_call_rt(jse_runtime rt, jse_value func, const jse_value *argv,
+                        unsigned int argc, jse_value this_val,
+                        jse_value *out_val);
 
 #ifdef __cplusplus
 }

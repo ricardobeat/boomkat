@@ -1459,6 +1459,12 @@ fn TVal? Vm.execute(Vm* vm, CompiledFunction* func) {
 
     if (had_error) vm.heap.has_error = true;
 
+    // An interrupt that aborted the drain must surface as this run's failure,
+    // not be swallowed by the successful main-run result. The interrupted job
+    // left has_error set, error_value rooted, and the uncatchable flag set for
+    // the host boundary; deliver the same shape an uncaught throw would.
+    if (vm.heap.uncatchable_throw) return VM_ERROR~;
+
     return result;
 }
 
@@ -1523,6 +1529,12 @@ fn TVal? Vm.execute_in_env(Vm* vm, CompiledFunction* func, EnvRecord* env) {
     vm.heap.drain_microtasks((void*)vm);
 
     if (had_error) vm.heap.has_error = true;
+
+    // An interrupt that aborted the drain must surface as this run's failure,
+    // not be swallowed by the successful main-run result. The interrupted job
+    // left has_error set, error_value rooted, and the uncatchable flag set for
+    // the host boundary; deliver the same shape an uncaught throw would.
+    if (vm.heap.uncatchable_throw) return VM_ERROR~;
 
     return result;
 }
@@ -1860,6 +1872,51 @@ fn bool? Vm.execute_module_nested(Vm* vm, CompiledFunction* func, EnvRecord* env
     return !run_faulted;
 }
 
+/// Poll the C-API interrupt handler at a VM safepoint (a backward branch or
+/// the restart-loop top). Returns true when the dispatch loop must stop: the
+/// handler aborted, and either a finally catcher consumed the "interrupted"
+/// error (needs_restart set, outer loop resumes) or no catcher existed
+/// anywhere (the uncaught error is recorded; caller returns VM_ERROR~).
+///
+/// No handler installed is the cost of one null compare. With one installed
+/// the budget is drawn down at the same cadence the GC already pays, and the
+/// handler runs at most once per INTERRUPT_BUDGET_INIT poll points, so
+/// uninterrupted execution is unaffected beyond the poll itself. The handler
+/// runs on the engine thread and must not re-enter the engine.
+/// Charge one interrupt poll point. Called from the switch sites and from the
+/// threaded burst, which share the budget, so decrements overlap harmlessly:
+/// at zero the budget resets to INIT and interrupt_due latches, and resetting
+/// in the same step keeps the budget from ever sitting at zero where a second
+/// decrement would underflow.
+fn void vm_charge_interrupt(Heap* h) @inline {
+    if (h.capi_interrupt_fn != null && --h.interrupt_budget == 0) {
+        h.interrupt_budget = heap::INTERRUPT_BUDGET_INIT;
+        h.interrupt_due = true;
+    }
+}
+
+/// Poll the C-API interrupt handler at a VM safepoint (a backward branch or
+/// the restart-loop top). Fire only when a charge latched interrupt_due; with
+/// no handler installed or no charge pending, this is a null compare. Returns
+/// true when the dispatch loop must stop: the handler aborted, and either a
+/// finally catcher consumed the "interrupted" error (needs_restart set, outer
+/// loop resumes) or no catcher existed anywhere (the uncaught error is
+/// recorded; caller returns VM_ERROR~).
+fn bool vm_poll_interrupt(Vm* vm, Activation* act, Instruction** curr_pc, bool* needs_restart) {
+    Heap* h = vm.heap;
+    if (h.capi_interrupt_fn == null) return false;
+    if (!h.interrupt_due) return false;
+    h.interrupt_due = false;
+    heap::JseInterruptFn cb = (heap::JseInterruptFn)h.capi_interrupt_fn;
+    if (cb(h.capi_runtime, h.capi_interrupt_opaque) == 0) return false;
+    // Abort. The error is a genuine Error marked uncatchable: catch catchers
+    // skip it (vm_throw_value) but finally blocks still run, and the flag is
+    // cleared only when the host receives the JSE_ERR_INTERRUPT status.
+    h.uncatchable_throw = true;
+    vm_throw_error(vm, h.err_proto, "interrupted", act, curr_pc, needs_restart);
+    return true;
+}
+
 /// Run the bytecode dispatch loop over an activation stack and registers the
 /// caller has already set up.
 fn TVal? Vm.run(Vm* vm) {
@@ -1900,6 +1957,19 @@ fn TVal? Vm.run(Vm* vm) {
         ds.code_end = ds.code_base + ds.code_count;
 
         ds.regs_base = ds.act.bottom;
+
+        // Interrupt poll at the restart loop top. A backward-branch poll would
+        // never fire for recursion such as `function f(){ f() }`, which spends
+        // its time in call/restart rather than back-edges; the restart is the
+        // safepoint that catches it. needs_restart is false here (the loop
+        // condition guarantees it), so the poll's own restart, set when a
+        // finally consumes the abort, is the discriminator below.
+        if (vm.heap.capi_interrupt_fn != null) {
+            vm_charge_interrupt(vm.heap);
+            if (vm_poll_interrupt(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                if (!ds.needs_restart) return VM_ERROR~;
+            }
+        }
 
         // The inner dispatch loop tests neither of two conditions per
         // instruction, which relies on invariants worth stating:
@@ -2976,7 +3046,19 @@ fn TVal? Vm.run(Vm* vm) {
             // when cmp_undef is set (both cmp_lt/cmp_le are false above), so
             // JMP_NGT / JMP_NGE would wrongly branch. Force to false here.
             if (cmp_undef) cmp_result = false;
-            if (cmp_result == branch_on) { if ((ichar)insn.a < 0) { if (--vm.heap.bwd_gc_budget == 0) { if (vm.heap.gc_pending) { vm.heap.safepoint_gc(); } vm.heap.bwd_gc_budget = heap::BWD_GC_INTERVAL; } } ds.curr_pc += (int)(ichar)insn.a; }
+            if (cmp_result == branch_on) {
+                if ((ichar)insn.a < 0) {
+                    if (--vm.heap.bwd_gc_budget == 0) { if (vm.heap.gc_pending) { vm.heap.safepoint_gc(); } vm.heap.bwd_gc_budget = heap::BWD_GC_INTERVAL; }
+                    if (vm.heap.capi_interrupt_fn != null) {
+                        vm_charge_interrupt(vm.heap);
+                        if (vm_poll_interrupt(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                            if (ds.needs_restart) break;
+                            return VM_ERROR~;
+                        }
+                    }
+                }
+                ds.curr_pc += (int)(ichar)insn.a;
+            }
             continue;
         }
 
@@ -3022,7 +3104,19 @@ fn TVal? Vm.run(Vm* vm) {
                 // Cross-type is always unequal for === (seq stays false).
             }
             bool take = (op == Opcode.JMP_SEQ) ? seq : !seq;
-            if (take) { if ((ichar)insn.a < 0) { if (--vm.heap.bwd_gc_budget == 0) { if (vm.heap.gc_pending) { vm.heap.safepoint_gc(); } vm.heap.bwd_gc_budget = heap::BWD_GC_INTERVAL; } } ds.curr_pc += (int)(ichar)insn.a; }
+            if (take) {
+                if ((ichar)insn.a < 0) {
+                    if (--vm.heap.bwd_gc_budget == 0) { if (vm.heap.gc_pending) { vm.heap.safepoint_gc(); } vm.heap.bwd_gc_budget = heap::BWD_GC_INTERVAL; }
+                    if (vm.heap.capi_interrupt_fn != null) {
+                        vm_charge_interrupt(vm.heap);
+                        if (vm_poll_interrupt(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                            if (ds.needs_restart) break;
+                            return VM_ERROR~;
+                        }
+                    }
+                }
+                ds.curr_pc += (int)(ichar)insn.a;
+            }
             continue;
         }
 
@@ -3311,7 +3405,16 @@ fn TVal? Vm.run(Vm* vm) {
         case Opcode.JUMP: {
             int sabc = insn.get_sabc();
             int target = (int)((long)(ds.curr_pc - ds.code_base) + (long)sabc);
-            if (target < (ds.curr_pc - ds.code_base)) { if (--vm.heap.bwd_gc_budget == 0) { if (vm.heap.gc_pending) { vm.heap.safepoint_gc(); } vm.heap.bwd_gc_budget = heap::BWD_GC_INTERVAL; } }
+            if (target < (ds.curr_pc - ds.code_base)) {
+                if (--vm.heap.bwd_gc_budget == 0) { if (vm.heap.gc_pending) { vm.heap.safepoint_gc(); } vm.heap.bwd_gc_budget = heap::BWD_GC_INTERVAL; }
+                if (vm.heap.capi_interrupt_fn != null) {
+                    vm_charge_interrupt(vm.heap);
+                    if (vm_poll_interrupt(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                        if (ds.needs_restart) break;
+                        return VM_ERROR~;
+                    }
+                }
+            }
             ds.curr_pc = ds.code_base + target;
             continue;
         }
@@ -3320,7 +3423,16 @@ fn TVal? Vm.run(Vm* vm) {
             if (is_truthy(ra)) {
                 int sbx = insn.get_sbc();
                 int target = (int)((long)(ds.curr_pc - ds.code_base) + (long)sbx);
-                if (target < (ds.curr_pc - ds.code_base)) { if (--vm.heap.bwd_gc_budget == 0) { if (vm.heap.gc_pending) { vm.heap.safepoint_gc(); } vm.heap.bwd_gc_budget = heap::BWD_GC_INTERVAL; } }
+                if (target < (ds.curr_pc - ds.code_base)) {
+                    if (--vm.heap.bwd_gc_budget == 0) { if (vm.heap.gc_pending) { vm.heap.safepoint_gc(); } vm.heap.bwd_gc_budget = heap::BWD_GC_INTERVAL; }
+                    if (vm.heap.capi_interrupt_fn != null) {
+                        vm_charge_interrupt(vm.heap);
+                        if (vm_poll_interrupt(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                            if (ds.needs_restart) break;
+                            return VM_ERROR~;
+                        }
+                    }
+                }
                 ds.curr_pc = ds.code_base + target;
             }
             continue;
@@ -3329,7 +3441,16 @@ fn TVal? Vm.run(Vm* vm) {
             if (!is_truthy(ra)) {
                 int sbx = insn.get_sbc();
                 int target = (int)((long)(ds.curr_pc - ds.code_base) + (long)sbx);
-                if (target < (ds.curr_pc - ds.code_base)) { if (--vm.heap.bwd_gc_budget == 0) { if (vm.heap.gc_pending) { vm.heap.safepoint_gc(); } vm.heap.bwd_gc_budget = heap::BWD_GC_INTERVAL; } }
+                if (target < (ds.curr_pc - ds.code_base)) {
+                    if (--vm.heap.bwd_gc_budget == 0) { if (vm.heap.gc_pending) { vm.heap.safepoint_gc(); } vm.heap.bwd_gc_budget = heap::BWD_GC_INTERVAL; }
+                    if (vm.heap.capi_interrupt_fn != null) {
+                        vm_charge_interrupt(vm.heap);
+                        if (vm_poll_interrupt(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                            if (ds.needs_restart) break;
+                            return VM_ERROR~;
+                        }
+                    }
+                }
                 ds.curr_pc = ds.code_base + target;
             }
             continue;
@@ -4677,7 +4798,19 @@ fn TVal? Vm.run(Vm* vm) {
                 cmp_lt = cmp < 0;
             }
             if (cmp_undef) cmp_lt = false;
-            if (cmp_lt) { if ((ichar)insn.a < 0) { if (--vm.heap.bwd_gc_budget == 0) { if (vm.heap.gc_pending) { vm.heap.safepoint_gc(); } vm.heap.bwd_gc_budget = heap::BWD_GC_INTERVAL; } } ds.curr_pc += (int)(ichar)insn.a; }
+            if (cmp_lt) {
+                if ((ichar)insn.a < 0) {
+                    if (--vm.heap.bwd_gc_budget == 0) { if (vm.heap.gc_pending) { vm.heap.safepoint_gc(); } vm.heap.bwd_gc_budget = heap::BWD_GC_INTERVAL; }
+                    if (vm.heap.capi_interrupt_fn != null) {
+                        vm_charge_interrupt(vm.heap);
+                        if (vm_poll_interrupt(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                            if (ds.needs_restart) break;
+                            return VM_ERROR~;
+                        }
+                    }
+                }
+                ds.curr_pc += (int)(ichar)insn.a;
+            }
             continue;
         }
 

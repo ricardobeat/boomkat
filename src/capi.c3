@@ -23,6 +23,7 @@ const int JSE_ERR_INTERNAL  = -4;
 const int JSE_ERR_INVALID   = -5;
 const int JSE_ERR_TYPE      = -6;
 const int JSE_ERR_FULL      = -7;
+const int JSE_ERR_INTERRUPT = -8;
 
 const int JSE_TYPE_UNDEFINED = 0;
 const int JSE_TYPE_NULL      = 1;
@@ -111,6 +112,9 @@ struct Runtime {
     uint     retired;        // slots withheld from reuse at generation max
     char[ERRBUF] errmsg;
     int      errcode;
+    int      err_line;       // 1-based, 0 when unknown
+    int      err_col;
+    char[ERRBUF] err_name;   // script name for the most recent failure
     /// Innermost host-call context, or null outside a host callback. Lets the
 }
 
@@ -125,9 +129,24 @@ fn void set_err(Runtime* rt, int code, char[] msg) {
     rt.errmsg[n] = 0;
 }
 
+fn void set_err_at(Runtime* rt, int code, char[] msg, int line, int col) {
+    set_err(rt, code, msg);
+    rt.err_line = line;
+    rt.err_col = col;
+}
+
+fn void set_script_name(Runtime* rt, char* name, usz len) {
+    usz n = len < ERRBUF - 1 ? len : ERRBUF - 1;
+    for (usz i = 0; i < n; i++) rt.err_name[i] = name[i];
+    rt.err_name[n] = 0;
+}
+
 fn void clear_err(Runtime* rt) {
     rt.errcode = JSE_OK;
     rt.errmsg[0] = 0;
+    rt.err_line = 0;
+    rt.err_col = 0;
+    rt.err_name[0] = 0;
 }
 
 // The engine's one @init function (builtins::init_builtin_dispatch_table)
@@ -325,10 +344,17 @@ fn void jse_value_free(void* rtp, uint id) @export("jse_value_free") {
 // Eval
 // ============================================================================
 
-fn int jse_eval(void* rtp, char* src, usz len, uint* out_val) @export("jse_eval") {
+fn int jse_eval_with_name(void* rtp, char* src, usz len, char* name, usz name_len,
+                              uint* out_val) @export("jse_eval_with_name") {
     if (rtp == null || src == null) return JSE_ERR_INVALID;
     Runtime* rt = (Runtime*)rtp;
     clear_err(rt);
+    if (name != null) set_script_name(rt, name, name_len);
+    // A fresh eval starts with a clean interrupt state: an abort from a prior
+    // run was cleared when it surfaced here, and a near-zero budget must not
+    // trigger an immediate unprompted callback.
+    rt.heap.uncatchable_throw = false;
+    rt.heap.interrupt_budget = heap::INTERRUPT_BUDGET_INIT;
     if (out_val != null) *out_val = 0;
 
     Lexer lex = lexer::lexer_init(src[:len], rt.heap);
@@ -346,9 +372,9 @@ fn int jse_eval(void* rtp, char* src, usz len, uint* out_val) @export("jse_eval"
         // Some compiler failure paths return without populating the global
         // buffer (e.g. "var = = ="). Never hand the host an empty message.
         if (n == 0) {
-            set_err(rt, JSE_ERR_SYNTAX, "SyntaxError");
+            set_err_at(rt, JSE_ERR_SYNTAX, "SyntaxError", (int)lex.err_line, (int)lex.err_col);
         } else {
-            set_err(rt, JSE_ERR_SYNTAX, m[:n]);
+            set_err_at(rt, JSE_ERR_SYNTAX, m[:n], (int)lex.err_line, (int)lex.err_col);
         }
         lex.free_arena();
         return JSE_ERR_SYNTAX;
@@ -361,6 +387,13 @@ fn int jse_eval(void* rtp, char* src, usz len, uint* out_val) @export("jse_eval"
 
     if (catch res) {
         if (rt.heap.has_error) {
+            // The interrupt flag marks this failure as an abort of a runaway
+            // script and is cleared here, at the host boundary.
+            if (rt.heap.uncatchable_throw) {
+                rt.heap.uncatchable_throw = false;
+                set_err(rt, JSE_ERR_INTERRUPT, "interrupted");
+                return JSE_ERR_INTERRUPT;
+            }
             describe_error(rt, &rt.heap.error_value);
             return JSE_ERR_THROW;
         }
@@ -382,6 +415,12 @@ fn int jse_eval(void* rtp, char* src, usz len, uint* out_val) @export("jse_eval"
         *out_val = id;
     }
     return JSE_OK;
+}
+
+/// The plain eval, fixed script name "<eval>". Forwards to the named variant,
+/// so the position-bearing path is shared.
+fn int jse_eval(void* rtp, char* src, usz len, uint* out_val) @export("jse_eval") {
+    return jse_eval_with_name(rtp, src, len, "<eval>", 6, out_val);
 }
 
 /// Read property `key` off `o` or its prototype chain, returning it only if it
@@ -628,14 +667,58 @@ fn int jse_last_error_code(void* rtp) @export("jse_last_error_code") {
     return ((Runtime*)rtp).errcode;
 }
 
-fn void jse_drain_microtasks(void* rtp) @export("jse_drain_microtasks") {
+/// Layout must match jse_error_info in include/jse.h on the target's ABI.
+struct JseErrorInfo {
+    int code;
+    int line;
+    int col;
+    char* script_name;
+}
+
+/// Fill *out with the most recent failure's kind and position. script_name
+/// points at runtime-owned storage with the same lifetime as jse_last_error.
+fn int jse_last_error_info(void* rtp, JseErrorInfo* out) @export("jse_last_error_info") {
+    if (out == null) return JSE_ERR_INVALID;
+    if (rtp == null) return JSE_ERR_INVALID;
+    Runtime* rt = (Runtime*)rtp;
+    out.code = rt.errcode;
+    out.line = rt.err_line;
+    out.col = rt.err_col;
+    out.script_name = rt.err_name[0] != 0 ? &rt.err_name[0] : null;
+    return JSE_OK;
+}
+
+fn int jse_drain_microtasks(void* rtp) @export("jse_drain_microtasks") {
+    if (rtp == null) return JSE_ERR_INVALID;
+    Runtime* rt = (Runtime*)rtp;
+    clear_err(rt);
+    rt.heap.uncatchable_throw = false;
+    rt.heap.interrupt_budget = heap::INTERRUPT_BUDGET_INIT;
+    rt.heap.drain_microtasks((void*)rt.vm);
+    // The drain aborts on an interrupt: the host needs to know its abort
+    // landed, and a reader-style error would be wiped by the next call.
+    if (rt.heap.uncatchable_throw) {
+        rt.heap.uncatchable_throw = false;
+        set_err(rt, JSE_ERR_INTERRUPT, "interrupted");
+        return JSE_ERR_INTERRUPT;
+    }
+    return JSE_OK;
+}
+
+/// Install, replace, or clear the interrupt handler. The callback runs on the
+/// engine thread at VM safepoints; it must not call back into the engine. A
+/// host interrupting from another thread sets a flag in `opaque` and returns
+/// it here.
+fn void jse_set_interrupt_handler(void* rtp, void* cb, void* opaque) @export("jse_set_interrupt_handler") {
     if (rtp == null) return;
     Runtime* rt = (Runtime*)rtp;
-    rt.heap.drain_microtasks((void*)rt.vm);
+    rt.heap.capi_interrupt_fn = cb;
+    rt.heap.capi_interrupt_opaque = opaque;
+    rt.heap.interrupt_budget = heap::INTERRUPT_BUDGET_INIT;
 }
 
 fn char* jse_version() @export("jse_version") {
-    return "0.1.0";
+    return "0.2.0";
 }
 
 // ============================================================================
@@ -867,7 +950,16 @@ fn int jse_call(void* ctxp, uint func_id, uint* argv, uint argc, uint this_id,
 
     bool ok = false;
     TVal res = builtins::host_call(ctx, fv, &args[0], n, tv, &ok);
-    if (!ok) return JSE_ERR_THROW;
+    if (!ok) {
+        // An interrupt heard here stays flagged: the staged re-throw that
+        // fires when this callback returns must remain uncatchable, so the
+        // flag clears only at the outermost host boundary that surfaces it.
+        if (rt.heap.uncatchable_throw) {
+            set_err(rt, JSE_ERR_INTERRUPT, "interrupted");
+            return JSE_ERR_INTERRUPT;
+        }
+        return JSE_ERR_THROW;
+    }
     if (out_val != null) {
         // Report exhaustion for every value kind, undefined included: handle 0
         // reads back as undefined, so returning it on a failed registration
@@ -879,5 +971,401 @@ fn int jse_call(void* ctxp, uint func_id, uint* argv, uint argc, uint this_id,
         }
         *out_val = id;
     }
+    return JSE_OK;
+}
+
+// ============================================================================
+// Value construction, object graph, and host calls outside a callback
+// ============================================================================
+//
+// These mirror the jse_return_* / jse_call helpers but live on the runtime
+// tier, for hosts that hold a jse_runtime (or a context promoted out of a
+// callback) rather than a live call context. Handles they return are
+// caller-owned and must be jse_value_free'd, like jse_eval results.
+
+/// Allocate a slot for `v`, reporting a full table explicitly.
+fn int capi_store(Runtime* rt, TVal v, uint* out) {
+    uint id = slot_alloc(rt, v);
+    if (id == 0) { set_err(rt, JSE_ERR_FULL, "value slot table full"); return JSE_ERR_FULL; }
+    *out = id;
+    return JSE_OK;
+}
+
+fn int jse_new_number(void* rtp, double d, uint* out) @export("jse_new_number") {
+    if (rtp == null || out == null) return JSE_ERR_INVALID;
+    Runtime* rt = (Runtime*)rtp;
+    clear_err(rt);
+    TVal v; v.set_number(d);
+    return capi_store(rt, v, out);
+}
+
+fn int jse_new_bool(void* rtp, int b, uint* out) @export("jse_new_bool") {
+    if (rtp == null || out == null) return JSE_ERR_INVALID;
+    Runtime* rt = (Runtime*)rtp;
+    clear_err(rt);
+    TVal v; v.set_boolean(b != 0);
+    return capi_store(rt, v, out);
+}
+
+fn int jse_new_null(void* rtp, uint* out) @export("jse_new_null") {
+    if (rtp == null || out == null) return JSE_ERR_INVALID;
+    Runtime* rt = (Runtime*)rtp;
+    clear_err(rt);
+    TVal v; v.set_null();
+    return capi_store(rt, v, out);
+}
+
+fn int jse_new_undefined(void* rtp, uint* out) @export("jse_new_undefined") {
+    if (rtp == null || out == null) return JSE_ERR_INVALID;
+    Runtime* rt = (Runtime*)rtp;
+    clear_err(rt);
+    TVal v; v.set_undefined();
+    return capi_store(rt, v, out);
+}
+
+fn int jse_new_string(void* rtp, char* utf8, usz len, uint* out) @export("jse_new_string") {
+    if (rtp == null || utf8 == null || out == null) return JSE_ERR_INVALID;
+    Runtime* rt = (Runtime*)rtp;
+    clear_err(rt);
+    HString* s = rt.heap.str_intern(utf8[:len]);
+    if (s == null) { set_err(rt, JSE_ERR_NOMEM, "out of memory"); return JSE_ERR_NOMEM; }
+    TVal v; v.set_string(s);
+    return capi_store(rt, v, out);
+}
+
+fn int jse_new_object(void* rtp, uint* out) @export("jse_new_object") {
+    if (rtp == null || out == null) return JSE_ERR_INVALID;
+    Runtime* rt = (Runtime*)rtp;
+    clear_err(rt);
+    HObject*? oraw = rt.heap.alloc_object(hobject::ObjClass.OBJECT);
+    if (catch oraw) { set_err(rt, JSE_ERR_NOMEM, "out of memory"); return JSE_ERR_NOMEM; }
+    HObject* o = oraw;
+    o.prototype = rt.heap.object_proto;
+    TVal v; v.set_object(o);
+    return capi_store(rt, v, out);
+}
+
+fn int jse_new_array(void* rtp, uint* out) @export("jse_new_array") {
+    if (rtp == null || out == null) return JSE_ERR_INVALID;
+    Runtime* rt = (Runtime*)rtp;
+    clear_err(rt);
+    HObject*? araw = rt.heap.alloc_object(hobject::ObjClass.ARRAY);
+    if (catch araw) { set_err(rt, JSE_ERR_NOMEM, "out of memory"); return JSE_ERR_NOMEM; }
+    HObject* a = araw;
+    a.prototype = rt.heap.array_proto;
+    TVal v; v.set_object(a);
+    return capi_store(rt, v, out);
+}
+
+/// Fresh array whose elements are the first `n` of `elems`. The caller keeps
+/// ownership of the input handles; they are copied in.
+fn int jse_new_array_from(void* rtp, uint* elems, uint n, uint* out) @export("jse_new_array_from") {
+    if (rtp == null || out == null) return JSE_ERR_INVALID;
+    Runtime* rt = (Runtime*)rtp;
+    clear_err(rt);
+    if (n > 0 && elems == null) return JSE_ERR_INVALID;
+    HObject*? araw = rt.heap.alloc_object(hobject::ObjClass.ARRAY);
+    if (catch araw) { set_err(rt, JSE_ERR_NOMEM, "out of memory"); return JSE_ERR_NOMEM; }
+    HObject* a = araw;
+    a.prototype = rt.heap.array_proto;
+    for (uint i = 0; i < n; i++) {
+        TVal ev;
+        if (elems == null || !slot_get(rt, elems[i], &ev)) ev.set_undefined();
+        builtins::array_set_elem(a, i, ev, rt.heap);
+    }
+    TVal len_tv; len_tv.set_fastint((long)n);
+    a.put_prop(rt.heap.str(heap::BuiltinStr.LENGTH), len_tv, hobject::PROP_FLAGS_WEC, rt.heap);
+    TVal v; v.set_object(a);
+    return capi_store(rt, v, out);
+}
+
+/// Handle to the global object (globalThis). Caller owns it.
+fn int jse_get_global(void* rtp, uint* out) @export("jse_get_global") {
+    if (rtp == null || out == null) return JSE_ERR_INVALID;
+    Runtime* rt = (Runtime*)rtp;
+    clear_err(rt);
+    TVal g;
+    if (rt.vm.global_env != null && rt.vm.global_env.bindings != null) {
+        g.set_object(rt.vm.global_env.bindings);
+    } else {
+        g.set_undefined();
+    }
+    return capi_store(rt, g, out);
+}
+
+/// Resolve a property handle to an HObject, or fail with JSE_ERR_TYPE.
+fn HObject* capi_object(Runtime* rt, uint id, TVal* out) {
+    if (!slot_get(rt, id, out)) return null;
+    if (!out.is_object()) return null;
+    return (HObject*)out.get_heapptr();
+}
+
+/// Surface a VM failure (heap error channel) as a jse_ status, distinguishing an
+/// interrupt from an ordinary throw.
+fn int capi_vm_fault(Runtime* rt) {
+    if (rt.heap.uncatchable_throw) {
+        rt.heap.uncatchable_throw = false;
+        set_err(rt, JSE_ERR_INTERRUPT, "interrupted");
+        return JSE_ERR_INTERRUPT;
+    }
+    describe_error(rt, &rt.heap.error_value);
+    return JSE_ERR_THROW;
+}
+
+fn int jse_get_prop(void* rtp, uint obj_id, char* key, usz key_len, uint* out) @export("jse_get_prop") {
+    if (rtp == null || key == null || out == null) return JSE_ERR_INVALID;
+    Runtime* rt = (Runtime*)rtp;
+    clear_err(rt);
+    *out = 0;
+    TVal ov;
+    if (capi_object(rt, obj_id, &ov) == null) return reader_fail(rt, JSE_ERR_TYPE, "value is not an object");
+    HObject* obj = (HObject*)ov.get_heapptr();
+    HString* k = rt.heap.str_intern(key[:key_len]);
+    if (k == null) { set_err(rt, JSE_ERR_NOMEM, "out of memory"); return JSE_ERR_NOMEM; }
+    TVal got;
+    if (!builtins::js_get_with_receiver((void*)rt.vm, rt.heap, obj, k, ov, &got)) {
+        return capi_vm_fault(rt);
+    }
+    return capi_store(rt, got, out);
+}
+
+fn int jse_get_prop_index(void* rtp, uint obj_id, uint idx, uint* out) @export("jse_get_prop_index") {
+    if (rtp == null || out == null) return JSE_ERR_INVALID;
+    Runtime* rt = (Runtime*)rtp;
+    clear_err(rt);
+    *out = 0;
+    TVal ov;
+    if (capi_object(rt, obj_id, &ov) == null) return reader_fail(rt, JSE_ERR_TYPE, "value is not an object");
+    HObject* obj = (HObject*)ov.get_heapptr();
+    HString* k = rt.heap.int_to_hstring((long)idx);
+    if (k == null) { set_err(rt, JSE_ERR_NOMEM, "out of memory"); return JSE_ERR_NOMEM; }
+    TVal got;
+    if (!builtins::js_get_with_receiver((void*)rt.vm, rt.heap, obj, k, ov, &got)) {
+        return capi_vm_fault(rt);
+    }
+    return capi_store(rt, got, out);
+}
+
+fn int jse_set_prop(void* rtp, uint obj_id, char* key, usz key_len, uint val_id) @export("jse_set_prop") {
+    if (rtp == null || key == null) return JSE_ERR_INVALID;
+    Runtime* rt = (Runtime*)rtp;
+    clear_err(rt);
+    TVal ov, vv;
+    if (capi_object(rt, obj_id, &ov) == null) return reader_fail(rt, JSE_ERR_TYPE, "value is not an object");
+    if (!slot_get(rt, val_id, &vv)) return reader_fail(rt, JSE_ERR_INVALID, "invalid or freed value handle");
+    HObject* obj = (HObject*)ov.get_heapptr();
+    HString* k = rt.heap.str_intern(key[:key_len]);
+    if (k == null) { set_err(rt, JSE_ERR_NOMEM, "out of memory"); return JSE_ERR_NOMEM; }
+    bool res;
+    if (!builtins::js_set_with_receiver((void*)rt.vm, rt.heap, obj, k, vv, ov, &res)) {
+        return capi_vm_fault(rt);
+    }
+    if (!res) {
+        // Strict-only engine: a Set that returns false throws a TypeError.
+        set_err(rt, JSE_ERR_THROW, "Cannot assign to read only property");
+        return JSE_ERR_THROW;
+    }
+    return JSE_OK;
+}
+
+fn int jse_set_prop_index(void* rtp, uint obj_id, uint idx, uint val_id) @export("jse_set_prop_index") {
+    if (rtp == null) return JSE_ERR_INVALID;
+    Runtime* rt = (Runtime*)rtp;
+    clear_err(rt);
+    TVal ov, vv;
+    if (capi_object(rt, obj_id, &ov) == null) return reader_fail(rt, JSE_ERR_TYPE, "value is not an object");
+    if (!slot_get(rt, val_id, &vv)) return reader_fail(rt, JSE_ERR_INVALID, "invalid or freed value handle");
+    HObject* obj = (HObject*)ov.get_heapptr();
+    HString* k = rt.heap.int_to_hstring((long)idx);
+    if (k == null) { set_err(rt, JSE_ERR_NOMEM, "out of memory"); return JSE_ERR_NOMEM; }
+    bool res;
+    if (!builtins::js_set_with_receiver((void*)rt.vm, rt.heap, obj, k, vv, ov, &res)) {
+        return capi_vm_fault(rt);
+    }
+    if (!res) {
+        set_err(rt, JSE_ERR_THROW, "Cannot assign to read only property");
+        return JSE_ERR_THROW;
+    }
+    return JSE_OK;
+}
+
+fn int jse_has_prop(void* rtp, uint obj_id, char* key, usz key_len, int* out) @export("jse_has_prop") {
+    if (rtp == null || key == null || out == null) return JSE_ERR_INVALID;
+    Runtime* rt = (Runtime*)rtp;
+    clear_err(rt);
+    TVal ov;
+    if (capi_object(rt, obj_id, &ov) == null) return reader_fail(rt, JSE_ERR_TYPE, "value is not an object");
+    HObject* obj = (HObject*)ov.get_heapptr();
+    HString* k = rt.heap.str_intern(key[:key_len]);
+    if (k == null) { set_err(rt, JSE_ERR_NOMEM, "out of memory"); return JSE_ERR_NOMEM; }
+    bool b;
+    if (!builtins::js_has_property((void*)rt.vm, rt.heap, obj, k, &b)) {
+        return capi_vm_fault(rt);
+    }
+    *out = b ? 1 : 0;
+    return JSE_OK;
+}
+
+fn int jse_delete_prop(void* rtp, uint obj_id, char* key, usz key_len, int* out) @export("jse_delete_prop") {
+    if (rtp == null || key == null || out == null) return JSE_ERR_INVALID;
+    Runtime* rt = (Runtime*)rtp;
+    clear_err(rt);
+    TVal ov;
+    if (capi_object(rt, obj_id, &ov) == null) return reader_fail(rt, JSE_ERR_TYPE, "value is not an object");
+    HObject* obj = (HObject*)ov.get_heapptr();
+    HString* k = rt.heap.str_intern(key[:key_len]);
+    if (k == null) { set_err(rt, JSE_ERR_NOMEM, "out of memory"); return JSE_ERR_NOMEM; }
+    // Absent (own) property: report 0 and succeed, mirroring the header.
+    if (obj.find_prop_idx((void*)k, rt.heap) < 0) { *out = 0; return JSE_OK; }
+    bool res;
+    if (obj.flags.exotic_proxyobj) {
+        if (!builtins::proxy_mop_delete((void*)rt.vm, rt.heap, obj, k, &res)) {
+            return capi_vm_fault(rt);
+        }
+    } else if (obj.flags.exotic_module_ns) {
+        res = false;
+    } else {
+        res = obj.es_delete_prop((void*)k, rt.heap);
+    }
+    if (!res) {
+        // Strict-only engine: deleting a non-configurable property throws.
+        set_err(rt, JSE_ERR_THROW, "Cannot delete property");
+        return JSE_ERR_THROW;
+    }
+    *out = 1;
+    return JSE_OK;
+}
+
+/// Fresh array of an object's own string property names (enumerable and not;
+/// symbol keys skipped). The host walks it with jse_get_prop_index.
+fn int jse_own_prop_names(void* rtp, uint obj_id, uint* out) @export("jse_own_prop_names") {
+    if (rtp == null || out == null) return JSE_ERR_INVALID;
+    Runtime* rt = (Runtime*)rtp;
+    clear_err(rt);
+    TVal ov;
+    if (capi_object(rt, obj_id, &ov) == null) return reader_fail(rt, JSE_ERR_TYPE, "value is not an object");
+    HObject* obj = (HObject*)ov.get_heapptr();
+    Heap* h = rt.heap;
+
+    HObject*? araw = h.alloc_object(hobject::ObjClass.ARRAY);
+    if (catch araw) { set_err(rt, JSE_ERR_NOMEM, "out of memory"); return JSE_ERR_NOMEM; }
+    HObject* arr = araw;
+    arr.prototype = h.array_proto;
+    uint idx = 0;
+
+    // Proxy exotic: [[OwnPropertyKeys]] filtered to string keys.
+    if (obj.flags.exotic_proxyobj) {
+        HString** pkeys;
+        uint pn;
+        if (!builtins::proxy_filtered_own_keys((void*)rt.vm, h, obj, 1, &pkeys, &pn)) {
+            return capi_vm_fault(rt);
+        }
+        defer h.free_func(h.heap_udata, pkeys);
+        for (uint i = 0; i < pn; i++) {
+            TVal kv; kv.set_string(pkeys[i]);
+            builtins::array_set_elem(arr, i, kv, h);
+        }
+        idx = pn;
+        TVal plen; plen.set_fastint((long)pn);
+        arr.put_prop(h.str(heap::BuiltinStr.LENGTH), plen, hobject::PROP_FLAGS_WC, h);
+        TVal v; v.set_object(arr);
+        return capi_store(rt, v, out);
+    }
+
+    uint max_keys = builtins::own_key_buf_capacity(obj) + 64;
+    usz bytes = (usz)(max_keys * HString*::size);
+    HString** key_buf = (HString**)h.alloc_func(h.heap_udata, bytes);
+    if (key_buf == null) { set_err(rt, JSE_ERR_NOMEM, "out of memory"); return JSE_ERR_NOMEM; }
+    defer h.free_func(h.heap_udata, key_buf);
+    uint key_count = 0;
+
+    // Integer-indexed own properties, ascending (ES9.1.11.1 OrdinaryOwnKeys).
+    // Dense array / string-exotic / typed-array indices plus named integer keys.
+    if (obj.flags.exotic_stringobj && (*obj.extra_ptr()).prim.primitive_value.is_string()) {
+        HString* prim = (HString*)(*obj.extra_ptr()).prim.primitive_value.get_heapptr();
+        if (prim != null) for (uint i = 0; i < prim.char_length() && key_count < max_keys; i++) {
+            key_buf[key_count++] = h.int_to_hstring((long)i);
+        }
+    }
+    if (builtins::is_typed_array_class(obj.get_class())) {
+        uint n = builtins::ta_element_count(obj);
+        for (uint i = 0; i < n && key_count < max_keys; i++) {
+            key_buf[key_count++] = h.int_to_hstring((long)i);
+        }
+    }
+    // Named integer-indexed properties, mergesort-lite ascending.
+    for (uint i = 0; i < obj.prop_count; i++) {
+        if (obj.prop_key_at(i, h) != null) {
+            HString* key = (HString*)obj.prop_key_at(i, h);
+            if (key.is_arridx() && !key.is_symbol() && key_count < max_keys) {
+                key_buf[key_count++] = key;
+            }
+        }
+    }
+    bool array_part_is_indexed = obj.flags.exotic_array || obj.flags.exotic_arguments;
+    if (obj.array_size > 0 && array_part_is_indexed) {
+        for (uint i = 0; i < obj.array_size && key_count < max_keys; i++) {
+            if (obj.array_part()[i].is_undefined()) continue;
+            HString* ki = h.int_to_hstring((long)i);
+            if (ki == null) continue;
+            if (ki.is_arridx() && obj.find_prop_idx(ki, h) >= 0) continue;
+            key_buf[key_count++] = ki;
+        }
+    }
+    // Non-index string keys in insertion order (symbols skipped).
+    for (uint i = 0; i < obj.prop_count; i++) {
+        if (obj.prop_key_at(i, h) != null) {
+            HString* key = (HString*)obj.prop_key_at(i, h);
+            if (key.is_arridx() || key.is_symbol()) continue;
+            if (key_count < max_keys) key_buf[key_count++] = key;
+        }
+    }
+
+    for (uint i = 0; i < key_count; i++) {
+        TVal kv; kv.set_string(key_buf[i]);
+        builtins::array_set_elem(arr, i, kv, h);
+    }
+    TVal len_tv; len_tv.set_fastint((long)key_count);
+    arr.put_prop(h.str(heap::BuiltinStr.LENGTH), len_tv, hobject::PROP_FLAGS_WC, h);
+    TVal v; v.set_object(arr);
+    return capi_store(rt, v, out);
+}
+
+/// Call a JS function from outside a callback. argv/argc (NULL/0 for none),
+/// this_val (0 for undefined). On JSE_OK *out_val receives a caller-owned
+/// handle. A thrown callee returns JSE_ERR_THROW (or JSE_ERR_INTERRUPT for an
+/// interrupt); the exception is recorded on the runtime, not unwound through C.
+fn int jse_call_rt(void* rtp, uint func_id, uint* argv, uint argc, uint this_id,
+                   uint* out_val) @export("jse_call_rt") {
+    if (rtp == null) return JSE_ERR_INVALID;
+    Runtime* rt = (Runtime*)rtp;
+    clear_err(rt);
+    if (out_val != null) *out_val = 0;
+
+    TVal fv;
+    if (!slot_get(rt, func_id, &fv)) return reader_fail(rt, JSE_ERR_INVALID, "invalid or freed value handle");
+    if (!fv.is_lightfunc()) {
+        if (!fv.is_object()) return reader_fail(rt, JSE_ERR_TYPE, "value is not a function");
+        HObject* fo = (HObject*)fv.get_heapptr();
+        if (fo == null || !fo.flags.callable) return reader_fail(rt, JSE_ERR_TYPE, "value is not a function");
+    }
+    if (argc > 0 && argv == null) return JSE_ERR_INVALID;
+    TVal tv;
+    if (this_id == 0) { tv.set_undefined(); } else if (!slot_get(rt, this_id, &tv)) { tv.set_undefined(); }
+
+    TVal[16] args;
+    uint n = argc > 16 ? 16 : argc;
+    for (uint i = 0; i < n; i++) {
+        TVal a;
+        if (argv == null || !slot_get(rt, argv[i], &a)) a.set_undefined();
+        args[i] = a;
+    }
+
+    rt.heap.has_error = false;
+    TVal res = rt.heap.call_fn((void*)rt.vm, fv, &args[0], n, tv);
+    if (rt.heap.has_error) {
+        return capi_vm_fault(rt);
+    }
+    if (out_val != null) return capi_store(rt, res, out_val);
     return JSE_OK;
 }

@@ -115,7 +115,24 @@ macro Instruction* th_next(Instruction* pc, Instruction* code_end, TVal* regs, C
 /// budget itself and runs the safepoint) is far cheaper than framing the
 /// common case. The budget is left untouched on a bail so the switch's own
 /// decrement is the one that fires.
+///
+/// The interrupt budget is charged here for the same reason: threaded dispatch
+/// consumes the vast majority of back-edges, so a poll that only ran at switch
+/// sites would fire roughly BWD_GC_INTERVAL times too rarely, and a runaway
+/// loop could run tens of millions of iterations before the host's abort
+/// landed. No handler is the one-compare fast path; with one installed, a bail
+/// hands the due poll to the switch site, whose decrement is the one that
+/// fires.
 macro bool th_bwd_edge_needs_safepoint(ColdCtx* cold) {
+    vm_charge_interrupt(cold.vm.heap);
+    // The interrupt budget runs down inside the burst too. Threaded dispatch
+    // consumes the vast majority of back-edges, so a poll that waited for a
+    // switch visit would fire roughly BWD_GC_INTERVAL times too rarely, and a
+    // runaway loop could run millions of iterations before the host's abort
+    // landed. Charging here (and bailing on the due flag) holds the poll
+    // cadence at INTERRUPT_BUDGET_INIT back-edges in both dispatch modes; no
+    // handler installed is the one-compare fast path.
+    if (cold.vm.heap.interrupt_due) return true;
     return cold.vm.heap.bwd_gc_budget <= 1;
 }
 

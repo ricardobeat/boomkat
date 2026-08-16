@@ -87,9 +87,20 @@ const uint  GC_MAX_ROOTS            = 64;
 /// Marks an embedder-owned root set that is not an HObject. Called during
 /// mark_roots with the pointer stored in Heap.capi_roots.
 alias CapiMarkFn = fn void(void*);
+/// The C ABI's interrupt callback, invoked by the VM at safepoints. Returns
+/// non-zero to abort the running script. Lives here rather than in the capi
+/// module so vm_execute can call it without importing capi (which imports vm).
+alias JseInterruptFn = fn int(void* runtime, void* opaque);
 /// How many backward jumps between GC checks. Spacing them out stops loops
 /// from thrashing the collector.
 const uint  BWD_GC_INTERVAL        = 1024;
+/// How many back-edge safepoints between interrupt handler calls. Under
+/// threaded dispatch most back-edges run inside the burst and never reach the
+/// switch, which is where the poll site lives, so the effective cadence there
+/// is this many times BWD_GC_INTERVAL. A power of two; reset after every
+/// handler call and at each top-level eval, so a near-zero budget from a prior
+/// run cannot trigger an immediate unprompted callback.
+const uint  INTERRUPT_BUDGET_INIT  = 16;
 /// Strings longer than this are never interned. They are very rarely property
 /// keys, and interned copies pile up in the table until the next GC, which
 /// gives O(n^2) memory growth in loops like `s += chunk`.
@@ -701,6 +712,25 @@ struct Heap {
     void*               capi_runtime;
     CapiMarkFn          capi_mark;
 
+    // The C ABI interrupt handler, polled at VM safepoints (vm_execute's
+    // vm_poll_interrupt). Set by jse_set_interrupt_handler, which reaches the
+    // heap through the runtime; null means no handler and the poll is a single
+    // compare. The handler runs on the engine thread and must not re-enter the
+    // engine; opaque is never dereferenced here.
+    void*               capi_interrupt_fn;
+    void*               capi_interrupt_opaque;
+    uint                interrupt_budget;
+    /// Set when interrupt_budget runs down to zero; the switch site clears it
+    /// and calls the handler. The threaded burst charges the budget too and
+    /// bails on this flag, so back-edges consumed inside a burst still reach
+    /// the poll without underflowing (charge resets the budget at zero).
+    bool                interrupt_due;
+    /// Set while an "interrupted" error is unwinding. vm_throw_value skips
+    /// catch catchers while it is set, so script cannot swallow the abort;
+    /// finally blocks still run. Cleared only at the host boundary when the
+    /// JSE_ERR_INTERRUPT status is handed out.
+    bool                uncatchable_throw;
+
     // Valstack window the GC scans for roots. valstack_base is refreshed on VM
     // create and resize. valstack_top_ptr points at vm.valstack_top so the GC
     // reads the live value and push/pop need no synchronization.
@@ -1024,6 +1054,11 @@ fn Heap*? create(
     h.gc_trigger_counter    = GC_INITIAL_TRIGGER;
     h.gc_pending            = false;
     h.bwd_gc_budget         = BWD_GC_INTERVAL;
+    h.capi_interrupt_fn     = null;
+    h.capi_interrupt_opaque = null;
+    h.interrupt_budget      = INTERRUPT_BUDGET_INIT;
+    h.interrupt_due         = false;
+    h.uncatchable_throw     = false;
     h.native_frame_depth    = 0;
     h.host_fns              = null;
     h.host_fn_count         = 0;
@@ -1767,6 +1802,11 @@ fn void Heap.reset(&self) {
     self.capi_roots       = null;
     self.capi_runtime     = null;
     self.capi_mark        = null;
+    self.capi_interrupt_fn = null;
+    self.capi_interrupt_opaque = null;
+    self.interrupt_budget = INTERRUPT_BUDGET_INIT;
+    self.interrupt_due = false;
+    self.uncatchable_throw = false;
     self.gc_running       = false;
     self.gc_trigger_counter = GC_INITIAL_TRIGGER;
     self.gc_pending       = false;
@@ -4087,6 +4127,7 @@ fn void Heap.drain_microtasks(&self, void* vm) {
     // slot 0 and hide the queued entries from the GC.
     {
         uint i = 0;
+        bool interrupted = false;
         while (i < self.microtask_count) {
             if (self.gc_pending) { self.safepoint_gc(); }
             uint base = i * 3;
@@ -4102,8 +4143,15 @@ fn void Heap.drain_microtasks(&self, void* vm) {
                 result = arg;
             }
 
-            if (downstream.is_object() && downstream.get_heapptr() != null &&
-                self.microtask_after_fn != null && vm != null) {
+            // An interrupt raised inside this job aborts the drain. The job's
+            // unwind already recorded the error on has_error and left
+            // uncatchable_throw set for the host boundary; settle no promise
+            // with it, and drop the jobs still queued so a later drain cannot
+            // resume half-dead promise state.
+            if (self.uncatchable_throw) {
+                interrupted = true;
+            } else if (downstream.is_object() && downstream.get_heapptr() != null &&
+                       self.microtask_after_fn != null && vm != null) {
                 self.microtask_after_fn((void*)self, vm, result, downstream);
             }
 
@@ -4115,6 +4163,20 @@ fn void Heap.drain_microtasks(&self, void* vm) {
             self.microtask_queue[base + 1].set_undefined();
             self.decref_tval(&self.microtask_queue[base + 2]);
             self.microtask_queue[base + 2].set_undefined();
+
+            if (interrupted) {
+                // Drop the remainder of the queue.
+                while (i < self.microtask_count) {
+                    uint rb = i * 3;
+                    i++;
+                    self.decref_tval(&self.microtask_queue[rb]);
+                    self.microtask_queue[rb].set_undefined();
+                    self.decref_tval(&self.microtask_queue[rb + 1]);
+                    self.microtask_queue[rb + 1].set_undefined();
+                    self.decref_tval(&self.microtask_queue[rb + 2]);
+                    self.microtask_queue[rb + 2].set_undefined();
+                }
+            }
         }
         self.microtask_count = 0;
     }

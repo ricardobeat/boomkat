@@ -146,6 +146,17 @@ out/host_fn_abi: test/capi/host_fn_abi.c include/jse.h out/jse_static.a
 test-host-abi: out/host_fn_abi
 	./out/host_fn_abi
 
+# Embedding API tests (plans/074): interrupt handler with in-suite SIGALRM
+# watchdog and recovery, value/object/array construction, property access and
+# enumeration, script-name + line/col error info, and host-side calls.
+out/embed_api: test/capi/embed_api.c include/jse.h out/jse_static.a
+	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/embed_api.c \
+	   out/jse_static.a $(JSE_LDLIBS) -o out/embed_api
+
+.PHONY: test-embed-api
+test-embed-api: out/embed_api
+	./out/embed_api
+
 # Value-registry GC tests under GC_STRESS + ASan: a collection at every
 # allocation, so a registry the mark phase does not walk fails deterministically
 # instead of rarely.

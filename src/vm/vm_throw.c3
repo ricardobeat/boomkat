@@ -47,7 +47,12 @@ fn bool vm_throw_value(Vm* vm, TVal thrown_val, Activation* act,
     for (;;) {
         Catcher* cat = (Catcher*)search_act.cat;
         while (cat != null) {
-            if (cat.flags & CATCHER_FLAG_CATCH_ENABLED) {
+            if ((cat.flags & CATCHER_FLAG_CATCH_ENABLED) != 0
+                && !vm.heap.uncatchable_throw) {
+                // An interrupt is uncatchable: no catch clause may intercept
+                // it, or the script after the catch could run another loop.
+                // The flag's skip leaves the FINALLY check below active, so
+                // finally blocks still run during the unwind.
                 // If this is not the innermost catcher (i.e., we skipped
                 // catchers with IN_FINALLY), pop the skipped catchers so
                 // that the CATCH handler reads from the correct catcher.
@@ -133,9 +138,11 @@ fn bool vm_throw_value(Vm* vm, TVal thrown_val, Activation* act,
         // No catcher in this activation, so the throw unwinds past it. If it is an
         // async function body, the throw does not propagate to the caller: it
         // rejects the function's Promise (which the caller already received) and
-        // the async frame returns normally. Absorb it here.
+        // the async frame returns normally. Absorb it here. An interrupt is the
+        // exception: it must surface to the host as JSE_ERR_INTERRUPT, not settle
+        // the promise with an internal error the host never sees.
         if ((search_act.flags & ACT_FLAG_ASYNC) != 0 && search_act.async_promise != null
-            && !local_only) {
+            && !local_only && !vm.heap.uncatchable_throw) {
             HObject* prom = search_act.async_promise;
             // Pop every activation above and including the async frame.
             while (vm.activation_count > 0
