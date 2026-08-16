@@ -18,8 +18,8 @@ chance, he, nearley, d3-array, uuid, plus typescript 9 MB and babel 5 MB).
 QuickJS (`out/qjs`) is the differential oracle throughout.
 
 Status: B1-B11, B13-B17 and B19-B21 fixed. B12 withdrawn — it was a
-sloppy-mode fixture, not an engine bug. **B18 is open** (an async callback
-invoked by a builtin does not return a promise), along with the E-series.
+sloppy-mode fixture, not an engine bug. **B18 fixed 2026-08-16** (async
+callbacks invoked by builtins now return promises). The E-series remains open.
 
 Library loading: **5 of the 8 original failures now pass** — four of them
 fixed by B16 alone. protobufjs and typescript still fail; babel is untested.
@@ -903,17 +903,20 @@ cannot "fix" an over-rejection by dropping the guard entirely.
 
 ## B18: an async callback invoked by a builtin does not return a promise
 
-**Severity: medium. OPEN — partial fix attempted and reverted, see below.**
+**Severity: medium. FIXED 2026-08-16 (see below); the earlier partial fix was
+reverted and superseded.**
 
 ```js
-[1, 2].map(async (x) => x)[0]        // ours: 1        node: Promise
-[1, 2].filter(async () => false)     // ours: []       node: [1, 2]
+[1, 2].map(async (x) => x)[0]        // ours (fixed): Promise    node: Promise
+[1, 2].filter(async () => false)     // ours (fixed): [1, 2]     node: [1, 2]
 ```
 
 A plain function *returning* a promise works. An **async function** called by
-a builtin does not: it runs to completion and hands back the raw return value.
-`filter` is the sharpest case — a promise is always truthy, so an async
-predicate must keep every element, and ours drops them all.
+a builtin did not: it ran to completion and handed back the raw return value.
+`filter` was the sharpest case — a promise is always truthy, so an async
+predicate must keep every element, and ours dropped them all. Worse, any
+callback that actually *suspended* (`async x => { await 0; return x; }`) lost
+its value entirely, returning `undefined`.
 
 Root cause: `vm_call_fn_impl` (`src/vm/vm_execute.c3`, "Case 3: compiled
 function on HObject") is the path builtins use to invoke a JS callback. It
@@ -922,17 +925,25 @@ for an **initial** async call — no `promise_create`, no `ACT_FLAG_ASYNC`. The
 CALL opcode's path in `vm_calls.c3` does both.
 
 **A one-block fix is NOT sufficient.** Adding the `promise_create` +
-`ACT_FLAG_ASYNC` setup there does make `map`/`filter`/`some` return real
-promises that resolve correctly — but a callback that actually *suspends*
-(`async x => { await null; return x; }`) then resolves to `null`, because this
-path re-enters the VM synchronously and has no generator state to suspend
-into. That is strictly worse than the current behaviour, so the attempt was
-reverted rather than shipped.
+`ACT_FLAG_ASYNC` setup alone makes `map`/`filter`/`some` return real promises,
+but the callback's returned value is lost when it suspends, because the setup
+never tells the caller to collect the promise. That is strictly worse than the
+original behaviour, so the first attempt was reverted rather than shipped.
 
-Doing this properly means giving the call_fn path the same
-suspend/resume machinery the CALL opcode has. Affects every builtin that
-invokes a callback: `map`, `filter`, `some`, `every`, `forEach`, `sort`
-comparators, `Promise` executors, and accessors.
+**The fix that landed:** two additions in `vm_call_fn_impl`'s Case 3. On an
+initial (non-resume) call to a plain async function (`is_async() &&
+!is_async_gen()`), create the promise and mark the activation async, exactly
+like the CALL path. Then, when the inner `Vm.run` returns, hand the caller the
+promise unless the body already delivered it: a completed body's RET settles
+and returns the promise, while a suspended or throwing body leaves
+`Vm.run`'s result as `undefined` and the pending/rejected promise is the
+correct value for the builtin to collect. The suspend/resume machinery itself
+(AWAIT's GeneratorState, the ASYNC_RESUME/REJECT reactions) already existed on
+this path, so no new coroutine state was needed. Verified byte-for-byte
+against node across map/filter/some/every/forEach/Promise executors/.then/
+sort with both suspending and non-suspending async callbacks; `test/
+test_async_builtin_callbacks.js` pins it (14 assertions), test262 async phases
+(5, 17-20, 21, 24) 0 fail, ASAN clean.
 
 ---
 

@@ -6,7 +6,7 @@ once the current round (L, P2, C7a-cap) drains. **Do not dispatch until then.**
 
 ## Confirmed reproduced
 
-### PB1 — arguments object lacks `@@iterator` — REAL IN-SCOPE BUG
+### PB1 — arguments object lacks `@@iterator` — RESOLVED (already implemented)
 RESEARCHED (not guessed): the strict `arguments` object IS a supported, first-
 class feature. Evidence: dedicated `ObjClass.ARGUMENTS` exotic object built in 6+
 VM call paths (vm_calls.c3:372 etc.) with indexed elements, `.length`, strict
@@ -20,11 +20,19 @@ What's OUT of scope: only the SLOPPY **mapped** arguments (arguments[i]↔named-
 aliasing) — the `language/arguments-object/` test dir is already skip-listed
 (run_test262.py:312), which is the correct narrow exclusion.
 
-What's the BUG: the arguments object is missing `Symbol.iterator` (should be
-`%Array.prototype.values%`), so `[...arguments]`/`for-of arguments` throw. Already
-listed in BACKLOG.md:59 as a fix, not a non-goal. Fix: install `@@iterator` on the
-ARGUMENTS object (shared, not per-instance — tie to PB2's shared-iterator-proto
-work, or at minimum point it at Array.prototype.values). Small, real, in-scope.
+RESOLVED — `@@iterator` is installed by `finish_arguments_object`
+(src/vm/vm_calls.c3:22): it sets `.length`, `.callee`, and `@@iterator` to the
+*same* function object as `%Array.prototype.values%` with descriptor
+{writable: true, enumerable: false, configurable: true}. Verified against node:
+value identity (`arguments[Symbol.iterator] === [][Symbol.iterator]` is true) and
+descriptor match byte-for-byte; `[...arguments]`, `for-of arguments`,
+`Array.from(arguments)` and destructuring all work. The edition is ES2015 core,
+not >ES2015: test262 tags both tests `es6id` 9.4.4.6 S7 / 9.4.4.7 S22 (ES2015
+§9.4.4 arguments-exotic-object steps). The two tests stay skipped only because
+both carry `flags: [noStrict]` (wholesale runner filter): the mapped variant
+genuinely needs sloppy mapped arguments, while the unmapped variant (assertions
+inside a `'use strict'` IIFE) would pass if un-skipped per-file. The old
+BACKLOG.md:59 pointer is stale — no such entry remains.
 
 ### PB2 — iterators have `next` as an OWN property, not on a shared prototype
 `Object.getPrototypeOf([1,2][Symbol.iterator]()).hasOwnProperty("next")` is
@@ -157,11 +165,21 @@ builtin_to_string_vm treatment. Reporter: E1.
 
 ## Needs more investigation
 
-### PB3 — batch-runner SIGSEGV under sustained load (crash, infra)
-`test262_runner --worker` crashes between tests under load (heap.reset/GC
+### PB3 — batch-runner SIGSEGV under sustained load — CLOSED (no longer reproduces)
+`test262_runner --worker` crashed between tests under load (heap.reset/GC
 fragility). Does not repro via isolated run_single_test.sh. Tracked in memory
 `batch-runner-segv-under-load`. **Highest severity (a crash)** but hardest to
 pin — needs a focused GC/heap-reset investigation, likely with a stress repro.
+
+CLOSED 2026-08-16: no worker crash in any full-suite run since the session-302/303
+GC fixes — sessions 303, 309, 312 and the review run all completed 49,814/0 with
+`--workers 4` under sustained load. The heap-reset/GC fragility class PB3 pointed
+at was addressed in that window: the deterministic worker segfaults fixed by the
+decref revert (`37252db2`), the generator/async-resume GC lifetime crash
+(`6722c1a6`, plus the `GC_STRESS` + ASAN gate it added), and the mid-sweep
+refcount double-free (`afc10dd2`). The runner's RSS-sampling MEMKILL cap
+(scripts/run_test262.py) also converts over-memory workers into clean kills
+instead of native crashes. Reopen if a worker dies under sustained load again.
 
 ### PB5 — eval'd `super.x` in an OBJECT-LITERAL method resolves wrong super-base
 `__super__` holds either the constructor (needs `.prototype`) or the home

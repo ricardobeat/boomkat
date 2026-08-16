@@ -670,6 +670,22 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
             uint preserved_flags = act.flags;
             act.flags = (target.has_direct_eval() ? ACT_FLAG_DIRECT_EVAL : 0)
                       | preserved_flags;
+            // Initial call to a plain async function (B18): create the
+            // function's promise and mark the activation async so RET settles
+            // it and AWAIT can suspend onto it. The CALL opcode path does the
+            // same (vm_calls.c3); without it the callback runs synchronously
+            // to completion and the builtin receives the raw return value
+            // instead of a promise. Async generators are excluded: their
+            // promise/request machinery is owned by gen_initial/GEN_START.
+            HObject* cfn_async_prom = null;
+            if (!did_resume && target.is_async() && !target.is_async_gen()) {
+                HObject*? prom_raw = builtins::promise_create(vm.heap);
+                if (try p = prom_raw) {
+                    cfn_async_prom = p;
+                    act.flags |= ACT_FLAG_ASYNC;
+                    act.async_promise = p;
+                }
+            }
             act.heap_reg_count = 0;
             if (did_resume) { track_restored_regs(act, frame, nregs); }
             act.caller_valstack_top = frame + nregs;
@@ -913,6 +929,17 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
             if (cfn_is_gen_initial && cfn_gen_result_slot.is_object()
                 && cfn_gen_result_slot.get_heapptr() != null) {
                 result = cfn_gen_result_slot;
+            }
+
+            // Initial async call: the caller must receive the function's
+            // promise. If the body completed, RET already delivered the
+            // promise as result; if it suspended at an AWAIT or threw,
+            // Vm.run returned undefined and the pending/rejected promise is
+            // the value the builtin should collect (map stores it, .then
+            // adopts it via promise_resolve_with_value).
+            if (cfn_async_prom != null
+                && (!result.is_object() || result.get_heapptr() != (void*)cfn_async_prom)) {
+                result.set_object(cfn_async_prom);
             }
 
             // Drain microtasks after callback execution, but only when this
