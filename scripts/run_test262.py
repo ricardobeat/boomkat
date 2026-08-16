@@ -445,19 +445,6 @@ SKIP_FILES = {
     # primitive, ES5 §10.4.3), and 10.4.3-1-103's `==` assertions pass either
     # way, so only the var-shadowing test stays here.
     "language/function-code/S10.2.1_A5.2_T1.js",  # var x inside f(x) preserves param binding — sloppy-mode-only
-    # onlyStrict — engine is strict-only. 10.4.3-1-13/-15 and their gs twins
-    # (Function/`new Function` bodies must substitute `this` to the global
-    # object, never undefined) pass via FuncFlags.subst_global_this on
-    # dynamic-constructor bodies; the strict getter `this` tests
-    # (10.4.3-1-103/-104/-106) pass via the primitive-receiver accessor
-    # path. Nothing left in F5.
-    # F6 — onlyStrict arguments-object tests. ES5 §10.6 requires that in strict
-    # mode `arguments.callee` is a non-configurable accessor whose get/set are
-    # both %ThrowTypeError%, so reads and writes throw TypeError. The engine
-    # installs exactly that accessor (shared frozen intrinsic, see
-    # register_function_constructor + finish_arguments_object), and the
-    # built-ins/ThrowTypeError descriptor tests all pass; nothing left here.
-    # onlyStrict — engine is strict-only.
     # D1 — Date constructor Sputnik month-rollover tests assert pre-epoch and
     # near-epoch month-overflow behavior (e.g. new Date(1899, 12) === new
     # Date(1900, 0)). The engine's date_utc_to_ms correctly handles month
