@@ -2504,6 +2504,38 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
     self.lexer.seen_line_term  = saved_slt;
 }
 
+/// True when `tt` can end an ExpressionStatement, so a LineTerminator after
+/// it starts a new statement (ASI): `function` cannot continue an expression
+/// after these tokens. FUNCTION itself is here because the expression-skip
+/// path records the skipped `function` as the previous token, and a function
+/// expression cannot be followed by another `function` (`var g = function
+/// named() {}\nfunction f() {}` ends the variable statement at the `}`).
+/// Operators and the restricted-production keywords (`return`, `throw`,
+/// `break`, `continue`) can take a function expression on the next line, so
+/// they are deliberately absent.
+fn bool token_completes_statement(TokenType tt) @inline {
+    switch (tt) {
+        case TokenType.IDENTIFIER:
+        case TokenType.NUMBER:
+        case TokenType.BIGINT:
+        case TokenType.STRING:
+        case TokenType.REGEXP:
+        case TokenType.TEMPLATE:
+        case TokenType.TEMPLATE_TAIL:
+        case TokenType.THIS:
+        case TokenType.SUPER:
+        case TokenType.RPAREN:
+        case TokenType.RBRACKET:
+        case TokenType.RBRACE:
+        case TokenType.FUNCTION:
+        case TokenType.INC:
+        case TokenType.DEC:
+            return true;
+        default:
+            return false;
+    }
+}
+
 /// Pre-scan function declarations at the top level (global scope) and hoist them
 /// before any statements are compiled. This implements function declaration
 /// hoisting as per ES5 §10.2.1.1.
@@ -2552,6 +2584,11 @@ fn void? CompilerContext.hoist_global_fn_decls(&self, bool checks_only = false) 
     // and must be skipped.
     TokenType prev_toplevel = TokenType.EOF_TOKEN;
     bool has_prev = false;
+    // ASI signal carried from an `async` iteration to the `function` one:
+    // the async branch peeks `function` on the same line and pushes it
+    // back, so by the time the loop re-consumes it, seen_line_term no
+    // longer shows the line break that ended the previous statement.
+    bool prev_ended_by_asi = false;
 
     while (true) {
         // Save lexer state before consuming this token (so we can restore
@@ -2628,6 +2665,11 @@ fn void? CompilerContext.hoist_global_fn_decls(&self, bool checks_only = false) 
             // it (see hoist_decls' identical branch for why this must be
             // "async"'s offset, not "function"'s).
             uint async_kw_pos = self.lexer.token_start;
+            // Capture the ASI state before the peek: afterwards
+            // seen_line_term describes the gap after `async`, losing the
+            // line break that ended the previous statement.
+            bool asi_before_async = self.lexer.seen_line_term
+                && token_completes_statement(prev_toplevel);
             Token? async_peek = self.lexer.next_token();
             if (catch _err_peek = async_peek) continue;
             if (async_peek.type == TokenType.FUNCTION && async_peek.line == tok_opt.line) {
@@ -2636,6 +2678,7 @@ fn void? CompilerContext.hoist_global_fn_decls(&self, bool checks_only = false) 
                     Token fn_tok = async_peek;
                     self.lexer.pushback(fn_tok);
                 }
+                prev_ended_by_asi = asi_before_async;
                 self.is_async = true;
                 continue;
             }
@@ -2651,16 +2694,60 @@ fn void? CompilerContext.hoist_global_fn_decls(&self, bool checks_only = false) 
             continue;
         }
 
+        // TypeScript: a top-level `type` alias is an erasable statement.
+        // Skip it whole, the same way the statement pass does, so the
+        // `function` on the next line (no semicolon after the alias) still
+        // reads as a declaration here. Restore the lexer and let
+        // ts_try_type_alias do the lookahead; a non-alias `type` (an
+        // identifier expression, `type` on its own line) falls through with
+        // the token re-consumed.
+        if (brace_depth == 0 && tt == TokenType.IDENTIFIER && !tok_opt.has_escape
+            && ident_is(tok_opt.str_value, "type")) {
+            self.lexer.pos             = pos_before;
+            self.lexer.line            = line_before;
+            self.lexer.col             = col_before;
+            self.lexer.current         = cur_before;
+            self.lexer.lookahead       = look_before;
+            self.lexer.has_lookahead   = haslk_before;
+            self.lexer.pushed_back     = push_before;
+            self.lexer.has_pushed_back = haspb_before;
+            self.lexer.seen_line_term  = slt_before;
+            if (self.ts_try_type_alias()) {
+                prev_toplevel = TokenType.SEMICOLON;
+                has_prev = true;
+                continue;
+            }
+            // ts_try_type_alias pushed `type` back onto the COMPILER
+            // pushback stack (not the lexer's), so re-consume through
+            // advance(), which pops that stack; the pre-scan's final
+            // restore only rewinds the lexer. Reading straight off the
+            // lexer here would leave `type` in the stack for the statement
+            // pass to trip over.
+            Token? type_retok = self.advance();
+            if (catch _e_trt = type_retok) continue;
+            tt = type_retok.type;
+            tok_opt = type_retok;
+        }
+
         if (brace_depth == 0 && tt == TokenType.FUNCTION) {
             // `function` at brace_depth 0 is a declaration only when it
             // starts a statement.  In expression position (after `=`,
             // `(`, `,`, `:`, `?`, `=>`, etc.) it must be skipped to
             // avoid double-compilation by the statement parser.
-            bool in_stmt_pos = !has_prev
+            // ASI: a LineTerminator after a token that completes a
+            // statement ends it, so the `function` starts a new
+            // declaration (`const x = 1\nfunction f() {}`). The async
+            // branch's latch covers `...\nasync function`, whose peeked
+            // `function` re-consumes after `async` on the same line.
+            bool asi_ends_prev = self.lexer.seen_line_term
+                && token_completes_statement(prev_toplevel);
+            bool in_stmt_pos = prev_ended_by_asi || asi_ends_prev
+                || !has_prev
                 || prev_toplevel == TokenType.SEMICOLON
                 || prev_toplevel == TokenType.RBRACE
                 || prev_toplevel == TokenType.LBRACE
                 || prev_toplevel == TokenType.EOF_TOKEN;
+            prev_ended_by_asi = false;
             if (!in_stmt_pos) {
                 // Expression position, skip the entire function expression
                 // body so we don't compile it here.  The statement parser

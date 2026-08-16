@@ -6,12 +6,13 @@ compile-only says nothing about executing real `.ts` sources: value-level
 behavior of type-erased files, module graphs in ts_mode, the syntax shapes
 real libraries use that hand-written fixtures never hit.
 
-Status: done (session 310).
+Status: done (sessions 310-311).
 
 ## Contents
 
 - [The corpus](#the-corpus)
 - [The oracle](#the-oracle)
+- [Engine support](#engine-support)
 - [Parser gaps closed](#parser-gaps-closed)
 - [Regression verification](#regression-verification)
 
@@ -37,26 +38,82 @@ Two layers, both checked in:
    `scripts/ts_runtime_checks/*.ts`:
    - microdiff 1.4.0 (single file, 104 lines)
    - zustand 5.0.3 vanilla.ts (single file, 100 lines)
-   - valtio 2.1.3 vanilla.ts + proxy-compare 3.0.1 vendored beside it (the
-     one bare-specifier import, rewritten to the local file; the rewrite is
-     recorded in the script)
+   - valtio 2.1.3 vanilla.ts, with proxy-compare 3.0.1 vendored as a bare
+     specifier under `test/tscorpus/node_modules/` (resolved by the engine's
+     node_modules walk, never leaving the repo)
+   - @preact/signals-core 1.14.4 index.ts
+   - jotai 2.20.2 vanilla package tree (`src/vanilla/`: atom, store,
+     typeUtils, internals)
+
+   No source file is rewritten. The sources stay byte-identical to upstream;
+   all wiring lives in the drivers and the vendored node_modules layout.
 
 ## The oracle
 
-Node's native type stripping. A driver must produce byte-identical stdout
-under `node` and the engine. For the handbook the reference output is
-captured into `.expected` files (`run.sh --regen`), so `test-local` has no
-node dependency; the library sweep runs node live, like the tsc oracle in
-`just ts-conformance`.
+The engine itself, twice: tsc strips each `.ts` to a `.js` mirror in
+`test/tscorpus/_transpiled/` (same relative layout), the driver runs once
+against the `.ts` sources and once against the mirrors, and stdout must
+match. tsc runs with `--target es2022 --module esnext --skipLibCheck
+--outDir`; TS2339-style errors do not block emit. The post-processing step
+(SPEC_RE) rewrites `.ts` import specifiers to `.js` in the emitted files
+only, and `drop_undeclared_export_names` removes same-file interface names
+from trailing export lists (tsc keeps them, making the mirror an invalid
+module; its `//` comments inside the list are stripped before the name
+check). No node, no source rewrites.
 
-Corpus selection was oracle-first: candidates were admitted only if node
-itself runs them (nanostores was dropped, it ships compiled JS; fast-equals
-was dropped, extensionless intra-package imports that node's ESM resolver
-refuses).
+The node oracle of session 310 is gone. The mirror run is the acceptance
+bar: any behavior the engine executes must reproduce exactly on the
+stripped output, which is the same code with the types erased. A library
+passes only if both sides run and print identically.
+
+An engine-side transpiler oracle (typescript.js `ts.transpileModule` on our
+own engine) was tried first and is blocked by a pre-existing codegen bug:
+`substituteNode` resolves undefined in `getPipelinePhase` (`TypeError:
+undefined is not a function`), reproduced minimally with
+`const q = 1; q.foo;`. It fails on `--no-optimize` and on the pre-session
+binary, so it is not this session's changes. The repro lives in
+`test/libcorpus/typescript.js`; fixing it is its own session.
+
+## Engine support
+
+The sweep needed two engine features to run unmodified multi-file sources:
+
+1. **node_modules resolution** (src/module.c3): bare specifiers now walk the
+   ancestor directories for `node_modules/<pkg>/`, probing subpath files,
+   `package.json` main, and index files in order, hooked into
+   `call_resolve_name` before the extension-probe fallback. This is what
+   lets valtio's `import { createProxy } from 'proxy-compare'` resolve
+   without touching the source. Relative specifiers are unaffected.
+2. **ts_mode type erasure**: see the parser gaps below.
 
 ## Parser gaps closed
 
-Four, all found by the corpora on their first runs:
+Session 310 closed four (see below). Session 311 found three more:
+
+5. **Top-level `type` aliases with no trailing `;` desynced the hoist
+   pre-scan** (functions.c3): `hoist_global_fn_decls` classified the
+   `function` after a semicolonless alias as an expression (the alias's
+   last token, an identifier, is not a statement terminator), so the name
+   was never recorded and a following `export { f }` named no runtime
+   binding. The pre-scan now skips whole `type` aliases like the statement
+   pass does, and its statement-start decision is ASI-aware: a line break
+   after a token that completes a statement starts a new one. That second
+   half is a plain-JS fix too (`const x = 1\nfunction f() {}` in a module
+   previously exported nothing). The first attempt at the alias skip left
+   `type` on the compiler's pushback stack (the pre-scan's restore rewinds
+   only the lexer), which broke every `import type` until the fall-through
+   re-consume switched to `advance()`.
+6. **`typeof` fast paths split optional chains** (expressions.c3): the
+   bare- and parenthesized-identifier paths under TYPEOF emit TYPEOFIDENT
+   directly and only checked `.` `[` `(` as a member continuation, so
+   `typeof a?.b` and `typeof (a).b` left the continuation dangling (a
+   SyntaxError from the enclosing parse). The continuation set now matches
+   the member chain: `.` `[` `(` `?.` and a template literal.
+7. **Object-type member names that are statement keywords** (ts_skip.c3):
+   `delete(key: K): boolean` inside an object type stopped the type at the
+   keyword. `ts_token_stops_type` is now gated on depth 0.
+
+Session 310's four, still current:
 
 1. **`ts_swallow_to_semi` ate the next statement** (ts_skip.c3): the ASI
    check ran after consuming the token that crossed the line break, so
@@ -83,8 +140,12 @@ Four, all found by the corpora on their first runs:
 ## Regression verification
 
 - Handbook corpus 43/43 (wired into `just test-local`).
-- Library sweep 3/3 byte-identical to node.
+- Library sweep 5/5: both the `.ts` sources and the tsc-stripped mirrors
+  run under the engine and print identically (microdiff, zustand, valtio,
+  signals-core, jotai).
 - `just ts-conformance` (Microsoft corpus): 0 failures.
-- `just rosetta` 42/42; libcorpus 22/22; `just test-local` green.
-- All four fixes are gated on `ts_mode`; no non-TS path changed, so test262
-  (100% at session 309) is unaffected.
+- `just rosetta` 42/42; `just modules` 15/15 (includes the new
+  t15_hoist_asi fixture); `just test-local` green.
+- test262: phases 0-3 spot-checked 0 fail / 0 unexpected CE (the ASI and
+  typeof fixes touch non-TS paths, so the targeted-subset run still stands
+  at 100% from session 309).

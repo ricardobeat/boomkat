@@ -274,7 +274,10 @@ fn void? CompilerContext.skip_type(&self) {
 
         // Statement keywords never appear inside a type expression; stop so
         // the following statement stays intact (see ts_token_stops_type).
-        if (ts_token_stops_type(tt)) {
+        // Depth-gated: inside brackets a keyword is a legal member name
+        // (`delete(key: K): boolean` in an object type), and no new statement
+        // can start there anyway.
+        if (depth == 0 && ts_token_stops_type(tt)) {
             return;
         }
 

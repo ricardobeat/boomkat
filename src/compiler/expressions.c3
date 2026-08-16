@@ -1543,6 +1543,25 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
                 }
 
                 if (matched) {
+                    // `( IDENTIFIER )` followed by a member/call/template
+                    // continuation (`typeof (a).b`, `typeof (a)?.b`,
+                    // `typeof (a)[0]`, `typeof (a)()`, `typeof (a)\`x\``)
+                    // is not a bare identifier reference: the fast path
+                    // would emit TYPEOFIDENT for `a` and leave the
+                    // continuation dangling. Restore and fall through to
+                    // normal typeof expression parsing.
+                    Token? cont_opt = self.lexer.peek();
+                    if (try ct = cont_opt) {
+                        if (ct.type == TokenType.DOT || ct.type == TokenType.LBRACKET
+                            || ct.type == TokenType.LPAREN || ct.type == TokenType.OPT_CHAIN
+                            || ct.type == TokenType.TEMPLATE
+                            || ct.type == TokenType.TEMPLATE_HEAD
+                            || (ct.type == TokenType.STRING && ct.is_template)) {
+                            matched = false;
+                        }
+                    }
+                }
+                if (matched) {
                     Token idTok2 = matched_id;
                     if (!self.is_global) {
                         if (try local_reg = self.resolve_var(idTok2.str_value)) {
@@ -1587,7 +1606,11 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
                         if (try tok2 = peeked2) {
                             is_member = tok2.type == TokenType.DOT ||
                                         tok2.type == TokenType.LBRACKET ||
-                                        tok2.type == TokenType.LPAREN;
+                                        tok2.type == TokenType.LPAREN ||
+                                        tok2.type == TokenType.OPT_CHAIN ||
+                                        tok2.type == TokenType.TEMPLATE ||
+                                        tok2.type == TokenType.TEMPLATE_HEAD ||
+                                        (tok2.type == TokenType.STRING && tok2.is_template);
                         }
                         if (is_member) {
                             // Not a bare identifier, push back and fall through
@@ -1889,8 +1912,15 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
             self.last_was_member = false;
             return op_dec;
 
-        case TokenType.NEW:
-            return self.new_expr()!;
+        case TokenType.NEW: {
+            // Returns without passing through postfix_expr, so the TS postfix
+            // erasure (`new X() as T`) must run explicitly.
+            ushort new_reg = self.new_expr()!;
+            if (self.lexer.ts_mode) {
+                self.ts_skip_postfix_type_ops()!;
+            }
+            return new_reg;
+        }
 
         default:
             // No unary operator was consumed, so this is still the head of the
@@ -1928,6 +1958,40 @@ fn bool CompilerContext.postfix_result_discarded(&self) {
 /// `last_was_member` after emitting a call, and then inspect the flag here
 /// to decide whether to emit INC/DEC + PUTPROP for a member LHS.
 ///
+/// TypeScript postfix erasable syntax after a completed expression:
+/// non-null `!`, `as T`, `satisfies T`, chainable (`x as unknown as T`).
+/// Consumed without emitting anything. ts_mode only.
+fn void? CompilerContext.ts_skip_postfix_type_ops(&self) {
+    for (;;) {
+        TokenType tt2 = self.peek_type();
+        if (tt2 == TokenType.LOG_NOT) {
+            // Non-null postfix `!`. `!x` (unary) is a prefix on a fresh
+            // operand; here a primary is already parsed, so the `!` is
+            // postfix and can be consumed unconditionally.
+            Token _bang = self.advance()!;
+            continue;
+        }
+        if (tt2 == TokenType.IDENTIFIER) {
+            if (self.check_ts_ident("as") || self.check_ts_ident("satisfies")) {
+                // check_ts_ident (not match_ts_ident) because the failed
+                // probe would consume+pushback the identifier, and when this
+                // expression runs inside a nested compile context (class
+                // field initializer), the pushback would land on the nested
+                // context's stack, invisible to the caller that reads the
+                // shared lexer.
+                Token _kw = self.advance()!;
+                // `as const` — `const` is a keyword, not a type name, so
+                // skip_type would stop on it immediately.
+                if (self.match(TokenType.CONST)) continue;
+                self.skip_type()!;
+                continue;
+            }
+        }
+        break;
+    }
+}
+
+///
 /// For a member LHS (e.g. `obj.prop++`), the GETPROP emitted by member_expr
 /// is still in the bytecode stream. We NOP it (its result is now in `saved`
 /// and we will overwrite `operand` with INC) and use the saved obj/prop
@@ -1945,36 +2009,7 @@ fn ushort? CompilerContext.postfix_expr(&self) {
     // TypeScript postfix erasable syntax: non-null `!`, `as T`, `satisfies T`.
     // Loop because they can chain: `x as unknown as T`.
     if (self.lexer.ts_mode) {
-        for (;;) {
-            TokenType tt2 = self.peek_type();
-            if (tt2 == TokenType.LOG_NOT) {
-                // Non-null postfix `!` — only valid when followed by something
-                // that continues an expression suffix (`.`, `[`, `(`, operator,
-                // `,`, `;`, etc.). Distinguishing from `!x` (unary) is easy
-                // because `!x` is a *prefix* on a fresh operand; here we already
-                // parsed a primary. So consume unconditionally.
-                Token _bang = self.advance()!;
-                continue;
-            }
-            if (tt2 == TokenType.IDENTIFIER) {
-                if (self.check_ts_ident("as") || self.check_ts_ident("satisfies")) {
-                    // The contextual keyword really matches; consume it and
-                    // skip the type. check_ts_ident (not match_ts_ident)
-                    // because the failed probe would consume+pushback the
-                    // identifier, and when this expression runs inside a
-                    // nested compile context (class field initializer), the
-                    // pushback would land on the nested context's stack,
-                    // invisible to the caller that reads the shared lexer.
-                    Token _kw = self.advance()!;
-                    // `as const` — `const` is a keyword, not a type name, so
-                    // skip_type would stop on it immediately.
-                    if (self.match(TokenType.CONST)) continue;
-                    self.skip_type()!;
-                    continue;
-                }
-            }
-            break;
-        }
+        self.ts_skip_postfix_type_ops()!;
     }
 
     bool lhs_was_getvar = self.last_was_getvar;

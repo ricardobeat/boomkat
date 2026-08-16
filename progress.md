@@ -1,6 +1,6 @@
 # Progress: Duktape C3 — test262 Conformance Tracker
 
-**Last Updated:** Session 310 — runtime TypeScript validation: handbook syntax corpus (43 files, in test-local) + real-library sweep (microdiff, zustand, valtio byte-identical to node); 4 ts_mode parser gaps closed. test262 remains 100% (49,814/0, session 309).
+**Last Updated:** Session 311 — library sweep reworked to a tsc-strip self-oracle (no node): 5/5 libraries pass both sides (microdiff, zustand, valtio, signals-core, jotai). Added node_modules resolution for bare specifiers; fixed the hoist pre-scan's ASI blind spot and the typeof fast paths' missing optional-chain continuation. test262 remains 100% (49,814/0, session 309).
 
 **Target:** 100% test262 pass rate on the targeted subset (see plan 040). — **reached session 309**
 
@@ -11,6 +11,19 @@
 - **Single-test repro**: `python3 scripts/run_test262.py --single <path>` (warns if the suite skips the test; `--debug`/`--keep` concat harness for `just lldb` / `--trace-vm`).
 - **Phase counts**: `bash scripts/count_test262_by_phase.sh` · **Delta**: `bash scripts/test262_delta.sh`.
 - **Build**: `c3c build test262_runner` or `c3c build duktape_c3` (plain runner; `duktape_c3_debug` for `-c`/`-t` inspection).
+
+## Session 311 (2026-08-16)
+
+Expanded the library sweep (plan 073) to signals-core and jotai, and reworked the oracle from node to a compile-ts-to-js self-comparison, per the user's direction ("compile ts to js, then run both and check that the result is the same"). The node oracle needed live node; the mirror run needs only the engine, so the acceptance bar is now: unmodified `.ts` sources and their tsc-stripped `.js` mirrors both run under the engine and print identically.
+
+- **Self-oracle plumbing** (`scripts/verify_ts_libraries.py`): `strip_with_tsc` emits mirrors into gitignored `test/tscorpus/_transpiled/` keeping the source layout; SPEC_RE rewrites `.ts` import specifiers to `.js` in emitted files only; `drop_undeclared_export_names` drops same-file interface names from trailing export lists (tsc keeps them, invalidating the mirror) and strips the `//` comments tsc preserves inside the list, which otherwise glued to the first specifier on the comma split and read as part of the declaration name.
+- **node_modules resolution** (src/module.c3): bare specifiers walk ancestor `node_modules/<pkg>/` directories (subpath files, `package.json` main, index probing), hooked into `call_resolve_name`. valtio's `proxy-compare` import now resolves from vendored `test/tscorpus/node_modules/proxy-compare/index.ts` with no source rewrite.
+- **jotai's export erasure, root-caused to the hoist pre-scan** (functions.c3): `hoist_global_fn_decls` saw `type ActuallyWritableAtom<T> = ...` (no trailing `;`) and classified the next `function` as an expression, so names were never recorded and `export { buildStore as INTERNAL_buildStoreRev3, ... }` linked to nothing. The pre-scan now skips `type` aliases whole and its statement-start test is ASI-aware (`const x = 1\nfunction f() {}` in a module previously exported nothing, a plain-JS bug). First fix attempt leaked `type` onto the compiler pushback stack and broke every `import type`; the fall-through re-consume now goes through `advance()`.
+- **`typeof` fast paths** (expressions.c3): the bare- and parenthesized-identifier paths emitted TYPEOFIDENT without checking `?.` (or templates) as a member continuation, so `typeof a?.b` and `typeof (a).b` were SyntaxErrors. Continuation set now matches the member chain.
+- **Object-type keywords** (ts_skip.c3): `ts_token_stops_type` gated on depth 0 so `delete(key: K): boolean` inside an object type no longer stops it.
+- An engine-side transpiler oracle (typescript.js `ts.transpileModule` on our own engine) is blocked by a pre-existing miscompile (`substituteNode` undefined in `getPipelinePhase`; minimal repro `const q = 1; q.foo;`), documented in the plan and `test/libcorpus/typescript.js` for a separate session.
+
+Validation: sweep 5/5 (microdiff, zustand, valtio, signals-core, jotai), handbook 43/43, ts-conformance 0 failures, rosetta 42/42, modules 15/15 (new t15_hoist_asi fixture), test-local green, test262 phases 0-3 spot-checked clean (the ASI and typeof fixes touch non-TS paths, so the 100% from session 309 stands). New regression tests: `test/typeof_optchain_member.js`, `test/modules/t15_hoist_asi/`.
 
 ## Session 310 (2026-08-16)
 

@@ -26,6 +26,7 @@ TESTS=(
   "t12_tinycolor:tinycolor — ESM color manipulation library"
   "t13_unresolvable:unresolvable import is a link-time SyntaxError"
   "t14_resolve_accept:resolvable import forms must not be over-rejected"
+  "t15_hoist_asi:function decl after ASI'd statement must be hoisted/exported"
 )
 
 for entry in "${TESTS[@]}"; do

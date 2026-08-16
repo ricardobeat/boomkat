@@ -321,6 +321,179 @@ fn char[] resolve_extension(char[] path) {
     return path;
 }
 
+/// True when a file exists at `path` (directories do not count: file::load
+/// on a directory fails or returns nothing usable, which reads as absent).
+fn bool module_file_exists(char[] path) {
+    if (try data = file::load(mem, (String)path)) {
+        mem::free(data.ptr);
+        return true;
+    }
+    return false;
+}
+
+/// Resolve a bare package specifier by walking node_modules directories
+/// upward from the importing module's directory (the core of Node's
+/// resolution). For each ancestor directory D, D/node_modules/<name> is
+/// probed as: a subpath file when the specifier has one ('pkg/sub/mod'),
+/// else package.json's "main" entry, else an index file (extension probing
+/// applies, .ts before .js). No "exports" field support; vendored source
+/// trees do not use it. Returns null when nothing matched, so the caller
+/// falls back to plain extension probing of the specifier itself.
+fn char[]? resolve_node_modules(char[] base_name, char[] specifier) {
+    usz name_len = 0;
+    while (name_len < specifier.len && specifier[name_len] != '/') name_len++;
+    if (name_len == 0) return MODULE_ERROR~;
+    // C3 slice ends are inclusive: [..name_len] would take name_len+1 bytes,
+    // so a name running to the end of the specifier is the whole slice and a
+    // bounded one ends at name_len-1.
+    char[] pkg_name = name_len == specifier.len ? specifier : specifier[..name_len - 1];
+    char[] sub = specifier[name_len..];  // "" or "/sub/path"
+
+    // Ancestor walk starts at base_name's own directory. dir_end is the
+    // length of the current directory prefix (one past its last '/');
+    // 0 means the importer sits in the working directory.
+    usz dir_end = 0;
+    for (usz i = 0; i < base_name.len; i++) {
+        if (base_name[i] == '/') dir_end = i + 1;
+    }
+    char[] nm = "node_modules/";
+    for (;;) {
+        usz plen = dir_end + nm.len + pkg_name.len;
+        void* buf = alloc::malloc_try(mem, (sz)(plen + 1)) ?? null;
+        if (buf == null) return MODULE_ERROR~;
+        mem::copy(buf, base_name.ptr, (sz)(dir_end));
+        mem::copy((char*)buf + dir_end, nm.ptr, (sz)(nm.len));
+        mem::copy((char*)buf + dir_end + nm.len, pkg_name.ptr, (sz)(pkg_name.len));
+        ((char*)buf)[plen] = 0;
+        char[] pkg_dir = ((char*)buf)[:plen];
+
+        bool resolved = false;
+        char[] resolved_path = (char[])"";
+        if (sub.len > 0) {
+            // 'pkg/sub/path': address a file inside the package directly.
+            // resolve_extension returns a NEW buffer on a hit and the input
+            // unchanged on a miss; a specifier that already carries a module
+            // extension comes back as-is without an existence check, so probe
+            // that case explicitly.
+            usz flen = plen + sub.len;
+            void* fbuf = alloc::malloc_try(mem, (sz)(flen + 1)) ?? null;
+            if (fbuf != null) {
+                mem::copy(fbuf, pkg_dir.ptr, (sz)(plen));
+                mem::copy((char*)fbuf + plen, sub.ptr, (sz)(sub.len));
+                ((char*)fbuf)[flen] = 0;
+                char[] full = ((char*)fbuf)[:flen];
+                char[] r = resolve_extension(full);
+                if (r.ptr != full.ptr || module_file_exists(r)) {
+                    resolved_path = r;
+                    resolved = true;
+                } else {
+                    mem::free(fbuf);
+                }
+            }
+        } else {
+            // Package root: package.json "main", then index.<ext>.
+            usz pj_len = plen + 13;  // "/package.json"
+            void* pjbuf = alloc::malloc_try(mem, (sz)(pj_len + 1)) ?? null;
+            bool have_main = false;
+            char[] main_path = (char[])"";
+            if (pjbuf != null) {
+                mem::copy(pjbuf, pkg_dir.ptr, (sz)(plen));
+                char[] pj = "/package.json";
+                mem::copy((char*)pjbuf + plen, pj.ptr, (sz)(pj.len));
+                ((char*)pjbuf)[pj_len] = 0;
+                char[] pj_path = ((char*)pjbuf)[:pj_len];
+                if (try body = file::load(mem, (String)pj_path)) {
+                    if (try m = package_json_main(body, pkg_dir)) {
+                        main_path = m;
+                        have_main = true;
+                    }
+                    mem::free(body.ptr);
+                }
+                mem::free(pjbuf);
+            }
+            if (have_main) {
+                resolved_path = resolve_extension(main_path);
+                resolved = true;
+            } else {
+                usz ilen = plen + 6;  // "/index"
+                void* ibuf = alloc::malloc_try(mem, (sz)(ilen + 1)) ?? null;
+                if (ibuf != null) {
+                    mem::copy(ibuf, pkg_dir.ptr, (sz)(plen));
+                    char[] idx = "/index";
+                    mem::copy((char*)ibuf + plen, idx.ptr, (sz)(idx.len));
+                    ((char*)ibuf)[ilen] = 0;
+                    char[] index_path = ((char*)ibuf)[:ilen];
+                    char[] r = resolve_extension(index_path);
+                    if (r.ptr != index_path.ptr) {
+                        resolved_path = r;
+                        resolved = true;
+                    } else {
+                        mem::free(ibuf);
+                    }
+                }
+            }
+        }
+        if (resolved) {
+            mem::free(buf);
+            return resolved_path;
+        }
+        mem::free(buf);
+
+        // Walk up one directory: drop the last path segment of the prefix.
+        if (dir_end == 0) return MODULE_ERROR~;
+        usz prev = dir_end;
+        dir_end = 0;
+        for (usz i = 0; i + 1 < prev; i++) {
+            if (base_name[i] == '/') dir_end = i + 1;
+        }
+        if (dir_end == prev) return MODULE_ERROR~;  // no progress (defensive)
+    }
+}
+
+/// Extract the "main" field from a package.json body and join it with the
+/// package directory, ready for extension probing. Returns null when the
+/// file has no "main" or the field is not a plain string.
+fn char[]? package_json_main(char[] body, char[] pkg_dir) {
+    char[] needle = "\"main\"";
+    usz match = 0;
+    usz i = 0;
+    for (; i < body.len; i++) {
+        if (body[i] == needle[match]) {
+            match++;
+            if (match == needle.len) { i++; break; }
+        } else {
+            match = (body[i] == needle[0]) ? 1 : 0;
+        }
+    }
+    if (match != needle.len) return MODULE_ERROR~;
+    // Skip whitespace, expect ':' then whitespace, then a quoted string.
+    while (i < body.len && (body[i] == ' ' || body[i] == '\t')) i++;
+    if (i >= body.len || body[i] != ':') return MODULE_ERROR~;
+    i++;
+    while (i < body.len && (body[i] == ' ' || body[i] == '\t')) i++;
+    if (i >= body.len || body[i] != '"') return MODULE_ERROR~;
+    i++;
+    usz start = i;
+    while (i < body.len && body[i] != '"') i++;
+    if (i >= body.len) return MODULE_ERROR~;
+    // Inclusive slice end: stop one before the closing quote.
+    char[] main = body[start..i - 1];
+    // Strip a leading "./" or "/" so dir + "/" + main concatenates cleanly.
+    if (main.len >= 2 && main[0] == '.' && main[1] == '/') {
+        main = main[2..];
+    } else if (main.len >= 1 && main[0] == '/') {
+        main = main[1..];
+    }
+    usz total = pkg_dir.len + 1 + main.len;
+    void* raw = alloc::malloc_try(mem, (sz)(total + 1)) ?? null;
+    if (raw == null) return MODULE_ERROR~;
+    mem::copy(raw, pkg_dir.ptr, (sz)(pkg_dir.len));
+    ((char*)raw)[pkg_dir.len] = '/';
+    mem::copy((char*)raw + pkg_dir.len + 1, main.ptr, (sz)(main.len));
+    ((char*)raw)[total] = 0;
+    return ((char*)raw)[:total];
+}
+
 fn char[]? call_resolve_name(Heap* heap, char[] base_name, char[] specifier) {
     if (heap.module_hooks != null) {
         ModuleHostHooks* hooks = (ModuleHostHooks*)heap.module_hooks;
@@ -328,9 +501,14 @@ fn char[]? call_resolve_name(Heap* heap, char[] base_name, char[] specifier) {
             return hooks.resolve_name(base_name, specifier, hooks.udata);
         }
     }
-    // A bare specifier, meaning no leading dot, is returned unchanged
-    // (plus an extension probe so `import 'x'` can find `x.ts`).
-    if (specifier.len > 0 && specifier[0] != '.') return resolve_extension(specifier);
+    // A bare specifier names a package: resolve it through node_modules
+    // directories first (Node-style), falling back to treating it as a
+    // plain path (plus an extension probe so `import 'x'` can find `x.ts`).
+    if (specifier.len > 0 && specifier[0] != '.') {
+        char[]? pkg = resolve_node_modules(base_name, specifier);
+        if (try pkg_path = pkg) return pkg;
+        return resolve_extension(specifier);
+    }
     // A relative specifier resolves against base_name's directory. A leading
     // "./" must be stripped in every case (not just when base_name itself
     // has a directory component) so the same file always normalizes to the
