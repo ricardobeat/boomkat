@@ -1,8 +1,19 @@
 # Progress: Duktape C3 — test262 Conformance Tracker
 
-**Last Updated:** Session 314 — closed the remaining strict-mode spec gaps: `arguments.callee` is now the non-configurable `%ThrowTypeError%` accessor (shared per-realm frozen intrinsic), and a chained private-field write before init throws TypeError instead of silently creating the field. Un-skipped 10.6-13-c-3-s/-14-c-4-s, privatefieldset-typeerror-1, and the four Function-constructor `this` tests (10.4.3-1-13/-15 ± gs) that `subst_global_this` already handled; all eight built-ins/ThrowTypeError tests now pass for real. Full suite 49,828/0, rosetta 42/42, test-local green, ASAN clean.
+**Last Updated:** Session 315 — committed the session-312 WIDE-prefix codegen fix (default-eval skip branches now record the post-WIDE instruction slot), verified the private read/write surface complete against the class corpus (phase 15 runs 0 fail), and un-skipped 174 noStrict tests via a new NOSTRICT_RUN_GLOBS exemption (forbidden-ext caller/arguments families and private brand-across-eval). Full suite 50,002/0, rosetta 42/42, test-local green.
 
 **Target:** 100% test262 pass rate on the targeted subset (see plan 040). — **reached session 309**
+
+## Session 315 (2026-08-16)
+
+Landed the session-312 WIDE-prefix fix and closed the last review item, the private-elements corpus verification.
+
+- **WIDE-prefix default-eval fix committed** (`cb641d4f`): the four default-eval sites patched their skip branch at `code_count` taken before `emit_a_sbx`; a WIDE prefix then shifted the patch onto the prefix word, the branch tested a stale register, and the default thunk never ran (typescript.js `getPipelinePhase` crash). The fix records the branch's own index from the emit's return, the slot after any prefix. Committed now with regression coverage in `scripts/lib_api_checks/typescript.js` (transpiles `const q = 1; q.foo;`, diffed against qjs).
+- **noStrict un-skip** (`7ba2344c`): a full-corpus worker sweep showed 518 of 1471 noStrict-flagged tests pass under the strict-only engine. Two coherent families were exempted from the blanket noStrict exclusion via `NOSTRICT_RUN_GLOBS`: the forbidden-ext family (160 tests across class/object/arrow/function/generator/async method kinds, asserting syntactic methods never gain own `caller`/`arguments` regardless of code strictness, ES2017 §12.3.9) and the private multiple-evaluations family (14 tests, private-name brands surviving repeated eval of the same class source). The remaining 344 strict-compatible noStrict tests are scattered singlets (eval-code, mapped arguments, string literals, Sputnik) and were left skipped pending per-family analysis. The 10 cross-realm private-eval variants stay feature-skipped, and the 10 sloppy-only families (super-write silent failure, `var arguments` at top level) stay noStrict-skipped; both verified correct.
+- **Private read/write completeness verified**: phase 15 (all of language/{statements,expressions}/class + super) runs 8375 → 8469 pass with 0 failures; privatefieldget/set/add/brand/on-proxy/primitive-receiver families all green; prototype-chain accessor reads and writes on subclass instances verified byte-identical to node. The four `private-*-is-not-a-own-property` SKIP_FILES entries stay, correctly: they need Annex B `__lookupGetter__`/`__lookupSetter__`, which the engine never installs.
+- **F5/F6 comment blocks dropped** (`6bc93f50`): both documented families were un-skipped in earlier sessions, leaving only "nothing left here" text.
+
+Validation: full test262 50,002 pass / 0 fail / 0 CE (was 49,828), skipped 2,822 (−174); rosetta 42/42; phases 1/3/7/11/15/21/24 re-run green.
 
 ## Session 314 (2026-08-16)
 
