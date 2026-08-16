@@ -15,3 +15,6 @@ test/typescript/ts_conformance_cache/
 # Real-world library corpus (fetched by scripts/verify_libraries.py), not vendored
 test/libcorpus/
 .claude
+
+# TypeScript runtime-library sources (fetched by scripts/verify_ts_libraries.py)
+test/tscorpus/

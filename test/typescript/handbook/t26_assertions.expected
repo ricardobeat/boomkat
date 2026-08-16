@@ -1,0 +1,4 @@
+4 true
+3 1
+caught: TypeError
+unset -1

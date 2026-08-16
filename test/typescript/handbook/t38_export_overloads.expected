@@ -1,0 +1,4 @@
+replaced: objectIs function
+replaced: canProxy function
+picked: a 1
+picked: b 1

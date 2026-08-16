@@ -220,6 +220,22 @@ ts-conformance phase-dir="":
     @test -d test/typescript/conformance-src || { echo "ERROR: corpus missing — run: python3 scripts/fetch_ts_conformance.py"; exit 1; }
     @if [ -n "{{phase-dir}}" ]; then python3 scripts/run_ts_conformance.py --phase-dir "{{phase-dir}}"; else python3 scripts/run_ts_conformance.py; fi
 
+# Run the TypeScript handbook syntax corpus: small doc-organized .ts files
+# (one feature area each) diffed against reference output captured from
+# node's type stripping, plus reject tests for non-erasable syntax. Regenerate
+# the reference files with `bash test/typescript/handbook/run.sh --regen`.
+ts-handbook:
+    @just build duktape_c3
+    bash test/typescript/handbook/run.sh
+
+# Fetch real-world TS library sources (microdiff, zustand, valtio) into
+# test/tscorpus (gitignored) and run each against a driver, requiring stdout
+# identical to node's native type stripping. Needs node on PATH; the first
+# run needs network, later runs are cached.
+ts-runtime:
+    @just build duktape_c3
+    python3 scripts/verify_ts_libraries.py
+
 # Detect test contamination: run a phase with --workers 1 in fixed vs shuffled
 # order and diff — any delta is a reset bug by definition.
 test262-contamination phase="0": build-batch

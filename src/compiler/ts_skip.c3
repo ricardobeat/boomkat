@@ -92,6 +92,18 @@ fn bool ts_token_completes_type(TokenType tt) @inline {
     }
 }
 
+/// Contextual TypeScript operator keywords are lexed as plain IDENTIFIERs
+/// but never END a type: `keyof`, `typeof`, `infer` and friends are always
+/// followed by more type (`keyof { [k: string]: number }`), so a `{` or a
+/// line break after one of them continues the type instead of ending it.
+fn bool ts_ident_is_type_operator(char[] name) @inline {
+    return ident_is(name, "keyof") || ident_is(name, "typeof")
+        || ident_is(name, "infer") || ident_is(name, "as")
+        || ident_is(name, "satisfies") || ident_is(name, "readonly")
+        || ident_is(name, "is") || ident_is(name, "asserts")
+        || ident_is(name, "abstract");
+}
+
 /// True if `tt` is a reserved word that can never appear inside a TypeScript
 /// type expression (statement keywords like `enum`, `class`, `function`,
 /// `if`). skip_type must stop on these: consuming one would swallow the
@@ -167,6 +179,11 @@ fn void? CompilerContext.skip_type(&self) {
     // `)`, so it shows up at depth 0) from an arrow that terminates the type
     // context (e.g. the `=>` after a return-type annotation in `(): T => x`).
     TokenType prev_tt = TokenType.EOF_TOKEN;
+    // Text of the previous consumed token. Needed where the token type alone
+    // is ambiguous: a `{` or line break after an IDENTIFIER ends the type for
+    // a type reference (`(): Foo {`, `var x: Foo\n...`) but continues it for
+    // a contextual operator keyword (`keyof { ... }`).
+    char[] prev_str = (char[])"";
     // Set when the previous iteration consumed a `}` that closed a top-level
     // object/mapped type (all depths 0). A type can only CONTINUE past that
     // with `|`, `&`, `extends`, `?` (conditional) or `[` (indexed access);
@@ -219,9 +236,10 @@ fn void? CompilerContext.skip_type(&self) {
             // start of the enclosing function/class/interface body when the
             // previous token completed a type (`): number {`); after an
             // operator it opens an object type (`T extends { a: U }`,
-            // `Foo | { x: T }`). Only allow `{` as the *first* token
-            // unconditionally (object type).
-            if (tt == TokenType.LBRACE && consumed_any && ts_token_completes_type(prev_tt)) {
+            // `Foo | { x: T }`, `keyof { ... }`). Only allow `{` as the
+            // *first* token unconditionally (object type).
+            if (tt == TokenType.LBRACE && consumed_any && ts_token_completes_type(prev_tt)
+                && !(prev_tt == TokenType.IDENTIFIER && ts_ident_is_type_operator(prev_str))) {
                 return;
             }
             // Line break after a completed type: ASI applies, so the type
@@ -232,7 +250,8 @@ fn void? CompilerContext.skip_type(&self) {
             // statement's first identifier into the type and desync the ASI
             // check (seen_line_term describes the gap before the swallowed
             // token, which is a space, not the newline).
-            if (self.lexer.seen_line_term && consumed_any && ts_token_completes_type(prev_tt)) {
+            if (self.lexer.seen_line_term && consumed_any && ts_token_completes_type(prev_tt)
+                && !(prev_tt == TokenType.IDENTIFIER && ts_ident_is_type_operator(prev_str))) {
                 if (tt != TokenType.BIT_OR && tt != TokenType.BIT_AND
                     && tt != TokenType.EXTENDS && tt != TokenType.QUESTION
                     && tt != TokenType.COLON && tt != TokenType.ARROW
@@ -259,7 +278,7 @@ fn void? CompilerContext.skip_type(&self) {
             return;
         }
 
-        Token _skip = self.advance()!;
+        Token skip_tok = self.advance()!;
         consumed_any = true;
 
         switch (tt) {
@@ -281,6 +300,7 @@ fn void? CompilerContext.skip_type(&self) {
                 break;
         }
         prev_tt = tt;
+        prev_str = skip_tok.str_value;
         if (tt == TokenType.RBRACE && brace == 0 && paren == 0 && bracket == 0 && angle == 0) {
             just_closed_obj = true;
         }
@@ -731,13 +751,26 @@ fn void? CompilerContext.ts_swallow_to_semi(&self) {
         TokenType tt = self.peek_type();
         int depth = paren + bracket + brace;
         if (tt == TokenType.EOF_TOKEN) return;
+        // ASI: a line break before the next token at depth 0 ends the erased
+        // declaration, unless the token continues the type across the break
+        // (union/intersection operators, conditional-type arms, member
+        // access, argument commas, function-type arrow). The check must run
+        // before the token is consumed: seen_line_term after peek describes
+        // the gap in front of the peeked token, and consuming first would eat
+        // the first token of the next statement (`export type A = Str\nconst
+        // q = 5` lost its `const`, and a following `console.log(...)` call
+        // vanished whole because `.` kept the loop going).
+        if (depth == 0 && self.lexer.seen_line_term
+            && tt != TokenType.BIT_OR && tt != TokenType.BIT_AND
+            && tt != TokenType.QUESTION && tt != TokenType.COLON
+            && tt != TokenType.DOT && tt != TokenType.COMMA
+            && tt != TokenType.ARROW) {
+            return;
+        }
         if (depth == 0 && tt == TokenType.SEMICOLON) {
             Token _semi = self.advance()!;
             return;
         }
-        // Also stop before EOF-adjacent tokens that clearly cannot belong to
-        // this erased statement (defensive — TS import/export always end in
-        // `;` or a newline-terminated statement per ASI).
         // Template literal types (`` `text${T}` ``) are not a flat token
         // stream: the substitution's `}` must be consumed and the tail
         // re-scanned before the next token is lexable (same as skip_type).
@@ -754,11 +787,6 @@ fn void? CompilerContext.ts_swallow_to_semi(&self) {
             case TokenType.LBRACE:   brace++;
             case TokenType.RBRACE:   if (brace > 0) brace--;
             default: break;
-        }
-        // ASI: if we hit a newline at depth 0 with no `;` in sight, stop too.
-        if (depth == 0 && self.lexer.seen_line_term) {
-            TokenType nt = self.peek_type();
-            if (nt != TokenType.COMMA && nt != TokenType.DOT) return;
         }
     }
 }
@@ -807,7 +835,11 @@ fn bool? CompilerContext.ts_try_skip_type_only_export_decl(&self) {
     return false;
 }
 
-/// `export type X = T;` and `export type { A, B }` — consume and discard.
+/// `export type X = T;` and `export type { A, B } from "x"` — consume and
+/// discard. The alias form goes through skip_generic_params + skip_type so
+/// multi-line generic parameter lists and multi-line conditional bodies
+/// parse structurally; the brace-list re-export form is a flat token run
+/// and stays with ts_swallow_to_semi.
 fn bool? CompilerContext.ts_try_skip_type_only_export(&self) {
     if (!self.lexer.ts_mode) return false;
     Token export_tok = self.advance()!;
@@ -820,6 +852,16 @@ fn bool? CompilerContext.ts_try_skip_type_only_export(&self) {
         self.pushback(maybe_type);
         self.pushback(export_tok);
         return false;
+    }
+    if (self.peek_type() == TokenType.IDENTIFIER && !self.lexer.seen_line_term) {
+        Token _name = self.advance()!!;
+        if (self.check(TokenType.LT)) {
+            if (catch _e = self.skip_generic_params()) return true;
+        }
+        if (!self.match(TokenType.ASSIGN)) return true;
+        if (catch _e = self.skip_type()) return true;
+        self.match(TokenType.SEMICOLON);
+        return true;
     }
     self.ts_swallow_to_semi()!;
     return true;

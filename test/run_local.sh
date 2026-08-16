@@ -13,6 +13,8 @@
 #                        which a script cannot assert about its own silence.
 #   5. test/robustness/ — resource limits. When broken these crash or hang, so
 #                        there is no output to assert and no return to wait for.
+#   6. test/typescript/handbook/ — .ts syntax corpus, diffed against reference
+#                        output captured from node's type stripping.
 #
 # A test fails if the engine exits non-zero or prints a line containing FAIL
 # (the convention local tests use for an assertion-failure branch).
@@ -101,7 +103,13 @@ echo ""
 bash "$DIR/compile_error_messages/run.sh" "$ENGINE"
 CEM_RC=$?
 
+# TypeScript handbook syntax corpus — .ts files diffed against reference
+# output captured from node's type stripping (no node needed to run).
+echo ""
+bash "$DIR/typescript/handbook/run.sh" "$ENGINE"
+TSB_RC=$?
+
 [ "$FAIL" -eq 0 ] && [ "$MOD_RC" -eq 0 ] && [ "$MODSYN_RC" -eq 0 ] \
   && [ "$MODEXP_RC" -eq 0 ] && [ "$TOPLVL_RC" -eq 0 ] && [ "$UNC_RC" -eq 0 ] \
   && [ "$REJ_RC" -eq 0 ] && [ "$ROB_RC" -eq 0 ] \
-  && [ "$CFMT_RC" -eq 0 ] && [ "$CEM_RC" -eq 0 ]
+  && [ "$CFMT_RC" -eq 0 ] && [ "$CEM_RC" -eq 0 ] && [ "$TSB_RC" -eq 0 ]

@@ -5946,6 +5946,29 @@ fn void? CompilerContext.import_declaration(&self) {
         while (!self.check(TokenType.RBRACE) && !self.is_at_end()) {
             if (binding_count >= 32) return COMPILE_ERROR~;
 
+            // TS inline type specifier: `import { type X, value }` erases
+            // X's binding entirely. Only a `type` followed by another name
+            // is the qualifier; a lone `type` (`,` or `}` next) is a binding
+            // literally named "type" and imports normally.
+            bool erased_ts_type = false;
+            if (self.lexer.ts_mode && self.check_ts_ident("type")) {
+                Token type_kw = self.advance()!;
+                TokenType after = self.peek_type();
+                if (after == TokenType.IDENTIFIER || after == TokenType.STRING) {
+                    erased_ts_type = true;
+                } else {
+                    self.pushback(type_kw);
+                }
+            }
+            if (erased_ts_type) {
+                char[] _erased = self.parse_module_export_name()!;
+                if (self.match_as()) {
+                    Token _erased_alias = self.expect_binding_identifier()!;
+                }
+                if (!self.match(TokenType.COMMA)) break;
+                continue;
+            }
+
             // The import name (before 'as') is a ModuleExportName (IdentifierName or StringLiteral).
             char[] import_name_str = self.parse_module_export_name()!;
             if (self.match_as()) {
@@ -6345,6 +6368,17 @@ fn void? CompilerContext.export_declaration(&self) {
         // stores this slice into scope_stack, which outlives this token.
         HString* fn_name_hstr = ((Heap*)self.heap).str_intern(name_tok.str_value);
         char[] fn_name2 = fn_name_hstr.get_data();
+
+        // TypeScript overload signature (`export function f(x: T);`):
+        // signature-only, produces no binding, func_decl, or export. The
+        // implementation declaration later in the file registers all three.
+        if (self.lexer.ts_mode && self.ts_try_skip_overload_signature()) {
+            self.is_async = saved_is_async;
+            self.is_generator = false;
+            self.is_user_generator = false;
+            return;
+        }
+
         ushort func_reg = self.declare_var(fn_name2, VAR);
 
         // Regular functions are constructable (ES2015 §14.1.2); generators

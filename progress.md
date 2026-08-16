@@ -1,6 +1,6 @@
 # Progress: Duktape C3 — test262 Conformance Tracker
 
-**Last Updated:** Session 309 — **100% test262 reached**: full-suite run 49,814 pass / 0 fail / 0 unexpected CE across all phases, 3,010 skipped (the out-of-scope list). Plan 040's target is met. Corpus 22/22 load + api-checks, rosetta 42/42.
+**Last Updated:** Session 310 — runtime TypeScript validation: handbook syntax corpus (43 files, in test-local) + real-library sweep (microdiff, zustand, valtio byte-identical to node); 4 ts_mode parser gaps closed. test262 remains 100% (49,814/0, session 309).
 
 **Target:** 100% test262 pass rate on the targeted subset (see plan 040). — **reached session 309**
 
@@ -11,6 +11,26 @@
 - **Single-test repro**: `python3 scripts/run_test262.py --single <path>` (warns if the suite skips the test; `--debug`/`--keep` concat harness for `just lldb` / `--trace-vm`).
 - **Phase counts**: `bash scripts/count_test262_by_phase.sh` · **Delta**: `bash scripts/test262_delta.sh`.
 - **Build**: `c3c build test262_runner` or `c3c build duktape_c3` (plain runner; `duktape_c3_debug` for `-c`/`-t` inspection).
+
+## Session 310 (2026-08-16)
+
+Runtime TS validation (plan 073), following the open thread from session 309's notes. Compile conformance was saturated; the untested middle was executing real `.ts` sources.
+
+Built two corpora, oracle-first (node 24's native type stripping; candidates rejected by node were dropped: nanostores ships compiled JS, fast-equals uses extensionless intra-package imports node's ESM resolver refuses):
+
+- **Handbook syntax corpus** `test/typescript/handbook/` (`just ts-handbook`, wired into `just test-local`): 43 accept files organized along the TS Handbook plus 4 reject files (enum, namespace, parameter properties, angle-bracket assertions: non-erasable, both tsc and node refuse them). Reference output captured from node into `.expected` files (`run.sh --regen`), so test-local stays node-free.
+- **Runtime library sweep** `scripts/verify_ts_libraries.py` (`just ts-runtime`): microdiff, zustand vanilla, valtio (+ proxy-compare vendored beside it, import rewrite recorded in the script) fetched into gitignored `test/tscorpus/`, driven by `scripts/ts_runtime_checks/*.ts`, stdout diffed against node.
+
+The corpora found four ts_mode parser gaps, all fixed:
+
+1. `ts_swallow_to_semi` ASI check ran after consuming the crossing token, so `export type A = Str` ate the next statement's first token (or a whole `console.log(...)` call). Check moved before consume, with a continuation set for multi-line types.
+2. `keyof { ... }` tripped the "{ means enclosing body" heuristic; skip_type now tracks the previous token's text and continues past contextual operators (`keyof`, `typeof`, `infer`, `as`, `satisfies`, `readonly`, `is`, `asserts`, `abstract`).
+3. `export type X<...>` with multi-line generic parameters went through the flat swallower (no angle tracking); the alias form now uses skip_generic_params + skip_type.
+4. `import { type X, value }` parsed `type` as a binding; `export function` overload signatures had no skip (valtio's five consecutive signatures died on the first).
+
+Result: all three libraries run byte-identical to node (zustand and microdiff needed only the fixes above; valtio needed 3 and 4). Validation: handbook 43/43, ts-conformance 0 failures, rosetta 42/42, libcorpus 22/22, test-local green. All fixes are `ts_mode`-gated; the JS paths are untouched and test262's 100% stands.
+
+Next candidates for the sweep: more single-file sources (fp-ts core modules, jotai vanilla, signal-utils), then multi-file package source trees, which need the extensionless-import resolution question answered (our resolver accepts them, node's does not: either rewrite imports when vendoring, like proxy-compare, or document the divergence).
 
 ## Session 309 (2026-08-16)
 
