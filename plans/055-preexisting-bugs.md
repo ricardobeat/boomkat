@@ -234,3 +234,26 @@ field-init/private-name handling. Reporter: C7a-cap.
 have no HObject* identity. `Object.setPrototypeOf(fn, lightfunc)` does NOT crash
 in isolation — B's crash was the more specific super-call path. Needs the exact
 repro re-derived before fixing.
+
+### PB10 — FIXED (2026-08-16) — strict getter `this` on primitive receivers was boxed / never invoked
+`(5).x` where `x` is an accessor on the prototype chain behaved wrong in two
+ways: the primitive auto-box paths (GETPROP/GETPROPC string, number, boolean,
+bigint, symbol) called `proto.get_prop_proto`, which returns the raw
+accessor-pair slot, so the getter never ran and the caller saw an object where
+the getter's value belonged; the symbol paths invoked the getter but passed the
+temporary wrapper as `this`. Per ES5 §10.4.3 a strict-mode getter keeps the
+primitive thisArg (no ToObject), and this engine is strict-only, so the
+receiver must be the primitive. test262 10.4.3-1-103/-104/-106 were skip-listed
+for exactly this.
+
+Fixed in src/vm/vm_property.c3: new `primitive_getprop` (frame-based, single
+hop) and `primitive_getprop_sync` (reentrant call_fn for the fused GETPROPC2
+paths, where a frame-based getter would resume past the fused pair and skip hop
+2), used by all five primitive auto-box paths in GETPROP, GETPROPC and the
+GETPROPC2 hop-1/hop-2 intermediates; the getter receives the primitive itself.
+`getprop2_symbol_hop` now delegates to primitive_getprop instead of boxing.
+Verified byte-identical to node across number/string/boolean/bigint/symbol
+receivers, `Symbol.prototype.description`, data-prop fallbacks, two-hop fused
+chains and throwing getters; pinned by test/test_strict_getter_this.js (24
+assertions). test262 10.4.3-1-103/-104/-106 un-skipped, full suite 49,821/0,
+ASAN clean.

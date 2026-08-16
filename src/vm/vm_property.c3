@@ -25,31 +25,19 @@ fn TVal? vm_proxy_rethrow(Vm* vm, Dispatch* ds) {
     return (TVal){};
 }
 
-/// Auto-box a Symbol primitive (`sym_val`) and resolve `key` on it, invoking
-/// an accessor getter (e.g. Symbol.prototype.description) if one is found.
-/// Used by the GETPROPC2 fused-hop paths, mirroring the wrapper-object
-/// auto-box already done by the single-hop GETPROPC symbol handling, since a
-/// direct `symbol_proto.get_prop_proto` lookup would return the raw
-/// accessor-pair object instead of invoking the getter.
-/// Writes the result into `*dst` (register `dst_reg`) and sets
-/// `ds.needs_restart` if a JS-defined getter needs a call-frame restart.
-fn void getprop2_symbol_hop(Vm* vm, Dispatch* ds, TVal sym_val, HString* key, TVal* dst, uint dst_reg) {
-    HObject*? wrapper_raw = vm.heap.alloc_object(hobject::ObjClass.SYMBOL);
-    HObject* wrapper;
-    if (try w = wrapper_raw) {
-        wrapper = w;
-    } else {
-        dst.set_undefined();
-        return;
-    }
-    wrapper.prototype = vm.heap.symbol_proto;
-    wrapper.extra_ptr().prim.primitive_value = sym_val;
-
-    hobject::PropLookupResult res = wrapper.get_prop_or_accessor_proto(key, true, vm.heap);
+/// Resolve `key` on a primitive receiver with full [[Get]] semantics: walk
+/// the boxed prototype chain, and when an accessor is found, invoke its
+/// getter with `this` = the primitive itself. The engine is strict-only, so
+/// the receiver is never ToObject-coerced for the getter call (ES5 §10.4.3:
+/// a strict-mode function keeps a primitive thisArg); node behaves the same.
+/// The boxed wrapper is only the lookup start, not the receiver. Writes the
+/// result into `*dst` (register `dst_reg`) and sets `ds.needs_restart` if a
+/// JS-defined getter needs a call-frame restart.
+fn void primitive_getprop(Vm* vm, Dispatch* ds, TVal* prim, HObject* proto, void* key,
+                          TVal* dst, uint dst_reg) {
+    hobject::PropLookupResult res = proto.get_prop_or_accessor_proto(key, true, ds.vm.heap);
     if (res.kind == hobject::PropLookupKind.PROP_ACCESSOR) {
-        TVal wrapper_tv;
-        wrapper_tv.set_object(wrapper);
-        if (invoke_getter(vm, &res.acc, &wrapper_tv, dst_reg, ds.act, &ds.curr_pc, &ds.needs_restart, ds.regs_base)) {
+        if (invoke_getter(vm, &res.acc, prim, dst_reg, ds.act, &ds.curr_pc, &ds.needs_restart, ds.regs_base)) {
             ds.regs_base = ds.act.bottom;
         }
     } else if (res.kind == hobject::PropLookupKind.PROP_DATA) {
@@ -58,6 +46,65 @@ fn void getprop2_symbol_hop(Vm* vm, Dispatch* ds, TVal sym_val, HString* key, TV
     } else {
         dst.set_undefined();
     }
+}
+
+/// Synchronous variant of primitive_getprop for the fused GETPROPC2 hop paths:
+/// a frame-based invoke_getter would resume past the fused pair and skip hop 2
+/// entirely (same constraint as the object hop accessor cases), so the getter
+/// runs through the reentrant call_fn path with `this` = the primitive. A
+/// throwing getter is routed through vm_throw_value (catcher found: sets
+/// needs_restart) or leaves vm.has_error set (uncaught); the caller checks
+/// both after the call, exactly like the object hop-2 accessor case.
+fn void primitive_getprop_sync(Vm* vm, Dispatch* ds, TVal* prim, HObject* proto, void* key,
+                               TVal* dst, uint dst_reg, bool track = true) {
+    hobject::PropLookupResult res = proto.get_prop_or_accessor_proto(key, true, ds.vm.heap);
+    if (res.kind == hobject::PropLookupKind.PROP_ACCESSOR) {
+        TVal getter = res.acc.accessor_fn;
+        if (!getter.is_undefined() && !getter.is_null() && vm.heap.call_fn != null) {
+            TVal gv = vm.heap.call_fn(vm, getter, null, 0, *prim);
+            if (vm.heap.has_error) {
+                vm.heap.has_error = false;
+                TVal err = vm.heap.error_value;
+                if (!vm_throw_value(vm, err, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                    vm.has_error = true;
+                    vm.heap.has_error = true;
+                }
+                return;
+            }
+            // call_fn's result is borrowed from vm.return_val; a register
+            // store must take its own reference (the object accessor case
+            // does the same). The hop-1 paths write into a local mid_val and
+            // re-copy at the end, so they pass track=false for a raw alias.
+            if (track) {
+                vm.heap.tval_copy_ref(dst, &gv);
+                track_heap_store(ds.act, dst, dst_reg);
+            } else {
+                *dst = gv;
+            }
+        } else {
+            dst.set_undefined();
+        }
+    } else if (res.kind == hobject::PropLookupKind.PROP_DATA) {
+        vm.heap.tval_copy_ref(dst, &res.data_val);
+        if (track) track_heap_store(ds.act, dst, dst_reg);
+    } else {
+        dst.set_undefined();
+    }
+}
+
+/// Auto-box a Symbol primitive (`sym_val`) and resolve `key` on it, invoking
+/// an accessor getter (e.g. Symbol.prototype.description) if one is found.
+/// Used by the GETPROPC2 fused-hop paths. The getter receives the symbol
+/// primitive itself as `this` (strict-only, no wrapper), same as the
+/// single-hop GETPROPC symbol handling.
+/// Writes the result into `*dst` (register `dst_reg`) and sets
+/// `ds.needs_restart` if a JS-defined getter needs a call-frame restart.
+fn void getprop2_symbol_hop(Vm* vm, Dispatch* ds, TVal sym_val, HString* key, TVal* dst, uint dst_reg) {
+    if (vm.heap.symbol_proto == null) {
+        dst.set_undefined();
+        return;
+    }
+    primitive_getprop(vm, ds, &sym_val, vm.heap.symbol_proto, key, dst, dst_reg);
 }
 
 /// Sub-dispatch for GETPROP, GETPROPC, GETPROPC_CACHED, GETPROPC2, PUTPROP, DELPROP opcodes.
@@ -386,38 +433,13 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 // Check if this is a Symbol (0xFF-prefixed string)
                 HString* h_str = (HString*)rb.get_heapptr();
                 if (h_str != null && h_str.is_symbol() && vm.heap.symbol_proto != null) {
-                    // Auto-box symbol primitive: create a temporary wrapper object
-                    // so that accessor properties (like description getter) work correctly.
+                    // Auto-box symbol primitive: resolve accessor properties
+                    // (like the description getter) with the symbol itself as
+                    // the receiver, not the temporary wrapper.
                     HString* key = get_prop_key(vm, rc);
                     if (key != null) {
-                        HObject*? wrapper_raw = vm.heap.alloc_object(hobject::ObjClass.SYMBOL);
-                        HObject* wrapper;
-                        if (try w = wrapper_raw) {
-                            wrapper = w;
-                            wrapper.prototype = vm.heap.symbol_proto;
-                            // Store the symbol primitive as [[SymbolData]]
-                            wrapper.extra_ptr().prim.primitive_value = *rb;
-                        } else {
-                            ra.set_undefined();
-                            return (TVal){};
-                        }
-                        hobject::PropLookupResult res = wrapper.get_prop_or_accessor_proto(key, true, ds.vm.heap);
-                        if (res.kind == hobject::PropLookupKind.PROP_ACCESSOR) {
-                            TVal wrapper_tv;
-                            wrapper_tv.set_object(wrapper);
-                            if (invoke_getter(vm, &res.acc, &wrapper_tv, (uint)insn.a,
-                                              ds.act, &ds.curr_pc, &ds.needs_restart, ds.regs_base)) {
-                                ds.regs_base = ds.act.bottom;
-                                return (TVal){};
-                            }
-                            if (vm.has_error) return VM_ERROR~;
-                            return (TVal){};
-                        } else if (res.kind == hobject::PropLookupKind.PROP_DATA) {
-                            vm.heap.tval_copy_ref(ra, &res.data_val);
-                            track_heap_store(ds.act, ra, (uint)insn.a);
-                        } else {
-                            ra.set_undefined();
-                        }
+                        primitive_getprop(vm, ds, rb, vm.heap.symbol_proto, key, ra, (uint)insn.a);
+                        if (vm.has_error) return VM_ERROR~;
                     } else {
                         ra.set_undefined();
                     }
@@ -455,15 +477,11 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             ra.set_fastint((long)h_str.char_length());
                             return (TVal){};
                         }
-                        // Slow path: walk String.prototype chain
+                        // Slow path: full [[Get]] on String.prototype chain,
+                        // invoking accessor getters with the primitive as this.
                         if (vm.heap.string_proto != null) {
-                            TVal? result = vm.heap.string_proto.get_prop_proto(key, ds.vm.heap);
-                            if (try v = result) {
-                                vm.heap.tval_copy_ref(ra, &v);
-                                track_heap_store(ds.act, ra, (uint)insn.a);
-                            } else {
-                                ra.set_undefined();
-                            }
+                            primitive_getprop(vm, ds, rb, vm.heap.string_proto, key, ra, (uint)insn.a);
+                            if (vm.has_error) return VM_ERROR~;
                         } else {
                             ra.set_undefined();
                         }
@@ -472,44 +490,29 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     }
                 }
             } else if (rb.is_number() || rb.is_fastint()) {
-                // Auto-box number primitive: walk Number.prototype chain
+                // Auto-box number primitive: full [[Get]] on Number.prototype chain
                 HString* key = get_prop_key(vm, rc);
                 if (key != null && vm.heap.number_proto != null) {
-                    TVal? result = vm.heap.number_proto.get_prop_proto(key, ds.vm.heap);
-                    if (try v = result) {
-                        vm.heap.tval_copy_ref(ra, &v);
-                        track_heap_store(ds.act, ra, (uint)insn.a);
-                    } else {
-                        ra.set_undefined();
-                    }
+                    primitive_getprop(vm, ds, rb, vm.heap.number_proto, key, ra, (uint)insn.a);
+                    if (vm.has_error) return VM_ERROR~;
                 } else {
                     ra.set_undefined();
                 }
             } else if (rb.is_boolean()) {
-                // Auto-box boolean primitive: walk Boolean.prototype chain
+                // Auto-box boolean primitive: full [[Get]] on Boolean.prototype chain
                 HString* key = get_prop_key(vm, rc);
                 if (key != null && vm.heap.bool_proto != null) {
-                    TVal? result = vm.heap.bool_proto.get_prop_proto(key, ds.vm.heap);
-                    if (try v = result) {
-                        vm.heap.tval_copy_ref(ra, &v);
-                        track_heap_store(ds.act, ra, (uint)insn.a);
-                    } else {
-                        ra.set_undefined();
-                    }
+                    primitive_getprop(vm, ds, rb, vm.heap.bool_proto, key, ra, (uint)insn.a);
+                    if (vm.has_error) return VM_ERROR~;
                 } else {
                     ra.set_undefined();
                 }
             } else if (rb.is_bigint()) {
-                // Auto-box BigInt primitive: walk BigInt.prototype chain.
+                // Auto-box BigInt primitive: full [[Get]] on BigInt.prototype chain.
                 HString* key = get_prop_key(vm, rc);
                 if (key != null && vm.heap.bigint_proto != null) {
-                    TVal? result = vm.heap.bigint_proto.get_prop_proto(key, ds.vm.heap);
-                    if (try v = result) {
-                        vm.heap.tval_copy_ref(ra, &v);
-                        track_heap_store(ds.act, ra, (uint)insn.a);
-                    } else {
-                        ra.set_undefined();
-                    }
+                    primitive_getprop(vm, ds, rb, vm.heap.bigint_proto, key, ra, (uint)insn.a);
+                    if (vm.has_error) return VM_ERROR~;
                 } else {
                     ra.set_undefined();
                 }
@@ -803,35 +806,8 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     HString* h_str = (HString*)rb.get_heapptr();
                     if (h_str != null && h_str.is_symbol() && vm.heap.symbol_proto != null) {
                         if (key_hstr != null) {
-                            // Auto-box symbol primitive: create a temporary wrapper object
-                            // so that accessor properties (like description getter) work correctly.
-                            HObject*? wrapper_raw = vm.heap.alloc_object(hobject::ObjClass.SYMBOL);
-                            HObject* wrapper;
-                            if (try w = wrapper_raw) {
-                                wrapper = w;
-                                wrapper.prototype = vm.heap.symbol_proto;
-                                wrapper.extra_ptr().prim.primitive_value = *rb;
-                            } else {
-                                ra.set_undefined();
-                                return (TVal){};
-                            }
-                            hobject::PropLookupResult res = wrapper.get_prop_or_accessor_proto(key_hstr, true, ds.vm.heap);
-                            if (res.kind == hobject::PropLookupKind.PROP_ACCESSOR) {
-                                TVal wrapper_tv;
-                                wrapper_tv.set_object(wrapper);
-                                if (invoke_getter(vm, &res.acc, &wrapper_tv, (uint)insn.a,
-                                                  ds.act, &ds.curr_pc, &ds.needs_restart, ds.regs_base)) {
-                                    ds.regs_base = ds.act.bottom;
-                                    return (TVal){};
-                                }
-                                if (vm.has_error) return VM_ERROR~;
-                                return (TVal){};
-                            } else if (res.kind == hobject::PropLookupKind.PROP_DATA) {
-                                vm.heap.tval_copy_ref(ra, &res.data_val);
-                                track_heap_store(ds.act, ra, (uint)insn.a);
-                            } else {
-                                ra.set_undefined();
-                            }
+                            primitive_getprop(vm, ds, rb, vm.heap.symbol_proto, key_hstr, ra, (uint)insn.a);
+                            if (vm.has_error) return VM_ERROR~;
                         } else {
                             ra.set_undefined();
                         }
@@ -845,13 +821,8 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                 return (TVal){};
                             }
                             if (vm.heap.string_proto != null) {
-                                TVal? result = vm.heap.string_proto.get_prop_proto((void*)key_hstr, ds.vm.heap);
-                                if (try v = result) {
-                                    vm.heap.tval_copy_ref(ra, &v);
-                                    track_heap_store(ds.act, ra, (uint)insn.a);
-                                } else {
-                                    ra.set_undefined();
-                                }
+                                primitive_getprop(vm, ds, rb, vm.heap.string_proto, key_hstr, ra, (uint)insn.a);
+                                if (vm.has_error) return VM_ERROR~;
                             } else {
                                 ra.set_undefined();
                             }
@@ -861,37 +832,22 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     }
                 } else if (rb.is_number() || rb.is_fastint()) {
                     if (key_hstr != null && vm.heap.number_proto != null) {
-                        TVal? result = vm.heap.number_proto.get_prop_proto((void*)key_hstr, ds.vm.heap);
-                        if (try v = result) {
-                            vm.heap.tval_copy_ref(ra, &v);
-                            track_heap_store(ds.act, ra, (uint)insn.a);
-                        } else {
-                            ra.set_undefined();
-                        }
+                        primitive_getprop(vm, ds, rb, vm.heap.number_proto, key_hstr, ra, (uint)insn.a);
+                        if (vm.has_error) return VM_ERROR~;
                     } else {
                         ra.set_undefined();
                     }
                 } else if (rb.is_boolean()) {
                     if (key_hstr != null && vm.heap.bool_proto != null) {
-                        TVal? result = vm.heap.bool_proto.get_prop_proto((void*)key_hstr, ds.vm.heap);
-                        if (try v = result) {
-                            vm.heap.tval_copy_ref(ra, &v);
-                            track_heap_store(ds.act, ra, (uint)insn.a);
-                        } else {
-                            ra.set_undefined();
-                        }
+                        primitive_getprop(vm, ds, rb, vm.heap.bool_proto, key_hstr, ra, (uint)insn.a);
+                        if (vm.has_error) return VM_ERROR~;
                     } else {
                         ra.set_undefined();
                     }
                 } else if (rb.is_bigint()) {
                     if (key_hstr != null && vm.heap.bigint_proto != null) {
-                        TVal? result = vm.heap.bigint_proto.get_prop_proto((void*)key_hstr, ds.vm.heap);
-                        if (try v = result) {
-                            vm.heap.tval_copy_ref(ra, &v);
-                            track_heap_store(ds.act, ra, (uint)insn.a);
-                        } else {
-                            ra.set_undefined();
-                        }
+                        primitive_getprop(vm, ds, rb, vm.heap.bigint_proto, key_hstr, ra, (uint)insn.a);
+                        if (vm.has_error) return VM_ERROR~;
                     } else {
                         ra.set_undefined();
                     }
@@ -1276,13 +1232,9 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         if ((void*)key2_hstr == (void*)vm.heap.strs[heap::BuiltinStr.LENGTH]) {
                             ra2.set_fastint((long)mid_str.char_length());
                         } else if (vm.heap.string_proto != null) {
-                            TVal? result = vm.heap.string_proto.get_prop_proto((void*)key2_hstr, ds.vm.heap);
-                            if (try v = result) {
-                                vm.heap.tval_copy_ref(ra2, &v);
-                                track_heap_store(ds.act, ra2, dst2_reg);
-                            } else {
-                                ra2.set_undefined();
-                            }
+                            primitive_getprop_sync(vm, ds, &mid_val, vm.heap.string_proto, key2_hstr, ra2, dst2_reg);
+                            if (vm.has_error) return VM_ERROR~;
+                            if (ds.needs_restart) return (TVal){};
                         } else {
                             ra2.set_undefined();
                         }
@@ -1292,26 +1244,18 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 } else if (mid_val.is_number() || mid_val.is_fastint()) {
                     // NUMBER intermediate: auto-box for hop 2.
                     if (key2_hstr != null && vm.heap.number_proto != null) {
-                        TVal? result = vm.heap.number_proto.get_prop_proto((void*)key2_hstr, ds.vm.heap);
-                        if (try v = result) {
-                            vm.heap.tval_copy_ref(ra2, &v);
-                            track_heap_store(ds.act, ra2, dst2_reg);
-                        } else {
-                            ra2.set_undefined();
-                        }
+                        primitive_getprop_sync(vm, ds, &mid_val, vm.heap.number_proto, key2_hstr, ra2, dst2_reg);
+                        if (vm.has_error) return VM_ERROR~;
+                        if (ds.needs_restart) return (TVal){};
                     } else {
                         ra2.set_undefined();
                     }
                 } else if (mid_val.is_boolean()) {
                     // BOOLEAN intermediate: auto-box for hop 2.
                     if (key2_hstr != null && vm.heap.bool_proto != null) {
-                        TVal? result = vm.heap.bool_proto.get_prop_proto((void*)key2_hstr, ds.vm.heap);
-                        if (try v = result) {
-                            vm.heap.tval_copy_ref(ra2, &v);
-                            track_heap_store(ds.act, ra2, dst2_reg);
-                        } else {
-                            ra2.set_undefined();
-                        }
+                        primitive_getprop_sync(vm, ds, &mid_val, vm.heap.bool_proto, key2_hstr, ra2, dst2_reg);
+                        if (vm.has_error) return VM_ERROR~;
+                        if (ds.needs_restart) return (TVal){};
                     } else {
                         ra2.set_undefined();
                     }
@@ -1357,45 +1301,16 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 HString* rb_str = (HString*)rb.get_heapptr();
                 if (rb_str != null && key1_hstr != null) {
                     if (rb_str.is_symbol() && vm.heap.symbol_proto != null) {
-                        // Auto-box symbol primitive: wrapper object so accessor
-                        // properties (like description) work correctly. Getter is
-                        // invoked synchronously (mirrors the object-hop1 accessor
-                        // case above) since a frame-based invoke_getter would
-                        // resume past the fused pair and skip hop 2 entirely.
-                        HObject*? wrapper_raw1 = vm.heap.alloc_object(hobject::ObjClass.SYMBOL);
-                        HObject* wrapper1;
-                        if (try w = wrapper_raw1) {
-                            wrapper1 = w;
-                            wrapper1.prototype = vm.heap.symbol_proto;
-                            wrapper1.extra_ptr().prim.primitive_value = *rb;
-                            hobject::PropLookupResult r1s = wrapper1.get_prop_or_accessor_proto((void*)key1_hstr, true, vm.heap);
-                            if (r1s.kind == hobject::PropLookupKind.PROP_ACCESSOR) {
-                                TVal getter1s = r1s.acc.accessor_fn;
-                                if (!getter1s.is_undefined() && !getter1s.is_null() && vm.heap.call_fn != null) {
-                                    TVal wrapper1_tv;
-                                    wrapper1_tv.set_object(wrapper1);
-                                    mid_val = vm.heap.call_fn(vm, getter1s, null, 0, wrapper1_tv);
-                                    if (vm.heap.has_error) {
-                                        vm.heap.has_error = false;
-                                        TVal err1s = vm.heap.error_value;
-                                        if (!vm_throw_value(vm, err1s, ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                                            vm.has_error = true;
-                                            vm.heap.has_error = true;
-                                            return VM_ERROR~;
-                                        }
-                                        return (TVal){};
-                                    }
-                                }
-                            } else if (r1s.kind == hobject::PropLookupKind.PROP_DATA) {
-                                mid_val = r1s.data_val;
-                            }
-                        }
+                        primitive_getprop_sync(vm, ds, rb, vm.heap.symbol_proto, key1_hstr, &mid_val, 0, false);
+                        if (vm.has_error) return VM_ERROR~;
+                        if (ds.needs_restart) return (TVal){};
                     } else {
                         if ((void*)key1_hstr == (void*)vm.heap.strs[heap::BuiltinStr.LENGTH]) {
                             mid_val.set_fastint((long)rb_str.char_length());
                         } else if (vm.heap.string_proto != null) {
-                            TVal? result = vm.heap.string_proto.get_prop_proto((void*)key1_hstr, ds.vm.heap);
-                            if (try v = result) { mid_val = v; }
+                            primitive_getprop_sync(vm, ds, rb, vm.heap.string_proto, key1_hstr, &mid_val, 0, false);
+                            if (vm.has_error) return VM_ERROR~;
+                            if (ds.needs_restart) return (TVal){};
                         }
                     }
                 }
@@ -1481,13 +1396,9 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             if (vm.has_error) return VM_ERROR~;
                             if (ds.needs_restart) return (TVal){};
                         } else if (vm.heap.string_proto != null) {
-                            TVal? result = vm.heap.string_proto.get_prop_proto((void*)key2_hstr, ds.vm.heap);
-                            if (try v = result) {
-                                vm.heap.tval_copy_ref(ra2, &v);
-                                track_heap_store(ds.act, ra2, dst2_reg);
-                            } else {
-                                ra2.set_undefined();
-                            }
+                            primitive_getprop_sync(vm, ds, &mid_val, vm.heap.string_proto, key2_hstr, ra2, dst2_reg);
+                            if (vm.has_error) return VM_ERROR~;
+                            if (ds.needs_restart) return (TVal){};
                         } else {
                             ra2.set_undefined();
                         }
@@ -1496,25 +1407,17 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     }
                 } else if (mid_val.is_number() || mid_val.is_fastint()) {
                     if (key2_hstr != null && vm.heap.number_proto != null) {
-                        TVal? result = vm.heap.number_proto.get_prop_proto((void*)key2_hstr, ds.vm.heap);
-                        if (try v = result) {
-                            vm.heap.tval_copy_ref(ra2, &v);
-                            track_heap_store(ds.act, ra2, dst2_reg);
-                        } else {
-                            ra2.set_undefined();
-                        }
+                        primitive_getprop_sync(vm, ds, &mid_val, vm.heap.number_proto, key2_hstr, ra2, dst2_reg);
+                        if (vm.has_error) return VM_ERROR~;
+                        if (ds.needs_restart) return (TVal){};
                     } else {
                         ra2.set_undefined();
                     }
                 } else if (mid_val.is_boolean()) {
                     if (key2_hstr != null && vm.heap.bool_proto != null) {
-                        TVal? result = vm.heap.bool_proto.get_prop_proto((void*)key2_hstr, ds.vm.heap);
-                        if (try v = result) {
-                            vm.heap.tval_copy_ref(ra2, &v);
-                            track_heap_store(ds.act, ra2, dst2_reg);
-                        } else {
-                            ra2.set_undefined();
-                        }
+                        primitive_getprop_sync(vm, ds, &mid_val, vm.heap.bool_proto, key2_hstr, ra2, dst2_reg);
+                        if (vm.has_error) return VM_ERROR~;
+                        if (ds.needs_restart) return (TVal){};
                     } else {
                         ra2.set_undefined();
                     }
@@ -1736,13 +1639,9 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         if (key2_is_length) {
                             ra2.set_fastint((long)mid_str.char_length());
                         } else if (vm.heap.string_proto != null) {
-                            TVal? result = vm.heap.string_proto.get_prop_proto((void*)key2_hstr, ds.vm.heap);
-                            if (try v = result) {
-                                vm.heap.tval_copy_ref(ra2, &v);
-                                track_heap_store(ds.act, ra2, dst2_reg);
-                            } else {
-                                ra2.set_undefined();
-                            }
+                            primitive_getprop_sync(vm, ds, &mid_val, vm.heap.string_proto, key2_hstr, ra2, dst2_reg);
+                            if (vm.has_error) return VM_ERROR~;
+                            if (ds.needs_restart) return (TVal){};
                         } else {
                             ra2.set_undefined();
                         }
@@ -1752,26 +1651,18 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 } else if (mid_val.is_number() || mid_val.is_fastint()) {
                     // NUMBER intermediate: auto-box for hop 2.
                     if (key2_hstr != null && vm.heap.number_proto != null) {
-                        TVal? result = vm.heap.number_proto.get_prop_proto((void*)key2_hstr, ds.vm.heap);
-                        if (try v = result) {
-                            vm.heap.tval_copy_ref(ra2, &v);
-                            track_heap_store(ds.act, ra2, dst2_reg);
-                        } else {
-                            ra2.set_undefined();
-                        }
+                        primitive_getprop_sync(vm, ds, &mid_val, vm.heap.number_proto, key2_hstr, ra2, dst2_reg);
+                        if (vm.has_error) return VM_ERROR~;
+                        if (ds.needs_restart) return (TVal){};
                     } else {
                         ra2.set_undefined();
                     }
                 } else if (mid_val.is_boolean()) {
                     // BOOLEAN intermediate: auto-box for hop 2.
                     if (key2_hstr != null && vm.heap.bool_proto != null) {
-                        TVal? result = vm.heap.bool_proto.get_prop_proto((void*)key2_hstr, ds.vm.heap);
-                        if (try v = result) {
-                            vm.heap.tval_copy_ref(ra2, &v);
-                            track_heap_store(ds.act, ra2, dst2_reg);
-                        } else {
-                            ra2.set_undefined();
-                        }
+                        primitive_getprop_sync(vm, ds, &mid_val, vm.heap.bool_proto, key2_hstr, ra2, dst2_reg);
+                        if (vm.has_error) return VM_ERROR~;
+                        if (ds.needs_restart) return (TVal){};
                     } else {
                         ra2.set_undefined();
                     }
@@ -1791,8 +1682,9 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 TVal mid_val;
                 mid_val.set_undefined();
                 if (key1_hstr != null && vm.heap.number_proto != null) {
-                    TVal? result = vm.heap.number_proto.get_prop_proto((void*)key1_hstr, ds.vm.heap);
-                    if (try v = result) { mid_val = v; }
+                    primitive_getprop_sync(vm, ds, rb, vm.heap.number_proto, key1_hstr, &mid_val, 0, false);
+                    if (vm.has_error) return VM_ERROR~;
+                    if (ds.needs_restart) return (TVal){};
                 }
 
                 // The shared hop 2 dispatch, with no inline cache, as for a string source.
@@ -1868,13 +1760,9 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         if (key2_is_length) {
                             ra2.set_fastint((long)mid_str.char_length());
                         } else if (vm.heap.string_proto != null) {
-                            TVal? result = vm.heap.string_proto.get_prop_proto((void*)key2_hstr, ds.vm.heap);
-                            if (try v = result) {
-                                vm.heap.tval_copy_ref(ra2, &v);
-                                track_heap_store(ds.act, ra2, dst2_reg);
-                            } else {
-                                ra2.set_undefined();
-                            }
+                            primitive_getprop_sync(vm, ds, &mid_val, vm.heap.string_proto, key2_hstr, ra2, dst2_reg);
+                            if (vm.has_error) return VM_ERROR~;
+                            if (ds.needs_restart) return (TVal){};
                         } else {
                             ra2.set_undefined();
                         }
@@ -1883,25 +1771,17 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     }
                 } else if (mid_val.is_number() || mid_val.is_fastint()) {
                     if (key2_hstr != null && vm.heap.number_proto != null) {
-                        TVal? result = vm.heap.number_proto.get_prop_proto((void*)key2_hstr, ds.vm.heap);
-                        if (try v = result) {
-                            vm.heap.tval_copy_ref(ra2, &v);
-                            track_heap_store(ds.act, ra2, dst2_reg);
-                        } else {
-                            ra2.set_undefined();
-                        }
+                        primitive_getprop_sync(vm, ds, &mid_val, vm.heap.number_proto, key2_hstr, ra2, dst2_reg);
+                        if (vm.has_error) return VM_ERROR~;
+                        if (ds.needs_restart) return (TVal){};
                     } else {
                         ra2.set_undefined();
                     }
                 } else if (mid_val.is_boolean()) {
                     if (key2_hstr != null && vm.heap.bool_proto != null) {
-                        TVal? result = vm.heap.bool_proto.get_prop_proto((void*)key2_hstr, ds.vm.heap);
-                        if (try v = result) {
-                            vm.heap.tval_copy_ref(ra2, &v);
-                            track_heap_store(ds.act, ra2, dst2_reg);
-                        } else {
-                            ra2.set_undefined();
-                        }
+                        primitive_getprop_sync(vm, ds, &mid_val, vm.heap.bool_proto, key2_hstr, ra2, dst2_reg);
+                        if (vm.has_error) return VM_ERROR~;
+                        if (ds.needs_restart) return (TVal){};
                     } else {
                         ra2.set_undefined();
                     }
@@ -1921,8 +1801,9 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 TVal mid_val;
                 mid_val.set_undefined();
                 if (key1_hstr != null && vm.heap.bool_proto != null) {
-                    TVal? result = vm.heap.bool_proto.get_prop_proto((void*)key1_hstr, ds.vm.heap);
-                    if (try v = result) { mid_val = v; }
+                    primitive_getprop_sync(vm, ds, rb, vm.heap.bool_proto, key1_hstr, &mid_val, 0, false);
+                    if (vm.has_error) return VM_ERROR~;
+                    if (ds.needs_restart) return (TVal){};
                 }
 
                 // The shared hop 2 dispatch, with no inline cache, as for a string source.
@@ -1998,13 +1879,9 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         if (key2_is_length) {
                             ra2.set_fastint((long)mid_str.char_length());
                         } else if (vm.heap.string_proto != null) {
-                            TVal? result = vm.heap.string_proto.get_prop_proto((void*)key2_hstr, ds.vm.heap);
-                            if (try v = result) {
-                                vm.heap.tval_copy_ref(ra2, &v);
-                                track_heap_store(ds.act, ra2, dst2_reg);
-                            } else {
-                                ra2.set_undefined();
-                            }
+                            primitive_getprop_sync(vm, ds, &mid_val, vm.heap.string_proto, key2_hstr, ra2, dst2_reg);
+                            if (vm.has_error) return VM_ERROR~;
+                            if (ds.needs_restart) return (TVal){};
                         } else {
                             ra2.set_undefined();
                         }
@@ -2013,25 +1890,17 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     }
                 } else if (mid_val.is_number() || mid_val.is_fastint()) {
                     if (key2_hstr != null && vm.heap.number_proto != null) {
-                        TVal? result = vm.heap.number_proto.get_prop_proto((void*)key2_hstr, ds.vm.heap);
-                        if (try v = result) {
-                            vm.heap.tval_copy_ref(ra2, &v);
-                            track_heap_store(ds.act, ra2, dst2_reg);
-                        } else {
-                            ra2.set_undefined();
-                        }
+                        primitive_getprop_sync(vm, ds, &mid_val, vm.heap.number_proto, key2_hstr, ra2, dst2_reg);
+                        if (vm.has_error) return VM_ERROR~;
+                        if (ds.needs_restart) return (TVal){};
                     } else {
                         ra2.set_undefined();
                     }
                 } else if (mid_val.is_boolean()) {
                     if (key2_hstr != null && vm.heap.bool_proto != null) {
-                        TVal? result = vm.heap.bool_proto.get_prop_proto((void*)key2_hstr, ds.vm.heap);
-                        if (try v = result) {
-                            vm.heap.tval_copy_ref(ra2, &v);
-                            track_heap_store(ds.act, ra2, dst2_reg);
-                        } else {
-                            ra2.set_undefined();
-                        }
+                        primitive_getprop_sync(vm, ds, &mid_val, vm.heap.bool_proto, key2_hstr, ra2, dst2_reg);
+                        if (vm.has_error) return VM_ERROR~;
+                        if (ds.needs_restart) return (TVal){};
                     } else {
                         ra2.set_undefined();
                     }

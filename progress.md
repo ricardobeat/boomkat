@@ -1,8 +1,26 @@
 # Progress: Duktape C3 — test262 Conformance Tracker
 
-**Last Updated:** Session 311 — library sweep reworked to a tsc-strip self-oracle (no node): 5/5 libraries pass both sides (microdiff, zustand, valtio, signals-core, jotai). Added node_modules resolution for bare specifiers; fixed the hoist pre-scan's ASI blind spot and the typeof fast paths' missing optional-chain continuation. test262 remains 100% (49,814/0, session 309).
+**Last Updated:** Session 313 — strict-mode getter `this` on primitive receivers fixed: `(5).x` for an accessor `x` invoked the getter with the boxed wrapper (or returned the raw accessor slot without invoking it at all) instead of the primitive, failing test262 10.4.3-1-103/-104/-106. New `primitive_getprop`/`primitive_getprop_sync` helpers in vm_property.c3 route all five primitive types through the accessor machinery with the primitive as `this`; the three tests are un-skipped and pinned by `test/test_strict_getter_this.js` (24 assertions, byte-identical to node). Full suite 49,821/0, rosetta 42/42, test-local green, ASAN clean.
 
 **Target:** 100% test262 pass rate on the targeted subset (see plan 040). — **reached session 309**
+
+## Session 313 (2026-08-16)
+
+Fixed the strict-mode getter `this` coercion gap (skip-listed test262 10.4.3-1-103/-104/-106): property reads on primitive receivers resolved accessors through `get_prop_proto`, which returns the raw accessor-pair slot, so the getter never ran; the symbol paths invoked it with the temporary wrapper as `this` instead of the symbol. The engine is strict-only, so per ES5 §10.4.3 the getter must receive the primitive itself.
+
+- **Root cause** (src/vm/vm_property.c3): the GETPROP/GETPROPC primitive auto-box paths (string, number, boolean, bigint, symbol) and the GETPROPC2 fused hop-1/hop-2 intermediates all used `X.prototype.get_prop_proto`, a raw slot read that bypasses accessor invocation entirely; only the symbol wrapper paths ran the getter, and with the wrong receiver. The object-receiver paths already had the correct `get_prop_or_accessor_proto` + `invoke_getter` shape.
+- **Fix**: two new helpers. `primitive_getprop` (frame-based, for single hops) and `primitive_getprop_sync` (reentrant `call_fn`, for the fused GETPROPC2 paths where a frame-based getter would resume past the fused pair and skip hop 2), both invoking the getter with `this` = the primitive. All five primitive types wired through them in GETPROP, GETPROPC, and the GETPROPC2 intermediates; `getprop2_symbol_hop` delegates to `primitive_getprop` instead of boxing. `Symbol.prototype.description` (a builtin getter) already read a primitive `this`, so it works unchanged.
+- **Validation**: differential vs node on a 24-assertion battery (number/string/boolean/bigint/symbol receivers, description, data-prop fallbacks, two-hop fused chains, throwing getters, Number.prototype accessors vs Number objects) — byte-identical. Pinned as `test/test_strict_getter_this.js`. test262 10.4.3-1-103/-104/-106 un-skipped; full suite 49,821 pass / 0 fail / 0 CE; rosetta 42/42; test-local green (353 scripts); ASAN clean on the new test and the getter-adjacent async/generator tests.
+
+## Session 312 (2026-08-16)
+
+Fixed the pre-existing miscompile that kept plan 073's engine-side transpiler oracle (typescript.js `ts.transpileModule` on our own engine) from running: `TypeError: undefined is not a function` in `getPipelinePhase`, minimal repro `const q = 1; q.foo;`.
+
+- **Root cause** (src/compiler/functions.c3, context.c3): a nonexistent-property diagnostic prints the receiver type through `createPrinter`, whose `var { onEmitNode = noEmitNotification, ... } = handlers` destructure falls apart when the function has more than 255 live registers. The default-eval skip branch was patched as `self.code[skip_addr] = make_a_sbx(IF_TRUE, cmp_reg, skip_off)` with `skip_addr` taken from `code_count` *before* `emit_a_sbx`; for a wide `cmp_reg` the emit wrote a WIDE prefix at that slot, and the patch then overwrote the prefix with a raw IF_TRUE. The real IF_TRUE (one slot later) kept its placeholder offset and lost its register's high byte, testing a stale register; a truthy stale value skipped the default thunk entirely, leaving `substituteNode` undefined for `getPipelinePhase` to call. The fix records the branch's own index from `emit_a_sbx`'s return value (the instruction slot after any WIDE prefix) at all four sites: destructure leaf defaults and nested-pattern defaults (`emit_destruct_bindings`), default parameters (`emit_param_prologue`), and destructured-param defaults (`emit_destruct_param_defaults`). The offset math and the `cmp_reg & 0xFF` mask in the rewritten instruction were already prefix-correct once the patch lands on the instruction, since the untouched WIDE prefix still carries the high byte.
+- **Regression coverage**: `scripts/lib_api_checks/typescript.js` now transpiles `const q = 1; q.foo;` and pins the output (`var q = 1;\nq.foo;\n`); verified FAIL on the pre-fix binary and PASS with the fix, and diffed against qjs by the api-check harness. Plan 073's blocker paragraph rewritten to describe the fix.
+- Also confirmed: with the skip branch intact, the fused peepholes are unaffected (all are gated on `!has_wide`).
+
+Validation: `just rosetta` 42/42, `just test-local` green (351 scripts, 15 modules, handbook 43/43), `just ts-runtime` 5/5, `just ts-conformance` 0 failures, test262 phases 1 and 3 spot-checked 0 fail / 0 unexpected CE.
 
 ## Test Infrastructure
 
