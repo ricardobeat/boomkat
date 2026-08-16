@@ -61,3 +61,4 @@
 | [register-locals.md](register-locals.md) | ✅ DONE | Register-resident locals optimization; validated by the ENV_STRICT oracle (`duktape_c3_envstrict` target + corpus). Known gap: captured-local coherence — see plan 045 |
 | [026-rosetta-remaining-failures.md](026-rosetta-remaining-failures.md) | ✅ DONE | Rosetta suite at 100/100 since session 248 (B24–B30 closed) |
 | [052-road-to-zero.md](052-road-to-zero.md) | ✅ DONE | Route to 0 test262 failures reached: full-suite run 2026-08-16 = 0 FAIL / 0 CE:unexpected across all phases (49,814 pass) |
+| [074-embedding-c-api.md](074-embedding-c-api.md) | 🔄 IN PROGRESS | C embedding API plan (QuickJS-referenced): interrupt handler + uncatchable abort, property access/enumeration, value/object/array construction, script-name + line/col error info, host-side call; phased landing, implementation pending |
