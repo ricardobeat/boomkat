@@ -1019,8 +1019,10 @@ fn void CompilerContext.emit_destruct_bindings(&self,
                 self.emit_abc(Opcode.SNEQ, (uint)cmp_reg, (uint)group_reg, (uint)undef_reg);
                 self.free_reg(undef_reg);
 
-                uint skip_addr = self.code_count;
-                self.emit_a_sbx(Opcode.IF_TRUE, (uint)cmp_reg, 0);
+                // The skip branch is patched below; a WIDE prefix for a wide
+                // cmp_reg lands BEFORE the instruction, so record the branch's
+                // own index from the emit, not the pre-emit count.
+                uint skip_addr = self.emit_a_sbx(Opcode.IF_TRUE, (uint)cmp_reg, 0);
                 self.free_reg(cmp_reg);
 
                 ushort closure_reg = self.alloc_reg();
@@ -1207,8 +1209,7 @@ fn void CompilerContext.emit_destruct_bindings(&self,
                 self.emit_abc(Opcode.SNEQ, (uint)cmp_reg, (uint)bind_reg, (uint)undef_reg);
                 self.free_reg(undef_reg);
 
-                uint skip_addr = self.code_count;
-                self.emit_a_sbx(Opcode.IF_TRUE, (uint)cmp_reg, 0);
+                uint skip_addr = self.emit_a_sbx(Opcode.IF_TRUE, (uint)cmp_reg, 0);
                 self.free_reg(cmp_reg);
 
                 ushort closure_reg = self.alloc_reg();
@@ -3029,8 +3030,7 @@ fn void? CompilerContext.emit_param_prologue(&self, ushort arg_count,
         self.free_reg(undef_reg);
 
         // IF_TRUE: skip past default evaluation (will be patched)
-        uint skip_addr = self.code_count;
-        self.emit_a_sbx(Opcode.IF_TRUE, (uint)cmp_reg, 0);
+        uint skip_addr = self.emit_a_sbx(Opcode.IF_TRUE, (uint)cmp_reg, 0);
         self.free_reg(cmp_reg);
 
         // CLOSURE for default function

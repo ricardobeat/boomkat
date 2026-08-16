@@ -1294,8 +1294,7 @@ fn void CompilerContext.emit_destruct_param_defaults(&self) {
         self.free_reg(undef_reg);
 
         // IF_TRUE: skip past the default-eval block (will patch target after).
-        uint skip_addr = self.code_count;
-        self.emit_a_sbx(Opcode.IF_TRUE, (uint)cmp_reg, 0);
+        uint skip_addr = self.emit_a_sbx(Opcode.IF_TRUE, (uint)cmp_reg, 0);
         self.free_reg(cmp_reg);
 
         // Call the default thunk. Result replaces the arg slot in-place so

@@ -67,12 +67,21 @@ stripped output, which is the same code with the types erased. A library
 passes only if both sides run and print identically.
 
 An engine-side transpiler oracle (typescript.js `ts.transpileModule` on our
-own engine) was tried first and is blocked by a pre-existing codegen bug:
-`substituteNode` resolves undefined in `getPipelinePhase` (`TypeError:
-undefined is not a function`), reproduced minimally with
-`const q = 1; q.foo;`. It fails on `--no-optimize` and on the pre-session
-binary, so it is not this session's changes. The repro lives in
-`test/libcorpus/typescript.js`; fixing it is its own session.
+own engine) was tried first and is now unblocked. The blocker was a codegen
+bug, not a TS feature: `typeToString` prints a receiver type through
+`createPrinter`, whose `var { onEmitNode = noEmitNotification, ... } =
+handlers` destructure fell apart in functions with more than 255 live
+registers. The skip-branch patch rewrote the WIDE prefix word instead of
+the `IF_TRUE` instruction, so the branch tested a stale register and the
+default thunk never ran, leaving `substituteNode` undefined for
+`getPipelinePhase` to call. The fix records the branch's own index from
+`emit_a_sbx` (which returns the instruction slot after any WIDE prefix)
+instead of the pre-emit `code_count`; the same off-by-prefix patch existed
+in all four default-eval sites (functions.c3 destructure leaves and nested
+patterns, default parameters, and context.c3 `emit_destruct_param_defaults`).
+Minimal repro: `const q = 1; q.foo;`. Regression coverage:
+`scripts/lib_api_checks/typescript.js` now transpiles that exact input and
+pins the output, diffed against qjs by `just libcorpus --api-checks`.
 
 ## Engine support
 
