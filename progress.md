@@ -1,6 +1,6 @@
 # Progress: Duktape C3 — test262 Conformance Tracker
 
-**Last Updated:** Session 307 — plan 072 closed out: `class await` hoist leak, `looks_like_module` depth-0 fix, unique per-class `__super__` bindings (the typescript services "object is not a constructor"), substr ±∞/undefined guards. Corpus re-verified: 22/22 load, 21/22 api-checks (typescript's jsDoc bug is the one left). Rosetta 42/42, local suite green, phase 15 8374/0/0.
+**Last Updated:** Session 308 — plan 072 fully closed: the typescript api-check driver's last failure was two register-clobber bugs (member-assignment base, switch discriminant home), both fixed in 760855cc. Corpus is fully green: 22/22 load, 22/22 api-checks. Rosetta 42/42, local suite green, phase 15 8374/0/0, phases 0/2/3 12476/0.
 
 **Target:** 100% test262 pass rate on the targeted subset (see plan 040).
 
@@ -11,6 +11,17 @@
 - **Single-test repro**: `python3 scripts/run_test262.py --single <path>` (warns if the suite skips the test; `--debug`/`--keep` concat harness for `just lldb` / `--trace-vm`).
 - **Phase counts**: `bash scripts/count_test262_by_phase.sh` · **Delta**: `bash scripts/test262_delta.sh`.
 - **Build**: `c3c build test262_runner` or `c3c build duktape_c3` (plain runner; `duktape_c3_debug` for `-c`/`-t` inspection).
+
+## Session 308 (2026-08-16)
+
+The typescript api-check driver (plan 072's last open item) died with `Cannot create property 'jsDoc' on string`. Instrumenting the bundle traced it to `createBaseIdentifier`: after `node.escapedText = text`, `node` read back as the string. Two engine bugs, same family (freeing a live local's home register), fixed in 760855cc:
+
+- **Member assignment base clobber** (`src/compiler/expressions.c3`): `n.a = v` with `n` a register-cached let/const unwinds its registers with nothing live above the base, so the free popped the binding's slot and the result-temp alloc handed it straight back; the LDREG result copy then overwrote the variable with the RHS. Guarded with `last_member_obj_is_local`, the flag 79096c6c added for `typeof local.prop`; every other member-store path keeps a result register live across its frees, so the audit found no further sites.
+- **Switch discriminant clobber** (`src/compiler/statements.c3`): a bare `switch (kind)` on a let/const resolves to the binding's home register, and the closing `free_reg(disc_reg)` popped `next_reg` below the binding. The next temp alloc landed there; in a second switch on the same variable the first case literal's LDINT overwrote the discriminant, every comparison became a self-compare, and all inputs dispatched to the first case (in TS: a kind-260 node reaching the kind-243 handler). Same guard applied to the for-increment result (`for (;; ++i)`).
+
+Method notes that paid off: a 16-shape expression matrix separated the failing form (discarded member store with register RHS) from 15 look-alikes; the `-t` VM trace showed PUTPROP innocent and pinned the bad register read on the emitted LDREG; and once the jsDoc layer cleared, the second bug surfaced as a kind mis-dispatch that reproduced down to two switches on one local (no bundle needed).
+
+Corpus after the fixes: 22/22 load, 22/22 api-checks, first full-green run. Regression tests: `test/codegen_member_store_local_base.js`, `test/codegen_switch_disc_local.js`. Gates: rosetta 42/42, local suite green, phase 15 8374/0/0, phases 0/2/3 12476/0.
 
 ## Session 307 (2026-08-16)
 

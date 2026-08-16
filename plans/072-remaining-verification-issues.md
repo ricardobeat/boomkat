@@ -71,15 +71,40 @@ over-approximation (`capture_all = true`) rather than a lookahead gate like
 `class_kw_starts_class`: that scan works on raw token streams without lexer
 restore, and over-approximation is safe.
 
+### 6. typescript api-check driver: two register-clobber bugs (760855cc)
+
+The `Cannot create property 'jsDoc' on string` failure was two engine bugs
+stacked on the same driver, both in the free-a-live-local's-home-register
+family:
+
+1. **Member assignment base clobber.** `n.a = v` where `n` is a register
+   cached `let`/`const` and `v` sits in a low register (a parameter): the
+   store path freed the base register, the result-temp alloc handed the same
+   slot back, and the `LDREG` result copy overwrote the variable with the
+   RHS. `createBaseIdentifier`'s `node.escapedText = text` turned `node`
+   into the string. Fixed with the `last_member_obj_is_local` guard
+   (79096c6c introduced it for `typeof local.prop`; the assignment path
+   never got it).
+
+2. **Switch discriminant clobber.** `switch (kind)` on a bare `let`/`const`
+   read returns the binding's home register, and `switch_statement`'s
+   closing `free_reg(disc_reg)` popped `next_reg` below the live binding.
+   The next temp allocation landed in the slot: with a second switch on the
+   same variable, the first case literal's `LDINT` overwrote the
+   discriminant, so every comparison after it was a self-compare and all
+   inputs dispatched to the first case. `checkSourceElementWorker` sent a
+   kind-260 node to the kind-243 handler, which read `declarationList` off
+   a VariableDeclaration and died with `reading 'declarations'`. Same
+   guard applied to the for-increment expression result
+   (`for (;; ++i)`).
+
+Minimal repros: `test/codegen_member_store_local_base.js`,
+`test/codegen_switch_disc_local.js`. After the fixes the driver passes:
+**corpus 22/22 load, 22/22 api-checks**, first full-green run. Gates:
+rosetta 42/42, local suite green, phase 15 8374/0/0, phases 0/2/3
+12476/0.
+
 ## Open bugs
-
-### typescript api-check: `Cannot create property 'jsDoc' on string`
-
-The driver now loads the bundle and runs TS's own parser (both fixes above
-landed), then dies during `createSourceFile`/`transpileModule` with
-`TypeError: Cannot create property 'jsDoc' on string`. Next layer of the
-same driver; reproduce with `python3 scripts/verify_libraries.py --no-fetch
---api-checks typescript`. Own task.
 
 ### 3. `BigNumber.prototype.sqrt()` and `new BigNumber("1.1", 24)` — NOT REPRODUCING
 
@@ -126,10 +151,10 @@ walk forward.
 ## Corpus claims
 
 Independently re-verified from a worktree with `test/libcorpus` populated
-(2026-08-16, at 8d951801): load sweep 22/22, api-checks 21/22. The one
-failing driver is typescript, on the jsDoc bug above. `substr` picked up
-explicit ±Infinity/undefined-length guards in the same pass (186ca01a);
-pinned by `test/test_substr_infinity.js`.
+(2026-08-16, at 8d951801): load sweep 22/22, api-checks 21/22, the one
+failing driver being typescript. At 760855cc both sweeps are 22/22.
+`substr` picked up explicit ±Infinity/undefined-length guards in the same
+pass (186ca01a); pinned by `test/test_substr_infinity.js`.
 
 ## Known-open, not yet investigated further
 
