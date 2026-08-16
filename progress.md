@@ -18,10 +18,12 @@ First full-suite run since the plan 072 work (recent sessions only ran spot phas
 
 The path here, in broad strokes: the Wave 1 parser holes (reserved words as property names, generator methods, async arrows, member-expression for-of LHS), RegExp via libregexp, the Array.prototype sweep, the property-descriptor matrix, the classes phase (8,374 tests, once 930 unexpected CEs), and a long tail of clustered fixes, most recently the plan 070/072 real-world-corpus pass whose register-lifetime fixes (this session's member-store and switch-discriminant clobbers among them) closed out the remaining runtime failures.
 
+Then the TS conformance sweep (`just ts-conformance`) re-run showed one failure: `importMetaNarrowing.ts` uses `import.meta` inside an if-paren with no depth-0 `import`/`export` anywhere, so `looks_like_module` classified it as a script and the parser rejected `import.meta` as module-only syntax. Fixed in b3d4bc94: `import` followed by `.` is now a module marker at any nesting depth (it is never legal script syntax; `x.import.meta` property chains excluded by the preceding-dot check), and the scanner now skips string/template literals so quoted text mentioning `import.meta` or `export` cannot trip the detector (previously an acknowledged gap). Conformance corpus back to 0 failures; regression cases in `test/cli_looks_like_module_depth.js` (quoted text, templates, property chains, plus a globalThis-attachment canary for the file's own routing).
+
 Open threads for the next goal, per the project spec ("beat Duktape on performance, keep memory low, run on low-powered devices"):
 
+- **TS runtime surface (plan 069 successor)**: compile conformance is 0 failures and the engine already runs typescript.js 5.4.5 end to end (the api-check driver calls `transpileModule` through our VM). The untested middle ground is running real `.ts` sources directly in ts_mode: value-level behavior of erased files, module-graph fixtures in TS, and real projects' source trees rather than precompiled bundles.
 - **Plan 071 M2 (memory)**: `memory_test.js` still peaks at 2.5x QuickJS after subtracting the 912 KB fixed-overhead gap: string concatenation 5x (1,840 vs 352 KB), a 200x200 array matrix 2.5x, plain objects 2x. The session 306 shape-hash-table work removed the 8-property cliff; concat is the largest relative gap.
-- **Plan 069 (TS conformance)**: the corpus now runs typescript 5.4.5 end to end (parse, checker, emit); the conformance driver covers type-stripping compile behavior against `tsc --erasableSyntaxOnly`.
 - **Flake watch**: the plan 040 baseline noted ±33 run-to-run noise; a green re-run would confirm the 100% holds (`bash scripts/test262_delta.sh`).
 
 ## Session 308 (2026-08-16)
