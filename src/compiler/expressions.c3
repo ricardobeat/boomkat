@@ -458,6 +458,7 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
     bool lhs_was_member = self.last_was_member;
     ushort lhs_member_obj = self.last_member_obj_reg;
     ushort lhs_member_prop = self.last_member_prop_reg;
+    bool lhs_member_obj_is_local = self.last_member_obj_is_local;
     bool lhs_was_local_var = self.last_was_local_var;
     // An assignment operator has been consumed and the LHS markers are
     // captured, so this is the one point every store form converges. Report it
@@ -818,7 +819,15 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
             self.free_reg(left);
             self.emit_abc(member_store_op, (uint)lhs_member_obj, (uint)lhs_member_prop, (uint)right);
             self.free_reg(lhs_member_prop);
-            self.free_reg(lhs_member_obj);
+            // The base can be a live let/const home register: member_expr
+            // uses the binding's slot directly as the operand. Nothing sits
+            // above it here (the compound and logical paths keep a result
+            // register live across these frees), so the pop would hand the
+            // slot to the alloc_reg below, whose LDREG then overwrites the
+            // variable. Local homes are released at scope exit, not here.
+            if (!lhs_member_obj_is_local) {
+                self.free_reg(lhs_member_obj);
+            }
             // The assignment expression evaluates to the assigned value. When
             // `right` is a live local's own register we must not return it (a
             // later free would alias it); when it is a temp we must copy the

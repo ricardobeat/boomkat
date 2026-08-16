@@ -3704,7 +3704,15 @@ fn void? CompilerContext.for_statement(&self) {
         self.void_ctx = true;
         self.postfix_void = true;
         ushort incr_reg = self.expression()!;
-        self.free_reg(incr_reg);
+        bool incr_is_local = self.last_was_local_var && self.last_local_var_reg == incr_reg;
+        self.void_ctx = false;
+        self.postfix_void = false;
+        // `++i` on a let/const binding returns the binding's home register;
+        // freeing it would pop next_reg below the live local (see the switch
+        // discriminant guard above).
+        if (!incr_is_local) {
+            self.free_reg(incr_reg);
+        }
     }
 
     // Sync register-cached for-init var back to the environment when necessary.
@@ -4903,6 +4911,12 @@ fn void? CompilerContext.switch_statement(&self) {
     self.expect(TokenType.LPAREN)!;
 
     ushort disc_reg = self.expression()!;
+    // A bare identifier discriminant resolves to the binding's home register,
+    // which the switch must not free at its end: that would pop next_reg
+    // below the live local and hand its slot to the next temp allocation
+    // (the case-literal LDINT of a following statement landed there and
+    // turned every comparison into a self-compare).
+    bool disc_is_local = self.last_was_local_var && self.last_local_var_reg == disc_reg;
 
     self.expect(TokenType.RPAREN)!;
     self.expect(TokenType.LBRACE)!;
@@ -5194,7 +5208,9 @@ fn void? CompilerContext.switch_statement(&self) {
             bytecode::make_sabc(Opcode.JUMP, offset);
     }
 
-    self.free_reg(disc_reg);
+    if (!disc_is_local) {
+        self.free_reg(disc_reg);
+    }
 }
 
 /// Parse a labeled statement: `identifier : statement`.
