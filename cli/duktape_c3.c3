@@ -184,12 +184,16 @@ fn bool has_ts_extension(String path) {
 /// multi-line object literal with `{ export: 1, import: 2 }` at line starts
 /// would route through the ESM pipeline (typescript 5.4.5's bundle).
 ///
+/// `import.meta` is module-only too, but as an expression it is valid at any
+/// nesting depth, so it is matched wherever it appears (`import` is a
+/// reserved word, so `import` followed by `.` is never legal script syntax;
+/// `x.import.meta` property chains are excluded by the preceding-dot check).
+///
 /// `import` immediately followed by `(` is a dynamic import() expression,
 /// legal in classic scripts, and does not make a file a module. String and
-/// template literal contents are not lexed here: a string spanning lines
-/// could in theory contain the literal word `export` at a line start at
-/// depth 0 and trick the detector, but the existing detector did not lex
-/// strings either, so this stays no worse.
+/// template literal contents are skipped so quoted text cannot match; regex
+/// literals are not lexed (telling them from division needs full expression
+/// context), so a regex containing the literal text can still false-positive.
 fn bool looks_like_module(char[] src) {
     usz i = 0;
     bool at_stmt_start = true;
@@ -210,12 +214,33 @@ fn bool looks_like_module(char[] src) {
             if (i + 1 < src.len) i += 2;
             continue;
         }
+        // String / template literal: skip to the closing quote so its
+        // contents cannot match. Escapes are honored; a template's ${}
+        // interpolation is skipped wholesale (its code is not scanned).
+        if (c == '"' || c == '\'' || c == '`') {
+            char quote = c;
+            i++;
+            while (i < src.len && src[i] != quote) {
+                if (src[i] == '\\' && i + 1 < src.len) i++;
+                i++;
+            }
+            if (i < src.len) i++;
+            at_stmt_start = false;
+            continue;
+        }
         // Track nesting so a brace/paren/bracket at statement start does
         // not count as a module-level position. The opener itself is not a
         // statement-start token for `import`/`export`, but the FIRST token
         // inside the new nesting is, and it must be at depth 1, not 0.
         if (c == '{' || c == '(' || c == '[') { depth++; at_stmt_start = false; i++; continue; }
         if (c == '}' || c == ')' || c == ']') { if (depth > 0) depth--; at_stmt_start = false; i++; continue; }
+        // `import.meta` at any depth marks module code (see doc comment).
+        // A preceding ident char means this is the tail of a longer word;
+        // a preceding `.` means an `x.import.meta` property chain.
+        if (i + 6 < src.len && src[i:6] == "import" && src[i+6] == '.'
+            && (i == 0 || (!is_ident_cont(src[i-1]) && src[i-1] != '.'))) {
+            return true;
+        }
         if (at_stmt_start && depth == 0) {
             // Check for `import` or `export` as a whole word at this pos.
             // `import` followed by `(` is dynamic import(), legal in scripts.

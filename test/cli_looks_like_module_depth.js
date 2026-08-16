@@ -156,5 +156,51 @@ function scriptWithExportInParens() {
 eq(scriptWithExportInParens(), 5,
    "export as an object key inside parens does not make the file a module");
 
+// --- import.meta is module-only syntax, so its presence anywhere routes the
+// file to ESM. But it must be the real token sequence: quoted text and
+// x.import.meta property chains are ordinary script content. The conformance
+// corpus's importMetaNarrowing.ts (import.meta inside an if-paren, no
+// depth-0 import/export anywhere) is the positive case and is covered by
+// `just ts-conformance`. Routing for this whole file is asserted by the
+// canary at the end: a mis-route to the module pipeline detaches every
+// top-level declaration from globalThis, so typeof globalThis.eq would be
+// "undefined".
+function scriptWithImportMetaInString() {
+  var s = "see import.meta docs";
+  return s.indexOf("import.meta");
+}
+eq(scriptWithImportMetaInString(), 4,
+   "text 'import.meta' inside a string literal parses as script content");
+
+function scriptWithImportMetaInTemplate() {
+  var t = `template mentioning import.meta here`;
+  return t.indexOf("import.meta") >= 0;
+}
+eq(scriptWithImportMetaInTemplate(), true,
+   "text 'import.meta' inside a template literal parses as script content");
+
+function scriptWithImportPropertyChain() {
+  var a = { import: { meta: "chain" } };
+  return a.import.meta;
+}
+eq(scriptWithImportPropertyChain(), "chain",
+   "an x.import.meta property chain parses as script content");
+
+// A multi-line string whose second line begins with the word `export` must
+// not trip the depth-0 declaration match either.
+function scriptWithExportAtStringLineStart() {
+  var s = "line one\nexport function fake() {}";
+  return s.charAt(9);
+}
+eq(scriptWithExportAtStringLineStart(), "e",
+   "'export' at a line start inside a string parses as script content");
+
+// Canary: all the quoted-text shapes above must leave this file on the
+// script pipeline, where top-level declarations attach to the global.
+eq(typeof globalThis.eq, "function",
+   "quoted 'import.meta'/'export' text and property chains keep the file a script");
+eq(typeof this, "object",
+   "top-level this is the global object (the file did not route as a module)");
+
 print('cli_looks_like_module_depth: ' + pass + ' passed, ' + fail + ' failed');
 if (fail > 0) { print('SOME TESTS FAILED'); throw new Error('FAIL'); }
