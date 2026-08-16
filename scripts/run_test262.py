@@ -246,6 +246,20 @@ SKIP_GLOBS = {
     # Async generators (`async function*` / `async *m()`) implemented — plan 060.
     # The `*async-gen*` / AsyncGenerator built-in globs are no longer skipped.
 }
+
+# noStrict-flagged tests exempt from the blanket noStrict exclusion in
+# skip_reason: they assert mode-independent behavior and pass under the
+# strict-only engine, verified through the canonical worker path.
+NOSTRICT_RUN_GLOBS = {
+    # Syntactic methods (class/object/arrow/generator/async, in any
+    # combination) never get own `caller`/`arguments` properties, regardless
+    # of code strictness (ES2017 §12.3.9).
+    "*/forbidden-ext/*/*.js",
+    # A private name keeps its brand across repeated evaluations of the same
+    # class source via eval (direct or indirect), so a brand check on an
+    # instance made by a later evaluation still holds.
+    "*/private-*-multiple-evaluations-of-class-*.js",
+}
 SKIP_FILES = {
     # Map/Set key/value tests that use a BigInt literal far beyond 2^127
     # (~10^80). Arbitrary-precision BigInt is out of scope (plan 056, fixed-width
@@ -807,8 +821,12 @@ def skip_reason(path, es5_only=False):
         return "ES5-only mode: post-ES5 feature flag"
     # Strict-only engine: noStrict tests are intentionally unsupported —
     # they exercise non-strict language features (octals, with, duplicate
-    # params, etc.) which the engine now rejects at parse time.
-    if re.search(r"flags:\s*\[.*\bnoStrict\b", header):
+    # params, etc.) which the engine now rejects at parse time. The
+    # NOSTRICT_RUN_GLOBS families assert mode-independent behavior and pass
+    # under the strict-only engine, so they are exempt.
+    if re.search(r"flags:\s*\[.*\bnoStrict\b", header) and not any(
+        fnmatch.fnmatch(rel, pat) for pat in NOSTRICT_RUN_GLOBS
+    ):
         return "noStrict (strict-only engine)"
     # CanBlockIsFalse tests assume Atomics.wait throws because the agent cannot
     # suspend. This engine's single main agent has AgentCanSuspend = true (like
