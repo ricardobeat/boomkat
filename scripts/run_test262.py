@@ -297,11 +297,6 @@ SKIP_FILES = {
     # assertion runs. The engine behavior itself is correct (verified
     # manually with `--module`); the skip is a runner limitation.
     "language/expressions/class/elements/class-name-static-initializer-default-export.js",
-    # Same-line `y = this.#x = 1; #x;` pattern — chained private-write then
-    # field declaration. The chained private-write requires the field-init
-    # context to parse `this.#x = 1` as a private brand-gated assignment,
-    # but the same-line parser treats it as separate elements. Pre-existing.
-    "language/statements/class/elements/privatefieldset-typeerror-1.js",
     # B17 — for-loop tests that depend on implicit globals (Sputnik 2009
     # era tests where `__in__deepest__loop = __in__deepest__loop` must not
     # throw ReferenceError). Our strict engine rejects implicit globals.
@@ -436,23 +431,19 @@ SKIP_FILES = {
     # primitive, ES5 §10.4.3), and 10.4.3-1-103's `==` assertions pass either
     # way, so only the var-shadowing test stays here.
     "language/function-code/S10.2.1_A5.2_T1.js",  # var x inside f(x) preserves param binding — sloppy-mode-only
-    # F5 — onlyStrict function-code tests. The engine's strict-mode semantics
-    # are not yet complete enough to satisfy these tests:
-    #   -13-s / -13gs / -15-s / -15gs: Function("return typeof this;") per ES5
-    #     §15.3.2.1 step 9 produces a non-strict body (so `this` falls back
-    #     to the global object); the engine forces every compilation unit
-    #     strict, so `this` is undefined and the assertion fails.
-    # onlyStrict — engine is strict-only.
-    "language/function-code/10.4.3-1-13-s.js",  # Function("return typeof this;") — strict body makes `this` undefined
-    "language/function-code/10.4.3-1-13gs.js", # Function("return typeof this;") — strict body makes `this` undefined
-    "language/function-code/10.4.3-1-15-s.js", # new Function("return typeof this;") — strict body makes `this` undefined
-    "language/function-code/10.4.3-1-15gs.js", # new Function("return typeof this;") — strict body makes `this` undefined
+    # onlyStrict — engine is strict-only. 10.4.3-1-13/-15 and their gs twins
+    # (Function/`new Function` bodies must substitute `this` to the global
+    # object, never undefined) pass via FuncFlags.subst_global_this on
+    # dynamic-constructor bodies; the strict getter `this` tests
+    # (10.4.3-1-103/-104/-106) pass via the primitive-receiver accessor
+    # path. Nothing left in F5.
     # F6 — onlyStrict arguments-object tests. ES5 §10.6 requires that in strict
-    # mode `arguments.callee` is a non-configurable accessor (throws TypeError
-    # on assignment). The engine does not yet enforce these accessor semantics.
+    # mode `arguments.callee` is a non-configurable accessor whose get/set are
+    # both %ThrowTypeError%, so reads and writes throw TypeError. The engine
+    # installs exactly that accessor (shared frozen intrinsic, see
+    # register_function_constructor + finish_arguments_object), and the
+    # built-ins/ThrowTypeError descriptor tests all pass; nothing left here.
     # onlyStrict — engine is strict-only.
-    "language/arguments-object/10.6-13-c-3-s.js",  # arguments.callee descriptor must be {get,set} non-configurable
-    "language/arguments-object/10.6-14-c-4-s.js",  # argObj.callee = ... must throw TypeError in strict mode
     # D1 — Date constructor Sputnik month-rollover tests assert pre-epoch and
     # near-epoch month-overflow behavior (e.g. new Date(1899, 12) === new
     # Date(1900, 0)). The engine's date_utc_to_ms correctly handles month

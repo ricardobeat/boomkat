@@ -1,8 +1,18 @@
 # Progress: Duktape C3 — test262 Conformance Tracker
 
-**Last Updated:** Session 313 — strict-mode getter `this` on primitive receivers fixed: `(5).x` for an accessor `x` invoked the getter with the boxed wrapper (or returned the raw accessor slot without invoking it at all) instead of the primitive, failing test262 10.4.3-1-103/-104/-106. New `primitive_getprop`/`primitive_getprop_sync` helpers in vm_property.c3 route all five primitive types through the accessor machinery with the primitive as `this`; the three tests are un-skipped and pinned by `test/test_strict_getter_this.js` (24 assertions, byte-identical to node). Full suite 49,821/0, rosetta 42/42, test-local green, ASAN clean.
+**Last Updated:** Session 314 — closed the remaining strict-mode spec gaps: `arguments.callee` is now the non-configurable `%ThrowTypeError%` accessor (shared per-realm frozen intrinsic), and a chained private-field write before init throws TypeError instead of silently creating the field. Un-skipped 10.6-13-c-3-s/-14-c-4-s, privatefieldset-typeerror-1, and the four Function-constructor `this` tests (10.4.3-1-13/-15 ± gs) that `subst_global_this` already handled; all eight built-ins/ThrowTypeError tests now pass for real. Full suite 49,828/0, rosetta 42/42, test-local green, ASAN clean.
 
 **Target:** 100% test262 pass rate on the targeted subset (see plan 040). — **reached session 309**
+
+## Session 314 (2026-08-16)
+
+Closed the last three skip-listed strict-mode gaps from the session-312 review, plus the stale F5 block.
+
+- **`arguments.callee` accessor** (PB11): `finish_arguments_object` installed `callee` as a plain writable data property, so the descriptor was wrong and writes silently succeeded. It now installs a non-configurable accessor whose get/set are `heap.throw_type_error`, the single per-realm `%ThrowTypeError%` intrinsic built by AddRestrictedFunctionProperties and now genuinely frozen (extensible=false; name `""` and length 0 non-configurable, length first per property-order.js). Reads, writes and deletes all throw TypeError; descriptor byte-identical to node. Un-skipped test262 10.6-13-c-3-s / 10.6-14-c-4-s; all eight `built-ins/ThrowTypeError` tests pass for real (previously only two passed, spuriously, because `d.get` was undefined).
+- **Chained private-field write** (PB12): `class C { y = this.#x = 1; #x; }` fell through to OrdinarySet's create-new branch because the `y` initializer runs before `#x`'s INITPROP_PRIV, silently defining the field. The PUTPROP slow path now throws TypeError for a hidden-symbol (private-name) key that reaches the create-new fall-through, per PrivateFieldSet §13.3.3.3. Private accessor writes still route through the setter; writes to initialized fields still work. Un-skipped test262 `privatefieldset-typeerror-1.js`.
+- **F5 block cleanup**: the four Function-constructor `this` tests (10.4.3-1-13/-15 ± gs) were skip-listed as "strict body makes this undefined", but `FuncFlags.subst_global_this` on dynamic-constructor bodies already substitutes the global object, so they pass; un-skipped.
+
+Validation: `test/test_strict_callee_private.js` (24 assertions, byte-identical to node), full test262 49,828 pass / 0 fail / 0 CE (was 49,821), rosetta 42/42, test-local 354 scripts + all sub-suites green, ASAN clean on both new regression tests.
 
 ## Session 313 (2026-08-16)
 

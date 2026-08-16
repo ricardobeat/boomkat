@@ -1416,17 +1416,29 @@ fn bool register_function_constructor(EnvRecord* global_env, Heap* heap) {
             // Name per V8/SpiderMonkey convention. The exact name isn't
             // asserted by the failing tests, but a real name makes
             // toString output more readable.
-            HString* get_name = builtin_intern_string(heap, "get caller");
-            if (get_name != null) {
-                TVal ntv; ntv.set_string(get_name);
-                HString* nkey = heap.str(heap::BuiltinStr.NAME);
-                if (nkey != null) get_fn.put_prop(nkey, ntv, hobject::PROP_FLAGS_NWC, heap);
-            }
+            // %ThrowTypeError% is anonymous: name is the empty string
+            // (ES2017 §9.2.7, asserted by built-ins/ThrowTypeError/name.js).
+            // length is defined first: built-ins/ThrowTypeError/property-order.js
+            // requires the order "length", "name".
             HString* len_str = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
             if (len_str != null) {
                 TVal ltv; ltv.set_fastint(0);
-                get_fn.put_prop(len_str, ltv, hobject::PROP_FLAGS_NWC, heap);
+                get_fn.put_prop(len_str, ltv, hobject::PROP_FLAGS_NNC, heap);
             }
+            HString* get_name = builtin_intern_string(heap, "");
+            if (get_name != null) {
+                TVal ntv; ntv.set_string(get_name);
+                HString* nkey = heap.str(heap::BuiltinStr.NAME);
+                if (nkey != null) get_fn.put_prop(nkey, ntv, hobject::PROP_FLAGS_NNC, heap);
+            }
+
+            // %ThrowTypeError% is frozen: [[Extensible]] false and every own
+            // property non-configurable (ES2017 §9.2.7 step 6, §9.4.4.7).
+            // Also the only way the Function.prototype and arguments-object
+            // poison pills share one intrinsic, which the descriptor-based
+            // tests rely on.
+            get_fn.flags.extensible = false;
+            heap.throw_type_error = get_fn;
 
             TVal shared_thrower; shared_thrower.set_object(get_fn);
             // Setter is the same function as the getter.

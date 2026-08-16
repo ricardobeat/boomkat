@@ -582,6 +582,12 @@ struct Heap {
     HObject* object_proto___proto___getter;
     HObject* object_proto___proto___setter;
 
+    // %ThrowTypeError%, the per-realm intrinsic both AddRestrictedFunctionProperties
+    // (Function.prototype caller/arguments) and the strict arguments object's
+    // callee accessor share. Built once in register_function_constructor and
+    // frozen there, per ES2017 §9.2.7 / §9.4.4.7.
+    HObject* throw_type_error;
+
     // Built-in constructor prototypes
     HObject* object_proto;
     HObject* bool_proto;
@@ -1786,6 +1792,7 @@ fn void Heap.reset(&self) {
     self.object_proto     = null;
     self.object_proto___proto___getter = null;
     self.object_proto___proto___setter = null;
+    self.throw_type_error = null;
     self.bool_proto       = null;
     self.string_proto     = null;
     self.number_proto     = null;

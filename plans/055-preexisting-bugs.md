@@ -257,3 +257,37 @@ receivers, `Symbol.prototype.description`, data-prop fallbacks, two-hop fused
 chains and throwing getters; pinned by test/test_strict_getter_this.js (24
 assertions). test262 10.4.3-1-103/-104/-106 un-skipped, full suite 49,821/0,
 ASAN clean.
+
+### PB11 — FIXED (2026-08-16) — `arguments.callee` was a data property, not the non-configurable accessor
+`finish_arguments_object` installed `callee` as a plain writable data property
+({value, writable: true, configurable: true}), so `Object.getOwnPropertyDescriptor`
+reported a data descriptor and `argObj.callee = v` silently wrote instead of
+throwing. Per ES2017 §9.4.4.7 step 6, `callee` must be an accessor whose get
+and set are both the realm's single `%ThrowTypeError%` intrinsic, with
+{enumerable: false, configurable: false}.
+
+Fixed: the thrower built by AddRestrictedFunctionProperties (Function.prototype
+caller/arguments) is now stored on the Heap as `heap.throw_type_error`, made
+genuinely frozen (extensible=false, name="" and length 0 both non-configurable,
+length defined before name per property-order.js), and reused by
+`finish_arguments_object`, which installs `callee` as a non-configurable
+accessor. Reads, writes and deletes of `arguments.callee` all throw TypeError;
+the descriptor matches node byte-for-byte. test262 10.6-13-c-3-s/-14-c-4-s and
+all eight built-ins/ThrowTypeError tests (frozen, extensible, is-function,
+name, property-order, forbidden-caller, unique-per-realm-*) now pass; previously
+only two passed, and only spuriously (d.get was undefined).
+
+### PB12 — FIXED (2026-08-16) — chained private-field write before init silently created the field
+`class C { y = this.#x = 1; #x; }` ran the `y` initializer before `#x`'s
+INITPROP_PRIV, so the PUTPROP for `this.#x = 1` found no own property and no
+prototype accessor and fell through to OrdinarySet's create-new-property branch,
+silently defining the field. Per PrivateFieldSet (ES2022 §13.3.3.3) the write
+must throw TypeError when the field is not present.
+
+Fixed in the PUTPROP slow path (vm_property.c3): a hidden-symbol key (private
+name) that reaches the create-new fall-through throws TypeError ("Cannot write
+private member...") instead of inserting. Reads already threw (GETPROP_PRIVATE's
+brand walk); private accessor writes still route through the setter, and writes
+to initialized fields still work. test262
+privatefieldset-typeerror-1.js un-skipped; the other ten privatefieldset tests
+already passed and still do.

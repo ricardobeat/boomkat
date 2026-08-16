@@ -2632,6 +2632,23 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                 }
                                 return (TVal){};
                             }
+                            // A private write (hidden symbol key) must never fall
+                            // through to creating a property. CHK_BRAND proved the
+                            // object is a class instance, but PrivateFieldSet
+                            // (ES2022 §13.3.3.3) requires the field to already exist
+                            // as an own data property or a prototype accessor; a
+                            // write that finds neither means the field initializer
+                            // has not run yet (`y = this.#x = 1` before `#x;`),
+                            // which is a TypeError, not a silent field creation.
+                            // test262 privatefieldset-typeerror-1 pins this.
+                            if (key != null && ((HString*)key).is_hidden()) {
+                                if (!vm_throw_error(vm, vm.heap.type_err_proto,
+                                        "Cannot write private member to an object whose class did not declare it",
+                                        ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                    return VM_ERROR~;
+                                }
+                                return (TVal){};
+                            }
                             // No accessor, no non-writable data on chain: insert new property
                             if (hobj.flags.extensible) {
                                 hobj.put_prop(key, put_val, hobject::PROP_FLAGS_WEC, ds.vm.heap);

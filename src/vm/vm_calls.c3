@@ -20,11 +20,22 @@ import std::math;
 /// %Array.prototype.values%, so callers must go through this helper rather
 /// than re-deriving the value property-by-property at each call site.
 fn void finish_arguments_object(Vm* vm, HObject* args_obj, HObject* callee, uint nargs) {
+    // ES2017 §9.4.4.7 step 6: callee is a non-configurable accessor whose
+    // getter and setter are both %ThrowTypeError% (the same frozen intrinsic
+    // Function.prototype's caller/arguments poison pills use), and it is
+    // enumerable: false, configurable: false. Reads and writes through the
+    // property system both throw TypeError; the descriptor reflects the
+    // accessor shape (test262 10.6-13-c-3-s, 10.6-14-c-4-s).
     HString* callee_key = (HString*)vm.heap.strs[heap::BuiltinStr.CALLEE];
-    if (callee_key != null) {
-        TVal callee_tv;
-        callee_tv.set_object(callee);
-        args_obj.put_prop(callee_key, callee_tv, hobject::PROP_FLAGS_WC, vm.heap);
+    if (callee_key != null && vm.heap.throw_type_error != null) {
+        TVal thrower; thrower.set_object(vm.heap.throw_type_error);
+        TVal gs_callee = hobject::hobject_create_accessors(vm.heap, thrower, thrower);
+        PropFlags callee_flags;
+        callee_flags.writable = false;
+        callee_flags.enumerable = false;
+        callee_flags.configurable = false;
+        callee_flags.is_accessor = true;
+        args_obj.put_prop(callee_key, gs_callee, callee_flags, vm.heap);
     }
     HString* length_key = (HString*)vm.heap.strs[heap::BuiltinStr.LENGTH];
     if (length_key != null) {
