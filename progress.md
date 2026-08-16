@@ -1,8 +1,8 @@
 # Progress: Duktape C3 — test262 Conformance Tracker
 
-**Last Updated:** Session 308 — plan 072 fully closed: the typescript api-check driver's last failure was two register-clobber bugs (member-assignment base, switch discriminant home), both fixed in 760855cc. Corpus is fully green: 22/22 load, 22/22 api-checks. Rosetta 42/42, local suite green, phase 15 8374/0/0, phases 0/2/3 12476/0.
+**Last Updated:** Session 309 — **100% test262 reached**: full-suite run 49,814 pass / 0 fail / 0 unexpected CE across all phases, 3,010 skipped (the out-of-scope list). Plan 040's target is met. Corpus 22/22 load + api-checks, rosetta 42/42.
 
-**Target:** 100% test262 pass rate on the targeted subset (see plan 040).
+**Target:** 100% test262 pass rate on the targeted subset (see plan 040). — **reached session 309**
 
 ## Test Infrastructure
 
@@ -11,6 +11,18 @@
 - **Single-test repro**: `python3 scripts/run_test262.py --single <path>` (warns if the suite skips the test; `--debug`/`--keep` concat harness for `just lldb` / `--trace-vm`).
 - **Phase counts**: `bash scripts/count_test262_by_phase.sh` · **Delta**: `bash scripts/test262_delta.sh`.
 - **Build**: `c3c build test262_runner` or `c3c build duktape_c3` (plain runner; `duktape_c3_debug` for `-c`/`-t` inspection).
+
+## Session 309 (2026-08-16)
+
+First full-suite run since the plan 072 work (recent sessions only ran spot phases): **49,814 pass / 0 fail / 0 unexpected CE / 3,010 skipped (100.0%)**. Plan 040's target, 100% of the targeted test262 subset, is met. The suite has grown from the ~29,500 of the plan 040 baseline to 49,814 executable tests as phases came into scope (25 phase groups, from Core VM through ESM Modules).
+
+The path here, in broad strokes: the Wave 1 parser holes (reserved words as property names, generator methods, async arrows, member-expression for-of LHS), RegExp via libregexp, the Array.prototype sweep, the property-descriptor matrix, the classes phase (8,374 tests, once 930 unexpected CEs), and a long tail of clustered fixes, most recently the plan 070/072 real-world-corpus pass whose register-lifetime fixes (this session's member-store and switch-discriminant clobbers among them) closed out the remaining runtime failures.
+
+Open threads for the next goal, per the project spec ("beat Duktape on performance, keep memory low, run on low-powered devices"):
+
+- **Plan 071 M2 (memory)**: `memory_test.js` still peaks at 2.5x QuickJS after subtracting the 912 KB fixed-overhead gap: string concatenation 5x (1,840 vs 352 KB), a 200x200 array matrix 2.5x, plain objects 2x. The session 306 shape-hash-table work removed the 8-property cliff; concat is the largest relative gap.
+- **Plan 069 (TS conformance)**: the corpus now runs typescript 5.4.5 end to end (parse, checker, emit); the conformance driver covers type-stripping compile behavior against `tsc --erasableSyntaxOnly`.
+- **Flake watch**: the plan 040 baseline noted ±33 run-to-run noise; a green re-run would confirm the 100% holds (`bash scripts/test262_delta.sh`).
 
 ## Session 308 (2026-08-16)
 
