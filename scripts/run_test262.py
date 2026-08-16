@@ -201,17 +201,24 @@ UNSUPPORTED_PATTERN = re.compile(
 # pattern so the two never drift.
 _UNSUPPORTED_FEATURE_RE = re.compile(UNSUPPORTED_PATTERN.pattern.split(r"\b(?:", 1)[1].rsplit(r")\b", 1)[0])
 
-# Skipped, but no longer in UNSUPPORTED_PATTERN because the relevant
-# tests are now attempting (B31 swapped to quickjs-ng libregexp):
-#   regexp-unicode-property-escapes  - \p{...} works at compile; engine
-#                                       runtime input is still byte-mode
-#                                       so multi-byte UTF-8 subjects fail
-#                                       (B32).
-#   regexp-v-flag                    - flag accepted, v compiles +
-#                                       matches string-set notation; but
-#                                       libregexp.c only implements a
-#                                       subset of the v-flag spec, so
-#                                       some set expressions still fail.
+# These feature tokens were dropped from UNSUPPORTED_PATTERN when the
+# underlying RegExp features landed (B31 swapped the vendored libregexp for
+# quickjs-ng's, which this engine vendors; the benchmark qjs is the same
+# quickjs-ng release, so differential tests against it exercise the exact
+# library the engine ships):
+#   regexp-unicode-property-escapes - \p{...}/\P{...} in u and v modes,
+#                                       including multi-byte UTF-8 subjects
+#                                       (the old byte-mode limitation is
+#                                       gone). The generated property-escapes
+#                                       tree runs in phase 5 with the 60 s
+#                                       timeout override below.
+#   regexp-v-flag                    - full unicodeSets support: string
+#                                       properties (\p{RGI_Emoji} and the
+#                                       flag/ZWJ/keycap/tag sequences), &&
+#                                       intersection, -- subtraction, nested
+#                                       classes, \q{...} string-set notation.
+#                                       Verified byte-identical to node and
+#                                       qjs across the construct matrix.
 #   regexp-duplicate-named-groups    - fixed: the groups-object/indices.groups
 #                                       builders now match quickjs.c's
 #                                       js_regexp_exec semantics (a defined
@@ -219,22 +226,14 @@ _UNSUPPORTED_FEATURE_RE = re.compile(UNSUPPORTED_PATTERN.pattern.split(r"\b(?:",
 #                                       undefined one never clobbers a value
 #                                       already set by an earlier alternative).
 #   regexp-modifiers                 - inline flag groups (?i:...)/(?-i:...)/
-#                                       (?ims-ims:...) already work correctly
-#                                       via libregexp at both compile and
-#                                       exec time (verified against every
-#                                       built-ins/RegExp/regexp-modifiers/
-#                                       test). The only failures are
-#                                       language/literals/regexp/early-err-*
-#                                       $DONOTEVALUATE tests, which fail for
-#                                       an unrelated, pre-existing reason:
-#                                       this engine never parse-time-validates
-#                                       regexp literals at all (semantic
-#                                       errors like an unknown modifier
-#                                       letter are only caught if the literal
-#                                       is actually evaluated), and that
-#                                       directory isn't in any PHASES entry
-#                                       so it's outside the "0 fails" surface
-#                                       anyway.
+#                                       (?ims-ims:...) work via libregexp at
+#                                       both compile and exec time, and the
+#                                       engine parse-time-validates regexp
+#                                       literals, so the phase-parse negative
+#                                       tests in language/literals/regexp
+#                                       (early-err-*) score as expected CEs.
+# The one remaining regexp exclusion is `legacy-regexp` in
+# UNSUPPORTED_PATTERN (Annex B pattern constructs, out of scope).
 
 # Glob patterns of test files to skip. Paths are relative to test262/test().
 # Strict-only engine rejects non-strict-only features; tests that explicitly
@@ -258,9 +257,6 @@ SKIP_FILES = {
     # (async-generator stragglers + fromAsync-with-async-gen-source un-skipped —
     # plan 060 implements `async function*`.)
     "language/comments/hashbang/function-constructor.js",
-    "language/expressions/optional-chaining/member-expression.js",
-    "language/destructuring/binding/syntax/destructuring-array-parameters-function-arguments-length.js",
-    "language/destructuring/binding/syntax/destructuring-object-parameters-function-arguments-length.js",
     # B04 — Function constructor duplicate params / restricted names in non-strict
     "built-ins/Function/15.3.2.1-11-1.js",     # duplicate separate param allowed
     "built-ins/Function/15.3.2.1-11-3.js",     # formal param named 'eval' allowed
@@ -318,10 +314,6 @@ SKIP_FILES = {
     # exercises String.prototype.split is never entered / the bare reference
     # throws uncaught. Unsatisfiable while strict-only.
     "built-ins/String/prototype/split/checking-by-using-eval.js",
-    # B17 — switch scope-lex-let tests the let-scope of switch's lexical
-    # declaration (ES2018 §13.12.1 step 6 BlockDeclarationInstantiation).
-    # Our switch doesn't push a fresh block scope yet.
-    "language/statements/switch/scope-lex-let.js",
     # B46 — legacy Sputnik sort tests encoding pre-ES2019 implementation-defined
     # undefined placement; modern stable sort does not special-case undefined
     # when a comparator is supplied, so these expectations are unsatisfiable.
