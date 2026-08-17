@@ -62,7 +62,7 @@ each bundle loads, and a per-library API driver's output must match qjs.
 
 **TypeScript** (`python3 scripts/verify_ts_libraries.py`): each source runs
 under the engine's ts_mode, and stdout must match the same source stripped to
-.js by `tsc`. 5/5 pass.
+.js by `tsc`. 7/7 pass.
 
 | Source | Version | What is checked |
 |---|---|---|
@@ -71,6 +71,8 @@ under the engine's ts_mode, and stdout must match the same source stripped to
 | valtio | 2.1.3 | vanilla store + vendored proxy-compare 3.0.1 |
 | @preact/signals-core | 1.14.4 | signal primitives (`src/index.ts`) |
 | jotai | 2.20.2 | vanilla package tree (`src/vanilla/`) |
+| fp-ts | 2.16.9 | full source tree (123 modules), bare self-imports, `import X = Y`, overload signatures |
+| zod | 4.4.3 | lib tree (107 modules), NodeNext `.js` specifiers, type modifiers in re-export lists |
 
 ## Benchmarks
 

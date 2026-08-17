@@ -44,8 +44,20 @@ Two layers, both checked in:
    - @preact/signals-core 1.14.4 index.ts
    - jotai 2.20.2 vanilla package tree (`src/vanilla/`: atom, store,
      typeUtils, internals)
+   - fp-ts 2.16.9, the whole source tree (123 modules under `src/`, vendored
+     at `test/tscorpus/node_modules/fp-ts/` so bare self-imports like
+     `fp-ts/function` resolve through the node_modules walk). Exercises
+     `import X = Y` aliases, overload signatures, and cross-module type-only
+     cycles
+   - zod 4.4.3 lib tree (107 modules). Exercises NodeNext `.js` import
+     specifiers (the resolver maps `./x.js` to the `x.ts` twin), `type`
+     modifiers inside re-export lists, and `declare const` ambient stubs
+     written without a semicolon
 
-   No source file is rewritten. The sources stay byte-identical to upstream;
+   Tree libraries are enumerated from jsDelivr's file API by the sweep's
+   fetch step. No source file is rewritten except one documented fetch-time
+   patch (zod's memberless legacy enum stub, which erasable-syntax mode
+   rejects by design). The sources otherwise stay byte-identical to upstream;
    all wiring lives in the drivers and the vendored node_modules layout.
 
 ## The oracle
@@ -85,19 +97,60 @@ pins the output, diffed against qjs by `just libcorpus --api-checks`.
 
 ## Engine support
 
-The sweep needed two engine features to run unmodified multi-file sources:
+The sweep needed three engine features to run unmodified multi-file sources:
 
 1. **node_modules resolution** (src/module.c3): bare specifiers now walk the
    ancestor directories for `node_modules/<pkg>/`, probing subpath files,
    `package.json` main, and index files in order, hooked into
    `call_resolve_name` before the extension-probe fallback. This is what
    lets valtio's `import { createProxy } from 'proxy-compare'` resolve
-   without touching the source. Relative specifiers are unaffected.
-2. **ts_mode type erasure**: see the parser gaps below.
+   without touching the source. Relative specifiers are unaffected. fp-ts's
+   bare self-imports (`fp-ts/function`) resolve the same way.
+2. **`.js`-to-`.ts` twin resolution** (src/module.c3): a NodeNext-style
+   `./x.js` specifier written in a `.ts` source loads `x.ts` when the `.js`
+   file does not exist, and the module's normalized name is the `.ts` path
+   so ts_mode applies to the loaded source. zod 4's tree imports itself
+   exclusively through `.js` specifiers.
+3. **ts_mode type erasure**: see the parser gaps below.
+
+Whole-tree libraries also outran two fixed-size buffers, which the sweep
+turned into silent data loss and are now growable List storage: module
+import/export metadata (fp-ts's index.ts alone imports 121 specifiers), the
+64-entry GC root array (a 60-module zod graph had its later module envs
+swept mid-run), and the 128-entry namespace export table (`import * as z`
+saw undefined members past the cap).
 
 ## Parser gaps closed
 
-Session 310 closed four (see below). Session 311 found three more:
+Session 310 closed four (see below). Session 311 found three more. Session
+312, running fp-ts and zod, found these:
+
+8. **Ambient declarations with no semicolon ate the next statement**
+   (ts_skip.c3): the `declare` skip waited for a `;`, so fp-ts's
+   semicolonless `export declare const URI: unique symbol` swallowed the
+   next declaration and its export vanished. The skip now stops at a line
+   break when the previous token can terminate the declaration, the same
+   completes-a-type set skip_type uses.
+9. **`export { type X as Y } from` registered a phantom re-export**
+   (statements.c3): the clause consumed the `type` modifier but still
+   registered the specifier, and the linker rejected the missing binding.
+   The specifier is now erased entirely, matching tsc.
+10. **`typeof v as T` / `typeof v!` stranded the cast** (expressions.c3):
+   the bare-identifier fast path under TYPEOF returned without checking
+   for a TS postfix, leaving `as` or `!` dangling (visible only inside
+   groupings and call arguments, where no outer postfix pass runs). Those
+   postfixes now fall through to the normal parse path.
+11. **The `import X = Y` probe desynced the compiler pushback stack**
+   (statements.c3): a wrong guess (`import en from ...` is not
+   import-equals) consumed tokens parked on the compiler's 4-deep pushback
+   stack without restoring them. The probe now snapshots and rewinds the
+   stack along with the lexer slots.
+12. **Cross-module type-only import elision** (module.c3): a TS module's
+   `import { Interface } from './x'` cannot be judged at parse time, so
+   unresolved named imports from a `.ts` importer elide per binding at
+   link time, and an import statement whose bindings all elided is pruned
+   from the dependency order (otherwise erased types re-form the cycles
+   they were supposed to break).
 
 5. **Top-level `type` aliases with no trailing `;` desynced the hoist
    pre-scan** (functions.c3): `hoist_global_fn_decls` classified the
@@ -149,9 +202,9 @@ Session 310's four, still current:
 ## Regression verification
 
 - Handbook corpus 43/43 (wired into `just test-local`).
-- Library sweep 5/5: both the `.ts` sources and the tsc-stripped mirrors
+- Library sweep 7/7: both the `.ts` sources and the tsc-stripped mirrors
   run under the engine and print identically (microdiff, zustand, valtio,
-  signals-core, jotai).
+  signals-core, jotai, fp-ts, zod).
 - `just ts-conformance` (Microsoft corpus): 0 failures.
 - `just rosetta` 42/42; `just modules` 15/15 (includes the new
   t15_hoist_asi fixture); `just test-local` green.
