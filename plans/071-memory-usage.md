@@ -72,13 +72,12 @@ all sub-suites green, test262 phase 0-1 2468 pass / 0 fail.
 
 ### Accepted trade-off
 
-A loop that grows an object one property at a time and reads after every
-write rebuilds the table once per new shape, an O(n) chain walk per build
-where the per-object design did an O(1) insert. Builds are per shape rather
-than per object, so steady-state class instances pay nothing after the first
-instance, and plain construction with no interleaved reads pays nothing until
-the first lookup. The interleaved grow-and-read pattern is rare enough to
-accept this.
+The single-user case was later reconciled (session 318): an object whose shape
+chain has no second user keeps a per-object incremental table, so growing one
+object one key at a time is O(1) amortized again. Only a shape reached by more
+than one object builds the shared table, so 50,000 identical objects still pay
+one table per shape, never per object, and the 8-prop memory cliff stays
+closed.
 
 ## Remaining gap, not yet profiled
 

@@ -718,6 +718,16 @@ union HObjectExtra {
 /// fields are binary-compatible with HeapHeader, so a raw cast at offset 0
 /// works.
 ///
+/// Metadata for an object's per-object property hash table, allocated once
+/// prop_count reaches HASH_MIN_PROPS for an object whose shape chain has no
+/// second user. HObject holds only a pointer to it, so an object that never
+/// builds a table costs 8 bytes rather than the whole struct.
+struct PropHashInfo {
+    void* table;    /// HashEntry[] buffer
+    uint  mask;     /// one less than the slot count
+    uint  count;    /// prop_count as of the last rebuild
+}
+
 /// HObject flattens these fields into its own layout with
 /// `inline HObjectBase base`. Classes that need subtype fields add an
 /// HObjectExtra after this prefix; see alloc_size_for_class.
@@ -733,6 +743,7 @@ struct HObjectBase {
     uint          array_size;
     uint          array_used;
     void*         prop_alloc;
+    PropHashInfo* prop_hash;
 }
 
 /// The core ECMAScript object representation.
@@ -1015,6 +1026,71 @@ fn uint prop_hash_mask_for(uint prop_count) @inline {
     return slots - 1;
 }
 
+/// Allocate or grow the per-object hash table for property lookup, rebuilding
+/// from the shape chain. This is only ever called for an object whose shape
+/// chain has no second user; a shared shape's table already serves every
+/// object on it, so building one per object there would just repeat that
+/// table.
+fn void HObject.ensure_prop_hash(&self, heap::Heap* h) {
+    if (self.prop_count < HASH_MIN_PROPS) return;
+    uint new_mask = prop_hash_mask_for(self.prop_count);
+    // Nothing to do when the table is current and correctly sized.
+    if (self.prop_hash != null && self.prop_hash.count == self.prop_count && self.prop_hash.mask == new_mask) return;
+
+    usz new_bytes = (usz)(new_mask + 1) * HashEntry::size;
+    void* new_table = h.alloc_func(h.heap_udata, new_bytes);
+    if (new_table == null) return;
+    mem::clear(new_table, (sz)(new_bytes));
+
+    HashEntry* entries = (HashEntry*)new_table;
+    uint mask = new_mask;
+
+    // The shape chain is the authoritative key list. During put_prop growth the
+    // new key is already in the shape but not yet in the old table, so rebuild
+    // from the shape rather than from the table.
+    hobject::Shape* sh = self.get_shape(h);
+    while (sh != null) {
+        hobject::ShapeProperty* sp = sh.props();
+        for (uint j = 0; j < sh.own_count; j++) {
+            void* k = sp[j].key;
+            if (k == null) continue;
+            uint hv = hash_key(k);
+            uint slot = hv & mask;
+            while (entries[slot].key != null) slot = (slot + 1) & mask;
+            entries[slot].key = k;
+            entries[slot].index = sh.offset + j;
+        }
+        sh = sh.parent_shape;
+    }
+
+    if (self.prop_hash != null) {
+        h.free_func(h.heap_udata, self.prop_hash.table);
+        self.prop_hash.mask = new_mask;
+        self.prop_hash.count = self.prop_count;
+        self.prop_hash.table = new_table;
+    } else {
+        PropHashInfo* phi = (PropHashInfo*)h.alloc_func(h.heap_udata, PropHashInfo::size);
+        if (phi == null) {
+            h.free_func(h.heap_udata, new_table);
+            return;
+        }
+        phi.table = new_table;
+        phi.mask = new_mask;
+        phi.count = self.prop_count;
+        self.prop_hash = phi;
+    }
+}
+
+/// Free an object's per-object property hash table, used when its shape chain
+/// gains a second user and a shared table takes over, or during deletion when
+/// the surviving indices have moved.
+fn void HObject.drop_prop_hash(&self, heap::Heap* h) {
+    if (self.prop_hash == null) return;
+    h.free_func(h.heap_udata, self.prop_hash.table);
+    h.free_func(h.heap_udata, self.prop_hash);
+    self.prop_hash = null;
+}
+
 /// The property key at `idx`, found by walking the shape chain. Null when the
 /// index is out of range.
 fn void* HObject.prop_key_at(&self, uint idx, heap::Heap* h) @inline {
@@ -1123,30 +1199,36 @@ fn void HObject.set_prop_flags(&self, uint idx, PropFlags new_flags, heap::Heap*
     }
 }
 
-/// The index of the property with this interned key, or -1. Uses the shape's
-/// hash table, building it on first use once the property count reaches
-/// HASH_MIN_PROPS and a second object has reached the shape, and walks the
-/// shape chain otherwise.
+/// The index of the property with this interned key, or -1. A shape shared by
+/// more than one object uses its own lazily built hash table; a single-user
+/// shape chain keeps one per-object incremental table on the object. Both are
+/// built once the property count reaches HASH_MIN_PROPS, and the shape chain
+/// is walked when neither is available.
 fn int HObject.find_prop_idx(&self, void* key, heap::Heap* h) {
     if (key == null || self.prop_count == 0) return -1;
 
     hobject::Shape* sh = self.get_shape(h);
 
-    if (self.prop_count >= HASH_MIN_PROPS && sh != null && sh.shared) {
-        if (sh.hash_table == null) shape_build_hash(sh, h);
-        if (sh.hash_table != null) {
-            HashEntry* entries = sh.hash_table;
-            uint mask = prop_hash_mask_for(self.prop_count);
-            uint slot = hash_key(key) & mask;
-            for (uint probes = 0; probes <= mask; probes++) {
-                HashEntry* e = &entries[slot];
-                if (e.key == null) return -1;
-                if (e.key == key) return (int)e.index;
-                slot = (slot + 1) & mask;
+    if (self.prop_count >= HASH_MIN_PROPS && sh != null) {
+        if (sh.shared) {
+            // The shape is shared, so one table for the whole chain serves every
+            // object on it. Drop any per-object table left over from a growth
+            // phase that happened while this object had the chain to itself.
+            if (self.prop_hash != null) self.drop_prop_hash(h);
+            if (sh.hash_table == null) shape_build_hash(sh, h);
+            if (sh.hash_table != null) {
+                return hash_table_probe(sh.hash_table, prop_hash_mask_for(self.prop_count), key);
             }
-            return -1;
+            // The table allocation failed, so fall through to the chain walk.
+        } else {
+            // Only this object uses the chain, so amortize its lookups with one
+            // incremental per-object table rather than a table per shape, which
+            // would be quadratic in both time and memory on a deep chain.
+            self.ensure_prop_hash(h);
+            if (self.prop_hash != null) {
+                return hash_table_probe(self.prop_hash.table, self.prop_hash.mask, key);
+            }
         }
-        // The table allocation failed, so fall through to the chain walk.
     }
 
     // No hash table, so walk the shape chain.
@@ -1156,6 +1238,19 @@ fn int HObject.find_prop_idx(&self, void* key, heap::Heap* h) {
             if (sp[i].key == key) return (int)(sh.offset + i);
         }
         sh = sh.parent_shape;
+    }
+    return -1;
+}
+
+/// Order-preserving lookup of `key` in a hash table, returning the stored
+/// index or -1. Open addressing with linear probing.
+fn int hash_table_probe(HashEntry* entries, uint mask, void* key) @inline {
+    uint slot = hash_key(key) & mask;
+    for (uint probes = 0; probes <= mask; probes++) {
+        HashEntry* e = &entries[slot];
+        if (e.key == null) return -1;
+        if (e.key == key) return (int)e.index;
+        slot = (slot + 1) & mask;
     }
     return -1;
 }
@@ -1457,6 +1552,47 @@ fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags, heap::Hea
     }
     self.shape_id = new_shape_id;
 
+    // Keep the per-object hash table in step with this growth, but only for a
+    // single-user shape chain. A shared shape's one table already names this
+    // key and serves every object on it, so a per-object table there would
+    // only waste memory. When the chain just turned shared, drop the table we
+    // spent the unshared phase maintaining.
+    hobject::Shape* new_leaf = h.get_shape(new_shape_id);
+    if (self.prop_count >= HASH_MIN_PROPS) {
+        if (new_leaf != null && !new_leaf.shared) {
+            uint needed_mask = prop_hash_mask_for(self.prop_count);
+            if (self.prop_hash == null) {
+                self.ensure_prop_hash(h);
+            } else if (self.prop_hash.mask != needed_mask) {
+                self.ensure_prop_hash(h);
+            } else {
+                // Right size, so insert the new key in place instead of paying
+                // for a full rebuild on every put_prop.
+                HashEntry* entries = (HashEntry*)self.prop_hash.table;
+                uint mask = self.prop_hash.mask;
+                uint slot = hash_key(key) & mask;
+                uint probes = 0;
+                while (entries[slot].key != null && probes <= mask) {
+                    if (entries[slot].key == key) {
+                        // A new key should not already be present; repoint it.
+                        entries[slot].index = new_idx;
+                        return true;
+                    }
+                    slot = (slot + 1) & mask;
+                    probes++;
+                }
+                if (entries[slot].key == null) {
+                    entries[slot].key = key;
+                    entries[slot].index = new_idx;
+                    self.prop_hash.count = self.prop_count;
+                }
+                // A full table cannot happen at the 70% load factor.
+            }
+        } else if (self.prop_hash != null) {
+            self.drop_prop_hash(h);
+        }
+    }
+
     return true;
 }
 
@@ -1560,8 +1696,11 @@ fn bool HObject.delete_prop(&self, void* key, heap::Heap* h) {
         }
     }
 
-    // The fresh shape has no hash table yet; the next lookup builds one if the
-    // surviving count still reaches HASH_MIN_PROPS.
+    // The fresh private shape has no hash table yet, and the surviving indices
+    // have moved, so a per-object table from before the delete is stale. Drop it
+    // and let the next lookup rebuild from the new shape if the count still
+    // reaches HASH_MIN_PROPS.
+    self.drop_prop_hash(h);
 
     return true;
 }
@@ -1962,6 +2101,19 @@ fn void hobject_free(HObject* obj, void* heap_ptr, bool free_header) {
                 }
             }
         }
+    }
+
+    // Free the per-object property hash table.
+    if (obj.prop_hash != null) {
+        if (hp != null) {
+            heap::Heap* h = hp;
+            h.free_func(h.heap_udata, obj.prop_hash.table);
+            h.free_func(h.heap_udata, obj.prop_hash);
+        } else {
+            mem::free(obj.prop_hash.table);
+            mem::free(obj.prop_hash);
+        }
+        obj.prop_hash = null;
     }
 
     // Free the block holding prop_values and array_part. The shape is shared and

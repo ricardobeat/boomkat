@@ -1,8 +1,17 @@
 # Progress: Duktape C3 — test262 Conformance Tracker
 
-**Last Updated:** Session 317 — `error.stack` now reports a per-frame source location: `    at <name> (<file>:<line>)`, innermost first. The filename rides the lexer into `finish()`, a per-instruction line table is emitted and survives NOP compaction, and the builtin-dispatch path now records the caller's resume PC so the throw-site frame has a line too. Plan 070 B4 closed (columns and the `<eval>` top-frame name remain later refinements).
+**Last Updated:** Session 318 — fixed the 20x shape-benchmark regression opened when the property hash moved onto the shared shape (`cb33d7b3`). A single object growing a long unique-key chain walked it linearly per lookup and was quadratic in total. The fix restores a per-object incremental hash table for single-user shape chains only, so the 10,000-key shape benches drop from ~290 ms back to ~7 ms while 50,000 identically-shaped objects still share one table (no 8-prop memory cliff). `error.stack` reports a per-frame source location: `    at <name> (<file>:<line>)`, innermost first. The filename rides the lexer into `finish()`, a per-instruction line table is emitted and survives NOP compaction, and the builtin-dispatch path now records the caller's resume PC so the throw-site frame has a line too. Plan 070 B4 closed (columns and the `<eval>` top-frame name remain later refinements).
 
 **Target:** 100% test262 pass rate on the targeted subset (see plan 040). — **reached session 309**
+
+## Session 318 (2026-08-17)
+
+Fixed the shape-benchmark regression introduced by `cb33d7b3`, which had left `bench_shape_no_call` and `bench_shape_stress` at ~290 ms (good parent: 14 ms, cached Duktape 8 ms).
+
+- **Root cause** (`src/hobject.c3`): with the property hash on the shared shape, a single object growing thousands of unique keys built a chain of unshared shapes. `find_prop_idx` looked through the shared table only, so every lookup on the chain fell back to a linear walk, and each insertion walked the whole chain: O(n^2) over the 10,000-key object. The later `shared` gate avoided a table per shape (quadratic memory) but kept the quadratic time.
+- **Fix**: restore a per-object incremental hash table for single-user shape chains only. `find_prop_idx` uses the shared shape's table when `sh.shared`, and otherwise maintains one `prop_hash` on the object, inserted incrementally by `put_prop` and rebuilt lazily when it outgrows its mask. `delete_prop` drops it (indices moved); `hobject_free` frees it; and both `find_prop_idx` and `put_prop` drop it the moment a shape turns shared, so the 50,000 identical objects case still pays one table per shape, not per object. Plan 071 M1's accepted grow-and-read trade-off is gone: single-user growth is O(1) amortized again.
+
+Validation: `just bench` shape benches at 7 ms / 6 ms (Duktape 8 ms, QuickJS 5 ms), no other bench moved; `just bench-memory` flat (7.7 MB / 33.5 MB) and the 7-prop vs 8-prop 50,000-object profile identical (15,319 KB each), so the memory win holds; `just test-local` green, `just rosetta` 42/42, test262 phase 15 8469 pass / 0 fail.
 
 ## Session 317 (2026-08-16)
 
