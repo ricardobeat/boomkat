@@ -272,6 +272,12 @@ struct CompilerContext {
     Instruction* code;
     uint code_count;
     uint code_cap;
+    /// Per-instruction source line, parallel to `code`: line_table[i] is the
+    /// line of the source token that produced code[i]. Filled by emit(), kept
+    /// in lockstep with code through ensure_code_cap and finish()'s NOP
+    /// compaction, then copied into the CompiledFunction so error.stack can
+    /// report a line per frame.
+    uint* line_table;
 
     // Inner functions (growable)
     CompiledFunction** inner_funcs;
@@ -1009,6 +1015,7 @@ fn void CompilerContext.init(&self, Lexer* lex, void* heap) {
     Heap* h = (Heap*)heap;
     self.code_cap = INITIAL_CODE;
     self.code = (Instruction*)h.alloc_func(h.heap_udata, (usz)(INITIAL_CODE * Instruction::size));
+    self.line_table = (uint*)h.alloc_func(h.heap_udata, (usz)(INITIAL_CODE * uint::size));
     self.scope_cap = INITIAL_SCOPE_DEPTH;
     self.scope_stack = (ScopeEntry*)h.alloc_func(h.heap_udata, (usz)(INITIAL_SCOPE_DEPTH * ScopeEntry::size));
     self.const_cap = INITIAL_CONSTANTS;
@@ -1051,6 +1058,7 @@ fn void CompilerContext.init(&self, Lexer* lex, void* heap) {
 fn void CompilerContext.cleanup(&self) {
     Heap* h = (Heap*)self.heap;
     if (self.code != null) { h.free_func(h.heap_udata, self.code); self.code = null; }
+    if (self.line_table != null) { h.free_func(h.heap_udata, self.line_table); self.line_table = null; }
     if (self.scope_stack != null) { h.free_func(h.heap_udata, self.scope_stack); self.scope_stack = null; }
     if (self.constants != null) { h.free_func(h.heap_udata, self.constants); self.constants = null; }
     if (self.const_hash != null) { h.free_func(h.heap_udata, self.const_hash); self.const_hash = null; }
@@ -1113,6 +1121,12 @@ fn void CompilerContext.ensure_code_cap(&self) {
         return;
     }
     self.code = (Instruction*)p;
+    void* lp = h.realloc_func(h.heap_udata, self.line_table, (usz)(new_cap * uint::size));
+    if (lp == null) {
+        self.record_error("out of memory growing the line table");
+        return;
+    }
+    self.line_table = (uint*)lp;
     self.code_cap = new_cap;
 }
 
@@ -1907,7 +1921,15 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     uint final_count = self.disable_optimize ? self.code_count : new_count;
     usz code_bytes = (usz)final_count * Instruction::size;
     void* code_raw = h.alloc_func(h.heap_udata, code_bytes);
-    if (code_raw == null) {
+    // The line table stays parallel to code: one entry per final instruction,
+    // the source line of the instruction that survived at that slot.
+    void* line_raw = null;
+    if (final_count > 0 && self.line_table != null) {
+        line_raw = h.alloc_func(h.heap_udata, (usz)final_count * uint::size);
+    }
+    if (code_raw == null || (final_count > 0 && self.line_table != null && line_raw == null)) {
+        if (line_raw != null) { h.free_func(h.heap_udata, line_raw); }
+        if (code_raw != null) { h.free_func(h.heap_udata, code_raw); }
         if (!self.disable_optimize) {
             h.free_func(h.heap_udata, pc_map);
             h.free_func(h.heap_udata, nop_keep);
@@ -1916,6 +1938,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         return COMPILE_ERROR~;
     }
     Instruction* dst_code = (Instruction*)code_raw;
+    uint* dst_line = (uint*)line_raw;
     uint dst_idx = 0;
     if (self.disable_optimize) {
         // Copy everything verbatim, preserves all NOPs introduced by the
@@ -1923,16 +1946,21 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         // correct.  Useful for debugging: every instruction the peephole
         // produced is visible in the dump.
         for (uint i = 0; i < self.code_count; i++) {
-            dst_code[dst_idx++] = self.code[i];
+            dst_code[dst_idx] = self.code[i];
+            if (dst_line != null) dst_line[dst_idx] = self.line_table[i];
+            dst_idx++;
         }
     } else {
         for (uint i = 0; i < self.code_count; i++) {
             if (self.code[i].op != Opcode.NOP || nop_keep[i]) {
-                dst_code[dst_idx++] = self.code[i];
+                dst_code[dst_idx] = self.code[i];
+                if (dst_line != null) dst_line[dst_idx] = self.line_table[i];
+                dst_idx++;
             }
         }
     }
     func.code = dst_code;
+    func.line_table = dst_line;
     func.code_count = final_count;
     if (!self.disable_optimize) {
         h.free_func(h.heap_udata, pc_map);
@@ -1940,12 +1968,32 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     }
 }
 
+    // Copy the source name (a file path, module specifier, or "<eval>") into a
+    // heap-owned buffer so it outlives the compile. `mem`, like the function
+    // name and retained source text: free_compiled_funcs releases all three
+    // with mem::free and cannot tell the allocators apart. Non-fatal on
+    // allocation failure, matching how the function name is set.
+    {
+        char[] src_name = self.lexer.source_name;
+        if (src_name.len > 0) {
+            char* fname = (char*)alloc::malloc_try(mem, (sz)((usz)src_name.len + 1)) ?? null;
+            if (fname != null) {
+                for (usz i = 0; i < (usz)src_name.len; i++) fname[i] = src_name[i];
+                fname[src_name.len] = 0;
+                func.filename_ptr = fname;
+                func.filename_len = (uint)src_name.len;
+            }
+        }
+    }
+
     // Copy constant pool
     if (self.const_count > 0) {
         usz const_bytes = (usz)self.const_count * TVal::size;
         void* const_raw = h.alloc_func(h.heap_udata, const_bytes);
         if (const_raw == null) {
             if (func.code != null) { h.free_func(h.heap_udata, func.code); }
+            if (func.line_table != null) { h.free_func(h.heap_udata, func.line_table); }
+            if (func.filename_ptr != null) { mem::free(func.filename_ptr); }
             h.free_func(h.heap_udata, raw);
             return COMPILE_ERROR~;
         }
@@ -1960,7 +2008,9 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         void* inner_raw = h.alloc_func(h.heap_udata, inner_bytes);
         if (inner_raw == null) {
             if (func.code != null) { h.free_func(h.heap_udata, func.code); }
+            if (func.line_table != null) { h.free_func(h.heap_udata, func.line_table); }
             if (func.constants != null) { h.free_func(h.heap_udata, func.constants); }
+            if (func.filename_ptr != null) { mem::free(func.filename_ptr); }
             h.free_func(h.heap_udata, raw);
             return COMPILE_ERROR~;
         }

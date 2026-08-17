@@ -1486,12 +1486,11 @@ fn void Heap.free_compiled_funcs(&self) {
         // Private-name snapshot from compiler/context.c3 finish(), tracked when
         // a function used direct eval and inherited names from a parent class.
         if (cf.eval_private_names != null) { self.free_func(self.heap_udata, cf.eval_private_names); }
-        // The function's name and retained source text, copied out of the
-        // compiler's scratch buffers so they outlive the compile. Both come from
-        // `mem` rather than the heap allocator. `filename_ptr` stays untouched:
-        // stamp_module_filename hands every nested function the module's
-        // normalized specifier, so it is borrowed.
+        // The function's name, source filename, and retained source text,
+        // copied out of the compiler's scratch buffers so they outlive the
+        // compile. All three come from `mem` rather than the heap allocator.
         if (cf.name_ptr != null) { mem::free(cf.name_ptr); cf.name_ptr = null; }
+        if (cf.filename_ptr != null) { mem::free(cf.filename_ptr); cf.filename_ptr = null; }
         if (cf.src_ptr != null) { mem::free(cf.src_ptr); cf.src_ptr = null; }
         self.free_func(self.heap_udata, cf);
     }

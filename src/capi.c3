@@ -357,7 +357,7 @@ fn int jse_eval_with_name(void* rtp, char* src, usz len, char* name, usz name_le
     rt.heap.interrupt_budget = heap::INTERRUPT_BUDGET_INIT;
     if (out_val != null) *out_val = 0;
 
-    Lexer lex = lexer::lexer_init(src[:len], rt.heap);
+    Lexer lex = lexer::lexer_init(src[:len], rt.heap, name != null ? name[:name_len] : (char[])"<eval>");
     lex.skip_hashbang();
     // compile_eval, not compile: a top-level *script* only yields a value via an
     // explicit RET, so `40+2` would come back undefined. eval-form code carries a

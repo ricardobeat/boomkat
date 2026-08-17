@@ -1702,6 +1702,21 @@ fn char[] CompiledFunction.get_filename(&self) {
     return self.filename_ptr[:self.filename_len];
 }
 
+/// Copy `name` into a heap-owned buffer and record it as this function's source
+/// filename. No-op when `name` is empty. Non-fatal on allocation failure: the
+/// function simply keeps whatever filename it had (usually none). `mem`, like
+/// the name and retained source text, so free_compiled_funcs releases it with
+/// mem::free.
+fn void CompiledFunction.set_filename_owned(&self, char[] name) {
+    if (name.len == 0) return;
+    char* fname = (char*)alloc::malloc_try(mem, (sz)((usz)name.len + 1)) ?? null;
+    if (fname == null) return;
+    for (usz i = 0; i < (usz)name.len; i++) fname[i] = name[i];
+    fname[name.len] = 0;
+    self.filename_ptr = fname;
+    self.filename_len = (uint)name.len;
+}
+
 /// Returns the source line number for the instruction at `pc`.
 ///
 /// If no line table is present, returns 0.

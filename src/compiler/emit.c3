@@ -20,6 +20,7 @@ fn uint CompilerContext.emit(&self, Instruction inst) {
     }
     uint idx = self.code_count;
     self.code[idx] = inst;
+    if (self.line_table != null) self.line_table[idx] = self.lexer.current.line;
     self.code_count++;
     return idx;
 }

@@ -683,7 +683,7 @@ fn ModuleDef*? resolve_module(Heap* heap, char[] specifier, char[] base_name, bo
     }
 
     // 5. Compile
-    Lexer lex = lexer::lexer_init(source, heap);
+    Lexer lex = lexer::lexer_init(source, heap, normalized);
     defer lex.free_arena();
     // ES2024 §12.5: the HTML-like comment grammar is reachable from Script
     // only, so in a Module `<!--` and `-->` stay real tokens and the source is
@@ -733,12 +733,12 @@ fn ModuleDef*? resolve_module(Heap* heap, char[] specifier, char[] base_name, bo
         return MODULE_ERROR~;
     }
     mod.func = func_opt;
-    // Stamp the normalized module name onto the whole compiled-function tree
-    // (body + every nested function template). `import.meta` resolves its owning
-    // module from the currently executing function's filename, so nested
-    // functions must carry it too (GetActiveScriptOrModule / §13.3.12 must
-    // observe the DEFINING module, not the one whose body happens to be running).
-    stamp_module_filename(mod.func, normalized.ptr, (uint)normalized.len);
+    // The normalized module name rides the lexer into finish(), which copies it
+    // onto the compiled-function tree (body + every nested function template).
+    // `import.meta` resolves its owning module from the currently executing
+    // function's filename, so nested functions must carry it too
+    // (GetActiveScriptOrModule / §13.3.12 must observe the DEFINING module, not
+    // the one whose body happens to be running).
 
     // 6. Notify host
     call_on_module_loaded(heap, mod);
@@ -2327,19 +2327,6 @@ fn void collect_star_export_items_from(ModuleDef* root, ModuleDef* mod,
         }
         // Transitively include the target's own star re-exports.
         collect_star_export_items_from(root, target, items, count, depth + 1);
-    }
-}
-
-/// Recursively set filename_ptr/filename_len on a compiled function and every
-/// nested function template it contains. Used to attribute each function to its
-/// defining module so `import.meta` (§13.3.12) resolves correctly from within
-/// nested functions.
-fn void stamp_module_filename(bytecode::CompiledFunction* func, char* name_ptr, uint name_len) {
-    if (func == null) return;
-    func.filename_ptr = name_ptr;
-    func.filename_len = name_len;
-    for (uint i = 0; i < func.inner_count; i++) {
-        stamp_module_filename(func.inner_funcs[i], name_ptr, name_len);
     }
 }
 

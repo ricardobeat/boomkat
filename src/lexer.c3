@@ -438,6 +438,11 @@ fn uint encode_utf8_to_buf(char[STRING_BUF_SIZE]* buf, uint offset, uint cp) {
 
 struct Lexer {
     char[] source;
+    /// Source name the script was compiled under (a file path, a module
+    /// specifier, or "<eval>"). Borrowed for the lifetime of the compile: the
+    /// compiler copies it into the CompiledFunction in finish(), so the slice
+    /// need not outlive this Lexer. Empty when the source has no name.
+    char[] source_name;
     uint pos;
     uint line;
     uint col;
@@ -515,9 +520,15 @@ struct Lexer {
 // ============================================================================
 
 /// Create a new lexer for the given source text.
-fn Lexer lexer_init(char[] source, void* heap) {
+///
+/// `source_name` is the name recorded against the compiled functions so
+/// `error.stack` can report a file. It is borrowed, not copied: the compiler
+/// copies it into each CompiledFunction during finish(), so the slice only has
+/// to stay valid for the compile itself.
+fn Lexer lexer_init(char[] source, void* heap, char[] source_name = {}) {
     Lexer lex;
     lex.source = source;
+    lex.source_name = source_name;
     lex.pos = 0;
     lex.line = 1;
     lex.col = 1;

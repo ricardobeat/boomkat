@@ -195,7 +195,7 @@ fn int main(String[] args) {
         return 0;
     }
 
-    Lexer lx = lexer::lexer_init(source, hp);
+    Lexer lx = lexer::lexer_init(source, hp, (char[])path);
     defer lx.free_arena();
     lx.ts_mode = has_ts_extension(path);
     bytecode::CompiledFunction*? func = compiler::compile(&lx, hp);

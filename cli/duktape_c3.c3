@@ -88,7 +88,7 @@ fn int main(String[] args) {
         return rc;
     }
 
-    Lexer lex = lexer::lexer_init(source, hp);
+    Lexer lex = lexer::lexer_init(source, hp, (char[])path);
     defer lex.free_arena();
     lex.skip_hashbang();
     CompiledFunction*? func = compiler::compile(&lex, hp);
@@ -136,7 +136,7 @@ fn int run_with_lexer_ts(Heap* hp, Vm* v, String path) {
         if (rc == 0 && unhandled_rejection_count > 0) return 1;
         return rc;
     }
-    Lexer lex = lexer::lexer_init(source, hp);
+    Lexer lex = lexer::lexer_init(source, hp, (char[])path);
     defer lex.free_arena();
     lex.skip_hashbang();
     lex.ts_mode = true;

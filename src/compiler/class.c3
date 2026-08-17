@@ -1775,6 +1775,10 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
             return COMPILE_ERROR~;
         }
         CompiledFunction* ctor_func = ctor_func_raw;
+        // Attribute the default constructor to its defining module/script like
+        // every function compiled through finish(), so import.meta resolves and
+        // error.stack can name a file from within it.
+        ctor_func.set_filename_owned(self.lexer.source_name);
         // Track for heap cleanup
         hp.track_compiled_func((void*)ctor_func);
         ctor_inner_idx = self.add_inner_func(ctor_func);

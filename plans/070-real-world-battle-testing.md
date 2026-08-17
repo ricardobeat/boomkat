@@ -385,6 +385,18 @@ before.
 
 **Severity: medium. Debuggability and embedding gap.**
 
+**FIXED (session 317).** `error.stack` now carries one `    at <name>
+(<file>:<line>)` frame per live call, innermost first. The filename rides the
+lexer (`lexer_init(source_name)`) into `finish()`, which copies it onto the
+CompiledFunction; a per-instruction line table is emitted in parallel with the
+bytecode and survives the NOP-compaction pass. The CLI passes the file path,
+`jse_eval_with_name` passes the script name, and modules pass their normalized
+specifier. One VM fix was needed for the innermost frame: the builtin-dispatch
+path in `dispatch_calls` never recorded the caller's resume PC, so a stack
+captured inside the Error constructor read the activation's stale entry PC and
+reported no line for the throw site. Columns (`f.js:2:34`) are not emitted yet;
+the frames carry file and line only.
+
 ```js
 "use strict";
 function inner(){ throw new Error("boom"); }
@@ -1337,7 +1349,7 @@ nothing, so each was validated in both directions before being committed.
 | B9 rejections | `test/rejections/run.sh` | `test-local` |
 | B10 `VM_ERROR` | `test/uncaught/run.sh` | `test-local` |
 | B11 nesting crash | `test/robustness/run.sh` | `test-local` |
-| B4 `error.stack` | — | needs frames first; assert in `test/uncaught/` once they exist |
+| B4 `error.stack` | `test/test_error_stack_frames.js`, `test/test_error_stack_locations.js` | flat sweep |
 | E1 interrupt | — | no API to test; see E1 above |
 
 Three new surfaces were added to `test/run_local.sh`, because the flat

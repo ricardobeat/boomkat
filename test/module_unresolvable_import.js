@@ -21,12 +21,12 @@ function assert(cond, msg) {
 // The fixtures are shared with test/modules/t13_unresolvable (reject) and
 // test/modules/t14_resolve_accept (accept) rather than duplicated here.
 //
-// A dynamic import() issued from a plain (non-module) script resolves its
-// specifier against the process working directory, not the script's own
-// directory, so these paths are relative to the repo root — which is where
-// test/run_local.sh invokes the engine from.
-var bad = './test/modules/t13_unresolvable/';
-var ok = './test/modules/t14_resolve_accept/';
+// A dynamic import() issued from a plain script resolves its specifier
+// against the referencing script's own directory (the filename now rides the
+// compiled function), so these paths are relative to test/, this file's
+// directory, not to the process working directory.
+var bad = './modules/t13_unresolvable/';
+var ok = './modules/t14_resolve_accept/';
 
 var started = 0, reported = 0;
 var jobs = [];

@@ -1176,6 +1176,13 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
 
 fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, DecodedInsn insn) {
     Vm* vm = ds.vm;
+    // Record the caller's resume point before any nested execution below. The
+    // compiled-function fast path already does this itself, but the builtin
+    // (lightfunc/bound/host) paths dispatch synchronously without pushing an
+    // activation, so a stack captured inside such a builtin (e.g. the Error
+    // constructor) would otherwise read this activation's stale entry PC and
+    // report no source line for the innermost frame.
+    ds.act.curr_pc = ds.curr_pc;
     switch (op) {
         case Opcode.CALL:
         case Opcode.CALL_S:

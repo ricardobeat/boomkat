@@ -1,8 +1,19 @@
 # Progress: Duktape C3 — test262 Conformance Tracker
 
-**Last Updated:** Session 315 — committed the session-312 WIDE-prefix codegen fix (default-eval skip branches now record the post-WIDE instruction slot), verified the private read/write surface complete against the class corpus (phase 15 runs 0 fail), and un-skipped 174 noStrict tests via a new NOSTRICT_RUN_GLOBS exemption (forbidden-ext caller/arguments families and private brand-across-eval). Full suite 50,002/0, rosetta 42/42, test-local green.
+**Last Updated:** Session 317 — `error.stack` now reports a per-frame source location: `    at <name> (<file>:<line>)`, innermost first. The filename rides the lexer into `finish()`, a per-instruction line table is emitted and survives NOP compaction, and the builtin-dispatch path now records the caller's resume PC so the throw-site frame has a line too. Plan 070 B4 closed (columns and the `<eval>` top-frame name remain later refinements).
 
 **Target:** 100% test262 pass rate on the targeted subset (see plan 040). — **reached session 309**
+
+## Session 317 (2026-08-16)
+
+Closed plan 070 B4 (`error.stack` has no frames/file/line) end to end.
+
+- **Per-instruction line table** (`src/compiler/context.c3`, `emit.c3`): a `uint* line_table` runs parallel to the bytecode, filled by `emit()` from the lexer's current token line and grown in `ensure_code_cap`. `finish()` copies it alongside the surviving instructions in the NOP-compaction pass (same skip logic, so fused/removed instructions keep their first slot's line), and the post-finish `peephole_scan` only rewrites, never removes, so the table stays valid. Freed via `free_func` in `free_compiled_funcs`.
+- **Filename propagation** (`src/lexer.c3`, `src/bytecode.c3`): `lexer_init` takes a `source_name`, which `finish()` copies into `filename_ptr` (`mem`, freed in `free_compiled_funcs`). The CLI passes the file path, `jse_eval_with_name` passes the script name, and `resolve_module` passes the normalized specifier, replacing the old borrowed `stamp_module_filename` (deleted). `make_default_constructor` stamps its filename via a new `set_filename_owned`.
+- **Innermost-frame line fix** (`src/vm/vm_calls.c3`): `dispatch_calls` now records `ds.act.curr_pc = ds.curr_pc` on entry, so a stack captured inside a synchronously-dispatched builtin (the Error constructor) reads the caller's real resume PC instead of the stale entry PC (`off=0`), which left the throw-site frame line-less.
+- **Dynamic-import base** changed with it: a plain script now resolves relative `import()` specifiers against its own directory (its filename is no longer empty), which is the spec-correct base. `test/module_unresolvable_import.js` paths updated to match.
+
+Validation: `just test-local` 355 scripts + all sub-suites green (new `test/test_error_stack_locations.js` pins the innermost-frame line), `just rosetta` 42/42, test262 phase 15 8469/0/0, `just ts-runtime` 5/5, `just ts-conformance` 0 failures, capi suites + NONANBOX build green, ASan clean on the stack-location tests.
 
 ## Session 315 (2026-08-16)
 
