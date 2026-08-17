@@ -651,6 +651,7 @@ fn bool CompilerContext.ts_try_declare_statement(&self) {
     int brace = 0;
     int angle = 0;
     bool body_open = false;
+    TokenType prev_tt = nt.type;
     for (;;) {
         TokenType tt = self.peek_type();
         int depth = paren + bracket + brace + angle;
@@ -661,6 +662,17 @@ fn bool CompilerContext.ts_try_declare_statement(&self) {
                 return true;
             }
             if (body_open && brace == 0) {
+                return true;
+            }
+            // ASI: an ambient declaration without a `;` ends at a line break
+            // once the tokens so far can terminate it (`declare const x:
+            // unique symbol` in fp-ts is written with no semicolon, and the
+            // skip must not run into the next statement). The same
+            // completes-a-type token set skip_type uses decides whether the
+            // break is a real boundary; a break after `|`, `:` or `extends`
+            // continues a multi-line type instead.
+            if (!body_open && self.lexer.seen_line_term
+                && ts_token_completes_type(prev_tt)) {
                 return true;
             }
         }
@@ -676,6 +688,7 @@ fn bool CompilerContext.ts_try_declare_statement(&self) {
         }
         Token? adv = self.advance();
         if (catch _e = adv) return true;
+        prev_tt = tt;
         switch (tt) {
             case TokenType.LPAREN:   paren++;
             case TokenType.RPAREN:   if (paren > 0) paren--;
