@@ -1516,6 +1516,11 @@ fn bool CompilerContext.scan_destruct_param_to_arrow(&self) {
         else if (tt == TokenType.RPAREN) {
             paren_d--;
             if (paren_d == 0) {
+                // TS: a return-type annotation may sit between the params'
+                // `)` and the `=>` (`({ a }: T): R => ...`).
+                if (self.lexer.ts_mode) {
+                    if (catch _e = self.try_skip_ts_type_annotation()) return false;
+                }
                 return self.check_arrow();
             }
         }

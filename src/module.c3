@@ -20,6 +20,7 @@ import duktape::compiler;
 import duktape::builtins;
 import duktape::vm;
 import std::io;
+import std::collections::list;
 
 // ============================================================================
 // Fault codes
@@ -77,6 +78,11 @@ struct ReqModuleEntry {
     // True when the import carried `with { type: "json" }`; the referenced
     // module is loaded as a JSON module. Layout mirrors CompReqModuleEntry.
     bool         wants_json;
+    // True when every binding of the import statement was type-only and was
+    // elided (see mark_type_only_req_modules). The statement is then gone
+    // entirely: the target must not be evaluated as part of this module's
+    // dependency order, or a cycle the erased types had broken would re-form.
+    bool         type_only;
 }
 
 // ============================================================================
@@ -100,11 +106,10 @@ struct ModuleHostHooks {
 // ModuleDef, one module's definition
 // ============================================================================
 
-const uint MAX_IMPORTS      = 64;
-const uint MAX_EXPORTS      = 64;
+// `export * from` chains are walked recursively by
+// collect_star_export_items_from; this bounds that recursion (a cycle the
+// resolveSet guard does not catch, since each hop is a distinct module).
 const uint MAX_STAR_EXPORTS = 16;
-const uint MAX_REQ_MODULES  = 32;
-const uint MAX_FUNC_DECLS   = 128;
 
 /// A top-level `function` declaration in a module body. Recorded by the
 /// compiler during hoist_global_fn_decls so the linker can instantiate the
@@ -119,20 +124,19 @@ struct ModuleDef {
     char[]                module_name;    // normalized path / identifier
     ModuleStatus          status;
 
-    // Import/export metadata (populated during compilation)
-    ImportEntry[MAX_IMPORTS]      imports;
-    uint                          import_count;
-    ExportEntry[MAX_EXPORTS]      exports;
-    uint                          export_count;
-    StarExportEntry[MAX_STAR_EXPORTS] star_exports;
-    uint                          star_export_count;
-    ReqModuleEntry[MAX_REQ_MODULES] req_modules;
-    uint                          req_module_count;
+    // Import/export metadata (populated during compilation). Growable: real
+    // libraries run past a hundred import statements in one module
+    // (fp-ts/ReadonlyArray.ts has 39 specifiers, fp-ts/index.ts 121), and a
+    // fixed cap that silently dropped entries mis-linked the overflow onto
+    // whatever module happened to hold index 0.
+    List{ImportEntry}     imports;
+    List{ExportEntry}     exports;
+    List{StarExportEntry} star_exports;
+    List{ReqModuleEntry}  req_modules;
     // Top-level function declarations, instantiated eagerly at link time.
-    // Layout note: CompModuleDef mirrors every field up to here, so this
-    // array must appear in both structs at the same position.
-    FuncDeclEntry[MAX_FUNC_DECLS] func_decls;
-    uint                          func_decl_count;
+    // Layout note: CompModuleDef mirrors every field up to here, so these
+    // lists must appear in both structs at the same position.
+    List{FuncDeclEntry}   func_decls;
 
     // Compiled bytecode for this module's body
     bytecode::CompiledFunction*   func;
@@ -226,6 +230,48 @@ fn ModuleDef* heap_find_loaded_module(Heap* heap, char[] name) {
 // Default module host callbacks
 // ============================================================================
 
+/// NodeNext twin probe: a `.js`/`.mjs`/`.cjs` specifier written in a TS
+/// source names the matching `.ts`/`.mts`/`.cts` file. Modern library
+/// sources (zod 3.25+, 4.x) are published that way. Returns a malloc'd twin
+/// path when that file exists, null when the specifier carries no JS
+/// extension or the twin is absent. The caller owns the returned buffer.
+fn char[]? probe_ts_twin(char[] path) {
+    usz base_len;
+    String ext;
+    if (path.len >= 3 && path[^3..] == ".js") {
+        base_len = path.len - 3;
+        ext = ".ts";
+    } else if (path.len >= 4) {
+        char[] t = path[^4..];
+        if (t == ".mjs") {
+            base_len = path.len - 4;
+            ext = ".mts";
+        } else if (t == ".cjs") {
+            base_len = path.len - 4;
+            ext = ".cts";
+        } else {
+            return MODULE_ERROR~;
+        }
+    } else {
+        return MODULE_ERROR~;
+    }
+    usz total = base_len + ext.len;
+    void* raw = alloc::malloc_try(mem, (sz)(total + 1)) ?? null;
+    if (raw == null) {
+        return MODULE_ERROR~;
+    }
+    mem::copy(raw, path.ptr, (sz)base_len);
+    mem::copy((char*)raw + base_len, ext.ptr, (sz)ext.len);
+    ((char*)raw)[total] = 0;
+    char[] twin = ((char*)raw)[:total];
+    if (try data = file::load(mem, (String)twin)) {
+        mem::free(data.ptr);
+        return twin;
+    }
+    mem::free(raw);
+    return MODULE_ERROR~;
+}
+
 /// Default source reader: read a module file from disk into a caller-owned
 /// buffer allocated from the engine's `mem` (libc-backed) heap. The returned
 /// slice is exactly the file's bytes; the lexer scans by length (no NUL
@@ -240,6 +286,20 @@ fn char[]? default_module_read(char[] normalized_name, void* udata) {
             return MODULE_ERROR~;
         }
         return data;
+    }
+    // A `.js` specifier in a TS source names its `.ts` twin; read it when the
+    // exact path is absent (NodeNext resolution, zod and friends).
+    if (try twin_opt = probe_ts_twin(normalized_name)) {
+        char[] twin = twin_opt;
+        char[]? probe = file::load(mem, (String)twin);
+        mem::free(twin);
+        if (try loaded = probe) {
+            if (loaded.len == 0) {
+                mem::free(loaded.ptr);
+                return MODULE_ERROR~;
+            }
+            return loaded;
+        }
     }
     // Probe common extensions: `.ts`/`.mts`/`.cts` before `.js`/`.mjs`/`.cjs`
     // so a TS import `./x` finds `./x.ts` before a stale `./x.js`.
@@ -287,7 +347,14 @@ fn bool has_module_ext(char[] name) {
 /// nothing matched. The returned buffer is heap-owned when different from
 /// input, otherwise input is returned as-is.
 fn char[] resolve_extension(char[] path) {
-    if (has_module_ext(path)) return path;
+    if (has_module_ext(path)) {
+        // A missing exact file with a JS extension may name the TS twin of a
+        // NodeNext-style source (`./x.js` in a .ts file means `./x.ts`).
+        if (module_file_exists(path)) return path;
+        char[]? twin = probe_ts_twin(path);
+        if (try t = twin) return t;
+        return path;
+    }
     // Check if bare path exists.
     usz plen = path.len;
     void* pbuf = alloc::malloc_try(mem, (sz)(plen + 1)) ?? null;
@@ -595,6 +662,14 @@ fn ModuleDef*? heap_ensure_module(Heap* heap, char[] name) {
     ModuleDef* mod = (ModuleDef*)raw;
     mod.module_name = name;
     mod.status = ModuleStatus.UNLOADED;
+    // The metadata lists grow on the malloc-backed default allocator (the one
+    // the compiler uses for its own growable sets); ModuleDefs live until the
+    // process exits, so the list storage is never freed.
+    mod.imports.allocator = mem;
+    mod.exports.allocator = mem;
+    mod.star_exports.allocator = mem;
+    mod.req_modules.allocator = mem;
+    mod.func_decls.allocator = mem;
 
     // Grow cache if needed
     if (heap.module_cache_count >= heap.module_cache_cap) {
@@ -658,12 +733,13 @@ fn ModuleDef*? resolve_module(Heap* heap, char[] specifier, char[] base_name, bo
         mod.is_json = true;
         mod.json_value = parsed;
         // Sole export: `default`, a plain (non-lexical, non-indirect) binding.
-        mod.exports[0].local_name = "default";
-        mod.exports[0].export_name = "default";
-        mod.exports[0].is_indirect = false;
-        mod.exports[0].req_module_idx = 0;
-        mod.exports[0].is_lexical = false;
-        mod.export_count = 1;
+        ExportEntry def;
+        def.local_name = "default";
+        def.export_name = "default";
+        def.is_indirect = false;
+        def.req_module_idx = 0;
+        def.is_lexical = false;
+        mod.exports.push(def);
         // Create + root the env now and declare `default`, so build_namespace_object
         // and install_live_binding see the value even before link_module runs. A
         // JSON module never runs code, so its env needs no scope-chain parent.
@@ -744,7 +820,7 @@ fn ModuleDef*? resolve_module(Heap* heap, char[] specifier, char[] base_name, bo
     call_on_module_loaded(heap, mod);
 
     // 7. Recursively resolve dependencies
-    for (uint i = 0; i < mod.req_module_count; i++) {
+    for (uint i = 0; i < (uint)mod.req_modules.len(); i++) {
         ReqModuleEntry* rme = &mod.req_modules[i];
         ModuleDef*? dep = resolve_module(heap, rme.module_name, normalized, rme.wants_json);
         if (catch err = dep) {
@@ -798,7 +874,7 @@ fn ResolveExportResult resolve_export(ModuleDef* mod, char[] export_name,
     }
 
     // Step 4: local (direct, non-indirect) exports own their binding in `mod`.
-    for (uint i = 0; i < mod.export_count; i++) {
+    for (uint i = 0; i < (uint)mod.exports.len(); i++) {
         ExportEntry* ee = &mod.exports[i];
         if (ee.is_indirect) continue;
         if (char_slice_eq(ee.export_name, export_name)) {
@@ -808,11 +884,11 @@ fn ResolveExportResult resolve_export(ModuleDef* mod, char[] export_name,
 
     // Step 5: indirect exports (`export { x } from './other'`). Delegate to the
     // imported module's ResolveExport for the re-exported name.
-    for (uint i = 0; i < mod.export_count; i++) {
+    for (uint i = 0; i < (uint)mod.exports.len(); i++) {
         ExportEntry* ee = &mod.exports[i];
         if (!ee.is_indirect) continue;
         if (!char_slice_eq(ee.export_name, export_name)) continue;
-        if (ee.req_module_idx >= mod.req_module_count) return { ResolveExportKind.NULL, null, {} };
+        if (ee.req_module_idx >= (uint)mod.req_modules.len()) return { ResolveExportKind.NULL, null, {} };
         ReqModuleEntry* rme = &mod.req_modules[ee.req_module_idx];
         if (rme.resolved == null) return { ResolveExportKind.NULL, null, {} };
         ModuleDef* imported = (ModuleDef*)rme.resolved;
@@ -835,9 +911,9 @@ fn ResolveExportResult resolve_export(ModuleDef* mod, char[] export_name,
     // every star target; multiple distinct bindings for the same name are
     // AMBIGUOUS.
     ResolveExportResult star_resolution = { ResolveExportKind.NULL, null, {} };
-    for (uint i = 0; i < mod.star_export_count; i++) {
+    for (uint i = 0; i < (uint)mod.star_exports.len(); i++) {
         StarExportEntry* se = &mod.star_exports[i];
-        if (se.req_module_idx >= mod.req_module_count) continue;
+        if (se.req_module_idx >= (uint)mod.req_modules.len()) continue;
         ReqModuleEntry* rme = &mod.req_modules[se.req_module_idx];
         if (rme.resolved == null) continue;
         ModuleDef* imported = (ModuleDef*)rme.resolved;
@@ -870,7 +946,7 @@ fn bool module_raise_link_error(Heap* heap, char[] msg) {
 /// exactly one binding. A NULL or AMBIGUOUS resolution is a SyntaxError. On
 /// failure parks a SyntaxError on the heap error channel and returns false.
 fn bool validate_indirect_exports(Heap* heap, ModuleDef* mod) {
-    for (uint i = 0; i < mod.export_count; i++) {
+    for (uint i = 0; i < (uint)mod.exports.len(); i++) {
         ExportEntry* ee = &mod.exports[i];
         if (!ee.is_indirect) continue;
         ResolveSetEntry[RESOLVE_SET_MAX] set;
@@ -881,6 +957,47 @@ fn bool validate_indirect_exports(Heap* heap, ModuleDef* mod) {
         }
     }
     return true;
+}
+
+/// True when the module's normalized name carries a TypeScript extension
+/// (.ts/.mts/.cts), i.e. it was compiled in ts_mode.
+fn bool module_is_ts(ModuleDef* mod) {
+    char[] n = mod.module_name;
+    if (n.len >= 3) {
+        char[] t = n[^3..];
+        if (t[0] == '.' && t[1] == 't' && t[2] == 's') return true;
+        if (n.len >= 4) {
+            char[] t4 = n[^4..];
+            if (t4[0] == '.' && (t4[1] == 'm' || t4[1] == 'c') && t4[2] == 't' && t4[3] == 's') return true;
+        }
+    }
+    return false;
+}
+
+/// A TS module's `import { X } from './y'` where X is only a type (the
+/// stripper erased it from y) is elided per binding in the import-install
+/// loop. When EVERY binding of one import statement is type-only, the
+/// statement is gone entirely: y must not be pulled into this module's
+/// dependency order, or evaluating y first would re-form a cycle the erased
+/// types had broken and trip TDZ on a const the other module reads.
+fn void mark_type_only_req_modules(ModuleDef* mod) {
+    if (!module_is_ts(mod)) return;
+    for (uint ri = 0; ri < (uint)mod.req_modules.len(); ri++) {
+        ReqModuleEntry* rme = &mod.req_modules[ri];
+        if (rme.resolved == null) continue;
+        uint total = 0;
+        uint elided = 0;
+        for (uint i = 0; i < (uint)mod.imports.len(); i++) {
+            ImportEntry* ie = &mod.imports[i];
+            if (ie.req_module_idx != ri) continue;
+            total++;
+            if (ie.is_star) continue;  // a namespace binding never elides
+            ResolveSetEntry[RESOLVE_SET_MAX] set;
+            ResolveExportResult r = resolve_export((ModuleDef*)rme.resolved, ie.import_name, &set[0], 0);
+            if (r.kind != ResolveExportKind.RESOLVED) elided++;
+        }
+        if (total > 0 && elided == total) rme.type_only = true;
+    }
 }
 
 /// Validate a module's named imports (ECMA-262 16.2.1.6.2 InitializeEnvironment
@@ -901,10 +1018,10 @@ fn bool validate_indirect_exports(Heap* heap, ModuleDef* mod) {
 /// is checked here rather than against resolve_export, which has no export
 /// entries to walk for a bodyless JSON module.
 fn bool validate_imports(Heap* heap, ModuleDef* mod) {
-    for (uint i = 0; i < mod.import_count; i++) {
+    for (uint i = 0; i < (uint)mod.imports.len(); i++) {
         ImportEntry* ie = &mod.imports[i];
         if (ie.is_star) continue;
-        if (ie.req_module_idx >= mod.req_module_count) continue;
+        if (ie.req_module_idx >= (uint)mod.req_modules.len()) continue;
         ReqModuleEntry* rme = &mod.req_modules[ie.req_module_idx];
         if (rme.resolved == null) continue;
         ModuleDef* source_mod = (ModuleDef*)rme.resolved;
@@ -918,6 +1035,13 @@ fn bool validate_imports(Heap* heap, ModuleDef* mod) {
         ResolveSetEntry[RESOLVE_SET_MAX] set;
         ResolveExportResult r = resolve_export(source_mod, ie.import_name, &set[0], 0);
         if (r.kind != ResolveExportKind.RESOLVED) {
+            // A TS module's type-only named imports (`import { Interface } from
+            // './x'` without a `type` modifier) name exports the stripper
+            // erased from the target; without cross-module type info the
+            // elision can only be decided here. Only .ts importers get it: a
+            // plain JS module importing a missing name is still the spec's
+            // link-time SyntaxError.
+            if (module_is_ts(mod)) continue;
             return module_raise_link_error(heap,
                 "requested module does not provide the requested export");
         }
@@ -970,7 +1094,7 @@ fn bool link_module(Heap* heap, vm::Vm* vm, ModuleDef* mod, EnvRecord* global_en
     }
 
     // Link dependencies first with the same parent env.
-    for (uint i = 0; i < mod.req_module_count; i++) {
+    for (uint i = 0; i < (uint)mod.req_modules.len(); i++) {
         ReqModuleEntry* rme = &mod.req_modules[i];
         if (rme.resolved == null) continue;
         ModuleDef* dep = (ModuleDef*)rme.resolved;
@@ -995,6 +1119,7 @@ fn bool link_module(Heap* heap, vm::Vm* vm, ModuleDef* mod, EnvRecord* global_en
     // pre-declaration, used to shadow a self-imported `let`/`const`/`class`
     // export's TDZ sentinel with a premature `undefined` copy.
     if (!validate_imports(heap, mod)) return false;
+    mark_type_only_req_modules(mod);
 
     // NOTE: an indirect export (`export { x } from './other'`) installs NO
     // binding in mod.env at link time either. See the matching note in
@@ -1010,7 +1135,7 @@ fn bool link_module(Heap* heap, vm::Vm* vm, ModuleDef* mod, EnvRecord* global_en
     // captures the module env as both var and lex environment (its top-level
     // enclosing scope), exactly as the CLOSURE opcode would.
     if (mod.func != null) {
-        for (uint i = 0; i < mod.func_decl_count; i++) {
+        for (uint i = 0; i < (uint)mod.func_decls.len(); i++) {
             FuncDeclEntry* fd = &mod.func_decls[i];
             if (fd.inner_func_idx >= mod.func.inner_count) continue;
             HString* key = heap.str_intern(fd.name);
@@ -1041,7 +1166,7 @@ fn bool link_module(Heap* heap, vm::Vm* vm, ModuleDef* mod, EnvRecord* global_en
     // (builtins/core.c3) throws instead of yielding a stale undefined.
     // Function-declaration exports are already bound above and are skipped by
     // the env_has check.
-    for (uint i = 0; i < mod.export_count; i++) {
+    for (uint i = 0; i < (uint)mod.exports.len(); i++) {
         ExportEntry* ee = &mod.exports[i];
         if (ee.is_indirect) continue;
         HString* key = heap.str_intern(ee.local_name);
@@ -1377,10 +1502,13 @@ fn bool execute_module(Heap* heap, Vm* vm, ModuleDef* mod) {
         }
     }
 
-    // Execute dependencies first (so their exports are available).
+    // Execute dependencies first (so their exports are available). A
+    // type-only import statement was erased entirely (see
+    // mark_type_only_req_modules), so its target is not a dependency here.
     ModuleDef* async_dep = null;
-    for (uint i = 0; i < mod.req_module_count; i++) {
+    for (uint i = 0; i < (uint)mod.req_modules.len(); i++) {
         ReqModuleEntry* rme = &mod.req_modules[i];
+        if (rme.type_only) continue;
         if (rme.resolved == null) continue;
         ModuleDef* dep = (ModuleDef*)rme.resolved;
         if (dep.status == ModuleStatus.EVALUATING && dep.eval_promise == null) {
@@ -1399,7 +1527,9 @@ fn bool execute_module(Heap* heap, Vm* vm, ModuleDef* mod) {
             mod.cycle_root = dep;
         }
         if (dep.status != ModuleStatus.EVALUATED) {
-            if (!execute_module(heap, vm, dep)) return module_record_eval_error(heap, vm, mod);
+            if (!execute_module(heap, vm, dep)) {
+                return module_record_eval_error(heap, vm, mod);
+            }
             // Only a dependency that GENUINELY suspended somewhere in its own
             // subgraph (has a pending eval_promise, set exclusively by the
             // pending != null / async_dep branches below) makes mod
@@ -1468,9 +1598,9 @@ fn bool module_execute_continue(Heap* heap, Vm* vm, ModuleDef* mod) {
     // mutation in the source module is observed by the importer and by
     // the namespace object without any re-copy step. See
     // install_live_binding for the shared implementation.
-    for (uint i = 0; i < mod.import_count; i++) {
+    for (uint i = 0; i < (uint)mod.imports.len(); i++) {
         ImportEntry* ie = &mod.imports[i];
-        if (ie.req_module_idx >= mod.req_module_count) continue;
+        if (ie.req_module_idx >= (uint)mod.req_modules.len()) continue;
         ReqModuleEntry* rme = &mod.req_modules[ie.req_module_idx];
         if (rme.resolved == null) continue;
         ModuleDef* source_mod = (ModuleDef*)rme.resolved;
@@ -1525,6 +1655,9 @@ fn bool module_execute_continue(Heap* heap, Vm* vm, ModuleDef* mod) {
             // module's imports are only resolvable once the outermost link
             // completes. Fall back to identity resolution against the direct
             // source module so those get a binding rather than none at all.
+            // A TS importer's type-only name (erased export) installs no
+            // binding; every reference to it was erased too.
+            if (module_is_ts(mod)) continue;
             char[] src_local_name = resolve_export_local_name(source_mod, ie.import_name);
             install_live_binding(heap, mod.env, local_key, source_mod, src_local_name);
         }
@@ -1571,12 +1704,20 @@ fn bool module_execute_continue(Heap* heap, Vm* vm, ModuleDef* mod) {
             // and execute_in_env take over activations[0]/valstack[0] and are
             // unsafe to call here; execute_module_nested is re-entrant.
             bool? ok = vm.execute_module_nested(mod.func, mod.env, &pending);
-            if (catch err = ok) return module_record_eval_error(heap, vm, mod);
-            if (!ok) return module_record_eval_error(heap, vm, mod);  // rejected, reason is in heap.error_value
+            if (catch err = ok) {
+                return module_record_eval_error(heap, vm, mod);
+            }
+            if (!ok) {
+                return module_record_eval_error(heap, vm, mod);
+            }
         } else if (mod.func.is_async()) {
             bool? ok = vm.execute_module_async(mod.func, mod.env, &pending);
-            if (catch err = ok) return module_record_eval_error(heap, vm, mod);
-            if (!ok) return module_record_eval_error(heap, vm, mod);  // rejected, reason is in heap.error_value
+            if (catch err = ok) {
+                return module_record_eval_error(heap, vm, mod);
+            }
+            if (!ok) {
+                return module_record_eval_error(heap, vm, mod);
+            }
         } else {
             TVal? res = vm.execute_in_env(mod.func, mod.env);
             if (catch err = res) {
@@ -2152,7 +2293,7 @@ fn TVal module_error_with_proto(Heap* heap, HObject* proto, char[] msg) {
 /// For most exports local_name == export_name, but for `export default <expr>`
 /// the compiler emits local_name="*default*" and export_name="default".
 fn char[] resolve_export_local_name(ModuleDef* mod, char[] export_name) {
-    for (uint i = 0; i < mod.export_count; i++) {
+    for (uint i = 0; i < (uint)mod.exports.len(); i++) {
         ExportEntry* ee = &mod.exports[i];
         if (!ee.is_indirect && char_slice_eq(ee.export_name, export_name)) {
             return ee.local_name;
@@ -2182,7 +2323,7 @@ fn ExportBindingSource resolve_export_binding_source(ModuleDef* mod, ExportEntry
     if (!ee.is_indirect) {
         return { mod, ee.local_name };
     }
-    if (ee.req_module_idx >= mod.req_module_count) {
+    if (ee.req_module_idx >= (uint)mod.req_modules.len()) {
         return { null, {} };
     }
     ReqModuleEntry* rme = &mod.req_modules[ee.req_module_idx];
@@ -2306,13 +2447,13 @@ fn void collect_star_export_items_from(ModuleDef* root, ModuleDef* mod,
                                        NsExportItem[MAX_NS_EXPORTS]* items,
                                        uint* count, uint depth) {
     if (depth > MAX_STAR_EXPORTS) return;
-    for (uint si = 0; si < mod.star_export_count; si++) {
+    for (uint si = 0; si < (uint)mod.star_exports.len(); si++) {
         StarExportEntry* se = &mod.star_exports[si];
-        if (se.req_module_idx >= mod.req_module_count) continue;
+        if (se.req_module_idx >= (uint)mod.req_modules.len()) continue;
         ReqModuleEntry* rme = &mod.req_modules[se.req_module_idx];
         if (rme.resolved == null) continue;
         ModuleDef* target = (ModuleDef*)rme.resolved;
-        for (uint ei = 0; ei < target.export_count; ei++) {
+        for (uint ei = 0; ei < (uint)target.exports.len(); ei++) {
             ExportEntry* ee = &target.exports[ei];
             // `export *` never re-exports the default binding (§16.2.3.7 step 4).
             if (char_slice_eq(ee.export_name, "default")) continue;
@@ -2411,7 +2552,7 @@ fn HObject*? build_namespace_object(Heap* heap, ModuleDef* source_mod) {
     // nearer export win (star names are only added if not already present).
     NsExportItem[MAX_NS_EXPORTS] items;
     uint item_count = 0;
-    for (uint i = 0; i < source_mod.export_count; i++) {
+    for (uint i = 0; i < (uint)source_mod.exports.len(); i++) {
         ExportEntry* ee = &source_mod.exports[i];
         ns_add_export_item(&items, &item_count, ee.export_name, source_mod, ee);
     }
@@ -2439,7 +2580,7 @@ fn HObject*? build_namespace_object(Heap* heap, ModuleDef* source_mod) {
         // static data property {enumerable:true, configurable:false}, not a
         // live env binding accessor. (§16.2.3.7 / GetModuleNamespace.)
         if (it.entry != null && it.entry.is_indirect && char_slice_eq(it.entry.local_name, "*")
-            && it.entry.req_module_idx < it.owner_mod.req_module_count) {
+            && it.entry.req_module_idx < (uint)it.owner_mod.req_modules.len()) {
             ReqModuleEntry* rme = &it.owner_mod.req_modules[it.entry.req_module_idx];
             if (rme.resolved != null) {
                 ModuleDef* target = (ModuleDef*)rme.resolved;

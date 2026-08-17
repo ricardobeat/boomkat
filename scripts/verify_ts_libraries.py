@@ -14,9 +14,12 @@ divergence isolates a ts_mode erasure bug; no second engine runs the corpus.
 Sources are fetched UNMODIFIED and laid out so their own import specifiers
 resolve as written: valtio's bare 'proxy-compare' import is satisfied by
 vendoring that package at node_modules/proxy-compare/index.ts (the engine's
-node_modules resolution), and jotai keeps its src/vanilla/ directory shape.
-The transpiled mirrors land in test/tscorpus/_transpiled/ with .ts import
-specifiers mechanically rewritten to .js in the EMITTED files only.
+node_modules resolution), jotai keeps its src/vanilla/ directory shape, and
+fp-ts's self-imports ('fp-ts/function') resolve against the vendored package
+tree at node_modules/fp-ts/. zod 4 sources use NodeNext `.js` specifiers
+('external.js' meaning 'external.ts'), which the resolver maps to the TS
+twin. The transpiled mirrors land in test/tscorpus/_transpiled/ with .ts
+import specifiers mechanically rewritten to .js in the EMITTED files only.
 
 An engine-side transpiler was tried first (ts.transpileModule via
 typescript.js running on this engine, the api-check path) and is blocked by
@@ -27,6 +30,7 @@ with --no-optimize and on older binaries; tracked for its own session.
 """
 import argparse
 import difflib
+import json
 import os
 import re
 import shutil
@@ -71,6 +75,44 @@ LIBS = {
             for part in ("atom.ts", "store.ts", "typeUtils.ts", "internals.ts")
         },
     },
+    # Tree specs fetch a whole source tree enumerated from jsDelivr's file API
+    # rather than a fixed file list. `dest` is the cache-relative base the
+    # sources land under, `keep` selects the files, `strip` removes a path
+    # prefix before the file is laid out under `dest`.
+    "fpts": {
+        "driver": "fpts.ts",
+        # fp-ts sources import their own package by name ('fp-ts/function'),
+        # so the tree is vendored as a package at node_modules/fp-ts/ where the
+        # engine's node_modules walk resolves those self-imports unmodified.
+        # The npm package ships only compiled JS and d.ts, so the sources come
+        # from the GitHub tag via jsDelivr's gh CDN.
+        "tree": {
+            "api": "https://data.jsdelivr.com/v1/packages/gh/gcanti/fp-ts@2.16.9?structure=flat",
+            "base": "https://cdn.jsdelivr.net/gh/gcanti/fp-ts@2.16.9",
+            "dest": "node_modules/fp-ts",
+            "keep": lambda name: name.startswith("/src/") and name.endswith(".ts"),
+            "strip": "/src/",
+        },
+    },
+    "zod": {
+        "driver": "zod.ts",
+        # zod 4 sources import each other through NodeNext `.js` specifiers
+        # ("external.js" naming "external.ts"), which the engine's resolver
+        # maps to the .ts twin. Tests and benchmarks are filtered out; they
+        # are not part of the library surface.
+        "tree": {
+            "api": "https://data.jsdelivr.com/v1/packages/npm/zod@4.4.3?structure=flat",
+            "base": "https://cdn.jsdelivr.net/npm/zod@4.4.3",
+            "dest": "zod",
+            "keep": lambda name: (
+                name.startswith("/src/")
+                and name.endswith(".ts")
+                and "/tests/" not in name
+                and "/benchmarks/" not in name
+            ),
+            "strip": "/",
+        },
+    },
 }
 
 
@@ -91,6 +133,44 @@ def fetch(url, dest):
     with open(dest, "wb") as f:
         f.write(data)
     return True
+
+
+def fetch_tree(tree, name):
+    """Enumerate a package's TS sources via jsDelivr's file API and fetch each
+    into CACHE/<dest>/<stripped-name>. Returns the list of cache-relative
+    source paths, or None when any fetch failed."""
+    try:
+        req = urllib.request.Request(tree["api"], headers={"User-Agent": UA})
+        listing = json.loads(urllib.request.urlopen(req, timeout=30).read())
+    except Exception as e:
+        print(f"  FAILED listing {name}: {e}", file=sys.stderr)
+        return None
+    strip = tree.get("strip", "")
+    rels = []
+    for entry in listing["files"]:
+        n = entry["name"]
+        if not tree["keep"](n):
+            continue
+        rel = n[len(strip):] if n.startswith(strip) else n.lstrip("/")
+        dest = os.path.join(CACHE, tree["dest"], rel)
+        if not fetch(tree["base"].rstrip("/") + "/" + n.lstrip("/"), dest):
+            return None
+        rels.append(os.path.join(tree["dest"], rel))
+    return rels
+
+
+def local_tree_files(dest):
+    """Re-derive the cache-relative source list of a fetched tree without the
+    network: walk CACHE/<dest> and collect every .ts file."""
+    root = os.path.join(CACHE, dest)
+    rels = []
+    if os.path.isdir(root):
+        for dirpath, _dirs, names in os.walk(root):
+            for n in names:
+                if n.endswith(".ts"):
+                    full = os.path.join(dirpath, n)
+                    rels.append(os.path.relpath(full, CACHE))
+    return rels
 
 
 def run(binary, driver_path, cwd):
@@ -156,10 +236,11 @@ def drop_undeclared_export_names(body):
     declared = set(DECL_RE.findall(body))
 
     def fix(m):
-        # The emitted list keeps the source's `//` comments, which would glue
-        # to the following specifier on a naive comma split and read as part
-        # of the declaration name.
-        inner = re.sub(r"//[^\n]*", "", m.group(1))
+        # The emitted list keeps the source's `//` AND `/** */` comments (fp-ts
+        # documents every re-export), which would glue to the following
+        # specifier on a naive comma split and read as part of the declaration
+        # name.
+        inner = re.sub(r"//[^\n]*|/\*.*?\*/", "", m.group(1), flags=re.S)
         specs = [s.strip() for s in inner.split(",") if s.strip()]
         kept = [s for s in specs if (s.split(" as ")[0].strip() in declared)]
         return "export { " + ", ".join(kept) + " };" if kept else ""
@@ -177,8 +258,15 @@ def main():
     if not args.no_fetch:
         ok = True
         for name, spec in LIBS.items():
-            for dest, url in spec["files"].items():
-                ok = fetch(url, os.path.join(CACHE, dest)) and ok
+            if "tree" in spec:
+                rels = fetch_tree(spec["tree"], name)
+                if rels is None:
+                    ok = False
+                    continue
+                spec["_rel_files"] = rels
+            else:
+                for dest, url in spec["files"].items():
+                    ok = fetch(url, os.path.join(CACHE, dest)) and ok
         if not ok:
             return 1
     if args.fetch_only:
@@ -192,10 +280,19 @@ def main():
         if not os.path.exists(driver):
             print(f"SKIP: no driver for {name}")
             continue
-        missing = [f for f in spec["files"] if not os.path.exists(os.path.join(CACHE, f))]
-        if missing:
-            print(f"SKIP: {name} sources not fetched ({', '.join(missing)})")
-            continue
+        if "tree" in spec:
+            rel_files = spec.get("_rel_files")
+            if rel_files is None:
+                rel_files = local_tree_files(spec["tree"]["dest"])
+            if not rel_files:
+                print(f"SKIP: {name} sources not fetched")
+                continue
+        else:
+            missing = [f for f in spec["files"] if not os.path.exists(os.path.join(CACHE, f))]
+            if missing:
+                print(f"SKIP: {name} sources not fetched ({', '.join(missing)})")
+                continue
+            rel_files = list(spec["files"].keys())
 
         # Copy the driver beside the fetched sources so its relative imports resolve.
         driver_cache = os.path.join(CACHE, f"_driver_{name}.ts")
@@ -214,8 +311,7 @@ def main():
             continue
 
         # 2. transpiled js run, tsc as the stripper
-        rel_files = list(spec["files"].keys()) + [f"_driver_{name}.ts"]
-        if not strip_with_tsc(rel_files):
+        if not strip_with_tsc(rel_files + [f"_driver_{name}.ts"]):
             failed += 1
             print(f"FAIL: {name} (tsc strip step failed)")
             continue

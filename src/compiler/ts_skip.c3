@@ -174,6 +174,19 @@ fn void? CompilerContext.skip_type(&self) {
     int brace   = 0;
     int angle   = 0;
     bool consumed_any = false;
+    // Set when the currently open top-level paren group is a parenthesized
+    // function type `(...) => R` rather than a parameter list. A group whose
+    // first token is itself a group or generic (`((a: T) => U)`,
+    // `(<A = never>() => R)`) has its own arrow at depth 1 and must be
+    // parenthesized; one that starts with a name (`(fa: A, f: (b: B) => A)`)
+    // is a parameter list even when a nested arrow follows. Copied into
+    // last_group_had_arrow when the group closes; the depth-0 ARROW case
+    // uses it to tell the enclosing arrow's body arrow from a function
+    // type's own arrow (see below).
+    bool paren_has_arrow  = false;
+    bool last_group_had_arrow = false;
+    bool group_seen_first = false;
+    bool top_group_first_is_group = false;
     // The token type consumed on the previous iteration. Used to tell a
     // function-type arrow `(a: T) => U` (which follows the group's closing
     // `)`, so it shows up at depth 0) from an arrow that terminates the type
@@ -226,7 +239,12 @@ fn void? CompilerContext.skip_type(&self) {
                 case TokenType.ARROW:
                     // `(...) => U` at the top level: the group closed before
                     // the arrow, which belongs to the function type. Continue
-                    // only when the arrow directly follows that `)`.
+                    // only when the arrow directly follows that `)` and the
+                    // group was a plain parenthesized type; a parenthesized
+                    // function type `((a: T) => U)` already consumed an arrow
+                    // inside itself, so the arrow after its `)` starts the
+                    // enclosing arrow function's body.
+                    if (prev_tt == TokenType.RPAREN && last_group_had_arrow) return;
                     if (prev_tt == TokenType.RPAREN) break;
                     return;
                 default:
@@ -284,9 +302,27 @@ fn void? CompilerContext.skip_type(&self) {
         Token skip_tok = self.advance()!;
         consumed_any = true;
 
+        // First element of the top-level paren group (paren count before this
+        // token's own paren effect). A group starting with another group or
+        // generics (`((a: T) => U)`, `(<A = never>() => R)`) is a
+        // parenthesized type; one starting with a name (`(fa: A, ...)`) is a
+        // parameter list even when a nested function-type arrow follows.
+        if (paren == 1 && !group_seen_first && tt != TokenType.RPAREN) {
+            group_seen_first = true;
+            if (tt == TokenType.LPAREN || tt == TokenType.LT) {
+                top_group_first_is_group = true;
+            }
+        }
+
         switch (tt) {
-            case TokenType.LPAREN:   paren++;
-            case TokenType.RPAREN:   if (paren > 0) paren--;
+            case TokenType.LPAREN:
+                if (paren == 0) paren_has_arrow = false;
+                paren++;
+                break;
+            case TokenType.RPAREN:
+                if (paren > 0) paren--;
+                if (paren == 0) last_group_had_arrow = paren_has_arrow;
+                break;
             case TokenType.LBRACKET: bracket++;
             case TokenType.RBRACKET: if (bracket > 0) bracket--;
             case TokenType.LBRACE:   brace++;
@@ -297,6 +333,9 @@ fn void? CompilerContext.skip_type(&self) {
             case TokenType.GE:       if (angle > 0) angle--;  // `>=` at end of generic like `T=>`
             case TokenType.SHR:      if (angle >= 2) { angle -= 2; } else if (angle == 1) angle--;
             case TokenType.USHR:     if (angle >= 3) { angle -= 3; } else if (angle > 0) angle = 0;
+            case TokenType.ARROW:
+                if (paren == 1 && top_group_first_is_group) paren_has_arrow = true;
+                break;
             case TokenType.EOF_TOKEN:
                 return;  // safety net; loop guard above should have exited
             default:

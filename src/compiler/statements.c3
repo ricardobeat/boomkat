@@ -7,6 +7,7 @@ import duktape::hstring;
 import duktape::hobject;
 import duktape::heap;
 import std::io;
+import std::collections::list;
 
 // ============================================================================
 // Compiler-side module metadata (must match module::ModuleDef layout)
@@ -48,6 +49,9 @@ struct CompReqModuleEntry {
     // JSON.parse, default export = the parsed value) rather than compiled as
     // ECMAScript. Layout must match module::ReqModuleEntry.
     bool   wants_json;
+    // Set at link time when the statement's bindings were all type-only (see
+    // module::ReqModuleEntry.type_only). Layout must match module::ReqModuleEntry.
+    bool   type_only;
 }
 
 /// Full lexer + compiler-pushback snapshot, used to re-parse a source
@@ -114,12 +118,6 @@ struct ForOfHead {
     ForLhsSnapshot lhs_snap;
 }
 
-const uint COMP_MAX_IMPORTS      = 64;
-const uint COMP_MAX_EXPORTS      = 64;
-const uint COMP_MAX_STAR_EXPORTS = 16;
-const uint COMP_MAX_REQ_MODULES  = 32;
-const uint COMP_MAX_FUNC_DECLS   = 128;
-
 /// Layout must match module::FuncDeclEntry.
 struct CompFuncDeclEntry {
     char[] name;
@@ -127,72 +125,50 @@ struct CompFuncDeclEntry {
 }
 
 /// Compiler-side view of ModuleDef, field layout must match module::ModuleDef.
+/// The metadata lists are growable (see ModuleDef's note) and come
+/// pre-initialized by the module loader; the compiler only pushes into them.
 struct CompModuleDef {
-    char[]                              module_name;
-    char                                status;
-    CompImportEntry[COMP_MAX_IMPORTS]   imports;
-    uint                                import_count;
-    CompExportEntry[COMP_MAX_EXPORTS]   exports;
-    uint                                export_count;
-    CompStarExportEntry[COMP_MAX_STAR_EXPORTS] star_exports;
-    uint                                star_export_count;
-    CompReqModuleEntry[COMP_MAX_REQ_MODULES] req_modules;
-    uint                                req_module_count;
-    CompFuncDeclEntry[COMP_MAX_FUNC_DECLS] func_decls;
-    uint                                func_decl_count;
+    char[]                                module_name;
+    char                                  status;
+    List{CompImportEntry}                 imports;
+    List{CompExportEntry}                 exports;
+    List{CompStarExportEntry}             star_exports;
+    List{CompReqModuleEntry}              req_modules;
+    List{CompFuncDeclEntry}               func_decls;
 }
 
 /// Register a top-level module function declaration for eager link-time
 /// instantiation (deduplicates by name, a later declaration of the same
 /// name replaces the earlier inner_func_idx, mirroring last-wins hoisting).
 fn void mod_register_func_decl(CompModuleDef* mod, char[] name, uint inner_func_idx) {
-    for (uint i = 0; i < mod.func_decl_count; i++) {
+    for (uint i = 0; i < (uint)mod.func_decls.len(); i++) {
         if (str_eq(mod.func_decls[i].name, name)) {
             mod.func_decls[i].inner_func_idx = inner_func_idx;
             return;
         }
     }
-    if (mod.func_decl_count >= COMP_MAX_FUNC_DECLS) return;
-    uint idx = mod.func_decl_count;
-    mod.func_decls[idx].name = name;
-    mod.func_decls[idx].inner_func_idx = inner_func_idx;
-    mod.func_decl_count++;
+    mod.func_decls.push({ name, inner_func_idx });
 }
 
 /// Register a required module specifier, returning its index (deduplicates).
 fn uint mod_register_req_module(CompModuleDef* mod, char[] specifier, bool wants_json = false) {
-    for (uint i = 0; i < mod.req_module_count; i++) {
+    for (uint i = 0; i < (uint)mod.req_modules.len(); i++) {
         // A JSON import and an ECMAScript import of the same specifier are
         // distinct module requests (different [[Attributes]]), so only reuse
         // an entry whose json-ness matches too.
         if (mod.req_modules[i].wants_json == wants_json &&
-            mod.req_modules[i].module_name.len == specifier.len) {
-            bool match = true;
-            for (usz j = 0; j < specifier.len; j++) {
-                if (mod.req_modules[i].module_name[j] != specifier[j]) { match = false; break; }
-            }
-            if (match) return i;
+            str_eq(mod.req_modules[i].module_name, specifier)) {
+            return i;
         }
     }
-    if (mod.req_module_count >= COMP_MAX_REQ_MODULES) return 0;
-    uint idx = mod.req_module_count;
-    mod.req_modules[idx].module_name = specifier;
-    mod.req_modules[idx].resolved = null;
-    mod.req_modules[idx].wants_json = wants_json;
-    mod.req_module_count++;
+    uint idx = (uint)mod.req_modules.len();
+    mod.req_modules.push({ specifier, null, wants_json, false });
     return idx;
 }
 
 /// Register an import entry in the module.
 fn void mod_register_import(CompModuleDef* mod, char[] local_name, char[] import_name, uint req_idx, bool is_star, bool is_default) {
-    if (mod.import_count >= COMP_MAX_IMPORTS) return;
-    uint idx = mod.import_count;
-    mod.imports[idx].local_name = local_name;
-    mod.imports[idx].import_name = import_name;
-    mod.imports[idx].req_module_idx = req_idx;
-    mod.imports[idx].is_star = is_star;
-    mod.imports[idx].is_default = is_default;
-    mod.import_count++;
+    mod.imports.push({ local_name, import_name, req_idx, is_star, is_default });
 }
 
 /// True when `export_name` is already an ExportedName of this module.
@@ -209,7 +185,7 @@ fn void mod_register_import(CompModuleDef* mod, char[] local_name, char[] import
 /// star exports are registered through mod_register_star_export and never reach
 /// this path.
 fn bool mod_has_export_name(CompModuleDef* mod, char[] export_name) {
-    for (uint i = 0; i < mod.export_count; i++) {
+    for (uint i = 0; i < (uint)mod.exports.len(); i++) {
         if (str_eq(mod.exports[i].export_name, export_name)) return true;
     }
     return false;
@@ -234,15 +210,7 @@ fn void? CompilerContext.register_export(&self, CompModuleDef* mod, char[] local
 
 /// Register an export entry in the module.
 fn void mod_register_export(CompModuleDef* mod, char[] local_name, char[] export_name, bool is_indirect, uint req_idx, bool is_lexical = false, bool declares_binding = false) {
-    if (mod.export_count >= COMP_MAX_EXPORTS) return;
-    uint idx = mod.export_count;
-    mod.exports[idx].local_name = local_name;
-    mod.exports[idx].export_name = export_name;
-    mod.exports[idx].is_indirect = is_indirect;
-    mod.exports[idx].req_module_idx = req_idx;
-    mod.exports[idx].is_lexical = is_lexical;
-    mod.exports[idx].declares_binding = declares_binding;
-    mod.export_count++;
+    mod.exports.push({ local_name, export_name, is_indirect, req_idx, is_lexical, declares_binding });
 }
 
 /// Find the ImportEntry (if any) whose local binding name is `local_name`.
@@ -252,7 +220,7 @@ fn void mod_register_export(CompModuleDef* mod, char[] local_name, char[] export
 /// re-export sourced from the ImportEntry's own module/import name, per
 /// Table 59. Returns null when `local_name` names an ordinary local binding.
 fn CompImportEntry* mod_find_import_by_local(CompModuleDef* mod, char[] local_name) {
-    for (uint i = 0; i < mod.import_count; i++) {
+    for (uint i = 0; i < (uint)mod.imports.len(); i++) {
         if (str_eq(mod.imports[i].local_name, local_name)) return &mod.imports[i];
     }
     return null;
@@ -260,10 +228,7 @@ fn CompImportEntry* mod_find_import_by_local(CompModuleDef* mod, char[] local_na
 
 /// Register a star export entry in the module.
 fn void mod_register_star_export(CompModuleDef* mod, uint req_idx) {
-    if (mod.star_export_count >= COMP_MAX_STAR_EXPORTS) return;
-    uint idx = mod.star_export_count;
-    mod.star_exports[idx].req_module_idx = req_idx;
-    mod.star_export_count++;
+    mod.star_exports.push({ req_idx });
 }
 
 // ============================================================================
@@ -411,6 +376,43 @@ fn void? CompilerContext.statement(&self) {
                 // Module's top-level StatementList (ES2024 §16.2.1).
                 if (!at_module_top) {
                     return self.fail("'import' declarations may only appear at the top level of a module")~;
+                }
+                // TS import-equals: `import Ord = O.Ord` is the legacy
+                // namespace-import form. tsc strips it to `const Ord = O.Ord`,
+                // so compile the same const binding.
+                if (after_import == TokenType.IDENTIFIER) {
+                    // Probe the token after the identifier without committing:
+                    // the lexer has a single pushback slot, so a wrong guess is
+                    // rewound by restoring the position and both token slots
+                    // (the probe's advances refill them).
+                    uint saved_pos = self.lexer.pos;
+                    Token saved_la = self.lexer.lookahead;
+                    bool saved_has_la = self.lexer.has_lookahead;
+                    bool saved_has_pb = self.lexer.has_pushed_back;
+                    self.advance()!;   // consume 'import' (from pushback slot)
+                    Token ie_name = self.advance()!;
+                    if (self.check(TokenType.ASSIGN)) {
+                        self.advance()!;  // consume '='
+                        self.check_lexical_redeclares_param(ie_name.str_value)!;
+                        ushort reg = self.declare_var(ie_name.str_value, CONST);
+                        ushort val_reg = self.assignment_expr()!;
+                        if (val_reg != reg) {
+                            self.emit_abc(Opcode.LDREG, (uint)reg, (uint)val_reg, 0);
+                        }
+                        self.free_reg(val_reg);
+                        uint name_idx = self.add_string_constant(ie_name.str_value);
+                        self.emit_var_store(reg, name_idx, true, true);
+                        if (self.is_global) self.free_reg(reg);
+                        self.match(TokenType.SEMICOLON);
+                        break;
+                    }
+                    // Not `import NAME =`; rewind so import_declaration()
+                    // re-reads `import` from the pushback slot and the name
+                    // from the input stream.
+                    self.lexer.pos = saved_pos;
+                    self.lexer.lookahead = saved_la;
+                    self.lexer.has_lookahead = saved_has_la;
+                    self.lexer.has_pushed_back = saved_has_pb;
                 }
                 self.import_declaration()!;
             }
@@ -927,7 +929,7 @@ fn void? CompilerContext.check_module_exports_resolvable(&self) {
     NameSpan[MAX_PRESCAN_NAMES] var_spans;
     uint var_n = 0;
     // Only pay for the pre-scan if some local export could actually need it.
-    for (uint i = 0; i < mod.export_count; i++) {
+    for (uint i = 0; i < (uint)mod.exports.len(); i++) {
         if (!mod.exports[i].is_indirect) {
             uint saved_pos = self.lexer.pos;
             self.lexer.pos = 0;
@@ -939,7 +941,7 @@ fn void? CompilerContext.check_module_exports_resolvable(&self) {
         }
     }
 
-    for (uint i = 0; i < mod.export_count; i++) {
+    for (uint i = 0; i < (uint)mod.exports.len(); i++) {
         if (mod.exports[i].is_indirect) continue;
         // An `export`-prefixed declaration binds its own name in the same
         // statement, so it always satisfies the rule. Skipping it also avoids
@@ -955,13 +957,13 @@ fn void? CompilerContext.check_module_exports_resolvable(&self) {
         for (ushort h = 0; h < self.hoisted_fn_count && !found; h++) {
             if (str_eq(self.hoisted_fn_names[h], local)) found = true;
         }
-        for (uint d = 0; d < mod.func_decl_count && !found; d++) {
+        for (uint d = 0; d < (uint)mod.func_decls.len() && !found; d++) {
             if (str_eq(mod.func_decls[d].name, local)) found = true;
         }
         for (uint v = 0; v < var_n && !found; v++) {
             if (str_eq(self.name_span_text(var_spans[v]), local)) found = true;
         }
-        for (uint m = 0; m < mod.import_count && !found; m++) {
+        for (uint m = 0; m < (uint)mod.imports.len() && !found; m++) {
             if (str_eq(mod.imports[m].local_name, local)) found = true;
         }
         if (!found) {
@@ -5504,6 +5506,16 @@ fn void? CompilerContext.function_declaration(&self, bool is_async_decl = false,
                     }
                 }
                 if (already) {
+                    // TypeScript overload chains: the name was hoisted from
+                    // the implementation that follows, and this occurrence may
+                    // be a signature-only overload. Consume it when it is; a
+                    // signature has no body, and scanning for a `{` would
+                    // land inside the next declaration's object/mapped return
+                    // type.
+                    if (self.lexer.ts_mode && self.ts_try_skip_overload_signature()) {
+                        self.lexer.note_block_close();
+                        return;
+                    }
                     // Skip the rest of the function body
                     self.skip_function_body();
                     // The body's closing `}` is a statement/declaration
