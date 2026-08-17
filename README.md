@@ -27,6 +27,51 @@ Other gates:
 - `just test-gc-stress`: an ASAN GC-stress suite, 20-30 minutes, nightly
   material
 
+## Real-world validation
+
+Unmodified npm sources run against the engine; the bundles are fetched into
+gitignored caches (`test/libcorpus/`, `test/tscorpus/`) by the verify scripts.
+
+**JavaScript** (`python3 scripts/verify_libraries.py --no-fetch --api-checks`):
+each bundle loads, and a per-library API driver's output must match qjs.
+
+| Library | Version | Loads | API checks |
+|---|---|:---:|---:|
+| lodash | 4.17.21 | yes | 17 |
+| underscore | 1.13.6 | yes | 8 |
+| moment | unpinned | yes | 6 |
+| marked | 4.3.0 | yes | 5 |
+| handlebars | 4.7.8 | yes | 5 |
+| immutable | unpinned | yes | 6 |
+| acorn | unpinned | yes | 4 |
+| bluebird | 3.7.2 | yes | 5 |
+| decimal.js | unpinned | yes | 5 |
+| bignumber.js | unpinned | yes | 7 |
+| mathjs | unpinned | yes | 5 |
+| jszip | 3.10.1 | yes | 4 |
+| papaparse | unpinned | yes | 4 |
+| crypto-js | unpinned | yes | 4 |
+| protobufjs | 7.4.0 | yes | 2 |
+| chance | unpinned | yes | 5 |
+| he | unpinned | yes | 4 |
+| nearley | unpinned | yes | 2 |
+| d3-array | unpinned | yes | 7 |
+| uuid | 8.3.2 | yes | 2 |
+| typescript | 5.4.5 | yes | 4 |
+| @babel/standalone | 7.24.7 | yes | 3 |
+
+**TypeScript** (`python3 scripts/verify_ts_libraries.py`): each source runs
+under the engine's ts_mode, and stdout must match the same source stripped to
+.js by `tsc`. 5/5 pass.
+
+| Source | Version | What is checked |
+|---|---|---|
+| microdiff | 1.4.0 | single-file diff library |
+| zustand | 5.0.3 | vanilla store (`src/vanilla.ts`) |
+| valtio | 2.1.3 | vanilla store + vendored proxy-compare 3.0.1 |
+| @preact/signals-core | 1.14.4 | signal primitives (`src/index.ts`) |
+| jotai | 2.20.2 | vanilla package tree (`src/vanilla/`) |
+
 ## Benchmarks
 
 `just bench` runs the suite in `benchmarks/` (3 iterations per benchmark)
