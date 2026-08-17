@@ -8,15 +8,15 @@ Duktape, low memory, and small-device portability.
 
 ## Status
 
-The gate is green: **50,002 pass / 0 fail / 0 unexpected compile error** across
-all 25 test262 phases (2,822 skips of 52,824 total, `test262_results/latest.json`).
-The targeted subset is ES5/ES6 core in a single strict
-mode; the skip list and its reasoning live in `scripts/run_test262.py`, and
-`docs/engine-scope.md` explains what is out of scope and why. Progress is
+The full test262 suite passes: **50,002 pass / 0 fail / 0 unexpected compile
+error** across all 25 phase groups (2,822 skips of 52,824 total,
+`test262_results/latest.json`). The targeted subset is ES5/ES6 core in a single
+strict mode; the skip list and its reasoning live in `scripts/run_test262.py`,
+and `docs/engine-scope.md` explains what is out of scope and why. Progress is
 tracked per session in `progress.md`, the roadmap to 100% in
 `plans/040-test262-100-percent.md`.
 
-Other gates:
+Other checks:
 
 - `just rosetta`: 41/41 unmodified rosettacode.org samples, cross-checked
   against qjs (`test/rosetta-verbatim/`)
