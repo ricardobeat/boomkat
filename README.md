@@ -8,9 +8,9 @@ Duktape, low memory, and small-device portability.
 
 ## Status
 
-The gate is green: **49,814 pass / 0 fail / 0 unexpected compile error** across
-all 25 test262 phases (3,010 skips of 52,824 total, `test262_results/latest.json`,
-refreshed session 303). The targeted subset is ES5/ES6 core in a single strict
+The gate is green: **50,002 pass / 0 fail / 0 unexpected compile error** across
+all 25 test262 phases (2,822 skips of 52,824 total, `test262_results/latest.json`).
+The targeted subset is ES5/ES6 core in a single strict
 mode; the skip list and its reasoning live in `scripts/run_test262.py`, and
 `docs/engine-scope.md` explains what is out of scope and why. Progress is
 tracked per session in `progress.md`, the roadmap to 100% in
@@ -81,27 +81,27 @@ better; the ratio columns are C3/reference, so below 1.0 the engine wins.
 
 | Benchmark | C3 (ms) | Duktape (ms) | QuickJS (ms) | vs Duktape | vs QuickJS |
 |---|---|---|---|---|---|
-| bench_arithmetic | 349 | 3,272 | 297 | 0.1x | 1.2x |
-| bench_array | 22 | 41 | 12 | 0.5x | 1.8x |
-| bench_date | 80 | 906 | 60 | 0.1x | 1.3x |
-| bench_function_call | 254 | 1,283 | 185 | 0.2x | 1.4x |
-| bench_ic_monomorphic | 97 | 286 | 109 | 0.3x | 0.9x |
-| bench_ic_proto | 121 | 451 | 136 | 0.3x | 0.9x |
-| bench_loop | 146 | 1,361 | 146 | 0.1x | 1.0x |
-| bench_memory_heavy | 113 | 173 | 62 | 0.7x | 1.8x |
-| bench_object | 369 | 1,668 | 255 | 0.2x | 1.4x |
-| bench_property_lookup | 256 | 1,775 | 189 | 0.1x | 1.4x |
-| bench_recursion_deep | 900 | 1,975 | 614 | 0.5x | 1.5x |
-| bench_recursion | 218 | 473 | 150 | 0.5x | 1.5x |
-| bench_regexp | 694 | 670 | 312 | 1.0x | 2.2x |
-| bench_shape_no_call | 8 | 9 | 7 | 0.9x | 1.1x |
-| bench_shape_stress | 7 | 8 | 6 | 0.9x | 1.2x |
-| bench_string | 10 | 18 | 8 | 0.6x | 1.3x |
-| bench_valstack_copy | 11 | 14 | 13 | 0.8x | 0.8x |
+| bench_arithmetic | 332 | 3,305 | 246 | 0.1x | 1.3x |
+| bench_array | 12 | 40 | 9 | 0.3x | 1.3x |
+| bench_date | 77 | 885 | 49 | 0.1x | 1.6x |
+| bench_function_call | 222 | 1,266 | 148 | 0.2x | 1.5x |
+| bench_ic_monomorphic | 81 | 283 | 88 | 0.3x | 0.9x |
+| bench_ic_proto | 114 | 447 | 110 | 0.2x | 1.0x |
+| bench_loop | 113 | 1,342 | 119 | 0.1x | 0.9x |
+| bench_memory_heavy | 76 | 170 | 49 | 0.4x | 1.6x |
+| bench_object | 356 | 1,647 | 208 | 0.2x | 1.7x |
+| bench_property_lookup | 243 | 1,756 | 156 | 0.1x | 1.6x |
+| bench_recursion_deep | 863 | 1,954 | 490 | 0.4x | 1.8x |
+| bench_recursion | 207 | 468 | 120 | 0.4x | 1.7x |
+| bench_regexp | 542 | 652 | 258 | 0.8x | 2.1x |
+| bench_shape_no_call | 8 | 8 | 5 | 1.0x | 1.6x |
+| bench_shape_stress | 8 | 8 | 5 | 1.0x | 1.6x |
+| bench_string | 9 | 17 | 6 | 0.5x | 1.5x |
+| bench_valstack_copy | 11 | 13 | 10 | 0.8x | 1.1x |
 
-The engine beats Duktape on every benchmark but `bench_regexp` (parity) and is
-within ~1.5x of QuickJS everywhere except regexp (2.2x), ahead of it on the
-inline-cache and valstack microbenchmarks.
+The engine ties or beats Duktape on every benchmark and stays within ~1.8x of
+QuickJS everywhere except regexp (2.1x), ahead of it on the inline-cache and
+loop microbenchmarks.
 
 ### Startup time
 
