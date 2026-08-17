@@ -381,15 +381,18 @@ fn void? CompilerContext.statement(&self) {
                 // namespace-import form. tsc strips it to `const Ord = O.Ord`,
                 // so compile the same const binding.
                 if (after_import == TokenType.IDENTIFIER) {
-                    // Probe the token after the identifier without committing:
-                    // the lexer has a single pushback slot, so a wrong guess is
-                    // rewound by restoring the position and both token slots
-                    // (the probe's advances refill them).
+                    // Probe the token after the identifier without committing.
+                    // A wrong guess rewinds the lexer position, both token
+                    // slots, and the compiler pushback stack (ts-mode probes
+                    // like ts_try_skip_type_only_import may have parked the
+                    // import tokens there).
                     uint saved_pos = self.lexer.pos;
                     Token saved_la = self.lexer.lookahead;
                     bool saved_has_la = self.lexer.has_lookahead;
                     bool saved_has_pb = self.lexer.has_pushed_back;
-                    self.advance()!;   // consume 'import' (from pushback slot)
+                    uint saved_pbc = self.pushback_count;
+                    Token[4] saved_pbs = self.pushback_stack;
+                    self.advance()!;   // consume 'import'
                     Token ie_name = self.advance()!;
                     if (self.check(TokenType.ASSIGN)) {
                         self.advance()!;  // consume '='
@@ -407,12 +410,13 @@ fn void? CompilerContext.statement(&self) {
                         break;
                     }
                     // Not `import NAME =`; rewind so import_declaration()
-                    // re-reads `import` from the pushback slot and the name
-                    // from the input stream.
+                    // re-reads the statement exactly as it was.
                     self.lexer.pos = saved_pos;
                     self.lexer.lookahead = saved_la;
                     self.lexer.has_lookahead = saved_has_la;
                     self.lexer.has_pushed_back = saved_has_pb;
+                    self.pushback_count = saved_pbc;
+                    self.pushback_stack = saved_pbs;
                 }
                 self.import_declaration()!;
             }
@@ -6258,10 +6262,12 @@ fn void? CompilerContext.export_declaration(&self) {
             if (count >= 32) return COMPILE_ERROR~;
             bool local_was_string = false;
             // TypeScript `export { type foo }` / `export { type foo as bar }`:
-            // the `type` modifier marks a type-only specifier, fully erased.
-            // Only a modifier when another export name follows on the same
-            // line; `export { type }` exports a binding literally named
-            // "type".
+            // the `type` modifier marks a type-only specifier, fully erased
+            // (it must not reach register_export or the linker would demand a
+            // runtime binding the target never had). Only a modifier when
+            // another export name follows on the same line; `export { type }`
+            // exports a binding literally named "type".
+            bool erased_ts_spec = false;
             if (self.lexer.ts_mode && self.check_ts_ident("type")) {
                 Lexer saved_ts = *self.lexer;
                 bool is_type_mod = false;
@@ -6282,19 +6288,20 @@ fn void? CompilerContext.export_declaration(&self) {
                 }
                 if (is_type_mod) {
                     Token _tmod = self.advance()!;
+                    erased_ts_spec = true;
                 }
             }
             char[] local_str = self.parse_module_export_name(&local_was_string)!;
-            local_is_string[count] = local_was_string;
+            char[] alias_str = local_str;
             if (self.match_as()) {
-                char[] alias_str = self.parse_module_export_name()!;
+                alias_str = self.parse_module_export_name()!;
+            }
+            if (!erased_ts_spec) {
+                local_is_string[count] = local_was_string;
                 local_names[count] = local_str;
                 export_names[count] = alias_str;
-            } else {
-                local_names[count] = local_str;
-                export_names[count] = local_str;
+                count++;
             }
-            count++;
             if (!self.match(TokenType.COMMA)) break;
         }
         self.expect(TokenType.RBRACE)!;

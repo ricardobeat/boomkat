@@ -7,6 +7,7 @@ import duktape::bytecode;
 import duktape::re_bindings;
 import duktape::esm;
 import std::io;
+import std::collections::list;
 import std::core::mem::mempool;
 import std::core::mem::allocators;
 
@@ -82,7 +83,6 @@ const uint  GRAY_STACK_INITIAL_CAP  = 64;
 /// first use (most programs never nest a join) and grown as needed.
 const uint  JOIN_VISITED_INITIAL_CAP = 16;
 const usz   STRS_CACHE_SIZE         = 256;
-const uint  GC_MAX_ROOTS            = 64;
 
 /// Marks an embedder-owned root set that is not an HObject. Called during
 /// mark_roots with the pointer stored in Heap.capi_roots.
@@ -432,7 +432,7 @@ struct HostFnEntry {
 ///
 /// `values` is a real JS Array allocated through alloc_object, so it carries a
 /// temproot flag and its elements are marked transitively. That is what keeps
-/// arguments alive without spending one of the 64 GC_MAX_ROOTS entries, and
+/// arguments alive without spending a GC-root entry, and
 /// without referencing ctx.regs — a nested jse_call can realloc the valstack
 /// and leave a register pointer dangling (see vm_calls.c3:1331).
 ///
@@ -694,9 +694,11 @@ struct Heap {
     uint      compiled_func_cap;
     uint      compiled_func_count;
 
-    // Registered GC roots: HeapHeader* that are always reachable.
-    void*[GC_MAX_ROOTS] gc_roots;
-    uint                gc_root_count;
+    // Registered GC roots: HeapHeader* that are always reachable. Every
+    // module env's bindings object registers here, so whole-library import
+    // graphs (60+ modules) run past any fixed size; a capped array silently
+    // dropped registrations and the sweep collected live module envs.
+    List{void*} gc_roots;
 
     // The C ABI's value registry is a plain array rather than an HObject, so
     // the mark phase cannot reach it transitively. capi_mark, when set, is
@@ -1797,7 +1799,7 @@ fn void Heap.reset(&self) {
     self.resume_gen       = null;
     self.did_yield        = false;
     self.ag_did_await     = false;
-    self.gc_root_count    = 0;
+    self.gc_roots.clear();
     self.capi_roots       = null;
     self.capi_runtime     = null;
     self.capi_mark        = null;
@@ -2523,10 +2525,13 @@ fn void Heap.remove_from_finalize_list(&self, HeapHeader* hdr) {
  * reachable, so they are never freed.
  */
 fn void Heap.register_gc_root(&self, HeapHeader* hdr) {
-    if (self.gc_root_count < GC_MAX_ROOTS) {
-        self.gc_roots[self.gc_root_count] = (void*)hdr;
-        self.gc_root_count++;
+    // A zero-initialized Heap carries a zeroed List (null entries); arm its
+    // allocator on first use so every creation path is covered without an
+    // explicit init order.
+    if (self.gc_roots.entries == null && self.gc_roots.size == 0) {
+        self.gc_roots.allocator = mem;
     }
+    self.gc_roots.push((void*)hdr);
 }
 
 // ============================================================================
@@ -2934,7 +2939,7 @@ fn void Heap.drain_gray(&self) {
  * through the gray stack, so there is no recursion or depth limit.
  */
 fn void Heap.mark_roots(&self) {
-    for (uint i = 0; i < self.gc_root_count; i++) {
+    for (uint i = 0; i < (uint)self.gc_roots.len(); i++) {
         HeapHeader* hdr = (HeapHeader*)self.gc_roots[i];
         if (hdr != null) {
             if (hdr.is_object()) {
@@ -3236,7 +3241,7 @@ $if $feature(HEAP_VERIFY):
     uint checked = 0;
     uint errors = 0;
 
-    for (uint i = 0; i < self.gc_root_count; i++) {
+    for (uint i = 0; i < (uint)self.gc_roots.len(); i++) {
         void* root = self.gc_roots[i];
         if (root != null) {
             if (!self.validate_hobject((HeapHeader*)root, "gc_root")) errors++;

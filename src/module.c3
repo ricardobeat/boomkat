@@ -952,8 +952,19 @@ fn bool validate_indirect_exports(Heap* heap, ModuleDef* mod) {
         ResolveSetEntry[RESOLVE_SET_MAX] set;
         ResolveExportResult r = resolve_export(mod, ee.export_name, &set[0], 0);
         if (r.kind != ResolveExportKind.RESOLVED) {
-            return module_raise_link_error(heap,
-                "indirect export does not resolve to a single binding");
+            char[256] buf;
+            char[] prefix = "re-exported name '";
+            char[] suffix = "' does not resolve to a single binding";
+            usz nlen = ee.export_name.len < 200 ? ee.export_name.len : 200;
+            usz off = 0;
+            mem::copy(&buf[0], prefix.ptr, (sz)prefix.len);
+            off += prefix.len;
+            mem::copy((char*)&buf[0] + off, ee.export_name.ptr, (sz)nlen);
+            off += nlen;
+            mem::copy((char*)&buf[0] + off, suffix.ptr, (sz)suffix.len);
+            off += suffix.len;
+            buf[off] = 0;
+            return module_raise_link_error(heap, ((char*)&buf[0])[:off]);
         }
     }
     return true;
@@ -1042,8 +1053,19 @@ fn bool validate_imports(Heap* heap, ModuleDef* mod) {
             // plain JS module importing a missing name is still the spec's
             // link-time SyntaxError.
             if (module_is_ts(mod)) continue;
-            return module_raise_link_error(heap,
-                "requested module does not provide the requested export");
+            char[256] nbuf;
+            char[] nprefix = "module does not provide an export named '";
+            char[] nsuffix = "'";
+            usz nnlen = ie.import_name.len < 200 ? ie.import_name.len : 200;
+            usz noff = 0;
+            mem::copy(&nbuf[0], nprefix.ptr, (sz)nprefix.len);
+            noff += nprefix.len;
+            mem::copy((char*)&nbuf[0] + noff, ie.import_name.ptr, (sz)nnlen);
+            noff += nnlen;
+            mem::copy((char*)&nbuf[0] + noff, nsuffix.ptr, (sz)nsuffix.len);
+            noff += nsuffix.len;
+            nbuf[noff] = 0;
+            return module_raise_link_error(heap, ((char*)&nbuf[0])[:noff]);
         }
     }
     return true;
@@ -2407,24 +2429,20 @@ struct NsExportItem {
     ExportEntry* entry;
 }
 
-const uint MAX_NS_EXPORTS = 128;
-
-/// True if `name` is already among the first `count` collected namespace items.
-fn bool ns_has_export_name(NsExportItem[MAX_NS_EXPORTS]* items, uint count, char[] name) {
-    for (uint i = 0; i < count; i++) {
-        if (char_slice_eq((*items)[i].export_name, name)) return true;
+/// True if `name` is already among the collected namespace items.
+fn bool ns_has_export_name(List{NsExportItem}* items, char[] name) {
+    for (uint i = 0; i < (uint)items.len(); i++) {
+        if (char_slice_eq((*items)[(sz)i].export_name, name)) return true;
     }
     return false;
 }
 
 /// Append a namespace export item unless its name is already present (nearer
-/// exports shadow star-reached ones) or the table is full.
-fn void ns_add_export_item(NsExportItem[MAX_NS_EXPORTS]* items, uint* count,
+/// exports shadow star-reached ones).
+fn void ns_add_export_item(List{NsExportItem}* items,
                            char[] export_name, ModuleDef* owner_mod, ExportEntry* entry) {
-    if (*count >= MAX_NS_EXPORTS) return;
-    if (ns_has_export_name(items, *count, export_name)) return;
-    (*items)[*count] = { export_name, owner_mod, entry != null ? entry.local_name : export_name, entry };
-    (*count)++;
+    if (ns_has_export_name(items, export_name)) return;
+    items.push({ export_name, owner_mod, entry != null ? entry.local_name : export_name, entry });
 }
 
 /// Expand `export *` star re-exports (§16.2.3.7 GetExportedNames) into the
@@ -2434,9 +2452,8 @@ fn void ns_add_export_item(NsExportItem[MAX_NS_EXPORTS]* items, uint* count,
 /// ExportEntry (so indirect/namespace re-exports still resolve correctly),
 /// while names the target itself only re-exports via its own `export *` are
 /// added as plain bindings in the target. `depth` guards against import cycles.
-fn void collect_star_export_items(ModuleDef* mod, NsExportItem[MAX_NS_EXPORTS]* items,
-                                  uint* count, uint depth) {
-    collect_star_export_items_from(mod, mod, items, count, depth);
+fn void collect_star_export_items(ModuleDef* mod, List{NsExportItem}* items, uint depth) {
+    collect_star_export_items_from(mod, mod, items, depth);
 }
 
 /// Implementation of collect_star_export_items: `root` is the module whose
@@ -2444,8 +2461,7 @@ fn void collect_star_export_items(ModuleDef* mod, NsExportItem[MAX_NS_EXPORTS]* 
 /// always resolves ambiguity relative to it, ECMA-262 §16.2.1.6.3), `mod` is
 /// the current module being scanned for `export *` targets.
 fn void collect_star_export_items_from(ModuleDef* root, ModuleDef* mod,
-                                       NsExportItem[MAX_NS_EXPORTS]* items,
-                                       uint* count, uint depth) {
+                                       List{NsExportItem}* items, uint depth) {
     if (depth > MAX_STAR_EXPORTS) return;
     for (uint si = 0; si < (uint)mod.star_exports.len(); si++) {
         StarExportEntry* se = &mod.star_exports[si];
@@ -2464,10 +2480,10 @@ fn void collect_star_export_items_from(ModuleDef* root, ModuleDef* mod,
             ResolveSetEntry[RESOLVE_SET_MAX] amb_rset;
             ResolveExportResult amb_rr = resolve_export(root, ee.export_name, &amb_rset[0], 0);
             if (amb_rr.kind == ResolveExportKind.AMBIGUOUS) continue;
-            ns_add_export_item(items, count, ee.export_name, target, ee);
+            ns_add_export_item(items, ee.export_name, target, ee);
         }
         // Transitively include the target's own star re-exports.
-        collect_star_export_items_from(root, target, items, count, depth + 1);
+        collect_star_export_items_from(root, target, items, depth + 1);
     }
 }
 
@@ -2550,26 +2566,26 @@ fn HObject*? build_namespace_object(Heap* heap, ModuleDef* source_mod) {
     // reached transitively through `export *` star re-exports. `default` is
     // never re-exported by a star (§16.2.3.7). Names already contributed by a
     // nearer export win (star names are only added if not already present).
-    NsExportItem[MAX_NS_EXPORTS] items;
-    uint item_count = 0;
+    List{NsExportItem} items;
+    items.allocator = mem;
     for (uint i = 0; i < (uint)source_mod.exports.len(); i++) {
         ExportEntry* ee = &source_mod.exports[i];
-        ns_add_export_item(&items, &item_count, ee.export_name, source_mod, ee);
+        ns_add_export_item(&items, ee.export_name, source_mod, ee);
     }
-    collect_star_export_items(source_mod, &items, &item_count, 0);
+    collect_star_export_items(source_mod, &items, 0);
 
     // Sort collected items by export_name into code-unit order (§10.4.6.9).
-    for (uint i = 1; i < item_count; i++) {
+    for (uint i = 1; i < (uint)items.len(); i++) {
         NsExportItem tmp = items[i];
         int j = (int)i - 1;
-        while (j >= 0 && export_name_less(tmp.export_name, items[j].export_name)) {
-            items[j + 1] = items[j];
+        while (j >= 0 && export_name_less(tmp.export_name, items[(sz)j].export_name)) {
+            items[(sz)(j + 1)] = items[(sz)j];
             j--;
         }
-        items[j + 1] = tmp;
+        items[(sz)(j + 1)] = tmp;
     }
 
-    for (uint oi = 0; oi < item_count; oi++) {
+    for (uint oi = 0; oi < (uint)items.len(); oi++) {
         NsExportItem* it = &items[oi];
         HString* export_key = heap.str_intern(it.export_name);
         if (export_key == null) continue;

@@ -1563,6 +1563,21 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
                 }
                 if (matched) {
                     Token idTok2 = matched_id;
+                    // A TS postfix cast/satisfies (`typeof (v) as T`) must not
+                    // strand the cast keyword after the fast path's return;
+                    // fall through to the normal path when one follows.
+                    Token? cast_opt = self.lexer.peek();
+                    if (try ct2 = cast_opt) {
+                        if (ct2.type == TokenType.LOG_NOT
+                            || (ct2.type == TokenType.IDENTIFIER && self.lexer.ts_mode
+                                && (ident_is(ct2.str_value, "as")
+                                    || ident_is(ct2.str_value, "satisfies")))) {
+                            matched = false;
+                        }
+                    }
+                }
+                if (matched) {
+                    Token idTok2 = matched_id;
                     if (!self.is_global) {
                         if (try local_reg = self.resolve_var(idTok2.str_value)) {
                             ushort res_typeof = self.alloc_reg();
@@ -1603,6 +1618,7 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
                         // Peek one more token to check for member/call access
                         Token? peeked2 = self.lexer.peek();
                         bool is_member = false;
+                        bool is_ts_postfix = false;
                         if (try tok2 = peeked2) {
                             is_member = tok2.type == TokenType.DOT ||
                                         tok2.type == TokenType.LBRACKET ||
@@ -1611,10 +1627,18 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
                                         tok2.type == TokenType.TEMPLATE ||
                                         tok2.type == TokenType.TEMPLATE_HEAD ||
                                         (tok2.type == TokenType.STRING && tok2.is_template);
+                            is_ts_postfix = self.lexer.ts_mode
+                                && (tok2.type == TokenType.LOG_NOT
+                                    || (tok2.type == TokenType.IDENTIFIER
+                                        && (ident_is(tok2.str_value, "as")
+                                            || ident_is(tok2.str_value, "satisfies"))));
                         }
-                        if (is_member) {
-                            // Not a bare identifier, push back and fall through
-                            // to normal typeof expr (will parse the member expr)
+                        if (is_member || is_ts_postfix) {
+                            // Not a plain bare identifier (member/call/template
+                            // follows, or a TS cast/assertion the fast path
+                            // would strand): push back and fall through to
+                            // normal typeof expr parsing, whose postfix
+                            // handling erases `as T` / `!`.
                             self.pushback(idTok);
                         } else {
                             // If the identifier resolves to a non-captured local

@@ -78,7 +78,8 @@ LIBS = {
     # Tree specs fetch a whole source tree enumerated from jsDelivr's file API
     # rather than a fixed file list. `dest` is the cache-relative base the
     # sources land under, `keep` selects the files, `strip` removes a path
-    # prefix before the file is laid out under `dest`.
+    # prefix before the file is laid out under `dest`, and `patch` rewrites
+    # individual fetched files (cache-relative path -> body transform).
     "fpts": {
         "driver": "fpts.ts",
         # fp-ts sources import their own package by name ('fp-ts/function'),
@@ -111,6 +112,18 @@ LIBS = {
                 and "/benchmarks/" not in name
             ),
             "strip": "/",
+            # v4/classic/compat.ts ends with `export enum ZodFirstPartyTypeKind
+            # {}`, a memberless deprecated stub kept only for
+            # zod-to-json-schema compatibility. Enums are non-erasable
+            # TypeScript and the engine rejects them by design, so the stub
+            # line is dropped at fetch time. Nothing in the tree imports the
+            # name (the only other mention is the v3 compat copy, which no v4
+            # module reaches).
+            "patch": {
+                "zod/src/v4/classic/compat.ts": lambda body: re.sub(
+                    r"\n/\*\* [^\n]*\*/\nexport enum ZodFirstPartyTypeKind \{\}[^\n]*\n?$",
+                    "\n", body),
+            },
         },
     },
 }
@@ -146,6 +159,7 @@ def fetch_tree(tree, name):
         print(f"  FAILED listing {name}: {e}", file=sys.stderr)
         return None
     strip = tree.get("strip", "")
+    patch = tree.get("patch", {})
     rels = []
     for entry in listing["files"]:
         n = entry["name"]
@@ -155,7 +169,15 @@ def fetch_tree(tree, name):
         dest = os.path.join(CACHE, tree["dest"], rel)
         if not fetch(tree["base"].rstrip("/") + "/" + n.lstrip("/"), dest):
             return None
-        rels.append(os.path.join(tree["dest"], rel))
+        cache_rel = os.path.join(tree["dest"], rel)
+        if cache_rel in patch:
+            with open(dest) as f:
+                body = f.read()
+            patched = patch[cache_rel](body)
+            if patched != body:
+                with open(dest, "w") as f:
+                    f.write(patched)
+        rels.append(cache_rel)
     return rels
 
 
@@ -227,13 +249,40 @@ def strip_with_tsc(rel_files):
 
 DECL_RE = re.compile(r"\b(?:function|class|const|let|var)\s+([A-Za-z_$][\w$]*)")
 EXPORT_LIST_RE = re.compile(r"export\s*\{([^}]*)\}\s*;", re.M)
+# Local names an import statement can bind: the default name, `* as ns`, and
+# each `{ a as b }` / bare `{ a }` specifier. An `export { z }` re-exporting an
+# imported binding is valid, so those names count as declared.
+IMPORT_NAMES_RE = re.compile(
+    r"\bimport\s+(?:([A-Za-z_$][\w$]*)\s*,\s*)?"
+    r"(?:\*\s*as\s+([A-Za-z_$][\w$]*)|\{([^}]*)\})?"
+    r"\s*from\s"
+)
+
+
+def _import_binding_names(body):
+    names = set()
+    for m in IMPORT_NAMES_RE.finditer(body):
+        if m.group(1):
+            names.add(m.group(1))
+        if m.group(2):
+            names.add(m.group(2))
+        if m.group(3):
+            inner = re.sub(r"//[^\n]*|/\*.*?\*/", "", m.group(3), flags=re.S)
+            for spec in inner.split(","):
+                spec = spec.strip().replace("type ", "").strip()
+                if not spec:
+                    continue
+                local = spec.split(" as ")[-1].strip()
+                if local:
+                    names.add(local)
+    return names
 
 
 def drop_undeclared_export_names(body):
     """The stripper sometimes keeps type-only names in a trailing export list
     (same-file interfaces), which makes the emitted .js an invalid module.
     Drop specifiers that name no declaration in the file."""
-    declared = set(DECL_RE.findall(body))
+    declared = set(DECL_RE.findall(body)) | _import_binding_names(body)
 
     def fix(m):
         # The emitted list keeps the source's `//` AND `/** */` comments (fp-ts

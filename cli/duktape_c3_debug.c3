@@ -154,7 +154,11 @@ fn int main(String[] args) {
         // any body runs. Skipping it left every module-scope `function` decl
         // (and any cross-module import) unresolved at body-execution time.
         if (!esm::link_module(hp, v, mod, v.global_env)) {
-            io::eprintfn("module link failed");
+            if (v.heap.has_error) {
+                print_uncaught_error(v.heap, &v.heap.error_value);
+            } else {
+                io::eprintfn("module link failed");
+            }
             return 1;
         }
 
