@@ -1,36 +1,144 @@
 {
- "timestamp": "2026-07-31 15:40:00",
- "phases": [
-  {
-   "name": "Phase 22: Buffers",
-   "total": 3530,
-   "pass": 3302,
-   "fail": 0,
-   "skip": 228,
-   "ce_unexpected": 0
-  },
-  {
-   "name": "Phase 23: Proxy",
-   "total": 311,
-   "pass": 262,
-   "fail": 0,
-   "skip": 49,
-   "ce_unexpected": 0
-  },
-  {
-   "name": "Phase 25: ESM Modules",
-   "total": 729,
-   "pass": 582,
-   "fail": 0,
-   "skip": 147,
-   "ce_unexpected": 0
+  "timestamp": "2026-08-17 16:04:15",
+  "phases": [
+    {
+      "label": "Phase 0-1: Core VM",
+      "total": 3148,
+      "pass": 2477,
+      "fail": 0,
+      "skip": 671
+    },
+    {
+      "label": "Phase 1: Calling Convention & Closures",
+      "total": 426,
+      "pass": 384,
+      "fail": 0,
+      "skip": 42
+    },
+    {
+      "label": "Phase 2: Basic Operators",
+      "total": 2484,
+      "pass": 2256,
+      "fail": 0,
+      "skip": 228
+    },
+    {
+      "label": "Phase 3: Object System",
+      "total": 7967,
+      "pass": 7772,
+      "fail": 0,
+      "skip": 195
+    },
+    {
+      "label": "Phase 4: Error Handling & References",
+      "total": 402,
+      "pass": 379,
+      "fail": 0,
+      "skip": 23
+    },
+    {
+      "label": "Phase 5: Built-in Constructors",
+      "total": 8751,
+      "pass": 8451,
+      "fail": 0,
+      "skip": 300
+    },
+    {
+      "label": "Phase 6: Built-in Prototype Methods",
+      "total": 4713,
+      "pass": 4619,
+      "fail": 0,
+      "skip": 94
+    },
+    {
+      "label": "Phase 7: Remaining ES5 Features",
+      "total": 1898,
+      "pass": 1528,
+      "fail": 0,
+      "skip": 370
+    },
+    {
+      "label": "Phase 8: ES5 Built-in Objects",
+      "total": 3187,
+      "pass": 3155,
+      "fail": 0,
+      "skip": 32
+    },
+    {
+      "label": "Phase 11: Arrow Functions & Templates",
+      "total": 465,
+      "pass": 439,
+      "fail": 0,
+      "skip": 26
+    },
+    {
+      "label": "Phase 12-13: Destructuring & Spread",
+      "total": 19,
+      "pass": 18,
+      "fail": 0,
+      "skip": 1
+    },
+    {
+      "label": "Phase 14: for-of",
+      "total": 751,
+      "pass": 705,
+      "fail": 0,
+      "skip": 46
+    },
+    {
+      "label": "Phase 24: for-await-of",
+      "total": 1483,
+      "pass": 1434,
+      "fail": 0,
+      "skip": 49
+    },
+    {
+      "label": "Phase 15: Classes",
+      "total": 8520,
+      "pass": 8469,
+      "fail": 0,
+      "skip": 51
+    },
+    {
+      "label": "Phase 17-20: Map/Set/Symbol/Promise/WeakMap/WeakSet/WeakRef/FinalizationRegistry",
+      "total": 1715,
+      "pass": 1614,
+      "fail": 0,
+      "skip": 101
+    },
+    {
+      "label": "Phase 21: Generators",
+      "total": 2325,
+      "pass": 2156,
+      "fail": 0,
+      "skip": 169
+    },
+    {
+      "label": "Phase 22: Buffers",
+      "total": 3530,
+      "pass": 3302,
+      "fail": 0,
+      "skip": 228
+    },
+    {
+      "label": "Phase 23: Proxy",
+      "total": 311,
+      "pass": 262,
+      "fail": 0,
+      "skip": 49
+    },
+    {
+      "label": "Phase 25: ESM Modules",
+      "total": 729,
+      "pass": 582,
+      "fail": 0,
+      "skip": 147
+    }
+  ],
+  "overall": {
+    "pass": 50002,
+    "fail": 0,
+    "skip": 2822,
+    "total": 52824
   }
- ],
- "overall": {
-  "pass": 49814,
-  "fail": 0,
-  "ce": 0,
-  "skip": 3010,
-  "total": 52824
- }
 }

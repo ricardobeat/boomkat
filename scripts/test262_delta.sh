@@ -68,13 +68,14 @@ phases = []
 overall_pass = overall_fail = overall_skip = 0
 
 for line in text.split('\n'):
-    # Parse phase data lines:
-    #   "Phase X: Label | total | pass | fail | skip"
-    # NB: the header "Phase | Total | Pass | Fail | Skip" starts with "Phase "
-    #     but lacks a colon — guard with ": " to exclude it.
+    # Parse phase data lines, current runner format:
+    #   "Phase 0-1: Label | total | pass | fail | skip | CE:expected-parse | ..."
+    # The runner prints the CE columns after the skip count, so take the first
+    # five |-separated fields. The header "Phase | Total | ..." also starts
+    # with "Phase " but has no colon, so the ": " guard excludes it.
     if line.startswith('Phase ') and ': ' in line:
         parts = [p.strip() for p in line.split('|')]
-        if len(parts) == 5:
+        if len(parts) >= 5:
             label = parts[0]
             p_total = int(parts[1])
             p_pass  = int(parts[2])
@@ -92,8 +93,9 @@ for line in text.split('\n'):
             overall_skip += p_skip
 
     # Parse overall line (overrides phase-summed totals when present, e.g.
-    # "Overall: 18302 pass / 123 fail (99.3%)")
-    m = re.match(r'^Overall:\s*(\d+)\s+pass\s+/\s+(\d+)\s+fail', line)
+    # "Overall (raw): 18302 pass / 123 fail (99.3%)"); the "(raw)" qualifier
+    # came with the CE breakdown columns.
+    m = re.match(r'^Overall(?:\s*\(raw\))?:\s*(\d+)\s+pass\s+/\s+(\d+)\s+fail', line)
     if m:
         overall_pass = int(m.group(1))
         overall_fail = int(m.group(2))
