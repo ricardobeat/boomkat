@@ -13,7 +13,7 @@
 
 **Boomkat** is a strict-only Javascript engine developed from scratch. It is written in [C3](https://c3-lang.org/), using Duktape and QuickJS as architectural references. The goal was to match Duktape's performance, but ended up matching (even slightly surpassing) QuickJS in runtime performance and memory usage.
 
-👉 This is **not production-ready** code. Surprisingly, 100% test262 conformance is not nearly enough to validate the engine. In particular, the source code has not been scanned for security vulnerabilities. Use at your own peril.
+👉 This is **not production-ready** code. Surprisingly, 100% test262 conformance is not nearly enough to validate the engine. There are still bugs lurking. In particular, the source code has not been scanned for security vulnerabilities. Use at your own peril.
 
 ## Compatibility and features
 
@@ -171,8 +171,14 @@ Bindings in C3, Rust, Python, Ruby, and Zig
 - `-D ENV_STRICT`: compile-time environment-handling checks
   (`boomkat_envstrict` target)
 
+## Support this project
+
+If you'd like to support the project, you can [sponsor me](https://github.com/sponsors/ricardobeat) on Github.
+
+[![Sponsor](https://img.shields.io/badge/sponsor-%E2%9D%A4-red)](https://github.com/sponsors/ricardobeat)
+
 ## License
 
-Use of this software is govered by the Business Source License included in the [LICENSE](./LICENSE) file and at www.mariadb.com/bsl11.
+Use of this software is governed by the Business Source License included in the [LICENSE](./LICENSE) file and at www.mariadb.com/bsl11.
 
 Can be used without restrictions for open-source work, and commercial projects up to $2M/year revenue. Source becomes MIT-licensed after four years.
