@@ -18,3 +18,4 @@ test/libcorpus/
 
 # TypeScript runtime-library sources (fetched by scripts/verify_ts_libraries.py)
 test/tscorpus/
+test262_results
