@@ -2,7 +2,7 @@
 """
 Golden-bytecode test runner.
 
-Runs `out/duktape_c3_debug -c` on every `.js` file in test/golden_bytecode/
+Runs `out/boomkat_debug -c` on every `.js` file in test/golden_bytecode/
 and diffs the disassembly against the checked-in `.expected` file of the
 same name. This is the contract that keeps compiler-peephole fusions
 (ADDI/SUBI, INC_VAR, GETPROPC, JMP_N*, copy-propagation, ...) honest across
@@ -13,7 +13,7 @@ regression.
 
 Each golden is a pair:
     test/golden_bytecode/<name>.js         source snippet
-    test/golden_bytecode/<name>.expected   `duktape_c3_debug -c` stdout, verbatim
+    test/golden_bytecode/<name>.expected   `boomkat_debug -c` stdout, verbatim
 
 Usage:
     python3 scripts/run_golden_bytecode.py                 # run + diff all goldens
@@ -25,8 +25,8 @@ Usage:
                                                               pure no-op when disabled)
     python3 scripts/run_golden_bytecode.py fib_subi          # run a single golden by name
 
-Requires `out/duktape_c3_debug` to be built with TRACE_VM (the `duktape_c3_debug`
-target already carries this feature — see `just build-trace` / `make out/duktape_c3_debug`).
+Requires `out/boomkat_debug` to be built with TRACE_VM (the `boomkat_debug`
+target already carries this feature — see `just build-trace` / `make out/boomkat_debug`).
 """
 
 import argparse
@@ -37,7 +37,7 @@ import sys
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 GOLDEN_DIR = os.path.join(REPO_ROOT, "test", "golden_bytecode")
-DEBUG_BIN = os.path.join(REPO_ROOT, "out", "duktape_c3_debug")
+DEBUG_BIN = os.path.join(REPO_ROOT, "out", "boomkat_debug")
 
 # Fused opcodes that at least one golden must exercise. Used only by
 # --check-noop to confirm --no-optimize output is free of every one of them
@@ -77,7 +77,7 @@ def main():
     args = parser.parse_args()
 
     if not os.path.isfile(DEBUG_BIN):
-        print(f"error: {DEBUG_BIN} not found — build it first (`c3c build duktape_c3_debug` or `just build-trace`)",
+        print(f"error: {DEBUG_BIN} not found — build it first (`c3c build boomkat_debug` or `just build-trace`)",
               file=sys.stderr)
         return 1
 
@@ -94,7 +94,7 @@ def main():
 
         actual, rc = run_disasm(js_path)
         if rc != 0:
-            print(f"FAIL {name}: duktape_c3_debug exited {rc}")
+            print(f"FAIL {name}: boomkat_debug exited {rc}")
             failures.append(name)
             continue
 

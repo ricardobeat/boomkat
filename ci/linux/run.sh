@@ -68,9 +68,9 @@ printf 'compiler-rt: %s\n' "${RT_LIB:-<none found>}"
 
 # ---------------------------------------------------------------------------
 if want build; then
-    say "1. build the engine (c3c build duktape_c3)"
-    if timeout "$TIMEOUT" make duktape_c3 2>&1 | grep -viE 'warning|^ *[0-9]+:|^ *\^+ *$' | tail -5; then
-        [ -x out/duktape_c3 ] && pass "engine binary built" || fail "engine binary missing"
+    say "1. build the engine (c3c build boomkat)"
+    if timeout "$TIMEOUT" make boomkat 2>&1 | grep -viE 'warning|^ *[0-9]+:|^ *\^+ *$' | tail -5; then
+        [ -x out/boomkat ] && pass "engine binary built" || fail "engine binary missing"
     else
         fail "engine build"
     fi
@@ -79,7 +79,7 @@ fi
 # ---------------------------------------------------------------------------
 if want tests; then
     say "2. engine test suite (bash test/run_local.sh)"
-    if [ ! -x out/duktape_c3 ]; then
+    if [ ! -x out/boomkat ]; then
         skip "test suite (no engine binary)"
     else
         suite_log=$(mktemp)
@@ -147,7 +147,7 @@ if want link; then
 
         # Everything the engine and its vendored C define is also exported: c3c
         # has no visibility control and no version script, so the whole module
-        # graph (duktape.*, lre_*, cr_*) lands in .dynsym. This is NOT a Linux
+        # graph (boomkat.*, lre_*, cr_*) lands in .dynsym. This is NOT a Linux
         # regression -- the macOS dylib exports ~2460 symbols for the same
         # reason -- so it is reported as a count, not failed on. What matters is
         # that the 12 documented jse_ entry points are all present.

@@ -1,15 +1,15 @@
 module test;
 
-import duktape::lexer;
-import duktape::compiler;
-import duktape::bytecode;
-import duktape::types;
+import boomkat::lexer;
+import boomkat::compiler;
+import boomkat::bytecode;
+import boomkat::types;
 import std::io;
 import libc;
 
 fn int main(String[] args) {
     if (args.len < 2) {
-        io::eprintfn("Usage: duktape_c3 <file.js>");
+        io::eprintfn("Usage: boomkat <file.js>");
         return 1;
     }
     

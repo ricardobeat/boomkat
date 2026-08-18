@@ -16,7 +16,7 @@
 # Usage: bash scripts/run_gc_stress.sh [engine_binary]
 # Returns non-zero if any test fails.
 
-ENGINE="${1:-./out/duktape_c3_gc_stress}"
+ENGINE="${1:-./out/boomkat_gc_stress}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 TESTS=(

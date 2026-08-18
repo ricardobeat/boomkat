@@ -18,7 +18,7 @@ of the JavaScript block it came from.
 
 ## Running
 
-    just rosetta            # or: bash test/rosetta-verbatim/run.sh ./out/duktape_c3
+    just rosetta            # or: bash test/rosetta-verbatim/run.sh ./out/boomkat
     just rosetta-check      # re-fetch from the wiki and diff against local copies
 
 `rosetta-check` is how you confirm a sample has not been quietly edited (and

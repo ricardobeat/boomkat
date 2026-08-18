@@ -16,7 +16,7 @@
 // Manifestation: either wrong values (ok:false, _format:[object Object])
 // or SIGSEGV (exit 139) depending on memory layout.
 //
-// Repro: ./out/duktape_c3 --module test/modules/t12_tinycolor/bugs.js
+// Repro: ./out/boomkat --module test/modules/t12_tinycolor/bugs.js
 // Expected: "ok: true, r: 255"  Actual: crash or wrong values
 
 import tinycolor from '../../vendor/tinycolor.esm.js';

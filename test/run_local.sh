@@ -2,8 +2,8 @@
 # Run the local JS test suite.
 #
 # Five surfaces, because they need different invocations:
-#   1. test/*.js       — plain scripts, run as `duktape_c3 <file>`.
-#   2. test/modules/   — ESM fixtures, run as `duktape_c3 --module <entry>`;
+#   1. test/*.js       — plain scripts, run as `boomkat <file>`.
+#   2. test/modules/   — ESM fixtures, run as `boomkat --module <entry>`;
 #                        delegated to test/modules/run.sh, which owns the
 #                        entry-point list. The flat sweep skips the directory.
 #   3. test/uncaught/  — uncaught-exception reporting on stderr; delegated to
@@ -22,7 +22,7 @@
 # Usage: bash test/run_local.sh [engine_binary]
 # Returns non-zero if any test fails.
 
-ENGINE="${1:-./out/duktape_c3}"
+ENGINE="${1:-./out/boomkat}"
 DIR="$(cd "$(dirname "$0")" && pwd)"
 PASS=0
 FAIL=0

@@ -3,7 +3,7 @@
 # Exits non-zero on any failure.
 set -uo pipefail
 
-BIN="${BIN:-./out/duktape_c3}"
+BIN="${BIN:-./out/boomkat}"
 DIR="$(cd "$(dirname "$0")" && pwd)"
 FAIL=0
 

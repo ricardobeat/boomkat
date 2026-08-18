@@ -38,7 +38,7 @@
 #
 # Usage: bash test/console_format/run.sh [engine_binary]
 
-ENGINE="${1:-./out/duktape_c3}"
+ENGINE="${1:-./out/boomkat}"
 DIR="$(cd "$(dirname "$0")" && pwd)"
 
 total=0

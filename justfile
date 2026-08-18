@@ -1,10 +1,10 @@
-# Duktape C3 Port — common tasks
+# Boomkat — common tasks
 justfile := "benchmarks/README.md"
 
 # ── Build ────────────────────────────────────────────────────────────────────
 
 # Build everything (default)
-all: build-lib build-batch build-bench build-orig-duktape
+all: build-lib build-batch build-bench build-duktape
 
 # Build the static library (skips c3c if nothing changed — see Makefile)
 build-lib:
@@ -14,13 +14,13 @@ build-lib:
 build-batch:
     @make out/test262_runner
 
-# Build the C3 Duktape CLI — the plain runner (skips c3c if nothing changed)
+# Build the boomkat CLI — the plain runner (skips c3c if nothing changed)
 build-bench:
-    @make out/duktape_c3
+    @make out/boomkat
 
 # Build original Duktape v2.7.0 for comparison benchmarks
-build-orig-duktape:
-    @cc -O2 -o out/duktape_orig benchmarks/duktape_orig.c $(ls duktape/src-separate/*.c) -I.
+build-duktape:
+    @cc -O2 -o out/duktape benchmarks/duktape.c $(ls duktape/src-separate/*.c) -I.
     @rm -f out/bench_cache_duktape.txt
 
 # Build QuickJS CLI for comparison benchmarks
@@ -29,22 +29,22 @@ build-quickjs:
     cp quickjs/qjs out/
     @rm -f out/bench_cache_qjs.txt
 
-# Build a specific target: `just build <target>`  (e.g. just build duktape_c3)
-build t="duktape_c3":
+# Build a specific target: `just build <target>`  (e.g. just build boomkat)
+build t="boomkat":
     c3c build "{{t}}"
 
-# Build the C3 Duktape CLI with debug symbols (-O0) for lldb debugging
-build-debug t="duktape_c3":
+# Build the boomkat CLI with debug symbols (-O0) for lldb debugging
+build-debug t="boomkat":
     c3c -O0 build "{{t}}"
 
-# Build the inspection CLI (`out/duktape_c3_debug`): the `duktape_c3_debug`
+# Build the inspection CLI (`out/boomkat_debug`): the `boomkat_debug`
 # target carries `-D TRACE_VM`, so `-c`/`--format json`/`-t` (`--trace-vm`)
 # dump bytecode, dump JSON, and trace every instruction respectively.
 build-trace:
-    c3c build duktape_c3_debug
+    c3c build boomkat_debug
 
 # Run the golden-bytecode fusion test suite (test/golden_bytecode/): diffs
-# `duktape_c3_debug -c` disasm against checked-in .expected files so a
+# `boomkat_debug -c` disasm against checked-in .expected files so a
 # compiler change that silently breaks a peephole fusion (ADDI/SUBI,
 # INC_VAR, GETPROPC, JMP_N*, ...) fails loudly instead of only showing up
 # as an unexplained benchmark regression. --check-noop also asserts the
@@ -60,21 +60,21 @@ update-golden-bytecode: build-trace
     python3 scripts/run_golden_bytecode.py --update
 
 # Build with heap verification enabled (`-D HEAP_VERIFY`) — validates GC roots at yield/resume
-build-verify t="duktape_c3":
+build-verify t="boomkat":
     c3c -D HEAP_VERIFY -O0 build "{{t}}"
 
-# Build duktape_c3 with heap verification and run a JS file
+# Build boomkat with heap verification and run a JS file
 run-verify file="test/simple.js":
-    c3c -D HEAP_VERIFY -O0 build duktape_c3
-    ./out/duktape_c3 {{file}}
+    c3c -D HEAP_VERIFY -O0 build boomkat
+    ./out/boomkat {{file}}
 
 # ── Debugging ─────────────────────────────────────────────────────────────────
 
-# Build duktape_c3 with -O0 and launch lldb
+# Build boomkat with -O0 and launch lldb
 # Usage: just lldb test/simple.js    (basic run + bt on crash)
 lldb file="test/simple.js":
-    c3c -O0 build duktape_c3
-    lldb ./out/duktape_c3 -b -o "run {{file}}" -o "bt"
+    c3c -O0 build boomkat
+    lldb ./out/boomkat -b -o "run {{file}}" -o "bt"
 
 # Build the AddressSanitizer test262 runner (`out/test262_runner_asan`): the
 # `test262_runner_asan` target is -O0 with `"sanitize": "address"`, for chasing
@@ -86,13 +86,13 @@ build-asan:
     @make out/test262_runner_asan
 
 # Build with NaN-boxing disabled (`-D NONANBOX`)
-build-nonanbox t="duktape_c3":
+build-nonanbox t="boomkat":
     c3c -D NONANBOX build "{{t}}"
 
-# Build duktape_c3 with NaN-boxing disabled and run a smoke test
+# Build boomkat with NaN-boxing disabled and run a smoke test
 test-nonanbox file="test/simple.js":
-    c3c -D NONANBOX build duktape_c3
-    ./out/duktape_c3 {{file}}
+    c3c -D NONANBOX build boomkat
+    ./out/boomkat {{file}}
 
 # Clean build artifacts
 clean:
@@ -110,18 +110,18 @@ pack:
 
 # Run a single JS file (skips c3c if nothing changed)
 run file="test/simple.js":
-    @make out/duktape_c3
-    ./out/duktape_c3 {{file}}
+    @make out/boomkat
+    ./out/boomkat {{file}}
 
 # Run a JS file as an ESM module (import/export) (skips c3c if nothing changed)
 run-module file="test/modules/t01_named/main.js":
-    @make out/duktape_c3
-    ./out/duktape_c3 --module {{file}}
+    @make out/boomkat
+    ./out/boomkat --module {{file}}
 
 # Run all ESM module tests: the runnable fixtures, then the module-syntax
 # declaration-position early errors (compile-only, so they need their own driver)
 modules:
-    @just build duktape_c3
+    @just build boomkat
     bash test/modules/run.sh
     bash test/modules/syntax_positions.sh
     bash test/modules/export_names.sh
@@ -131,18 +131,18 @@ modules:
 # test_async_500k.js is excluded — it passes but takes ~20s, so it is a perf
 # stress test rather than a regression check; run it directly when relevant.
 test-local:
-    @just build duktape_c3
+    @just build boomkat
     bash test/run_local.sh
 
 # Run the GC-lifetime tests under a build that collects at every allocation
-# (`duktape_c3_gc_stress`: -D GC_STRESS plus ASAN). Under the normal trigger a
+# (`boomkat_gc_stress`: -D GC_STRESS plus ASAN). Under the normal trigger a
 # value that survives an allocating call without being a real GC root is merely
 # lucky, so a missed root is invisible to every other gate here and only shows up
 # as a field crash on a memory-tight device. This build makes it deterministic.
 # Slow by construction — keep the script's list to the tests that exercise
 # lifetimes across suspension, microtask, and re-entry boundaries.
 test-gc-stress:
-    @make out/duktape_c3_gc_stress
+    @make out/boomkat_gc_stress
     bash scripts/run_gc_stress.sh
 
 # Assert that exiting a for-in early (break/return/throw) costs no more peak
@@ -150,14 +150,14 @@ test-gc-stress:
 # /usr/bin/time -l rather than an in-script assertion — the engine exposes no
 # GC trigger, so a stranded enumeration state is only visible as RSS growth.
 test-forin-rss:
-    @just build duktape_c3
+    @just build boomkat
     bash scripts/check_forin_early_exit_rss.sh
 
 # Assert that abandoning a generator suspended inside a try costs no more peak
 # RSS than running the same generator to exhaustion. Same reasoning as
 # test-forin-rss: a stranded Catcher chain is invisible to script assertions.
 test-generator-catcher-rss:
-    @just build duktape_c3
+    @just build boomkat
     bash scripts/check_generator_catcher_rss.sh
 
 # Assert that `s += ...` in a loop scales linearly. Lives outside test-local
@@ -165,7 +165,7 @@ test-generator-catcher-rss:
 # sizes; a script cannot assert its own asymptotics. Interning every
 # concatenation temporary made this O(n^2).
 test-string-concat-scaling:
-    @just build duktape_c3
+    @just build boomkat
     bash scripts/check_string_concat_scaling.sh
 
 # Assert that adding properties to one object scales linearly in memory. Same
@@ -173,7 +173,7 @@ test-string-concat-scaling:
 # so only peak RSS at two sizes separates them. Building the property hash
 # table per shape made a single object's growth O(n^2).
 test-unshared-shape-hash-rss:
-    @just build duktape_c3
+    @just build boomkat
     bash scripts/check_unshared_shape_hash_rss.sh
 
 # Run the local corpus through the ASan build. The compiler sizes its own
@@ -188,11 +188,11 @@ test-compile-asan:
 # ── JS test suites ───────────────────────────────────────────────────────────
 
 # Run the engine conformance tests (hand-written assert-based)
-engine-tests engine="duktape_c3":
+engine-tests engine="boomkat":
    bash test/engine/run.sh ./out/{{engine}}
 
 # Run the verbatim Rosetta Code samples (unmodified third-party code)
-rosetta engine="duktape_c3":
+rosetta engine="boomkat":
    bash test/rosetta-verbatim/run.sh ./out/{{engine}}
 
 # Confirm the verbatim samples still match rosettacode.org
@@ -225,7 +225,7 @@ ts-conformance phase-dir="":
 # node's type stripping, plus reject tests for non-erasable syntax. Regenerate
 # the reference files with `bash test/typescript/handbook/run.sh --regen`.
 ts-handbook:
-    @just build duktape_c3
+    @just build boomkat
     bash test/typescript/handbook/run.sh
 
 # Fetch real-world TS library sources (microdiff, zustand, valtio) into
@@ -233,7 +233,7 @@ ts-handbook:
 # identical to node's native type stripping. Needs node on PATH; the first
 # run needs network, later runs are cached.
 ts-runtime:
-    @just build duktape_c3
+    @just build boomkat
     python3 scripts/verify_ts_libraries.py
 
 # Detect test contamination: run a phase with --workers 1 in fixed vs shuffled
@@ -258,61 +258,61 @@ test262-gate: build-batch
 
 # Run all benchmarks without rebuilding (default: 3 iterations)
 bench n="3":
-	@test -f out/duktape_c3 || { echo "ERROR: out/duktape_c3 not found — run: c3c build duktape_c3"; exit 1; }
-	@test -f out/duktape_orig || { echo "Building original Duktape..."; cc -O2 -o out/duktape_orig benchmarks/duktape_orig.c $(ls duktape/src-separate/*.c) -I.; rm -f out/bench_cache_duktape.txt; }
+	@test -f out/boomkat || { echo "ERROR: out/boomkat not found — run: c3c build boomkat"; exit 1; }
+	@test -f out/duktape || { echo "Building original Duktape..."; cc -O2 -o out/duktape benchmarks/duktape.c $(ls duktape/src-separate/*.c) -I.; rm -f out/bench_cache_duktape.txt; }
 	@test -f out/qjs || { echo "Building QuickJS..."; make -C quickjs qjs && cp quickjs/qjs out/ && rm -f out/bench_cache_qjs.txt; }
 	bash scripts/run_benchmarks.sh {{n}}
 
-# Rebuild duktape_c3 and run all benchmarks
+# Rebuild boomkat and run all benchmarks
 bench-rebuild n="3":
-	c3c build duktape_c3
-	@test -f out/duktape_orig || { echo "Building original Duktape..."; cc -O2 -o out/duktape_orig benchmarks/duktape_orig.c $(ls duktape/src-separate/*.c) -I.; rm -f out/bench_cache_duktape.txt; }
+	c3c build boomkat
+	@test -f out/duktape || { echo "Building original Duktape..."; cc -O2 -o out/duktape benchmarks/duktape.c $(ls duktape/src-separate/*.c) -I.; rm -f out/bench_cache_duktape.txt; }
 	@test -f out/qjs || { echo "Building QuickJS..."; make -C quickjs qjs && cp quickjs/qjs out/ && rm -f out/bench_cache_qjs.txt; }
 	bash scripts/run_benchmarks.sh {{n}}
 
 # Quick single-engine benchmark (no comparison, skips deep recursion)
 bench-fast n="2":
-	@test -f out/duktape_c3 || { echo "ERROR: out/duktape_c3 not found — run: c3c build duktape_c3"; exit 1; }
+	@test -f out/boomkat || { echo "ERROR: out/boomkat not found — run: c3c build boomkat"; exit 1; }
 	bash scripts/run_bench_fast.sh {{n}}
 
 # Run a single benchmark file: `just bench-one benchmarks/bench_loop.js`
 bench-one file n="3":
-    @test -f out/duktape_c3 || { echo "ERROR: out/duktape_c3 not found"; exit 1; }
-    ./out/duktape_c3 {{file}}
+    @test -f out/boomkat || { echo "ERROR: out/boomkat not found"; exit 1; }
+    ./out/boomkat {{file}}
 
 # Run a single benchmark on original Duktape
 bench-orig file:
-	@test -f out/duktape_orig || { echo "Building original Duktape..."; cc -O2 -o out/duktape_orig benchmarks/duktape_orig.c $(ls duktape/src-separate/*.c) -I.; }
-	./out/duktape_orig {{file}}
+	@test -f out/duktape || { echo "Building original Duktape..."; cc -O2 -o out/duktape benchmarks/duktape.c $(ls duktape/src-separate/*.c) -I.; }
+	./out/duktape {{file}}
 
 # ── Size & Memory Benchmarks ────────────────────────────────────────────────
 
 # Measure binary sizes and peak RSS of all engines
 bench-sizes:
 	@echo "=== Engine Size & Memory Benchmark ==="
-	@test -f out/duktape_c3 || { echo "ERROR: out/duktape_c3 not found — run: c3c build duktape_c3"; exit 1; }
-	@test -f out/duktape_orig || { echo "Building original Duktape..."; cc -O2 -o out/duktape_orig benchmarks/duktape_orig.c $(ls duktape/src-separate/*.c) -I.; }
+	@test -f out/boomkat || { echo "ERROR: out/boomkat not found — run: c3c build boomkat"; exit 1; }
+	@test -f out/duktape || { echo "Building original Duktape..."; cc -O2 -o out/duktape benchmarks/duktape.c $(ls duktape/src-separate/*.c) -I.; }
 	@test -f out/qjs || { echo "Building QuickJS..."; make -C quickjs qjs && cp quickjs/qjs out/; }
 	bash scripts/run_sizes_bench.sh
 
-# Rebuild duktape_c3 and run size/memory benchmark
+# Rebuild boomkat and run size/memory benchmark
 bench-sizes-rebuild:
-	c3c build duktape_c3
-	@test -f out/duktape_orig || { echo "Building original Duktape..."; cc -O2 -o out/duktape_orig benchmarks/duktape_orig.c $(ls duktape/src-separate/*.c) -I.; }
+	c3c build boomkat
+	@test -f out/duktape || { echo "Building original Duktape..."; cc -O2 -o out/duktape benchmarks/duktape.c $(ls duktape/src-separate/*.c) -I.; }
 	@test -f out/qjs || { echo "Building QuickJS..."; make -C quickjs qjs && cp quickjs/qjs out/; }
 	bash scripts/run_sizes_bench.sh
 
 # Measure peak RSS memory usage across engines
 bench-memory:
-	@test -f out/duktape_c3 || { echo "ERROR: out/duktape_c3 not found — run: c3c build duktape_c3"; exit 1; }
-	@test -f out/duktape_orig || { echo "Building original Duktape..."; cc -O2 -o out/duktape_orig benchmarks/duktape_orig.c $(ls duktape/src-separate/*.c) -I.; }
+	@test -f out/boomkat || { echo "ERROR: out/boomkat not found — run: c3c build boomkat"; exit 1; }
+	@test -f out/duktape || { echo "Building original Duktape..."; cc -O2 -o out/duktape benchmarks/duktape.c $(ls duktape/src-separate/*.c) -I.; }
 	@test -f out/qjs || { echo "Building QuickJS..."; make -C quickjs qjs && cp quickjs/qjs out/; }
 	bash scripts/run_memory_bench.sh
 
 # Compare memory usage: current build only
 bench-memory-compare:
 	@echo "=== Building ==="
-	c3c build duktape_c3
+	c3c build boomkat
 	@echo ""
 	@echo "=== CURRENT BUILD ==="
 	@bash scripts/run_memory_bench.sh

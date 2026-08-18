@@ -1,11 +1,11 @@
 #!/bin/bash
-# Run all ESM module tests through the duktape_c3 engine.
+# Run all ESM module tests through the boomkat engine.
 # Each test is an entry main.js run with --module flag.
 # Pass = exit 0; Fail = non-zero exit (thrown string or runtime error).
 # Usage: bash test/modules/run.sh [engine_binary]
 # Returns non-zero if any test fails.
 
-ENGINE="${1:-./out/duktape_c3}"
+ENGINE="${1:-./out/boomkat}"
 DIR="$(cd "$(dirname "$0")" && pwd)"
 PASS=0
 FAIL=0

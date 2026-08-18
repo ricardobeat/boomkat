@@ -1,4 +1,4 @@
-// Date tests for Duktape C3
+// Date tests for Boomkat
 
 var __failed = false;
 

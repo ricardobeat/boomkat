@@ -1,7 +1,7 @@
 module test_parse;
 
-import duktape::heap;
-import duktape::lexer;
+import boomkat::heap;
+import boomkat::lexer;
 import std::io;
 
 fn int main() {

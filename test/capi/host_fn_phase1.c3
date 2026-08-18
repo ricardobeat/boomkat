@@ -6,16 +6,16 @@
 /// setter, new, super(), a builtin callback, and .name/.length metadata.
 module host_fn_phase1;
 
-import duktape::builtins;
-import duktape::compiler;
-import duktape::vm;
-import duktape::heap;
-import duktape::env;
-import duktape::hobject;
-import duktape::hstring;
-import duktape::lexer;
-import duktape::types;
-import duktape::bytecode;
+import boomkat::builtins;
+import boomkat::compiler;
+import boomkat::vm;
+import boomkat::heap;
+import boomkat::env;
+import boomkat::hobject;
+import boomkat::hstring;
+import boomkat::lexer;
+import boomkat::types;
+import boomkat::bytecode;
 import std::io;
 
 int g_calls;

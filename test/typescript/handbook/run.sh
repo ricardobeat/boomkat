@@ -18,7 +18,7 @@
 # Usage: bash test/typescript/handbook/run.sh [engine_binary] [--regen]
 
 set -u
-ENGINE="${ENGINE:-./out/duktape_c3}"
+ENGINE="${ENGINE:-./out/boomkat}"
 REGEN=0
 for arg in "$@"; do
   case "$arg" in

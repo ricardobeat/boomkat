@@ -9,8 +9,8 @@
 /// host uses.
 module value_registry_gc;
 
-import duktape::capi;
-import duktape::types;
+import boomkat::capi;
+import boomkat::types;
 import std::io;
 
 int g_fails;

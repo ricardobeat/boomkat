@@ -1434,7 +1434,7 @@ def run_single(test, debug=False, keep=False):
     """Run ONE test through the canonical --worker path and print its raw
     verdict. Warns first if the suite would skip the test, so a raw verdict on
     a deferred-feature or noStrict test is not mistaken for a real failure.
-    With debug/keep, builds a concat-harness file for the plain `duktape_c3`
+    With debug/keep, builds a concat-harness file for the plain `boomkat`
     binary (lldb / --trace-vm) instead. Returns a process exit code."""
     path = _resolve_single_path(test)
     if path is None:
@@ -1446,15 +1446,15 @@ def run_single(test, debug=False, keep=False):
         print(f"⚠ SUITE SKIPS THIS TEST ({reason})")
         print("   — verdict below is raw engine behavior, not a suite failure")
 
-    # --keep / --debug: concat harness + run under duktape_c3 (for lldb).
+    # --keep / --debug: concat harness + run under boomkat (for lldb).
     if keep or debug:
         combined = _build_concat_file(path)
         if keep:
             print(combined)
             return 0
-        debug_bin = os.path.join(PROJECT_DIR, "out", "duktape_c3")
+        debug_bin = os.path.join(PROJECT_DIR, "out", "boomkat")
         if not os.path.isfile(debug_bin):
-            print(f"ERROR: {debug_bin} not found. Build it with: c3c build duktape_c3",
+            print(f"ERROR: {debug_bin} not found. Build it with: c3c build boomkat",
                   file=sys.stderr)
             return 2
         try:
@@ -1563,7 +1563,7 @@ def main():
         "--debug",
         action="store_true",
         help="With --single: instead of the worker, concat assert.js/sta.js + the "
-             "test's `includes:` and run under `duktape_c3` (for lldb / --trace-vm).",
+             "test's `includes:` and run under `boomkat` (for lldb / --trace-vm).",
     )
     parser.add_argument(
         "--keep",

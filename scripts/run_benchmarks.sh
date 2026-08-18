@@ -1,22 +1,22 @@
 #!/bin/bash
-# Benchmark comparison runner for Duktape C3 vs original Duktape vs QuickJS
+# Benchmark comparison runner for Boomkat vs original Duktape vs QuickJS
 #
 # Usage: ./scripts/run_benchmarks.sh [iterations]
 #
 # Runs all benchmarks on all engines and prints a comparison table.
-# Results for duktape_orig and qjs are cached in out/bench_cache_*.txt
+# Results for duktape and qjs are cached in out/bench_cache_*.txt
 # and reused across runs. Delete those files to force a re-run.
 
 set -euo pipefail
 
 PROJ_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 BENCH_DIR="$PROJ_DIR/benchmarks"
-C3_RUNNER="$PROJ_DIR/out/duktape_c3"
-DUKTAPE="$PROJ_DIR/out/duktape_orig"
+C3_RUNNER="$PROJ_DIR/out/boomkat"
+ORIG="$PROJ_DIR/out/duktape"
 QJS="$PROJ_DIR/out/qjs"
 ITERATIONS="${1:-3}"
 CACHE_DIR="$PROJ_DIR/out"
-CACHE_DUK="$CACHE_DIR/bench_cache_duktape.txt"
+CACHE_ORIG="$CACHE_DIR/bench_cache_duktape.txt"
 CACHE_QJS="$CACHE_DIR/bench_cache_qjs.txt"
 
 TMPDIR_BENCH=$(mktemp -d)
@@ -24,12 +24,12 @@ trap 'rm -rf "$TMPDIR_BENCH"' EXIT
 
 if [ ! -f "$C3_RUNNER" ]; then
     echo "ERROR: C3 runner not found at $C3_RUNNER"
-    echo "Run: c3c build duktape_c3"
+    echo "Run: c3c build boomkat"
     exit 1
 fi
 
-if [ ! -f "$DUKTAPE" ]; then
-    echo "ERROR: Original duktape not found at $DUKTAPE"
+if [ ! -f "$ORIG" ]; then
+    echo "ERROR: Original duktape not found at $ORIG"
     exit 1
 fi
 
@@ -71,7 +71,7 @@ all_cached() {
 }
 
 echo "============================================================"
-echo "  Duktape C3 Port — Benchmark Comparison"
+echo "  Boomkat — Benchmark Comparison"
 echo "  $(date)"
 echo "  Iterations per benchmark: $ITERATIONS"
 [ "$QJS_AVAILABLE" = true ] && echo "  QuickJS: available" || echo "  QuickJS: not built (run 'just build-quickjs')"
@@ -117,12 +117,12 @@ echo ""
 echo "------------------------------------------------------------"
 echo "  2. Original Duktape v2.7.0 (compile + execute)"
 echo "------------------------------------------------------------"
-if all_cached "$CACHE_DUK"; then
-    echo "  (using cached results — delete $CACHE_DUK to re-run)"
+if all_cached "$CACHE_ORIG"; then
+    echo "  (using cached results — delete $CACHE_ORIG to re-run)"
     for f in "$BENCH_DIR"/bench_*.js; do
         name=$(basename "$f" .js)
-        val=$(cache_get "$CACHE_DUK" "$name")
-        echo "$val" > "$TMPDIR_BENCH/duk_$name"
+        val=$(cache_get "$CACHE_ORIG" "$name")
+        echo "$val" > "$TMPDIR_BENCH/orig_$name"
         echo "  $name ... ${val}ms (cached)"
     done
 else
@@ -132,13 +132,13 @@ else
         total=0
         count=0
         for ((i=0; i<ITERATIONS; i++)); do
-            ms=$(time_ms "$DUKTAPE" "$f")
+            ms=$(time_ms "$ORIG" "$f")
             total=$((total + ms))
             count=$((count + 1))
         done
         avg=$((total / count))
-        echo "$avg" > "$TMPDIR_BENCH/duk_$name"
-        cache_set "$CACHE_DUK" "$name" "$avg"
+        echo "$avg" > "$TMPDIR_BENCH/orig_$name"
+        cache_set "$CACHE_ORIG" "$name" "$avg"
         echo "${avg}ms"
     done
 fi
@@ -192,15 +192,15 @@ if [ "$QJS_AVAILABLE" = true ]; then
     echo "  --------------------------------------------------------------------------"
     for name in "${bench_names[@]}"; do
         c3_val=$(cat "$TMPDIR_BENCH/c3_$name")
-        duk_val=$(cat "$TMPDIR_BENCH/duk_$name")
+        orig_val=$(cat "$TMPDIR_BENCH/orig_$name")
         qjs_val=$(cat "$TMPDIR_BENCH/qjs_$name")
 
-        if [ "$c3_val" != "N/A" ] && [ "$duk_val" != "N/A" ]; then
-            ratio=$(echo "scale=2; $c3_val / $duk_val" | bc 2>/dev/null || echo "?")
+        if [ "$c3_val" != "N/A" ] && [ "$orig_val" != "N/A" ]; then
+            ratio=$(echo "scale=2; $c3_val / $orig_val" | bc 2>/dev/null || echo "?")
             if [ "$(echo "$ratio > 0" | bc 2>/dev/null)" = "1" ]; then
-                printf "  %-30s %8.1fms %8.1fms %8.1fms %8.1fx\n" "$name" "$c3_val" "$duk_val" "$qjs_val" "$ratio"
+                printf "  %-30s %8.1fms %8.1fms %8.1fms %8.1fx\n" "$name" "$c3_val" "$orig_val" "$qjs_val" "$ratio"
             else
-                printf "  %-30s %8.1fms %8.1fms %8.1fms %8s\n" "$name" "$c3_val" "$duk_val" "$qjs_val" "?"
+                printf "  %-30s %8.1fms %8.1fms %8.1fms %8s\n" "$name" "$c3_val" "$orig_val" "$qjs_val" "?"
             fi
         elif [ "$c3_val" != "N/A" ] && [ "$qjs_val" != "N/A" ]; then
             ratio=$(echo "scale=2; $c3_val / $qjs_val" | bc 2>/dev/null || echo "?")
@@ -209,10 +209,10 @@ if [ "$QJS_AVAILABLE" = true ]; then
             else
                 printf "  %-30s %8.1fms %8s %8.1fms %8s\n" "$name" "$c3_val" "-" "$qjs_val" "?"
             fi
-        elif [ "$duk_val" != "N/A" ] && [ "$qjs_val" != "N/A" ]; then
-            printf "  %-30s %8s %8.1fms %8.1fms %8s\n" "$name" "-" "$duk_val" "$qjs_val" "?"
+        elif [ "$orig_val" != "N/A" ] && [ "$qjs_val" != "N/A" ]; then
+            printf "  %-30s %8s %8.1fms %8.1fms %8s\n" "$name" "-" "$orig_val" "$qjs_val" "?"
         else
-            printf "  %-30s %10s %10s %10s %8s\n" "$name" "$c3_val" "$duk_val" "$qjs_val" "-"
+            printf "  %-30s %10s %10s %10s %8s\n" "$name" "$c3_val" "$orig_val" "$qjs_val" "-"
         fi
     done
 else
@@ -220,24 +220,24 @@ else
     echo "  -------------------------------------------------------------"
     for name in "${bench_names[@]}"; do
         c3_val=$(cat "$TMPDIR_BENCH/c3_$name")
-        duk_val=$(cat "$TMPDIR_BENCH/duk_$name")
-        if [ "$c3_val" != "N/A" ] && [ "$duk_val" != "N/A" ]; then
-            ratio=$(echo "scale=2; $c3_val / $duk_val" | bc 2>/dev/null || echo "?")
+        orig_val=$(cat "$TMPDIR_BENCH/orig_$name")
+        if [ "$c3_val" != "N/A" ] && [ "$orig_val" != "N/A" ]; then
+            ratio=$(echo "scale=2; $c3_val / $orig_val" | bc 2>/dev/null || echo "?")
             if [ "$(echo "$ratio > 0" | bc 2>/dev/null)" = "1" ]; then
-                printf "  %-30s %8.1fms %8.1fms %8.1fx\n" "$name" "$c3_val" "$duk_val" "$ratio"
+                printf "  %-30s %8.1fms %8.1fms %8.1fx\n" "$name" "$c3_val" "$orig_val" "$ratio"
             else
-                printf "  %-30s %8.1fms %8.1fms %8s\n" "$name" "$c3_val" "$duk_val" "?"
+                printf "  %-30s %8.1fms %8.1fms %8s\n" "$name" "$c3_val" "$orig_val" "?"
             fi
         else
-            printf "  %-30s %10s %10s %10s\n" "$name" "$c3_val" "$duk_val" "-"
+            printf "  %-30s %10s %10s %10s\n" "$name" "$c3_val" "$orig_val" "-"
         fi
     done
 fi
 echo "  -------------------------------------------------------------"
 echo ""
 if [ "$QJS_AVAILABLE" = true ]; then
-    echo "Ratio (C3/Duktape) > 1.0 means C3 port is slower."
+    echo "Ratio (C3/Duktape) > 1.0 means the C3 engine is slower."
 else
-    echo "Ratio > 1.0 means C3 port is slower (higher is worse)."
+    echo "Ratio > 1.0 means the C3 engine is slower (higher is worse)."
 fi
 echo "============================================================"

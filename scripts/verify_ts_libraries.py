@@ -42,7 +42,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 CACHE = os.path.join(ROOT, "test", "tscorpus")
 TRANSPILED = os.path.join(CACHE, "_transpiled")
-ENGINE = os.path.join(ROOT, "out", "duktape_c3")
+ENGINE = os.path.join(ROOT, "out", "boomkat")
 CHECKS_DIR = os.path.join(HERE, "ts_runtime_checks")
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120 Safari/537.36"
 

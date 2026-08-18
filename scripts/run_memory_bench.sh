@@ -3,15 +3,15 @@
 #
 # Usage: ./scripts/run_memory_bench.sh [script.js]
 #
-# Compares: C3 port (duktape_c3), original Duktape (duktape_orig), QuickJS (qjs)
+# Compares: C3 port (boomkat), original Duktape (duktape), QuickJS (qjs)
 # Measures peak RSS via /usr/bin/time -l (macOS) or /usr/bin/time -v (Linux).
 
 set -euo pipefail
 
 PROJ_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 BENCH_DIR="$PROJ_DIR/benchmarks"
-C3_RUNNER="$PROJ_DIR/out/duktape_c3"
-DUKTAPE="$PROJ_DIR/out/duktape_orig"
+C3_RUNNER="$PROJ_DIR/out/boomkat"
+ORIG="$PROJ_DIR/out/duktape"
 QJS="$PROJ_DIR/out/qjs"
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -37,17 +37,17 @@ ratio() {
 }
 
 print_table() {
-    local sname="$1" c3_rss="$2" duk_rss="$3" qjs_rss="$4"
+    local sname="$1" c3_rss="$2" orig_rss="$3" qjs_rss="$4"
 
     local c3_ratio=$(ratio "$c3_rss" "$qjs_rss")
-    local duk_ratio=$(ratio "$duk_rss" "$qjs_rss")
+    local orig_ratio=$(ratio "$orig_rss" "$qjs_rss")
     local qjs_ratio="1.0"
 
     local c3_label="$c3_rss KB"
-    local duk_label="$duk_rss KB"
+    local orig_label="$orig_rss KB"
     local qjs_label="$qjs_rss KB"
     [ "$c3_rss" = "N/A" ] && c3_label="N/A"
-    [ "$duk_rss" = "N/A" ] && duk_label="N/A"
+    [ "$orig_rss" = "N/A" ] && orig_label="N/A"
     [ "$qjs_rss" = "N/A" ] && qjs_label="N/A"
 
     local header="Engine ($sname)"
@@ -58,8 +58,8 @@ print_table() {
 
     printf "  %-${col1}s   %-9s   %-8s\n" "$header" "Peak RSS" "vs QJS"
     echo "  ${hbar}---${hbar:0:11}---${hbar:0:10}"
-    printf "  %-${col1}s   %9s   %7sx\n" "duktape_c3 (C3 port)" "$c3_label" "$c3_ratio"
-    printf "  %-${col1}s   %9s   %7sx\n" "duktape_orig (Duktape)" "$duk_label" "$duk_ratio"
+    printf "  %-${col1}s   %9s   %7sx\n" "boomkat (C3 port)" "$c3_label" "$c3_ratio"
+    printf "  %-${col1}s   %9s   %7sx\n" "duktape (Duktape v2.7.0)" "$orig_label" "$orig_ratio"
     printf "  %-${col1}s   %9s   %7sx\n" "qjs (QuickJS)" "$qjs_label" "$qjs_ratio"
     echo ""
 }
@@ -83,10 +83,10 @@ for script in "${SCRIPTS[@]}"; do
     sname=$(basename "$script")
 
     c3_rss=$(measure_rss_kb "$C3_RUNNER" "$script")
-    duk_rss=$(measure_rss_kb "$DUKTAPE" "$script")
+    orig_rss=$(measure_rss_kb "$ORIG" "$script")
     qjs_rss=$(measure_rss_kb "$QJS" "$script")
 
-    print_table "$sname" "$c3_rss" "$duk_rss" "$qjs_rss"
+    print_table "$sname" "$c3_rss" "$orig_rss" "$qjs_rss"
 done
 
 echo "============================================================"

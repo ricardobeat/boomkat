@@ -10,7 +10,7 @@ rec("cmp", new BigNumber("1e30").isGreaterThan("1e29"));
 // sqrt and base-24 construction: the prior plan 072 description flagged these
 // as broken ("Invalid array length" / sqrt returning 1 instead of ~1.41421356),
 // traced to a NaN reaching array_set_length_desc via src/vm/vm_property.c3. As
-// of commit 6377fc14 the bug does not reproduce on either duktape_c3 or qjs
+// of commit 6377fc14 the bug does not reproduce on either boomkat or qjs
 // with the vendored 9.3.1 bundle (both engines return sqrt(2) =
 // 1.4142135623730950488 and new BigNumber("1.1", 24) = 1.04166666666666666667).
 // Covered here so a regression would surface in the api-check diff against qjs.

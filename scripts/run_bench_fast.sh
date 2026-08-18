@@ -3,23 +3,23 @@
 #
 # Usage: ./scripts/run_bench_fast.sh [iterations]
 #
-# Runs all benchmarks on duktape_c3, skipping bench_recursion_deep.
+# Runs all benchmarks on boomkat, skipping bench_recursion_deep.
 
 set -euo pipefail
 
 PROJ_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 BENCH_DIR="$PROJ_DIR/benchmarks"
-RUNNER="$PROJ_DIR/out/duktape_c3"
+RUNNER="$PROJ_DIR/out/boomkat"
 ITERATIONS="${1:-2}"
 SKIP="bench_recursion_deep"
 
 if [ ! -f "$RUNNER" ]; then
-    echo "ERROR: $RUNNER not found — run: c3c build duktape_c3"
+    echo "ERROR: $RUNNER not found — run: c3c build boomkat"
     exit 1
 fi
 
 echo "============================================================"
-echo "  Fast Benchmark: duktape_c3"
+echo "  Fast Benchmark: boomkat"
 echo "  $(date)"
 echo "  Iterations: $ITERATIONS"
 echo "============================================================"

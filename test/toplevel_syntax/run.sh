@@ -18,7 +18,7 @@
 #
 # Usage: bash test/toplevel_syntax/run.sh [engine_binary]
 
-ENGINE="${1:-./out/duktape_c3}"
+ENGINE="${1:-./out/boomkat}"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 PASS=0

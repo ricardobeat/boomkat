@@ -28,7 +28,7 @@ Phases: `build`, `tests`, `libs`, `smoke`, `link`, `initarray`, `install`,
 
 | Phase | Checks |
 |---|---|
-| `build` | `c3c build duktape_c3` produces a working binary |
+| `build` | `c3c build boomkat` produces a working binary |
 | `tests` | `bash test/run_local.sh` — the whole engine suite |
 | `libs` | `make lib` and `make shared` produce `jse_static.a` and `libjse.so` |
 | `smoke` | `make smoke` prints 42 (links the **static** archive) |

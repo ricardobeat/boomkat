@@ -14,7 +14,7 @@ under this engine, using out/qjs as the pass/fail oracle for each bundle.
 
 Background: plans/070-real-world-battle-testing.md. Each library is prefixed
 with a minimal host shim and suffixed with `console.log("LOADED")`, then run
-under both `out/duktape_c3` and `out/qjs`. A library that loads under qjs but
+under both `out/boomkat` and `out/qjs`. A library that loads under qjs but
 not under us is a real engine gap, not a bundle problem.
 """
 import argparse
@@ -27,7 +27,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 CACHE = os.path.join(ROOT, "test", "libcorpus")
 WRAPPED = os.path.join(CACHE, "_wrapped")
-ENGINE = os.path.join(ROOT, "out", "duktape_c3")
+ENGINE = os.path.join(ROOT, "out", "boomkat")
 QJS = os.path.join(ROOT, "out", "qjs")
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120 Safari/537.36"
 
@@ -138,7 +138,7 @@ def sweep(names):
         if c3 != "PASS":
             fails += 1
     print()
-    print(f"{len(rows) - fails}/{len(rows)} pass under duktape_c3")
+    print(f"{len(rows) - fails}/{len(rows)} pass under boomkat")
     return 1 if fails else 0
 
 

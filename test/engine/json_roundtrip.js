@@ -11,10 +11,10 @@ assert(JSON.parse(JSON.stringify(true)) === true, "bool roundtrip");
 assert(JSON.parse(JSON.stringify(null)) === null, "null roundtrip");
 
 // Object roundtrip
-var obj = { name: "Duktape", version: 2.7, nested: { x: [1,2,3] } };
+var obj = { name: "boomkat", version: 2.7, nested: { x: [1,2,3] } };
 var json = JSON.stringify(obj);
 var parsed = JSON.parse(json);
-assert(parsed.name === "Duktape", "object string field");
+assert(parsed.name === "boomkat", "object string field");
 assert(parsed.version === 2.7, "object number field");
 assert(parsed.nested.x[2] === 3, "nested array value");
 

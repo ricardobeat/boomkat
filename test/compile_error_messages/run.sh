@@ -7,7 +7,7 @@
 # wrong. The first line of the engine's stderr is `SyntaxError: <msg>
 # (line L, col C)`; the empty-message form is `(line 0, col 0)`.
 
-ENGINE="${1:-./out/duktape_c3}"
+ENGINE="${1:-./out/boomkat}"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 PASS=0

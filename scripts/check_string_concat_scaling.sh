@@ -23,7 +23,7 @@
 # Usage: bash scripts/check_string_concat_scaling.sh [engine_binary]
 
 set -u
-ENGINE="${1:-./out/duktape_c3}"
+ENGINE="${1:-./out/boomkat}"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 

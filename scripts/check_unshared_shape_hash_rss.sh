@@ -26,7 +26,7 @@
 set -euo pipefail
 
 PROJ_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-RUNNER="${1:-$PROJ_DIR/out/duktape_c3}"
+RUNNER="${1:-$PROJ_DIR/out/boomkat}"
 
 if [ ! -x "$RUNNER" ]; then
     echo "FAIL: runner not found or not executable: $RUNNER" >&2

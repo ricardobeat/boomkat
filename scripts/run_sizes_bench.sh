@@ -3,7 +3,7 @@
 #
 # Usage: ./scripts/run_sizes_bench.sh [script.js]
 #
-# Compares: C3 port (duktape_c3), original Duktape (duktape_orig), QuickJS (qjs)
+# Compares: C3 port (boomkat), original Duktape (duktape), QuickJS (qjs)
 #
 # Measurements:
 #   - Binary size (KB) — stripped when possible
@@ -13,8 +13,8 @@ set -euo pipefail
 
 PROJ_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 BENCH_DIR="$PROJ_DIR/benchmarks"
-C3_RUNNER="$PROJ_DIR/out/duktape_c3"
-DUKTAPE="$PROJ_DIR/out/duktape_orig"
+C3_RUNNER="$PROJ_DIR/out/boomkat"
+ORIG="$PROJ_DIR/out/duktape"
 QJS="$PROJ_DIR/out/qjs"
 
 # Accept optional script argument, default to memory_test.js
@@ -82,11 +82,11 @@ echo "│ Engine                   │ Binary (KB) │"
 echo "├──────────────────────────┼─────────────┤"
 
 c3_size=$(file_size_kb "$C3_RUNNER")
-duk_size=$(file_size_kb "$DUKTAPE")
+orig_size=$(file_size_kb "$ORIG")
 qjs_size=$(file_size_kb "$QJS")
 
-printf "│ %-24s │ %11s │\n" "duktape_c3 (C3 port)" "$c3_size"
-printf "│ %-24s │ %11s │\n" "duktape_orig (Duktape)" "$duk_size"
+printf "│ %-24s │ %11s │\n" "boomkat (C3 port)" "$c3_size"
+printf "│ %-24s │ %11s │\n" "duktape (Duktape v2.7.0)" "$orig_size"
 printf "│ %-24s │ %11s │\n" "qjs (QuickJS)" "$qjs_size"
 echo "└──────────────────────────┴─────────────┘"
 echo ""
@@ -101,11 +101,11 @@ echo "│ Engine                   │ Peak RSS(KB)│"
 echo "├──────────────────────────┼─────────────┤"
 
 c3_rss=$(measure_rss_kb "$C3_RUNNER" "$MEM_SCRIPT")
-duk_rss=$(measure_rss_kb "$DUKTAPE" "$MEM_SCRIPT")
+orig_rss=$(measure_rss_kb "$ORIG" "$MEM_SCRIPT")
 qjs_rss=$(measure_rss_kb "$QJS" "$MEM_SCRIPT")
 
-printf "│ %-24s │ %11s │\n" "duktape_c3 (C3 port)" "$c3_rss"
-printf "│ %-24s │ %11s │\n" "duktape_orig (Duktape)" "$duk_rss"
+printf "│ %-24s │ %11s │\n" "boomkat (C3 port)" "$c3_rss"
+printf "│ %-24s │ %11s │\n" "duktape (Duktape v2.7.0)" "$orig_rss"
 printf "│ %-24s │ %11s │\n" "qjs (QuickJS)" "$qjs_rss"
 echo "└──────────────────────────┴─────────────┘"
 echo ""
@@ -115,16 +115,16 @@ echo ""
 echo "---"
 echo ""
 
-if [ "$c3_size" != "N/A" ] && [ "$duk_size" != "N/A" ]; then
-    c3_vs_duk_size=$(echo "scale=2; $c3_size / $duk_size" | bc 2>/dev/null || echo "?")
-    echo "Binary size ratio (C3/Duktape):  ${c3_vs_duk_size}x"
+if [ "$c3_size" != "N/A" ] && [ "$orig_size" != "N/A" ]; then
+    c3_vs_orig_size=$(echo "scale=2; $c3_size / $orig_size" | bc 2>/dev/null || echo "?")
+    echo "Binary size ratio (C3/Duktape):  ${c3_vs_orig_size}x"
 else
     echo "Binary size ratio (C3/Duktape):  ?"
 fi
 
-if [ "$c3_rss" != "N/A" ] && [ "$duk_rss" != "N/A" ]; then
-    c3_vs_duk_rss=$(echo "scale=2; $c3_rss / $duk_rss" | bc 2>/dev/null || echo "?")
-    echo "Peak RSS ratio  (C3/Duktape):  ${c3_vs_duk_rss}x"
+if [ "$c3_rss" != "N/A" ] && [ "$orig_rss" != "N/A" ]; then
+    c3_vs_orig_rss=$(echo "scale=2; $c3_rss / $orig_rss" | bc 2>/dev/null || echo "?")
+    echo "Peak RSS ratio  (C3/Duktape):  ${c3_vs_orig_rss}x"
 else
     echo "Peak RSS ratio  (C3/Duktape):  ?"
 fi

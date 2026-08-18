@@ -30,7 +30,7 @@ aborts the run and reports partial results if anything pathological slips in.
 
 Usage:
   python3 scripts/run_ts_conformance.py [--limit N] [--only <substring>]
-      [--bin ./out/duktape_c3] [--keep-tsc] [--phase-dir <subdir>]
+      [--bin ./out/boomkat] [--keep-tsc] [--phase-dir <subdir>]
       [--jobs N] [--engine-timeout SECONDS] [--deadline SECONDS]
       [--log <file>] [--no-cache]
   --keep-tsc     reuse cached tsc classifications (default; kept for compat)
@@ -53,7 +53,7 @@ ROOT = os.path.dirname(HERE)
 CORPUS = os.path.join(ROOT, "test", "typescript", "conformance-src",
                       "tests", "cases", "conformance")
 CACHE = os.path.join(ROOT, "test", "typescript", "ts_conformance_cache")
-DEFAULT_BIN = os.path.join(ROOT, "out", "duktape_c3")
+DEFAULT_BIN = os.path.join(ROOT, "out", "boomkat")
 
 DEFAULT_JOBS = 16
 DEFAULT_ENGINE_TIMEOUT = 20      # seconds per engine run

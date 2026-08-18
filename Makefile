@@ -57,15 +57,15 @@ C3C ?= c3c
 #
 # --build-dir has to trail the target name for the same reason C3C_LDFLAGS does,
 # so recipes read `$(C3C_BUILD) <target> $(C3C_BUILDFLAGS) $(C3C_LDFLAGS)`.
-C3C_BUILD = d=$$(mktemp -d "$${TMPDIR:-/tmp}/duk-c3-build.XXXXXX"); trap 'rm -rf "$$d"' EXIT; $(C3C) build
+C3C_BUILD = d=$$(mktemp -d "$${TMPDIR:-/tmp}/boomkat-build.XXXXXX"); trap 'rm -rf "$$d"' EXIT; $(C3C) build
 C3C_BUILDFLAGS = --build-dir "$$d"
 
 PREFIX ?= /usr/local
 
-.PHONY: all lib lib-full test262_runner test262_runner_asan duktape_c3 duktape_c3_debug duktape_c3_gc_stress clean \
+.PHONY: all lib lib-full test262_runner test262_runner_asan boomkat boomkat_debug boomkat_gc_stress clean \
         shared jse jse-stress example-c example-ruby smoke install
 
-all: lib-full test262_runner duktape_c3
+all: lib-full test262_runner boomkat
 
 # `lib` builds the jse_* embedding archive (see the C ABI section below).
 # `lib-full` is the original unoptimised whole-engine archive.
@@ -76,12 +76,12 @@ test262_runner: out/test262_runner
 # lifetime bug, otherwise a stale binary reports clean results for code it
 # does not contain.
 test262_runner_asan: out/test262_runner_asan
-duktape_c3: out/duktape_c3
-duktape_c3_debug: out/duktape_c3_debug
+boomkat: out/boomkat
+boomkat_debug: out/boomkat_debug
 # Also deliberately out of `all`: GC_STRESS collects at every allocation, which
 # makes the binary orders of magnitude slower. It is the only build that turns a
 # missed GC root into a deterministic failure instead of a rare field crash.
-duktape_c3_gc_stress: out/duktape_c3_gc_stress
+boomkat_gc_stress: out/boomkat_gc_stress
 
 out/lib.a: project.json $(call target_sources,lib)
 	$(C3C_BUILD) lib $(C3C_BUILDFLAGS) $(C3C_LDFLAGS)
@@ -92,14 +92,14 @@ out/test262_runner: project.json $(call target_sources,test262_runner)
 out/test262_runner_asan: project.json $(call target_sources,test262_runner_asan)
 	$(C3C_BUILD) test262_runner_asan $(C3C_BUILDFLAGS) $(C3C_LDFLAGS)
 
-out/duktape_c3: project.json $(call target_sources,duktape_c3)
-	$(C3C_BUILD) duktape_c3 $(C3C_BUILDFLAGS) $(C3C_LDFLAGS)
+out/boomkat: project.json $(call target_sources,boomkat)
+	$(C3C_BUILD) boomkat $(C3C_BUILDFLAGS) $(C3C_LDFLAGS)
 
-out/duktape_c3_debug: project.json $(call target_sources,duktape_c3_debug)
-	$(C3C_BUILD) duktape_c3_debug $(C3C_BUILDFLAGS) $(C3C_LDFLAGS)
+out/boomkat_debug: project.json $(call target_sources,boomkat_debug)
+	$(C3C_BUILD) boomkat_debug $(C3C_BUILDFLAGS) $(C3C_LDFLAGS)
 
-out/duktape_c3_gc_stress: project.json $(call target_sources,duktape_c3_gc_stress)
-	$(C3C_BUILD) duktape_c3_gc_stress $(C3C_BUILDFLAGS) $(C3C_LDFLAGS)
+out/boomkat_gc_stress: project.json $(call target_sources,boomkat_gc_stress)
+	$(C3C_BUILD) boomkat_gc_stress $(C3C_BUILDFLAGS) $(C3C_LDFLAGS)
 
 # ---- C embedding ABI targets ------------------------------------------------
 
@@ -272,4 +272,4 @@ linux-ci-shell:
 
 clean:
 	c3c clean
-	@rm -rf "$${TMPDIR:-/tmp}"/duk-c3-build.*
+	@rm -rf "$${TMPDIR:-/tmp}"/boomkat-build.*

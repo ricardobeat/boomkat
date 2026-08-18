@@ -1,6 +1,6 @@
 // Regression coverage for looks_like_module's depth tracking.
 //
-// looks_like_module() in cli/duktape_c3.c3 is the gate that routes a file
+// looks_like_module() in cli/boomkat.c3 is the gate that routes a file
 // through the ESM pipeline (imports/exports at top level) or the script
 // pipeline (everything else). It used to treat any post-newline position as a
 // statement start, which made a plain script containing a multi-line object
