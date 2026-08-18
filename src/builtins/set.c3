@@ -137,10 +137,9 @@ fn bool set_record_has(BuiltinContext* ctx, SetRecord* rec, TVal value) {
     return tval_to_boolean(result);
 }
 
-/// Call setRecord.[[SetKeys]]() and return the resulting iterator object
-/// (does not validate that the return value is an object, GetIteratorFromMethod
-/// callers must check before use, matching how other iterator-consuming
-/// callers in this file behave).
+/// Call setRecord.[[SetKeys]]() and return the resulting iterator value.
+/// The Object check from GetIteratorFromMethod step 2 happens in
+/// set_iter_step, so a non-object return throws on the first step.
 fn TVal set_record_get_keys_iterator(BuiltinContext* ctx, SetRecord* rec) {
     if (rec != null) {
         rec.set_like.set_temproot();
@@ -194,7 +193,13 @@ fn bool set_iter_step(BuiltinContext* ctx, TVal iterator, TVal next_fn, TVal* ou
     *out_done = true;
     iterator.set_temproot();
     next_fn.set_temproot();
-    if (!iterator.is_object() || iterator.get_heapptr() == null) return true;
+    if (!iterator.is_object() || iterator.get_heapptr() == null) {
+        // GetIteratorFromMethod step 2: a keys() result that is not an
+        // object (a string primitive, a number) is a TypeError, never a
+        // silently-exhausted iterator.
+        coll_throw(ctx, "iterator is not an object");
+        return false;
+    }
     if (!tval_is_callable(next_fn)) {
         coll_throw(ctx, "iterator.next is not callable");
         return false;
