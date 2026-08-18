@@ -15,26 +15,23 @@
 
 👉 This is **not production-ready** code. Surprisingly, 100% test262 conformance is not nearly enough to validate the engine. There are still bugs lurking. In particular, the source code has not been scanned for security vulnerabilities. Use at your own peril.
 
-## Compatibility and features
+## Features and compatibility
 
-The engine passes 100% of a targeted subset of ES5/ES6. Because it only runs in strict mode, sloppy mode tests are skipped. A full **50,002** tests pass using the official [test262](https://github.com/tc39/test262) suite, with zero failures or compile errors.
+- Runs everything in **strict mode** only
+- Passes **50k** tests from the [test262](https://github.com/tc39/test262) suite. 100% pass rate on the targeted subset (skips sloppy mode, legacy and proposal-stage features)
+- Supports all modern JS features like `Map/Set`, `ArrayBuffer` and `TypedArray`, `Proxy`, async/await, private fields, template literals, optional chaining
+- Built-in support for ES modules
+- **Natively runs TypeScript** code (including module support), including the TypeScript compiler itself
 
-<p>
-<img align="center" src="./docs/example_javascript.png" width="400" />
-</p>
-
-All modern ES features are supported: `Map/Set`, `ArrayBuffer` and `TypedArray`, `Proxy` objects, Promises and async/await, private fields, template literals, optional chaining, etc. The engine also has built-in support for ES modules.
-
-It can also *natively execute TypeScript* by stripping types at runtime. The module system is TS-aware so you can run typescript projects directly from source. The engine can sucessfully run libraries like **Zod**, **fp-ts**, and the TypeScript compiler itself.
-
-<p>
-<img align="center" src="./docs/example_typescript.png" width="400" />
+<p align="center">
+  <img align="center" src="./docs/example_javascript.png" width="400" />
+  <img align="center" src="./docs/example_typescript.png" width="400" />
 </p>
 
 A full ECMAScript feature-by-feature breakdown against QuickJS, quickjs-ng, and
 Duktape can be found in [FEATURES.md](FEATURES.md).
 
-> Note that boomkat is *not a runtime*: it does not offer file or network APIs and is not a replacement for Node/Bun - and is very far from matching V8/SpiderMonkey performance. It is meant to be embedded into a host application as a scripting language, like QuickJS.
+> Note: boomkat is *not a runtime*; it does not offer file or network APIs and is not a replacement for Node/Bun - and is very far from matching V8/SpiderMonkey performance. It is meant to be embedded into a host application as a scripting language, like QuickJS.
 
 ## Why?
 
