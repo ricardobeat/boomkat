@@ -13,7 +13,7 @@
 
 **Boomkat** is a strict-only Javascript engine developed from scratch. It is written in [C3](https://c3-lang.org/), using Duktape and QuickJS as architectural references. The goal was to match Duktape's performance, but ended up matching (even slightly surpassing) QuickJS in runtime performance and memory usage.
 
-👉 This is **not production-ready** code. Surprisingly, 100% test262 conformance is not nearly enough to validate the engine. In particular, the source code has not been scanned for security vulnerabilities. Use at your own peril.
+👉 This is **not production-ready** code. Surprisingly, 100% test262 conformance is not nearly enough to validate the engine. There are still bugs lurking. In particular, the source code has not been scanned for security vulnerabilities. Use at your own peril.
 
 ## Compatibility and features
 
