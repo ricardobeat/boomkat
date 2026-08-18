@@ -1,8 +1,8 @@
 module test_prop;
-import duktape::heap;
-import duktape::hobject;
-import duktape::hstring;
-import duktape::types;
+import boomkat::heap;
+import boomkat::hobject;
+import boomkat::hstring;
+import boomkat::types;
 import std::io;
 
 fn int main(String[] args) {

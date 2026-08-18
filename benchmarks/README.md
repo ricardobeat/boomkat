@@ -1,12 +1,12 @@
-# Benchmarks — Duktape C3 Port
+# Benchmarks — Boomkat
 
-Simple performance benchmarks comparing the C3 port against original Duktape v2.7.0.
+Simple performance benchmarks comparing boomkat against original Duktape v2.7.0.
 
 ## Structure
 
 ```
 benchmarks/
-├── duktape_c3.c3             C3 CLI runner (compiled to out/duktape_c3)
+├── boomkat.c3             C3 CLI runner (compiled to out/boomkat)
 ├── bench_loop.js             Loop overhead (for/while)
 ├── bench_arithmetic.js       Arithmetic operations (+, -, *, /, %, bitwise)
 ├── bench_function_call.js    Function call overhead (empty, identity, 2-arg)
@@ -22,14 +22,14 @@ benchmarks/
 
 ```bash
 # Build the C3 CLI runner
-c3c build duktape_c3
+c3c build boomkat
 
 # Run the full comparison
 scripts/run_benchmarks.sh [iterations]
 
 # Run individual benchmarks
-out/duktape_c3 benchmarks/bench_loop.js      # C3 port
-out/duktape_orig benchmarks/bench_loop.js      # Original Duktape
+out/boomkat benchmarks/bench_loop.js      # C3 port
+out/duktape benchmarks/bench_loop.js      # Original Duktape
 ```
 
 ## Interpreting Results
@@ -45,7 +45,7 @@ A ratio of ~5x means the C3 port is about 5× slower than the optimized C implem
 
 - Each benchmark iteration spawns a fresh process for all engines (C3, Duktape, QuickJS)
 - Timing includes both compilation and execution (actual workload dominates)
-- The `duktape_orig` binary is built from Duktape v2.7.0 source
+- The `duktape` binary is built from Duktape v2.7.0 source
 
 ## Size & Memory Benchmark
 
@@ -63,8 +63,8 @@ Results table:
 
 | Engine                   | Binary (KB) | Peak RSS (KB) |
 |--------------------------|-------------|---------------|
-| duktape_c3 (C3 port)     | ...         | ...           |
-| duktape_orig (Duktape)   | ...         | ...           |
+| boomkat (C3 port)     | ...         | ...           |
+| duktape (Duktape v2.7.0)   | ...         | ...           |
 | qjs (QuickJS)            | ...         | ...           |
 
 QuickJS is optional (skip row if not built). Ratios vs Duktape and QuickJS are printed at the bottom.

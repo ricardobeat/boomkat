@@ -1,5 +1,5 @@
 ============================================================
-  Duktape C3 Port — Benchmark Comparison
+  Boomkat — Benchmark Comparison
   Thu Jun 11 2026
   Iterations per benchmark: 3
   QuickJS: available
@@ -85,5 +85,5 @@
   bench_valstack_copy                16.0ms     12.0ms      9.0ms      1.3x
   -------------------------------------------------------------
 
-Ratio (C3/Duktape) > 1.0 means C3 port is slower.
+Ratio (C3/Duktape) > 1.0 means the C3 engine is slower.
 ============================================================

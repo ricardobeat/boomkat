@@ -1,21 +1,21 @@
 #!/bin/bash
-# Run individual benchmarks through the C3 Duktape CLI
+# Run individual benchmarks through the boomkat CLI
 #
 # Usage:
 #   bash benchmarks/run.sh              # run all bench_*.js
 #   bash benchmarks/run.sh bench_date   # run specific benchmark(s)
 #
-# Builds duktape_c3 first if needed.
+# Builds boomkat first if needed.
 
 set -euo pipefail
 
 PROJ_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-C3_RUNNER="$PROJ_DIR/out/duktape_c3"
+C3_RUNNER="$PROJ_DIR/out/boomkat"
 
 # Build if not present
 if [ ! -f "$C3_RUNNER" ]; then
-    echo "Building duktape_c3..."
-    (cd "$PROJ_DIR" && c3c build duktape_c3)
+    echo "Building boomkat..."
+    (cd "$PROJ_DIR" && c3c build boomkat)
 fi
 
 if [ $# -eq 0 ]; then
