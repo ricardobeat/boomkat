@@ -31,7 +31,9 @@ The ES5/ES6 core, plus the later additions that ordinary code now assumes:
 - `Symbol`, including the well-known symbols
 - TypedArrays, `ArrayBuffer` (including resizable), `DataView`
 - `Atomics` and `SharedArrayBuffer`, on a single agent
-- ESM: `import`, `export`, namespace objects, dynamic `import()`
+- ESM: `import`, `export`, namespace objects, dynamic `import()`, import
+  attributes (`with { type: "json" }`)
+- Iterator helpers (`Iterator.prototype.map`/`filter`/`take`/`drop`/...)
 - `BigInt`, as fixed-width int128 rather than arbitrary precision
 
 ## Deliberately out of scope
@@ -43,7 +45,7 @@ The ES5/ES6 core, plus the later additions that ordinary code now assumes:
   ECMA-402 §11.1.2 against the engine's single locale, with no full locale
   data.
 - **Stage 3 proposals.** Temporal, decorators, ShadowRealm, explicit resource
-  management, import attributes, iterator helpers. These still move.
+  management. These still move.
 - **Cross-realm behavior.** No second realm to be cross to.
 - **Multi-agent coordination.** `Atomics` is well defined on one agent and ships;
   what needs threads is the coordination surface, so test262 files driving a

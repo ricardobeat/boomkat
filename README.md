@@ -1,85 +1,98 @@
-# Boomkat
+<br />
+<div align="center">
+  <img src="./docs/boomkat.png" alt="" width="80" />
+  <h1 align="center">boomkat</h1>
+  <p align="center">
+    A modern, fully ES compatible, strict-only javascript engine
+  </p>
+</div>
 
-A strict-only ECMAScript engine written in [C3](https://c3-lang.org/).
-Duktape v2.7.0 and QuickJS are the architectural references; the engine is a
-native C3 implementation that leans on the language's memory safety and its
-stdlib. The goal is 100% of a targeted test262 subset, better performance than
-Duktape, low memory, and small-device portability.
+> *boomkat* is the dutch name for the [Margay](https://en.wikipedia.org/wiki/Margay), a small wild cat native to South America; translates to 'tree cat'. It fits with the tradition of animal-themed names for JS engines and sounds cool :)
 
-## Status
+## About
 
-The full test262 suite passes: **50,002 pass / 0 fail / 0 unexpected compile
-error** across all 25 phase groups (2,822 skips of 52,824 total,
-`test262_results/latest.json`). The targeted subset is ES5/ES6 core in a single
-strict mode; the skip list and its reasoning live in `scripts/run_test262.py`,
-and `docs/engine-scope.md` explains what is out of scope and why. Progress is
-tracked per session in `progress.md`, the roadmap to 100% in
-`plans/040-test262-100-percent.md`.
+**Boomkat** is a strict-only Javascript engine developed from scratch. It is written in [C3](https://c3-lang.org/), using Duktape and QuickJS as architectural references. The goal was to match Duktape's performance, but ended up matching (even slightly surpassing) QuickJS in runtime performance and memory usage.
 
-Other checks:
+👉 This is **not production-ready** code. In particular, the engine has not been scanned for security vulnerabilities. Use at your own peril.
 
-- `just rosetta`: 41/41 unmodified rosettacode.org samples, cross-checked
-  against qjs (`test/rosetta-verbatim/`)
-- `just test-local`: every `test/*.js` plus the ESM fixtures under
-  `test/modules/`
-- `just test-golden-bytecode`: golden disassembly and the fusion-free
-  `--no-optimize` invariant
-- `just test-gc-stress`: an ASAN GC-stress suite, 20-30 minutes, nightly
-  material
+## Compatibility
+
+The engine passes 100% of a targeted subset of ES5/ES6. Because it only runs in strict mode, sloppy mode tests are skipped. A full **50,002** tests pass using the official [test262](https://github.com/tc39/test262) suite, with zero failures or compile errors.
+
+## Features
+
+All modern ES features are supported: `Map/Set`, `ArrayBuffer` and `TypedArray`, `Proxy` objects, Promises and async/await, private fields, template literals, optional chaining, etc. The engine also has built-in support for ES modules.
+
+It can also *natively execute TypeScript* by stripping types at runtime. The module system is TS-aware so you can run typescript projects directly from source. The engine can sucessfully run libraries like **Zod**, **fp-ts**, and the TypeScript compiler itself.
+
+A full ECMAScript feature-by-feature breakdown against QuickJS, quickjs-ng, and
+Duktape can be found in [FEATURES.md](FEATURES.md).
+
+> Note that boomkat is *not a runtime*: it does not offer file or network APIs and is not a replacement for Node/Bun - and is very far from matching V8/SpiderMonkey performance. It is meant to be embedded into a host application as a scripting language, like QuickJS.
+
+## Why?
+
+This started as a simple attempt at converting Duktape from C to C3. I was bored, excited about doing something in the C3 lang, and really wanted to see what could be done using the latest generation of open-weight LLMs. As development went on I dropped the idea of a 1:1 port and started looking at other engines for new ideas.
+
+This project took about 12 weeks of nearly non-stop AI agents, working day and night. An estimated ~$300 was spent across Minimax, DeepSeek, Xiaomi Mimo, Claude Code and a dozen other LLMs. A full write-up on the development process, timeline and cost breakdown is in the works.
+
+## Design
+
+- **Strict-only.** There is no sloppy mode. Non-strict and Annex B features are rejected at parse time;
+  `"use strict"` is accepted and ignored.
+- **One-pass compiler.** No AST, parser emits bytecode.
+- **Register VM.** 32-bit instructions, inline caches for property and variable access, hidden classes / object shapes, peephole optimizations and fused opcodes on the hot paths.
+- **Threaded dispatch**. Direct-threaded dispatch achieved through tail-call optimization in LLVM as C3 does not have computed-goto.
+- **NaN-boxed values.** Uses 8-byte packed `TVal` structs; A plain tagged union mode is available with `-D NONANBOX` for debugging and portability
+- **Hybrid collector.** Refcounting reclaims most values; a mark-and-sweep GC collects the rest
 
 ## Real-world validation
 
-Unmodified npm sources run against the engine; the bundles are fetched into
-gitignored caches (`test/libcorpus/`, `test/tscorpus/`) by the verify scripts.
+Apparently fifty thousand tests are not nearly enough to verify that the engine actually works. A trillion bugs were uncovered by actually trying to run code.
 
-**JavaScript** (`python3 scripts/verify_libraries.py --no-fetch --api-checks`):
-each bundle loads, and a per-library API driver's output must match qjs.
+**Javascript**: we run unmodified npm sources against the engine. The `python3 scripts/verify_libraries.py --api-checks` script downloads and tries to execute each library, then runs a few tests against each, and compare the results with QuickJS:
 
-| Library | Version | Loads | API checks |
+| Library | Version | Loading | API checks |
 |---|---|:---:|---:|
-| lodash | 4.17.21 | yes | 17 |
-| underscore | 1.13.6 | yes | 8 |
-| moment | unpinned | yes | 6 |
-| marked | 4.3.0 | yes | 5 |
-| handlebars | 4.7.8 | yes | 5 |
-| immutable | unpinned | yes | 6 |
-| acorn | unpinned | yes | 4 |
-| bluebird | 3.7.2 | yes | 5 |
-| decimal.js | unpinned | yes | 5 |
-| bignumber.js | unpinned | yes | 7 |
-| mathjs | unpinned | yes | 5 |
-| jszip | 3.10.1 | yes | 4 |
-| papaparse | unpinned | yes | 4 |
-| crypto-js | unpinned | yes | 4 |
-| protobufjs | 7.4.0 | yes | 2 |
-| chance | unpinned | yes | 5 |
-| he | unpinned | yes | 4 |
-| nearley | unpinned | yes | 2 |
-| d3-array | unpinned | yes | 7 |
-| uuid | 8.3.2 | yes | 2 |
-| typescript | 5.4.5 | yes | 4 |
-| @babel/standalone | 7.24.7 | yes | 3 |
+| lodash | 4.17.21 | ✅ | 17 |
+| underscore | 1.13.6 | ✅ | 8 |
+| moment | * | ✅ | 6 |
+| marked | 4.3.0 | ✅ | 5 |
+| handlebars | 4.7.8 | ✅ | 5 |
+| immutable | * | ✅ | 6 |
+| acorn | * | ✅ | 4 |
+| bluebird | 3.7.2 | ✅ | 5 |
+| decimal.js | * | ✅ | 5 |
+| bignumber.js | * | ✅ | 7 |
+| mathjs | * | ✅ | 5 |
+| jszip | 3.10.1 | ✅ | 4 |
+| papaparse | * | ✅ | 4 |
+| crypto-js | * | ✅ | 4 |
+| protobufjs | 7.4.0 | ✅ | 2 |
+| chance | * | ✅ | 5 |
+| he | * | ✅ | 4 |
+| nearley | * | ✅ | 2 |
+| d3-array | * | ✅ | 7 |
+| uuid | 8.3.2 | ✅ | 2 |
+| typescript | 5.4.5 | ✅ | 4 |
+| @babel/standalone | 7.24.7 | ✅ | 3 |
 
-**TypeScript** (`python3 scripts/verify_ts_libraries.py`): each source runs
-under the engine's ts_mode, and stdout must match the same source stripped to
-.js by `tsc`. 7/7 pass.
+**TypeScript**: `python3 scripts/verify_ts_libraries.py` downloads sources and runs them
+unmodified against the engine. The output must match the result of running the same source stripped by `tsc`.
 
-| Source | Version | What is checked |
-|---|---|---|
-| microdiff | 1.4.0 | single-file diff library |
-| zustand | 5.0.3 | vanilla store (`src/vanilla.ts`) |
-| valtio | 2.1.3 | vanilla store + vendored proxy-compare 3.0.1 |
-| @preact/signals-core | 1.14.4 | signal primitives (`src/index.ts`) |
-| jotai | 2.20.2 | vanilla package tree (`src/vanilla/`) |
-| fp-ts | 2.16.9 | full source tree (123 modules), bare self-imports, `import X = Y`, overload signatures |
-| zod | 4.4.3 | lib tree (107 modules), NodeNext `.js` specifiers, type modifiers in re-export lists |
+| Source | Version | What is checked | Pass |
+|---|---|---|:---:|
+| microdiff | 1.4.0 | single-file diff library | ✅ |
+| zustand | 5.0.3 | vanilla store (`src/vanilla.ts`) | ✅ |
+| valtio | 2.1.3 | vanilla store + vendored proxy-compare 3.0.1 | ✅ |
+| @preact/signals-core | 1.14.4 | signal primitives (`src/index.ts`) | ✅ |
+| jotai | 2.20.2 | vanilla package tree (`src/vanilla/`) | ✅ |
+| fp-ts | 2.16.9 | full source tree (123 modules), bare self-imports, `import X = Y`, overload signatures | ✅ |
+| zod | 4.4.3 | lib tree (107 modules), NodeNext `.js` specifiers, type modifiers in re-export lists | ✅ |
 
 ## Benchmarks
 
-`just bench` runs the suite in `benchmarks/` (3 iterations per benchmark)
-against this engine, original Duktape v2.7.0 (`out/duktape`), and QuickJS
-(`out/qjs`); the Duktape and QuickJS results are cached between runs. Lower is
-better; the ratio columns are C3/reference, so below 1.0 the engine wins.
+Run `just bench` to benchmark against Duktape and QuickJS:
 
 | Benchmark | C3 (ms) | Duktape (ms) | QuickJS (ms) | vs Duktape | vs QuickJS |
 |---|---|---|---|---|---|
@@ -101,97 +114,24 @@ better; the ratio columns are C3/reference, so below 1.0 the engine wins.
 | bench_string | 9 | 17 | 6 | 0.5x | 1.5x |
 | bench_valstack_copy | 11 | 13 | 10 | 0.8x | 1.1x |
 
-The engine ties or beats Duktape on every benchmark and stays within ~1.8x of
-QuickJS everywhere except regexp (2.1x), ahead of it on the inline-cache and
-loop microbenchmarks.
-
 ### Startup time
-
-Empty program, median of 60 runs on macOS arm64.
 
 | Runtime | Median startup |
 |---|---|
-| boomkat (this engine) | 2.7 ms |
-| QuickJS (`out/qjs`) | 2.4 ms |
+| boomkat | 2.7 ms |
+| QuickJS | 2.4 ms |
 | Bun 1.3.13 | 8.4 ms |
 | Node 24.13.0 | 19.0 ms |
 
-## Engine comparison
-
-| | boomkat | QuickJS | quickjs-ng | Duktape v2.7.0 |
-|---|---|---|---|---|
-| `let`/`const`, arrows, classes, template literals | ✅ | ✅ | ✅ | ❌ |
-| Destructuring, `for...of`, spread, default params | ✅ | ✅ | ✅ | ❌ |
-| Generators, async/await, async generators | ✅ | ✅ | ✅ | ❌ |
-| `for await...of` | ✅ | ✅ | ✅ | ❌ |
-| Public/private class fields, static blocks | ✅ | ✅ | ✅ | ❌ |
-| Optional chaining, nullish coalescing | ✅ | ✅ | ✅ | ❌ |
-| `**`, logical assignment (`&&=`, `||=`, `??=`) | ✅ | ✅ | ✅ | ⚠️ `**` only |
-| `Promise`, `Map`/`Set`/`WeakMap`/`WeakSet` | ✅ | ✅ | ✅ | ❌ |
-| `Promise.allSettled`/`any`, `AggregateError` | ✅ | ✅ | ✅ | ❌ |
-| `WeakRef`, `FinalizationRegistry` | ✅ | ✅ | ✅ | ❌ |
-| `BigInt` | ✅ | ✅ | ✅ | ❌ |
-| `Symbol`, `Proxy`, `Reflect` | ✅ | ✅ | ✅ | ⚠️ |
-| `Symbol.description` | ✅ | ✅ | ✅ | ❌ |
-| `TypedArray` (`Uint8Array`, `Float64Array`, ...) | ✅ | ✅ | ✅ | ✅ |
-| `DataView` | ✅ | ✅ | ✅ | ✅ |
-| Resizable `ArrayBuffer` | ✅ | ❌ | ✅ | ❌ |
-| `SharedArrayBuffer`, `Atomics` | ⚠️ | ✅ | ✅ | ❌ |
-| `String.raw`, `padStart`/`padEnd`, `includes` | ✅ | ✅ | ✅ | ⚠️ `includes` only |
-| `Array.from`/`of`/`flat`, `Object.entries`/`fromEntries` | ✅ | ✅ | ✅ | ❌ |
-| RegExp named groups, lookbehind, `s`/`u`/`d` flags | ✅ | ✅ | ✅ | ❌ |
-| RegExp `v` flag, modifiers | ✅ | ✅ | ✅ | ❌ |
-| `globalThis` | ✅ | ✅ | ✅ | ✅ |
-| ES modules | ✅ | ✅ | ✅ | ❌ |
-| Top-level `await` | ✅ | ✅ | ✅ | ❌ |
-| Import attributes, JSON modules | ❌ | ✅ | ⚠️ attributes parsed | ❌ |
-| Iterator helpers | ✅ | ✅ | ✅ | ❌ |
-| Set methods (`union`, `intersection`, ...) | ✅ | ✅ | ✅ | ❌ |
-| Intl (ECMA-402) | ❌ | ❌ | ❌ | ❌ |
-| TypeScript type stripping | ✅ | ❌ | ❌ | ❌ |
-| Built-in debugger | ❌ | ❌ | ❌ | ✅ |
-
-| | boomkat | QuickJS | quickjs-ng | Duktape v2.7.0 |
-|---|---|---|---|---|
-| Language | C3 | C | C | C |
-| Baseline | ES5/ES6, strict-only | most of ES2025 | latest ES spec | ES5.1, partial ES6/7 |
-| `BigInt` | int128 | arbitrary | arbitrary | |
-| `Proxy` | full | full | full | subset |
-| `SharedArrayBuffer` | single agent | shared | shared | |
-| Sloppy mode, Annex B | rejected | supported | supported | supported |
-| RegExp engine | libregexp | libregexp | libregexp | built-in |
-| TypeScript stripping | erasable only | | | |
-| GC | refcount + MS | refcount + cycles | refcount + cycles | refcount + MS |
-| Inspection | disasm, VM trace | bytecode dump | bytecode dump | remote debugger |
-| Embedding | C ABI | C API | C API | C API |
-
-## Design
-
-- **Strict-only, single mode.** There is no sloppy mode and no `is_strict` flag
-  to branch on. Non-strict and Annex B features are rejected at parse time;
-  `"use strict"` is accepted and ignored.
-- **One-pass compiler.** No AST: the parser emits register bytecode as it
-  recognizes each construct, then `finish()` runs the fusion and
-  move-elimination passes.
-- **Register VM.** Fixed 32-bit instructions, threaded dispatch, inline caches
-  for property and variable access, hidden classes behind those caches, fused
-  opcodes on the hot paths.
-- **NaN-boxed values.** The default build packs every `TVal` into 8 bytes;
-  `-D NONANBOX` switches to a 16-byte tagged union.
-- **Hybrid collector.** Refcounting reclaims most values; mark-and-sweep runs
-  at safepoints to collect the cycles it cannot.
-- **The ES5/ES6 core, plus what ordinary code assumes:** classes with private
-  fields and static blocks, generators and async/await, async generators,
-  `Promise`, `Map`/`Set`/`WeakMap`/`WeakSet`,
-  `WeakRef`/`FinalizationRegistry`, `Symbol`, `Proxy`/`Reflect`, TypedArrays
-  and resizable `ArrayBuffer`, `Atomics` and `SharedArrayBuffer` on a single
-  agent, ES modules with top-level `await`, and `BigInt` as fixed-width
-  int128. The full in-scope list is `docs/engine-scope.md`.
+(not an entirely fair comparison as bun/node do a *lot more*, but useful for a baseline)
 
 ## Build and run
 
-`just list` shows every task. The only requirements are C3 (`c3c`), `just`,
-and Python 3.
+### Requirements
+
+- C3 compiler: `brew install c3c`
+- Just: `brew install just`
+- Python 3
 
 | Task | Command |
 |---|---|
@@ -206,20 +146,13 @@ and Python 3.
 | ASAN test262 runner | `just build-asan` |
 | lldb on a crash | `just lldb <file>` |
 
-`boomkat` is the plain runner. `boomkat_debug` carries the inspection
-flags (`-c` disassembles, `-t` traces the VM). To reproduce one test262 test
-through the worker path:
-
-```sh
-python3 scripts/run_test262.py --single test262/test/<path>.js
-```
-
-## Embedding
+## Embedding / bindings
 
 The engine ships a `jse_` C ABI (`include/jse.h`, static `libjse.a` and a
-shared library) plus first-party bindings in C3, Rust, Python, Ruby, and Zig
-(`bindings/`). `docs/embedding.md` covers packaging, the ABI reference, the
-lifetime and GC rules, and each binding's status and known limitations.
+shared library). See `docs/embedding.md`.
+
+Bindings in C3, Rust, Python, Ruby, and Zig
+(`bindings/` and `examples/`) are **work in progress*.
 
 ## Build flags
 
@@ -232,36 +165,6 @@ lifetime and GC rules, and each binding's status and known limitations.
 - `-D ENV_STRICT`: compile-time environment-handling checks
   (`boomkat_envstrict` target)
 
-## Project layout
-
-```
-src/            engine: types, heap, hstring, hobject, env, bytecode, lexer,
-                compiler/, vm/, builtins/, capi, module, hbigint, re_bindings
-cli/            boomkat, boomkat_debug, test262_runner
-docs/           architecture.md, engine-scope.md, embedding.md,
-                string-representation-survey.md
-include/        jse.h, the public C ABI
-bindings/       C3, Rust, Python, Ruby, Zig
-test/           JS tests, golden bytecode, rosetta-verbatim, ESM modules,
-                capi host-function tests
-test262/        the conformance suite (skip list in scripts/run_test262.py)
-benchmarks/     speed and memory benchmarks (`just bench`, `just bench-memory`)
-plans/          design and roadmap plans
-progress.md     per-session test262 tracker
-```
-
-## Documentation
-
-- `AGENTS.md` is the operating manual: build and test commands, the
-  strict-only rules, compiler and VM invariants.
-- `docs/architecture.md` is the design guide: how a script runs, the compiler,
-  the VM, values and objects, the heap and both collectors, builtins and
-  modules.
-- `docs/engine-scope.md` is what is in scope, what is not, and the notes for
-  anyone editing the test262 skip list.
-- `docs/string-representation-survey.md` is the survey behind the string
-  encoding: CESU-8 storage, the char-index cache, interning.
-
 ## License
 
-MIT, following the original Duktape license.
+MIT
