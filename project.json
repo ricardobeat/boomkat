@@ -3,6 +3,7 @@
   "warnings": [
     "all"
   ],
+  "version": "0.1",
   "c-sources": [
     "libregexp/libregexp.c",
     "libregexp/libunicode.c",

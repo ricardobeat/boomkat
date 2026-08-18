@@ -167,4 +167,6 @@ Bindings in C3, Rust, Python, Ruby, and Zig
 
 ## License
 
-MIT
+Use of this software is govered by the Business Source License included in the [LICENSE](./LICENSE) file and at www.mariadb.com/bsl11.
+
+Can be used without restrictions for open-source work, and commercial projects up to $2M/year revenue. Source becomes MIT-licensed after four years.
