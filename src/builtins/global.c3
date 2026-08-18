@@ -174,7 +174,7 @@ fn void ConsoleSink.put(&self, char c) {
 }
 
 fn void ConsoleSink.write(&self, char[] bytes) {
-    for (usz i = 0; i < bytes.len; i++) self.put(bytes[i]);
+    hstring::write_cesu8_as_utf8(bytes, self.use_stderr ? &eputc : &putc_out);
 }
 
 /// Emit one value the way console renders it outside any specifier: the
