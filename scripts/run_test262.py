@@ -468,7 +468,7 @@ SKIP_FILES = {
     # but since that's a whole-file parse error, every other (in-range)
     # assertion in the same file never runs either. Not bugs: arbitrary-
     # precision BigInt would need a real bignum representation (deferred,
-    # not a small fix). See progress.md session 285/286.
+    # not a small fix).
     "built-ins/BigInt/asIntN/arithmetic.js",
     "built-ins/BigInt/asUintN/arithmetic.js",
     "built-ins/BigInt/constructor-from-binary-string.js",

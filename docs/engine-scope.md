@@ -59,7 +59,7 @@ The ES5/ES6 core, plus the later additions that ordinary code now assumes:
 ## Two notes for anyone editing the skip list
 
 A skip is a claim that behavior is out of scope. It is not a place to park a
-bug: an in-scope test that fails belongs in `BACKLOG.md`, not in `SKIP_FILES`.
+bug: an in-scope test that fails is a real bug, not a `SKIP_FILES` entry.
 
 When you implement something, remove its skip in the same change. This file
 replaced a tiered planning document whose "implement later" tiers had quietly

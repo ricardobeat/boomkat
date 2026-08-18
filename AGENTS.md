@@ -1,7 +1,5 @@
 # Boomkat
 
-> **High-level project phases and progress are tracked in `progress.md`.** Check it before starting work to understand where we are and what's next.
-
 ## Project Spec
 
 A C3-native, strict-only JavaScript engine. **Goal**: pass 100% of the targeted test262 subset (the ~29,500 executable tests left after the skip list; roadmap in `plans/040-test262-100-percent.md`), beat Duktape on performance, keep memory low, and run on low-powered devices across platforms.
