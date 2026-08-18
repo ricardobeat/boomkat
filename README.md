@@ -171,6 +171,10 @@ Bindings in C3, Rust, Python, Ruby, and Zig
 - `-D ENV_STRICT`: compile-time environment-handling checks
   (`boomkat_envstrict` target)
 
+## Support
+
+This is a one-man show at the moment. If you'd like to support the project, you can [![Sponsor](https://img.shields.io/badge/sponsor-%E2%9D%A4-red)](https://github.com/sponsors/yourname) me on Github, or buy a commercial license (see below).
+
 ## License
 
 Use of this software is govered by the Business Source License included in the [LICENSE](./LICENSE) file and at www.mariadb.com/bsl11.
