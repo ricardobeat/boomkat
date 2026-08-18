@@ -116,6 +116,41 @@ Empty program, median of 60 runs on macOS arm64.
 | Bun 1.3.13 | 8.4 ms |
 | Node 24.13.0 | 19.0 ms |
 
+## Engine comparison
+
+| | boomkat | QuickJS | quickjs-ng | Duktape v2.7.0 |
+|---|---|---|---|---|
+| `let`/`const`, arrows, classes, template literals | ✅ | ✅ | ✅ | ❌ |
+| Destructuring, `for...of`, spread, default params | ✅ | ✅ | ✅ | ❌ |
+| Generators, async/await, async generators | ✅ | ✅ | ✅ | ❌ |
+| `Promise`, `Map`/`Set`/`WeakMap`/`WeakSet` | ✅ | ✅ | ✅ | ❌ |
+| `WeakRef`, `FinalizationRegistry` | ✅ | ✅ | ✅ | ❌ |
+| `BigInt` | ✅ | ✅ | ✅ | ❌ |
+| `Symbol`, `Proxy`, `Reflect` | ✅ | ✅ | ✅ | ⚠️ |
+| `TypedArray`, `DataView` | ✅ | ✅ | ✅ | ✅ |
+| Resizable `ArrayBuffer` | ✅ | ❌ | ✅ | ❌ |
+| `SharedArrayBuffer`, `Atomics` | ⚠️ | ✅ | ✅ | ❌ |
+| ES modules | ✅ | ✅ | ✅ | ❌ |
+| Top-level `await` | ✅ | ✅ | ✅ | ❌ |
+| Import attributes, JSON modules | ❌ | ✅ | ⚠️ attributes parsed | ❌ |
+| Intl (ECMA-402) | ❌ | ❌ | ❌ | ❌ |
+| TypeScript type stripping | ✅ | ❌ | ❌ | ❌ |
+| Built-in debugger | ❌ | ❌ | ❌ | ✅ |
+
+| | boomkat | QuickJS | quickjs-ng | Duktape v2.7.0 |
+|---|---|---|---|---|
+| Language | C3 | C | C | C |
+| Baseline | ES5/ES6, strict-only | most of ES2025 | latest ES spec | ES5.1, partial ES6/7 |
+| `BigInt` | int128 | arbitrary | arbitrary | |
+| `Proxy` | full | full | full | subset |
+| `SharedArrayBuffer` | single agent | shared | shared | |
+| Sloppy mode, Annex B | rejected | supported | supported | supported |
+| RegExp engine | libregexp | libregexp | libregexp | built-in |
+| TypeScript stripping | erasable only | | | |
+| GC | refcount + MS | refcount + cycles | refcount + cycles | refcount + MS |
+| Inspection | disasm, VM trace | bytecode dump | bytecode dump | remote debugger |
+| Embedding | C ABI | C API | C API | C API |
+
 ## Design
 
 - **Strict-only, single mode.** There is no sloppy mode and no `is_strict` flag
