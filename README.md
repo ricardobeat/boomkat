@@ -97,25 +97,25 @@ unmodified against the engine. The output must match the result of running the s
 
 Run `just bench` to benchmark against Duktape and QuickJS:
 
-| Benchmark | C3 (ms) | Duktape (ms) | QuickJS (ms) | vs Duktape | vs QuickJS |
-|---|---|---|---|---|---|
-| bench_arithmetic | 332 | 3,305 | 246 | 0.1x | 1.3x |
-| bench_array | 12 | 40 | 9 | 0.3x | 1.3x |
-| bench_date | 77 | 885 | 49 | 0.1x | 1.6x |
-| bench_function_call | 222 | 1,266 | 148 | 0.2x | 1.5x |
-| bench_ic_monomorphic | 81 | 283 | 88 | 0.3x | 0.9x |
-| bench_ic_proto | 114 | 447 | 110 | 0.2x | 1.0x |
-| bench_loop | 113 | 1,342 | 119 | 0.1x | 0.9x |
-| bench_memory_heavy | 76 | 170 | 49 | 0.4x | 1.6x |
-| bench_object | 356 | 1,647 | 208 | 0.2x | 1.7x |
-| bench_property_lookup | 243 | 1,756 | 156 | 0.1x | 1.6x |
-| bench_recursion_deep | 863 | 1,954 | 490 | 0.4x | 1.8x |
-| bench_recursion | 207 | 468 | 120 | 0.4x | 1.7x |
-| bench_regexp | 542 | 652 | 258 | 0.8x | 2.1x |
-| bench_shape_no_call | 8 | 8 | 5 | 1.0x | 1.6x |
-| bench_shape_stress | 8 | 8 | 5 | 1.0x | 1.6x |
-| bench_string | 9 | 17 | 6 | 0.5x | 1.5x |
-| bench_valstack_copy | 11 | 13 | 10 | 0.8x | 1.1x |
+| Benchmark | C3 | Duktape | QuickJS |
+|---|---|---|---|
+| arithmetic | 350ms | 3,491ms (0.1x) | 260ms (1.3x) |
+| array | 14ms | 42ms (0.3x) | 10ms (1.4x) |
+| date | 78ms | 3,639ms (0.0x) | 55ms (1.4x) |
+| function_call | 226ms | 1,322ms (0.2x) | 162ms (1.4x) |
+| ic_monomorphic | 85ms | 293ms (0.3x) | 96ms (0.9x) |
+| ic_proto | 118ms | 465ms (0.3x) | 118ms (1.0x) |
+| loop | 118ms | 1,405ms (0.1x) | 126ms (0.9x) |
+| memory_heavy | 82ms | 182ms (0.5x) | 53ms (1.5x) |
+| object | 371ms | 1,719ms (0.2x) | 220ms (1.7x) |
+| property_lookup | 254ms | 1,845ms (0.1x) | 166ms (1.5x) |
+| recursion_deep | 875ms | 2,034ms (0.4x) | 528ms (1.7x) |
+| recursion | 210ms | 485ms (0.4x) | 130ms (1.6x) |
+| regexp | 558ms | 697ms (0.8x) | 271ms (2.1x) |
+| shape_no_call | 8ms | 9ms (0.9x) | 6ms (1.3x) |
+| shape_stress | 9ms | 9ms (1.0x) | 7ms (1.3x) |
+| string | 9ms | 19ms (0.5x) | 6ms (1.5x) |
+| valstack_copy | 11ms | 14ms (0.8x) | 10ms (1.1x) |
 
 ### Startup time
 
