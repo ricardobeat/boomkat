@@ -13,13 +13,13 @@
 /// throws, a getter observes the documented Get order, `timeZone: "UTC"`
 /// shifts the clock) against one locale's spelling of the month names. What a
 /// caller does not get is a different locale's spelling.
-module duktape::builtins;
-import duktape::types;
+module boomkat::builtins;
+import boomkat::types;
 import std::math;
 import std::io;
-import duktape::heap;
-import duktape::hstring;
-import duktape::hobject;
+import boomkat::heap;
+import boomkat::hstring;
+import boomkat::hobject;
 
 /// Room for the widest format this file can produce: a full weekday name, a
 /// full month name, a year past the four-digit range with an era suffix, a

@@ -6,15 +6,15 @@
  * the way other engines do.  We use it everywhere libc::strtod was called.
  *
  * `js_atod` requires a scratch buffer (JSATODTempMem, 216 bytes); the C
- * wrapper hides that and accepts a `void*` of DUKTAPE_DTOA_TMP_SIZE bytes,
+ * wrapper hides that and accepts a `void*` of BOOMKAT_DTOA_TMP_SIZE bytes,
  * which C3 passes as a fixed-size char array.
  */
-module duktape::dtoa_bindings;
+module boomkat::dtoa_bindings;
 
 
-/* Size in bytes of the scratch buffer expected by duktape_js_atod. */
+/* Size in bytes of the scratch buffer expected by boomkat_js_atod. */
 const usz DTOA_TMP_SIZE = 216;
-/* Size in bytes of the scratch buffer expected by duktape_js_dtoa. */
+/* Size in bytes of the scratch buffer expected by boomkat_js_dtoa. */
 const usz DTOA_FORMAT_TMP_SIZE = 296;
 
 /* JS_DTOA_* flags mirrored from quickjs/dtoa.h. */
@@ -35,10 +35,10 @@ const int JS_DTOA_EXP_ENABLED  = 4;
  *
  * Returns the parsed value (NaN on parse failure).
  */
-extern fn double duktape_js_atod(char* str, char** pnext, int radix, int flags,
+extern fn double boomkat_js_atod(char* str, char** pnext, int radix, int flags,
                                  char[DTOA_TMP_SIZE]* tmp);
 
-extern fn int duktape_js_dtoa(char* buf, double d, int radix, int n_digits, int flags,
+extern fn int boomkat_js_dtoa(char* buf, double d, int radix, int n_digits, int flags,
                               char[DTOA_FORMAT_TMP_SIZE]* tmp);
 
 /*
@@ -54,7 +54,7 @@ extern fn int duktape_js_dtoa(char* buf, double d, int radix, int n_digits, int 
 fn double atod_strtod_compat(char* str, char** endptr) {
     char[DTOA_TMP_SIZE] tmp;
     char* next = str;
-    double v = duktape_js_atod(str, &next, 10, 0, &tmp);
+    double v = boomkat_js_atod(str, &next, 10, 0, &tmp);
     *endptr = next;
     return v;
 }

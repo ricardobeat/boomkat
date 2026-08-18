@@ -1,11 +1,11 @@
-module duktape::heap;
+module boomkat::heap;
 
-import duktape::types;
-import duktape::hstring;
-import duktape::hobject;
-import duktape::bytecode;
-import duktape::re_bindings;
-import duktape::esm;
+import boomkat::types;
+import boomkat::hstring;
+import boomkat::hobject;
+import boomkat::bytecode;
+import boomkat::re_bindings;
+import boomkat::esm;
 import std::io;
 import std::collections::list;
 import std::core::mem::mempool;
@@ -1005,8 +1005,8 @@ fn void default_free(void* udata, void* ptr) {
 }
 
 fn void default_fatal(void* udata, char* msg) {
-    io::eprintfn("DUKTAPE FATAL: %s", msg);
-    abort("duktape fatal error");
+    io::eprintfn("BOOMKAT FATAL: %s", msg);
+    abort("boomkat fatal error");
 }
 
 // The FixedBlockPools draw from `allocators::LIBC_ALLOCATOR`.

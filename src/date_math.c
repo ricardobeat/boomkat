@@ -18,13 +18,13 @@
  */
 #pragma STDC FP_CONTRACT OFF
 
-double duktape_date_make_time(double hour, double minute, double second, double ms) {
+double boomkat_date_make_time(double hour, double minute, double second, double ms) {
     double hm = hour * 3600000.0 + minute * 60000.0;
     double hms = hm + second * 1000.0;
     return hms + ms;
 }
 
-double duktape_date_make_date(double day, double time_within_day) {
+double boomkat_date_make_date(double day, double time_within_day) {
     double day_ms = day * 86400000.0;
     return day_ms + time_within_day;
 }

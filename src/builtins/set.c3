@@ -1,12 +1,12 @@
 /// Set constructor and Set.prototype methods.
-module duktape::builtins;
+module boomkat::builtins;
 
-import duktape::types;
-import duktape::heap;
-import duktape::hobject;
-import duktape::hstring;
-import duktape::env;
-import duktape::vm;
+import boomkat::types;
+import boomkat::heap;
+import boomkat::hobject;
+import boomkat::hstring;
+import boomkat::env;
+import boomkat::vm;
 import std::math;
 
 // ============================================================================

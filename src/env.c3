@@ -1,11 +1,11 @@
 /// The scope chain: runtime variable resolution through linked environment
 /// records, split into a var environment and a lex environment.
-module duktape::env;
+module boomkat::env;
 
-import duktape::types;
-import duktape::hstring;
-import duktape::hobject;
-import duktape::heap;
+import boomkat::types;
+import boomkat::hstring;
+import boomkat::hobject;
+import boomkat::heap;
 
 // ============================================================================
 // EnvRecord pool

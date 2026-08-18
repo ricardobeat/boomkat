@@ -1,10 +1,10 @@
-module duktape::peephole;
+module boomkat::peephole;
 
-import duktape::bytecode;
-import duktape::types;
-import duktape::heap;
-import duktape::hobject;
-import duktape::compiler;
+import boomkat::bytecode;
+import boomkat::types;
+import boomkat::heap;
+import boomkat::hobject;
+import boomkat::compiler;
 
 // ============================================================================
 // GETPROPC2 chain fusion

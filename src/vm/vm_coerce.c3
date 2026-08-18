@@ -1,15 +1,15 @@
-module duktape::vm;
+module boomkat::vm;
 
-import duktape::types;
-import duktape::bytecode;
-import duktape::heap;
-import duktape::hstring;
-import duktape::hbigint;
-import duktape::hobject;
-import duktape::env;
-import duktape::builtins;
-import duktape::re_bindings;
-import duktape::dtoa_bindings;
+import boomkat::types;
+import boomkat::bytecode;
+import boomkat::heap;
+import boomkat::hstring;
+import boomkat::hbigint;
+import boomkat::hobject;
+import boomkat::env;
+import boomkat::builtins;
+import boomkat::re_bindings;
+import boomkat::dtoa_bindings;
 import std::io;
 import std::math;
 
@@ -419,7 +419,7 @@ fn HString* iterable_value_desc(Vm* vm, TVal* val) {
     return typeof_string(vm, val);
 }
 
-// int_to_buf is defined in duktape::hstring and available via the module import.
+// int_to_buf is defined in boomkat::hstring and available via the module import.
 
 /// Convert a double to an interned HString* using shortest round-trip formatting.
 fn HString*? vm_number_to_string(Vm* vm, double val) {
@@ -453,7 +453,7 @@ fn HString*? vm_number_to_string(Vm* vm, double val) {
     // produce e.g. "7.300000000000001" from "7.3000000000000007").
     char[64] buf;
     char[dtoa_bindings::DTOA_FORMAT_TMP_SIZE] tmp;
-    int len = dtoa_bindings::duktape_js_dtoa(&buf, val, 10, 0,
+    int len = dtoa_bindings::boomkat_js_dtoa(&buf, val, 10, 0,
         dtoa_bindings::JS_DTOA_FORMAT_FREE, &tmp);
     if (len <= 0 || len >= 64) {
         return null;

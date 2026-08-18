@@ -1,6 +1,6 @@
 /// Disassembler for the bytecode representation defined in `bytecode.c3`.
 ///
-/// Part of the `duktape::bytecode` module, holding the disassembly helpers: the
+/// Part of the `boomkat::bytecode` module, holding the disassembly helpers: the
 /// `OPCODE_NAMES` table, the `get_opcode_name` lookup, the per-format formatter
 /// in `Instruction.disassemble`, and the `write_str`, `write_uint`, and
 /// `write_int` buffer writers.
@@ -9,7 +9,7 @@
 /// no-op stubs instead, which keeps callers linkable: `vm_trace.c3`, the `-c`
 /// and `--format json` dumpers, and the `dump_vm_state` crash helper. Dead code
 /// elimination then drops `OPCODE_NAMES` from the binary.
-module duktape::bytecode;
+module boomkat::bytecode;
 
 // ============================================================================
 // Instruction.disassemble: one-line textual rendering

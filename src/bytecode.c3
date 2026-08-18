@@ -24,10 +24,10 @@
 /// Disassembly lives in `bytecode_disasm.c3` behind the `TRACE_VM` feature:
 /// `Instruction.disassemble`, the `OPCODE_NAMES` table, and the `write_*`
 /// helpers.
-module duktape::bytecode;
+module boomkat::bytecode;
 
-import duktape::types;
-import duktape::hobject;
+import boomkat::types;
+import boomkat::hobject;
 
 // ============================================================================
 // Constants
@@ -1733,10 +1733,10 @@ fn uint CompiledFunction.get_line(&self, uint pc) {
 //
 // `Instruction.disassemble`, the `OPCODE_NAMES` table, and the `write_*`
 // buffer-writer helpers live in `src/bytecode_disasm.c3`, in this same
-// `duktape::bytecode` module. That file gates its implementations on the
+// `boomkat::bytecode` module. That file gates its implementations on the
 // `TRACE_VM` feature, so a release build pays no `.text` cost and LLVM drops
 // `OPCODE_NAMES` from `.rodata` once nothing reachable references it.
 //
-// Build the `duktape_c3_debug` target, or pass `-D TRACE_VM`, to get the dump
+// Build the `boomkat_debug` target, or pass `-D TRACE_VM`, to get the dump
 // helpers and the `-t`, `-c`, and `--format json` CLI options.
 

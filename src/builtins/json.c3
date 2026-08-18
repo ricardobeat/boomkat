@@ -1,14 +1,14 @@
 /// JSON.parse and JSON.stringify.
-module duktape::builtins;
-import duktape::types;
+module boomkat::builtins;
+import boomkat::types;
 import std::math;
 
-import duktape::heap;
-import duktape::hstring;
-import duktape::hobject;
-import duktape::env;
-import duktape::dtoa_bindings;
-import duktape::vm;
+import boomkat::heap;
+import boomkat::hstring;
+import boomkat::hobject;
+import boomkat::env;
+import boomkat::dtoa_bindings;
+import boomkat::vm;
 import std::io;
 
 // ============================================================================
@@ -241,7 +241,7 @@ fn TVal json_parse_number(JsonParseCtx* jctx) {
     // JSON.parse("-0") must yield -0 (ES §25.5.1 → ToNumber preserves it).
     long fi = (long)d;
     bool is_neg_zero = d == 0.0 && (1.0 / d) < 0.0;
-    if (!is_neg_zero && (double)fi == d && fi >= types::DUK_MIN_SAFE_INT && fi <= types::DUK_MAX_SAFE_INT) {
+    if (!is_neg_zero && (double)fi == d && fi >= types::MIN_SAFE_INT && fi <= types::MAX_SAFE_INT) {
         TVal r; r.set_fastint(fi); return r;
     }
     TVal r; r.set_number(d); return r;
@@ -1221,7 +1221,7 @@ fn usz json_number_to_string(double d, char* buf, usz buf_size) {
         return (glen > 0) ? (usz)glen : 0;
     }
     char[dtoa_bindings::DTOA_FORMAT_TMP_SIZE] tmp;
-    int len = dtoa_bindings::duktape_js_dtoa(buf, d, 10, 0,
+    int len = dtoa_bindings::boomkat_js_dtoa(buf, d, 10, 0,
         dtoa_bindings::JS_DTOA_FORMAT_FREE, &tmp);
     if (len > 0 && (usz)len < buf_size) {
         return (usz)len;

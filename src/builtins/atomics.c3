@@ -7,14 +7,14 @@
 /// no-waiter behaviour: `notify` always reports 0, `wait` returns "not-equal"
 /// or "timed-out" without ever blocking, and `waitAsync` returns a synchronous
 /// {async:false, value:...} result.
-module duktape::builtins;
+module boomkat::builtins;
 
-import duktape::types;
-import duktape::hstring;
-import duktape::heap;
-import duktape::hobject;
-import duktape::hbigint;
-import duktape::env;
+import boomkat::types;
+import boomkat::hstring;
+import boomkat::heap;
+import boomkat::hobject;
+import boomkat::hbigint;
+import boomkat::env;
 import std::io;
 import std::math;
 

@@ -5,11 +5,11 @@
 /// the *value* half of the sync `{value, done}` result is itself Promise-resolved
 /// (awaited) before the caller sees it, so a synchronously-thenable value
 /// still gets unwrapped like it would from a real async iterator.
-module duktape::builtins;
-import duktape::types;
-import duktape::hstring;
-import duktape::heap;
-import duktape::hobject;
+module boomkat::builtins;
+import boomkat::types;
+import boomkat::hstring;
+import boomkat::heap;
+import boomkat::hobject;
 
 /// Internal-slot key holding the wrapped [[SyncIteratorRecord]]'s iterator
 /// object. There is no dedicated ObjClass/HObjectExtra member for this

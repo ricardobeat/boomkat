@@ -22,12 +22,12 @@
 /// un-interned string into the engine (string equality is pointer identity
 /// engine-wide, so an escaping un-interned HString would silently break
 /// indexOf/SEQ/keys).
-module duktape::builtins;
-import duktape::types;
-import duktape::hstring;
-import duktape::hobject;
-import duktape::heap;
-import duktape::hbigint;
+module boomkat::builtins;
+import boomkat::types;
+import boomkat::hstring;
+import boomkat::hobject;
+import boomkat::heap;
+import boomkat::hbigint;
 import std::math;
 
 /// The default depth limit. A structure nested deeper renders as the

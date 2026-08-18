@@ -1,14 +1,14 @@
 /// Error constructors: Error, TypeError, RangeError, ReferenceError, SyntaxError, EvalError, URIError, AggregateError.
-module duktape::builtins;
-import duktape::types;
-import duktape::env;
+module boomkat::builtins;
+import boomkat::types;
+import boomkat::env;
 import std::io;
-import duktape::hstring;
-import duktape::hobject;
+import boomkat::hstring;
+import boomkat::hobject;
 
-import duktape::heap;
-import duktape::vm;
-import duktape::bytecode;
+import boomkat::heap;
+import boomkat::vm;
+import boomkat::bytecode;
 
 // ============================================================================
 // Error constructor builtins

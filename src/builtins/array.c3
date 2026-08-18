@@ -1,15 +1,15 @@
 /// Array constructor and Array.prototype methods.
-module duktape::builtins;
+module boomkat::builtins;
 
-import duktape::types;
+import boomkat::types;
 import std::math;
 import std::io;
-import duktape::heap;
-import duktape::hstring;
-import duktape::hobject;
-import duktape::hbigint;
-import duktape::env;
-import duktape::vm;
+import boomkat::heap;
+import boomkat::hstring;
+import boomkat::hobject;
+import boomkat::hbigint;
+import boomkat::env;
+import boomkat::vm;
 
 // ============================================================================
 // Additional Array.prototype methods
@@ -767,12 +767,12 @@ fn ulong arr_to_length(double raw) {
     // Step 1: ToIntegerOrInfinity
     if (raw != raw) return 0;           // NaN → 0
     if (raw == 0.0) return 0;           // +0 / -0 → 0
-    if (raw == double::inf) return (ulong)types::DUK_MAX_SAFE_INT;  // +Infinity → 2^53-1
+    if (raw == double::inf) return (ulong)types::MAX_SAFE_INT;  // +Infinity → 2^53-1
     if (raw == -double::inf) return 0;  // -Infinity → 0
 
     // Step 2-3: clamp to [0, 2^53-1]
     if (raw < 0) return 0;
-    if (raw > (double)types::DUK_MAX_SAFE_INT) return (ulong)types::DUK_MAX_SAFE_INT;
+    if (raw > (double)types::MAX_SAFE_INT) return (ulong)types::MAX_SAFE_INT;
     return (ulong)raw;
 }
 
@@ -1539,7 +1539,7 @@ fn void builtin_array_proto_push(BuiltinContext* ctx) {
     if (!array_to_length(obj, ctx.heap, ctx, &len)) { ctx.result.set_undefined(); return; }
 
     // ES2022 §23.1.3.23 step 4: throw if result length would exceed 2^53-1.
-    if (len + (ulong)ctx.argc > (ulong)types::DUK_MAX_SAFE_INT) {
+    if (len + (ulong)ctx.argc > (ulong)types::MAX_SAFE_INT) {
         arr_throw_type_error(ctx, "Pushing would exceed the maximum array length (2^53-1)");
         ctx.result.set_undefined();
         return;
@@ -2077,7 +2077,7 @@ fn void builtin_array_proto_splice(BuiltinContext* ctx) {
 
     // ES2022 §23.1.3.28 step 11: throw before any mutation if the resulting
     // length would exceed 2^53-1.
-    if (len - actual_delete_count + (ulong)item_count > (ulong)types::DUK_MAX_SAFE_INT) {
+    if (len - actual_delete_count + (ulong)item_count > (ulong)types::MAX_SAFE_INT) {
         arr_throw_type_error(ctx, "Splicing would exceed the maximum array length (2^53-1)");
         ctx.result.set_undefined();
         return;
@@ -2464,7 +2464,7 @@ fn void builtin_array_proto_toSpliced(BuiltinContext* ctx) {
     // Calculate new length. §23.1.3.35: newLen > 2^53-1 is a TypeError
     // (step 12); ArrayCreate then rejects newLen > 2^32-1 with RangeError.
     ulong new_len = len + (ulong)item_count - actual_delete_count;
-    if (new_len > (ulong)types::DUK_MAX_SAFE_INT) {
+    if (new_len > (ulong)types::MAX_SAFE_INT) {
         arr_throw_type_error(ctx, "Array length exceeds 2**53-1");
         return;
     }
@@ -2635,7 +2635,7 @@ fn void builtin_array_proto_unshift(BuiltinContext* ctx) {
     // and no overflow to check, length is just re-clamped below.
     if (arg_count > 0) {
         // Step 4.a: throw before any element is moved.
-        if (len + (ulong)arg_count > (ulong)types::DUK_MAX_SAFE_INT) {
+        if (len + (ulong)arg_count > (ulong)types::MAX_SAFE_INT) {
             arr_throw_type_error(ctx, "Unshifting would exceed the maximum array length (2^53-1)");
             ctx.result.set_undefined();
             return;
@@ -2877,7 +2877,7 @@ fn bool concat_process_item(BuiltinContext* ctx, TVal item, HString* concat_sym,
 
     if (!item.is_object() || item.get_heapptr() == null) {
         // Primitive, add as single element (§23.1.3.1 step 5.d.ii).
-        if (n >= (ulong)types::DUK_MAX_SAFE_INT) {
+        if (n >= (ulong)types::MAX_SAFE_INT) {
             arr_throw_type_error(ctx, "Concatenating would exceed the maximum array length (2^53-1)");
             return false;
         }
@@ -2921,7 +2921,7 @@ fn bool concat_process_item(BuiltinContext* ctx, TVal item, HString* concat_sym,
     if (spread) {
         ulong item_len;
         if (!array_to_length(item_obj, ctx.heap, ctx, &item_len)) return false;
-        if (n + item_len > (ulong)types::DUK_MAX_SAFE_INT) {
+        if (n + item_len > (ulong)types::MAX_SAFE_INT) {
             arr_throw_type_error(ctx, "Concatenating would exceed the maximum array length (2^53-1)");
             return false;
         }
@@ -2937,7 +2937,7 @@ fn bool concat_process_item(BuiltinContext* ctx, TVal item, HString* concat_sym,
             n++;
         }
     } else {
-        if (n >= (ulong)types::DUK_MAX_SAFE_INT) {
+        if (n >= (ulong)types::MAX_SAFE_INT) {
             arr_throw_type_error(ctx, "Concatenating would exceed the maximum array length (2^53-1)");
             return false;
         }

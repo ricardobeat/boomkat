@@ -1,17 +1,17 @@
 /// Function constructor and Function.prototype methods.
-module duktape::builtins;
-import duktape::types;
-import duktape::bytecode;
+module boomkat::builtins;
+import boomkat::types;
+import boomkat::bytecode;
 import std::math;
 import std::io;
-import duktape::hstring;
-import duktape::env;
+import boomkat::hstring;
+import boomkat::env;
 
-import duktape::heap;
-import duktape::hobject;
-import duktape::vm;
-import duktape::compiler;
-import duktape::lexer;
+import boomkat::heap;
+import boomkat::hobject;
+import boomkat::vm;
+import boomkat::compiler;
+import boomkat::lexer;
 
 // ============================================================================
 // Function constructor (ES5 §15.3)

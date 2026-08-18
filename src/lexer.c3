@@ -1,16 +1,16 @@
-/// Lexer module for the Duktape JavaScript engine.
+/// Lexer module for the boomkat JavaScript engine.
 ///
 /// Tokenizes ECMAScript source code (ES2015+ subset) into a stream of
 /// tokens.  Handles UTF-8 source, numeric literals (decimal, hex, octal,
 /// binary, float, exponent), string literals with full escape sequence
 /// support, template literals, regular expression literals, and all
 /// ES2015+ punctuators and keywords.
-module duktape::lexer;
+module boomkat::lexer;
 
-import duktape::types;
-import duktape::dtoa_bindings;
-import duktape::unicode_bindings;
-import duktape::heap;
+import boomkat::types;
+import boomkat::dtoa_bindings;
+import boomkat::unicode_bindings;
+import boomkat::heap;
 import std::math;
 import std::io;
 
@@ -1266,7 +1266,7 @@ fn Token? Lexer.scan_number(&self) {
             buf[j] = 0;
             char* endptr;
             char[dtoa_bindings::DTOA_TMP_SIZE] tmp;
-            value = dtoa_bindings::duktape_js_atod(&buf[0], &endptr, 0, 0, &tmp);
+            value = dtoa_bindings::boomkat_js_atod(&buf[0], &endptr, 0, 0, &tmp);
         } else {
             // Fallback: should never happen for valid JS number literals
             value = 0.0;

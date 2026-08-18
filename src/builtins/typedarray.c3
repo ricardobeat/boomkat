@@ -1,15 +1,15 @@
 /// TypedArray constructors and element access (ES2015 §22.2), Stage 2 of
 /// plan 049. Buffer allocation reuses the ArrayBuffer primitives from
 /// arraybuffer.c3; element read/write conversion lives in vm_property.c3.
-module duktape::builtins;
+module boomkat::builtins;
 
-import duktape::types;
-import duktape::env;
-import duktape::hstring;
-import duktape::hobject;
-import duktape::heap;
-import duktape::hbigint;
-import duktape::vm;
+import boomkat::types;
+import boomkat::env;
+import boomkat::hstring;
+import boomkat::hobject;
+import boomkat::heap;
+import boomkat::hbigint;
+import boomkat::vm;
 import std::io;
 import std::math;
 

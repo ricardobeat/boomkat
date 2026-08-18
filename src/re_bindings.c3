@@ -1,7 +1,7 @@
 /*
  * RegExp C bindings: C3 interop with QuickJS libregexp through re_wrapper
  */
-module duktape::re_bindings;
+module boomkat::re_bindings;
 
 extern fn void* re_compile(char* pattern, usz pattern_len,
                            int flags, char* error_msg, int error_msg_size);

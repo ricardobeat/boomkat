@@ -34,9 +34,9 @@
 /// resolved into adjacency where possible, and fused superinstructions are
 /// in their final form), and before NOP compaction (so the NOPs this pass
 /// introduces are physically removed).
-module duktape::compiler;
+module boomkat::compiler;
 
-import duktape::bytecode;
+import boomkat::bytecode;
 
 /// Register bitset for the liveness pass, sized to the registers the
 /// function under compilation actually uses instead of the full 16-bit

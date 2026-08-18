@@ -1,22 +1,22 @@
 /// Plain JavaScript runner: compile a source file and execute it.
 ///
 /// This is the normal way to run a `.js` file. For bytecode disassembly,
-/// instruction tracing, and other inspection flags, use the `duktape_c3_debug`
-/// binary (`cli/duktape_c3_debug.c3`). For test262, use `test262_runner
+/// instruction tracing, and other inspection flags, use the `boomkat_debug`
+/// binary (`cli/boomkat_debug.c3`). For test262, use `test262_runner
 /// --worker` or `python3 scripts/run_test262.py --single <path>`. This binary
 /// is NOT a test262 harness (no assert/Test262Error/includes handling).
-module duktape_c3;
+module boomkat;
 
-import duktape::compiler;
-import duktape::vm;
-import duktape::heap;
-import duktape::env;
-import duktape::hobject;
-import duktape::hstring;
-import duktape::lexer;
-import duktape::types;
-import duktape::bytecode;
-import duktape::esm;
+import boomkat::compiler;
+import boomkat::vm;
+import boomkat::heap;
+import boomkat::env;
+import boomkat::hobject;
+import boomkat::hstring;
+import boomkat::lexer;
+import boomkat::types;
+import boomkat::bytecode;
+import boomkat::esm;
 import std::io;
 
 /// Counts the rejections reported by cli_rejection_tracker, so the exit status

@@ -1,15 +1,15 @@
-module duktape::capi;
+module boomkat::capi;
 
-import duktape::builtins;
-import duktape::compiler;
-import duktape::vm;
-import duktape::heap;
-import duktape::hobject;
-import duktape::env;
-import duktape::hstring;
-import duktape::lexer;
-import duktape::types;
-import duktape::bytecode;
+import boomkat::builtins;
+import boomkat::compiler;
+import boomkat::vm;
+import boomkat::heap;
+import boomkat::hobject;
+import boomkat::env;
+import boomkat::hstring;
+import boomkat::lexer;
+import boomkat::types;
+import boomkat::bytecode;
 
 // ============================================================================
 // Status codes (must mirror include/jse.h)

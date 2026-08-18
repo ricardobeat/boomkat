@@ -1,11 +1,11 @@
 /// Boolean constructor and Boolean.prototype methods.
-module duktape::builtins;
-import duktape::types;
-import duktape::env;
-import duktape::hstring;
+module boomkat::builtins;
+import boomkat::types;
+import boomkat::env;
+import boomkat::hstring;
 
-import duktape::heap;
-import duktape::hobject;
+import boomkat::heap;
+import boomkat::hobject;
 
 // ============================================================================
 // Boolean constructor builtins

@@ -1,15 +1,15 @@
 /// Iterator protocol: %IteratorPrototype%, Array/String/Map/Set/RegExpString iterators.
-module duktape::builtins;
-import duktape::types;
+module boomkat::builtins;
+import boomkat::types;
 import std::io;
 import std::math;
 
-import duktape::heap;
-import duktape::hstring;
-import duktape::hobject;
-import duktape::re_bindings;
-import duktape::vm;
-import duktape::env;
+import boomkat::heap;
+import boomkat::hstring;
+import boomkat::hobject;
+import boomkat::re_bindings;
+import boomkat::vm;
+import boomkat::env;
 
 // ============================================================================
 // Iterator protocol, built-in @@iterator methods and .next() functions

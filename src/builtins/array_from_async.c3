@@ -19,11 +19,11 @@
 ///     result and the mapped value, never the raw value).
 ///   * array-like path, per-index Get + Await of the element, then optional
 ///     mapfn + Await, then CreateDataPropertyOrThrow.
-module duktape::builtins;
-import duktape::types;
-import duktape::hstring;
-import duktape::heap;
-import duktape::hobject;
+module boomkat::builtins;
+import boomkat::types;
+import boomkat::hstring;
+import boomkat::heap;
+import boomkat::hobject;
 
 // Hidden-prop keys carrying the driver state (mirrors promise.c3 / async_from_
 // sync.c3 "\xFF..." unspellable-key convention). All live on one state object.

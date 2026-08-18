@@ -1,5 +1,5 @@
-module duktape::compiler;
-import duktape::lexer;
+module boomkat::compiler;
+import boomkat::lexer;
 
 // ============================================================================
 // Template-aware brace classification for token-level scanners

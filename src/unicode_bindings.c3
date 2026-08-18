@@ -2,7 +2,7 @@
  * Unicode normalization C bindings: C3 interop with QuickJS libunicode
  * through unicode_wrapper.
  */
-module duktape::unicode_bindings;
+module boomkat::unicode_bindings;
 
 /*
  * Normalize a string of uint32_t codepoints.

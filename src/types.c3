@@ -1,39 +1,39 @@
 /// Core engine types: the tagged value representation (TVal), the heap object
 /// header every collected allocation starts with (HeapHeader), portable type
 /// aliases, numeric constants, and fault codes.
-module duktape::types;
+module boomkat::types;
 
 // ============================================================================
 // Portable type aliases
 // ============================================================================
 
 /// 32-bit signed integer used throughout the API.
-alias DukInt       = int;
+alias BkInt       = int;
 /// 32-bit unsigned integer.
-alias DukUint      = uint;
+alias BkUint      = uint;
 /// Platform-native size type.
-alias DukSize      = usz;
+alias BkSize      = usz;
 /// Value-stack index (signed so negative indices work).
-alias DukIdx       = int;
+alias BkIdx       = int;
 /// Compact signed integer for space-sensitive structures.
-alias DukSmallInt  = short;
+alias BkSmallInt  = short;
 /// Compact unsigned integer.
-alias DukSmallUint = ushort;
+alias BkSmallUint = ushort;
 /// Boolean (mirrors the built-in bool).
-alias DukBool      = bool;
+alias BkBool      = bool;
 /// IEEE 754 double precision float.
-alias DukDouble    = double;
+alias BkDouble    = double;
 /// Unicode codepoint (U+0000 .. U+10FFFF).
-alias DukCodepoint = uint;
+alias BkCodepoint = uint;
 
 // ============================================================================
 // Common constants
 // ============================================================================
 
 /// Maximum safe integer representable in a double (2^53 - 1).
-const long   DUK_MAX_SAFE_INT    = 9007199254740991;
+const long   MAX_SAFE_INT    = 9007199254740991;
 /// Minimum safe integer representable in a double -(2^53 - 1).
-const long   DUK_MIN_SAFE_INT    = -9007199254740991;
+const long   MIN_SAFE_INT    = -9007199254740991;
 
 // ============================================================================
 // Fault codes (used with C3's faultdef / optional error handling)

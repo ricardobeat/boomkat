@@ -1,14 +1,14 @@
 /// Date constructor and Date.prototype methods.
-module duktape::builtins;
-import duktape::types;
+module boomkat::builtins;
+import boomkat::types;
 import std::math;
 import std::io;
-import duktape::env;
-import duktape::vm;
+import boomkat::env;
+import boomkat::vm;
 
-import duktape::heap;
-import duktape::hstring;
-import duktape::hobject;
+import boomkat::heap;
+import boomkat::hstring;
+import boomkat::hobject;
 import std::time;
 
 /// ES2015+ §21.4.1.14 MakeTime: ((h*msPerHour + m*msPerMinute) + s*msPerSecond) + milli,
@@ -16,12 +16,12 @@ import std::time;
 /// C translation unit so it isn't affected by the engine-wide relaxed
 /// fp-math build setting (which otherwise lets the optimizer reassociate
 /// this chain and produce different rounding for huge operands).
-extern fn double duktape_date_make_time(double hour, double minute, double second, double ms);
+extern fn double boomkat_date_make_time(double hour, double minute, double second, double ms);
 
 /// ES2015+ §21.4.1.15 MakeDate: day * msPerDay + timeWithinDay. Same
-/// separate-translation-unit trick as duktape_date_make_time, otherwise the
+/// separate-translation-unit trick as boomkat_date_make_time, otherwise the
 /// multiply+add gets fused into a single-rounding FMA under relaxed fp-math.
-extern fn double duktape_date_make_date(double day, double time_within_day);
+extern fn double boomkat_date_make_date(double day, double time_within_day);
 
 // ============================================================================
 // Date constructor and methods (ES5 §15.9)
@@ -841,8 +841,8 @@ fn void builtin_date_utc(BuiltinContext* ctx) {
     long doy = (153 * (m - 2) + 2) / 5 + (long)day - 1;  // day of year
     long doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
     long epoch_day = (era * 146097 + (long)doe - 719468);
-    double maketime = duktape_date_make_time(hour, min, sec, ms);
-    double t = duktape_date_make_date((double)epoch_day, maketime);
+    double maketime = boomkat_date_make_time(hour, min, sec, ms);
+    double t = boomkat_date_make_date((double)epoch_day, maketime);
     ctx.result.set_number(date_time_clip(t));
 }
 
@@ -1500,8 +1500,8 @@ fn double date_utc_to_ms(long year, long month, long day,
     long doy = (153 * (m - 2) + 2) / 5 + day - 1;
     long doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
     long epoch_day = era * 146097 + doe - 719468;
-    double maketime = duktape_date_make_time((double)hour, (double)minute, (double)second, (double)ms);
-    return duktape_date_make_date((double)epoch_day, maketime);
+    double maketime = boomkat_date_make_time((double)hour, (double)minute, (double)second, (double)ms);
+    return boomkat_date_make_date((double)epoch_day, maketime);
 }
 
 /// Helper: TimeClip, clamp time value to ±8.64e15 ms per ES5 §15.9.1.14.

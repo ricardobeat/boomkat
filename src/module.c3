@@ -7,18 +7,18 @@
 ///   3. Link: modules share env bindings, which is what makes exports live.
 ///   4. Execute: the module body's top-level statements run.
 ///   5. Namespace: `import *` builds a Module Namespace Object.
-module duktape::esm;
+module boomkat::esm;
 
-import duktape::types;
-import duktape::bytecode;
-import duktape::env;
-import duktape::heap;
-import duktape::hobject;
-import duktape::hstring;
-import duktape::lexer;
-import duktape::compiler;
-import duktape::builtins;
-import duktape::vm;
+import boomkat::types;
+import boomkat::bytecode;
+import boomkat::env;
+import boomkat::heap;
+import boomkat::hobject;
+import boomkat::hstring;
+import boomkat::lexer;
+import boomkat::compiler;
+import boomkat::builtins;
+import boomkat::vm;
 import std::io;
 import std::collections::list;
 

@@ -1,8 +1,8 @@
 /// The debug and inspection CLI.
 ///
-/// The inspection counterpart to the plain `duktape_c3` runner: same engine,
+/// The inspection counterpart to the plain `boomkat` runner: same engine,
 /// plus flags to disassemble bytecode, trace execution, and time stages. To
-/// just run a file, use `duktape_c3` (`cli/duktape_c3.c3`).
+/// just run a file, use `boomkat` (`cli/boomkat.c3`).
 ///
 /// Flags (any order, file is the non-flag argument):
 ///   <js_file>               Run JS file (default)
@@ -13,17 +13,17 @@
 ///   --no-optimize            Disable compiler peephole passes (debug aid)
 ///   --format json            Structured bytecode output (implies -c)
 ///   --help                   Show usage
-module duktape_c3_debug;
+module boomkat_debug;
 
-import duktape::compiler;
-import duktape::vm;
-import duktape::heap;
-import duktape::lexer;
-import duktape::bytecode;
-import duktape::types;
-import duktape::hstring;
-import duktape::hobject;
-import duktape::esm;
+import boomkat::compiler;
+import boomkat::vm;
+import boomkat::heap;
+import boomkat::lexer;
+import boomkat::bytecode;
+import boomkat::types;
+import boomkat::hstring;
+import boomkat::hobject;
+import boomkat::esm;
 import std::io;
 import std::time;
 
@@ -46,7 +46,7 @@ fn int main(String[] args) {
         defer vm::opprof_dump();
     $endif
     if (args.len < 2) {
-        print_usage(args.len > 0 ? args[0] : "duktape_c3");
+        print_usage(args.len > 0 ? args[0] : "boomkat");
         return 1;
     }
 
@@ -225,7 +225,7 @@ $else
     // of silently producing empty output.
     if (compile_only || trace_vm || json_format) {
         io::eprintfn("note: -c/-t/--format produce full output only in the trace-enabled CLI.");
-        io::eprintfn("      Run `just build-trace` to build `out/duktape_c3_debug` and use that.");
+        io::eprintfn("      Run `just build-trace` to build `out/boomkat_debug` and use that.");
     }
 $endif
 

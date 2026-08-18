@@ -1,11 +1,11 @@
 /// Symbol constructor, global registry, and well-known symbols.
-module duktape::builtins;
-import duktape::types;
-import duktape::env;
+module boomkat::builtins;
+import boomkat::types;
+import boomkat::env;
 
-import duktape::heap;
-import duktape::hstring;
-import duktape::hobject;
+import boomkat::heap;
+import boomkat::hstring;
+import boomkat::hobject;
 
 // ============================================================================
 // Symbol helpers

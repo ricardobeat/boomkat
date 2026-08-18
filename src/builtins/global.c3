@@ -1,18 +1,18 @@
 /// Global built-in functions: print, parseInt, parseFloat, isNaN, isFinite, eval, URI encoding/decoding.
-module duktape::builtins;
-import duktape::types;
-import duktape::bytecode;
+module boomkat::builtins;
+import boomkat::types;
+import boomkat::bytecode;
 import std::io;
 import std::math;
-import duktape::dtoa_bindings;
-import duktape::lexer;
-import duktape::compiler;
-import duktape::hstring;
-import duktape::hobject;
+import boomkat::dtoa_bindings;
+import boomkat::lexer;
+import boomkat::compiler;
+import boomkat::hstring;
+import boomkat::hobject;
 
-import duktape::heap;
-import duktape::env;
-import duktape::vm;
+import boomkat::heap;
+import boomkat::env;
+import boomkat::vm;
 
 /// Print a single TVal using proper JS ToString coercion.
 /// For objects, looks up and calls the object's toString() method via call_fn

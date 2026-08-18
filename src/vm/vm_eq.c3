@@ -1,8 +1,8 @@
-module duktape::vm;
+module boomkat::vm;
 
-import duktape::types;
-import duktape::hstring;
-import duktape::hbigint;
+import boomkat::types;
+import boomkat::hstring;
+import boomkat::hbigint;
 import std::math;
 
 fn bool abstract_eq(Vm* vm, TVal* a, TVal* b) {

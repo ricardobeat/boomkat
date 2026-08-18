@@ -23,17 +23,17 @@
 ///        ./out/batch_test_vm --worker   (stdin-driven worker mode)
 module test262_runner;
 
-import duktape::compiler;
-import duktape::esm;
-import duktape::vm;
-import duktape::heap;
-import duktape::env;
-import duktape::lexer;
-import duktape::types;
-import duktape::bytecode;
-import duktape::hobject;
-import duktape::hstring;
-import duktape::builtins;
+import boomkat::compiler;
+import boomkat::esm;
+import boomkat::vm;
+import boomkat::heap;
+import boomkat::env;
+import boomkat::lexer;
+import boomkat::types;
+import boomkat::bytecode;
+import boomkat::hobject;
+import boomkat::hstring;
+import boomkat::builtins;
 import std::io;
 
 // ============================================================================

@@ -1,13 +1,13 @@
-module duktape::compiler;
+module boomkat::compiler;
 
-import duktape::types;
-import duktape::lexer;
-import duktape::bytecode;
-import duktape::hstring;
-import duktape::hobject;
-import duktape::heap;
-import duktape::hbigint;
-import duktape::dtoa_bindings;
+import boomkat::types;
+import boomkat::lexer;
+import boomkat::bytecode;
+import boomkat::hstring;
+import boomkat::hobject;
+import boomkat::heap;
+import boomkat::hbigint;
+import boomkat::dtoa_bindings;
 import std::io;
 import std::math;
 
@@ -102,7 +102,7 @@ fn char[] format_field_number_key(double val, char[] buf) {
         n = printed.len;
     } else {
         char[dtoa_bindings::DTOA_FORMAT_TMP_SIZE] tmp;
-        int len = dtoa_bindings::duktape_js_dtoa(&local, val, 10, 0,
+        int len = dtoa_bindings::boomkat_js_dtoa(&local, val, 10, 0,
             dtoa_bindings::JS_DTOA_FORMAT_FREE, &tmp);
         n = len > 0 ? (usz)len : 0;
     }

@@ -7,12 +7,12 @@
 /// therefore always returns the target, and cleanup callbacks never fire,
 /// both are spec-legal, since collection is entirely at the implementation's
 /// discretion. This mirrors the accepted non-weak WeakMap/WeakSet behaviour.
-module duktape::builtins;
-import duktape::types;
-import duktape::hstring;
-import duktape::env;
-import duktape::heap;
-import duktape::hobject;
+module boomkat::builtins;
+import boomkat::types;
+import boomkat::hstring;
+import boomkat::env;
+import boomkat::heap;
+import boomkat::hobject;
 
 // ============================================================================
 // Callable predicate

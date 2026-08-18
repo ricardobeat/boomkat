@@ -21,10 +21,10 @@
 /// find no match. `run_fusion_rule` skips NOPs to find the consumer for
 /// exactly this reason, see the FUSION_PHASE_NOTE below for where each
 /// existing hand-written pass would sit on this timeline.
-module duktape::compiler;
+module boomkat::compiler;
 
-import duktape::bytecode;
-import duktape::types;
+import boomkat::bytecode;
+import boomkat::types;
 
 /// FUSION_PHASE_NOTE, ordering of every fusion-shaped pass in finish(),
 /// documented once here instead of re-derived per pass:

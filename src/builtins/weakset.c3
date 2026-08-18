@@ -1,11 +1,11 @@
 /// WeakSet constructor and WeakSet.prototype methods.
-module duktape::builtins;
-import duktape::types;
-import duktape::hstring;
-import duktape::env;
+module boomkat::builtins;
+import boomkat::types;
+import boomkat::hstring;
+import boomkat::env;
 
-import duktape::heap;
-import duktape::hobject;
+import boomkat::heap;
+import boomkat::hobject;
 
 // ============================================================================
 // WeakSet helpers

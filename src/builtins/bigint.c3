@@ -4,15 +4,15 @@
 /// See plan 056.  BigInt values are fixed-width int128 boxes (see hbigint.c3);
 /// results outside ±(2^127 − 1) raise RangeError rather than wrapping, except
 /// asIntN / asUintN whose modular reduction is their specified behaviour.
-module duktape::builtins;
+module boomkat::builtins;
 
-import duktape::types;
-import duktape::env;
-import duktape::heap;
-import duktape::hobject;
-import duktape::hstring;
-import duktape::hbigint;
-import duktape::vm;
+import boomkat::types;
+import boomkat::env;
+import boomkat::heap;
+import boomkat::hobject;
+import boomkat::hstring;
+import boomkat::hbigint;
+import boomkat::vm;
 import std::math;
 import libc;
 

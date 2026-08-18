@@ -1,8 +1,8 @@
 /*
- * jse.h — C99 embedding ABI for the duktape-c3 JavaScript engine.
+ * jse.h — C99 embedding ABI for the boomkat JavaScript engine.
  *
- * Prefix rationale: "jse_" = JS Engine. The project forbids duk_/DUK_ in new
- * code (the library may be renamed), and js_/JS_ collides with QuickJS, whose
+ * Prefix rationale: "jse_" = JS Engine. duk_/DUK_ are Duktape's prefixes
+ * and stay out of new code, and js_/JS_ collides with QuickJS, whose
  * sources are already vendored in this build. jse_ is short, neutral, and
  * collision-free against every vendored C symbol.
  *

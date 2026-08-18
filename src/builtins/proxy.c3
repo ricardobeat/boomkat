@@ -11,16 +11,16 @@
 /// signalled through heap.has_error / heap.error_value (the same channel
 /// call_fn uses for exceptions thrown inside JS callbacks).  Every proxy_mop_*
 /// function returns false when an error is pending.
-module duktape::builtins;
-import duktape::types;
+module boomkat::builtins;
+import boomkat::types;
 import std::math;
-import duktape::hstring;
-import duktape::env;
+import boomkat::hstring;
+import boomkat::env;
 import std::io;
 
-import duktape::heap;
-import duktape::hobject;
-import duktape::vm;
+import boomkat::heap;
+import boomkat::hobject;
+import boomkat::vm;
 
 // ============================================================================
 // Storage accessors

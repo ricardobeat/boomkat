@@ -9,9 +9,9 @@
 /// current op) pair, incremented once per dispatch and dumped at exit. Both
 /// the counters and the dispatch-loop hook are gated on OP_PROFILE, which no
 /// shipping target enables, so the default build carries neither.
-module duktape::vm;
+module boomkat::vm;
 
-import duktape::bytecode;
+import boomkat::bytecode;
 import std::io;
 import std::sort;
 

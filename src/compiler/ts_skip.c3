@@ -1,7 +1,7 @@
-module duktape::compiler;
+module boomkat::compiler;
 
-import duktape::types;
-import duktape::lexer;
+import boomkat::types;
+import boomkat::lexer;
 import libc;
 import std::io;
 

@@ -20,13 +20,13 @@
 /// operand before settling) is Phase C, for now a `yield v` settles the
 /// current request's promise with `{v, false}` synchronously, which is correct
 /// for bodies without an `await` between the yield and the settle.
-module duktape::builtins;
-import duktape::types;
-import duktape::hstring;
-import duktape::heap;
-import duktape::hobject;
-import duktape::bytecode;
-import duktape::env;
+module boomkat::builtins;
+import boomkat::types;
+import boomkat::hstring;
+import boomkat::heap;
+import boomkat::hobject;
+import boomkat::bytecode;
+import boomkat::env;
 
 // ============================================================================
 // Prototype-chain registration (heap init)

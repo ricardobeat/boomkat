@@ -1,12 +1,12 @@
 /// Math built-in object methods.
-module duktape::builtins;
-import duktape::types;
-import duktape::hstring;
-import duktape::env;
+module boomkat::builtins;
+import boomkat::types;
+import boomkat::hstring;
+import boomkat::env;
 
-import duktape::heap;
-import duktape::hobject;
-import duktape::vm;
+import boomkat::heap;
+import boomkat::hobject;
+import boomkat::vm;
 import std::io;
 import std::math;
 

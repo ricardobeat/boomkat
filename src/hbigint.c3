@@ -9,10 +9,10 @@
 /// `heap_allocated` list like a buffer and is refcounted too, so a bigint held
 /// only by the constant pool survives on its refcount while runtime-produced
 /// ones are reclaimed by mark-and-sweep.
-module duktape::hbigint;
+module boomkat::hbigint;
 
-import duktape::types;
-import duktape::heap;
+import boomkat::types;
+import boomkat::heap;
 
 // ============================================================================
 // Bounds

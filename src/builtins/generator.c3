@@ -1,14 +1,14 @@
 /// GeneratorFunction and Generator.prototype methods.
-module duktape::builtins;
-import duktape::types;
-import duktape::bytecode;
-import duktape::hstring;
-import duktape::env;
+module boomkat::builtins;
+import boomkat::types;
+import boomkat::bytecode;
+import boomkat::hstring;
+import boomkat::env;
 
-import duktape::heap;
-import duktape::hobject;
-import duktape::compiler;
-import duktape::lexer;
+import boomkat::heap;
+import boomkat::hobject;
+import boomkat::compiler;
+import boomkat::lexer;
 import std::io;
 
 // ============================================================================

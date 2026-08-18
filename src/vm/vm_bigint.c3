@@ -6,13 +6,13 @@
 /// nothing.  Arithmetic on two BigInts is done in native int128 (fixed width);
 /// out-of-range results and division/modulo by zero raise the appropriate
 /// error via the deferred-throw mechanism (vm.throw_pending).
-module duktape::vm;
+module boomkat::vm;
 
-import duktape::types;
-import duktape::bytecode;
-import duktape::heap;
-import duktape::hstring;
-import duktape::hbigint;
+import boomkat::types;
+import boomkat::bytecode;
+import boomkat::heap;
+import boomkat::hstring;
+import boomkat::hbigint;
 
 // ============================================================================
 // Result of a BigInt binary-op attempt.

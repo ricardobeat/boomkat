@@ -1,14 +1,14 @@
-module duktape::vm;
+module boomkat::vm;
 
-import duktape::types;
-import duktape::bytecode;
-import duktape::heap;
-import duktape::hstring;
-import duktape::hobject;
-import duktape::env;
-import duktape::builtins;
+import boomkat::types;
+import boomkat::bytecode;
+import boomkat::heap;
+import boomkat::hstring;
+import boomkat::hobject;
+import boomkat::env;
+import boomkat::builtins;
 import std::io;
-import duktape::re_bindings;
+import boomkat::re_bindings;
 import std::math;
 
 // ============================================================================

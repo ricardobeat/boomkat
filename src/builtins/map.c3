@@ -1,12 +1,12 @@
 /// Map constructor and Map.prototype methods.
-module duktape::builtins;
-import duktape::types;
+module boomkat::builtins;
+import boomkat::types;
 import std::math;
-import duktape::hstring;
-import duktape::env;
+import boomkat::hstring;
+import boomkat::env;
 
-import duktape::heap;
-import duktape::hobject;
+import boomkat::heap;
+import boomkat::hobject;
 
 // Differs from === only in that NaN equals NaN.
 // ============================================================================

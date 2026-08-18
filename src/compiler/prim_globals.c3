@@ -1,6 +1,6 @@
-module duktape::compiler;
+module boomkat::compiler;
 
-import duktape::lexer;
+import boomkat::lexer;
 import std::io;
 
 // ============================================================================

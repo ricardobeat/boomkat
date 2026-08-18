@@ -1,20 +1,20 @@
-/// Built-in function registry for the Duktape C3 port.
+/// Built-in function registry for the boomkat engine.
 /// Core: shared types, constants, helpers, dispatch table, and registration.
-module duktape::builtins;
+module boomkat::builtins;
 
-import duktape::types;
-import duktape::bytecode;
-import duktape::hstring;
-import duktape::hbigint;
-import duktape::hobject;
-import duktape::heap;
-import duktape::env;
-import duktape::compiler;
-import duktape::lexer;
-import duktape::re_bindings;
-import duktape::vm;
-import duktape::dtoa_bindings;
-import duktape::esm;
+import boomkat::types;
+import boomkat::bytecode;
+import boomkat::hstring;
+import boomkat::hbigint;
+import boomkat::hobject;
+import boomkat::heap;
+import boomkat::env;
+import boomkat::compiler;
+import boomkat::lexer;
+import boomkat::re_bindings;
+import boomkat::vm;
+import boomkat::dtoa_bindings;
+import boomkat::esm;
 import std::io;
 import std::math;
 
@@ -916,13 +916,13 @@ fn void print_tval(TVal* val) {
                 if (v > 0) { io::printf("Infinity"); } else { io::printf("-Infinity"); }
             } else {
                 long iv = (long)v;
-                if ((double)iv == v && iv >= types::DUK_MIN_SAFE_INT && iv <= types::DUK_MAX_SAFE_INT) {
+                if ((double)iv == v && iv >= types::MIN_SAFE_INT && iv <= types::MAX_SAFE_INT) {
                     io::printf("%d", iv);
                 } else {
                     // Shortest round-trip form, same as ToString(Number).
                     char[64] nbuf;
                     char[dtoa_bindings::DTOA_FORMAT_TMP_SIZE] ntmp;
-                    int nlen = dtoa_bindings::duktape_js_dtoa(&nbuf, v, 10, 0,
+                    int nlen = dtoa_bindings::boomkat_js_dtoa(&nbuf, v, 10, 0,
                         dtoa_bindings::JS_DTOA_FORMAT_FREE, &ntmp);
                     if (nlen > 0 && nlen < 64) {
                         nbuf[nlen] = 0;
@@ -1234,7 +1234,7 @@ fn void builtin_to_number(TVal* val, TVal* result) {
             // Try fastint preservation, but not for -0 (fastint can't represent it)
             if (d != 0.0 || !math::signbit(d)) {
                 long fi = (long)d;
-                if ((double)fi == d && fi >= types::DUK_MIN_SAFE_INT && fi <= types::DUK_MAX_SAFE_INT) {
+                if ((double)fi == d && fi >= types::MIN_SAFE_INT && fi <= types::MAX_SAFE_INT) {
                     result.set_fastint(fi);
                     return;
                 }
@@ -2209,7 +2209,7 @@ fn HString* builtin_number_to_hstring(Heap* heap, double d) {
     }
     char[64] buf;
     char[dtoa_bindings::DTOA_FORMAT_TMP_SIZE] tmp;
-    int len = dtoa_bindings::duktape_js_dtoa(&buf, d, 10, 0,
+    int len = dtoa_bindings::boomkat_js_dtoa(&buf, d, 10, 0,
         dtoa_bindings::JS_DTOA_FORMAT_FREE, &tmp);
     if (len > 0 && len < 64) {
         return builtin_intern_string(heap, buf[:len]);

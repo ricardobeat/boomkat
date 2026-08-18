@@ -6,10 +6,10 @@
 ///
 /// This module holds the struct and its flags, the allocation helpers, a
 /// standalone hash function, and the UTF-8 and array-index utilities.
-module duktape::hstring;
+module boomkat::hstring;
 
-import duktape::types;
-import duktape::heap;
+import boomkat::types;
+import boomkat::heap;
 import std::core::mem;
 
 // ============================================================================
@@ -106,7 +106,7 @@ bitstruct HStringFlags : uint {
     bool  is_arridx         : 8;
     /// ES2015 Symbol (internal or well-known).
     bool  is_symbol         : 9;
-    /// Duktape hidden Symbol (\xFF prefix).
+    /// Hidden Symbol (\xFF prefix, Duktape's scheme).
     bool  is_hidden         : 10;
     /// String data lives in an external buffer, not inline.
     bool  has_extdata       : 13;
@@ -250,7 +250,7 @@ fn bool HString.is_arridx(&self)             { return self.flags.is_arridx; }
 /// Returns `true` when the string represents an ES2015 Symbol.
 fn bool HString.is_symbol(&self)             { return self.flags.is_symbol; }
 
-/// Returns `true` when the string is a Duktape hidden symbol.
+/// Returns `true` when the string is a hidden symbol.
 fn bool HString.is_hidden(&self)             { return self.flags.is_hidden; }
 
 /// Returns `true` when the data resides in an external buffer.
@@ -496,7 +496,7 @@ fn HString*? hstring_alloc_cap(void* heap_ptr, char[] data, uint hash, uint cap)
     // here as an allocation failure keeps a missed caller from writing a
     // wrapped `blen` into the header.
     if (length_exceeds_max((ulong)data.len) || length_exceeds_max((ulong)cap)) {
-        return duktape::types::ALLOC_ERROR~;
+        return boomkat::types::ALLOC_ERROR~;
     }
     if (cap < (uint)data.len) { cap = (uint)data.len; }
 
@@ -504,7 +504,7 @@ fn HString*? hstring_alloc_cap(void* heap_ptr, char[] data, uint hash, uint cap)
 
     void* raw = ((heap::Heap*)heap_ptr).alloc_no_gc(total) ?? null;
     if (raw == null) {
-        return duktape::types::ALLOC_ERROR~;
+        return boomkat::types::ALLOC_ERROR~;
     }
 
     // Zero-fill the header portion.

@@ -1,10 +1,10 @@
-module duktape::vm;
+module boomkat::vm;
 
-import duktape::types;
-import duktape::bytecode;
-import duktape::heap;
-import duktape::hobject;
-import duktape::env;
+import boomkat::types;
+import boomkat::bytecode;
+import boomkat::heap;
+import boomkat::hobject;
+import boomkat::env;
 
 // ============================================================================
 // Direct-threaded dispatch (feature THREADED_DISPATCH, on by default). The hot

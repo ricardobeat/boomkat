@@ -1,13 +1,13 @@
 /// Number constructor and Number.prototype methods.
-module duktape::builtins;
-import duktape::types;
-import duktape::env;
+module boomkat::builtins;
+import boomkat::types;
+import boomkat::env;
 import std::math;
-import duktape::hstring;
+import boomkat::hstring;
 
-import duktape::heap;
-import duktape::hobject;
-import duktape::dtoa_bindings;
+import boomkat::heap;
+import boomkat::hobject;
+import boomkat::dtoa_bindings;
 import std::io;
 
 // ============================================================================
@@ -305,7 +305,7 @@ fn void builtin_number_proto_toFixed(BuiltinContext* ctx) {
     if (math::abs(d) >= 1e21) flags = dtoa_bindings::JS_DTOA_FORMAT_FREE;
     char[256] buf;
     char[dtoa_bindings::DTOA_FORMAT_TMP_SIZE] tmp;
-    int len = dtoa_bindings::duktape_js_dtoa(&buf, d, 10, f, flags, &tmp);
+    int len = dtoa_bindings::boomkat_js_dtoa(&buf, d, 10, f, flags, &tmp);
     if (len < 0 || len >= 256) {
         ctx.result.set_undefined();
         return;
@@ -371,7 +371,7 @@ fn void builtin_number_proto_toExponential(BuiltinContext* ctx) {
     }
     char[256] buf;
     char[dtoa_bindings::DTOA_FORMAT_TMP_SIZE] tmp;
-    int len = dtoa_bindings::duktape_js_dtoa(&buf, d, 10, n_digits, flags, &tmp);
+    int len = dtoa_bindings::boomkat_js_dtoa(&buf, d, 10, n_digits, flags, &tmp);
     if (len < 0 || len >= 256) {
         ctx.result.set_undefined();
         return;
@@ -434,7 +434,7 @@ fn void builtin_number_proto_toPrecision(BuiltinContext* ctx) {
     char[256] buf;
     char[dtoa_bindings::DTOA_FORMAT_TMP_SIZE] tmp;
     int flags = dtoa_bindings::JS_DTOA_FORMAT_FIXED;
-    int len = dtoa_bindings::duktape_js_dtoa(&buf, d, 10, p, flags, &tmp);
+    int len = dtoa_bindings::boomkat_js_dtoa(&buf, d, 10, p, flags, &tmp);
     if (len < 0 || len >= 256) {
         ctx.result.set_undefined();
         return;
@@ -555,7 +555,7 @@ fn void builtin_number_isSafeInteger(BuiltinContext* ctx) {
     double abs_d = d < 0 ? -d : d;
     double fl = math::floor(abs_d);
     // Must be integer AND within safe range (2^53 - 1 = 9007199254740991)
-    ctx.result.set_boolean((fl == abs_d) && (abs_d <= (double)types::DUK_MAX_SAFE_INT));
+    ctx.result.set_boolean((fl == abs_d) && (abs_d <= (double)types::MAX_SAFE_INT));
 }
 fn bool register_number_constructor(EnvRecord* global_env, Heap* heap) {
     // Create Number prototype
@@ -656,9 +656,9 @@ fn bool register_number_constructor(EnvRecord* global_env, Heap* heap) {
     // Add Number.EPSILON (ES6 §20.1.2.1), 2^-52
     if (!set_num_static_prop(num, heap, "EPSILON", 2.220446049250313e-16)) return false;
     // Add Number.MAX_SAFE_INTEGER (ES6 §20.1.2.6), 2^53 - 1
-    if (!set_num_static_prop(num, heap, "MAX_SAFE_INTEGER", (double)types::DUK_MAX_SAFE_INT)) return false;
+    if (!set_num_static_prop(num, heap, "MAX_SAFE_INTEGER", (double)types::MAX_SAFE_INT)) return false;
     // Add Number.MIN_SAFE_INTEGER (ES6 §20.1.2.8), -(2^53 - 1)
-    if (!set_num_static_prop(num, heap, "MIN_SAFE_INTEGER", (double)types::DUK_MIN_SAFE_INT)) return false;
+    if (!set_num_static_prop(num, heap, "MIN_SAFE_INTEGER", (double)types::MIN_SAFE_INT)) return false;
     // Add Number.parseInt (ES6 §20.1.2.12), MUST be the same function object as global parseInt.
     // Look up the global parseInt (already registered) and put it directly on Number.
     {

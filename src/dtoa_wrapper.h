@@ -11,8 +11,8 @@
  * raw int flags that the lexer/builtins already use into JS_ATOD_* bits and
  * hide the per-call scratch struct.
  */
-#ifndef DUKTAPE_DTOA_WRAPPER_H
-#define DUKTAPE_DTOA_WRAPPER_H
+#ifndef BOOMKAT_DTOA_WRAPPER_H
+#define BOOMKAT_DTOA_WRAPPER_H
 
 #include <stddef.h>
 
@@ -42,7 +42,7 @@ extern "C" {
  * The exact scratch-buffer layout is private to dtoa.c; we treat it as
  * opaque memory here. The size is sizeof(JSATODTempMem) == 27 * 8 = 216.
  */
-double duktape_js_atod(const char *str, const char **pnext, int radix, int flags,
+double boomkat_js_atod(const char *str, const char **pnext, int radix, int flags,
                        void *tmp);
 
 /*
@@ -54,20 +54,20 @@ double duktape_js_atod(const char *str, const char **pnext, int radix, int flags
  *   radix     — base (10 for JS number formatters).
  *   n_digits  — number of digits (meaning depends on flags).
  *   flags     — JS_DTOA_FORMAT_* and JS_DTOA_EXP_* bits.
- *   tmp       — scratch buffer of DUKTAPE_DTOA_FORMAT_TMP_SIZE bytes.
+ *   tmp       — scratch buffer of BOOMKAT_DTOA_FORMAT_TMP_SIZE bytes.
  *
  * Returns the length of the formatted string.
  */
-int duktape_js_dtoa(char *buf, double d, int radix, int n_digits, int flags,
+int boomkat_js_dtoa(char *buf, double d, int radix, int n_digits, int flags,
                     void *tmp);
 
-/* Size, in bytes, of the scratch buffer expected by duktape_js_atod. */
-#define DUKTAPE_DTOA_TMP_SIZE 216
-/* Size, in bytes, of the scratch buffer expected by duktape_js_dtoa. */
-#define DUKTAPE_DTOA_FORMAT_TMP_SIZE 296
+/* Size, in bytes, of the scratch buffer expected by boomkat_js_atod. */
+#define BOOMKAT_DTOA_TMP_SIZE 216
+/* Size, in bytes, of the scratch buffer expected by boomkat_js_dtoa. */
+#define BOOMKAT_DTOA_FORMAT_TMP_SIZE 296
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* DUKTAPE_DTOA_WRAPPER_H */
+#endif /* BOOMKAT_DTOA_WRAPPER_H */

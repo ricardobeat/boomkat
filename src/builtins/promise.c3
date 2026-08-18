@@ -1,14 +1,14 @@
 /// Promise constructor, Promise.prototype methods, and microtask integration.
-module duktape::builtins;
-import duktape::types;
-import duktape::hstring;
+module boomkat::builtins;
+import boomkat::types;
+import boomkat::hstring;
 import std::io;
 
-import duktape::heap;
-import duktape::hobject;
-import duktape::env;
-import duktape::bytecode;
-import duktape::vm;
+import boomkat::heap;
+import boomkat::hobject;
+import boomkat::env;
+import boomkat::bytecode;
+import boomkat::vm;
 
 // ============================================================================
 // Promise helpers (ES6 §25.4)

@@ -15,14 +15,14 @@
 ///
 /// The hash table holds uint indices into the props array, with HASH_UNUSED and
 /// HASH_DELETED marking empty and tombstone slots.
-module duktape::hobject;
+module boomkat::hobject;
 
-import duktape::types;
-import duktape::hstring;
-import duktape::bytecode;
-import duktape::env;
-import duktape::re_bindings;
-import duktape::heap;
+import boomkat::types;
+import boomkat::hstring;
+import boomkat::bytecode;
+import boomkat::env;
+import boomkat::re_bindings;
+import boomkat::heap;
 import std::core::mem::mempool;
 import std::io;
 

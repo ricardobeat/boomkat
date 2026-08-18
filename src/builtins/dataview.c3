@@ -2,15 +2,15 @@
 /// Reuses the ArrayBuffer/TypedArray view-linking primitives from
 /// arraybuffer.c3/typedarray.c3; this file only adds the byte-addressed
 /// get/set surface with an explicit littleEndian argument.
-module duktape::builtins;
+module boomkat::builtins;
 
-import duktape::types;
+import boomkat::types;
 import std::io;
-import duktape::hstring;
-import duktape::heap;
-import duktape::hobject;
-import duktape::hbigint;
-import duktape::env;
+import boomkat::hstring;
+import boomkat::heap;
+import boomkat::hobject;
+import boomkat::hbigint;
+import boomkat::env;
 
 fn bool is_dataview_obj(HObject* obj) {
     return obj != null && obj.flags.obj_class == hobject::ObjClass.DATAVIEW;

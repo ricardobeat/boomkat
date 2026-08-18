@@ -1,13 +1,13 @@
 /// RegExp constructor and RegExp.prototype methods.
-module duktape::builtins;
-import duktape::types;
+module boomkat::builtins;
+import boomkat::types;
 import std::io;
-import duktape::hstring;
-import duktape::env;
-import duktape::vm;
-import duktape::heap;
-import duktape::hobject;
-import duktape::re_bindings;
+import boomkat::hstring;
+import boomkat::env;
+import boomkat::vm;
+import boomkat::heap;
+import boomkat::hobject;
+import boomkat::re_bindings;
 import std::math;
 
 // ============================================================================

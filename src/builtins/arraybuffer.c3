@@ -1,14 +1,14 @@
 /// ArrayBuffer constructor and prototype (ES2015 §24.1), Stage 1 of plan 049.
 /// TypedArray/DataView element access is out of scope here; this file only
 /// implements the byte-buffer backing store and its public surface.
-module duktape::builtins;
+module boomkat::builtins;
 
-import duktape::types;
+import boomkat::types;
 import std::io;
-import duktape::hstring;
-import duktape::heap;
-import duktape::hobject;
-import duktape::env;
+import boomkat::hstring;
+import boomkat::heap;
+import boomkat::hobject;
+import boomkat::env;
 
 /// ES2022 §7.1.22 ToIndex, specialized to the [0, INT32_MAX] range this
 /// engine caps buffer lengths at (mirrors QuickJS's int cap).

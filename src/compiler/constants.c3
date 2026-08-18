@@ -1,12 +1,12 @@
-module duktape::compiler;
+module boomkat::compiler;
 
-import duktape::types;
-import duktape::lexer;
-import duktape::bytecode;
-import duktape::hstring;
-import duktape::hbigint;
-import duktape::hobject;
-import duktape::heap;
+import boomkat::types;
+import boomkat::lexer;
+import boomkat::bytecode;
+import boomkat::hstring;
+import boomkat::hbigint;
+import boomkat::hobject;
+import boomkat::heap;
 import std::io;
 
 // ============================================================================

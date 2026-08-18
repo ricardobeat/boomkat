@@ -1,15 +1,15 @@
 /// Object constructor and Object.prototype methods.
-module duktape::builtins;
-import duktape::types;
-import duktape::bytecode;
-import duktape::env;
+module boomkat::builtins;
+import boomkat::types;
+import boomkat::bytecode;
+import boomkat::env;
 import std::math;
 import std::io;
 
-import duktape::heap;
-import duktape::hstring;
-import duktape::hobject;
-import duktape::vm;
+import boomkat::heap;
+import boomkat::hstring;
+import boomkat::hobject;
+import boomkat::vm;
 
 // ============================================================================
 // Object constructor builtins

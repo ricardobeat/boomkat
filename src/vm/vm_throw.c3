@@ -1,11 +1,11 @@
-module duktape::vm;
+module boomkat::vm;
 
-import duktape::types;
-import duktape::bytecode;
-import duktape::hobject;
-import duktape::hstring;
-import duktape::heap;
-import duktape::builtins;
+import boomkat::types;
+import boomkat::bytecode;
+import boomkat::hobject;
+import boomkat::hstring;
+import boomkat::heap;
+import boomkat::builtins;
 
 // ============================================================================
 // Catcher chain helpers

@@ -19,11 +19,11 @@
     "libregexp"
   ],
   "targets": {
-    "duktape_c3": {
+    "boomkat": {
       "type": "executable",
       "sources": [
         "src",
-        "cli/duktape_c3.c3"
+        "cli/boomkat.c3"
       ],
       "opt": "O2",
       "single-module": true,
@@ -34,11 +34,11 @@
         "THREADED_DISPATCH"
       ]
     },
-    "duktape_c3_threaded": {
+    "boomkat_threaded": {
       "type": "executable",
       "sources": [
         "src",
-        "cli/duktape_c3.c3"
+        "cli/boomkat.c3"
       ],
       "opt": "O2",
       "single-module": true,
@@ -49,11 +49,11 @@
         "THREADED_DISPATCH"
       ]
     },
-    "duktape_c3_debug": {
+    "boomkat_debug": {
       "type": "executable",
       "sources": [
         "src",
-        "cli/duktape_c3_debug.c3"
+        "cli/boomkat_debug.c3"
       ],
       "opt": "O2",
       "single-module": true,
@@ -64,11 +64,11 @@
         "TRACE_VM"
       ]
     },
-    "duktape_c3_opprofile": {
+    "boomkat_opprofile": {
       "type": "executable",
       "sources": [
         "src",
-        "cli/duktape_c3_debug.c3"
+        "cli/boomkat_debug.c3"
       ],
       "opt": "O2",
       "single-module": true,
@@ -81,21 +81,21 @@
         "THREADED_DISPATCH"
       ]
     },
-    "duktape_c3_asan": {
+    "boomkat_asan": {
       "type": "executable",
       "sources": [
         "src",
-        "cli/duktape_c3.c3"
+        "cli/boomkat.c3"
       ],
       "opt": "O0",
       "single-module": true,
       "sanitize": "address"
     },
-    "duktape_c3_gc_stress": {
+    "boomkat_gc_stress": {
       "type": "executable",
       "sources": [
         "src",
-        "cli/duktape_c3.c3"
+        "cli/boomkat.c3"
       ],
       "opt": "O0",
       "single-module": true,
@@ -104,11 +104,11 @@
         "GC_STRESS"
       ]
     },
-    "duktape_c3_threaded_asan": {
+    "boomkat_threaded_asan": {
       "type": "executable",
       "sources": [
         "src",
-        "cli/duktape_c3.c3"
+        "cli/boomkat.c3"
       ],
       "opt": "O0",
       "single-module": true,
@@ -117,11 +117,11 @@
         "THREADED_DISPATCH"
       ]
     },
-    "duktape_c3_envstrict": {
+    "boomkat_envstrict": {
       "type": "executable",
       "sources": [
         "src",
-        "cli/duktape_c3.c3"
+        "cli/boomkat.c3"
       ],
       "opt": "O0",
       "features": [

@@ -1,15 +1,15 @@
 /// String constructor and String.prototype methods.
-module duktape::builtins;
-import duktape::types;
-import duktape::env;
+module boomkat::builtins;
+import boomkat::types;
+import boomkat::env;
 import std::math;
 
-import duktape::heap;
-import duktape::hstring;
-import duktape::hobject;
-import duktape::re_bindings;
-import duktape::unicode_bindings;
-import duktape::vm;
+import boomkat::heap;
+import boomkat::hstring;
+import boomkat::hobject;
+import boomkat::re_bindings;
+import boomkat::unicode_bindings;
+import boomkat::vm;
 
 // ============================================================================
 // String constructor builtins

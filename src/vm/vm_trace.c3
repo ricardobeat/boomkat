@@ -1,9 +1,9 @@
-module duktape::vm;
+module boomkat::vm;
 
-import duktape::types;
-import duktape::bytecode;
-import duktape::hstring;
-import duktape::hobject;
+import boomkat::types;
+import boomkat::bytecode;
+import boomkat::hstring;
+import boomkat::hobject;
 import std::io;
 
 // ============================================================================
@@ -13,7 +13,7 @@ import std::io;
 // flag is recognised in the release build but does nothing (the
 // runtime check `if (@unlikely(vm.trace))` in vm_execute.c3 is also
 // gated), so users hitting `-t` on a release build silently get no
-// trace output. Build `duktape_c3_debug` (`just build-trace`) for the
+// trace output. Build `boomkat_debug` (`just build-trace`) for the
 // full instruction trace.
 // ============================================================================
 
