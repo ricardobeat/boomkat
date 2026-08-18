@@ -652,6 +652,17 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
         // but in_class_body = true allows super.x / super[x] syntax.
     }
 
+    // TypeScript: `implements Foo, Bar<T>` before the class body. Must be
+    // skipped BEFORE prescan_private_names below, which expects the lexer
+    // to be positioned right at the body's opening `{`.
+    if (self.lexer.ts_mode && self.check(TokenType.IMPLEMENTS)) {
+        Token _impl_early = self.advance()!;
+        for (;;) {
+            self.skip_type()!;
+            if (!self.match(TokenType.COMMA)) break;
+        }
+    }
+
     // Private class members (ES2022): push a fresh private-name scope and
     // pre-declare every `#name` in the class body (Phase A, plan 054 §2a)
     // BEFORE any member body compiles, so a field initializer may reference
@@ -831,15 +842,6 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
                 }
             }
             field_init_ctx.free_reg(fi_key_reg);
-        }
-    }
-
-    // TypeScript: `implements Foo, Bar<T>` before the class body.
-    if (self.lexer.ts_mode && self.check(TokenType.IMPLEMENTS)) {
-        Token _impl = self.advance()!;
-        for (;;) {
-            self.skip_type()!;
-            if (!self.match(TokenType.COMMA)) break;
         }
     }
 
