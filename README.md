@@ -145,7 +145,7 @@ Empty program, median of 60 runs on macOS arm64.
 | ES modules | ✅ | ✅ | ✅ | ❌ |
 | Top-level `await` | ✅ | ✅ | ✅ | ❌ |
 | Import attributes, JSON modules | ❌ | ✅ | ⚠️ attributes parsed | ❌ |
-| Iterator helpers | ❌ | ✅ | ✅ | ❌ |
+| Iterator helpers | ✅ | ✅ | ✅ | ❌ |
 | Set methods (`union`, `intersection`, ...) | ❌ | ✅ | ✅ | ❌ |
 | Intl (ECMA-402) | ❌ | ❌ | ❌ | ❌ |
 | TypeScript type stripping | ✅ | ❌ | ❌ | ❌ |
