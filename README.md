@@ -123,16 +123,30 @@ Empty program, median of 60 runs on macOS arm64.
 | `let`/`const`, arrows, classes, template literals | ✅ | ✅ | ✅ | ❌ |
 | Destructuring, `for...of`, spread, default params | ✅ | ✅ | ✅ | ❌ |
 | Generators, async/await, async generators | ✅ | ✅ | ✅ | ❌ |
+| `for await...of` | ✅ | ✅ | ✅ | ❌ |
+| Public/private class fields, static blocks | ✅ | ✅ | ✅ | ❌ |
+| Optional chaining, nullish coalescing | ✅ | ✅ | ✅ | ❌ |
+| `**`, logical assignment (`&&=`, `||=`, `??=`) | ✅ | ✅ | ✅ | ⚠️ `**` only |
 | `Promise`, `Map`/`Set`/`WeakMap`/`WeakSet` | ✅ | ✅ | ✅ | ❌ |
+| `Promise.allSettled`/`any`, `AggregateError` | ✅ | ✅ | ✅ | ❌ |
 | `WeakRef`, `FinalizationRegistry` | ✅ | ✅ | ✅ | ❌ |
 | `BigInt` | ✅ | ✅ | ✅ | ❌ |
 | `Symbol`, `Proxy`, `Reflect` | ✅ | ✅ | ✅ | ⚠️ |
-| `TypedArray`, `DataView` | ✅ | ✅ | ✅ | ✅ |
+| `Symbol.description` | ✅ | ✅ | ✅ | ❌ |
+| `TypedArray` (`Uint8Array`, `Float64Array`, ...) | ✅ | ✅ | ✅ | ✅ |
+| `DataView` | ✅ | ✅ | ✅ | ✅ |
 | Resizable `ArrayBuffer` | ✅ | ❌ | ✅ | ❌ |
 | `SharedArrayBuffer`, `Atomics` | ⚠️ | ✅ | ✅ | ❌ |
+| `String.raw`, `padStart`/`padEnd`, `includes` | ✅ | ✅ | ✅ | ⚠️ `includes` only |
+| `Array.from`/`of`/`flat`, `Object.entries`/`fromEntries` | ✅ | ✅ | ✅ | ❌ |
+| RegExp named groups, lookbehind, `s`/`u`/`d` flags | ✅ | ✅ | ✅ | ❌ |
+| RegExp `v` flag, modifiers | ❌ | ✅ | ✅ | ❌ |
+| `globalThis` | ✅ | ✅ | ✅ | ✅ |
 | ES modules | ✅ | ✅ | ✅ | ❌ |
 | Top-level `await` | ✅ | ✅ | ✅ | ❌ |
 | Import attributes, JSON modules | ❌ | ✅ | ⚠️ attributes parsed | ❌ |
+| Iterator helpers | ❌ | ✅ | ✅ | ❌ |
+| Set methods (`union`, `intersection`, ...) | ❌ | ✅ | ✅ | ❌ |
 | Intl (ECMA-402) | ❌ | ❌ | ❌ | ❌ |
 | TypeScript type stripping | ✅ | ❌ | ❌ | ❌ |
 | Built-in debugger | ❌ | ❌ | ❌ | ✅ |
