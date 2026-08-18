@@ -140,7 +140,7 @@ Empty program, median of 60 runs on macOS arm64.
 | `String.raw`, `padStart`/`padEnd`, `includes` | ✅ | ✅ | ✅ | ⚠️ `includes` only |
 | `Array.from`/`of`/`flat`, `Object.entries`/`fromEntries` | ✅ | ✅ | ✅ | ❌ |
 | RegExp named groups, lookbehind, `s`/`u`/`d` flags | ✅ | ✅ | ✅ | ❌ |
-| RegExp `v` flag, modifiers | ❌ | ✅ | ✅ | ❌ |
+| RegExp `v` flag, modifiers | ✅ | ✅ | ✅ | ❌ |
 | `globalThis` | ✅ | ✅ | ✅ | ✅ |
 | ES modules | ✅ | ✅ | ✅ | ❌ |
 | Top-level `await` | ✅ | ✅ | ✅ | ❌ |
