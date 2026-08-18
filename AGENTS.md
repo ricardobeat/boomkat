@@ -1,4 +1,4 @@
-# Duktape C3 Port
+# Boomkat
 
 > **High-level project phases and progress are tracked in `progress.md`.** Check it before starting work to understand where we are and what's next.
 
@@ -28,15 +28,15 @@ All common tasks are `just` recipes (`just list` to see them all). The fast debu
 
 | Task | Command |
 |------|---------|
-| Run one JS file | `just run <file>` (rebuilds `duktape_c3`, runs `./out/duktape_c3 <file>`) |
-| Inspect bytecode | `./out/duktape_c3_debug -c <file>` (disassemble, skip run); build with `just build-trace` |
-| Build a target | `just build <target>` (e.g. `duktape_c3`, `duktape_c3_debug`, `test262_runner`) |
+| Run one JS file | `just run <file>` (rebuilds `boomkat`, runs `./out/boomkat <file>`) |
+| Inspect bytecode | `./out/boomkat_debug -c <file>` (disassemble, skip run); build with `just build-trace` |
+| Build a target | `just build <target>` (e.g. `boomkat`, `boomkat_debug`, `test262_runner`) |
 | Build everything | `just all` |
 | Debug build (`-O0`) | `just build-debug <target>` |
 | ASAN test262 runner | `just build-asan` (`out/test262_runner_asan`) |
 | Rosetta suite | `just rosetta` (22+ language features; the go-to regression check) |
 | Local suite | `just test-local` (every `test/*.js` + the ESM fixtures) |
-| Run one JS file as ESM | `just run-module <file>` (`./out/duktape_c3 --module <file>`) |
+| Run one JS file as ESM | `just run-module <file>` (`./out/boomkat --module <file>`) |
 | ESM module tests only | `just modules` (`test/modules/`, 12 entry points) |
 | One test262 phase | `just test262-phase <n>` |
 | Full test262 | `just test262` |
@@ -45,7 +45,7 @@ All common tasks are `just` recipes (`just list` to see them all). The fast debu
 
 **ESM tests need `--module`.** `import`/`export` are rejected at parse time by the plain runner, so an ESM fixture run as a plain script always reports a SyntaxError. Every ESM test therefore lives under `test/modules/<tNN_name>/main.js` (with its dependency files alongside) and is invoked through `test/modules/run.sh`, which passes `--module` and treats a non-zero exit as failure. `just test-local` runs both surfaces: the flat `test/*.js` sweep under the plain runner, then `run.sh` for the module fixtures. Do NOT add `import`/`export` files directly to `test/`: they would read as spurious failures in the flat sweep. `test/test_async_500k.js` is skipped by the local suite: it passes but takes ~20s, so it is a perf stress test, not a regression check.
 
-For test262 work: `python3 scripts/run_test262.py --phase <n> --log <file>` writes per-test `RESULT<TAB>path` lines for failure clustering. The `--phase` flag accepts a phase label number (0, 1, 2, … 8, 11-15, 17-25) and can be repeated to run multiple phases: `--phase 0 --phase 2 --phase 3`. Without `--phase`, all phases run. Invalid phase numbers are rejected with an error listing valid choices. `python3 scripts/run_test262.py --single <path-under-test262/test>` reproduces one test through the canonical worker path. **`--single` warns `⚠ SUITE SKIPS THIS TEST` (naming the reason) when the test carries an unsupported-feature or `noStrict` flag. A raw COMPILE_ERROR or FAIL on such a test is not a real failure**, the suite skips it. Add `--debug` (concat assert/sta/includes + run under `duktape_c3`) or `--keep` (emit the combined file for `just lldb` / `--trace-vm`). The runner kills workers exceeding 2 GB RSS (`MEMKILL`); see `plans/040-test262-100-percent.md` §A5.
+For test262 work: `python3 scripts/run_test262.py --phase <n> --log <file>` writes per-test `RESULT<TAB>path` lines for failure clustering. The `--phase` flag accepts a phase label number (0, 1, 2, … 8, 11-15, 17-25) and can be repeated to run multiple phases: `--phase 0 --phase 2 --phase 3`. Without `--phase`, all phases run. Invalid phase numbers are rejected with an error listing valid choices. `python3 scripts/run_test262.py --single <path-under-test262/test>` reproduces one test through the canonical worker path. **`--single` warns `⚠ SUITE SKIPS THIS TEST` (naming the reason) when the test carries an unsupported-feature or `noStrict` flag. A raw COMPILE_ERROR or FAIL on such a test is not a real failure**, the suite skips it. Add `--debug` (concat assert/sta/includes + run under `boomkat`) or `--keep` (emit the combined file for `just lldb` / `--trace-vm`). The runner kills workers exceeding 2 GB RSS (`MEMKILL`); see `plans/040-test262-100-percent.md` §A5.
 
 **TypeScript conformance** (`just ts-conformance`, or `just ts-conformance <phase-dir>` for a subset like `types`/`classes`): `scripts/run_ts_conformance.py` runs the official Microsoft conformance corpus (`test/typescript/conformance-src`, a sparse clone fetched by `scripts/fetch_ts_conformance.py`; gitignored) against the engine's TS type-stripping mode, using `tsc --erasableSyntaxOnly` as the acceptance oracle. Each file is classified ACCEPT (must compile), REJECT (must SyntaxError, TS1294-only), or SKIP, with verdicts cached in `test/typescript/ts_conformance_cache` (also gitignored). The full corpus run takes about a minute: tsc verdicts are cached, engine runs are parallel (`--jobs`, default 16), files that compile but run past the per-file timeout count as passes (compile conformance, not runtime), and a hard deadline (default 600s) aborts with partial results. Use `--log <file>` for `RESULT<TAB>path` failure clustering. Documented non-goals are skipped by outcome, not fixed: decorators, auto-accessors (`accessor`), and `using` declarations. `JS_EARLY_ERROR_FILES` in the runner names spec-correct JS early errors tsc's lenient parser accepts (catch-var shadowing, `with`).
 
@@ -127,10 +127,10 @@ rules. Update it when a change makes one of its claims wrong.
 - **`is_async` must not leak into nested functions**: `function_declaration`/`function_expr` restore `is_async` only around the `compile_inner_function` call, then reset it.
 - **break/continue across finally** (vm.c3): `BREAK`/`CONTINUE` are jump-offset opcodes that walk the catcher chain and redirect through active `finally` blocks via `pending_pc`. Flags: `CATCHER_FLAG_PENDING_BREAK/CONTINUE/IN_FINALLY`. `IN_FINALLY` guards against throw/return-in-finally infinite loops.
 
-Two CLI binaries share the engine (`src`): **`duktape_c3`** (`cli/duktape_c3.c3`) is
-the plain runner: run a file, or `--module <file>` for ESM, nothing else. **`duktape_c3_debug`**
-(`cli/duktape_c3_debug.c3`, built via `just build-trace`) is the inspection binary and is the
-one that carries the debug flags below. The plain `duktape_c3` does not understand `-c` or `-t`;
+Two CLI binaries share the engine (`src`): **`boomkat`** (`cli/boomkat.c3`) is
+the plain runner: run a file, or `--module <file>` for ESM, nothing else. **`boomkat_debug`**
+(`cli/boomkat_debug.c3`, built via `just build-trace`) is the inspection binary and is the
+one that carries the debug flags below. The plain `boomkat` does not understand `-c` or `-t`;
 it treats them as a file path. Debug flags (no perf impact on release builds):
 - `-c` / `--compile-only`: disassemble bytecode, skip execution (`--format json` for structured output)
 - `-t` / `--trace-vm`: print each instruction + register values before dispatch (stderr)

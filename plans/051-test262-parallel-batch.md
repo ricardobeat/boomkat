@@ -76,7 +76,7 @@ Additionally fix:
 ## Verification
 
 After all 5 agents complete:
-1. Build: `c3c build test_vm && c3c build duktape_c3`
+1. Build: `c3c build test_vm && c3c build boomkat`
 2. Rosetta: `just rosetta` (must be 99/100)
 3. Test each fix with specific test262 tests
 4. Commit all, update progress.md with new numbers

@@ -3,7 +3,7 @@ name = "jse"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.70"
-description = "Safe Rust bindings for the duktape-c3 JavaScript engine"
+description = "Safe Rust bindings for the boomkat JavaScript engine"
 publish = false
 
 [dependencies]

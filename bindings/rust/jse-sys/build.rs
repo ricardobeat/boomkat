@@ -51,7 +51,7 @@ fn main() {
         d
     } else {
         let root = repo_root().expect(
-            "could not locate the duktape-c3 checkout (no ancestor directory \
+            "could not locate the boomkat checkout (no ancestor directory \
              contains include/jse.h). Set JSE_LIB_DIR to a directory holding \
              libjse.a or jse_static.a.",
         );

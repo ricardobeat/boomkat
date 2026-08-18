@@ -97,7 +97,7 @@ Array.prototype methods.
    (build baseline via `git stash` — worktrees miss the vendored quickjs/
    sources); only intended diffs allowed.
 5. test262 targeted clusters (single-test runner rebuilds nothing — build
-   `out/duktape_c3` first):
+   `out/boomkat` first):
    `built-ins/Array/prototype/{shift,sort,at,includes,join}/**` plus a re-run
    of the B40 cluster (`*maximum-index*`, `*integer-limit*`, 24/28 today —
    must not drop; the 4 fails are Proxy-gated).

@@ -164,7 +164,7 @@ large, conformance-sensitive project; flag it and get explicit buy-in before sta
 - **Import cycle** between `heap` and `hobject`/`hstring` (Step 0) — mitigate with opaque
   `void*` + accessor fns if the full-type import cycles.
 - **Perf regression** if any Tier-3 layout accidentally changes — benchmark
-  (`duktape_c3` target) before/after Tier 3.
+  (`boomkat` target) before/after Tier 3.
 - **GC root scanning** of valstack must remain intact after the allocator swap (Step 3).
 - **Custom-allocator smoke test** (Step 1) is the safety net for the whole effort; build
   it first.

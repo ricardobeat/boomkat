@@ -20,7 +20,7 @@ at its two call sites rather than carving machinery out of a shared one.
    dependency, which matters on the low-powered targets in the project spec.
 2. **`util.inspect`'s formatter is gated by the same flag.** It is reachable
    only through console (verified: no other caller in `src/`; the CLI's uncaught
-   reporting lives in `cli/duktape_c3.c3` and does not use it). Gating both
+   reporting lives in `cli/boomkat.c3` and does not use it). Gating both
    gives embedders the real size win — the formatter is the bulk of the code.
 
 ## Why a `NO…` flag, not a `CONSOLE` flag
@@ -111,7 +111,7 @@ root cause five times in this repo (BACKLOG session 302; plans 063-066).
 `register_console_object` must stay exported so an embedder can write:
 
 ```c3
-duktape::builtins::register_console_object(global_env, heap);
+boomkat::builtins::register_console_object(global_env, heap);
 ```
 
 Same function the CLI calls — one code path, no drift between the two.

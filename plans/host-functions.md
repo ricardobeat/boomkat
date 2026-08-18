@@ -766,7 +766,7 @@ cap. Do not design that in speculatively; test first.
 
 ### Testing it
 
-- `make duktape_c3_gc_stress` (`Makefile:65`, `project.json:93`) collects at
+- `make boomkat_gc_stress` (`Makefile:65`, `project.json:93`) collects at
   every allocation. Every host-function test must pass under it. This is the
   single highest-value test in this plan: it turns "the scope array might not be
   rooted" from a subtle heisenbug into a deterministic failure.
@@ -1298,7 +1298,7 @@ handle encoding (high-bit split), argument/`this`/`new_target` materialisation,
 `should_throw` plumbing.
 
 Still C3-only tests. Deliverable: arguments in, values out, throwing works, all
-verified under `duktape_c3_gc_stress`.
+verified under `boomkat_gc_stress`.
 
 This is the phase where the GC design is proven, and it must not be merged with
 Phase 3 — a bug here surfaces as a C-level crash if the ABI is in the way.
@@ -1352,7 +1352,7 @@ amended per binding in Phase 5.
 
 Test files go in `test/` alongside the existing suite (`test/*.js`) for the
 JS-visible behaviour, and in `examples/c99` (or a new `test/capi/`) for the ABI.
-Every JS-level test must also pass under `make duktape_c3_gc_stress`.
+Every JS-level test must also pass under `make boomkat_gc_stress`.
 
 ### Call shapes — the five paths from premise 6
 
@@ -1411,7 +1411,7 @@ and an array argument's type via `jse_type_of`.
 
 ### GC
 
-- All of the above under `make duktape_c3_gc_stress`.
+- All of the above under `make boomkat_gc_stress`.
 - Host function allocating 1000 strings in one call, returning the last;
   assert correctness under GC_STRESS.
 - Host function that reads `jse_arg(ctx, 0)` *after* an intervening `jse_call`

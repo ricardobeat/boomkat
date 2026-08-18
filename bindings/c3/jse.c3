@@ -29,16 +29,16 @@
 ///     at once does `root` report `JsError.VALUE_TABLE_FULL`.
 module jse;
 
-import duktape::builtins;
-import duktape::compiler;
-import duktape::vm;
-import duktape::heap;
-import duktape::env;
-import duktape::hobject;
-import duktape::hstring;
-import duktape::lexer;
-import duktape::types;
-import duktape::bytecode;
+import boomkat::builtins;
+import boomkat::compiler;
+import boomkat::vm;
+import boomkat::heap;
+import boomkat::env;
+import boomkat::hobject;
+import boomkat::hstring;
+import boomkat::lexer;
+import boomkat::types;
+import boomkat::bytecode;
 import std::io;
 
 // ============================================================================

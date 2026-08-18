@@ -14,7 +14,7 @@ C3 compiles all `.c3` files sharing the same `module` declaration as a single tr
 
 ## Proposed Split
 
-All files use `module duktape::vm;` and the same imports as the current `vm.c3`.
+All files use `module boomkat::vm;` and the same imports as the current `vm.c3`.
 
 | File | Lines (approx) | Contents |
 |------|---------------|----------|
@@ -56,7 +56,7 @@ Even though the switch stays in one file, natural comment sections already exist
 
 ## Risks
 
-- **Missing imports**: each new file needs its own `import` declarations. The current `vm.c3` imports `duktape::types`, `duktape::heap`, `duktape::hobject`, `duktape::builtins`, `duktape::bytecode`, `duktape::env`, `duktape::hstring`, `duktape::re_bindings`, `libc`, `std::math`. Copy all to every file — the compiler deduplicates.
+- **Missing imports**: each new file needs its own `import` declarations. The current `vm.c3` imports `boomkat::types`, `boomkat::heap`, `boomkat::hobject`, `boomkat::builtins`, `boomkat::bytecode`, `boomkat::env`, `boomkat::hstring`, `boomkat::re_bindings`, `libc`, `std::math`. Copy all to every file — the compiler deduplicates.
 - **`@inline` functions referenced before definition**: C3 resolves within-module references at link time, not parse time, so order doesn't matter.
 - **No partial switch**: the `switch (opcode)` in `execute()` cannot be split. `vm_execute.c3` will still be ~6500 lines. That's acceptable — the goal is separating concerns, not making every file small.
 

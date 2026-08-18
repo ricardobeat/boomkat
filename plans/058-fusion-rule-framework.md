@@ -16,9 +16,9 @@ at all (see "Deliberately left hand-written" below).
 `just update-golden-bytecode`.
 
 **Mechanism:** each `<name>.js` is compiled with
-`out/duktape_c3_debug -c <name>.js` (requires the `duktape_c3_debug` target,
+`out/boomkat_debug -c <name>.js` (requires the `boomkat_debug` target,
 which carries `-D TRACE_VM` — `just build-trace` or plain
-`c3c build duktape_c3_debug`). The stdout disasm is diffed verbatim against
+`c3c build boomkat_debug`). The stdout disasm is diffed verbatim against
 the checked-in `<name>.expected`. Any diff — a fusion that stopped firing,
 an extra fusion firing somewhere it shouldn't, a register-allocation shift —
 fails the specific golden with a unified diff, not a silent perf drop.
@@ -44,13 +44,13 @@ suite caught during authoring: a naive `while (i<5) i++;` produces zero
 **Running it:**
 
 ```
-just test-golden-bytecode          # build duktape_c3_debug, run + diff all 6, plus --check-noop
+just test-golden-bytecode          # build boomkat_debug, run + diff all 6, plus --check-noop
 python3 scripts/run_golden_bytecode.py fib_subi     # single golden
 python3 scripts/run_golden_bytecode.py --update     # regenerate .expected after an intentional change
 ```
 
 **disable_optimize equivalence:** `--no-optimize` is already wired
-(`cli/duktape_c3_debug.c3` → `compiler::set_disable_optimize(true)`, gates
+(`cli/boomkat_debug.c3` → `compiler::set_disable_optimize(true)`, gates
 every peephole pass in `CompilerContext.finish()`, see `context.c3:164`).
 `--check-noop` (default-on via the justfile recipe) re-runs each golden with
 `--no-optimize` and asserts the output contains none of `ADDI, SUBI,
@@ -61,7 +61,7 @@ pass this check.
 ## 2. Declarative fusion rules
 
 **Location:** `src/compiler/fusion.c3` (new file, same module
-`duktape::compiler`).
+`boomkat::compiler`).
 
 ### Why declarative
 

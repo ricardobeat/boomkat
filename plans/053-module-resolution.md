@@ -17,7 +17,7 @@ already committed on `main`: `79e7110` (await-in-module), `55f14b9`
 The corrected harness exposed a cluster of `flags:[module]` test failures. The
 root cause is **not** parsing — `compile_module` works — it is that the
 **resolve → link → evaluate pipeline is dead code**: `resolve_module`,
-`link_module`, and `execute_module` exist in `src/module.c3` (`duktape::esm`)
+`link_module`, and `execute_module` exist in `src/module.c3` (`boomkat::esm`)
 but **nothing calls them**. The batch worker's `exec_js_module` only calls
 `compile_module` (parse) and then runs the module body via `execute_in_env`
 with **no dependencies loaded**. So any module test that imports a sibling file
@@ -96,7 +96,7 @@ What is missing / broken for our tests:
 
 **Goal:** `eval-rqstd-abrupt` passes; positive sync-import module tests run.
 
-1. **Add an entry point** in `duktape::esm`, e.g.:
+1. **Add an entry point** in `boomkat::esm`, e.g.:
    ```
    fn TVal? run_module_program(Heap* heap, Vm* vm, char[] module_name, char[] source)
    ```

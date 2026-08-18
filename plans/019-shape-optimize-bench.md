@@ -4,7 +4,7 @@
 
 | Engine | Time |
 |--------|------|
-| C3 port (duktape_c3) | **582ms** |
+| C3 port (boomkat) | **582ms** |
 | Original Duktape | **342ms** |
 | QuickJS | — |
 

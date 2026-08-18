@@ -12,8 +12,8 @@ Memory optimization plans 029–032 have landed. The light workload (`memory_tes
 
 | Engine | `memory_test.js` | `bench_memory_heavy.js` |
 |---|---|---|
-| duktape_c3 (C3 port) | **6,656 KB** | **45,616 KB** |
-| duktape_orig | 6,384 KB | 39,264 KB |
+| boomkat (C3 port) | **6,656 KB** | **45,616 KB** |
+| duktape | 6,384 KB | 39,264 KB |
 | qjs (QuickJS) | 6,112 KB | 31,808 KB |
 
 - `memory_test.js` is essentially tied with original Duktape and QuickJS.

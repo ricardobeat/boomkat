@@ -64,7 +64,7 @@ not-found branch that returns `"undefined"`. Every other use of `arguments`
 goes through a path that triggers materialization, which is why only `typeof`
 is wrong.
 
-Verify this before fixing: disassemble with `./out/duktape_c3_debug -c` on a
+Verify this before fixing: disassemble with `./out/boomkat_debug -c` on a
 `typeof arguments` repro and confirm `TYPEOFIDENT` is emitted and that the
 name-walk misses. Do not assume — the fix differs depending on whether the
 right place is the compiler (recognize `arguments` and force materialization /

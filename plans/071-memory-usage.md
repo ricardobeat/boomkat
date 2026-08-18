@@ -12,7 +12,7 @@ current design pays it, and states the change that removes it.
 A micro-benchmark of 50,000 same-shaped objects, once with 7 named properties
 and once with 8:
 
-| Script | duktape_c3 | QuickJS |
+| Script | boomkat | QuickJS |
 |--------|-----------|---------|
 | 7 props | 17,584 KB | 14,976 KB |
 | 8 props | 31,056 KB | 14,976 KB |

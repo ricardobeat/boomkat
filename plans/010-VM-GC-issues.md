@@ -8,7 +8,7 @@ Two bugs found and fixed, one remaining GC correctness bug under investigation.
 
 ## Bug 1: IC (Inline Cache) base pointer not updated on function calls (FIXED)
 
-**Symptom:** `bench_ic_monomorphic.js`, `bench_ic_proto.js` crash with SIGBUS/SIGABRT when run via `duktape_c3`. `test_vm` works because the disassembly pass touches memory in a way that masks the crash.
+**Symptom:** `bench_ic_monomorphic.js`, `bench_ic_proto.js` crash with SIGBUS/SIGABRT when run via `boomkat`. `test_vm` works because the disassembly pass touches memory in a way that masks the crash.
 
 **Root cause:** The VM's inner dispatch loop maintains a local `ic_base` pointer for the current function's inline cache. Five locations in `vm.c3` update `code_base` (when switching functions on call/return), but `ic_base` was only initialized once at the start of the run loop, never updated when calling into a new function or returning from one.
 

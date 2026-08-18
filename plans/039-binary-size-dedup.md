@@ -2,7 +2,7 @@
 
 ## Background
 
-Release binary (`duktape_c3`, `O3` + `panic-msg: false` + `debug-info: none`, see
+Release binary (`boomkat`, `O3` + `panic-msg: false` + `debug-info: none`, see
 `082f193`) is 1.12MB vs QuickJS ~1.1MB and original C Duktape ~400KB. `__text`
 (actual code) is the overwhelming majority of the binary — not debug symbols,
 not unicode tables. A 5-way parallel audit of all ~64K lines of `src/` found
@@ -28,7 +28,7 @@ Confirmed unreferenced via grep across `src/`. Delete outright.
 - [x] `src/module.c3:150-189` `default_module_normalize` — no callers, logic reimplemented inline in `call_resolve_name` — commit `e4920da`
 - [x] `src/env.c3:398-411` `env_check_const` — no callers — commit `7abd2a9`
 - [x] `src/env.c3:295-318` `env_put_lex` — no callers — commit `7f310c4`
-- [ ] **DEFERRED** `src/bytecode.c3:1055-1262` disassembler (`OPCODE_NAMES`, `disassemble`, `write_*`) — NOT pure dead code. Investigation found it backs real CLI features in `benchmarks/duktape_c3.c3` (`-c`/`--compile-only`, `--format json`, `-t`/`--trace-vm`), not just the trace path. Gating it out of the release build removes user-facing CLI functionality — a product decision, not a mechanical cleanup. Needs a follow-up plan: likely a new build target (e.g. `duktape_c3_debug` with `-D TRACE_VM`) that keeps these flags working, with `$if($feature(TRACE_VM))` gating in `bytecode.c3`/`vm_trace.c3`/`benchmarks/duktape_c3.c3`. Skipped for now per user decision.
+- [ ] **DEFERRED** `src/bytecode.c3:1055-1262` disassembler (`OPCODE_NAMES`, `disassemble`, `write_*`) — NOT pure dead code. Investigation found it backs real CLI features in `benchmarks/boomkat.c3` (`-c`/`--compile-only`, `--format json`, `-t`/`--trace-vm`), not just the trace path. Gating it out of the release build removes user-facing CLI functionality — a product decision, not a mechanical cleanup. Needs a follow-up plan: likely a new build target (e.g. `boomkat_debug` with `-D TRACE_VM`) that keeps these flags working, with `$if($feature(TRACE_VM))` gating in `bytecode.c3`/`vm_trace.c3`/`benchmarks/boomkat.c3`. Skipped for now per user decision.
 
 For each: grep-confirm zero call sites immediately before deleting (line numbers
 may have drifted since the audit). Build + run `just bench-fast 2` after each
@@ -164,12 +164,12 @@ reimplemented ad hoc in map/set/symbol instead of reused.
 - Local `test/` JS files relevant to the touched builtin (e.g. `test_map*.js`,
   `test_weakmap.js`, `test_promise_*.js` for item 1/5) — see memory: avoid full
   test262 runs, use local tests / single phase instead.
-- Binary size delta: `ls -la out/duktape_c3` before/after each item, track
+- Binary size delta: `ls -la out/boomkat` before/after each item, track
   cumulative reduction toward the QuickJS/Duktape gap.
 
 ## Non-goals
 
 - Not attempting `-Os`/`-Oz`/`--optsize=small` — already benchmarked, costs
   25-50% perf on hot paths for ~28% size win. Rejected (see commit 082f193 discussion).
-- Not touching `ENV_STRICT`/`duktape_c3_envstrict` target — it's the
+- Not touching `ENV_STRICT`/`boomkat_envstrict` target — it's the
   register-locals correctness oracle, not a release-size concern.

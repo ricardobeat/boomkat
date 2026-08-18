@@ -169,7 +169,7 @@ is their spec'd modular behavior, not overflow.)
 
 ## Global validation gate (each phase)
 
-1. Clean rebuild of **both** binaries (`rm -rf build/obj`; `duktape_c3` AND
+1. Clean rebuild of **both** binaries (`rm -rf build/obj`; `boomkat` AND
    `test262_runner` — stale-runner faked results before).
 2. Run the affected phase(s) with `--log`, diff PASS set vs baseline:
    **require 0 regressions.**

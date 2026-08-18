@@ -1,4 +1,4 @@
-# Rust bindings for the duktape-c3 JavaScript engine
+# Rust bindings for the boomkat JavaScript engine
 
 Two crates over the `jse_` C ABI (`include/jse.h`):
 

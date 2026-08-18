@@ -43,7 +43,7 @@ Reproduce by copying the real test262 file instead:
 src=test262/test/language/expressions/class/class-name-ident-await-escaped.js
 { echo '"use strict";'; sed -n '/---\*\//,$p' $src | tail -n +2; } > /tmp/r.js
 grep -n 'u0061' /tmp/r.js        # confirm the escape is actually present
-./out/duktape_c3 /tmp/r.js
+./out/boomkat /tmp/r.js
 ```
 
 Always `grep` the generated file to confirm the escape survived before drawing

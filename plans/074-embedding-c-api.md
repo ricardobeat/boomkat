@@ -171,7 +171,7 @@ JSE_API int jse_last_error_info(jse_runtime rt, jse_error_info *out);
 
 The compiler already knows the position: the Lexer records `err_line` /
 `err_col` (`src/lexer.c3:502`), and the CLI prints them as
-`SyntaxError: ... (line 1, col 20)` (`cli/duktape_c3.c3:100`). `jse_eval`'s
+`SyntaxError: ... (line 1, col 20)` (`cli/boomkat.c3:100`). `jse_eval`'s
 compile-failure path copies `lex.err_msg` into the runtime buffer today
 (`src/capi.c3:340-352`) but drops the position; this adds `line`/`col` to the
 Runtime alongside `errmsg` and copies them in the same place. Runtime-throw

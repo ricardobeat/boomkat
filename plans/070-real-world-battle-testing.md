@@ -209,7 +209,7 @@ already correct.
 })();
 ```
 
-`duktape_c3` prints `param=undefined`; `qjs` prints `param=number`. The
+`boomkat` prints `param=undefined`; `qjs` prints `param=number`. The
 argument is simply lost.
 
 ### Bytecode evidence
@@ -259,7 +259,7 @@ A second, independent symptom of the same root cause:
 })();
 ```
 
-`qjs` prints `79800`; `duktape_c3` throws
+`qjs` prints `79800`; `boomkat` throws
 `Cannot convert object to primitive value` — a register holding an
 unrelated value is read as an operand.
 
@@ -324,7 +324,7 @@ Building a string by repeated `+=` copies the accumulator on every
 iteration. Time quadruples for each doubling of the loop count, while
 QuickJS stays flat:
 
-| iterations | duktape_c3 | qjs | growth vs previous |
+| iterations | boomkat | qjs | growth vs previous |
 |---|---|---|---|
 | 10,000 | 23 ms | 4 ms | — |
 | 20,000 | 79 ms | 4 ms | 3.4x |
@@ -405,7 +405,7 @@ function outer(){ middle(); }
 try { outer(); } catch(e){ console.log(JSON.stringify(e.stack)); }
 ```
 
-- `duktape_c3`: `"Error: boom"`
+- `boomkat`: `"Error: boom"`
 - `qjs`: `"    at inner (f.js:2:34)\n    at middle (f.js:3:25)\n    at outer (f.js:4:25)\n    at <eval> (f.js:5:12)\n"`
 
 `e.stack` exists and is a string, but carries no frames, no file, and no
@@ -524,7 +524,7 @@ removed.
 
 Counts at or above 2^32 wrap instead of raising `RangeError`:
 
-| call | duktape_c3 | qjs |
+| call | boomkat | qjs |
 |---|---|---|
 | `"x".repeat(4294967296)` | length **0** | RangeError |
 | `"x".repeat(4294967297)` | length **1** | RangeError |
@@ -595,7 +595,7 @@ Two related defects in the same function:
 Promise.reject(new Error("boom"));
 ```
 
-- `duktape_c3` (CLI): no output, exit 0
+- `boomkat` (CLI): no output, exit 0
 - `qjs`: `Possibly unhandled promise rejection: Error: boom` plus a stack,
   exit 1
 
@@ -619,7 +619,7 @@ Promise.resolve().then(function(){});
 undefinedGlobal;
 ```
 
-- `duktape_c3`: `VM error: vm::VM_ERROR (at execute)`, exit 1
+- `boomkat`: `VM error: vm::VM_ERROR (at execute)`, exit 1
 - `qjs`: `ReferenceError: 'undefinedGlobal' is not defined` plus location
 
 Without the pending microtask the same script reports
@@ -658,7 +658,7 @@ async function* g(){ for await ([value = yield "a"] of [[]]) { print(value); } }
 ```
 
 - `qjs`: resumes the body with `value=11`
-- `duktape_c3`: `ReferenceError: 'value' is not defined`
+- `boomkat`: `ReferenceError: 'value' is not defined`
 
 The fixture never declares `value`. This engine is strict-only, so assigning
 to an undeclared identifier is a ReferenceError — and **node agrees under an
@@ -696,7 +696,7 @@ the assertions actually live.
 
 ```js
 function f(a){ return 1 + a; }
-f("A");   // duktape_c3: "A1"      node/qjs: "1A"
+f("A");   // boomkat: "A1"      node/qjs: "1A"
 ```
 
 `FUSION_ADDI_SUBI` (`src/compiler/fusion.c3`, the `is_add` branch) folds a
@@ -745,7 +745,7 @@ cannot "restore symmetry" by folding the other side back in.
 ```js
 Array.prototype[1] = 1;
 var x = [0]; x.length = 2;
-x.pop();   // duktape_c3: undefined      node/qjs: 1
+x.pop();   // boomkat: undefined      node/qjs: 1
 ```
 
 `pop` reads index `length-1` with `[[Get]]`, which continues up the prototype
@@ -814,7 +814,7 @@ built batch binary.
 ```
 
 - node (with `"use strict"`): `ok n.x={"v":"k","y":1}`
-- `duktape_c3`: `Uncaught: undefined is not a function`
+- `boomkat`: `Uncaught: undefined is not a function`
 
 The disassembly of the inner function shows the fault directly:
 
@@ -1383,9 +1383,9 @@ correct, but a frame-layout change could turn them into segfaults).
 ## Verification method
 
 Each finding was minimised to a self-contained strict-mode repro, run
-under both `out/duktape_c3` and `out/qjs`, and confirmed to be
+under both `out/boomkat` and `out/qjs`, and confirmed to be
 strict-legal. B1 and B2 were traced to the responsible source lines and
-confirmed against disassembly (`out/duktape_c3_debug -c`). B3 was measured
+confirmed against disassembly (`out/boomkat_debug -c`). B3 was measured
 as a median of three runs per point, across four input sizes, to establish
 the growth rate rather than a single ratio.
 

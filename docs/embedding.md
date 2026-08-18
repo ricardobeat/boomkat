@@ -96,8 +96,8 @@ and it exists only in compiler-rt (verified: `nm` finds it in neither libgcc). A
 GCC-driven static link therefore fails with:
 
 ```
-/usr/bin/ld: libjse.a(duktape.esm.o): in function `duktape.hbigint.bigint_mul':
-duktape::esm:(.text+0xee228): undefined reference to `__muloti4'
+/usr/bin/ld: libjse.a(boomkat.esm.o): in function `boomkat.hbigint.bigint_mul':
+boomkat::esm:(.text+0xee228): undefined reference to `__muloti4'
 ```
 
 Pass the archive explicitly (Debian: `apt install libclang-rt-19-dev`):
@@ -137,7 +137,7 @@ Running it established the following:
 
 | Area | Result |
 |---|---|
-| `c3c build duktape_c3` | Builds, once `__muloti4` is supplied (see above) |
+| `c3c build boomkat` | Builds, once `__muloti4` is supplied (see above) |
 | `bash test/run_local.sh` | Fully green, identical counts to macOS: 302 scripts, 14 module fixtures, 101 + 63 syntax/export checks, 24 top-level, 12 uncaught, 5796 console lines |
 | `make lib` / `make shared` | Both build; `out/libjse.so` is produced |
 | `make smoke` | Prints `42` |

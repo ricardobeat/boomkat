@@ -1,4 +1,4 @@
-//! Safe Rust bindings for the duktape-c3 JavaScript engine.
+//! Safe Rust bindings for the boomkat JavaScript engine.
 //!
 //! ```no_run
 //! use jse::{Kind, Runtime};

@@ -177,7 +177,7 @@ restructure, not a fused op — out of scope here.
 
 1. `c3c build test_vm && ./out/test_vm benchmarks/bench_ic_monomorphic.js` — inspect
    the fused bytecode and confirm PASS.
-2. `c3c build duktape_c3 && just bench-fast 3` — expect bench_ic_monomorphic,
+2. `c3c build boomkat && just bench-fast 3` — expect bench_ic_monomorphic,
    bench_loop, bench_arithmetic, bench_property_lookup all to improve; nothing
    should regress.
 3. Local test suite (batch_test_vm over test/) — comparisons and property access

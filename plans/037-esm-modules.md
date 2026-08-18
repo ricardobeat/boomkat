@@ -38,13 +38,13 @@ QuickJS compiles modules as an async function body where all top-level declarati
 ### New module definition structs (`src/module.c3`)
 
 ```c3
-module duktape::module;
+module boomkat::module;
 
-import duktape::types;
-import duktape::bytecode;
-import duktape::env;
-import duktape::heap;
-import duktape::hobject;
+import boomkat::types;
+import boomkat::bytecode;
+import boomkat::env;
+import boomkat::heap;
+import boomkat::hobject;
 
 struct ImportEntry {
     char[] local_name;      // the local binding name ("foo", "default", "ns")
@@ -389,7 +389,7 @@ fn ModuleDef*? resolve_module(Heap* heap, char[] specifier, char[] base_name) {
 ### 6e. Host usage example (CLI)
 
 ```c3
-// In benchmarks/duktape_c3.c3 --module mode:
+// In benchmarks/boomkat.c3 --module mode:
 
 // Use defaults (file-based loading, relative path normalization)
 // No hooks needed — engine uses default_module_normalize + default_module_read
@@ -444,11 +444,11 @@ This can be deferred to a later phase after static imports work.
 
 ## Phase 8: CLI Integration
 
-**File:** `benchmarks/duktape_c3.c3`
+**File:** `benchmarks/boomkat.c3`
 
 Add a `--module` / `-m` flag:
 ```
-duktape_c3 --module ./entry.js
+boomkat --module ./entry.js
 ```
 
 When `--module` is passed:
@@ -459,7 +459,7 @@ When `--module` is passed:
 Add a `just run-module` recipe:
 ```just
 run-module file:
-    just build duktape_c3 && ./out/duktape_c3 --module {{file}}
+    just build boomkat && ./out/boomkat --module {{file}}
 ```
 
 ---
@@ -498,7 +498,7 @@ QuickJS achieves live bindings by sharing `JSVarRef` pointers between modules. T
 | 7 | Module loader & resolver | new `src/module_loader.c3` | 200 |
 | 8 | Module linker (binding resolution) | `src/module_loader.c3` | 100 |
 | 9 | VM `execute_in_env` | `src/vm/vm_lifecycle.c3` | 50 |
-| 10 | CLI `--module` flag | `benchmarks/duktape_c3.c3` | 40 |
+| 10 | CLI `--module` flag | `benchmarks/boomkat.c3` | 40 |
 | 11 | `import()` dynamic import | `src/vm/vm_execute.c3`, `src/bytecode.c3` | 100 |
 | 12 | Live bindings (Option B) | `src/module_loader.c3`, `src/env.c3` | 150 |
 

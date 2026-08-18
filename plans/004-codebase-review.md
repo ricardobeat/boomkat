@@ -1,6 +1,6 @@
 # Codebase Review — May 29, 2026
 
-Reviewer pass over the Duktape-C3 engine. Goal: prioritize work that closes the
+Reviewer pass over the Boomkat engine. Goal: prioritize work that closes the
 gap to QuickJS (currently 5–12× slower) and fixes architecture/quality debt.
 
 ## Where we stand (benchmarks/results.txt)

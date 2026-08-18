@@ -939,7 +939,7 @@ same-session baseline**. Per project rules, do not run full test262.
 **Files.** `src/hobject.c3`, `src/heap.c3`.
 
 **Verification.** Local suite; **plus a GC-stress run**, because these are
-teardown paths the local suite covers thinly. `make duktape_c3_gc_stress` over
+teardown paths the local suite covers thinly. `make boomkat_gc_stress` over
 the object-lifetime and promise families, and an ASan pass over
 `Heap.destroy`/`Heap.reset` cycles. Both prototypes hit real segfaults here;
 this is not a formality.
@@ -1226,7 +1226,7 @@ nonce is there to prevent.
 
 ### 4. GC under GC_STRESS with two live runtimes
 
-Every test above, under `duktape_c3_gc_stress`. Specifically:
+Every test above, under `boomkat_gc_stress`. Specifically:
 
 - A collection triggered in A while B holds live objects — assert B's objects
   survive and A's unreachable ones do not. `mark_roots` reaches `capi_roots`

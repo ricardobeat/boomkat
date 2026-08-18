@@ -59,7 +59,7 @@ Each section below expands one of those steps.
 | `src/env.c3` | Environment records and the scope chain |
 | `src/module.c3` | The ESM lifecycle: resolve, link, evaluate |
 | `src/builtins/` | The standard library, one file per area |
-| `cli/` | The `duktape_c3` and debug binaries, and the test262 runner |
+| `cli/` | The `boomkat` and debug binaries, and the test262 runner |
 
 ## From source to bytecode
 

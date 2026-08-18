@@ -140,7 +140,7 @@ In `finish()`, once `needs_env` is final:
      shadowing, hoisted `var` use-before-decl, `typeof` local/global,
      closures capturing outer locals (must stay correct), `arguments`, default/
      rest params, recursion, try/catch param, generators.
-2. After each phase: `bash test/rosetta/run.sh ./out/duktape_c3` must stay 44/44.
+2. After each phase: `bash test/rosetta/run.sh ./out/boomkat` must stay 44/44.
 3. test262 phases 1 (closures/calling convention) and 3 (object/scope) — compare
    pass counts to the recorded baseline; no regressions.
 4. The `-D ENV_STRICT` trap (Phase 0) must not fire on the full corpus + rosetta.
@@ -171,9 +171,9 @@ locals work must not regress it further.
 
 ## PHASE 0 — DONE
 
-- Corpus: `test/test_register_locals.js` — run `./out/duktape_c3 test/test_register_locals.js`, must print `RESULT:PASS`.
-- Trap: project.json target `duktape_c3_envstrict` (O0 + `"features":["ENV_STRICT"]`).
-  Build with `c3c build duktape_c3_envstrict`. Run a script through `./out/duktape_c3_envstrict`;
+- Corpus: `test/test_register_locals.js` — run `./out/boomkat test/test_register_locals.js`, must print `RESULT:PASS`.
+- Trap: project.json target `boomkat_envstrict` (O0 + `"features":["ENV_STRICT"]`).
+  Build with `c3c build boomkat_envstrict`. Run a script through `./out/boomkat_envstrict`;
   it panics `ERROR: 'ENV_STRICT: needs_env=false fn touched own env: <OP>'` if a needs_env=false
   function touches its own env. **Goal after Phase 1-2: this build runs the corpus + rosetta clean.**
   NOTE: `$feature` flags do NOT work via `-D` in project/build mode — they must be in the target's

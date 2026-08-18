@@ -23,7 +23,7 @@
 > below (see "Phase 0 findings"): four for-of *paths*, only three of them
 > functions, with **three distinct register layouts**. The helper shape is
 > narrower than "one loop emitter." Verification is test-based (for-of +
-> generator fixtures, test262 dirs, rosetta); `duktape_c3_debug -c` disasm is a
+> generator fixtures, test262 dirs, rosetta); `boomkat_debug -c` disasm is a
 > convenience sanity check, not a byte-identity gate.
 >
 > **Phase 0 DONE 2026-07-20** (branch `forof-unify-plan057`, commit `948853e`):
@@ -281,11 +281,11 @@ unifying the two register layouts is on the table *if* the generator tests still
 pass (the below-callee `val_holder` is justified only by that generator-clobber
 case, so it stands or falls on those tests, not on byte-identity).
 
-`out/duktape_c3_debug -c <file>` disassembles without executing (built
+`out/boomkat_debug -c <file>` disassembles without executing (built
 2026-07-20); a diff of the seven captured baselines is a handy "did I move this
 cleanly" sanity check while refactoring, but it is not the acceptance gate. NB:
-`duktape_c3` (the plain runner) has **no** `-c` flag — disasm is
-`duktape_c3_debug` only; the [[disasm-one-level-only]] note's `-c` refers to this
+`boomkat` (the plain runner) has **no** `-c` flag — disasm is
+`boomkat_debug` only; the [[disasm-one-level-only]] note's `-c` refers to this
 debug binary.
 
 ### AsyncFromSyncIterator adapter
@@ -321,7 +321,7 @@ a test needs the observable adapter object.
    `test_generator_forof.js`, the generator-clobber case), test262
    for-of/destructuring/generator dirs (net ≥ 0, zero regressions), rosetta
    100/0. Correctness = tests pass, not byte-identity; cleaner/different bytecode
-   is expected and fine. `duktape_c3_debug -c` disasm is a convenience sanity
+   is expected and fine. `boomkat_debug -c` disasm is a convenience sanity
    check only.
 1. **Parser + reject-cases** — `for await` recognized in async/module, errors
    elsewhere. Explicitly **reject** `for await (... in ...)` (no async for-in

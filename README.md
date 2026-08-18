@@ -1,4 +1,4 @@
-# Duktape C3
+# Boomkat
 
 A strict-only ECMAScript engine written in [C3](https://c3-lang.org/).
 Duktape v2.7.0 and QuickJS are the architectural references; the engine is a
@@ -77,7 +77,7 @@ under the engine's ts_mode, and stdout must match the same source stripped to
 ## Benchmarks
 
 `just bench` runs the suite in `benchmarks/` (3 iterations per benchmark)
-against this engine, original Duktape v2.7.0 (`out/duktape_orig`), and QuickJS
+against this engine, original Duktape v2.7.0 (`out/duktape`), and QuickJS
 (`out/qjs`); the Duktape and QuickJS results are cached between runs. Lower is
 better; the ratio columns are C3/reference, so below 1.0 the engine wins.
 
@@ -111,7 +111,7 @@ Empty program, median of 60 runs on macOS arm64.
 
 | Runtime | Median startup |
 |---|---|
-| duktape_c3 (this engine) | 2.7 ms |
+| boomkat (this engine) | 2.7 ms |
 | QuickJS (`out/qjs`) | 2.4 ms |
 | Bun 1.3.13 | 8.4 ms |
 | Node 24.13.0 | 19.0 ms |
@@ -146,10 +146,10 @@ and Python 3.
 
 | Task | Command |
 |---|---|
-| Build a target | `just build <target>` (e.g. `duktape_c3`, `duktape_c3_debug`, `test262_runner`) |
+| Build a target | `just build <target>` (e.g. `boomkat`, `boomkat_debug`, `test262_runner`) |
 | Run one JS file | `just run <file>` |
 | Run one JS file as ESM | `just run-module <file>` |
-| Inspect bytecode | `just build-trace`, then `./out/duktape_c3_debug -c <file>` |
+| Inspect bytecode | `just build-trace`, then `./out/boomkat_debug -c <file>` |
 | Local suite | `just test-local` |
 | Rosetta suite | `just rosetta` |
 | One test262 phase | `just test262-phase <n>` |
@@ -157,7 +157,7 @@ and Python 3.
 | ASAN test262 runner | `just build-asan` |
 | lldb on a crash | `just lldb <file>` |
 
-`duktape_c3` is the plain runner. `duktape_c3_debug` carries the inspection
+`boomkat` is the plain runner. `boomkat_debug` carries the inspection
 flags (`-c` disassembles, `-t` traces the VM). To reproduce one test262 test
 through the worker path:
 
@@ -181,14 +181,14 @@ lifetime and GC rules, and each binding's status and known limitations.
 - `-D HEAP_VERIFY`: validate GC roots at yield/resume (`just build-verify`)
 - `-D GC_STRESS`: pin the collector trigger for stress runs
 - `-D ENV_STRICT`: compile-time environment-handling checks
-  (`duktape_c3_envstrict` target)
+  (`boomkat_envstrict` target)
 
 ## Project layout
 
 ```
 src/            engine: types, heap, hstring, hobject, env, bytecode, lexer,
                 compiler/, vm/, builtins/, capi, module, hbigint, re_bindings
-cli/            duktape_c3, duktape_c3_debug, test262_runner
+cli/            boomkat, boomkat_debug, test262_runner
 docs/           architecture.md, engine-scope.md, embedding.md,
                 string-representation-survey.md
 include/        jse.h, the public C ABI

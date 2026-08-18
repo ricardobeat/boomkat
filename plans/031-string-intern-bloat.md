@@ -14,7 +14,7 @@ comes from string concatenation.
 
 ### Data (from targeted micro-benchmarks)
 
-| Test | duktape_c3 | QuickJS | Duktape orig | C3/QS ratio |
+| Test | boomkat | QuickJS | Duktape orig | C3/QS ratio |
 |------|-----------|---------|-------------|-------------|
 | String concat (2000 loops) | **12,752 KB** | 2,704 KB | 2,704 KB | **4.7×** |
 | Object allocation (5000 objs) | 4,848 KB | 4,304 KB | — | 1.1× |

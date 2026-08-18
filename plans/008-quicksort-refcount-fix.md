@@ -6,7 +6,7 @@
 
 ## Summary
 
-The Duktape C3 VM crashed on `rosetta/quicksort.js` and related tests with `VM_ERROR` during `Math.floor` invocation in the second call to the quickSort function. The root cause was a reference count underflow in the sliding-window call mechanism that freed the global Math object prematurely, recycled its memory as a closure, and triggered a double-free on heap teardown.
+The Boomkat VM crashed on `rosetta/quicksort.js` and related tests with `VM_ERROR` during `Math.floor` invocation in the second call to the quickSort function. The root cause was a reference count underflow in the sliding-window call mechanism that freed the global Math object prematurely, recycled its memory as a closure, and triggered a double-free on heap teardown.
 
 ## Root Cause
 

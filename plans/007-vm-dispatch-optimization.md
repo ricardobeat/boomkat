@@ -22,7 +22,7 @@ any benchmark baseline. This must be removed before any timing is meaningful.
 Also verify no other hot-path prints exist (`grep -n "printfn\|eprintfn" src/vm.c3` — only the
 unknown-opcode fallthrough at line 4888 is acceptable).
 
-Rebuild `duktape_c3` at O2 and record per-benchmark baseline numbers in `benchmarks/results.txt`.
+Rebuild `boomkat` at O2 and record per-benchmark baseline numbers in `benchmarks/results.txt`.
 The debug print almost certainly inflates recursion time severely (a `printfn` on every call-frame
 setup is an I/O syscall per function call).
 
@@ -142,14 +142,14 @@ Run benchmarks in this order after each step:
 
 ```sh
 # Build
-c3c compile-run --target duktape_c3 -O2 -- benchmarks/duktape_c3.c3
+c3c compile-run --target boomkat -O2 -- benchmarks/boomkat.c3
 
 # Or via project.json
-c3c build duktape_c3
-./build/duktape_c3 benchmarks/bench_recursion.js
-./build/duktape_c3 benchmarks/bench_ic_monomorphic.js
-./build/duktape_c3 benchmarks/bench_loop.js
-./build/duktape_c3 benchmarks/bench_arithmetic.js
+c3c build boomkat
+./build/boomkat benchmarks/bench_recursion.js
+./build/boomkat benchmarks/bench_ic_monomorphic.js
+./build/boomkat benchmarks/bench_loop.js
+./build/boomkat benchmarks/bench_arithmetic.js
 ```
 
 Target deltas (measured after printf removal establishes real baseline):
@@ -167,5 +167,5 @@ Target deltas (measured after printf removal establishes real baseline):
 - `src/vm.c3` — dispatch loop (line 1355–4868), CALL fast path (2658–2751), ADD (1496), zero-register loop (2706)
 - `src/bytecode.c3` — opcode enum (73), instruction format (457–466)
 - `src/hobject.c3` — ICEntry struct (1150–1160), GETPROP IC (referenced from vm.c3:2007)
-- `benchmarks/duktape_c3.c3` — benchmark runner
+- `benchmarks/boomkat.c3` — benchmark runner
 - `benchmarks/results.txt` — baseline to update after each step

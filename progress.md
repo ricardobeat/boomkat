@@ -1,4 +1,4 @@
-# Progress: Duktape C3 — test262 Conformance Tracker
+# Progress: Boomkat — test262 Conformance Tracker
 
 **Last Updated:** Session 319 — fp-ts 2.16.9 (123 modules) and zod 4.4.3 (107 modules) joined the TS runtime sweep, which now passes 7/7. Whole-library import graphs outran three fixed-size buffers that failed silently: module import/export metadata capped at 32 specifier entries (an overflow aliased onto entry 0 and mis-linked imports, the `guard_ is not defined` failure in fp-ts), a 64-entry GC root array (a 60-module zod graph had later module envs swept mid-run), and a 128-entry namespace export table (`import * as z` read undefined past the cap). All three are growable List storage now. Parser gaps closed along the way: semicolonless `declare` stubs end at a line break, `export { type X as Y } from` erases the specifier, `typeof v as T` / `typeof v!` no longer strand the cast, the `import X = Y` probe rewinds the compiler pushback stack, and cross-module type-only imports elide per binding at link time with fully-elided statements pruned from the dependency order.
 
@@ -83,7 +83,7 @@ Validation: `just rosetta` 42/42, `just test-local` green (351 scripts, 15 modul
 - **Per-test results**: add `--log out/test262_results.tsv`; cluster with `awk -F'\t' '$1=="FAIL"{print $2}' … | xargs -n1 dirname | sort | uniq -c | sort -rn`.
 - **Single-test repro**: `python3 scripts/run_test262.py --single <path>` (warns if the suite skips the test; `--debug`/`--keep` concat harness for `just lldb` / `--trace-vm`).
 - **Phase counts**: `bash scripts/count_test262_by_phase.sh` · **Delta**: `bash scripts/test262_delta.sh`.
-- **Build**: `c3c build test262_runner` or `c3c build duktape_c3` (plain runner; `duktape_c3_debug` for `-c`/`-t` inspection).
+- **Build**: `c3c build test262_runner` or `c3c build boomkat` (plain runner; `boomkat_debug` for `-c`/`-t` inspection).
 
 ## Session 311 (2026-08-16)
 
@@ -168,7 +168,7 @@ Memory work against QuickJS (`just bench-memory`), opening plan 071. Profiling 5
 - Result: the 8-prop script peaks at 16.3 MB (was 31.1), within noise of the 7-prop script, which itself dropped 17.6 → 16.1 MB on the removed pointer. Objects built but never read by key now pay nothing. `bench_memory_heavy.js` stands at 39.6 MB vs QuickJS 31.9 MB (1.2x); Duktape is 39.1 MB.
 - Accepted trade-off, recorded in the plan: an interleaved grow-then-read loop rebuilds the table once per new shape where the per-object design did an O(1) insert. Builds are per shape, not per object, so class instances and plain construction pay nothing.
 - Gates: rosetta 42/42, local suite and all sub-suites green, test262 phase 0-1 (Core VM, 3148) 2468 pass / 0 fail / 0 CE-unexpected.
-- Remaining gap (plan 071, M2 once profiled): `memory_test.js` still peaks at 2.5x QuickJS. Decomposed above each engine's empty-script baseline (duktape_c3 3,296 KB, QuickJS 2,384 KB, so +912 KB fixed): string concatenation costs 5x (1,840 vs 352 KB), a 200x200 array matrix 2.5x (3,040 vs 1,216 KB), plain objects 2x (3,952 vs 1,920 KB). String concat is the largest relative gap.
+- Remaining gap (plan 071, M2 once profiled): `memory_test.js` still peaks at 2.5x QuickJS. Decomposed above each engine's empty-script baseline (boomkat 3,296 KB, QuickJS 2,384 KB, so +912 KB fixed): string concatenation costs 5x (1,840 vs 352 KB), a 200x200 array matrix 2.5x (3,040 vs 1,216 KB), plain objects 2x (3,952 vs 1,920 KB). String concat is the largest relative gap.
 
 ## Session 305 (2026-08-02)
 

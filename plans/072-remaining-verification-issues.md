@@ -114,9 +114,9 @@ threw `RangeError: Invalid array length` — and traced the second to a NaN
 reaching `array_set_length_desc` via `src/vm/vm_property.c3:2293`. The
 vendored 9.3.1 bundle in `test/libcorpus/_wrapped/bignumberjs.js` (md5
 `6898eb155fd3bbf2a7c4c51c0f864c20`) now produces identical output on
-`duktape_c3` and `qjs` for every probed case:
+`boomkat` and `qjs` for every probed case:
 
-| case                              | duktape_c3                              | qjs                                      |
+| case                              | boomkat                              | qjs                                      |
 |-----------------------------------|-----------------------------------------|------------------------------------------|
 | `new BN("2").sqrt()`             | `1.4142135623730950488`                 | `1.4142135623730950488`                  |
 | `new BN("0").sqrt()`             | `0`                                     | `0`                                      |

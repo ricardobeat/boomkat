@@ -334,7 +334,7 @@ LLVM intrinsics. Replace `libc::memset` / `libc::memcpy` in hot paths:
 ### `--sanitize=address` — ASan for validation
 
 ```bash
-c3c build --sanitize=address duktape_c3
+c3c build --sanitize=address boomkat
 ```
 
 Catches heap corruption, use-after-free, buffer overflows at runtime. Would have caught
