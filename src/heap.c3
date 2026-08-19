@@ -75,7 +75,28 @@ faultdef HEAP_ALLOC_FAULT;
 const uint  INITIAL_STR_TABLE_SIZE  = 256;
 const float STR_TABLE_LOAD_FACTOR   = 0.70;
 const long  GC_INITIAL_TRIGGER      = 1;
-const long  GC_TRIGGER_GROW_FACTOR  = 1;
+/// Allocations allowed between collections, as a multiple of the surviving
+/// live object count.
+///
+/// At 1 the budget equalled the live heap, so a program holding N live objects
+/// collected every N allocations and re-marked all N each time -- quadratic in
+/// the live set, and ~50% GC overhead by construction. `for (const x of arr)`
+/// over a 200k array spent over 90% of its samples in mark_tval and ran 629x
+/// slower than QuickJS; index loops and forEach over the same array were fine,
+/// because they allocate nothing per step while the iterator protocol
+/// allocates a result object.
+///
+/// Raising this trades allocation headroom for less frequent marking. Measured
+/// on that for-of loop: 1 -> 304ms, 2 -> 184ms, 4 -> 160ms, 8 -> 103ms, with
+/// peak RSS flat at 74MB throughout, since what dominates is the live array
+/// rather than the garbage between cycles.
+///
+/// 4 is a deliberate middle: it captures most of the win while bounding the
+/// floating garbage a higher factor would allow. It is NOT free -- allocation
+/// heavy work that was collecting at exactly the right moment can get slower
+/// (bench_memory_heavy 0.07s -> 0.11s), so revisit with a full benchmark run
+/// on a quiet machine before moving it again.
+const long  GC_TRIGGER_GROW_FACTOR  = 4;
 const uint  MEGA_CACHE_SIZE         = 512;
 /// Initial capacity for the gray object stack, which grows as needed.
 const uint  GRAY_STACK_INITIAL_CAP  = 64;
