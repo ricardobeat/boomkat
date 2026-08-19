@@ -3956,6 +3956,13 @@ struct IterRec {
     ushort callee_reg;  // per-iteration callee slot (reloaded each step)
     ushort callee_this_reg;
     bool   is_await;
+    /// Address of the fused fast path's done-branch, valid while
+    /// has_fast_exit. Lives here rather than on the context because for-of
+    /// loops nest: a shared field would be overwritten by the inner loop and
+    /// the outer branch would never be patched, leaving it jumping to offset
+    /// zero -- an infinite loop.
+    uint   fast_exit;
+    bool   has_fast_exit;
 }
 
 /// GetIterator(src, hint): look up the iterator method, call it, fetch .next.
@@ -4029,7 +4036,32 @@ fn IterRec? CompilerContext.emit_iter_open(&self, ushort src_reg, bool is_await)
 /// result, unpack .done/.value. Writes the value into val_slot (which the caller
 /// allocated below the callee window) and returns the exit jump to patch at the
 /// done=true target. Leaves no live temps above val_slot.
-fn uint? CompilerContext.emit_iter_step(&self, IterRec rec, ushort val_slot) {
+fn uint? CompilerContext.emit_iter_step(&self, IterRec rec, ushort val_slot, uint* out_fast_exit) {
+    // Fused fast step for a built-in array iterator, laid out as the opcode
+    // documents: refusal falls through to the first JUMP (into the generic
+    // sequence below), a finished iteration takes the second, and a produced
+    // value lands past both. for-await is excluded because its step has to
+    // await the promise .next() returns.
+    uint fast_done_jump = 0;
+    uint fast_cont_jump = 0;
+    bool has_fast = false;
+    *out_fast_exit = 0;
+    if (!rec.is_await) {
+        self.emit_abc(Opcode.ITER_NEXT_FAST, (uint)val_slot, (uint)rec.method_reg, (uint)rec.next_reg);
+        // Layout the handler relies on, in the order it branches to them:
+        //   +0  JUMP -> the generic sequence (refusal falls through to here)
+        //   +1  JUMP -> the loop exit        (handled, iteration finished)
+        //   +2  JUMP -> the loop body        (handled, value produced)
+        // The third is needed because the generic sequence sits between this
+        // point and the body: landing "past the JUMPs" would land on the slow
+        // path, not on the consumer of the value.
+        uint to_slow = self.emit_jump(Opcode.JUMP);
+        fast_done_jump = self.emit_jump(Opcode.JUMP);
+        fast_cont_jump = self.emit_jump(Opcode.JUMP);
+        self.patch_jump(to_slow);
+        has_fast = true;
+    }
+
     self.emit_abc(Opcode.LDREG, (uint)rec.callee_reg, (uint)rec.next_reg, 0);
     self.emit_abc(Opcode.LDREG, (uint)rec.callee_this_reg, (uint)rec.method_reg, 0);
 
@@ -4069,6 +4101,20 @@ fn uint? CompilerContext.emit_iter_step(&self, IterRec rec, ushort val_slot) {
     self.free_reg(done_reg);
     self.free_reg(done_key_reg);
     self.free_reg(result_reg);
+
+    // Both the fast path's done-branch and the generic path's done-branch have
+    // to reach the same loop exit. Chain the fast one onto the generic one so
+    // the single returned jump still describes the exit for the caller to
+    // patch; the fast branch lands on the generic branch, which then jumps on.
+    if (has_fast) {
+        // The continue-branch lands here, where the generic path arrives once
+        // it has stored the value. The done-branch cannot be aimed at the
+        // generic done-branch itself -- that is an IF_TRUE reading a register
+        // only the generic path fills -- so it is returned to the caller
+        // alongside exit_jump and patched to the same loop exit.
+        self.patch_jump(fast_cont_jump);
+        *out_fast_exit = fast_done_jump;
+    }
 
     return exit_jump;
 }
@@ -4139,7 +4185,8 @@ fn void? CompilerContext.emit_forof(&self, ForOfHead head, ushort src_reg, uint 
         self.emit_head_inittz(head);
     }
 
-    uint exit_jump = self.emit_iter_step(rec, val_slot)!;
+    uint fast_exit = 0;
+    uint exit_jump = self.emit_iter_step(rec, val_slot, &fast_exit)!;
 
     // IteratorClose-on-throw guard (§14.7.5.6): wrapping the bind and body means
     // any abrupt completion closes the iterator before propagating.
@@ -4192,6 +4239,8 @@ fn void? CompilerContext.emit_forof(&self, ForOfHead head, ushort src_reg, uint 
     // is only invoked for an abrupt completion out of the loop (break,
     // throw, or a `return` inside the body), never on natural exhaustion.
     self.patch_jump(exit_jump);
+    // The fused fast path's done-branch exits the loop at the same point.
+    if (fast_exit != 0) { self.patch_jump(fast_exit); }
     if (needs_per_iter_env) {
         self.emit_simple(Opcode.POP_LEX);
         self.cur_lex_depth--;

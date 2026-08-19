@@ -130,6 +130,22 @@ fn uint CompilerContext.emit_cond_jump_back(&self, Opcode op, uint a, uint targe
     return self.emit(bytecode::make_a_sbx(op, a, back));
 }
 
+/// Patch a previously emitted JUMP to land on `target_addr` rather than on the
+/// current position. Used when two branches must converge on one exit that has
+/// not been resolved yet: the earlier branch is aimed at the later one, which
+/// its own eventual patch then carries the rest of the way.
+fn void CompilerContext.patch_jump_to(&self, uint addr, uint target_addr) {
+    if (addr >= self.code_count || target_addr >= self.code_count) { return; }
+    Opcode op = self.code[addr].op;
+    int offset = (int)target_addr - (int)addr - 1;
+    if (op == Opcode.JUMP || op == Opcode.BREAK || op == Opcode.CONTINUE) {
+        self.code[addr] = bytecode::make_sabc(op, offset);
+    } else {
+        uint a = self.code[addr].a;
+        self.code[addr] = bytecode::make_a_sbx(op, a, offset);
+    }
+}
+
 /// Patch a previously emitted JUMP/BREAK/CONTINUE to target the current code position.
 fn void CompilerContext.patch_jump(&self, uint addr) {
     if (addr >= self.code_count) { return; }
