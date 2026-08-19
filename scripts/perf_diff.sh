@@ -49,6 +49,18 @@ done
 [ $# -ge 1 ] || usage 1
 BASE_REF="$1"; shift
 
+# Flags may also follow the ref; without this they are taken as workload paths
+# and basename chokes on them.
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -f|--force) FORCE=1; shift ;;
+        -n|--runs)  RUNS="$2"; shift 2 ;;
+        --) shift; break ;;
+        -*) echo "unknown flag: $1" >&2; usage 1 ;;
+        *) break ;;
+    esac
+done
+
 load_now() { uptime | sed 's/.*averages*: *//' | awk '{print $1}'; }
 
 check_load() {
