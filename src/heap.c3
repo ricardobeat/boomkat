@@ -77,6 +77,26 @@ const uint  INITIAL_STR_TABLE_SIZE  = 256;
 const float STR_TABLE_LOAD_FACTOR   = 0.70;
 const long  GC_INITIAL_TRIGGER      = 1;
 const long  GC_TRIGGER_GROW_FACTOR  = 1;
+/// Divisor applied to the last cycle's mark work when it sets the next cycle's
+/// allocation budget.
+///
+/// The budget wants to track marking cost (see the trigger reset), but using
+/// that cost raw collects far too rarely and holds a lot of floating garbage.
+/// Dividing it trades a little of each back. Measured on `for (const x of arr)`
+/// over a 200k array (best of 5) with peak RSS from the 400k case:
+///
+///     divisor   1      82ms   137MB
+///     divisor   4      81ms    90MB
+///     divisor   8      79ms    82MB
+///     divisor  16      75ms    78MB   <- both fastest and near-leanest
+///     divisor  32      86ms    76MB
+///     divisor  64      98ms    77MB
+///
+/// 16 is not a compromise between the two: collecting a little more often
+/// keeps the working set in cache, so below it the extra floating garbage
+/// costs time as well as memory, and above it the collection frequency starts
+/// to dominate again.
+const long  GC_MARK_WORK_DIVISOR    = 16;
 const uint  MEGA_CACHE_SIZE         = 512;
 /// Initial capacity for the gray object stack, which grows as needed.
 const uint  GRAY_STACK_INITIAL_CAP  = 64;
@@ -508,6 +528,17 @@ struct Heap {
     uint  native_frame_depth;
     uint  live_obj_count;
     uint  peak_live_obj_count;   /// High-water mark for live objects
+    /// TVals visited by the last mark phase.
+    ///
+    /// live_obj_count counts only nodes on heap_allocated, which is what the
+    /// collection budget used to scale by. Marking cost is not that number: an
+    /// array's elements live inside its prop_alloc rather than as separate
+    /// nodes, so a 200k-element array marks 226k values while contributing ~1
+    /// to live_obj_count. Budgeting against the node count therefore let mark
+    /// cost grow with the array while the allocations permitted between cycles
+    /// stayed flat -- the product being quadratic. See mark_work_last use in
+    /// the trigger reset.
+    ulong mark_work_last;
 
     /// Host function registry. A host function is an ordinary FUNCTION object
     /// whose builtin_fn_index is HOST_FN_BASE + slot, so every existing call
@@ -2259,6 +2290,7 @@ fn HObject*? Heap.alloc_object(&self, hobject::ObjClass cls) {
  * Reallocate a block through the heap's allocator, counting down the GC trigger.
  */
 fn void*? Heap.realloc(&self, void* ptr, usz new_size) {
+    gcprofile::gcprof_realloc();
     self.gc_trigger_counter--;
     if (self.gc_trigger_counter <= 0) {
         self.gc_pending = true;
@@ -2612,6 +2644,7 @@ fn HObject* Heap.gray_pop(&self) {
  */
 fn void Heap.mark_tval(&self, TVal* v) {
     gcprofile::gcprof_mark();
+    self.mark_work_last++;
     if (v.is_object()) {
         HObject* obj = (HObject*)v.get_heapptr();
         if (obj != null) {
@@ -3613,6 +3646,9 @@ fn void Heap.sweep_large_strings(&self) {
 fn void Heap.mark_and_sweep(&self, bool safepoint) {
     if (self.gc_running) { return; }
     self.gc_running = true;
+    // Reset before the mark phase so mark_work_last describes THIS cycle when
+    // the trigger is recomputed at the end of it.
+    self.mark_work_last = 0;
 
     bool clear_temproots = safepoint && self.native_frame_depth == 0;
 
@@ -3663,7 +3699,25 @@ fn void Heap.mark_and_sweep(&self, bool safepoint) {
 $if $feature(GC_STRESS):
     long new_trigger = 1;
 $else
-    long new_trigger = (long)self.live_obj_count * GC_TRIGGER_GROW_FACTOR;
+    // Budget the next cycle against the work the mark phase actually did, not
+    // against the number of nodes that survived it.
+    //
+    // The two diverge sharply once a large array or string-keyed object is
+    // live: its contents are marked one TVal at a time but sit inside one
+    // node, so live_obj_count stays tiny while mark cost tracks the container.
+    // Scaling by the node count then pins the allocations-between-cycles at a
+    // constant while per-cycle cost grows with the data, which is quadratic in
+    // the live set. `for (const x of arr)` over a 200k array marked 226k values
+    // per cycle against a budget of 505 allocations -- a 450:1 ratio of work to
+    // headroom -- and ran ~75x slower than QuickJS. Doubling the array
+    // quadrupled total marking (17.5M -> 68M -> 269M) with the budget unmoved
+    // at 505.
+    //
+    // Taking the larger of the two keeps the old behaviour whenever nodes
+    // dominate, and lets the budget follow mark cost when contents dominate.
+    long by_nodes = (long)self.live_obj_count * GC_TRIGGER_GROW_FACTOR;
+    long by_work  = (long)self.mark_work_last / GC_MARK_WORK_DIVISOR;
+    long new_trigger = by_work > by_nodes ? by_work : by_nodes;
     if (new_trigger < GC_INITIAL_TRIGGER) {
         new_trigger = GC_INITIAL_TRIGGER;
     }

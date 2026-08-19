@@ -25,6 +25,8 @@ module boomkat::gcprofile;
 import std::io;
 
 ulong gcprof_allocations;
+ulong gcprof_reallocs;
+ulong gcprof_last_live;
 ulong gcprof_cycles;
 ulong gcprof_marked;
 ulong gcprof_swept;
@@ -32,6 +34,14 @@ ulong gcprof_swept;
 macro void gcprof_alloc() @builtin {
     $if $feature(GC_PROFILE):
     gcprof_allocations++;
+    $endif
+}
+
+/// Count a realloc. It decrements the same GC trigger an allocation does, so
+/// leaving it out understates what is actually driving collections.
+macro void gcprof_realloc() @builtin {
+    $if $feature(GC_PROFILE):
+    gcprof_reallocs++;
     $endif
 }
 
@@ -45,14 +55,16 @@ macro void gcprof_cycle(ulong swept) @builtin {
     $if $feature(GC_PROFILE):
     gcprof_cycles++;
     gcprof_swept += swept;
+    gcprof_last_live = swept;
     $endif
 }
 
 /// Dump collection pressure to stderr. Call once at interpreter shutdown.
 fn void gcprof_dump() {
 $if $feature(GC_PROFILE):
-    io::eprintfn("# GC_PROFILE allocations=%d cycles=%d marked=%d swept=%d",
-                 gcprof_allocations, gcprof_cycles, gcprof_marked, gcprof_swept);
+    io::eprintfn("# GC_PROFILE allocations=%d reallocs=%d cycles=%d marked=%d swept=%d",
+                 gcprof_allocations, gcprof_reallocs, gcprof_cycles, gcprof_marked, gcprof_swept);
+    io::eprintfn("#   live_obj_count_at_last_cycle=%d", gcprof_last_live);
     if (gcprof_cycles > 0) {
         io::eprintfn("#   allocs_per_cycle=%d marked_per_cycle=%d",
                      gcprof_allocations / gcprof_cycles,
