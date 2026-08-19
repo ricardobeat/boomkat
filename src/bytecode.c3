@@ -797,6 +797,36 @@ enum Opcode : char {
     /// A = the returned iterator, and requires it to be an Object (step 5).
     CHKITER,
 
+    /// Fused for-of step over a built-in array iterator.
+    ///
+    /// A = value destination, B = the iterator object, C = unused.
+    ///
+    /// Control flow is encoded in the two instructions that must follow it:
+    ///   [ITER_NEXT_FAST]     handled + more     -> falls through to +3
+    ///   [JUMP  slow_path]    not handled        -> taken
+    ///   [JUMP  loop_exit]    handled + done     -> taken
+    /// so a successful step costs one dispatch and one predictable branch,
+    /// while the refusal path lands on the generic sequence unchanged.
+    ///
+    /// The generic sequence a for-of compiles to is CALL .next, CHKOBJ, GETPROP
+    /// .done, GETPROP .value -- a call plus two hash lookups per element, and
+    /// the callee allocates a fresh {value, done} object each time that dies
+    /// immediately. Over a 200k array that allocation was one per element and
+    /// the property reads dominated the profile.
+    ///
+    /// When B is an ARRAY_ITERATOR whose target is a plain array and whose
+    /// prototype's `next` is still the built-in, this reads the element from
+    /// the array's storage and advances the iterator's index in place: no call,
+    /// no result object, no property lookups.
+    ///
+    /// It refuses (falling through to the generic sequence, which the compiler
+    /// still emits directly after) whenever anything observable could differ:
+    /// a non-array or exotic target, an index past the end, a hole or accessor
+    /// element whose read is user-visible, a kind other than `values`, or a
+    /// shape-generation bump on %ArrayIteratorPrototype% -- which is how a
+    /// user-patched `next` is detected, since that patch must still be called.
+    ITER_NEXT_FAST,
+
     /// IteratorClose: if the value in A is an object and has a callable
     /// `.return` method, call it with this = A and discard the result. Used
     /// after a pattern walk so destructuring of partially-exhausted
@@ -1024,6 +1054,7 @@ case PUTLEX:     return A_BC;
         case DEC_GLOBAL: return A_BC;
         case GETPROPC2:  return ABC;
         case REQUIRE_OBJ: return ABC;
+        case ITER_NEXT_FAST: return ABC;
         case ITER_CLOSE: return ABC;
         case GET_ITER_ASYNC:   return ABC;
         case ITER_CLOSE_ASYNC: return ABC;

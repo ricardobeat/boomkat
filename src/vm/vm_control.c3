@@ -536,6 +536,72 @@ fn TVal? dispatch_closures(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
 fn TVal? dispatch_iterator(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, DecodedInsn insn) {
     Vm* vm = ds.vm;
     switch (op) {
+        case Opcode.ITER_NEXT_FAST: {
+            // Fused for-of step. Sets ds.iter_fast_done to tell the compiler's
+            // branch whether iteration finished, and ds.iter_fast_taken to say
+            // whether this handled the step at all; when it did not, the
+            // generic CALL/CHKOBJ/GETPROP sequence that follows runs instead.
+            // pc currently points at the instruction AFTER ITER_NEXT_FAST,
+            // i.e. at the "not handled" JUMP. Falling through to it is the
+            // refusal path; +1 skips to the "done" JUMP; +2 continues the loop.
+            TVal itv = rb[0];
+            if (!itv.is_object()) break;
+            HObject* it = (HObject*)itv.get_heapptr();
+            if (it == null || it.flags.obj_class != hobject::ObjClass.ARRAY_ITERATOR) break;
+
+            // A patched `next` must still be called -- user code can count the
+            // calls -- so check the method this loop actually resolved rather
+            // than trusting the class. rc holds it (the compiler passes
+            // next_reg as C for exactly this).
+            //
+            // Checking the resolved value is what makes this sound: a shape
+            // generation only bumps when prop_alloc moves, so overwriting
+            // ArrayIteratorPrototype.next in place leaves it untouched and a
+            // generation guard would sail straight past the patch.
+            TVal nextv = rc[0];
+            if (!nextv.is_object()) break;
+            HObject* nf = (HObject*)nextv.get_heapptr();
+            if (nf == null || !nf.is_callable()) break;
+            if (nf.callable_kind() != hobject::CallableKind.BUILTIN_FN) break;
+            if ((*nf.extra_ptr()).func.builtin_fn_index
+                != (int)builtins::Builtin.ARRAY_ITERATOR_NEXT.ordinal) break;
+
+            // Only the plain `values` kind reads straight through; keys() and
+            // entries() synthesise a value (and entries() allocates a pair).
+            if ((*it.extra_ptr()).iter.kind != 0) break;
+            HObject* target = (*it.extra_ptr()).iter.target;
+            if (target == null) {
+                // Exhausted iterators drop their target, which is the done
+                // state and is cheap to report without the generic path.
+                ds.curr_pc += 1;   // -> the done JUMP
+                break;
+            }
+            if (target.flags.obj_class != hobject::ObjClass.ARRAY) break;
+
+            uint idx = (*it.extra_ptr()).iter.index;
+            ulong len = (ulong)*target.array_len_ptr();
+            if ((ulong)idx >= len) {
+                // Done: release the target exactly as the built-in next does,
+                // so a later step sees an exhausted iterator either way.
+                vm.heap.decref((types::HeapHeader*)target);
+                (*it.extra_ptr()).iter.target = null;
+                ds.curr_pc += 1;   // -> the done JUMP
+                break;
+            }
+
+            // get_array_idx fails for a hole or anything outside the dense
+            // part, and an accessor never lives there, so a success here is a
+            // plain data element whose read has no observable side effect.
+            TVal? elem = target.get_array_idx(idx);
+            if (catch elem) break;
+            (*it.extra_ptr()).iter.index = idx + 1;
+            vm.heap.tval_copy_ref(ra, &elem);
+            track_heap_store(ds.act, ra, (uint)insn.a);
+            ds.curr_pc += 2;   // -> the continue JUMP, which lands on the body
+            break;
+        }
+
+
         case Opcode.INITFOR: {
             // ra = object to enumerate, rb = iter_state (output)
 

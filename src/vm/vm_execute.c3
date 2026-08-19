@@ -5830,6 +5830,7 @@ fn TVal? Vm.run(Vm* vm) {
         // === ITERATOR ===
         case Opcode.INITFOR:
         case Opcode.NEXTFOR:
+        case Opcode.ITER_NEXT_FAST:
             if (catch err = dispatch_iterator(&ds, op, ra, rb, rc, insn)) { return err~; }
             continue;
 
