@@ -99,23 +99,23 @@ Run `just bench` to benchmark against Duktape and QuickJS:
 
 | Benchmark | C3 | Duktape | QuickJS |
 |---|---|---|---|
-| arithmetic | 326ms | 3,410ms (0.1x) | 248ms (1.3x) |
+| arithmetic | 323ms | 3,410ms (0.1x) | 248ms (1.3x) |
 | array | 11ms | 41ms (0.3x) | 10ms (1.1x) |
-| date | 74ms | 3,571ms (0.0x) | 54ms (1.4x) |
-| function_call | 217ms | 1,286ms (0.2x) | 152ms (1.4x) |
+| date | 75ms | 3,571ms (0.0x) | 54ms (1.4x) |
+| function_call | 218ms | 1,286ms (0.2x) | 152ms (1.4x) |
 | ic_monomorphic | 79ms | 287ms (0.3x) | 90ms (0.9x) |
 | ic_proto | 112ms | 455ms (0.2x) | 112ms (1.0x) |
-| loop | 108ms | 1,363ms (0.1x) | 122ms (0.9x) |
-| memory_heavy | 73ms | 175ms (0.4x) | 51ms (1.4x) |
-| object | 343ms | 1,675ms (0.2x) | 210ms (1.6x) |
-| property_lookup | 235ms | 1,782ms (0.1x) | 156ms (1.5x) |
-| recursion_deep | 830ms | 1,989ms (0.4x) | 498ms (1.7x) |
-| recursion | 200ms | 474ms (0.4x) | 122ms (1.6x) |
-| regexp | 524ms | 677ms (0.8x) | 261ms (2.0x) |
-| shape_no_call | 7ms | 8ms (0.9x) | 5ms (1.4x) |
+| loop | 110ms | 1,363ms (0.1x) | 122ms (0.9x) |
+| memory_heavy | 75ms | 175ms (0.4x) | 51ms (1.5x) |
+| object | 353ms | 1,675ms (0.2x) | 210ms (1.7x) |
+| property_lookup | 241ms | 1,782ms (0.1x) | 156ms (1.5x) |
+| recursion_deep | 745ms | 1,989ms (0.4x) | 498ms (1.5x) |
+| recursion | 181ms | 474ms (0.4x) | 122ms (1.5x) |
+| regexp | 539ms | 677ms (0.8x) | 261ms (2.1x) |
+| shape_no_call | 8ms | 8ms (1.0x) | 5ms (1.6x) |
 | shape_stress | 7ms | 9ms (0.8x) | 5ms (1.4x) |
-| string | 8ms | 18ms (0.4x) | 6ms (1.3x) |
-| valstack_copy | 9ms | 14ms (0.6x) | 10ms (0.9x) |
+| string | 9ms | 18ms (0.5x) | 6ms (1.5x) |
+| valstack_copy | 10ms | 14ms (0.7x) | 10ms (1.0x) |
 
 ### Startup time
 
