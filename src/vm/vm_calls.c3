@@ -1156,14 +1156,36 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
 
                     // Direct dispatch to new activation (avoid restart overhead)
                     ds.act = new_act;
-                    vm.current_func = target_fast;
-                    ds.code_base = target_fast.code;
-                    ds.code_count = target_fast.code_count;
-                    ds.code_end = ds.code_base + ds.code_count;
-                    ds.ic_base = (hobject::ICEntry*)target_fast.ic_entries;
-                    ds.var_ic_base = (hobject::VarICEntry*)target_fast.var_ic_entries;
-                    ds.constants = target_fast.constants;
-                    ds.nregs = target_fast.num_regs;
+                    // Reload the per-function dispatch state only when the
+                    // callee is a different CompiledFunction than the one
+                    // already running. Direct self-recursion (fib, and every
+                    // other single-function recursive benchmark) calls the
+                    // function it is already inside, so all seven fields
+                    // below already hold exactly these values: six loads off
+                    // target_fast plus an add, and six stores into the
+                    // Dispatch struct, which lives in Vm.run's stack frame
+                    // and so is genuine memory traffic rather than register
+                    // moves.
+                    //
+                    // The RET path (vm_execute.c3) has carried the mirror
+                    // image of this guard on `caller_func != vm.current_func`
+                    // since it was written; the call side simply never got
+                    // it. Guarding on vm.current_func is what makes the two
+                    // symmetric: it is the single field that records which
+                    // function these cached pointers were derived from, and
+                    // every other writer of ds.code_base/constants/ic_base
+                    // (the restart preamble, RET, the generator paths) sets
+                    // it in the same breath.
+                    if (target_fast != vm.current_func) {
+                        vm.current_func = target_fast;
+                        ds.code_base = target_fast.code;
+                        ds.code_count = target_fast.code_count;
+                        ds.code_end = ds.code_base + ds.code_count;
+                        ds.ic_base = (hobject::ICEntry*)target_fast.ic_entries;
+                        ds.var_ic_base = (hobject::VarICEntry*)target_fast.var_ic_entries;
+                        ds.constants = target_fast.constants;
+                        ds.nregs = target_fast.num_regs;
+                    }
                     ds.curr_pc = ds.act.curr_pc;
                     ds.regs_base = ds.act.bottom;
                     return (TVal){};

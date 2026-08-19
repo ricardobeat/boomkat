@@ -3740,6 +3740,92 @@ fn TVal? Vm.run(Vm* vm) {
         // RET / RETUNDEF are extremely hot in recursion; inline them here.
         // RET_GEN / RETUNDEF_GEN are generator-only and stay out-of-line.
         case Opcode.RET: {
+            // Fast path: a plain `return <primitive>;` from an ordinary
+            // compiled function, which is the overwhelming majority of every
+            // return a call-heavy program executes (measured at a 100% hit
+            // rate on fib and on a 20M-iteration one-line-callee loop).
+            //
+            // The general path below is ~270 retired instructions per return.
+            // Almost none of that is the return itself: it is the pin/unpin of
+            // a heap return value, the catcher and for-in chain drains, the
+            // callee-register decref sweep, the async-promise settle, the
+            // derived-constructor and super() bookkeeping, and the
+            // heap_reg_count write-back tracking -- each of which is provably
+            // dead when the guards below hold. Skipping them wholesale is
+            // worth -7.7% retired instructions on fib(32) and -4.0% on the
+            // call loop.
+            //
+            // Every guard maps to exactly one thing the general path does:
+            //
+            //   !gc_pending          the safepoint call
+            //   cat == null          find_and_unlink_finally_catcher (which
+            //                        returns null immediately on a null chain)
+            //                        and catcher_chain_walk
+            //   forin == null        free_forin_chain
+            //   heap_reg_count == 0  decref_callee_regs
+            //   flags & ~BORROWED    CONSTRUCT/DERIVED (the two derived-ctor
+            //                        throws and the construct write-back),
+            //                        ASYNC (promise resolve), THIS_OWNED (the
+            //                        this_binding release), SUPER_CTOR (the
+            //                        whole super()-binding tail). Only
+            //                        BORROWED_CALLEE is allowed through, and
+            //                        it is handled explicitly below.
+            //   !val.is_heap_...     the val pin/unpin, the tval_copy_ref
+            //                        write-back, and the track_heap_store call
+            //                        (whose own guard is this same predicate)
+            //   activation_count > 1 the outermost-frame return
+            //   retval != null       the null-result-register case
+            //
+            // The one piece of real work left is the write-back, which must
+            // still release whatever the destination register held. That is
+            // the `pres.is_heap_allocated()` test: a borrowed callee slot is
+            // NOT owned by this frame and must be raw-overwritten (see
+            // ACT_FLAG_BORROWED_CALLEE), so it is excluded from the decref and
+            // handed to the general path only when it is genuinely owned.
+            {
+                Activation* fa = &vm.activations[vm.activation_count - 1];
+                TVal fval = *ra;
+                if (!vm.heap.gc_pending
+                    && fa.cat == null && fa.forin == null
+                    && fa.heap_reg_count == 0
+                    && (fa.flags & ~ACT_FLAG_BORROWED_CALLEE) == 0
+                    && !fval.is_heap_allocated()
+                    && vm.activation_count > 1
+                    && fa.retval != null) {
+                    TVal* fres = fa.retval;
+                    // Borrowed: the slot holds the non-owned callee, so raw
+                    // overwrite. Otherwise release an owned heap value first.
+                    bool f_borrowed = (fa.flags & ACT_FLAG_BORROWED_CALLEE) != 0;
+                    if (!f_borrowed && fres.is_heap_allocated()) {
+                        vm.heap.decref_tval(fres);
+                    }
+                    *fres = fval;
+                    vm.activation_count--;
+                    // Derive the caller frame the same way the general path
+                    // does rather than following fa.parent. The two agree for
+                    // every frame a CALL site pushes, but the re-entrant
+                    // entry activations (Vm.execute and vm_call_fn_impl) carry
+                    // parent == null, and keeping one rule for both avoids
+                    // depending on the guards above to exclude them.
+                    ds.act = &vm.activations[vm.activation_count - 1];
+                    vm.valstack_bottom = ds.act.bottom;
+                    vm.valstack_top = fa.caller_valstack_top;
+                    CompiledFunction* fcf = (CompiledFunction*)ds.act.func;
+                    if (fcf != vm.current_func) {
+                        vm.current_func = fcf;
+                        ds.code_base = fcf.code;
+                        ds.code_count = fcf.code_count;
+                        ds.code_end = ds.code_base + ds.code_count;
+                        ds.constants = fcf.constants;
+                        ds.ic_base = (hobject::ICEntry*)fcf.ic_entries;
+                        ds.var_ic_base = (hobject::VarICEntry*)fcf.var_ic_entries;
+                        ds.nregs = fcf.num_regs;
+                    }
+                    ds.curr_pc = ds.act.curr_pc;
+                    ds.regs_base = ds.act.bottom;
+                    continue;
+                }
+            }
             // Safe point: run deferred GC before returning to caller
             if (vm.heap.gc_pending) { vm.heap.safepoint_gc(); }
             // Check for active finally catchers: if we're returning through
@@ -4026,6 +4112,48 @@ fn TVal? Vm.run(Vm* vm) {
         }
 
         case Opcode.RETUNDEF: {
+            // Fast path, the RET fast path above with the return value fixed
+            // at undefined. See that comment for what each guard stands in
+            // for; the only differences are that the value is undefined by
+            // construction (so the is_heap_allocated test on it is
+            // statically false) and that the general path's async branch
+            // settles rather than resolves, which ACT_FLAG_ASYNC excludes
+            // either way. `return;` bodies are 1 call in 3 in
+            // bench_function_call.
+            {
+                Activation* ua = &vm.activations[vm.activation_count - 1];
+                if (!vm.heap.gc_pending
+                    && ua.cat == null && ua.forin == null
+                    && ua.heap_reg_count == 0
+                    && (ua.flags & ~ACT_FLAG_BORROWED_CALLEE) == 0
+                    && vm.activation_count > 1
+                    && ua.retval != null) {
+                    TVal* ures = ua.retval;
+                    if ((ua.flags & ACT_FLAG_BORROWED_CALLEE) == 0
+                            && ures.is_heap_allocated()) {
+                        vm.heap.decref_tval(ures);
+                    }
+                    ures.set_undefined();
+                    vm.activation_count--;
+                    ds.act = &vm.activations[vm.activation_count - 1];
+                    vm.valstack_bottom = ds.act.bottom;
+                    vm.valstack_top = ua.caller_valstack_top;
+                    CompiledFunction* ucf = (CompiledFunction*)ds.act.func;
+                    if (ucf != vm.current_func) {
+                        vm.current_func = ucf;
+                        ds.code_base = ucf.code;
+                        ds.code_count = ucf.code_count;
+                        ds.code_end = ds.code_base + ds.code_count;
+                        ds.constants = ucf.constants;
+                        ds.ic_base = (hobject::ICEntry*)ucf.ic_entries;
+                        ds.var_ic_base = (hobject::VarICEntry*)ucf.var_ic_entries;
+                        ds.nregs = ucf.num_regs;
+                    }
+                    ds.curr_pc = ds.act.curr_pc;
+                    ds.regs_base = ds.act.bottom;
+                    continue;
+                }
+            }
             // Safe point: run deferred GC before returning to caller
             if (vm.heap.gc_pending) { vm.heap.safepoint_gc(); }
             // Check for active finally catchers (same as RET). Walk up to the
