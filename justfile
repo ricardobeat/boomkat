@@ -355,3 +355,10 @@ bytecode-diff *ARGS:
 gc-profile SCRIPT:
     @make out/boomkat_gcprofile 2>/dev/null || c3c build boomkat_gcprofile
     ./out/boomkat_gcprofile {{SCRIPT}}
+
+# ES6+ benchmarks against QuickJS only. Duktape is ES5.1 and cannot parse them,
+# which is why the main suite avoids modern syntax -- and why work on the
+# capture-analysis, lexical-environment and iterator paths is invisible there.
+# See benchmarks/es6/README.md.
+bench-es6 *ARGS:
+    bash scripts/run_bench_es6.sh {{ARGS}}
