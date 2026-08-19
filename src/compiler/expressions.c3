@@ -1469,8 +1469,31 @@ fn ushort? CompilerContext.unary_expr(&self) {
 /// The body of unary_expr: dispatches on the already-peeked leading token.
 /// Split out so unary_expr can set last_was_unary_op AFTER the recursive
 /// operand parse, which would otherwise clobber it.
-fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) {
-    switch (tt) {
+/// Resolve a bare or parenthesized identifier under TYPEOF to a register and
+/// emit register-based TYPEOF, which reads the live value rather than the
+/// env-walking TYPEOFIDENT. A non-captured local resolves from the scope
+/// stack; a REGISTER-RESIDENT top-level var resolves to its home register
+/// (its env binding only holds the end-of-script mirror, so TYPEOFIDENT would
+/// report a stale "undefined"). Returns the TYPEOF result register, or
+/// SCOPE_ERROR when the name is neither, so the caller falls back to
+/// TYPEOFIDENT (which handles the unresolvable-reference case).
+fn ushort? CompilerContext.try_emit_typeof_register(&self, char[] id_name) {
+    if (!self.is_global) {
+        if (try local_reg = self.resolve_var(id_name)) {
+            ushort res = self.alloc_reg();
+            self.emit_abc(Opcode.TYPEOF, (uint)res, (uint)local_reg, 0);
+            return res;
+        }
+    } else if (self.is_slot_global_name(id_name)) {
+        if (try ushort sreg = self.resolve_slot_global(id_name)) {
+            ushort res = self.alloc_reg();
+            self.emit_abc(Opcode.TYPEOF, (uint)res, (uint)sreg, 0);
+            return res;
+        }
+    }
+    return SCOPE_ERROR~;
+}
+fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) {    switch (tt) {
         // ES §13.5: a UnaryExpression's value is the operator's result, never
         // a Reference (AssignmentTargetType ~invalid~). clear_ref_markers drops
         // the operand's getvar/member/local state so assignment_expr rejects
@@ -1594,12 +1617,8 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
                 }
                 if (matched) {
                     Token idTok2 = matched_id;
-                    if (!self.is_global) {
-                        if (try local_reg = self.resolve_var(idTok2.str_value)) {
-                            ushort res_typeof = self.alloc_reg();
-                            self.emit_abc(Opcode.TYPEOF, (uint)res_typeof, (uint)local_reg, 0);
-                            return res_typeof;
-                        }
+                    if (try ushort res_typeof = self.try_emit_typeof_register(idTok2.str_value)) {
+                        return res_typeof;
                     }
                     // The bare-identifier fast paths here bypass primary_expr,
                     // so they must repeat its `arguments` bookkeeping.
@@ -1664,12 +1683,8 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
                             // env (register-resident locals optimization). Captured
                             // vars and globals still use TYPEOFIDENT (handles the
                             // unresolvable-reference case per ES5 §11.4.3).
-                            if (!self.is_global) {
-                                if (try local_reg = self.resolve_var(idTok.str_value)) {
-                                    ushort res_typeof = self.alloc_reg();
-                                    self.emit_abc(Opcode.TYPEOF, (uint)res_typeof, (uint)local_reg, 0);
-                                    return res_typeof;
-                                }
+                            if (try ushort res_typeof = self.try_emit_typeof_register(idTok.str_value)) {
+                                return res_typeof;
                             }
                             // This fast path bypasses primary_expr, so it must
                             // repeat its `arguments` bookkeeping.
@@ -3922,6 +3937,20 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 if (!self.is_global) {
                     if (try var_reg = self.resolve_var(id_tok.str_value)) {
                         self.last_was_getvar = false;
+                        self.last_was_local_var = true;
+                        self.last_local_var_reg = var_reg;
+                        self.save_lhs_ident_name(id_tok.str_value);
+                        return var_reg;
+                    }
+                }
+                // A REGISTER-RESIDENT top-level var resolves straight to its
+                // home register (no global-object IC walk), unless a nested
+                // block shadows it, in which case resolve_slot_global yields.
+                if (self.is_global && self.is_slot_global_name(id_tok.str_value)) {
+                    if (try var_reg = self.resolve_slot_global(id_tok.str_value)) {
+                        self.last_was_getvar = false;
+                        self.last_was_getglobal = false;
+                        self.last_was_getglobal_prim = false;
                         self.last_was_local_var = true;
                         self.last_local_var_reg = var_reg;
                         self.save_lhs_ident_name(id_tok.str_value);

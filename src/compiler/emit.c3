@@ -88,6 +88,18 @@ fn bool CompilerContext.is_declared_global(&self, uint name_idx) {
 /// Emit a bare-identifier read: GETGLOBAL at global slot scope, else GETVAR.
 /// Records last_was_getglobal so the assignment write-back picks PUTGLOBAL.
 fn uint CompilerContext.emit_ident_read(&self, uint reg, uint name_idx) {
+    // A REGISTER-RESIDENT top-level var reads its home register instead of the
+    // global-object property (which only holds the end-of-script mirror).
+    if (self.is_slot_global_name_index(name_idx)) {
+        if (try ushort home = self.resolve_slot_global_by_index(name_idx)) {
+            self.last_was_getvar = false;
+            self.last_was_getglobal = false;
+            self.last_was_getglobal_prim = false;
+            self.last_was_local_var = true;
+            self.last_local_var_reg = home;
+            return self.emit_abc(Opcode.LDREG, reg, (uint)home, 0);
+        }
+    }
     if (self.at_global_slot_scope()) {
         self.last_was_getglobal = true;
         if (self.is_prim_only_global(name_idx)) {

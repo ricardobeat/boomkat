@@ -771,6 +771,7 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
                         }
                         // call_fn may have invoked user JS, reallocating the
                         // register file, so re-derive `rc` before reusing it.
+                        ds.regs_base = ds.act.bottom;
                         rc = ds.regs_base + (uint)insn.c;
                     } else if (im_res.kind == hobject::PropLookupKind.PROP_DATA) {
                         iter_method = im_res.data_val;
@@ -793,6 +794,7 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
 
             // Call @@iterator() with this = source
             TVal iterator = vm.heap.call_fn(vm, iter_method, null, 0, src_tv);
+            ds.regs_base = ds.act.bottom;
             if (vm.has_error) {
                 TVal err_itr2 = vm.return_val;
                 vm.has_error = false;
@@ -826,6 +828,15 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
             HString* value_key = intern_string(vm, "value");
             uint k = 0;
             while (vm.heap.call_fn != null) {
+                // The elements already written sit at [dest_start, dest_start+k),
+                // above the caller's num_regs, so a re-entrant call_fn would
+                // otherwise place the callback frame at act.bottom + num_regs
+                // and clobber them. Keep valstack_top above the written region:
+                // vm_call_fn_impl takes max(valstack_top, act.bottom+num_regs)
+                // as its frame base and restores this top when it returns.
+                ds.regs_base = ds.act.bottom;
+                TVal* spread_top = ds.regs_base + dest_start + k;
+                if (spread_top > vm.valstack_top) { vm.valstack_top = spread_top; }
                 HObject* iter_obj = (HObject*)iterator.get_heapptr();
                 TVal? next_opt = iter_obj.get_prop_proto(next_key, ds.vm.heap);
                 TVal next_method;
@@ -836,6 +847,7 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
                 if (!callable) { break; }
 
                 TVal result = vm.heap.call_fn(vm, next_method, null, 0, iterator);
+                ds.regs_base = ds.act.bottom;
                 if (vm.has_error) {
                     TVal err_nxt2 = vm.return_val;
                     vm.has_error = false;
@@ -859,6 +871,7 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
                         TVal done_this2;
                         done_this2.set_object(result_obj);
                         done_val2 = vm.heap.call_fn(vm, acc_fn2, null, 0, done_this2);
+                        ds.regs_base = ds.act.bottom;
                         if (vm.has_error) {
                             TVal err_done2 = vm.return_val;
                             vm.has_error = false;
@@ -890,6 +903,7 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
                         TVal value_this2;
                         value_this2.set_object(result_obj);
                         value_val2 = vm.heap.call_fn(vm, acc_fn2, null, 0, value_this2);
+                        ds.regs_base = ds.act.bottom;
                         if (vm.has_error) {
                             TVal err_val2 = vm.return_val;
                             vm.has_error = false;
@@ -910,6 +924,16 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
                     value_found2 = false;
                 }
                 if (value_found2) {
+                    // The spread is unbounded at compile time, so the frame's
+                    // num_regs does not cover these writes; grow the valstack
+                    // before landing past its end.
+                    uint need = (uint)(ds.regs_base - vm.valstack) + dest_start + k + 1;
+                    if (!ensure_valstack(vm, need)) {
+                        TVal* count_slot5 = ds.regs_base + count_reg;
+                        count_slot5.set_fastint((long)(base_off + k));
+                        return (TVal){};
+                    }
+                    ds.regs_base = ds.act.bottom;
                     TVal* dest_slot = ds.regs_base + dest_start + k;
                     // Own the argument reference: the element is borrowed from the
                     // iterable, but the call frame's teardown (decref_callee_regs)

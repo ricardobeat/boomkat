@@ -1646,12 +1646,12 @@ fn void CompilerContext.hoist_one_var_name(&self, char[] raw_name, bool is_globa
     self.emit_abc(Opcode.LDUNDEF, (uint)var_reg, 0, 0);
     uint var_name_idx = self.add_string_constant(var_name);
     self.emit_a_bc(Opcode.DECLVAR_HOIST, (uint)var_reg, var_name_idx);
-    // At global scope, var bindings are env-resident (accessed via
-    // GETVAR/PUTVAR); the register is only a temporary DECLVAR source.
-    // Free it immediately so 500+ var declarations don't exhaust the
-    // register file.  Non-global hoisting must keep the register alive
-    // as the function's actual local-variable slot.
-    if (is_global) { self.free_reg(var_reg); }
+    // At global scope, var bindings are normally env-resident (accessed via
+    // GETGLOBAL/PUTGLOBAL); the register is only a temporary DECLVAR source.
+    // Free it immediately so 500+ var declarations don't exhaust the register
+    // file.  The exception: a REGISTER-RESIDENT global keeps its register as
+    // the live home slot for the whole top-level body, synced at end of script.
+    if (is_global && !self.is_slot_global_name(var_name)) { self.free_reg(var_reg); }
 }
 
 /// Token-walk a `var` binding pattern and hoist every leaf BoundName in it.

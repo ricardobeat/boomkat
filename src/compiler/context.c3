@@ -132,6 +132,12 @@ struct ScopeEntry {
     /// `var` of the same name is explicitly allowed (it resolves to the same
     /// binding), so `kind` alone cannot tell the two cases apart.
     bool is_param;
+    /// True for a top-level `var` that a whole-program pre-scan proved
+    /// REGISTER-RESIDENT. Its register is the binding's only storage during
+    /// the body; the global property is just a mirror synced at end of script.
+    /// resolve_slot_global uses this to hand reads/writes the home register
+    /// while a block-shadowing `let`/`const` still resolves to the env.
+    bool is_slot_global;
     /// SCOPEMARK entries only: true for the marker a function BODY opens, as
     /// opposed to a nested BlockStatement.  The parameter check above sees
     /// through this marker (a body's top-level lexical names collide with the
@@ -874,6 +880,26 @@ struct CompilerContext {
     // guarded GETGLOBAL/PUTGLOBAL path is used by default (conservative).
     List{uint} prim_only_name_idxs;
 
+    // Constant-pool indices of top-level `var` globals that a whole-program
+    // pre-scan proved REGISTER-RESIDENT: the unit has no eval/globalThis/
+    // window/Function/with/this observability, and the name is never referenced
+    // from a nested function body. Reads/writes of such a global compile to the
+    // name's home register (a live slot for the whole top-level body), avoiding
+    // the global-object GETGLOBAL/PUTGLOBAL IC walk per access. The global
+    // property is still created by DECLVAR_HOIST and synced once at the end of
+    // the script (PUTVAR), preserving observability for the embedder and any
+    // post-Program reader. Populated by pre_scan_global_var_slots at Script
+    // global scope only; empty otherwise (conservative).
+    List{uint} slot_global_name_idxs;
+
+    // Subset of slot_global_name_idxs whose binding was actually VALUE-WRITTEN
+    // somewhere in the unit (an initializer or an assignment/update). A bare
+    // `var x;` declaration never writes the global property, so it must not be
+    // synced either: writing a no-op value to a non-writable global (e.g.
+    // `var undefined;` or a property frozen by another script) would wrongly
+    // throw. Only value-written vars get the end-of-script PUTVAR.
+    List{uint} slot_global_synced_name_idxs;
+
     // Direct eval tracking, when true, the CALL path must create a fresh env.
     bool has_direct_eval;
     /// Set by primary_expr when the identifier "eval" is resolved; checked and
@@ -1048,6 +1074,8 @@ fn void CompilerContext.init(&self, Lexer* lex, void* heap) {
     // entries survive the whole compile; freed in cleanup().
     self.declared_global_name_idxs.allocator = mem;
     self.prim_only_name_idxs.allocator = mem;
+    self.slot_global_name_idxs.allocator = mem;
+    self.slot_global_synced_name_idxs.allocator = mem;
 
     // Strict-only engine: lexer always in strict mode (affects FutureReservedWord
     // keyword recognition, implements/interface/package/private/protected/public).
@@ -1077,6 +1105,8 @@ fn void CompilerContext.cleanup(&self) {
     self.private_name_table = null;
     self.declared_global_name_idxs.free();
     self.prim_only_name_idxs.free();
+    self.slot_global_name_idxs.free();
+    self.slot_global_synced_name_idxs.free();
 }
 
 /// Borrow the private-names table from an enclosing context (a method,

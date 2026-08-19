@@ -58,6 +58,14 @@ fn CompiledFunction*? compile(Lexer* lex, void* heap) {
     // Hoist function declarations at the global level (ES5 §10.2.1.1).
     ctx.hoist_global_fn_decls()!;
 
+    // Whole-program register-resident global proof: classify top-level `var`
+    // globals that can live in a register for the whole body (no
+    // eval/globalThis/Function observability, never referenced from a nested
+    // function body) so reads/writes skip the global-object IC walk. Must run
+    // BEFORE the real var hoist below, which consults the result when deciding
+    // whether to keep a global's register alive.
+    ctx.pre_scan_global_var_slots();
+
     // Hoist var declarations at the global level.
     ctx.hoist_decls(true)!;
 
@@ -89,6 +97,22 @@ fn CompiledFunction*? compile(Lexer* lex, void* heap) {
     ctx.reserved_regs = ctx.next_reg;
     while (!ctx.is_at_end()) {
         ctx.statement()!;
+    }
+
+    // Sync REGISTER-RESIDENT globals back to the global environment. The home
+    // registers held their values for the whole body; the environment binding
+    // is only a mirror until now, so flush it so any post-Program reader
+    // (globalThis.x, Object.keys, the following script) observes the value.
+    // Only VALUE-WRITTEN vars are synced: a bare `var x;` declaration never
+    // writes the property, so syncing it would wrongly assign to a possibly
+    // non-writable global (e.g. `var undefined;`). PUTVAR (not PUTGLOBAL) is
+    // used so an elided hoist binding still materializes. Done before
+    // pop_scope_to so the home registers are still resolvable.
+    for (uint sgi = 0; sgi < (uint)ctx.slot_global_synced_name_idxs.len(); sgi++) {
+        uint name_idx = ctx.slot_global_synced_name_idxs[sgi];
+        if (try ushort home = ctx.resolve_slot_global_by_index(name_idx)) {
+            ctx.emit_a_bc(Opcode.PUTVAR, (uint)home, name_idx);
+        }
     }
 
     // Free any remaining scope_stack entries (top-level lexical declarations)

@@ -145,7 +145,8 @@ fn ushort CompilerContext.declare_var(&self, char[] name, ScopeKind kind, bool i
     // hoisted to the function-scoped environment and doesn't need scope
     // tracking; a PARAMETER at global scope (a top-level `catch` clause's) does
     // need it, or the body `let` that may not redeclare it has nothing to see.
-    bool push_scope = !self.is_global || kind != VAR || is_param;
+    bool push_scope = !self.is_global || kind != VAR || is_param
+        || (kind == VAR && self.is_slot_global_name(name));
     // See push_scope_marker: a dropped entry is a silent wrong answer.
     if (push_scope) { self.ensure_scope_cap(); }
     if (push_scope && self.scope_depth >= self.scope_cap) { self.scope_overflow = true; }
@@ -169,6 +170,8 @@ fn ushort CompilerContext.declare_var(&self, char[] name, ScopeKind kind, bool i
         self.scope_stack[self.scope_depth].is_captured = captured;
         self.scope_stack[self.scope_depth].is_tdz = is_tdz;
         self.scope_stack[self.scope_depth].is_param = is_param;
+        self.scope_stack[self.scope_depth].is_slot_global =
+            kind == VAR && self.is_slot_global_name(name);
         if (captured) { self.has_captured_local = true; }
         self.scope_depth++;
     }
@@ -203,9 +206,47 @@ fn ushort? CompilerContext.resolve_var(&self, char[] name) {
     return SCOPE_ERROR~;
 }
 
-/// Look up whether a name currently in scope was declared `let`/`const`
-/// (lexical) as opposed to `var`. Used by `export { name }` (no `from`
-/// clause) to decide whether the local export binding is TDZ-eligible.
+/// Resolve a REGISTER-RESIDENT top-level `var` (is_slot_global) to its home
+/// register. Walks the whole scope stack (a `var` is function/global scoped,
+/// never block scoped), skipping SCOPEMARKs but yielding to any matching
+/// block-shadowing `let`/`const`, which must keep resolving through the env.
+/// Returns SCOPE_ERROR when shadowed or when the entry is captured/TDZ.
+fn ushort? CompilerContext.resolve_slot_global(&self, char[] name) {
+    uint i = self.scope_depth;
+    while (i > 0) {
+        i--;
+        ScopeEntry* e = &self.scope_stack[i];
+        if (e.kind == SCOPEMARK) { continue; }
+        if (!str_eq(e.name, name)) { continue; }
+        if (e.kind == LET || e.kind == CONST) { return SCOPE_ERROR~; }
+        if (e.is_slot_global) {
+            if (e.is_captured || e.is_tdz) { return SCOPE_ERROR~; }
+            return e.reg;
+        }
+        return SCOPE_ERROR~;
+    }
+    return SCOPE_ERROR~;
+}
+
+/// True when `name` was proven REGISTER-RESIDENT by pre_scan_global_var_slots.
+/// Interned constants dedupe by content, so comparing indexes is safe.
+fn bool CompilerContext.is_slot_global_name(&self, char[] name) {
+    return self.is_slot_global_name_index(self.add_string_constant(name));
+}
+
+/// True when the constant-pool index names a REGISTER-RESIDENT top-level var.
+fn bool CompilerContext.is_slot_global_name_index(&self, uint name_idx) {
+    if (self.slot_global_name_idxs.len() == 0) return false;
+    return self.slot_global_name_idxs.contains(name_idx);
+}
+
+/// Resolve a REGISTER-RESIDENT var to its home register by constant-pool index
+/// (the form emit_ident_read has in hand). Recovers the name string and defers
+/// to resolve_slot_global, so block-shadowing is honored identically.
+fn ushort? CompilerContext.resolve_slot_global_by_index(&self, uint name_idx) {
+    HString* name_hstr = (HString*)self.constants[name_idx].get_heapptr();
+    return self.resolve_slot_global(name_hstr.get_data());
+}
 /// Defaults to false (treated as `var`) if the name isn't found in the
 /// scope stack, such as a top-level `function` declaration promoted straight
 /// to the module env, which is hoisted and never in TDZ.

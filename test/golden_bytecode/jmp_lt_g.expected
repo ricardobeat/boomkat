@@ -6,47 +6,37 @@
 [  4] CHKGLOBALVAR    r0, 4
 [  5] LDUNDEF         r0 = r0, r0
 [  6] DECLVAR_HOIST   r0, 0
-[  7] LDUNDEF         r0 = r0, r0
-[  8] DECLVAR_HOIST   r0, 1
-[  9] LDUNDEF         r0 = r0, r0
-[ 10] DECLVAR_HOIST   r0, 2
-[ 11] LDUNDEF         r0 = r0, r0
-[ 12] DECLVAR_HOIST   r0, 3
-[ 13] LDUNDEF         r0 = r0, r0
-[ 14] DECLVAR_HOIST   r0, 4
+[  7] LDUNDEF         r1 = r0, r0
+[  8] DECLVAR_HOIST   r1, 1
+[  9] LDUNDEF         r2 = r0, r0
+[ 10] DECLVAR_HOIST   r2, 2
+[ 11] LDUNDEF         r3 = r0, r0
+[ 12] DECLVAR_HOIST   r3, 3
+[ 13] LDUNDEF         r4 = r0, r0
+[ 14] DECLVAR_HOIST   r4, 4
 [ 15] LDINT           r0, +4
-[ 16] PUTVAR          r0, 0
-[ 17] LDINT           r0, +3
-[ 18] PUTVAR          r0, 1
-[ 19] LDINT           r0, 0
-[ 20] PUTVAR          r0, 2
-[ 21] LDINT           r0, 0
-[ 22] PUTVAR          r0, 3
-[ 23] LDINT           r0, 0
-[ 24] PUTVAR          r0, 4
-[ 25] JUMP            +16
-[ 26] LDINT           r1, 0
-[ 27] PUTGLOBAL_PRIM  r1, 3
-[ 28] JUMP            +6
-[ 29] GETGLOBAL_PRIM  r1, 4
-[ 30] ADDI            r1 = r1, r1
-[ 31] PUTGLOBAL_PRIM  r1, 4
-[ 32] GETGLOBAL_PRIM  r1, 3
-[ 33] ADDI            r1 = r1, r1
-[ 34] PUTGLOBAL_PRIM  r1, 3
-[ 35] GETGLOBAL_PRIM  r0, 3
-[ 36] GETGLOBAL_PRIM  r1, 1
-[ 37] LT              r0 = r0, r1
-[ 38] IF_TRUE         r0, -10
-[ 39] GETGLOBAL_PRIM  r1, 2
-[ 40] ADDI            r1 = r1, r1
-[ 41] PUTGLOBAL_PRIM  r1, 2
-[ 42] GETGLOBAL_PRIM  r0, 2
-[ 43] JMP_LT_G        -19, r0, g[..]
-[ 44] NOP             
-[ 45] GETGLOBAL_PRIM  r2, 4
-[ 46] GETGLOBAL_PRIM  r3, 2
-[ 47] GETGLOBAL_PRIM  r4, 3
-[ 48] CALL_GLOBAL     r0, argc=3, K[5]
-[ 49] RETUNDEF        
+[ 16] LDINT           r1, +3
+[ 17] LDINT           r2, 0
+[ 18] LDINT           r3, 0
+[ 19] LDINT           r4, 0
+[ 20] JUMP            +7
+[ 21] LDINT           r5, 0
+[ 22] LDREG           r3 = r5, r0
+[ 23] JUMP            +2
+[ 24] ADDI            r4 = r4, r1
+[ 25] ADDI            r3 = r3, r1
+[ 26] JMP_LT          -3, r3, r1
+[ 27] ADDI            r2 = r2, r1
+[ 28] LDREG           r5 = r2, r0
+[ 29] JMP_LT          -9, r5, r0
+[ 30] LDREG           r7 = r4, r0
+[ 31] LDREG           r8 = r2, r0
+[ 32] LDREG           r9 = r3, r0
+[ 33] CALL_GLOBAL     r5, argc=3, K[5]
+[ 34] PUTVAR          r0, 0
+[ 35] PUTVAR          r1, 1
+[ 36] PUTVAR          r2, 2
+[ 37] PUTVAR          r3, 3
+[ 38] PUTVAR          r4, 4
+[ 39] RETUNDEF        
 --- End bytecode ---

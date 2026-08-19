@@ -4,36 +4,28 @@
 [  2] CHKGLOBALVAR    r0, 2
 [  3] LDUNDEF         r0 = r0, r0
 [  4] DECLVAR_HOIST   r0, 0
-[  5] LDUNDEF         r0 = r0, r0
-[  6] DECLVAR_HOIST   r0, 1
-[  7] LDUNDEF         r0 = r0, r0
-[  8] DECLVAR_HOIST   r0, 2
+[  5] LDUNDEF         r1 = r0, r0
+[  6] DECLVAR_HOIST   r1, 1
+[  7] LDUNDEF         r2 = r0, r0
+[  8] DECLVAR_HOIST   r2, 2
 [  9] LDINT           r0, 0
-[ 10] PUTVAR          r0, 0
-[ 11] LDINT           r0, 0
-[ 12] DECLVAR         r0, 1
-[ 13] LDINT           r1, +4
-[ 14] JUMP            +6
-[ 15] GETGLOBAL_PRIM  r2, 0
-[ 16] GETGLOBAL_PRIM  r3, 1
-[ 17] ADD             r2 = r2, r3
-[ 18] LDREG           r3 = r2, r0
-[ 19] PUTGLOBAL_PRIM  r2, 0
-[ 20] INC_GLOBAL      r2, 1
-[ 21] GETGLOBAL_PRIM  r2, 1
-[ 22] JMP_LT          -8, r2, r1
-[ 23] LDINT           r0, 0
-[ 24] PUTVAR          r0, 2
-[ 25] LDINT           r0, +4
-[ 26] JUMP            +5
-[ 27] GETGLOBAL_PRIM  r1, 0
-[ 28] GETGLOBAL_PRIM  r2, 2
-[ 29] ADD             r1 = r1, r2
-[ 30] PUTGLOBAL_PRIM  r1, 0
-[ 31] INC_GLOBAL      r1, 2
-[ 32] GETGLOBAL_PRIM  r1, 2
-[ 33] JMP_LT          -7, r1, r0
-[ 34] GETGLOBAL_PRIM  r2, 0
-[ 35] CALL_GLOBAL     r0, argc=1, K[3]
-[ 36] RETUNDEF        
+[ 10] LDINT           r1, 0
+[ 11] DECLVAR         r1, 1
+[ 12] LDINT           r3, +4
+[ 13] JUMP            +2
+[ 14] ADD             r0 = r0, r1
+[ 15] INC             r1
+[ 16] JMP_LT          -3, r1, r3
+[ 17] LDINT           r2, 0
+[ 18] LDINT           r3, +4
+[ 19] JUMP            +2
+[ 20] ADD             r0 = r0, r2
+[ 21] INC             r2
+[ 22] JMP_LT          -3, r2, r3
+[ 23] LDREG           r5 = r0, r0
+[ 24] CALL_GLOBAL     r3, argc=1, K[3]
+[ 25] PUTVAR          r0, 0
+[ 26] PUTVAR          r1, 1
+[ 27] PUTVAR          r2, 2
+[ 28] RETUNDEF        
 --- End bytecode ---
