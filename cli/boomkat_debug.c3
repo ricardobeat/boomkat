@@ -16,6 +16,7 @@
 module boomkat_debug;
 
 import boomkat::compiler;
+import boomkat::gcprofile;
 import boomkat::vm;
 import boomkat::heap;
 import boomkat::lexer;
@@ -44,6 +45,9 @@ fn int main(String[] args) {
     vm::test262_host_enabled = true;
     $if $feature(OP_PROFILE):
         defer vm::opprof_dump();
+    $endif
+    $if $feature(GC_PROFILE):
+        defer gcprofile::gcprof_dump();
     $endif
     if (args.len < 2) {
         print_usage(args.len > 0 ? args[0] : "boomkat");

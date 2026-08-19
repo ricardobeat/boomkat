@@ -1,6 +1,7 @@
 module boomkat::heap;
 
 import boomkat::types;
+import boomkat::gcprofile;
 import boomkat::hstring;
 import boomkat::hobject;
 import boomkat::bytecode;
@@ -2246,6 +2247,7 @@ fn HObject*? Heap.alloc_object(&self, hobject::ObjClass cls) {
             self.peak_live_obj_count = self.live_obj_count;
         }
         self.gc_trigger_counter--;
+        gcprofile::gcprof_alloc();
         if (self.gc_trigger_counter <= 0) {
             self.gc_pending = true;
         }
@@ -2609,6 +2611,7 @@ fn HObject* Heap.gray_pop(&self) {
  * outgoing edges, so they are only marked.
  */
 fn void Heap.mark_tval(&self, TVal* v) {
+    gcprofile::gcprof_mark();
     if (v.is_object()) {
         HObject* obj = (HObject*)v.get_heapptr();
         if (obj != null) {
@@ -3666,6 +3669,7 @@ $else
     }
 $endif
     self.gc_trigger_counter = new_trigger;
+    gcprofile::gcprof_cycle((ulong)self.live_obj_count);
     self.gc_running = false;
 }
 

@@ -82,6 +82,22 @@
         "THREADED_DISPATCH"
       ]
     },
+    "boomkat_gcprofile": {
+      "type": "executable",
+      "sources": [
+        "src",
+        "cli/boomkat_debug.c3"
+      ],
+      "opt": "O2",
+      "single-module": true,
+      "fp-math": "relaxed",
+      "panic-msg": false,
+      "debug-info": "line-tables",
+      "features": [
+        "GC_PROFILE",
+        "THREADED_DISPATCH"
+      ]
+    },
     "boomkat_asan": {
       "type": "executable",
       "sources": [
