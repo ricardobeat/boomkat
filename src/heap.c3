@@ -3575,6 +3575,13 @@ fn void Heap.sweep(&self) {
  */
 fn void Heap.sweep_strings(&self) {
     if (self.str_table_size == 0) { return; }
+    // Sweeping visits every slot, so this scan is as much collection work as
+    // marking is. Counting it into mark_work_last keeps the trigger honest for
+    // string-heavy programs: a loop building 400k short-lived strings grew the
+    // table to 524k slots and swept it 197 times -- 41 million slot visits
+    // against 605k objects marked -- and a budget that saw only the marking
+    // scheduled collections as if the table were free.
+    self.mark_work_last += (ulong)self.str_table_size;
     for (uint i = 0; i < self.str_table_size; i++) {
         HString* entry = self.str_table[i];
         if (entry == null || entry == STR_TABLE_TOMBSTONE) { continue; }

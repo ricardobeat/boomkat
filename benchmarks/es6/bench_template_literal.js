@@ -1,6 +1,14 @@
-// Template literals. Each one is a concat of its cooked strings and the
-// ToString of each substitution, so this measures that lowering against the
-// equivalent `+` chain rather than string building in general.
+// Template literals, measured against the equivalent `+` chain.
+//
+// Read the two together. The `+` arm is not a control that should be ignored:
+// when this file first ran it was SLOWER than the template arm (6927ms against
+// 3759ms), which said immediately that the cost was in building strings rather
+// than in the template lowering. It turned out to be the string table being
+// swept in full on every GC cycle -- 41M slot visits for 400k allocations --
+// and the fix moved both arms together.
+//
+// So a large number here is not evidence about template syntax until the `+`
+// arm is compared against it.
 var N = 400000;
 
 function templates(n) {

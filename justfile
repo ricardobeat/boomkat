@@ -168,6 +168,16 @@ test-string-concat-scaling:
     @just build boomkat
     bash scripts/check_string_concat_scaling.sh
 
+# Assert that building many DISTINCT short-lived strings scales linearly. Its
+# sibling above builds ONE long string by repeated `+=`; this one measures the
+# string TABLE those strings intern into, which sweep_strings scans in full on
+# every GC cycle. Must run each size in a fresh process: within one process the
+# first loop already grows the table, so a later loop never sees a cold one and
+# the curve looks linear even on a broken engine.
+test-string-table-scaling:
+    @just build boomkat
+    bash scripts/check_string_table_scaling.sh
+
 # Assert that adding properties to one object scales linearly in memory. Same
 # reasoning as test-string-concat-scaling: correctness is identical either way,
 # so only peak RSS at two sizes separates them. Building the property hash
