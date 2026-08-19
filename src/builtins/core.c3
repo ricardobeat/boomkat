@@ -775,6 +775,7 @@ enum Builtin : uint (String js_name, int js_arity, BuiltinFunc handler) {
     ERROR_PROTO_STACK_SET {"set stack", 1, &builtin_error_proto_stack_set},            // set Error.prototype.stack
     ESCAPE {"escape", 1, &builtin_escape},                                             // escape(string) (Annex B §B.2.1.1)
     UNESCAPE {"unescape", 1, &builtin_unescape},                                       // unescape(string) (Annex B §B.2.1.2)
+    STRUCTURED_CLONE {"structuredClone", 1, &builtin_structured_clone},                 // structuredClone(value, [options]) (HTML §2.7.10)
     LAST {"", -1, null}, // sentinel, one past the highest valid builtin; not a real builtin
 }
 
@@ -3668,6 +3669,9 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
 
     // Register unescape (Annex B §B.2.1.2)
     if (!register_simple_builtin(global_env, heap, "unescape", Builtin.UNESCAPE.ordinal)) return false;
+
+    // Register structuredClone (HTML §2.7.10)
+    if (!register_simple_builtin(global_env, heap, "structuredClone", Builtin.STRUCTURED_CLONE.ordinal)) return false;
 
     // Register test262 batch runner helper
     if (!register_simple_builtin(global_env, heap, "__resetGlobals", Builtin.RESET_GLOBALS.ordinal)) return false;

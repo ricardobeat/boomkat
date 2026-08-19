@@ -64,7 +64,7 @@ excluded.
 | `TypedArray` family, `DataView` | ✅ | ✅ | ✅ | ✅ |
 | Base64/hex `TypedArray` helpers (`fromBase64`, `toHex`, ...) | ✅ | ❌ | ✅ | ❌ |
 | `SharedArrayBuffer`, `Atomics` | ⚠️ single agent | ✅ | ✅ | ❌ |
-| `structuredClone` | ❌ | ❌ | ❌ | ❌ |
+| `structuredClone` | ✅ | ✅ | ✅ | ❌ |
 
 ## Numbers, strings, dates
 
