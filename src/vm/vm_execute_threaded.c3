@@ -147,6 +147,55 @@ fn Instruction* th_addi(Instruction* pc, Instruction* code_end, TVal* regs, Cold
     return th_next(pc, code_end, regs, cold);
 }
 
+// Inline refcount helpers, split into a test and a mutation.
+//
+// Calling Heap.incref/decref from a threaded handler makes LLVM frame the whole
+// function -- five stp/ldp pairs saving ten callee-saved registers on every
+// instruction. Doing the common case inline keeps the handler a leaf, which was
+// worth ~8% on captured-variable loops.
+//
+// The split matters: a handler that touches both sides must confirm BOTH are
+// inlinable before mutating either, or a bail after a completed retain leaks
+// the reference it took.
+
+/// True when `v` can be retained with a plain increment: every heap value
+/// except a pinned header (builtin strings, well-known symbols, the small-int
+/// cache), whose fixed refcount the switch is left to handle.
+macro bool th_can_retain(TVal* v) @private {
+    if (!v.is_heap_allocated()) return true;
+    void* p = v.get_heapptr();
+    if (p == null) return true;
+    return !((types::HeapHeader*)p).is_pinned();
+}
+
+macro void th_do_retain(TVal* v) @private {
+    if (!v.is_heap_allocated()) return;
+    void* p = v.get_heapptr();
+    if (p == null) return;
+    ((types::HeapHeader*)p).refcount++;
+}
+
+/// True when the reference `slot` holds can be dropped with a plain decrement.
+///
+/// Mirrors the fast half of Heap.decref: everything except the refcount
+/// reaching zero, which is where the free path -- and its call -- lives. A
+/// header that would hit zero, a pinned one, and any release during a sweep
+/// (where decref applies extra reachability rules) all go to the switch.
+macro bool th_can_release(TVal* slot, ColdCtx* cold) @private {
+    if (!slot.is_heap_allocated()) return true;
+    void* p = slot.get_heapptr();
+    if (p == null) return true;
+    types::HeapHeader* h = (types::HeapHeader*)p;
+    return !(cold.vm.heap.sweeping || h.is_pinned() || h.refcount <= 1);
+}
+
+macro void th_do_release(TVal* slot) @private {
+    if (!slot.is_heap_allocated()) return;
+    void* p = slot.get_heapptr();
+    if (p == null) return;
+    ((types::HeapHeader*)p).refcount--;
+}
+
 fn Instruction* th_ldreg(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     TVal* rb = regs + insn.b;
@@ -154,10 +203,8 @@ fn Instruction* th_ldreg(Instruction* pc, Instruction* code_end, TVal* regs, Col
     // switch handles refcount + track_heap_store.
     if (rb.is_heap_allocated()) return pc;
     TVal* ra = regs + insn.a;
-    // Bail instead of decreffing here: the call would frame this handler (ten
-    // callee-saved registers saved and restored) on every register copy, even
-    // though a heap-valued destination is the rare case. See th_getvar.
-    if (ra.is_heap_allocated()) return pc;
+    if (!th_can_release(ra, cold)) return pc;
+    th_do_release(ra);
     *ra = *rb;
     pc++;
     return th_next(pc, code_end, regs, cold);
@@ -505,19 +552,21 @@ fn Instruction* th_getvar(Instruction* pc, Instruction* code_end, TVal* regs, Co
     TVal v = b.prop_values()[vic.prop_idx];
     if (env::is_tdz_sentinel(&v)) return pc; // TDZ error -> switch
     TVal* ra = regs + insn.a;
-    // Keep this handler a LEAF. tval_copy_ref can call out to Heap.decref (to
-    // release whatever the destination register held), and a single such call
-    // makes LLVM frame the whole function: five stp/ldp pairs saving ten
-    // callee-saved registers, paid on EVERY variable read, hot path or not.
-    // That prologue is most of this handler's cost -- th_getvar assembles to
-    // 163 instructions against th_addi's 34, on what should be a load.
+    // Keep this handler a LEAF. Calling out to Heap.decref makes LLVM frame the
+    // whole function: five stp/ldp pairs saving ten callee-saved registers,
+    // paid on EVERY variable read. That prologue was most of this handler's
+    // cost -- 163 instructions against th_addi's 34, on what should be a load.
     //
-    // Both sides of the refcount work are therefore pushed to the switch: a
-    // heap-valued source needs an incref, and a heap-valued destination needs
-    // the decref. Neither happens in the loops this path exists for (fastints
-    // and doubles), so the common case stays frameless and the rare one costs
-    // one switch iteration.
-    if (v.is_heap_allocated() || ra.is_heap_allocated()) return pc;
+    // The refcount work is done inline instead of bailing, so heap-valued
+    // captures keep the fast path too: an incref is an increment, and a decref
+    // is an increment plus a zero test whose free path (the only part needing
+    // the call) is rare. Anything that would reach that path, or a pinned or
+    // mid-sweep header where decref has extra rules, hands off to the switch.
+    // Both sides are tested before either is mutated: bailing out after a
+    // completed retain would leak the reference it took.
+    if (!th_can_retain(&v) || !th_can_release(ra, cold)) return pc;
+    th_do_retain(&v);
+    th_do_release(ra);
     *ra = v;
     track_heap_store(act, ra, (uint)insn.a);
     pc++;
@@ -545,11 +594,10 @@ fn Instruction* th_putvar_assign(Instruction* pc, Instruction* code_end, TVal* r
     hobject::PropFlags fl = b.get_prop_flags(vic.prop_idx, cold.vm.heap);
     if (env::is_tdz_sentinel(pv) || !fl.writable || fl.is_accessor) return pc;
     TVal* ra = regs + insn.a;
-    // Leaf-handler guard, as in th_getvar: releasing a heap-valued binding
-    // calls Heap.decref, and that one call frames the whole handler, costing
-    // ten register saves on every assignment. Hand those to the switch and
-    // keep the fastint/double path frameless.
-    if (pv.is_heap_allocated()) return pc;
+    // Inline release, as in th_getvar: keeps the handler leaf without pushing
+    // heap-valued bindings onto the switch.
+    if (!th_can_release(pv, cold)) return pc;
+    th_do_release(pv);
     *pv = *ra;
     ra.set_undefined();
     pc++;
