@@ -2041,7 +2041,14 @@ fn void? CompilerContext.var_declaration(&self) {
             // For already-declared vars, only emit store if there's an initializer
             if (!already_declared || has_init) {
                 uint name_idx = self.add_string_constant(name_tok.str_value);
-                if (self.is_global && !is_lexical && has_init) {
+                bool slot_global = self.is_global && !is_lexical
+                    && self.is_slot_global_name_index(name_idx);
+                if (slot_global) {
+                    // A REGISTER-RESIDENT global: the initializer already landed
+                    // in the home register (LDREG above). The global property is
+                    // only a mirror synced once at end of script, so skip the
+                    // per-initializer env write entirely.
+                } else if (self.is_global && !is_lexical && has_init) {
                     // `var x = <expr>` at global scope is a declaration (already
                     // instantiated by the hoist pass) followed by a plain
                     // assignment, so emit the assignment as a value-only update
@@ -2062,9 +2069,10 @@ fn void? CompilerContext.var_declaration(&self) {
             // at runtime, the register is only needed briefly as the PUTVAR source.
             // Lexical declarations (let/const) at global scope have their registers
             // managed by pop_scope_to() from the enclosing block() or from the
-            // top-level compile() cleanup.
+            // top-level compile() cleanup. A REGISTER-RESIDENT global keeps its
+            // register as the live home slot for the whole top-level body.
             if (self.is_global) {
-                if (!is_lexical) {
+                if (!is_lexical && !self.is_slot_global_name(name_tok.str_value)) {
                     self.free_reg(reg);
                 }
                 self.free_regs_to(saved_reg);
