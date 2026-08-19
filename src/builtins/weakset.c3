@@ -17,8 +17,8 @@ fn HObject* check_weakset(BuiltinContext* ctx) {
 
 /// Find the index in array_part where a value matches. Returns -1 if not found.
 /// WeakSet entries are stored as [v0, v1, ...] in array_part.
-fn int weakset_find_value(HObject* ws, TVal val) {
-    return find_in_array_part(ws, val, 1);
+fn int weakset_find_value(HObject* ws, TVal val, heap::Heap* h) {
+    return coll_find(ws, val, 1, h);
 }
 
 // ============================================================================
@@ -51,7 +51,7 @@ fn void builtin_weakset_proto_has(BuiltinContext* ctx) {
     if (ctx.argc < 1) { ctx.result.set_boolean(false); return; }
 
     TVal value = ctx.regs[ctx.base_reg];
-    int found = weakset_find_value(ws, value);
+    int found = weakset_find_value(ws, value, ctx.heap);
     ctx.result.set_boolean((found >= 0));
 }
 

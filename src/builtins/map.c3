@@ -62,8 +62,8 @@ fn HObject* check_map(BuiltinContext* ctx) {
 
 /// Find the index in array_part where a key matches. Returns -1 if not found.
 /// Map entries are stored as [k0, v0, k1, v1, ...] in array_part.
-fn int map_find_key(HObject* map, TVal key) {
-    return find_in_array_part(map, key, 2);
+fn int map_find_key(HObject* map, TVal key, heap::Heap* h) {
+    return coll_find(map, key, 2, h);
 }
 
 // ============================================================================
@@ -131,7 +131,7 @@ fn void builtin_map_proto_get(BuiltinContext* ctx) {
     if (ctx.argc < 1) { ctx.result.set_undefined(); return; }
 
     TVal key = ctx.regs[ctx.base_reg];
-    int found = map_find_key(map, key);
+    int found = map_find_key(map, key, ctx.heap);
     if (found >= 0) {
         *ctx.result = map.array_part()[(uint)found + 1];
     } else {
@@ -148,7 +148,7 @@ fn void builtin_map_proto_has(BuiltinContext* ctx) {
     if (ctx.argc < 1) { ctx.result.set_boolean(false); return; }
 
     TVal key = ctx.regs[ctx.base_reg];
-    int found = map_find_key(map, key);
+    int found = map_find_key(map, key, ctx.heap);
     ctx.result.set_boolean((found >= 0));
 }
 

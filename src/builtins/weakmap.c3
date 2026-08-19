@@ -17,8 +17,8 @@ fn HObject* check_weakmap(BuiltinContext* ctx) {
 
 /// Find the index in array_part where a key matches. Returns -1 if not found.
 /// WeakMap entries are stored as [k0, v0, k1, v1, ...] in array_part.
-fn int weakmap_find_key(HObject* wm, TVal key) {
-    return find_in_array_part(wm, key, 2);
+fn int weakmap_find_key(HObject* wm, TVal key, heap::Heap* h) {
+    return coll_find(wm, key, 2, h);
 }
 
 // ============================================================================
@@ -69,7 +69,7 @@ fn void builtin_weakmap_proto_get(BuiltinContext* ctx) {
     if (ctx.argc < 1) { ctx.result.set_undefined(); return; }
 
     TVal key = ctx.regs[ctx.base_reg];
-    int found = weakmap_find_key(wm, key);
+    int found = weakmap_find_key(wm, key, ctx.heap);
     if (found >= 0) {
         *ctx.result = wm.array_part()[(uint)found + 1];
     } else {
@@ -86,7 +86,7 @@ fn void builtin_weakmap_proto_has(BuiltinContext* ctx) {
     if (ctx.argc < 1) { ctx.result.set_boolean(false); return; }
 
     TVal key = ctx.regs[ctx.base_reg];
-    int found = weakmap_find_key(wm, key);
+    int found = weakmap_find_key(wm, key, ctx.heap);
     ctx.result.set_boolean((found >= 0));
 }
 

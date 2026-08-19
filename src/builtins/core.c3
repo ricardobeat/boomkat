@@ -1386,6 +1386,99 @@ fn bool can_be_held_weakly(Heap* heap, TVal val) {
 /// Find the index in array_part where a value matches using SameValueZero.
 /// stride=2 for Map/WeakMap (key-value pairs), stride=1 for Set/WeakSet (values).
 /// Returns -1 if not found.
+/// Mix a double's bits, folding -0 onto +0 so the two hash alike.
+fn uint coll_hash_double(double d) @inline {
+    if (d == 0.0) { d = 0.0; }
+    ulong x = bitcast(d, ulong);
+    x ^= x >> 33;
+    x *= 0xFF51AFD7ED558CCDu;
+    x ^= x >> 29;
+    return (uint)x;
+}
+
+/// Hash a collection key so SameValueZero-equal values always collide.
+///
+/// Must agree with same_value_impl(.., false): a fastint and a double holding
+/// the same value are equal despite their different tags, every NaN equals
+/// every other, -0 equals +0, and strings compare by content rather than
+/// pointer (strings over MAX_INTERN_BYTES are not interned, so two equal
+/// strings can be distinct objects).
+///
+/// Numeric keys are therefore canonicalised to a double before hashing, NaN
+/// maps to one fixed code, and strings hash their bytes. Hashing two EQUAL keys
+/// differently loses entries; hashing unequal keys alike only costs a probe.
+fn uint coll_hash_key(TVal v, heap::Heap* h) {
+    if (v.is_fastint()) return coll_hash_double((double)v.get_fastint());
+    if (v.is_number()) {
+        double d = v.get_number();
+        if (math::is_nan(d)) return 0x7FF80000u;
+        return coll_hash_double(d);
+    }
+    if (v.is_string()) {
+        hstring::HString* hs = (hstring::HString*)v.get_heapptr();
+        return hs != null ? h.content_hash(hs) : 0u;
+    }
+    if (v.is_boolean()) return v.get_boolean() ? 0x9E3779B9u : 0x85EBCA6Bu;
+    if (v.is_undefined()) return 0xC2B2AE35u;
+    if (v.is_null()) return 0x27D4EB2Fu;
+    if (v.is_bigint()) {
+        long b = (long)v.get_bigint();
+        return ((uint)b) ^ ((uint)(b >> 32));
+    }
+    // Objects and symbols are compared by identity, so they hash by it too.
+    ulong p = (ulong)(uptr)v.get_heapptr();
+    return (uint)(p >> 4) ^ (uint)(p >> 32);
+}
+
+/// Drop a collection's lookup index, so the next operation rebuilds it.
+fn void coll_hash_drop(HObject* obj, heap::Heap* h) {
+    hobject::CollHashInfo* ci = obj.coll_hash;
+    if (ci == null) return;
+    if (ci.slots != null) { h.free_func(h.heap_udata, ci.slots); }
+    h.free_func(h.heap_udata, ci);
+    obj.coll_hash = null;
+}
+
+/// Build (or rebuild) the index over array_part, sized to the current entry
+/// count. Leaves coll_hash null if anything fails, which only costs speed:
+/// every caller falls back to the linear scan.
+fn void coll_hash_build(HObject* obj, uint stride, heap::Heap* h) {
+    coll_hash_drop(obj, h);
+
+    uint entries = obj.array_used / stride;
+    // Keep the load factor near 0.5, so probe chains stay short.
+    uint cap = 16;
+    while (cap < entries * 2) {
+        if (cap >= 0x40000000u) return;   // refuse rather than overflow
+        cap *= 2;
+    }
+
+    hobject::CollHashInfo* ci =
+        (hobject::CollHashInfo*)h.alloc_func(h.heap_udata, hobject::CollHashInfo::size);
+    if (ci == null) return;
+    uint* slots = (uint*)h.alloc_func(h.heap_udata, (usz)cap * uint::size);
+    if (slots == null) { h.free_func(h.heap_udata, ci); return; }
+    for (uint i = 0; i < cap; i++) { slots[i] = 0; }
+
+    ci.slots = slots;
+    ci.mask = cap - 1;
+    ci.used = 0;
+    ci.built = obj.array_used;
+    obj.coll_hash = ci;
+
+    // A tombstoned entry keeps its array slot (live iterators depend on that)
+    // but must not be indexed, or a lookup would resolve to a deleted value.
+    TVal* ap = obj.array_part();
+    if (ap == null) { coll_hash_drop(obj, h); return; }
+    for (uint i = 0; i < obj.array_used; i += stride) {
+        if (ap[i].is_deleted()) continue;
+        uint slot = coll_hash_key(ap[i], h) & ci.mask;
+        while (slots[slot] != 0) { slot = (slot + 1) & ci.mask; }
+        slots[slot] = i + 1;   // 1-based, so 0 can mean empty
+        ci.used++;
+    }
+}
+
 fn int find_in_array_part(HObject* obj, TVal val, uint stride) {
     uint count = obj.array_used;
     for (uint i = 0; i < count; i += stride) {
@@ -1394,6 +1487,76 @@ fn int find_in_array_part(HObject* obj, TVal val, uint stride) {
         }
     }
     return -1;
+}
+
+/// find_in_array_part, but using the collection's hash index once it is worth
+/// having one.
+///
+/// Map/Set/WeakMap/WeakSet keep entries in array_part and used to scan it on
+/// every add, has, get and delete, which made building a collection quadratic:
+/// a 100k Set took 24s against QuickJS's 9ms, over 90% of it inside
+/// same_value_zero.
+///
+/// The index stores 1-based array_part indices rather than a copy of each key,
+/// so array_part stays the single source of truth for iteration order,
+/// tombstones and GC tracing, and the extra memory is one uint per slot at a
+/// ~0.5 load factor instead of a second copy of every key.
+///
+/// Falls back to the scan whenever the index is absent -- below the size
+/// threshold, or after an allocation failure -- so behaviour never depends on
+/// it existing.
+fn int coll_find(HObject* obj, TVal val, uint stride, heap::Heap* h) {
+    uint entries = obj.array_used / stride;
+    if (entries < hobject::COLL_HASH_MIN_ENTRIES) {
+        return find_in_array_part(obj, val, stride);
+    }
+
+    hobject::CollHashInfo* ci = obj.coll_hash;
+
+    // Entries appended since the last build are indexed incrementally rather
+    // than by rebuilding: an append happens on every add/set, and rebuilding
+    // there would restore the very O(n)-per-insert cost this index removes.
+    // A full rebuild is only for the cases incremental catch-up cannot serve --
+    // no index yet, a shrunk array (delete-compaction in the Weak collections),
+    // or a load factor that has crept too high.
+    if (ci != null && ci.built < obj.array_used && ci.used * 2 <= ci.mask) {
+        TVal* ap_add = obj.array_part();
+        if (ap_add != null) {
+            for (uint i = ci.built; i < obj.array_used; i += stride) {
+                if (ap_add[i].is_deleted()) continue;
+                uint slot = coll_hash_key(ap_add[i], h) & ci.mask;
+                while (ci.slots[slot] != 0
+                       && ci.slots[slot] != hobject::COLL_SLOT_DELETED) {
+                    slot = (slot + 1) & ci.mask;
+                }
+                ci.slots[slot] = i + 1;
+                ci.used++;
+            }
+            ci.built = obj.array_used;
+        }
+    }
+
+    if (ci == null || ci.built != obj.array_used || ci.used * 2 > ci.mask) {
+        coll_hash_build(obj, stride, h);
+        ci = obj.coll_hash;
+        if (ci == null) return find_in_array_part(obj, val, stride);
+    }
+
+    TVal* ap = obj.array_part();
+    if (ap == null) return -1;
+
+    uint slot = coll_hash_key(val, h) & ci.mask;
+    while (true) {
+        uint e = ci.slots[slot];
+        if (e == 0) return -1;                       // empty: the key is absent
+        if (e != hobject::COLL_SLOT_DELETED) {
+            uint idx = e - 1;
+            if (idx < obj.array_used && same_value_zero(ap[idx], val)) {
+                return (int)idx;
+            }
+        }
+        slot = (slot + 1) & ci.mask;                 // step over tombstones
+    }
 }
 
 // ============================================================================
@@ -1735,7 +1898,7 @@ fn void coll_set_entry(BuiltinContext* ctx, HObject* coll, uint stride, bool req
     // CanonicalizeKeyedCollectionKey (§24.5.1): -0 is stored as +0, so an
     // iterated key never surfaces as -0 even when set() was handed one.
     key = canonicalize_keyed_collection_key(key);
-    int found = find_in_array_part(coll, key, stride);
+    int found = coll_find(coll, key, stride, ctx.heap);
     if (found >= 0) {
         // Overwrite the existing value slot directly (not via set_array_idx):
         // this slot is already counted in array_used, and a value of undefined
@@ -1785,7 +1948,7 @@ fn void coll_get_or_insert(BuiltinContext* ctx, HObject* coll, bool require_weak
     key = canonicalize_keyed_collection_key(key);
     TVal value = ctx.regs[ctx.base_reg + 1];  // undefined if not provided
 
-    int found = find_in_array_part(coll, key, 2);
+    int found = coll_find(coll, key, 2, ctx.heap);
     if (found >= 0) {
         *ctx.result = coll.array_part()[(uint)found + 1];
         return;
@@ -1827,7 +1990,7 @@ fn void coll_get_or_insert_computed(BuiltinContext* ctx, HObject* coll, bool req
         return;
     }
 
-    int found = find_in_array_part(coll, key, 2);
+    int found = coll_find(coll, key, 2, ctx.heap);
     if (found >= 0) {
         *ctx.result = coll.array_part()[(uint)found + 1];
         return;
@@ -1849,7 +2012,7 @@ fn void coll_get_or_insert_computed(BuiltinContext* ctx, HObject* coll, bool req
     // Re-search: the callback may have inserted `key` itself (overwrites-
     // mutation-from-callbackfn test262 semantics) or another concurrent
     // mutation may have added it.
-    int found2 = find_in_array_part(coll, key, 2);
+    int found2 = coll_find(coll, key, 2, ctx.heap);
     if (found2 >= 0) {
         // Overwrite directly (see coll_set_entry): set_array_idx's
         // undefined-transition bookkeeping would corrupt array_used here,
@@ -1889,7 +2052,7 @@ fn void coll_add_value(BuiltinContext* ctx, HObject* coll, bool require_object_v
     // CanonicalizeKeyedCollectionKey (§24.5.1): a Set element is its own key,
     // so -0 is stored as +0 and iteration never surfaces -0.
     value = canonicalize_keyed_collection_key(value);
-    int found = find_in_array_part(coll, value, 1);
+    int found = coll_find(coll, value, 1, ctx.heap);
     if (found < 0) {
         uint idx = coll.array_used;
         coll.set_array_idx(idx, value, ctx.heap);
@@ -1906,7 +2069,7 @@ fn void coll_add_value(BuiltinContext* ctx, HObject* coll, bool require_object_v
 /// shrink array_used, safe since Weak collections are not iterable).
 /// stride=2 for Map/WeakMap (key+value slots), stride=1 for Set/WeakSet (value only).
 fn void coll_delete(BuiltinContext* ctx, HObject* coll, TVal key, uint stride, bool tombstone) {
-    int found = find_in_array_part(coll, key, stride);
+    int found = coll_find(coll, key, stride, ctx.heap);
     if (found < 0) { ctx.result.set_boolean(false); return; }
     if (tombstone) {
         for (uint i = 0; i < stride; i++) {
@@ -1959,7 +2122,7 @@ fn bool group_by_append_object(BuiltinContext* ctx, HObject* groups_obj, HString
 /// Append `value` to the group array for `key` (SameValueZero) in `map`,
 /// creating a new single-element Array the first time `key` is seen.
 fn bool group_by_append_map(BuiltinContext* ctx, HObject* map, TVal key, TVal value) {
-    int found = map_find_key(map, key);
+    int found = map_find_key(map, key, ctx.heap);
     HObject* group_arr = null;
     if (found >= 0) {
         TVal existing = map.array_part()[(uint)found + 1];

@@ -19,8 +19,8 @@ fn HObject* check_set(BuiltinContext* ctx) {
 
 /// Find the index in array_part where a value matches. Returns -1 if not found.
 /// Set entries are stored as [v0, v1, ...] in array_part.
-fn int set_find_value(HObject* set, TVal val) {
-    return find_in_array_part(set, val, 1);
+fn int set_find_value(HObject* set, TVal val, heap::Heap* h) {
+    return coll_find(set, val, 1, h);
 }
 
 /// Counts non-deleted entries, same logic as the .size getter, factored out
@@ -399,7 +399,7 @@ fn void builtin_set_proto_has(BuiltinContext* ctx) {
     if (ctx.argc < 1) { ctx.result.set_boolean(false); return; }
 
     TVal value = ctx.regs[ctx.base_reg];
-    int found = set_find_value(set, value);
+    int found = set_find_value(set, value, ctx.heap);
     ctx.result.set_boolean((found >= 0));
 }
 
@@ -643,7 +643,7 @@ fn void builtin_set_proto_union(BuiltinContext* ctx) {
         if (!set_iter_step(ctx, iterator, next_fn, &next_value, &done)) { ctx.result.set_undefined(); return; }
         if (done) break;
         next_value = set_normalize_neg_zero(next_value);
-        if (set_find_value(result, next_value) < 0) {
+        if (set_find_value(result, next_value, ctx.heap) < 0) {
             set_result_append(result, next_value, ctx.heap);
         }
     }
@@ -678,7 +678,7 @@ fn void builtin_set_proto_intersection(BuiltinContext* ctx) {
         while (set_live_walk_next(&walk, &elem)) {
             bool has = set_record_has(ctx, &rec, elem);
             if (ctx.should_throw) { ctx.result.set_undefined(); return; }
-            if (has && set_find_value(result, elem) < 0) set_result_append(result, elem, ctx.heap);
+            if (has && set_find_value(result, elem, ctx.heap) < 0) set_result_append(result, elem, ctx.heap);
             set_live_walk_resample(&walk);
         }
     } else {
@@ -692,7 +692,7 @@ fn void builtin_set_proto_intersection(BuiltinContext* ctx) {
             if (!set_iter_step(ctx, iterator, next_fn, &next_value, &done)) { ctx.result.set_undefined(); return; }
             if (done) break;
             next_value = set_normalize_neg_zero(next_value);
-            if (set_find_value(set, next_value) >= 0 && set_find_value(result, next_value) < 0) {
+            if (set_find_value(set, next_value, ctx.heap) >= 0 && set_find_value(result, next_value, ctx.heap) < 0) {
                 set_result_append(result, next_value, ctx.heap);
             }
         }
@@ -751,7 +751,7 @@ fn void builtin_set_proto_difference(BuiltinContext* ctx) {
             if (!set_iter_step(ctx, iterator, next_fn, &next_value, &done)) { ctx.result.set_undefined(); return; }
             if (done) break;
             next_value = set_normalize_neg_zero(next_value);
-            int found = set_find_value(result, next_value);
+            int found = set_find_value(result, next_value, ctx.heap);
             if (found >= 0) {
                 ctx.heap.decref_tval(&result.array_part()[(uint)found]);
                 result.array_part()[(uint)found].set_deleted();
@@ -794,8 +794,8 @@ fn void builtin_set_proto_symmetricDifference(BuiltinContext* ctx) {
         if (!set_iter_step(ctx, iterator, next_fn, &next_value, &done)) { ctx.result.set_undefined(); return; }
         if (done) break;
         next_value = set_normalize_neg_zero(next_value);
-        int found = set_find_value(result, next_value);
-        if (set_find_value(set, next_value) >= 0) {
+        int found = set_find_value(result, next_value, ctx.heap);
+        if (set_find_value(set, next_value, ctx.heap) >= 0) {
             if (found >= 0) {
                 ctx.heap.decref_tval(&result.array_part()[(uint)found]);
                 result.array_part()[(uint)found].set_deleted();
@@ -869,7 +869,7 @@ fn void builtin_set_proto_isSupersetOf(BuiltinContext* ctx) {
         if (!set_iter_step(ctx, iterator, next_fn, &next_value, &done)) { ctx.result.set_undefined(); return; }
         if (done) break;
         next_value = set_normalize_neg_zero(next_value);
-        if (set_find_value(set, next_value) < 0) {
+        if (set_find_value(set, next_value, ctx.heap) < 0) {
             set_iter_close(ctx, iterator);
             ctx.result.set_boolean(false);
             return;
@@ -917,7 +917,7 @@ fn void builtin_set_proto_isDisjointFrom(BuiltinContext* ctx) {
             if (!set_iter_step(ctx, iterator, next_fn, &next_value, &done)) { ctx.result.set_undefined(); return; }
             if (done) break;
             next_value = set_normalize_neg_zero(next_value);
-            if (set_find_value(set, next_value) >= 0) {
+            if (set_find_value(set, next_value, ctx.heap) >= 0) {
                 set_iter_close(ctx, iterator);
                 ctx.result.set_boolean(false);
                 return;
