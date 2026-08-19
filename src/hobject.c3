@@ -2592,6 +2592,8 @@ struct MegamorphicEntry {
     uint    recycle_epoch;
     TVal*   prop_value_ptr; // direct pointer to value slot
     void*   cached_prop_alloc; // owner.prop_values() snapshot for invalidation
+    /// True when prop_value_ptr names an accessor cell rather than a data value.
+    bool    is_accessor;
 }
 
 /// Hash function for megamorphic cache lookup.
@@ -2623,7 +2625,7 @@ fn MegamorphicEntry* mega_cache_lookup(heap::Heap* h, HObject* hobj, void* key) 
 /// Own properties and properties on the receiver's immediate prototype are
 /// stored; anything deeper is not, since the entry has room to re-check only
 /// one link and a longer chain could change out of sight.
-fn void mega_cache_store(heap::Heap* h, HObject* hobj, void* key, HObject* owner, int prop_idx) @inline {
+fn void mega_cache_store(heap::Heap* h, HObject* hobj, void* key, HObject* owner, int prop_idx, bool is_accessor) @inline {
     if (h.mega_cache == null) return;
     bool own = owner == hobj;
     if (!own && hobj.prototype != owner) return;
@@ -2637,6 +2639,7 @@ fn void mega_cache_store(heap::Heap* h, HObject* hobj, void* key, HObject* owner
     e.recycle_epoch = h.shape_recycle_epoch;
     e.prop_value_ptr = &owner.prop_values()[prop_idx];
     e.cached_prop_alloc = (void*)owner.prop_values();
+    e.is_accessor = is_accessor;
 }
 
 /// Inline cache for a GETVAR or TYPEOFIDENT site, holding the resolved
@@ -2731,6 +2734,17 @@ fn PropLookupResult HObject.get_prop_or_accessor_proto(&self, void* key, bool wa
     if (want_getter && self.mega_cacheable()) {
         MegamorphicEntry* me = mega_cache_lookup(h, self, key);
         if (me != null) {
+            if (me.is_accessor) {
+                return {
+                    .kind = PropLookupKind.PROP_ACCESSOR,
+                    .owner = me.proto == null ? self : (HObject*)me.proto,
+                    .acc = {
+                        .accessor_fn = hobject_access_getter(*me.prop_value_ptr),
+                        .this_obj = self,
+                        .found = true
+                    }
+                };
+            }
             return {
                 .kind = PropLookupKind.PROP_DATA,
                 .data_val = *me.prop_value_ptr,
@@ -2761,7 +2775,10 @@ fn PropLookupResult HObject.get_prop_or_accessor_proto(&self, void* key, bool wa
         if (idx >= 0) {
             if (cur.get_prop_flags((uint)idx, h).is_accessor) {
                 TVal gs_slot = cur.prop_values()[idx];
-            TVal accessor_fn = want_getter ? hobject_access_getter(gs_slot) : hobject_access_setter(gs_slot);
+                TVal accessor_fn = want_getter ? hobject_access_getter(gs_slot) : hobject_access_setter(gs_slot);
+                if (want_getter && depth <= 1 && self.mega_cacheable()) {
+                    mega_cache_store(h, self, key, cur, idx, true);
+                }
                 return {
                     .kind = PropLookupKind.PROP_ACCESSOR,
                     .acc = {
@@ -2775,7 +2792,7 @@ fn PropLookupResult HObject.get_prop_or_accessor_proto(&self, void* key, bool wa
             // walk. mega_cache_store rejects an owner further than one link
             // away, so only depth 0 and 1 are offered.
             if (want_getter && depth <= 1 && self.mega_cacheable()) {
-                mega_cache_store(h, self, key, cur, idx);
+                mega_cache_store(h, self, key, cur, idx, false);
             }
             return {
                 .kind = PropLookupKind.PROP_DATA,
