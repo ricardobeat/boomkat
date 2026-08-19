@@ -2466,15 +2466,14 @@ fn void? CompilerContext.for_statement(&self) {
     // (ES2015 §14.7.4.2 CreatePerIterationEnvironment). Tracked here and emitted
     // as a prologue at the start of each body iteration (see body_label below).
     //
-    // At non-global scope: only bindings actually captured by a nested closure need
-    // per-iter envs; common non-capturing loops pay no overhead.
-    // At global scope: the pre_scan_captures pass is not run (no way to know which
-    // names closures capture), so we conservatively enable per-iter for ALL global
-    // for-let/for-const loops (the PUSH_LEX/POP_LEX/PUTLEX cost is negligible
-    // compared to typical loop bodies, and correct semantics must be preserved).
-    // In both cases the env is authoritative: at non-global scope captures use
-    // INC_VAR (env-resident); at global scope primary_expr always uses GETVAR
-    // and i++ compiles to INC_VAR via a peephole, keeping the env in sync.
+    // Only bindings actually captured by a nested closure need per-iter envs;
+    // common non-capturing loops pay no overhead. The pre_scan_captures pass
+    // runs for both function and global scope, so is_captured_name works
+    // uniformly.
+    //
+    // The env is authoritative: at non-global scope captures use INC_VAR
+    // (env-resident); at global scope primary_expr always uses GETVAR and i++
+    // compiles to INC_VAR via a peephole, keeping the env in sync.
     bool needs_periterenv = false;
     char[][8] periterenv_names;
     uint[8] periterenv_name_idxs;
@@ -2998,7 +2997,7 @@ fn void? CompilerContext.for_statement(&self) {
                     HString* hs = (HString*)self.constants[fdbinds[i].name_idx].get_heapptr();
                     self.check_var_lex_conflict(hs.get_data(), decl_kind)!;
                     fdbinding_regs[i] = self.declare_binding_var(hs.get_data(), decl_kind);
-                    if (is_lexical && (self.is_global || self.is_captured_name(hs.get_data()))) {
+                    if (is_lexical && self.is_captured_name(hs.get_data())) {
                         fd_periter_name_idxs[fd_periter_count] = fdbinds[i].name_idx;
                         fd_periter_is_const[fd_periter_count] = is_const;
                         fd_periter_count++;
@@ -3198,7 +3197,7 @@ fn void? CompilerContext.for_statement(&self) {
 
                 // The head TDZ environment is retained beneath the initial
                 bool needs_forin_periter = is_lexical
-                    && (self.is_global || self.is_captured_name(name_tok.str_value));
+                    && self.is_captured_name(name_tok.str_value);
                 // The TDZ environment above remains active for the first iteration.
                 ushort iter_state = self.alloc_reg();
                 self.emit_abc(Opcode.INITFOR, (uint)obj_reg, (uint)iter_state, 0);
@@ -3352,10 +3351,9 @@ fn void? CompilerContext.for_statement(&self) {
             for_var_name_idx = self.add_string_constant(name_tok.str_value);
             // Collect per-iter binding: a let/const binding needs a fresh env each
             // iteration so closures in different iterations capture distinct values.
-            // At non-global scope only captured bindings trigger per-iter (perf guard).
-            // At global scope all let/const bindings trigger per-iter conservatively
-            // (capture analysis is not run for global scripts).
-            if (is_lexical && (self.is_global || self.is_captured_name(name_tok.str_value))) {
+            // Only captured bindings trigger per-iter; the pre_scan_captures pass
+            // runs for both function and global scope now.
+            if (is_lexical && self.is_captured_name(name_tok.str_value)) {
                 needs_periterenv = true;
             }
             if (is_lexical && periterenv_count < 8) {
@@ -3429,7 +3427,7 @@ fn void? CompilerContext.for_statement(&self) {
                     uint extra_name_idx = self.add_string_constant(extra_name2);
                     self.emit_var_store(extra_reg, extra_name_idx, is_lexical, is_const);
                     // Track extra let/const bindings for per-iter env prologue.
-                    if (is_lexical && (self.is_global || self.is_captured_name(extra_name2))) {
+                    if (is_lexical && self.is_captured_name(extra_name2)) {
                         needs_periterenv = true;
                     }
                     if (is_lexical && periterenv_count < 8) {

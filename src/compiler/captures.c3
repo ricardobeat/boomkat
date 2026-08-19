@@ -79,7 +79,7 @@ fn bool CompilerContext.is_captured_name(&self, char[] name) {
 /// stops at the matching `}`. For an expression body (`expr_mode`, arrows),
 /// the scan stops when the expression ends (a closer below the entry depth,
 /// or a top-level `,` / `;`). The lexer state is fully restored on return.
-fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false) {
+fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false, bool global_mode = false) {
     // --- Save lexer state ---
     uint saved_pos    = self.lexer.pos;
     uint saved_line   = self.lexer.line;
@@ -96,7 +96,9 @@ fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false) {
     int  combined_depth = 0;     // parens + brackets + braces (expression extents)
     int  region_depth = -1;      // brace_depth where the outermost callable body began
     int  expr_region_depth = -1; // combined_depth of an expression-bodied arrow
-    bool started = false;        // block mode: saw the body's opening `{`
+    // Global scripts have no outer `{`, so the scan starts immediately and
+    // runs until EOF. For function bodies the scan waits for the opening `{`.
+    bool started = global_mode;
 
     // Paren context stack: was each `(` preceded by a control keyword?
     bool[64] paren_ctrl;
@@ -304,7 +306,10 @@ fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false) {
             } else {
                 brace_depth--;
                 combined_depth--;
-                if (!expr_mode && started && brace_depth == 0) {
+                // For function bodies, brace_depth returning to 0 means the
+                // body's closing `}`.  For global scripts (no outer `{}`),
+                // brace_depth 0 is the top level, so keep scanning until EOF.
+                if (!expr_mode && started && brace_depth == 0 && !global_mode) {
                     done = true;  // body's closing brace
                 }
                 if (region_depth >= 0 && (int)brace_depth <= region_depth) {

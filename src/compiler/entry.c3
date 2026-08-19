@@ -72,6 +72,11 @@ fn CompiledFunction*? compile(Lexer* lex, void* heap) {
     lex.has_pushed_back = saved_haspb;
     lex.seen_line_term  = saved_slt;
 
+    // Capture pre-scan for global scripts: collect identifiers referenced
+    // inside nested closures so for (let ...) loops can skip per-iteration
+    // environment allocation when no closure captures the loop variable.
+    ctx.pre_scan_captures(false, true);
+
     // Whole-program primitive-only global proof: classify each top-level global
     // as primitive-only (all assignments store provably-primitive values, no
     // eval/globalThis/window/Function/with observability) so its reads/writes
@@ -301,6 +306,9 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
     lex.pushed_back     = saved_push;
     lex.has_pushed_back = saved_haspb;
     lex.seen_line_term  = saved_slt;
+
+    // Capture pre-scan for eval scripts, same as compile() above.
+    ctx.pre_scan_captures(false, true);
 
     // Parse statements until EOF
     ctx.hoist_lexical_tdz();
