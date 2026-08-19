@@ -309,6 +309,21 @@ fn TVal? dispatch_exceptions(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                         return (TVal){};
                     }
                     if (callee_result != null) {
+                        // Borrowed callee (CALL_VAR from a global binding): the
+                        // old value in callee_result IS the borrowed closure,
+                        // which this frame never incref'd, so it must be
+                        // overwritten raw and never decref'd. The plain RET
+                        // path has always honoured this; completing a return
+                        // through a finally did not, and dropped one reference
+                        // to the callee on every such return.
+                        //
+                        // That is why `try { return x; } finally {}` died on
+                        // the SIXTH call: the function object's refcount walked
+                        // 5,4,3,2,1,0 and the next call dispatched freed
+                        // memory. ASAN reported it as a use-after-poison in
+                        // is_callable from try_fast_compiled_call; the visible
+                        // symptom was "object is not a function".
+                        bool ret_borrowed = (callee_act.flags & ACT_FLAG_BORROWED_CALLEE) != 0;
                         // ES2015 §9.2.2 step 13: constructor returning a
                         // non-Object must use 'this' binding.  Derived
                         // non-object non-undefined was already converted to
@@ -320,35 +335,49 @@ fn TVal? dispatch_exceptions(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                         if ((callee_act.flags & ACT_FLAG_CONSTRUCT) != 0) {
                             if (val.is_object()) {
                                 if (!val.is_heap_allocated()) {
-                                    if (callee_result.is_heap_allocated()) {
+                                    if (!ret_borrowed && callee_result.is_heap_allocated()) {
                                         vm.heap.decref_tval(callee_result);
                                     }
                                     *callee_result = val;
                                 } else if (val_pinned) {
-                                    vm.heap.decref_tval(callee_result);
+                                    if (!ret_borrowed) vm.heap.decref_tval(callee_result);
                                     *callee_result = val;
                                     val_pinned = false;
+                                } else if (ret_borrowed) {
+                                    ((HeapHeader*)val.get_heapptr()).incref();
+                                    *callee_result = val;
                                 } else {
                                     vm.heap.tval_copy_ref(callee_result, &val);
                                 }
                             } else {
                                 // Non-object return (undefined) → use 'this' binding
-                                if (callee_result.is_heap_allocated()) {
+                                if (!ret_borrowed && callee_result.is_heap_allocated()) {
                                     vm.heap.decref_tval(callee_result);
+                                }
+                                // A borrowed slot is overwritten raw, so the
+                                // reference this frame parks there has to be
+                                // taken explicitly rather than inherited.
+                                if (ret_borrowed && callee_act.this_binding.is_heap_allocated()
+                                    && callee_act.this_binding.get_heapptr() != null) {
+                                    ((HeapHeader*)callee_act.this_binding.get_heapptr()).incref();
                                 }
                                 *callee_result = callee_act.this_binding;
                             }
                         } else {
-                            // Non-constructor path: plain return value copy
+                            // Non-constructor path: plain return value copy.
+                            // Mirrors the plain RET path's borrowed handling.
                             if (!val.is_heap_allocated()) {
-                                if (callee_result.is_heap_allocated()) {
+                                if (!ret_borrowed && callee_result.is_heap_allocated()) {
                                     vm.heap.decref_tval(callee_result);
                                 }
                                 *callee_result = val;
                             } else if (val_pinned) {
-                                vm.heap.decref_tval(callee_result);
+                                if (!ret_borrowed) vm.heap.decref_tval(callee_result);
                                 *callee_result = val;
                                 val_pinned = false;
+                            } else if (ret_borrowed) {
+                                ((HeapHeader*)val.get_heapptr()).incref();
+                                *callee_result = val;
                             } else {
                                 vm.heap.tval_copy_ref(callee_result, &val);
                             }
@@ -358,6 +387,26 @@ fn TVal? dispatch_exceptions(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     ds.act = &vm.activations[vm.activation_count - 1];
                     vm.valstack_bottom = ds.act.bottom;
                     vm.valstack_top = ds.act.caller_valstack_top;
+                    // Same watermark duty the plain RET path performs, and for
+                    // the same reason: the write-back above may have parked a
+                    // heap reference in a caller register the caller never
+                    // tracked. decref_callee_regs only sweeps
+                    // [0..heap_reg_count] on pop, and vm_mark_activations
+                    // over-scans past a frame's registers on the assumption
+                    // that every pop left them cleared -- so a slot missed by
+                    // the sweep is read later as a live register of whatever
+                    // frame next occupies that valstack range.
+                    //
+                    // Omitting this made `try { return x; } finally {}` fail
+                    // once six calls had accumulated: ASAN caught
+                    // try_fast_compiled_call reading a use-after-poison callee
+                    // in is_callable, i.e. the stale slot was being dispatched
+                    // as a function. Manifested as "object is not a function".
+                    if ((val.is_heap_allocated() || (callee_act.flags & ACT_FLAG_CONSTRUCT) != 0)
+                        && callee_result != null && callee_result >= ds.act.bottom
+                        && callee_result.is_heap_allocated()) {
+                        track_heap_store(ds.act, callee_result, (uint)(callee_result - ds.act.bottom));
+                    }
                     CompiledFunction* caller_func = (CompiledFunction*)ds.act.func;
                     if (caller_func != vm.current_func) {
                         vm.current_func = caller_func;
