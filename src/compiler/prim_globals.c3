@@ -574,3 +574,396 @@ fn bool CompilerContext.is_prim_only_global(&self, uint name_idx) {
     if (self.prim_only_name_idxs.len() == 0) return false;
     return self.prim_only_name_idxs.contains(name_idx);
 }
+
+const uint SLOT_GLOBAL_MAX = 64;
+
+// ============================================================================
+// Whole-program register-resident global proof (slot_global_name_idxs)
+// ============================================================================
+//
+// A top-level `var` global is REGISTER-RESIDENT iff the whole unit shows no
+// observability and the name is never referenced from a nested function body:
+//   (1) observability gate: any `eval`/`globalThis`/`window`/`Function`/`with`
+//       /`this` occurrence anywhere discards the entire set (each can read or
+//       write a global by name out of the compiler's view);
+//   (2) per-name gate: the name never appears at brace_depth >= 1 (a closure
+//       reading it would see the stale global property, not the register).
+// Such vars compile to a live home register for the whole top-level body
+// (reads are LDREG, writes are register stores), and the global property is
+// synced once at the end of the script, which preserves GlobalDeclaration
+// Instantiation semantics: DECLVAR_HOIST still creates the binding, any
+// post-Program reader (globalThis.x, Object.keys, the harness) sees the value.
+//
+// SOUNDNESS: every ambiguous case (an observability hazard, a nested refresh,
+// capacity overflow, modules/eval) resolves to "not register-resident", so it
+// falls back to the guarded GETGLOBAL/PUTGLOBAL path unchanged. A false
+// positive (register-eliding a name that IS observed) would hand a stale value
+// to the observer, so the proof is deliberately conservative.
+fn void CompilerContext.pre_scan_global_var_slots(&self) {
+    // Only Script global scope: modules bind via GETVAR, eval may see a caller
+    // env we cannot prove, so neither is slot-eligible.
+    if (!self.is_global || self.is_module || self.in_eval_code) return;
+
+    uint saved_pos    = self.lexer.pos;
+    uint saved_line   = self.lexer.line;
+    uint saved_col    = self.lexer.col;
+    Token saved_cur   = self.lexer.current;
+    Token saved_look  = self.lexer.lookahead;
+    bool  saved_haslk = self.lexer.has_lookahead;
+    Token saved_push  = self.lexer.pushed_back;
+    bool  saved_haspb = self.lexer.has_pushed_back;
+    bool  saved_slt   = self.lexer.seen_line_term;
+
+    char[64][SLOT_GLOBAL_MAX] names;
+    ushort[SLOT_GLOBAL_MAX]   name_lens;
+    bool[SLOT_GLOBAL_MAX]     declared;
+    bool[SLOT_GLOBAL_MAX]     nested_ref;
+    bool[SLOT_GLOBAL_MAX]     value_written;   // had an initializer or an assignment
+    uint count = 0;
+    bool disabled = false;
+    bool overflow = false;
+
+    TokenType prev_tt = TokenType.EOF_TOKEN;
+    char[64]  prev_ident;
+    ushort    prev_ident_len = 0;
+    uint paren_depth = 0;
+    uint bracket_depth = 0;
+    uint brace_depth = 0;
+    bool decl_context = false;
+    int  decl_paren = 0;
+    int  decl_bracket = 0;
+    int  decl_brace = 0;
+    // Destructuring-binding-pattern tracking: a default value inside a binding
+    // pattern is compiled into a synthetic closure (compile_default_expr) whose
+    // free names are read via the global env. A slot-resident var referenced
+    // there would read the stale (unsynced) property, so any default in a
+    // binding pattern disables the whole proof. Reuses the same conservative
+    // pattern-boundary heuristic as pre_scan_prim_globals.
+    bool in_destructure = false;
+    int  destructure_paren = 0;
+    int  destructure_bracket = 0;
+    int  destructure_brace = 0;
+    bool destructure_was_array = false;
+
+    // Function-body detection. Only references inside an ACTUAL nested callable
+    // (function/arrow/method/class) must disqualify a slot-global: a bare
+    // top-level `for`/`if`/block `{...}` references the same register path, so
+    // its braces must NOT count. We classify each open paren as a control-
+    // structure condition (for/if/while/switch/catch/with) vs anything else; a
+    // `{` that follows a non-control `)` (function/method body) or an arrow or
+    // a `class` keyword is a function boundary, and a `{` that follows a
+    // control `)` or a statement-start/block keyword is a plain block.
+    bool[256] paren_control;
+    bool[256] brace_is_fn;
+    int  cur_fn_depth = 0;      // enclosing nested-function-body count
+    bool last_paren_was_control = false;  // the most recent `)` closed a control cond
+    bool class_pending = false;  // saw `class`; its body `{` is a fn boundary
+    // An arrow expression body has no braces; conservatively treat the region
+    // from `=>` until the arrow's expression ends as a nested function.
+    bool arrow_active = false;
+    int  arrow_paren = 0;
+    int  arrow_bracket = 0;
+    // A `function(...)` signature paren runs default-value expressions in the
+    // CALLEE's frame, so a reference there cannot touch the caller's home
+    // register. Treat the region through the matching body `{` as nested.
+    int  fn_sig_paren = -1;
+    // `function` may be followed by a name (`function f(`) or `*` and a name
+    // (`function* f(`) before its signature `(`; track it across those so the
+    // signature paren is still recognized.
+    bool fn_pending = false;
+
+    while (!disabled) {
+        Token? tok_opt = self.lexer.next_token();
+        if (catch _err = tok_opt) break;
+        Token tok = tok_opt;
+        TokenType tt = tok.type;
+        if (tt == TokenType.EOF_TOKEN) break;
+
+        // Observability hazards: any occurrence discards the whole proof.
+        if (tt == TokenType.WITH || tt == TokenType.THIS) { disabled = true; break; }
+        if (tt == TokenType.IDENTIFIER && is_prim_observability_name(tok.str_value)) {
+            disabled = true; break;
+        }
+
+        // Classify delimiters as they open or close, before adjusting depth.
+        if (tt == TokenType.LPAREN) {
+            paren_depth++;
+            paren_control[paren_depth] = slot_global_is_ctrl_paren(prev_tt);
+            if (fn_pending && fn_sig_paren < 0) {
+                fn_sig_paren = (int)paren_depth;
+            }
+            fn_pending = false;
+        } else if (tt == TokenType.RPAREN) {
+            if (paren_depth > 0) {
+                last_paren_was_control = paren_control[paren_depth];
+                paren_depth--;
+            }
+            // The signature paren's default values are leaf references; once
+            // the paren closes the body `{` (or the next statement) keeps
+            // cur_fn_depth covering the rest, so clear the signature marker.
+            if (fn_sig_paren >= 0 && paren_depth < (uint)fn_sig_paren) {
+                fn_sig_paren = -1;
+            }
+        } else if (tt == TokenType.LBRACE) {
+            // A `{` is a function body iff it directly follows an arrow, a
+            // non-control `)` (function or method body), or a `class` head.
+            // A control-structure `)` (if/for/while/switch/catch/with) or any
+            // statement-start/block position makes it a plain block, which
+            // keeps top-level loop vars on the register path.
+            bool is_fn = prev_tt == TokenType.ARROW
+                || (prev_tt == TokenType.RPAREN && !last_paren_was_control)
+                || class_pending;
+            class_pending = false;
+            brace_depth++;
+            brace_is_fn[brace_depth] = is_fn;
+            if (is_fn) { cur_fn_depth++; }
+            // A braced arrow/class body is fully tracked by brace_is_fn, so
+            // the (conservative) expression-body tracker hands over to it.
+            if (arrow_active) { arrow_active = false; }
+        } else if (tt == TokenType.RBRACE) {
+            if (brace_depth > 0) {
+                if (brace_is_fn[brace_depth]) { cur_fn_depth--; }
+                brace_depth--;
+            }
+        } else if (tt == TokenType.LBRACKET) {
+            bracket_depth++;
+        } else if (tt == TokenType.RBRACKET) {
+            if (bracket_depth > 0) bracket_depth--;
+        } else if (tt == TokenType.ARROW) {
+            arrow_active = true;
+            arrow_paren = (int)paren_depth;
+            arrow_bracket = (int)bracket_depth;
+        } else if (tt == TokenType.FUNCTION) {
+            fn_pending = true;
+        } else if (tt == TokenType.CLASS) {
+            class_pending = true;
+        }
+
+        // (Conservative) end of an arrow expression body.
+        if (arrow_active) {
+            if (tt == TokenType.SEMICOLON && paren_depth == 0) { arrow_active = false; }
+            else if (tt == TokenType.COMMA
+                     && (int)paren_depth <= arrow_paren
+                     && (int)bracket_depth <= arrow_bracket) { arrow_active = false; }
+            else if (tt == TokenType.RPAREN && (int)paren_depth < arrow_paren) { arrow_active = false; }
+            else if (tt == TokenType.RBRACKET && (int)bracket_depth < arrow_bracket) { arrow_active = false; }
+            else if (tt == TokenType.RBRACE && brace_depth == 0) { arrow_active = false; }
+        }
+
+        if (tt == TokenType.VAR || tt == TokenType.LET || tt == TokenType.CONST) {
+            decl_context = true;
+            decl_paren = (int)paren_depth;
+            decl_bracket = (int)bracket_depth;
+            decl_brace = (int)brace_depth;
+        }
+
+        // Destructuring-binding-pattern detection (mirrors prim_globals): a
+        // default `=` inside a binding pattern is wrapped in a synthetic
+        // closure that reads its free names via the env, so it disables the
+        // whole slot proof (a slot-resident free name would read a stale
+        // property). Benchmarks use no binding patterns, so this costs them
+        // nothing; real code that does is conservatively not optimized.
+        if (!in_destructure && (tt == TokenType.LBRACKET || tt == TokenType.LBRACE)) {
+            bool after_decl = (prev_tt == TokenType.VAR || prev_tt == TokenType.LET
+                               || prev_tt == TokenType.CONST);
+            bool stmt_start = (prev_tt == TokenType.SEMICOLON || prev_tt == TokenType.LBRACE
+                               || prev_tt == TokenType.RBRACE || prev_tt == TokenType.EOF_TOKEN);
+            bool after_assign_ctx = (prev_tt == TokenType.ASSIGN || prev_tt == TokenType.LPAREN
+                               || prev_tt == TokenType.COMMA);
+            if (after_decl || stmt_start || after_assign_ctx) {
+                in_destructure = true;
+                destructure_was_array = (tt == TokenType.LBRACKET);
+                destructure_paren = (int)paren_depth;
+                destructure_bracket = (int)bracket_depth;
+                destructure_brace = (int)brace_depth;
+            }
+        }
+        if (in_destructure) {
+            // A DEFAULT `=` binds an element INSIDE the pattern (at or above
+            // the pattern's opening depth); the pattern-to-value `=` comes
+            // strictly after the outer bracket closes (below that depth). A
+            // default is wrapped in a synthetic closure that reads its free
+            // names via the env, so it disables the whole proof.
+            int cur = destructure_was_array ? (int)bracket_depth : (int)brace_depth;
+            int entry = destructure_was_array ? destructure_bracket : destructure_brace;
+            if (tt == TokenType.ASSIGN && cur >= entry) { disabled = true; break; }
+            // Close only once the outer bracket/brace has fully closed (depth
+            // dropped strictly below the pattern's opening depth); an inner
+            // nested pattern's close returns to == entry and must not close us.
+            bool close_pat = false;
+            if (cur < entry) {
+                if (tt == TokenType.ASSIGN || tt == TokenType.SEMICOLON
+                    || tt == TokenType.RPAREN || tt == TokenType.IN
+                    || (tt == TokenType.IDENTIFIER && tok.str_value == "of")) {
+                    close_pat = true;
+                }
+            }
+            if (close_pat) {
+                // Any binding pattern, not just one with a default, desyncs a
+                // slot-resident global: its leaf targets are written through
+                // env ops (PUTVAR/DECLVAR) while reads use the home register.
+                // Disable the whole proof on any pattern.
+                disabled = true; break;
+            }
+        }
+
+        // A `for (x in obj)` head assigns its iteration variable through the
+        // env, desyncing a slot-resident loop var from its home register. An
+        // `in` directly inside the controlling paren is the loop head; a
+        // binary-operator `in` sits in a nested paren whose control flag is
+        // false. Disable the whole proof on the loop head.
+        if (tt == TokenType.IN && paren_control[paren_depth]) { disabled = true; break; }
+
+        bool in_fn = cur_fn_depth > 0 || arrow_active
+            || (fn_sig_paren >= 0 && paren_depth >= (uint)fn_sig_paren);
+
+        if (tt == TokenType.IDENTIFIER) {
+            char[] nm = tok.str_value;
+            int idx = slot_global_find(&names[0], &name_lens[0], count, nm);
+            // Top-level `var NAME` / `var __, NAME` declarator binds a global.
+            bool top_decl = brace_depth == 0 && !in_fn
+                && (prev_tt == TokenType.VAR
+                    || (decl_context
+                        && prev_tt == TokenType.COMMA
+                        && (int)paren_depth == decl_paren
+                        && (int)bracket_depth == decl_bracket
+                        && (int)brace_depth == decl_brace));
+            if (top_decl) {
+                if (idx < 0) {
+                    idx = slot_global_intern(&names[0], &name_lens[0], &count, nm);
+                    if (idx < 0) { overflow = true; break; }
+                }
+                declared[idx] = true;
+            } else if (in_fn) {
+                // A reference inside a nested callable reads the global
+                // property, which only holds the end-of-script mirror:
+                // disqualify it (or remember it for a later declaration).
+                if (idx < 0) {
+                    int ni = slot_global_intern(&names[0], &name_lens[0], &count, nm);
+                    if (ni < 0) { overflow = true; break; }
+                    idx = ni;
+                }
+                nested_ref[idx] = true;
+            }
+        }
+
+        if (tt == TokenType.SEMICOLON && paren_depth == 0) decl_context = false;
+
+        // An assignment/update to a previously-seen identifier names a target
+        // whose global property must be synced at end of script. A bare
+        // `var x;` declaration never writes the property, so it is excluded.
+        if (slot_global_is_assign_op(tt) && prev_tt == TokenType.IDENTIFIER && prev_ident_len > 0) {
+            int aidx = slot_global_find(&names[0], &name_lens[0], count,
+                                        prev_ident[:prev_ident_len]);
+            if (aidx >= 0) { value_written[aidx] = true; }
+        }
+
+        if (tt == TokenType.IDENTIFIER) {
+            char[] nm = tok.str_value;
+            if (nm.len <= 63) {
+                for (usz j = 0; j < nm.len; j++) prev_ident[j] = nm[j];
+                prev_ident_len = (ushort)nm.len;
+            } else {
+                prev_ident_len = 0;
+            }
+        } else {
+            prev_ident_len = 0;
+        }
+        prev_tt = tt;
+    }
+
+    self.lexer.pos             = saved_pos;
+    self.lexer.line            = saved_line;
+    self.lexer.col             = saved_col;
+    self.lexer.current         = saved_cur;
+    self.lexer.lookahead       = saved_look;
+    self.lexer.pushed_back     = saved_push;
+    self.lexer.has_pushed_back = saved_haspb;
+    self.lexer.has_lookahead   = saved_haslk;
+    self.lexer.seen_line_term  = saved_slt;
+
+    if (disabled || overflow || count == 0) return;
+
+    for (uint i = 0; i < count; i++) {
+        if (declared[i] && !nested_ref[i]) {
+            uint idx = self.add_string_constant(names[i][:name_lens[i]]);
+            if (!self.slot_global_name_idxs.contains(idx)) {
+                self.slot_global_name_idxs.push(idx);
+            }
+            // Only a value-written binding is synced at end of script; a bare
+            // declaration must leave the (possibly non-writable) property alone.
+            if (value_written[i] && !self.slot_global_synced_name_idxs.contains(idx)) {
+                self.slot_global_synced_name_idxs.push(idx);
+            }
+        }
+    }
+}
+
+fn int slot_global_find(char[64]* names, ushort* name_lens, uint count, char[] nm) {
+    if (nm.len == 0) return -1;
+    for (uint i = 0; i < count; i++) {
+        if (name_lens[i] == nm.len) {
+            bool same = true;
+            for (usz j = 0; j < nm.len; j++) {
+                if (names[i][j] != nm[j]) { same = false; break; }
+            }
+            if (same) return (int)i;
+        }
+    }
+    return -1;
+}
+
+fn int slot_global_intern(char[64]* names, ushort* name_lens, uint* count, char[] nm) {
+    uint c = *count;
+    if (nm.len == 0 || nm.len > 63 || c >= SLOT_GLOBAL_MAX) return -1;
+    for (usz j = 0; j < nm.len; j++) names[c][j] = nm[j];
+    name_lens[c] = (ushort)nm.len;
+    (*count)++;
+    return (int)c;
+}
+
+/// True when `t` opens a control-structure condition whose closing `)` is
+/// followed by a BLOCK `{`, never a function body. Every other parenthesized
+/// expression that a function/method body can follow is classified false.
+fn bool slot_global_is_ctrl_paren(TokenType t) {
+    switch (t) {
+        case TokenType.FOR:
+        case TokenType.IF:
+        case TokenType.WHILE:
+        case TokenType.SWITCH:
+        case TokenType.CATCH:
+        case TokenType.WITH:
+            return true;
+        default:
+            return false;
+    }
+}
+
+/// True when `t` writes a value into the identifier it follows: plain
+/// assignment, a compound-assign, or ++/--. A `var x;` declaration alone does
+/// not write the global property and is intentionally absent.
+fn bool slot_global_is_assign_op(TokenType t) {
+    switch (t) {
+        case TokenType.ASSIGN:
+        case TokenType.PLUS_ASSIGN:
+        case TokenType.MINUS_ASSIGN:
+        case TokenType.STAR_ASSIGN:
+        case TokenType.SLASH_ASSIGN:
+        case TokenType.PERCENT_ASSIGN:
+        case TokenType.STARSTAR_ASSIGN:
+        case TokenType.SHL_ASSIGN:
+        case TokenType.SHR_ASSIGN:
+        case TokenType.USHR_ASSIGN:
+        case TokenType.BIT_AND_ASSIGN:
+        case TokenType.BIT_OR_ASSIGN:
+        case TokenType.BIT_XOR_ASSIGN:
+        case TokenType.LOG_AND_ASSIGN:
+        case TokenType.LOG_OR_ASSIGN:
+        case TokenType.NULLISH_ASSIGN:
+        case TokenType.INC:
+        case TokenType.DEC:
+            return true;
+        default:
+            return false;
+    }
+}
