@@ -154,9 +154,10 @@ fn Instruction* th_ldreg(Instruction* pc, Instruction* code_end, TVal* regs, Col
     // switch handles refcount + track_heap_store.
     if (rb.is_heap_allocated()) return pc;
     TVal* ra = regs + insn.a;
-    if (ra.is_heap_allocated()) {
-        cold.vm.heap.decref_tval(ra);
-    }
+    // Bail instead of decreffing here: the call would frame this handler (ten
+    // callee-saved registers saved and restored) on every register copy, even
+    // though a heap-valued destination is the rare case. See th_getvar.
+    if (ra.is_heap_allocated()) return pc;
     *ra = *rb;
     pc++;
     return th_next(pc, code_end, regs, cold);
@@ -350,7 +351,9 @@ fn Instruction* th_getglobal(Instruction* pc, Instruction* code_end, TVal* regs,
     } else {
         // A heap operand is common here (object-valued globals), so this stays
         // inline rather than bailing: the refcount call frames the handler, but
-        // routing every such read through the switch costs more.
+        // routing every such read through the switch costs more. Measured:
+        // bailing here costs bench_property_lookup 255->307ms and
+        // bench_arithmetic 346->391ms.
         cold.vm.heap.tval_copy_ref(ra, pv);
         track_heap_store(cold.act, ra, (uint)insn.a);
     }
@@ -502,7 +505,20 @@ fn Instruction* th_getvar(Instruction* pc, Instruction* code_end, TVal* regs, Co
     TVal v = b.prop_values()[vic.prop_idx];
     if (env::is_tdz_sentinel(&v)) return pc; // TDZ error -> switch
     TVal* ra = regs + insn.a;
-    vm.heap.tval_copy_ref(ra, &v);
+    // Keep this handler a LEAF. tval_copy_ref can call out to Heap.decref (to
+    // release whatever the destination register held), and a single such call
+    // makes LLVM frame the whole function: five stp/ldp pairs saving ten
+    // callee-saved registers, paid on EVERY variable read, hot path or not.
+    // That prologue is most of this handler's cost -- th_getvar assembles to
+    // 163 instructions against th_addi's 34, on what should be a load.
+    //
+    // Both sides of the refcount work are therefore pushed to the switch: a
+    // heap-valued source needs an incref, and a heap-valued destination needs
+    // the decref. Neither happens in the loops this path exists for (fastints
+    // and doubles), so the common case stays frameless and the rare one costs
+    // one switch iteration.
+    if (v.is_heap_allocated() || ra.is_heap_allocated()) return pc;
+    *ra = v;
     track_heap_store(act, ra, (uint)insn.a);
     pc++;
     return th_next(pc, code_end, regs, cold);
@@ -529,7 +545,11 @@ fn Instruction* th_putvar_assign(Instruction* pc, Instruction* code_end, TVal* r
     hobject::PropFlags fl = b.get_prop_flags(vic.prop_idx, cold.vm.heap);
     if (env::is_tdz_sentinel(pv) || !fl.writable || fl.is_accessor) return pc;
     TVal* ra = regs + insn.a;
-    vm.heap.decref_tval(pv);
+    // Leaf-handler guard, as in th_getvar: releasing a heap-valued binding
+    // calls Heap.decref, and that one call frames the whole handler, costing
+    // ten register saves on every assignment. Hand those to the switch and
+    // keep the fastint/double path frameless.
+    if (pv.is_heap_allocated()) return pc;
     *pv = *ra;
     ra.set_undefined();
     pc++;
