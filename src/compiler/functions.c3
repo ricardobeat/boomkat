@@ -654,6 +654,18 @@ fn void CompilerContext.emit_destruct_iter_next(&self, DestructIterState* state,
     uint exhausted_jump = self.emit_cond_jump(Opcode.IF_TRUE, (uint)exh_reg);
     self.free_reg(exh_reg);
 
+    // Fast path, the same fused step for-of uses: for a plain array iterator
+    // with the builtin next method the step is a direct array read, no .next()
+    // call and no {value,done} result object. The handler refuses (falls
+    // through to the generic sequence below) for anything else, so GetIterator
+    // and the protocol stay observable. Layout the handler relies on: refusal
+    // lands on the first JUMP, done on the second, a produced value on the third.
+    self.emit_abc(Opcode.ITER_NEXT_FAST, (uint)dest_reg, (uint)state.method_reg, (uint)state.next_reg);
+    uint to_slow_jump = self.emit_jump(Opcode.JUMP);
+    uint fast_done_jump = self.emit_jump(Opcode.JUMP);
+    uint fast_cont_jump = self.emit_jump(Opcode.JUMP);
+    self.patch_jump(to_slow_jump);
+
     // Reload callee/this each call (generators may overwrite)
     self.emit_abc(Opcode.LDREG, (uint)state.callee_reg, (uint)state.next_reg, 0);
     self.emit_abc(Opcode.LDREG, (uint)state.callee_this_reg, (uint)state.method_reg, 0);
@@ -697,9 +709,16 @@ fn void CompilerContext.emit_destruct_iter_next(&self, DestructIterState* state,
     // (§7.4.7), so bind undefined here too, dest_reg was never populated on
     // this path since .value is now only read when not done.
     self.patch_jump(mark_jump);
+    // Fast path done lands with mark_jump: the iterator just reported done,
+    // so dest_reg binds undefined and method_reg latches to undefined, which
+    // is what skips the trailing IteratorClose. The fast path itself never
+    // latched method_reg, so this landing does it.
+    self.patch_jump(fast_done_jump);
     self.emit_abc(Opcode.LDUNDEF, (uint)dest_reg, 0, 0);
     self.emit_abc(Opcode.LDUNDEF, (uint)state.method_reg, 0, 0);
     self.patch_jump(end_jump);
+    // Fast path value lands at the same exit as the generic not-done path.
+    self.patch_jump(fast_cont_jump);
 }
 
 /// Free registers held by an iterator state.
