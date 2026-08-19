@@ -13,7 +13,7 @@ import std::io;
 // Constant pool
 // ============================================================================
 
-/// Look up a constant in the hash table and return its index, or const_count if not found.
+// Look up a constant in the hash table and return its index, or const_count if not found.
 fn uint CompilerContext.lookup_constant_hash(&self, ulong val_bits) {
     if (self.const_hash == null || self.const_hash_cap == 0) return self.const_count;
     // Use the low bits of the TVal as initial hash probe
@@ -35,11 +35,7 @@ fn uint CompilerContext.lookup_constant_hash(&self, ulong val_bits) {
     return self.const_count;
 }
 
-/// Insert a constant into the hash table.
-///
-/// Skipped once the table reaches its fill cap (later constants are then
-/// appended without dedup) and for all-zero bits, which are
-/// indistinguishable from an empty slot.
+// Insert a constant into the hash table.
 fn void CompilerContext.insert_constant_hash(&self, ulong val_bits, uint idx) {
     if (self.const_hash == null || self.const_hash_count >= self.const_hash_fill || val_bits == 0) {
         return;
@@ -58,7 +54,7 @@ fn void CompilerContext.insert_constant_hash(&self, ulong val_bits, uint idx) {
     }
 }
 
-/// Add a TVal to the constant pool and return its index.
+// Add a TVal to the constant pool and return its index.
 fn uint CompilerContext.add_constant(&self, TVal val) {
     ulong val_bits = val.get_raw_bits();
     TValTag tag = val.get_tag();
@@ -88,13 +84,10 @@ fn uint CompilerContext.add_constant(&self, TVal val) {
     return idx;
 }
 
-/// Add a string constant: intern the string and add a STRING TVal to the pool.
+// Add a string constant: intern the string and add a STRING TVal to the pool.
+// Uses Heap.str_intern so raw 4-byte UTF-8 astral characters normalize to CESU-8,
+// ensuring source literals and \u{...} escapes intern to identical byte sequences.
 fn uint CompilerContext.add_string_constant(&self, char[] str) {
-    // Intern via Heap.str_intern (not a hand-rolled lookup/alloc) so raw
-    // 4-byte UTF-8 astral sequences in source literals get normalized to
-    // CESU-8 the same way any other interned string does, since otherwise a
-    // literal emoji typed in source and the same character via `\u{...}`
-    // would intern under two different byte encodings and fail `===`.
     Heap* hp = (Heap*)self.heap;
     HString* hstr = hp.str_intern(str);
 
@@ -102,7 +95,6 @@ fn uint CompilerContext.add_string_constant(&self, char[] str) {
     if (hstr != null) {
         tv.set_string(hstr);
     } else {
-        // Fallback: store as pointer with null
         tv.set_string(null);
     }
 
@@ -111,8 +103,6 @@ fn uint CompilerContext.add_string_constant(&self, char[] str) {
     // Check if this string (by pointer) is already in the constant pool
     uint found_idx = self.lookup_constant_hash(val_bits);
     if (found_idx < self.const_count) {
-        // The pool entry already holds its references; release the one taken
-        // by set_string above.
         if (hstr != null) { hp.decref((types::HeapHeader*)hstr); }
         return found_idx;
     }
@@ -123,26 +113,20 @@ fn uint CompilerContext.add_string_constant(&self, char[] str) {
     }
     uint idx = self.const_count;
     self.constants[idx] = tv;
-    // Insert into hash table for future lookups
     self.insert_constant_hash(val_bits, idx);
     if (hstr != null) { ((types::HeapHeader*)hstr).incref(); }
     self.const_count++;
     return idx;
 }
 
-/// Add a number constant and return its index.
+// Add a number constant and return its index.
 fn uint CompilerContext.add_number_constant(&self, double val) {
     TVal tv;
     tv.set_number(val);
     return self.add_constant(tv);
 }
 
-/// Add a BigInt constant and return its index.
-///
-/// `digits` is the lexer's literal text (possibly carrying a `0x`/`0o`/`0b`
-/// radix prefix and `_` separators).  It is parsed into a native int128 and
-/// boxed as an HBigInt. A literal beyond this engine's fixed-width BigInt range
-/// is a compile error.
+// Add a BigInt constant and return its index.
 fn uint? CompilerContext.add_bigint_constant(&self, char[] digits) {
     Heap* hp = (Heap*)self.heap;
 
@@ -156,8 +140,7 @@ fn uint? CompilerContext.add_bigint_constant(&self, char[] digits) {
         return COMPILE_ERROR~;
     }
 
-    // Box the value.  hbigint_alloc registers it on the mark-and-sweep list and
-    // flags it a temproot; the constant-pool slot below is its anchoring ref.
+    // Box the value. The constant pool slot holds the single anchoring reference.
     hbigint::HBigInt*? box_r = hbigint::hbigint_alloc(hp, parsed);
     if (catch box_r) {
         self.set_compile_error("out of memory allocating BigInt");
@@ -165,9 +148,8 @@ fn uint? CompilerContext.add_bigint_constant(&self, char[] digits) {
     }
     hbigint::HBigInt* box = box_r;
 
-    // Wrap as a BIGINT TVal (set_bigint does an incref → refcount now 2:
-    // the alloc's initial ref + this one).  Release the alloc's initial ref so
-    // the pool slot holds exactly one reference.
+    // Wrap as a BIGINT TVal (increfs). Decref the initial allocation reference so
+    // the pool slot retains exactly one reference.
     TVal tv;
     tv.set_bigint(box);
     hp.decref((types::HeapHeader*)box);

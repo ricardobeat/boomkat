@@ -13,46 +13,15 @@ import std::io;
 // Destructuring patterns (array and object)
 // ============================================================================
 
-/// True when a property-key token may also serve as the *target* of an object
-/// pattern's shorthand form (`{a}` / `{a = d}`), where the key doubles as an
-/// IdentifierReference (assignment patterns) or BindingIdentifier (binding
-/// patterns).
-///
-/// Per ES2015 §13.15.5.1 / §13.3.3, the shorthand's target is an
-/// `Identifier: IdentifierName but not ReservedWord`, so `{ extends }`,
-/// `{ var }` and `{ default }` are early SyntaxErrors even though those same
-/// words are perfectly legal as *keys* in the `{ extends: t }` long form.
-/// Escaped spellings (`{ var }`) are covered for free: ES2024 §12.6.1
-/// makes the lexer resolve an escaped reserved word to its keyword token, so
-/// they arrive here under the same TokenType as the literal spelling.
-///
-/// `await` is reserved only inside a module / async function ([Await] scope);
-/// outside those it is a plain identifier and the shorthand is legal.
-///
-/// `yield`, by contrast, is *always* rejected here: this engine is strict-only
-/// (the lexer pins `strict_mode = true`), and in strict code `yield` is a
-/// reserved word regardless of generator context, so `{ yield } = v` is an
-/// early SyntaxError everywhere. The `!is_generator && !forbid_yield` idiom
-/// used elsewhere in the compiler encodes the *sloppy*-mode allowance, which
-/// this engine can never reach.
-///
-/// This mirrors the object-*literal* shorthand gate in `object_literal`
-/// (expressions.c3), which already rejects the reserved-word forms; the
-/// pattern collectors below route reserved words through
-/// `destructuring_property_key` and so need this check to match it.
+// True when a property-key token may also serve as the target of an object
+// pattern's shorthand form (`{a}` / `{a = d}`), where the key doubles as an
+// IdentifierReference (assignment patterns) or BindingIdentifier (binding patterns).
 fn bool CompilerContext.shorthand_key_is_identifier_ref(&self, TokenType tt) {
     return tt == TokenType.IDENTIFIER || self.await_is_identifier(tt);
 }
 
-/// Parse a property key in a destructuring binding pattern.
-/// Per ES2015 §13.3.3.7 the property key can be an IdentifierName, a string
-/// literal, a numeric literal, or a computed key. Reserved words are
-/// allowed as binding keys (mirroring object-literal property syntax), they
-/// are stored under their keyword spelling in the constant pool, so the
-/// runtime property lookup matches the lexical key.
-///
-/// Returns the key as a `char[]` slice (backed by the token's str_value;
-/// valid until the lexer advances past the consumed token).
+// Parse a property key in a destructuring binding pattern (ES2015 §13.3.3.7).
+// Returns the key as a char[] slice.
 fn char[]? CompilerContext.destructuring_property_key(&self) {
     TokenType tt = self.peek_type();
     // Identifier or reserved-word key
@@ -70,10 +39,7 @@ fn char[]? CompilerContext.destructuring_property_key(&self) {
         Token t = self.advance()!;
         return t.str_value;
     }
-    // BigInt literal key (e.g. {1n: c}), ES2020 PropertyName: NumericLiteral,
-    // the key is ToString(NumericValue(NumericLiteral)). Parse+format at
-    // compile time (destructuring keys are static constants, not runtime
-    // TOPROPKEY targets) and intern so the returned slice outlives this call.
+    // BigInt literal key (e.g. {1n: c}), ES2020 PropertyName: NumericLiteral.
     if (tt == TokenType.BIGINT) {
         Token t = self.advance()!;
         int128? parsed = hbigint::parse_bigint_literal(t.str_value);
@@ -86,15 +52,8 @@ fn char[]? CompilerContext.destructuring_property_key(&self) {
         return hs.get_data();
     }
     // Reserved word (keyword) key, only when a keyword has a string spelling.
-    // The lexer's keyword tokens carry str_value only for the contextual
-    // keywords set up as object-literal keys (default, if, etc.); for plain
-    // keywords we extract the canonical spelling.
     char[] kw_str = lexer::keyword_to_string(tt);
     if (kw_str.len > 0) {
-        // A PropertyName is an IdentifierName, so an escaped spelling names
-        // the property (`var { break: x } = o`); in the shorthand form
-        // the key doubles as a BindingIdentifier, which is Identifier grammar
-        // too, so the escape stays legal there as well.
         self.advance(true)!;
         return kw_str;
     }
@@ -102,14 +61,8 @@ fn char[]? CompilerContext.destructuring_property_key(&self) {
     return COMPILE_ERROR~;
 }
 
-/// Parse array destructuring pattern: [a, b, ...rest] = rhs
-/// The '[' has already been consumed.
-///
-/// Uses the ES2015 §13.3.3 iterator protocol via the shared, recursive
-/// `emit_destruct_bindings` emitter, the same machinery the function-parameter
-/// path uses. This makes statement-level destructuring work for any iterable
-/// (generators, custom iterables), at arbitrary nesting depth, not just Arrays.
-/// See plan 044; mirrors QuickJS's OP_for_of_start/OP_for_of_next lowering.
+// Parse array destructuring pattern: [a, b, ...rest] = rhs
+// The '[' has already been consumed.
 fn void? CompilerContext.array_destructure(&self, ScopeKind kind, bool is_lexical, bool is_const,
                                             char[]* out_names = null, uint* out_count = null) {
     DestructBind[MAX_DESTRUCT_BINDS] binds;
@@ -203,8 +156,8 @@ fn void? CompilerContext.array_destructure(&self, ScopeKind kind, bool is_lexica
     return;
 }
 
-/// Parse object destructuring pattern: {a, b: c, x = default} = rhs
-/// The '{' has already been consumed.
+// Parse object destructuring pattern: {a, b: c, x = default} = rhs
+// The '{' has already been consumed.
 fn void? CompilerContext.object_destructure(&self, ScopeKind kind, bool is_lexical, bool is_const,
                                              char[]* out_names = null, uint* out_count = null) {
     // We're parsing a destructuring STATEMENT/LHS (`let`/`const`/`var`/`for-in`/
@@ -291,17 +244,8 @@ fn void? CompilerContext.object_destructure(&self, ScopeKind kind, bool is_lexic
 // Destructuring ASSIGNMENT (without let/const/var)
 // ============================================================================
 
-/// Scan ahead from the current `{` or `[` token to determine whether it begins
-/// a MemberExpression primary (e.g. `{}.x`, `{}[key]`, `[1,2][0]`) rather
-/// than a nested destructuring pattern.
-///
-/// Scans the raw source by creating a disposable copy of the lexer, skipping
-/// past the outermost balanced brace/bracket, then checking the token that
-/// immediately follows. Returns true if `.`, `[`, or `(` follows the closing
-/// bracket, meaning the caller should treat it as a full LHS expression
-/// rather than a nested sub-pattern.
-///
-/// The actual lexer state is never modified; the scan is purely speculative.
+// Scan ahead from current `{` or `[` to see if it begins a MemberExpression primary
+// (e.g. `{}.x`, `{}[key]`, `[1,2][0]`) rather than a nested destructuring pattern.
 fn bool CompilerContext.primary_is_member_target(&self) {
     // Determine the open/close bracket pair from the upcoming token.
     TokenType open_tt  = self.peek_type();
@@ -309,13 +253,7 @@ fn bool CompilerContext.primary_is_member_target(&self) {
         ? TokenType.RBRACE : TokenType.RBRACKET;
 
     // Make a cheap copy of the lexer so we can lex ahead without side-effects.
-    // Preserve the lexer state exactly (including any buffered lookahead and
-    // pushback tokens) so that `scan.next_token()` correctly yields the `{`
-    // or `[` that peek_type() already saw.
     Lexer scan = *self.lexer;
-    // Also copy the compiler pushback stack, but we do not use it in this
-    // speculative scan (we go directly through the Lexer copy).  Clear
-    // pushed_back so the Lexer-level pushback is the only source.
     scan.has_pushed_back = false;
 
     // Consume the opening bracket.
@@ -343,21 +281,7 @@ fn bool CompilerContext.primary_is_member_target(&self) {
          || next.type == TokenType.OPT_CHAIN);
 }
 
-/// Parse a DestructuringAssignmentTarget, any LeftHandSideExpression valid
-/// as an assignment target (§13.15.5). Returns true when the target is a
-/// member expression (`a.b`, `a[i]`, `{}[f()]`, etc.); false when it is a
-/// plain identifier.
-///
-/// For member targets, emits code to evaluate the object and key into fresh
-/// registers (`*out_obj_reg` / `*out_key_reg`) for a later PUTPROP.
-/// For identifier targets, `*out_name_idx` receives the constant-pool index
-/// of the name; no code is emitted.
-///
-/// When the next token is an IDENTIFIER not followed by `.`, `[`, or `(`,
-/// we consume it cheaply without emitting a GETVAR, assignment patterns
-/// only write to the target, never read from it.  For anything more complex
-/// (member chains starting with any primary, `new`, etc.) we call
-/// `postfix_expr` in lhs_mode and NOP the trailing GETPROP.
+// Parse a DestructuringAssignmentTarget, any LeftHandSideExpression valid as assignment target (§13.15.5).
 fn bool? CompilerContext.parse_assign_target_lhs(&self,
     ushort* out_obj_reg, ushort* out_key_reg, uint* out_name_idx)
 {
@@ -451,12 +375,7 @@ fn bool? CompilerContext.parse_assign_target_lhs(&self,
     return self.fail("invalid assignment target in destructuring pattern")~;
 }
 
-/// Parse a leaf assignment target into a DestructBind, deferring member
-/// targets. Per ES2022 §13.15.5 the target lref is evaluated after the
-/// iterator is opened, so for member expressions the collection-time parse
-/// only advances the lexer, its code and registers are discarded, and a
-/// lexer snapshot is stored for emit_deferred_target to re-parse inside the
-/// IteratorClose guard.
+// Parse a leaf assignment target into a DestructBind, deferring member targets (ES2022 §13.15.5).
 fn void? CompilerContext.collect_assign_target(&self, DestructBind* bind)
 {
     DeferredTarget* snap = (DeferredTarget*)alloc::malloc_try(mem, (sz)(DeferredTarget::size)) ?? null;
@@ -480,10 +399,7 @@ fn void? CompilerContext.collect_assign_target(&self, DestructBind* bind)
     // (ES2024 §13.15.1): in strict code `eval`, `arguments` and the reserved
     // words are not, so `[eval] = v` / `[yield] = v` are early SyntaxErrors
     // exactly as the non-pattern `eval = v` already is. Only identifier
-    // targets can offend — a member expression (`o.eval`) is always valid.
-    // This is the one point every leaf assignment target passes through, so
-    // array elements, object properties, rest targets and nested patterns are
-    // all covered here rather than at N call sites.
+    // targets can offend: a member expression (`o.eval`) is always valid.
     if (!is_member) {
         HString* nhs = (HString*)self.constants[tgt_name].get_heapptr();
         if (is_restricted_name(nhs.get_data(),
@@ -507,17 +423,7 @@ fn void? CompilerContext.collect_assign_target(&self, DestructBind* bind)
     }
 }
 
-/// Re-parse and emit a member target deferred by collect_assign_target.
-/// Called by emit_destruct_bindings inside the IteratorClose guard. The
-/// evaluated object/key land in fresh registers at the current watermark and
-/// are copied down into the bind's pre-allocated persistent pair (below every
-/// iterator/push callee window, so they survive the protocol CALLs up to the
-/// final PUTPROP); the parse temporaries are then released.
-///
-/// For private field targets (this.#field), the brand check (CHK_BRAND) is
-/// deferred: emit_private_access loads the brand symbol but skips the check.
-/// The bind's is_private_target flag and deferred_brand_* fields carry the
-/// state so emit_destruct_bindings can emit the CHK_BRAND after GetV.
+// Re-parse and emit a member target deferred by collect_assign_target.
 fn void CompilerContext.emit_deferred_target(&self, DestructBind* bind)
 {
     DeferredTarget* snap = bind.deferred_target;
@@ -536,15 +442,7 @@ fn void CompilerContext.emit_deferred_target(&self, DestructBind* bind)
     }
 
     // Enable deferred brand check: for private field targets, emit_private_access
-    // loads the brand symbol but skips CHK_BRAND. We detect the private target
-    // after parsing by checking deferred_brand_reg. The brand register itself
-    // is pre-allocated (bind.private_brand_reg, from emit_destruct_bindings's
-    // pre-scan) and handed to emit_private_access via deferred_brand_reg_hint.
-    // It must land below the source property's upcoming GETPROP result
-    // register, or a getter triggered while reading the source clobbers it
-    // (invoke_getter writes its callee/this pair at [result_reg,
-    // result_reg + 1] before the call even starts) before the deferred
-    // CHK_BRAND runs.
+    // loads the brand symbol but skips CHK_BRAND.
     self.defer_brand_check = true;
     self.deferred_brand_reg = 0xFFFF;
     self.deferred_brand_name_c = 0xFF;
@@ -556,7 +454,6 @@ fn void CompilerContext.emit_deferred_target(&self, DestructBind* bind)
     ushort tgt_key  = 0xFFFF;
     uint   tgt_name = 0xFFFFFFFF;
     if (catch self.parse_assign_target_lhs(&tgt_obj, &tgt_key, &tgt_name)) {
-        // Unreachable: the same token stream parsed successfully at collection.
         self.defer_brand_check = false;
         self.deferred_brand_reg_hint = 0xFFFF;
         self.free_reg(bind.private_brand_reg);
@@ -567,30 +464,14 @@ fn void CompilerContext.emit_deferred_target(&self, DestructBind* bind)
     // Check if a brand check was deferred (private field target).
     if (self.deferred_brand_reg != 0xFFFF) {
         bind.is_private_target = true;
-        // deferred_brand_reg equals bind.private_brand_reg (the hint was
-        // honoured), already the pre-allocated persistent register, so no
-        // further protection is needed past this point. The CHK_BRAND's
-        // object operand is bind.member_obj_reg (set below via LDREG), not
-        // self.deferred_brand_obj_reg (the parse-time temp `this` register,
-        // unsafe to read after the source GETPROP's getter call, see
-        // DestructBind's doc comment).
         bind.private_brand_name_c = self.deferred_brand_name_c;
 
-        // Strip the trailing GETPROP_PRIVATE emitted by member_expr while
-        // parsing `this.#field`.  The read result is unused for the
-        // assignment target (PUTPROP stores the source value) AND its brand
-        // check (walk-chain → PrivateFieldFind) fires BEFORE we have evaluated
-        // the source's GetV, meaning `({a: this.#field} = src)` would throw
-        // out of order if src.a's getter is meant to side-effect-install
-        // the private field per ES2022 §13.15.5.6.  Leave CHK_BRAND to
-        // emit_destruct_bindings (which places it AFTER the source GetV).
         if (self.code_count > 0
             && self.code[self.code_count - 1].op == Opcode.GETPROP_PRIVATE) {
             self.code_count--;
         }
     } else {
         bind.is_private_target = false;
-        // Not a private target after all, release the reserved slot.
         self.free_reg(bind.private_brand_reg);
     }
     self.defer_brand_check = false;
@@ -598,21 +479,12 @@ fn void CompilerContext.emit_deferred_target(&self, DestructBind* bind)
     self.emit_abc(Opcode.LDREG, (uint)bind.member_obj_reg, (uint)tgt_obj, 0);
     self.emit_abc(Opcode.LDREG, (uint)bind.member_prop_reg, (uint)tgt_key, 0);
     self.free_regs_to(pre_reg);
-    // bind.private_brand_reg (when is_private_target) is a persistent
-    // register allocated in emit_destruct_bindings's pre-scan, well below
-    // pre_reg, free_regs_to(pre_reg) above cannot reclaim it. Defensive
-    // no-op guard kept in case a future caller passes a lower pre_reg.
     if (bind.is_private_target && self.next_reg <= bind.private_brand_reg) {
         self.next_reg = (ushort)(bind.private_brand_reg + 1);
     }
 }
 
-/// Re-parse and emit a computed property key deferred by
-/// collect_obj_assign_binds. Called by emit_destruct_bindings at the point of
-/// use (immediately before the GETPROP that reads the property), so a
-/// computed key such as `{[sourceKey()]: t}` evaluates after the RHS per
-/// ES2022 §13.15.5.3, not before it. The evaluated key value lands in the
-/// bind's pre-allocated persistent register (bind.computed_key_reg).
+// Re-parse and emit a computed property key deferred by collect_obj_assign_binds.
 fn void CompilerContext.emit_deferred_computed_key(&self, DestructBind* bind)
 {
     DeferredTarget* snap = bind.deferred_computed_key;
@@ -648,19 +520,9 @@ fn void CompilerContext.emit_deferred_computed_key(&self, DestructBind* bind)
     self.free_regs_to(pre_reg);
 }
 
-/// Parse array destructuring assignment: [a, b, ...rest] = rhs
-/// The '[' has already been consumed.
-/// Returns the RHS register (destructuring assignment evaluates to RHS value).
-///
-/// Targets may be identifiers or member expressions (§13.15.5
-/// DestructuringAssignmentTarget = LeftHandSideExpression). Member targets are
-/// parsed eagerly to capture the object/key registers before the RHS iterator
-/// is set up; the emission machinery stores PUTPROP instead of PUTVAR.
-/// Collect an array assignment pattern into the shared DestructBind model.
-/// Accepts the full LeftHandSideExpression grammar at top level and in rest
-/// (identifiers, member expressions, nested array/object patterns, defaults,
-/// elision holes). Consumes through the closing ']'. Shared by
-/// array_destructure_assign and the bare for-of loop.
+// Parse array destructuring assignment: [a, b, ...rest] = rhs.
+// The '[' has already been consumed.
+// Collect an array assignment pattern into the shared DestructBind model (ES §13.15.5).
 fn void? CompilerContext.collect_arr_assign_binds(&self,
     DestructBind[] binds_arg, uint* count_ptr, ushort parent_idx = 0xFFFF)
 {
@@ -942,16 +804,9 @@ fn ushort? CompilerContext.array_destructure_assign(&self) {
     return result_reg;
 }
 
-/// Parse object destructuring assignment: {a, b: c, x = default} = rhs
-/// The '{' has already been consumed.
-/// Returns the RHS register (destructuring assignment evaluates to RHS value).
-/// Collect an object assignment pattern into the shared DestructBind model.
-/// Handles: shorthand `{a}`, `{key: target}`, computed keys `{[e]: t}`,
-/// member-expression targets (`{a: obj.x}`), nested array/object targets
-/// (delegated to the param collectors, identifier leaves only), defaults
-/// (`{a = d}`, `{a: t = d}`), and object rest (`{...target}`). Targets accept
-/// the full LeftHandSideExpression grammar at the top level and in rest.
-/// The '{' has already been consumed; this consumes its own '}'.
+// Parse object destructuring assignment: {a, b: c, x = default} = rhs.
+// The '{' has already been consumed.
+// Collect an object assignment pattern into the shared DestructBind model (ES §13.15.5).
 fn void? CompilerContext.collect_obj_assign_binds(&self,
     DestructBind[] binds, uint* count, ushort parent_idx = 0xFFFF)
 {
@@ -989,7 +844,7 @@ fn void? CompilerContext.collect_obj_assign_binds(&self,
         // Property key: computed `[expr]`, or a literal/identifier key.
         // Per ES2022 §13.15.5.3 ObjectAssignmentPattern's computed key
         // expression evaluates AFTER the RHS (source object) is evaluated,
-        // not at pattern-parse time. Defer via lexer snapshot + re-parse at
+        // not at pattern-parse time. Defer via lexer snapshot and re-parse at
         // emission (see collect_assign_target and emit_deferred_computed_key).
         // Collection here only advances the lexer past `[expr]`, discarding
         // its code and registers.
@@ -1059,8 +914,7 @@ fn void? CompilerContext.collect_obj_assign_binds(&self,
             // Nested pattern target: `key: [..]` / `key: {..}`. Emit a synthetic
             // group whose value is source[key]; delegate the sub-pattern to the
             // assign-bind collectors so member-expression leaves nested at any
-            // depth (e.g. `{k: [x[yield]]}`) are accepted and deferred, not
-            // just identifiers.
+            // depth (e.g. `{k: [x[yield]]}`) are accepted and deferred.
             bool nested_is_obj = self.check(TokenType.LBRACE);
             uint synth = *count;
             if (*count < binds.len) {
@@ -1094,7 +948,7 @@ fn void? CompilerContext.collect_obj_assign_binds(&self,
             // read from the source, so a side-effecting target such as
             // `{key: target()[targetKey()]}` must not run before the source
             // read (or the RHS, since collect happens before the RHS is
-            // parsed at all, deferral makes it re-evaluate at emission time,
+            // parsed at all; deferral makes it re-evaluate at emission time,
             // after both the RHS and the source property read).
             DestructBind tgt_bind;
             if (catch err = self.collect_assign_target(&tgt_bind)) {
@@ -1149,9 +1003,9 @@ fn void? CompilerContext.collect_obj_assign_binds(&self,
     self.expect(TokenType.RBRACE)!;
 }
 
-/// Parse object destructuring assignment: {a, b: c, x = default} = rhs
-/// The '{' has already been consumed.
-/// Returns the RHS register (destructuring assignment evaluates to RHS value).
+// Parse object destructuring assignment: {a, b: c, x = default} = rhs
+// The '{' has already been consumed.
+// Returns the RHS register (destructuring assignment evaluates to RHS value).
 fn ushort? CompilerContext.object_destructure_assign(&self) {
     DestructBind[MAX_DESTRUCT_BINDS] binds;
     uint count = 0;

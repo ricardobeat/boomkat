@@ -13,9 +13,9 @@ import std::io;
 // Expression parsing
 // ============================================================================
 
-/// Fail if the previous RHS expression was an ArrowFunction, ArrowFunction
-/// is AssignmentExpression-level and must not appear as a binary operand
-/// (`1 + () => 2`, `#x in () => {}`, ES §13.16, §13.15).
+// Fail if the previous RHS expression was an ArrowFunction, ArrowFunction
+// is AssignmentExpression-level and must not appear as a binary operand
+// (`1 + () => 2`, `#x in () => {}`, ES §13.16, §13.15).
 macro CompilerContext.check_no_arrow_rhs(&self) {
     if (self.last_was_arrow_expr) {
         self.last_was_arrow_expr = false;
@@ -23,14 +23,14 @@ macro CompilerContext.check_no_arrow_rhs(&self) {
     }
 }
 
-/// Parse a full expression (comma operator at lowest precedence), with the
-/// grammar's `[+In]`: an `in` operator is allowed at every level.
-///
-/// This is the entry point every nested grouping uses — parentheses, brackets,
-/// call arguments, template substitutions — and each of those re-fixes the
-/// grammar's In parameter to `[+In]`, so clearing forbid_in here is what makes
-/// `for ((a in b);;)` and `for (f(a in b);;)` legal inside a `[~In]` head.
-/// The head itself enters through expression_no_in().
+// Parse a full expression (comma operator at lowest precedence), with the
+// grammar's `[+In]`: an `in` operator is allowed at every level.
+//
+// This is the entry point every nested grouping uses : parentheses, brackets,
+// call arguments, template substitutions : and each of those re-fixes the
+// grammar's In parameter to `[+In]`, so clearing forbid_in here is what makes
+// `for ((a in b);;)` and `for (f(a in b);;)` legal inside a `[~In]` head.
+// The head itself enters through expression_no_in().
 fn ushort? CompilerContext.expression(&self) {
     bool saved_forbid_in = self.forbid_in;
     self.forbid_in = false;
@@ -38,8 +38,8 @@ fn ushort? CompilerContext.expression(&self) {
     return self.expression_inner();
 }
 
-/// Parse a full expression as `Expression[~In]`: a top-level `in` operator is
-/// a SyntaxError. Only a C-style for head uses this (§14.7.4).
+// Parse a full expression as `Expression[~In]`: a top-level `in` operator is
+// a SyntaxError. Only a C-style for head uses this (§14.7.4).
 fn ushort? CompilerContext.expression_no_in(&self) {
     self.forbid_in = true;
     defer self.forbid_in = false;
@@ -103,9 +103,9 @@ fn ushort? CompilerContext.expression_inner(&self) {
     return result;
 }
 
-/// Save the raw text of a just-resolved identifier for later SetFunctionName
-/// inference (assignment_expr reads this when the LHS is a simple
-/// IdentifierReference). Truncates (clears) if the name doesn't fit.
+// Save the raw text of a just-resolved identifier for later SetFunctionName
+// inference (assignment_expr reads this when the LHS is a simple
+// IdentifierReference). Truncates (clears) if the name doesn't fit.
 fn void CompilerContext.save_lhs_ident_name(&self, char[] name) {
     // A freshly resolved identifier is a bare IdentifierReference until a
     // CoverParenthesizedExpression closes around it, so clear the marker here
@@ -122,16 +122,16 @@ fn void CompilerContext.save_lhs_ident_name(&self, char[] name) {
     }
 }
 
-/// Bookkeeping for a resolved-by-name identifier that turned out to be
-/// `arguments`. Two effects, both required at every site that reads an
-/// identifier without going through `primary_expr`:
-///
-///  - ES2022 §15.7.1 forbids `arguments` anywhere in a class field
-///    initializer, including under `typeof`.
-///  - Inside a non-arrow function body the reference makes the function need
-///    an arguments object, which the VM only builds when `uses_arguments` is
-///    set at call entry. Missing this is silent: the name simply doesn't
-///    resolve, so `typeof arguments` reads back `"undefined"`.
+// Bookkeeping for a resolved-by-name identifier that turned out to be
+// `arguments`. Two effects, both required at every site that reads an
+// identifier without going through `primary_expr`:
+//
+//  - ES2022 §15.7.1 forbids `arguments` anywhere in a class field
+//    initializer, including under `typeof`.
+//  - Inside a non-arrow function body the reference makes the function need
+//    an arguments object, which the VM only builds when `uses_arguments` is
+//    set at call entry. Missing this is silent: the name simply doesn't
+//    resolve, so `typeof arguments` reads back `"undefined"`.
 fn void? CompilerContext.note_arguments_reference(&self, char[] name) {
     if (!str_eq(name, "arguments")) return;
     if (self.forbid_arguments) {
@@ -140,14 +140,14 @@ fn void? CompilerContext.note_arguments_reference(&self, char[] name) {
     if (!self.is_global) self.uses_arguments = true;
 }
 
-/// Parse an assignment expression.
-///
-/// Thin wrapper over assignment_expr_inner that stamps the AssignmentTargetType
-/// verdict on the way out. It has to happen here, after the inner parse has
-/// fully returned: the verdict cannot be set at the point the assignment
-/// operator is consumed, because parsing the RHS resolves identifiers, and
-/// every resolved identifier clears the flag (an IdentifierReference is a valid
-/// target). `x = y` would set the verdict and then have `y` immediately wipe it.
+// Parse an assignment expression.
+//
+// Thin wrapper over assignment_expr_inner that stamps the AssignmentTargetType
+// verdict on the way out. It has to happen here, after the inner parse has
+// fully returned: the verdict cannot be set at the point the assignment
+// operator is consumed, because parsing the RHS resolves identifiers, and
+// every resolved identifier clears the flag (an IdentifierReference is a valid
+// target). `x = y` would set the verdict and then have `y` immediately wipe it.
 fn ushort? CompilerContext.assignment_expr(&self) {
     bool saw_assign_op = false;
     ushort r = self.assignment_expr_inner(&saw_assign_op)!;
@@ -382,7 +382,7 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
     // `f() = 1` reaches here with none of the reference markers set, so it is
     // rejected at parse time, matching QuickJS. V8/node instead parse it and
     // throw a ReferenceError at runtime; that leniency is NOT copied, and the
-    // reason is worth recording because — unlike the other node divergences —
+    // reason is worth recording because : unlike the other node divergences :
     // the spec does sanction a deferral here.
     //
     // AssignmentTargetType (ES2025 §8.6.4) returns simple, web-compat or
@@ -419,8 +419,8 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
     // cite the web-compat clause expect `phase: parse, type: SyntaxError`, and
     // every one whose operator is deferrable is flagged onlyStrict. The two
     // logical-assignment cases carry no strictness flag, exactly as B.3.9's
-    // Note requires. All ten pass. node fits the same shape — it defers for
-    // `=`, `+=` and `++` but keeps a SyntaxError for `&&=`/`??=` — so it is
+    // Note requires. All ten pass. node fits the same shape : it defers for
+    // `=`, `+=` and `++` but keeps a SyntaxError for `&&=`/`??=` : so it is
     // implementing B.3.9; it just also applies it to genuinely strict code
     // (a `.mjs` module still yields ReferenceError), which B.3.9 does not
     // permit.
@@ -1017,7 +1017,7 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
     return left;
 }
 
-/// Parse a conditional (ternary) expression: expr ? expr : expr
+// Parse a conditional (ternary) expression: expr ? expr : expr
 fn ushort? CompilerContext.conditional_expr(&self) {
     // Reset so an arrow that came in as the condition doesn't trip the binary
     // operator check on the operator that follows the conditional.
@@ -1061,7 +1061,7 @@ fn ushort? CompilerContext.conditional_expr(&self) {
         self.patch_jump(end_jump);
 
         // ES §13.14.1: a ConditionalExpression has AssignmentTargetType
-        // ~invalid~ — `(a ? b : c) = 1` is a SyntaxError even though the false
+        // ~invalid~ : `(a ? b : c) = 1` is a SyntaxError even though the false
         // branch just parsed may itself have been a plain identifier.
         self.clear_ref_markers();
         return result_reg;
@@ -1070,7 +1070,7 @@ fn ushort? CompilerContext.conditional_expr(&self) {
     return result;
 }
 
-/// Parse binary expressions using a Pratt parser with precedence climbing.
+// Parse binary expressions using a Pratt parser with precedence climbing.
 fn ushort? CompilerContext.binary_expr(&self, int min_prec) {
     self.last_was_local_var = false;
     // Clear any arrow marker from an enclosing binary_expr so the initial
@@ -1088,9 +1088,9 @@ fn ushort? CompilerContext.binary_expr(&self, int min_prec) {
 
     // `[~In]` reaches exactly one decision: whether this invocation's operator
     // loop may consume an `in`. Every operand is parsed with the flag cleared,
-    // so it can never leak into a nested construct — a parenthesized
+    // so it can never leak into a nested construct : a parenthesized
     // subexpression, a call argument, an array element, a template
-    // substitution — all of which are `[+In]` by grammar no matter which entry
+    // substitution : all of which are `[+In]` by grammar no matter which entry
     // point they use. This is the same consume-on-entry discipline as
     // yield_ok_here above, and it is what keeps `for (f(a in b);;)` legal
     // while `for (a in b;;)` is not.
@@ -1197,14 +1197,14 @@ fn ushort? CompilerContext.binary_expr(&self, int min_prec) {
         }
         // `[~In]`: inside a C-style for head an unparenthesized `in` would be
         // ambiguous with a for-in head, so the grammar simply has no
-        // production for it (§14.7.4). Reject rather than break — unlike ASI
+        // production for it (§14.7.4). Reject rather than break : unlike ASI
         // there is no shorter parse to fall back to, the next token in the
         // head must be `;`.
         if (tt == TokenType.IN && no_in) {
             return self.fail("'in' is not allowed in a for-statement head")~;
         }
         // Record that at least one binary operator was consumed. The value of
-        // this expression is then the operator's result — never a Reference —
+        // this expression is then the operator's result : never a Reference :
         // so the reference markers are cleared once, after the loop, no matter
         // which operator form (LOG_AND / LOG_OR / NULLISH / regular) ran.
         // Clearing here instead would not work: each form parses its right
@@ -1217,7 +1217,7 @@ fn ushort? CompilerContext.binary_expr(&self, int min_prec) {
         //       UnaryExpression
         //       UpdateExpression ** ExponentiationExpression
         // The left operand of `**` is an UpdateExpression, so a UnaryExpression
-        // there is a SyntaxError — the grammar refuses to guess between
+        // there is a SyntaxError : the grammar refuses to guess between
         // `(-a) ** b` and `-(a ** b)`. Parenthesising either way makes the
         // operand a PrimaryExpression and is the documented workaround.
         // `a ** -b` is unaffected: the RIGHT operand is a full
@@ -1326,7 +1326,7 @@ fn ushort? CompilerContext.binary_expr(&self, int min_prec) {
             // than at `prec + 1`, which is PREC_LOGICAL_OR and would swallow
             // them. That makes `a ?? b || c` fail: the `||` is left unconsumed
             // and surfaces at this loop's next iteration, where the
-            // saw_nullish guard rejects it. `a ?? (b || c)` is unaffected —
+            // saw_nullish guard rejects it. `a ?? (b || c)` is unaffected :
             // the parentheses make the operand a PrimaryExpression.
             ushort right = self.binary_expr(PREC_BITWISE_OR)!;
             self.check_no_arrow_rhs();
@@ -1408,7 +1408,7 @@ fn ushort? CompilerContext.binary_expr(&self, int min_prec) {
     // multiplicative / logical / coalesce result has AssignmentTargetType
     // ~invalid~. When any operator was consumed above, `left` holds a computed
     // value, so drop the reference markers the final right operand left behind
-    // — otherwise assignment_expr's SimpleAssignmentTarget check sees that
+    // : otherwise assignment_expr's SimpleAssignmentTarget check sees that
     // operand's state and accepts `x + y = 1` or `(a === b) = 1`.
     if (saw_binary_op) {
         self.clear_ref_markers();
@@ -1416,14 +1416,14 @@ fn ushort? CompilerContext.binary_expr(&self, int min_prec) {
     return left;
 }
 
-/// Drop the "the expression just parsed was a Reference" markers.
-///
-/// assignment_expr, postfix_expr and the prefix `++`/`--` path accept a target
-/// only when one of these is set, so clearing them is how an operator whose
-/// result is a value (AssignmentTargetType ~invalid~, ES §13.15.1) makes
-/// `<expr> = 1` a SyntaxError. Kept as one helper because the markers must move
-/// together — an operator that cleared only some of them would still let the
-/// stale one through.
+// Drop the "the expression just parsed was a Reference" markers.
+//
+// assignment_expr, postfix_expr and the prefix `++`/`--` path accept a target
+// only when one of these is set, so clearing them is how an operator whose
+// result is a value (AssignmentTargetType ~invalid~, ES §13.15.1) makes
+// `<expr> = 1` a SyntaxError. Kept as one helper because the markers must move
+// together : an operator that cleared only some of them would still let the
+// stale one through.
 fn void CompilerContext.clear_ref_markers(&self) {
     self.last_was_getvar = false;
     self.last_was_member = false;
@@ -1435,7 +1435,7 @@ fn void CompilerContext.clear_ref_markers(&self) {
     self.last_target_invalid = false;
 }
 
-/// Parse a unary expression.
+// Parse a unary expression.
 fn ushort? CompilerContext.unary_expr(&self) {
     TokenType tt = self.peek_type();
 
@@ -1449,8 +1449,8 @@ fn ushort? CompilerContext.unary_expr(&self) {
 
     // Whether a unary OPERATOR is about to be consumed, so binary_expr can
     // reject `-a ** b`: `**`'s left operand is an UpdateExpression, not a
-    // UnaryExpression (§13.6). `++a ** b` and `a++ ** b` stay legal — they ARE
-    // UpdateExpressions — hence the explicit operator list rather than "did we
+    // UnaryExpression (§13.6). `++a ** b` and `a++ ** b` stay legal : they ARE
+    // UpdateExpressions : hence the explicit operator list rather than "did we
     // take a non-default branch".
     //
     // Applied to self.last_was_unary_op by the wrapper below rather than here:
@@ -1466,9 +1466,9 @@ fn ushort? CompilerContext.unary_expr(&self) {
     return result_reg;
 }
 
-/// The body of unary_expr: dispatches on the already-peeked leading token.
-/// Split out so unary_expr can set last_was_unary_op AFTER the recursive
-/// operand parse, which would otherwise clobber it.
+// The body of unary_expr: dispatches on the already-peeked leading token.
+// Split out so unary_expr can set last_was_unary_op AFTER the recursive
+// operand parse, which would otherwise clobber it.
 fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) {
     switch (tt) {
         // ES §13.5: a UnaryExpression's value is the operator's result, never
@@ -1781,7 +1781,7 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
                 // Like every other UnaryExpression (§13.5), a `delete` yields
                 // the operator's boolean result, never a Reference, so its
                 // AssignmentTargetType is ~invalid~ and `delete x.y = 1` is a
-                // SyntaxError. Only last_was_member was being cleared here —
+                // SyntaxError. Only last_was_member was being cleared here :
                 // enough to stop the member store path, but the getvar/local
                 // markers left over from the operand still made it look like a
                 // valid assignment target.
@@ -1971,13 +1971,13 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
     }
 }
 
-/// After a postfix ++/-- token has been consumed, decide whether the update
-/// result is actually discarded. Only valid when the caller already holds a
-/// true postfix_void signal (statement / for-update position). The token now at
-/// the cursor is whatever follows the ++/--: any binary/assignment/ternary/comma
-/// operator (or `(`, `[`, `.`) would consume the produced value, so we skip the
-/// materialization only for the clear statement/clause terminators. A newline
-/// after the ++/-- means ASI ends the statement here, which also discards it.
+// After a postfix ++/-- token has been consumed, decide whether the update
+// result is actually discarded. Only valid when the caller already holds a
+// true postfix_void signal (statement / for-update position). The token now at
+// the cursor is whatever follows the ++/--: any binary/assignment/ternary/comma
+// operator (or `(`, `[`, `.`) would consume the produced value, so we skip the
+// materialization only for the clear statement/clause terminators. A newline
+// after the ++/-- means ASI ends the statement here, which also discards it.
 fn bool CompilerContext.postfix_result_discarded(&self) {
     if (self.lexer.seen_line_term) return true;
     TokenType next = self.peek_type();
@@ -1987,20 +1987,20 @@ fn bool CompilerContext.postfix_result_discarded(&self) {
         || next == TokenType.EOF_TOKEN;
 }
 
-/// Parse postfix expressions (++, --).
-///
-/// NOTE: We deliberately do NOT set `self.lhs_mode = true` here. Doing so
-/// would change how `member_expr` behaves for ALL nested member expressions
-/// inside `call_expr`, including callees of method calls like `foo.bar()`,
-/// keeping their obj/prop registers alive and marking them as LHS members,
-/// which breaks unrelated code. Instead we let `member_expr` always track
-/// `last_was_member` (and save obj/prop registers), let `call_expr` clear
-/// `last_was_member` after emitting a call, and then inspect the flag here
-/// to decide whether to emit INC/DEC + PUTPROP for a member LHS.
-///
-/// TypeScript postfix erasable syntax after a completed expression:
-/// non-null `!`, `as T`, `satisfies T`, chainable (`x as unknown as T`).
-/// Consumed without emitting anything. ts_mode only.
+// Parse postfix expressions (++, --).
+//
+// NOTE: We deliberately do NOT set `self.lhs_mode = true` here. Doing so
+// would change how `member_expr` behaves for ALL nested member expressions
+// inside `call_expr`, including callees of method calls like `foo.bar()`,
+// keeping their obj/prop registers alive and marking them as LHS members,
+// which breaks unrelated code. Instead we let `member_expr` always track
+// `last_was_member` (and save obj/prop registers), let `call_expr` clear
+// `last_was_member` after emitting a call, and then inspect the flag here
+// to decide whether to emit INC/DEC + PUTPROP for a member LHS.
+//
+// TypeScript postfix erasable syntax after a completed expression:
+// non-null `!`, `as T`, `satisfies T`, chainable (`x as unknown as T`).
+// Consumed without emitting anything. ts_mode only.
 fn void? CompilerContext.ts_skip_postfix_type_ops(&self) {
     for (;;) {
         TokenType tt2 = self.peek_type();
@@ -2020,7 +2020,7 @@ fn void? CompilerContext.ts_skip_postfix_type_ops(&self) {
                 // context's stack, invisible to the caller that reads the
                 // shared lexer.
                 Token _kw = self.advance()!;
-                // `as const` — `const` is a keyword, not a type name, so
+                // `as const` : `const` is a keyword, not a type name, so
                 // skip_type would stop on it immediately.
                 if (self.match(TokenType.CONST)) continue;
                 self.skip_type()!;
@@ -2031,11 +2031,11 @@ fn void? CompilerContext.ts_skip_postfix_type_ops(&self) {
     }
 }
 
-///
-/// For a member LHS (e.g. `obj.prop++`), the GETPROP emitted by member_expr
-/// is still in the bytecode stream. We NOP it (its result is now in `saved`
-/// and we will overwrite `operand` with INC) and use the saved obj/prop
-/// registers to emit a follow-up PUTPROP that writes the new value back.
+//
+// For a member LHS (e.g. `obj.prop++`), the GETPROP emitted by member_expr
+// is still in the bytecode stream. We NOP it (its result is now in `saved`
+// and we will overwrite `operand` with INC) and use the saved obj/prop
+// registers to emit a follow-up PUTPROP that writes the new value back.
 fn ushort? CompilerContext.postfix_expr(&self) {
     // Consume the discarded-result signal once, before descending. Clearing it
     // here means any nested sub-expression reached via call_expr (subscripts,
@@ -2263,15 +2263,15 @@ fn ushort? CompilerContext.postfix_expr(&self) {
     return operand;
 }
 
-/// After the ')' of a grouping expression: decide whether a pending
-/// member-call receiver survives the parens. Member accesses, optional
-/// chains included, keep their Reference through parens (`(o.m)()` and
-/// `(o?.b)()` both call with this=o; test262
-/// optional-chaining/optional-call-preserves-this.js). A short-circuited
-/// chain yields undefined and the call throws regardless, so no receiver
-/// handling is needed for that case. The receiver is dropped only when
-/// nothing call-like follows, the parenthesized value is consumed as
-/// plain data.
+// After the ')' of a grouping expression: decide whether a pending
+// member-call receiver survives the parens. Member accesses, optional
+// chains included, keep their Reference through parens (`(o.m)()` and
+// `(o?.b)()` both call with this=o; test262
+// optional-chaining/optional-call-preserves-this.js). A short-circuited
+// chain yields undefined and the call throws regardless, so no receiver
+// handling is needed for that case. The receiver is dropped only when
+// nothing call-like follows, the parenthesized value is consumed as
+// plain data.
 fn void CompilerContext.drop_paren_receiver_unless_ref(&self) {
     TokenType next_tt = self.peek_type();
     bool call_follows = next_tt == TokenType.LPAREN || next_tt == TokenType.OPT_CHAIN;
@@ -2281,7 +2281,7 @@ fn void CompilerContext.drop_paren_receiver_unless_ref(&self) {
     }
 }
 
-/// Parse call expressions: f(), f(a,b), obj.method(), obj[expr](), tag`...`.
+// Parse call expressions: f(), f(a,b), obj.method(), obj[expr](), tag`...`.
 fn ushort? CompilerContext.call_expr(&self) {
     self.last_was_optional_chain = false;
     ushort callee = self.member_expr()!;
@@ -2553,17 +2553,17 @@ fn ushort? CompilerContext.call_expr(&self) {
     return callee;
 }
 
-/// Emit a function call for the callee in the given register.
-///
-/// Calling convention (matching original Duktape):
-///   callee_reg + 0  = callee (function object)
-///   callee_reg + 1  = arg 1
-///   callee_reg + 2  = arg 2
-///   ...
-///   callee_reg + N  = arg N
-///
-/// The result is placed in a separate result register (A field).
-/// The VM reads args from callee_reg + 1, so we must guarantee that layout.
+// Emit a function call for the callee in the given register.
+//
+// Calling convention (matching original Duktape):
+//   callee_reg + 0  = callee (function object)
+//   callee_reg + 1  = arg 1
+//   callee_reg + 2  = arg 2
+//   ...
+//   callee_reg + N  = arg N
+//
+// The result is placed in a separate result register (A field).
+// The VM reads args from callee_reg + 1, so we must guarantee that layout.
 fn ushort? CompilerContext.emit_call(&self, ushort callee_reg) {
     // CALL_VAR fusion candidate: the callee is a bare-identifier reference
     // (GETVAR emitted by primary_expr, not a local variable register) whose
@@ -2580,7 +2580,7 @@ fn ushort? CompilerContext.emit_call(&self, ushort callee_reg) {
     // receiver register is pending. Without it, a stale call_prop_obj_reg
     // left by an enclosing property assignment made this strip the callee's
     // GETVAR and then emit a plain CALL, which read a register nothing had
-    // written — a silent wrong-register call.
+    // written : a silent wrong-register call.
     bool getvar_callee = self.last_was_getvar
         && self.call_prop_obj_reg == REG_NONE
         && self.last_getvar_code_pos + 1 == self.code_count
@@ -2802,7 +2802,7 @@ fn ushort? CompilerContext.emit_call(&self, ushort callee_reg) {
     // passed as an ARGUMENT (`a.every((x, i) => x > 0)`) leaves
     // last_was_arrow_expr set on the way out of assignment_expr, and nothing
     // between there and the enclosing binary_expr's post-RHS
-    // check_no_arrow_rhs() cleared it — so `true && a.every((x,i) => x>0)`
+    // check_no_arrow_rhs() cleared it : so `true && a.every((x,i) => x>0)`
     // was rejected as "arrow function in expression position not allowed".
     // The guard exists to reject a BARE arrow as a binary operand
     // (`1 + () => 2`); an arrow inside the call's parentheses is not that.
@@ -2819,18 +2819,18 @@ fn ushort? CompilerContext.emit_call(&self, ushort callee_reg) {
     return callee_reg;
 }
 
-/// Emit a tagged template call: tag`...` or tag`text ${expr} text`.
-///
-/// The callee register is already set by member_expr.
-/// Template parts become the first argument (a template object array),
-/// and embedded expressions become subsequent arguments.
-///
-/// Calling convention:
-///   callee_reg + 0  = callee (tag function)
-///   callee_reg + 1  = this (undefined or object for member expressions)
-///   callee_reg + 2  = arg 1 (template object array)
-///   callee_reg + 3  = arg 2 (expr 1)
-///   ...
+// Emit a tagged template call: tag`...` or tag`text ${expr} text`.
+//
+// The callee register is already set by member_expr.
+// Template parts become the first argument (a template object array),
+// and embedded expressions become subsequent arguments.
+//
+// Calling convention:
+//   callee_reg + 0  = callee (tag function)
+//   callee_reg + 1  = this (undefined or object for member expressions)
+//   callee_reg + 2  = arg 1 (template object array)
+//   callee_reg + 3  = arg 2 (expr 1)
+//   ...
 fn ushort? CompilerContext.emit_tagged_template(&self, ushort callee_reg) {
     // Save the member expression object (if any) for 'this' binding
     ushort obj_reg = REG_NONE;
@@ -3034,7 +3034,7 @@ fn ushort? CompilerContext.emit_tagged_template(&self, ushort callee_reg) {
     return result_reg;
 }
 
-/// Parse new expression: new Constructor(args).
+// Parse new expression: new Constructor(args).
 fn ushort? CompilerContext.new_expr(&self) {
     self.expect(TokenType.NEW)!;
 
@@ -3114,7 +3114,7 @@ fn ushort? CompilerContext.new_expr(&self) {
         // `NewExpression : new NewExpression` bottom out there. ImportCall is
         // listed only under CallExpression, and there is no
         // `MemberExpression : CallExpression` production, so no `new` callee
-        // can ever contain a bare ImportCall — `new import('')` is a
+        // can ever contain a bare ImportCall : `new import('')` is a
         // SyntaxError, and so is a property access chained onto it
         // (`new import('').then`), because the chain would have to be
         // `CallExpression . IdentifierName`, which is still a CallExpression.
@@ -3431,7 +3431,7 @@ fn ushort? CompilerContext.new_expr(&self) {
     return ctor_reg;
 }
 
-/// Parse member expression: property accesses and computed accesses.
+// Parse member expression: property accesses and computed accesses.
 fn ushort? CompilerContext.member_expr(&self) {
     self.callee_is_eval = false;  // Reset before each callee resolution
     // Reset last_was_member: if the loop runs, it will be set to true.
@@ -3660,14 +3660,14 @@ fn ushort? CompilerContext.member_expr(&self) {
     return obj;
 }
 
-/// Compute the super base register for `super.x` / `super[x]` (§13.3.7.1
-/// GetSuperBase): loads `__super__` (or `__static_super__` for static
-/// methods, whose HomeObject is the constructor itself) and derives its
-/// [[Prototype]]. When the binding already holds the HomeObject
-/// (super_is_home_object, or any static method) that's a direct GETPROTO;
-/// otherwise `__super__` holds the superclass constructor value itself
-/// (the `extends Base` case), so the base is `Base.prototype` via GETPROP.
-/// Returns the register holding the super base (caller owns/frees it).
+// Compute the super base register for `super.x` / `super[x]` (§13.3.7.1
+// GetSuperBase): loads `__super__` (or `__static_super__` for static
+// methods, whose HomeObject is the constructor itself) and derives its
+// [[Prototype]]. When the binding already holds the HomeObject
+// (super_is_home_object, or any static method) that's a direct GETPROTO;
+// otherwise `__super__` holds the superclass constructor value itself
+// (the `extends Base` case), so the base is `Base.prototype` via GETPROP.
+// Returns the register holding the super base (caller owns/frees it).
 fn ushort CompilerContext.emit_super_base(&self) {
     uint super_name_idx;
     if (self.super_is_static_method) {
@@ -3700,7 +3700,7 @@ fn ushort CompilerContext.emit_super_base(&self) {
     return super_proto_reg;
 }
 
-/// Parse primary expressions: literals, identifiers, grouping, etc.
+// Parse primary expressions: literals, identifiers, grouping, etc.
 fn ushort? CompilerContext.primary_expr(&self) {
     self.expr_depth++;
     defer self.expr_depth--;
@@ -3751,7 +3751,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
             }
             is_arrow = self.check(TokenType.ARROW);
             if (!is_arrow) {
-                // `(x: T): R => ...` — the return-type annotation sits
+                // `(x: T): R => ...` : the return-type annotation sits
                 // between the group and the arrow.
                 if (catch _e3 = self.try_skip_ts_type_annotation()) {
                     *self.lexer = saved_lexer;
@@ -3778,7 +3778,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
             //   NonOctalDecimalIntegerLiteral    `0` followed by 8-9 (`08`),
             //                                    and any digits after either
             // A `0` followed by ANY decimal digit is therefore one of the two,
-            // so one test covers both — the previous 0-7 range accepted `08`
+            // so one test covers both : the previous 0-7 range accepted `08`
             // and `09` silently. `0x`/`0o`/`0b`/`0.`/`0e` are unaffected: the
             // second character is not a decimal digit.
             char[] nsrc = num_tok.str_value;
@@ -3982,7 +3982,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
             // Check for empty parens: () => ...
             if (self.check(TokenType.RPAREN)) {
                 self.advance()!;  // consume ')'
-                // TS: `() : T => ...` — skip return-type before ARROW.
+                // TS: `() : T => ...` : skip return-type before ARROW.
                 if (self.lexer.ts_mode) self.try_skip_ts_type_annotation()!;
                 if (!reject_arrow_head && self.check_arrow()) {
                     // No-param arrow: () => ...
@@ -4027,7 +4027,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 // NamedEvaluation purposes (ES2015 §12.15.4 step 1.c uses
                 // static IsIdentifierRef, which CoverParenthesizedExpression
                 // never satisfies): `(fn) = function(){}` must NOT name the
-                // function. Flag the name rather than dropping it — parens
+                // function. Flag the name rather than dropping it : parens
                 // preserve AssignmentTargetType, so the saved name is still
                 // needed for the `(eval) = 1` early error.
                 //
@@ -4051,7 +4051,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
             // `await` is a BindingIdentifier wherever it is not reserved
             // (§13.1.1), so `(await) => 1` is an arrow head in script code and
             // must enter this scan; await_is_identifier makes that decision.
-            // This is only DETECTION — parse_arrow_function_reparse re-parses
+            // This is only DETECTION : parse_arrow_function_reparse re-parses
             // the head through expect_binding_identifier, which re-applies the
             // reservation, so admitting the token here cannot accept anything
             // the real parse would reject.
@@ -4200,7 +4200,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 // NamedEvaluation purposes (ES2015 §12.15.4 step 1.c uses
                 // static IsIdentifierRef, which CoverParenthesizedExpression
                 // never satisfies): `(fn) = function(){}` must NOT name the
-                // function. Flag the name rather than dropping it — parens
+                // function. Flag the name rather than dropping it : parens
                 // preserve AssignmentTargetType, so the saved name is still
                 // needed for the `(eval) = 1` early error.
                 //
@@ -4265,7 +4265,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 // NamedEvaluation purposes (ES2015 §12.15.4 step 1.c uses
                 // static IsIdentifierRef, which CoverParenthesizedExpression
                 // never satisfies): `(fn) = function(){}` must NOT name the
-                // function. Flag the name rather than dropping it — parens
+                // function. Flag the name rather than dropping it : parens
                 // preserve AssignmentTargetType, so the saved name is still
                 // needed for the `(eval) = 1` early error.
                 //
@@ -4299,7 +4299,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 // NamedEvaluation purposes (ES2015 §12.15.4 step 1.c uses
                 // static IsIdentifierRef, which CoverParenthesizedExpression
                 // never satisfies): `(fn) = function(){}` must NOT name the
-                // function. Flag the name rather than dropping it — parens
+                // function. Flag the name rather than dropping it : parens
                 // preserve AssignmentTargetType, so the saved name is still
                 // needed for the `(eval) = 1` early error.
                 //
@@ -5003,22 +5003,22 @@ fn ushort? CompilerContext.primary_expr(&self) {
     }
 }
 
-/// Parse literal keyword values (true, false, null, undefined).
-///
-/// true/false/null/undefined are tokenized as IDENTIFIER tokens and handled
-/// directly in `primary_expr`'s IDENTIFIER case, so this function is only
-/// reached when `primary_expr`'s default case sees a token that cannot start
-/// any expression (e.g. EOF, a stray operator with no operand). That is a
-/// syntax error, not a valid empty expression, silently emitting `undefined`
-/// here previously masked things like a lone `++`/`+` at end of input.
+// Parse literal keyword values (true, false, null, undefined).
+//
+// true/false/null/undefined are tokenized as IDENTIFIER tokens and handled
+// directly in `primary_expr`'s IDENTIFIER case, so this function is only
+// reached when `primary_expr`'s default case sees a token that cannot start
+// any expression (e.g. EOF, a stray operator with no operand). That is a
+// syntax error, not a valid empty expression, silently emitting `undefined`
+// here previously masked things like a lone `++`/`+` at end of input.
 fn ushort? CompilerContext.literal_keyword(&self) {
     return self.fail("unexpected token in expression")~;
 }
 
-/// Parse-time validation of a regexp literal (ES §12.9.3 early errors):
-/// the pattern must compile under the literal's flags. `str_value` is the
-/// raw "/pattern/flags" text. Splitting mirrors the VM's NEWREGEXP handler.
-/// Flags must be valid, non-duplicate, and u/v mutually exclusive.
+// Parse-time validation of a regexp literal (ES §12.9.3 early errors):
+// the pattern must compile under the literal's flags. `str_value` is the
+// raw "/pattern/flags" text. Splitting mirrors the VM's NEWREGEXP handler.
+// Flags must be valid, non-duplicate, and u/v mutually exclusive.
 fn void? CompilerContext.validate_regexp_literal(&self, char[] raw) {
     usz len = raw.len;
     if (len < 2 || raw[0] != '/') return;
@@ -5084,7 +5084,7 @@ fn void? CompilerContext.validate_regexp_literal(&self, char[] raw) {
     re_bindings::re_free(compiled);
 }
 
-/// Parse object literal: { key: value, ... }
+// Parse object literal: { key: value, ... }
 fn ushort? CompilerContext.object_literal(&self) {
     // An object literal is not an AnonymousFunctionDefinition, any pending
     // inferred name (e.g. from `var o = {...}`) does not apply here and
@@ -5216,7 +5216,7 @@ fn ushort? CompilerContext.object_literal(&self) {
                 // Escaped `get`/`set` (`get m(){}`) is a plain
                 // IdentifierName, never the contextual accessor keyword
                 // (ES2024 §5.1.5), so it does not open an accessor. It then
-                // fails as `get m(){}` — two names with no separator — which
+                // fails as `get m(){}` : two names with no separator : which
                 // is the SyntaxError the spec requires.
                 if (!is_generator_method && key_tt == TokenType.IDENTIFIER && !key_tok.has_escape
                         && next_starts_key) {
@@ -5575,7 +5575,7 @@ fn ushort? CompilerContext.object_literal(&self) {
     return obj_reg;
 }
 
-/// Parse array literal: [ expr, expr, ... ]
+// Parse array literal: [ expr, expr, ... ]
 fn ushort? CompilerContext.array_literal(&self) {
     // Not an AnonymousFunctionDefinition, clear any pending inferred name
     // so it doesn't leak into an unrelated later function expression.
@@ -5680,9 +5680,9 @@ fn ushort? CompilerContext.array_literal(&self) {
 // for-of loop compilation
 // ============================================================================
 
-/// Emit bytecode for a for-of loop.  The iterable expression has already been
-/// evaluated into `iter_reg` and the RParen was consumed.
-/// Uses the ES6 iterator protocol: Symbol.iterator → .next() → {value, done}.
+// Emit bytecode for a for-of loop.  The iterable expression has already been
+// evaluated into `iter_reg` and the RParen was consumed.
+// Uses the ES6 iterator protocol: Symbol.iterator → .next() → {value, done}.
 fn void? CompilerContext.emit_forof_loop(&self, char[] var_name, ushort iter_reg, uint saved_scope, ushort saved_reg, bool is_lexical, bool is_const, bool is_bare, bool is_await = false) {
     // Declare loop variable register. (Per-iteration lexical env, §14.7.5.6, is
     // handled uniformly inside emit_forof.)

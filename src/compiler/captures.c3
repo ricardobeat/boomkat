@@ -4,33 +4,19 @@ import boomkat::lexer;
 import std::io;
 
 // ============================================================================
-// Capture pre-scan (plan 045)
+// Capture pre-scan
 //
-// Locals referenced by nested callables (functions, methods, getters/setters,
-// arrows) or reachable by direct eval must be environment-resident: closures
-// and eval read/write the env copy, so a register copy in the outer function
-// would go stale in either direction. The pre-scan walks the body's tokens
-// before it is compiled and collects every identifier that appears inside a
-// nested callable body; declare_var marks matching locals is_captured, which
-// routes all their access through GETVAR/PUTVAR.
+// Locals referenced by nested callables or direct eval must be environment-resident.
+// The pre-scan walks tokens before compilation and collects every identifier appearing
+// inside a nested callable body. Matching locals are marked is_captured, routing
+// access through GETVAR/PUTVAR.
 //
-// Callable-body detection is token-level and deliberately overapproximate
-// (false positives only cost env round-trips on that name, never wrong
-// values):
-//   - `) {` opens a callable body unless the `(` was preceded by a control
-//     keyword (if/for/while/switch/catch). This uniformly catches function
-//     declarations/expressions, methods, getters/setters, generators, and
-//     class methods. The rare `f()` expression statement followed by a block
-//     statement is a harmless false positive.
-//   - `=> {` opens a callable body; an expression-bodied arrow collects until
-//     the expression ends (bracket depth drops below the arrow's, or a
-//     top-level `,` / `;` / `:` at the arrow's depth).
-//   - `class` bodies degrade to capture_all: field initializers run in
-//     constructor scope and can reference outer locals without any `) {`.
-//   - The identifier `eval` anywhere degrades to capture_all: a direct eval
-//     can read and assign any caller binding by name.
-//   - Table overflow (more distinct names than the fixed capacity, or a name
-//     longer than the slot) degrades to capture_all.
+// Callable boundaries are detected via token heuristics that overapproximate on
+// purpose: a false positive only costs env round-trips on that name, never a
+// wrong value.
+//   - `) {` opens a body unless `(` was preceded by a control keyword (if/for/while/etc.)
+//   - `=>` opens an arrow body
+//   - `eval`, `class` field initializers, or table overflow degrade to capture_all
 // ============================================================================
 
 fn bool is_control_paren_kw(TokenType tt) {
@@ -38,7 +24,7 @@ fn bool is_control_paren_kw(TokenType tt) {
         || tt == TokenType.SWITCH || tt == TokenType.CATCH;
 }
 
-/// Record a name referenced inside a nested callable body.
+// Record a name referenced inside a nested callable body.
 fn void CompilerContext.add_captured_name(&self, char[] name) {
     if (self.capture_all) return;
     if (name.len == 0) return;
@@ -58,7 +44,7 @@ fn void CompilerContext.add_captured_name(&self, char[] name) {
     self.captured_count++;
 }
 
-/// Is this local name captured by a nested callable (or is everything)?
+// True if this local name is captured by a nested callable.
 fn bool CompilerContext.is_captured_name(&self, char[] name) {
     if (self.capture_all) return true;
     for (uint i = 0; i < self.captured_count; i++) {
@@ -73,12 +59,10 @@ fn bool CompilerContext.is_captured_name(&self, char[] name) {
     return false;
 }
 
-/// Token pre-scan collecting captured names for the function body that the
-/// lexer is currently positioned at. Mirrors hoist_decls' conventions:
-/// for a block body, call with the lexer BEFORE the body's `{`; the scan
-/// stops at the matching `}`. For an expression body (`expr_mode`, arrows),
-/// the scan stops when the expression ends (a closer below the entry depth,
-/// or a top-level `,` / `;`). The lexer state is fully restored on return.
+// Token pre-scan collecting captured names for the function body the lexer is
+// positioned at. For a block body call with the lexer before the opening `{`;
+// the scan stops at the matching `}`. For an expression body (expr_mode, arrows)
+// it stops when the expression ends. Lexer state is fully restored on return.
 fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false, bool global_mode = false) {
     // --- Save lexer state ---
     uint saved_pos    = self.lexer.pos;

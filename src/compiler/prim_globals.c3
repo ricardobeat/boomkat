@@ -5,30 +5,17 @@ import std::io;
 
 // ============================================================================
 // Whole-program primitive-only global proof (GETGLOBAL_PRIM / PUTGLOBAL_PRIM)
+//
+// A top-level `var`/`function` global is primitive-only if every assignment
+// stores a provably-primitive value, and the unit has no escape hatches
+// (eval/globalThis/window/Function/with/global-this). Reads and writes then
+// compile to guard-free GETGLOBAL_PRIM / PUTGLOBAL_PRIM opcodes (no heap checks,
+// refcounts, or store tracking).
+//
+// In this engine, strings and bigints are heap-allocated, so string/template/bigint
+// literals clear the primitive-only bit. Ambiguous assignments or table overflows
+// conservatively fall back to standard guarded GETGLOBAL/PUTGLOBAL.
 // ============================================================================
-//
-// A top-level `var`/`function` global is PRIMITIVE-ONLY iff EVERY assignment to
-// its name anywhere in the compilation unit (including nested function bodies)
-// stores a provably-primitive value, AND the unit has no eval/globalThis/window/
-// Function/with/global-`this` observability that could inject a heap value from
-// outside the compiler's view. Reads/writes of such a global then compile to the
-// guard-free GETGLOBAL_PRIM / PUTGLOBAL_PRIM opcodes (no is_heap check, no
-// refcount, no track_heap_store).
-//
-// SOUNDNESS: the whole correctness argument is
-//   (1) the observability gate: if any escape hatch appears, no global
-//       is treated primitive-only (the entire set is discarded); and
-//   (2) clearing the primitive-only bit on ANY assignment whose right-hand side
-//       is not provably primitive, including assignments inside nested functions
-//       and assignments whose RHS names a non-primitive-only global (resolved to
-//       a fixpoint). Strings and bigints are HEAP in this engine, so a string /
-//       template / bigint literal RHS clears the bit.
-//
-// The scan is deliberately CONSERVATIVE: whenever it cannot prove primitiveness
-// (unknown identifier RHS, member/call/new RHS, capacity overflow, or any
-// observability hazard) it falls back to the guarded GETGLOBAL/PUTGLOBAL path.
-// A false negative only costs the optimization; a false positive would be a
-// refcount UAF/leak, so every ambiguous case resolves to "not primitive-only".
 
 const uint PRIM_MAX_CANDIDATES = 256;
 const uint PRIM_MAX_DEPS = 8;       // per-candidate RHS-identifier dependencies
@@ -119,9 +106,9 @@ fn PrimCandidate* prim_intern(PrimCandidate* table, uint* count, char[] name, bo
     return c;
 }
 
-/// Whole-program pre-scan (Script global scope only). Populates
-/// self.prim_only_name_idxs with the constant-pool indices of proven
-/// primitive-only top-level globals. Lexer state is fully saved and restored.
+// Whole-program pre-scan (Script global scope only). Populates
+// self.prim_only_name_idxs with the constant-pool indices of proven
+// primitive-only top-level globals.
 fn void CompilerContext.pre_scan_prim_globals(&self) {
     // Only Script global scope: modules bind via GETVAR (no GETGLOBAL), and the
     // opcodes are only substituted at global slot scope anyway.
@@ -569,7 +556,7 @@ fn void CompilerContext.prim_rhs_token(&self, Token tok, TokenType tt, TokenType
     }
 }
 
-/// True when the given constant-pool name index was proven primitive-only.
+// True when the given constant-pool name index was proven primitive-only.
 fn bool CompilerContext.is_prim_only_global(&self, uint name_idx) {
     if (self.prim_only_name_idxs.len() == 0) return false;
     return self.prim_only_name_idxs.contains(name_idx);
