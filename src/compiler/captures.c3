@@ -117,6 +117,37 @@ fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false) {
     int param_buf_base_paren = -1;    // paren_depth of the opening `(`
     bool param_buf_pending = false;   // `)` seen, waiting for `{` or discard
 
+    // --- Shadow set: parameter names bound by the innermost callable ---
+    // A name a nested callable binds as its own parameter cannot refer to the
+    // outer local of the same name, so references to it inside that callable
+    // must NOT mark the outer local captured. Only simple `(a, b)` / `a =>`
+    // parameter positions qualify: a name appearing anywhere else in the list
+    // (inside a default expression, or a destructuring pattern) is a
+    // reference, not a binder, so it is left out and stays capturing.
+    //
+    // The set is only consulted while region_depth marks the body that these
+    // parameters belong to, and it is cleared when that body closes. Nested
+    // callables deeper in are not tracked -- shadow_valid goes false for them,
+    // which falls back to the old capture-everything behaviour.
+    char[][16] shadow_names;
+    ushort[16] shadow_lens;
+    uint shadow_count = 0;
+    bool shadow_valid = false;        // set is complete/trustworthy for region_depth
+    // Candidate binders accumulated while scanning the current param list.
+    char[][16] cand_names;
+    ushort[16] cand_lens;
+    uint cand_count = 0;
+    bool cand_ok = true;              // false once the list has a non-simple form
+    int  cand_paren = -1;             // paren_depth just inside the param list
+    int  cand_cdepth = -1;            // combined_depth just inside the param list
+    // An identifier in binder position, confirmed by the next token.
+    char[] pend_name;
+    ushort pend_len = 0;
+    bool   pend_active = false;
+    // Most recent identifier token, for the parenless `x => ...` arrow form.
+    char[] last_ident;
+    ushort last_ident_len = 0;
+
     bool done = false;
     while (!done && !self.capture_all) {
         Token? tok_opt = self.lexer.next_token();
@@ -130,6 +161,25 @@ fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false) {
         pending_body_brace = false;
         pending_arrow = false;
 
+        // Resolve a parameter-binder candidate against the token that follows
+        // it: only `,` or `)` confirm a simple binder. Anything else (`=`,
+        // `.`, `[`, ...) means the identifier was a reference or a non-simple
+        // pattern element, which disqualifies the whole list from shadowing.
+        if (pend_active) {
+            pend_active = false;
+            if (tt == TokenType.COMMA || tt == TokenType.RPAREN) {
+                if (cand_count < 16) {
+                    cand_names[cand_count] = pend_name;
+                    cand_lens[cand_count] = pend_len;
+                    cand_count++;
+                } else {
+                    cand_ok = false;
+                }
+            } else {
+                cand_ok = false;
+            }
+        }
+
         // If `)` was seen but the next token is not `{`, this was a call or
         // grouping expression, not a param list, so discard the deferred buffer.
         if (param_buf_pending && tt != TokenType.LBRACE && tt != TokenType.ARROW) {
@@ -142,18 +192,68 @@ fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false) {
         if (was_pending_arrow && tt != TokenType.LBRACE
             && region_depth < 0 && expr_region_depth < 0) {
             expr_region_depth = combined_depth;
+            // Same shadow adoption as a braced body, for `(a, b) => expr`.
+            shadow_count = 0;
+            shadow_valid = false;
+            if (cand_ok && cand_count > 0) {
+                for (uint ci = 0; ci < cand_count; ci++) {
+                    shadow_names[ci] = cand_names[ci];
+                    shadow_lens[ci] = cand_lens[ci];
+                }
+                shadow_count = cand_count;
+                shadow_valid = true;
+            }
         }
 
         if (tt == TokenType.LBRACE) {
             tscan.on_lbrace();
+            if ((was_pending_brace || was_pending_arrow) && region_depth >= 0) {
+                // A callable nested inside the region we are already tracking.
+                // Its own binders are not modelled, so stop trusting the outer
+                // shadow set for the rest of this region: fall back to
+                // capturing every name, as before.
+                shadow_valid = false;
+                shadow_count = 0;
+            }
             if ((was_pending_brace || was_pending_arrow) && region_depth < 0) {
                 region_depth = (int)brace_depth;
+                // This body belongs to the parameter list just scanned: adopt
+                // its simple binders as the shadow set for the whole region.
+                shadow_count = 0;
+                shadow_valid = false;
+                if (cand_ok && cand_count > 0) {
+                    for (uint ci = 0; ci < cand_count; ci++) {
+                        shadow_names[ci] = cand_names[ci];
+                        shadow_lens[ci] = cand_lens[ci];
+                    }
+                    shadow_count = cand_count;
+                    shadow_valid = true;
+                }
                 // Flush deferred param-default capture buffer: identifiers
                 // seen inside the `(...)` that preceded this `{` are in
                 // parameter-default expressions and must be captured.
+                //
+                // Confirmed simple binders are skipped: `function (s, i)` names
+                // the parameters themselves, which shadow rather than reference
+                // the outer locals. A name that is BOTH a binder and a
+                // reference elsewhere in the list (`(a = s, s)`) still flushes,
+                // because it only reaches the binder set when every one of its
+                // occurrences sat in binder position.
                 if (param_buf_count > 0) {
                     for (uint pi = 0; pi < param_buf_count; pi++) {
-                        self.add_captured_name(param_buf_names[pi][:param_buf_lens[pi]]);
+                        char[] pn = param_buf_names[pi][:param_buf_lens[pi]];
+                        bool is_binder = false;
+                        if (shadow_valid) {
+                            for (uint si = 0; si < shadow_count; si++) {
+                                if (shadow_lens[si] != pn.len) continue;
+                                bool same = true;
+                                for (usz j = 0; j < pn.len; j++) {
+                                    if (shadow_names[si][j] != pn[j]) { same = false; break; }
+                                }
+                                if (same) { is_binder = true; break; }
+                            }
+                        }
+                        if (!is_binder) self.add_captured_name(pn);
                     }
                 }
             }
@@ -179,8 +279,12 @@ fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false) {
                 if (!expr_mode && started && brace_depth == 0) {
                     done = true;  // body's closing brace
                 }
-                if (region_depth >= 0 && (int)brace_depth <= region_depth) region_depth = -1;
-                if (expr_region_depth >= 0 && combined_depth < expr_region_depth) expr_region_depth = -1;
+                if (region_depth >= 0 && (int)brace_depth <= region_depth) {
+                    region_depth = -1;
+                    shadow_valid = false;
+                    shadow_count = 0;
+                }
+                if (expr_region_depth >= 0 && combined_depth < expr_region_depth) { expr_region_depth = -1; shadow_valid = false; shadow_count = 0; }
             }
         } else if (tt == TokenType.LPAREN) {
             if (paren_depth < 64) {
@@ -191,6 +295,11 @@ fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false) {
                     param_buf_base_paren = (int)paren_depth;
                     param_buf_count = 0;
                     param_buf_pending = false;
+                    // Start collecting simple binder names for this list.
+                    cand_count = 0;
+                    cand_ok = true;
+                    cand_paren = (int)paren_depth + 1;
+                    cand_cdepth = combined_depth + 1;
                 }
             } else {
                 self.capture_all = true;
@@ -210,15 +319,27 @@ fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false) {
             if (expr_mode && combined_depth < 0) {
                 done = true;  // closer below the arrow expression's entry depth
             }
-            if (expr_region_depth >= 0 && combined_depth < expr_region_depth) expr_region_depth = -1;
+            if (expr_region_depth >= 0 && combined_depth < expr_region_depth) { expr_region_depth = -1; shadow_valid = false; shadow_count = 0; }
         } else if (tt == TokenType.LBRACKET) {
             combined_depth++;
         } else if (tt == TokenType.RBRACKET) {
             combined_depth--;
             if (expr_mode && combined_depth < 0) done = true;
-            if (expr_region_depth >= 0 && combined_depth < expr_region_depth) expr_region_depth = -1;
+            if (expr_region_depth >= 0 && combined_depth < expr_region_depth) { expr_region_depth = -1; shadow_valid = false; shadow_count = 0; }
         } else if (tt == TokenType.ARROW) {
             pending_arrow = true;
+            // A parenless arrow (`x => ...`) binds the single identifier that
+            // immediately precedes the `=>`, with no param-list parens for the
+            // candidate machinery to have seen. Adopt it directly. When the
+            // arrow did have parens, `)` was the previous token and the
+            // candidate set built above already holds the binders.
+            if (prev_tt == TokenType.IDENTIFIER && region_depth < 0
+                && expr_region_depth < 0 && last_ident_len > 0) {
+                cand_names[0] = last_ident;
+                cand_lens[0] = last_ident_len;
+                cand_count = 1;
+                cand_ok = true;
+            }
         } else if (tt == TokenType.CLASS) {
             // Class field initializers run in constructor scope with no
             // `) {` marker, so degrade rather than miss captures. Unlike
@@ -231,6 +352,8 @@ fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false) {
                    || tt == TokenType.COLON) {
             if (expr_region_depth >= 0 && combined_depth == expr_region_depth) {
                 expr_region_depth = -1;
+                shadow_valid = false;
+                shadow_count = 0;
             }
             if (expr_mode && combined_depth == 0 && tt != TokenType.COLON
                 && region_depth < 0) {
@@ -238,19 +361,52 @@ fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false) {
             }
         } else if (tt == TokenType.IDENTIFIER) {
             char[] name = tok.str_value;
+            last_ident = name;
+            last_ident_len = (ushort)name.len;
             if (name.len == 4 && name[0] == 'e' && name[1] == 'v'
                 && name[2] == 'a' && name[3] == 'l') {
                 // Direct eval can read/assign any caller binding by name.
                 self.capture_all = true;
             } else if (region_depth >= 0 || expr_region_depth >= 0) {
-                self.add_captured_name(name);
+                // Skip names the innermost callable binds as its own simple
+                // parameters: those references resolve to the parameter, never
+                // to the outer local, so the outer local stays register-resident.
+                bool shadowed = false;
+                if (shadow_valid) {
+                    for (uint si = 0; si < shadow_count; si++) {
+                        if (shadow_lens[si] != name.len) continue;
+                        bool same = true;
+                        for (usz j = 0; j < name.len; j++) {
+                            if (shadow_names[si][j] != name[j]) { same = false; break; }
+                        }
+                        if (same) { shadowed = true; break; }
+                    }
+                }
+                if (!shadowed) self.add_captured_name(name);
             }
             // Buffer identifiers seen inside a non-control `(...)` so they
             // can be captured if the paren turns out to be a param list.
-            if (param_buf_active && param_buf_count < 16 && region_depth < 0) {
-                param_buf_names[param_buf_count] = name;
-                param_buf_lens[param_buf_count] = (ushort)name.len;
-                param_buf_count++;
+            if (param_buf_active && region_depth < 0) {
+                if (param_buf_count < 16) {
+                    param_buf_names[param_buf_count] = name;
+                    param_buf_lens[param_buf_count] = (ushort)name.len;
+                    param_buf_count++;
+                } else {
+                    // Overflowed the deferred buffer: names beyond it would be
+                    // dropped, so no binder claim from this list is trustworthy.
+                    cand_ok = false;
+                }
+                // A binder is an identifier sitting directly at the top level
+                // of the list (`(a, b)`), i.e. exactly one paren deep and not
+                // nested in a default expression, array/object pattern, or
+                // call. It is only *confirmed* once the following token turns
+                // out to be `,` or `)`, which rejects `a = s` (default), `a.b`
+                // (member expression) and any other continuation.
+                if ((int)paren_depth == cand_paren && combined_depth == cand_cdepth) {
+                    pend_name = name;
+                    pend_len = (ushort)name.len;
+                    pend_active = true;
+                }
             }
         }
 
