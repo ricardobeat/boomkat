@@ -125,6 +125,10 @@ fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false) {
     // (inside a default expression, or a destructuring pattern) is a
     // reference, not a binder, so it is left out and stays capturing.
     //
+    // The set is also extended by the body's own top-level `var`/`let`/`const`
+    // binders (see decl_pending below), which covers a nested callable that
+    // redeclares an outer name rather than taking it as a parameter.
+    //
     // The set is only consulted while region_depth marks the body that these
     // parameters belong to, and it is cleared when that body closes. Nested
     // callables deeper in are not tracked -- shadow_valid goes false for them,
@@ -147,6 +151,21 @@ fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false) {
     // Most recent identifier token, for the parenless `x => ...` arrow form.
     char[] last_ident;
     ushort last_ident_len = 0;
+
+    // --- Shadow set extension: body-level `var`/`let`/`const` binders ---
+    // A nested callable that declares its own body-level binding of a name
+    // cannot reach the outer local of that name, so references to it inside
+    // that callable must not mark the outer local captured.
+    //
+    // Only the callable body's OWN top level qualifies (`brace_depth ==
+    // region_depth + 1`). A declaration in a nested block shadows just that
+    // block, so `() => { const a = s; { let s = 9; } }` must still capture the
+    // outer `s`; restricting to body level is what keeps that sound. `var`
+    // hoists to the whole body, and a body-level `let`/`const` covers every
+    // point a nested closure could read the name from, so both are safe here.
+    bool decl_pending = false;    // inside a body-level declarator list
+    bool decl_at_binder = false;  // next identifier is a binding identifier
+    int  decl_cdepth = -1;        // combined_depth of the declarator list
 
     bool done = false;
     while (!done && !self.capture_all) {
@@ -214,14 +233,23 @@ fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false) {
                 // capturing every name, as before.
                 shadow_valid = false;
                 shadow_count = 0;
+                // Any declarator list in progress belonged to the outer body;
+                // declarations inside this deeper callable must not extend it.
+                decl_pending = false;
+                decl_at_binder = false;
             }
             if ((was_pending_brace || was_pending_arrow) && region_depth < 0) {
                 region_depth = (int)brace_depth;
                 // This body belongs to the parameter list just scanned: adopt
                 // its simple binders as the shadow set for the whole region.
+                // An empty list still yields a valid (empty) set, so a nested
+                // callable taking no parameters can still shadow via its own
+                // body-level declarations below.
                 shadow_count = 0;
                 shadow_valid = false;
-                if (cand_ok && cand_count > 0) {
+                decl_pending = false;
+                decl_at_binder = false;
+                if (cand_ok) {
                     for (uint ci = 0; ci < cand_count; ci++) {
                         shadow_names[ci] = cand_names[ci];
                         shadow_lens[ci] = cand_lens[ci];
@@ -283,6 +311,8 @@ fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false) {
                     region_depth = -1;
                     shadow_valid = false;
                     shadow_count = 0;
+                    decl_pending = false;
+                    decl_at_binder = false;
                 }
                 if (expr_region_depth >= 0 && combined_depth < expr_region_depth) { expr_region_depth = -1; shadow_valid = false; shadow_count = 0; }
             }
@@ -348,8 +378,38 @@ fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false) {
             // lexer restore, and the over-approximation is safe (captures
             // more, never fewer).
             self.capture_all = true;
+        } else if (tt == TokenType.VAR || tt == TokenType.LET
+                   || tt == TokenType.CONST) {
+            // A declaration at the tracked callable body's own top level binds
+            // names that shadow the outer local. `for (var i = 0; ...)` also
+            // lands here: its header sits one paren deeper, and decl_cdepth
+            // records that so the header's `,` separators are still binders.
+            if (region_depth >= 0 && (int)brace_depth == region_depth + 1) {
+                decl_pending = true;
+                decl_at_binder = true;
+                decl_cdepth = combined_depth;
+            } else {
+                decl_pending = false;
+                decl_at_binder = false;
+            }
         } else if (tt == TokenType.COMMA || tt == TokenType.SEMICOLON
                    || tt == TokenType.COLON) {
+            if (decl_pending) {
+                if (tt == TokenType.SEMICOLON) {
+                    // Ends the declaration (or the init clause of a for-head).
+                    decl_pending = false;
+                    decl_at_binder = false;
+                } else if (tt == TokenType.COMMA && combined_depth == decl_cdepth) {
+                    // A `,` at the declarator list's own depth continues the
+                    // list, so the next identifier is another binder. A `,`
+                    // nested inside a call, array or object in an initialiser
+                    // is deeper and correctly leaves decl_at_binder false.
+                    decl_at_binder = true;
+                } else if (tt == TokenType.COLON) {
+                    // Object-pattern value position / ternary: not a binder.
+                    decl_at_binder = false;
+                }
+            }
             if (expr_region_depth >= 0 && combined_depth == expr_region_depth) {
                 expr_region_depth = -1;
                 shadow_valid = false;
@@ -359,10 +419,28 @@ fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false) {
                 && region_depth < 0) {
                 done = true;  // end of arrow expression body
             }
+        } else if (tt == TokenType.ASSIGN) {
+            if (decl_pending) decl_at_binder = false;  // initialiser follows
         } else if (tt == TokenType.IDENTIFIER) {
             char[] name = tok.str_value;
             last_ident = name;
             last_ident_len = (ushort)name.len;
+            // A binding identifier of a body-level declarator shadows the
+            // outer local of the same name. Both depth tests must hold: the
+            // declaration is at the body's own top level, and the name sits at
+            // the declarator list's own depth rather than inside a
+            // destructuring pattern, call, or index in an initialiser. A
+            // pattern leaf is therefore skipped, which only over-captures.
+            if (decl_at_binder && region_depth >= 0
+                && (int)brace_depth == region_depth + 1
+                && combined_depth == decl_cdepth) {
+                decl_at_binder = false;
+                if (shadow_valid && shadow_count < 16) {
+                    shadow_names[shadow_count] = name;
+                    shadow_lens[shadow_count] = (ushort)name.len;
+                    shadow_count++;
+                }
+            }
             if (name.len == 4 && name[0] == 'e' && name[1] == 'v'
                 && name[2] == 'a' && name[3] == 'l') {
                 // Direct eval can read/assign any caller binding by name.
