@@ -682,7 +682,16 @@ fn Instruction* th_getpropc(Instruction* pc, Instruction* code_end, TVal* regs, 
     if (!ic_val.is_heap_allocated()) {
         *ra = ic_val;
     } else {
-        vm.heap.tval_copy_ref(ra, &ic_val);
+        // Inline refcount, matching th_getvar/th_ldreg (c32cc52b): tval_copy_ref
+        // calls Heap.decref, which frames the handler (ten callee-saved registers
+        // saved/restored on every IC hit). An incref is a plain increment, and a
+        // decref is a decrement plus a zero test whose free path is rare. Both
+        // sides are tested before either is mutated: bailing after a completed
+        // retain would leak the reference it took.
+        if (!th_can_retain(&ic_val) || !th_can_release(ra, cold)) return pc;
+        th_do_retain(&ic_val);
+        th_do_release(ra);
+        *ra = ic_val;
         track_heap_store(cold.act, ra, (uint)insn.a);
     }
     pc++;
@@ -708,7 +717,11 @@ fn Instruction* th_getpropc_cached(Instruction* pc, Instruction* code_end, TVal*
     if (!ic_val.is_heap_allocated()) {
         *ra = ic_val;
     } else {
-        vm.heap.tval_copy_ref(ra, &ic_val);
+        // Same inline-refcount pattern as th_getpropc above.
+        if (!th_can_retain(&ic_val) || !th_can_release(ra, cold)) return pc;
+        th_do_retain(&ic_val);
+        th_do_release(ra);
+        *ra = ic_val;
         track_heap_store(cold.act, ra, (uint)insn.a);
     }
     pc++;
