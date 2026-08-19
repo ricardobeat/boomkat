@@ -187,10 +187,14 @@ fn bool instanceof_walk_chain(Vm* vm, Dispatch* ds, HObject* start, HObject* pro
 /// heap.has_error when they convert it into their own throw, but nothing clears
 /// throw_pending, so the next arithmetic coercion re-fires the same RangeError
 /// after the user's catch has already handled it.
-/// Minimum accumulator size before the in-place append path engages. Below
-/// `MAX_INTERN_BYTES` a concat result is interned, so it is shared by
-/// definition and must never be mutated; the ordinary copy path handles it.
-const uint CONCAT_ACCUM_MIN = heap::MAX_INTERN_BYTES;
+/// Minimum result size at which an `acc = acc + chunk` concat is born as a
+/// non-interned accumulator with spare capacity, and below which the in-place
+/// append path refuses to engage. Deliberately lower than
+/// `heap::MAX_INTERN_BYTES`: a string-building loop crosses 32 bytes within a
+/// few iterations, and interning every intermediate until 256 bytes piles
+/// dead strings into the string table. A non-interned accumulator is
+/// refcounted, so the intermediates die with the loop variable instead.
+const uint CONCAT_ACCUM_MIN = 32;
 
 /// Fast path for `acc = acc + chunk`, the shape every `acc += chunk` loop
 /// compiles to. Appends `rs` onto `ls` in place and leaves the result in `ra`,
@@ -229,9 +233,9 @@ const uint CONCAT_ACCUM_MIN = heap::MAX_INTERN_BYTES;
 /// allocating an HString for it first. It must not alias `ls`'s own buffer;
 /// the overlap check below enforces that.
 ///
-/// The result stays non-interned, which is the pre-existing contract for any
-/// concat result over `MAX_INTERN_BYTES`: `ensure_interned` canonicalizes it at
-/// every point where identity matters.
+/// The result stays non-interned, the standing contract for any concat
+/// result at or over `CONCAT_ACCUM_MIN`: `ensure_interned` canonicalizes it
+/// at every point where identity matters.
 fn bool vm_concat_accumulate(Vm* vm, Activation* act, TVal* ra, TVal* rb,
                              HString* ls, char[] tail, uint reg_idx,
                              bytecode::Instruction* next_insn) {
@@ -285,6 +289,22 @@ fn bool vm_concat_accumulate(Vm* vm, Activation* act, TVal* ra, TVal* rb,
     vm.heap.set_reg_string(ra, grown);
     track_heap_store(act, ra, reg_idx);
     return true;
+}
+
+/// Birth a concat result as a non-interned accumulator with spare capacity,
+/// so the next iteration of an `acc = acc + chunk` loop can append in place
+/// via vm_concat_accumulate. Qualifies only on that exact shape (ra == rb)
+/// with a result of at least CONCAT_ACCUM_MIN bytes; anything else returns
+/// null and the caller interns the result as usual. Birthing only allocates:
+/// nothing shared is mutated, so none of vm_concat_accumulate's aliasing
+/// guards apply. Capacity starts at twice the content so a growing loop
+/// reaches its final size in O(log n) reallocations.
+fn HString* vm_concat_birth(Vm* vm, TVal* ra, TVal* rb, char[] data) {
+    if (ra != rb) return null;
+    if (data.len < CONCAT_ACCUM_MIN) return null;
+    ulong cap = (ulong)data.len * 2;
+    if (hstring::length_exceeds_max(cap)) { cap = (ulong)data.len; }
+    return vm.heap.alloc_concat_accumulator(data, (uint)cap);
 }
 
 fn bool vm_run_depth_exceeded(Vm* vm) {
@@ -2198,14 +2218,14 @@ fn TVal? Vm.run(Vm* vm) {
                             mem::copy(buf, &int_buf, (sz)((usz)int_len));
                             mem::copy(buf + int_len, str.get_cstr(), (sz)(s_len));
                         }
-                        // Every string must be interned: string equality across
-                        // the engine (SEQ, indexOf, property keys) is pointer
-                        // identity on the interned HString.
-                        HString* interned = intern_string(vm, buf[:total]);
+                        // In the `acc = acc + chunk` shape the result is born
+                        // as a non-interned accumulator; anything else is
+                        // interned so string equality stays pointer identity.
+                        HString* result = vm_concat_birth(vm, ra, rb, buf[:total]);
+                        if (result == null) { result = intern_string(vm, buf[:total]); }
                         if (heap_allocated) vm.heap.free_func(vm.heap.heap_udata, buf);
-                        vm.heap.set_reg_string(ra, interned);
-                        // A concat result can be a large NON-interned string
-                        // (len > MAX_INTERN_BYTES): a pure refcounted leaf with
+                        vm.heap.set_reg_string(ra, result);
+                        // A non-interned result is a pure refcounted leaf with
                         // no string-table/GC backstop. Raise heap_reg_count so
                         // decref_callee_regs releases the register's reference
                         // at frame teardown instead of leaking it.
@@ -2253,6 +2273,17 @@ fn TVal? Vm.run(Vm* vm) {
                     }
                     uint total = (uint)total64;
 
+                    // `acc += chunk` in a loop: extend the accumulator in place
+                    // rather than copying it whole on every iteration, which is
+                    // what makes the naive form quadratic. Only legal when the
+                    // accumulator is provably unshared; see vm_concat_accumulate.
+                    // This must run before the buffer below: the fallback path
+                    // frees that buffer, and a success leaks it otherwise.
+                    if (vm_concat_accumulate(vm, ds.act, ra, rb, ls, rs.get_data(), (uint)insn.a,
+                                             ds.curr_pc)) {
+                        continue;
+                    }
+
                     // Use stack buffer for small strings, heap for large
                     char[512] stack_buf;
                     char* buf;
@@ -2265,15 +2296,6 @@ fn TVal? Vm.run(Vm* vm) {
                         heap_allocated = true;
                     }
 
-                    // `acc += chunk` in a loop: extend the accumulator in place
-                    // rather than copying it whole on every iteration, which is
-                    // what makes the naive form quadratic. Only legal when the
-                    // accumulator is provably unshared; see vm_concat_accumulate.
-                    if (vm_concat_accumulate(vm, ds.act, ra, rb, ls, rs.get_data(), (uint)insn.a,
-                                             ds.curr_pc)) {
-                        continue;
-                    }
-
                     // Copy both halves directly into buffer
                     if (a_len > 0) {
                         mem::copy(buf, ls.get_cstr(), (sz)(a_len));
@@ -2282,13 +2304,14 @@ fn TVal? Vm.run(Vm* vm) {
                         mem::copy(buf + a_len, rs.get_cstr(), (sz)(b_len));
                     }
 
-                    // Every string must be interned: string equality across
-                    // the engine (SEQ, indexOf, property keys) is pointer
-                    // identity on the interned HString.
-                    HString* interned = intern_string(vm, buf[:total]);
+                    // In the `acc = acc + chunk` shape the result is born
+                    // as a non-interned accumulator; anything else is
+                    // interned so string equality stays pointer identity.
+                    HString* result = vm_concat_birth(vm, ra, rb, buf[:total]);
+                    if (result == null) { result = intern_string(vm, buf[:total]); }
                     if (heap_allocated) vm.heap.free_func(vm.heap.heap_udata, buf);
-                    vm.heap.set_reg_string(ra, interned);
-                    // Large concat results are non-interned; see the tracking
+                    vm.heap.set_reg_string(ra, result);
+                    // Non-interned results need register tracking; see the
                     // note on the STRING+FASTINT fast path above.
                     track_heap_store(ds.act, ra, (uint)insn.a);
                 } else {
@@ -2406,14 +2429,14 @@ fn TVal? Vm.run(Vm* vm) {
                         }
                         mem::copy(buf, str.get_cstr(), (sz)(s_len));
                         mem::copy(buf + s_len, &int_buf, (sz)((usz)int_len));
-                        // Every string must be interned: string equality across
-                        // the engine (SEQ, indexOf, property keys) is pointer
-                        // identity on the interned HString.
-                        HString* interned = intern_string(vm, buf[:total]);
+                        // In the `acc = acc + chunk` shape the result is born
+                        // as a non-interned accumulator; anything else is
+                        // interned so string equality stays pointer identity.
+                        HString* result = vm_concat_birth(vm, ra, rb, buf[:total]);
+                        if (result == null) { result = intern_string(vm, buf[:total]); }
                         if (heap_allocated) vm.heap.free_func(vm.heap.heap_udata, buf);
-                        vm.heap.set_reg_string(ra, interned);
-                        // A concat result can be a large NON-interned string
-                        // (len > MAX_INTERN_BYTES): a pure refcounted leaf with
+                        vm.heap.set_reg_string(ra, result);
+                        // A non-interned result is a pure refcounted leaf with
                         // no string-table/GC backstop. Raise heap_reg_count so
                         // decref_callee_regs releases the register's reference
                         // at frame teardown instead of leaking it.

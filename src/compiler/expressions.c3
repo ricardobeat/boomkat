@@ -971,6 +971,18 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
             self.free_reg(lhs_member_prop);
             self.free_reg(lhs_member_obj);
         } else if (lhs_was_getvar) {
+            if (void_ctx) {
+                // Putvar clears its source register, but the value is
+                // discarded: expression_statement only signals void context
+                // outside eval bodies, so no completion value is owed. Storing
+                // straight from `left` keeps the compound op directly followed
+                // by its PUTGLOBAL, the exact shape the VM's refcount-2
+                // in-place concat append requires for `acc += chunk` loops
+                // over globals; the preserve copy between them forces a full
+                // copy every iteration.
+                self.emit_a_bc(ident_store_op, (uint)left, lhs_getvar_name_idx);
+                return left;
+            }
             // PUTVAR clears the source register, so copy to a temp first
             // so the result survives the clobber.
             ushort tmp = self.alloc_reg();
