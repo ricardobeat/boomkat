@@ -73,6 +73,13 @@ const uint PROPS_GROW_DEN = 2;
 /// Property count at which a hash table is worth building. Below it, the linear
 /// scan is faster.
 const uint HASH_MIN_PROPS = 8;
+/// Entries a collection must hold before it builds a CollHashInfo. Below this
+/// the linear scan over array_part is faster than hashing, and most Maps and
+/// Sets in real code never reach it.
+const uint COLL_HASH_MIN_ENTRIES = 8;
+/// Marks a probe slot whose entry was deleted. Probing must continue past it
+/// rather than stop, or a key inserted after the deletion becomes unreachable.
+const uint COLL_SLOT_DELETED = 0xFFFFFFFF;
 
 /// Load factor as numerator over denominator. The table is rebuilt once
 /// prop_count passes hash_size * HASH_LOAD_NUM / HASH_LOAD_DEN.
@@ -728,6 +735,30 @@ struct PropHashInfo {
     uint  count;    /// prop_count as of the last rebuild
 }
 
+/// Open-addressed index over a collection's array_part, so Map/Set lookups do
+/// not scan it.
+///
+/// Map, Set, WeakMap and WeakSet keep their entries in array_part -- keys and
+/// values interleaved for the Maps, values alone for the Sets -- and every
+/// add/has/get/delete used to walk that array comparing each entry with
+/// SameValueZero. Building a 100k Set was therefore quadratic and took 24
+/// seconds against QuickJS's 9ms, with 90% of samples inside the comparison.
+///
+/// `slots` holds 1-based array_part indices, 0 meaning empty and DELETED_SLOT
+/// meaning a tombstone that probing must step over. Storing indices rather
+/// than keys keeps array_part the single source of truth: iteration order,
+/// tombstone semantics and GC tracing all stay exactly as they were, and the
+/// index costs one uint per slot rather than a second copy of every key.
+///
+/// Built lazily once a collection exceeds COLL_HASH_MIN_ENTRIES, so the small
+/// collections that dominate real code keep paying nothing.
+struct CollHashInfo {
+    uint* slots;   /// 1-based indices into array_part; 0 = empty
+    uint  mask;    /// one less than the slot count, which is a power of two
+    uint  used;    /// occupied slots, tombstones included, for the load factor
+    uint  built;   /// array_used as of the last rebuild
+}
+
 /// HObject flattens these fields into its own layout with
 /// `inline HObjectBase base`. Classes that need subtype fields add an
 /// HObjectExtra after this prefix; see alloc_size_for_class.
@@ -744,6 +775,10 @@ struct HObjectBase {
     uint          array_used;
     void*         prop_alloc;
     PropHashInfo* prop_hash;
+    /// Lookup index for MAP/SET/WEAKMAP/WEAKSET, null until the collection is
+    /// large enough to want one. Never used by other classes -- prop_hash is
+    /// the index over named properties, and a Map can have both.
+    CollHashInfo* coll_hash;
 }
 
 /// The core ECMAScript object representation.
@@ -2114,6 +2149,21 @@ fn void hobject_free(HObject* obj, void* heap_ptr, bool free_header) {
             mem::free(obj.prop_hash);
         }
         obj.prop_hash = null;
+    }
+
+    // The collection lookup index, for MAP/SET/WEAKMAP/WEAKSET. It holds
+    // indices into array_part rather than references, so it needs freeing but
+    // never GC tracing.
+    if (obj.coll_hash != null) {
+        if (hp != null) {
+            heap::Heap* h = hp;
+            if (obj.coll_hash.slots != null) { h.free_func(h.heap_udata, obj.coll_hash.slots); }
+            h.free_func(h.heap_udata, obj.coll_hash);
+        } else {
+            if (obj.coll_hash.slots != null) { mem::free(obj.coll_hash.slots); }
+            mem::free(obj.coll_hash);
+        }
+        obj.coll_hash = null;
     }
 
     // Free the block holding prop_values and array_part. The shape is shared and
