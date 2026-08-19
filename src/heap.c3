@@ -3954,9 +3954,11 @@ fn void Heap.large_string_unregister(&self, HString* s) {
 /// grow to `cap` bytes, so subsequent appends land in place instead of copying
 /// the whole accumulator again.
 ///
-/// Only used for results already past `MAX_INTERN_BYTES`, which `str_intern`
-/// would leave un-interned anyway, so this adds no new un-interned strings; it
-/// only gives one of them spare capacity. Returns null if allocation fails.
+/// Used for `acc = acc + chunk` results at or over the VM's CONCAT_ACCUM_MIN,
+/// which is below `MAX_INTERN_BYTES`, so this does add un-interned strings in
+/// that range. They follow the same contract as the large ones: refcounted,
+/// registered here, and canonicalized by `ensure_interned` where identity
+/// matters. Returns null if allocation fails.
 fn HString* Heap.alloc_concat_accumulator(&self, char[] data, uint cap) {
     HString*? new_s = hstring::hstring_alloc_cap(self, data, hstring::HASH_DEFERRED, cap);
     if (try s = new_s) {

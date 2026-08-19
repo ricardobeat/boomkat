@@ -19,8 +19,8 @@ function check(name, actual, expected) {
     }
 }
 
-// Pad past the interning threshold so the accumulator path actually engages;
-// below it every result is interned and copied.
+// Pad past CONCAT_ACCUM_MIN (32) so the accumulator path actually engages;
+// below it every concat result is interned and copied.
 var P = "";
 for (var i = 0; i < 40; i++) { P += "pad"; }
 
