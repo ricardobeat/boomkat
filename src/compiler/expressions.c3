@@ -739,7 +739,11 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
             // statically resolvable too, so strip its dead read.
             if (lhs_last.op == Opcode.GETGLOBAL_PRIM
                 || (lhs_last.op == Opcode.GETGLOBAL
-                    && self.is_declared_global(lhs_getvar_name_idx))) {
+                    && self.is_declared_global(lhs_getvar_name_idx))
+                || (lhs_last.op == Opcode.GETVAR
+                    && lhs_ident_name_len > 0
+                    && self.is_statically_resolvable_local(
+                           lhs_ident_name_buf[:lhs_ident_name_len]))) {
                 self.code_count--;
             } else {
                 self.code[self.code_count - 1] = bytecode::make_a_bc(Opcode.RESOLVEVAR, (uint)left, lhs_getvar_name_idx);

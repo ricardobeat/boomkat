@@ -394,3 +394,33 @@ fn ushort CompilerContext.shield_computed_key(&self, ushort key_reg) {
     self.emit_abc(Opcode.LDREG, (uint)tmp, (uint)key_reg, 0);
     return tmp;
 }
+
+/// True when a bare-identifier assignment to `name` is STATICALLY RESOLVABLE,
+/// so the RESOLVEVAR probe and its THROW_UNRESOLVED guard are provably dead.
+///
+/// PutValue (ES2022 §13.15.2 step 1) requires a strict assignment to observe
+/// whether its LHS resolves BEFORE the RHS runs, which is what those two
+/// instructions implement. A binding this compiler declared in the current
+/// function always resolves: it exists in the environment from the moment the
+/// scope is entered (DECLVAR / INITTZ run at function entry), so the probe can
+/// only ever answer "found".
+///
+/// The TDZ entries are deliberately excluded. A `let`/`const` still holds its
+/// sentinel until the initialiser's PUTLEX publishes it, and reaching it early
+/// must throw ReferenceError; that throw comes from the access path, so the
+/// binding has to keep going through the guarded route while `is_tdz` is set.
+/// SCOPEMARK entries are skipped, and the walk stops at the first name match
+/// so an inner shadowing binding decides the answer, not an outer one.
+fn bool CompilerContext.is_statically_resolvable_local(&self, char[] name) {
+    if (self.is_global) return false;
+    uint i = self.scope_depth;
+    while (i > 0) {
+        i--;
+        ScopeEntry* e = &self.scope_stack[i];
+        if (e.kind == SCOPEMARK) continue;
+        if (str_eq(e.name, name)) {
+            return !e.is_tdz;
+        }
+    }
+    return false;
+}
