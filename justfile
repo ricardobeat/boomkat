@@ -322,3 +322,36 @@ bench-memory-compare:
 # List available commands
 list:
     @just --list
+
+# Interleaved A/B benchmark against another revision, with a load guard.
+# Refuses to report numbers taken on a busy machine, because those mislead:
+# measuring one binary to completion and then the other attributes machine
+# drift to the code change. Alternates runs and reports best-of-N.
+#   just perf-diff HEAD~1
+#   just perf-diff main /tmp/case.js
+perf-diff *ARGS:
+    bash scripts/perf_diff.sh {{ARGS}}
+
+# Sample a workload, then disassemble each hot symbol to explain why it is hot:
+# instruction count, whether it carries a stack frame, and the calls forcing
+# one. Finds the "163 instructions where 34 is normal" class of problem that a
+# sampled profile alone cannot show.
+#   just perf-triage /tmp/case.js
+perf-triage *ARGS:
+    bash scripts/perf_triage.sh {{ARGS}}
+
+# Diff compiled bytecode across the library corpus against another build.
+# Catches capture-analysis and codegen regressions that stay invisible to
+# test262: a binding losing its environment materialisation shows up here as a
+# DECLVAR delta long before it shows up as a runtime error in a minified bundle.
+#   just build boomkat_debug && just bytecode-diff /path/to/other/out/boomkat_debug
+bytecode-diff *ARGS:
+    python3 scripts/bytecode_diff.py {{ARGS}}
+
+# Collection-pressure counters (allocations, cycles, objects marked). Answers
+# "is the collector running too often" which a sampled profile cannot, since
+# both a large live heap and an over-tight budget look like time in mark_tval.
+#   just gc-profile /tmp/case.js
+gc-profile SCRIPT:
+    @make out/boomkat_gcprofile 2>/dev/null || c3c build boomkat_gcprofile
+    ./out/boomkat_gcprofile {{SCRIPT}}
