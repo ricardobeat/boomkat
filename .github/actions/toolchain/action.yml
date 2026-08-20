@@ -1,0 +1,41 @@
+name: Toolchain
+description: Install c3c and fetch the pinned QuickJS sources (both cached by version/ref).
+
+runs:
+  using: composite
+  steps:
+    # c3c's official x86-64 Linux binary runs natively on ubuntu-latest (no
+    # emulation, unlike the arm64 container in ci/linux). Fixed version → cached.
+    - name: Cache c3c
+      id: cache-c3c
+      uses: actions/cache@v4
+      with:
+        path: /opt/c3c
+        key: c3c-${{ env.C3C_VERSION }}-linux-x64
+    - name: Install c3c
+      if: steps.cache-c3c.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        curl -fsSL -o /tmp/c3c.tar.gz \
+          "https://github.com/c3lang/c3c/releases/download/v${C3C_VERSION}/c3-linux.tar.gz"
+        mkdir -p /opt/c3c
+        tar xzf /tmp/c3c.tar.gz -C /opt/c3c --strip-components=1
+    - name: Put c3c on PATH
+      shell: bash
+      run: echo "/opt/c3c" >> "$GITHUB_PATH"
+
+    # quickjs/ is gitignored; project.json pulls cutils.c and dtoa.c from it.
+    # Cache keyed on the pinned ref so a fresh clone only happens on a pin bump.
+    - name: Cache quickjs sources
+      id: cache-quickjs
+      uses: actions/cache@v4
+      with:
+        path: quickjs
+        key: quickjs-${{ env.QUICKJS_REF }}
+    - name: Fetch quickjs sources
+      if: steps.cache-quickjs.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        rm -rf quickjs
+        git clone https://github.com/bellard/quickjs.git quickjs
+        git -C quickjs checkout "$QUICKJS_REF"
