@@ -1,4 +1,4 @@
-/// WeakSet constructor and WeakSet.prototype methods.
+// WeakSet constructor and WeakSet.prototype methods.
 module boomkat::builtins;
 import boomkat::types;
 import boomkat::hstring;
@@ -15,8 +15,8 @@ fn HObject* check_weakset(BuiltinContext* ctx) {
     return check_collection_class(ctx, hobject::ObjClass.WEAKSET, "WeakSet.prototype method called on incompatible value");
 }
 
-/// Find the index in array_part where a value matches. Returns -1 if not found.
-/// WeakSet entries are stored as [v0, v1, ...] in array_part.
+// Find the index in array_part where a value matches. Returns -1 if not found.
+// WeakSet entries are stored as [v0, v1, ...] in array_part.
 fn int weakset_find_value(HObject* ws, TVal val, heap::Heap* h) {
     return coll_find(ws, val, 1, h);
 }
