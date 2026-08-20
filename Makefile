@@ -270,6 +270,29 @@ linux-ci-shell:
 	    --memory $(LINUX_MEMORY) --cpus $(LINUX_CPUS) \
 	    -v "$(CURDIR):/work" -v "$(QUICKJS_DIR):/work/quickjs" $(LINUX_IMAGE) bash)
 
+# ---- Linux/amd64 CI (x86-64 via emulation) ----------------------------------
+#
+# Reproduces the x86-64 GitHub CI on an Apple Silicon host. Uses an emulating
+# container engine (podman by default; set X86_ENGINE=docker to use docker),
+# NOT Apple's `container` CLI, whose amd64 emulation breaks c3c's linking. The
+# engine runs a real Linux VM with binfmt, so the prebuilt x86-64 c3c works.
+X86_IMAGE  ?= jse-linux-x86-ci
+X86_ENGINE ?= podman
+X86_RUN = $(X86_ENGINE) run --rm --platform linux/amd64 \
+	    -v "$(CURDIR):/work" -v "$(QUICKJS_DIR):/work/quickjs" -w /work $(X86_IMAGE)
+
+.PHONY: linux-x86-ci linux-x86-ci-image linux-x86-ci-shell
+
+linux-x86-ci-image:
+	$(X86_ENGINE) build --platform linux/amd64 -t $(X86_IMAGE) -f ci/linux-x86/Dockerfile ci/linux-x86
+
+linux-x86-ci:
+	$(call with_quickjs_unlinked,$(X86_RUN) bash ci/linux-x86/run.sh $(PHASES))
+
+linux-x86-ci-shell:
+	$(call with_quickjs_unlinked,$(X86_ENGINE) run --rm -it --platform linux/amd64 \
+	    -v "$(CURDIR):/work" -v "$(QUICKJS_DIR):/work/quickjs" -w /work $(X86_IMAGE) bash)
+
 clean:
 	c3c clean
 	@rm -rf "$${TMPDIR:-/tmp}"/boomkat-build.*
