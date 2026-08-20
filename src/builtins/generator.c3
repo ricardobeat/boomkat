@@ -1,4 +1,4 @@
-/// GeneratorFunction and Generator.prototype methods.
+// GeneratorFunction and Generator.prototype methods.
 module boomkat::builtins;
 import boomkat::types;
 import boomkat::bytecode;
@@ -15,10 +15,10 @@ import std::io;
 // GeneratorFunction constructor (ES6 §25.2.1)
 // ============================================================================
 
-/// Build a dynamic generator/async function from param + body strings, per
-/// ES2019 §19.2.1.1.1 CreateDynamicFunction.  is_generator / is_async select
-/// which keyword prefix appears in the retained source text and which compile
-/// flags are set on the CompilerContext.
+// Build a dynamic generator/async function from param + body strings, per
+// ES2019 §19.2.1.1.1 CreateDynamicFunction.  is_generator / is_async select
+// which keyword prefix appears in the retained source text and which compile
+// flags are set on the CompilerContext.
 fn void builtin_dynamic_gen_function(BuiltinContext* ctx, bool is_gen, bool is_async) {
     char* body_str = "";
     usz body_len = 0;
@@ -99,11 +99,9 @@ fn void builtin_dynamic_gen_function(BuiltinContext* ctx, bool is_gen, bool is_a
     (*func_obj.extra_ptr()).func.var_env = ctx.global_env;
     (*func_obj.extra_ptr()).func.lex_env = ctx.global_env;
 
-    // Set [[Prototype]] of the returned function object (ES2015 §9.2.2
-    // [[Construct]] step 5/2.a: OrdinaryCreateFromConstructor(newTarget, ...)
-    // so `class Sub extends GeneratorFunction {}` produces an instance whose
-    // [[Prototype]] is Sub.prototype, not %GeneratorFunction.prototype%):
-    // async functions → AsyncFunction.prototype, generator functions → GeneratorFunction.prototype
+    // Set [[Prototype]] (ES2015 §9.2.2 [[Construct]]): `class Sub extends
+    // GeneratorFunction {}` gets [[Prototype]] Sub.prototype, not
+    // %GeneratorFunction.prototype%.
     HObject* default_fn_proto;
     if (is_async && is_gen && ctx.heap.async_generator_func_proto != null) {
         default_fn_proto = ctx.heap.async_generator_func_proto;
