@@ -2648,11 +2648,13 @@ fn void builtin_string_proto_codePointAt(BuiltinContext* ctx) {
 
     double pos_d = (ctx.argc > 0) ? builtin_to_integer_vm(ctx, &ctx.regs[ctx.base_reg]) : 0.0;
     if (ctx.should_throw) { ctx.result.set_undefined(); return; }
-    if (math::is_nan(pos_d) || pos_d < 0) {
+    // Reject out-of-range (including +Infinity) before casting: (uint)(long)d
+    // is UB for a d past int64/uint range and x86 miscompiles it at -O2.
+    // pos >= clen returns undefined anyway, so fold the bound check in here.
+    if (math::is_nan(pos_d) || pos_d < 0 || pos_d >= (double)clen) {
         ctx.result.set_undefined(); return;
     }
     uint pos = (uint)(long)pos_d;
-    if (pos >= clen) { ctx.result.set_undefined(); return; }
 
     uint first = s_hstr.char_at_unchecked(pos);
     if (hstring::is_high_surrogate(first) && pos + 1 < clen) {
