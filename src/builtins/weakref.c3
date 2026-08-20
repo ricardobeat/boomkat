@@ -1,12 +1,12 @@
-/// WeakRef and FinalizationRegistry constructors and prototype methods
-/// (ES2021 §26.1 / §26.2).
-///
-/// This engine's weak collections are not truly weak: nothing is ever
-/// collected, so a WeakRef target and every FinalizationRegistry entry are
-/// held strongly (in the object's array_part) and never cleared. deref()
-/// therefore always returns the target, and cleanup callbacks never fire,
-/// both are spec-legal, since collection is entirely at the implementation's
-/// discretion. This mirrors the accepted non-weak WeakMap/WeakSet behaviour.
+// WeakRef and FinalizationRegistry constructors and prototype methods
+// (ES2021 §26.1 / §26.2).
+//
+// This engine's weak collections are not truly weak: nothing is ever
+// collected, so a WeakRef target and every FinalizationRegistry entry are
+// held strongly (in the object's array_part) and never cleared. deref()
+// therefore always returns the target, and cleanup callbacks never fire,
+// both are spec-legal, since collection is entirely at the implementation's
+// discretion. This mirrors the accepted non-weak WeakMap/WeakSet behaviour.
 module boomkat::builtins;
 import boomkat::types;
 import boomkat::hstring;
