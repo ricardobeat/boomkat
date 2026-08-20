@@ -1,4 +1,4 @@
-/// Boolean constructor and Boolean.prototype methods.
+// Boolean constructor and Boolean.prototype methods.
 module boomkat::builtins;
 import boomkat::types;
 import boomkat::env;
@@ -11,8 +11,8 @@ import boomkat::hobject;
 // Boolean constructor builtins
 // ============================================================================
 
-/// ToBoolean then return boolean primitive (function call) or
-/// a Boolean wrapper object (constructor call).
+// ToBoolean then return boolean primitive (function call) or
+// a Boolean wrapper object (constructor call).
 fn void builtin_boolean(BuiltinContext* ctx) {
     bool b;
     if (ctx.argc > 0) {
@@ -36,8 +36,8 @@ fn void builtin_boolean(BuiltinContext* ctx) {
     }
 }
 
-/// Boolean.prototype.toString, returns "true" or "false"
-/// ES2015 §15.6.4.2: throws TypeError if `this` is not a Boolean or Boolean wrapper.
+// Boolean.prototype.toString, returns "true" or "false"
+// ES2015 §15.6.4.2: throws TypeError if `this` is not a Boolean or Boolean wrapper.
 fn void builtin_boolean_proto_toString(BuiltinContext* ctx) {
     // 'this' is at base_reg - 1
     TVal this_val = ctx.regs[ctx.base_reg - 1];
@@ -62,8 +62,8 @@ fn void builtin_boolean_proto_toString(BuiltinContext* ctx) {
     ctx.result.set_string(s);
 }
 
-/// Boolean.prototype.valueOf, ES2015 §15.6.4.3: throws TypeError if `this`
-/// is not a Boolean or Boolean wrapper object.
+// Boolean.prototype.valueOf, ES2015 §15.6.4.3: throws TypeError if `this`
+// is not a Boolean or Boolean wrapper object.
 fn void builtin_boolean_proto_valueOf(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     if (this_val.is_object() && this_val.get_heapptr() != null) {
