@@ -2794,8 +2794,13 @@ fn void builtin_array_proto_lastIndexOf(BuiltinContext* ctx) {
     // If n < 0 → k = len + n. If len+n < 0 → no match (-1).
     // Else → k = min(n, len - 1).
     // Note: len == 0 means k starts at -1 → loop doesn't execute → -1.
+    // NaN must be handled before the else-branch cast: ToInteger(NaN) is 0, and
+    // (long)NaN is UB that x86 miscompiles at -O2. NaN is neither >= len nor
+    // < 0, so without this it would fall through to (long)relative_start.
     long k;
-    if (relative_start >= (double)len) {
+    if (relative_start != relative_start) {
+        k = 0;
+    } else if (relative_start >= (double)len) {
         k = (long)len - 1;
     } else if (relative_start < 0) {
         double tmp = (double)len + relative_start;

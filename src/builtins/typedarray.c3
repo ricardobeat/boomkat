@@ -1948,7 +1948,17 @@ fn void builtin_ta_proto_lastIndexOf(BuiltinContext* ctx) {
         // Length is captured before fromIndex coercion and NOT re-derived (spec
         // §23.2.3.17); only detach short-circuits. Shrunk indices read undefined.
         if (ta_buffer_truly_detached(obj)) { ctx.result.set_fastint(-1); return; }
-        if (from_d < 0.0) {
+        // Handle NaN and the infinities before casting: (long)NaN and
+        // (long)±Infinity are UB and x86 miscompiles them at -O2. Spec
+        // §23.2.3.17: NaN → 0 (starts at index 0), +Infinity clamps to the last
+        // index, -Infinity starts before index 0 (no match).
+        if (from_d != from_d) {
+            from = 0;
+        } else if (from_d == -1.0 / 0.0) {
+            ctx.result.set_fastint(-1); return;
+        } else if (from_d == 1.0 / 0.0) {
+            from = (long)len - 1;
+        } else if (from_d < 0.0) {
             from = (long)len + (long)from_d;
         } else {
             long fd = (long)from_d;
