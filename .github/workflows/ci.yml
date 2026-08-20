@@ -25,7 +25,7 @@ jobs:
     outputs:
       engine: ${{ steps.filter.outputs.engine }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dorny/paths-filter@v3
         id: filter
         with:
@@ -51,7 +51,7 @@ jobs:
     if: needs.changes.outputs.engine == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # --- Toolchain (fixed versions, so cache them) ------------------------
       # c3c 0.8.2's official x86-64 Linux binary runs natively on ubuntu-latest
@@ -88,9 +88,9 @@ jobs:
           git clone https://github.com/bellard/quickjs.git quickjs
           git -C quickjs checkout "$QUICKJS_REF"
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: '20'
+          node-version: '24'
       # tsc is the transpile/classification oracle for the TS library sweep and
       # the TS conformance corpus. Pin the version so results are reproducible
       # and the install is cacheable via setup-node's npm cache.
