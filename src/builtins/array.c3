@@ -297,9 +297,10 @@ fn void builtin_array_proto_includes(BuiltinContext* ctx) {
         }
         double sd = builtin_to_integer_vm(ctx, arg);
         if (ctx.should_throw) { ctx.result.set_undefined(); return; }
-        start_i = (long)sd;
-        if (start_i < 0) { start_i = (long)len + start_i; if (start_i < 0) start_i = 0; }
-        if ((ulong)start_i > len) start_i = (long)len;
+        // Clamp before the cast: (long)sd is UB for Infinity/out-of-range and
+        // x86 miscompiles it at -O2. arr_relative_index gives the same
+        // max(len+n,0) / min(n,len) result without the UB cast.
+        start_i = (long)arr_relative_index(sd, len);
     }
 
     TVal search_elem;
