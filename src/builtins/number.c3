@@ -1,4 +1,4 @@
-/// Number constructor and Number.prototype methods.
+// Number constructor and Number.prototype methods.
 module boomkat::builtins;
 import boomkat::types;
 import boomkat::env;
@@ -14,10 +14,10 @@ import std::io;
 // Number constructor builtins
 // ============================================================================
 
-/// thisNumberValue(this value) per ES2022 §21.1.3: returns the Number value
-/// if `this` is a number primitive or a Number-wrapper object, else false.
-/// Callers must check the returned bool before using `out`, a false return
-/// means the caller must throw a TypeError (this value is not a number).
+// thisNumberValue(this value) per ES2022 §21.1.3: returns the Number value
+// if `this` is a number primitive or a Number-wrapper object, else false.
+// Callers must check the returned bool before using `out`, a false return
+// means the caller must throw a TypeError (this value is not a number).
 fn bool this_number_value(BuiltinContext* ctx, double* out) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     if (this_val.is_number()) {
@@ -39,12 +39,12 @@ fn bool this_number_value(BuiltinContext* ctx, double* out) {
     return false;
 }
 
-/// Helper: append the radix digits of a non-negative integer-valued double to
-/// `out`, most significant digit first. Doubles reach ~1.8e308 (up to ~1024
-/// bits, ~1024 base-2 digits), far past any fixed-width integer type, so this
-/// works entirely in `double` via repeated division/floor rather than casting
-/// through `ulong`/`long` the way `number_to_radix_str` does for the part
-/// that DOES fit in 64 bits. Returns false on allocation failure.
+// Helper: append the radix digits of a non-negative integer-valued double to
+// `out`, most significant digit first. Doubles reach ~1.8e308 (up to ~1024
+// bits, ~1024 base-2 digits), far past any fixed-width integer type, so this
+// works entirely in `double` via repeated division/floor rather than casting
+// through `ulong`/`long` the way `number_to_radix_str` does for the part
+// that DOES fit in 64 bits. Returns false on allocation failure.
 fn bool append_double_int_radix(StrBuf* out, double val, uint radix) {
     if (val == 0.0) return out.append_char('0');
     // Peel off least-significant digits first, buffering them, then emit
@@ -69,8 +69,8 @@ fn bool append_double_int_radix(StrBuf* out, double val, uint radix) {
     return true;
 }
 
-/// Helper: convert a positive integer to a string in the given radix (2-36).
-/// Writes at most 64 chars into buf. Returns the number of chars written.
+// Helper: convert a positive integer to a string in the given radix (2-36).
+// Writes at most 64 chars into buf. Returns the number of chars written.
 fn int number_to_radix_str(ulong val, uint radix, char* buf, usz buf_size) {
     if (val == 0) {
         buf[0] = '0';
@@ -97,8 +97,8 @@ fn int number_to_radix_str(ulong val, uint radix, char* buf, usz buf_size) {
     return write_pos;
 }
 
-/// ToNumber then return number primitive (function call) or
-/// a Number wrapper object (constructor call).
+// ToNumber then return number primitive (function call) or
+// a Number wrapper object (constructor call).
 fn void builtin_number(BuiltinContext* ctx) {
     TVal num;
     if (ctx.argc > 0) {
@@ -138,8 +138,8 @@ fn void builtin_number(BuiltinContext* ctx) {
     }
 }
 
-/// Number.prototype.toString(radix), ES5 §15.7.4.2
-/// Returns string representation in the given radix (2-36), default 10.
+// Number.prototype.toString(radix), ES5 §15.7.4.2
+// Returns string representation in the given radix (2-36), default 10.
 fn void builtin_number_proto_toString(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     double d;
@@ -257,11 +257,11 @@ fn void builtin_number_proto_toString(BuiltinContext* ctx) {
     ctx.result.set_string(result);
 }
 
-/// Number.prototype.toFixed(fractionDigits), ES2022 §21.1.3.3
-/// Step order: ToIntegerOrInfinity(fractionDigits) and its range check happen
-/// before thisNumberValue is checked, but thisNumberValue itself must throw
-/// TypeError first if `this` is not a number (implementations commonly check
-/// fractionDigits first since it can throw independently of `this`).
+// Number.prototype.toFixed(fractionDigits), ES2022 §21.1.3.3
+// Step order: ToIntegerOrInfinity(fractionDigits) and its range check happen
+// before thisNumberValue is checked, but thisNumberValue itself must throw
+// TypeError first if `this` is not a number (implementations commonly check
+// fractionDigits first since it can throw independently of `this`).
 fn void builtin_number_proto_toFixed(BuiltinContext* ctx) {
     // 1. Let f be ? ToIntegerOrInfinity(fractionDigits).
     int f = 0;
@@ -314,12 +314,12 @@ fn void builtin_number_proto_toFixed(BuiltinContext* ctx) {
     ctx.result.set_string(s);
 }
 
-/// Number.prototype.toExponential(fractionDigits), ES2022 §21.1.3.2
-/// Step order: 1. Let x be ? thisNumberValue(this value). 2. Let f be
-/// ? ToIntegerOrInfinity(fractionDigits), this may call user code (valueOf/
-/// toString) so it must run even when fractionDigits is undefined behaves
-/// as a no-op (ToIntegerOrInfinity(undefined) = 0, but the "undefined" case
-/// is distinguished later to select free-format output).
+// Number.prototype.toExponential(fractionDigits), ES2022 §21.1.3.2
+// Step order: 1. Let x be ? thisNumberValue(this value). 2. Let f be
+// ? ToIntegerOrInfinity(fractionDigits), this may call user code (valueOf/
+// toString) so it must run even when fractionDigits is undefined behaves
+// as a no-op (ToIntegerOrInfinity(undefined) = 0, but the "undefined" case
+// is distinguished later to select free-format output).
 fn void builtin_number_proto_toExponential(BuiltinContext* ctx) {
     // 1. Let x be ? thisNumberValue(this value).
     double d;
@@ -380,11 +380,11 @@ fn void builtin_number_proto_toExponential(BuiltinContext* ctx) {
     ctx.result.set_string(s);
 }
 
-/// Number.prototype.toPrecision(precision), ES2022 §21.1.3.5
-/// Step order: 1. Let x be ? thisNumberValue(this value). 2. If precision is
-/// undefined, return ! ToString(x). 3. Let p be ? ToInteger(precision).
-/// 4. If x is NaN, return "NaN" (checked AFTER ToInteger(precision), so a
-/// poisoned precision object still has its valueOf/toString invoked).
+// Number.prototype.toPrecision(precision), ES2022 §21.1.3.5
+// Step order: 1. Let x be ? thisNumberValue(this value). 2. If precision is
+// undefined, return ! ToString(x). 3. Let p be ? ToInteger(precision).
+// 4. If x is NaN, return "NaN" (checked AFTER ToInteger(precision), so a
+// poisoned precision object still has its valueOf/toString invoked).
 fn void builtin_number_proto_toPrecision(BuiltinContext* ctx) {
     // 1. Let x be ? thisNumberValue(this value).
     double d;
@@ -443,9 +443,9 @@ fn void builtin_number_proto_toPrecision(BuiltinContext* ctx) {
     ctx.result.set_string(s);
 }
 
-/// Number.prototype.valueOf(), ES2022 §21.1.3.7
-/// 1. Return ? thisNumberValue(this value). Throws TypeError if `this` is
-/// not a number primitive or Number-wrapper object.
+// Number.prototype.valueOf(), ES2022 §21.1.3.7
+// 1. Return ? thisNumberValue(this value). Throws TypeError if `this` is
+// not a number primitive or Number-wrapper object.
 fn void builtin_number_proto_valueOf(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     if (this_val.is_object() && this_val.get_heapptr() != null) {
@@ -474,8 +474,8 @@ fn void builtin_number_proto_valueOf(BuiltinContext* ctx) {
 // Number static methods (ES6 §20.1.2)
 // ============================================================================
 
-/// Number.isNaN(number), ES6 §20.1.2.4
-/// Returns true only if the argument is the NaN number value (no coercion).
+// Number.isNaN(number), ES6 §20.1.2.4
+// Returns true only if the argument is the NaN number value (no coercion).
 fn void builtin_number_isNaN(BuiltinContext* ctx) {
     if (ctx.argc < 1 || (!ctx.regs[ctx.base_reg].is_number() && !ctx.regs[ctx.base_reg].is_fastint())) {
         ctx.result.set_boolean(false);
@@ -491,8 +491,8 @@ fn void builtin_number_isNaN(BuiltinContext* ctx) {
     }
 }
 
-/// Number.isFinite(number), ES6 §20.1.2.2
-/// Returns true only if the argument is a finite number value (no coercion).
+// Number.isFinite(number), ES6 §20.1.2.2
+// Returns true only if the argument is a finite number value (no coercion).
 fn void builtin_number_isFinite(BuiltinContext* ctx) {
     if (ctx.argc < 1 || (!ctx.regs[ctx.base_reg].is_number() && !ctx.regs[ctx.base_reg].is_fastint())) {
         ctx.result.set_boolean(false);
@@ -508,8 +508,8 @@ fn void builtin_number_isFinite(BuiltinContext* ctx) {
     }
 }
 
-/// Number.isInteger(number), ES6 §20.1.2.3
-/// Returns true only if the argument is an integer number value (no coercion).
+// Number.isInteger(number), ES6 §20.1.2.3
+// Returns true only if the argument is an integer number value (no coercion).
 fn void builtin_number_isInteger(BuiltinContext* ctx) {
     if (ctx.argc < 1 || (!ctx.regs[ctx.base_reg].is_number() && !ctx.regs[ctx.base_reg].is_fastint())) {
         ctx.result.set_boolean(false);
@@ -534,8 +534,8 @@ fn void builtin_number_isInteger(BuiltinContext* ctx) {
     ctx.result.set_boolean((fl == abs_d));
 }
 
-/// Number.isSafeInteger(number), ES6 §20.1.2.5
-/// Returns true only if the argument is a safe integer (±(2^53 - 1)).
+// Number.isSafeInteger(number), ES6 §20.1.2.5
+// Returns true only if the argument is a safe integer (±(2^53 - 1)).
 fn void builtin_number_isSafeInteger(BuiltinContext* ctx) {
     if (ctx.argc < 1 || (!ctx.regs[ctx.base_reg].is_number() && !ctx.regs[ctx.base_reg].is_fastint())) {
         ctx.result.set_boolean(false);
