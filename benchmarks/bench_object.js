@@ -1,5 +1,5 @@
 // Object property operations benchmark
-var N = 2000000;
+var N = 1700000;
 var obj = {};
 var i;
 

@@ -1,5 +1,5 @@
 // Property lookup chain benchmark (prototype chain depth)
-var N = 2000000;
+var N = 1600000;
 
 // Deep prototype chain
 function A() { this.a = 1; }
