@@ -1,0 +1,157 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+# A newer push to the same branch cancels an in-flight run — the old result
+# is stale the moment the new commit lands.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  C3C_VERSION: "0.8.2"
+  # bellard/quickjs pin. project.json sources cutils.c/dtoa.c from here; it is
+  # also the QuickJS the differential oracle (out/qjs) is built from.
+  QUICKJS_REF: "d73189dd5a582c19c565774bd56fed4e72d33c99"
+
+jobs:
+  # Decide whether the engine job needs to run at all. A docs-only, plans-only,
+  # or bindings-only push must not rebuild the engine or sweep the corpora.
+  # Everything that can change engine behavior or how it's exercised is "engine".
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      engine: ${{ steps.filter.outputs.engine }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            engine:
+              - 'src/**'
+              - 'cli/**'
+              - 'libregexp/**'
+              - 'include/**'
+              - 'test/**'
+              - 'scripts/**'
+              - 'ci/**'
+              - 'project.json'
+              - 'Makefile'
+              - '.github/workflows/ci.yml'
+
+  # Single engine job: build once, run the checked-in suite, then sweep the
+  # real-world corpora against the same binary. One job avoids rebuilding the
+  # engine and re-installing the toolchain a second time.
+  engine:
+    name: build + test + corpus (linux/x86-64)
+    needs: changes
+    if: needs.changes.outputs.engine == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # --- Toolchain (fixed versions, so cache them) ------------------------
+      # c3c 0.8.2's official x86-64 Linux binary runs natively on ubuntu-latest
+      # (no emulation, unlike the arm64 container in ci/linux).
+      - name: Cache c3c
+        id: cache-c3c
+        uses: actions/cache@v4
+        with:
+          path: /opt/c3c
+          key: c3c-${{ env.C3C_VERSION }}-linux-x64
+      - name: Install c3c
+        if: steps.cache-c3c.outputs.cache-hit != 'true'
+        run: |
+          curl -fsSL -o /tmp/c3c.tar.gz \
+            "https://github.com/c3lang/c3c/releases/download/v${C3C_VERSION}/c3-linux.tar.gz"
+          mkdir -p /opt/c3c
+          tar xzf /tmp/c3c.tar.gz -C /opt/c3c --strip-components=1
+      - name: Put c3c on PATH
+        run: echo "/opt/c3c" >> "$GITHUB_PATH"
+
+      # quickjs/ is gitignored; project.json pulls cutils.c and dtoa.c from it.
+      # Fetch the pinned commit the working tree uses. Cache keyed on the ref so
+      # a fresh clone only happens when the pin changes.
+      - name: Cache quickjs sources
+        id: cache-quickjs
+        uses: actions/cache@v4
+        with:
+          path: quickjs
+          key: quickjs-${{ env.QUICKJS_REF }}
+      - name: Fetch quickjs sources
+        if: steps.cache-quickjs.outputs.cache-hit != 'true'
+        run: |
+          rm -rf quickjs
+          git clone https://github.com/bellard/quickjs.git quickjs
+          git -C quickjs checkout "$QUICKJS_REF"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      # tsc is the transpile/classification oracle for the TS library sweep and
+      # the TS conformance corpus. Pin the version so results are reproducible
+      # and the install is cacheable via setup-node's npm cache.
+      - name: Install TypeScript
+        run: npm install -g typescript@5.6.3
+
+      - name: Versions
+        run: |
+          c3c --version
+          cc --version | head -1
+          tsc --version
+
+      # --- Build + core suite ----------------------------------------------
+      # ci/linux/run.sh owns the maintained phases: `build` makes out/boomkat,
+      # `tests` runs the whole engine suite (test/run_local.sh).
+      - name: Build engine + run test suite
+        run: bash ci/linux/run.sh build tests
+
+      # out/qjs is the differential oracle for the JS library sweep.
+      - name: Build QuickJS oracle
+        run: |
+          make -C quickjs qjs
+          cp quickjs/qjs out/
+
+      # --- Corpus caches ----------------------------------------------------
+      # Each fetcher is content-addressed: it skips any file already present, so
+      # a restored cache turns fetching into a no-op. The key is tied to the
+      # fetcher script (download URLs and version pins live there); restore-keys
+      # falls back to the previous cache when only one pin changed, so a single
+      # URL bump re-downloads one file instead of the whole corpus.
+      - name: Cache JS library corpus
+        uses: actions/cache@v4
+        with:
+          path: test/libcorpus
+          key: libcorpus-${{ hashFiles('scripts/verify_libraries.py') }}
+          restore-keys: libcorpus-
+
+      - name: Cache TS library corpus
+        uses: actions/cache@v4
+        with:
+          path: test/tscorpus
+          key: tscorpus-${{ hashFiles('scripts/verify_ts_libraries.py') }}
+          restore-keys: tscorpus-
+
+      - name: Cache TS conformance corpus
+        uses: actions/cache@v4
+        with:
+          path: |
+            test/typescript/conformance-src
+            test/typescript/ts_conformance_cache
+          key: ts-conformance-${{ hashFiles('scripts/fetch_ts_conformance.py') }}
+          restore-keys: ts-conformance-
+
+      # --- Sweeps (cheapest first, conformance is the long pole) ------------
+      - name: JS library corpus
+        run: python3 scripts/verify_libraries.py
+
+      - name: TS library corpus
+        run: python3 scripts/verify_ts_libraries.py
+
+      - name: TS conformance corpus
+        run: |
+          python3 scripts/fetch_ts_conformance.py
+          python3 scripts/run_ts_conformance.py
