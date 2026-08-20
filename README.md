@@ -97,25 +97,25 @@ unmodified against the engine. The output must match the result of running the s
 
 Run `just bench` to benchmark against Duktape and QuickJS:
 
-| Benchmark | C3 | Duktape | QuickJS |
+| Benchmark | boomkat | Duktape | QuickJS |
 |---|---|---|---|
-| arithmetic | 323ms | 3,410ms (0.1x) | 248ms (1.3x) |
-| array | 11ms | 41ms (0.3x) | 10ms (1.1x) |
-| date | 75ms | 3,571ms (0.0x) | 54ms (1.4x) |
-| function_call | 218ms | 1,286ms (0.2x) | 152ms (1.4x) |
-| ic_monomorphic | 79ms | 287ms (0.3x) | 90ms (0.9x) |
-| ic_proto | 112ms | 455ms (0.2x) | 112ms (1.0x) |
-| loop | 110ms | 1,363ms (0.1x) | 122ms (0.9x) |
-| memory_heavy | 75ms | 175ms (0.4x) | 51ms (1.5x) |
-| object | 353ms | 1,675ms (0.2x) | 210ms (1.7x) |
-| property_lookup | 241ms | 1,782ms (0.1x) | 156ms (1.5x) |
-| recursion_deep | 745ms | 1,989ms (0.4x) | 498ms (1.5x) |
-| recursion | 181ms | 474ms (0.4x) | 122ms (1.5x) |
-| regexp | 539ms | 677ms (0.8x) | 261ms (2.1x) |
-| shape_no_call | 8ms | 8ms (1.0x) | 5ms (1.6x) |
-| shape_stress | 7ms | 9ms (0.8x) | 5ms (1.4x) |
-| string | 9ms | 18ms (0.5x) | 6ms (1.5x) |
-| valstack_copy | 10ms | 14ms (0.7x) | 10ms (1.0x) |
+| arithmetic | 221ms | 3,404ms (0.1x) | 247ms (0.9x) |
+| array | 13ms | 43ms (0.3x) | 10ms (1.3x) |
+| date | 78ms | 3,590ms (0.0x) | 52ms (1.5x) |
+| function_call | 172ms | 1,300ms (0.1x) | 154ms (1.1x) |
+| ic_monomorphic | 77ms | 290ms (0.3x) | 90ms (0.9x) |
+| ic_proto | 112ms | 457ms (0.2x) | 113ms (1.0x) |
+| loop | 61ms | 1,368ms (0.0x) | 122ms (0.5x) |
+| memory_heavy | 78ms | 179ms (0.4x) | 51ms (1.5x) |
+| object | 356ms | 1,685ms (0.2x) | 211ms (1.7x) |
+| property_lookup | 226ms | 1,799ms (0.1x) | 157ms (1.4x) |
+| recursion_deep | 761ms | 1,989ms (0.4x) | 501ms (1.5x) |
+| recursion | 185ms | 475ms (0.4x) | 122ms (1.5x) |
+| regexp | 550ms | 673ms (0.8x) | 260ms (2.1x) |
+| shape_no_call | 55ms | 72ms (0.8x) | 23ms (2.4x) |
+| shape_stress | 57ms | 74ms (0.8x) | 22ms (2.6x) |
+| string | 53ms | 138ms (0.4x) | 24ms (2.2x) |
+| valstack_copy | 61ms | 102ms (0.6x) | 67ms (0.9x) |
 
 ### Startup time
 

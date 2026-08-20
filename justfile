@@ -280,6 +280,11 @@ bench-rebuild n="3":
 	@test -f out/qjs || { echo "Building QuickJS..."; make -C quickjs qjs && cp quickjs/qjs out/ && rm -f out/bench_cache_qjs.txt; }
 	bash scripts/run_benchmarks.sh {{n}}
 
+# Clear cached Duktape/QuickJS benchmark results (forces a re-run next time)
+bench-clear:
+	@rm -f out/bench_cache_duktape.txt out/bench_cache_qjs.txt
+	@echo "Cleared benchmark caches."
+
 # Quick single-engine benchmark (no comparison, skips deep recursion)
 bench-fast n="2":
 	@test -f out/boomkat || { echo "ERROR: out/boomkat not found — run: c3c build boomkat"; exit 1; }

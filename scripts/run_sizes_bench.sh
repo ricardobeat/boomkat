@@ -3,7 +3,7 @@
 #
 # Usage: ./scripts/run_sizes_bench.sh [script.js]
 #
-# Compares: C3 port (boomkat), original Duktape (duktape), QuickJS (qjs)
+# Compares: boomkat, original Duktape (duktape), QuickJS (qjs)
 #
 # Measurements:
 #   - Binary size (KB) — stripped when possible
@@ -85,7 +85,7 @@ c3_size=$(file_size_kb "$C3_RUNNER")
 orig_size=$(file_size_kb "$ORIG")
 qjs_size=$(file_size_kb "$QJS")
 
-printf "│ %-24s │ %11s │\n" "boomkat (C3 port)" "$c3_size"
+printf "│ %-24s │ %11s │\n" "boomkat" "$c3_size"
 printf "│ %-24s │ %11s │\n" "duktape (Duktape v2.7.0)" "$orig_size"
 printf "│ %-24s │ %11s │\n" "qjs (QuickJS)" "$qjs_size"
 echo "└──────────────────────────┴─────────────┘"
@@ -104,7 +104,7 @@ c3_rss=$(measure_rss_kb "$C3_RUNNER" "$MEM_SCRIPT")
 orig_rss=$(measure_rss_kb "$ORIG" "$MEM_SCRIPT")
 qjs_rss=$(measure_rss_kb "$QJS" "$MEM_SCRIPT")
 
-printf "│ %-24s │ %11s │\n" "boomkat (C3 port)" "$c3_rss"
+printf "│ %-24s │ %11s │\n" "boomkat" "$c3_rss"
 printf "│ %-24s │ %11s │\n" "duktape (Duktape v2.7.0)" "$orig_rss"
 printf "│ %-24s │ %11s │\n" "qjs (QuickJS)" "$qjs_rss"
 echo "└──────────────────────────┴─────────────┘"
@@ -117,30 +117,30 @@ echo ""
 
 if [ "$c3_size" != "N/A" ] && [ "$orig_size" != "N/A" ]; then
     c3_vs_orig_size=$(echo "scale=2; $c3_size / $orig_size" | bc 2>/dev/null || echo "?")
-    echo "Binary size ratio (C3/Duktape):  ${c3_vs_orig_size}x"
+    echo "Binary size ratio (boomkat/Duktape):  ${c3_vs_orig_size}x"
 else
-    echo "Binary size ratio (C3/Duktape):  ?"
+    echo "Binary size ratio (boomkat/Duktape):  ?"
 fi
 
 if [ "$c3_rss" != "N/A" ] && [ "$orig_rss" != "N/A" ]; then
     c3_vs_orig_rss=$(echo "scale=2; $c3_rss / $orig_rss" | bc 2>/dev/null || echo "?")
-    echo "Peak RSS ratio  (C3/Duktape):  ${c3_vs_orig_rss}x"
+    echo "Peak RSS ratio  (boomkat/Duktape):  ${c3_vs_orig_rss}x"
 else
-    echo "Peak RSS ratio  (C3/Duktape):  ?"
+    echo "Peak RSS ratio  (boomkat/Duktape):  ?"
 fi
 
 if [ "$c3_size" != "N/A" ] && [ "$qjs_size" != "N/A" ]; then
     c3_vs_qjs_size=$(echo "scale=2; $c3_size / $qjs_size" | bc 2>/dev/null || echo "?")
-    echo "Binary size ratio (C3/QuickJS): ${c3_vs_qjs_size}x"
+    echo "Binary size ratio (boomkat/QuickJS): ${c3_vs_qjs_size}x"
 else
-    echo "Binary size ratio (C3/QuickJS): ?"
+    echo "Binary size ratio (boomkat/QuickJS): ?"
 fi
 
 if [ "$c3_rss" != "N/A" ] && [ "$qjs_rss" != "N/A" ]; then
     c3_vs_qjs_rss=$(echo "scale=2; $c3_rss / $qjs_rss" | bc 2>/dev/null || echo "?")
-    echo "Peak RSS ratio  (C3/QuickJS):  ${c3_vs_qjs_rss}x"
+    echo "Peak RSS ratio  (boomkat/QuickJS):  ${c3_vs_qjs_rss}x"
 else
-    echo "Peak RSS ratio  (C3/QuickJS):  ?"
+    echo "Peak RSS ratio  (boomkat/QuickJS):  ?"
 fi
 
 echo ""

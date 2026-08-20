@@ -21,29 +21,29 @@ benchmarks/
 ## Running
 
 ```bash
-# Build the C3 CLI runner
+# Build boomkat
 c3c build boomkat
 
 # Run the full comparison
 scripts/run_benchmarks.sh [iterations]
 
 # Run individual benchmarks
-out/boomkat benchmarks/bench_loop.js      # C3 port
+out/boomkat benchmarks/bench_loop.js      # boomkat
 out/duktape benchmarks/bench_loop.js      # Original Duktape
 ```
 
 ## Interpreting Results
 
 The comparison script reports:
-- **C3 Port (ms)** — average compile + execute time for the C3 port
+- **boomkat (ms)** — average compile + execute time for boomkat
 - **Duktape (ms)** — average time for original Duktape
-- **Ratio** — C3 / Duktape (higher = C3 is slower relative to Duktape)
+- **Ratio** — boomkat / Duktape (higher = boomkat is slower relative to Duktape)
 
-A ratio of ~5x means the C3 port is about 5× slower than the optimized C implementation.
+A ratio of ~5x means boomkat is about 5× slower than the optimized C implementation.
 
 ## Notes
 
-- Each benchmark iteration spawns a fresh process for all engines (C3, Duktape, QuickJS)
+- Each benchmark iteration spawns a fresh process for all engines (boomkat, Duktape, QuickJS)
 - Timing includes both compilation and execution (actual workload dominates)
 - The `duktape` binary is built from Duktape v2.7.0 source
 
@@ -63,7 +63,7 @@ Results table:
 
 | Engine                   | Binary (KB) | Peak RSS (KB) |
 |--------------------------|-------------|---------------|
-| boomkat (C3 port)     | ...         | ...           |
+| boomkat                  | ...         | ...           |
 | duktape (Duktape v2.7.0)   | ...         | ...           |
 | qjs (QuickJS)            | ...         | ...           |
 

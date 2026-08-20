@@ -1,5 +1,5 @@
 #!/bin/bash
-# Fast single-engine benchmark runner (C3 port only, no comparisons)
+# Fast single-engine benchmark runner (boomkat only, no comparisons)
 #
 # Usage: ./scripts/run_bench_fast.sh [iterations]
 #

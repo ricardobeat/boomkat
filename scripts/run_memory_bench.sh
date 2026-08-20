@@ -3,7 +3,7 @@
 #
 # Usage: ./scripts/run_memory_bench.sh [script.js]
 #
-# Compares: C3 port (boomkat), original Duktape (duktape), QuickJS (qjs)
+# Compares: boomkat, original Duktape (duktape), QuickJS (qjs)
 # Measures peak RSS via /usr/bin/time -l (macOS) or /usr/bin/time -v (Linux).
 
 set -euo pipefail
@@ -58,7 +58,7 @@ print_table() {
 
     printf "  %-${col1}s   %-9s   %-8s\n" "$header" "Peak RSS" "vs QJS"
     echo "  ${hbar}---${hbar:0:11}---${hbar:0:10}"
-    printf "  %-${col1}s   %9s   %7sx\n" "boomkat (C3 port)" "$c3_label" "$c3_ratio"
+    printf "  %-${col1}s   %9s   %7sx\n" "boomkat" "$c3_label" "$c3_ratio"
     printf "  %-${col1}s   %9s   %7sx\n" "duktape (Duktape v2.7.0)" "$orig_label" "$orig_ratio"
     printf "  %-${col1}s   %9s   %7sx\n" "qjs (QuickJS)" "$qjs_label" "$qjs_ratio"
     echo ""

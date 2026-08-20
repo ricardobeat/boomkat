@@ -1,5 +1,5 @@
 // String operations benchmark
-var N = 25000;
+var N = 250000;
 var s = "Hello, World!";
 var result = "";
 var i;

@@ -89,7 +89,7 @@ time_ms() {
 }
 
 echo "------------------------------------------------------------"
-echo "  1. C3 Port (compile + execute)"
+echo "  1. boomkat (compile + execute)"
 echo "------------------------------------------------------------"
 for f in "$BENCH_DIR"/bench_*.js; do
     name=$(basename "$f" .js)
@@ -188,7 +188,7 @@ for f in "$BENCH_DIR"/bench_*.js; do
 done
 
 if [ "$QJS_AVAILABLE" = true ]; then
-    printf "  %-30s %12s %12s %12s %8s\n" "Benchmark" "C3(ms)" "Duktape(ms)" "QuickJS(ms)" "Ratio"
+    printf "  %-30s %12s %12s %12s %8s\n" "Benchmark" "boomkat(ms)" "Duktape(ms)" "QuickJS(ms)" "Ratio"
     echo "  --------------------------------------------------------------------------"
     for name in "${bench_names[@]}"; do
         c3_val=$(cat "$TMPDIR_BENCH/c3_$name")
@@ -198,25 +198,25 @@ if [ "$QJS_AVAILABLE" = true ]; then
         if [ "$c3_val" != "N/A" ] && [ "$orig_val" != "N/A" ]; then
             ratio=$(echo "scale=2; $c3_val / $orig_val" | bc 2>/dev/null || echo "?")
             if [ "$(echo "$ratio > 0" | bc 2>/dev/null)" = "1" ]; then
-                printf "  %-30s %8.1fms %8.1fms %8.1fms %8.1fx\n" "$name" "$c3_val" "$orig_val" "$qjs_val" "$ratio"
+                printf "  %-30s %7.0fms %7.0fms %7.0fms %8.1fx\n" "$name" "$c3_val" "$orig_val" "$qjs_val" "$ratio"
             else
-                printf "  %-30s %8.1fms %8.1fms %8.1fms %8s\n" "$name" "$c3_val" "$orig_val" "$qjs_val" "?"
+                printf "  %-30s %7.0fms %7.0fms %7.0fms %8s\n" "$name" "$c3_val" "$orig_val" "$qjs_val" "?"
             fi
         elif [ "$c3_val" != "N/A" ] && [ "$qjs_val" != "N/A" ]; then
             ratio=$(echo "scale=2; $c3_val / $qjs_val" | bc 2>/dev/null || echo "?")
             if [ "$(echo "$ratio > 0" | bc 2>/dev/null)" = "1" ]; then
-                printf "  %-30s %8.1fms %8s %8.1fms %8.1fx\n" "$name" "$c3_val" "-" "$qjs_val" "$ratio"
+                printf "  %-30s %7.0fms %8s %7.0fms %8.1fx\n" "$name" "$c3_val" "-" "$qjs_val" "$ratio"
             else
-                printf "  %-30s %8.1fms %8s %8.1fms %8s\n" "$name" "$c3_val" "-" "$qjs_val" "?"
+                printf "  %-30s %7.0fms %8s %7.0fms %8s\n" "$name" "$c3_val" "-" "$qjs_val" "?"
             fi
         elif [ "$orig_val" != "N/A" ] && [ "$qjs_val" != "N/A" ]; then
-            printf "  %-30s %8s %8.1fms %8.1fms %8s\n" "$name" "-" "$orig_val" "$qjs_val" "?"
+            printf "  %-30s %8s %7.0fms %7.0fms %8s\n" "$name" "-" "$orig_val" "$qjs_val" "?"
         else
             printf "  %-30s %10s %10s %10s %8s\n" "$name" "$c3_val" "$orig_val" "$qjs_val" "-"
         fi
     done
 else
-    printf "  %-30s %12s %12s %10s\n" "Benchmark" "C3(ms)" "Duktape(ms)" "Ratio"
+    printf "  %-30s %12s %12s %10s\n" "Benchmark" "boomkat(ms)" "Duktape(ms)" "Ratio"
     echo "  -------------------------------------------------------------"
     for name in "${bench_names[@]}"; do
         c3_val=$(cat "$TMPDIR_BENCH/c3_$name")
@@ -224,9 +224,9 @@ else
         if [ "$c3_val" != "N/A" ] && [ "$orig_val" != "N/A" ]; then
             ratio=$(echo "scale=2; $c3_val / $orig_val" | bc 2>/dev/null || echo "?")
             if [ "$(echo "$ratio > 0" | bc 2>/dev/null)" = "1" ]; then
-                printf "  %-30s %8.1fms %8.1fms %8.1fx\n" "$name" "$c3_val" "$orig_val" "$ratio"
+                printf "  %-30s %7.0fms %7.0fms %8.1fx\n" "$name" "$c3_val" "$orig_val" "$ratio"
             else
-                printf "  %-30s %8.1fms %8.1fms %8s\n" "$name" "$c3_val" "$orig_val" "?"
+                printf "  %-30s %7.0fms %7.0fms %8s\n" "$name" "$c3_val" "$orig_val" "?"
             fi
         else
             printf "  %-30s %10s %10s %10s\n" "$name" "$c3_val" "$orig_val" "-"
@@ -236,8 +236,8 @@ fi
 echo "  -------------------------------------------------------------"
 echo ""
 if [ "$QJS_AVAILABLE" = true ]; then
-    echo "Ratio (C3/Duktape) > 1.0 means the C3 engine is slower."
+    echo "Ratio (boomkat/Duktape) > 1.0 means boomkat is slower."
 else
-    echo "Ratio > 1.0 means the C3 engine is slower (higher is worse)."
+    echo "Ratio > 1.0 means boomkat is slower (higher is worse)."
 fi
 echo "============================================================"

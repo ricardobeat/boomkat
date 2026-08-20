@@ -14,5 +14,8 @@ function copyTest(n, a, b, c, d) {
 }
 
 var N = 22;
-var result = copyTest(N, 1, 2, 3, 4);
+var result = 0;
+for (var rep = 0; rep < 11; rep++) {
+    result = copyTest(N, 1, 2, 3, 4);
+}
 print(result);
