@@ -50,8 +50,11 @@ from concurrent.futures import ThreadPoolExecutor
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
+# The corpus lives under the TypeScript 7 ("Corsa") Go-rewrite layout
+# (tsc/testdata/tests/cases/conformance); scripts/fetch_ts_conformance.py
+# sparse-checks out exactly this path.
 CORPUS = os.path.join(ROOT, "test", "typescript", "conformance-src",
-                      "tests", "cases", "conformance")
+                      "tsc", "testdata", "tests", "cases", "conformance")
 CACHE = os.path.join(ROOT, "test", "typescript", "ts_conformance_cache")
 DEFAULT_BIN = os.path.join(ROOT, "out", "boomkat")
 

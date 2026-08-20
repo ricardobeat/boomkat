@@ -4,21 +4,26 @@ on:
   push:
   pull_request:
 
-# A newer push to the same branch cancels an in-flight run — the old result
-# is stale the moment the new commit lands.
+# A newer push to the same branch cancels an in-flight run. The old result is
+# stale the moment the new commit lands.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 env:
   C3C_VERSION: "0.8.2"
-  # bellard/quickjs pin. project.json sources cutils.c/dtoa.c from here; it is
-  # also the QuickJS the differential oracle (out/qjs) is built from.
+  # bellard/quickjs pin. project.json sources cutils.c/dtoa.c from here (needed
+  # to build the engine); this is not the JS-corpus reference engine (see below).
   QUICKJS_REF: "d73189dd5a582c19c565774bd56fed4e72d33c99"
+  # quickjs-ng prebuilt binary used as out/qjs, the JS-corpus reference engine.
+  QJS_NG_VERSION: "v0.16.2"
+  # TypeScript (tsc) version for the conformance and TS-library jobs. 7.x is the
+  # Go rewrite, matching the conformance corpus layout the fetcher checks out.
+  TS_VERSION: "7.0.2"
 
 jobs:
-  # Gate the whole pipeline: a docs-only, plans-only, or bindings-only push must
-  # not build the engine or run any suite. Everything that can change engine
+  # Gate the whole pipeline. A docs-only, plans-only, or bindings-only push must
+  # not build the engine or run any suite. Anything that can change engine
   # behavior or how it's exercised counts as "engine".
   filter:
     runs-on: ubuntu-latest
@@ -41,10 +46,11 @@ jobs:
               - 'project.json'
               - 'Makefile'
               - '.github/workflows/ci.yml'
+              - '.github/actions/**'
 
-  # Build the engine, the batch test262 runner, and the QuickJS oracle once,
-  # then hand them to the parallel suite jobs as an artifact. Building here means
-  # the toolchain is installed and the engine compiled a single time.
+  # Build the engine and the batch test262 runner once, then hand them to the
+  # parallel suite jobs as an artifact. This way the toolchain is installed and
+  # the engine compiled a single time.
   build:
     name: build
     needs: filter
@@ -53,15 +59,26 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/toolchain
+        with:
+          c3c-version: ${{ env.C3C_VERSION }}
+          quickjs-ref: ${{ env.QUICKJS_REF }}
 
       # `make boomkat` and `make out/test262_runner` produce the binaries the
-      # suite jobs consume; out/qjs is the JS-corpus differential oracle.
-      - name: Build engine + test262 runner + qjs oracle
+      # suite jobs consume.
+      - name: Build engine + test262 runner
         run: |
           make boomkat
           make out/test262_runner
-          make -C quickjs qjs
-          cp quickjs/qjs out/
+
+      # out/qjs is the reference engine the JS library corpus differs against.
+      # The corpus only needs to know whether a library loads, so a prebuilt
+      # quickjs-ng release binary does the job. Download it rather than build it.
+      - name: Fetch qjs reference binary
+        run: |
+          curl -fsSL -o out/qjs \
+            "https://github.com/quickjs-ng/quickjs/releases/download/${QJS_NG_VERSION}/qjs-linux-x86_64"
+          chmod +x out/qjs
+          out/qjs -e 'console.log(6*7)'
 
       - uses: actions/upload-artifact@v4
         with:
@@ -70,7 +87,7 @@ jobs:
           retention-days: 1
           if-no-files-found: error
 
-  # ── Parallel suites, all consuming the prebuilt out/ ────────────────────────
+  # Parallel suites, all consuming the prebuilt out/.
 
   tests:
     name: tests
@@ -101,11 +118,11 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: '24'
-      # tsc is the accept/reject oracle for the conformance corpus.
+      # tsc provides the accept/reject reference for the conformance corpus.
       - name: Install TypeScript
-        run: npm install -g typescript@5.6.3
-      # microsoft/TypeScript sparse clone; cache keyed on the fetcher (its clone
-      # ref lives there), restore-keys reuses the prior clone across script edits.
+        run: npm install -g typescript@${TS_VERSION}
+      # Cache the microsoft/TypeScript sparse clone. The key is the fetcher's
+      # hash, and restore-keys reuses the prior clone when the fetcher changes.
       - name: Cache TS conformance corpus
         uses: actions/cache@v4
         with:
@@ -134,8 +151,8 @@ jobs:
           path: out
       - run: chmod +x out/test262_runner out/boomkat
       # The gate runs the full suite once and exits non-zero unless it reports
-      # zero fails across every phase (it folds in every non-pass verdict). Same
-      # script `just test262-gate` uses — one source of truth.
+      # zero fails across every phase (its fail count folds in every non-pass
+      # verdict). This is the same script `just test262-gate` uses.
       - name: test262 zero-fail gate
         run: bash scripts/test262_gate.sh
 
@@ -154,10 +171,10 @@ jobs:
         with:
           node-version: '24'
       - name: Install TypeScript
-        run: npm install -g typescript@5.6.3
-      # Both fetchers are content-addressed (skip files already present), so a
-      # restored cache turns fetching into a no-op; restore-keys lets a single
-      # URL/pin bump re-download one file instead of the whole corpus.
+        run: npm install -g typescript@${TS_VERSION}
+      # Both fetchers skip files already present, so a restored cache turns
+      # fetching into a no-op. restore-keys lets a single URL or pin bump
+      # re-download one file instead of the whole corpus.
       - name: Cache JS library corpus
         uses: actions/cache@v4
         with:
