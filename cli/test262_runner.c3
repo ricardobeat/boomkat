@@ -1,26 +1,14 @@
-/// Batch test262 runner, reuses a single heap+VM across tests, resetting
-/// state between runs to avoid per-test malloc/free churn that causes RSS bloat.
-///
-/// Reset protocol (between tests):
-///   1. heap.reset() , frees all HObject allocations, string table, env pools,
-///      shapes, compiled functions, module cache, and all pool-backed memory.
-///      ⚠️  heap.reset() MUST also clear the megamorphic property cache
-///      (mega_cache), pool allocators reset to the same starting addresses
-///      so new objects can get false cache hits against stale entries.
-///   2. vm_destroy() + vm_create(), destroys the old VM (frees valstack, VM struct)
-///      and creates a fresh one.  vm_create() calls register_builtins() which
-///      re-populates all builtin prototypes, constructors, and methods.
-///      vm_reset() exists as a lighter alternative but is not used here.
-///
-/// Known heap-reset correctness requirements:
-///   - mega_cache must be cleared (heap.c3 Heap.reset does this).
-///   - Builtin string cache (Heap.strs) is cleared and re-interned.
-///   - Shape system is reset (trans_table freed, shapes freed, root created).
-///   - GC state (gc_root_count, gray_count, gc_trigger_counter) is reset.
-///   - Object pool allocators are freed + re-initialized.
-///
-/// Usage: ./out/batch_test_vm <manifest_file>
-///        ./out/batch_test_vm --worker   (stdin-driven worker mode)
+// Batch test262 runner. Reuses a single heap and VM across tests, resetting
+// state between runs to avoid memory churn and RSS bloat.
+//
+// Reset protocol between tests:
+//   1. heap.reset(): frees object allocations, strings, env pools, shapes,
+//      compiled functions, module cache, pool-backed memory, and clears the
+//      megamorphic cache.
+//   2. vm_destroy() and vm_create(): recreate the VM and repopulate builtins.
+//
+// Usage: ./out/test262_runner <manifest_file>
+//        ./out/test262_runner --worker
 module test262_runner;
 
 import boomkat::compiler;
@@ -54,7 +42,7 @@ fn int run_manifest_loop(char[] mpath) {
     File fp = fp_opt;
     defer (void)fp.close();
 
-    // Allocate the long-lived heap and VM once
+    // Allocate the long-lived heap and VM once.
     Heap*? hp_opt = heap::create(null, null, null, null, null);
     if (catch h = hp_opt) { return 1; }
     Heap* hp = hp_opt;
@@ -74,10 +62,8 @@ fn int run_manifest_loop(char[] mpath) {
 
             bool report = (total % 100 == 0);
 
-            // Reset heap+VM, destroy+recreate VM to avoid stale-reference bugs.
-            // Null out `v` between destroy and a successful recreate so that a
-            // failed vm_create cannot leave `v` pointing at freed memory (which
-            // the next iteration's vm_destroy, or the final one, would double-free).
+            // Reset heap and recreate VM. Set `v` to null during recreation
+            // so failures do not leave dangling pointers for subsequent cleanup.
             hp.reset();
             vm::vm_destroy(v);
             v = null;
@@ -110,7 +96,7 @@ fn int run_manifest_loop(char[] mpath) {
 }
 
 // ============================================================================
-// Helper: compile+execute JS source in a VM
+// Helper: compile and execute JS source in a VM
 // ============================================================================
 
 fn int exec_js(Vm* v, Heap* hp, char[] src) {
@@ -120,7 +106,7 @@ fn int exec_js(Vm* v, Heap* hp, char[] src) {
     CompiledFunction*? f = compiler::compile(&lx, hp);
     if (catch err = f) {
         io::eprintfn("  COMPILE ERROR: %s", (String)lx.err_msg[..]);
-        return 2;  // 2 = compile error (distinct from runtime error)
+        return 2;
     }
     if (catch err = v.execute(f)) {
         io::eprintfn("  RUNTIME ERROR (compiled ok, %d insns): %s", f.code_count, (String)lx.err_msg[..]);
@@ -130,27 +116,21 @@ fn int exec_js(Vm* v, Heap* hp, char[] src) {
 }
 
 // ============================================================================
-// Run one test, reusing an already-reset heap+VM
+// Run one test, reusing an already-reset heap and VM
 // ============================================================================
 
 const char[] MIN_HARNESS = "var __test262_fail=0;function Test262Error(msg){this.message=msg||'';}Test262Error.prototype.toString=function(){return'Test262Error: '+this.message;};Test262Error.thrower=function(m){throw new Test262Error(m);};function $DONOTEVALUATE(){throw'Test262: This statement should not be evaluated.';}function $ERROR(msg){__test262_fail++;}function $FAIL(msg){__test262_fail++;}function isNegativeZero(v){return v===0&&1/v===-Infinity;}function isPrimitive(v){return!v||(typeof v!=='object'&&typeof v!=='function');}function formatIdentityFreeValue(v){switch(v===null?'null':typeof v){case'string':return typeof JSON!=='undefined'?JSON.stringify(v):'\"'+v+'\"';case'bigint':return String(v)+'n';case'number':if(isNegativeZero(v))return'-0';case'boolean':case'undefined':case'null':return String(v);}return'';}function formatSimpleValue(v){var b=formatIdentityFreeValue(v);if(b)return b;try{return String(v);}catch(e){if(e.name==='TypeError')return Object.prototype.toString.call(v);throw e;}}function assert(m,b){if(m===true)return;if(b===undefined)b='Expected true but got '+assert._toString(m);throw new Test262Error(b);}assert._isSameValue=function(a,b){if(a===b)return a!==0||1/a===1/b;return a!==a&&b!==b;};assert.sameValue=function(a,e,m){try{if(assert._isSameValue(a,e))return;}catch(e){throw new Test262Error(m+'(_isSameValue threw)'+e);}if(m===undefined)m='';else m+=' ';m+='Expected SameValue(\\u00AB'+assert._toString(a)+'\\u00BB, \\u00AB'+assert._toString(e)+'\\u00BB) to be true';throw new Test262Error(m);};assert.notSameValue=function(a,u,m){if(!assert._isSameValue(a,u))return;if(m===undefined)m='';else m+=' ';m+='Expected SameValue(\\u00AB'+assert._toString(a)+'\\u00BB, \\u00AB'+assert._toString(u)+'\\u00BB) to be false';throw new Test262Error(m);};assert.throws=function(e,f,m){if(typeof f!=='function')throw new Test262Error('assert.throws requires two arguments');if(m===undefined)m='';else m+=' ';try{f();}catch(t){if(typeof t!=='object'||t===null){m+='Thrown value was not an object!';throw new Test262Error(m);}if(e===Error||t instanceof e){}else{}}return;};assert._toString=function(o){try{return''+o;}catch(e){return'[error in toString: '+e.message+']';}};";
 
-// Simplified nativeFunctionMatcher, avoids \uXXXX regex escapes and
-// string escape sequences that the engine doesn't support.
-// Uses charCodeAt() for character code comparisons.
+// Simplified nativeFunctionMatcher without unicode regex escapes.
 const char[] NFM_HARNESS = "function validateNativeFunctionSource(source){var pos=0;function isNewline(c){var n=c.charCodeAt(0);return n===10||n===13||n===8232||n===8233;}function isWhitespace(c){var n=c.charCodeAt(0);return n===9||n===11||n===12||n===32||n===160||n===65279;}function eatWhitespace(){while(pos<source.length){var c=source[pos];if(isWhitespace(c)||isNewline(c)){pos++;continue;}if(c==='/'){if(source[pos+1]==='/'){while(pos<source.length){if(isNewline(source[pos]))break;pos++;}continue;}if(source[pos+1]==='*'){var end=source.indexOf('*/',pos);if(end===-1)throw SyntaxError();pos=end+2;continue;}}break;}}function isIDStart(c){return/[A-Za-z_$]/.test(c);}function isIDContinue(c){return/[0-9A-Za-z_$]/.test(c);}function getIdentifier(){eatWhitespace();var start=pos;var end=pos;switch(source[end]){case'_':case'$':end++;break;default:if(isIDStart(source[end])){end++;break;}return null;}while(end<source.length){var c=source[end];switch(c){case'_':case'$':end++;break;default:if(isIDContinue(c)){end++;break;}return source.slice(start,end);}}return source.slice(start,end);}function test(s){eatWhitespace();if(/\\w/.test(s))return getIdentifier()===s;return source.slice(pos,pos+s.length)===s;}function eat(s){if(test(s)){pos+=s.length;return true;}return false;}function eatIdentifier(){var n=getIdentifier();if(n!==null){pos+=n.length;return true;}return false;}function expect(s){if(!eat(s))throw SyntaxError();}function eatString(){var ch=source.charCodeAt(pos);if(ch===39||ch===34){var match=source[pos];pos++;while(pos<source.length){var cur=source.charCodeAt(pos);if(cur===match&&source.charCodeAt(pos-1)!==92)return;if(isNewline(source[pos]))throw SyntaxError();pos++;}throw SyntaxError();}}function stumbleUntil(c){var m={']':'[',')':'('}[c];var nesting=1;while(pos<source.length){eatWhitespace();eatString();if(source[pos]===m)nesting++;else if(source[pos]===c)nesting--;pos++;if(nesting===0)return;}throw SyntaxError();}expect('function');eat('get')||eat('set');if(!eatIdentifier()&&eat('['))stumbleUntil(']');expect('(');stumbleUntil(')');expect('{');expect('[');expect('native');expect('code');expect(']');expect('}');eatWhitespace();if(pos!==source.length)throw SyntaxError();}function assertToStringOrNativeFunction(fn,expected){var actual=''+fn;try{assert.sameValue(actual,expected);}catch(unused){assertNativeFunction(fn,expected);}}function assertNativeFunction(fn,special){var actual=''+fn;try{validateNativeFunctionSource(actual);}catch(unused){throw new Test262Error('Conforms to NativeFunction Syntax: '+JSON.stringify(actual)+(special?' ('+special+')':''));}}";
 
 const char[] ISCON_HARNESS = "function isConstructor(f){try{var p=new Proxy({},{getPrototypeOf:function(){return null;}});new f(p);return true;}catch(e){return false;}}";
 
-// Minimal $262 host object for tests that call $262.detachArrayBuffer,
-// $DETACHBUFFER, etc. The detach primitive is provided by the engine as
-// the hidden global __detachArrayBuffer (see src/builtins/arraybuffer.c3).
+// Minimal $262 host object providing detachArrayBuffer, global, and evalScript.
 const char[] HOST262_HARNESS = "var $262={detachArrayBuffer:function(b){return __detachArrayBuffer(b);},global:this,gc:function(){},evalScript:function(s){return __evalScript(s);},createRealm:function(){throw new Error('createRealm not supported');},agent:{}};function $DETACHBUFFER(b){return __detachArrayBuffer(b);}";
 
-// Parse test262 metadata frontmatter for `includes: [a.js, b.js]` and load each
-// harness file. Called once per test after the boilerplate harness is loaded.
+// Parse test262 frontmatter for `includes:` and load required harness files.
 fn void load_test_includes(Vm* v, Heap* hp, char[] src) {
-    // Find "includes:" within the /*---...---*/ frontmatter (first 4KB is plenty).
     usz scan_end = src.len < 4096 ? src.len : (usz)4096;
     usz i = 0;
     while (i + 9 < scan_end) {
@@ -163,11 +143,9 @@ fn void load_test_includes(Vm* v, Heap* hp, char[] src) {
         i++;
     }
     if (i + 9 >= scan_end) return;
-    // Skip whitespace + '[' expected
     while (i < scan_end && (src[i] == ' ' || src[i] == '\t')) { i++; }
     if (i >= scan_end || src[i] != '[') return;
     i++;
-    // Read comma-separated filenames until ']'
     while (i < scan_end && src[i] != ']') {
         while (i < scan_end && (src[i] == ' ' || src[i] == '\t' || src[i] == ',' || src[i] == '\n' || src[i] == '\r')) { i++; }
         if (i >= scan_end || src[i] == ']') break;
@@ -175,7 +153,6 @@ fn void load_test_includes(Vm* v, Heap* hp, char[] src) {
         while (i < scan_end && src[i] != ',' && src[i] != ']' && src[i] != ' ' && src[i] != '\t' && src[i] != '\n' && src[i] != '\r') { i++; }
         usz end = i;
         if (end <= start) break;
-        // Build path "test262/harness/<name>"
         char[128] path_buf;
         char[] prefix = "test262/harness/";
         usz p = 0;
@@ -183,12 +160,7 @@ fn void load_test_includes(Vm* v, Heap* hp, char[] src) {
         for (usz k = start; k < end && p < 127; k++) { path_buf[p++] = src[k]; }
         path_buf[p] = 0;
         char[] path = path_buf[:p];
-        // nativeFunctionMatcher.js is pre-loaded in simplified form as
-        // NFM_HARNESS (it avoids \uXXXX regex escapes). Loading the on-disk
-        // copy again would re-declare its top-level `const` bindings over the
-        // already-installed ones, a genuine GlobalDeclarationInstantiation
-        // SyntaxError, so skip it, exactly as assert.js/propertyHelper.js are
-        // never re-loaded from an `includes:` list.
+        // Skip loading on-disk nativeFunctionMatcher.js because NFM_HARNESS is preloaded.
         {
             char[] want = "nativeFunctionMatcher.js";
             usz flen = end - start;
@@ -208,11 +180,10 @@ fn void load_test_includes(Vm* v, Heap* hp, char[] src) {
     }
 }
 
-/// Detect if test source has `flags: [async]` in its frontmatter.
+// Check for `flags: [async]` in frontmatter.
 fn bool is_async_test(char[] src) {
     usz scan_end = src.len < 4096 ? src.len : (usz)4096;
     usz i = 0;
-    // Find "flags:" within the frontmatter
     while (i + 6 < scan_end) {
         if (src[i] == 'f' && src[i+1] == 'l' && src[i+2] == 'a' && src[i+3] == 'g'
             && src[i+4] == 's' && src[i+5] == ':') {
@@ -222,7 +193,6 @@ fn bool is_async_test(char[] src) {
         i++;
     }
     if (i + 6 >= scan_end) return false;
-    // Look for "async" within the brackets
     while (i < scan_end && src[i] != ']') {
         if (src[i] == 'a' && src[i+1] == 's' && src[i+2] == 'y' && src[i+3] == 'n' && src[i+4] == 'c') {
             return true;
@@ -232,12 +202,6 @@ fn bool is_async_test(char[] src) {
     return false;
 }
 
-/// Detect if test source has `flags: [module]` in its frontmatter.
-/// Module code changes parse-time semantics (e.g. `await` is always reserved,
-/// top-level `import`/`export` are allowed, the body is implicitly strict),
-/// so `flags: [module]` tests must be compiled via compile_module, not the
-/// plain script path, or negative-parse module tests silently "pass" as
-/// scripts.
 fn bool contains_substr(char[] haystack, char[] needle) {
     if (needle.len > haystack.len) return false;
     usz max_i = haystack.len - needle.len;
@@ -251,10 +215,10 @@ fn bool contains_substr(char[] haystack, char[] needle) {
     return false;
 }
 
+// Check for `flags: [module]` in frontmatter or top-level module statements.
 fn bool is_module_test(char[] path, char[] src) {
     usz scan_end = src.len < 4096 ? src.len : (usz)4096;
     usz i = 0;
-    // Find "flags:" within the frontmatter
     while (i + 6 < scan_end) {
         if (src[i] == 'f' && src[i+1] == 'l' && src[i+2] == 'a' && src[i+3] == 'g'
             && src[i+4] == 's' && src[i+5] == ':') {
@@ -263,15 +227,7 @@ fn bool is_module_test(char[] path, char[] src) {
         }
         i++;
     }
-    // No "flags:" block at all. Per test262 INTERPRETING.md, absence of the
-    // `module` flag means the test is global (script) code, directory
-    // placement is not itself a mode signal (e.g.
-    // language/module-code/top-level-await/new-await-script-code.js has no
-    // `flags:` block and deliberately tests SCRIPT semantics). The one
-    // reliable signal left is the source itself: a flagless module-code/
-    // import/export test still needs an actual top-level `import`/`export`
-    // declaration to parse at all, so fall back to a raw keyword scan rather
-    // than trusting the path.
+    // If no flags block exists, fall back to keyword scan for import/export in module paths.
     if (i + 6 >= scan_end) {
         return contains_substr(path, "language/module-code/") ||
             contains_substr(path, "language/import/") ||
@@ -279,13 +235,7 @@ fn bool is_module_test(char[] path, char[] src) {
             ? (contains_substr(src, "import") || contains_substr(src, "export"))
             : false;
     }
-    // A `flags:` block IS present, trust it over the path prefix. A test
-    // whose frontmatter explicitly lists flags without "module" (e.g.
-    // `flags: [async]`) is deliberately exercising non-module/script-code
-    // semantics even when physically filed under module-code/, see
-    // language/module-code/top-level-await/new-await-script-code.js, which
-    // tests that `await` is a legal identifier/class name in SCRIPT code and
-    // must not be parsed via the module (always-reserved-await) path.
+    // When flags block exists, rely on presence of "module".
     while (i + 6 < scan_end && src[i] != ']') {
         if (src[i] == 'm' && src[i+1] == 'o' && src[i+2] == 'd' && src[i+3] == 'u'
             && src[i+4] == 'l' && src[i+5] == 'e') {
@@ -296,18 +246,15 @@ fn bool is_module_test(char[] path, char[] src) {
     return false;
 }
 
-/// Negative-test phase, extracted from `negative:\n  phase: <p>` frontmatter.
+// Negative test phase from frontmatter.
 enum NegPhase : int {
-    NONE,        // not a negative test
-    PARSE,       // negative: phase: parse     , a compile/parse (early) error is expected
-    RESOLUTION,  // negative: phase: resolution, a module-resolution error is expected
-    RUNTIME,     // negative: phase: runtime   , a runtime throw is expected
+    NONE,
+    PARSE,
+    RESOLUTION,
+    RUNTIME,
 }
 
-/// Extract the `type:` (expected error constructor name) from the `negative:`
-/// frontmatter block into `out`. Returns the length written, 0 if absent.
-/// Per test262 INTERPRETING.md, a negative test passes only if the thrown
-/// exception's constructor name matches this `type`.
+// Extract expected error constructor name from negative frontmatter.
 fn usz negative_type(char[] src, char[] out) {
     usz scan_end = src.len < 8192 ? src.len : (usz)8192;
     usz i = 0;
@@ -339,26 +286,18 @@ fn usz negative_type(char[] src, char[] out) {
     return 0;
 }
 
-/// Does the thrown value's constructor name match `expected`?  Builtin error
-/// types are matched by walking the prototype chain against the heap's error
-/// prototypes (robust against a missing/renamed `.name`). Anything else
-/// (Test262Error, custom errors) is matched by reading the object's `name`
-/// own/inherited property. Returns true on match.
+// Match thrown value constructor name against expected type.
+// Checks builtin error prototype chains and constructor name properties.
 fn bool thrown_type_matches(Vm* v, Heap* hp, char[] expected) {
-    // The uncaught-error unwind clears vm.throw_value/throw_pending, but the
-    // thrown value persists in heap.error_value, read it from there. (v is
-    // kept in the signature for symmetry with the rest of the harness API.)
+    // Read thrown value from heap.error_value after unwinding.
     TVal thrown_val = hp.error_value;
     if (!thrown_val.is_object()) {
-        // A thrown primitive (string/number) has no constructor name to match.
-        // The corpus's runtime-negatives all throw Error objects, so treat a
-        // primitive throw as a non-match (fails the type check).
         return false;
     }
     HObject* thrown = (HObject*)thrown_val.get_heapptr();
     if (thrown == null) return false;
 
-    // Map expected builtin-error name → its prototype, then chain-walk.
+    // Check prototype chains for standard builtin error types.
     HObject* want_proto = null;
     if (compiler::str_eq(expected, "TypeError"))      { want_proto = hp.type_err_proto; }
     else if (compiler::str_eq(expected, "RangeError"))     { want_proto = hp.range_err_proto; }
@@ -373,14 +312,9 @@ fn bool thrown_type_matches(Vm* v, Heap* hp, char[] expected) {
             if (cur == want_proto) return true;
             cur = cur.prototype;
         }
-        // Might still match by name (e.g. a subclass); fall through to name check.
     }
 
-    // Per INTERPRETING.md the match is against the *constructor's* name, so
-    // read thrown.constructor.name. This is what catches user error types like
-    // Test262Error, whose instances have no own/inherited `name` property but
-    // whose constructor function is named. Also covers builtin errors that
-    // didn't match a proto above (e.g. subclasses).
+    // Check constructor.name for custom error types (such as Test262Error).
     char[] ctor_key = "constructor";
     uint ch = hp.hash_string(ctor_key);
     HString*? cks = hp.str_table_lookup(ctor_key, ch);
@@ -415,18 +349,9 @@ fn bool thrown_type_matches(Vm* v, Heap* hp, char[] expected) {
     return false;
 }
 
-/// Parse the `negative:` frontmatter block and return its declared phase.
-///
-/// Runtime-negative tests are the dangerous case: many (all 40 in the corpus)
-/// have NO local try/assert.throws, the comment in e.g.
-/// eval-code/direct/strict-caller-global.js explicitly says they *rely on the
-/// negative frontmatter* to assert the error. Without inverting the verdict,
-/// the worker scores a correct throw as FAIL and a buggy non-throw as PASS, so
-/// i.e. it rewards implementing the reverse of the spec. run_one_test() uses
-/// this to invert the runtime-negative verdict.
+// Parse the `negative:` frontmatter block and return its declared phase.
 fn NegPhase negative_phase(char[] src) {
     usz scan_end = src.len < 8192 ? src.len : (usz)8192;
-    // Find "negative:" in the frontmatter.
     usz i = 0;
     bool found = false;
     while (i + 9 < scan_end) {
@@ -440,13 +365,11 @@ fn NegPhase negative_phase(char[] src) {
         i++;
     }
     if (!found) return NegPhase.NONE;
-    // Find "phase:" after "negative:", scan a bounded window (the YAML block).
     usz block_end = i + 256 < scan_end ? i + 256 : scan_end;
     while (i + 6 < block_end) {
         if (src[i] == 'p' && src[i+1] == 'h' && src[i+2] == 'a' && src[i+3] == 's'
             && src[i+4] == 'e' && src[i+5] == ':') {
             i += 6;
-            // Skip spaces
             while (i < block_end && (src[i] == ' ' || src[i] == '\t')) { i++; }
             if (i + 5 <= block_end && src[i] == 'p' && src[i+1] == 'a' && src[i+2] == 'r'
                 && src[i+3] == 's' && src[i+4] == 'e') {
@@ -468,18 +391,7 @@ fn NegPhase negative_phase(char[] src) {
     return NegPhase.NONE;
 }
 
-/// Compile+run a `flags: [module]` test through the ESM parse path so that
-/// module-only syntax rules apply. Self-contained module tests (no imports)
-/// execute; tests with imports are compiled only (the worker does not run the
-/// module resolve/link pipeline). Return codes match exec_js: 0 ok, 1 runtime
-/// error, 2 compile error.
-// Run a `flags: [module]` test through the full ESM pipeline (resolve -> link
-// -> evaluate) so module-only rules apply AND relative imports (`./x.js`)
-// resolve against the test file's directory. `test_path` must be the module
-// file's path; the harness globals (Test262Error, assert, ...) are already
-// installed on vm.global_env, and module envs are parented to it, so they
-// remain visible inside the module. Return codes match exec_js: 0 ok, 1
-// runtime throw (value in heap.error_value), 2 load/compile/link error.
+// Run a `flags: [module]` test through the ESM resolve, link, and evaluate pipeline.
 fn int exec_js_module(Vm* v, Heap* hp, char[] test_path) {
     return esm::run_module_file(hp, v, test_path);
 }
@@ -502,18 +414,11 @@ fn int run_one_test(Vm* v, Heap* hp, char[] test_path, char[] assert_src, char[]
         if (exec_js(v, hp, property_helper_src) != 0) { io::eprintfn("  FAIL: propertyHelper.js"); }
     }
 
-    // Load simplified nativeFunctionMatcher (avoids \u regex escapes)
     if (exec_js(v, hp, NFM_HARNESS) != 0) { io::eprintfn("  FAIL: NFM_HARNESS"); }
-
-    // Load simplified isConstructor
     if (exec_js(v, hp, ISCON_HARNESS) != 0) { io::eprintfn("  FAIL: ISCON_HARNESS"); }
-
-    // Load $262 host object (detachArrayBuffer bridge for TA/AB tests)
     if (exec_js(v, hp, HOST262_HARNESS) != 0) { io::eprintfn("  FAIL: HOST262_HARNESS"); }
 
-    // Load $DONE helper for async tests (tests with `flags: [async]`).
-    // For async tests, we wrap $DONE to set a completion flag so we can
-    // verify the test actually settled (not just that __test262_fail stayed 0).
+    // Async harness setup.
     bool async_test = is_async_test(src);
     char[]? done_src_opt = file::load_temp((String)"test262/harness/doneprintHandle.js");
     char[] done_src;
@@ -522,15 +427,13 @@ fn int run_one_test(Vm* v, Heap* hp, char[] test_path, char[] assert_src, char[]
         if (exec_js(v, hp, done_src) != 0) { io::eprintfn("  FAIL: doneprintHandle.js"); }
     }
     if (async_test) {
-        // Set completion flag and wrap $DONE to track settlement
         char[] async_setup = "var __test262_async_done=0;var __test262_async_error=null;(function(){var _origDONE=$DONE;$DONE=function(err){__test262_async_done=1;if(err){__test262_async_error=String(err);__test262_fail++;}_origDONE(err);};})();";
         exec_js(v, hp, async_setup);
     }
 
-    // Load per-test `includes:` harness files (testTypedArray.js, detachArrayBuffer.js, etc.)
     load_test_includes(v, hp, src);
 
-    // Detect onlyStrict flag and prepend "use strict";\n to source.
+    // Prepend strict directive when onlyStrict flag is set.
     bool only_strict = false;
     {
         usz scan = src.len < 4096 ? src.len : (usz)4096;
@@ -558,82 +461,49 @@ fn int run_one_test(Vm* v, Heap* hp, char[] test_path, char[] assert_src, char[]
     }
     defer if (strict_buf != null) { mem::free(strict_buf); }
 
-    // `flags: [module]` tests must be parsed as ES modules so module-only
-    // rules apply (e.g. `await` reserved, top-level import/export). Otherwise
-    // a negative-parse module test would compile fine as a script and never
-    // surface its expected SyntaxError. The python runner's categorize_ce()
-    // maps a COMPILE_ERROR on a `negative: phase: parse` test to a pass.
     bool module_test = is_module_test(test_path, src);
     NegPhase neg = negative_phase(src);
-    // Module tests go through the ESM pipeline by PATH (so relative imports
-    // resolve against the test file's dir); script tests run the augmented
-    // source string directly. Scripts still get the test path as the base
-    // for relative dynamic-import specifiers (heap.current_module_name is
-    // the fallback base when the running function carries no filename).
+
     int src_rc;
     if (module_test) {
         src_rc = exec_js_module(v, hp, test_path);
     } else {
-        // Stays set through the trailing microtask drains (deferred imports);
-        // Heap.reset clears it before the next test.
         hp.current_module_name = test_path;
         src_rc = exec_js(v, hp, exec_src);
     }
 
-    // `negative: phase: runtime` tests expect the *execution* to throw, and
-    // (in this corpus, all 40 of them) have no local try/assert.throws, they
-    // rely entirely on this frontmatter. Per test262 INTERPRETING.md a negative
-    // test passes only if it throws AND the thrown exception's constructor name
-    // matches the declared `type` AND the error occurs at the declared phase.
-    // Invert the verdict accordingly. Without this the worker rewards
-    // implementing the reverse of the spec (a non-throwing bug scores PASS, or
-    // a throw of the wrong type, such as the annexB HTML-comment tests that
-    // threw ReferenceError instead of the expected error, scores PASS).
+    // Runtime-negative tests: verify execution threw the expected error type.
     if (neg == NegPhase.RUNTIME) {
         if (src_rc == 2) {
             io::eprintfn("  FAIL: runtime-negative threw at parse time, not runtime");
-            return 1;  // wrong phase, a real mismatch, not the expected error
+            return 1;
         }
         if (src_rc == 0) {
             io::eprintfn("  FAIL: runtime-negative completed without throwing");
-            return 1;  // ran clean but was required to throw (was a false PASS)
+            return 1;
         }
-        // src_rc == 1: it threw at runtime. Now enforce the type match.
         char[64] tbuf;
         usz tn = negative_type(src, tbuf[..]);
         if (tn == 0) {
-            return 0;  // no declared type, a runtime throw alone suffices
+            return 0;
         }
         if (thrown_type_matches(v, hp, tbuf[:tn])) {
-            return 0;  // threw the expected error type at runtime, pass
+            return 0;
         }
         io::eprintfn("  FAIL: runtime-negative threw wrong error type (wanted %s)", (String)tbuf[:tn]);
-        return 1;  // threw, but not the declared type, fail
+        return 1;
     }
 
-    // `negative: phase: parse` tests expect an early (parse-time) error. Our
-    // compiler surfaces every early error as a compile error (src_rc == 2), so
-    // a compile error is the expected outcome, since the corpus's parse-negatives
-    // all declare SyntaxError, which is exactly what an early parse rejection
-    // represents. This mirrors the python runner's categorize_ce(), which maps
-    // a CE on a `negative: phase: parse` test to a pass. A parse-negative that
-    // compiled clean (src_rc != 2) failed to reject and is a real bug.
+    // Parse-negative tests: verify syntax was rejected at parse time.
     if (neg == NegPhase.PARSE) {
-        if (src_rc == 2) { return 0; }  // expected early error, pass
+        if (src_rc == 2) { return 0; }
         io::eprintfn("  FAIL: parse-negative did not reject at parse time");
         return 1;
     }
 
-    // `negative: phase: resolution` tests expect the module to parse cleanly
-    // but fail during resolution/linking (e.g. an import attribute forcing a
-    // JSON load whose content is invalid, or the ensure-linking-error fixture
-    // importing a nonexistent binding). Both surface from the ESM pipeline as a
-    // load/link error (src_rc == 2). A runtime throw (src_rc == 1) during a
-    // dependency's evaluation also counts as a resolution/link-time rejection
-    // for these corpus tests. Only a clean run (src_rc == 0) means the module
-    // failed to reject and is a real bug.
+    // Resolution-negative tests: verify rejection during module linking.
     if (neg == NegPhase.RESOLUTION) {
-        if (src_rc != 0) { return 0; }  // rejected during resolve/link, pass
+        if (src_rc != 0) { return 0; }
         io::eprintfn("  FAIL: resolution-negative did not reject at link time");
         return 1;
     }
@@ -667,35 +537,18 @@ fn int run_one_test(Vm* v, Heap* hp, char[] test_path, char[] assert_src, char[]
         return 1;
     }
 
-    // Drain pending microtasks in a loop so async tests (those relying on
-    // Promise / .then / for-await suspensions) get a chance to fully run
-    // before we read __test262_fail / __test262_async_done. A single drain
-    // is insufficient: each suspended async function or rejected-then
-    // reaction may enqueue more microtasks during the drain (e.g. an async
-    // iterator's .next() resolves its Promise, the resume callback runs,
-    // and the for-await body itself enqueues a `.then` for the next value).
-    // We stop when either the queue drains with no new enqueues during the
-    // pass, or after a generous bound (1000 drains) to guard against
-    // pathological infinite-microtask loops.
+    // Drain pending microtasks to allow async tests to complete.
     int drain_loops = 0;
     for (int drain_i = 0; drain_i < 1000; drain_i++) {
         uint before = hp.microtask_count;
         hp.drain_microtasks(v);
         uint after = hp.microtask_count;
         drain_loops++;
-        if (after == 0) break;  // queue fully drained
-        if (after == before && drain_i > 5) break;  // settled (no new enqueues this pass)
-    }
-    // For async tests: if the async_done flag isn't set but the queue drained,
-    // the test's promise chain must have settled without calling $DONE, so bail
-    // out so the per-test "async test never called $DONE" check fires rather
-    // than letting the test return 0 from this point.
-    if (async_test && drain_loops == 0) {
-        // No drain happened; fall through to the normal check.
+        if (after == 0) break;
+        if (after == before && drain_i > 5) break;
     }
 
-    // For async tests, verify that $DONE was actually called, a test that
-    // sets up a promise but never settles is a harness failure, not a pass.
+    // Verify async tests called $DONE.
     if (async_test) {
         char[] adk = "__test262_async_done";
         uint adh = hp.hash_string(adk);
@@ -704,7 +557,6 @@ fn int run_one_test(Vm* v, Heap* hp, char[] test_path, char[] assert_src, char[]
             TVal? adtv = env::env_get(v.global_env, adks);
             if (try adval = adtv) {
                 if (adval.get_fastint() == 0) {
-                    // $DONE was never called, async test didn't settle
                     io::eprintfn("  FAIL: async test never called $DONE (drained %d loops, queue=%d)", drain_loops, hp.microtask_count);
                     return 1;
                 }
@@ -737,7 +589,7 @@ fn int run_worker_loop() {
     char[] ph_src;
     if (try p = ph_src_opt) { ph_src = p; }
 
-    // Allocate the long-lived heap and VM once
+    // Allocate the long-lived heap and VM once.
     Heap*? hp_opt = heap::create(null, null, null, null, null);
     if (catch h = hp_opt) { return 1; }
     Heap* hp = hp_opt;
@@ -747,10 +599,7 @@ fn int run_worker_loop() {
     if (catch err = v_opt) { return 1; }
     Vm* v = v_opt;
 
-    // The line read has to happen inside the @pool() scope: treadline allocates
-    // the line from the temp allocator, and only allocations made inside the
-    // scope are reclaimed when it closes. Reading in the `while` header leaks
-    // one line buffer per test for the lifetime of the worker.
+    // Read inside @pool scope so line allocations are reclaimed per test.
     bool eof = false;
     while (!eof) {
         @pool() {
@@ -759,10 +608,7 @@ fn int run_worker_loop() {
             if (catch line_opt) { eof = true; } else { line = line_opt; }
             if (eof || line.len == 0) { continue; }
 
-            // Reset heap+VM, destroy+recreate VM to avoid stale-reference bugs.
-            // Null out `v` between destroy and a successful recreate so that a
-            // failed vm_create cannot leave `v` pointing at freed memory (which
-            // the next iteration's vm_destroy, or the final one, would double-free).
+            // Reset heap and recreate VM.
             hp.reset();
             vm::vm_destroy(v);
             v = null;

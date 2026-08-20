@@ -1,18 +1,15 @@
-/// The debug and inspection CLI.
-///
-/// The inspection counterpart to the plain `boomkat` runner: same engine,
-/// plus flags to disassemble bytecode, trace execution, and time stages. To
-/// just run a file, use `boomkat` (`cli/boomkat.c3`).
-///
-/// Flags (any order, file is the non-flag argument):
-///   <js_file>               Run JS file (default)
-///   -c, --compile-only       Disassemble bytecode, no execution
-///   -t, --trace-vm           Trace every instruction with register values
-///   --dump-constants         Include constant pool in bytecode dump
-///   -d, --debug              Print stage timing
-///   --no-optimize            Disable compiler peephole passes (debug aid)
-///   --format json            Structured bytecode output (implies -c)
-///   --help                   Show usage
+// Inspection CLI for bytecode disassembly, execution tracing, and stage timing.
+// To run a file without inspection tools, use `boomkat` (`cli/boomkat.c3`).
+//
+// Flags:
+//   <js_file>           Run JS file (default)
+//   -c, --compile-only  Disassemble bytecode without executing
+//   -t, --trace-vm      Trace each instruction with register values
+//   --dump-constants    Include constant pool in bytecode dump
+//   -d, --debug         Print stage timing
+//   --no-optimize       Disable compiler peephole passes
+//   --format json       Structured bytecode output (implies -c)
+//   --help              Show usage
 module boomkat_debug;
 
 import boomkat::compiler;
@@ -84,7 +81,6 @@ fn int main(String[] args) {
             compile_only = true;
             i++;
         } else if (a == "--format" && i + 1 < (uint)args.len) {
-            // Unknown format
             i++;
         } else if (a.len > 0 && a.ptr[0] != '-') {
             path_opt = a;
@@ -138,11 +134,10 @@ fn int main(String[] args) {
     time::Time t3 = debug ? time::now() : (time::Time)0;
 
     if (module_mode) {
-        // ESM module mode: resolve -> link -> execute
+        // ESM module mode: resolve -> link -> execute.
         char[] module_name = path;
         esm::ModuleDef*? mod_opt = esm::resolve_module(hp, module_name, "");
         if (catch err = mod_opt) {
-            // Compile error was already printed by resolve_module; just exit.
             return 1;
         }
         esm::ModuleDef* mod = mod_opt;
@@ -153,10 +148,8 @@ fn int main(String[] args) {
 
         if (debug) io::printfn("  resolve:     %d us", (int)(time::now() - t3));
 
-        // Link resolves import bindings and instantiates top-level function
-        // declarations in the module env (ECMA-262 16.2.1.5.5 step 17) before
-        // any body runs. Skipping it left every module-scope `function` decl
-        // (and any cross-module import) unresolved at body-execution time.
+        // Resolve import bindings and instantiate top-level function
+        // declarations in the module environment (ECMA-262 16.2.1.5.5 step 17).
         if (!esm::link_module(hp, v, mod, v.global_env)) {
             if (v.heap.has_error) {
                 print_uncaught_error(v.heap, &v.heap.error_value);
@@ -176,10 +169,7 @@ fn int main(String[] args) {
             }
             return 1;
         }
-        // A dynamic import() enqueues its resolve/link/evaluate pipeline as a
-        // job rather than running inline (see esm::dynamic_import), so drain
-        // it out so top-level `import()` calls in a module run under -m
-        // actually complete before the process exits.
+        // Dynamic import enqueues jobs; drain microtasks until completion.
         for (int drain_i = 0; drain_i < 1000; drain_i++) {
             uint before = hp.microtask_count;
             hp.drain_microtasks((void*)v);
@@ -187,10 +177,8 @@ fn int main(String[] args) {
             if (after == 0) break;
             if (after == before && drain_i > 5) break;
         }
-        // mod itself may have settled asynchronously during the drain above
-        // (a rejected top-level await, or a rejected async dependency it was
-        // transitively chained onto; see esm::execute_module's async_dep
-        // handling) rather than synchronously in the execute_module call.
+        // Module may have settled asynchronously during the drain (rejected top-level
+        // await or rejected async dependency).
         if (mod.status == esm::ModuleStatus.ERRORED) {
             if (mod.has_eval_error) {
                 print_uncaught_error(hp, &mod.eval_error);
@@ -222,11 +210,9 @@ fn int main(String[] args) {
     if (debug) io::printfn("  compile:     %d us", (int)(time::now() - t3));
 
 $if $feature(TRACE_VM):
-    // With TRACE_VM enabled the disassemble and trace flags work fully.
+    // Disassembly and trace flags are active.
 $else
-    // When -c/-t/--format is requested on a release build, the disassemble
-    // bodies and vm trace helpers are no-ops. Notify the user once instead
-    // of silently producing empty output.
+    // In release builds, disassembly and tracing helpers are no-ops.
     if (compile_only || trace_vm || json_format) {
         io::eprintfn("note: -c/-t/--format produce full output only in the trace-enabled CLI.");
         io::eprintfn("      Run `just build-trace` to build `out/boomkat_debug` and use that.");
@@ -259,22 +245,16 @@ $endif
         return 0;
     }
 
-    if (compile_only) {
-        // Already handled above
-    }
-
     // Execute.
     time::Time t4 = debug ? time::now() : (time::Time)0;
     TVal? res = v.execute(func);
     if (catch err = res) {
-        // If the VM recorded an uncaught JS exception (set by vm_uncaught_error
-        // or the THROW opcode), print it as a clean "Uncaught: <message>" line.
-        // Otherwise this is a true VM-level fault, so show the crash dump.
+        // Print uncaught JS exceptions. For internal VM faults, show the crash dump.
         if (v.heap.has_error) {
             print_uncaught_error(v.heap, &v.heap.error_value);
         } else {
             io::eprintfn("execute failed: %s", err);
-            // Crash dump: dump current instruction and register state
+            // Dump current instruction and register state.
             dump_vm_state(v);
         }
         return 1;
@@ -287,8 +267,7 @@ $endif
 // Text bytecode dump
 // ============================================================================
 
-/// True if the path ends in `.ts`, `.mts`, or `.cts` (case-sensitive, like
-/// TypeScript itself).
+// True if the path ends in `.ts`, `.mts`, or `.cts` (case-sensitive).
 fn bool has_ts_extension(String path) {
     if (path.len >= 3 && path[^3..] == ".ts") return true;
     if (path.len >= 4 && path[^4..] == ".mts") return true;
@@ -296,8 +275,8 @@ fn bool has_ts_extension(String path) {
     return false;
 }
 
-/// Dump an inner function and recurse into its own inner functions, labelling
-/// each with its dotted path from the top level ("Inner function 1.0.2").
+// Dump an inner function and recurse into child functions with dotted paths
+// ("Inner function 1.0.2").
 fn void dump_inner_tree(bytecode::CompiledFunction* f, uint idx, String path, bool dump_consts) {
     if (f == null) return;
     char[128] label_buf;
@@ -323,9 +302,7 @@ fn void dump_function(bytecode::CompiledFunction f) {
 $if $feature(TRACE_VM):
     char[200] line_buf;
     for (uint i = 0; i < f.code_count; i++) {
-        // MOVE_GG is a two-word instruction: word 1's BC is the destination
-        // name index, the trailing word (a kept NOP) holds the source name
-        // index in its BC. Render both halves on one line for clarity.
+        // MOVE_GG is a two-word instruction: word 1 BC is destination, word 2 BC is source.
         if (f.code[i].op == bytecode::Opcode.MOVE_GG && i + 1 < f.code_count) {
             io::printfn("[%3d] MOVE_GG         g[%d] <- g[%d]",
                         i, f.code[i].get_bc(), f.code[i + 1].get_bc());
@@ -333,9 +310,7 @@ $if $feature(TRACE_VM):
             i++;
             continue;
         }
-        // WIDE is a prefix word: its A/B/C carry the high bytes of the next
-        // instruction's operands. Render the pair as one instruction with
-        // the effective 16-bit operands.
+        // WIDE prefix carries the high bytes of the next instruction's operands.
         if (f.code[i].op == bytecode::Opcode.WIDE && i + 1 < f.code_count) {
             bytecode::Instruction wide = f.code[i];
             bytecode::Instruction payload = f.code[i + 1];
@@ -357,9 +332,7 @@ $if $feature(TRACE_VM):
         io::printfn("[%3d] %s", i, instr);
     }
 $else
-    // release build: disassemble is stubbed (returns 0), so we just emit
-    // the bare instruction index. The CLI main() prints a one-shot notice
-    // telling the user to rebuild with TRACE_VM for opcodes.
+    // Release build: disassemble is stubbed.
     (void)f;
 $endif
 }
@@ -384,8 +357,7 @@ $if $feature(TRACE_VM):
     }
     io::printfn("  ],");
 $else
-    // release build: emit empty `instructions` array. The CLI main() prints
-    // a notice telling the user to rebuild with TRACE_VM.
+    // Release build: emit empty `instructions` array.
     (void)f; (void)idx;
 $endif
 }
@@ -450,7 +422,7 @@ fn void dump_vm_state(Vm* v) {
             uint pc_offset = pc != null ? (uint)(pc - f.code) : 0xFFFF;
             io::eprintf("  curr_pc offset: 0x%04X (%d)\n", pc_offset, pc_offset);
 
-            // Dump current instruction
+            // Dump current instruction.
             if (pc != null && pc >= f.code && pc < f.code + f.code_count) {
                 char[200] buf;
 $if $feature(TRACE_VM):
@@ -459,13 +431,13 @@ $if $feature(TRACE_VM):
                 io::eprintf("  instruction: [0x%04X] %s\n",
                             pc_offset, (String)buf[0:end]);
 $else
-                // release build: disassemble is a no-op stub.
+                // Release build: disassemble is a no-op stub.
                 io::eprintf("  instruction: [0x%04X] (op=%d)\n",
                             pc_offset, pc.op.ordinal);
 $endif
             }
 
-            // Dump register file
+            // Dump register file.
             TVal* regs = act.bottom;
             uint nregs = f.num_regs;
             io::eprintf("  registers (%d slots):\n", nregs);
@@ -485,9 +457,7 @@ $endif
     io::eprintf("--- End Crash Dump ---\n");
 }
 
-/// Extract and print the .message from an uncaught error TVal.
-/// If the value is an Error object with a .message string property, prints
-/// "Uncaught <ErrorName>: <message>". Otherwise prints a generic message.
+// Extract and print .name and .message from an uncaught error value.
 fn void print_uncaught_error(heap::Heap* h, TVal* err_val) {
     if (err_val.is_object()) {
         HObject* err_obj = (HObject*)err_val.get_heapptr();
@@ -495,10 +465,7 @@ fn void print_uncaught_error(heap::Heap* h, TVal* err_val) {
             HString* msg_key = (HString*)h.strs[heap::BuiltinStr.MESSAGE];
             HString* name_key = (HString*)h.strs[heap::BuiltinStr.NAME];
 
-            // Walk the shape chain to find properties by key. The shape
-            // stores the key for each property; prop_values() stores the values
-            // in the same order. This is the reliable way to look up a
-            // property by key when find_prop_idx's hash isn't populated.
+            // Walk the shape chain to match properties by key in property storage order.
             char[64] name_buf = "Error";
             usz name_len = 5;
             char[types::ERROR_MSG_BUF] msg_buf;
@@ -506,7 +473,7 @@ fn void print_uncaught_error(heap::Heap* h, TVal* err_val) {
             bool found_msg = false;
             bool found_name = false;
 
-            // Walk shape chain (each shape has a range of properties)
+            // Walk shape chain.
             hobject::Shape* sh = err_obj.get_shape(h);
             uint global_offset = 0;
             TVal* vals = err_obj.prop_values();
@@ -550,7 +517,7 @@ fn void print_uncaught_error(heap::Heap* h, TVal* err_val) {
             return;
         }
     }
-    // Non-object throw value (string, number, boolean, etc.)
+    // Non-object throw value (string, number, boolean, etc.).
     io::eprintf("Uncaught: ");
     print_tval_stderr(err_val);
     io::eprintf("\n");
@@ -582,4 +549,3 @@ fn void print_tval_stderr(TVal* v) {
         default: io::eprintf("<?>"); break;
     }
 }
-
