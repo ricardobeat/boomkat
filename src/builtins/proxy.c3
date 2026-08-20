@@ -1,16 +1,16 @@
-/// Proxy exotic object, ES2020 §10.5.
-///
-/// Implements the Proxy constructor, Proxy.revocable, and the essential
-/// internal methods (MOP operations) with their trap-result invariant
-/// validation.  The "trap absent" default forwards each operation to the
-/// [[ProxyTarget]] using the ordinary semantics (the Reflect.* operations,
-/// hand-rolled here, the JS-visible Reflect global stays out of scope).
-///
-/// Error reporting: these functions are callable both from builtins (via
-/// BuiltinContext) and directly from the VM opcode handlers, so errors are
-/// signalled through heap.has_error / heap.error_value (the same channel
-/// call_fn uses for exceptions thrown inside JS callbacks).  Every proxy_mop_*
-/// function returns false when an error is pending.
+// Proxy exotic object, ES2020 §10.5.
+//
+// Implements the Proxy constructor, Proxy.revocable, and the essential
+// internal methods (MOP operations) with their trap-result invariant
+// validation.  The "trap absent" default forwards each operation to the
+// [[ProxyTarget]] using the ordinary semantics (the Reflect.* operations,
+// hand-rolled here, the JS-visible Reflect global stays out of scope).
+//
+// Error reporting: these functions are callable both from builtins (via
+// BuiltinContext) and directly from the VM opcode handlers, so errors are
+// signalled through heap.has_error / heap.error_value (the same channel
+// call_fn uses for exceptions thrown inside JS callbacks).  Every proxy_mop_*
+// function returns false when an error is pending.
 module boomkat::builtins;
 import boomkat::types;
 import std::math;
@@ -29,8 +29,8 @@ import boomkat::vm;
 fn HObject* proxy_target(HObject* p)  @inline { return (*p.extra_ptr()).proxy.target; }
 fn HObject* proxy_handler(HObject* p) @inline { return (*p.extra_ptr()).proxy.handler; }
 
-/// Hidden own-property key on a revoker function that points back at its proxy.
-/// 0xFF-prefixed so it is treated as a symbol (invisible to string-key paths).
+// Hidden own-property key on a revoker function that points back at its proxy.
+// 0xFF-prefixed so it is treated as a symbol (invisible to string-key paths).
 const char[] PROXY_REVOKE_SLOT = "\xFFproxyRevokeSlot";
 
 // ============================================================================
@@ -83,7 +83,7 @@ struct ProxyDesc {
 fn bool ProxyDesc.is_accessor_desc(&self) @inline { return self.has_get || self.has_set; }
 fn bool ProxyDesc.is_data_desc(&self)     @inline { return self.has_value || self.has_writable; }
 
-/// CompletePropertyDescriptor (§6.2.5.6): fill absent fields with defaults.
+// CompletePropertyDescriptor (§6.2.5.6): fill absent fields with defaults.
 fn void ProxyDesc.complete(&self) {
     if (self.is_accessor_desc()) {
         if (!self.has_get) { self.getter.set_undefined(); self.has_get = true; }
@@ -96,8 +96,8 @@ fn void ProxyDesc.complete(&self) {
     if (!self.has_configurable) { self.configurable = false; self.has_configurable = true; }
 }
 
-/// Ordinary own-property lookup into a ProxyDesc (no proxy recursion here,
-/// callers that may see a proxy use own_property_desc below).
+// Ordinary own-property lookup into a ProxyDesc (no proxy recursion here,
+// callers that may see a proxy use own_property_desc below).
 fn void ordinary_own_desc(Heap* heap, HObject* obj, HString* key, ProxyDesc* out) {
     *out = (ProxyDesc){};
     // Integer-Indexed exotic [[GetOwnProperty]] (ES2022 §10.4.5.1): canonical
@@ -165,14 +165,14 @@ fn void ordinary_own_desc(Heap* heap, HObject* obj, HString* key, ProxyDesc* out
     }
 }
 
-/// Module Namespace Exotic [[GetOwnProperty]] into a ProxyDesc (§10.4.6.5).
-/// String keys that name an export are surfaced as DATA descriptors
-/// {value: live-binding-value, writable:true, enumerable:true, configurable:false};
-/// symbol keys (including @@toStringTag) go through OrdinaryGetOwnProperty
-/// unchanged. Returns false (leaving heap.has_error set) if reading the live
-/// binding threw, e.g. the export is still in TDZ (§10.4.6.5 step 4 calls
-/// O.[[Get]], which throws ReferenceError for an uninitialized binding). Callers
-/// must propagate that via proxy_ctx_ok / their own error channel.
+// Module Namespace Exotic [[GetOwnProperty]] into a ProxyDesc (§10.4.6.5).
+// String keys that name an export are surfaced as DATA descriptors
+// {value: live-binding-value, writable:true, enumerable:true, configurable:false};
+// symbol keys (including @@toStringTag) go through OrdinaryGetOwnProperty
+// unchanged. Returns false (leaving heap.has_error set) if reading the live
+// binding threw, e.g. the export is still in TDZ (§10.4.6.5 step 4 calls
+// O.[[Get]], which throws ReferenceError for an uninitialized binding). Callers
+// must propagate that via proxy_ctx_ok / their own error channel.
 fn bool module_ns_own_desc(void* vm, Heap* heap, HObject* ns, HString* key, ProxyDesc* out) {
     *out = (ProxyDesc){};
     // Symbol keys: OrdinaryGetOwnProperty (§10.4.6.5 step 1).
@@ -195,7 +195,7 @@ fn bool module_ns_own_desc(void* vm, Heap* heap, HObject* ns, HString* key, Prox
     return true;
 }
 
-/// Own-property descriptor with proxy recursion ([[GetOwnProperty]]).
+// Own-property descriptor with proxy recursion ([[GetOwnProperty]]).
 fn bool own_property_desc(void* vm, Heap* heap, HObject* obj, HString* key, ProxyDesc* out) {
     if (obj.flags.exotic_proxyobj) {
         return proxy_mop_get_own(vm, heap, obj, key, out);
@@ -207,9 +207,9 @@ fn bool own_property_desc(void* vm, Heap* heap, HObject* obj, HString* key, Prox
     return true;
 }
 
-/// Assemble a ProxyDesc from a parsed descriptor (flags + values + presence
-/// bits), mirroring the inline conversion used by the TypedArray/Array
-/// defineProperty paths. Used by the Module Namespace define branch.
+// Assemble a ProxyDesc from a parsed descriptor (flags + values + presence
+// bits), mirroring the inline conversion used by the TypedArray/Array
+// defineProperty paths. Used by the Module Namespace define branch.
 fn ProxyDesc module_ns_desc_from_fields(bool is_accessor, hobject::PropFlags* flags, TVal[2]* vals, DescFields* fields) {
     ProxyDesc pd;
     pd.found = true;
@@ -225,13 +225,13 @@ fn ProxyDesc module_ns_desc_from_fields(bool is_accessor, hobject::PropFlags* fl
     return pd;
 }
 
-/// Module Namespace Exotic [[DefineOwnProperty]] (§10.4.6.4). Returns true only
-/// when `desc` is a no-op redefinition of an existing own property (every
-/// present field matches the current descriptor); returns false otherwise
-/// (caller throws for Object.defineProperty / returns false for Reflect).
-/// A non-existent key returns false. Sets `*err` true (and leaves heap.has_error
-/// set) if computing the current descriptor threw (TDZ), the caller must
-/// propagate rather than throw a TypeError.
+// Module Namespace Exotic [[DefineOwnProperty]] (§10.4.6.4). Returns true only
+// when `desc` is a no-op redefinition of an existing own property (every
+// present field matches the current descriptor); returns false otherwise
+// (caller throws for Object.defineProperty / returns false for Reflect).
+// A non-existent key returns false. Sets `*err` true (and leaves heap.has_error
+// set) if computing the current descriptor threw (TDZ), the caller must
+// propagate rather than throw a TypeError.
 fn bool module_ns_define_own(void* vm, Heap* heap, HObject* ns, HString* key, ProxyDesc* desc, bool* err) {
     *err = false;
     // Symbol keys (e.g. @@toStringTag) use the object's ordinary own descriptor.
@@ -253,7 +253,7 @@ fn bool module_ns_define_own(void* vm, Heap* heap, HObject* ns, HString* key, Pr
     return true;
 }
 
-/// [[IsExtensible]] with proxy recursion.
+// [[IsExtensible]] with proxy recursion.
 fn bool object_is_extensible(void* vm, Heap* heap, HObject* obj, bool* out) {
     if (obj.flags.exotic_proxyobj) {
         return proxy_mop_is_extensible(vm, heap, obj, out);
@@ -262,7 +262,7 @@ fn bool object_is_extensible(void* vm, Heap* heap, HObject* obj, bool* out) {
     return true;
 }
 
-/// [[GetPrototypeOf]] with proxy recursion. Writes object-or-null TVal.
+// [[GetPrototypeOf]] with proxy recursion. Writes object-or-null TVal.
 fn bool object_get_proto(void* vm, Heap* heap, HObject* obj, TVal* out) {
     if (obj.flags.exotic_proxyobj) {
         return proxy_mop_get_proto(vm, heap, obj, out);
@@ -275,8 +275,8 @@ fn bool object_get_proto(void* vm, Heap* heap, HObject* obj, TVal* out) {
     return true;
 }
 
-/// Transfer a pending heap-level proxy error into a BuiltinContext throw.
-/// Returns false when an error was pending (caller should bail out).
+// Transfer a pending heap-level proxy error into a BuiltinContext throw.
+// Returns false when an error was pending (caller should bail out).
 fn bool proxy_ctx_ok(BuiltinContext* ctx) {
     if (ctx.heap.has_error) {
         ctx.should_throw = true;
@@ -343,7 +343,7 @@ fn bool js_get_with_receiver(void* vm, Heap* heap, HObject* obj, HString* key, T
     return true;
 }
 
-/// Convenience: [[Get]] where the receiver is the object itself.
+// Convenience: [[Get]] where the receiver is the object itself.
 fn bool js_get(void* vm, Heap* heap, HObject* obj, HString* key, TVal* out) {
     TVal recv; recv.set_object(obj);
     return js_get_with_receiver(vm, heap, obj, key, recv, out);
@@ -531,7 +531,7 @@ fn bool js_has_property(void* vm, Heap* heap, HObject* obj, HString* key, bool* 
 // Trap lookup, GetMethod(handler, name)
 // ============================================================================
 
-/// Result: 0 = error pending, 1 = no trap (forward to target), 2 = trap found.
+// Result: 0 = error pending, 1 = no trap (forward to target), 2 = trap found.
 fn int proxy_find_trap(void* vm, Heap* heap, HObject* proxy, char[] name,
                        TVal* trap_out, HObject** target_out, HObject** handler_out) {
     HObject* handler = proxy_handler(proxy);
@@ -563,7 +563,7 @@ fn int proxy_find_trap(void* vm, Heap* heap, HObject* proxy, char[] name,
     return 2;
 }
 
-/// Call a trap; returns false when the trap threw.
+// Call a trap; returns false when the trap threw.
 fn bool proxy_call_trap(void* vm, Heap* heap, TVal trap, HObject* handler,
                         TVal* args, uint nargs, TVal* out) {
     if (heap.call_fn == null) { proxy_throw_type(heap, "no VM call context"); return false; }
@@ -720,8 +720,8 @@ fn bool proxy_mop_delete(void* vm, Heap* heap, HObject* proxy, HString* key, boo
 // Descriptor object <-> ProxyDesc conversion
 // ============================================================================
 
-/// FromPropertyDescriptor: build a JS descriptor object from a ProxyDesc
-/// (only present fields are included).
+// FromPropertyDescriptor: build a JS descriptor object from a ProxyDesc
+// (only present fields are included).
 fn HObject* proxy_desc_to_object(Heap* heap, ProxyDesc* d) {
     HObject*? raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch e = raw) return null;
@@ -752,7 +752,7 @@ fn HObject* proxy_desc_to_object(Heap* heap, ProxyDesc* d) {
     return obj;
 }
 
-/// ToPropertyDescriptor (§6.2.5.5) on a trap result object.
+// ToPropertyDescriptor (§6.2.5.5) on a trap result object.
 fn bool proxy_object_to_desc(void* vm, Heap* heap, HObject* obj, ProxyDesc* out) {
     *out = (ProxyDesc){};
     out.found = true;
@@ -847,18 +847,18 @@ fn bool proxy_desc_compatible(bool extensible, ProxyDesc* desc, ProxyDesc* curre
 // own callers via the proxy [[DefineOwnProperty]] trap fallback).
 // ============================================================================
 
-/// Applies ArraySetLength for a "length" descriptor on Array `obj`. Follows
-/// the proxy.c3 MOP convention: returns false when heap.has_error was set
-/// (caller must propagate the pending TypeError/RangeError), true otherwise
-/// with *res reporting success/failure of the definition itself. Mirrors
-/// ValidateAndApplyPropertyDescriptor's handling of the exotic "length"
-/// property: steps 3-4 coerce Desc.[[Value]] via ToUint32 AND ToNumber (two
-/// observable ToPrimitive("number") calls) before any other descriptor-field
-/// validation runs, then writable/configurable/enumerable/accessor fields
-/// are validated, then the length is applied (truncating and deleting
-/// configurable elements, stopping at the first non-configurable one), and
-/// finally writable:false is applied last so that element deletion can
-/// still adjust length along the way.
+// Applies ArraySetLength for a "length" descriptor on Array `obj`. Follows
+// the proxy.c3 MOP convention: returns false when heap.has_error was set
+// (caller must propagate the pending TypeError/RangeError), true otherwise
+// with *res reporting success/failure of the definition itself. Mirrors
+// ValidateAndApplyPropertyDescriptor's handling of the exotic "length"
+// property: steps 3-4 coerce Desc.[[Value]] via ToUint32 AND ToNumber (two
+// observable ToPrimitive("number") calls) before any other descriptor-field
+// validation runs, then writable/configurable/enumerable/accessor fields
+// are validated, then the length is applied (truncating and deleting
+// configurable elements, stopping at the first non-configurable one), and
+// finally writable:false is applied last so that element deletion can
+// still adjust length along the way.
 fn bool array_set_length_desc(void* vm, Heap* heap, HObject* obj, ProxyDesc* desc, bool* res) {
     *res = false;
     uint old_len = array_get_length(obj, heap);
@@ -1121,7 +1121,7 @@ fn bool ordinary_define_own(void* vm, Heap* heap, HObject* obj, HString* key, Pr
     return true;
 }
 
-/// [[DefineOwnProperty]] with proxy recursion.
+// [[DefineOwnProperty]] with proxy recursion.
 fn bool object_define_own(void* vm, Heap* heap, HObject* obj, HString* key, ProxyDesc* desc, bool* res) {
     if (obj.flags.exotic_proxyobj) {
         return proxy_mop_define(vm, heap, obj, key, desc, res);
@@ -1252,9 +1252,9 @@ fn bool proxy_mop_define(void* vm, Heap* heap, HObject* proxy, HString* key, Pro
 // [[OwnPropertyKeys]], trap "ownKeys" (§10.5.11)
 // ============================================================================
 
-/// Collect all own property keys of an ordinary object (dense array indices
-/// first, then integer-index named props, then strings, then symbols) into a
-/// heap-allocated HString* buffer. Returns count; caller frees *buf_out.
+// Collect all own property keys of an ordinary object (dense array indices
+// first, then integer-index named props, then strings, then symbols) into a
+// heap-allocated HString* buffer. Returns count; caller frees *buf_out.
 fn uint ordinary_own_keys(Heap* heap, HObject* obj, HString*** buf_out) {
     uint cap = obj.prop_count + obj.array_used + 4;
     HString** buf = (HString**)heap.alloc_func(heap.heap_udata, (usz)cap * (usz)void*::size);
@@ -1308,7 +1308,7 @@ fn uint ordinary_own_keys(Heap* heap, HObject* obj, HString*** buf_out) {
     return n;
 }
 
-/// [[OwnPropertyKeys]]: writes a JS Array of keys to *arr_out.
+// [[OwnPropertyKeys]]: writes a JS Array of keys to *arr_out.
 fn bool proxy_mop_own_keys(void* vm, Heap* heap, HObject* proxy, HObject** arr_out) {
     TVal trap; HObject* target; HObject* handler;
     int t = proxy_find_trap(vm, heap, proxy, "ownKeys", &trap, &target, &handler);
@@ -1473,37 +1473,37 @@ fn bool proxy_mop_own_keys(void* vm, Heap* heap, HObject* proxy, HObject** arr_o
     return true;
 }
 
-/// Own keys of a proxy filtered by kind and enumerability.
-/// mode: 0 = enumerable string keys (Object.keys / for-in),
-///       1 = all string keys (getOwnPropertyNames),
-///       2 = symbol keys (getOwnPropertySymbols).
-/// Returns keys in *buf_out (caller frees via heap.free_func) and the count.
+// Own keys of a proxy filtered by kind and enumerability.
+// mode: 0 = enumerable string keys (Object.keys / for-in),
+//       1 = all string keys (getOwnPropertyNames),
+//       2 = symbol keys (getOwnPropertySymbols).
+// Returns keys in *buf_out (caller frees via heap.free_func) and the count.
 fn bool proxy_filtered_own_keys(void* vm, Heap* heap, HObject* proxy, int mode,
                                 HString*** buf_out, uint* count_out) {
     uint total;
     return proxy_partitioned_own_keys(vm, heap, proxy, mode, buf_out, count_out, &total);
 }
 
-/// As `proxy_filtered_own_keys`, but in mode 0 also reports the keys the
-/// enumerability filter rejected instead of discarding them.
-///
-/// The result buffer is partitioned: `[0, *count_out)` holds the enumerable
-/// string keys in [[OwnPropertyKeys]] trap order, and `[*count_out, *total_out)`
-/// holds the string keys [[GetOwnProperty]] reported as existing but NOT
-/// enumerable, in reverse trap order. for-in (EnumerateObjectProperties) needs
-/// the second group only as a set, to mark those names already-seen so a
-/// same-named enumerable property further up the prototype chain is
-/// suppressed, so their relative order is immaterial.
-///
-/// Keys for which [[GetOwnProperty]] returns undefined appear in neither
-/// group: EnumerateObjectProperties records a key as visited only "if desc is
-/// not undefined", so an absent key must not shadow the prototype chain.
-///
-/// Partitioning a single pass keeps the trap invocation count and order
-/// identical to the enumerable-only filter: exactly one [[GetOwnProperty]] per
-/// string key returned by [[OwnPropertyKeys]], in trap order.
-///
-/// In modes 1 and 2 no enumerability filter runs, so `*total_out == *count_out`.
+// As `proxy_filtered_own_keys`, but in mode 0 also reports the keys the
+// enumerability filter rejected instead of discarding them.
+//
+// The result buffer is partitioned: `[0, *count_out)` holds the enumerable
+// string keys in [[OwnPropertyKeys]] trap order, and `[*count_out, *total_out)`
+// holds the string keys [[GetOwnProperty]] reported as existing but NOT
+// enumerable, in reverse trap order. for-in (EnumerateObjectProperties) needs
+// the second group only as a set, to mark those names already-seen so a
+// same-named enumerable property further up the prototype chain is
+// suppressed, so their relative order is immaterial.
+//
+// Keys for which [[GetOwnProperty]] returns undefined appear in neither
+// group: EnumerateObjectProperties records a key as visited only "if desc is
+// not undefined", so an absent key must not shadow the prototype chain.
+//
+// Partitioning a single pass keeps the trap invocation count and order
+// identical to the enumerable-only filter: exactly one [[GetOwnProperty]] per
+// string key returned by [[OwnPropertyKeys]], in trap order.
+//
+// In modes 1 and 2 no enumerability filter runs, so `*total_out == *count_out`.
 fn bool proxy_partitioned_own_keys(void* vm, Heap* heap, HObject* proxy, int mode,
                                    HString*** buf_out, uint* count_out, uint* total_out) {
     *buf_out = null;
@@ -1696,12 +1696,12 @@ fn bool proxy_mop_prevent_extensions(void* vm, Heap* heap, HObject* proxy, bool*
     return true;
 }
 
-/// SetIntegrityLevel(O, level), ES2015 §7.3.13, for a Proxy target.
-/// Routes [[PreventExtensions]] then [[DefineOwnProperty]] for every own key
-/// through the MOP so a `defineProperty`/`preventExtensions` trap observes
-/// the same partial descriptors an ordinary object walk would apply: data
-/// properties get {writable:false} (frozen only) and every property gets
-/// {configurable:false}; accessor properties only ever get {configurable:false}.
+// SetIntegrityLevel(O, level), ES2015 §7.3.13, for a Proxy target.
+// Routes [[PreventExtensions]] then [[DefineOwnProperty]] for every own key
+// through the MOP so a `defineProperty`/`preventExtensions` trap observes
+// the same partial descriptors an ordinary object walk would apply: data
+// properties get {writable:false} (frozen only) and every property gets
+// {configurable:false}; accessor properties only ever get {configurable:false}.
 fn bool proxy_set_integrity_level(void* vm, Heap* heap, HObject* proxy, bool frozen) {
     bool pok;
     if (!proxy_mop_prevent_extensions(vm, heap, proxy, &pok)) return false;
@@ -1740,10 +1740,10 @@ fn bool proxy_set_integrity_level(void* vm, Heap* heap, HObject* proxy, bool fro
     return true;
 }
 
-/// TestIntegrityLevel(O, level), ES2015 §7.3.15, for a Proxy.
-/// The proxy MOP calls are required even when their traps are absent: in that
-/// case proxy_mop_own_keys forwards to the target's [[OwnPropertyKeys]], while
-/// [[GetOwnProperty]] still runs on the outer proxy for every forwarded key.
+// TestIntegrityLevel(O, level), ES2015 §7.3.15, for a Proxy.
+// The proxy MOP calls are required even when their traps are absent: in that
+// case proxy_mop_own_keys forwards to the target's [[OwnPropertyKeys]], while
+// [[GetOwnProperty]] still runs on the outer proxy for every forwarded key.
 fn bool proxy_test_integrity_level(void* vm, Heap* heap, HObject* proxy,
                                    bool frozen, bool* out) {
     bool ext;
@@ -1926,9 +1926,9 @@ fn void builtin_proxy_revoke(BuiltinContext* ctx) {
     ctx.callee_obj.put_prop((void*)slot_key, undef, hobject::PROP_FLAGS_NWC, ctx.heap);
 }
 
-/// Proxy [[Call]] and [[Construct]], dispatched through the ordinary builtin
-/// call path (the proxy object's extra.proxy.builtin_fn_index points here and
-/// ctx.callee_obj is the proxy itself).
+// Proxy [[Call]] and [[Construct]], dispatched through the ordinary builtin
+// call path (the proxy object's extra.proxy.builtin_fn_index points here and
+// ctx.callee_obj is the proxy itself).
 fn void builtin_proxy_call(BuiltinContext* ctx) {
     HObject* p = ctx.callee_obj;
     if (p == null || !p.flags.exotic_proxyobj) {
