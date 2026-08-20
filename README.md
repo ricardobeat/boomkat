@@ -14,7 +14,7 @@
 
 **Boomkat** is a strict-only Javascript engine developed from scratch using the [C3](https://c3-lang.org/) language.
 
-It was heavily inspired by [Duktape](https://duktape.org) and [QuickJS](https://bellard.org/quickjs/), built for embedding and to potentially target embedded devices. In contrast to latest Duktape, *boomkat* supports 100% of the ES2025 specification; it also runs TypeScript files natively, while being significantly faster and only marginally larger in size.
+It was heavily inspired by [Duktape](https://duktape.org) and [QuickJS](https://bellard.org/quickjs/), built for embedding and to potentially target embedded devices. In contrast to latest Duktape, *boomkat* supports 100% of the ES2025 specification plus most of ES2026; it also runs TypeScript files natively, while being significantly faster and only marginally larger in size.
 
 > *boomkat* is the dutch name for the [Margay](https://en.wikipedia.org/wiki/Margay), a small wild cat native to South America; translates to 'tree cat'. It fits with the tradition of animal-themed names for JS engines (like SpiderMonkey) and has a nice ring to it :)
 

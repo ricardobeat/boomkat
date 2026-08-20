@@ -35,6 +35,7 @@ excluded.
 | Dynamic `import()`, `import.meta` | ✅ | ✅ | ✅ | ❌ |
 | Top-level `await` | ✅ | ✅ | ✅ | ❌ |
 | Import attributes (`with { type: "json" }`) | ✅ | ✅ | ⚠️ parsed only | ❌ |
+| `import defer` (ES2026) | ❌ | ❌ | ❌ | ❌ |
 | Decorators | ❌ | ❌ | ❌ | ❌ |
 | `using`/`await using`, explicit resource management | ❌ | ❌ | ❌ | ❌ |
 | Sloppy mode, `with`, Annex B | ❌ rejected | ✅ | ✅ | ✅ |
@@ -62,7 +63,7 @@ excluded.
 | `WeakRef`, `FinalizationRegistry` | ✅ | ✅ | ✅ | ❌ |
 | `ArrayBuffer`, resizable `ArrayBuffer` | ✅ | ⚠️ fixed-only | ✅ | ❌ |
 | `TypedArray` family, `DataView` | ✅ | ✅ | ✅ | ✅ |
-| Base64/hex `TypedArray` helpers (`fromBase64`, `toHex`, ...) | ✅ | ❌ | ✅ | ❌ |
+| Base64/hex `TypedArray` helpers (`fromBase64`, `toHex`, ...) | ✅ | ✅ | ✅ | ❌ |
 | `SharedArrayBuffer`, `Atomics` | ⚠️ single agent | ✅ | ✅ | ❌ |
 | `structuredClone` | ❌ | ❌ | ❌ | ❌ |
 
@@ -72,11 +73,13 @@ excluded.
 |---|---|---|---|---|
 | `BigInt` | ✅ int128 | ✅ arbitrary | ✅ arbitrary | ❌ |
 | `Number` static methods, `toFixed`/`toPrecision`/`toExponential` | ✅ | ✅ | ✅ | ⚠️ partial |
+| `Math.sumPrecise` (ES2026) | ✅ | ✅ | ✅ | ❌ |
 | `String.raw`, `padStart`/`padEnd`, `includes`, `at` | ✅ | ✅ | ✅ | ⚠️ `includes` only |
 | `String` well-formed UTF-16 (`isWellFormed`, `toWellFormed`) | ✅ | ✅ | ✅ | ❌ |
 | `Array`/`TypedArray` well-known additions (`from`/`of`/`flat`/`at`/`with`/`toSorted`/`toReversed`/`toSpliced`) | ✅ | ✅ | ✅ | ❌ |
-| `Array.fromAsync` | ✅ | ⚠️ varies | ✅ | ❌ |
+| `Array.fromAsync` | ✅ | ❌ | ❌ | ❌ |
 | `Date`, full get/set/UTC surface | ✅ | ✅ | ✅ | ✅ |
+| `JSON.rawJSON`/`isRawJSON`, `parse` source access (ES2026) | ✅ | ✅ | ✅ | ❌ |
 | `Intl` (ECMA-402) | ❌ | ❌ | ⚠️ partial (ng) | ❌ |
 
 ## RegExp
@@ -86,7 +89,7 @@ excluded.
 | Named capture groups, lookbehind | ✅ | ✅ | ✅ | ❌ |
 | `s` (dotAll), `u` (unicode), `d` (indices) flags | ✅ | ✅ | ✅ | ❌ |
 | `v` flag (`unicodeSets`), set notation, modifiers | ✅ | ✅ | ✅ | ❌ |
-| `RegExp.escape` | ✅ | ❌ | ✅ | ❌ |
+| `RegExp.escape` | ✅ | ✅ | ✅ | ❌ |
 
 ## Iterators and control-flow additions
 
@@ -94,8 +97,10 @@ excluded.
 |---|---|---|---|---|
 | Iterator protocol, `Symbol.iterator`/`asyncIterator` | ✅ | ✅ | ✅ | ❌ |
 | Iterator helpers (`map`, `filter`, `take`, `drop`, `flatMap`, ...) | ✅ | ✅ | ✅ | ❌ |
+| `Iterator.concat` (ES2026) | ✅ | ✅ | ✅ | ❌ |
 | `Promise`, microtask queue | ✅ | ✅ | ✅ | ❌ |
 | `Promise.allSettled`/`any`/`withResolvers`, `AggregateError` | ✅ | ✅ | ✅ | ❌ |
+| `Error.isError` (ES2026) | ✅ | ✅ | ✅ | ❌ |
 
 ## Other
 
@@ -110,7 +115,7 @@ excluded.
 | | boomkat | QuickJS | quickjs-ng | Duktape v2.7.0 |
 |---|---|---|---|---|
 | Language | C3 | C | C | C |
-| Baseline | ES5/ES6, strict-only | most of ES2025 | latest ES spec | ES5.1, partial ES6/7 |
+| Baseline | ES2025 + most ES2026, strict-only | ES2025 + most ES2026 | ES2025 + most ES2026 | ES5.1, partial ES6/7 |
 | `BigInt` representation | int128 | arbitrary | arbitrary | |
 | `Proxy` | full | full | full | subset |
 | `SharedArrayBuffer` | single agent | shared | shared | |
