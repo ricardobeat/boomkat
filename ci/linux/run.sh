@@ -92,6 +92,30 @@ if want tests; then
 fi
 
 # ---------------------------------------------------------------------------
+if want test262; then
+    say "2b. test262 zero-fail gate (bash scripts/test262_gate.sh)"
+    # The runner reads test files from the test262/ submodule. When the working
+    # tree is bind-mounted from the host, the submodule must be checked out
+    # there; a fresh clone in the container needs `git submodule update --init`.
+    if [ ! -d test262/test ]; then
+        skip "test262 (submodule test262/ not checked out)"
+    else
+        # Build the batch runner in-container so it matches this platform, then
+        # run the same gate CI and `just test262-gate` use.
+        if timeout "$TIMEOUT" make out/test262_runner 2>&1 | tail -3; then
+            t262_log=$(mktemp)
+            timeout 3600 bash scripts/test262_gate.sh >"$t262_log" 2>&1
+            t262_rc=$?
+            grep -E '^Overall \(raw\):|GATE (PASSED|FAILED)|run [0-9]' "$t262_log" | tail -20
+            [ $t262_rc -eq 0 ] && pass "test262 gate (0 fail)" || fail "test262 gate (exit $t262_rc)"
+            rm -f "$t262_log"
+        else
+            fail "test262 runner build"
+        fi
+    fi
+fi
+
+# ---------------------------------------------------------------------------
 if want libs; then
     say "3. build both libraries (make lib / make shared)"
     timeout "$TIMEOUT" make lib 2>&1 | tail -2

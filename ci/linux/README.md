@@ -21,15 +21,16 @@ make linux-ci PHASES=link
 make linux-ci-shell             # interactive shell in the same environment
 ```
 
-Phases: `build`, `tests`, `libs`, `smoke`, `link`, `initarray`, `install`,
-`bindings`. The runner exits non-zero if any phase fails.
+Phases: `build`, `tests`, `test262`, `libs`, `smoke`, `link`, `initarray`,
+`install`, `bindings`. The runner exits non-zero if any phase fails.
 
 ## What it checks
 
 | Phase | Checks |
 |---|---|
 | `build` | `c3c build boomkat` produces a working binary |
-| `tests` | `bash test/run_local.sh` — the whole engine suite |
+| `tests` | `bash test/run_local.sh`, the whole engine suite |
+| `test262` | `bash scripts/test262_gate.sh`, the full test262 suite with a zero-fail gate (needs the `test262/` submodule; ~15 min) |
 | `libs` | `make lib` and `make shared` produce `jse_static.a` and `libjse.so` |
 | `smoke` | `make smoke` prints 42 (links the **static** archive) |
 | `link` | `ldd` has no unresolved deps; `nm -D` exports all 12 `jse_` symbols; the static archive links from plain `cc`; whether compiler-rt is required |
