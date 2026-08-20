@@ -2823,6 +2823,15 @@ fn ushort? CompilerContext.emit_call(&self, ushort callee_reg) {
     // (`1 + () => 2`); an arrow inside the call's parentheses is not that.
     self.last_was_arrow_expr = false;
 
+    // A CallExpression result is a value, never an IdentifierReference. The
+    // callee left last_was_getvar/last_was_local_var set (it was a name
+    // lookup); clear them so `delete foo()` is treated as delete of a
+    // non-reference (returns true) instead of "delete of an unqualified
+    // identifier". Leaving them set was arch-dependent downstream: arm64
+    // happened to clear the stale flag, x86 rejected the delete.
+    self.last_was_getvar = false;
+    self.last_was_local_var = false;
+
     // Free everything from callee_reg (callee, this, args, spread temps)
     self.free_regs_to(callee_reg);
     // Result lives at callee_reg
