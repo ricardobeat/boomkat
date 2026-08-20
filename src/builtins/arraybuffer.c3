@@ -544,6 +544,17 @@ fn void builtin_arraybuffer_proto_transfer_to_fixed_length(BuiltinContext* ctx) 
 // ObjClass/is_shared bookkeeping differ between the two.
 // ============================================================================
 
+// Saturate a spec relative-index double into [-len, len] before it is cast to
+// long. (long)d is undefined behavior for ±Infinity and out-of-range inputs,
+// which x86 miscompiles at -O2; any value beyond ±len yields the same clamped
+// slice bound anyway, so this is behavior-preserving.
+fn long ab_clamp_relative(double d, long len) {
+    if (d != d) return 0;              // NaN → 0 (ToInteger already maps it, defensive)
+    if (d >= (double)len) return len;
+    if (d <= -(double)len) return -len;
+    return (long)d;
+}
+
 fn void arraybuffer_slice_impl(BuiltinContext* ctx, bool is_shared) {
     char[] label = is_shared ? "SharedArrayBuffer.prototype.slice" : "ArrayBuffer.prototype.slice";
     HObject* obj = is_shared ? sab_this(ctx, "slice") : ab_this(ctx, "slice");
@@ -561,11 +572,15 @@ fn void arraybuffer_slice_impl(BuiltinContext* ctx, bool is_shared) {
     if (ctx.argc >= 1) start_arg = ctx.regs[ctx.base_reg];
     if (ctx.argc >= 2) end_arg   = ctx.regs[ctx.base_reg + 1];
 
+    // Clamp the relative index into [-len, len] before casting. (long)d is UB
+    // for ±Infinity or out-of-range inputs (the start/end-exceeds-length cases)
+    // and x86 miscompiles it at -O2. Any value past ±len clamps to the same
+    // result below, so saturating first is behavior-preserving.
     long rel_start = 0;
     if (!start_arg.is_undefined()) {
         double d = builtin_to_integer_vm(ctx, &start_arg);
         if (ctx.should_throw) return;
-        rel_start = (long)d;
+        rel_start = ab_clamp_relative(d, len);
     }
     long start_idx;
     if (rel_start < 0) {
@@ -580,7 +595,7 @@ fn void arraybuffer_slice_impl(BuiltinContext* ctx, bool is_shared) {
     if (!end_arg.is_undefined()) {
         double d = builtin_to_integer_vm(ctx, &end_arg);
         if (ctx.should_throw) return;
-        rel_end = (long)d;
+        rel_end = ab_clamp_relative(d, len);
     }
     long end_idx;
     if (rel_end < 0) {
