@@ -170,26 +170,24 @@ fn void builtin_array_proto_copyWithin(BuiltinContext* ctx) {
         ? builtin_to_integer_vm(ctx, &ctx.regs[ctx.base_reg])
         : 0.0;
     if (ctx.should_throw) { ctx.result.set_undefined(); return; }
-    long downstream_i = (long)downstream_d;
-    if (downstream_i < 0) { downstream_i = (long)len + downstream_i; if (downstream_i < 0) downstream_i = 0; }
-    if ((ulong)downstream_i > len) downstream_i = (long)len;
+    // arr_relative_index does the +len / min(len) clamp with the range check
+    // BEFORE the (long) cast. Casting the raw double first is undefined behavior
+    // for out-of-range or Infinity inputs (e.g. copyWithin(0, 1, Infinity)) and
+    // at -O2 produces the x86 "integer indefinite" instead of a clamped index.
+    long downstream_i = (long)arr_relative_index(downstream_d, len);
 
     long start_i = 0;
     if (ctx.argc > 1 && !ctx.regs[ctx.base_reg + 1].is_undefined()) {
         double sd = builtin_to_integer_vm(ctx, &ctx.regs[ctx.base_reg + 1]);
         if (ctx.should_throw) { ctx.result.set_undefined(); return; }
-        start_i = (long)sd;
-        if (start_i < 0) { start_i = (long)len + start_i; if (start_i < 0) start_i = 0; }
-        if ((ulong)start_i > len) start_i = (long)len;
+        start_i = (long)arr_relative_index(sd, len);
     }
 
     long end_i = (long)len;
     if (ctx.argc > 2 && !ctx.regs[ctx.base_reg + 2].is_undefined()) {
         double ed = builtin_to_integer_vm(ctx, &ctx.regs[ctx.base_reg + 2]);
         if (ctx.should_throw) { ctx.result.set_undefined(); return; }
-        end_i = (long)ed;
-        if (end_i < 0) { end_i = (long)len + end_i; if (end_i < 0) end_i = 0; }
-        if ((ulong)end_i > len) end_i = (long)len;
+        end_i = (long)arr_relative_index(ed, len);
     }
 
     long count = end_i - start_i;
