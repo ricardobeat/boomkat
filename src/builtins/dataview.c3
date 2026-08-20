@@ -1,7 +1,7 @@
-/// DataView constructor and prototype (ES2015 §24.2), Stage 3 of plan 049.
-/// Reuses the ArrayBuffer/TypedArray view-linking primitives from
-/// arraybuffer.c3/typedarray.c3; this file only adds the byte-addressed
-/// get/set surface with an explicit littleEndian argument.
+// DataView constructor and prototype (ES2015 §24.2), Stage 3 of plan 049.
+// Reuses the ArrayBuffer/TypedArray view-linking primitives from
+// arraybuffer.c3/typedarray.c3; this file only adds the byte-addressed
+// get/set surface with an explicit littleEndian argument.
 module boomkat::builtins;
 
 import boomkat::types;
@@ -16,8 +16,8 @@ fn bool is_dataview_obj(HObject* obj) {
     return obj != null && obj.flags.obj_class == hobject::ObjClass.DATAVIEW;
 }
 
-/// Element byte width for the 8 DataView accessor kinds, keyed by the
-/// TypedArray ObjClass tags reused here to identify width/signedness/kind.
+// Element byte width for the 8 DataView accessor kinds, keyed by the
+// TypedArray ObjClass tags reused here to identify width/signedness/kind.
 fn uint dv_elem_size(hobject::ObjClass cls) {
     switch (cls) {
         case hobject::ObjClass.INT8ARRAY:
@@ -191,8 +191,8 @@ fn void builtin_dataview_proto_byteoffset_get(BuiltinContext* ctx) {
 // Shared get/set core, §24.2.1.1 GetViewValue / §24.2.1.2 SetViewValue
 // ============================================================================
 
-/// Load `elem_size` bytes at `p` as a little-endian unsigned integer (up to
-/// 8 bytes), then byte-swap into big-endian order when `!little_endian`.
+// Load `elem_size` bytes at `p` as a little-endian unsigned integer (up to
+// 8 bytes), then byte-swap into big-endian order when `!little_endian`.
 fn ulong dv_load_raw(char* p, uint elem_size, bool little_endian) {
     ulong v = 0;
     if (little_endian) {
@@ -323,7 +323,7 @@ fn void dv_get(BuiltinContext* ctx, hobject::ObjClass elem_class) {
     }
 }
 
-/// Box an int128 into an HBigInt and store it as the builtin result.
+// Box an int128 into an HBigInt and store it as the builtin result.
 fn void dv_set_bigint_result(BuiltinContext* ctx, int128 v) {
     hbigint::HBigInt*? box = hbigint::hbigint_alloc(ctx.heap, v);
     if (catch box) { ctx.result.set_undefined(); return; }
@@ -455,7 +455,7 @@ fn void builtin_dataview_set_biguint64(BuiltinContext* ctx) { dv_set(ctx, hobjec
 // Registration
 // ============================================================================
 
-/// Register a DataView.prototype accessor getter (buffer/byteLength/byteOffset).
+// Register a DataView.prototype accessor getter (buffer/byteLength/byteOffset).
 fn bool register_dataview_accessor(HObject* proto, Heap* heap, char[] name, uint getter_index) {
     HString* key = heap.str_intern(name);
     if (key == null) return false;
@@ -497,7 +497,7 @@ fn bool register_dataview_accessor(HObject* proto, Heap* heap, char[] name, uint
     return true;
 }
 
-/// Create DataView.prototype and register the DataView constructor globally.
+// Create DataView.prototype and register the DataView constructor globally.
 fn bool register_dataview(EnvRecord* global_env, Heap* heap) {
     HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = proto_raw) return false;
