@@ -60,9 +60,15 @@ fn double vm_to_number(Vm* vm, TVal* val) {
 /// Converts a double to int32 using modular arithmetic (mod 2^32).
 /// Handles NaN → 0, Infinity → 0, and large values via floor-then-mod.
 fn int toint32(double d) @inline {
-    // Fast path: value already fits in int32
-    int i = (int)d;
-    if ((double)i == d) return i;
+    // Fast path: value already fits in int32. The range check MUST come before
+    // the cast: (int)d for a d outside int32 range is undefined behavior, and
+    // at -O2 LLVM exploits that to assume the cast is exact and fold away the
+    // `(double)i == d` guard, returning the x86 cvttsd2si "integer indefinite"
+    // (0x80000000) for values like 2^32. Guarding first keeps the cast defined.
+    if (d >= -2147483648.0 && d <= 2147483647.0) {
+        int i = (int)d;
+        if ((double)i == d) return i;
+    }
     // NaN / ±Infinity → 0
     if (math::is_nan(d) || !math::is_finite(d)) return 0;
     // Spec: posInt = sign(d) * floor(abs(d)); int32bit = posInt mod 2^32
