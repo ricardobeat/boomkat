@@ -1,4 +1,4 @@
-/// Map constructor and Map.prototype methods.
+// Map constructor and Map.prototype methods.
 module boomkat::builtins;
 import boomkat::types;
 import std::math;
@@ -8,7 +8,6 @@ import boomkat::env;
 import boomkat::heap;
 import boomkat::hobject;
 
-// Differs from === only in that NaN equals NaN.
 // ============================================================================
 // SameValueZero (ES6 §7.2.10) and SameValue (§7.2.9) differ only in ±0:
 // SameValue treats +0 and -0 as distinct, SameValueZero treats them equal.
@@ -60,8 +59,8 @@ fn HObject* check_map(BuiltinContext* ctx) {
     return check_collection_class(ctx, hobject::ObjClass.MAP, "Map.prototype method called on incompatible value");
 }
 
-/// Find the index in array_part where a key matches. Returns -1 if not found.
-/// Map entries are stored as [k0, v0, k1, v1, ...] in array_part.
+// Find the index in array_part where a key matches. Returns -1 if not found.
+// Map entries are stored as [k0, v0, k1, v1, ...] in array_part.
 fn int map_find_key(HObject* map, TVal key, heap::Heap* h) {
     return coll_find(map, key, 2, h);
 }
@@ -190,7 +189,7 @@ fn void builtin_map_proto_keys(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Map.prototype.data.values(), ES6 §23.1.3.11
+// Map.prototype.values(), ES6 §23.1.3.11
 // Returns a MapIterator with kind=0 (values).
 // ============================================================================
 fn void builtin_map_proto_values(BuiltinContext* ctx) {
