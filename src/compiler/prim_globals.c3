@@ -671,6 +671,13 @@ fn void CompilerContext.pre_scan_global_var_slots(&self) {
     // (`function* f(`) before its signature `(`; track it across those so the
     // signature paren is still recognized.
     bool fn_pending = false;
+    // A template substitution `${ ... }` opens with a TEMPLATE_HEAD/MIDDLE
+    // token, not an LBRACE, but closes with a plain RBRACE. Without tracking
+    // this, the closing `}` decrements brace_depth (and cur_fn_depth) with no
+    // matching increment, desyncing the function-boundary counter: code after a
+    // template inside a function body is misread as top-level, so a name it
+    // references is not disqualified and wrongly stays register-resident.
+    TemplateScan tscan;
 
     while (!disabled) {
         Token? tok_opt = self.lexer.next_token();
@@ -710,6 +717,7 @@ fn void CompilerContext.pre_scan_global_var_slots(&self) {
             // A control-structure `)` (if/for/while/switch/catch/with) or any
             // statement-start/block position makes it a plain block, which
             // keeps top-level loop vars on the register path.
+            tscan.on_lbrace();
             bool is_fn = prev_tt == TokenType.ARROW
                 || (prev_tt == TokenType.RPAREN && !last_paren_was_control)
                 || class_pending;
@@ -720,10 +728,20 @@ fn void CompilerContext.pre_scan_global_var_slots(&self) {
             // A braced arrow/class body is fully tracked by brace_is_fn, so
             // the (conservative) expression-body tracker hands over to it.
             if (arrow_active) { arrow_active = false; }
+        } else if (tt == TokenType.TEMPLATE_HEAD) {
+            // `${` inside a template opens a substitution whose closing `}` is a
+            // plain RBRACE; record it so classify_rbrace can tell that `}` from
+            // a real block close.
+            tscan.on_template_head();
         } else if (tt == TokenType.RBRACE) {
-            if (brace_depth > 0) {
-                if (brace_is_fn[brace_depth]) { cur_fn_depth--; }
-                brace_depth--;
+            // Only a real block-close `}` adjusts the brace/function counters; a
+            // `}` that ends a template substitution must not (classify_rbrace
+            // also re-lexes the template continuation on the SUBST path).
+            if (tscan.classify_rbrace(self.lexer) == TemplateBrace.BLOCK) {
+                if (brace_depth > 0) {
+                    if (brace_is_fn[brace_depth]) { cur_fn_depth--; }
+                    brace_depth--;
+                }
             }
         } else if (tt == TokenType.LBRACKET) {
             bracket_depth++;

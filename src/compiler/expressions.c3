@@ -3724,6 +3724,26 @@ fn ushort CompilerContext.emit_super_base(&self) {
     return super_proto_reg;
 }
 
+/// ToString-coerce a template substitution value. TOSTR mutates its register in
+/// place, so when `reg` is a live variable's home register (a bare identifier
+/// read returns the home directly: a register-resident local or slot-global),
+/// coercing in place would corrupt the variable, e.g. `${a} ${a + b}` would
+/// leave `a` holding the string "10". A register below the allocation watermark
+/// (next_reg) aliases such a home; coerce into a fresh temp instead so the home
+/// stays intact. Returns the register holding the coerced string.
+fn ushort CompilerContext.tostr_into_temp(&self, ushort reg) {
+    if (reg < self.next_reg) {
+        ushort tmp = self.alloc_reg();
+        if (tmp != reg) {
+            self.emit_abc(Opcode.LDREG, (uint)tmp, (uint)reg, 0);
+        }
+        self.emit_abc(Opcode.TOSTR, (uint)tmp, 0, 0);
+        return tmp;
+    }
+    self.emit_abc(Opcode.TOSTR, (uint)reg, 0, 0);
+    return reg;
+}
+
 /// Parse primary expressions: literals, identifiers, grouping, etc.
 fn ushort? CompilerContext.primary_expr(&self) {
     self.expr_depth++;
@@ -4935,7 +4955,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
             // been redefined/removed. Coerce here so the ADD below (both
             // operands already strings) is a plain concat, not a second
             // ToPrimitive pass.
-            self.emit_abc(Opcode.TOSTR, (uint)expr_reg, 0, 0);
+            expr_reg = self.tostr_into_temp(expr_reg);
 
             // Concatenate: result = result + expr  (ADD handles string coercion)
             {
@@ -4969,7 +4989,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 next_tok = self.lexer.scan_template_after_expr()!;
 
                 // ToString the substitution value (see head-substitution comment above).
-                self.emit_abc(Opcode.TOSTR, (uint)next_expr_reg, 0, 0);
+                next_expr_reg = self.tostr_into_temp(next_expr_reg);
 
                 // Concatenate expression
                 ushort concat_reg3 = self.alloc_reg();
