@@ -49,6 +49,7 @@
 #define BOOMKAT_H
 
 #include <stddef.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -63,8 +64,15 @@ extern "C" {
 /* Opaque runtime handle. */
 typedef void *bk_runtime;
 
-/* Opaque value handle. 0 is never a valid handle. */
-typedef unsigned int bk_value;
+/*
+ * Opaque value handle. 0 is never a valid handle.
+ *
+ * 64 bits, not a pointer: the low half names a slot in the issuing runtime's
+ * GC-rooted registry, and the high half carries that runtime's id, so a handle
+ * used against the wrong runtime is rejected rather than silently resolving to
+ * an unrelated value of the same shape.
+ */
+typedef uint64_t bk_value;
 #define BK_INVALID_VALUE ((bk_value)0)
 
 /*

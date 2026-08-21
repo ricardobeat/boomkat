@@ -63,7 +63,7 @@ fn void bk_close(void* rtp) @export("bk_close") {
 }
 
 // Release a handle. Safe with 0, a scope handle, or an already-freed handle.
-fn void bk_value_free(void* rtp, uint id) @export("bk_value_free") {
+fn void bk_value_free(void* rtp, ulong id) @export("bk_value_free") {
     if (rtp == null) return;
     embed::slot_release((Runtime*)rtp, id);
 }
@@ -73,7 +73,7 @@ fn void bk_value_free(void* rtp, uint id) @export("bk_value_free") {
 // ============================================================================
 
 fn int bk_eval_with_name(void* rtp, char* src, usz len, char* name, usz name_len,
-                              uint* out_val) @export("bk_eval_with_name") {
+                              ulong* out_val) @export("bk_eval_with_name") {
     if (rtp == null || src == null) return BK_ERR_INVALID;
     Runtime* rt = (Runtime*)rtp;
     if (out_val != null) *out_val = 0;
@@ -92,7 +92,7 @@ fn int bk_eval_with_name(void* rtp, char* src, usz len, char* name, usz name_len
 
 /// The plain eval, fixed script name "<eval>". Forwards to the named variant,
 /// so the position-bearing path is shared.
-fn int bk_eval(void* rtp, char* src, usz len, uint* out_val) @export("bk_eval") {
+fn int bk_eval(void* rtp, char* src, usz len, ulong* out_val) @export("bk_eval") {
     return bk_eval_with_name(rtp, src, len, "<eval>", 6, out_val);
 }
 
@@ -101,19 +101,19 @@ fn int bk_eval(void* rtp, char* src, usz len, uint* out_val) @export("bk_eval") 
 // Readers
 // ============================================================================
 
-fn int type_of(Runtime* rt, void* ctxp, uint id) {
+fn int type_of(Runtime* rt, void* ctxp, ulong id) {
     if (rt == null) return BK_TYPE_OTHER;
     TVal v;
     if (!embed::resolve_handle(rt, ctxp, id, &v)) return BK_TYPE_UNDEFINED;
     return embed::classify(v);
 }
 
-fn int bk_type_of(void* rtp, uint id) @export("bk_type_of") {
+fn int bk_type_of(void* rtp, ulong id) @export("bk_type_of") {
     return type_of((Runtime*)rtp, null, id);
 }
 
 /// Context tier; see bk_ctx_get_number.
-fn int bk_ctx_type_of(void* ctxp, uint id) @export("bk_ctx_type_of") {
+fn int bk_ctx_type_of(void* ctxp, ulong id) @export("bk_ctx_type_of") {
     return type_of(embed::ctx_runtime(ctxp), ctxp, id);
 }
 
@@ -133,7 +133,7 @@ fn int reader_fail(Runtime* rt, int code, String msg) {
 // into some runtime's registry, so with two runtimes open there is no such
 // thing, and guessing would resolve one runtime's handle against another's
 // values.
-fn int read_number(Runtime* rt, void* ctxp, uint id, double* out) {
+fn int read_number(Runtime* rt, void* ctxp, ulong id, double* out) {
     if (out == null) return BK_ERR_INVALID;
     if (rt == null) return BK_ERR_INVALID;
     embed::clear_err(rt);
@@ -144,17 +144,17 @@ fn int read_number(Runtime* rt, void* ctxp, uint id, double* out) {
     return BK_OK;
 }
 
-fn int bk_get_number(void* rtp_in, uint id, double* out) @export("bk_get_number") {
+fn int bk_get_number(void* rtp_in, ulong id, double* out) @export("bk_get_number") {
     return read_number((Runtime*)rtp_in, null, id, out);
 }
 
 /// Context tier: reads an argument or any handle a callback holds, including a
 /// scope handle, which the runtime tier cannot resolve.
-fn int bk_ctx_get_number(void* ctxp, uint id, double* out) @export("bk_ctx_get_number") {
+fn int bk_ctx_get_number(void* ctxp, ulong id, double* out) @export("bk_ctx_get_number") {
     return read_number(embed::ctx_runtime(ctxp), ctxp, id, out);
 }
 
-fn int read_bool(Runtime* rt, void* ctxp, uint id, int* out) {
+fn int read_bool(Runtime* rt, void* ctxp, ulong id, int* out) {
     if (out == null) return BK_ERR_INVALID;
     if (rt == null) return BK_ERR_INVALID;
     embed::clear_err(rt);
@@ -165,19 +165,19 @@ fn int read_bool(Runtime* rt, void* ctxp, uint id, int* out) {
     return BK_OK;
 }
 
-fn int bk_get_bool(void* rtp_in, uint id, int* out) @export("bk_get_bool") {
+fn int bk_get_bool(void* rtp_in, ulong id, int* out) @export("bk_get_bool") {
     return read_bool((Runtime*)rtp_in, null, id, out);
 }
 
 /// Context tier; see bk_ctx_get_number.
-fn int bk_ctx_get_bool(void* ctxp, uint id, int* out) @export("bk_ctx_get_bool") {
+fn int bk_ctx_get_bool(void* ctxp, ulong id, int* out) @export("bk_ctx_get_bool") {
     return read_bool(embed::ctx_runtime(ctxp), ctxp, id, out);
 }
 
 
 /// Copy a JS string out as NUL-terminated UTF-8. Two-call protocol: pass
 /// buf==null to learn the required size (excluding NUL).
-fn int read_string(Runtime* rt, void* ctxp, uint id, char* buf, usz cap, usz* out_len) {
+fn int read_string(Runtime* rt, void* ctxp, ulong id, char* buf, usz cap, usz* out_len) {
     if (rt == null) return BK_ERR_INVALID;
     embed::clear_err(rt);
     TVal v;
@@ -196,12 +196,12 @@ fn int read_string(Runtime* rt, void* ctxp, uint id, char* buf, usz cap, usz* ou
     return BK_OK;
 }
 
-fn int bk_get_string(void* rtp_in, uint id, char* buf, usz cap, usz* out_len) @export("bk_get_string") {
+fn int bk_get_string(void* rtp_in, ulong id, char* buf, usz cap, usz* out_len) @export("bk_get_string") {
     return read_string((Runtime*)rtp_in, null, id, buf, cap, out_len);
 }
 
 /// Context tier; see bk_ctx_get_number.
-fn int bk_ctx_get_string(void* ctxp, uint id, char* buf, usz cap, usz* out_len) @export("bk_ctx_get_string") {
+fn int bk_ctx_get_string(void* ctxp, ulong id, char* buf, usz cap, usz* out_len) @export("bk_ctx_get_string") {
     return read_string(embed::ctx_runtime(ctxp), ctxp, id, buf, cap, out_len);
 }
 
@@ -302,16 +302,16 @@ fn uint bk_argc(void* ctxp) @export("bk_argc") {
 
 /// Handle to argument `i`. Out-of-range yields a handle to undefined, matching
 /// JS semantics and sparing every host an arity check.
-fn uint bk_arg(void* ctxp, uint i) @export("bk_arg") {
-    return embed::scope_handle(heap::HOST_SCOPE_ARG0 + i);
+fn ulong bk_arg(void* ctxp, uint i) @export("bk_arg") {
+    return embed::scope_handle(embed::ctx_runtime(ctxp), (ulong)(heap::HOST_SCOPE_ARG0 + i));
 }
 
-fn uint bk_this(void* ctxp) @export("bk_this") {
-    return embed::scope_handle(heap::HOST_SCOPE_THIS);
+fn ulong bk_this(void* ctxp) @export("bk_this") {
+    return embed::scope_handle(embed::ctx_runtime(ctxp), (ulong)heap::HOST_SCOPE_THIS);
 }
 
-fn uint bk_new_target(void* ctxp) @export("bk_new_target") {
-    return embed::scope_handle(heap::HOST_SCOPE_NEW_TARGET);
+fn ulong bk_new_target(void* ctxp) @export("bk_new_target") {
+    return embed::scope_handle(embed::ctx_runtime(ctxp), (ulong)heap::HOST_SCOPE_NEW_TARGET);
 }
 
 fn int bk_is_construct(void* ctxp) @export("bk_is_construct") {
@@ -321,7 +321,7 @@ fn int bk_is_construct(void* ctxp) @export("bk_is_construct") {
 
 
 /// Set the callback's return value from a handle.
-fn void bk_return(void* ctxp, uint id) @export("bk_return") {
+fn void bk_return(void* ctxp, ulong id) @export("bk_return") {
     Runtime* rt = embed::ctx_runtime(ctxp);
     if (rt == null) return;
     builtins::BuiltinContext* ctx = (builtins::BuiltinContext*)ctxp;
@@ -368,7 +368,7 @@ fn void bk_throw_error(void* ctxp, int kind, char* msg) @export("bk_throw_error"
 }
 
 /// Throw an arbitrary value by handle.
-fn void bk_throw(void* ctxp, uint id) @export("bk_throw") {
+fn void bk_throw(void* ctxp, ulong id) @export("bk_throw") {
     Runtime* rt = embed::ctx_runtime(ctxp);
     if (rt == null) return;
     TVal v;
@@ -378,7 +378,7 @@ fn void bk_throw(void* ctxp, uint id) @export("bk_throw") {
 
 /// Promote a scope handle to a runtime-owned global handle the host may keep
 /// past the callback. The caller then owns it and must bk_value_free it.
-fn uint bk_value_persist(void* ctxp, uint id) @export("bk_value_persist") {
+fn ulong bk_value_persist(void* ctxp, ulong id) @export("bk_value_persist") {
     Runtime* rt = embed::ctx_runtime(ctxp);
     if (rt == null) return 0;
     TVal v;
@@ -392,8 +392,8 @@ fn uint bk_value_persist(void* ctxp, uint id) @export("bk_value_persist") {
 /// global handle in *out_val (caller owns it) and returns BK_OK. On an
 /// exception in the callee the throw is staged on the context, so the host
 /// should return promptly; the status is BK_ERR_THROW.
-fn int bk_call(void* ctxp, uint func_id, uint* argv, uint argc, uint this_id,
-                uint* out_val) @export("bk_call") {
+fn int bk_call(void* ctxp, ulong func_id, ulong* argv, uint argc, ulong this_id,
+                ulong* out_val) @export("bk_call") {
     Runtime* rt = embed::ctx_runtime(ctxp);
     if (rt == null) return BK_ERR_INVALID;
     builtins::BuiltinContext* ctx = (builtins::BuiltinContext*)ctxp;
@@ -430,7 +430,7 @@ fn int bk_call(void* ctxp, uint func_id, uint* argv, uint argc, uint this_id,
         // Report exhaustion for every value kind, undefined included: handle 0
         // reads back as undefined, so returning it on a failed registration
         // would be a silent wrong answer rather than an error.
-        uint id = embed::slot_alloc(rt, res);
+        ulong id = embed::slot_alloc(rt, res);
         if (id == 0) {
             embed::set_err(rt, BK_ERR_FULL, "value slot table full");
             return BK_ERR_FULL;
@@ -450,14 +450,14 @@ fn int bk_call(void* ctxp, uint func_id, uint* argv, uint argc, uint this_id,
 // caller-owned and must be bk_value_free'd, like bk_eval results.
 
 /// Allocate a slot for `v`, reporting a full table explicitly.
-fn int capi_store(Runtime* rt, TVal v, uint* out) {
-    uint id = embed::slot_alloc(rt, v);
+fn int capi_store(Runtime* rt, TVal v, ulong* out) {
+    ulong id = embed::slot_alloc(rt, v);
     if (id == 0) { embed::set_err(rt, BK_ERR_FULL, "value slot table full"); return BK_ERR_FULL; }
     *out = id;
     return BK_OK;
 }
 
-fn int bk_new_number(void* rtp, double d, uint* out) @export("bk_new_number") {
+fn int bk_new_number(void* rtp, double d, ulong* out) @export("bk_new_number") {
     if (rtp == null || out == null) return BK_ERR_INVALID;
     Runtime* rt = (Runtime*)rtp;
     embed::clear_err(rt);
@@ -465,7 +465,7 @@ fn int bk_new_number(void* rtp, double d, uint* out) @export("bk_new_number") {
     return capi_store(rt, v, out);
 }
 
-fn int bk_new_bool(void* rtp, int b, uint* out) @export("bk_new_bool") {
+fn int bk_new_bool(void* rtp, int b, ulong* out) @export("bk_new_bool") {
     if (rtp == null || out == null) return BK_ERR_INVALID;
     Runtime* rt = (Runtime*)rtp;
     embed::clear_err(rt);
@@ -473,7 +473,7 @@ fn int bk_new_bool(void* rtp, int b, uint* out) @export("bk_new_bool") {
     return capi_store(rt, v, out);
 }
 
-fn int bk_new_null(void* rtp, uint* out) @export("bk_new_null") {
+fn int bk_new_null(void* rtp, ulong* out) @export("bk_new_null") {
     if (rtp == null || out == null) return BK_ERR_INVALID;
     Runtime* rt = (Runtime*)rtp;
     embed::clear_err(rt);
@@ -481,7 +481,7 @@ fn int bk_new_null(void* rtp, uint* out) @export("bk_new_null") {
     return capi_store(rt, v, out);
 }
 
-fn int bk_new_undefined(void* rtp, uint* out) @export("bk_new_undefined") {
+fn int bk_new_undefined(void* rtp, ulong* out) @export("bk_new_undefined") {
     if (rtp == null || out == null) return BK_ERR_INVALID;
     Runtime* rt = (Runtime*)rtp;
     embed::clear_err(rt);
@@ -489,7 +489,7 @@ fn int bk_new_undefined(void* rtp, uint* out) @export("bk_new_undefined") {
     return capi_store(rt, v, out);
 }
 
-fn int bk_new_string(void* rtp, char* utf8, usz len, uint* out) @export("bk_new_string") {
+fn int bk_new_string(void* rtp, char* utf8, usz len, ulong* out) @export("bk_new_string") {
     if (rtp == null || utf8 == null || out == null) return BK_ERR_INVALID;
     Runtime* rt = (Runtime*)rtp;
     embed::clear_err(rt);
@@ -499,7 +499,7 @@ fn int bk_new_string(void* rtp, char* utf8, usz len, uint* out) @export("bk_new_
     return capi_store(rt, v, out);
 }
 
-fn int bk_new_object(void* rtp, uint* out) @export("bk_new_object") {
+fn int bk_new_object(void* rtp, ulong* out) @export("bk_new_object") {
     if (rtp == null || out == null) return BK_ERR_INVALID;
     Runtime* rt = (Runtime*)rtp;
     embed::clear_err(rt);
@@ -511,7 +511,7 @@ fn int bk_new_object(void* rtp, uint* out) @export("bk_new_object") {
     return capi_store(rt, v, out);
 }
 
-fn int bk_new_array(void* rtp, uint* out) @export("bk_new_array") {
+fn int bk_new_array(void* rtp, ulong* out) @export("bk_new_array") {
     if (rtp == null || out == null) return BK_ERR_INVALID;
     Runtime* rt = (Runtime*)rtp;
     embed::clear_err(rt);
@@ -525,7 +525,7 @@ fn int bk_new_array(void* rtp, uint* out) @export("bk_new_array") {
 
 /// Fresh array whose elements are the first `n` of `elems`. The caller keeps
 /// ownership of the input handles; they are copied in.
-fn int bk_new_array_from(void* rtp, uint* elems, uint n, uint* out) @export("bk_new_array_from") {
+fn int bk_new_array_from(void* rtp, ulong* elems, uint n, ulong* out) @export("bk_new_array_from") {
     if (rtp == null || out == null) return BK_ERR_INVALID;
     Runtime* rt = (Runtime*)rtp;
     embed::clear_err(rt);
@@ -546,7 +546,7 @@ fn int bk_new_array_from(void* rtp, uint* elems, uint n, uint* out) @export("bk_
 }
 
 /// Handle to the global object (globalThis). Caller owns it.
-fn int bk_get_global(void* rtp, uint* out) @export("bk_get_global") {
+fn int bk_get_global(void* rtp, ulong* out) @export("bk_get_global") {
     if (rtp == null || out == null) return BK_ERR_INVALID;
     Runtime* rt = (Runtime*)rtp;
     embed::clear_err(rt);
@@ -560,7 +560,7 @@ fn int bk_get_global(void* rtp, uint* out) @export("bk_get_global") {
 }
 
 /// Resolve a property handle to an HObject, or fail with BK_ERR_TYPE.
-fn HObject* capi_object(Runtime* rt, uint id, TVal* out) {
+fn HObject* capi_object(Runtime* rt, ulong id, TVal* out) {
     if (!embed::slot_get(rt, id, out)) return null;
     if (!out.is_object()) return null;
     return (HObject*)out.get_heapptr();
@@ -578,7 +578,7 @@ fn int capi_vm_fault(Runtime* rt) {
     return BK_ERR_THROW;
 }
 
-fn int bk_get_prop(void* rtp, uint obj_id, char* key, usz key_len, uint* out) @export("bk_get_prop") {
+fn int bk_get_prop(void* rtp, ulong obj_id, char* key, usz key_len, ulong* out) @export("bk_get_prop") {
     if (rtp == null || key == null || out == null) return BK_ERR_INVALID;
     Runtime* rt = (Runtime*)rtp;
     embed::clear_err(rt);
@@ -595,7 +595,7 @@ fn int bk_get_prop(void* rtp, uint obj_id, char* key, usz key_len, uint* out) @e
     return capi_store(rt, got, out);
 }
 
-fn int bk_get_prop_index(void* rtp, uint obj_id, uint idx, uint* out) @export("bk_get_prop_index") {
+fn int bk_get_prop_index(void* rtp, ulong obj_id, uint idx, ulong* out) @export("bk_get_prop_index") {
     if (rtp == null || out == null) return BK_ERR_INVALID;
     Runtime* rt = (Runtime*)rtp;
     embed::clear_err(rt);
@@ -612,7 +612,7 @@ fn int bk_get_prop_index(void* rtp, uint obj_id, uint idx, uint* out) @export("b
     return capi_store(rt, got, out);
 }
 
-fn int bk_set_prop(void* rtp, uint obj_id, char* key, usz key_len, uint val_id) @export("bk_set_prop") {
+fn int bk_set_prop(void* rtp, ulong obj_id, char* key, usz key_len, ulong val_id) @export("bk_set_prop") {
     if (rtp == null || key == null) return BK_ERR_INVALID;
     Runtime* rt = (Runtime*)rtp;
     embed::clear_err(rt);
@@ -634,7 +634,7 @@ fn int bk_set_prop(void* rtp, uint obj_id, char* key, usz key_len, uint val_id) 
     return BK_OK;
 }
 
-fn int bk_set_prop_index(void* rtp, uint obj_id, uint idx, uint val_id) @export("bk_set_prop_index") {
+fn int bk_set_prop_index(void* rtp, ulong obj_id, uint idx, ulong val_id) @export("bk_set_prop_index") {
     if (rtp == null) return BK_ERR_INVALID;
     Runtime* rt = (Runtime*)rtp;
     embed::clear_err(rt);
@@ -655,7 +655,7 @@ fn int bk_set_prop_index(void* rtp, uint obj_id, uint idx, uint val_id) @export(
     return BK_OK;
 }
 
-fn int bk_has_prop(void* rtp, uint obj_id, char* key, usz key_len, int* out) @export("bk_has_prop") {
+fn int bk_has_prop(void* rtp, ulong obj_id, char* key, usz key_len, int* out) @export("bk_has_prop") {
     if (rtp == null || key == null || out == null) return BK_ERR_INVALID;
     Runtime* rt = (Runtime*)rtp;
     embed::clear_err(rt);
@@ -672,7 +672,7 @@ fn int bk_has_prop(void* rtp, uint obj_id, char* key, usz key_len, int* out) @ex
     return BK_OK;
 }
 
-fn int bk_delete_prop(void* rtp, uint obj_id, char* key, usz key_len, int* out) @export("bk_delete_prop") {
+fn int bk_delete_prop(void* rtp, ulong obj_id, char* key, usz key_len, int* out) @export("bk_delete_prop") {
     if (rtp == null || key == null || out == null) return BK_ERR_INVALID;
     Runtime* rt = (Runtime*)rtp;
     embed::clear_err(rt);
@@ -704,7 +704,7 @@ fn int bk_delete_prop(void* rtp, uint obj_id, char* key, usz key_len, int* out) 
 
 /// Fresh array of an object's own string property names (enumerable and not;
 /// symbol keys skipped). The host walks it with bk_get_prop_index.
-fn int bk_own_prop_names(void* rtp, uint obj_id, uint* out) @export("bk_own_prop_names") {
+fn int bk_own_prop_names(void* rtp, ulong obj_id, ulong* out) @export("bk_own_prop_names") {
     if (rtp == null || out == null) return BK_ERR_INVALID;
     Runtime* rt = (Runtime*)rtp;
     embed::clear_err(rt);
@@ -801,8 +801,8 @@ fn int bk_own_prop_names(void* rtp, uint obj_id, uint* out) @export("bk_own_prop
 /// this_val (0 for undefined). On BK_OK *out_val receives a caller-owned
 /// handle. A thrown callee returns BK_ERR_THROW (or BK_ERR_INTERRUPT for an
 /// interrupt); the exception is recorded on the runtime, not unwound through C.
-fn int bk_call_rt(void* rtp, uint func_id, uint* argv, uint argc, uint this_id,
-                   uint* out_val) @export("bk_call_rt") {
+fn int bk_call_rt(void* rtp, ulong func_id, ulong* argv, uint argc, ulong this_id,
+                   ulong* out_val) @export("bk_call_rt") {
     if (rtp == null) return BK_ERR_INVALID;
     Runtime* rt = (Runtime*)rtp;
     embed::clear_err(rt);

@@ -33,14 +33,14 @@ fn void check(String label, bool cond) {
 /// A held string would survive on its refcount alone and prove nothing.
 fn void test_handles_survive_gc(void* rt) {
     const uint N = 96;
-    uint[N] held;
+    ulong[N] held;
     uint made = 0;
 
     for (uint i = 0; i < N; i++) {
         // Each object is reachable ONLY through its handle: the expression
         // result is never stored in a global or any other live structure.
         String src = string::tformat("({ tag: 'reg-%d-value' })", i);
-        uint v = 0;
+        ulong v = 0;
         if (capi::bk_eval(rt, (char*)src.ptr, src.len, &v) != capi::BK_OK) break;
         held[i] = v;
         made++;
@@ -50,7 +50,7 @@ fn void test_handles_survive_gc(void* rt) {
     // Churn the heap with the handles outstanding. Under GC_STRESS this
     // collects constantly.
     String churn = "var s = 0; for (var i = 0; i < 400; i++) { s += ({ x: i }).x; } s";
-    uint junk = 0;
+    ulong junk = 0;
     if (capi::bk_eval(rt, (char*)churn.ptr, churn.len, &junk) == capi::BK_OK) {
         capi::bk_value_free(rt, junk);
     }
@@ -72,7 +72,7 @@ fn void test_freed_handles_release(void* rt) {
     uint churned = 0;
     for (uint i = 0; i < 2000; i++) {
         String src = string::tformat("'transient-%d'", i);
-        uint v = 0;
+        ulong v = 0;
         if (capi::bk_eval(rt, (char*)src.ptr, src.len, &v) != capi::BK_OK) break;
         capi::bk_value_free(rt, v);
         churned++;
@@ -81,7 +81,7 @@ fn void test_freed_handles_release(void* rt) {
 
     // The registry must still be correct afterwards.
     String src = "'final'";
-    uint v = 0;
+    ulong v = 0;
     bool ok = capi::bk_eval(rt, (char*)src.ptr, src.len, &v) == capi::BK_OK;
     if (ok) {
         char[32] buf;

@@ -59,21 +59,16 @@ const usz ERRBUF = 512;
 // Value handle encoding
 // ============================================================================
 //
-// A handle is one 32-bit word:
+// A handle is one 64-bit word:
 //
-//    31          30..19            18..0
-//   [scope]  [ generation ]     [ index+1 ]
-//
-// Bit 31 is SCOPE_HANDLE_BIT, reserved for per-call scope handles, so a global
-// slot id must never set it -- the encoding below cannot, since index and
-// generation together occupy only bits 0..30.
+//    63..48        47        46..32          31..0
+//   [ rt id ]   [scope]  [ generation ]   [ index+1 ]
 //
 // Index is stored biased by one, which keeps 0 reserved as "no value" and lets
 // the eval/call paths keep treating a zero out-param as failure.
 //
-// 16 index bits cap the registry at 65535 simultaneously live handles. That is
-// a real ceiling reported as BK_ERR_FULL, not a silent wrap: the array itself
-// grows on demand and never reserves that much.
+// 32 index bits mean the registry is bounded by memory rather than by the
+// encoding. BK_ERR_FULL is still returned when the slot array cannot grow.
 //
 // 15 generation bits retire a slot on free. A stale handle to a freed slot
 // mismatches the slot's current generation and is rejected, so it can never
@@ -86,23 +81,45 @@ const usz ERRBUF = 512;
 // counter would return to a value a stale handle still carries and the two
 // would become bit-identical, which no check downstream could separate.
 //
-// Retirement is permanent for the life of the runtime. It cannot be undone by
-// waiting for the registry to empty: a handle freed long ago is still held by
-// the host, and resetting the generation would make it resolve again. One index
-// is spent per 32767 alloc/free cycles on it, so exhausting all 65535 indexes
-// takes over two billion cycles, and the result is a clean BK_ERR_FULL rather
-// than a stale handle resolving.
-const uint SLOT_INDEX_BITS = 16;
-const uint SLOT_INDEX_MASK = (1u << SLOT_INDEX_BITS) - 1;   // 65535
-const uint SLOT_GEN_BITS   = 15;
-const uint SLOT_GEN_MASK   = (1u << SLOT_GEN_BITS) - 1;     // 32767
-const uint SLOT_GEN_MAX    = SLOT_GEN_MASK;
-const uint SLOT_FREE_END   = 0xFFFF_FFFF;
-const uint SLOT_INITIAL_CAP = 64;
+// Bit 47 is SCOPE_HANDLE_BIT, marking a per-call scope handle. A registry
+// handle never sets it: index and generation together occupy only bits 0..46.
+//
+// Bits 63..48 carry the id of the runtime that issued the handle. Without it
+// two runtimes hand out bit-identical handles -- the first value each issues
+// is index 0, generation 1 -- and resolving one runtime's handle against the
+// other silently answers with an unrelated value of the same shape. That is a
+// wrong answer rather than an error, and no check downstream can separate the
+// two. With the id present the mismatch is caught and reported as
+// BK_ERR_INVALID.
+//
+// The id comes from a process-wide counter that wraps at 16 bits. A collision
+// therefore needs 65536 runtimes to have been opened *and* a handle from an
+// old one to still be in the host's hands, which is a far narrower window than
+// having no id at all.
+const ulong SLOT_INDEX_BITS = 32;
+const ulong SLOT_INDEX_MASK = (1ul << SLOT_INDEX_BITS) - 1;   // 4294967295
+const ulong SLOT_GEN_BITS   = 15;
+const ulong SLOT_GEN_MASK   = (1ul << SLOT_GEN_BITS) - 1;     // 32767
+const uint  SLOT_GEN_MAX    = (uint)SLOT_GEN_MASK;
+const uint  SLOT_FREE_END   = 0xFFFF_FFFF;
+const uint  SLOT_INITIAL_CAP = 64;
+
+// The registry cannot hand out an index of SLOT_FREE_END, which is the free
+// list's end marker, so that is the ceiling on live slots.
+const uint SLOT_INDEX_LIMIT = SLOT_FREE_END;
 
 // Marks a per-call scope handle. Set on handles naming `this`, `new.target`
 // or an argument, which live in the call scope rather than the registry.
-const uint SCOPE_HANDLE_BIT = 0x8000_0000;
+const ulong SCOPE_HANDLE_BIT = 1ul << 47;
+
+const ulong RT_ID_SHIFT = 48;
+const ulong RT_ID_MASK  = 0xFFFF;
+
+// Process-wide source of runtime ids. Starts at 1 so a zero id, which is what
+// a zeroed-out or never-opened Runtime would carry, is never valid.
+uint g_next_rt_id = 1;
+
+macro ulong handle_rt_id(ulong h) => (h >> RT_ID_SHIFT) & RT_ID_MASK;
 
 // One registry entry. `used` distinguishes a live slot from one on the free
 // list, so the common stale-handle case is caught without relying on the
@@ -127,6 +144,7 @@ struct SlotEntry {
 struct Runtime {
     Heap*    heap;
     Vm*      vm;
+    uint     rt_id;          // identifies this runtime's handles; see above
     // Host-held values. A dedicated growable array rather than an HObject: the
     // object registry was bounded by the ushort prop_count and burned a shape
     // slot per delete, and it hashed an integer key into a string on every
@@ -187,6 +205,10 @@ fn Runtime* create() {
     rt.heap = hp; rt.vm = v;
     rt.slots = null; rt.slot_cap = 0; rt.slot_count = 0;
     rt.free_head = SLOT_FREE_END; rt.live = 0; rt.retired = 0;
+    rt.rt_id = g_next_rt_id & (uint)RT_ID_MASK;
+    g_next_rt_id++;
+    // Id 0 is reserved as "no runtime", so skip it when the counter wraps.
+    if (rt.rt_id == 0) { rt.rt_id = 1; g_next_rt_id = 2; }
     clear_err(rt);
 
     // The slot array is not an HObject, so the mark phase cannot reach it
@@ -361,7 +383,7 @@ fn void describe_error(Runtime* rt, TVal* ev) {
 // registry usable at its current size.
 fn bool slot_grow(Runtime* rt) {
     uint new_cap = rt.slot_cap == 0 ? SLOT_INITIAL_CAP : rt.slot_cap * 2;
-    if (new_cap > SLOT_INDEX_MASK) new_cap = SLOT_INDEX_MASK;
+    if (new_cap > SLOT_INDEX_LIMIT) new_cap = SLOT_INDEX_LIMIT;
     if (new_cap <= rt.slot_cap) return false;
     usz bytes = (usz)new_cap * SlotEntry::size;
     void* raw = rt.heap.realloc_func(rt.heap.heap_udata, (void*)rt.slots, bytes);
@@ -378,15 +400,13 @@ fn bool slot_grow(Runtime* rt) {
 // Returning 0 is the ONLY failure signal, and every caller turns it into an
 // explicit error: a handle is never handed back for a value that was not
 // stored.
-fn uint slot_alloc(Runtime* rt, TVal v) {
+fn ulong slot_alloc(Runtime* rt, TVal v) {
     uint idx;
     if (rt.free_head != SLOT_FREE_END) {
         idx = rt.free_head;
         rt.free_head = rt.slots[idx].next_free;
     } else {
-        // slot_count indexes from 0 and the handle stores index+1, so the last
-        // usable index is SLOT_INDEX_MASK - 1.
-        if (rt.slot_count >= SLOT_INDEX_MASK) return 0;
+        if (rt.slot_count >= SLOT_INDEX_LIMIT) return 0;
         if (rt.slot_count == rt.slot_cap && !slot_grow(rt)) return 0;
         idx = rt.slot_count;
         rt.slot_count++;
@@ -399,25 +419,30 @@ fn uint slot_alloc(Runtime* rt, TVal v) {
     rt.slots[idx].v = v;
     rt.slots[idx].used = true;
     rt.live++;
-    return ((rt.slots[idx].gen & SLOT_GEN_MASK) << SLOT_INDEX_BITS) | (idx + 1);
+    return ((ulong)rt.rt_id << RT_ID_SHIFT)
+         | (((ulong)rt.slots[idx].gen & SLOT_GEN_MASK) << SLOT_INDEX_BITS)
+         | ((ulong)idx + 1);
 }
 
 // Resolve a handle to its entry, or null if the handle is stale, freed, out of
 // range, or a scope handle. This is the single validation point.
-fn SlotEntry* slot_entry(Runtime* rt, uint id) {
+fn SlotEntry* slot_entry(Runtime* rt, ulong id) {
     if (rt == null || id == 0) return null;
     if ((id & SCOPE_HANDLE_BIT) != 0) return null;
-    uint biased = id & SLOT_INDEX_MASK;
+    // A handle issued by a different runtime names a slot in that runtime's
+    // registry, not this one. Reject it instead of resolving it here.
+    if (handle_rt_id(id) != (ulong)rt.rt_id) return null;
+    ulong biased = id & SLOT_INDEX_MASK;
     if (biased == 0) return null;
-    uint idx = biased - 1;
-    if (idx >= rt.slot_count) return null;
+    ulong idx = biased - 1;
+    if (idx >= (ulong)rt.slot_count) return null;
     SlotEntry* e = &rt.slots[idx];
     if (!e.used) return null;
-    if (((id >> SLOT_INDEX_BITS) & SLOT_GEN_MASK) != (e.gen & SLOT_GEN_MASK)) return null;
+    if (((id >> SLOT_INDEX_BITS) & SLOT_GEN_MASK) != ((ulong)e.gen & SLOT_GEN_MASK)) return null;
     return e;
 }
 
-fn bool slot_get(Runtime* rt, uint id, TVal* out) {
+fn bool slot_get(Runtime* rt, ulong id, TVal* out) {
     SlotEntry* e = slot_entry(rt, id);
     if (e == null) return false;
     *out = e.v;
@@ -426,7 +451,7 @@ fn bool slot_get(Runtime* rt, uint id, TVal* out) {
 
 // Release a handle. Scope handles and already-freed handles are ignored
 // rather than treated as an error.
-fn void slot_release(Runtime* rt, uint id) {
+fn void slot_release(Runtime* rt, ulong id) {
     SlotEntry* e = slot_entry(rt, id);
     if (e == null) return;
 
@@ -450,7 +475,7 @@ fn void slot_release(Runtime* rt, uint id) {
     }
     e.gen++;
 
-    uint idx = (id & SLOT_INDEX_MASK) - 1;
+    uint idx = (uint)((id & SLOT_INDEX_MASK) - 1);
     e.next_free = rt.free_head;
     rt.free_head = idx;
 }
@@ -464,17 +489,21 @@ fn void slot_release(Runtime* rt, uint id) {
 // Scope handles are distinguished from global slot ids by the high bit, so
 // the type query and the readers accept both kinds without separate entry
 // points.
-fn uint scope_handle(uint idx) @inline {
-    return SCOPE_HANDLE_BIT | idx;
+fn ulong scope_handle(Runtime* rt, ulong idx) @inline {
+    ulong rid = rt == null ? 0 : (ulong)rt.rt_id;
+    return (rid << RT_ID_SHIFT) | SCOPE_HANDLE_BIT | idx;
 }
 
 // Resolve any handle to a TVal. Global slot ids go to the slot registry;
 // scope handles read the innermost host call scope through the context.
-fn bool resolve_handle(Runtime* rt, void* ctxp, uint id, TVal* out) {
+fn bool resolve_handle(Runtime* rt, void* ctxp, ulong id, TVal* out) {
     if ((id & SCOPE_HANDLE_BIT) != 0) {
         if (ctxp == null) return false;
+        // A scope handle belongs to one call in one runtime, so it is checked
+        // the same way a registry handle is.
+        if (rt != null && handle_rt_id(id) != (ulong)rt.rt_id) return false;
         builtins::BuiltinContext* ctx = (builtins::BuiltinContext*)ctxp;
-        uint idx = id & ~SCOPE_HANDLE_BIT;
+        uint idx = (uint)(id & ~(SCOPE_HANDLE_BIT | (RT_ID_MASK << RT_ID_SHIFT)));
         if (idx == heap::HOST_SCOPE_THIS)       { *out = builtins::host_this(ctx); return true; }
         if (idx == heap::HOST_SCOPE_NEW_TARGET) { *out = builtins::host_new_target(ctx); return true; }
         *out = builtins::host_arg(ctx, idx - heap::HOST_SCOPE_ARG0);

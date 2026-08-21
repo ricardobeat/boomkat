@@ -173,6 +173,21 @@ static void test_cross_handles(void) {
         check("cross: eval in A", 0);
         bk_close(A); bk_close(B); return;
     }
+
+    /* Populate B's registry too. Without this the rejection below is
+       incidental -- an empty registry rejects every index -- rather than a
+       property of the handle. With both runtimes holding a slot 0 at
+       generation 1, only the runtime id in the handle separates them. */
+    {
+        bk_value vb;
+        if (bk_eval(B, "'from-B'", 8, &vb) != BK_OK) {
+            check("cross: eval in B", 0);
+            bk_close(A); bk_close(B); return;
+        }
+        check("the two handles are not bit-identical", va != vb);
+        bk_value_free(B, vb);
+    }
+
     /* A's handle read through B must fail rather than answer with B's value. */
     check("A handle rejected by B (string)", bk_get_string(B, va, s, sizeof s, &n) != BK_OK);
     check("A handle rejected by B (number)", bk_get_number(B, va, &d) != BK_OK);

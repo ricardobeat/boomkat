@@ -107,7 +107,7 @@ macro fault_of(int code) {
 // slot, and the registry the mark phase walks all live in `boomkat::embed`,
 // shared with the C ABI.
 struct JsValue {
-    uint slot;   // 0 == empty/released
+    ulong slot;   // 0 == empty/released
 }
 
 // The value returned for a statement with no completion value (`var x = 1;`).
@@ -258,7 +258,7 @@ fn String? JsRuntime.to_display_string(&self, JsValue v, Allocator allocator = t
 // Faults: NOT_OPEN, VALUE_TABLE_FULL
 fn JsValue? JsRuntime.root(&self, TVal tv) {
     if (self.rt == null) return NOT_OPEN~;
-    uint slot = embed::slot_alloc(self.rt, tv);
+    ulong slot = embed::slot_alloc(self.rt, tv);
     if (slot == 0) return VALUE_TABLE_FULL~;
     JsValue handle = { .slot = slot };
     return handle;

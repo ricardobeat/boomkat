@@ -109,22 +109,19 @@ int main(void)
      * -------------------------------------------------------- 5. handles
      *
      * A bk_value is an index into ONE runtime's registry, not a pointer to a
-     * value, and the index is NOT tagged with which runtime it came from. Two
-     * runtimes at the same allocation state hand out bit-identical handles, as
-     * the first line below shows.
+     * value. Two runtimes at the same allocation state therefore agree on the
+     * slot and generation fields; what keeps their handles apart is the id of
+     * the issuing runtime, carried in the top bits of every handle.
      *
-     * So passing a handle to the wrong runtime's reader is NOT reliably caught.
-     * It is caught only when that slot happens to be free or to carry a
-     * different generation in the other runtime; when both registries are in
-     * step, the read succeeds and quietly answers with the OTHER runtime's
-     * value. Both outcomes are printed below, from the same pair of runtimes.
+     * That makes the mistake an error rather than a wrong answer: reading A's
+     * handle through B reports BK_ERR_INVALID instead of quietly returning B's
+     * own value from the same slot. The check does not depend on the two
+     * registries' relative state, as the second read below shows.
      *
-     * Pairing a handle with its runtime is therefore the host's job, and the
-     * engine will not check it for you. To move a value across, read it out on
-     * one side and write it back on the other; no handle means anything in
-     * both.
+     * A handle still means nothing outside the runtime that issued it. To move
+     * a value across, read it out on one side and write it back on the other.
      */
-    printf("\nhandles are per-runtime, and mixing them is not diagnosed:\n");
+    printf("\nhandles are per-runtime, and mixing them is refused:\n");
 
     /*
      * A fresh pair, so both registries start in step and issue the same
@@ -145,8 +142,9 @@ int main(void)
             goto fail;
         }
 
-        printf("%-30s = %u vs %u (identical: %s)\n", "  C's handle vs D's handle",
-               vc, vd, vc == vd ? "yes" : "no");
+        printf("%-30s = %llu vs %llu (identical: %s)\n", "  C's handle vs D's handle",
+               (unsigned long long)vc, (unsigned long long)vd,
+               vc == vd ? "yes" : "no");
 
         /* Correct use: each handle read by the runtime that issued it. */
         n = -1.0;
@@ -157,26 +155,25 @@ int main(void)
         printf("%-30s = %g\n", "  D's handle read by D", n);
 
         /*
-         * The silent case. Both registries are in step, so D resolves C's
-         * handle and answers with its OWN value, 7, and returns BK_OK.
+         * The mistake, caught. Both registries are in step -- each holds one
+         * value at slot 0, generation 1 -- so the slot and generation fields
+         * of the two handles are identical. What separates them is the id of
+         * the issuing runtime, carried in the top bits of every handle, so D
+         * refuses C's handle instead of answering with its own value.
          */
         n = -1.0;
         status = bk_get_number(d, vc, &n);
-        printf("%-30s = %s, n=%g  <-- D's value, not C's\n",
-               "  C's handle read by D", bku_status_name(status), n);
+        printf("%-30s = %s  <-- refused, not answered\n",
+               "  C's handle read by D", bku_status_name(status));
 
-        /*
-         * The caught case, from the same pair. Freeing a handle in D moves its
-         * generation counter on, so C's handle now names a slot D considers
-         * stale and D rejects it. Identical mistake; only the registries'
-         * relative state differs, which is why this is not a check you can
-         * lean on.
-         */
+        /* Still refused once D's own handle is gone and its generation moves
+           on: the rejection does not depend on the registries' relative
+           state. */
         bk_value_free(d, vd);
         n = -1.0;
         status = bk_get_number(d, vc, &n);
-        printf("%-30s = %s, n=%g  <-- caught, only by luck\n",
-               "  C's handle read by D again", bku_status_name(status), n);
+        printf("%-30s = %s\n",
+               "  C's handle read by D again", bku_status_name(status));
 
         bk_value_free(c, vc);
         bk_close(c);
