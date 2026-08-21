@@ -37,6 +37,9 @@ const uint PRIM_MAX_CANDIDATES = 256;
 /// cap discards the proof rather than growing the stacks: source this deep is
 /// rejected downstream anyway, and forgoing the optimization is always sound.
 const uint SLOT_MAX_NESTING = 256;
+/// Assignments held per parenthesized expression while waiting to see whether
+/// a `=>` follows. Beyond this the candidate is disqualified on the spot.
+const uint SLOT_MAX_PAREN_ASSIGNS = 128;
 const uint PRIM_MAX_DEPS = 8;       // per-candidate RHS-identifier dependencies
 
 struct PrimCandidate {
@@ -685,12 +688,23 @@ fn void CompilerContext.pre_scan_global_var_slots(&self) {
     // references is not disqualified and wrongly stays register-resident.
     TemplateScan tscan;
 
+    // Candidates assigned inside the paren group currently open. An arrow's
+    // `=>` is the first token that identifies the group as a parameter list,
+    // and it arrives just after the group closes, so the decision waits here.
+    ushort[SLOT_MAX_PAREN_ASSIGNS] pend_aidx;
+    ushort[SLOT_MAX_PAREN_ASSIGNS] pend_depth;
+    uint pend_count = 0;
+
     while (!disabled) {
         Token? tok_opt = self.lexer.next_token();
         if (catch _err = tok_opt) break;
         Token tok = tok_opt;
         TokenType tt = tok.type;
         if (tt == TokenType.EOF_TOKEN) break;
+
+        // Back at top level with no `=>` in sight: nothing pending can be a
+        // parameter default any more.
+        if (paren_depth == 0 && tt != TokenType.ARROW) { pend_count = 0; }
 
         // Observability hazards: any occurrence discards the whole proof.
         if (tt == TokenType.WITH || tt == TokenType.THIS) { disabled = true; break; }
@@ -756,6 +770,15 @@ fn void CompilerContext.pre_scan_global_var_slots(&self) {
         } else if (tt == TokenType.RBRACKET) {
             if (bracket_depth > 0) bracket_depth--;
         } else if (tt == TokenType.ARROW) {
+            // The group that just closed was a parameter list. Its defaults
+            // compile to thunks that write through the env chain, so anything
+            // assigned inside it cannot be read from a home register
+            // (`((a = (g = 5)) => {})()` left g unchanged).
+            if (prev_tt == TokenType.RPAREN) {
+                for (uint k = 0; k < pend_count; k++) {
+                    if ((uint)pend_depth[k] > paren_depth) { nested_ref[pend_aidx[k]] = true; }
+                }
+            }
             arrow_active = true;
             arrow_paren = (int)paren_depth;
             arrow_bracket = (int)bracket_depth;
@@ -883,26 +906,16 @@ fn void CompilerContext.pre_scan_global_var_slots(&self) {
                                         prev_ident[:prev_ident_len]);
             if (aidx >= 0) {
                 value_written[aidx] = true;
-                // An assignment inside a plain paren group is ambiguous: the
-                // group may be an arrow's parameter list, whose default-value
-                // expressions compile to separate thunk functions. Such a thunk
-                // writes the name through the env chain, but a register-resident
-                // global is read from its home register, so the write would be
-                // lost (`((a = (g = 5)) => {})()` left g unchanged). Without
-                // lookahead to `=>` a plain grouping cannot be told apart from an
-                // arrow param list, so it is disqualified.
-                //
-                // A control-clause paren is not ambiguous: `for (`, `if (`, and
-                // the rest can never open an arrow's parameter list, and their
-                // assignments compile inline in the same function. Only a plain
-                // paren somewhere in the enclosing chain forces the fallback, so
-                // a `for (var i = 0; ...)` counter stays register-resident while
-                // `for (var f = (a = 1) => a; ...)` still disqualifies.
-                bool inside_plain_paren = false;
-                for (uint d = 1; d <= paren_depth && d < SLOT_MAX_NESTING; d++) {
-                    if (!paren_control[d]) { inside_plain_paren = true; break; }
+                // Hold it until a `=>` says the group was a parameter list.
+                if (paren_depth > 0) {
+                    if (pend_count < SLOT_MAX_PAREN_ASSIGNS) {
+                        pend_aidx[pend_count]  = (ushort)aidx;
+                        pend_depth[pend_count] = (ushort)paren_depth;
+                        pend_count++;
+                    } else {
+                        nested_ref[aidx] = true;
+                    }
                 }
-                if (inside_plain_paren) { nested_ref[aidx] = true; }
             }
         }
 
