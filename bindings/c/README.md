@@ -9,8 +9,6 @@ build system beyond `make` and `cc`.
 | `main.c` | Driving JS from C: evaluate for a value, read it out, surface errors, shut down. Read this first. It is meant as documentation. |
 | `host_fn.c` | The other direction: registering C callbacks as JS globals, with udata, arguments, throwing, and calling back into JS. |
 | `two_runtimes.c` | Several runtimes open at once: independent globals, objects and interned strings, and what a handle does and does not mean outside the runtime that issued it. |
-| `bk_util.h` / `bk_util.c` | Optional conveniences over the raw ABI (mainly the two-call string protocol). Copy them into your own project if useful. |
-| `Makefile` | Static and shared link recipes. |
 
 ## Prerequisites
 
